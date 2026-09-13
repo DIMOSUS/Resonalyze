@@ -1882,8 +1882,17 @@ you press **Play**.
 
 The **FIR Constructor** (under the **Tools** tab) designs **linear-phase crossover
 kernels** — a **Low pass**, a **High pass** or a **Band pass** — and draws what the
-kernel does: its magnitude, and its phase referenced to the kernel's peak. There is
-no measurement behind either plot; the constructor shows the filter alone. It works
+kernel does. The upper plot carries its magnitude on the left axis and its phase,
+referenced to the kernel's peak, on the right axis in the phase curve's own colour;
+the phase is drawn only where the magnitude stands within 60 dB of the kernel's
+loudest point, because below that the angle belongs to rounding and would flip
+between ±180° over the slope. For a linear-phase kernel it is a flat 0° (180° past a
+zero). The lower plot is the **impulse response** against time from the kernel's
+peak, so everything at negative time is the ringing ahead of the peak — the price a
+linear-phase crossover pays, and at a low corner a long one. **Impulse: in dB** shows
+each tap's level under the largest instead of the taps themselves, down to −120 dB,
+which is where the length of that ringing can actually be read. There is no
+measurement behind either plot; the constructor shows the filter alone. It works
 on its own, at a **Sample rate** of its own, with **Export file…** writing the kernel
 as a 32-bit float WAV or a text file (the same formats and the same header the
 Virtual DSP FIR button writes, plus a comment line naming the design), or it edits

@@ -10,8 +10,8 @@ namespace Resonalyze;
 
 /// <summary>
 /// The FIR Constructor: designs a linear-phase low-pass, high-pass or band-pass
-/// kernel and shows what it does — its magnitude and its phase, with no measurement
-/// behind them. It stands alone (a rate of its own, a file on the way out) or edits
+/// kernel and shows what it does — its magnitude and phase on one plot, and its
+/// impulse response on the other, with no measurement behind them. It stands alone (a rate of its own, a file on the way out) or edits
 /// one Virtual DSP channel side, which it returns the kernel to.
 /// </summary>
 /// <remarks>
@@ -43,12 +43,31 @@ public partial class FirConstructorPanel : UserControl
 
     private static readonly OxyColor KernelColor = OxyColor.FromRgb(90, 180, 255);
     private static readonly OxyColor TargetColor = OxyColor.FromArgb(200, 230, 184, 0);
+    private static readonly OxyColor PhaseColor = OxyColor.FromRgb(210, 140, 255);
 
-    private readonly PlotModel magnitudeModel;
-    private readonly PlotModel phaseModel;
+    private const string MagnitudeAxisKey = "magnitude";
+    private const string PhaseAxisKey = "phase";
+    private const string AmplitudeAxisKey = "amplitude";
+
+    // The phase is drawn only where the kernel passes something: below this many dB
+    // under its own loudest point, the angle is that of a few taps' rounding and flips
+    // between ±180° over the magnitude's slope.
+    private const double PhaseFloorDb = 60;
+
+    // The deepest level the impulse's dB view goes to, under its largest tap.
+    private const double ImpulseFloorDb = 120;
+
+    private readonly PlotModel responseModel;
+    private readonly PlotModel impulseModel;
     private readonly LineSeries magnitudeSeries;
     private readonly LineSeries targetSeries;
     private readonly LineSeries phaseSeries;
+    private readonly LineSeries impulseSeries;
+    private readonly LinearAxis amplitudeAxis;
+
+    // The last curves that landed, kept so the impulse's scale can be switched without
+    // a rebuild.
+    private Rendering? lastRendering;
 
     // What the plots show: the kernel, and the design it was built from — null for a
     // bare kernel. kernelName is the file a bare kernel came from.
@@ -90,25 +109,86 @@ public partial class FirConstructorPanel : UserControl
         InitializeComponent();
         Ui.DarkScrollBars.Apply(this);
 
-        magnitudeModel = CreateModel("Magnitude", "dB", -100, 10);
+        responseModel = PlotModelStyle.CreateTitledModel("Magnitude and phase (phase referenced to the kernel's peak)");
+        responseModel.TitleFontSize = 12;
+        PlotModelStyle.AddFrequencyAxis(responseModel);
+        PlotModelStyle.InsertAxis(responseModel, 0, new LinearAxis
+        {
+            Key = MagnitudeAxisKey,
+            Position = AxisPosition.Left,
+            Minimum = -100,
+            Maximum = 10,
+            MajorGridlineStyle = LineStyle.Solid,
+            MinorGridlineStyle = LineStyle.Dot,
+            Title = "dB"
+        });
+        // The phase owns no gridlines — the magnitude's draw them — and says which curve
+        // it belongs to by its colour.
+        PlotModelStyle.AddAxis(responseModel, new LinearAxis
+        {
+            Key = PhaseAxisKey,
+            Position = AxisPosition.Right,
+            Minimum = -180,
+            Maximum = 180,
+            MajorStep = 90,
+            MajorGridlineStyle = LineStyle.None,
+            MinorGridlineStyle = LineStyle.None,
+            TextColor = PhaseColor,
+            TitleColor = PhaseColor,
+            TicklineColor = PhaseColor,
+            Title = "Phase (°)"
+        });
         targetSeries = new LineSeries
         {
             Title = "Target",
             Color = TargetColor,
             StrokeThickness = 1.5,
-            LineStyle = LineStyle.Dash
+            LineStyle = LineStyle.Dash,
+            YAxisKey = MagnitudeAxisKey
         };
-        magnitudeSeries = new LineSeries { Title = "Kernel", Color = KernelColor, StrokeThickness = 2 };
-        magnitudeModel.Series.Add(targetSeries);
-        magnitudeModel.Series.Add(magnitudeSeries);
-        phaseModel = CreateModel("Phase, referenced to the kernel's peak", "°", -180, 180);
-        ((LinearAxis)phaseModel.Axes[0]).MajorStep = 45;
-        phaseSeries = new LineSeries { Color = KernelColor, StrokeThickness = 2 };
-        phaseModel.Series.Add(phaseSeries);
-        plotMagnitude.Model = magnitudeModel;
-        plotPhase.Model = phaseModel;
-        PlotInteraction.Enable(plotMagnitude);
-        PlotInteraction.Enable(plotPhase);
+        magnitudeSeries = new LineSeries
+        {
+            Title = "Magnitude",
+            Color = KernelColor,
+            StrokeThickness = 2,
+            YAxisKey = MagnitudeAxisKey
+        };
+        phaseSeries = new LineSeries
+        {
+            Title = "Phase",
+            Color = OxyColor.FromAColor(200, PhaseColor),
+            StrokeThickness = 1,
+            YAxisKey = PhaseAxisKey
+        };
+        responseModel.Series.Add(targetSeries);
+        responseModel.Series.Add(phaseSeries);
+        responseModel.Series.Add(magnitudeSeries);
+
+        impulseModel = PlotModelStyle.CreateTitledModel("Impulse response (time from the kernel's peak)");
+        impulseModel.TitleFontSize = 12;
+        PlotModelStyle.AddAxis(impulseModel, new LinearAxis
+        {
+            Position = AxisPosition.Bottom,
+            MajorGridlineStyle = LineStyle.Solid,
+            MinorGridlineStyle = LineStyle.Dot,
+            Title = "ms"
+        });
+        amplitudeAxis = new LinearAxis
+        {
+            Key = AmplitudeAxisKey,
+            Position = AxisPosition.Left,
+            MajorGridlineStyle = LineStyle.Solid,
+            MinorGridlineStyle = LineStyle.Dot,
+            Title = "Amplitude"
+        };
+        PlotModelStyle.AddAxis(impulseModel, amplitudeAxis);
+        impulseSeries = new LineSeries { Color = KernelColor, StrokeThickness = 1, YAxisKey = AmplitudeAxisKey };
+        impulseModel.Series.Add(impulseSeries);
+
+        plotResponse.Model = responseModel;
+        plotImpulse.Model = impulseModel;
+        PlotInteraction.Enable(plotResponse);
+        PlotInteraction.Enable(plotImpulse);
 
         InitializeChoices();
         WireEvents();
@@ -319,38 +399,22 @@ public partial class FirConstructorPanel : UserControl
         buttonExport.Click += (_, _) => ExportFile();
         buttonReturnToDsp.Click += (_, _) => ReturnToVirtualDsp();
         buttonBackToDsp.Click += (_, _) => BackToVirtualDspRequested?.Invoke();
-    }
-
-    private static PlotModel CreateModel(string title, string unit, double minimum, double maximum)
-    {
-        PlotModel model = PlotModelStyle.CreateTitledModel(title);
-        model.TitleFontSize = 12;
-        PlotModelStyle.AddFrequencyAxis(model);
-        PlotModelStyle.InsertAxis(model, 0, new LinearAxis
-        {
-            Position = AxisPosition.Left,
-            Minimum = minimum,
-            Maximum = maximum,
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineStyle = LineStyle.Dot,
-            Title = unit
-        });
-        return model;
+        checkBoxImpulseDb.CheckedChanged += (_, _) => ApplyImpulse(lastRendering, rescale: true);
     }
 
     // The two plots share the height beside the controls, half each.
     private void LayoutPlots()
     {
-        int gap = plotPhase.Top - plotMagnitude.Bottom;
-        int available = ClientSize.Height - plotMagnitude.Top * 2 - gap;
+        int gap = plotImpulse.Top - plotResponse.Bottom;
+        int available = ClientSize.Height - plotResponse.Top * 2 - gap;
         if (available < 2)
         {
             return;
         }
 
-        plotMagnitude.Height = available / 2;
-        plotPhase.Top = plotMagnitude.Bottom + gap;
-        plotPhase.Height = available - available / 2;
+        plotResponse.Height = available / 2;
+        plotImpulse.Top = plotResponse.Bottom + gap;
+        plotImpulse.Height = available - available / 2;
     }
 
     // ---------------------------------------------------------------- editing
@@ -730,6 +794,8 @@ public partial class FirConstructorPanel : UserControl
         DataPoint[] Magnitude,
         DataPoint[] Target,
         DataPoint[] Phase,
+        DataPoint[] Impulse,
+        DataPoint[] ImpulseDb,
         double DeviationDb);
 
     // What the panel held on its own before a handoff (see standaloneWork).
@@ -751,6 +817,7 @@ public partial class FirConstructorPanel : UserControl
         var magnitude = new DataPoint[Points + 1];
         var target = new List<DataPoint>(designed is { HasTargetMagnitude: true } ? Points + 1 : 0);
         var phase = new DataPoint[Points + 1];
+        double loudestDb = double.NegativeInfinity;
         for (int i = 0; i <= Points; i++)
         {
             if (i % 50 == 0)
@@ -761,6 +828,7 @@ public partial class FirConstructorPanel : UserControl
             double frequency = 20 * Math.Pow(highHz / 20, (double)i / Points);
             Complex response = shown.Response(frequency, rate);
             magnitude[i] = new DataPoint(frequency, 20 * Math.Log10(Math.Max(response.Magnitude, 1e-10)));
+            loudestDb = Math.Max(loudestDb, magnitude[i].Y);
             if (designed is { HasTargetMagnitude: true })
             {
                 double targetDb = 20 * Math.Log10(Math.Max(designed.TargetMagnitude(frequency), 1e-10));
@@ -778,9 +846,34 @@ public partial class FirConstructorPanel : UserControl
                 response.Magnitude > 1e-9 ? aligned.Phase * 180 / Math.PI : double.NaN);
         }
 
+        // A NaN is a gap in the line: the phase is left out wherever the kernel passes
+        // nothing worth an angle.
+        for (int i = 0; i <= Points; i++)
+        {
+            if (magnitude[i].Y < loudestDb - PhaseFloorDb)
+            {
+                phase[i] = new DataPoint(phase[i].X, double.NaN);
+            }
+        }
+
+        // The impulse against time from its peak: negative time is the ringing ahead of
+        // it, which is what a linear-phase kernel costs and what this plot is for.
+        ReadOnlySpan<double> taps = shown.Taps;
+        double largest = Math.Max(Math.Abs(taps[shown.PeakIndex]), double.Epsilon);
+        var impulse = new DataPoint[taps.Length];
+        var impulseDb = new DataPoint[taps.Length];
+        for (int i = 0; i < taps.Length; i++)
+        {
+            double timeMs = (i - shown.PeakIndex) * 1_000.0 / rate;
+            impulse[i] = new DataPoint(timeMs, taps[i]);
+            impulseDb[i] = new DataPoint(
+                timeMs,
+                Math.Max(20 * Math.Log10(Math.Abs(taps[i]) / largest), -ImpulseFloorDb));
+        }
+
         cancellation.ThrowIfCancellationRequested();
         double deviation = designed?.WorstDeviationDb(shown) ?? double.NaN;
-        return new Rendering(shown, magnitude, target.ToArray(), phase, deviation);
+        return new Rendering(shown, magnitude, target.ToArray(), phase, impulse, impulseDb, deviation);
     }
 
     private void ApplyRendering(Rendering? rendering)
@@ -797,8 +890,30 @@ public partial class FirConstructorPanel : UserControl
 
         UpdateReadouts(displayRate, rendering?.DeviationDb ?? double.NaN);
         UpdateActions();
-        magnitudeModel.InvalidatePlot(true);
-        phaseModel.InvalidatePlot(true);
+        responseModel.InvalidatePlot(true);
+        ApplyImpulse(rendering, rescale: !ReferenceEquals(lastRendering?.Kernel, rendering?.Kernel));
+        lastRendering = rendering;
+    }
+
+    // The impulse at the scale the box asks for: the taps themselves, or their level in
+    // dB under the largest. A new kernel or a switched scale refits the view to it;
+    // the same kernel redrawn keeps the user's zoom.
+    private void ApplyImpulse(Rendering? rendering, bool rescale)
+    {
+        impulseSeries.Points.Clear();
+        bool decibels = checkBoxImpulseDb.Checked;
+        if (rendering != null)
+        {
+            impulseSeries.Points.AddRange(decibels ? rendering.ImpulseDb : rendering.Impulse);
+        }
+
+        amplitudeAxis.Title = decibels ? "dB" : "Amplitude";
+        if (rescale)
+        {
+            impulseModel.ResetAllAxes();
+        }
+
+        impulseModel.InvalidatePlot(true);
     }
 
     private void UpdateReadouts(int rate, double deviation)

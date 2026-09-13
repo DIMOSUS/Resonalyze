@@ -54,6 +54,8 @@ namespace Resonalyze
             labelTapsHint = new Label();
             labelSampleRate = new Label();
             comboBoxSampleRate = new DarkComboBox();
+            labelImpulseScale = new Label();
+            checkBoxImpulseDb = new ReleaseClickCheckBox();
             labelLatency = new Label();
             labelDeviation = new Label();
             labelProblem = new Label();
@@ -61,8 +63,8 @@ namespace Resonalyze
             buttonExport = new ReleaseClickButton();
             buttonReturnToDsp = new ReleaseClickButton();
             buttonBackToDsp = new ReleaseClickButton();
-            plotMagnitude = new OxyPlot.WindowsForms.PlotView();
-            plotPhase = new OxyPlot.WindowsForms.PlotView();
+            plotResponse = new OxyPlot.WindowsForms.PlotView();
+            plotImpulse = new OxyPlot.WindowsForms.PlotView();
             ((System.ComponentModel.ISupportInitialize)numericHighPassHz).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericLowPassHz).BeginInit();
             ((System.ComponentModel.ISupportInitialize)numericKaiserBeta).BeginInit();
@@ -372,111 +374,132 @@ namespace Resonalyze
             comboBoxSampleRate.Size = new Size(90, 23);
             comboBoxSampleRate.TabIndex = 24;
             // 
+            // labelImpulseScale
+            // 
+            labelImpulseScale.AutoSize = true;
+            labelImpulseScale.ForeColor = Color.FromArgb(210, 214, 222);
+            labelImpulseScale.Location = new Point(18, 408);
+            labelImpulseScale.Name = "labelImpulseScale";
+            labelImpulseScale.Size = new Size(47, 15);
+            labelImpulseScale.Text = "Impulse";
+            labelImpulseScale.TabIndex = 25;
+            // 
+            // checkBoxImpulseDb
+            // 
+            checkBoxImpulseDb.AutoSize = true;
+            checkBoxImpulseDb.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxImpulseDb.Location = new Point(118, 406);
+            checkBoxImpulseDb.Name = "checkBoxImpulseDb";
+            checkBoxImpulseDb.Size = new Size(55, 19);
+            checkBoxImpulseDb.Text = "in dB";
+            checkBoxImpulseDb.UseVisualStyleBackColor = true;
+            checkBoxImpulseDb.TabIndex = 26;
+            // 
             // labelLatency
             // 
             labelLatency.AutoEllipsis = true;
             labelLatency.ForeColor = Color.FromArgb(210, 214, 222);
-            labelLatency.Location = new Point(18, 414);
+            labelLatency.Location = new Point(18, 444);
             labelLatency.Name = "labelLatency";
             labelLatency.Size = new Size(314, 32);
             labelLatency.Text = "Latency";
-            labelLatency.TabIndex = 25;
+            labelLatency.TabIndex = 27;
             // 
             // labelDeviation
             // 
             labelDeviation.AutoEllipsis = true;
             labelDeviation.ForeColor = Color.FromArgb(210, 214, 222);
-            labelDeviation.Location = new Point(18, 448);
+            labelDeviation.Location = new Point(18, 478);
             labelDeviation.Name = "labelDeviation";
             labelDeviation.Size = new Size(314, 32);
             labelDeviation.Text = "Deviation";
-            labelDeviation.TabIndex = 26;
+            labelDeviation.TabIndex = 28;
             // 
             // labelProblem
             // 
             labelProblem.AutoEllipsis = true;
             labelProblem.ForeColor = Color.FromArgb(255, 130, 130);
-            labelProblem.Location = new Point(18, 482);
+            labelProblem.Location = new Point(18, 512);
             labelProblem.Name = "labelProblem";
             labelProblem.Size = new Size(314, 34);
             labelProblem.Text = "";
-            labelProblem.TabIndex = 27;
+            labelProblem.TabIndex = 29;
             // 
             // buttonImport
             // 
             buttonImport.BackColor = Color.FromArgb(50, 55, 80);
             buttonImport.FlatStyle = FlatStyle.Popup;
             buttonImport.ForeColor = Color.White;
-            buttonImport.Location = new Point(18, 524);
+            buttonImport.Location = new Point(18, 554);
             buttonImport.Name = "buttonImport";
             buttonImport.Size = new Size(120, 26);
             buttonImport.Text = "Import file…";
             buttonImport.UseVisualStyleBackColor = false;
-            buttonImport.TabIndex = 28;
+            buttonImport.TabIndex = 30;
             // 
             // buttonExport
             // 
             buttonExport.BackColor = Color.FromArgb(50, 55, 80);
             buttonExport.FlatStyle = FlatStyle.Popup;
             buttonExport.ForeColor = Color.White;
-            buttonExport.Location = new Point(144, 524);
+            buttonExport.Location = new Point(144, 554);
             buttonExport.Name = "buttonExport";
             buttonExport.Size = new Size(120, 26);
             buttonExport.Text = "Export file…";
             buttonExport.UseVisualStyleBackColor = false;
-            buttonExport.TabIndex = 29;
+            buttonExport.TabIndex = 31;
             // 
             // buttonReturnToDsp
             // 
             buttonReturnToDsp.BackColor = Color.FromArgb(50, 55, 80);
             buttonReturnToDsp.FlatStyle = FlatStyle.Popup;
             buttonReturnToDsp.ForeColor = Color.White;
-            buttonReturnToDsp.Location = new Point(18, 562);
+            buttonReturnToDsp.Location = new Point(18, 592);
             buttonReturnToDsp.Name = "buttonReturnToDsp";
             buttonReturnToDsp.Size = new Size(246, 26);
             buttonReturnToDsp.Text = "Return FIR to Virtual DSP";
             buttonReturnToDsp.UseVisualStyleBackColor = false;
             buttonReturnToDsp.Visible = false;
-            buttonReturnToDsp.TabIndex = 30;
+            buttonReturnToDsp.TabIndex = 32;
             // 
             // buttonBackToDsp
             // 
             buttonBackToDsp.BackColor = Color.FromArgb(50, 55, 80);
             buttonBackToDsp.FlatStyle = FlatStyle.Popup;
             buttonBackToDsp.ForeColor = Color.White;
-            buttonBackToDsp.Location = new Point(18, 592);
+            buttonBackToDsp.Location = new Point(18, 622);
             buttonBackToDsp.Name = "buttonBackToDsp";
             buttonBackToDsp.Size = new Size(246, 24);
             buttonBackToDsp.Text = "Back without applying";
             buttonBackToDsp.UseVisualStyleBackColor = false;
             buttonBackToDsp.Visible = false;
-            buttonBackToDsp.TabIndex = 31;
+            buttonBackToDsp.TabIndex = 33;
             // 
-            // plotMagnitude
+            // plotResponse
             // 
-            plotMagnitude.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            plotMagnitude.BackColor = Color.FromArgb(32, 36, 46);
-            plotMagnitude.Location = new Point(350, 14);
-            plotMagnitude.Name = "plotMagnitude";
-            plotMagnitude.PanCursor = Cursors.Hand;
-            plotMagnitude.Size = new Size(880, 364);
-            plotMagnitude.ZoomHorizontalCursor = Cursors.SizeWE;
-            plotMagnitude.ZoomRectangleCursor = Cursors.SizeNWSE;
-            plotMagnitude.ZoomVerticalCursor = Cursors.SizeNS;
-            plotMagnitude.TabIndex = 32;
+            plotResponse.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            plotResponse.BackColor = Color.FromArgb(32, 36, 46);
+            plotResponse.Location = new Point(350, 14);
+            plotResponse.Name = "plotResponse";
+            plotResponse.PanCursor = Cursors.Hand;
+            plotResponse.Size = new Size(880, 364);
+            plotResponse.ZoomHorizontalCursor = Cursors.SizeWE;
+            plotResponse.ZoomRectangleCursor = Cursors.SizeNWSE;
+            plotResponse.ZoomVerticalCursor = Cursors.SizeNS;
+            plotResponse.TabIndex = 34;
             // 
-            // plotPhase
+            // plotImpulse
             // 
-            plotPhase.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            plotPhase.BackColor = Color.FromArgb(32, 36, 46);
-            plotPhase.Location = new Point(350, 390);
-            plotPhase.Name = "plotPhase";
-            plotPhase.PanCursor = Cursors.Hand;
-            plotPhase.Size = new Size(880, 364);
-            plotPhase.ZoomHorizontalCursor = Cursors.SizeWE;
-            plotPhase.ZoomRectangleCursor = Cursors.SizeNWSE;
-            plotPhase.ZoomVerticalCursor = Cursors.SizeNS;
-            plotPhase.TabIndex = 33;
+            plotImpulse.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            plotImpulse.BackColor = Color.FromArgb(32, 36, 46);
+            plotImpulse.Location = new Point(350, 390);
+            plotImpulse.Name = "plotImpulse";
+            plotImpulse.PanCursor = Cursors.Hand;
+            plotImpulse.Size = new Size(880, 364);
+            plotImpulse.ZoomHorizontalCursor = Cursors.SizeWE;
+            plotImpulse.ZoomRectangleCursor = Cursors.SizeNWSE;
+            plotImpulse.ZoomVerticalCursor = Cursors.SizeNS;
+            plotImpulse.TabIndex = 35;
             // 
             // FirConstructorPanel
             // 
@@ -485,8 +508,8 @@ namespace Resonalyze
             AutoScroll = true;
             BackColor = Color.FromArgb(40, 44, 54);
             BorderStyle = BorderStyle.FixedSingle;
-            Controls.Add(plotPhase);
-            Controls.Add(plotMagnitude);
+            Controls.Add(plotImpulse);
+            Controls.Add(plotResponse);
             Controls.Add(buttonBackToDsp);
             Controls.Add(buttonReturnToDsp);
             Controls.Add(buttonExport);
@@ -494,6 +517,8 @@ namespace Resonalyze
             Controls.Add(labelProblem);
             Controls.Add(labelDeviation);
             Controls.Add(labelLatency);
+            Controls.Add(checkBoxImpulseDb);
+            Controls.Add(labelImpulseScale);
             Controls.Add(comboBoxSampleRate);
             Controls.Add(labelSampleRate);
             Controls.Add(labelTapsHint);
@@ -554,6 +579,8 @@ namespace Resonalyze
         private Label labelTapsHint;
         private Label labelSampleRate;
         private DarkComboBox comboBoxSampleRate;
+        private Label labelImpulseScale;
+        private ReleaseClickCheckBox checkBoxImpulseDb;
         private Label labelLatency;
         private Label labelDeviation;
         private Label labelProblem;
@@ -561,7 +588,7 @@ namespace Resonalyze
         private ReleaseClickButton buttonExport;
         private ReleaseClickButton buttonReturnToDsp;
         private ReleaseClickButton buttonBackToDsp;
-        private OxyPlot.WindowsForms.PlotView plotMagnitude;
-        private OxyPlot.WindowsForms.PlotView plotPhase;
+        private OxyPlot.WindowsForms.PlotView plotResponse;
+        private OxyPlot.WindowsForms.PlotView plotImpulse;
     }
 }

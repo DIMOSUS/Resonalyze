@@ -1882,8 +1882,10 @@ you press **Play**.
 
 The **FIR Constructor** (under the **Tools** tab) designs **linear-phase crossover
 kernels** — a **Low pass**, a **High pass** or a **Band pass** — and draws what the
-kernel does. The upper plot carries its magnitude on the left axis and its phase,
-referenced to the kernel's peak, on the right axis in the phase curve's own colour;
+kernel does. The upper plot carries its magnitude on the left axis and its phase
+on the right axis in the phase curve's own colour, referenced to the kernel's delay —
+the exact centre, (N − 1) / 2 samples, of a symmetric kernel of either length, and
+the largest tap of any other;
 the phase is drawn only where the magnitude stands within 60 dB of the kernel's
 loudest point, because below that the angle belongs to rounding and would flip
 between ±180° over the slope. For a linear-phase kernel it is a flat 0° (180° past a

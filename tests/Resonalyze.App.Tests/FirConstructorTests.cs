@@ -613,6 +613,31 @@ public sealed class FirConstructorTests
         });
     }
 
+    [Fact]
+    public void TheImpulsePlot_IsDecimated_AndAnEvenSymmetricKernelReadsFlatPhase()
+    {
+        StaTest.Run(() =>
+        {
+            using var panel = new FirConstructorPanel();
+            Settle(panel);
+
+            // A kernel as long as an import may be: drawn through the decimator, not
+            // as 131072 GDI+ segments on every repaint.
+            var impulse = Field<OxyPlot.Series.LineSeries>(panel, "impulseSeries");
+            Assert.NotNull(impulse.Decimator);
+
+            // Even length: the true delay is 1.5 samples, half a sample from the largest
+            // tap. Referenced to it, the passband phase is 0°, not a 90°-per-kHz tilt.
+            Invoke(panel, "ShowBareKernel", new FirFilter([0.1, 0.4, 0.4, 0.1], 48_000), "even.txt");
+            Settle(panel);
+            var phase = Field<OxyPlot.Series.LineSeries>(panel, "phaseSeries");
+            Assert.NotEmpty(phase.Points);
+            Assert.All(
+                phase.Points.Where(point => !double.IsNaN(point.Y)),
+                point => Assert.True(Math.Abs(point.Y) < 1e-6 || Math.Abs(Math.Abs(point.Y) - 180) < 1e-6, $"{point.X} Hz: {point.Y}°"));
+        });
+    }
+
     // Pumps the STA thread until the panel's background rebuild has landed: its
     // continuations are posted to this thread's WinForms synchronization context.
     private static void Settle(FirConstructorPanel panel)

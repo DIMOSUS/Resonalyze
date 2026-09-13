@@ -109,7 +109,7 @@ public partial class FirConstructorPanel : UserControl
         InitializeComponent();
         Ui.DarkScrollBars.Apply(this);
 
-        responseModel = PlotModelStyle.CreateTitledModel("Magnitude and phase (phase referenced to the kernel's peak)");
+        responseModel = PlotModelStyle.CreateTitledModel("Magnitude and phase (phase referenced to the kernel's delay)");
         responseModel.TitleFontSize = 12;
         PlotModelStyle.AddFrequencyAxis(responseModel);
         PlotModelStyle.InsertAxis(responseModel, 0, new LinearAxis
@@ -182,7 +182,16 @@ public partial class FirConstructorPanel : UserControl
             Title = "Amplitude"
         };
         PlotModelStyle.AddAxis(impulseModel, amplitudeAxis);
-        impulseSeries = new LineSeries { Color = KernelColor, StrokeThickness = 1, YAxisKey = AmplitudeAxisKey };
+        // Decimated, as ImpulseLineSeries is: an imported kernel may carry 131072 taps,
+        // and a plain GDI+ line through every one of them takes seconds per repaint on
+        // the UI thread, whatever the background rebuild saved.
+        impulseSeries = new LineSeries
+        {
+            Color = KernelColor,
+            StrokeThickness = 1,
+            YAxisKey = AmplitudeAxisKey,
+            Decimator = Decimator.Decimate
+        };
         impulseModel.Series.Add(impulseSeries);
 
         plotResponse.Model = responseModel;
@@ -813,7 +822,10 @@ public partial class FirConstructorPanel : UserControl
     {
         double highHz = Math.Min(20_000, rate / 2.0);
         const int Points = 800;
-        double peakSamples = shown.PeakIndex;
+        // The delay the phase is referenced to: a symmetric kernel's exact centre,
+        // (N − 1) / 2 — half a sample off the grid for an even length, where the largest
+        // tap sits half a sample from it — and the peak for any other kernel.
+        double referenceSamples = shown.IsSymmetric ? shown.LinearPhaseDelaySamples : shown.PeakIndex;
         var magnitude = new DataPoint[Points + 1];
         var target = new List<DataPoint>(designed is { HasTargetMagnitude: true } ? Points + 1 : 0);
         var phase = new DataPoint[Points + 1];
@@ -835,12 +847,11 @@ public partial class FirConstructorPanel : UserControl
                 target.Add(new DataPoint(frequency, targetDb));
             }
 
-            // Referenced to the peak: a linear-phase kernel's delay removed, it reads
-            // 0° in its passband (180° past a zero) instead of a phase wrapped
-            // thousands of times; for a kernel that is not linear-phase the peak is
-            // simply the stated reference.
+            // With a linear-phase kernel's delay removed it reads 0° in its passband
+            // (180° past a zero) instead of a phase wrapped thousands of times; for a
+            // kernel that is not linear-phase the peak is simply the stated reference.
             Complex aligned = response *
-                Complex.FromPolarCoordinates(1, Math.Tau * frequency * peakSamples / rate);
+                Complex.FromPolarCoordinates(1, Math.Tau * frequency * referenceSamples / rate);
             phase[i] = new DataPoint(
                 frequency,
                 response.Magnitude > 1e-9 ? aligned.Phase * 180 / Math.PI : double.NaN);

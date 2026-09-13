@@ -2510,8 +2510,16 @@ public partial class VirtualCrossoverPanel : UserControl
         // impulse response.
         ResolveSpatialAverage(settings, state);
         // And the kernel, for the same reason: it is this side's, and it has to come
-        // back whether or not the measurement does.
+        // back whether or not the measurement does. The block was bound BEFORE this
+        // (ApplySettingsToControl runs ahead of the restore, while the kernel is still
+        // null), and the restore's own callback refreshes only the source button — so
+        // the FIR row is told here, or a side whose curves are already convolved would
+        // go on showing "file not found" until something else rebound the block.
         ResolveFir(settings);
+        if (channelControls.ContainsKey(channel))
+        {
+            UpdateFirReadout(channel);
+        }
         if (!settings.HasSource)
         {
             return;

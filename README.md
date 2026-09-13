@@ -81,8 +81,8 @@ API key, no network request: the clipboard is the whole transport.
 
 <p align="center">
   <strong>Virtual DSP</strong> — combine measured drivers through gain, delay,
-  polarity, crossover filters, and PEQ (bells, shelves and all-pass alike)
-  before touching the hardware DSP.
+  polarity, crossover filters, PEQ (bells, shelves and all-pass alike) and FIR
+  filters before touching the hardware DSP.
 </p>
 
 <p align="center">
@@ -237,7 +237,9 @@ is set to show no animations (Settings → Accessibility → Visual effects).
   delay/polarity controls, plus a **sum-loss** curve
 - **Virtual DSP** — up to twelve L/R driver pairs (plus mono channels) through
   virtual chains: gain, delay, polarity, Butterworth / Linkwitz-Riley / Bessel /
-  Chebyshev crossovers and PEQ (all-pass bands included), with the complex sum,
+  Chebyshev crossovers, PEQ (all-pass bands included) and a per-channel FIR stage
+  (kernels imported from `.wav` / `.fir` / `.txt` or designed in the FIR
+  Constructor, run at the processor's rate), with the complex sum,
   sum loss, phase tracking, junction read-outs, Δ L−R timing, **Auto crossover**,
   a stereo-aware **Auto delay**, a headphone audition, sessions, tuning-sheet
   export

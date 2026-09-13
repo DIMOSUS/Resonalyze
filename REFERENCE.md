@@ -2202,8 +2202,9 @@ is a crossover too — but only as a CROSSOVER: a kernel designed in the FIR
 Constructor lands on the other side as well, and a Clear of one removes it from
 both. A kernel **imported from a file** never travels, and is never written over:
 a room or driver correction is the one filter the two sides of a car do not share,
-so an import on the side shown stays on that side, and a side holding an imported
-correction keeps it whatever is designed, imported or cleared on the other. Gain, delay, the phase angle and the PEQ are not
+so an import on the side shown stays on that side, clearing it touches nothing on
+the other side (even a crossover still standing there), and a side holding an
+imported correction keeps it whatever is designed, imported or cleared on the other. Gain, delay, the phase angle and the PEQ are not
 locked, for the reason they start unticked in the copy dialog; mono pairs have one
 settings set and need no lock. A run that writes both sides itself — **Auto
 delay**, which decides polarity per side, or the crossover wizard — keeps its own

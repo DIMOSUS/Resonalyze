@@ -172,6 +172,13 @@ public sealed record FirCrossoverDesign(
         {
             return "The window is not one the constructor knows.";
         }
+        // Every method, both edges: a family the program does not know is a damaged
+        // design even where the method would not read it, and the session refuses it
+        // on the same terms.
+        if (!Enum.IsDefined(LowPassEdge.Family) || !Enum.IsDefined(HighPassEdge.Family))
+        {
+            return "A crossover family is not one the program knows.";
+        }
         if (SampleRateHz <= 0)
         {
             return "The sample rate must be positive.";

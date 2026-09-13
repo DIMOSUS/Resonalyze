@@ -55,9 +55,10 @@ namespace Resonalyze;
 /// from a file is taps and nothing more, and a room or driver correction is exactly
 /// the thing the two sides of a car do not share: carrying left-correction.wav over
 /// the right side's own correction would lose it without a word. So an import on the
-/// shown side stays there; a designed kernel, or a Clear, is carried only onto a hidden
-/// side that holds no kernel or a designed one, never over an imported kernel; and a
-/// Clear is carried only where it removes a crossover, not onto a side that has none.
+/// shown side stays there; a designed kernel is carried only onto a hidden side that
+/// holds no kernel or a designed one, never over an imported kernel; and a Clear is
+/// carried only when what it removed on the shown side WAS a crossover and the hidden
+/// side holds one too — clearing an imported correction touches nothing else.
 /// </para>
 /// </remarks>
 internal sealed class VirtualCrossoverSideLock
@@ -215,7 +216,7 @@ internal sealed class VirtualCrossoverSideLock
 
         if (shownNow.Fir != shownBefore.Fir &&
             hiddenNow.Fir != shownNow.Fir &&
-            CarriesFir(shownNow.Fir, hiddenNow.Fir))
+            CarriesFir(shownBefore.Fir, shownNow.Fir, hiddenNow.Fir))
         {
             shownNow.Fir.WriteTo(hidden);
             wrote = true;
@@ -224,21 +225,29 @@ internal sealed class VirtualCrossoverSideLock
         return wrote;
     }
 
-    // Whether the FIR stage the shown side moved to may be written over the hidden
-    // side's: only a crossover travels, and only onto a side whose kernel, if any, is
-    // one too (see the class remarks).
-    private static bool CarriesFir(FirStage shown, FirStage hidden)
+    // Whether the shown side's move from `before` to `now` may be written over the
+    // hidden side's FIR stage (see the class remarks):
+    //   anything -> designed : carried, unless the hidden side holds an imported kernel;
+    //   designed -> cleared  : carried, onto a hidden side holding a crossover;
+    //   imported -> cleared  : not carried — the removed kernel was a correction;
+    //   anything -> imported : not carried.
+    private static bool CarriesFir(FirStage before, FirStage now, FirStage hidden)
     {
-        bool hiddenIsImported = hidden.Kernel != null && hidden.Design == null;
-        if (hiddenIsImported)
+        if (IsImported(hidden))
         {
             return false;
         }
 
-        bool shownIsCrossover = shown.Kernel != null && shown.Design != null;
-        bool shownIsCleared = shown.Kernel == null;
-        bool hiddenIsCrossover = hidden.Kernel != null && hidden.Design != null;
-        return shownIsCrossover || (shownIsCleared && hiddenIsCrossover);
+        if (IsCrossover(now))
+        {
+            return true;
+        }
+
+        return now.Kernel == null && IsCrossover(before) && IsCrossover(hidden);
+
+        static bool IsCrossover(FirStage stage) => stage.Kernel != null && stage.Design != null;
+
+        static bool IsImported(FirStage stage) => stage.Kernel != null && stage.Design == null;
     }
 
     // The PHYSICAL sides, mono routing ignored, for the same reason the channel keeps

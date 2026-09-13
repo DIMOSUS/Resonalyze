@@ -219,6 +219,8 @@ public sealed class FirCrossoverDesignTests
         // The windowed sinc reads only the corner: a family or slope it never uses
         // cannot make the design unbuildable.
         Assert.Null(Design(method: FirCrossoverMethod.WindowedSinc, slope: 18).Problem());
+        // But an unknown family is damage, whatever the method reads.
+        Assert.NotNull(Design(method: FirCrossoverMethod.WindowedSinc, family: (CrossoverFilterFamily)99).Problem());
         Assert.Throws<ArgumentException>(() => Design(taps: 1_024).Build());
     }
 }

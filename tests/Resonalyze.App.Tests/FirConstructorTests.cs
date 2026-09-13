@@ -365,6 +365,33 @@ public sealed class FirConstructorTests
     }
 
     [Fact]
+    public void ClearingAnImportedCorrection_LeavesTheOtherSidesCrossoverStanding()
+    {
+        // Both sides carry the same designed crossover; a correction is imported over
+        // it on the left (correctly not carried), then cleared. The Clear removed a
+        // correction, not a crossover, and may not take the right side's crossover.
+        var pair = new VirtualCrossoverChannelPairSettings();
+        WithDesignedKernel(pair.Left, HighPassDesign());
+        pair.Right.Fir = pair.Left.Fir;
+        pair.Right.FirDesign = pair.Left.FirDesign;
+        FirFilter rightCrossover = pair.Right.Fir!;
+        var sideLock = new VirtualCrossoverSideLock();
+        sideLock.Engage([pair]);
+
+        pair.Left.Fir = new FirFilter([0.2, 1.0, 0.2]);
+        pair.Left.FirSourceName = "left-correction.wav";
+        pair.Left.FirDesign = null;
+        Assert.False(sideLock.Follow([pair], shownRight: false));
+        Assert.Same(rightCrossover, pair.Right.Fir);
+
+        pair.Left.Fir = null;
+        pair.Left.FirSourceName = null;
+        Assert.False(sideLock.Follow([pair], shownRight: false));
+        Assert.Same(rightCrossover, pair.Right.Fir);
+        Assert.NotNull(pair.Right.FirDesign);
+    }
+
+    [Fact]
     public void TheLock_DoesNotCarryAClear_OntoASideWithoutACrossover()
     {
         // The shown side's imported correction is cleared; the hidden side never had a

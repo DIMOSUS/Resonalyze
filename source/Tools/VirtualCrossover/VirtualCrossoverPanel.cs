@@ -2117,6 +2117,16 @@ public partial class VirtualCrossoverPanel : UserControl
         bool phaseShown = project.ResolveDspPhaseControl();
         bool firShown = project.ResolveDspFirFilters();
         int rate = ProcessorSampleRateHz;
+        // Every side learns the rate its FIR stage runs at, both physical sides of every
+        // pair: a FIR crossover's corners are read through it (see
+        // VirtualCrossoverChannelSettings.EffectiveCrossover). Before the early return,
+        // so a pair added or loaded since the last change is stamped too.
+        foreach (VirtualCrossoverChannel channel in channels)
+        {
+            channel.Pair.Left.FirRunSampleRateHz = rate;
+            channel.Pair.Right.FirRunSampleRateHz = rate;
+        }
+
         bool changed = channelControls.Values.Any(control =>
             control.PhaseControlShown != phaseShown ||
             control.FirControlShown != firShown ||

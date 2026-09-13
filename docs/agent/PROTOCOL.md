@@ -249,8 +249,12 @@ else in a reply touches it.
   empty). `highPass` / `lowPass` are present for the edges the kind uses, in the
   shape of `dsp.crossover`'s; their family and slope describe the magnitude only
   for `"IirMagnitude"` (a `"WindowedSinc"` kernel has a corner and no slope).
-  `latencyMs` is the exact delay the kernel adds, half its length, and like
-  `peakMs` it is already inside every curve. Where `dsp.crossover.kind` is `Off`,
+  `latencyMs` is the exact delay the kernel adds, half its length, at
+  `designedAtHz`, and like `peakMs` it is already inside every curve. Where
+  `designedAtHz` is not `processor.sampleRateHz` the kernel is convolved at the
+  processor's rate anyway, so it cuts at the stated corners scaled by
+  `processor.sampleRateHz / designedAtHz`, and adds its delay scaled by the
+  inverse; the junctions are read at the scaled corners. Where `dsp.crossover.kind` is `Off`,
   these are the corners the channel is cut at, and the junctions are read at them.
   Read-only like the rest of `dsp.fir`: a `setCrossover` on such a side is allowed
   but ADDS an IIR crossover on top of the kernel, and the review says so.

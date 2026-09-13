@@ -1935,6 +1935,11 @@ A design that cannot be built — a band-pass whose high-pass corner is not belo
 its low-pass corner, a corner at or past Nyquist — says why in red, and nothing is
 drawn or exported until it is fixed.
 
+The kernel and its curves are rebuilt in the background a moment after each edit,
+so a long kernel does not hold the window up while a value is scrolled: a burst of
+edits builds only the last one, the plots keep the previous kernel until it lands,
+and **Export file…** and **Return FIR to Virtual DSP** wait for it.
+
 **Auto delay and the kernel's latency.** [Auto delay](#auto-delay) absorbs the
 delay a kernel adds like any other delay in the chain, and it reads a linear-phase
 kernel's pre-ringing correctly at every corner and length — see the note on
@@ -1967,6 +1972,11 @@ the pair switched between stereo and mono, the side's kernel was imported, clear
 copied over or mirrored by **Lock** in the meantime, or the DSP processor changed its
 rate or stopped taking FIR filters. The design stays in the constructor either way,
 so it can be exported or returned to a fresh session.
+
+Whatever the constructor held on its own when the first session began — its
+controls, its rate, a kernel opened from a file — is kept aside, however many
+channels are opened after it, and comes back when a session ends with a return.
+Opening a channel never costs an unexported standalone design.
 
 ## Virtual DSP
 
@@ -2125,7 +2135,10 @@ Each channel runs through:
   channel is cut twice — legitimate, but rarely meant). A kernel imported from a
   file is never a crossover here, so it never turns the button red. Where the IIR
   crossover is **Off**, a designed kernel's corners stand in for it wherever a
-  corner is read rather than filtered: the order of the channels along the
+  corner is read rather than filtered — the corners it actually CUTS at, which for
+  a kernel designed at another rate than the processor runs are its design's
+  corners scaled by the ratio of the two (a 48 kHz design on a 96 kHz processor cuts
+  an octave higher until it is rebuilt): the order of the channels along the
   spectrum, the junction frequencies, Auto delay's overlap bands, the EQ Wizard's
   Auto Tune window and the AI assistant's junction checks
 - **PEQ** — the channel's whole filter bank, bells and shelves and **all-pass

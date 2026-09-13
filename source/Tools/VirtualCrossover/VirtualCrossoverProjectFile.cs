@@ -330,6 +330,16 @@ public sealed class VirtualCrossoverChannelSettings
     [JsonIgnore]
     public bool HasFir => Fir != null;
 
+    /// <summary>
+    /// The rate the project's processor runs this side's FIR stage at, as the Virtual
+    /// DSP panel last resolved it, or null before it has. Not stored: the rate follows
+    /// the processor dialog and, for a profile that follows the measurements, the
+    /// measurements themselves, so it is context the panel stamps (see
+    /// <see cref="EffectiveCrossover"/>), not part of the tune.
+    /// </summary>
+    [JsonIgnore]
+    public int? FirRunSampleRateHz { get; set; }
+
     /// <summary>True when this side's kernel is a crossover designed in the constructor.</summary>
     [JsonIgnore]
     public bool HasFirCrossover => Fir != null && FirDesign != null;
@@ -343,15 +353,41 @@ public sealed class VirtualCrossoverChannelSettings
     /// stage, so a FIR crossover read here is not filtered twice.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// A FIR crossover's corners are where the kernel CUTS, not where it was designed
+    /// to: taps designed at one rate and run at another scale every frequency by the
+    /// ratio of the two, so a 48 kHz design on a 96 kHz processor cuts an octave
+    /// higher until it is rebuilt (the block's FIR button is red meanwhile). The
+    /// corners are scaled by <see cref="FirRunSampleRateHz"/> over the design's rate;
+    /// before the panel has stamped a rate they are the design's own. Only the corner
+    /// frequencies are meaningful in the result — the spec is read, never built.
+    /// </para>
+    /// <para>
     /// The edges of the returned spec are the IIR edges when the IIR crossover is off
     /// and there is no FIR crossover either — the kind is Off then, and nothing reads
     /// them; they are returned only so a caller never has to handle a null.
+    /// </para>
     /// </remarks>
     [JsonIgnore]
-    public CrossoverSpec EffectiveCrossover =>
-        CrossoverKind == CrossoverKind.Off && HasFirCrossover
-            ? new CrossoverSpec(FirDesign!.Kind, FirDesign.LowPassEdge, FirDesign.HighPassEdge)
-            : new CrossoverSpec(CrossoverKind, LowPassEdge, HighPassEdge);
+    public CrossoverSpec EffectiveCrossover
+    {
+        get
+        {
+            if (CrossoverKind != CrossoverKind.Off || !HasFirCrossover)
+            {
+                return new CrossoverSpec(CrossoverKind, LowPassEdge, HighPassEdge);
+            }
+
+            FirCrossoverDesign design = FirDesign!;
+            double scale = FirRunSampleRateHz is { } runHz && runHz != design.SampleRateHz
+                ? (double)runHz / design.SampleRateHz
+                : 1.0;
+            return new CrossoverSpec(
+                design.Kind,
+                design.LowPassEdge with { FrequencyHz = design.LowPassEdge.FrequencyHz * scale },
+                design.HighPassEdge with { FrequencyHz = design.HighPassEdge.FrequencyHz * scale });
+        }
+    }
 
     /// <summary>
     /// The corner the side is high-passed at, IIR first and the FIR crossover second

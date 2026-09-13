@@ -163,6 +163,22 @@ public sealed class FirConstructorTests
         Assert.Null(VirtualDspEqHandoff.PassbandFor(settings));
     }
 
+    [Fact]
+    public void AFirCrossoverRunAtAnotherRate_CutsWhereTheRateMovesIt()
+    {
+        // Designed at 48 kHz, run by a 96 kHz processor: the same taps cut an octave
+        // higher until the kernel is rebuilt, and the corners read say so.
+        var settings = WithDesignedKernel(new VirtualCrossoverChannelSettings(), HighPassDesign());
+        Assert.Equal(80, settings.EffectiveHighPassHz);
+
+        settings.FirRunSampleRateHz = 96_000;
+        Assert.Equal(160, settings.EffectiveHighPassHz);
+        Assert.Equal((160.0, 20_000.0), VirtualDspEqHandoff.PassbandFor(settings));
+
+        settings.FirRunSampleRateHz = 48_000;
+        Assert.Equal(80, settings.EffectiveHighPassHz);
+    }
+
     // ----------------------------------------------------------------- handoff
 
     [Fact]
@@ -335,12 +351,14 @@ public sealed class FirConstructorTests
         StaTest.Run(() =>
         {
             using var panel = new FirConstructorPanel();
+            Settle(panel);
 
             Assert.NotNull(panel.CurrentDesign);
             Assert.Equal(4_095, panel.CurrentKernel!.Length);
             Assert.False(panel.InVirtualDspHandoff);
 
             Field<DarkNumericUpDown>(panel, "numericTaps").Value = 2_000;
+            Settle(panel);
 
             Assert.Equal(2_001, panel.CurrentDesign!.TapCount);
             Assert.Equal(2_001, panel.CurrentKernel!.Length);
@@ -348,8 +366,36 @@ public sealed class FirConstructorTests
             // A band-pass with its corners crossed cannot be built, and says why.
             Select(Field<DarkComboBox>(panel, "comboBoxType"), 2);
             Field<DarkNumericUpDown>(panel, "numericHighPassHz").Value = 3_000;
+            Settle(panel);
             Assert.Null(panel.CurrentKernel);
             Assert.Contains("band-pass", Field<Label>(panel, "labelProblem").Text);
+        });
+    }
+
+    [Fact]
+    public void ABurstOfEdits_RebuildsInTheBackground_AndOnlyTheLastLands()
+    {
+        StaTest.Run(() =>
+        {
+            using var panel = new FirConstructorPanel();
+            Settle(panel);
+            Button export = Field<Button>(panel, "buttonExport");
+            DarkNumericUpDown taps = Field<DarkNumericUpDown>(panel, "numericTaps");
+
+            // Three wheel steps inside one settle: the edit event returns at once, the
+            // previous kernel stays on screen, and nothing may leave meanwhile.
+            taps.Value = 8_191;
+            taps.Value = 16_383;
+            taps.Value = 1_023;
+            Assert.True(panel.RebuildPending);
+            Assert.Equal(4_095, panel.CurrentKernel!.Length);
+            Assert.False(export.Enabled);
+
+            Settle(panel);
+
+            Assert.Equal(1_023, panel.CurrentKernel!.Length);
+            Assert.Equal(1_023, panel.CurrentDesign!.TapCount);
+            Assert.True(export.Enabled);
         });
     }
 
@@ -359,6 +405,7 @@ public sealed class FirConstructorTests
         StaTest.Run(() =>
         {
             using var panel = new FirConstructorPanel();
+            Settle(panel);
             var channel = new VirtualCrossoverChannel("B");
             WithDesignedKernel(channel.Pair.Left, HighPassDesign(rate: 96_000, taps: 2_047));
             FirConstructorHandoffRequest request = FirConstructorHandoff.Build(channel, false, 1, 48_000);
@@ -366,6 +413,7 @@ public sealed class FirConstructorTests
             panel.ReturnFirRequested = (_, _, design) => returned = design;
 
             panel.BeginVirtualDspHandoff(request);
+            Settle(panel);
 
             Assert.True(panel.InVirtualDspHandoff);
             Assert.Equal(HighPassDesign(rate: 48_000, taps: 2_047), panel.CurrentDesign);
@@ -376,8 +424,55 @@ public sealed class FirConstructorTests
             Assert.Equal(panel.CurrentDesign, returned);
 
             panel.EndVirtualDspHandoff();
+            Settle(panel);
             Assert.False(panel.InVirtualDspHandoff);
             Assert.True(Field<DarkComboBox>(panel, "comboBoxSampleRate").Enabled);
+        });
+    }
+
+    [Fact]
+    public void AHandoff_KeepsTheStandaloneWorkAside_AndPutsItBackWhenTheSessionEnds()
+    {
+        StaTest.Run(() =>
+        {
+            // A band-pass designed on its own at 96 kHz, never exported: opening a
+            // channel, twice, the second replacing the first, must not cost it.
+            using var panel = new FirConstructorPanel();
+            Select(Field<DarkComboBox>(panel, "comboBoxType"), 2);
+            Field<DarkNumericUpDown>(panel, "numericHighPassHz").Value = 250;
+            Field<DarkNumericUpDown>(panel, "numericLowPassHz").Value = 3_000;
+            Field<DarkNumericUpDown>(panel, "numericTaps").Value = 2_047;
+            Select(Field<DarkComboBox>(panel, "comboBoxSampleRate"), 3);
+            Settle(panel);
+            FirCrossoverDesign standalone = panel.CurrentDesign!;
+            Assert.Equal(96_000, standalone.SampleRateHz);
+
+            var first = new VirtualCrossoverChannel("B");
+            WithDesignedKernel(first.Pair.Left, HighPassDesign());
+            panel.BeginVirtualDspHandoff(FirConstructorHandoff.Build(first, false, 1, 48_000));
+            Settle(panel);
+            var second = new VirtualCrossoverChannel("C");
+            panel.BeginVirtualDspHandoff(FirConstructorHandoff.Build(second, true, 1, 48_000));
+            Settle(panel);
+            Assert.NotEqual(standalone, panel.CurrentDesign);
+
+            panel.EndVirtualDspHandoff();
+            Settle(panel);
+
+            Assert.Equal(standalone, panel.CurrentDesign);
+            Assert.Contains("Standalone", Field<Label>(panel, "labelSession").Text);
+
+            // And a bare kernel the constructor was showing comes back as it was.
+            using var bare = new FirConstructorPanel();
+            Settle(bare);
+            var file = new FirFilter([0.25, 0.5, 0.25], 48_000);
+            Invoke(bare, "ShowBareKernel", file, "room.wav");
+            bare.BeginVirtualDspHandoff(FirConstructorHandoff.Build(first, false, 1, 48_000));
+            Settle(bare);
+            bare.EndVirtualDspHandoff();
+            Settle(bare);
+            Assert.Same(file, bare.CurrentKernel);
+            Assert.Null(bare.CurrentDesign);
         });
     }
 
@@ -391,21 +486,40 @@ public sealed class FirConstructorTests
             channel.Pair.Left.Fir = new FirFilter([0.25, 0.5, 0.25], 48_000);
             channel.Pair.Left.FirSourceName = "room.wav";
             panel.BeginVirtualDspHandoff(FirConstructorHandoff.Build(channel, false, 1, 48_000));
+            Settle(panel);
 
             Assert.Same(channel.Pair.Left.Fir, panel.CurrentKernel);
             Assert.Null(panel.CurrentDesign);
             // A bare kernel is not a design, so there is nothing to return.
             Button returnButton = Field<Button>(panel, "buttonReturnToDsp");
-            Assert.True(returnButton.Visible || !panel.Visible);
             Assert.False(returnButton.Enabled);
 
             Field<DarkNumericUpDown>(panel, "numericTaps").Value = 511;
+            Settle(panel);
 
             Assert.NotNull(panel.CurrentDesign);
             Assert.NotSame(channel.Pair.Left.Fir, panel.CurrentKernel);
             Assert.True(returnButton.Enabled);
         });
     }
+
+    // Pumps the STA thread until the panel's background rebuild has landed: its
+    // continuations are posted to this thread's WinForms synchronization context.
+    private static void Settle(FirConstructorPanel panel)
+    {
+        DateTime deadline = DateTime.UtcNow.AddSeconds(30);
+        while (panel.RebuildPending)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The constructor's rebuild never landed.");
+            Application.DoEvents();
+            Thread.Sleep(5);
+        }
+    }
+
+    private static void Invoke(object owner, string method, params object?[] arguments) =>
+        owner.GetType()
+            .GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(owner, arguments);
 
     // ---------------------------------------------------------------- helpers
 

@@ -25,7 +25,16 @@ namespace Resonalyze;
 /// <para>
 /// In a handoff the rate is the processor's and cannot be changed here. A design that
 /// arrives made at another rate is therefore rebuilt at the processor's on the way in,
-/// which is the rebuild the block's red FIR button asks for.
+/// which is the rebuild the block's red FIR button asks for. Whatever the constructor
+/// held on its own before the first handoff is kept aside and put back when the
+/// session ends, so opening a channel never costs an unexported design.
+/// </para>
+/// <para>
+/// Building a kernel and its curves is not a UI-thread job: at the tap ceiling a design
+/// is a quarter-million-bin magnitude, an inverse FFT and 1400 evaluations of a
+/// 16k-tap response. Every edit therefore starts a rebuild in the background after a
+/// short settle, cancels the one before it, and only the latest lands; while one is
+/// pending the plots show the previous kernel and Export and Return wait.
 /// </para>
 /// </remarks>
 public partial class FirConstructorPanel : UserControl
@@ -53,6 +62,28 @@ public partial class FirConstructorPanel : UserControl
 
     // Set while the panel writes its own controls, so those writes are not edits.
     private bool suppressEdits;
+
+    // The rate the kernel on screen is read at: its design's, or the one selected when
+    // a bare kernel was shown.
+    private int displayRate = 48_000;
+
+    // The background rebuild: the latest request's cancellation and generation. Only
+    // the generation current when a rebuild finishes may land.
+    private CancellationTokenSource? rebuildCancellation;
+    private int rebuildGeneration;
+
+    // The bare kernel most recently ASKED for, before its curves land — what a handoff
+    // has to keep aside even when the rebuild showing it is still running.
+    private FirFilter? requestedBareKernel;
+    private string? requestedBareName;
+
+    // What the constructor held on its own when the first handoff began; put back when
+    // the session ends. Null while standalone.
+    private StandaloneWork? standaloneWork;
+
+    // How long an edit settles before its rebuild starts: long enough to swallow a burst
+    // of wheel steps, short enough not to be seen.
+    private const int RebuildSettleMs = 60;
 
     public FirConstructorPanel()
     {
@@ -113,6 +144,9 @@ public partial class FirConstructorPanel : UserControl
     /// <summary>Whether a Virtual DSP session is running.</summary>
     internal bool InVirtualDspHandoff => virtualDspToken != null;
 
+    /// <summary>Whether a rebuild is still running; the kernel on screen is then the previous one.</summary>
+    internal bool RebuildPending { get; private set; }
+
     /// <summary>
     /// Installs a channel side sent over by Virtual DSP: its design (rebuilt at the
     /// processor's rate) or its bare kernel, or a first design started at the side's
@@ -122,6 +156,15 @@ public partial class FirConstructorPanel : UserControl
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // The first handoff keeps the standalone work aside; a handoff that replaces
+        // another session keeps what was set aside the first time.
+        standaloneWork ??= virtualDspToken == null
+            ? new StandaloneWork(
+                ReadControls(),
+                Selected(comboBoxSampleRate, 48_000),
+                requestedBareKernel,
+                requestedBareName)
+            : null;
         virtualDspToken = request.Token;
         sessionLabel = request.ChannelLabel;
         string? rebuiltNote = null;
@@ -161,15 +204,43 @@ public partial class FirConstructorPanel : UserControl
     }
 
     /// <summary>
-    /// Ends the Virtual DSP session, if any: the Return button goes, and the rate is
-    /// the constructor's own again. The design on screen stays.
+    /// Ends the Virtual DSP session, if any: the Return button goes, the rate is the
+    /// constructor's own again, and the work the constructor held before the session —
+    /// its controls, its rate, a bare kernel it was showing — is put back. Back to
+    /// Virtual DSP does not end a session, so a design can still be returned later.
     /// </summary>
     internal void EndVirtualDspHandoff()
     {
         virtualDspToken = null;
         sessionLabel = null;
         UpdateSessionControls();
-        UpdateActions();
+        if (standaloneWork is not { } work)
+        {
+            UpdateActions();
+            return;
+        }
+
+        standaloneWork = null;
+        suppressEdits = true;
+        try
+        {
+            SelectRate(work.RateHz);
+            WriteControls(work.Controls);
+        }
+        finally
+        {
+            suppressEdits = false;
+        }
+
+        if (work.BareKernel is { } bare)
+        {
+            UpdateControlAvailability();
+            ShowBareKernel(bare, work.BareName);
+        }
+        else
+        {
+            OnDesignEdited();
+        }
     }
 
     // ---------------------------------------------------------------- set-up
@@ -345,30 +416,93 @@ public partial class FirConstructorPanel : UserControl
 
         UpdateControlAvailability();
         FirCrossoverDesign candidate = ReadControls();
-        kernelName = null;
+        requestedBareKernel = null;
+        requestedBareName = null;
         if (candidate.Problem() is { } problem)
         {
+            // Nothing to build: whatever was running is stale, and the plots empty.
+            CancelRebuild();
             design = null;
             kernel = null;
+            kernelName = null;
             labelProblem.Text = problem;
-        }
-        else
-        {
-            design = candidate;
-            kernel = candidate.Build();
-            labelProblem.Text = string.Empty;
+            ApplyRendering(null);
+            return;
         }
 
-        Redraw();
+        labelProblem.Text = string.Empty;
+        _ = ShowAsync(candidate, bare: null, name: null, settle: true);
     }
 
     private void ShowBareKernel(FirFilter bare, string? name)
     {
-        design = null;
-        kernel = bare;
-        kernelName = name;
+        requestedBareKernel = bare;
+        requestedBareName = name;
         labelProblem.Text = string.Empty;
-        Redraw();
+        _ = ShowAsync(null, bare, name, settle: false);
+    }
+
+    private void CancelRebuild()
+    {
+        rebuildCancellation?.Cancel();
+        rebuildCancellation = null;
+        rebuildGeneration++;
+        RebuildPending = false;
+    }
+
+    // Builds (or takes) the kernel and its curves off the UI thread and lands them only
+    // if no later request has been made meanwhile.
+    private async Task ShowAsync(FirCrossoverDesign? candidate, FirFilter? bare, string? name, bool settle)
+    {
+        rebuildCancellation?.Cancel();
+        using var cancellation = new CancellationTokenSource();
+        rebuildCancellation = cancellation;
+        int generation = ++rebuildGeneration;
+        RebuildPending = true;
+        UpdateActions();
+        int rate = candidate?.SampleRateHz ?? Selected(comboBoxSampleRate, 48_000);
+        CancellationToken token = cancellation.Token;
+        try
+        {
+            if (settle)
+            {
+                await Task.Delay(RebuildSettleMs, token);
+            }
+
+            Rendering rendering = await Task.Run(
+                () => Render(bare ?? candidate!.Build(), candidate, rate, token),
+                token);
+            if (generation != rebuildGeneration || IsDisposed)
+            {
+                return;
+            }
+
+            design = candidate;
+            kernel = rendering.Kernel;
+            kernelName = name;
+            displayRate = rate;
+            RebuildPending = false;
+            ApplyRendering(rendering);
+        }
+        catch (OperationCanceledException)
+        {
+            // A later edit took over; it owns the pending state.
+        }
+        catch (Exception exception) when (generation == rebuildGeneration && !IsDisposed)
+        {
+            design = null;
+            kernel = null;
+            RebuildPending = false;
+            labelProblem.Text = "The kernel could not be built: " + exception.Message;
+            ApplyRendering(null);
+        }
+        finally
+        {
+            if (ReferenceEquals(rebuildCancellation, cancellation))
+            {
+                rebuildCancellation = null;
+            }
+        }
     }
 
     private FirCrossoverDesign ReadControls() =>
@@ -498,15 +632,18 @@ public partial class FirConstructorPanel : UserControl
 
     private void UpdateActions()
     {
-        buttonExport.Enabled = kernel != null;
+        // Nothing leaves while a rebuild runs: the kernel on screen is then not the one
+        // the controls describe.
+        buttonExport.Enabled = kernel != null && !RebuildPending;
         // Only a DESIGN returns: a bare kernel came from a file, and a file is imported
         // on the Virtual DSP side, where it keeps its name.
-        buttonReturnToDsp.Enabled = virtualDspToken != null && kernel != null && design != null;
+        buttonReturnToDsp.Enabled =
+            virtualDspToken != null && kernel != null && design != null && !RebuildPending;
     }
 
     private void ReturnToVirtualDsp()
     {
-        if (virtualDspToken is { } token && kernel is { } built && design is { } designed)
+        if (!RebuildPending && virtualDspToken is { } token && kernel is { } built && design is { } designed)
         {
             ReturnFirRequested?.Invoke(token, built, designed);
         }
@@ -544,7 +681,7 @@ public partial class FirConstructorPanel : UserControl
 
     private void ExportFile()
     {
-        if (kernel is not { } exported)
+        if (RebuildPending || kernel is not { } exported)
         {
             return;
         }
@@ -570,7 +707,7 @@ public partial class FirConstructorPanel : UserControl
             FirFilterFiles.Save(
                 dialog.FileName,
                 exported,
-                DisplayRate,
+                displayRate,
                 kernelName,
                 design is { } described ? FirCrossoverDescription.Long(described) : null);
         }
@@ -585,55 +722,86 @@ public partial class FirConstructorPanel : UserControl
         }
     }
 
-    // The rate the kernel on screen is read at: its design's, or the selected one for a
-    // bare kernel — which is what a Virtual DSP processor would run it at too.
-    private int DisplayRate => design?.SampleRateHz ?? Selected(comboBoxSampleRate, 48_000);
-
     // ---------------------------------------------------------------- plots
 
-    private void Redraw()
+    // A kernel with everything the panel draws of it, computed off the UI thread.
+    private sealed record Rendering(
+        FirFilter Kernel,
+        DataPoint[] Magnitude,
+        DataPoint[] Target,
+        DataPoint[] Phase,
+        double DeviationDb);
+
+    // What the panel held on its own before a handoff (see standaloneWork).
+    private sealed record StandaloneWork(
+        FirCrossoverDesign Controls,
+        int RateHz,
+        FirFilter? BareKernel,
+        string? BareName);
+
+    private static Rendering Render(
+        FirFilter shown,
+        FirCrossoverDesign? designed,
+        int rate,
+        CancellationToken cancellation)
+    {
+        double highHz = Math.Min(20_000, rate / 2.0);
+        const int Points = 800;
+        double peakSamples = shown.PeakIndex;
+        var magnitude = new DataPoint[Points + 1];
+        var target = new List<DataPoint>(designed is { HasTargetMagnitude: true } ? Points + 1 : 0);
+        var phase = new DataPoint[Points + 1];
+        for (int i = 0; i <= Points; i++)
+        {
+            if (i % 50 == 0)
+            {
+                cancellation.ThrowIfCancellationRequested();
+            }
+
+            double frequency = 20 * Math.Pow(highHz / 20, (double)i / Points);
+            Complex response = shown.Response(frequency, rate);
+            magnitude[i] = new DataPoint(frequency, 20 * Math.Log10(Math.Max(response.Magnitude, 1e-10)));
+            if (designed is { HasTargetMagnitude: true })
+            {
+                double targetDb = 20 * Math.Log10(Math.Max(designed.TargetMagnitude(frequency), 1e-10));
+                target.Add(new DataPoint(frequency, targetDb));
+            }
+
+            // Referenced to the peak: a linear-phase kernel's delay removed, it reads
+            // 0° in its passband (180° past a zero) instead of a phase wrapped
+            // thousands of times; for a kernel that is not linear-phase the peak is
+            // simply the stated reference.
+            Complex aligned = response *
+                Complex.FromPolarCoordinates(1, Math.Tau * frequency * peakSamples / rate);
+            phase[i] = new DataPoint(
+                frequency,
+                response.Magnitude > 1e-9 ? aligned.Phase * 180 / Math.PI : double.NaN);
+        }
+
+        cancellation.ThrowIfCancellationRequested();
+        double deviation = designed?.WorstDeviationDb(shown) ?? double.NaN;
+        return new Rendering(shown, magnitude, target.ToArray(), phase, deviation);
+    }
+
+    private void ApplyRendering(Rendering? rendering)
     {
         magnitudeSeries.Points.Clear();
         targetSeries.Points.Clear();
         phaseSeries.Points.Clear();
-        int rate = DisplayRate;
-        if (kernel is { } shown)
+        if (rendering != null)
         {
-            double highHz = Math.Min(20_000, rate / 2.0);
-            const int Points = 800;
-            double peakSamples = shown.PeakIndex;
-            for (int i = 0; i <= Points; i++)
-            {
-                double frequency = 20 * Math.Pow(highHz / 20, (double)i / Points);
-                Complex response = shown.Response(frequency, rate);
-                double magnitudeDb = 20 * Math.Log10(Math.Max(response.Magnitude, 1e-10));
-                magnitudeSeries.Points.Add(new DataPoint(frequency, magnitudeDb));
-                if (design is { HasTargetMagnitude: true } target)
-                {
-                    double targetDb = 20 * Math.Log10(Math.Max(target.TargetMagnitude(frequency), 1e-10));
-                    targetSeries.Points.Add(new DataPoint(frequency, targetDb));
-                }
-
-                // Referenced to the peak: a linear-phase kernel's delay removed, it reads
-                // 0° in its passband (180° past a zero) instead of a phase wrapped
-                // thousands of times; for a kernel that is not linear-phase the peak is
-                // simply the stated reference.
-                Complex aligned = response *
-                    Complex.FromPolarCoordinates(1, Math.Tau * frequency * peakSamples / rate);
-                double phase = response.Magnitude > 1e-9
-                    ? aligned.Phase * 180 / Math.PI
-                    : double.NaN;
-                phaseSeries.Points.Add(new DataPoint(frequency, phase));
-            }
+            magnitudeSeries.Points.AddRange(rendering.Magnitude);
+            targetSeries.Points.AddRange(rendering.Target);
+            phaseSeries.Points.AddRange(rendering.Phase);
         }
 
-        UpdateReadouts(rate);
+        UpdateReadouts(displayRate, rendering?.DeviationDb ?? double.NaN);
         UpdateActions();
         magnitudeModel.InvalidatePlot(true);
         phaseModel.InvalidatePlot(true);
     }
 
-    private void UpdateReadouts(int rate)
+    private void UpdateReadouts(int rate, double deviation)
     {
         if (kernel is not { } shown)
         {
@@ -647,7 +815,6 @@ public partial class FirConstructorPanel : UserControl
             labelLatency.Text = string.Create(
                 CultureInfo.InvariantCulture,
                 $"Latency {designed.LatencyMs:0.00} ms ({designed.LatencySamples} samples at {FirCrossoverDescription.Rate(rate)})");
-            double deviation = designed.WorstDeviationDb(shown);
             labelDeviation.Text = double.IsNaN(deviation)
                 ? "A brick wall has no slope to compare with: read the plot."
                 : string.Create(

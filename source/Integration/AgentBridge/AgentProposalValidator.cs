@@ -1846,7 +1846,10 @@ internal static class AgentOperations
             FirSourceName = settings.FirSourceName,
             // And its design, which is where a variant's junction reads the corners of
             // a side cut by a FIR crossover alone (see EffectiveCrossover).
-            FirDesign = settings.FirDesign
+            FirDesign = settings.FirDesign,
+            // And the rate that kernel runs at, which moves those corners when it is not
+            // the design's.
+            FirRunSampleRateHz = settings.FirRunSampleRateHz
         };
     }
 

@@ -2,6 +2,7 @@ using System.Numerics;
 using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.Series;
+using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
@@ -70,6 +71,152 @@ public sealed class ImpulseWindowPreviewTests
             Assert.Single(model.Annotations));
         Assert.Equal(Tag, mark.Tag);
         Assert.Equal(10.0, mark.X, 12);
+    }
+
+    [Fact]
+    public void AddGatedTraceSeries_WithEnvelopes_WrapsEachTraceOnTheEnvelopesScale()
+    {
+        var model = new PlotModel();
+        // A tone burst whose envelope crests where its carrier crosses zero: the
+        // sample peak sits a quarter cycle off, ~12 % under the crest, so on the
+        // sample peak's scale the envelope would run past the ±1 axis.
+        IrPreviewTrace burst = MakeBurst("A", centerSample: 720, carrierHz: 500);
+
+        ImpulseWindowPreview.AddGatedTraceSeries(
+            model, [burst], SampleRate,
+            gateOffsetMs: 10, leftMs: 0.5, plateauMs: 15, rightMs: 5, Tag,
+            envelopes: true);
+
+        List<LineSeries> series = model.Series.OfType<LineSeries>().ToList();
+        // The upper and lower guide, then the trace over them, then the gate.
+        Assert.Equal(4, series.Count);
+        (LineSeries upper, LineSeries lower, LineSeries trace) =
+            (series[0], series[1], series[2]);
+        Assert.Equal("A", trace.Title);
+        foreach (LineSeries guide in new[] { upper, lower })
+        {
+            Assert.Equal("A envelope", guide.Title);
+            Assert.False(guide.RenderInLegend);
+            Assert.Equal(OxyColor.FromAColor(30, burst.Color), guide.Color);
+            Assert.True(guide.StrokeThickness < trace.StrokeThickness);
+            Assert.Equal(Tag, guide.Tag);
+        }
+
+        Assert.Equal(1.0, upper.Points.Max(point => point.Y), 9);
+        Assert.Equal(-1.0, lower.Points.Min(point => point.Y), 9);
+        for (int i = 0; i < trace.Points.Count; i++)
+        {
+            Assert.Equal(trace.Points[i].X, upper.Points[i].X);
+            Assert.Equal(-upper.Points[i].Y, lower.Points[i].Y, 12);
+            Assert.True(Math.Abs(trace.Points[i].Y) <= upper.Points[i].Y + 1e-9);
+        }
+
+        double tracePeak = trace.Points.Max(point => Math.Abs(point.Y));
+        Assert.InRange(tracePeak, 0.85, 0.92);
+    }
+
+    [Fact]
+    public void Envelopes_DrawOnTheVirtualDspImpulseViewOnly()
+    {
+        IrPreviewTrace[] traces =
+        [
+            MakeBurst("A", centerSample: 720, carrierHz: 500),
+            MakeBurst("B", centerSample: 960, carrierHz: 2_000)
+        ];
+        var impulse = new AcousticImpulseRender(
+            traces, SampleRate, GateOffsetMs: 10, LeftMs: 0.5, PlateauMs: 15, RightMs: 5);
+
+        using var view = new OxyPlot.WindowsForms.PlotView();
+        var plot = new VirtualCrossoverAcousticPlot(view, "hint", AcousticView.Impulse);
+        plot.Draw(new AcousticRender(string.Empty, [], impulse));
+        Assert.Equal(2, EnvelopeGuides(view.Model!, "A"));
+        Assert.Equal(2, EnvelopeGuides(view.Model!, "B"));
+
+        // The step of an envelope is nothing; the step view draws none.
+        plot.ConfigureForView(AcousticView.Step);
+        plot.Draw(new AcousticRender(string.Empty, [], impulse with { Step = true }));
+        Assert.DoesNotContain(
+            view.Model!.Series.OfType<LineSeries>(),
+            item => item.Title?.EndsWith(" envelope", StringComparison.Ordinal) == true);
+
+        // Nor does the gate dialog's compact preview.
+        using var preview = new OxyPlot.WindowsForms.PlotView();
+        ImpulseWindowPreview.UpdateGatedMulti(
+            preview, traces, SampleRate,
+            gateOffsetMs: 10, leftMs: 0.5, plateauMs: 15, rightMs: 5);
+        Assert.Equal(0, EnvelopeGuides(preview.Model!, "A"));
+    }
+
+    [Fact]
+    public void Envelopes_AreReadOverTheWholeRecord_NotTheDisplayedWindow()
+    {
+        var model = new PlotModel();
+        // A burst straddling the window's right edge: a transform over the
+        // displayed samples alone cuts it in half and wraps the cut onto the
+        // window's quiet start, so the two readings part company near both ends.
+        const int displayEnd = 1_563; // gate 456 + 984, plus a 123-sample context
+        IrPreviewTrace burst = MakeBurst("A", centerSample: displayEnd, carrierHz: 500);
+
+        ImpulseWindowPreview.AddGatedTraceSeries(
+            model, [burst], SampleRate,
+            gateOffsetMs: 10, leftMs: 0.5, plateauMs: 15, rightMs: 5, Tag,
+            envelopes: true);
+        LineSeries upper = model.Series.OfType<LineSeries>().First();
+        int first = (int)Math.Round(upper.Points[0].X * SampleRate / 1_000.0);
+        Assert.Equal(displayEnd, first + upper.Points.Count - 1);
+
+        double[] whole = SignalEnvelope.Envelope(
+            [.. burst.Samples.Select(sample => sample.Real)]);
+        double[] windowed = SignalEnvelope.Envelope(
+            [.. burst.Samples.Skip(first).Take(upper.Points.Count).Select(sample => sample.Real)]);
+        double wholePeak = whole.Skip(first).Take(upper.Points.Count).Max();
+        double windowedPeak = windowed.Max();
+
+        double largestWindowedGap = 0;
+        for (int i = 0; i < upper.Points.Count; i++)
+        {
+            Assert.Equal(whole[first + i] / wholePeak, upper.Points[i].Y, 9);
+            largestWindowedGap = Math.Max(
+                largestWindowedGap,
+                Math.Abs(windowed[i] / windowedPeak - upper.Points[i].Y));
+        }
+
+        // The test would notice a window-only transform: it reads differently.
+        Assert.True(largestWindowedGap > 0.05, $"gap {largestWindowedGap}");
+    }
+
+    [Fact]
+    public void EnvelopeOf_IsMemoizedPerArray_SoAWarmUpServesTheDraw()
+    {
+        // The Virtual DSP computes the envelopes off the UI thread before the
+        // frame; the draw only stays cheap if it reads that very result.
+        IrPreviewTrace burst = MakeBurst("A", centerSample: 720, carrierHz: 500);
+
+        double[] warmed = ImpulseWindowPreview.EnvelopeOf(burst.Samples);
+
+        Assert.Same(warmed, ImpulseWindowPreview.EnvelopeOf(burst.Samples));
+        Assert.NotSame(
+            warmed,
+            ImpulseWindowPreview.EnvelopeOf((Complex[])burst.Samples.Clone()));
+    }
+
+    private static int EnvelopeGuides(PlotModel model, string channel) =>
+        model.Series.OfType<LineSeries>().Count(item => item.Title == channel + " envelope");
+
+    // A Gaussian-modulated sine, 1 ms sigma, its carrier crossing zero at the
+    // envelope's crest.
+    private static IrPreviewTrace MakeBurst(string title, int centerSample, double carrierHz)
+    {
+        const double sigmaSamples = SampleRate / 1_000.0;
+        var samples = new Complex[SampleRate / 10];
+        for (int i = 0; i < samples.Length; i++)
+        {
+            double offset = i - centerSample;
+            samples[i] = Math.Exp(-offset * offset / (2 * sigmaSamples * sigmaSamples)) *
+                Math.Sin(2 * Math.PI * carrierHz * offset / SampleRate);
+        }
+
+        return new IrPreviewTrace(samples, title, OxyColors.Orange);
     }
 
     private static IrPreviewTrace MakeTrace(

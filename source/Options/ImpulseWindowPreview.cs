@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 using OxyPlot;
 using OxyPlot.Annotations;
@@ -63,10 +64,18 @@ internal static class ImpulseWindowPreview
     // The shared body of the gated multi-trace view: each trace normalized to
     // its own in-window peak, the Tukey gate outline, and a vertical mark at
     // the gate offset. Used by the gate dialog's preview and the Virtual DSP
-    // impulse view alike, so the two renderings cannot drift apart. Everything
+    // impulse view alike, so the window, the gate and the traces cannot drift
+    // apart; the two differ only by the envelopes below, which the Virtual DSP
+    // view alone asks for and which move its peak to the envelope's. Everything
     // added carries seriesTag so a host redrawing an existing model can find
     // and remove it. Returns the display window bounds (ms), or null when
     // there is nothing to draw.
+    //
+    // With envelopes each trace also gets its ± analytic envelope (see
+    // AddEnvelopeGuides), and its peak is then the ENVELOPE's in-window peak
+    // rather than the samples': the envelope rides above the samples it was
+    // built from, so on the sample peak's scale it would run off the ±1 axis
+    // wherever a band-limited arrival peaks between its carrier's crests.
     public static (double StartMs, double EndMs)? AddGatedTraceSeries(
         PlotModel model,
         IReadOnlyList<IrPreviewTrace> traces,
@@ -75,7 +84,8 @@ internal static class ImpulseWindowPreview
         double leftMs,
         double plateauMs,
         double rightMs,
-        object? seriesTag = null)
+        object? seriesTag = null,
+        bool envelopes = false)
     {
         if (GatedDisplay.Resolve(
                 traces, sampleRate, gateOffsetMs, leftMs, plateauMs, rightMs)
@@ -86,12 +96,22 @@ internal static class ImpulseWindowPreview
 
         foreach (IrPreviewTrace trace in traces)
         {
+            double[]? envelope = envelopes && trace.Samples.Length > 0
+                ? EnvelopeOf(trace.Samples)
+                : null;
             double maxMagnitude = 0;
             for (int s = display.Start; s <= display.End && s < trace.Samples.Length; s++)
             {
-                maxMagnitude = Math.Max(maxMagnitude, Math.Abs(trace.Samples[s].Real));
+                maxMagnitude = Math.Max(
+                    maxMagnitude,
+                    envelope?[s] ?? Math.Abs(trace.Samples[s].Real));
             }
             double scale = maxMagnitude > 0 ? 1.0 / maxMagnitude : 1.0;
+
+            if (envelope != null)
+            {
+                AddEnvelopeGuides(model, trace, envelope, scale, display, sampleRate, seriesTag);
+            }
 
             LineSeries series = CreateTraceSeries(trace, seriesTag);
             for (int s = display.Start; s <= display.End; s++)
@@ -234,6 +254,73 @@ internal static class ImpulseWindowPreview
             Tag = seriesTag,
             TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
         };
+
+    // The envelope guides: thin and translucent in the trace's own colour, so
+    // they read as belonging to it without competing with it. Fainter than the
+    // correlation view's guides: here they sit under every channel's trace at
+    // once.
+    private const byte EnvelopeGuideAlpha = 30;
+    private const double EnvelopeGuideThickness = 0.8;
+
+    // A trace's analytic envelope, ± around zero, on the trace's own scale so
+    // the pair wraps it. Drawn before the trace, which stays on top. Named in
+    // the tracker, kept out of the legend.
+    private static void AddEnvelopeGuides(
+        PlotModel model,
+        IrPreviewTrace trace,
+        double[] envelope,
+        double scale,
+        GatedDisplay display,
+        int sampleRate,
+        object? seriesTag)
+    {
+        foreach (int sign in new[] { 1, -1 })
+        {
+            var series = new LineSeries
+            {
+                Title = trace.Title + " envelope",
+                RenderInLegend = false,
+                Color = OxyColor.FromAColor(EnvelopeGuideAlpha, trace.Color),
+                StrokeThickness = EnvelopeGuideThickness,
+                Tag = seriesTag,
+                TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
+            };
+            for (int s = display.Start; s <= display.End; s++)
+            {
+                double value = s < envelope.Length ? envelope[s] * scale : 0.0;
+                series.Points.Add(new DataPoint(s * 1000.0 / sampleRate, sign * value));
+            }
+
+            model.Series.Add(series);
+        }
+    }
+
+    // The envelope is read over the WHOLE record rather than the displayed
+    // window: the window's right edge cuts through the room's decay, and a
+    // transform over a cut record wobbles at the cut — on the milliseconds the
+    // view is about. A processed record ends in the padding ApplyChain adds past
+    // its content (silence or the filters' decay), so the whole record's wrap
+    // point falls where there is nothing left to cut; it is also a power of two
+    // long, which the transform wants. Memoized per sample array: the Virtual
+    // DSP redraws this view on every chain edit, and its processing cache hands
+    // every unchanged channel back the same array, so only the edited channel
+    // pays — and it pays off the UI thread: the panel warms the envelopes of
+    // the traces it is about to draw before the frame (see RedrawMainPlotAsync),
+    // and the draw reads them from here. Safe from any thread; two threads
+    // racing on one array compute it twice and keep one.
+    private static readonly ConditionalWeakTable<Complex[], double[]> envelopeCache = new();
+
+    internal static double[] EnvelopeOf(Complex[] samples) =>
+        envelopeCache.GetValue(samples, static record =>
+        {
+            var real = new double[record.Length];
+            for (int i = 0; i < real.Length; i++)
+            {
+                real[i] = record[i].Real;
+            }
+
+            return SignalEnvelope.Envelope(real);
+        });
 
     // The Tukey gate drawn where it sits, and a vertical mark at the gate
     // offset (the end of the left shoulder).

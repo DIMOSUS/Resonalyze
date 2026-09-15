@@ -3977,6 +3977,29 @@ public partial class VirtualCrossoverPanel : UserControl
                     VirtualCrossoverGroupViews.ParticipatesInTotalSum(
                         groupView, pair.Zone));
         }
+
+        // The impulse view wraps every drawn trace in its envelope, a Hilbert
+        // transform over the whole processed record — 2^17 samples a channel on
+        // an ordinary sweep capture, and many times that where a late arrival
+        // kept the source uncropped (VirtualCrossoverSourceSnapshot) or a
+        // high-Q or FIR tail stretched ApplyChain's padding.
+        // Off the UI thread for the reason the phase entries above are: a chain
+        // edit hands the edited channel a new array, so every frame of a drag is
+        // the first time for it. The envelopes are memoized per array, and the
+        // frame below reads the ones warmed here.
+        if (radioViewImpulse.Checked)
+        {
+            Complex[][] drawnResponses =
+                [.. shown
+                    .Where(item => item.Channel.Pair.ShowProcessedCurve)
+                    .Select(item => item.ImpulseResponse)];
+            await Task.Run(() =>
+            {
+                using var _ = AppProfiler.Zone("VirtualDSP.WarmImpulseEnvelopes");
+                drawnResponses.AsParallel().ForAll(
+                    response => ImpulseWindowPreview.EnvelopeOf(response));
+            });
+        }
         if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
             return;
@@ -7739,9 +7762,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // The impulse view is the gate dialog's IR preview promoted to the main
     // plot: every processed channel IR (crossover/PEQ/gain/delay/polarity
-    // applied) on the shared absolute timeline, each normalized to its own
-    // in-window peak, with the phase-gate Tukey window drawn where it sits.
-    // Well-aligned drivers visibly start together.
+    // applied) on the shared absolute timeline, each wrapped in its envelope
+    // and normalized to that envelope's in-window peak, with the phase-gate
+    // Tukey window drawn where it sits. Well-aligned drivers visibly start
+    // together.
     private AcousticImpulseRender? BuildImpulseRender(List<ProcessedChannel> processed)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildImpulseRender");

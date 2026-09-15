@@ -205,9 +205,10 @@ internal sealed class VirtualCrossoverAcousticPlot
     {
         if (IsTimeDomain(acousticView))
         {
-            // The impulse traces are each normalized to their own peak, exactly
-            // like the IR Gate preview; the step traces to the largest among
-            // them. Either way the scale is unitless.
+            // The impulse traces are each normalized to their own envelope's
+            // peak (the IR Gate preview, which draws no envelopes, to the
+            // sample peak); the step traces to the largest among them. Either
+            // way the scale is unitless.
             valueAxis.Title = string.Empty;
             valueAxis.AbsoluteMinimum = -1.05;
             valueAxis.AbsoluteMaximum = 1.05;
@@ -357,9 +358,10 @@ internal sealed class VirtualCrossoverAcousticPlot
     {
         // The impulse view is the gate dialog's IR preview promoted to the main
         // plot: every processed channel IR on the shared absolute timeline, each
-        // normalized to its own in-window peak, with the phase-gate Tukey window
-        // drawn where it sits. The step view draws the same traces' step
-        // responses over the same window, on one common scale.
+        // wrapped in its ± envelope and normalized to that envelope's in-window
+        // peak, with the phase-gate Tukey window drawn where it sits. The step
+        // view draws the same traces' step responses over the same window, on
+        // one common scale.
         (double StartMs, double EndMs)? window = impulse.Step
             ? ImpulseWindowPreview.AddStepTraceSeries(
                 model,
@@ -378,7 +380,8 @@ internal sealed class VirtualCrossoverAcousticPlot
                 impulse.LeftMs,
                 impulse.PlateauMs,
                 impulse.RightMs,
-                SeriesTag);
+                SeriesTag,
+                envelopes: true);
         if (window is not { } bounds)
         {
             return;

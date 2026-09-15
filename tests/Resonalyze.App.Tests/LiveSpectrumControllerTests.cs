@@ -250,6 +250,42 @@ public sealed class LiveSpectrumControllerTests
         Assert.Single(rebuilt.Annotations.OfType<OverlayTextAnnotation>());
     }
 
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(0, false)]
+    [InlineData(3, true)]
+    public void CaptureReadOut_NamesClippedFrames(int? clippedFrames, bool named)
+    {
+        using var sweep = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
+        var controller = (LiveSpectrumController)RuntimeHelpers.GetUninitializedObject(
+            typeof(LiveSpectrumController));
+        SetField(controller, "measurement", noise);
+        SetField(controller, "liveSpectrumOptions", new LiveSpectrumOptions());
+        SetField(controller, "plotModelFactory", CreateMmmFactory(sweep, noise));
+        SetField(controller, "loadedCapture", new LiveCaptureDocument
+        {
+            Recipe = new LiveCaptureRecipe
+            {
+                AnalysisMode = LiveAnalysisMode.Mmm,
+                AveragedFrameCount = 25,
+                ClippedFrameCount = clippedFrames,
+                IntegratedSeconds = 17.07
+            }
+        });
+
+        var model = new OxyPlot.PlotModel();
+        UpdateCaptureProgressAnnotation(controller, model);
+
+        OverlayTextAnnotation readOut =
+            Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
+        Assert.Equal(named, readOut.Text?.Contains("clipped", StringComparison.Ordinal) ?? false);
+        if (named)
+        {
+            Assert.Contains("25 frames, 3 clipped", readOut.Text, StringComparison.Ordinal);
+        }
+    }
+
     private static PlotModelFactory CreateMmmFactory(
         ExpSweepMeasurement sweep,
         NoiseMeasurement noise) =>

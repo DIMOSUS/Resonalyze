@@ -514,6 +514,49 @@ public sealed class AbstractedMeasurementTests
         Assert.True(opened!.Disposed);
     }
 
+    [Theory]
+    [InlineData(1.0f, true)]
+    [InlineData(0.5f, false)]
+    public async Task LiveSpectrumCountsTheAveragedFramesWhoseMicrophoneReachedFullScale(
+        float microphonePeak, bool clips)
+    {
+        var factory = new FakeAudioSessionFactory(
+            streamingFactory: _ => new RecordingStreamingSession(
+                framesToRaise: 40, failAfterFrames: false, microphonePeak));
+        using var measurement = new NoiseMeasurement(factory);
+        measurement.Init(
+            44_100, 24, 0.5, PlaybackChannel.Mono,
+            sequenceLength: 1024,
+            waveInputChannelOffset: 0,
+            waveLoopbackInputChannelOffset: 1);
+
+        Task<bool> running = measurement.RunAsync();
+        LiveSpectrumSnapshot? snapshot = null;
+        for (int i = 0; i < 200 && (snapshot?.FrameCount ?? 0) < 5; i++)
+        {
+            await Task.Delay(20);
+            snapshot = measurement.GetAccumulatedSpectrumSnapshot();
+        }
+        await measurement.AbortAsync();
+
+        Assert.True(await running, measurement.LastError?.ToString());
+        Assert.NotNull(snapshot);
+        Assert.True(snapshot.FrameCount >= 5);
+        // Every frame of the tone peaks at the same level, so a clipping run counts exactly the frames it averaged.
+        Assert.Equal(clips ? snapshot.FrameCount : 0, snapshot.ClippedFrameCount);
+    }
+
+    [Theory]
+    [InlineData(40, true, 0.25, 40)]
+    [InlineData(40, false, 0.25, 7)]
+    [InlineData(3, false, 0.25, 3)]
+    [InlineData(40, false, 1.0, 1)]
+    public void LiveCoherenceDebiasesByTheAveragesTheMeanHolds(
+        int frames, bool infinite, double alpha, int expected)
+    {
+        Assert.Equal(expected, NoiseMeasurement.IndependentAverageCount(frames, infinite, alpha));
+    }
+
     private sealed class ThrowingOpenFactory : IAudioSessionFactory
     {
         public IReadOnlyList<AudioBackendDescriptor> Backends { get; } =

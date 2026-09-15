@@ -52,6 +52,7 @@ internal sealed class LiveSpectrumController : IDisposable
     private PlotModel? captureProgressOwner;
     private string? captureProgressState;
     private int captureProgressFrames = -1;
+    private int captureProgressClipped = -1;
     // Reused across ~30 fps ticks to avoid allocation churn; remove/re-add each tick keeps z-order against overlays.
     private LineSeries? peakHoldSeries;
     private LineSeries? mainSeries;
@@ -121,7 +122,8 @@ internal sealed class LiveSpectrumController : IDisposable
             ? plotModelFactory.BuildLiveCaptureDocument(
                 snapshot.InputMagnitude,
                 snapshot.FrameCount,
-                title: string.Empty)
+                title: string.Empty,
+                snapshot.ClippedFrameCount)
             : null;
 
     /// <summary>Stops and harvests the final accumulation; <see cref="AbortAsync"/> would drop the newest frames.</summary>
@@ -757,11 +759,13 @@ internal sealed class LiveSpectrumController : IDisposable
         }
 
         int frames;
+        int clipped;
         double seconds;
         string state;
         if (loadedCapture is { } document)
         {
             frames = document.Recipe.AveragedFrameCount;
+            clipped = document.Recipe.ClippedFrameCount ?? 0;
             seconds = document.Recipe.IntegratedSeconds;
             state = "Loaded";
         }
@@ -769,6 +773,7 @@ internal sealed class LiveSpectrumController : IDisposable
         {
             bool running = measurement.InProgress;
             frames = running ? measurement.AveragedFrameCount : lastSnapshot?.FrameCount ?? 0;
+            clipped = running ? measurement.ClippedFrameCount : lastSnapshot?.ClippedFrameCount ?? 0;
             int sampleRate = measurement.SampleRate;
             if (sampleRate < 1)
             {
@@ -801,11 +806,17 @@ internal sealed class LiveSpectrumController : IDisposable
             captureProgressState = null;
         }
 
-        if (state != captureProgressState || frames != captureProgressFrames)
+        if (state != captureProgressState || frames != captureProgressFrames || clipped != captureProgressClipped)
         {
             captureProgressState = state;
             captureProgressFrames = frames;
-            captureProgressAnnotation.Text = $"{state} — {seconds:0} s, {frames} frames";
+            captureProgressClipped = clipped;
+            captureProgressAnnotation.Text = clipped > 0
+                ? $"{state} — {seconds:0} s, {frames} frames, {clipped} clipped"
+                : $"{state} — {seconds:0} s, {frames} frames";
+            captureProgressAnnotation.TextColor = clipped > 0
+                ? OxyColor.FromRgb(255, 190, 80)
+                : OxyColor.FromRgb(150, 165, 190);
         }
 
         model.Annotations.Add(captureProgressAnnotation);

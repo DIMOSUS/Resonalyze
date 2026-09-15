@@ -367,8 +367,9 @@ against 23 Hz at the default. Keep it the same for every capture in a set.
 ![Live Spectrum in MMM mode, mid-capture](assets/images/manual/mmm-capture.png)
 
 **⚠ Protect the tweeters here too.** MMM plays full-range pink noise for the whole
-capture, and unlike the sweep it has no start frequency to raise, so for a tweeter or a
-small midrange the protective high-pass in the DSP is the only
+capture — at the sweeps' playback level, about 6 dB under a sweep's power, but
+continuously — and unlike the sweep it has no start frequency to raise, so for a tweeter or
+a small midrange the protective high-pass in the DSP is the only
 [protection](#-protect-the-drivers). Keep it in place and declare it in Record Settings
 exactly as for the sweep: the capture divides that filter back out, so its curve lines
 up with the driver's impulse response. The filter is read when you press **Start** —
@@ -385,6 +386,10 @@ levels as the sweeps:
 - press **Start** and move it in **slow, smooth circles** around the head area, at
   about the radius of a head, for **30 seconds or more**;
 - press **Save** and store the capture as its own file.
+
+If the read-out at the top left adds **clipped** in amber, the microphone input overloaded
+during that walk. Those frames are already in the average, so lower the microphone gain and
+take the captures of the set again.
 
 One capture per driver — left and right separately, one for a mono subwoofer — without
 touching the microphone gain or playback level between them. Virtual DSP checks the set

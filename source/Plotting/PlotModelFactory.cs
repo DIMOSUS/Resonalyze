@@ -300,7 +300,8 @@ internal sealed class PlotModelFactory
     public LiveCaptureDocument? BuildLiveCaptureDocument(
         double[]? inputMagnitude,
         int frameCount,
-        string title)
+        string title,
+        int clippedFrameCount = 0)
     {
         // From the accumulation, the same field the render divides out.
         ProtectiveHighPassConfiguration protectiveHighPass =
@@ -359,6 +360,7 @@ internal sealed class PlotModelFactory
                 OverlapPercent = 100 - 100 * hop / sequenceLength,
                 AveragingSpeed = liveSpectrumOptions.EffectiveAveragingSpeed,
                 AveragedFrameCount = frames,
+                ClippedFrameCount = clippedFrameCount,
                 IntegratedSeconds = (double)frames * hop / sampleRate,
                 NoiseColor = liveSpectrumOptions.EffectiveNoiseColor,
                 // What the curve received: the render skips a misaligned compensation.

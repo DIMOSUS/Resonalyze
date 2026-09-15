@@ -136,7 +136,8 @@ where pinned), `calibration` (the microphone calibration's name, no path),
 `rearFillOffsetMs`.
 
 `spatialAverage` says where the tune stands with spatial averages, counted over
-the channels that have a measurement:
+the channels the current view shows that have a measurement (see the counts
+below):
 
 ```json
 "spatialAverage": { "mode": "MovingMic", "hybridTicked": true, "hybridDrawn": false,
@@ -160,8 +161,9 @@ the channels that have a measurement:
   grid; one grid step is the nearest. A hybrid column and the measured column
   beside it are therefore not at one width: compare the two by shape, not by
   the depth of a narrow feature.
-- The counts run over the channels the current view **shows** — the union of
-  `sides[].channels`, the channels the diagnostics are built from. A channel the
+- The counts run over the channels the current view **shows** that have a
+  measurement — the union of `sides[].channels`, the channels the diagnostics
+  are built from; a shown channel with no source is not counted. A channel the
   view leaves out has its own curves but never hybrid ones, whatever it holds;
   a muted channel has no curves at all; neither is counted. `channelsDrawn` is
   read off the hybrid curves actually present in the package, not off what is

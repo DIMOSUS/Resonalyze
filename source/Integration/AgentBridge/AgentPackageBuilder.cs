@@ -226,7 +226,7 @@ internal static class AgentPackageBuilder
             analysis.StereoLevelDifferenceDb,
             analysis.RearFillOffsetMs);
 
-    // Counted over the channels the view shows (the diagnostics' channels). "Drawn" is read off hybrid curves present, not attachments: an unread capture leaves the point measurement in charge.
+    // Counted over the channels the view shows that have a source (the diagnostics' measured channels). "Drawn" is read off hybrid curves present, not attachments: an unread capture leaves the point measurement in charge.
     private static AgentPackageSpatialAverage BuildSpatialAverage(
         AgentAnalysisInputs analysis,
         IReadOnlyList<AgentChannelInputs> channels,

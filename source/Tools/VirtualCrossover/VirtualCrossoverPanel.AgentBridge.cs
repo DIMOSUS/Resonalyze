@@ -548,7 +548,7 @@ public partial class VirtualCrossoverPanel
         return engines;
     }
 
-    /// <summary>A junction's two blocks as the tuner reads them: every side carrying both measurements with its own chain, or the one side asked for. A mono block is routed to both sides.</summary>
+    /// <summary>A junction's two blocks as the tuner reads them: every side carrying both measurements with its own chain, or the one side asked for. A mono block is routed to both sides; two mono blocks are read once, as the right side would repeat the left.</summary>
     private static (List<JunctionTuneSide> Sides, string? Refusal) BuildJunctionTuneSides(
         VirtualCrossoverChannel lower, VirtualCrossoverChannel upper, bool? rightSideOnly)
     {

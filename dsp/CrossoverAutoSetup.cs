@@ -386,7 +386,7 @@ public static class CrossoverAutoSetup
             : (DistortionBandStatus.NoCleanBand, reliableHigh, reliableLow);
     }
 
-    // Thresholds are geometric midpoints between neighbouring class centers.
+    // Thresholds are fixed class-centre midpoints, not derived from SensibleRange. See docs/tech/crossover-auto-setup.md#classification-and-sensible-ranges.
     private static DriverType Classify(double lowHz, double highHz)
     {
         double center = Math.Sqrt(lowHz * highHz);

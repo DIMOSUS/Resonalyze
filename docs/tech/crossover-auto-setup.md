@@ -81,8 +81,12 @@ from NoCleanBand and supplies the protective edges.
 
 ## Classification and sensible ranges
 
-`Classify` picks the driver class by the band's log-centre, with thresholds at the geometric midpoints
-between neighbouring class centres. The class only seeds the suggestion; the user confirms it.
+`Classify` picks the driver class by the band's log-centre, with thresholds 63 / 141 / 450 / 2500 Hz at
+the geometric midpoints between fixed class centres: 40 (subwoofer), 100 (woofer), 200 (midbass),
+1000 (midrange) and ~6300 Hz (tweeter). These centres are not the centres of `SensibleRange` below:
+the ranges bound where a class may hand over, not what a driver is. Deriving the thresholds from
+the ranges (~423 and ~2283 Hz for the upper two) would class a wide-band midrange reaching 20 kHz
+as a tweeter. The class only seeds the suggestion; the user confirms it.
 
 `SensibleRange` caps each class to musically sane handovers: a woofer measured in-room still shows
 output near 850 Hz, but nobody crosses a woofer there. Notable floors:

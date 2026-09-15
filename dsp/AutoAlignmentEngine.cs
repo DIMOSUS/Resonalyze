@@ -123,7 +123,7 @@ public static class AutoAlignmentEngine
     // Reaches past the flip partner at low junctions, where the fixed span is sub-period.
     private const double DiagnosticFineReachHalfPeriods = 1.25;
 
-    // Both polarity partners must be whole lobes in the window for the dominance gate. See docs/tech/auto-alignment.md#seed-trust-gates.
+    // Polarity partners and the same-sign rival one period over must be whole lobes in the window for the edge and rival gates. See docs/tech/auto-alignment.md#seed-trust-gates.
     private const double SeedCorrelationWindowPeriods = 1.25;
 
     private static double SeedCorrelationRangeMs(double crossoverHz) =>

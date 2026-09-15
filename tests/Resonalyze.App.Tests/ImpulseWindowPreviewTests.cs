@@ -146,6 +146,21 @@ public sealed class ImpulseWindowPreviewTests
         Assert.Equal(0, EnvelopeGuides(preview.Model!, "A"));
     }
 
+    [Fact]
+    public void EnvelopeOf_IsMemoizedPerArray_SoAWarmUpServesTheDraw()
+    {
+        // The Virtual DSP computes the envelopes off the UI thread before the
+        // frame; the draw only stays cheap if it reads that very result.
+        IrPreviewTrace burst = MakeBurst("A", centerSample: 720, carrierHz: 500);
+
+        double[] warmed = ImpulseWindowPreview.EnvelopeOf(burst.Samples);
+
+        Assert.Same(warmed, ImpulseWindowPreview.EnvelopeOf(burst.Samples));
+        Assert.NotSame(
+            warmed,
+            ImpulseWindowPreview.EnvelopeOf((Complex[])burst.Samples.Clone()));
+    }
+
     private static int EnvelopeGuides(PlotModel model, string channel) =>
         model.Series.OfType<LineSeries>().Count(item => item.Title == channel + " envelope");
 

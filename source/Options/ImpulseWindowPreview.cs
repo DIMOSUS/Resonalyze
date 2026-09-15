@@ -302,10 +302,13 @@ internal static class ImpulseWindowPreview
     // long, which the transform wants. Memoized per sample array: the Virtual
     // DSP redraws this view on every chain edit, and its processing cache hands
     // every unchanged channel back the same array, so only the edited channel
-    // pays.
+    // pays — and it pays off the UI thread: the panel warms the envelopes of
+    // the traces it is about to draw before the frame (see RedrawMainPlotAsync),
+    // and the draw reads them from here. Safe from any thread; two threads
+    // racing on one array compute it twice and keep one.
     private static readonly ConditionalWeakTable<Complex[], double[]> envelopeCache = new();
 
-    private static double[] EnvelopeOf(Complex[] samples) =>
+    internal static double[] EnvelopeOf(Complex[] samples) =>
         envelopeCache.GetValue(samples, static record =>
         {
             var real = new double[record.Length];

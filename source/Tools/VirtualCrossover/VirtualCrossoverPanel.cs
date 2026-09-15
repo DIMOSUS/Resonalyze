@@ -3977,6 +3977,28 @@ public partial class VirtualCrossoverPanel : UserControl
                     VirtualCrossoverGroupViews.ParticipatesInTotalSum(
                         groupView, pair.Zone));
         }
+
+        // The impulse view wraps every drawn trace in its envelope, a Hilbert
+        // transform over the whole processed record — 2^17 samples a channel on
+        // an ordinary sweep capture, and 2^20 where a late arrival kept the
+        // source uncropped (VirtualCrossoverSourceSnapshot).
+        // Off the UI thread for the reason the phase entries above are: a chain
+        // edit hands the edited channel a new array, so every frame of a drag is
+        // the first time for it. The envelopes are memoized per array, and the
+        // frame below reads the ones warmed here.
+        if (radioViewImpulse.Checked)
+        {
+            Complex[][] drawnResponses =
+                [.. shown
+                    .Where(item => item.Channel.Pair.ShowProcessedCurve)
+                    .Select(item => item.ImpulseResponse)];
+            await Task.Run(() =>
+            {
+                using var _ = AppProfiler.Zone("VirtualDSP.WarmImpulseEnvelopes");
+                drawnResponses.AsParallel().ForAll(
+                    response => ImpulseWindowPreview.EnvelopeOf(response));
+            });
+        }
         if (mainPlotView.IsDisposed || !processingCoordinator.IsCurrent(revision))
         {
             return;

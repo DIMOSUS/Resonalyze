@@ -16,7 +16,7 @@ internal sealed record GatedPhaseCurve(
 internal static class GatedPhaseCurves
 {
     /// <param name="impulseResponse">PROCESSED response; gate offsets are absolute times from sample 0.</param>
-    /// <param name="gate">Offset and detrend are overwritten from the set-wide values resolved by <see cref="PhaseGatePlacement"/>.</param>
+    /// <param name="gate">Offset and detrend are overwritten from <paramref name="gateOffsetMs"/> and <paramref name="detrendMs"/>, resolved over the channel set by <see cref="PhaseGatePlacement"/>.</param>
     public static GatedPhaseCurve Read(
         Complex[] impulseResponse,
         int sampleRate,

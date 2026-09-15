@@ -444,7 +444,7 @@ public partial class EqWizardPanel
         // A handoff is pinned to the correction its panel renders with; the IR preference stays untouched.
         if (source.Kind == EqWizardSourceKind.VirtualDspChannel)
         {
-            // Pinned whenever the panel pinned ANY correction, curve or mode (curve-only dropped the average's own correction).
+            // Pinned whenever the panel pinned ANY correction, curve or mode (the curve alone misses the average's own correction).
             return source.PinsCorrection
                 ? EqWizardCalibrationChoice.PinnedToSource
                 : EqWizardCalibrationChoice.Off;

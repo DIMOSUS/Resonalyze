@@ -590,7 +590,8 @@ Virtual DSP gate pin and saved offsets all refer to its absolute timeline.
 - Envelope smoothing is a centred moving average (prefix sums, so wide windows cost
   the same): a trailing average would slide every reflection later by half its
   window and falsify arrivals.
-- The step response is always emitted normalised for its own axis. Sharing the
+- The step response is always emitted normalised for its own axis (divided by the
+  reference impulse peak, or by its own peak when `NormalizeStepToImpulsePeak` is off). Sharing the
   impulse's units fails on real records: DC or low-frequency content integrates into
   a step many times the impulse peak (a synthetic cabin IR reached 1000 %), flattening
   the impulse; and dB cannot hold a signed quantity crossing zero.

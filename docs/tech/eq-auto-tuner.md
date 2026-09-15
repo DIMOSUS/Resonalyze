@@ -285,8 +285,9 @@ user just left:
 ### Gated sources
 
 A Virtual DSP channel with an impulse response reads through the gate it arrived with (same `DataHelper` call,
-template and offset as the DSP panel's magnitude view) and the steady-state window `FrequencyResponseOptions.
-SteadyStateWindowSamples` (one definition in ms, long so a bass band's full depth shows). The corrected preview is
+template and offset as the DSP panel's magnitude view). An ungated impulse response instead reads through the
+steady-state window `FrequencyResponseOptions.SteadyStateWindowSamples` (one definition in ms, long so a bass band's
+full depth shows). The gated corrected preview is
 filtered THEN windowed — a window does not commute with a filter, and at Virtual DSP gate lengths the difference
 reaches several dB in the bass (`EqWizardGatedPreview`). That render is too heavy for a fader frame, so it runs
 asynchronously keyed by the bank; the last landed render stays on screen meanwhile. Renders start only once the
@@ -480,8 +481,8 @@ so a hand-edited file never breaks the audio path. Use `IsShelving()`/`IsAllPass
 out-of-range value cannot be a bell to the filter and a shelf to the tuning sheet.
 
 - **Shelves** (RBJ): `FrequencyHz` is the MIDDLE of the transition, where the response reaches half the shelf gain in dB;
-  Q sets the knee, not a bandwidth. 1/sqrt(2) is the steepest monotonic shelf; above it the shelf overshoots. New shelves,
-  and shelves read from text without a Q, use 0.707.
+  Q sets the knee, not a bandwidth. 1/sqrt(2) is the steepest monotonic shelf; above it the shelf overshoots. New shelves
+  start at 0.7 (the strips keep one decimal); shelves read from text without a Q parse at 0.707.
 - **All-pass:** unity magnitude everywhere. First order: 180° swing, −90° at the corner, no Q (the slot keeps a positive
   sentinel Q because project-file validators require one; the strip greys the field). Second order: 360° swing, −180° at
   the corner; Q sets how abruptly the phase turns and so how much group delay piles up at the corner, which the strip shows

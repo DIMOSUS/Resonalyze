@@ -259,7 +259,7 @@ public static class CrossoverFilter
         }
         else
         {
-            // Even orders sit at -ripple at the RBJ-normalized passband edge: shift down so ripple spans [-ripple, 0] dB.
+            // RBJ sections put the passband edge at 0 dB, where an even-order Chebyshev belongs at -ripple: shift down so ripple spans [-ripple, 0] dB.
             double gain = Math.Pow(10.0, -rippleDb / 20.0);
             sections[firstIndex] = ScaleGain(sections[firstIndex], gain);
         }

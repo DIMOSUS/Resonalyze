@@ -44,7 +44,7 @@ public sealed class VirtualCrossoverAlignmentStageTests
     [Fact]
     public void AProjectWithoutARearOrACentreNeedsNoStagingAtAll()
     {
-        // Pre-zone projects (Front and Sub only) take the single-stage path, which IS the old engine call.
+        // Pre-zone projects (Front and Sub only) take the single-stage path, which IS the unstaged engine call, not a one-stage staged run.
         Assert.False(VirtualCrossoverAlignmentStages.NeedsStaging(
             [VirtualCrossoverZone.Sub, VirtualCrossoverZone.Front, VirtualCrossoverZone.Front]));
         Assert.False(VirtualCrossoverAlignmentStages.NeedsStaging([]));

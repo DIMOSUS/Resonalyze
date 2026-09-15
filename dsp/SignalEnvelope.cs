@@ -281,7 +281,7 @@ public static class SignalEnvelope
     // Same resolved-valley depth as TimeAlignmentAnalysis; real foot ripples dip at most 14.5 dB.
     internal const double ArrivalPacketResolvedValleyDb = 20.0;
 
-    // Latest to earliest; every candidate, even a dwarfed one, becomes a sidelobe reference.
+    // Latest to earliest; every non-sidelobe candidate, even a dwarfed one, becomes a sidelobe reference.
     private static int EliminatePreRingingSidelobes(
         IReadOnlyList<double> envelope,
         IReadOnlyList<int> candidates,

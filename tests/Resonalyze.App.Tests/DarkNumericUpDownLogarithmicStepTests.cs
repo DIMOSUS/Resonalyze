@@ -69,7 +69,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     }
 
     [Theory]
-    // 347 Hz once went down to 345 and back up to 348.
+    // 347 Hz (a step down from 350) must not go down to 345 and back up to 348.
     [InlineData(347)]
     [InlineData(1320)]
     [InlineData(4100)]

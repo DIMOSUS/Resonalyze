@@ -66,7 +66,7 @@ public sealed class EqAutoTuneHeadlessTests
         PeqBand kept = Assert.Single(inputs.KeptAllPass);
         Assert.Equal(400, kept.FrequencyHz);
         Assert.Equal(EqualizationCurve.MaxBandCount - 1, inputs.Options.MaxBands);
-        // The fit corrects the response with the all-pass in the chain; through a window that differs.
+        // The fit corrects the response WITH the all-pass in the chain; through a window that is a different curve.
         IReadOnlyList<SignalPoint> withoutAllPass =
             EqAutoTuneHeadless.SourceCurve(request.Source, 0, appliedBank: null);
         IReadOnlyList<SignalPoint> withAllPass = EqAutoTuneHeadless.SourceCurve(

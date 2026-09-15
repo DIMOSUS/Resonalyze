@@ -53,7 +53,7 @@ public static class PhaseRotationControl
         return Math.Clamp(snapped, 0, MaximumDegrees);
     }
 
-    /// <summary>Null when transparent; a capped corner delivers less than asked (see <see cref="DeliveredDegrees"/>).</summary>
+    /// <summary>Null when transparent; a capped corner turns the reference further than asked (see <see cref="DeliveredDegrees"/>).</summary>
     public static AllPassSpec? Realize(PhaseRotationSpec rotation, double sampleRateHz)
     {
         if (!(sampleRateHz > 0))

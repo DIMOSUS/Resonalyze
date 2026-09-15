@@ -207,8 +207,9 @@ transformed once for all channels (see `MeasureSingleFrameCompactness` above). R
 name the **configured** input: capture indices are relative to the first opened channel,
 so an ASIO rig on inputs 6, 8 and 9 arrives as 1, 3 and 4.
 
-**Whole-measurement failure.** If every run failed on shape, that is the bad-loopback case,
-and `DiagnoseTotalFailure` analyses the one rejected capture for the richer diagnosis
+**Whole-measurement failure.** If the run that stopped the measurement was rejected on shape
+(a "credible response" issue), that is the bad-loopback case, and `DiagnoseTotalFailure`
+analyses that one rejected capture for the richer diagnosis
 (quiet loopback means bleed instead of the wire; which channel distorts). It throws that
 diagnosis; the caller's generic refusal remains the fallback for captures that will not
 analyse or plain level faults. It builds no array curves, since those would refuse on the
@@ -228,8 +229,9 @@ never both apply.
 `DescribeResultCaution` (the pre-arrival notice) runs after the refusal, never inside it,
 because the total-failure diagnosis also calls the refusal check.
 
-For imports, `RefuseImportedRecording` applies the same gates but none of the wiring
-diagnosis: a shapeless IR there means the file is not a recording of this sweep. The
+For imports, the compactness floor applies together with `MinimumArrivalSharpnessDb`, and
+`RefuseImportedRecording` gives none of the wiring diagnosis: a shapeless IR there means the
+file is not a recording of this sweep. The
 message depends on which gate failed — quoting a compactness figure for a sharpness
 failure would show a number inside the passing range.
 
@@ -631,8 +633,8 @@ the deconvolved arrival sharpest, and reports it as `ImportedTimeScalePpm`:
   200 ppm probe reads worse than no correction. The objective rises over about 200 ppm each
   side of the truth, so a 100 ppm step cannot skip the peak. The scan and refinement cost
   about two dozen deconvolutions, a second or two once per import.
-- Refinement stops at `FinestScaleStepPpm` (12.5), a hundredth of a sample over a 4 s sweep,
-  where the objective says more about the room than the scale.
+- Refinement stops at `FinestScaleStepPpm` (12.5 ppm, 50 µs over a 4 s sweep), where the
+  objective says more about the room than the scale.
 - A gain under `MeaningfulScaleGainDb` (0.5 dB) reports zero: on a field take sharpness
   wandered by a few tenths of a dB across +-50 ppm.
 - The reference is the sweep at the start of a view as long as the analysed window: the
@@ -691,8 +693,9 @@ one that is live and wrong — an unused preamp hissing at -40 dBFS, a wrong soc
 capsule. Such a channel divides into an H1 with no arrival, and the spatial average would
 trim its median onto the anchor and give it a full share of weight: a plausible curve, and
 a tune fitted to nothing. It is refused on `MinimumCompactnessDb`, fail-closed, naming the
-input (otherwise the user unplugs seven microphones in turn). `DescribeIncredibleResponse`
-is the single definition shared by the per-run check and the averaged backstop.
+input (otherwise the user unplugs seven microphones in turn). `DescribeIncredibleShape` is
+the single verdict shared by the per-run check (which measures shapes through
+`MeasureSingleFrameCompactness`) and the averaged backstop (via `DescribeIncredibleResponse`).
 
 **Per-run floor.** `RunFloorDb` lowers the floor for one run of an N-run average by
 `10*log10(N)`. Averaging leaves the coherent arrival alone and divides the uncorrelated rest
@@ -807,9 +810,11 @@ reference on the analysis path.
   compensation reads 13 dB hot at 20 Hz). It pins periodic pink excitation (exactly
   `1/sqrt(f)`, whereas the Kellett bank's poles sit in normalized frequency and move with
   the rate), Infinite averaging (an exponential window would weight the end of the
-  microphone path over its beginning), slope compensation on and smoothing off. The pins
-  live on the options object because both the analyzer and the plot factory read them and
-  do not always hold the same instance.
+  microphone path over its beginning), slope compensation on and smoothing off. The colour
+  and averaging pins live on the options object (`EffectiveNoiseColor`,
+  `EffectiveAveragingSpeed`) because both the analyzer and the plot factory read them and
+  do not always hold the same instance; slope compensation and smoothing are pinned in
+  `PlotModelFactory`.
 - Code asks the traits `IsReferenceFree` and `IsSpatialAverageCapture`, never `== Rta` or
   `== Mmm`, so a future array mode joins in one place instead of a dozen call sites where a
   miss produces a smooth wrong curve.

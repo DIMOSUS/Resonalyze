@@ -462,8 +462,8 @@ public sealed class FrequencyDependentPhaseTests
     [Fact]
     public void Fdw_IsLinear_SpectrumOfASumIsTheSumOfTheSpectra()
     {
-        // FDW(A+B) = FDW(A) + FDW(B) bin for bin, including between bank centres; different reflections broke
-        // the old log-magnitude interpolation by tens of degrees.
+        // FDW(A+B) = FDW(A) + FDW(B) bin for bin, including between bank centres; different reflections break
+        // a log-magnitude interpolation by tens of degrees.
         var first = new Complex[4_096];
         first[480] = Complex.One;
         first[480 + 62] = new Complex(0.7, 0.0); // +0.7 at 1.3 ms

@@ -256,7 +256,7 @@ public partial class VirtualCrossoverPanel
         }
     }
 
-    /// <summary>Whether every playing channel has a spatial average forming one set (the hybrid toggle's gate).</summary>
+    /// <summary>Whether the active side's playing channels' captures form one set (the hybrid toggle's gate).</summary>
     private LiveCaptureSetVerdict JudgeSpatialAverages =>
         JudgeSideSpatialAverages(project.ActiveSideRight);
 
@@ -399,7 +399,7 @@ public partial class VirtualCrossoverPanel
     }
 
     /// <summary>Band where a group member is expected to play: inside it a silent capture breaks the group point, outside the member is absent.</summary>
-    /// <remarks>Bypassed members use their full measured range: their idle crossover corners say nothing about presence.</remarks>
+    /// <remarks>Bypassed members use the full 20 Hz–20 kHz range: their idle crossover corners say nothing about presence.</remarks>
     internal static (double LowHz, double HighHz) HybridGroupMemberBand(
         VirtualCrossoverChannel channel, bool rightSide) =>
         channel.Pair.Bypass
@@ -445,7 +445,7 @@ public partial class VirtualCrossoverPanel
                 "offset cannot level them both. " + verdict.Reason);
     }
 
-    /// <summary>That side's playing channels all carry captures and those form one set (recipe decides, not coverage).</summary>
+    /// <summary>That side's playing channels carry captures (all for MMM; arrays may have gaps) and those form one set (recipe decides, not coverage).</summary>
     private LiveCaptureSetVerdict JudgeSideSpatialAverages(bool rightSide)
     {
         LiveCaptureSetVerdict gathered =
@@ -554,7 +554,7 @@ public partial class VirtualCrossoverPanel
                     "small in the bass, largest at a crossover high up.");
     }
 
-    /// <summary>This redraw's hybrid magnitudes, shared by drawing and summation; null unless every channel yields a curve.</summary>
+    /// <summary>This redraw's hybrid magnitudes, shared by drawing and summation; null when a moving-mic channel yields no curve (array channels fall back to their point response).</summary>
     private HybridMagnitudes? BuildHybridMagnitudes(
         IReadOnlyList<ProcessedChannel> processed,
         IReadOnlyList<AnalysisCurve> references,
@@ -630,7 +630,7 @@ public partial class VirtualCrossoverPanel
                 : channel.Pair.ToChain(rightSide),
             // Processor rate: the chain is what the device runs; the capture's rate is already folded into its levels.
             channel.ProcessorSampleRateFor(rightSide),
-            // Swap to the panel calibration is exact for single-file captures; mixed-calibration captures keep their own (see SpatialAverageHybrid).
+            // Own keeps the capture's correction; a named panel curve swaps exactly for single-file captures, mixed-calibration ones keep their own (see SpatialAverageHybrid).
             SpatialAverageCalibrationFor(state),
             reference.Select(point => point.X).ToList(),
             smoothingCode);

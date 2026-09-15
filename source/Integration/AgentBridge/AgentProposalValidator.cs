@@ -75,7 +75,7 @@ internal static class AgentProposalValidator
     // Below this a net rise is bilinear warping and rounding, not a boost.
     private const double HeadroomToleranceDb = 0.05;
 
-    /// <summary>Widest bell passed silently within an octave of one of the channel's active corners; narrower bells turn the phase where the pair sums. See docs/tech/agent-bridge.md#junction-zone-q.</summary>
+    /// <summary>Highest bell Q passed silently within an octave of one of the channel's active corners; narrower bells turn the phase where the pair sums. See docs/tech/agent-bridge.md#junction-zone-q.</summary>
     public const double JunctionQLimit = 2;
 
     // Bells only: shelves are wide by nature, and an all-pass at a junction is there for the phase.
@@ -266,7 +266,7 @@ internal static class AgentProposalValidator
         }
     }
 
-    // Each engine runs once per import: the first request is kept. Probes are exempt (bounded by the variant budget).
+    // Each engine runs once per scope (channel, junction or project) per import: the first request is kept. Probes are exempt (bounded by the variant budget).
     private static void RejectRepeatedEngineRequests(List<AgentOperationVerdict> verdicts)
     {
         var first = new Dictionary<(string Op, string? ChannelId), string>();
@@ -459,7 +459,7 @@ internal static class AgentProposalValidator
             _ => false
         };
 
-    // Scope for the once-per-import rule: channel, junction (probes also per reading), or none for whole-project engines.
+    // Scope for the once-per-import rule: channel, junction, or none for whole-project engines. Probes never reach the rule.
     private static string? ScopeOf(AgentOperation operation) => operation switch
     {
         AgentChannelOperation channel => channel.ChannelId,

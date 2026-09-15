@@ -132,7 +132,7 @@ internal static class VirtualCrossoverCalibrationSelection
                     : VirtualCrossoverCalibrationNotice.MatchedBySlotName);
         }
 
-        // Entry missing: keep the working previous selection rather than replacing it with nothing.
+        // Entry missing or without a usable file: keep the working previous selection rather than replacing it with nothing.
         return new VirtualCrossoverCalibrationDecision(
             previousSelectedId,
             IsSession(previousSelectedId) ? previousSession : null,

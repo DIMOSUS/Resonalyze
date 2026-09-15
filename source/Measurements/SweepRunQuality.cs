@@ -87,7 +87,7 @@ internal sealed record SweepRunRejection(
     int Run,
     IReadOnlyList<string> Issues);
 
-/// <summary>Post-publication notice from the result's own shape; never a refusal and names no cause. See docs/tech/sweep-measurement.md#pre-arrival.</summary>
+/// <summary>Notice published with the result, from its own shape; never a refusal and names no cause. See docs/tech/sweep-measurement.md#pre-arrival.</summary>
 internal sealed record SweepResultCaution(double PreArrivalDb)
 {
     public string Describe() =>

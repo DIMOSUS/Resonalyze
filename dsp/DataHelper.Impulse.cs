@@ -146,7 +146,7 @@ namespace Resonalyze.Dsp
                 opt.BandFilterOctaves * BandFadeFraction);
         }
 
-        // Circular mask and Hilbert are correct: the record is one deconvolution period. Padding was worse. See docs/tech/phase-and-group-delay.md#impulse-view-traces.
+        // Circular mask and Hilbert are correct: the record is one deconvolution period. Padding adds an edge that lifts the silent region. See docs/tech/phase-and-group-delay.md#impulse-view-traces.
 
         private static List<SignalPoint> RenderMagnitudeTrace(
             double[] magnitude,

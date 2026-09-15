@@ -94,7 +94,7 @@ internal static class ArrayMicrophoneAnalysis
             "nothing a full share of the result. Check that input, then measure again.");
     }
 
-    /// <summary>Single definition of the verdict, shared by the run check and the averaged backstop.</summary>
+    /// <summary>Measures the response, then applies <see cref="DescribeIncredibleShape"/>, the verdict shared by the run check and the averaged backstop.</summary>
     public static string? DescribeIncredibleResponse(
         Complex[]? transfer,
         int sampleRate,

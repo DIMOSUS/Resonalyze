@@ -97,7 +97,7 @@ public static class AlignmentSelection
             : inMargin.OrderByDescending(item => item.ScoreDb).First();
     }
 
-    /// <summary>Replaces a sub-trailing pick with the nearest sub-leading candidate within <paramref name="marginDb"/> and <paramref name="reachMs"/>.</summary>
+    /// <summary>A pick trailing by more than <paramref name="slackMs"/> yields to the anchor-nearest candidate that does not, within <paramref name="marginDb"/> and a lead of <paramref name="reachMs"/>.</summary>
     public static AlignmentCandidate PreferSubLeading(
         IEnumerable<AlignmentCandidate> pool,
         AlignmentCandidate chosen,

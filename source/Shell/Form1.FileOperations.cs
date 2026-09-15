@@ -542,7 +542,7 @@ public partial class Form1
             SweepMeasurementConfiguration configuration =
                 measurementSettings.Measurement.BuildConfiguration();
             // Sweep matching picks the channel only when one channel holds it: a reference track copy of the excitation would win
-            // and pass every check, so with multiple channels the user is asked.
+            // and pass every check, so when another channel matches comparably (IsAmbiguous) the user is asked.
             double[] qualities = recording.ChannelCount > 1
                 ? await Task.Run(() =>
                     RecordedSweepChannels.Rank(configuration, recording.Channels))

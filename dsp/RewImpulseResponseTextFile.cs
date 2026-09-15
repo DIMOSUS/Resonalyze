@@ -61,7 +61,7 @@ public sealed class RewImpulseResponseTextFile
     public double[] ToLoopbackReferencedImpulseResponse() =>
         ToLoopbackReferencedImpulseResponse(0);
 
-    /// <summary>Same, with a REW timing offset (seconds, REW's sign) taken back out by moving t = 0 later; samples untouched.</summary>
+    /// <summary>Same, with a REW timing offset (seconds, REW's sign) taken back out: subtracted from the reference index, so the arrival moves later; samples untouched.</summary>
     public double[] ToLoopbackReferencedImpulseResponse(double timingOffsetSeconds) =>
         FractionalSampleShift.AdvanceCircular(
             Samples,

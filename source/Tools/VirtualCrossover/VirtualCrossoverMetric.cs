@@ -338,7 +338,7 @@ internal static class VirtualCrossoverMetric
                 result.PhaseConsistency >= JunctionPhaseAlignment.MinimumPhaseConsistency
                     ? $"{result.PhaseAtCrossoverDeg,4:+0;-0;0}°"
                     : "    —";
-            // Below MinimumAlignableScore the best delay is the least bad of bad alignments, so fix and polarity are dashed.
+            // Below MinimumAlignableScore the best delay is the least bad of bad alignments: fix dashed, polarity blank.
             bool alignable =
                 result.BestScore >= JunctionPhaseAlignment.MinimumAlignableScore;
             double significantMs =
@@ -355,7 +355,7 @@ internal static class VirtualCrossoverMetric
                     < JunctionPhaseAlignment.PolarityFlipAdvantage ? "~"
                 : " ";
             string score = $"{result.CurrentScore,5:0.00;-0.00;0.00}";
-            // No fix on the row, no period-hop warning.
+            // A dashed (unalignable) fix gets no period-hop warning.
             string warning =
                 alignable &&
                 result.LobeMargin is { } margin && margin < AmbiguousLobeMargin

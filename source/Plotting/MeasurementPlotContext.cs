@@ -46,7 +46,7 @@ internal sealed class MeasurementPlotContext
                 transfer.PeakIndex)
             : null;
 
-    /// <summary><c>K = loopbackPeakDbFs + calibrationOffsetDb</c> turns dBr into dB SPL. Null without a calibration matching this result's input.</summary>
+    /// <summary><c>K = loopbackPeakDbFs + calibrationOffsetDb</c> turns dBr into dB SPL. Null without a captured loopback level or a calibration matching this result's input.</summary>
     public double? SplOffsetDb
     {
         get

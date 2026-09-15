@@ -506,7 +506,7 @@ public sealed class VirtualCrossoverProjectFile
     public int Version { get; set; } = CurrentVersion;
     public DateTimeOffset SavedAtUtc { get; set; }
 
-    /// <summary>Null = never chosen (pre-array files); resolved at load, not written on save.</summary>
+    /// <summary>Null = not yet settled (pre-array files); the panel guesses while null and stores the guess once a capture exists.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public VirtualCrossoverSpatialAverageMode? SpatialAverageMode { get; set; }
 
@@ -698,7 +698,7 @@ public sealed class VirtualCrossoverProjectFile
     public double RearFillOffsetMs { get; set; } =
         VirtualCrossoverAutoDelayDialog.DefaultRearFillOffsetMs;
 
-    /// <summary>Draw the hybrid (spatial-average) magnitude. Dropped on load when a playing channel lacks an average.</summary>
+    /// <summary>Draw the hybrid (spatial-average) magnitude. Intent: kept on load, drawn only while every playing channel has an average.</summary>
     public bool ShowHybridCurves { get; set; }
 
     /// <summary>Older files inherit the magnitude answer.</summary>
@@ -1079,7 +1079,7 @@ public sealed class VirtualCrossoverProjectFile
                         double.IsFinite(frequencyHz) && frequencyHz > 0 &&
                         double.IsFinite(q) && q > 0)
                     {
-                        // Full bank: drop the last bell (Auto Tune can re-propose it), keep the ear-aligned all-pass; reported in MigrationNoticeText.
+                        // Full bank: drop the last gain-bearing band (Auto Tune can re-propose it), keep the ear-aligned all-pass; reported in MigrationNoticeText.
                         if (side.PeqBands.Count >= EqualizationCurve.MaxBandCount)
                         {
                             int last = side.PeqBands.FindLastIndex(
@@ -1148,7 +1148,7 @@ public sealed class VirtualCrossoverProjectFile
     [JsonIgnore]
     public string? BackupNoticePath { get; private set; }
 
-    // Sides whose full 32-band bank lost a bell to a migrated all-pass on THIS load.
+    // Sides whose full 32-band bank lost a gain-bearing band to a migrated all-pass on THIS load.
     private int migratedFullBanks;
 
     // Only a hand-edited file reaches this state, but a silently dropped filter must be reported.

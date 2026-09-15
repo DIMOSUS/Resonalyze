@@ -749,7 +749,7 @@ namespace Resonalyze
         // Below this a better fit is metric noise.
         private const double MeaningfulScaleGainDb = 0.5;
 
-        // ~1/100 sample over a 4 s sweep.
+        // Refinement floor (50 µs over a 4 s sweep); finer steps read the room rather than the scale.
         private const double FinestScaleStepPpm = 12.5;
 
         // Objective rises over ~200 ppm either side of the truth, so 100 cannot step over the peak.
@@ -1045,7 +1045,7 @@ namespace Resonalyze
                     rejections);
                 if (rejections.Count > 0 || accumulator.AcceptedRuns == 0)
                 {
-                    // Shape failure of the whole measurement is the bad-loopback case; diagnose one rejected capture for it.
+                    // A shape rejection is the bad-loopback case; diagnose the rejected capture for it.
                     DiagnoseTotalFailure(rejectedCapture, sweep, rejections);
                     throw new InvalidOperationException(
                         (rejections.Count > 0
@@ -1742,7 +1742,7 @@ namespace Resonalyze
 
         internal enum DistortionVerdict
         {
-            // Floors too high to confirm or exclude a DistortingChannelDb-level fault.
+            // No reading, or floors too high to confirm or exclude a DistortingChannelDb-level fault.
             Unjudged,
             // Every requested order readable AND total packet energy below the threshold.
             JudgedClean,

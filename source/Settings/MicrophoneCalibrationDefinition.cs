@@ -17,8 +17,8 @@ internal sealed class MicrophoneCalibrationDefinition
     public const double MinFrontDiameterMm = 1.0;
     public const double MaxFrontDiameterMm = 60.0;
 
-    /// <summary>Fixed id of the migrated 90° slot, so it names a different file on each machine; sessions from
-    /// elsewhere are resolved by their carried curve (<c>VirtualCrossoverCalibrationSelection</c>).</summary>
+    /// <summary>Fixed (not generated) so pre-migration Virtual DSP projects resolve to it; every machine mints it for its own file,
+    /// so sessions from elsewhere are resolved by their carried curve (<c>VirtualCrossoverCalibrationSelection</c>).</summary>
     public const string LegacyNinetyDegreesId = "90deg";
 
     private const string GeneratedIdPrefix = "cal-";

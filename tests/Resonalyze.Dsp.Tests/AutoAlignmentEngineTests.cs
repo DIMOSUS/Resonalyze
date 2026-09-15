@@ -741,7 +741,7 @@ public sealed class AutoAlignmentEngineTests
     [Fact]
     public void Compute_TrustedSeedAtALowJunction_KeepsBothPolaritiesInTheWindow()
     {
-        // 85 Hz: the polarity partner is half a period (5.9 ms) out, past the old 2.5 ms cap; the window must reach it.
+        // 85 Hz: the polarity partner is half a period (5.9 ms) out, past a fixed 2.5 ms cap; the window must reach it.
         var midbass = new TestChannel("B", DelayedImpulse(15.2));
         var mid = new TestChannel("C", DelayedImpulse(0.0, invert: true));
         var log = new StringBuilder();

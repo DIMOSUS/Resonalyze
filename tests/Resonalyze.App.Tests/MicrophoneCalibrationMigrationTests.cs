@@ -137,7 +137,7 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
         Assert.Equal(MicrophoneCalibrationIds.ZeroDegrees, options.CalibrationId);
     }
 
-    /// <summary>"Own" names a rule rather than a curve, so unlike the old sentinel it persists across restarts.</summary>
+    /// <summary>"Own" names a rule rather than a curve, so it persists across restarts as an ordinary id.</summary>
     [Fact]
     public void TheOwnSelectionSurvivesASaveAndLoad()
     {

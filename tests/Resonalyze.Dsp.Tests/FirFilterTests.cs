@@ -340,7 +340,7 @@ public sealed class FirFilterTests
     [Fact]
     public void ValidRange_StartsAfterTheKernelsLeadingZeros_AndEndsAfterItsTail()
     {
-        // Leading zeros shift by three samples, trailing taps extend by four, both at the record rate (2x here).
+        // Three leading zeros shift the start by 3 processor samples, the 7 taps extend the end by N − 1 = 6; doubled at the 2x record rate.
         var chain = new DspChannelChain(Fir: new FirFilter([0, 0, 0, 1.0, 0.5, 0.25, 0.125]));
 
         ValidSampleRange range = VirtualCrossoverAnalysis.ChainValidRange(

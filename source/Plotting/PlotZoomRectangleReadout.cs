@@ -204,7 +204,7 @@ internal static class PlotZoomRectangleReadout
             },
             culture);
 
-    /// <summary>Unit from the title (whole, first word, or trailing parentheses); keyless frequency/phase axes by key.</summary>
+    /// <summary>Unit from the title (whole, first word, or trailing parentheses); untitled frequency/phase axes by key.</summary>
     private static string UnitOf(Axis axis)
     {
         string? title = axis.Title;

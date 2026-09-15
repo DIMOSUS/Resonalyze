@@ -79,7 +79,7 @@ internal sealed record EqWizardCurveSource
     public IReadOnlyList<double> OwnCalibrationCorrectionDb { get; init; } =
         Array.Empty<double>();
 
-    /// <summary>The stored curve: unsmoothed and carrying the capture's calibration.</summary>
+    /// <summary>The stored curve, carrying the capture's calibration and smoothing (see <see cref="CapturedSmoothingCode"/>).</summary>
     public IReadOnlyList<SignalPoint> Points { get; init; } = Array.Empty<SignalPoint>();
 
     /// <summary>For a no-raw curve: the additive per-point correction baked into <see cref="Points"/>; empty otherwise.</summary>
@@ -99,7 +99,7 @@ internal sealed record EqWizardCurveSource
 
     public AnalysisCurveKind? CurveKind { get; init; }
 
-    /// <summary>Calibration selector applies. See docs/tech/eq-auto-tuner.md#calibration-choice.</summary>
+    /// <summary>Calibration selector applies. See docs/tech/eq-auto-tuner.md#re-smoothing-imported-curves.</summary>
     public bool SupportsCalibration =>
         Kind == EqWizardSourceKind.ImpulseResponse || HasOwnCalibration;
 

@@ -37,8 +37,9 @@ disagreed in sign and direct-sound phase carried a systematic multi-millisecond 
 - **Phase consistency** R (mean resultant length, 0..1): how much the window's bins agree on one phase.
   Below `MinimumPhaseConsistency` (0.5) φ is mush (a notch sits at the handover) and no layer may show it as a
   number.
-- **Best extra delay / best invert**: the extra delay on the LOWER channel that maximises the band score (a
-  negative value means delay the upper channel instead), and whether flipping the lower channel wins.
+- **Best extra delay / best invert**: the extra delay on the LOWER channel that maximises the band score, relative to
+  the current settings (a negative value advances the lower channel: a positive delay on the upper one when the
+  lower is at 0), and whether flipping the lower channel wins.
 - **Opposite polarity score**: the best score the other polarity reaches, shown in the tooltip so the user sees
   how close the alternative sits.
 - **Rival lobe** and **lobe margin**: the best same-polarity local optimum at least 0.4 period
@@ -302,8 +303,8 @@ cannot. Front, rear and centre drivers routinely play the same band from differe
 at 290 Hz overlaps the front midrange and tweeter completely without a junction with either, and ordering by band
 centre invents a handover no filter creates. The zone is independent of the `Mono` routing flag: a sub pair can be
 stereo, a two-way centre is two mono blocks, one install can carry two mono subs in different bands. Only Center
-implies mono (enforced by the panel). The UI order runs up the spectrum then outward; the tuning sheet follows DSP
-entry order instead (`VirtualCrossoverSheetGroups.SectionOrder`).
+implies mono (enforced by the panel). The zone selector lists Front, Rear, Center, Sub (`VirtualCrossoverZones.All`); the tuning sheet
+follows DSP entry order instead, Sub first (`VirtualCrossoverSheetGroups.SectionOrder`).
 
 Pre-v9 projects had no zone, and "mono" then meant "shared subwoofer". `GuessForLegacyPair` maps a stereo pair to
 Front (a rear pair must be re-pointed by hand), a high-pass mono block to Center (no sub plays up the spectrum), and
@@ -404,8 +405,8 @@ bypass, Auto dominant band, or manual).
   level made the axis mean different things per curve: picks 6 dB and 25 dB under their peaks put equal levels
   19 dB apart on screen. Each curve's floor rides 80 dB under its own maximum so a genuinely quieter Compare record
   is drawn whole, and decimation pools min/max per bucket so narrow reflection peaks are not skipped.
-- **Delay table.** Columns are 16 characters wide, the widest cell with a Compare delta (e.g. "163.000 (+2.604)"),
-  so a full row is 66 characters, what the status box shows at the table font without wrapping. The recommended
+- **Delay table.** Each column holds the widest cell with a Compare delta (16 characters, e.g. "163.000 (+2.604)") plus
+  one space, so a full row is 66 characters, what the status box shows at the table font without wrapping. The recommended
   marker goes at the end of the row, because a glyph of uncertain width ahead of the cells shifts the columns.
 - **Imported recordings** have no absolute time (nothing ties the recorder start to playback), so the panel refuses
   them rather than show meaningless delays.

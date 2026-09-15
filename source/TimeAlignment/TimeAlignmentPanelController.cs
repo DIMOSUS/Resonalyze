@@ -53,7 +53,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private const string EnvelopeDecibelAxisTitle = "dB re Main peak";
 
-    // Opening view bounded under each curve's max so a quiet Compare record does not squeeze the arrivals; the axis still pans to the full range.
+    // Each curve is floored CurveFloorDb under its own max; the plot opens EnvelopeOpeningSpanDb tall so a quiet Compare record does not squeeze the arrivals (the axis still pans the full range).
     private const double CurveFloorDb = 80.0;
     private const double EnvelopeOpeningSpanDb = 100.0;
 
@@ -861,7 +861,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
-        // ONE reference for both curves (Main's strongest peak): per-curve first-arrival normalization made equal levels read up to 19 dB apart.
+        // ONE reference for both curves (Main's strongest peak): per-curve first-arrival normalization drew equal levels 19 dB apart when picks sat 6 and 25 dB under their peaks.
         double referenceAmplitude = result.StrongestEnvelopePeak;
 
         int radius = Math.Min(
@@ -1806,7 +1806,7 @@ internal readonly record struct TimeAlignmentAnalysisSource(
     PlaybackChannel PlayChannel,
     SweepMeasurementMode MeasurementMode,
     double[] TransferImpulseResponse,
-    // γ² half spectrum behind TransferImpulseResponse (null for <2 averages); weights the GCC-PHAT refinement.
+    // γ² half spectrum behind TransferImpulseResponse (null for <2 averages or a snapshot without it); weights the GCC-PHAT refinement.
     double[]? TransferCoherence,
     InputLevelMeterSnapshot Levels);
 

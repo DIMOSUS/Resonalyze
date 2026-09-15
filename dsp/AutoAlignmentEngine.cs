@@ -39,7 +39,7 @@ public interface IAlignmentChannel
     /// <summary>The MEASUREMENT's rate — the grid every impulse response here lives on.</summary>
     int SampleRate { get; }
 
-    /// <summary>Rate the simulated processor runs its filters at: used only when pushing a chain through ApplyChain; measured content uses <see cref="SampleRate"/>.</summary>
+    /// <summary>Rate the simulated processor runs its filters at: used only for chain math (ApplyChain, filter responses, FIR kernel delay); measured content uses <see cref="SampleRate"/>.</summary>
     int ProcessorSampleRate { get; }
 }
 
@@ -131,14 +131,14 @@ public static class AutoAlignmentEngine
             DiagnosticCorrelationRangeMs,
             SeedCorrelationWindowPeriods * 1000.0 / crossoverHz);
 
-    // Half a period (no cycle skip), floored at the fixed span; farther lobes need the SeedVetoMinProminenceDb exception.
+    // Half a period (no cycle skip), floored at the fixed span; farther lobes need a stand-down door (chain skew or a disqualified anchor).
     private static double SeedReachMs(double crossoverHz) =>
         Math.Max(DiagnosticCorrelationRangeMs, 500.0 / crossoverHz);
 
     // Min |r| of the dominant PHAT extremum to seed stage 2 (position only). Deliberately low: an off seed is recovered downstream.
     private const double PhatSeedMinCoefficient = 0.15;
 
-    /// <summary>Arrival pick depth below band energy past which the arrival may no longer veto a whitened extremum. See docs/tech/auto-alignment.md#seed-reach-veto.</summary>
+    /// <summary>Arrival pick depth below band energy past which the reach veto MAY stand down (only with every other clause of MayWithdrawSeedReachVeto). See docs/tech/auto-alignment.md#seed-reach-veto.</summary>
     private const double SeedVetoMinProminenceDb =
         -TimeAlignmentAnalysisOptions.DefaultFirstPeakThresholdBelowMaxDb / 2.0;
 
@@ -211,7 +211,7 @@ public static class AutoAlignmentEngine
     /// <summary>Inverted filter-sum advantage needed to expect relative inversion; keeps in-phase when filters say nothing (BW18, no crossover, staggered corners). See docs/tech/auto-alignment.md#expected-polarity.</summary>
     private const double ExpectedInversionMarginDb = 1.0;
 
-    // Near-tie between sub-leading and sub-trailing lobes is decided for the leading sub (precedence), up to the ~1.4 dB comb noise.
+    // Near-tie between sub-leading and sub-trailing lobes is decided for the leading sub (precedence); kept just under the ~1.4 dB comb noise.
     // See docs/tech/auto-alignment.md#sub-precedence.
     private const double SubPrecedenceMarginDb = 1.0;
 
@@ -460,7 +460,7 @@ public static class AutoAlignmentEngine
             ? lower - upper
             : null;
 
-    // Skew-corrected offset must fit the ORIGINAL half-period reach: the reach is corrected, never widened, so cycle skips stay refused.
+    // The OFFSET is corrected by the skew and must fit the unwidened reach, so cycle skips stay refused.
     internal static bool ChainSkewExplainsSeedOffset(
         double seedOffsetMs,
         double reachMs,
@@ -519,7 +519,7 @@ public static class AutoAlignmentEngine
         return toleranceMs + Math.Clamp(full - probe, 0, toleranceMs);
     }
 
-    /// <summary>Latched = read later than prediction beyond allowance; Inconsistent = earlier (not convicted, not certified). See docs/tech/auto-alignment.md#predicted-front-arrival.</summary>
+    /// <summary>Latched = later than prediction by more than ConvictionFactor allowances; Inconsistent = earlier beyond one allowance, or later by 1 to ConvictionFactor (not convicted, not certified). See docs/tech/auto-alignment.md#predicted-front-arrival.</summary>
     internal enum PredictionState { Unavailable, Verified, Latched, Inconsistent }
 
     /// <summary>Prediction accuracy floor: honest reads land well inside, field latches run 6.7 ms and up.</summary>
@@ -1194,7 +1194,7 @@ public static class AutoAlignmentEngine
                 {
                     return "same-polarity rival near-tie";
                 }
-                // The reach veto stands down only for a re-anchored pair or a deep pick the direct cut overrules. See docs/tech/auto-alignment.md#seed-reach-veto.
+                // Reach veto doors: a re-anchored pair, a chain skew that explains the offset, or a disqualified anchor (skew ≥ reach, deep pick). See docs/tech/auto-alignment.md#seed-reach-veto.
                 double reachMs = SeedReachMs(pair.CrossoverHz);
                 // With a usable direct-cut seed, tighten the reach to DirectSeedTrustReachPeriods (the 3 ms floor spans 4-5 periods up there).
                 if (directSeed != null)
@@ -1245,7 +1245,7 @@ public static class AutoAlignmentEngine
                         return null;
                     }
 
-                    // Deep-pick anchor: the veto is transferred to the direct cut, not dropped (see SeedVetoMinProminenceDb).
+                    // Deep-pick anchor: at or above DirectSeedMinCrossoverHz the veto passes to the direct cut; below, the extremum's own strength decides.
                     if (!MayWithdrawSeedReachVeto(
                         anchorProminenceDb,
                         anchorIsRawReads,
@@ -1497,7 +1497,7 @@ public static class AutoAlignmentEngine
             secondaryPair != null ? 500.0 / secondaryPair.CrossoverHz : 0);
         double anchorMs = priorOverrideMs ?? (primaryBase + secondaryBase) / 2.0;
 
-        // Matched odd-order split above DirectSeedMinCrossoverHz without a wide seed: polarity comes from the filters; a caller polarity outranks it.
+        // Matched split at or above DirectSeedMinCrossoverHz, no wide seed, no joint search: the filters force polarity (inverted or in phase); a caller polarity outranks it.
         // See docs/tech/auto-alignment.md#expected-polarity.
         bool? filterPolarity = pair.CrossoverHz >= DirectSeedMinCrossoverHz
             ? ExpectsRelativeInversion(pair)
@@ -1620,7 +1620,7 @@ public static class AutoAlignmentEngine
             }
         }
 
-        // Window: coarse base(s) ± half the slowest crossover period — absorbs coarse error without spanning two same-polarity lobes.
+        // Window: coarse base(s) ± half the slowest crossover period, clamped (see fine-search-window) — absorbs coarse error without spanning two same-polarity lobes.
         (IReadOnlyList<AlignmentCandidate> Candidates,
             IReadOnlyList<AlignmentCandidate> AllOptima,
             double WindowLowMs, double WindowHighMs)
@@ -1707,7 +1707,7 @@ public static class AutoAlignmentEngine
             // Purity is relative to the settled neighbor: an absolute-flag preference would slide a tweeter a quarter period off its inverted twin's onset line.
             bool neighborInverted =
                 alignment.GetValueOrDefault(neighborChannel).InvertPolarity;
-            // "Pure" is what the filters ask for: odd-order LR / BW12 sum inverted (see ExpectsRelativeInversion).
+            // "Pure" is what the filters ask for: matched LR12/LR36 and BW12/BW36 sum inverted (see ExpectsRelativeInversion).
 
             AlignmentCandidate? selected = candidates.Count > 0
                 ? AlignmentSelection.Select(candidates, anchorMs,

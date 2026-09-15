@@ -81,7 +81,7 @@ internal static class AgentProtocol
     public const string ProtocolUrl =
         "https://raw.githubusercontent.com/DIMOSUS/Resonalyze/main/docs/agent/PROTOCOL.md";
 
-    /// <summary>Numbers tokenize at 4-5 tokens each, so 80 KB is already tens of thousands of tokens. Optional series are dropped in a fixed order to stay under the ceiling.</summary>
+    /// <summary>Numbers tokenize at 4-5 tokens each, so 80 KB is already tens of thousands of tokens. The builder thins, then drops optional series, to fit the target; past the ceiling nothing is copied.</summary>
     public const int TargetPackageBytes = 80 * 1024;
     public const int MaxPackageBytes = 100 * 1024;
 
@@ -136,7 +136,7 @@ internal static class AgentProtocol
     /// <summary>Advice lines, sources, and facts per source.</summary>
     public const int MaxListItems = 32;
     public const int MaxStringLength = 2000;
-    /// <summary>Guards runaway nesting; a probe variant's PEQ band sits at depth 12, the deepest the protocol reaches.</summary>
+    /// <summary>Guards runaway nesting; a probe variant's PEQ band, the deepest the protocol reaches, sits at depth 10.</summary>
     public const int MaxJsonDepth = 12;
 
     public const string SetGainDb = "setGainDb";

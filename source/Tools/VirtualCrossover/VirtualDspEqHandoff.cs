@@ -216,7 +216,7 @@ internal static class VirtualDspEqHandoff
     }
 
     /// <summary>Lands a finished bank on the side it came from; false and no write when any guard fails, so the wizard stays open.</summary>
-    /// <remarks>Only polarity changes may pass. See docs/tech/virtual-dsp-session-file.md#eq-wizard-handoff.</remarks>
+    /// <remarks>Of chain edits, only a polarity flip passes a chain handoff (raw handoffs ignore the chain). See docs/tech/virtual-dsp-session-file.md#eq-wizard-handoff.</remarks>
     public static bool TryApplyReturn(
         IReadOnlyList<VirtualCrossoverChannel> channels,
         VirtualDspEqReturnToken token,

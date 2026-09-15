@@ -67,7 +67,7 @@ internal readonly record struct CentreCorroboration(
     }
 }
 
-/// <summary>Places a whole group (rear fill, centre) against one settled front-chain driver: coarse band-limited arrival, then whitened correlation refined around it.</summary>
+/// <summary>Places a whole group (rear fill, centre) against a settled reference (preferably one front-chain driver): coarse band-limited arrival, then whitened correlation refined around it.</summary>
 /// <remarks>Not a junction search; one-way staging. See docs/tech/junction-phase-and-group-placement.md#group-placement.</remarks>
 internal static class VirtualCrossoverGroupPlacement
 {
@@ -121,7 +121,7 @@ internal static class VirtualCrossoverGroupPlacement
     }
 
     /// <summary>Near and far references for a centre over one shared band, or the refusal sentence.</summary>
-    /// <remarks>Picks must be one block's left and right instance, else the scene-offset witness is fake. See docs/tech/junction-phase-and-group-placement.md#centre-references-and-witness.</remarks>
+    /// <remarks>Prefers one block's left and right instance; otherwise each side's own content (shared blocks removed), else refuses. See docs/tech/junction-phase-and-group-placement.md#centre-references-and-witness.</remarks>
     public static CentreReferenceChoice<T> ChooseCentreReferences<T>(
         IReadOnlyCollection<T> near,
         IReadOnlyCollection<T> far,

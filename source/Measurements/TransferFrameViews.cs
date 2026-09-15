@@ -2,7 +2,7 @@ using System.Collections;
 
 namespace Resonalyze;
 
-/// <summary>Float samples as doubles without a copy (157 MB at the longest sweep); converted once into the FFT buffer.</summary>
+/// <summary>Float samples as doubles without a copy (a copy would be 157 MB at the longest sweep); converted once into the FFT buffer.</summary>
 internal sealed class RecordedSamplesView(float[] samples) : IReadOnlyList<double>
 {
     public double this[int index] => samples[index];

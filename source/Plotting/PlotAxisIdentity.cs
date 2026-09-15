@@ -3,7 +3,7 @@ using OxyPlot.Axes;
 
 namespace Resonalyze;
 
-/// <summary>An axis's key and hard limits; re-arming them means the axis now shows something else.</summary>
+/// <summary>An axis's key, title, type and hard limits; re-arming them means the axis now shows something else.</summary>
 internal readonly record struct PlotAxisIdentity(
     string? Key,
     string? Title,

@@ -764,7 +764,7 @@ internal sealed class VirtualCrossoverMetrics
             side.ProcessedValidRange);
     }
 
-    // Full-band read far behind its upper-half probe (beyond half a low-edge period, min 1 ms) latched onto modal build-up.
+    // Full-band read far behind its upper-half probe (beyond half a period at the probe's low edge, min 1 ms) latched onto modal build-up.
     // The probe only votes; its number never substitutes.
     private static bool IsModalLatched(
         TimeAlignmentAnalysisResult fullBand,

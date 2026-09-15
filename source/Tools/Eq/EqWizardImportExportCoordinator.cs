@@ -74,7 +74,7 @@ internal sealed class EqWizardImportExportCoordinator
             string text = readAllText(request.Path);
 
             // Parsers never throw, so the format must say whether it recognised the file; a preamp-only profile has no bands
-            // yet is valid (treating it as failure applied an empty curve over the user's tune).
+            // yet is valid, and must not be treated as a failure.
             if (!request.Target.Format.TryImport(text, out EqualizationCurve curve))
             {
                 return EqWizardFileResult<EqualizationCurve>.Failed(

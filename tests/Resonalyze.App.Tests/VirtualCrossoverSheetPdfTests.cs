@@ -322,7 +322,7 @@ public sealed class VirtualCrossoverSheetPdfTests
         Assert.Contains("Channel A (mono) — PEQ", AllText(sheet.Document));
     }
 
-    // 45 Hz Q 3.0 -4 dB: Symmetric 3.0*10^(4/40) = 3.775, Classic 3.0*10^(-4/40) = 2.384.
+    // 45 Hz Q 3.0 -4 dB: Symmetric 3.0*10^(4/40) = 3.777, Classic 3.0*10^(-4/40) = 2.383.
     [Theory]
     [InlineData(PeqQConvention.Rbj, "Q · RBJ", "3.0")]
     [InlineData(PeqQConvention.Symmetric, "Q · Symmetric", "3.78")]
@@ -507,7 +507,7 @@ public sealed class VirtualCrossoverSheetPdfTests
     [Fact]
     public void GroupCurves_AGroupOfMonoMembers_GetsOneSumRatherThanTwoCopies()
     {
-        // One sub is inverted: the sum's chains must keep polarity (an earlier version un-inverted them).
+        // One sub is inverted: the sum's chains must keep polarity, or subs knitting through the inversion sum as if fighting.
         VirtualCrossoverChannelSettings rearSub = Loaded("rear sub");
         rearSub.InvertPolarity = true;
         rearSub.DelayMs = 5.73;

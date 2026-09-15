@@ -273,7 +273,7 @@ public static class SpatialAverage
         return bandCount;
     }
 
-    /// Even count: mean of the two central values. Sorts in place.
+    // Even count: mean of the two central values. Sorts in place.
     private static double Median(List<double> values)
     {
         values.Sort();

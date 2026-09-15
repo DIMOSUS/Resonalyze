@@ -10,8 +10,8 @@ position is derived from it, never from constants scattered elsewhere.
 
 - The time advance of harmonic *n* for a logarithmic sweep is `Δt = L · ln(n) / ln(f2/f1)`
   (`HarmonicTimeOffsetSeconds`). It depends only on the sweep, never on level.
-- `HarmonicOffsetSamples` accepts fractional orders: order `n ± 0.5` addresses the geometric-mean boundary
-  between neighbouring packets, so packet centres and window edges come from one formula.
+- `HarmonicOffsetSamples` accepts fractional orders, so packet centres and boundaries come from one formula:
+  `BuildWindow` places edges at the geometric means `√(n·(n±1))`, the energy probe's flanks at `n ± 0.5`.
 - `BuildWindow` gives each order its own window, from the boundary toward order+1 (earlier) to the
   boundary toward order−1 (later). Order 1 has no lower neighbour, so its later edge mirrors the earlier
   one, centring the linear window on the peak.
@@ -69,8 +69,8 @@ an unresolvably small harmonic is the mark of a clean capture.
 
 The tail noise (`EstimateTailNoiseAmplitude`) is read from the quiet region after the linear packet and
 its reverb guard, the same region `EssNoise` uses. It is split into `TailNoiseChunkCount` = 8 chunks whose
-RMS values are combined by median, so one stray thump cannot inflate it. A tail shorter than the minimum
-chunk length returns 0 and the below-noise test is skipped.
+RMS values are combined by median, so one stray thump cannot inflate it. A tail whose chunks would be
+shorter than `MinTailNoiseChunkLength` = 128 samples returns 0 and the below-noise test is skipped.
 
 ## Harmonic energy probe
 
@@ -98,5 +98,5 @@ when that happened, and the ceiling speaks only for the orders read — an unrea
 packet inside the record.
 
 **Certifying clean** requires a below-threshold ceiling *and* complete coverage; "nothing detected" alone
-never means clean. A null result means no verdict at all (second-order probes do not fit, or the linear
-packet is empty or non-finite).
+never means clean. A null result means no verdict at all (for example second-order probes do not fit, the
+probe radius rounds to zero, or the linear packet is empty or non-finite).

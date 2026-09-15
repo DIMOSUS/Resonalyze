@@ -183,7 +183,7 @@ public partial class VirtualCrossoverPanel
         DropDownMenu.ShowUnder(buttonAi, agentMenu);
     }
 
-    // Plus the project generation it wrote into: after a session load the entries would restore into settings nobody displays.
+    // The last import's undo and the project generation it wrote into: after a session load the entries would restore into settings nobody displays.
     private AgentImportUndo? agentUndo;
     private long agentUndoGeneration;
 
@@ -1416,7 +1416,6 @@ public partial class VirtualCrossoverPanel
         }
     }
 
-    /// <summary>Copy for AI: gathers at one revision (retrying once), builds off the UI thread, then writes the whole text to the clipboard at once, so a failure copies nothing.</summary>
     // Excess group delay per measured channel, as a separate text beside the package (which already fills a chat), named after the last package so the two line up by channel id.
     private async Task CopyExcessGroupDelayForAiAsync()
     {
@@ -1507,6 +1506,7 @@ public partial class VirtualCrossoverPanel
         }
     }
 
+    /// <summary>Copy for AI: gathers at one revision (retrying once), builds off the UI thread, then writes the whole text to the clipboard at once, so a failure copies nothing.</summary>
     private async Task CopyForAiAsync()
     {
         if (agentBusy)

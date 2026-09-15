@@ -7,7 +7,7 @@ namespace Resonalyze;
 /// See docs/tech/junction-phase-and-group-placement.md#junction-read-out-spectra.</summary>
 internal static class JunctionPhaseSpectra
 {
-    /// <summary>Fixed 8 cycles, not the dialog's 4/6/8 selector (4 cycles flipped polarity on 5 of 20 junctions).</summary>
+    /// <summary>Fixed 8 cycles, not the dialog's 4/6/8 selector (4 cycles moved φ a median 36° against the steady-state reference, 8 cycles 5°).</summary>
     public const int FdwCycles = 8;
 
     public static List<Complex[]> Build(

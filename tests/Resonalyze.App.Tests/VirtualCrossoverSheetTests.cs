@@ -39,7 +39,7 @@ public sealed class VirtualCrossoverSheetTests
         return project;
     }
 
-    // 120 Hz Q 2.0 -4 dB cut: Symmetric 2.0*10^(4/40) = 2.517, Classic 2.0*10^(-4/40) = 1.589.
+    // 120 Hz Q 2.0 -4 dB cut: Symmetric 2.0*10^(4/40) = 2.518, Classic 2.0*10^(-4/40) = 1.589.
     [Theory]
     [InlineData(PeqQConvention.Rbj, "Q 2")]
     [InlineData(PeqQConvention.Symmetric, "Q 2.52")]

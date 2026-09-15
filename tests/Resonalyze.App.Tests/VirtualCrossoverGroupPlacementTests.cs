@@ -103,7 +103,7 @@ public sealed class VirtualCrossoverGroupPlacementTests
     [Fact]
     public void Place_StaysOnTheArrivalsOwnLobeWhenAStrongerOneSitsBeside()
     {
-        // Decoy 2 ms (two periods) late and 2.3 dB louder: the old flat 2 ms refinement placed the group on it.
+        // Decoy 2 ms (two periods) late and 2.3 dB louder: a flat 2 ms refinement would place the group on it.
         Complex[] reference = Packet(0, halfWidth: 48);
         Complex[] group = PacketWithLaterRival(3.0);
 

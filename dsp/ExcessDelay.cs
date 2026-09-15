@@ -4,7 +4,7 @@ using MathNet.Numerics.IntegralTransforms;
 namespace Resonalyze.Dsp;
 
 /// <summary>
-/// Excess (all-pass) delay from g = IFFT(|H|·e^{jφ_exc}). Peak = first arrival of excess energy (bulk-delay readout, reflection-proof);
+/// Excess (all-pass) delay from g = IFFT(|H|·e^{jφ_exc}). Peak = first arrival of excess energy (bulk-delay readout; a louder later reflection does not capture it, a negative-lag dominant keeps the maximum);
 /// Slope = energy centroid = mean group delay (the τ to subtract when detrending excess phase). They agree only for a pure delay.
 /// </summary>
 public static class ExcessDelay

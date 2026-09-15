@@ -6,7 +6,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <remarks>The set offset was a median over DRAWN channels, so each mute moved the rest by ~0.25 dB on real cabins.</remarks>
+/// <remarks>The set offset is a median over every channel with a capture, not the DRAWN ones: a drawn-only median moved the rest ~0.25 dB per mute on real cabins.</remarks>
 public sealed class VirtualCrossoverMuteStabilityTests
 {
     private const int SampleRate = 48_000;

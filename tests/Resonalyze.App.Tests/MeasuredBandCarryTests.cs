@@ -33,7 +33,7 @@ public sealed class MeasuredBandCarryTests
     [Fact]
     public void ARawSpectrumWithNoBandIsLeftAlone()
     {
-        // A masked point must not consume a correction entry and shift the rest.
+        // No band (legacy overlays, text curves, RTA captures): nothing is masked.
         List<SignalPoint> curve = RawCurveRenderer.Render(Spectrum(), [], 6);
 
         Assert.All(curve, point => Assert.True(double.IsFinite(point.Y)));
@@ -42,6 +42,7 @@ public sealed class MeasuredBandCarryTests
     [Fact]
     public void TheBandIsAppliedAfterTheCalibrationToo()
     {
+        // A masked point must not consume a correction entry and shift the rest.
         var correction = new double[RawCurveRenderer.PointCount];
         Array.Fill(correction, 2.0);
 

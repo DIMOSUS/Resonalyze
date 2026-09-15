@@ -103,7 +103,8 @@ public static class VirtualCrossoverAnalysis
         ArgumentNullException.ThrowIfNull(chain);
         // Signed delay: a negative shift ends content earlier; the vacated tail is manufactured silence.
         double delaySamplesExact = chain.DelayMs / 1_000.0 * sampleRate;
-        // FIR leading exact zeros shift content; the kernel length extends it (convolution output is content).
+        // FIR leading exact zeros shift content and N − 1 kernel samples extend it (convolution output is content), both
+        // converted from processor to record samples.
         double firShiftSamples = 0;
         double firTailSamples = 0;
         if (chain.Fir is { } fir && processorSampleRate > 0)
@@ -1732,7 +1733,7 @@ public static class VirtualCrossoverAnalysis
             throw new ArgumentException("The search window is invalid.");
         }
 
-        // Content must land on the plateau: a fade that would reach an early front shrinks.
+        // The window opens one fade before the front so content lands on the plateau; a front within a fade of sample 0 shrinks the fade.
         int gateSamples = AlignmentGateSamples(sampleRate, minFrequencyHz);
         int fadeSamples = AlignmentGateFadeSamples(sampleRate, minFrequencyHz);
         int length = AlignmentFftLength(sampleRate, minFrequencyHz);
@@ -1878,7 +1879,8 @@ public static class VirtualCrossoverAnalysis
         return bins;
     }
 
-    /// <summary>A weaker channel deeper than this under the in-band peak is roll-off tail or residue.</summary>
+    /// <summary>A weaker channel deeper than this is roll-off tail or residue: under the in-band combined peak for the overlap,
+    /// under the stronger side in its own bin for the delay-evidence gate.</summary>
     private const double OverlapReliabilityGateDb = 30;
 
     /// <summary>Octaves of the pair band shared at comparable level (gated ∫ 2·min/sum over log f). Level balance, not SNR;

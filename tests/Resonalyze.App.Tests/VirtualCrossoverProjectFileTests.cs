@@ -9,7 +9,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V7Project_MovesTheChannelAllPassIntoThePeqBank()
     {
-        // v7 all-pass stage migrates to a v8 PEQ band: 2nd order keeps Q, 1st order stores 1.0, no stage adds nothing.
+        // v7 all-pass stage migrates to a v8 PEQ band: 2nd order keeps Q, 1st order stores 1.0, no stage adds no band.
         string root = CreateTemporaryDirectory();
         try
         {

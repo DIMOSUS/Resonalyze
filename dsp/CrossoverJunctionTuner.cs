@@ -463,7 +463,7 @@ public static class CrossoverJunctionTuner
         return result;
     }
 
-    /// <summary>Adds the low-pass where there was none; everything else unchanged.</summary>
+    /// <summary>Replaces the low-pass, adding it where there was none; everything else unchanged.</summary>
     public static DspChannelChain WithLowPass(DspChannelChain chain, CrossoverEdge lowPass)
     {
         ArgumentNullException.ThrowIfNull(chain);

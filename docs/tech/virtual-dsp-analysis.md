@@ -48,8 +48,10 @@ array does not have to re-run the chain:
 
 - The delay is signed. A positive delay shifts content right (silent prefix); a negative one
   shifts it left, so content ends earlier and the vacated tail is manufactured silence.
-- A FIR stage shifts content by its leading exact zeros and extends it by the kernel length —
-  what the convolution writes after the input's end is filter output, i.e. content.
+- A FIR stage shifts content by its leading exact zeros and extends it by N − 1 kernel samples —
+  what the convolution writes after the input's end is filter output, i.e. content. The kernel
+  is stated at the processor rate, so both figures are scaled by recordRate / processorRate
+  (the tail end is rounded up).
 - The measurement's own quiet regions (leading silence, an anechoic tail inside the input) stay
   in the range: they are recorded silence, not padding.
 - A delay that pushes the whole input out of the record yields an unknown range.
@@ -94,7 +96,8 @@ junction losses on real measurements.
   filter). FIR kernels compare by reference: the same loaded instance is the same filter.
 - Snapshotting detaches only the mutable PEQ and copies the rest with `with`. Member-by-member
   copying once silently dropped the all-pass stage from the processed path.
-- The processing rate is captured in `ProcessedChannel` / `VirtualCrossoverProcessedChannel`.
+- The response's sample rate (the measurement's record rate) is captured in `ProcessedChannel` /
+  `VirtualCrossoverProcessedChannel`.
   A session import rebinds channels on the UI thread while renders are in flight; reading the
   rate back off the live channel read zero and crashed with `ArgumentOutOfRangeException`.
   `MeasuredBand` and the microphone calibration are snapshotted per side for the same reason:
@@ -122,7 +125,8 @@ front and its fade-in attenuates one member's rise more than the other's.
 ## Magnitude curves and the shared window
 
 `VirtualCrossoverMetrics.BuildCurves` gates every channel and the sum with one anchor (the
-earliest start). Per-channel anchors capture different room content, the drawn Sum stops being
+earliest start; a gate offset pinned in the dialog replaces it and is shared just the same).
+Per-channel anchors capture different room content, the drawn Sum stops being
 the vector sum of the drawn curves and the loss can exceed its 0 dB ceiling. The summed
 envelope peak can sit between arrivals or vanish under cancellation, so it is not used. The
 magnitude always reads the fixed gate; FDW would need per-channel windows, so FDW shapes only
@@ -581,8 +585,8 @@ lower channel) and the current phase score.
   tooltip figure: a difference of scores has no scale a reader can judge.
 - Polarity slot: "i" recommends flipping, "~" flags a near-tie (inversion and half-period delay
   sum alike, common at subwoofer junctions), blank means clearly right.
-- Junctions below `JunctionPhaseAlignment.MinimumAlignableScore` dash fix and polarity: the best
-  delay is the least bad of bad alignments. φ is dashed below `MinimumPhaseConsistency`.
+- Junctions below `JunctionPhaseAlignment.MinimumAlignableScore` dash the fix and blank the
+  polarity and "!" slots: the best delay is the least bad of bad alignments. φ is dashed below `MinimumPhaseConsistency`.
 - The score column (−1..+1) moves while dragging a delay and answers "is it getting better",
   which the fix alone cannot.
 - Signed values use three format sections: since .NET Core 3.0's signed-zero change a negative

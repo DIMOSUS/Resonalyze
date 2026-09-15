@@ -114,7 +114,7 @@ frame count.
   a busy CPU only thins the display rate.
 - A redraw clones the accumulators under the data lock and rebuilds the display curve, which is worth
   doing once per analysis **frame**, not every tick. With spatial-average frame lengths (683 ms at
-  32768 samples and 48 kHz) a frame lands once in about forty ticks; the rest would clone a quarter of a
+  32768 samples and 48 kHz, no overlap) a frame lands once in about twenty 33 ms ticks; the rest would clone a quarter of a
   megabyte to an identical curve while contending with the audio thread. `lastDrawnFrameCount` lets such
   ticks skip. Notices still update every tick: an overload is a shortage of frames.
 - `RebuildModel` prefers a freshly computed snapshot (accumulators survive a stop) so a scale switch
@@ -157,7 +157,8 @@ version story.
   window resolves 2/T Hz whatever the rate). `IntegratedSeconds` is the honest measure of a walk (ten
   seconds and ninety seconds along one path are different measurements). `SplAnchorOffsetDb` may be null:
   a set is levelled against the impulse responses by one offset anyway; null only means captures from
-  different analyzer sessions cannot be mixed. `CaptureSessionId` is persisted for future set checks.
+  different analyzer sessions cannot be mixed. `CaptureSessionId` is what `JudgeSet` compares for that
+  one-session rule.
 - **Corrections stored both ways** — as recipe fields and as applied per-point arrays — so a reader that
   cannot reproduce the pipeline can still undo exactly what was applied:
   - `TiltCompensationDb`;

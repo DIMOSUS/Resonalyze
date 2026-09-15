@@ -207,7 +207,7 @@ internal sealed class VirtualCrossoverDspChainPlot
             OxyColor.FromRgb(200, 130, 255));
 
         // PHAT: full-record comb; PHAT direct: driver wavefronts (polarity witness); scores: the searched surface.
-        // The raw correlation was dropped: it follows whatever the cabin plays loudest.
+        // No raw amplitude-weighted correlation: it follows whatever the cabin plays loudest.
         AddCorrelationSeries(
             model, "PHAT", data.Whitened,
             OxyColor.FromRgb(79, 195, 247), CoefficientAxisKey,

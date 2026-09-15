@@ -53,7 +53,7 @@ transform of the analog prototype prewarped at the corner, so `|B|² = 1/(1 + r^
 `r = tan(πf/fs)/tan(πfc/fs)`, and LR of order 2n is that Butterworth squared, `|LR| = 1/(1 + r^(2n))`. This
 allows orders no section list carries. The high-pass uses the inverted ratio rather than `r^(2n)/(1 + r^(2n))`,
 which becomes ∞/∞ once a 96 dB/oct ratio overflows. Bessel has no closed form and is read off its sections,
-built once per design rather than per bin (a quarter million bins).
+built once per design rather than per bin (half the grid, at least 131 073 bins).
 
 `WorstDeviationDb` compares a kernel with the target only where the target is above a floor (−30 dB default):
 below it the target heads to −∞ and any finite kernel misses by an unbounded, meaningless amount.

@@ -90,7 +90,7 @@ median over the working band; the **recipe** is the fact and decides.
 - *Recipe must match* (`LiveCaptureRecipe.MatchesSetOf`): the corrections are curves whose shape
   depends on frame length, window and rate together. Two recipes can differ mostly in the bass and
   still land on a similar median, so the spread warning may not notice. `DescribeSetMismatch` names
-  the field (for example "32768 vs 65536") rather than just saying the captures disagree.
+  the field (for example "frame length (65536 against 32768)") rather than just saying the captures disagree.
 - *Levels must be comparable:* one analyzer session (one input gain), or every capture carrying an
   absolute SPL anchor.
 - *Not compared:* the protective high-pass (it describes the channel's hardware path, a tweeter has
@@ -201,8 +201,9 @@ capture always looks like), so "as measured" collapsed into "uncalibrated".
   equality compares the curve by reference, and a calibration re-read from its file would spuriously
   refuse a returning tune.
 
-In the panel, `SpatialAverageCalibrationFor` supplies the channel's "Own (as measured)" curve; for a
-single-file capture the swap is exact and usually a no-op.
+In the panel, `SpatialAverageCalibrationFor` returns *Own* under "Own (as measured)" (the capture's own
+correction, not the side's measurement file) and otherwise *Specific* with the panel's curve; for a
+single-file capture that swap is exact.
 
 ## Hybrid sum
 
@@ -235,15 +236,16 @@ has removed it. Captures normally stop below the protective high-pass, far under
 floor is rarely reached; when it is, a break is honest, while continuing would sum one set of sources
 and present it as the whole.
 
-`BuildHybridMagnitudes` is all-or-nothing per redraw: a channel failing to yield a curve would sum a
-spatial average against a point measurement. For efficiency each channel is built unsmoothed once and
+`BuildHybridMagnitudes` is all-or-nothing per redraw for a moving-microphone set: a channel failing to
+yield a curve would sum a spatial average against a point measurement. In an array set such a channel
+falls back to its point response and is flagged in `PointMeasuredChannels`. For efficiency each channel is built unsmoothed once and
 smoothed locally, since the shared builder's last step is that same smoothing.
 
 ## Level read-outs
 
 In hybrid mode the Δ L−R read-out (`HybridStereoLevelReader`) and the "vs Front" rows
 (`HybridGroupLevelReader`) read levels from the spatial averages through their chains. Both follow
-the hybrid **intent plus coverage**, not the current Show view (`HybridRequested`): a level that
+the hybrid **intent plus coverage** (the tick and the set verdict), not the current Show view: a level that
 changed basis when the user glanced at the phase view would read as two imbalances in one tune.
 
 - **Δ L−R** compares across sides, so it requires both sides to form one set (the same check as the
@@ -263,7 +265,7 @@ changed basis when the user glanced at the phase view would read as two imbalanc
   NaN is absence (the crossover removed the driver); inside it the capture has nothing to say about a
   playing driver and the group point becomes a gap, since summing the rest would quote part of the
   group as all of it. A finite value counts wherever it sits (a skirt is a real contribution). A
-  bypassed member's band is its full measured range, because its idle crossover corners say nothing
+  bypassed member's band is the full 20 Hz–20 kHz range, because its idle crossover corners say nothing
   about where it plays; reading them turned "the capture does not know" below an idle high-pass back
   into "the driver is absent". Bypassed members reach grouped read-outs with their raw signal (unlike
   the stereo block, which skips bypassed pairs).

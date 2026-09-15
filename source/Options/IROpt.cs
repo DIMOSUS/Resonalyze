@@ -131,7 +131,7 @@ namespace Resonalyze.Options
             double[] centres = active && octaves < OctaveBand
                 ? ThirdOctaveCentres
                 : OctaveCentres;
-            // Only bands below Nyquist (symmetric in octaves); same rule as ImpulseResponseOptions.HasBandFilter.
+            // Only bands whose whole octave-symmetric passband fits under Nyquist; same rule as ImpulseResponseOptions.HasBandFilter.
             if (active && sampleRate > 0)
             {
                 double[] realizable = centres

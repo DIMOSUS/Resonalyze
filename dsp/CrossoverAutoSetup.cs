@@ -100,7 +100,7 @@ public static class CrossoverAutoSetup
 
     private const int CrossoverSlopeDbPerOctave = 24;
 
-    /// <summary>Slopes steeper than 24 dB/oct whose peak group delay exceeds this are excluded; 24 dB/oct is always admitted. See docs/tech/crossover-auto-setup.md#group-delay-budget.</summary>
+    /// <summary>Slopes whose peak group delay exceeds this are excluded; the family's gentlest practical slope (12 dB/oct) is always admitted. See docs/tech/crossover-auto-setup.md#group-delay-budget.</summary>
     public const double MaxCrossoverGroupDelaySeconds = 0.010;
 
     /// <summary>Floor for the tweeter Fs estimate; the high-pass must reach <see cref="TweeterFsAttenuationTargetDb"/> at Fs. See docs/tech/crossover-auto-setup.md#tweeter-resonance-floor.</summary>

@@ -49,7 +49,8 @@ the safe direction):
   100+ dB below the peak (on a clean cabin sweep up to a third of the record near −140 dB). The quartile
   would land entirely in it (an envelope showing ~65 dB SNR read 123). The reported noise is measured only
   over samples within `DeconvolutionFloorDropDb` = 100 dB of the peak, the same intent as the Auto-delay
-  `ValidSampleRange` crop (where this bound is a no-op). `FindPeak` gates on max(noise, −25 dB below peak),
+  `ValidSampleRange` crop (where this bound is a no-op). `FindPeak` gates on max(noise floor + minimum SNR,
+  threshold below the peak; defaults 12 dB and 25 dB),
   so the tail never affects the arrival.
 
 ## Pre-ringing sidelobes
@@ -63,8 +64,8 @@ candidates against the known kernel:
   envelope at d (`KernelRingLevel`, from `AnalysisKernelEnvelope`; without a kernel, the Hilbert skirt's
   2/(πn), the delta worst case). Above that ceiling with a 6 dB superposition margin
   (`SidelobeLevelMarginRatio` = 2) the candidate cannot be pre-ring and is genuine.
-- **Mirror.** At or below the ceiling, the candidate is a sidelobe if an equal lobe exists at the mirrored
-  position after the peak; decay and reflections only add late energy, so the mirror cannot hide a lobe. The
+- **Mirror.** At or below the ceiling, the candidate is a sidelobe if the mirrored position after the peak
+  holds at least half its level (`SidelobeSymmetryRatio` = 0.5; an even kernel puts an equal lobe there); decay and reflections only add late energy, so the mirror cannot hide a lobe. The
   mirror is the max over a small neighbourhood (the integer peak index is up to half a sample off), clamped
   so it never touches the peak's own lobe.
 - Candidates are walked latest to earliest; every accepted (and every dwarfed) candidate becomes a sidelobe
@@ -85,7 +86,7 @@ so the walk never comes back empty):
   −20 dB against a per-peak ring ceiling of −24.7 dB), whose micro-ripples are a few hundredths of a dB
   proud. No single-peak ceiling prices that shelf, since it is the sum of every later skirt; the rise test
   reads it directly. The approach span (`ApproachSpanSamples`) is the kernel core out to where its envelope
-  has decayed by the window level, so it scales with the band's rise time; never shorter than one packet.
+  has decayed to `ApproachWindowKernelLevel` = 0.1 of its peak, so it scales with the band's rise time; never shorter than one packet.
 - **Rises within its packet** (`RisesWithinItsPacket`): the candidate must reach `ArrivalPacketRiseRatio` =
   25 % (−12 dB) of its packet's peak. Leading edges carry interference structure; a comb null just before the
   front leaves a bump above threshold, and taking it reports ripple-dependent time: identical drivers in

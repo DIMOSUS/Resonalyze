@@ -5,7 +5,7 @@ namespace Resonalyze;
 
 internal static class PlotAxisFit
 {
-    /// <summary>Frequency axes get no margin: 20 Hz-20 kHz is the data.</summary>
+    /// <summary>Vertical axes only; horizontal (frequency/time) axes get no margin: 20 Hz-20 kHz is the data.</summary>
     private const double ValueAxisMarginFraction = 0.05;
 
     /// <summary>Axes that refuse zoom (pinned by a mode) are left alone.</summary>

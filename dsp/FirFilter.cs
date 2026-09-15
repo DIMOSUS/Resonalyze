@@ -6,7 +6,7 @@ namespace Resonalyze.Dsp;
 /// <remarks>Reference equality on purpose: the render cache keys on the loaded instance.</remarks>
 public sealed class FirFilter
 {
-    /// <summary>1.4 s at 96 kHz; the record is padded by the kernel length, so this bounds the FFT.</summary>
+    /// <summary>1.4 s at 96 kHz; the record is padded by the kernel tail (up to 4·(N − 1) at 192 kHz record / 48 kHz processor), so this bounds the FFT.</summary>
     public const int MaximumTaps = 131_072;
 
     private readonly double[] taps;

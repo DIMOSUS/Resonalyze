@@ -2,7 +2,7 @@ using NAudio.Wave;
 
 namespace Resonalyze.Audio;
 
-/// <summary>Built lazily per routing: a measurement uses one, and eager packing kept four large PCM copies alive.</summary>
+/// <summary>Built lazily per routing: a measurement uses one, and eager packing would keep four large PCM copies alive.</summary>
 internal sealed class PcmStreamSet : IDisposable
 {
     private static readonly int ChannelModeCount =

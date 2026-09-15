@@ -1190,7 +1190,7 @@ namespace Resonalyze.Dsp
                 (extractionStart + result.PeakDelaySamples) * toMilliseconds);
         }
 
-        // Always-on: bridges single-bin interference nulls without changing the visible curve.
+        // Used when display smoothing is off: bridges single-bin interference nulls without changing the visible curve.
         private const double GroupDelayStabilizationOctaves = 1.0 / 48.0;
 
         // Smoothing never narrows below the window's resolution (1/T). See docs/tech/phase-and-group-delay.md#group-delay-smoothing.
@@ -1264,7 +1264,7 @@ namespace Resonalyze.Dsp
                 highestMeasuredFrequencyHz: double.PositiveInfinity);
         }
 
-        /// <summary>Curves over a prebuilt pair; <paramref name="settings"/> must carry the window geometry the pair was analysed through.</summary>
+        /// <summary>Curves over a prebuilt pair; <paramref name="settings"/> must carry the window geometry the pair was analysed through (its offset is ignored: <paramref name="extractionStart"/> sets the time reference).</summary>
         public static GroupDelayCurveSet GetGroupDelayCurves(
             GroupDelaySpectra spectra,
             int extractionStart,

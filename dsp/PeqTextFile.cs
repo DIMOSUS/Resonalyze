@@ -129,7 +129,7 @@ public static class PeqTextFile
         return recognized;
     }
 
-    // Gain may be absent only on an all-pass; Q only on a plain LS/HS.
+    // Gain may be absent only on an all-pass; Q only on a shelf (read at DefaultShelfQ).
     private static bool TryParseFilter(string[] tokens, out PeqBand band)
     {
         band = default;

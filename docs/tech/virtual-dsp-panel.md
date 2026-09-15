@@ -232,8 +232,9 @@ The host shows one warning line (`WarningChanged`), chosen in this order:
 4. A chosen calibration not applied to part of the plot.
 5. Own-calibration mismatch between channels.
 6. Point-measured fallbacks inside a hybrid (neutral info colour; nothing is wrong).
+7. Crossover spread (red, see below); with none of these the line is hidden.
 
-The crossover-spread warning (red) is separate, see below. Warnings are hidden on an empty group view,
+Warnings are hidden on an empty group view,
 since they would describe channels the user can no longer see.
 
 ### Hybrid spread thresholds
@@ -321,7 +322,7 @@ lists positionally but keeps the set offset and datums, which describe the captu
 on one axis; it is pure and internal because an off-by-one slice would draw a plausible wrong curve. Colours
 are semantic per zone. The target is drawn here too (a rear fill's level against the house curve). Picking
 Groups moves the view radio to Magnitude visibly (there is no group phase or impulse), and the
-phase/GD/impulse radios are muted while it is selected.
+phase, group delay, impulse and step radios are muted while it is selected.
 
 ### Junction phase read-out
 

@@ -15,6 +15,7 @@ internal sealed record ProcessedChannel(
     ValidSampleRange ValidRange = default,
     // Snapshotted per side: the list can carry the opposite side's responses.
     MeasuredBand MeasuredBand = default,
+    // This side's measurement calibration; null when its file named none or the path does not care (panel selection applies).
     CalibrationFile? MicrophoneCalibration = null);
 
 /// <summary><see cref="Unsmoothed"/> is the sum-loss operand; smoothing before the division invents corner dips.</summary>
@@ -39,8 +40,8 @@ internal sealed record GatedMagnitude(AnalysisCurve Display, AnalysisCurve Unsmo
                 });
 }
 
-/// <summary>One side's complex sum, its window anchor and its channels. The channels are the OPPOSITE side's responses:
-/// read their state for this sum's side, not the channel's active one.</summary>
+/// <summary>One side's complex sum, its window anchor and its channels. The channels hold THIS sum's side, which may not be
+/// the channel's active one: read their state for this side.</summary>
 internal sealed record VirtualCrossoverSideSum(
     Complex[] ImpulseResponse,
     int AnchorIndex,

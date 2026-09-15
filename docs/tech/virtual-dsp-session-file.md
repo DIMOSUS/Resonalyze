@@ -26,8 +26,8 @@ Code lives in `source/Tools/VirtualCrossover/`:
 validation rejects them, `LoadOrDefault` moves the file to `.backup` and starts fresh, `LoadFrom` throws.
 
 Legacy payload properties (`Channels`, `LegacyEnabled`, `LegacyAllPassType`, `LegacyPhaseGateOffsetMs`,
-`CalibrationMode`, …) exist only so old files deserialize; they are nullable to tell "absent" from a value, and
-only `Migrate` reads them.
+`CalibrationMode`, …) exist only so old files deserialize; the scalar ones are nullable to tell "absent" from a
+value, and only `Migrate` reads them.
 
 - **v1 → v2**: single-sided channels become the LEFT side of a pair (historical measurements were the user's
   only side); the right side starts empty.
@@ -46,8 +46,8 @@ only `Migrate` reads them.
   (AP1/AP2). The band realizes the same biquad bit for bit (pinned by `AllPassBandTests`). The legacy type is
   stored as a string, not the enum, because an unknown enum name would throw during deserialization, before
   `Migrate` could tolerate it; an unreadable type or bad numbers degrade to "no all-pass". A side whose bank
-  already held the full 32 bands loses its last bell rather than the all-pass: a bell is a magnitude
-  correction Auto Tune can propose again, while the all-pass sits on a junction aligned by ear. The count
+  already held the full 32 bands loses its last gain-bearing band rather than the all-pass: that band is a
+  magnitude correction Auto Tune can propose again, while the all-pass sits on a junction aligned by ear. The count
   (`migratedFullBanks`) is reported once via `MigrationNoticeText`.
 - **v8 → v9**: every block gets a `Zone` (front/rear/centre/sub), guessed from the mono flag and filter.
   Nothing else changes, so a wrong guess costs one combo box; guessing beats leaving everything Front, where a
@@ -58,7 +58,7 @@ only `Migrate` reads them.
 - **v10 → v11**: the FIR stage, bumped for the same reason.
 - **Always**: the stereo scene's wire sign and layout flag are re-aligned (see [Stereo scene](#stereo-scene)).
 
-`MigrationNoticeText` lists what a load had to drop — full-bank all-passes, and phase rotations or FIR kernels
+`MigrationNoticeText` lists what a load had to drop — bands given up to a migrated all-pass, and phase rotations or FIR kernels
 cleared because the named processor has no such control (reachable only by a hand-edited file, but a silently
 dropped filter is exactly what the notice exists to prevent).
 
@@ -79,7 +79,8 @@ build ignores them. Patterns used repeatedly:
   `ShowSumCurveStep` inherits the magnitude answer (the impulse view draws no Sum).
 - **Null resolves at read time**: `SpatialAverageMode`, `DspProcessorPhaseControl`, `DspProcessorFirFilters`
   are null until the user chooses; the choice is then stored and stops being guessed. A project whose
-  measurements carry arrays reads them without the user finding a menu.
+  measurements carry arrays reads them without the user finding a menu. `SpatialAverageMode` is also stored
+  as soon as the panel has a capture to guess from, so a later measurement cannot flip it.
 - **Empty stored as absent**: `AiNotes` (installation notes sent with every Copy for AI package) so a session
   that never had notes serializes byte for byte as before.
 - **Sum loss window**: `LossWindow` is null in files before the selector. `SumLossWindowMode` then answers
@@ -88,8 +89,8 @@ build ignores them. Patterns used repeatedly:
   be set by hand, and it always meant the steady-state curve, so switching it to the direct read would change
   the meaning of a number the user chose to watch. `ShowLossCurve` is still written so flag-only builds agree.
 - `GroupView` defaults to `FrontAndSub`, which draws exactly what pre-group files always drew.
-- `ShowHybridCurves` is stored with the captures it needs, but dropped on load when a playing channel no longer
-  has an average, so a session whose captures went missing opens honest.
+- `ShowHybridCurves` is stored with the captures it needs. The tick is intent and survives a load even when a
+  playing channel no longer has an average; the hybrid is then simply not drawn, so the session still opens honest.
 
 ## Source paths
 
@@ -104,8 +105,8 @@ tries, in order:
 1. The stored path, if it still exists.
 2. The path relative to the exporting session's folder (`Relativize`). This reproduces the original layout
    exactly, including sibling folders (`..\v4\mid.json`), which no search under the session folder can reach.
-3. The stored path's tails, longest first (`v5\left\woofer.json`, `left\woofer.json`, `woofer.json`), up to
-   `MaximumTailDepth` = 6 dropped folders. Longest first because the number of agreeing components is the only
+3. The stored path's tails, longest first (`v5\left\woofer.json`, `left\woofer.json`, `woofer.json`), at most
+   `MaximumTailDepth` = 6 components long (the file name plus five folders). Longest first because the number of agreeing components is the only
    evidence a tail match has: a tree holding both `left\woofer.json` and a different `woofer.json` would
    otherwise swap two measurements of the same rate silently. This is also the only route for sessions
    exported without relative paths. Collection stops at the drive/UNC root.
@@ -152,6 +153,7 @@ therefore decides by curve content (`CalibrationFile.SameCurve`):
 - **Imported**: any configured entry with the same curve is selected under its local id. Otherwise the curve
   is offered as the session's own item (`SessionId`, never written — its persisted form is the curve without
   an id), with notice `CarriedBySession`; `SessionCalibrationFiles` names the file and entry if the user keeps it.
+  An autosave whose curve names no configured entry lands on the same item, without the notice.
 - An id with no curve (pre-curve sessions): a generated id cannot be minted twice, so it proves the same
   machine; a slot id matches by name only (`MatchedBySlotName`). If the entry is absent the previous selection
   is kept (`KeptPrevious`) rather than replaced with nothing.
@@ -213,7 +215,7 @@ twice.
 A FIR crossover's corners are where the kernel *cuts*, not where it was designed: taps designed at one rate and
 run at another scale every frequency by the ratio, so a 48 kHz design on a 96 kHz processor cuts an octave
 higher until rebuilt (the block's FIR button is red meanwhile). Corners are scaled by `FirRunSampleRateHz`
-(stamped by the panel, not stored) over the design rate. Only the corner frequencies of the returned spec are
+(stamped by the panel, not stored) over the design rate; before a stamp they are the design's own. Only the corner frequencies of the returned spec are
 meaningful; when neither crossover exists the kind is Off and the edges are returned only to avoid nulls.
 
 Both IIR edges are validated even when the kind ignores them, because the UI shows them greyed out and they must
@@ -256,7 +258,7 @@ does). `StereoRightHandDrive` is kept explicitly so a zero offset still remember
 the timing reference, right leads by the offset), true = RHD (mirrored).
 
 A zero RHD offset still needs a negative sign, but IEEE −0.0 neither compares below zero nor survives a decimal
-round-trip. It is written as `RhdZeroOffsetMarkerMs` = −0.001 ms: a tenth of the UI's 0.01 ms grid and a
+round-trip. It is written as −`RhdZeroOffsetMarkerMs` (the constant is +0.001 ms; `SetStereoScene` applies the sign): a tenth of the UI's 0.01 ms grid and a
 twentieth of a sample at 48 kHz, inaudible to old builds and read back as zero by
 `StereoSceneOffsetMagnitudeMs`. The UI cannot produce a genuine 0.001 ms offset, so the marker is unambiguous.
 All in-app writes go through `SetStereoScene`. `Migrate` re-aligns files carrying only one of the two: the sign is

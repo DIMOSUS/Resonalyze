@@ -202,7 +202,7 @@ public sealed class AllPassFilterTests
     [Fact]
     public void CornerGroupDelay_ReadsTheClampedCorner_NotTheRequestedOne()
     {
-        // A corner at/above Nyquist is clamped, not off: the readout must follow the section (the old guard said 0 ms).
+        // A corner at/above Nyquist is clamped, not off: the readout must follow the section, not report 0 ms.
         const double sampleRate = 48_000;
         var atNyquist = new AllPassSpec(AllPassType.SecondOrder, 24_000, 20.0);
         var atTheClamp = new AllPassSpec(

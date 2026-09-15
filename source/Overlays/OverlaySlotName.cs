@@ -1,6 +1,6 @@
 namespace Resonalyze;
 
-/// <summary>Strips only the generated "Overlay {slot}: " prefix for this slot; user-typed titles stay intact.</summary>
+/// <summary>Strips only this slot's generated "Overlay {slot}:" prefix (or a legacy bare "{slot}:"); user-typed titles stay intact.</summary>
 internal static class OverlaySlotName
 {
     /// <summary>An occupied slot keeps its (possibly renamed) name; an empty one gets the automatic form.</summary>

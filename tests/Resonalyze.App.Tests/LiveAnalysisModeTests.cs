@@ -156,7 +156,7 @@ public sealed class LiveAnalysisModeTests
     [Fact]
     public void LegacySplScale_MigratesToRtaMode()
     {
-        // Before the split dB SPL was reachable only as an RTA.
+        // Before the split dB SPL was reachable only as an RTA, so a legacy file with the SPL scale is an RTA session.
         var legacy = new MeasurementSettingsFile.LiveSpectrumSettings
         {
             MagnitudeScale = MagnitudeScale.SoundPressureLevel,

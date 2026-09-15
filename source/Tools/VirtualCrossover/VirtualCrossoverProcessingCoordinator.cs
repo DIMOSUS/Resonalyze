@@ -497,7 +497,7 @@ internal sealed class VirtualCrossoverChannelSnapshot
         Source = source;
         SampleRate = sampleRate;
         ProcessorSampleRate = processorSampleRate;
-        // Only the mutable PEQ is detached; `with` carries every other stage (member-wise copying once dropped a stage).
+        // Only the mutable PEQ is detached; `with` carries every other stage (member-wise copying silently drops a forgotten one).
         Chain = chain.Peq == null
             ? chain
             : chain with { Peq = new EqualizationCurve(chain.Peq.Bands, chain.Peq.PreampDb) };
@@ -534,7 +534,7 @@ internal sealed class VirtualCrossoverProcessingSnapshot
     public IReadOnlyList<VirtualCrossoverChannelSnapshot> Channels => channels;
 }
 
-// Rate the response was processed at; never read it off the live channel (see ProcessedChannel).
+// SampleRate is the measurement's (record) rate, captured with the result; never read it off the live channel (see ProcessedChannel).
 internal sealed record VirtualCrossoverProcessedChannel(
     int Id,
     Complex[] ImpulseResponse,

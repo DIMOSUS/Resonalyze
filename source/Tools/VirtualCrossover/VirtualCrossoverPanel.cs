@@ -3125,7 +3125,6 @@ public partial class VirtualCrossoverPanel : UserControl
                 revision,
                 includePair: pair =>
                     VirtualCrossoverGroupViews.IsShown(groupView, pair.Zone),
-                // See HybridStereoLevelReader for why this is not HybridRequested.
                 hybridLevelDeltaDb: HybridStereoLevelReader());
         // Quoted by cross-group views instead of a loss; adds only arrival FFTs.
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas =
@@ -3245,8 +3244,6 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // While a session loads, processed is empty; keep the loading note instead of the no-sources hint.
-
     private static List<ProcessedChannel> ChannelsShownBy(
         IReadOnlyList<ProcessedChannel> processed,
         VirtualCrossoverGroupView view) =>
@@ -3265,6 +3262,7 @@ public partial class VirtualCrossoverPanel : UserControl
         Environment.NewLine +
         "Set a block's Zone to bring it into this view.";
 
+    // While a session loads, processed is empty; keep the loading note instead of the no-sources hint.
     private AcousticRender BuildAcousticRender(
         List<ProcessedChannel> processed,
         IReadOnlyList<ProcessedChannel> summed,
@@ -3794,7 +3792,7 @@ public partial class VirtualCrossoverPanel : UserControl
         UpdateCrossoverWarning(processed);
     }
 
-    /// <summary>Allowed disagreement (dB) of a moving-mic set's per-channel offsets before flagging.</summary>
+    /// <summary>Allowed disagreement (dB) of a spatial-average set's per-channel offsets before flagging; per mode.</summary>
     /// <remarks>See docs/tech/virtual-dsp-panel.md#hybrid-spread-thresholds.</remarks>
     private double HybridSpreadWarningDb =>
         SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
@@ -4510,8 +4508,8 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        // The centre is read against both front sums and placed at the midpoint; the readings should differ by the
-        // scene offset, so a disagreement is reported, not averaged.
+        // The centre is read against one reference per side (ChooseCentreReferences: peer drivers, else each side's own
+        // content) and placed at the midpoint; the readings should differ by the scene offset, so a disagreement is reported, not averaged.
         List<VirtualCrossoverSideAlignmentChannel> centreMembers = [.. later.Where(item =>
             VirtualCrossoverAlignmentStages.StageOf(item.Runtime.Pair.Zone) ==
                 VirtualCrossoverAlignmentStage.Center)];
@@ -4940,7 +4938,7 @@ public partial class VirtualCrossoverPanel : UserControl
         throw new InvalidOperationException(message);
     }
 
-    // Walks down on the 0.01 ms grid: the dialable span is not monotone in the fill. Null when a zero fill does not fit either.
+    // Walks down on the 0.01 ms grid: the dialable span is not monotone in the fill. Null when no fill is in play or a zero fill does not fit either.
     private static double? LargestFittingRearFill(
         IReadOnlyDictionary<IAlignmentChannel, double> raw,
         IReadOnlyCollection<IAlignmentChannel>? carriers,
@@ -4994,7 +4992,7 @@ public partial class VirtualCrossoverPanel : UserControl
         AutoDelaySumLossForecast? sumLoss = null;
         await Task.Run(() =>
         {
-            // An unstaged project makes this exactly the old engine call.
+            // An unstaged project puts every participant in the chain, so this is the plain unstaged engine call.
             (List<VirtualCrossoverChannel> chain, List<VirtualCrossoverChannel> later) =
                 SplitAlignmentStages(participants);
             AlignmentReprocessor reprocessor = ComputeAutoAlignment(
@@ -5821,7 +5819,6 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // Anchor and gate recomputed as pure functions of the processed set and snapshot, so they match the measured Sum.
-    // Raw curves anchor on their own START; see docs/tech/virtual-dsp-panel.md#raw-curve-anchor.
     private List<SignalPoint>? BuildActiveHybridSumCurve(
         List<ProcessedChannel> processed,
         List<AnalysisCurve> magnitudes,
@@ -5845,6 +5842,7 @@ public partial class VirtualCrossoverPanel : UserControl
             magnitudes.Select(curve => (IReadOnlyList<SignalPoint>)curve.Points).ToList());
     }
 
+    // Raw curves anchor on their own START; see docs/tech/virtual-dsp-panel.md#raw-curve-anchor.
     private AnalysisCurve BuildRawMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,

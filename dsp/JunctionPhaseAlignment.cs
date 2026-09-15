@@ -8,8 +8,8 @@ namespace Resonalyze.Dsp;
 /// <param name="CurrentScore">Σw·cos(Δφ)/Σw in -1..1 at current settings; not the γ² coherence.</param>
 /// <param name="PhaseAtCrossoverDeg">Lower minus upper at fc, ±180°, local circular mean (not the fit intercept). ±180° does not settle polarity; <paramref name="BestInvert"/> does.</param>
 /// <param name="PhaseConsistency">Mean resultant length R; below <see cref="JunctionPhaseAlignment.MinimumPhaseConsistency"/> φ is not shown; 0 = no energy near fc (φ is then the fit intercept).</param>
-/// <param name="BestExtraDelayMs">Extra delay on the LOWER channel; negative means delay the upper one instead.</param>
-/// <param name="RivalExtraDelayMs">Nearest same-polarity rival lobe (whole-period hop), or null.</param>
+/// <param name="BestExtraDelayMs">Extra delay on the LOWER channel, relative to current settings, at the <paramref name="BestInvert"/> polarity; negative advances it (a positive delay on the upper one when the lower is at 0).</param>
+/// <param name="RivalExtraDelayMs">Highest-scoring same-polarity local optimum at least 0.4 period from the best (whole-period hop), or null.</param>
 /// <param name="FitDelayMs">Lobe-blind slope delay; positive = lower channel later.</param>
 public sealed record JunctionPhaseResult(
     double CurrentScore,
@@ -48,7 +48,7 @@ public static class JunctionPhaseAlignment
     // Closer same-polarity bumps are texture of the same lobe, not a rival.
     private const double RivalMinimumSeparationPeriods = 0.4;
 
-    /// <summary>Flip advantage needed to recommend inversion; within it polarity is shown AMBIGUOUS (low-f inversion and half-period delay tie to ~0.001).</summary>
+    /// <summary>Flip advantage needed to recommend inversion; within it polarity is shown AMBIGUOUS (on a real 80 Hz sub junction inversion and half-period delay came within ~0.001).</summary>
     public const double PolarityFlipAdvantage = 0.05;
 
     // ±1/6 octave around fc; 1/12 to 1/3 octave agreed within a few degrees in the field.

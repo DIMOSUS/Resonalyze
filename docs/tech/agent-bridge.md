@@ -156,10 +156,12 @@ persisted: a reopened session cannot vouch for what an earlier one copied.
 - `summary` and `reason` are wanted, not required: refusing over missing prose costs a chat round
   trip. Blank equals missing, and the review says the prose is absent. Only blanks within length
   limits collapse, so an over-limit string is still refused.
-- Enum names must match the published names exactly (`TryParseName`), because `Enum.TryParse` would
-  also accept other casing and numeric strings.
-- `MaxJsonDepth` is 12: a probe variant carries a PEQ bank two levels deeper than a settings
-  operation's (root, operations, operation, variants, variant, changes, change, peq, bands, band).
+- Enum names are left as strings here; the review matches them against the published names exactly
+  (`AgentOperations.TryParseName`), because `Enum.TryParse` would also accept other casing and
+  numeric strings.
+- `MaxJsonDepth` is 12: a probe variant's PEQ band is the deepest thing the protocol describes, ten
+  levels down (root, operations, operation, variants, variant, changes, change, peq, bands, band),
+  four below a settings operation's band.
 
 ## Review rules
 
@@ -192,8 +194,9 @@ Value rules:
 Set rules, applied after per-row checks:
 
 - Two applicable edits of the same parameter on one channel are both refused; neither wins.
-- Each engine runs once per import; the first request is kept. Probes are exempt (a second probe is
-  another question) and bounded by budgets instead.
+- Each engine runs once per scope per import (per channel for Auto-tune, per junction for the
+  junction tune, once for the project-wide engines); the first request is kept. Probes are exempt (a
+  second probe is another question) and bounded by budgets instead.
 - The target level is one project datum: only the first stated level stands.
 - The Auto crossover wizard rewrites every junction and runs first, so a junction tune beside it is
   refused.
@@ -267,26 +270,26 @@ instead of taking the others or the import down.
 
 ## Import flow
 
-`ImportAiProposal`: clipboard, strict parse, review against the live session, the review dialog,
-then under `AgentProgressDialog`:
+`ImportAiProposal`: clipboard, strict parse, review against the live session, the review dialog, a
+first `AgentProposalApplier.Prepare` of the ticked rows, and a warning if the ticked subset leaves a
+final state the review never showed (unticking a row can take a compensating change with it; a
+warning, not a refusal). Then under `AgentProgressDialog`:
 
-1. Warn if the ticked subset leaves a final state the review never showed (unticking a row can take
-   a compensating change with it). A warning, not a refusal.
-2. Run probes (read-only, before anything is written).
-3. `CommitAgentImportAsync` re-judges the ticked rows against the session **as it is now**
+1. Run probes (read-only, before anything is written).
+2. `CommitAgentImportAsync` re-judges the ticked rows against the session **as it is now**
    (`AgentProposalApplier.Prepare`). This is not ceremony: rows were prepared before probes ran,
    probes take seconds, and the panel stays editable. Ticked is the review's default, not a gate
    (stale rows are offered unticked for deliberate opt-in), so the check is whether the fingerprint
    moved after the dialog showed it, not the fresh verdict's tick flag. The probes stand; they only
    read.
-4. Undo is armed **before** the first write: an engine can throw after the settings rows landed, and
+3. Undo is armed **before** the first write: an engine can throw after the settings rows landed, and
    an import the user cannot undo is the worst outcome. The previous import's undo returns only if
    nothing moved.
-5. Settings rows are written as one set (`AgentProposalApplier.Apply`); if a write throws, what was
+4. Settings rows are written as one set (`AgentProposalApplier.Apply`); if a write throws, what was
    written is restored. The side lock then `Remember`s the rows as written (the dialog showed exactly
    those sides) - before engines run, because a junction tune saves inside them and would otherwise
    read the rows as a hand edit.
-6. Engine requests run in the fixed order below, then one summary. Entries already in the summary did
+5. Engine requests run in the fixed order below, then one summary. Entries already in the summary did
    happen, so an error never claims "not imported" over them.
 
 Undo (`AgentImportUndo`) captures every channel's chain, not only named ones (engines write channels

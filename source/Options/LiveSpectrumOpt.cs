@@ -182,8 +182,8 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(checkSpl, splDescription);
         }
 
-        // Precedence: muted (Transfer) → amber → normal. Managed manually: SetTextEnabledLook memorizes the muted
-        // colour and would restore a stale amber.
+        // Precedence: muted (Transfer) → amber → normal. Managed manually: SetTextEnabledLook memorizes the colour it
+        // replaces when muting and would restore a stale amber.
         private void UpdateSplChoiceColor()
         {
             // MMM is band-power dB SPL by definition: pinned, not muted. SetTextEnabledLook would undo the pin.

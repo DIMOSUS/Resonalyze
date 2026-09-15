@@ -85,6 +85,7 @@ internal static class PhaseGatePlacement
             item.ImpulseResponse, item.PeakIndex, sampleRate, item.ValidRange));
 
     /// <summary>One τ for the whole set so RELATIVE phase survives the detrend.</summary>
+    /// <param name="manualDetrendMs">User τ for Manual; null references the set's shared front anchor.</param>
     public static double ResolveCommonDetrendMs(
         IReadOnlyList<PlacementChannel> channels,
         int sampleRate,

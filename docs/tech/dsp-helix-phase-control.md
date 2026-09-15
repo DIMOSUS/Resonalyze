@@ -56,4 +56,5 @@ ceiling is deliberate or a firmware defect is unknown; it is modelled because th
 folds the section's full 360° turn into (−180, 180], so it is unfolded or the solver would see a jump. `SolveCornerHz`
 bisects on log corner (the curve is smooth and monotone, checked against the closed form at 2000 points); a hundred
 halvings resolve well inside the bench's 0.2 %. The lower bracket is reference/64, where nearly the whole turn has
-happened. If even the maximum corner turns further than requested, the setting is capped at that corner.
+happened. If even the maximum corner turns further than requested, the setting is capped at that corner and
+delivers more rotation than asked (`DeliveredDegrees`).

@@ -21,8 +21,8 @@ crossover frequency, pair band about an octave to each side) and an `AlignmentRe
 that re-renders channels under trial overrides. The reprocessor runs off the UI thread and must not
 touch shared mutable state. All searches assume one sample rate (`RequireOneSampleRate`): a
 neighbour's IR is read at the searched channel's rate, so mixed rates would silently misscale.
-`IAlignmentChannel.ProcessorSampleRate` is used only when a chain is pushed through `ApplyChain`;
-everything measured lives at `SampleRate`.
+`IAlignmentChannel.ProcessorSampleRate` is used only for chain math (`ApplyChain`, the crossover
+filter responses of the polarity rule, a FIR kernel's delay); everything measured lives at `SampleRate`.
 
 ## Pipeline
 
@@ -296,8 +296,8 @@ the grade), the pair's whitened correlation is the second witness. It is taken a
 lobe within half a period of the prediction-implied lag and within half a period of the
 measured-implied lag. If the prediction family wins with |r| ≥ `LatchArbitrationMinR` (0.6) and a
 real margin, the pair moves to the predictions (Passat v2: r 0.91 vs 0.81). The floor and the
-advantage mirror the direct-coherence calibration. If either lag is unmeasurable, the zone withdraws
-the pair as before, and the log must not read as if the predictor convicted alone.
+advantage mirror the direct-coherence calibration. Otherwise the zone withdraws the pair from the
+predictor. A conviction by arbitration must not be logged as if the predictor convicted alone.
 
 ## Lobe-boundary conviction
 
@@ -332,7 +332,8 @@ channel, i.e. that quantity negated.
 Distrust rules are applied in order, because each corrupts the next one's inputs:
 
 1. **Edge-pinned.** A lobe cut by the window edge has artifact position and magnitude.
-2. **Weak or barely dominant.** See [Seed trust gates](#seed-trust-gates).
+2. **Weak.** |r| below `PhatSeedMinCoefficient`; see [Seed trust gates](#seed-trust-gates). There
+   is no peak-vs-trough dominance gate.
 3. **Near-tie with the same-sign rival one period over.** Peak-vs-trough confidence cannot see
    it, and the lobe (a whole-period cycle skip) would fall to whichever reflection ran hotter.
 4. **Farther from the arrival than the reach.** See [Seed reach veto](#seed-reach-veto).
@@ -410,9 +411,11 @@ A silenced witness leaves the full-record path exactly as before.
 fixed ±3 ms span. An extremum at or beyond it is refused; at the boundary itself the two lobes are
 equidistant, so it is refused too.
 
-The veto stands down in exactly two cases: the pair was re-anchored by a conviction, or the anchor
-is disqualified and the extremum can stand on its own (`ExtremumMayStandOnItsOwn`). A conviction
-without a replacement keeps the veto.
+The veto does not apply to a pair re-anchored by a conviction. Otherwise an extremum past the reach
+is admitted only when the pair's chain skew explains the offset (see [Chain skew](#chain-skew)), or
+when the anchor is disqualified (a chain skew as large as the reach, or a deep pick) and the
+extremum can stand on its own (`ExtremumMayStandOnItsOwn`). A conviction without a replacement
+keeps the veto.
 
 **Deep picks** (`SeedVetoMinProminenceDb` = half the 25 dB search depth). A pick in the upper half
 of the depth is a shoulder on the band's energy; one in the lower half is a separate feature. The
@@ -531,6 +534,7 @@ outranks the rule. The rule also applies only:
 - **Without a wide seed.** There the window spans several lobes and the recovery machinery compares
   both polarities. On the v4 cabin's wide-seeded 180 Hz BW36 junction, forcing the correct flip
   moved the channel a period off.
+- **Outside a joint two-neighbour search.**
 - **At or above `DirectSeedMinCrossoverHz`.** Lower down, modes shape the band, and the archived
   matched BW36 splits at 70 and 180 Hz answer polarity by moving up to a period rather than
   flipping.
@@ -704,8 +708,9 @@ stack and the one that leaves it leading is not acoustically resolvable, but it 
 one-sided. The first wavefront binds the bass to the localizable midbass transient (precedence), so
 a slightly leading sub reads as "bass up front" and a trailing one as sluggish and detached.
 
-`PreferSubLeading` replaces a trailing pick with the nearest leading candidate (lead measured from
-the envelope anchor, beyond `SubPrecedenceSlackMs` = 0.5 ms) within `SubPrecedenceMarginDb` (1 dB).
+`PreferSubLeading` replaces a pick that leaves the sub trailing the envelope anchor by more than
+`SubPrecedenceSlackMs` (0.5 ms) with the anchor-nearest candidate that does not, within
+`SubPrecedenceMarginDb` (1 dB).
 The margin sits above the near-tie scale and just under the ~1.4 dB comb-noise ceiling within which
 a mode can flatter either side. It was calibrated on the v3 cabin, where the leading lobe scored
 0.66-0.73 dB under the trailing pick yet localized the bass to the front stage. The pool spans the
@@ -737,7 +742,7 @@ C/D, r 0.07) cannot vote.
 
 ## Coherence ladder veto
 
-Where the direct correlation's advantage is itself slim (≤ `LadderVetoMaxAdvantage` 0.10), the
+Where the direct correlation's advantage is itself slim (below `LadderVetoMaxAdvantage` 0.10), the
 arrival-coherence ladder votes, and a decisive vote for the standing lobe vetoes the swap. The two
 witnesses read different things. The correlation is one whitened comb over the band: it carries
 polarity, but neighbouring lobes differ little. The ladder cuts sub-band probes at their own scales:
@@ -884,8 +889,9 @@ however, often measurable on other linked pairs.
 
 ## Scene lock
 
-Right channels whose pair band reaches the localization region are pinned to the cross-side target
-within `SceneLockToleranceMs` (0.05 ms): the image outranks the junction handover.
+Right channels whose pair band reaches the localization region are pinned to a non-Coarse
+cross-side target within `SceneLockToleranceMs` (0.05 ms): the image outranks the junction handover.
+A Coarse target pins only the lobe, as for low pairs below.
 
 - **Localization band.** The target is measured only in the sub-band above
   `SceneLockLocalizationLowHz` (300 Hz), because low soft envelopes carry no localization. At least
@@ -911,8 +917,8 @@ quality the scene mandate cost without touching the image.
   sides' junctions bound the delta. Every evaluator window is held fixed across probes (a shifting
   window would be the size of the change) and rebuilt from the current render. Scores carry the
   dip-excess penalty, since a plain mean buys a hundredth of a dB with a deep notch.
-- **Bounds.** The range is `PairComoveSearchRangeMs` (1.2 ms), capped at half the tightest adjacent
-  junction period and centred on the neighbour pair's already-applied delta. A flat window around
+- **Bounds.** The range is ±`PairComoveSearchRangeMs` (1.2 ms), intersected, for every adjacent
+  junction, with half that junction's period around its neighbour's already-applied co-move delta. A flat window around
   zero let two adjacent pairs drift a full period apart: a 0.1-0.2 dB gain walked a tweeter pair a
   lobe off its mid at a 2.3 kHz junction, with the sum back in phase so no loss was seen. Keeping
   the pair where it is stays legal. Onset-locked junctions keep their front gap within the lock cap.

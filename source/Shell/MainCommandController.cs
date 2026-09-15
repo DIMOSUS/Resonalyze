@@ -43,7 +43,7 @@ internal sealed class MainCommandController
         SetLoadAvailable(true);
     }
 
-    /// <summary>Save and the REW export together (export further narrowed); set here because Save has eight callers.</summary>
+    /// <summary>Save and the REW export together (export further narrowed); set in one place because Save has many callers.</summary>
     public void SetSaveAvailable(bool available)
     {
         SetButtonFrozen(saveButton, !available);

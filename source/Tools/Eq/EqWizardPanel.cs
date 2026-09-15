@@ -797,7 +797,7 @@ public partial class EqWizardPanel : UserControl
             fitSource,
             fitTarget,
             CreateAutoTuneOptions(reserved),
-            // Only a loopback-transfer IR carries coherence; otherwise boosts fall back to null-detection.
+            // Loopback γ² or mic-array agreement; without either, boosts fall back to null-detection.
             loadedSource?.Coherence);
 
         // Inputs stay editable during the fit; any input change bumps the revision and orphans the result.
@@ -1259,7 +1259,7 @@ public partial class EqWizardPanel : UserControl
         AddClampedFill(model, curveAug, targetAug, above: false, BelowTargetFill);
     }
 
-    // One area per run of finite points: a NaN vertex made the renderer close the shape across unmeasured octaves.
+    // One area per run of finite points: a NaN vertex would make the renderer close the shape across unmeasured octaves.
     private static void AddClampedFill(
         PlotModel model,
         IReadOnlyList<DataPoint> curve,

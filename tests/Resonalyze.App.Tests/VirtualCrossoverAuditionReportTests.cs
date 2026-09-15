@@ -2,7 +2,7 @@ namespace Resonalyze.App.Tests;
 
 public sealed class VirtualCrossoverAuditionReportTests
 {
-    /// <summary>Trailing the briefing, a finished render started below the box and nothing said the file was written.</summary>
+    /// <summary>A finished render leads: trailing the briefing it starts below the box and nothing says the file was written.</summary>
     [Fact]
     public void AFinishedRenderLeadsTheReport()
     {

@@ -6,7 +6,7 @@ namespace Resonalyze.Dsp;
 /// <summary>Minimum phase from a magnitude spectrum by the real-cepstrum method (cf. MATLAB <c>rceps</c>); excess = measured − minimum. See docs/tech/phase-and-group-delay.md#minimum-phase-reconstruction.</summary>
 public static class MinimumPhase
 {
-    /// <summary>Floor relative to the spectrum peak (−160 dB): minimum phase is gain-invariant, an absolute floor made it level-dependent.</summary>
+    /// <summary>Floor relative to the spectrum peak (−160 dB): minimum phase is gain-invariant, an absolute floor would make it level-dependent.</summary>
     public const double DefaultMagnitudeFloor = 1e-8;
 
     /// <summary>Minimum phase (radians, length N) from a full 0 … fs linear magnitude spectrum.</summary>

@@ -14,7 +14,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
     [Fact]
     public void SplitAlignmentStages_LeavesAFrontOnlyProjectUnstaged()
     {
-        // All-chain projects pass a null walk set (the old engine call), which keeps the session battery from drifting.
+        // All-chain projects pass a null walk set (the single-stage engine call), which keeps the session battery from drifting.
         VirtualCrossoverChannel sub = Block("A", VirtualCrossoverZone.Sub);
         VirtualCrossoverChannel mid = Block("B", VirtualCrossoverZone.Front);
         VirtualCrossoverChannel tweeter = Block("C", VirtualCrossoverZone.Front);
@@ -89,7 +89,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
     [Theory]
     [InlineData(false, false, false)]
     [InlineData(true, false, true)]
-    // RHD was wrong: group sums arrive in engine ROLES, so the cabin side timed rears against the opposite front.
+    // RHD: group sums arrive in engine ROLES; reading the cabin side would time rears against the opposite front.
     [InlineData(true, true, false)]
     [InlineData(false, true, true)]
     public void IsFarSide_FollowsTheLayoutRatherThanTheCabinSide(

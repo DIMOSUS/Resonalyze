@@ -147,7 +147,7 @@ public sealed class LiveCaptureDocument
 
     public SpatialAverageMethod Method { get; set; } = SpatialAverageMethod.MovingMic;
 
-    /// <summary>Analyzer session id, persisted for future set checks; nothing reads it yet.</summary>
+    /// <summary>Analyzer session id; <see cref="JudgeSet"/> mixes sessions only when every capture carries an SPL anchor.</summary>
     public Guid CaptureSessionId { get; set; }
 
     public LiveCaptureRecipe Recipe { get; set; } = new();

@@ -132,7 +132,7 @@ internal sealed record AgentProbeChange(
         Crossover == null && Peq == null;
 }
 
-/// <summary>Tune one junction's facing low-pass/high-pass on the pair's coherent sum at current delays and polarity, writing one crossover to both sides; nothing else moves. Omitted inputs: half-octave window, current families, every practical slope, one slope for both edges.</summary>
+/// <summary>Tune one junction's facing low-pass/high-pass on the pair's coherent sum at current delays and polarity, writing one crossover to both sides; nothing else moves. Omitted inputs: half an octave each way from the current corner, current families, every practical slope, one slope for both edges.</summary>
 internal sealed record TuneJunctionOperation(
     string Id,
     string? Reason,

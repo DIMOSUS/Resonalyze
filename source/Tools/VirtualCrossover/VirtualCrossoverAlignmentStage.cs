@@ -39,7 +39,7 @@ public static class VirtualCrossoverAlignmentStages
     public static bool SearchesJunctions(VirtualCrossoverAlignmentStage stage) =>
         stage == VirtualCrossoverAlignmentStage.FrontChain;
 
-    /// <summary>False for front-only projects, which take the old single-stage path unchanged by construction.</summary>
+    /// <summary>False for front-only projects, which take the single-stage path (not a one-stage staged run), so their results match the unstaged engine by construction.</summary>
     public static bool NeedsStaging(IEnumerable<VirtualCrossoverZone> zones) =>
         zones.Any(zone => StageOf(zone) != VirtualCrossoverAlignmentStage.FrontChain);
 }

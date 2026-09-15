@@ -55,8 +55,8 @@ drawn as a gap.
 
 `FirSpectrumBins` computes the FIR response at every record bin on the processor's circle:
 
-- **Fast path:** when `length / rateRatio` is a whole number M (equal rates, 48 kHz record through a 96 kHz
-  processor, or the reverse), the M-point DFT of the zero-padded kernel lands exactly on the record's bins.
+- **Fast path:** when `length / rateRatio` is a whole number M no shorter than the kernel (equal rates, 48 kHz
+  record through a 96 kHz processor, or the reverse), the M-point DFT of the zero-padded kernel lands exactly on the record's bins.
 - **Otherwise** (44.1 vs 48 kHz) the chirp-z transform (`FirFilter.ChirpSpectrum`) reads the kernel at each bin
   in three FFTs, instead of taps × bins multiplies (seventeen billion for the longest kernel and render).
 - **Cache:** bins depend only on kernel, record length and rate pair, so every knob turn reuses them. The table

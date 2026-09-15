@@ -2,7 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-// The logarithmic flag became a three-way scale: old files must open as left, and new files stay readable by old builds.
+// The logarithmic flag became a three-way scale: old files must open the view as their user left it, and new files stay readable by old builds.
 public sealed class ImpulseResponseSettingsTests
 {
     [Theory]

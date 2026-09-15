@@ -236,7 +236,7 @@ public sealed class SteadyStateWindowTests
     [Fact]
     public void TheWindowBeatsTheJunctionGateItReplaced()
     {
-        // At the weakest rate (192 kHz, 171 ms) the window must still beat the old junction gate (1.34 vs 7.23 dB).
+        // At the weakest rate (192 kHz, 171 ms) the window must still beat a 0.5/4/1.5 ms junction gate (1.34 vs 7.23 dB).
         const int rate = 192_000;
         var bank = new EqualizationCurve(new[] { new PeqBand(60, 8, -8) });
         Complex[] impulse = UnitImpulse(rate, out int peak);

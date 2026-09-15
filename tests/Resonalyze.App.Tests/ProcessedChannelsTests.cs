@@ -203,7 +203,7 @@ public sealed class ProcessedChannelsTests
     {
         List<ProcessedChannel> car = ReferenceCar();
 
-        // Unlimited 290 Hz high-passes centre at 2.4 kHz and wedge into the front chain, breaking the Mid/Tw pair.
+        // Rear and centre high-passed at 290 Hz with no upper corner have a 2.4 kHz band centre, wedging between Mid and Tw.
         Assert.Equal(
             ["RSub-FSub", "FSub-MB", "MB-Mid", "Mid-Rear", "Rear-Centre", "Centre-Tw"],
             Names(ProcessedChannels.GetAdjacentPairs(ProcessedChannels.OrderByBand(car))));

@@ -47,13 +47,13 @@ public static class GainBalanceEngine
     private const double SmoothingHalfWidthOctaves = 1.0 / 6.0;
     private const double SpreadGridStepOctaves = 1.0 / 24.0;
 
-    // Avoids reporting -0.0 for a channel already at target.
+    // Smaller cuts snap to exactly 0 dB, so a channel already at target reads unchanged, not -0.0.
     private const double MinimumCutDb = 0.05;
 
     /// <summary>Fewer grid points read as NaN (Low confidence), never as perfectly stable.</summary>
     public const int MinimumSpreadSamples = 8;
 
-    /// <summary>A dead input's noise floor reads 40+ dB down and, as the quietest, would drag every cut to it. Real drivers sit within ~20 dB.</summary>
+    /// <summary>A dead input's noise floor reads 40+ dB down and, as the quietest, would drag every cut to it. Real drivers sit within a couple of tens of dB.</summary>
     public const double MaxLevelBelowLoudestDb = 30;
 
     /// <summary>Keeps proposals inside the validator's gain range; independent of the credibility gate.</summary>

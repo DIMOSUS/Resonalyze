@@ -1,7 +1,7 @@
 # Audio layer: non-obvious driver behaviour
 
-`audio/` (`Resonalyze.Audio`) is the only project that references NAudio and Media
-Foundation. The application opens sessions through `IAudioSessionFactory`
+`audio/` (`Resonalyze.Audio`) is the only production project that references NAudio and
+Media Foundation (its test project references NAudio too). The application opens sessions through `IAudioSessionFactory`
 (`AudioSessionFactory` → `AudioBackendRegistry` → `WasapiBackend`, `AsioBackend`,
 `MmeBackend`) and sees only neutral contracts (`AudioSessionRequest`,
 `AudioCaptureResult`, `AudioFormat`, ...). Only `Resonalyze.Audio.Tests` gets
@@ -19,7 +19,8 @@ of reopening devices per run:
   after initialisation. `PcmDuplexSession` therefore builds its playback stream once from
   the bound signal and replays it; the signal is fixed for the session's lifetime.
 - Re-initialising an ASIO driver costs seconds on slow drivers. `AsioDuplexSession`
-  keeps the driver running (it plays silence after the stream ends); each run calls
+  keeps the driver running (it plays silence after the stream ends); the first run starts
+the driver, and each later run calls
   `AsioFullDuplexSession.ResetCapture` for a fresh accumulator and rewinds the
   excitation. The required sample count uses `AcceptedSamples` (including blocks queued
   around the rewind); processed `ReadSamples` could finish one ASIO packet early.
@@ -55,8 +56,9 @@ metering and publication run on a worker thread. The ASIO pool is allocated in
 `AsioCapturePump.Prepare`, because the buffer size is only known once the driver opens;
 PCM packet sizes are known before start. Exhausting the pool means processing fell
 behind the device and arms a terminal overflow failure. ASIO reports no packet
-discontinuities, and does not duplicate a mono provider onto stereo outputs, so
-`FloatArrayWaveStream` encodes the output routing explicitly.
+discontinuities (`AsioStreamingSession.CaptureDiscontinuity` never fires). ASIO also does
+not duplicate a mono provider onto stereo outputs, so `FloatArrayWaveStream` encodes the
+output routing explicitly.
 
 ## ASIO driver opening
 

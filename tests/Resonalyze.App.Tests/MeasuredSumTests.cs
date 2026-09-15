@@ -5,7 +5,7 @@ using Resonalyze.Dsp;
 namespace Resonalyze.App.Tests;
 
 /// <summary>
-/// Gating the summed IR once smears a channel's in-band energy into another's unmeasured (zero) bins,
+/// Gating the summed IR as a whole smears a channel's in-band energy into another's unmeasured (zero) bins,
 /// reading above the only measured channel near the edge; each channel's unmeasured bins must be cleared.
 /// </summary>
 public sealed class MeasuredSumTests

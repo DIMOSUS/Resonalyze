@@ -342,7 +342,7 @@ public partial class EqWizardPanel
         {
             GatedPhaseCurve? curve =
                 await phaseOrchestrator.RenderLatestAsync(request, color);
-            // Null = superseded; still redraw below, since that starts the follow-up render (returning early left the view empty).
+            // Null = superseded; still redraw below, since that starts the follow-up render (returning early would leave no curve and nothing on its way).
             if (curve != null && !IsDisposed && IsHandleCreated)
             {
                 landedPhaseCurve = curve;

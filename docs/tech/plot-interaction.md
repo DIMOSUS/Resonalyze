@@ -22,10 +22,10 @@ Code lives in `source/Plotting/`:
 Bindings that mirror REW:
 
 - Wheel zooms both axes around the pointer; Alt gives a fine step (`PlotAxisZoom.FineWheelFactor`,
-  equal to OxyPlot's `ZoomWheelFine`). Ctrl + wheel previously held OxyPlot's fine step; the fine
-  step now lives on Alt, where REW keeps it.
-- Shift + wheel, or the pointer over an axis, zooms that one axis. The second half is OxyPlot's own
-  `PlotModel.GetAxesFromPoint` behaviour, which only works because the frequency axis allows zoom.
+  equal to OxyPlot's `ZoomWheelFine`). OxyPlot's default puts the fine step on Ctrl + wheel; the
+  controller rebinds it to Alt, where REW keeps it.
+- Shift + wheel zooms the horizontal axis only. The pointer over an axis zooms that one axis; that is
+  OxyPlot's own `PlotModel.GetAxesFromPoint` behaviour, which only works because the frequency axis allows zoom.
 - Wheel over the end of an axis moves that single limit (see [Axis zoom arithmetic](#axis-zoom-arithmetic)).
 - x / Shift+X and y / Shift+Y zoom one axis out / in by about two (`StepZoomInScale = 2`).
 - Middle drag is variable zoom. OxyPlot binds its zoom rectangle to the middle button by default;
@@ -34,12 +34,13 @@ Bindings that mirror REW:
 - Ctrl+Alt+F / Ctrl+Alt+Y fit to data / fit Y to data. Double click opens `GraphLimitsDialog`.
 - F1 opens the help card. The controller handles the key itself; leaving it to Windows lets
   `DefWindowProc` turn it into a second, empty help request.
+- Esc drops a waiting zoom box; Ctrl+Z undoes the last recorded zoom (see [Undo stack](#undo-stack)).
 
-Two bindings have no REW counterpart and are kept from before the REW remap: Ctrl + wheel zooms the
-vertical axis only, and Home / A resets an axis to the model's own scale. Neither shadows a REW gesture.
+Two bindings have no REW counterpart: Ctrl + wheel zooms the vertical axis only, and Home / A (OxyPlot's
+default binding, not rebound here) resets all axes to the model's own scale. Neither shadows a REW gesture.
 
 Keyboard zoom centres on the pointer, but OxyPlot key events carry no position, so the controller
-tracks the last pointer position (`PlotAxisZoom.ClampToPlotArea` falls back to the plot centre).
+tracks the last pointer position (`PlotAxisZoom.ClampToPlotArea` clamps it into the plot area).
 Pointer tracking invalidates the view only when the zoom buttons appear, disappear or change hover
 state - a plain move across the plot must not repaint a waterfall.
 
@@ -48,8 +49,8 @@ otherwise OxyPlot's snapping tracker. Two double-click traps are handled explici
 
 - A second quick click on a zoom button arrives as a double click; it is answered as another zoom
   step instead of opening the limits dialog.
-- The second press of a double tap inside a zoom box (the first already zoomed) sets
-  `zoomBoxJustClicked` so the limits dialog does not open on top.
+- The click that zooms to a box sets `zoomBoxJustClicked`; the second press of a quick double tap
+  arrives as a double click, consumes the flag and does not open the limits dialog on top.
 
 OxyPlot's element tooltips are not wired up in its WinForms view, so hints (which axis a button
 zooms, why a box is too small) use a plain WinForms `ToolTip` on the control, shown for 4 s.
@@ -76,8 +77,8 @@ to cross two octaves in one gesture, long enough to land on a decade. The anchor
 coordinates and re-read through the axis each step, which keeps the pressed point still.
 
 `PlotAxisFit` leaves axes that refuse zoom alone (those are deliberately pinned by a mode, e.g. the EQ
-wizard's gain axis). Value axes get a 5 % margin, applied in the axis's own scale (a ratio on log axes);
-the frequency axis gets none, because 20 Hz-20 kHz is the data and padding would open on empty decades.
+wizard's gain axis). Vertical axes get a 5 % margin, applied in the axis's own scale (a ratio on log axes);
+horizontal axes (frequency or time) get none, because 20 Hz-20 kHz is the data and padding would open on empty decades.
 
 ## Zoom box
 
@@ -91,8 +92,8 @@ REW's zoom box is drawn first and applied second, which makes it a measuring tap
   during the drag; the wait and the click arrive long after it is gone.
 - **Frames both directions regardless of zoomability.** The Virtual DSP phase view locks its height to
   ±180°, and a phase difference across a crossover is exactly worth measuring. `Zoom()` then moves only
-  the axes with `IsZoomEnabled`. A direction with no measurable axis (hidden, or a colour axis such as the
-  waterfall's ±1 placeholder) is left null and spans the plot area.
+  the axes with `IsZoomEnabled`. A direction with no measurable axis (hidden, such as the waterfall's ±1
+  placeholder, or a colour axis) is left null and spans the plot area.
 - **Undo is recorded by the zooming click, not the drag**: a box that is only read must not leave anything
   on the undo stack.
 - **Release rules.** Pointer travel under 3 px (`MinimumDragSize`) is a Ctrl + right click, silently
@@ -121,7 +122,7 @@ Readout text (`PlotZoomRectangleReadout`):
 A model reference alone does not say whether the plot still shows the same quantities. The Virtual DSP
 acoustic view re-arms one value axis object between dB, degrees and a unitless impulse scale and swaps its
 bottom axis between frequency and time without replacing the model; the EQ wizard re-arms its dB axis for a
-new source. `PlotAxisIdentity` records an axis's key and the hard limits it is armed with, and
+new source. `PlotAxisIdentity` records an axis's key, title, type and the hard limits it is armed with, and
 `PlotAxisIdentities.Match` compares a model against a recorded list.
 
 Everything that remembers a range stores the identity next to it and drops what it holds on mismatch:
@@ -138,7 +139,8 @@ The zoom box annotation and the zoom-button annotation belong to whichever model
 
 ## Undo stack
 
-Zoom gestures push `PlotAxisViewport` snapshots (depth 32 - enough to undo a hunt around a resonance,
+Variable zoom, zoom buttons, the zooming box click and fit to data push `PlotAxisViewport` snapshots
+(wheel and x/y key steps do not) (depth 32 - enough to undo a hunt around a resonance,
 shallow enough not to become a session memory). Entries name axes by key, and a key's quantity varies
 between builds ("decibel" is dBr in one model and dB SPL in the next). The stack is therefore replayed only
 onto the same model with the same axis identities, and forgotten as soon as either changes. Carrying zoom

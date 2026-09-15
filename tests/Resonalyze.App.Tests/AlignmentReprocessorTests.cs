@@ -88,7 +88,7 @@ public sealed class AlignmentReprocessorTests
             $"at {sampleRate} Hz");
     }
 
-    // The old fixed crop left 149 ms at 384 kHz, so a 33 Hz junction's 262 ms window read filter tail.
+    // A fixed 65 536 crop leaves 149 ms at 384 kHz, so a 33 Hz junction's 262 ms window would read filter tail.
     [Fact]
     public void Reprocess_At384kHz_TheCropHoldsAFullLowBandWindow()
     {

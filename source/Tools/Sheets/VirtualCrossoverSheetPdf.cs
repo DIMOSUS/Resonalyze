@@ -18,7 +18,7 @@ namespace Resonalyze;
 // Shared layout lives in PdfSheet.
 internal static class VirtualCrossoverSheetPdf
 {
-    // Print-friendly variants of the on-screen channel palette, one per channel letter.
+    // Print-friendly variants of the on-screen channel palette, cycled by channel index (8 colours, up to 12 channels).
     private static readonly OxyColor[] ChainColors =
     [
         OxyColor.FromRgb(0x1F, 0x77, 0xB4),

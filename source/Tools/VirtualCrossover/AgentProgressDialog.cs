@@ -1,6 +1,6 @@
 namespace Resonalyze;
 
-/// <summary>Bridge progress window. Informational, not modal (engines disable the panel themselves; the crossover wizard needs the foreground), and no Cancel: no step can stop without a half-written tune.</summary>
+/// <summary>Bridge progress window. Informational, not modal (Auto delay and Auto-tune disable the panel themselves; the crossover wizard needs the foreground), and no Cancel: no step can stop without a half-written tune.</summary>
 internal sealed partial class AgentProgressDialog : Form
 {
     private readonly List<string> done = [];

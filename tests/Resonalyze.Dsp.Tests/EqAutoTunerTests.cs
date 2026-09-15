@@ -504,7 +504,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_CutsOnly_ClusterOfNarrowPeaks_EachGetsCut()
     {
-        // Five narrow peaks ~0.2 oct apart: the old fixed 0.33-oct spacing let one cut sterilise its neighbours.
+        // Five narrow peaks ~0.2 oct apart: a fixed 0.33-oct spacing would let one cut sterilise its neighbours.
         double[] centres = { 1050, 1200, 1400, 1600, 1850 };
         IReadOnlyList<SignalPoint> source = Grid(
             f => centres.Sum(c => new PeqBand(c, 8, 5).MagnitudeDbAt(f)));

@@ -492,7 +492,7 @@ internal sealed class LiveSpectrumController : IDisposable
                 return;
             }
 
-            // Re-render only on a new analysis frame (a 683 ms frame spans ~40 ticks); notices still update every tick. See docs/tech/live-spectrum.md#redraw-loop.
+            // Re-render only on a new analysis frame (a 683 ms frame spans ~20 ticks of 33 ms); notices still update every tick. See docs/tech/live-spectrum.md#redraw-loop.
             int frames = measurement.AveragedFrameCount;
             if (frames == lastDrawnFrameCount && lastSnapshot != null)
             {

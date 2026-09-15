@@ -67,7 +67,7 @@ and "dirty everywhere" are treated differently:
 - `Unavailable` — no curve supplied. Edges NaN; the class-based sensible range stands.
 - `Unreliable` — curve supplied but every in-band point is masked (NaN, the |H1| denominator
   collapsed). No information; same as Unavailable.
-- `CleanBandFound` — the most prominent contiguous run below the ceiling (bridging a narrow spike the
+- `CleanBandFound` — the widest (in octaves) contiguous run below the ceiling (bridging a narrow spike the
   way the magnitude band bridges a null). `DistortionLowHz` is the knee (lowest frequency a high-pass
   may cross at), `DistortionHighHz` the breakup onset (highest a low-pass may cross at).
 - `NoCleanBand` — reliable points exist but none clear the ceiling: the driver audibly distorts across
@@ -87,15 +87,17 @@ between neighbouring class centres. The class only seeds the suggestion; the use
 `SensibleRange` caps each class to musically sane handovers: a woofer measured in-room still shows
 output near 850 Hz, but nobody crosses a woofer there. Notable floors:
 
-- **Midrange 200–4000 Hz**. The floor was lowered from 250 Hz so a woofer/midbass can hand over
+- **Midrange 200–4000 Hz**. The 200 Hz floor lets a woofer/midbass hand over
   before its cone-breakup region when the midrange measures headroom down there; a wide overlap higher
   up interferes badly, and a midrange crossed low with a steep filter cleans the handover. The measured
   midrange band still gates it (a midrange rolled off by 300 Hz crosses no lower).
 - **Tweeter 1.7–20 kHz**. A quality tweeter crossed low with a steep filter covers more of the
   critical midrange for a better soundstage; a tweeter rolled off by 2.5 kHz still crosses no lower.
+  The 1.7 kHz floor bounds the seed; in the search window the resonance floor below replaces it.
 
-`CrossoverMarginOctaves` = 1 octave keeps the crossover above the upper driver's low edge (excursion
-protection) and below the lower driver's high edge.
+`CrossoverMarginOctaves` = 1 octave keeps the seed crossover (and `ProposeSingle`'s corner) above the
+upper driver's low edge (excursion protection) and below the lower driver's high edge. The search
+window itself reaches the measured band edges.
 
 ## Tweeter resonance floor
 
@@ -130,9 +132,10 @@ fine at a 250 Hz woofer/mid handover, ~5 ms, but not at a 75 Hz sub/woofer hando
 - Group delay is identical for low-pass and high-pass, so both shoulders are bounded the same way.
   With matched slopes a channel is held to the gentler of its two junctions, so a steep woofer
   low-pass with a gentle high-pass needs independent slopes.
-- The bound only caps how much steeper than the practical floor (24 dB/oct) the search may go. The
-  floor is always admitted: at a junction so low that even 24 dB/oct exceeds the budget, a gentler
-  crossover would break the overlap policy, so that delay is inherent to crossing that low.
+- The bound only caps how much steeper than the practical floor (the family's gentlest slope,
+  12 dB/oct) the search may go. The floor is always admitted: at a junction so low that even it exceeds
+  the budget, a gentler crossover would break the overlap policy, so that delay is inherent to crossing
+  that low. A 24 dB/oct slope over the budget is excluded like any other.
 
 ## Optimizer
 
@@ -158,8 +161,8 @@ summed magnitude on a 24-points-per-octave log grid.
   `OptimizeChannelSlope` tunes both shoulders together, starting from an allowed slope because the
   current one may have fallen under the tweeter floor after a frequency move.
 - When the user narrows the window inside a driver that still plays there, the outer channels get a
-  subsonic high-pass / brickwall low-pass at the window edge (e.g. a 75 Hz limit on a woofer reaching
-  lower). It only counts when at least a semitone inside the driver edge, so float noise does not
+  band-limit high-pass / low-pass at the window edge, on the gentlest admissible slope (24 dB/oct in the conventional run) (e.g. a 75 Hz
+  limit on a woofer reaching lower). It only counts when at least a semitone inside the driver edge, so float noise does not
   sprout filters, and it is not part of the search.
 - `JunctionSearchBounds`: where both drivers produce output, inside the class-compatible band when the
   classes overlap (a woofer must not cross up in its roll-off skirt), and separated from neighbours.
@@ -190,8 +193,8 @@ out-of-band excursion. The score therefore adds penalties that encode engineerin
   neighbour into a non-adjacent driver's band (a 12 dB/oct woofer bleeding up to the tweeter) is
   pushed to a steeper slope.
 - **Ear sensitivity** (2–4 kHz, sigma 0.5 octave, weight 0.5 dB): a handover there puts phase wobble,
-  lobing and any residual dip where they are most audible. A soft bump centred on ~2.83 kHz, full
-  inside and tapering about an octave to each side. A tie-breaker, not an override of a genuinely
+  lobing and any residual dip where they are most audible. A Gaussian bump in log frequency centred on
+  ~2.83 kHz (0.61 of full at 2 and 4 kHz, ~0.14 an octave from the centre). A tie-breaker, not an override of a genuinely
   flatter split.
 - **Sub handover up-bias** (0.6 dB): a sub should hand over where it stops being localizable
   (~80 Hz), not as low as flatness drags it; a sub crossed at 45 Hz leaves the woofer carrying real
@@ -255,7 +258,7 @@ else the first staged group) first, since others are levelled onto it.
 - `ProposeSingle` handles a driver that crosses with nobody (rear fill, centre, lone sub). `Propose`
   needs two channels, but such a driver still needs the protection a chain member gets from the
   driver under it: a high-pass. The corner starts an octave above the measured low edge (the same
-  margin as at a junction) and is raised by the tweeter Fs floor and by the distortion knee. The
+  margin the junction seed keeps) and is raised by the tweeter Fs floor and by the distortion knee. The
   octave margin is a preference that a driver narrower than two octaves cannot have; Fs and the
   distortion knee are safety, so where the window cannot hold them the method refuses rather than
   return a corner under the floor it computed. The corner is snapped up to the lattice (a step down

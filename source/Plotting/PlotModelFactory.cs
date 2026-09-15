@@ -129,7 +129,7 @@ internal sealed class PlotModelFactory
         EffectiveLiveAnalysisMode.IsSpatialAverageCapture() ||
         EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
 
-    /// <summary>Excitation model the RTA display compensates; null when off, not RTA, or Silent. Flat is a real value. Part of the peak-hold key.</summary>
+    /// <summary>Excitation model the RTA display compensates; null when off (MMM forces it on), not reference-free, or Silent. Flat is a real value. Part of the peak-hold key.</summary>
     public NoiseSpectralModel? LiveTiltModel =>
         EffectiveLiveAnalysisMode.IsReferenceFree() &&
         (liveSpectrumOptions.CompensateNoiseTilt ||

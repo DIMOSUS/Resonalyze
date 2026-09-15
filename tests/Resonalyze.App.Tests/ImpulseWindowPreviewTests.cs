@@ -97,7 +97,7 @@ public sealed class ImpulseWindowPreviewTests
         {
             Assert.Equal("A envelope", guide.Title);
             Assert.False(guide.RenderInLegend);
-            Assert.Equal(OxyColor.FromAColor(50, burst.Color), guide.Color);
+            Assert.Equal(OxyColor.FromAColor(30, burst.Color), guide.Color);
             Assert.True(guide.StrokeThickness < trace.StrokeThickness);
             Assert.Equal(Tag, guide.Tag);
         }

@@ -259,7 +259,7 @@ internal static class ImpulseWindowPreview
     // they read as belonging to it without competing with it. Fainter than the
     // correlation view's guides: here they sit under every channel's trace at
     // once.
-    private const byte EnvelopeGuideAlpha = 50;
+    private const byte EnvelopeGuideAlpha = 30;
     private const double EnvelopeGuideThickness = 0.8;
 
     // A trace's analytic envelope, ± around zero, on the trace's own scale so

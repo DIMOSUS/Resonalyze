@@ -349,9 +349,10 @@ opposite-polarity partner is recorded instead (see [Fine-search window](#fine-se
 - **`SeedCorrelationWindowPeriods` = 1.25.** The stage-1 correlation window must hold both polarity
   partners as whole lobes, and at a low junction the arrival it centres on can be half a period
   off, so it needs a full period each side. A window edge that cuts the rival lobe understates it,
-  and a gate would pass on a truncated number. The window was sized for the peak-vs-trough gate,
-  which is now log-only; it serves the same-sign rival gate unchanged, a period plus half a lobe
-  each side of the centre (a seed half a period off still has its inner rival whole). Mid/high
+  and a gate would pass on a truncated number. The gates that read it are the
+  edge-pinned and same-sign rival gates (peak-vs-trough is log-only): a period plus half a lobe
+  each side of the centre holds the rival one period over whole, and a seed half a period off
+  still has its inner rival whole. Mid/high
   junctions stay on the fixed ±3 ms floor.
 - **`PhatSeedMinCoefficient` = 0.15.** The minimum |r| of the dominant extremum. It is deliberately
   low: even a modest genuine extremum beats the envelope, and a slightly-off seed is recovered by

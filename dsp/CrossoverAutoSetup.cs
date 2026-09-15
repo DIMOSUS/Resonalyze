@@ -386,7 +386,7 @@ public static class CrossoverAutoSetup
             : (DistortionBandStatus.NoCleanBand, reliableHigh, reliableLow);
     }
 
-    // Geometric midpoints between the class centres of the original ranges (midrange 250-4000, tweeter 2000-20000 Hz); lowering those floors for the search did not move them.
+    // Thresholds are fixed class-centre midpoints, not derived from SensibleRange. See docs/tech/crossover-auto-setup.md#classification-and-sensible-ranges.
     private static DriverType Classify(double lowHz, double highHz)
     {
         double center = Math.Sqrt(lowHz * highHz);

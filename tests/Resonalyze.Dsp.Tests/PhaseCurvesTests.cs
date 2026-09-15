@@ -2,11 +2,7 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
-// Exercises the public degrees-domain phase API (GetPhase / GetMinimumPhase /
-// GetExcessPhase / EstimatePhaseDetrend). The radian core these wrap is covered by
-// GatedPhaseDataTests, MinimumPhaseTests and ExcessDelayTests; here we pin the
-// wrappers themselves — the degrees conversion, the measured-minus-minimum excess
-// composition (incl. its bin alignment) and the absolute-sample detrend offset.
+// Pins the degrees-domain wrappers; the radian core is covered by GatedPhaseDataTests, MinimumPhaseTests, ExcessDelayTests.
 public sealed class PhaseCurvesTests
 {
     private const int SampleRate = 48_000;
@@ -20,8 +16,7 @@ public sealed class PhaseCurvesTests
 
     private static SyntheticMeasurement MinimumPhaseFilterAt(int sampleIndex)
     {
-        // H(z) = 1 - 0.7 z^-1 + 0.2 z^-2 has both zeros inside the unit circle
-        // (|z| = sqrt(0.2) ~= 0.447), so it is minimum phase: its excess phase is ~0.
+        // Zeros inside the unit circle (|z| = sqrt(0.2)): minimum phase, excess ~0.
         var ir = new Complex[8_192];
         ir[sampleIndex] = new Complex(1.0, 0.0);
         ir[sampleIndex + 1] = new Complex(-0.7, 0.0);
@@ -52,7 +47,6 @@ public sealed class PhaseCurvesTests
     [Fact]
     public void GetMinimumPhase_OfAFlatMagnitudeResponseIsNearZeroDegrees()
     {
-        // A pure delay has flat magnitude, so its minimum-phase component is ~0.
         AnalysisCurve curve = DataHelper.GetMinimumPhase(
             Delay(960), gateOffsetMs: 20.0, leftMs: 1.0, plateauMs: 5.0, rightMs: 10.0,
             smoothingInverseOctaves: 0.0);
@@ -74,10 +68,7 @@ public sealed class PhaseCurvesTests
     [Fact]
     public void GetExcessPhase_OfAMinimumPhaseSystemIsNearZero()
     {
-        // Referenced to its own arrival (detrend = 20 ms = 960 samples), the measured
-        // phase of a minimum-phase filter equals its minimum phase, so the excess
-        // (measured - minimum) collapses to ~0. A sign flip or a minimumPhase[j+1]
-        // vs [j] off-by-one would leave a large residual.
+        // A sign flip or minimumPhase[j+1] vs [j] off-by-one would leave a residual.
         AnalysisCurve excess = DataHelper.GetExcessPhase(
             MinimumPhaseFilterAt(960), gateOffsetMs: 20.0, leftMs: 1.0, plateauMs: 5.0, rightMs: 10.0,
             detrendMilliseconds: 20.0, smoothingInverseOctaves: 0.0);
@@ -92,9 +83,7 @@ public sealed class PhaseCurvesTests
     [Fact]
     public void GetExcessPhase_OfAPureDelayTracksTheMeasuredPhase()
     {
-        // With no detrend the minimum-phase part is ~0, so the excess must follow the
-        // (large, unflattened) measured delay phase. This pins the subtraction sign:
-        // a flip would return the negated ramp.
+        // Pins the subtraction sign.
         var measurement = Delay(960);
         AnalysisCurve excess = DataHelper.GetExcessPhase(
             measurement, 20.0, 1.0, 5.0, 10.0,
@@ -115,13 +104,11 @@ public sealed class PhaseCurvesTests
     }
 
     [Theory]
-    [InlineData(1_440, 30.0)] // 30 ms
-    [InlineData(960, 20.0)]   // 20 ms
+    [InlineData(1_440, 30.0)]
+    [InlineData(960, 20.0)]
     public void EstimatePhaseDetrend_ReturnsTheAbsoluteArrivalTime(int sampleIndex, double expectedMs)
     {
-        // The estimate is absolute (referenced to IR sample 0). Dropping the
-        // extractionStart offset would report the arrival relative to the gate start
-        // (a few hundred microseconds) instead of its true tens-of-ms position.
+        // Absolute to IR sample 0: dropping extractionStart would report a gate-relative time.
         (double slopeMs, double peakMs) = DataHelper.EstimatePhaseDetrend(
             Delay(sampleIndex),
             gateOffsetMs: expectedMs, leftMs: 1.0, plateauMs: 8.0, rightMs: 3.0);

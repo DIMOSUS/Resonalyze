@@ -45,8 +45,6 @@ public sealed class PeqBankHistoryTests
     [Fact]
     public void Push_DropsTheRedoTrail()
     {
-        // Undoing and then editing again takes a new branch: the future that was
-        // undone is no longer reachable, so redo must not resurrect it.
         var history = new PeqBankHistory();
         history.Push(Bank(100));
         Assert.True(history.TryUndo(Bank(100, 200), out PeqBankState _));
@@ -66,8 +64,6 @@ public sealed class PeqBankHistoryTests
             history.Push(Bank(100 + index));
         }
 
-        // Capacity + 1 states were pushed, so the oldest is gone; walking all the
-        // way back must land on the second one, never on the dropped first.
         PeqBankState state = Bank(9000);
         int steps = 0;
         while (history.TryUndo(state, out state))
@@ -82,8 +78,7 @@ public sealed class PeqBankHistoryTests
     [Fact]
     public void States_WithTheSameBandsInADifferentOrderAreNotEqual()
     {
-        // Order is what an exported profile numbers its filters by, so a reorder
-        // is a real change and has to be recordable as one.
+        // Order numbers exported filters, so a reorder is a real change.
         Assert.NotEqual(Bank(100, 200), Bank(200, 100));
         Assert.Equal(Bank(100, 200), Bank(100, 200));
     }

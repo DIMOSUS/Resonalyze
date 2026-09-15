@@ -3,19 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The spatial-average method is chosen once and kept, not recomputed from what
-/// the project currently holds.
-/// </summary>
-/// <remarks>
-/// It decides where every channel's LEVELS come from, so recomputing it live made
-/// it change under a project that never chose. The migration case is the sharp one:
-/// a session written before arrays existed carries attachments and no stored mode,
-/// and loading one new measurement that happens to carry an array flipped the whole
-/// project onto the array method — the attachments then went unread and every
-/// channel without an array fell back to its point response. One channel's source
-/// changed and the source of every channel's levels changed with it.
-/// </remarks>
+/// <remarks>Recomputed live, one new array measurement flipped a legacy attachments project onto the array method.</remarks>
 public sealed class SpatialAverageModeSettlingTests
 {
     private static LiveCaptureDocument Capture(SpatialAverageMethod method) =>
@@ -46,8 +34,6 @@ public sealed class SpatialAverageModeSettlingTests
         return channel;
     }
 
-    // The panel, its project, and the settling call — the whole decision, with no
-    // control involved.
     private static VirtualCrossoverSpatialAverageMode? Settle(
         VirtualCrossoverProjectFile project,
         params VirtualCrossoverChannel[] channels)
@@ -77,9 +63,6 @@ public sealed class SpatialAverageModeSettlingTests
     [Fact]
     public void AnArrayArrivingLaterDoesNotChangeIt()
     {
-        // The migration scenario, in order: the project binds with its attachments
-        // and settles, and only then does a measurement carrying an array land in
-        // another channel.
         var project = new VirtualCrossoverProjectFile();
         VirtualCrossoverChannel attached = Attached("A");
         Settle(project, attached, new VirtualCrossoverChannel("B"));
@@ -92,9 +75,6 @@ public sealed class SpatialAverageModeSettlingTests
     [Fact]
     public void AProjectWhoseFirstMeasurementCarriesAnArrayUsesIt()
     {
-        // The other half of the rule: nothing was attached, so nothing was chosen,
-        // and the measurement gets to decide. A user who just recorded an array has
-        // already said what they wanted.
         var project = new VirtualCrossoverProjectFile();
         Assert.Equal(
             VirtualCrossoverSpatialAverageMode.MicArray,
@@ -104,11 +84,7 @@ public sealed class SpatialAverageModeSettlingTests
     [Fact]
     public void AProjectHOLDINGBothKeepsWhatItAlreadyShowed()
     {
-        // The field case, and the reason freezing must not also re-decide. This
-        // session carries array captures with its measurements AND moving-microphone
-        // files attached beside them for comparison, and it has always opened on the
-        // arrays. Settling has one job — stop the answer moving — so it stores the
-        // answer that was already being shown, not a different one.
+        // Field case: arrays plus comparison moving-mic files; settling stores the answer already shown, not a new one.
         var project = new VirtualCrossoverProjectFile();
         VirtualCrossoverChannel both = Attached("A");
         both.SideState(rightSide: false).ArrayCapture = Capture(SpatialAverageMethod.MicArray);
@@ -121,8 +97,7 @@ public sealed class SpatialAverageModeSettlingTests
     [Fact]
     public void AnEmptyProjectStoresNothingYet()
     {
-        // Settling on an empty project would freeze a guess made from no evidence,
-        // and the first array to arrive could then never choose.
+        // Settling an empty project would freeze a guess the first array could never override.
         var project = new VirtualCrossoverProjectFile();
         Assert.Null(Settle(project, new VirtualCrossoverChannel("A")));
     }

@@ -4,12 +4,11 @@ namespace Resonalyze.Audio;
 
 internal interface ISweepCaptureSession
 {
-    /// <summary>Frames accepted into the current epoch, including queued worker blocks.</summary>
+    /// <summary>Includes queued worker blocks.</summary>
     int AcceptedSamples { get; }
     Task StartAsync(CancellationToken cancellationToken);
     void Reset();
     Task WaitForSamplesAsync(int sampleCount, CancellationToken cancellationToken);
-    /// <summary>Faults when the capture device stops; otherwise never completes.</summary>
     Task WaitForStopAsync(CancellationToken cancellationToken);
     float[][] CompleteCaptureSnapshot();
 }
@@ -49,10 +48,7 @@ internal sealed class SweepRunAudioOrchestrator
         }
 
         int recordingStart = capture.AcceptedSamples;
-        // Observe a terminal capture failure that can happen while playback is
-        // still running — before the sample waiter below even exists — so a dead
-        // device fails the run instead of hanging it until an Abort. The
-        // observation is cancelled when the run finishes normally.
+        // A device can die during playback, before the sample waiter exists: observe the stop so the run fails, not hangs.
         using var stopObservation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken);
         Task stopped = ObserveStopAsync(stopObservation.Token);
@@ -64,11 +60,7 @@ internal sealed class SweepRunAudioOrchestrator
                 playback, source, cancellationToken);
             await AwaitUnlessStoppedAsync(playbackTask, stopped).ConfigureAwait(false);
 
-            // AcceptedSamples includes queued worker blocks. Reading it again at
-            // playback completion covers any packet accepted in the narrow window
-            // between the initial baseline and playback start. The tail therefore
-            // begins after both the nominal sweep end and every block accepted by
-            // the time playback actually ended.
+            // Re-read at playback end: the tail starts after every block accepted by then.
             int nominalSweepEnd = checked(recordingStart + sweepSamples);
             int recordingEnd = Math.Max(nominalSweepEnd, capture.AcceptedSamples);
             int requiredSamples = checked(recordingEnd + tailSamples);
@@ -81,16 +73,11 @@ internal sealed class SweepRunAudioOrchestrator
         {
             stopObservation.Cancel();
             await ObserveQuietlyAsync(stopped).ConfigureAwait(false);
-            // If the run bailed out on a stop, the abandoned work tasks are
-            // observed here without blocking, so neither surfaces as an
-            // unobserved task exception.
             Forget(playbackTask);
             Forget(sampleWaitTask);
         }
     }
 
-    // Faults with the capture-stop exception; on run completion it is cancelled
-    // and completes quietly, so only a real device stop propagates.
     private async Task ObserveStopAsync(CancellationToken token)
     {
         try
@@ -107,8 +94,6 @@ internal sealed class SweepRunAudioOrchestrator
         Task first = await Task.WhenAny(work, stopped).ConfigureAwait(false);
         if (ReferenceEquals(first, stopped))
         {
-            // Rethrows the device-stop failure (or, if the run was already
-            // cancelling, completes and lets the work task surface the cancel).
             await stopped.ConfigureAwait(false);
         }
         await work.ConfigureAwait(false);
@@ -122,7 +107,6 @@ internal sealed class SweepRunAudioOrchestrator
         }
         catch
         {
-            // The stop observation faulting/cancelling is expected during teardown.
         }
     }
 

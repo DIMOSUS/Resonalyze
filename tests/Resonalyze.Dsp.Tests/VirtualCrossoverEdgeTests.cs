@@ -2,8 +2,6 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
-// Edge/guard coverage for VirtualCrossoverAnalysis: a degenerate (empty) frequency
-// window, the Nyquist band clamp, and the meaning of the reported loss diagnostics.
 public sealed class VirtualCrossoverEdgeTests
 {
     private const int SampleRate = 48_000;
@@ -18,9 +16,7 @@ public sealed class VirtualCrossoverEdgeTests
     [Fact]
     public void DegenerateWindowAboveNyquist_YieldsNoAlignment()
     {
-        // 25-30 kHz sits entirely above the 24 kHz Nyquist, so no FFT bins fall in
-        // the window (lastBin < firstBin). The search must return the neutral result
-        // rather than indexing an empty bin list.
+        // 25-30 kHz is above the 24 kHz Nyquist: no bins, neutral result.
         Complex[] variable = UnitImpulse(4_096, 100);
         Complex[] fixedIr = UnitImpulse(4_096, 100);
 
@@ -38,8 +34,7 @@ public sealed class VirtualCrossoverEdgeTests
     [Fact]
     public void FindBandLimitedCorrelationDelay_ClampsAWidePassBandBelowNyquist()
     {
-        // A very wide pass band would run past Nyquist; the search must clamp the
-        // upper edge (to 0.95*Nyquist) while keeping the band ordered and usable.
+        // The upper edge clamps to 0.95*Nyquist.
         CorrelationAlignmentResult result =
             VirtualCrossoverAnalysis.FindBandLimitedCorrelationDelay(
                 UnitImpulse(8_192, 2_000),
@@ -57,8 +52,6 @@ public sealed class VirtualCrossoverEdgeTests
     [Fact]
     public void FindAlignmentCandidates_LossDiagnosticsReflectSummationQuality()
     {
-        // Two identical, already-aligned channels sum constructively across the whole
-        // band, so the best candidate's average loss and worst dip are both ~0 dB.
         Complex[] aligned = UnitImpulse(4_096, 100);
         IReadOnlyList<AlignmentCandidate> alignedCandidates =
             VirtualCrossoverAnalysis.FindAlignmentCandidates(
@@ -70,9 +63,7 @@ public sealed class VirtualCrossoverEdgeTests
         Assert.InRange(best.LossDb, -0.5, 0.5);
         Assert.InRange(best.DipDb, -0.5, 0.5);
 
-        // A second channel offset by half a period at the band centre (1.25 kHz ->
-        // 0.4 ms) partially cancels: the same aligned pick now carries a real average
-        // loss and a still-deeper dip, so the diagnostics are not vacuous.
+        // Half a period at the 1.25 kHz centre (0.4 ms) makes the diagnostics non-vacuous.
         Complex[] offsetFixed = UnitImpulse(4_096, 100);
         offsetFixed[100] = Complex.Zero;
         offsetFixed[119] = Complex.One; // ~0.4 ms later

@@ -34,8 +34,6 @@ public sealed class RecordedSweepFileTests : IDisposable
         return samples;
     }
 
-    // Every channel is read: which one carries the measurement is decided later,
-    // by matching them against the sweep, and that decision needs them all.
     [Fact]
     public void LoadKeepsEveryChannel()
     {
@@ -49,7 +47,6 @@ public sealed class RecordedSweepFileTests : IDisposable
         Assert.Equal(2, content.ChannelCount);
         Assert.Equal(44_100, content.SampleRate);
         Assert.Equal(4_096, content.FrameCount);
-        // 24-bit round trip: the samples come back, not merely the shape.
         for (int i = 0; i < loud.Length; i++)
         {
             Assert.Equal(quiet[i], content.Channels[0][i], tolerance: 1e-6f);
@@ -62,7 +59,6 @@ public sealed class RecordedSweepFileTests : IDisposable
     {
         string path = Path.Combine(directory, "empty.wav");
         AudioFileCodec.WriteWav(path, new AudioFileContent([new float[1]], 44_100));
-        // A one-sample file decodes, but a recording of nothing is not a take.
         File.WriteAllBytes(path, File.ReadAllBytes(path)[..44]);
 
         Assert.ThrowsAny<Exception>(() => RecordedSweepFile.Load(path));

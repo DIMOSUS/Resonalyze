@@ -7,7 +7,6 @@ using Resonalyze.Options;
 
 namespace Resonalyze;
 
-/// <summary>Which curve set the acoustic plot shows.</summary>
 internal enum AcousticView
 {
     Magnitude,
@@ -17,11 +16,7 @@ internal enum AcousticView
     Step
 }
 
-/// <summary>
-/// One line on the acoustic plot: its label, points, color and stroke.
-/// <paramref name="OnLossAxis"/> binds the curve to the right-hand sum-loss
-/// axis instead of the shared left value axis.
-/// </summary>
+/// <summary><paramref name="OnLossAxis"/> binds the curve to the right-hand sum-loss axis.</summary>
 internal sealed record AcousticCurve(
     string Title,
     IReadOnlyList<SignalPoint> Points,
@@ -30,13 +25,7 @@ internal sealed record AcousticCurve(
     LineStyle Style,
     bool OnLossAxis = false);
 
-/// <summary>
-/// The payload of the two time-domain views: the processed traces to draw and
-/// the gate window they are framed by (the presenter draws the Tukey window and
-/// re-arms the static ms axis to the returned bounds). <paramref name="Step"/>
-/// draws the traces' step responses on one common scale instead of the impulse
-/// responses each on its own; the traces then include the Sum where it is on.
-/// </summary>
+/// <summary>Time-domain payload framed by the gate window. <paramref name="Step"/> draws step responses on one common scale, Sum included.</summary>
 internal sealed record AcousticImpulseRender(
     IReadOnlyList<IrPreviewTrace> Traces,
     int SampleRate,
@@ -46,77 +35,41 @@ internal sealed record AcousticImpulseRender(
     double RightMs,
     bool Step = false);
 
-/// <summary>
-/// A ready-to-draw frame for the acoustic plot: the hint text plus either a set
-/// of curves (magnitude / phase / group delay) or the impulse or step payload.
-/// The panel prepares this from the processed channels; the presenter owns the
-/// OxyPlot mechanics.
-/// </summary>
 internal sealed record AcousticRender(
     string HintText,
     IReadOnlyList<AcousticCurve> Curves,
     AcousticImpulseRender? Impulse);
 
-/// <summary>
-/// The Virtual DSP main (acoustic) plot: the raw/processed channel magnitudes,
-/// phases or group delays, their complex sum and the sum loss, or the gated
-/// impulse and step views. Owns the plot model, its four axes (the shared
-/// log-frequency axis, the magnitude/phase value axis, the right-hand sum-loss
-/// axis and the linear ms axis of the two time-domain views), the watermark and
-/// hint annotations, the curve series and the axis-range preservation across
-/// view switches. The panel hands it a ready <see cref="AcousticRender"/>; it
-/// never builds a LineSeries itself.
-/// </summary>
+/// <summary>Presenter of the Virtual DSP main (acoustic) plot: owns the model, its four axes and range preservation; never builds curves.</summary>
 internal sealed class VirtualCrossoverAcousticPlot
 {
     private const string SeriesTag = "virtual-crossover:curve";
     private const string LossAxisKey = "virtual-crossover:loss";
     private const string TrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00}";
     private const string GroupDelayTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.000} ms";
-    // The tracker of the view on screen: the group-delay view names its unit,
-    // the others read the axis title.
     private string curveTrackerFormat = TrackerFormat;
 
-    // The sum-loss axis scale: a 6 dB step, the top just clear of the 0 dB
-    // ceiling so the line at 0 reads as a line rather than as the frame, and
-    // a nominal depth that holds an ordinary junction. A deeper notch extends
-    // the range in whole steps down to the floor, below which a cancellation
-    // is total and its exact depth means nothing.
+    // Loss axis: 6 dB steps, top just above 0 dB, nominal depth extended in whole steps down to a floor.
     private const double LossAxisStepDb = 6;
     private const double LossAxisTopDb = 3;
     private const double LossAxisNominalBottomDb = -24;
     private const double LossAxisFloorDb = -60;
 
-    /// <summary>
-    /// The sum-loss axis colour: the loss curve's own amber, so the scale on the
-    /// right reads as belonging to that one line.
-    /// </summary>
     public static readonly OxyColor LossAxisColor = OxyColor.FromRgb(230, 184, 0);
 
     private readonly PlotView view;
     private readonly PlotLabelsPanelController plotLabels;
     private readonly PlotWatermarkAnnotation hintAnnotation;
     private readonly LinearAxis valueAxis;
-    // The right-hand axis the sum loss is drawn against. The loss is a dB GAP
-    // (<= 0 by the triangle inequality), not a level: on the shared dB axis it
-    // sat a full scale below the curves it describes and flattened into the
-    // floor. In sight only while a loss curve is drawn, so the other views and
-    // a switched-off loss leave no empty scale behind.
+    // The loss is a dB gap (≤ 0), not a level: on the shared axis it flattened into the floor. Visible only while drawn.
     private readonly LinearAxis lossAxis;
-    // The nominal range last armed onto the loss axis, so a redraw can tell
-    // "the range this plot chose" from "the view the user zoomed to".
+    // Last armed nominal range, to tell our range from the user's zoom.
     private (double Lower, double Upper)? lossAxisNominal;
-    // The two bottom axes: the shared log-frequency axis for the magnitude/phase
-    // views and a linear ms axis for the impulse view. Only one is in the model
-    // at a time (ConfigureBottomAxis swaps them), so the untagged curve series
-    // always bind to the active one.
+    // Only one bottom axis is in the model at a time, so untagged series bind to the active one.
     private readonly LogarithmicAxis frequencyAxis;
     private readonly LinearAxis timeAxis;
 
-    // The display window the impulse time axis was last armed to, so a redraw
-    // that lands on the same window leaves the user's zoom alone. A move smaller
-    // than this is recomputation noise rather than a new window — it is orders
-    // of magnitude below one sample at any rate the app records at.
+    // Below this a window move is recomputation noise, not a new window.
     private const double WindowMoveEpsilonMs = 1e-6;
     private (double StartMs, double EndMs)? impulseWindow;
 
@@ -129,12 +82,7 @@ internal sealed class VirtualCrossoverAcousticPlot
         PlotModelStyle.ApplyChrome(model);
         PlotModelStyle.AddFrequencyAxis(model);
         frequencyAxis = (LogarithmicAxis)model.Axes[^1];
-        // The impulse view runs on an absolute-time axis. It zooms and pans like
-        // any other: the interesting part of an impulse view is the millisecond
-        // around each front, and the gate window it opens on is far wider than
-        // that. The window stays its hard limit — outside it the
-        // traces hold no data — and DrawImpulse only re-arms the range when the
-        // window itself moves, so a zoom survives the constant redraws.
+        // Zoomable within the gate window; the range is re-armed only when the window moves, so zoom survives redraws.
         timeAxis = new LinearAxis
         {
             Position = AxisPosition.Bottom,
@@ -142,8 +90,6 @@ internal sealed class VirtualCrossoverAcousticPlot
             MajorGridlineStyle = LineStyle.Solid,
             MinorGridlineStyle = LineStyle.Dot
         };
-        // The absolute pan/zoom limits live in ConfigureForView: they differ
-        // between the magnitude (dB), phase (deg) and impulse (normalized) views.
         valueAxis = new LinearAxis
         {
             Position = AxisPosition.Left,
@@ -151,11 +97,7 @@ internal sealed class VirtualCrossoverAcousticPlot
             MinorGridlineStyle = LineStyle.Dot
         };
         PlotModelStyle.AddAxis(model, valueAxis);
-        // After the value axis: the mouse and the on-graph buttons take the
-        // first visible zoomable axis of an orientation as "the" vertical
-        // scale (PlotAxisZoom.FindZoomableAxis), and that stays the dB axis on
-        // the left. The loss axis owns no gridlines (the left axis draws them);
-        // a faint line marks its 0 dB ceiling.
+        // Added after the value axis: PlotAxisZoom.FindZoomableAxis takes the first zoomable vertical axis.
         lossAxis = new LinearAxis
         {
             Key = LossAxisKey,
@@ -197,18 +139,12 @@ internal sealed class VirtualCrossoverAcousticPlot
         plotLabels = new PlotLabelsPanelController(view, () => Mode.VirtualCrossover);
     }
 
-    // Magnitude, phase and group delay reuse one value axis object so pan/zoom of
-    // the frequency axis survives the toggle; only the value scale and its zoom
-    // lock are re-armed. The impulse and step views additionally swap the bottom
-    // axis to the linear ms one.
+    // One value axis reused across views so frequency zoom survives toggles.
     public void ConfigureForView(AcousticView acousticView)
     {
         if (IsTimeDomain(acousticView))
         {
-            // The impulse traces are each normalized to their own envelope's
-            // peak (the IR Gate preview, which draws no envelopes, to the
-            // sample peak); the step traces to the largest among them. Either
-            // way the scale is unitless.
+            // Impulse traces are normalized to their own envelope peak, step traces to the largest; unitless.
             valueAxis.Title = string.Empty;
             valueAxis.AbsoluteMinimum = -1.05;
             valueAxis.AbsoluteMaximum = 1.05;
@@ -227,10 +163,6 @@ internal sealed class VirtualCrossoverAcousticPlot
         }
         else if (acousticView == AcousticView.GroupDelay)
         {
-            // Absolute milliseconds from the record's start — the impulse view's
-            // scale — so the range depends on where the arrivals are, and the
-            // axis fits itself to the drawn curves like the dB axis does. No hard
-            // limits: a curve can sit anywhere on that clock.
             valueAxis.Title = "ms";
             valueAxis.AbsoluteMinimum = double.MinValue;
             valueAxis.AbsoluteMaximum = double.MaxValue;
@@ -242,35 +174,23 @@ internal sealed class VirtualCrossoverAcousticPlot
         {
             valueAxis.Title = "dB";
             valueAxis.AbsoluteMinimum = -90;
-            // These traces are the measured, loopback-referenced magnitudes, so
-            // the pan ceiling is the shared one: attenuating the reference lifts
-            // every curve here by the same amount (see PlotModelStyle).
+            // Loopback-referenced magnitudes share the pan ceiling (see PlotModelStyle).
             valueAxis.AbsoluteMaximum = PlotModelStyle.RelativeDecibelAbsoluteMaximum;
             valueAxis.Minimum = double.NaN;
             valueAxis.Maximum = double.NaN;
             valueAxis.MajorStep = double.NaN;
         }
 
-        // ±180° is the ENTIRE range a wrapped phase can occupy, so there is
-        // nothing above or below to travel to: zooming the height would only cut
-        // curves off screen while implying the rest is somewhere out of view.
-        // Locked rather than merely bounded, which also drops the axis from the
-        // double-click limits dialog (it offers the zoomable axes only) and
-        // leaves a drag panning the frequency axis alone.
+        // Locked: ±180° is the whole wrapped range (also drops it from the limits dialog).
         bool phase = acousticView == AcousticView.Phase;
         valueAxis.IsZoomEnabled = !phase;
         valueAxis.IsPanEnabled = !phase;
-        // A tenth of the range of headroom around the group-delay curves, so
-        // a flat channel does not sit on the frame; the others keep OxyPlot's
-        // own hundredth.
         bool groupDelay = acousticView == AcousticView.GroupDelay;
         valueAxis.MinimumPadding = groupDelay ? 0.1 : 0.01;
         valueAxis.MaximumPadding = groupDelay ? 0.1 : 0.01;
         curveTrackerFormat = groupDelay ? GroupDelayTrackerFormat : TrackerFormat;
 
-        // The loss is magnitude-only (the panel mutes its toggle elsewhere);
-        // the next Draw decides the axis for the magnitude view, the others
-        // lose it right away rather than on their first redraw.
+        // The loss is magnitude-only; other views drop its axis immediately.
         if (acousticView != AcousticView.Magnitude)
         {
             lossAxis.IsAxisVisible = false;
@@ -281,8 +201,6 @@ internal sealed class VirtualCrossoverAcousticPlot
         view.InvalidatePlot(false);
     }
 
-    // Directly updates the hint annotation outside a full redraw (the session
-    // load shows a note before the sources resolve).
     public void ShowHint(string hint)
     {
         hintAnnotation.Text = hint;
@@ -314,8 +232,6 @@ internal sealed class VirtualCrossoverAcousticPlot
                 lossDrawn |= curve.OnLossAxis;
             }
 
-            // The axis shows exactly while a curve is bound to it: a scale with
-            // nothing on it is a scale for nothing.
             lossAxis.IsAxisVisible = lossDrawn;
             if (lossDrawn)
             {
@@ -327,16 +243,10 @@ internal sealed class VirtualCrossoverAcousticPlot
         model.InvalidatePlot(true);
     }
 
-    // The two views drawn on the ms axis: the processed impulse responses and
-    // their step responses. They share the axis object as well as the display
-    // window, so a toggle between them keeps the zoom.
     private static bool IsTimeDomain(AcousticView acousticView) =>
         acousticView is AcousticView.Impulse or AcousticView.Step;
 
-    // Keeps exactly one bottom axis in the model: the log-frequency axis for the
-    // magnitude/phase/group-delay views, the linear ms axis for the impulse and
-    // step views. Swapping whole axis objects (instead of reconfiguring one)
-    // preserves each view's own range across toggles.
+    // Swapping whole axis objects preserves each view's own range across toggles.
     private void ConfigureBottomAxis(AcousticView acousticView)
     {
         if (view.Model is not { } model)
@@ -356,12 +266,6 @@ internal sealed class VirtualCrossoverAcousticPlot
 
     private void DrawImpulse(PlotModel model, AcousticImpulseRender impulse)
     {
-        // The impulse view is the gate dialog's IR preview promoted to the main
-        // plot: every processed channel IR on the shared absolute timeline, each
-        // wrapped in its ± envelope and normalized to that envelope's in-window
-        // peak, with the phase-gate Tukey window drawn where it sits. The step
-        // view draws the same traces' step responses over the same window, on
-        // one common scale.
         (double StartMs, double EndMs)? window = impulse.Step
             ? ImpulseWindowPreview.AddStepTraceSeries(
                 model,
@@ -387,10 +291,7 @@ internal sealed class VirtualCrossoverAcousticPlot
             return;
         }
 
-        // The window the series were built for is the axis's hard limit either
-        // way. The RANGE, though, is re-armed only when that window actually
-        // moves: the axis zooms now, and every chain edit redraws this view, so
-        // re-arming each time would throw away the zoom the user just set.
+        // Range re-armed only when the window moves: every chain edit redraws, and re-arming would discard the user's zoom.
         timeAxis.AbsoluteMinimum = bounds.StartMs;
         timeAxis.AbsoluteMaximum = bounds.EndMs;
         if (impulseWindow is { } previous &&
@@ -416,8 +317,6 @@ internal sealed class VirtualCrossoverAcousticPlot
             }
         }
 
-        // The impulse view marks its gate-offset annotation with the same tag,
-        // so a redraw sweeps it together with the curves.
         for (int index = model.Annotations.Count - 1; index >= 0; index--)
         {
             if (Equals(model.Annotations[index].Tag, SeriesTag))
@@ -427,12 +326,7 @@ internal sealed class VirtualCrossoverAcousticPlot
         }
     }
 
-    // Sizes the loss axis to the nominal depth extended, in whole steps, to the
-    // deepest drawn loss. The nominal range is the hard pan/zoom limit — the
-    // curve holds nothing beyond it. The RANGE, though, is re-armed only when
-    // the nominal itself moved: the axis zooms and pans, and every chain edit
-    // redraws this view, so re-arming each time would throw away the zoom the
-    // user just set — the rule the impulse view's time axis follows too.
+    // The nominal range is the hard limit; the range is re-armed only when the nominal moves (as for the time axis).
     private void UpdateLossAxisRange(IReadOnlyList<AcousticCurve> curves)
     {
         double deepest = 0;
@@ -468,11 +362,6 @@ internal sealed class VirtualCrossoverAcousticPlot
         lossAxis.Reset();
     }
 
-    /// <summary>
-    /// The sum-loss axis range for a curve whose deepest point is
-    /// <paramref name="deepestDb"/>: the nominal depth, extended in whole steps
-    /// to hold the curve, down to the floor.
-    /// </summary>
     internal static (double Lower, double Upper) LossAxisRange(double deepestDb)
     {
         double lower = Math.Min(

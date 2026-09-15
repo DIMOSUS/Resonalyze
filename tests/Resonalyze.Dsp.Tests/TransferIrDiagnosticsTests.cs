@@ -24,9 +24,7 @@ public sealed class TransferIrDiagnosticsTests
         }
     }
 
-    // The field shape (v3 midbass records): a band-limited main arrival, the
-    // driver's weak out-of-band content travelling WITH it, and a small
-    // broadband click parked at a fixed early sample by the interface.
+    // v3 midbass shape: band-limited arrival, out-of-band content travelling with it, a broadband interface click at a fixed early sample.
     private static double[] CrosstalkRecord(
         double clickAmplitude,
         double outOfBandAmplitude = 0.05)
@@ -54,8 +52,6 @@ public sealed class TransferIrDiagnosticsTests
 
         Assert.InRange(band.PeakHz, 400, 620);
         Assert.True(band.LowHz < 500 && band.HighHz > 500);
-        // A 40-period Hann burst is spectrally tight: the -20 dB band must
-        // not swallow octaves of silence around it.
         Assert.True(
             Math.Log2(band.HighHz / band.LowHz) < 2.0,
             $"band {band.LowHz:0}-{band.HighHz:0} Hz is too wide for a narrowband burst");
@@ -64,11 +60,7 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void DetectDominantBand_BridgesANarrowCancellationNotch()
     {
-        // An in-cabin interference notch splits the driver's working band
-        // into two islands. The expansion must step across a deep-but-narrow
-        // dip instead of keeping only the island around the loudest room
-        // gain — the AutoBand default would otherwise throw away half the
-        // driver's real band.
+        // A deep narrow in-cabin notch must be stepped across, not split the band into islands.
         var impulseResponse = new double[65_536];
         for (int k = 0; k <= 15; k++)
         {
@@ -181,17 +173,13 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void DetectCrosstalkHead_FindsTheEarlyBroadbandClick()
     {
-        // -21 dB re the record's max — the field click's level, inside the
-        // full-band first-peak threshold, i.e. the click IS the full-band
-        // First Arrival until removed.
+        // -21 dB re max: the click is the full-band First Arrival until removed.
         double[] impulseResponse = CrosstalkRecord(clickAmplitude: 0.09);
 
         CrosstalkHeadGate? gate = TransferIrDiagnostics.DetectCrosstalkHead(
             impulseResponse, SampleRate);
 
         Assert.NotNull(gate);
-        // The gate covers the click (sample 30) and ends far before the
-        // 40 ms front.
         Assert.True(gate.Value.GateEndSample > 30);
         Assert.True(gate.Value.GateEndSample < SampleRate * 30 / 1000);
         Assert.InRange(gate.Value.BurstTimeMs, 0.3, 1.1);
@@ -200,10 +188,7 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void DetectCrosstalkHead_AClickHotterThanTheDriversTailIsStillFound()
     {
-        // The MORE dangerous artifact: the click outguns the driver's
-        // out-of-band content, so it is the complement band's strongest
-        // event. A detector keyed on "the strongest peak comes later" would
-        // go blind exactly here.
+        // The click outguns the out-of-band content: a 'strongest peak comes later' detector would go blind.
         double[] impulseResponse = CrosstalkRecord(clickAmplitude: 0.15);
 
         CrosstalkHeadGate? gate = TransferIrDiagnostics.DetectCrosstalkHead(
@@ -217,8 +202,6 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void DetectCrosstalkHead_AClickThatIsTheOnlyComplementEventIsFound()
     {
-        // No driver out-of-band tail at all: the click is the complement
-        // band's only event, first and strongest at once.
         double[] impulseResponse = CrosstalkRecord(
             clickAmplitude: 0.09, outOfBandAmplitude: 0.0);
 
@@ -241,10 +224,7 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void DetectCrosstalkHead_AGenuineWeakEarlyArrivalIsNotGated()
     {
-        // A weak IN-BAND early arrival (a real direct front 35 ms before the
-        // strong reflection cluster) has no complement island — the
-        // complement carries sound only where the record's genuine
-        // out-of-band content is, which travels with the arrivals.
+        // A weak in-band early front has no complement island.
         double[] impulseResponse = CrosstalkRecord(clickAmplitude: 0.0);
         AddToneBurst(impulseResponse, startMs: 5.0, frequencyHz: 300, periods: 10, amplitude: 0.1);
 
@@ -254,8 +234,6 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void DetectCrosstalkHead_AFullRangeRecordIsLeftAlone()
     {
-        // A broadband record has no complement band to test — and the field
-        // data showed its head click is inert for the engine anyway.
         var impulseResponse = new double[32_768];
         impulseResponse[30] = 0.02;
         impulseResponse[2_000] = 1.0;
@@ -266,15 +244,7 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void EstimateIrStart_DelayPrefixDoesNotInflateTheSnr()
     {
-        // The same review catch already pinned for the broadband onset and
-        // the band-limited arrival, now for the IR-start estimator behind
-        // every Auto gate placement: a chain DELAY manufactures a silent
-        // prefix that sinks the noise-floor estimate, and a noise record the
-        // 20 dB SNR gate rightly refuses comes back "credible" with a start
-        // in the middle of the noise (measured here: refused raw, 22.5 ms
-        // through the blind read). The valid range restricts the analysis to
-        // the measured content while every reported time stays in the full
-        // record's coordinates.
+        // A chain delay's silent prefix sinks the noise floor: a refused noise record read 'credible' at 22.5 ms without the valid range.
         var random = new Random(20_260_724);
         var raw = new Complex[4_096];
         for (int i = 0; i < raw.Length; i++)
@@ -290,8 +260,6 @@ public sealed class TransferIrDiagnosticsTests
         Assert.Null(TransferIrDiagnostics.EstimateIrStart(
             processed, 48_000, validRange));
 
-        // And a genuine front survives the guard with its position read in
-        // the FULL record's frame: the raw start plus the 25 ms delay.
         var front = new Complex[8_192];
         front[480] = Complex.One;
         Complex[] frontDelayed = VirtualCrossoverAnalysis.ApplyChain(
@@ -312,10 +280,7 @@ public sealed class TransferIrDiagnosticsTests
     public void EstimateIrStart_LandsOnTheFrontDespiteTheHeadClick(
         double clickAmplitude)
     {
-        // The field failure the estimator exists for: the broadband click at
-        // sample 30 IS the full-band first arrival, but carries no energy
-        // inside the driver's 300 Hz band — the in-band read must walk the
-        // genuine front at 40 ms instead, at both field click levels.
+        // The sample-30 click carries no in-band energy: the in-band read must find the 40 ms front.
         double[] impulseResponse = CrosstalkRecord(clickAmplitude);
 
         IrStartEstimate? start = TransferIrDiagnostics.EstimateIrStart(
@@ -323,8 +288,6 @@ public sealed class TransferIrDiagnosticsTests
 
         Assert.NotNull(start);
         Assert.True(start.Value.DominantBandLimited);
-        // On the front's rise (40 ms + a fraction of the 100 ms Hann rise),
-        // far past the click at 0.6 ms.
         Assert.InRange(start.Value.StartMs, 40.0, 65.0);
         Assert.True(start.Value.EarlyMs <= start.Value.StartMs);
         Assert.True(start.Value.StartMs <= start.Value.LateMs);
@@ -333,14 +296,7 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void EstimateIrStart_ACabinModeDoesNotDragTheReadOffTheArrival()
     {
-        // The field failure behind the arrival band's wider floor: a door
-        // woofer at the listening position, where one cabin mode towers ~20 dB
-        // over the driver's own working band. Read at the 15 dB CONTENT floor
-        // the band collapses around that mode — and a band that narrow cannot
-        // resolve anything shorter than its own ~8 ms, so the crossing walked
-        // back from its smeared envelope read 15.9 ms for an arrival at 20 ms,
-        // milliseconds before the record leaves its noise floor. The arrival
-        // band has to reach past the mode into the content the driver has.
+        // A cabin mode ~20 dB over the working band collapses the 15 dB content band; too narrow to resolve the front (15.9 ms for 20 ms).
         var impulseResponse = new double[65_536];
         int arrival = SampleRate * 20 / 1000;
         double decay = 30.0 * SampleRate / 1000.0;
@@ -349,8 +305,6 @@ public sealed class TransferIrDiagnosticsTests
             impulseResponse[arrival + i] += Math.Exp(-i / decay) *
                 Math.Sin(Math.Tau * 123.0 * i / SampleRate);
         }
-        // The driver's own front: wideband and brief, so it stands 20 dB below
-        // the mode across the spectrum however tall its samples are.
         int front = (int)Math.Round(0.4 * SampleRate / 1000.0);
         for (int i = 0; i < front; i++)
         {
@@ -358,7 +312,6 @@ public sealed class TransferIrDiagnosticsTests
                 10.0 * (0.5 - 0.5 * Math.Cos(Math.Tau * i / front));
         }
 
-        // The premise: at the content floor this record's band IS the mode.
         DominantBand contentBand = TransferIrDiagnostics.DetectDominantBand(
             impulseResponse, SampleRate);
         Assert.True(
@@ -390,9 +343,6 @@ public sealed class TransferIrDiagnosticsTests
             impulseResponse, SampleRate);
 
         Assert.NotNull(start);
-        // A delta's envelope rises within the Hilbert skirt: the crossing
-        // sits within a fraction of a millisecond of the front, and the
-        // 10-vs-50 % spread stays tight.
         Assert.InRange(start.Value.StartMs, 19.5, 20.05);
         Assert.InRange(
             start.Value.LateMs - start.Value.EarlyMs, 0.0, 0.5);
@@ -401,10 +351,7 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void EstimateIrStart_AFrontRunningOffTheRecordHeadStaysAtZero()
     {
-        // A narrowband arrival that begins before the record does: the
-        // envelope is already well above the low crossings at sample 0, so
-        // the backward walk runs out of record. The crossings must stop at
-        // the record start rather than extrapolate into negative time.
+        // Envelope already high at sample 0: crossings stop at the record start, no negative time.
         var impulseResponse = new double[65_536];
         double decay = 40.0 * SampleRate / 1000.0;
         for (int i = 0; i < impulseResponse.Length; i++)
@@ -446,8 +393,6 @@ public sealed class TransferIrDiagnosticsTests
             new double[16_384], SampleRate));
         Assert.Null(TransferIrDiagnostics.EstimateIrStart(
             Array.Empty<double>(), SampleRate));
-        // Too short for any spectral analysis — refused BEFORE the FFT, even
-        // at a valid sample rate.
         Assert.Null(TransferIrDiagnostics.EstimateIrStart(
             new double[] { 1.0 }, SampleRate));
         Assert.Null(TransferIrDiagnostics.EstimateIrStart(
@@ -457,10 +402,7 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void EstimateIrStart_RefusesANoiseOnlyRecord()
     {
-        // A noise envelope still has a strongest peak the first-arrival
-        // search falls back to; only the SNR floor exposes that there is no
-        // front to measure. Deterministic LCG noise (approx. Gaussian via a
-        // sum of uniforms) so the test never flakes.
+        // Noise still has a strongest peak; only the SNR floor exposes no front.
         var impulseResponse = new double[65_536];
         uint state = 12_345;
         double NextUniform()
@@ -482,8 +424,6 @@ public sealed class TransferIrDiagnosticsTests
             impulseResponse, SampleRate));
     }
 
-    // Deterministic LCG noise, the same generator the noise-only estimate
-    // test uses — the compactness tests must never flake either.
     private static double[] StationaryNoise(int length, uint seed)
     {
         var samples = new double[length];
@@ -499,13 +439,7 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void MeasureCompactness_GenuineDecayReadsHigh()
     {
-        // A CAUSAL arrival — fast attack, exponential decay — over a
-        // realistic noise floor, in a buffer many times the compactness
-        // window: the good-measurement shape (field records read
-        // 28.8-48.6 dB). Deliberately not the symmetric Hann burst of the
-        // crosstalk tests: a real acoustic IR is front-loaded, and the
-        // symmetric case (a zero-phase gate kernel) is covered by the
-        // gated-transfer band tests below.
+        // Causal, front-loaded arrival (field records read 28.8-48.6 dB); the symmetric kernel case is covered below.
         double[] impulseResponse = StationaryNoise(131_072, seed: 7);
         for (int i = 0; i < impulseResponse.Length; i++)
         {
@@ -528,15 +462,10 @@ public sealed class TransferIrDiagnosticsTests
             compactness.Value.InsideOutsideDb >=
                 TransferIrDiagnostics.MinimumCompactnessDb + 10,
             $"genuine shape read {compactness.Value.InsideOutsideDb:0.0} dB");
-        // The envelope peaks at the first sine crest right after the onset.
         Assert.InRange(compactness.Value.PeakDelayMs, 5, 30);
     }
 
-    // The field shape of a transfer built from an unusable reference (a
-    // loopback that was playback bleed): stationary division noise across
-    // the whole buffer with giant spikes at the circular wrap point — peak
-    // at sample ~2 or wrapped into negative time, energy everywhere. The
-    // real set read 11.2-15.7 dB.
+    // Transfer from an unusable loopback: stationary division noise with wrap spikes (field 11.2-15.7 dB).
     [Fact]
     public void MeasureCompactness_StationaryNoiseWithWrapSpikesReadsLow()
     {
@@ -564,9 +493,7 @@ public sealed class TransferIrDiagnosticsTests
         Assert.InRange(compactness.Value.InsideOutsideDb, -3, 3);
     }
 
-    // No peak-position rule, by design: an electrical chain measurement
-    // (mic input wired straight to a processor output) legitimately peaks
-    // at zero delay and must pass on its clean shape alone.
+    // No peak-position rule: an electrical chain legitimately peaks at zero delay.
     [Fact]
     public void MeasureCompactness_ElectricalDeltaAtZeroPasses()
     {
@@ -586,7 +513,6 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void MeasureCompactness_RefusesDegenerateInput()
     {
-        // Too short to carve a meaningful window, or nothing to measure.
         Assert.Null(TransferIrDiagnostics.MeasureCompactness(
             new double[100], SampleRate));
         Assert.Null(TransferIrDiagnostics.MeasureCompactness(
@@ -594,9 +520,7 @@ public sealed class TransferIrDiagnosticsTests
         Assert.Null(TransferIrDiagnostics.MeasureCompactness(
             StationaryNoise(65_536, seed: 3), sampleRate: 0));
 
-        // Non-finite content refuses too — the caller treats null as a
-        // failed measurement, so a NaN capture can never pass by silently
-        // poisoning every comparison.
+        // Callers treat null as failure, so NaN can never pass silently.
         double[] poisonedByNaN = StationaryNoise(65_536, seed: 4);
         poisonedByNaN[123] = double.NaN;
         Assert.Null(TransferIrDiagnostics.MeasureCompactness(
@@ -607,15 +531,7 @@ public sealed class TransferIrDiagnosticsTests
             poisonedByInfinity, SampleRate));
     }
 
-    // Band sweeps are a supported workflow, and the zero-phase excitation
-    // gate turns even an ideal H(f)=1 into a symmetric band-limited kernel
-    // whose pre-ringing lives in negative (wrapped) time — the compactness
-    // window must accommodate it at every allowed band. Each case runs the
-    // PRODUCTION estimator with the production gate shape (full band plus
-    // fade guard bands): the ideal transfer must clear the floor with
-    // margin, gated uncorrelated noise must stay far below it. A 10 ms
-    // pre-window fails the 20-50 Hz case at 19.9 dB, which is what this
-    // test pins.
+    // The zero-phase gate makes H(f)=1 a symmetric kernel with wrapped pre-ringing; a 10 ms pre-window fails 20-50 Hz at 19.9 dB.
     [Theory]
     [InlineData(20.0, 50.0)]
     [InlineData(20.0, 80.0)]
@@ -698,18 +614,14 @@ public sealed class TransferIrDiagnosticsTests
         {
             Assert.Equal(0.0, clean[i].Magnitude);
         }
-        // The main arrival region is untouched.
         int front = SampleRate * 40 / 1000;
         for (int i = front; i < front + 1000; i++)
         {
             Assert.Equal(complexIr[i], clean[i]);
         }
-        // And the original was not mutated.
         Assert.Equal(0.09, impulseResponse[30]);
     }
 
-    // The measure that tells a matched excitation from a mismatched one: how far
-    // the arrival stands above its own two milliseconds.
     [Fact]
     public void ArrivalSharpness_IsHighForACleanArrival()
     {
@@ -727,10 +639,7 @@ public sealed class TransferIrDiagnosticsTests
             $"sharpness was {sharpness}");
     }
 
-    // A decay that runs for a quarter of a second still counts as an arrival:
-    // the floor has to pass a reverberant room, not just an anechoic one. This is
-    // the case that ruled out measuring the SHARE of energy near the arrival —
-    // this record keeps only 12 % of it there.
+    // A reverberant decay keeps only 12 % of energy near the arrival, which ruled out an energy-share measure.
     [Fact]
     public void ArrivalSharpness_SurvivesALongDecay()
     {
@@ -752,8 +661,6 @@ public sealed class TransferIrDiagnosticsTests
             $"a reverberant record must pass; sharpness was {sharpness}");
     }
 
-    // What a sweep deconvolved against the WRONG sweep looks like: the energy is
-    // spread over tens of milliseconds instead of landing.
     [Fact]
     public void ArrivalSharpness_IsLowForASmearedArrival()
     {
@@ -783,12 +690,7 @@ public sealed class TransferIrDiagnosticsTests
             [new Complex(1, 0)], sampleRate: 0));
     }
 
-    // The excitation gate at the narrowest supported bands, built the way the
-    // measurement builds it (half-octave guard bands), through the PRODUCTION
-    // estimator. The kernel it turns an ideal H(f)=1 into is symmetric, so it is
-    // the one legitimate shape that can look acausal — and it must stay clear of
-    // the report line at every band, or a band sweep would be reported for
-    // being one.
+    // The symmetric gate kernel is the one legitimate acausal-looking shape; it must stay under the report line.
     [Theory]
     [InlineData(20.0, 25.0)]
     [InlineData(20.0, 50.0)]
@@ -816,29 +718,18 @@ public sealed class TransferIrDiagnosticsTests
             $"ideal {lowFullHz}-{highFullHz} Hz read {preArrival.Value:0.0} dB");
     }
 
-    // The measure's whole reason to exist, and the reason it is not a second
-    // spelling of compactness. The same resonance imposed two ways: once in
-    // magnitude alone, which rings both directions, and once as the minimum-phase
-    // filter a cabin would be, which rings forward only. Compactness reads one
-    // number for both — so its floor has to sit low enough to keep a genuinely
-    // resonant cabin, and a fault hiding above that floor goes unremarked. This
-    // measure sees only the first, which is what lets it carry a threshold at
-    // all.
+    // Magnitude-only resonance rings both ways, minimum-phase rings forward: compactness reads both the same, this measure does not.
     [Fact]
     public void MeasurePreArrivalDb_SeparatesADenominatorDipFromACabinResonance()
     {
         const int FrameLength = 262_144;
-        // The depth the field pair's reference actually lost, on a sub-band record
-        // like the one it was measured on: the fault is driven by whatever the
-        // record carries at the cancelled frequency, so a 20-200 Hz take is the
-        // honest base for it and a full-range one would understate it.
+        // A 20-200 Hz take: the fault scales with what the record carries at the cancelled frequency.
         const double DepthDb = 18.0;
         double[] clean = SyntheticCabinTransfer(
             FrameLength, delayMs: 12.0, decaySeconds: 0.25, highFullHz: 200.0);
         var band = new PeqBand(34.5, 40.0, DepthDb);
         BiquadCoefficients biquad = PeakingBiquad.Compute(band, SampleRate);
 
-        // The same peak at 34.5 Hz either way; only the phase differs.
         double[] denominatorDip = ApplySpectrum(
             clean, z => Complex.Abs(BiquadResponse(biquad, z)));
         double[] cabinResonance = ApplySpectrum(
@@ -851,9 +742,7 @@ public sealed class TransferIrDiagnosticsTests
         double cabinPreArrival = TransferIrDiagnostics
             .MeasurePreArrivalDb(cabinResonance, SampleRate)!.Value;
 
-        // What a synthetic can prove is the CONTRAST, and that a fault of this
-        // depth is reported rather than passed in silence. The absolute line is
-        // calibrated on field records, not on this.
+        // A synthetic proves the contrast only; the absolute line is calibrated on field records.
         Assert.True(
             dipPreArrival > cabinPreArrival + 10,
             $"a zero-phase denominator dip read {dipPreArrival:0.0} dB against " +
@@ -870,8 +759,6 @@ public sealed class TransferIrDiagnosticsTests
             "a minimum-phase cabin resonance must not even be reported; " +
             $"read {cabinPreArrival:0.0} dB");
 
-        // And the reason a second measure was needed at all: compactness reads the
-        // two as the same record.
         double dipCompactness = TransferIrDiagnostics
             .MeasureCompactness(denominatorDip, SampleRate)!.Value.InsideOutsideDb;
         double cabinCompactness = TransferIrDiagnostics
@@ -882,9 +769,7 @@ public sealed class TransferIrDiagnosticsTests
             $"{dipCompactness:0.0} dB against {cabinCompactness:0.0} dB");
     }
 
-    // A sweep too short to open a guard band leaves the gate a near-hard edge, and
-    // its kernel then rings as long as the fault does. The verdict is withheld
-    // rather than guessed.
+    // Without a guard band the gate kernel rings as long as the fault: verdict withheld.
     [Theory]
     [InlineData(0.50, true)]
     [InlineData(0.30, true)]
@@ -910,12 +795,7 @@ public sealed class TransferIrDiagnosticsTests
         Assert.True(TransferIrDiagnostics.CanJudgePreArrival(ExcitationBandGate.FullBand));
     }
 
-    // The measure's known blind spot, pinned so nobody builds a refusal on it
-    // again. The window is placed against the strongest sample, which is normally
-    // the arrival; a record whose direct path is obstructed and whose strongest
-    // sample is a LATER reflection puts its own direct sound inside that window,
-    // and the reading calls it acausal at every band. These records are fully
-    // causal, which is why the verdict here is a report and not a refusal.
+    // Known blind spot: an obstructed direct path puts direct sound inside the window. Hence a report, not a refusal.
     [Theory]
     [InlineData(20.0, 25.0, 0.20)]
     [InlineData(20.0, 50.0, 0.20)]
@@ -945,8 +825,6 @@ public sealed class TransferIrDiagnosticsTests
     [Fact]
     public void MeasurePreArrivalDb_IsNullWhenThereIsNothingToMeasure()
     {
-        // Too short to hold the window: half a second of buffer cannot carry one
-        // that reaches 100 ms out and 600 ms back.
         Assert.Null(TransferIrDiagnostics.MeasurePreArrivalDb(
             new Complex[SampleRate / 2], SampleRate));
         Assert.Null(TransferIrDiagnostics.MeasurePreArrivalDb(
@@ -954,7 +832,6 @@ public sealed class TransferIrDiagnosticsTests
         var poisoned = new Complex[1 << 18];
         poisoned[100] = double.NaN;
         Assert.Null(TransferIrDiagnostics.MeasurePreArrivalDb(poisoned, SampleRate));
-        // Silent: no arrival to read the tail against.
         Assert.Null(TransferIrDiagnostics.MeasurePreArrivalDb(
             new Complex[1 << 18], SampleRate));
     }
@@ -970,8 +847,7 @@ public sealed class TransferIrDiagnosticsTests
             TransferIrDiagnostics.MeasurePreArrivalDb(complexIr, SampleRate));
     }
 
-    // The gate the measurement builds for a requested band: half-octave guards on
-    // each side, which is what ExponentialSineSweep aims for.
+    // Half-octave guards on each side, as ExponentialSineSweep builds.
     private static ExcitationBandGate ProductionGate(double lowFullHz, double highFullHz)
     {
         if (lowFullHz <= 0)
@@ -988,11 +864,7 @@ public sealed class TransferIrDiagnosticsTests
             Math.Min(1.0, highFullHz * guard / nyquist));
     }
 
-    // A record shaped like a measurement rather than like a delta: a direct
-    // arrival some milliseconds in, a decaying cabin behind it, and the whole
-    // thing read through the PRODUCTION estimator at 20-1000 Hz. The shape
-    // matters — a bare kernel concentrates all its energy in a few samples, which
-    // flatters every ratio measured against the arrival.
+    // A bare kernel concentrates energy in a few samples and flatters every arrival ratio.
     private static double[] SyntheticCabinTransfer(
         int length,
         double delayMs,
@@ -1008,7 +880,7 @@ public sealed class TransferIrDiagnosticsTests
         room[arrival] = 1.0;
         for (int i = 1; i < decay; i++)
         {
-            // -60 dB over the decay length, which is a car cabin at low frequency.
+            // -60 dB over the decay length: a car cabin at low frequency.
             room[(arrival + i) % length] +=
                 0.5 * tail[i] * Math.Exp(-6.908 * i / decay);
         }
@@ -1018,8 +890,6 @@ public sealed class TransferIrDiagnosticsTests
             ProductionGate(20.0, highFullHz)).ImpulseResponse;
     }
 
-    // One arrival with a decay behind it, which is what a real one looks like and
-    // what makes the crest reading honest — a bare impulse would flatter it.
     private static void AddDecayingArrival(
         double[] record,
         double atMs,

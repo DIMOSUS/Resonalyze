@@ -1,33 +1,12 @@
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The circular-record contract of <see cref="TimeAlignmentAnalysis.Analyze"/>:
-/// a COMPLETE deconvolved record (<c>WrapPeakPositions</c>) is circular by
-/// construction — its tail is continuous with its head — so its transforms run
-/// unpadded, at the record's own length, where circular convolution is exact.
-/// Zero padding such a record manufactures a seam where the tail no longer
-/// meets the head, and the Hilbert envelope's edge transient at that seam
-/// reads as structure.
-/// </summary>
-/// <remarks>
-/// The field case (v5_exp subwoofer): a transfer IR carrying a DC shelf
-/// (out-of-band deconvolution residue, −17 dB under the peak). Circularly the
-/// shelf is a featureless constant the first-arrival search walks straight
-/// past — the read is the 13.28 ms front. Padded, the envelope dipped 9 dB at
-/// the record start and climbed back over the first millisecond, and the
-/// search rightly accepted that climb as a front: 0.2 ms, before the driver
-/// made a sound. The same padding turned the mid channel's smooth wrapped
-/// skirt into a 25 dB step at the record seam on the panel's envelope view.
-/// </remarks>
+/// <summary>A complete deconvolved record is circular, so <see cref="TimeAlignmentAnalysis.Analyze"/> transforms it unpadded;
+/// padding makes a seam whose envelope transient read as a front (field sub: 0.198 ms instead of 13.277 ms).</summary>
 public sealed class TimeAlignmentCircularRecordTests
 {
     private const int SampleRate = 96_000;
     private const int Length = 65_536;
 
-    // A sub-like complete record: a DC shelf across the whole circular
-    // buffer (the field record's out-of-band residue), a band-limited front
-    // at 13 ms, measurement noise, and a distortion-products block near the
-    // record end — where sweep deconvolution parks it.
     private static double[] CompleteRecord()
     {
         var record = new double[Length];
@@ -53,11 +32,7 @@ public sealed class TimeAlignmentCircularRecordTests
         return record;
     }
 
-    // The falsifier: the envelope of a complete record must BE the record's
-    // own circular envelope — the same samples the public primitive returns,
-    // whose own contract (a bin-centred cosine comes back flat) is what
-    // defines circular. The padded path differs by tens of percent near the
-    // seam, so any padding creeping back into this branch turns this red.
+    // Padding moves envelope samples by tens of percent near the seam.
     [Fact]
     public void CompleteRecord_EnvelopeIsTheCircularEnvelope()
     {
@@ -76,8 +51,6 @@ public sealed class TimeAlignmentCircularRecordTests
         }
     }
 
-    // And the banded read of the same record: filtered at the record's own
-    // length — exact for a circular signal — never on a padded copy.
     [Fact]
     public void CompleteRecord_BandedEnvelopeIsTheCircularOne()
     {
@@ -102,22 +75,13 @@ public sealed class TimeAlignmentCircularRecordTests
             options.BandpassFadeOctaves);
         double[] circular = SignalEnvelope.Envelope(
             BandpassWindow.Apply(record, window));
-        // To a tolerance rather than to the bit: the reference filters and
-        // transforms back before taking its envelope, while the read masks the
-        // record's own spectrum and reads the envelope off it — the same
-        // arithmetic with one round trip fewer, so the two agree to sixteen
-        // significant digits and not always to the seventeenth. What this test
-        // falsifies is padding, which moves these samples by tens of percent.
+        // One transform round trip fewer: agreement to 16 digits, not always 17.
         for (int i = 0; i < circular.Length; i++)
         {
             Assert.Equal(circular[i], result.EnvelopeSamples[i], tolerance: 1e-12);
         }
     }
 
-    // The outcome the contract exists for, stated on the fixture: nothing
-    // plays before 13 ms, so nothing before it may be called an arrival. The
-    // field verification is the v5_exp subwoofer itself, whose full-band read
-    // moved from 0.198 ms (padded) to 13.277 ms with the circular contract.
     [Fact]
     public void CompleteRecord_DcShelfIsNotReadAsAnArrival()
     {

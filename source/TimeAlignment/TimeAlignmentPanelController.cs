@@ -30,51 +30,30 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly DarkNumericUpDown bandpassFadeOctavesNumeric;
     private readonly PlotView bandpassPlotView;
     private readonly PlotView envelopePlotView;
-    // Both previews are rebuilt from scratch on every configuration change, so a
-    // zoom into a junction would last exactly until the next edit without these.
+    // Previews are rebuilt on every configuration change; without these a zoom would not survive the next edit.
     private readonly PlotViewportMemory bandpassViewports;
     private readonly PlotViewportMemory envelopeViewports;
     private readonly StatusRichTextBox statusTextBox;
     private readonly Font resultTableFont;
-    // The band detected for the Auto mode on the last refresh (null when no
-    // data or another mode is active); feeds the preview plot and the label.
     private DominantBand? lastAutoBand;
-    // Whether that band is the overlap of Main's and Compare's own bands rather
-    // than Main's alone; the label says which, because the two answer different
-    // questions ("where this driver plays" against "where these two meet").
+    // Overlap of Main's and Compare's bands rather than Main's alone; the label says which.
     private bool lastAutoBandIsShared;
     private bool disposed;
-    // What is drawn, what is running, what waits. This panel is refreshed from
-    // more places than there are changes to draw: a mode switch asks twice (the
-    // tab shows the panel, then the redraw that follows asks again), and a
-    // compare change, a loaded file and a restored history entry each arrive
-    // through two paths of their own. Every one of those used to re-run the
-    // whole band-limited analysis of a record that had not moved.
+    // The panel is asked to refresh more often than anything changes; the schedule skips re-reading an unchanged record.
     private readonly AnalysisReadSchedule<AnalysisRequest> reads = new();
-    // Per-record derivations, kept so that a band edit — which changes neither
-    // the record nor its hygiene — stops paying for them again. One slot per
-    // role; the entry is swapped as a whole, so a reader never sees a verdict
-    // paired with another record's samples.
+    // Per-record derivations, reused across band edits. Swapped whole so a reader never pairs a verdict with another record's samples.
     private ProjectionEntry? mainProjection;
     private ProjectionEntry? compareProjection;
     private HygieneEntry? mainHygiene;
     private HygieneEntry? compareHygiene;
-    // Guards those four slots: a superseded read can still be running on its own
-    // thread when the next one starts, and both reach for them.
+    // A superseded read may still run on its thread when the next starts.
     private readonly object recordDerivations = new();
 
-    // The fade the Auto mode puts around the detected pass band.
     private const double AutoBandFadeOctaves = 0.5;
 
-    // Names the reference both envelope curves are drawn against, so a Compare
-    // curve sitting below Main reads as the level difference it is.
     private const string EnvelopeDecibelAxisTitle = "dB re Main peak";
 
-    // How far under its own maximum one envelope curve is drawn before the
-    // floor takes over, and how tall the envelope plot opens: a Compare record
-    // tens of dB under Main (a sub against a tweeter) would otherwise squeeze
-    // the arrivals into a sliver. The axis still PANS to the full range —
-    // only the opening view is bounded.
+    // Opening view bounded under each curve's max so a quiet Compare record does not squeeze the arrivals; the axis still pans to the full range.
     private const double CurveFloorDb = 80.0;
     private const double EnvelopeOpeningSpanDb = 100.0;
 
@@ -94,9 +73,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         this.saveSettings = saveSettings;
         this.getImpulseResponseFileName = getImpulseResponseFileName;
         this.getCompareMeasurement = getCompareMeasurement;
-        // One step over the panel font, not four: the delay table is three
-        // rows of three cells with Compare deltas (66 characters with every
-        // delta), and at +4 the status box wrapped the meters cell.
+        // +1 over the panel font, not +4: at +4 the status box wrapped the meters cell.
         resultTableFont = new Font(
             FontFamily.GenericMonospace,
             owner.Font.Size + 1.0f,
@@ -113,7 +90,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         bandpassFadeOctavesNumeric = panel.BandpassFadeOctavesNumeric;
         bandpassPlotView = panel.BandpassPlotView;
         envelopePlotView = panel.EnvelopePlotView;
-        // Same zoom, pan and limits gestures as the other analysis plots.
         PlotInteraction.Enable(bandpassPlotView);
         PlotInteraction.Enable(envelopePlotView);
         bandpassViewports = new PlotViewportMemory(bandpassPlotView);
@@ -145,14 +121,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     public void RefreshConfiguration()
     {
-        // The options object is SHARED and is written behind this panel's back. Twice:
-        // the persisted settings land in it after the controls were first filled from
-        // the defaults (the controllers are built before ApplyPersistedSettings runs),
-        // and every history entry restores its own session into it. Neither touches a
-        // control, so without re-reading it here the band radios keep showing what they
-        // were built with while the analysis runs on something else — the panel then
-        // says "Auto" with the band caption on "-" and reads the whole spectrum, which
-        // is what FullBand looks like from the outside.
+        // The shared options object is written behind this panel (persisted settings, history restore) without touching controls; re-read it or the radios lie.
         ApplyOptionsToControls();
         RefreshAnalysis();
     }
@@ -172,8 +141,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private void WireEvents()
     {
-        // A radio switch fires CheckedChanged on both the leaving and the
-        // arriving button; reacting to the arriving one alone refreshes once.
+        // Both radios fire CheckedChanged; react to the arriving one only.
         void OnRadio(object? sender, EventArgs _)
         {
             if (!applyingOptions && sender is RadioButton { Checked: true })
@@ -219,16 +187,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
-        // The window preview and its caption follow the CONTROLS, so an edit
-        // moves them at once instead of at the end of the read behind it. In the
-        // Auto mode the caption still names the band of the last finished read
-        // until the new one lands, which is what "detected" has always meant.
+        // Preview and caption follow the controls immediately; the Auto caption still names the last finished read's band.
         UpdateAutoBandLabel();
         UpdateBandpassPreview();
 
-        // The band is FROZEN into the request here. The read runs off the UI
-        // thread, where the shared options object can be edited under it, and a
-        // number on screen has to state the band it was actually taken in.
+        // Band frozen into the request: the worker must state the band it actually read, whatever the options become.
         var request = new AnalysisRequest(
             mainSource,
             getCompareMeasurement(),
@@ -245,17 +208,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
-    // Starts the read, off the UI thread wherever there is a message loop to
-    // come back to. At a megabyte of transfer IR one read is a few hundred
-    // milliseconds, and it used to be spent inside the click that asked for it:
-    // that is what made a nudge of the band boxes feel like a hang, and what
-    // held the shell still for a moment after every sweep.
+    // Off the UI thread when there is a message loop: a read of a megabyte transfer IR takes a few hundred ms.
     private void StartAnalysis(AnalysisRequest request, int version)
     {
         if (!owner.IsHandleCreated || owner.IsDisposed || owner.InvokeRequired)
         {
-            // Nothing to come back to: the controllers are built and refreshed
-            // before the shell has a window, and the panel tests never open one.
+            // No handle yet (controllers refresh before the shell has a window; panel tests never open one).
             CompleteAnalysis(request, RunAnalysis(request), version);
             return;
         }
@@ -281,9 +239,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
-    // Draws a finished read — unless a newer one has been asked for since, in
-    // which case this one is stale and drawing it would put the previous band's
-    // numbers under the band the user is now looking at.
+    // Stale reads are not drawn: they would put the previous band's numbers under the current band.
     private void CompleteAnalysis(
         AnalysisRequest request,
         AnalysisOutcome outcome,
@@ -294,10 +250,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
-        // A read the controls have left is not drawn at all — the panel would
-        // otherwise stand there stating an alignment for a band nobody is
-        // looking at — but its slot on the pool frees here, so what IS wanted
-        // starts either way.
+        // Not drawn, but its pool slot frees here so the wanted read still starts.
         if (!reads.Complete(request, version))
         {
             StartDesiredAnalysis();
@@ -333,7 +286,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         StartDesiredAnalysis();
     }
 
-    // What the controls are still waiting for, now that the pool is free.
     private void StartDesiredAnalysis()
     {
         if (reads.TakeDesired(out AnalysisRequest desired) is { } version)
@@ -342,40 +294,24 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
-    // The read itself. Nothing here touches a control or the shared options
-    // object: it works from the request alone, so it is safe on a worker thread
-    // and it states the band it was given rather than the band the boxes have
-    // reached by the time it lands.
+    // Works from the request alone: safe on a worker thread.
     private AnalysisOutcome RunAnalysis(AnalysisRequest request)
     {
         try
         {
             TimeAlignmentAnalysisSource mainSource = request.MainSource;
-            // Crosstalk hygiene first: detection always runs on the RAW
-            // record, then the banded modes analyze the CLEANED record —
-            // the same order the Auto delay engine uses. A broadband click
-            // lands inside the analysis band and the upper-half probe
-            // alike, so analyzing the raw record could green-light
-            // ("verified") an arrival that times the click. The bypass mode
-            // keeps the raw record and flags the contamination instead.
+            // Crosstalk detection on the RAW record, analysis on the CLEANED one (engine order): a click in band could otherwise verify an arrival that times the click. Bypass mode keeps raw and flags.
             HygieneEntry mainHygieneEntry = Hygiene(ref mainHygiene, mainSource);
             TimeAlignmentAnalysisSource mainAnalysisSource = CleanForAnalysis(
                 mainSource, mainHygieneEntry, request.BandMode);
 
-            // The Compare record is resolved and cleaned BEFORE the band is
-            // chosen: in the Auto mode the band is the one both records share,
-            // and a band taken from Main alone would make the delta depend on
-            // which of the two was loaded as Main (a field mid pair: 32.7-7671
-            // Hz one way, 75.5-4695 Hz the other, and 0.3 ms of delta with it).
+            // Compare resolved before the band: the Auto band is shared, so the delta must not depend on which record is Main.
             TimeAlignmentAnalysisSource? compareSource = TryGetCompareSource(
                 request,
                 mainSource,
                 out string? compareWarning,
                 out CrosstalkHeadGate? compareCrosstalk);
 
-            // One options object per read, and the Compare measurement is
-            // analyzed in the same band, so the delta column compares like with
-            // like.
             TimeAlignmentAnalysisOptions analysisOptions = CreateAnalysisOptions(
                 request,
                 mainAnalysisSource,
@@ -434,9 +370,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
-    // Everything one read needs, taken on the UI thread before it starts. Two
-    // requests that compare equal describe the same read of the same records,
-    // which is what lets a repeated refresh recognize the answer already drawn.
+    // Equal requests describe the same read, so a repeated refresh recognizes the answer already drawn.
     private readonly record struct AnalysisRequest(
         TimeAlignmentAnalysisSource MainSource,
         TimeAlignmentCompareMeasurement? Compare,
@@ -448,9 +382,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         double FirstPeakMinimumSnrDb,
         double PeakSearchWindowMilliseconds);
 
-    // What one read produced. A Message instead of a result is the read saying
-    // why it has nothing to show — a band with no energy in it, or a record the
-    // analysis threw on — and the panel prints that in place of the tables.
+    // Message instead of a result: why there is nothing to show (no energy in band, analysis threw).
     private sealed record AnalysisOutcome(
         TimeAlignmentAnalysisSource MainSource,
         DominantBand? AutoBand,
@@ -482,16 +414,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 message);
     }
 
-    // A transfer IR's real projection, remembered per record. The analysis reads
-    // doubles while the measurement holds Complex, and converting a megabyte of
-    // samples on every refresh costs both the copy and a NEW array — and a new
-    // array would make every request look like a different one.
+    // Cached per record: a fresh array every refresh would also make every request compare unequal.
     private sealed record ProjectionEntry(Complex[] Source, double[] Samples);
 
-    // The crosstalk verdict and the cleaned copy that follows from it,
-    // remembered for the same reason: neither depends on the band, so a spin of
-    // a numeric box should not pay for a detection pass and a full copy of the
-    // samples before the analysis it asked for even starts.
+    // Band-independent, so a band edit does not pay for detection and a sample copy again.
     private sealed record HygieneEntry(
         double[] Samples,
         CrosstalkHeadGate? Crosstalk,
@@ -541,9 +467,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return entry;
     }
 
-    // The banded modes analyze the record with the convicted click removed
-    // (band detection included); the bypass mode shows the record as-is and
-    // relies on the red flag instead.
     private static TimeAlignmentAnalysisSource CleanForAnalysis(
         TimeAlignmentAnalysisSource source,
         HygieneEntry hygiene,
@@ -556,11 +479,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         out TimeAlignmentAnalysisSource source,
         out string message)
     {
-        // An imported recording has no absolute time: nothing tied the recorder's
-        // start to the playback, so its arrival sits wherever the record button
-        // was pressed. Every delay this mode reports is a comparison against
-        // another arrival, which makes those numbers meaningless here — and a
-        // meaningless delay presented as a measurement is worse than no mode.
+        // An imported recording has no absolute time, so every delay this mode reports would be meaningless.
         if (measurement.TimingReference == TimingReference.RecordedSweep)
         {
             source = default;
@@ -687,9 +606,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             FirstPeakThresholdBelowMaxDb = request.FirstPeakThresholdBelowMaxDb,
             FirstPeakMinimumSnrDb = request.FirstPeakMinimumSnrDb,
             PeakSearchWindowMilliseconds = request.PeakSearchWindowMilliseconds,
-            // Every position this panel prints is a delay against another
-            // arrival, so a peak past the halfway mark is read as the negative
-            // lead it is rather than as a buffer-length delay.
+            // Positions are delays against another arrival: a peak past halfway is a negative lead.
             WrapPeakPositions = true
         };
     }
@@ -700,14 +617,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             source.SampleRate,
             coherence: source.TransferCoherence);
 
-    // A record whose coherence never clears the threshold has no dominant band,
-    // and the detector says so by throwing. For COMPARE that verdict must stay
-    // Compare's: before the band was agreed between the two records, such a
-    // failure was caught with the rest of the Compare handling and Main kept
-    // working, and it still has to — the band simply falls back to Main's own,
-    // which the label then stops calling shared. Main's own failure keeps
-    // reaching the refresh handler: with no band for the Main record there is
-    // no analysis to show.
+    // Compare's detection failure stays Compare's: the band falls back to Main's (label drops "shared"). Main's failure propagates.
     internal static bool TryDetectDominantBand(
         TimeAlignmentAnalysisSource source,
         out DominantBand band)
@@ -724,13 +634,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
-    // The band the two records are read in when both are present: the overlap of
-    // their own dominant bands. Two drivers are only comparable where both
-    // actually play — outside the overlap one of the curves is its own noise —
-    // and an overlap is symmetric, so loading the pair the other way round
-    // returns the same band and the same delta. Two records that share too
-    // little to carve a band (a subwoofer against a tweeter) keep MAIN's band:
-    // the reading is then Main's own, which the shared-band note says out loud.
+    // Overlap of both dominant bands (symmetric, so swapping Main/Compare gives the same delta); too little overlap keeps Main's band.
     internal static (DominantBand Band, bool Shared) SharedBand(
         DominantBand main, DominantBand compare)
     {
@@ -741,9 +645,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             : (new DominantBand(low, high, Math.Clamp(main.PeakHz, low, high)), true);
     }
 
-    // Writing the controls raises the same events the user's own edits do, and those
-    // read the controls straight back into the options and save them. Harmless while
-    // the two agree; the whole point of this call is the case where they do not.
+    // Writing controls raises the user-edit events, which would save the controls back into the options.
     private bool applyingOptions;
 
     private void ApplyOptionsToControls()
@@ -869,10 +771,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return model;
     }
 
-    // Resolves the Compare record into an analysis-ready source: the same
-    // hygiene Main gets (its own crosstalk detection on the raw IR, cleaned
-    // analysis in the banded modes), and no analysis yet — the band still has
-    // to be agreed between the two records.
+    // Same hygiene as Main; no analysis yet, because the band is agreed between both records first.
     private TimeAlignmentAnalysisSource? TryGetCompareSource(
         AnalysisRequest request,
         TimeAlignmentAnalysisSource mainSource,
@@ -962,14 +861,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
-        // ONE reference for both curves: the Main record's strongest peak.
-        // Normalizing each curve by its own first-arrival level (what this plot
-        // used to do) makes the dB axis mean something different per curve — a
-        // record whose pick sits 6 dB below its peak and one whose pick sits 25
-        // dB below get drawn on references 19 dB apart, so two measurements of
-        // the same level read as 19 dB apart on screen. The prominence of a pick
-        // is an analysis figure, not a property of the record; the strongest
-        // peak is, so it is the only reference that keeps levels comparable.
+        // ONE reference for both curves (Main's strongest peak): per-curve first-arrival normalization made equal levels read up to 19 dB apart.
         double referenceAmplitude = result.StrongestEnvelopePeak;
 
         int radius = Math.Min(
@@ -1058,8 +950,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         axis.Minimum = Math.Max(minDb - 2, maxDb - EnvelopeOpeningSpanDb);
     }
 
-    // internal for the plot-construction tests: the reference both curves are
-    // drawn against is the whole point of this builder.
     internal static LineSeries CreateEnvelopeSeries(
         TimeAlignmentAnalysisResult result,
         double referenceAmplitude,
@@ -1093,9 +983,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             localMinDb = Math.Min(localMinDb, decibels);
         }
 
-        // Min/max pooling per decimation bucket: sampling every Nth value would
-        // skip a narrow reflection peak entirely, hiding the very feature the
-        // markers point at.
+        // Min/max pooling: every-Nth sampling would skip the narrow reflection peaks the markers point at.
         for (int bucketStart = -radius; bucketStart <= radius; bucketStart += step)
         {
             int bucketEnd = Math.Min(radius, bucketStart + step - 1);
@@ -1126,11 +1014,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             }
         }
 
-        // The floor rides under THIS curve's own maximum rather than under the
-        // shared reference: it is there to stop a null from dragging the axis
-        // to the numeric floor, and a Compare record genuinely quieter than
-        // Main must still be drawn whole instead of flattened onto an absolute
-        // line 80 dB under Main's peak.
+        // Floor under THIS curve's max, so a genuinely quieter Compare record is drawn whole, not flattened.
         double floorDb = localMaxDb - CurveFloorDb;
         for (int i = 0; i < series.Points.Count; i++)
         {
@@ -1181,9 +1065,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             PlotCalloutDirection.LeftDown);
     }
 
-    // The envelope index of the energy onset: its sample rounded and wrapped
-    // into the (circular) envelope, since a complete record reports positions
-    // as signed delays (see TimeAlignmentAnalysisOptions.WrapPeakPositions).
+    // Wrapped into the circular envelope: complete records report positions as signed delays.
     internal static int GetEnergyOnsetIndex(TimeAlignmentAnalysisResult result)
     {
         int length = result.EnvelopeSamples.Length;
@@ -1316,8 +1198,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return 0.0;
         }
 
-        // Same floor the curve itself is drawn with, so a marker never parks
-        // under its own line on a record much quieter than the reference.
+        // Same floor as the curve, so a marker never parks under its own line.
         double peakDecibels = DataHelper.AmplitudeToDecibels(
             result.StrongestEnvelopePeak / referenceAmplitude);
         double relativeAmplitude = result.EnvelopeSamples[peakIndex] / referenceAmplitude;
@@ -1413,8 +1294,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
 
         AppendStatusText("\r\n", UiPalette.TextPrimarySoft);
-        // Passing the Main result makes the Compare delay table show each value's delta
-        // against Source in parentheses.
         AppendMeasurementResult(
             bandMode,
             "Compare",
@@ -1451,7 +1330,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
-    /// <summary>The instants the delay table reports, one row each.</summary>
     internal enum DelayRow
     {
         FirstArrival,
@@ -1466,21 +1344,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         _ => DelayTableText.EnergyOnsetLabel
     };
 
-    // Which row of the delay table the analysis trusts most — the one the
-    // table marks and names below. The first arrival when nothing has
-    // disqualified it (see IsArrivalRecommendable), otherwise none. Never the
-    // strongest peak: a later, stronger peak is a mode or a reflection, not
-    // the driver's timing. And never the energy onset, although the engine's
-    // cross-side links read it below 300 Hz: an onset is a statistic of how
-    // the band's energy is distributed, and its distance from the front
-    // depends on the response's tail and chain — on the field midbass pair
-    // the same two fronts read 2.2 ms apart through their chains and 1.1 ms
-    // raw. Between the two sides of ONE driver pair that bias cancels, which
-    // is the only case the engine reads it in; this panel cannot know what
-    // two records are (a subwoofer against a midbass is the ordinary use),
-    // and there the difference of two onsets is partly shape, not time. The
-    // onset row is shown for the tuner to read against the peaks, not
-    // recommended.
+    // First arrival unless disqualified; never the strongest peak (mode/reflection) nor the energy onset (partly response shape between unrelated drivers).
+    // See docs/tech/junction-phase-and-group-placement.md#time-alignment-panel.
     internal static DelayRow? RecommendedRow(
         TimeAlignmentAnalysisResult result,
         TimeAlignmentArrivalProbe? honestyProbe,
@@ -1490,13 +1355,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             ? DelayRow.FirstArrival
             : null;
 
-    // Whether the First Arrival may be RECOMMENDED as the alignment figure.
-    // The strongest-peak hint ends with "Use First Arrival for alignment",
-    // and that advice must never print next to a verdict that just
-    // disqualified the arrival: a modal latch, a near-noise record, or a
-    // full-band read over a record with detected crosstalk (the bypass mode
-    // analyzes it raw). The states are independent, so without this gate the
-    // status box could give two opposite instructions at once.
+    // Gate so "Use First Arrival" never prints beside a verdict that disqualified it (modal latch, near noise, full-band read with crosstalk).
     internal static bool IsArrivalRecommendable(
         TimeAlignmentAnalysisResult result,
         TimeAlignmentArrivalProbe? honestyProbe,
@@ -1506,10 +1365,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         honestyProbe?.Certificate != AutoAlignmentEngine.ArrivalCertificate.Latched &&
         !(bandMode == TimeAlignmentBandMode.FullBand && crosstalkDetected);
 
-    // Field-proven failure (v3): an electrical copy of the playback lands at
-    // a fixed early sample in every record of a session; on band-limited
-    // drivers it sits within the first-peak threshold and the FULL-BAND
-    // First Arrival confidently times it instead of the sound.
+    // Field failure (v3): an electrical playback copy at a fixed early sample is timed by the full-band first arrival instead of the sound.
     private void AppendCrosstalkFlag(
         TimeAlignmentBandMode bandMode,
         CrosstalkHeadGate? crosstalk)
@@ -1519,15 +1375,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
-        // The mode the READ was taken in, never the one the controls have
-        // reached since: "removed from this analysis" is a statement about
-        // which record these very figures came off, and a bypass read whose
-        // panel has moved to Auto would otherwise claim a cleaning it never
-        // had.
+        // The mode the READ was taken in, not the controls' current one: a bypass read must not claim a cleaning.
         if (bandMode == TimeAlignmentBandMode.FullBand)
         {
-            // Bypass shows the record as-is, so the figures above may time
-            // the click; the banded modes analyze it removed.
             AppendStatusText(
                 $"⚠ Playback crosstalk at {gate.BurstTimeMs:0.00} ms " +
                 $"({gate.BurstPeakDbReMax:0.0} dB re max) — an electrical copy of\r\n" +
@@ -1543,13 +1393,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             UiPalette.WarningAmber);
     }
 
-    // The auto-alignment engine's arrival honesty probe, surfaced on the
-    // manual table: with a bandpass window active, the full-band first
-    // arrival is re-checked against the band's upper half. A full-band read
-    // far LATER than its own upper half is the modal latch — the read times
-    // the band's late build-up (a room mode), not the direct sound — which
-    // produces a confident wrong number exactly where this tool is used most
-    // (subwoofer and midbass bands).
+    // Engine's arrival honesty probe: a full-band arrival far LATER than its upper half is a modal latch (times a room mode, not the front).
     private void AppendArrivalHonesty(
         TimeAlignmentBandMode bandMode,
         TimeAlignmentAnalysisResult result,
@@ -1580,10 +1424,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                     UiPalette.SuccessGreenSoft);
                 break;
             case AutoAlignmentEngine.ArrivalCertificate.Latched:
-                // The upper-half figure is DIAGNOSTIC only: it proves the
-                // full-band read is not the direct front, but it is no
-                // alignment target itself (the engine's field case: an
-                // upper-half read walked a woofer 6 ms off).
+                // Upper-half figure is diagnostic only: in the engine's field case it walked a woofer 6 ms off.
                 AppendStatusText(
                     $"MODAL LATCH — full band {result.FirstArrivalDelayMilliseconds:0.000} ms " +
                     $"vs upper half {probeValue.ProbeResult.FirstArrivalDelayMilliseconds:0.000} ms\r\n",
@@ -1603,10 +1444,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
-    // A subwoofer or any narrowband/modal measurement can leave the strongest peak
-    // a room mode or reflection well after the direct sound, so the two columns
-    // disagree. Point the reader at the first arrival instead of the misleading
-    // strongest peak.
     private void AppendStrongestPeakHint(TimeAlignmentAnalysisResult result)
     {
         if (!result.StrongestPeakIsSeparateArrival)
@@ -1620,20 +1457,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             UiPalette.WarningAmber);
     }
 
-    // Two figures, deliberately not conflated into one "quality" number: the
-    // recording's SNR (strongest envelope peak vs the rest of the record) grades
-    // the measurement, while the first-arrival prominence (its level relative to
-    // the strongest peak) grades how sharply defined the pick is. A woofer's
-    // broad leading edge gives a low prominence on an excellent recording —
-    // physics, not a bad measurement — and must not drag the signal grade down.
+    // SNR grades the recording, prominence grades the pick; kept apart because a woofer's broad edge gives low prominence on a good recording.
     private void AppendSignalQuality(string title, TimeAlignmentAnalysisResult result)
     {
         AppendStatusText($"{title} Signal: ", UiPalette.TextPrimarySoft);
 
-        // Below the same SNR floor the auto-alignment engine refuses to
-        // measure at, the "arrival" is a bump in the noise (independent noise
-        // records read ~8 dB): the manual table still shows its figures, but
-        // graded as not-evidence rather than as a poor measurement.
+        // Below the engine's SNR floor the arrival is a noise bump (independent noise reads ~8 dB): shown, but graded not-evidence.
         if (result.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
         {
             AppendStatusText(
@@ -1673,20 +1502,13 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             color);
     }
 
-    // Below this the first arrival sits far down a slow leading edge; typical
-    // for band-limited low-frequency drivers, where the envelope rises over
-    // milliseconds before the in-room energy peaks.
+    // Typical of band-limited LF drivers whose envelope rises over milliseconds.
     private const double BroadRiseProminenceDb = -12.0;
 
-    // The GCC-PHAT trust for the first arrival: how sharply the whitened correlation
-    // located the sub-sample delay. RefinedByPhat=false means the whitened peak was
-    // too weak and the envelope parabola set the position, so the figure is the
-    // honest "coarse alignment" signal rather than a trustworthy sub-sample number.
+    // RefinedByPhat=false: whitened peak too weak, envelope parabola set the position (coarse alignment only).
     private void AppendAlignmentConfidence(TimeAlignmentAnalysisResult result)
     {
-        // The near-noise state above already declared the figures
-        // non-evidence; a confident-looking percentage next to that verdict
-        // would read as a contradiction.
+        // Near-noise already declared non-evidence; a confident percentage would contradict it.
         if (result.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
         {
             return;
@@ -1716,12 +1538,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             resultTableFont);
     }
 
-    // Rows are the instants the analysis reads, columns the units. With a
-    // reference (the Compare table) every cell shows its delta against the
-    // Main value in parentheses, e.g. "1.006 (+0.010)". The recommended row
-    // (see RecommendedRow) is printed bright and marked at its end, and named
-    // on the line under the table; the others dimmed, so the eye lands on the
-    // figure to align from.
+    // Compare cells show the delta against Main in parentheses; the recommended row is bright and named, others dimmed.
     private void AppendDelayTable(
         TimeAlignmentAnalysisResult result,
         TimeAlignmentAnalysisResult? reference,
@@ -1767,8 +1584,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         DelayRow? recommended)
     {
         bool isRecommended = recommended == row;
-        // The label carries the row's accent (matching its envelope marker);
-        // the cells are one segment so the click-to-copy columns stay exact.
+        // Cells stay one segment so click-to-copy columns remain exact.
         AppendStatusText(
             RowLabel(row).PadRight(DelayTableText.MillisecondsColumn),
             labelColor,
@@ -1803,8 +1619,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         string valueFormat) =>
         DelayTableText.FormatValueWithDelta(value, reference, valueFormat);
 
-    // Mic and Loopback on one line: the status box holds two full measurement
-    // blocks plus their warnings, so every line of vertical budget counts.
     private void AppendLevelsLine(InputLevelMeterSnapshot levels)
     {
         AppendStatusText("Levels (peak/RMS dBFS): ", UiPalette.TextPrimarySoft);
@@ -1860,9 +1674,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
         catch (System.Runtime.InteropServices.ExternalException)
         {
-            // The clipboard is a shared resource; another process may hold it
-            // (remote desktop, clipboard managers). Losing one copy click must
-            // not crash the app.
+            // Another process may hold the clipboard (RDP, clipboard managers); a lost copy must not crash.
             System.Media.SystemSounds.Beep.Play();
             return;
         }
@@ -1965,7 +1777,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         return axis;
     }
 
-    // The shared dark-preview look of every axis on the two side plots.
     private static void ApplyPreviewAxisStyle(Axis axis)
     {
         axis.MajorGridlineColor = OxyColor.FromRgb(55, 62, 78);
@@ -1995,9 +1806,7 @@ internal readonly record struct TimeAlignmentAnalysisSource(
     PlaybackChannel PlayChannel,
     SweepMeasurementMode MeasurementMode,
     double[] TransferImpulseResponse,
-    // The γ² half spectrum that produced TransferImpulseResponse (null for <2
-    // averages or a snapshot without it). Fed to the GCC-PHAT refinement so
-    // low-coherence bins carry less weight in the sub-sample alignment.
+    // γ² half spectrum behind TransferImpulseResponse (null for <2 averages); weights the GCC-PHAT refinement.
     double[]? TransferCoherence,
     InputLevelMeterSnapshot Levels);
 

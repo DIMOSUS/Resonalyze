@@ -1,6 +1,5 @@
 namespace Resonalyze;
 
-// Summary of how well an EQ fits its target, shown in the EQ Wizard results panel.
 internal sealed record EqTuneStats(
     double RmsErrorDb,
     double MaxErrorDb,
@@ -9,8 +8,6 @@ internal sealed record EqTuneStats(
     double PeakCutDb,
     double HeadroomDb);
 
-// Replaces the overlay panel in EQ Wizard mode with a compact, colour-coded
-// read-out of the current tuning result.
 public sealed partial class EqResultsPanel : UserControl
 {
     private static readonly Color NeutralColor = Color.FromArgb(225, 228, 235);
@@ -95,7 +92,6 @@ public sealed partial class EqResultsPanel : UserControl
         headroomValue.ForeColor = stats.HeadroomDb < -0.05 ? BadColor : GoodColor;
     }
 
-    // Lower error is better: green when comfortably small, red when large.
     private static Color QualityColor(double errorDb, double goodBelow, double badAbove)
     {
         if (errorDb <= goodBelow)

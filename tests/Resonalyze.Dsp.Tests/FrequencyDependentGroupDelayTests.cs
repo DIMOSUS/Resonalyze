@@ -2,12 +2,7 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The group delay read through the frequency-dependent window: the same
-/// τ = Re[T·conj(H)] / |H|² identity as the Fixed curve, evaluated on the
-/// stitched FDW bank and its time-weighted twin, so at every frequency it is
-/// the energy-weighted arrival time inside the window applied there.
-/// </summary>
+/// <summary>FDW group delay: τ = Re[T·conj(H)] / |H|² on the stitched FDW bank and its time-weighted twin.</summary>
 public sealed class FrequencyDependentGroupDelayTests
 {
     private const int SampleRate = 48_000;
@@ -17,16 +12,8 @@ public sealed class FrequencyDependentGroupDelayTests
     [Fact]
     public void FixedWindow_SettingsOverloadMatchesTheLegacySignatureBitForBit()
     {
-        // The app's typical geometry (a bulk delay ahead of a one-pole, the
-        // gate on the arrival, a left shoulder): the settings overload under
-        // Fixed must be the legacy signature, curve for curve and bit for
-        // bit. The legacy signature now delegates to the settings overload,
-        // so this pins the CONTRACT between the two (the Fixed defaults it
-        // fills in), not the arithmetic against the pre-FDW build — that was
-        // held byte for byte against the pre-feature library once, by dumping
-        // both over 27 gate/rate/smoothing combinations (106 MB, identical),
-        // and BankPlan_IsTheOriginalWalk_CentreForCentre keeps the bank's
-        // half of it under test.
+        // Pins the contract between the legacy signature and the settings overload under Fixed; arithmetic against the pre-FDW
+        // build was verified once byte for byte (27 combinations), and BankPlan_IsTheOriginalWalk_CentreForCentre keeps the bank's half.
         var response = new Complex[TransformLength];
         for (int i = 0; i < 600; i++)
         {
@@ -61,10 +48,7 @@ public sealed class FrequencyDependentGroupDelayTests
     [Fact]
     public void GroupDelayRead_LeavesThePhaseSpectrumBitIdentical()
     {
-        // A group-delay reader replaces the cached phase-only entry with the
-        // pair. The phase read before and after must not move by a bit: the
-        // spectrum member of the pair is the same extraction through the
-        // same transform.
+        // Replacing the cached phase-only entry with the pair must not move the phase by a bit.
         SyntheticMeasurement measurement = ReflectedImpulse();
         PhaseAnalysisSettings settings = Settings(PhaseWindowMode.FrequencyDependent, 8);
 
@@ -101,9 +85,7 @@ public sealed class FrequencyDependentGroupDelayTests
     [Fact]
     public void Fdw_WhenEveryWindowIsClamped_MatchesFixed()
     {
-        // A gate shorter than the 0.8 ms floor after its shoulder: every
-        // bank window clamps to the full gate, the bank is one entry, and
-        // the FDW curve must be the Fixed curve — values and blanked bins.
+        // Gate shorter than the 0.8 ms floor: the bank is one entry, so FDW equals Fixed.
         SyntheticMeasurement measurement = ReflectedImpulse();
         PhaseAnalysisSettings fixedSettings = Settings(PhaseWindowMode.Fixed, 8) with
         {
@@ -129,16 +111,8 @@ public sealed class FrequencyDependentGroupDelayTests
     [Fact]
     public void DirectSoundWithALateReflection_FdwReadsTheDirectArrivalWhereFixedRipples()
     {
-        // Direct sound plus a copy 6 ms later at −6 dB, through a 1/10/3 ms
-        // gate. Fixed keeps both arrivals at every frequency and the
-        // interference makes the group delay swing by milliseconds; FDW-8
-        // holds the reflection only while its window is long enough to
-        // reach it. With left = 1 ms the window is 1 + 8/f ms; the
-        // reflection is fully outside it from f = 8 / (6 − 1) = 1.6 kHz
-        // upward, so from 2 kHz — the first bank centre past that, with
-        // the interpolation from the centre below it settled — the curve
-        // is the direct arrival. Below 615 Hz the window clamps to the full
-        // gate and both curves are one analysis.
+        // Window 1 + 8/f ms with left = 1 ms: the 6 ms reflection is outside it from 1.6 kHz, so from 2 kHz the curve is the direct arrival.
+        // Below 615 Hz the window clamps to the full gate.
         const int reflectionSamples = 288; // 6 ms.
         var response = new Complex[TransformLength];
         response[ArrivalSample] = Complex.One;
@@ -183,12 +157,7 @@ public sealed class FrequencyDependentGroupDelayTests
     [InlineData(100)]
     public void SumGatedSpectraPairs_CarriesTheTimeWeightAcrossExtractionStarts(int startShift)
     {
-        // One pair re-referenced to a different extraction start must read the
-        // same ABSOLUTE arrival: the rotation moves the time origin, and the
-        // time weight has to move with it (T gains ((s − s_ref) / fs) · H), or
-        // the curve would shift by exactly the origin's move. Both directions:
-        // a target before the extraction and one after it (where the arrival
-        // wraps to the end of the circular buffer).
+        // Re-referencing moves the time origin; T gains ((s − s_ref) / fs) · H or the curve shifts by the origin's move.
         SyntheticMeasurement measurement = DelayedImpulse(ArrivalSample);
         PhaseAnalysisSettings settings = Settings(PhaseWindowMode.Fixed, 8) with
         {
@@ -218,11 +187,7 @@ public sealed class FrequencyDependentGroupDelayTests
     [Fact]
     public void TwoPlacementsOfOneResponse_SumToTheSameArrival()
     {
-        // The bank's own invariant, stated through the public sum: two
-        // extractions of one response at DIFFERENT starts, both windows
-        // containing the whole response, added in one reference. Each half
-        // reads the arrival on its own; the sum must too, with no step from
-        // the differing starts.
+        // Bank invariant: two extractions at different starts summed in one reference show no step.
         SyntheticMeasurement measurement = DelayedImpulse(ArrivalSample);
         PhaseAnalysisSettings early = Settings(PhaseWindowMode.Fixed, 8) with
         {
@@ -253,10 +218,7 @@ public sealed class FrequencyDependentGroupDelayTests
     [Fact]
     public void SumGatedSpectraPairs_SharedWindow_MatchesTheGateOverTheSummedImpulse()
     {
-        // Two channels through ONE window (same offset, same FDW bank): the
-        // group delay of the summed pairs must be the group delay of the
-        // summed impulse through that window — the linearity the Virtual DSP
-        // Sum rests on, for both members of the pair.
+        // Linearity through one window, which the Virtual DSP Sum rests on.
         var first = new Complex[TransformLength];
         var second = new Complex[TransformLength];
         var both = new Complex[TransformLength];
@@ -290,18 +252,8 @@ public sealed class FrequencyDependentGroupDelayTests
     [Fact]
     public void SumOfTwoDelays_EachGatedAtItsOwnArrival_ReadsTheEnergyWeightedMean()
     {
-        // Two pure delays d1, d2 with energies e1, e2, each gated at its own
-        // arrival (the Virtual DSP Auto placement) and summed. Per bin the
-        // identity does NOT give (e1·d1 + e2·d2) / (e1 + e2): numerator and
-        // energy both carry a √(e1·e2)·cos(ω·Δ) interference term, and the
-        // ratio oscillates with it. The energy-weighted mean is what the
-        // smoothing converges to once its kernel spans the ripple's period
-        // 1/Δ: the FDW-8 floor is f/16 either side, so with Δ = 8 ms
-        // (125 Hz period) the kernel holds two periods or more from 2 kHz up
-        // and the Hann sidelobes leave the cross term at a few percent,
-        // falling with frequency — a few hundredths of a millisecond on
-        // Δ = 8 ms, against the 8 ms a time weight left behind at its own
-        // extraction start would move the curve by.
+        // Per bin the sum of two gated delays carries a √(e1·e2)·cos(ω·Δ) term; FDW-8 smoothing (f/16 each side) spans
+        // ≥2 ripple periods from 2 kHz for Δ = 8 ms, leaving a few hundredths of a ms.
         const int secondArrival = ArrivalSample + 384; // +8 ms.
         const double secondAmplitude = 0.5;
         var first = new Complex[TransformLength];
@@ -337,11 +289,7 @@ public sealed class FrequencyDependentGroupDelayTests
     [Fact]
     public void MinimumPhaseSystem_HasNearZeroExcessUnderFdw()
     {
-        // h[n] = 0.9ⁿ is minimum-phase, and so is every rectangular
-        // truncation of it (the truncation zeros sit at radius 0.9). Through
-        // FDW-8 the window shrinks to 0.8 ms at the top of the band — still a
-        // minimum-phase signal, whose measured delay the windowed magnitude
-        // explains entirely: the excess reads ≈ 0 across the band.
+        // 0.9ⁿ and every truncation of it are minimum-phase, so the excess reads ≈ 0.
         var response = new Complex[TransformLength];
         for (int i = 0; i < 1_000; i++)
         {
@@ -371,18 +319,8 @@ public sealed class FrequencyDependentGroupDelayTests
     public void MinimumPhasePeqChain_ReadsNearZeroExcessUnderFdw(
         double q, int cycles, double leftMs, double plateauMs, double rightMs)
     {
-        // The FDW excess is NOT the classical all-pass group delay by
-        // construction: the arrival is read inside a window that changes with
-        // frequency, while the minimum-phase part is the classical group delay
-        // of the stitched magnitude's minimum-phase counterpart. Whether the
-        // difference matters is an empirical question, and this is the
-        // answer for the content a PEQ adds: three peaking bands at Q up to
-        // 10, a bulk delay in front, the Phase tab's, the Group Delay tab's
-        // and the Virtual DSP default gates with their Tukey fades, and every
-        // cycle count. The excess reads the bulk delay to within a twentieth
-        // of a millisecond across the band — the same order the Fixed gate
-        // reads it to — so what the diagnostic calls "what no PEQ can touch"
-        // stays true under FDW to that tolerance.
+        // FDW excess is not the classical all-pass GD by construction; empirically it reads PEQ content's bulk delay
+        // to within 0.05 ms across gates and cycle counts, the same order as Fixed.
         const int arrival = 480;
         const int length = 16_384;
         double[] impulse = new double[length];
@@ -422,14 +360,8 @@ public sealed class FrequencyDependentGroupDelayTests
     [Fact]
     public void Crossover_ExcessUnderFdw_IsTheFixedGatesExcess()
     {
-        // A steep high-pass rings for longer than any gate a junction uses,
-        // and the gate's truncation of that ringing reads as excess at the low
-        // edge under EVERY window — the FDW window is the whole gate there.
-        // What FDW must not do is add to it: wherever both windows read a
-        // value, the two excess curves agree to a few hundredths of a
-        // millisecond. (The validity gates differ by a few bins at the
-        // low-pass's stop-band edge, where FDW's wider smoothing floor keeps
-        // a bin the Fixed gate blanks — those bins are left out.)
+        // Gate truncation of a steep high-pass reads as low-edge excess under every window; FDW must not add to it.
+        // Bins where only FDW's wider floor keeps a value are excluded.
         const int arrival = 480;
         const int length = 16_384;
         double[] impulse = new double[length];
@@ -477,8 +409,6 @@ public sealed class FrequencyDependentGroupDelayTests
         Assert.True(disagree < band.Count * 0.02, $"the two windows blank different bands ({disagree} bins)");
         Assert.All(both, i => Assert.InRange(
             fdwCurves.Excess!.Points[i].Y - fixedCurves.Excess!.Points[i].Y, -0.05, 0.05));
-        // And the truncated ringing IS there to be seen under both: the low
-        // edge reads a millisecond of excess against the flat band above.
         double lowEdge = NearestY(fixedCurves.Excess!, 101.0);
         double midBand = NearestY(fixedCurves.Excess!, 1_000.0);
         Assert.True(lowEdge - midBand > 0.5, $"no low-edge excess ({lowEdge - midBand:0.000} ms)");
@@ -487,10 +417,7 @@ public sealed class FrequencyDependentGroupDelayTests
     [Fact]
     public void AllPass_DispersionLandsInExcessNotMinimumUnderFdw()
     {
-        // A second-order all-pass at 1 kHz (Q = 2) through FDW-8: its ringing
-        // is gone well inside the 8 ms window at 1 kHz, so |H| stays flat, the
-        // minimum curve stays ≈ 0 and the pile-up at the corner lands in the
-        // excess, as it does under the Fixed gate.
+        // All-pass ringing dies well inside 8 ms at 1 kHz: |H| flat, the corner pile-up lands in the excess.
         IReadOnlyList<BiquadCoefficients> sections = AllPassFilter.BuildSections(
             new AllPassSpec(AllPassType.SecondOrder, 1_000.0, Q: 2.0),
             SampleRate);
@@ -528,11 +455,7 @@ public sealed class FrequencyDependentGroupDelayTests
     [Fact]
     public void EffectiveGate_IsTheBankAndTheSmoothingFloor()
     {
-        // One function serves the bank and the floor: on every bank centre it
-        // returns the window that centre was analysed through; between
-        // centres it never grows with frequency; and the floor it yields is
-        // half the window's resolution — 62.5 Hz at 1 kHz for 8 cycles with
-        // no shoulder and no clamp (0.5 · 48000 / 384).
+        // Floor = half the window's resolution: 62.5 Hz at 1 kHz for 8 cycles (0.5 · 48000 / 384).
         PhaseAnalysisSettings settings = Settings(PhaseWindowMode.FrequencyDependent, 8) with
         {
             LeftMs = 0.0,
@@ -558,7 +481,6 @@ public sealed class FrequencyDependentGroupDelayTests
         Assert.Equal(384, DataHelper.FdwEffectiveGateSamples(1_000.0, settings, SampleRate));
         Assert.Equal(62.5, DataHelper.GroupDelayMinimumHalfWidthHz(1_000.0, settings, SampleRate));
 
-        // Fixed is the degenerate bank: the full gate everywhere.
         PhaseAnalysisSettings fixedSettings = settings with { WindowMode = PhaseWindowMode.Fixed };
         Assert.Equal(4_800, DataHelper.FdwEffectiveGateSamples(1_000.0, fixedSettings, SampleRate));
         Assert.Equal(4_800, DataHelper.FdwEffectiveGateSamples(20_000.0, fixedSettings, SampleRate));
@@ -574,12 +496,7 @@ public sealed class FrequencyDependentGroupDelayTests
     public void BankPlan_IsTheOriginalWalk_CentreForCentre(
         int sampleRate, int cycles, double leftMs, double plateauMs, double rightMs)
     {
-        // The bank's plan was lifted out of the original BuildFdwSpectrum into
-        // FdwBankPlan so the smoothing floor could share its geometry. This is
-        // that original walk, kept verbatim: the same centres, the same merge
-        // of equal windows into the LAST centre they hold for, the same
-        // shortest-window entry at Nyquist — or the phase view's spectra would
-        // have moved without a test noticing.
+        // The original BuildFdwSpectrum walk kept verbatim: same centres, merge into the LAST centre, shortest window at Nyquist.
         PhaseAnalysisSettings settings = Settings(PhaseWindowMode.FrequencyDependent, cycles) with
         {
             LeftMs = leftMs,
@@ -633,8 +550,6 @@ public sealed class FrequencyDependentGroupDelayTests
     [InlineData(PhaseWindowMode.FrequencyDependent)]
     public void ValidityGate_BlanksTheSameBinsInEveryCurve(PhaseWindowMode mode)
     {
-        // A differencer's low end falls below the −60 dB backstop under either
-        // window; the three curves must agree bin-exactly about what is blanked.
         var response = new Complex[TransformLength];
         response[0] = Complex.One;
         response[1] = -Complex.One;
@@ -710,8 +625,6 @@ public sealed class FrequencyDependentGroupDelayTests
         Unwrap: false,
         SmoothingInverseOctaves: 0.0);
 
-    // The whole record in one plateau from sample 0, the geometry the Fixed
-    // group-delay tests analyse the minimum-phase and all-pass systems through.
     private static PhaseAnalysisSettings FullPlateau(PhaseWindowMode windowMode, int cycles) =>
         Settings(windowMode, cycles) with
         {
@@ -756,8 +669,7 @@ public sealed class FrequencyDependentGroupDelayTests
             .MinBy(point => Math.Abs(point.X - frequencyHz))
             .Y;
 
-    // y[n] = b0·x[n] + b1·x[n−1] + b2·x[n−2] + a1·y[n−1] + a2·y[n−2] — the
-    // additive-feedback convention BiquadCoefficients documents.
+    // Additive-feedback convention: y[n] = b0·x[n] + b1·x[n−1] + b2·x[n−2] + a1·y[n−1] + a2·y[n−2].
     private static double[] FilterAdditiveFeedback(BiquadCoefficients biquad, double[] input)
     {
         double[] output = new double[input.Length];

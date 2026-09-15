@@ -16,15 +16,8 @@ internal static class AppProfiler
     private static readonly ConcurrentDictionary<string, CString> StableStrings = new();
 #endif
 
-    /// <summary>
-    /// Opens a Tracy zone. Tracy C zones are THREAD-BOUND and must nest
-    /// strictly LIFO per thread, so a zone must never span an <c>await</c>:
-    /// the continuation may interleave with other zones on the same thread
-    /// (or resume elsewhere), and Tracy terminates the session with
-    /// "Invalid order of zone begin and end events". In async flows, zone the
-    /// synchronous sections only — including inside <c>Task.Run</c> bodies,
-    /// which is where the heavy work usually lives anyway.
-    /// </summary>
+    /// <summary>Tracy zones are thread-bound and strictly LIFO: never span an <c>await</c> (Tracy aborts the session).
+    /// Zone synchronous sections only, e.g. inside <c>Task.Run</c> bodies.</summary>
     public static ProfileZone Zone(
         string name,
         [CallerMemberName] string memberName = "",

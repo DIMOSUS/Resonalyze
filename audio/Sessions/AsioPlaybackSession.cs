@@ -2,11 +2,7 @@ using NAudio.Wave;
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Playback-only ASIO session for the signal generator. Wraps a single
-/// <see cref="AsioOut"/> (AutoStop) so a finite signal ends by itself and stop
-/// releases the driver immediately.
-/// </summary>
+/// <summary>One <see cref="AsioOut"/> with AutoStop: a finite signal ends itself and stop releases the driver at once.</summary>
 internal sealed class AsioPlaybackSession : IAudioPlaybackSession
 {
     private readonly string driverName;

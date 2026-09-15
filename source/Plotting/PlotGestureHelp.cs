@@ -1,28 +1,14 @@
 namespace Resonalyze;
 
-/// <summary>One line of the graph help: a gesture, and what it does.</summary>
 internal readonly record struct PlotGestureHelpEntry(string Gesture, string Effect);
 
-/// <summary>A group of gestures under one heading.</summary>
 internal sealed record PlotGestureHelpSection(
     string Title,
     IReadOnlyList<PlotGestureHelpEntry> Entries);
 
-/// <summary>
-/// The graph controls in the words the user reads them in — what F1 puts on screen.
-///
-/// It is a list rather than a hand-laid dialog because it is the SAME map twice
-/// over: <see cref="PlotGestureController"/> binds it, and the "Graph Zoom and
-/// Limits" table in REFERENCE.md tabulates it. A gesture that changes has three
-/// places to change, and keeping this one in a form nobody has to lay out again is
-/// what makes the third cheap enough to actually do.
-///
-/// The wording is deliberately shorter than the reference's: this is a card to
-/// glance at with one hand on the mouse, not the place a behaviour is explained.
-/// </summary>
+/// <summary>The F1 card. Same map as <see cref="PlotGestureController"/> and REFERENCE.md's Graph Zoom and Limits table: change all three.</summary>
 internal static class PlotGestureHelp
 {
-    /// <summary>What the window is called, and the line under its title.</summary>
     public const string Title = "Graph controls";
 
     public const string Introduction =

@@ -7,34 +7,15 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// One channel's curve on the DSP-chain plot: its chain (drawn without the bulk
-/// delay, so the filters' own shape stays readable), the rate the PROCESSOR
-/// realizes that chain at — this plot is the filters themselves, so it belongs to
-/// the device rather than to the measurement — and its plot color. The panel hands
-/// these ready to draw; the presenter owns the OxyPlot mechanics.
-/// </summary>
+/// <summary>A channel's chain curve, drawn without bulk delay at the PROCESSOR's rate (this plot shows the device's filters).</summary>
 internal readonly record struct DspChainCurve(
     string Title,
     DspChannelChain Chain,
     int ProcessorSampleRate,
     OxyColor Color);
 
-/// <summary>
-/// The junction-correlation view's data, computed off the UI thread from two
-/// adjacent PROCESSED channels (current delays, polarity, filters applied, so
-/// lag 0 is "as currently aligned" and every lag reads as a correction to the
-/// upper channel). The whitened correlation shows WHERE the comb lobes sit on
-/// the full records (negative lobes: the same alignment with the upper
-/// channel inverted); its DIRECT twin reads the same comb on the channels'
-/// direct sound alone — the drivers' wavefronts, the engine's polarity
-/// witness; the two score curves show what the alignment engine THINKS of
-/// every lag — the dip-penalized junction loss, probed by rotating the
-/// windowed cuts, for both polarities.
-/// <see cref="ArrivalLagMs"/> marks the band-limited
-/// envelope arrival difference — the physics-first estimate the searches
-/// anchor on.
-/// </summary>
+/// <summary>Junction-correlation data from two PROCESSED channels: lag 0 is the applied alignment, lags correct the upper channel.
+/// See docs/tech/virtual-dsp-analysis.md#plots.</summary>
 internal sealed record JunctionCorrelationView(
     string PairTitle,
     string UpperName,
@@ -47,13 +28,7 @@ internal sealed record JunctionCorrelationView(
     List<SignalPoint> ScoreInverted,
     double ArrivalLagMs);
 
-/// <summary>
-/// The junction-coherence view's data: one junction's arrival-coherence
-/// ladder (see <see cref="VirtualCrossoverAnalysis.ArrivalCoherenceLadder"/>),
-/// computed off the UI thread from the same PROCESSED pair as the correlation
-/// view — lag 0 is the applied alignment, every band's lag a correction to
-/// the upper channel.
-/// </summary>
+/// <summary>One junction's arrival-coherence ladder from the same processed pair; lag 0 is the applied alignment.</summary>
 internal sealed record JunctionCoherenceView(
     string PairTitle,
     string UpperName,
@@ -62,18 +37,8 @@ internal sealed record JunctionCoherenceView(
     double BandHighHz,
     List<VirtualCrossoverAnalysis.ArrivalCoherencePoint> Ladder);
 
-/// <summary>
-/// The Virtual DSP lower plot: each enabled channel's DSP-chain response
-/// (magnitude / phase / group delay). The bulk delay is excluded — its timing
-/// effect shows on the acoustic plot, and drawing it here would wrap the phase
-/// into an unreadable sawtooth and swamp the filter group delay. Owns the
-/// PlotView's model, the single value axis it reconfigures per mode, and the
-/// drawn series; the panel supplies the mode and the per-channel curves.
-/// The junction modes swap in their own models — lag-domain correlation (see
-/// <see cref="DrawCorrelation"/>) and per-band coherence (see
-/// <see cref="DrawCoherence"/>); the models keep their axes' zoom/pan
-/// independently.
-/// </summary>
+/// <summary>Virtual DSP lower plot: chain magnitude/phase/group delay without the bulk delay (it would wrap phase and swamp GD),
+/// plus the junction correlation and coherence models.</summary>
 internal sealed class VirtualCrossoverDspChainPlot
 {
     private const string SeriesTag = "virtual-crossover:curve";
@@ -92,26 +57,14 @@ internal sealed class VirtualCrossoverDspChainPlot
     private readonly PlotModel correlationModel;
     private readonly PlotModel coherenceModel;
 
-    // Tracks the mode the value axis range was last set for, so switching modes
-    // resets the range to the new mode's default while an in-mode redraw (e.g.
-    // editing a filter) preserves the user's zoom/pan.
+    // Mode switches reset the range; in-mode redraws keep the user's zoom.
     private DspPlotMode? valueAxisMode;
 
-    // The pair and window the correlation axes were last configured for: a
-    // junction switch resets the ranges, an in-pair redraw (delay edits)
-    // preserves the user's zoom/pan.
+    // A junction switch resets the ranges; in-pair redraws keep the zoom.
     private (string Pair, double WindowMs)? correlationAxisState;
 
-    // Same idea for the coherence axes, over everything they are placed from.
-    // The lag range depends on the data (a misaligned junction pushes optima
-    // past the comb corridor), so it is bucketed to half-millisecond steps: a
-    // delay edit that keeps the ladder in the same bucket preserves the user's
-    // zoom, one that leaves it re-fits the axes instead of clipping the points
-    // that moved. The BAND is here because the frequency axis is fitted from
-    // it: editing the pair's crossover keeps the pair title, and the new
-    // ladder's lag limit usually lands in the same bucket (both are typically
-    // at the 1 ms floor), so a state of title-and-lag alone would leave the
-    // frequency axis on the PREVIOUS band and clip most of the rebuilt ladder.
+    // Lag limit bucketed to 0.5 ms; the band is included because a crossover edit keeps the title and often the bucket
+    // while the fitted frequency axis must follow.
     private (string Pair, double LagLimitMs, double BandLowHz, double BandHighHz)?
         coherenceAxisState;
 
@@ -123,8 +76,6 @@ internal sealed class VirtualCrossoverDspChainPlot
         var model = new PlotModel();
         PlotModelStyle.ApplyChrome(model);
         PlotModelStyle.AddFrequencyAxis(model);
-        // One value axis, reconfigured per plot mode (magnitude / phase / group
-        // delay). A single axis keeps each mode readable on its own scale.
         PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Key = ValueAxisKey,
@@ -203,11 +154,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         return model;
     }
 
-    /// <summary>
-    /// Swaps in the lag-domain model and draws one junction's correlation and
-    /// score curves. Null clears the view (no measurable pair): the empty
-    /// model with its watermark stays on screen.
-    /// </summary>
+    /// <summary>Draws one junction's correlation and score curves; null leaves the empty model with its watermark.</summary>
     public void DrawCorrelation(JunctionCorrelationView? data)
     {
         view.Model = correlationModel;
@@ -233,8 +180,6 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.TitleFontSize = 11;
         model.TitleColor = OxyColor.FromRgb(210, 214, 222);
 
-        // A junction switch (or a window change from new crossover settings)
-        // resets the axes; an in-pair redraw keeps the zoom.
         double windowMs = data.Whitened.Count > 0
             ? Math.Abs(data.Whitened[^1].X)
             : 3.0;
@@ -253,12 +198,7 @@ internal sealed class VirtualCrossoverDspChainPlot
             }
         }
 
-        // Each comb's analytic envelope first, as thin translucent ± guides
-        // in the parent curve's own color, under everything and out of the
-        // legend: the envelope's extremum is the coherence packet's center
-        // with the carrier lobes stripped — the group optimum the eye can
-        // read a lobe-skip against — while the carrier keeps answering which
-        // LOBE the tune sits on.
+        // Envelope guides: the packet centre a lobe-skip is read against; the carrier answers which lobe.
         AddEnvelopeGuides(
             model, "PHAT envelope", data.Whitened,
             OxyColor.FromRgb(79, 195, 247));
@@ -266,23 +206,12 @@ internal sealed class VirtualCrossoverDspChainPlot
             model, "PHAT direct envelope", data.WhitenedDirect,
             OxyColor.FromRgb(200, 130, 255));
 
-        // Four curves, each with its own question: PHAT — the whitened
-        // full-record comb (the honest read at bass junctions, where "direct
-        // sound" is not a measurable notion); PHAT direct — the drivers'
-        // wavefronts (the polarity witness); score both ways — the summation
-        // surface the search optimizes. The raw amplitude-weighted
-        // correlation used to be drawn too and answered nothing the others
-        // do not: its weighting hands the lag to whatever the cabin plays
-        // loudest, which is neither the comb, nor the drivers, nor the sum.
+        // PHAT: full-record comb; PHAT direct: driver wavefronts (polarity witness); scores: the searched surface.
+        // The raw correlation was dropped: it follows whatever the cabin plays loudest.
         AddCorrelationSeries(
             model, "PHAT", data.Whitened,
             OxyColor.FromRgb(79, 195, 247), CoefficientAxisKey,
             LineStyle.Solid, 1.8);
-        // The same whitened read on the DIRECT sound alone: each channel cut
-        // to a couple of crossover periods behind its own front, so the comb
-        // shows the drivers' timing where the full-record twin shows whatever
-        // the cabin's reflections correlate best (on a thin-overlap junction
-        // the two disagree by whole periods).
         AddCorrelationSeries(
             model, "PHAT direct", data.WhitenedDirect,
             OxyColor.FromRgb(200, 130, 255), CoefficientAxisKey,
@@ -296,10 +225,7 @@ internal sealed class VirtualCrossoverDspChainPlot
             OxyColor.FromRgb(255, 169, 79), ScoreAxisKey,
             LineStyle.Dash, 1.8);
 
-        // The "you are here" line: the channels enter PROCESSED, so lag 0 is
-        // the currently applied alignment. The arrival marker is the envelope
-        // estimate the searches anchor on — the gap between the two lines is
-        // exactly what the sum searches bought (or paid) versus the physics.
+        // Lag 0 is the applied alignment; the arrival marker is the envelope estimate the searches anchor on.
         model.Annotations.Add(new LineAnnotation
         {
             Type = LineAnnotationType.Vertical,
@@ -326,11 +252,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.InvalidatePlot(true);
     }
 
-    // The ± analytic envelope of one correlation comb, as legend-less thin
-    // guides (the title still names them in the tracker). Computed over the
-    // displayed window: the transform's edge wobble stays confined to the
-    // outermost samples of a decayed comb, which a 35%-alpha guide is
-    // entitled to.
+    // Computed over the displayed window; edge wobble stays in the decayed outer samples.
     private static void AddEnvelopeGuides(
         PlotModel model,
         string title,
@@ -437,12 +359,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         return model;
     }
 
-    /// <summary>
-    /// Swaps in the frequency-domain coherence model and draws one junction's
-    /// arrival-coherence ladder. Null clears the view (no measurable pair);
-    /// a view whose ladder the level gate emptied draws the title alone, so
-    /// "nothing to measure" and "nothing selected" stay distinguishable.
-    /// </summary>
+    /// <summary>Draws one junction's coherence ladder; a ladder emptied by the level gate draws the title alone.</summary>
     public void DrawCoherence(JunctionCoherenceView? data)
     {
         view.Model = coherenceModel;
@@ -468,10 +385,6 @@ internal sealed class VirtualCrossoverDspChainPlot
             $"{data.BandLowHz:0}-{data.BandHighHz:0} Hz";
         model.TitleFontSize = 11;
         model.TitleColor = OxyColor.FromRgb(210, 214, 222);
-        // Below the engine's own direct-coherence floor the band windows are
-        // long enough for cabin modes to rule the correlation: the ladder
-        // still reports HOW coherent the tune is, but its optima can sit on a
-        // mode rather than on the drivers, and the plot says so.
         model.Subtitle = data.CrossoverHz < 120
             ? "low junction: cabin modes can dominate this read"
             : null;
@@ -479,9 +392,6 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.SubtitleColor = OxyColor.FromAColor(170, OxyColor.FromRgb(240, 200, 90));
 
         List<VirtualCrossoverAnalysis.ArrivalCoherencePoint> ladder = data.Ladder;
-        // The default lag range covers the comb corridor and every optimum,
-        // bucketed so in-place delay edits keep the user's zoom (see the
-        // state field).
         double needed = Math.Max(
             1.0,
             1.15 * ladder
@@ -512,19 +422,14 @@ internal sealed class VirtualCrossoverDspChainPlot
             }
         }
 
-        // The comb corridor: past half a period the optimum belongs to the
-        // NEXT lobe — that band's arrivals differ by a whole cycle and no
-        // single delay reconciles it with the bands inside the corridor.
+        // Past half a period the optimum belongs to the next lobe.
         var corridorUpper = NewCoherenceLine(
             "±T/2 (next lobe)", OxyColor.FromAColor(150, OxyColors.Gray),
             CoherenceLagAxisKey, LineStyle.Dash, 1.0);
         var corridorLower = NewCoherenceLine(
             null, OxyColor.FromAColor(150, OxyColors.Gray),
             CoherenceLagAxisKey, LineStyle.Dash, 1.0);
-        // The attainable-versus-collected gap: the area between the envelope
-        // at the optimum and the envelope at lag 0 is the coherence the
-        // applied tune leaves on the table — zero-height where the band is
-        // centered.
+        // Gap between envelope at the optimum and at lag 0: coherence the applied tune leaves unused.
         var gap = new AreaSeries
         {
             Title = "r attainable",
@@ -542,13 +447,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         var lagLine = NewCoherenceLine(
             "Δt to optimum", OxyColor.FromAColor(200, OxyColors.White),
             CoherenceLagAxisKey, LineStyle.Solid, 1.2);
-        // One kind of marker, on purpose. Polarity would be a carrier read,
-        // and the ladder's 2/3-octave probe cannot make one: its coherence
-        // packet is 4.3x wider than the lobe spacing at EVERY frequency (see
-        // the remarks by ArrivalCoherencePoint), so the opposite-signed lobes
-        // sit inside the packet's plateau and whichever the maximum lands on
-        // is decided by noise. The correlation view reads polarity instead,
-        // over the pair's whole band, where the lobes separate.
+        // No polarity marker: the 2/3-octave probe cannot read polarity (see ArrivalCoherencePoint).
         var optimum = new ScatterSeries
         {
             Title = "optimum",
@@ -665,8 +564,6 @@ internal sealed class VirtualCrossoverDspChainPlot
             _ => DataHelper.AmplitudeToDecibels(response.Response(frequency).Magnitude)
         };
 
-    // Titles the value axis and, only when the mode actually changed, resets its
-    // range to that mode's sensible default.
     private void ConfigureValueAxis(LinearAxis axis, DspPlotMode mode)
     {
         axis.Title = mode switch
@@ -690,8 +587,6 @@ internal sealed class VirtualCrossoverDspChainPlot
                 axis.MajorStep = 90;
                 break;
             case DspPlotMode.GroupDelay:
-                // Group delay range varies widely with the filters, so let it
-                // auto-scale to the drawn curves.
                 axis.Minimum = double.NaN;
                 axis.Maximum = double.NaN;
                 axis.MajorStep = double.NaN;

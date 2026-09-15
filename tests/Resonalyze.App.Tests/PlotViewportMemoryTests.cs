@@ -5,8 +5,6 @@ using OxyPlot.WindowsForms;
 
 namespace Resonalyze.App.Tests;
 
-// What keeps a zoom alive across the constant model rebuilds: which axes are
-// carried over, which are left to the new model, and how a mode gets its own.
 public sealed class PlotViewportMemoryTests
 {
     [Fact]
@@ -36,8 +34,6 @@ public sealed class PlotViewportMemoryTests
         memory.Show(FrequencyModel(), Mode.FrequencyResponse);
         Axis(view.Model, PlotModelFactory.FrequencyAxisKey).Zoom(100, 500);
 
-        // A settings change, then another one: the second rebuild must not lose what
-        // the first one carried over.
         memory.Show(FrequencyModel(), Mode.FrequencyResponse);
         PlotModel third = FrequencyModel();
         memory.Show(third, Mode.FrequencyResponse);
@@ -55,9 +51,7 @@ public sealed class PlotViewportMemoryTests
         memory.Show(FrequencyModel(), Mode.FrequencyResponse);
         Axis(view.Model, PlotModelFactory.FrequencyAxisKey).Zoom(100, 500);
 
-        // The next model opens its dB axis higher — the ceiling a padded loopback
-        // lifts. The frequency zoom must survive; the dB axis must NOT be pinned
-        // back to the old window.
+        // The next model's dB ceiling is higher (padded loopback): frequency zoom survives, dB is not pinned back.
         PlotModel second = FrequencyModel(decibelMaximum: 30);
         memory.Show(second, Mode.FrequencyResponse);
         Update(second);
@@ -74,7 +68,6 @@ public sealed class PlotViewportMemoryTests
         memory.Show(FrequencyModel(), Mode.FrequencyResponse);
         Axis(view.Model, PlotModelFactory.FrequencyAxisKey).Zoom(100, 500);
 
-        // Away to another mode with its own zoom, and back.
         memory.Show(FrequencyModel(), Mode.PhaseResponse);
         Axis(view.Model, PlotModelFactory.FrequencyAxisKey).Zoom(2_000, 8_000);
         PlotModel back = FrequencyModel();
@@ -125,11 +118,7 @@ public sealed class PlotViewportMemoryTests
     [InlineData(true)]
     public void Show_KeepsAnOverlayWideningOutOfTheRememberedZoom(bool overlayArrivesAfterTheDraw)
     {
-        // The autocorrelation shape: axes that take their range from the data, and a
-        // mode that allows overlays. An overlay can join the model at the draw or
-        // well after it — a mode switch restores the saved slots only after
-        // ModeController has drawn, and Show All acts later still — and neither is a
-        // user zoom.
+        // Overlays can join after the draw (mode switch restores slots later, Show All later still); neither is a user zoom.
         using var view = new PlotView();
         var memory = new PlotViewportMemory(view);
         PlotModel first = AutoScaledModel();
@@ -144,16 +133,12 @@ public sealed class PlotViewportMemoryTests
             AddCurve(first, -40, 40);
         }
 
-        // What the repaint that follows an overlay does: recompute the data ranges,
-        // which is what widens an auto-scaled axis.
         ((IPlotModel)first).Update(true);
 
         PlotModel second = AutoScaledModel();
         memory.Show(second, Mode.Autocorrelation);
         Update(second);
 
-        // The second model carries no overlay, so its axis must show its OWN data,
-        // not the range the overlay stretched the first one to.
         Axis time = Axis(second, PlotModelFactory.TimeAxisKey);
         Assert.True(time.ActualMinimum > -20);
         Assert.True(time.ActualMaximum < 20);
@@ -162,8 +147,6 @@ public sealed class PlotViewportMemoryTests
     [Fact]
     public void Show_KeepsAZoomWhileAnOverlayWidensTheOtherAxis()
     {
-        // Both at once: the user forced the time axis, an overlay widened the value
-        // axis. One is a zoom to carry, the other is the model scaling itself.
         using var view = new PlotView();
         var memory = new PlotViewportMemory(view);
         PlotModel first = AutoScaledModel();
@@ -184,8 +167,7 @@ public sealed class PlotViewportMemoryTests
     [Fact]
     public void Apply_RestoresByAxisKeyAndNotByPositionAlone()
     {
-        // Phase and group delay both hang a left-hand LinearAxis off the same plot
-        // shape; a range restored by position alone would land on the wrong one.
+        // Phase and group delay both use a left LinearAxis; restoring by position would hit the wrong one.
         var captured = new PlotAxisViewport(
             PlotModelFactory.PhaseAxisKey,
             AxisPosition.Left,
@@ -209,7 +191,6 @@ public sealed class PlotViewportMemoryTests
         Assert.Equal(5, groupDelay.ActualMaximum, 6);
     }
 
-    // The autocorrelation pair: neither axis states a range, so both follow the data.
     private static PlotModel AutoScaledModel()
     {
         var model = new PlotModel();

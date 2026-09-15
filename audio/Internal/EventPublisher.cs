@@ -17,8 +17,7 @@ internal static class EventPublisher
             }
             catch
             {
-                // Notifications are observational. A broken UI or third-party
-                // subscriber must not terminate capture or invalidate samples.
+                // A broken subscriber must not stop capture.
             }
         }
     }
@@ -38,8 +37,7 @@ internal static class EventPublisher
             }
             catch
             {
-                // Notifications are observational. A broken UI or third-party
-                // subscriber must not terminate capture or invalidate samples.
+                // A broken subscriber must not stop capture.
             }
         }
     }

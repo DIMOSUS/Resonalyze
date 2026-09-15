@@ -1,14 +1,6 @@
 ﻿namespace Resonalyze;
 
-/// <summary>
-/// The Auto delay dialog: the steering layout (LHD/RHD), the stereo scene
-/// offset and the gain-balance
-/// opt-in, a Run command that computes a PROPOSAL (delays, polarities and
-/// optionally gains) without touching the channels, the before/after report
-/// with per-channel confidence, and Apply/Discard. Nothing is written until
-/// Apply; Discard leaves every channel setting as it was. The panel supplies
-/// the runner — the dialog owns no DSP.
-/// </summary>
+/// <summary>Auto delay dialog: Run computes a proposal without touching channels; nothing is written until Apply. The panel supplies the runner.</summary>
 internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
 {
     private readonly WrappingToolTip toolTip = new()
@@ -19,8 +11,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         ShowAlways = true
     };
 
-    // Status colors follow the message's meaning, matching the app's dark
-    // palette: an always-amber label read as a warning even for good news.
+    // Colors follow meaning: an always-amber label read as a warning even for good news.
     private static readonly Color StatusNeutral = Color.FromArgb(185, 190, 200);
     private static readonly Color StatusSuccess = Color.FromArgb(96, 210, 120);
     private static readonly Color StatusWarning = Color.FromArgb(230, 184, 0);
@@ -36,8 +27,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         CancelButton = buttonCancel;
         buttonApply.Enabled = false;
         buttonRun.Click += async (_, _) => await RunAsync();
-        // One handler covers both radios: any LHD<->RHD toggle flips RHD's
-        // own Checked, so LHD needs no listener of its own.
+        // Any LHD/RHD toggle flips RHD's Checked, so one handler suffices.
         radioRightHandDrive.CheckedChanged += (_, _) => InvalidateResult();
         numericSceneOffset.ValueChanged += (_, _) => InvalidateResult();
         numericRearFill.ValueChanged += (_, _) => InvalidateResult();
@@ -74,19 +64,11 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
             "side is near comes from the LHD/RHD switch. Typical: 1–2 dB.\r\n" +
             "0 = both sides levelled to the same target.\r\n" +
             "Cut-only: produced by attenuating the near side's channels.");
-        // The designer's Dispose releases the tooltip; no Disposed handler.
     }
 
-    /// <summary>The proposal of the last completed Run, applied on OK.</summary>
     public AutoDelayRunResult? Result { get; private set; }
 
-    /// <summary>
-    /// Seeds the dialog: the run mode (a single-side run has no L/R relation
-    /// to honor), the persisted steering layout, scene offset and near-side
-    /// cut, and the panel's compute delegate (run inputs) -> proposal.
-    /// <paramref name="polarityWarning"/> is a non-empty red heads-up shown at
-    /// launch when a driver's left and right measured polarities disagree.
-    /// </summary>
+    /// <summary><paramref name="polarityWarning"/>: shown at launch when a driver's L and R measured polarities disagree.</summary>
     public void Init(
         bool stereo,
         double sceneOffsetMs,
@@ -149,19 +131,9 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         }
     }
 
-    // The near-side cut is an input to the gain balance only: with the
-    // checkbox off no gain is written at all, and a single-side run has no L/R
-    // relation to tilt. Kept visible-but-disabled either way, so the value the
-    // next stereo run would use stays readable.
-    /// <summary>
-    /// The precedence-effect offset a rear fill starts at. Ten to twenty
-    /// milliseconds is where the ear stops placing the sound at the rear
-    /// speakers and starts hearing them as room; fifteen is the middle of it.
-    /// </summary>
+    /// <summary>Precedence-effect start: 10-20 ms is where the rear stops being localized and reads as room.</summary>
     public const double DefaultRearFillOffsetMs = 15.0;
 
-    // Off entirely without a rear fill: the field would be a setting for a
-    // group the project does not have.
     private void ApplyRearFillAvailability(bool hasRearFill)
     {
         UiStyle.SetTextEnabledLook(labelRearFill, hasRearFill);
@@ -199,9 +171,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         numericNearSideCut.Enabled = enabled;
     }
 
-    // Once a proposal exists, any input change makes it stale: Apply must
-    // always write exactly what the report shows, computed from the inputs
-    // the user sees.
+    // Any input change makes the proposal stale: Apply writes exactly what the report shows.
     private void InvalidateResult()
     {
         if (Result == null)
@@ -220,10 +190,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         labelStatus.ForeColor = color;
     }
 
-    // The compute runs seconds of FFT work off the UI thread; the dialog
-    // (and, through modality, the whole panel) stays visible in a busy state
-    // and must not close mid-run — the runner reads the live channel
-    // configuration, which only modality keeps stable.
+    // Must not close mid-run: the runner reads live channel configuration, which only modality keeps stable.
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         if (running)

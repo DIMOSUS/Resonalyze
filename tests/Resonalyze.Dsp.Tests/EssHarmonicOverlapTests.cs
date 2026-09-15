@@ -5,10 +5,7 @@ using Xunit;
 
 namespace Resonalyze.Dsp.Tests;
 
-// Pins the packet-overlap validity: a well-separated (fast-decaying) system reports
-// every harmonic reliable, while a packet that has not decayed by its window edge is
-// flagged as overlapping a neighbour, warned about, and dropped from the curves and
-// from THD instead of being drawn confidently.
+// A packet not decayed by its window edge is flagged, warned and dropped from curves and THD.
 public sealed class EssHarmonicOverlapTests
 {
     private const int SampleRate = 48_000;
@@ -44,12 +41,9 @@ public sealed class EssHarmonicOverlapTests
 
         double[] impulse = new double[ImpulseLength];
         impulse[PeakIndex] = 1.0;
-        // A well-behaved HD3 delta stays reliable.
         impulse[PeakIndex - EssHarmonicAnalysis.HarmonicOffsetSamples(sweep, 3)] = 0.01;
 
-        // HD2: content that persists at full level all the way to the (later)
-        // window edge, so it clearly swamps the boundary toward the linear packet —
-        // well above the drop margin the check must catch.
+        // HD2 persists at full level to the window edge, far above the drop margin.
         int peak2 = h2.PeakSample;
         for (int i = peak2; i <= h2.EndSample && i < ImpulseLength; i++)
         {
@@ -68,12 +62,10 @@ public sealed class EssHarmonicOverlapTests
         DistortionSpectrum spectrum = EssDistortion.ComputeDistortion(
             decomposition, calibration: null, new DistortionOptions(MaxHarmonic: 4));
 
-        // HD2 dropped everywhere; HD3 still carried where reliable; THD excludes HD2.
         Assert.All(spectrum.HarmonicDistortionRatio[2], v => Assert.True(double.IsNaN(v)));
         Assert.Contains(spectrum.HarmonicDistortionRatio[3], double.IsFinite);
         Assert.Contains(spectrum.Warnings, w => w.Contains("HD2"));
 
-        // Where only HD3 contributes, THD equals HD3 (HD2 is not summed in).
         for (int i = 0; i < spectrum.Frequencies.Length; i++)
         {
             double hd3 = spectrum.HarmonicDistortionRatio[3][i];
@@ -105,10 +97,8 @@ public sealed class EssHarmonicOverlapTests
             calibration: null,
             SpectrumCurves.Harmonics);
 
-        // The overlapping HD2 vanishes from the curve list; HD3 (clean) stays.
         Assert.DoesNotContain(result.Curves, c => c.Kind == AnalysisCurveKind.SecondHarmonic);
         Assert.Contains(result.Curves, c => c.Kind == AnalysisCurveKind.ThirdHarmonic);
-        // The warning explaining the drop reaches the display boundary.
         Assert.Contains(result.Warnings, w => w.Contains("HD2"));
         Assert.False(result.IncludesNoise);
     }

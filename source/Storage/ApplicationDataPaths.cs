@@ -1,13 +1,7 @@
 namespace Resonalyze;
 
-/// <summary>
-/// Owns every implicit application-data path. Installed builds use the current
-/// user's LocalAppData directory; placing <c>portable.flag</c> beside the
-/// executable keeps all data beside the application. If Windows cannot provide
-/// LocalAppData, beside-executable storage is also used as a startup-safe
-/// fallback. Existing side-by-side data is copied forward once, without
-/// overwriting newer destination files.
-/// </summary>
+/// <summary>LocalAppData by default; <c>portable.flag</c> beside the exe (or no LocalAppData) keeps data beside it.
+/// Side-by-side data is copied forward once without overwriting newer files.</summary>
 internal sealed class ApplicationDataPaths
 {
     private const string ApplicationDirectoryName = "Resonalyze";
@@ -45,10 +39,7 @@ internal sealed class ApplicationDataPaths
     public string OverlaysDirectory => Path.Combine(RootDirectory, "overlays");
     public string ToolsDirectory => Path.Combine(RootDirectory, "tools");
 
-    /// <summary>
-    /// Calibration files the application wrote itself — a curve a Virtual DSP
-    /// session carried in, kept as a file so it is a file entry like any other.
-    /// </summary>
+    /// <summary>Calibration files the app wrote itself (curves carried in by Virtual DSP sessions).</summary>
     public string CalibrationsDirectory => Path.Combine(RootDirectory, "calibrations");
     public string CrashLogFile => Path.Combine(RootDirectory, "crash.log");
     public string MeasurementErrorLogFile =>

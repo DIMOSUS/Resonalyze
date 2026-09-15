@@ -2,13 +2,7 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The Time Alignment band selector against the options object it draws. That object is
-/// shared and is written from outside the panel — the persisted settings land in it
-/// after the controllers were built, and every history entry restores its own session
-/// into it — so the panel has to re-read it, not assume it still says what it said when
-/// the radios were first filled.
-/// </summary>
+/// <summary>The options object is written from outside (persisted settings, history restores), so the panel must re-read it.</summary>
 public sealed class TimeAlignmentBandModeSyncTests
 {
     [Fact]
@@ -20,14 +14,9 @@ public sealed class TimeAlignmentBandModeSyncTests
         };
         using Harness harness = Harness.Create(options);
 
-        // What ApplyPersistedSettings and ApplySessionSnapshot both do: write the
-        // shared object, touching no control.
         options.BandMode = TimeAlignmentBandMode.FullBand;
         harness.Controller.RefreshConfiguration();
 
-        // The old failure read exactly like a detection that did not happen: the radio
-        // still said Auto, the band caption sat on "-", and the analysis ran over the
-        // whole spectrum — because the options underneath said FullBand all along.
         Assert.True(harness.Panel.BandModeFullRadio.Checked);
         Assert.False(harness.Panel.BandModeAutoRadio.Checked);
     });
@@ -51,7 +40,6 @@ public sealed class TimeAlignmentBandModeSyncTests
         Assert.Equal(2_500m, harness.Panel.BandpassCenterNumeric.Value);
         Assert.Equal(2m, harness.Panel.BandpassPassOctavesNumeric.Value);
         Assert.Equal(1.5m, harness.Panel.BandpassFadeOctavesNumeric.Value);
-        // Only the manual mode owns those boxes.
         Assert.True(harness.Panel.BandpassCenterNumeric.Enabled);
     });
 
@@ -67,10 +55,7 @@ public sealed class TimeAlignmentBandModeSyncTests
         options.BandMode = TimeAlignmentBandMode.FullBand;
         harness.Controller.RefreshConfiguration();
 
-        // Filling the controls raises the same events a user's edits do, and those
-        // read the controls back into the options and persist them. A refresh must not
-        // count as an edit — or restoring a session would immediately overwrite the
-        // settings file with it.
+        // Filling controls raises the user-edit events; a refresh must not persist as an edit.
         Assert.Equal(TimeAlignmentBandMode.FullBand, options.BandMode);
         Assert.Equal(0, harness.Saves);
     });

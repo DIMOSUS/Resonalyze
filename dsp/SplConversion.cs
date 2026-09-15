@@ -3,29 +3,11 @@ using System.Collections.Generic;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Places the loopback-referenced frequency-response curves on an absolute
-/// dB SPL axis.
-/// <para>
-/// The primary magnitude is a transfer function (microphone ÷ loopback), so its
-/// dB is relative (dBr); one per-measurement offset turns it into SPL:
-/// <c>K = loopbackPeakDbFs + calibrationOffsetDb</c>. The distortion and noise
-/// traces are ratios to the fundamental (dBc); adding the primary's own SPL at
-/// their frequency turns each ratio into an absolute level, so the whole plot
-/// reads in dB SPL. Any per-frequency microphone correction cancels: it is already
-/// in the displayed primary, so it rides along without entering <c>K</c>.
-/// </para>
-/// </summary>
+/// <summary>Puts loopback-referenced curves on dB SPL: primary (dBr) + <c>K = loopbackPeakDbFs + calibrationOffsetDb</c>;
+/// dBc traces are lifted by the primary's SPL at their frequency. Mic correction is already in the primary, not in K.</summary>
 public static class SplConversion
 {
-    /// <summary>
-    /// Returns the curves converted to dB SPL using <paramref name="offsetDb"/>
-    /// (the measurement's <c>K</c>). The primary shifts by <c>K</c>; every
-    /// fundamental-relative curve is lifted by the primary's SPL at its own
-    /// frequency. Curves that carry no absolute reference and have no primary to
-    /// anchor to are returned unchanged — the caller decides whether SPL is
-    /// available at all.
-    /// </summary>
+    /// <summary>Curves with no absolute reference and no primary to anchor to are returned unchanged.</summary>
     public static IReadOnlyList<AnalysisCurve> ToSoundPressureLevel(
         IReadOnlyList<AnalysisCurve> curves,
         double offsetDb)
@@ -66,8 +48,6 @@ public static class SplConversion
         return result;
     }
 
-    // The distortion and noise traces are all expressed relative to the
-    // fundamental, so each becomes an absolute level the same way.
     private static bool IsFundamentalRelative(AnalysisCurveKind kind) => kind is
         AnalysisCurveKind.SecondHarmonic or
         AnalysisCurveKind.ThirdHarmonic or
@@ -87,8 +67,7 @@ public static class SplConversion
         return shifted;
     }
 
-    // dBc(f) + primaryDbr(f) + K. The primary is sampled at the curve's own
-    // frequency (the distortion traces live on a different grid).
+    // The distortion traces live on a different grid, so sample the primary at each point.
     private static SignalPoint[] Lift(
         IReadOnlyList<SignalPoint> points,
         IReadOnlyList<SignalPoint> primaryDbr,
@@ -105,9 +84,6 @@ public static class SplConversion
         return lifted;
     }
 
-    // Linear interpolation of a frequency-ascending dB curve, clamped at the ends.
-    // The primary is smoothed and densely sampled on a log grid, so linear
-    // interpolation between neighbours sits well under the plotting resolution.
     private static double InterpolateDb(IReadOnlyList<SignalPoint> curve, double x)
     {
         int count = curve.Count;

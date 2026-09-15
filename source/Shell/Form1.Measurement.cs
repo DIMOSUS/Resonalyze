@@ -37,7 +37,6 @@ public partial class Form1
         }
         catch
         {
-            // Update checks are best-effort only and must never affect startup.
         }
     }
 
@@ -88,11 +87,7 @@ public partial class Form1
         await liveSpectrumController.AbortAsync();
         if (liveCaptureWasRunning)
         {
-            // Only when a capture was actually stopped. This runs on every mode
-            // switch, and a settings panel whose view was never denied has nothing
-            // to be paid back — probing the driver for it would open an AsioOut on
-            // each tab click. A switch to a Tools mode closes the panel anyway
-            // (SetCaptureControlsVisible), which the refresh reads as "nothing open".
+            // Only when a capture actually stopped: runs on every mode switch, and a needless refresh opens an AsioOut per tab click.
             RefreshOpenMeasurementSettingsDevice();
         }
 
@@ -106,7 +101,6 @@ public partial class Form1
         }
 
         UpdateOverlayAvailability();
-        // Which measurement owns Save changes with the mode.
         RefreshSaveAvailability();
     }
 
@@ -132,11 +126,7 @@ public partial class Form1
 
             await liveSpectrumController.ToggleAsync();
             UpdateRecordButtonForCurrentMode();
-            // The capture owns the audio device while it runs, so an Apply during one
-            // deliberately leaves the settings panel's picture of the driver alone
-            // rather than probing a device it does not own. This is where that debt is
-            // paid: the moment the capture releases the device, an open panel gets the
-            // straight answer it was denied.
+            // Pay the settings panel's device refresh deferred while the capture owned the device.
             RefreshOpenMeasurementSettingsDevice();
             return;
         }
@@ -170,30 +160,22 @@ public partial class Form1
             await startupAudioWarmup.WaitAsync();
             if (expSweepMeasurement.InProgress)
             {
-                // A second click can arrive while the warm-up is awaited;
-                // starting again would call Init on a running measurement.
+                // A second click during the warm-up would Init a running measurement.
                 return;
             }
 
             PrepareSweepMeasurementForRun();
-            // After Prepare, so the anchor prediction reads the input configuration
-            // this run will actually use.
+            // After Prepare, so the anchor prediction reads this run's input configuration.
             ResetSplViewOnlyDisplayForRun();
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
         }
     }
 
-    // The Live Spectrum mirror of ResetSplViewOnlyDisplayForRun below: an analyzer
-    // started while the display is view-only SPL would draw no curves at all, so
-    // drop the display to relative first. Also called when a RUNNING analyzer loses
-    // its calibration, where staying in SPL would blank it. The signal is left
-    // alone — it follows the analysis mode, not the scale.
+    // Live mirror of ResetSplViewOnlyDisplayForRun; also used when a running analyzer loses calibration. The signal is left alone.
     private void ResetLiveSplViewOnlyDisplayForRun()
     {
-        // MMM is never view-only (see LiveSpectrumController.SplViewOnly), so there
-        // is nothing to rescue here — and dropping the scale would fight the mode,
-        // which renders band-power dB SPL whatever this option says.
+        // MMM is never view-only and always renders band-power dB SPL.
         if (plotModelFactory.EffectiveLiveAnalysisMode.IsSpatialAverageCapture() ||
             plotModelFactory.EffectiveLiveSpectrumScale !=
                 Dsp.MagnitudeScale.SoundPressureLevel ||
@@ -204,18 +186,13 @@ public partial class Form1
 
         liveSpectrumOptions.MagnitudeScale = Dsp.MagnitudeScale.Relative;
         SaveMeasurementSettings();
-        // An open panel must follow the reset, or its next apply-on-change would
-        // write SPL right back into the options.
+        // An open panel must follow, or its next apply writes SPL back.
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
             panel => panel.ForceSplScaleOff());
     }
 
-    // A sweep started in dB SPL only stays there when the RUN AHEAD can supply SPL —
-    // i.e. an SPL calibration is configured for the input it will use, so the fresh
-    // measurement comes up in dB SPL directly. Without one the new curves would be
-    // born hidden (view-only shows overlays only), so the display drops to dBr/dBc.
-    // Deliberately NOT gated on the previous measurement's anchor: that one is
-    // irrelevant the moment a new run starts.
+    // Stays in dB SPL only if the run ahead has an SPL calibration for its input; otherwise new curves would be born hidden.
+    // Not gated on the previous measurement's anchor.
     private void ResetSplViewOnlyDisplayForRun()
     {
         if (frequencyResponseOptions.MagnitudeScale !=
@@ -227,16 +204,12 @@ public partial class Form1
 
         frequencyResponseOptions.MagnitudeScale = Dsp.MagnitudeScale.Relative;
         SaveMeasurementSettings();
-        // An open panel must follow the reset, or its next apply-on-change would
-        // write SPL right back into the options.
+        // An open panel must follow, or its next apply writes SPL back.
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.ForceRelativeScale());
     }
 
-    // One-time notice after loading a settings file written by a version that
-    // still captured the loopback from a separate input device: the loopback
-    // selection was reset (its channel offsets are meaningless on the shared
-    // device), so the user must pick a loopback channel again.
+    // Settings from the separate-loopback-device era: loopback selection was reset, the user must pick a channel again.
     private void NotifyLegacyDualDeviceLoopbackReset()
     {
         if (!measurementSettings.LegacyDualDeviceLoopbackReset)
@@ -263,18 +236,10 @@ public partial class Form1
         expSweepMeasurement.InProgress &&
         expSweepMeasurement.AverageRunCount > 1;
 
-    // Commit a calibration change (the microphone's files or the SPL anchor) the
-    // moment it happens: into the settings and to disk (debounced, flushed on
-    // close), onto the live measurement so the next impulse response stamps the SPL
-    // anchor, and onto the plot so a microphone calibration shows at once. None of
-    // it needs an Apply-settings click — a completed calibration is not a tentative
-    // edit, and losing it because Apply was not pressed is the whole bug here.
+    // A completed calibration commits immediately (settings, disk, measurement, plot) without Apply.
     private async void PersistCalibration(MeasurementOptions.CalibrationSelection selection)
     {
-        // Which half of this changed decides what the live analyzer has to be told.
-        // A microphone curve cannot reach a capture already taken — its calibration
-        // is frozen on the accumulation — while the SPL anchor shapes the display
-        // itself, so only the anchor may drop a peak hold.
+        // Mic curves cannot reach a capture already taken (frozen on the accumulation); only the SPL anchor may drop a peak hold.
         bool splAnchorMoved = !ReferenceEquals(
             measurementSettings.Measurement.SplCalibration, selection.SplCalibration);
         measurementSettings.Measurement.MicrophoneCalibration0DegreesPath =
@@ -284,12 +249,7 @@ public partial class Form1
         measurementSettings.Measurement.SplCalibration = selection.SplCalibration;
         expSweepMeasurement.SplCalibration = selection.SplCalibration;
         RefreshCalibrationConsumers();
-        // Losing the SPL anchor while the analyzer RUNS in dB SPL would leave it
-        // drawing nothing (view-only suppresses live curves), so drop the display to
-        // relative first — the calibration refresh below then restarts the capture on
-        // a scale its signal fits. An IDLE view-only SPL display is legitimate (it
-        // shows overlays) and is left alone. The open live panel's amber state
-        // follows the new calibration either way.
+        // A running analyzer losing its anchor in dB SPL would draw nothing, so drop to relative. Idle view-only SPL is legitimate.
         if (liveSpectrumController.InProgress)
         {
             ResetLiveSplViewOnlyDisplayForRun();
@@ -299,19 +259,12 @@ public partial class Form1
                 plotModelFactory.LiveSplOffsetDb.HasValue,
                 liveSpectrumController.HasDisplayableCurve,
                 liveSpectrumController.HasConfiguredLoopback));
-        // Persist the calibration itself up front so it survives even if the redraw
-        // below fails.
+        // Persist first so it survives a failed redraw.
         ScheduleMeasurementSettingsSave();
 
         try
         {
-            // The SPL anchor changes what a level maps to on screen, so the held
-            // envelope stops being comparable and the analyzer is refreshed in EVERY
-            // mode — it rebuilds its own model only when visible, so any other mode
-            // still refreshes below. A microphone curve does not get this: the
-            // capture carries the one it was taken through, and dropping a valid
-            // peak hold for a change that cannot touch its curve is exactly what the
-            // freeze was introduced to stop.
+            // The anchor changes level mapping, so refresh the analyzer in every mode; mic curve changes must not drop a valid peak hold.
             if (splAnchorMoved)
             {
                 liveSpectrumController.RefreshCalibration();
@@ -324,23 +277,17 @@ public partial class Form1
         }
         catch (Exception exception)
         {
-            // The calibration is already saved and applied; only the redraw failed.
             ShowMeasurementError("Failed to redraw after a calibration change.", exception);
         }
     }
 
-    // Everything in the measurement options except the audio-backend group takes
-    // effect as it is edited — the Apply button is left to the backend alone. The
-    // edits land in the settings only; PrepareSweepMeasurementForRun pushes them
-    // into the measurement before the next sweep, so tweaking the band cannot
-    // discard the measurement currently on screen.
+    // All but the audio-backend group apply as edited, into settings only; PrepareSweepMeasurementForRun pushes them before the next sweep.
     private async void ApplySweepSettingsLive(MeasurementOptions dialog)
     {
         sweepSettingsApplyPending = true;
         if (applyingSweepSettings)
         {
-            // An apply is in flight (it may be reopening the device); the loop
-            // below re-reads the panel once it finishes.
+            // An apply is in flight; the loop re-reads the panel after it.
             return;
         }
 
@@ -363,10 +310,6 @@ public partial class Form1
         }
     }
 
-    /// <summary>
-    /// Lets an open Record Settings panel re-read the audio device, once nothing is
-    /// holding it. A no-op when the panel is closed or a capture is still running.
-    /// </summary>
     private void RefreshOpenMeasurementSettingsDevice()
     {
         if (liveSpectrumController.InProgress || expSweepMeasurement.InProgress)
@@ -378,15 +321,7 @@ public partial class Form1
             panel => panel.RefreshAudioDeviceView());
     }
 
-    /// <summary>
-    /// Stops a live capture — running, or merely holding its redraw timer — and pays
-    /// the settings panel's device debt once it is stopped. Every path that takes the
-    /// device back from the analyzer goes through here, so an open Record Settings
-    /// panel is refreshed wherever the capture ends rather than only where the Record
-    /// button stopped it. A no-op, refresh included, when nothing was running: the
-    /// panel was never denied its answer, and probing an ASIO driver for nothing is
-    /// what the refresh is careful about in the first place.
-    /// </summary>
+    /// <summary>Stops a live capture and refreshes an open Record Settings panel; no-op (no ASIO probe) when nothing ran.</summary>
     private async Task StopLiveCaptureAsync()
     {
         if (!liveSpectrumController.InProgress && !liveSpectrumController.TimerEnabled)
@@ -403,25 +338,18 @@ public partial class Form1
         AudioSessionRequest requestBefore =
             CreateAudioWarmupRequest(measurementSettings.Measurement);
         dialog.ApplySweepSettings(measurementSettings.Measurement);
-        // The microphone the rig records through is the one a live capture is
-        // corrected by, so the edit reaches the analyzer on the same apply.
         RefreshCalibrationConsumers();
-        // Captures the other option groups and keeps the measurement settings
-        // just edited (they are not read back from expSweepMeasurement here).
+        // The settings just edited are not read back from expSweepMeasurement.
         SaveMeasurementSettings();
 
-        // Before the early return below: the protective high-pass is not an audio
-        // setting, so an edit to it alone leaves the request unchanged — and it is what
-        // a reference-free capture divides back out, so the live analyzer has to learn
-        // about it without the reconfigure that would restart a running one.
+        // Before the early return: the protective high-pass is not an audio setting but the live analyzer divides it out, without a restart.
         liveSpectrumController.ApplyProtectiveHighPass(measurementSettings.Measurement);
 
         AudioSessionRequest request =
             CreateAudioWarmupRequest(measurementSettings.Measurement);
         if (request == requestBefore)
         {
-            // Only the sweep definition moved; the audio session is unchanged, so
-            // there is nothing to reconfigure and no reason to reopen the device.
+            // Only the sweep definition moved; no device reopen.
             return;
         }
 
@@ -437,9 +365,7 @@ public partial class Form1
         }
         catch
         {
-            // Best effort, like the startup warm-up: the user edited a sweep
-            // setting, not the device, so a driver that refuses to pre-open must
-            // not interrupt them. Starting a measurement still reports it.
+            // Best effort: a driver refusing pre-open must not interrupt a sweep edit.
         }
     }
 
@@ -451,15 +377,7 @@ public partial class Form1
             return;
         }
 
-        // The panel OPENS the audio device: with ASIO its sample-rate list is read
-        // straight out of a driver probe, and a driver already open answers with the
-        // rate it is open at and nothing else. Every other place that touches the
-        // device waits for the startup warm-up first (see the record button and the
-        // live spectrum toggle); this one did not, so the first open after launch
-        // could land on a busy driver and offer one rate. Reopening the panel then
-        // fixed it, which is exactly what a timing collision looks like.
-        //
-        // Free once the warm-up has finished, which is every open but the first.
+        // The panel opens the device (ASIO rates come from a probe); a driver busy with the warm-up answers only its open rate.
         await startupAudioWarmup.WaitAsync();
         if (IsDisposed || dockedMeasurementSettingsHost.IsOpen)
         {
@@ -493,22 +411,8 @@ public partial class Form1
                             CreateAudioWarmupRequest(measurementSettings.Measurement),
                             CancellationToken.None);
 
-                        // The panel stays on screen after Apply, and the device it is
-                        // describing has just been reconfigured under it. Its picture
-                        // of the driver is a snapshot, so without this a rate change
-                        // leaves the status amber against a driver that is now running
-                        // at exactly that rate, and the only cure is reopening the
-                        // panel.
-                        //
-                        // Inside this branch and not after it: the condition is "the
-                        // device is ours to touch". Applying while the live spectrum
-                        // runs restarts that session, which OWNS the driver — and
-                        // probing it then opens a second AsioOut against a driver that
-                        // may refuse it or answer with only the rate it is running at,
-                        // which is the very short rate list this refresh exists to
-                        // prevent. A stale view is the smaller harm, and it is not
-                        // permanent: stopping the capture refreshes an open panel (see
-                        // the live spectrum toggle).
+                        // Refresh the panel's device snapshot after reconfigure. Only in this branch: while the live spectrum owns the driver,
+                        // probing would open a second AsioOut and get a short rate list. Stopping the capture refreshes it later.
                         dialog.RefreshAudioDeviceView();
                     }
                 }
@@ -562,14 +466,10 @@ public partial class Form1
         }
         catch
         {
-            // Startup warm-up is best-effort. The normal measurement path will
-            // still report driver errors if the selected ASIO setup is invalid.
         }
     }
 
-    // Maps the persisted audio settings onto a neutral warm-up request. Loopback
-    // that coincides with the microphone channel is treated as "no loopback" so
-    // the warm-up opens only the channels the routing actually needs.
+    // Loopback equal to the mic channel means no loopback, so the warm-up opens only needed channels.
     private static AudioSessionRequest CreateAudioWarmupRequest(
         MeasurementSettingsFile.SweepMeasurementSettings settings)
     {

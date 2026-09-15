@@ -5,9 +5,7 @@ namespace Resonalyze.History;
 internal sealed class MeasurementHistoryService
 {
     public const int MaxInMemoryHistoryEntries = 10;
-    // The whole list, saved rows included. Nothing bounded it before: the history
-    // gained a row for every file ever opened and kept it for as long as that file
-    // existed, so a few weeks of tuning left hundreds to scroll past.
+    // The whole list, saved rows included.
     public const int MaxHistoryEntries = 30;
 
     private readonly MeasurementHistoryPersistence persistence;
@@ -17,9 +15,7 @@ internal sealed class MeasurementHistoryService
     {
         this.persistence = persistence ?? new MeasurementHistoryPersistence();
         entries = this.persistence.Load().ToList();
-        // A store written before the cap existed, or by a build without it, arrives
-        // over depth; it is cut here rather than at the next mutation, which may
-        // never come — a session that only reads the history never saves it.
+        // An older store may arrive over depth; cut now, since a read-only session never saves.
         if (TrimEntries())
         {
             SaveTrimmedEntries();
@@ -42,9 +38,7 @@ internal sealed class MeasurementHistoryService
             sourceFilePath: null,
             snapshot);
         entries.Insert(0, entry);
-        // Recording does not otherwise touch the store — an unsaved entry lives in
-        // memory alone — but the depth cap can push a SAVED row off the end, and
-        // that has to reach disk.
+        // The depth cap can push a saved row off the end, which must reach disk.
         if (TrimEntries())
         {
             SaveTrimmedEntries();
@@ -175,8 +169,6 @@ internal sealed class MeasurementHistoryService
         return entry.Snapshot;
     }
 
-    // Stores the latest live working state into an entry so returning to it later
-    // restores what the user was actually doing, not the state at save time.
     public void UpdateSession(Guid entryId, MeasurementSessionSnapshot session)
     {
         MeasurementHistoryEntry? entry = FindById(entryId);
@@ -276,9 +268,7 @@ internal sealed class MeasurementHistoryService
             ArrayMicrophones = measurement.ArrayMicrophones,
             ProtectiveHighPass = measurement.MeasurementProtectiveHighPass,
             MicrophoneCalibration = measurement.MeasurementMicrophoneCalibration,
-            // Same rule as saving to disk: keep the calibration frozen onto THIS
-            // result, and only when it belongs to the input the result ran on — a
-            // leftover anchor from another device would be trusted on restore.
+            // Keep the anchor only when it belongs to this result's input; a leftover would be trusted on restore.
             SplCalibration =
                 measurement.MeasurementSplCalibration is { } anchor &&
                 measurement.InputMatches(anchor)
@@ -297,8 +287,7 @@ internal sealed class MeasurementHistoryService
         Complex[]? transfer = file.GetTransferImpulseResponse();
         (double lowHz, double highHz) = file.ResolveSweepBand();
         (double achievedLowHz, double achievedHighHz) = file.ResolveAchievedSweepBand();
-        // A file written before the full-amplitude edges were recorded falls back to
-        // the achieved band — what it has always been read over.
+        // Older files lack full-amplitude edges: fall back to the achieved band.
         double measuredLowHz = file.MeasuredLowFrequencyHz > 0
             ? file.MeasuredLowFrequencyHz
             : achievedLowHz;
@@ -349,27 +338,15 @@ internal sealed class MeasurementHistoryService
             ArrayMicrophones = file.ArrayMicrophones?.ToCurves() ?? [],
             ProtectiveHighPass = file.ProtectiveHighPass?.ToConfiguration(),
             MicrophoneCalibration = file.MicrophoneCalibration,
-            // The file's anchor was validated against its own input when written.
             SplCalibration = file.SplCalibration,
             Preview = preview,
             Session = session
         };
     }
 
-    // Two caps answering two different questions. The in-memory one is about
-    // MEMORY: an unsaved snapshot holds the complete impulse responses, so only a
-    // small rolling set of them is kept. The depth one is about the LIST, which a
-    // reader has to be able to find something in.
-    //
-    // Over the depth it is a FILE-BACKED row that goes, oldest first, even when an
-    // unsaved row is older. What such a row loses is its working state; the
-    // measurement itself is on disk and opening the file brings the row back, while
-    // an unsaved row IS the measurement — dropping it to keep a saved one would
-    // trade the irreplaceable for the recoverable. There is always one to drop: the
-    // memory cap runs first and leaves at most ten unsaved rows out of the thirty.
-    //
-    // Returns whether a PERSISTED row was removed, which is the caller's cue to
-    // rewrite the store even when it had no other reason to.
+    // Memory cap: unsaved snapshots hold full IRs, so few are kept. Depth cap: over it the oldest file-backed
+    // row goes even if an unsaved one is older (the file restores it; an unsaved row is the measurement).
+    // The memory cap runs first (≤10 unsaved of 30). Returns whether a persisted row was removed.
     private bool TrimEntries()
     {
         while (entries.Count(entry => !entry.IsFileBacked) > MaxInMemoryHistoryEntries)
@@ -399,13 +376,7 @@ internal sealed class MeasurementHistoryService
         return removedPersisted;
     }
 
-    // Best effort, the way the store rewrite in MeasurementHistoryPersistence.Load
-    // is: the in-memory list is already cut, so a store that cannot be written this
-    // launch is written by the next mutation or cut again by the next launch. The
-    // two callers are why it is swallowed rather than raised — this is the only
-    // write either of them makes, and neither has anywhere to report it that would
-    // not cost the user the launch (a field initializer on the shell) or the sweep
-    // that just finished.
+    // Best effort: the list is already cut, and neither caller (shell initializer, finished sweep) can report it.
     private void SaveTrimmedEntries()
     {
         try
@@ -418,10 +389,7 @@ internal sealed class MeasurementHistoryService
         }
     }
 
-    // A snapshot holds the complete impulse responses (tens of megabytes), so at
-    // most one file-backed entry keeps one cached — its file remains the source
-    // of truth and an evicted snapshot is reloaded on demand. Unsaved entries
-    // always keep theirs: memory is their only storage.
+    // Snapshots hold full IRs (tens of MB): one file-backed entry keeps its cache; unsaved entries always keep theirs.
     private void RetainSingleFileBackedSnapshot(MeasurementHistoryEntry keep)
     {
         foreach (MeasurementHistoryEntry entry in entries)

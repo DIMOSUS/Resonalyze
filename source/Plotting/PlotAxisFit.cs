@@ -3,28 +3,12 @@ using OxyPlot.Axes;
 
 namespace Resonalyze;
 
-/// <summary>
-/// "Fit to data" for a plot's axes — REW's Ctrl+Alt+F and Ctrl+Alt+Y, and the
-/// buttons of the same name in the graph limits dialog.
-/// </summary>
 internal static class PlotAxisFit
 {
-    /// <summary>
-    /// Headroom left around the data on a value axis, as a fraction of its span. The
-    /// frequency axis gets none: 20 Hz to 20 kHz IS the data, and padding it would
-    /// open every fit on empty decades.
-    /// </summary>
+    /// <summary>Frequency axes get no margin: 20 Hz-20 kHz is the data.</summary>
     private const double ValueAxisMarginFraction = 0.05;
 
-    /// <summary>
-    /// Fits the axes to the data drawn against them. Axes that refuse zoom are left
-    /// alone — those are the ones a mode deliberately pins (the waterfall's hidden
-    /// axes, the EQ wizard's fixed gain axis).
-    /// </summary>
-    /// <param name="verticalOnly">
-    /// True for REW's "Fit Y to data": the frequency (or time) span stays where the
-    /// user put it and only the value axis is refitted.
-    /// </param>
+    /// <summary>Axes that refuse zoom (pinned by a mode) are left alone.</summary>
     public static bool FitToData(PlotModel? model, bool verticalOnly)
     {
         if (model == null)
@@ -32,9 +16,6 @@ internal static class PlotAxisFit
             return false;
         }
 
-        // The data ranges are maintained by the model, not by the axes' view state,
-        // so they survive zooming; refresh them anyway in case a series changed
-        // since the last full update.
         ((IPlotModel)model).Update(true);
 
         bool fitted = false;
@@ -68,8 +49,6 @@ internal static class PlotAxisFit
             return true;
         }
 
-        // Margin in the axis's own scale: a decade is padded by a ratio, a linear
-        // axis by a fraction of its span.
         if (axis is LogarithmicAxis && minimum > 0)
         {
             double factor = Math.Pow(maximum / minimum, ValueAxisMarginFraction);

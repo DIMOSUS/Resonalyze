@@ -55,7 +55,6 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         Assert.Equal(entry.Id, loaded[0].Id);
         Assert.Equal(sourcePath, loaded[0].SourceFilePath);
         Assert.Null(loaded[0].Snapshot);
-        // The atomic write must not leave its temp file behind.
         Assert.DoesNotContain(
             Directory.GetFiles(directory),
             file => file.EndsWith(".tmp", StringComparison.Ordinal));
@@ -87,9 +86,7 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
     [Fact]
     public void Load_CleansPathlessRowsOutOfTheStore_Silently()
     {
-        // A broken row with no path never counted as a measurement: no warning
-        // for it — but the store must still be rewritten, or the row would sit
-        // in the JSON forever without ever tripping the missing-file removal.
+        // The store must still be rewritten, or the path-less row would stay in the JSON forever.
         File.WriteAllText(
             storePath,
             """
@@ -104,14 +101,7 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         Assert.DoesNotContain("sourceFilePath", File.ReadAllText(storePath));
     }
 
-    /// <summary>
-    /// The owner's policy: a history row whose measurement file is gone is dead
-    /// weight and is dropped AT LOAD, with the store rewritten immediately — a
-    /// session without history mutations never saves, and the removal (and its
-    /// one-time message) must not depend on one. The previous design retained
-    /// such rows for the unplugged-drive case, which greeted every launch with
-    /// the same warning.
-    /// </summary>
+    /// <summary>Rows whose file is gone are dropped at load and the store rewritten immediately (a read-only session never saves).</summary>
     [Fact]
     public void Load_RemovesUnreachableEntriesFromTheStoreImmediately()
     {
@@ -123,15 +113,11 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         var first = new MeasurementHistoryPersistence(storePath);
         first.Save(new[] { reachable, CreateEntry(unreachablePath) });
 
-        // The file disappears; the next launch removes its row at load, with
-        // no Save in between.
         File.Delete(unreachablePath);
         var second = new MeasurementHistoryPersistence(storePath);
         Assert.Equal(reachable.Id, Assert.Single(second.Load()).Id);
         Assert.NotNull(second.LoadWarning);
 
-        // Even with the file back, the row is gone for good and the following
-        // launch is quiet.
         File.WriteAllText(unreachablePath, "{}");
         var third = new MeasurementHistoryPersistence(storePath);
         Assert.Equal(reachable.Id, Assert.Single(third.Load()).Id);
@@ -150,8 +136,6 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         Assert.Empty(persistence.Load());
         Assert.NotNull(persistence.LoadWarning);
 
-        // A second Load of a store that no longer mentions the file must not
-        // carry the previous load's retention into the next Save.
         File.WriteAllText(storePath, "{\"schemaVersion\":1,\"entries\":[]}");
         Assert.Empty(persistence.Load());
         persistence.Save(Array.Empty<MeasurementHistoryEntry>());
@@ -174,8 +158,6 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         var persistence = new MeasurementHistoryPersistence(storePath);
         persistence.Save(new[] { kept, removed });
 
-        // Both files are present, so nothing is retained; dropping an entry from
-        // the list is a real delete and must stick.
         var reopened = new MeasurementHistoryPersistence(storePath);
         Assert.Equal(2, reopened.Load().Count);
         reopened.Save(new[] { kept });

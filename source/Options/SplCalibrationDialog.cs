@@ -8,17 +8,10 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Options
 {
-    /// <summary>
-    /// Modal SPL calibration: the user fits an acoustic calibrator over the
-    /// microphone, picks its reference level, and listens for the tone. On success
-    /// the dialog exposes an <see cref="SplCalibration"/> anchor; the caller is
-    /// responsible for persisting it. Capture runs on the same input the caller is
-    /// configuring, so the anchor is pinned to that digital tract.
-    /// </summary>
+    /// <summary>Captures on the input being configured, so the anchor is pinned to that tract; the caller persists it.</summary>
     internal sealed partial class SplCalibrationDialog : Form
     {
-        // A power-of-two block; ~5.9 Hz bins at 48 kHz, which is ample to isolate
-        // the 1 kHz tone while leaving room for enough frames in a few seconds.
+        // ~5.9 Hz bins at 48 kHz: isolates the 1 kHz tone with enough frames in a few seconds.
         private const int FrameLength = 8_192;
         private static readonly TimeSpan CaptureDuration = TimeSpan.FromSeconds(4);
         private static readonly SplToneCriteria Criteria = SplToneCriteria.Default;
@@ -30,7 +23,6 @@ namespace Resonalyze.Options
         private bool running;
         private bool pendingClose;
 
-        /// <summary>The captured calibration anchor, or null until one succeeds.</summary>
         public SplCalibration? Result { get; private set; }
 
         public SplCalibrationDialog(
@@ -72,7 +64,6 @@ namespace Resonalyze.Options
         {
             if (running)
             {
-                // The button doubles as Stop while a capture is in flight.
                 cancellation?.Cancel();
                 return;
             }
@@ -248,8 +239,7 @@ namespace Resonalyze.Options
 
         private void SplCalibrationDialog_FormClosing(object? sender, FormClosingEventArgs e)
         {
-            // A capture is in flight: cancel it and defer the close until it
-            // unwinds, so the background task never touches a disposed form.
+            // Defer the close until the capture unwinds, so the task never touches a disposed form.
             if (running)
             {
                 pendingClose = true;

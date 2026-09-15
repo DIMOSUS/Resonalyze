@@ -1,11 +1,5 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The overlay panel's name label is narrow and its capture button already shows the
-/// slot number, so the generated "Overlay {slot}: " prefix is dropped. Everything else
-/// is the user's own wording — including the numbers and units an audio name carries —
-/// and has to survive untouched.
-/// </summary>
 public sealed class OverlaySlotNameTests
 {
     [Theory]
@@ -17,7 +11,6 @@ public sealed class OverlaySlotNameTests
         Assert.Equal(expected, OverlaySlotName.Shorten(title, slot));
     }
 
-    // A file written before the label existed can carry the bare numbered form.
     [Theory]
     [InlineData("4: Main", 4, "Main")]
     [InlineData("12:Main", 12, "Main")]
@@ -46,8 +39,6 @@ public sealed class OverlaySlotNameTests
         Assert.Equal(title, OverlaySlotName.Shorten(title, slot));
     }
 
-    // The prefix is only noise when it repeats this slot; naming another one is
-    // information worth showing.
     [Theory]
     [InlineData("Overlay 5: Input Spectrum", 4)]
     [InlineData("5: Main", 4)]
@@ -62,7 +53,6 @@ public sealed class OverlaySlotNameTests
     [InlineData("4: ", 4)]
     public void Shorten_KeepsATitleThatIsNothingButThePrefix(string title, int slot)
     {
-        // An empty label would read as an empty slot.
         Assert.Equal(title, OverlaySlotName.Shorten(title, slot));
     }
 
@@ -78,8 +68,6 @@ public sealed class OverlaySlotNameTests
     [Fact]
     public void ForSave_AnOccupiedSlotKeepsItsName()
     {
-        // Re-capturing into a named slot updates the curve, not the label: the name
-        // may be the user's own ("Left tweeter") and must survive a re-measure.
         Assert.Equal(
             "Left tweeter",
             OverlaySlotName.ForSave(
@@ -92,8 +80,6 @@ public sealed class OverlaySlotNameTests
     [Fact]
     public void ForSave_AnEmptySlotGetsTheAutomaticName()
     {
-        // A never-used or cleared slot is named after what was captured, exactly as
-        // before the keep-the-name rule existed.
         Assert.Equal(
             "Overlay 4: Frequency Response",
             OverlaySlotName.ForSave(

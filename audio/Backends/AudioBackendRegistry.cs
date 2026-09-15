@@ -1,10 +1,5 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// The one place a persisted <see cref="AudioBackend"/> is resolved to a concrete
-/// backend implementation. Not a plugin framework — the backends are a fixed,
-/// compile-time set constructed once in the application's composition root.
-/// </summary>
 public sealed class AudioBackendRegistry : IAudioBackendRegistry
 {
     private readonly IReadOnlyDictionary<AudioBackend, IAudioBackend> byId;
@@ -21,7 +16,6 @@ public sealed class AudioBackendRegistry : IAudioBackendRegistry
         Backends = map.Values.Select(backend => backend.Descriptor).ToArray();
     }
 
-    /// <summary>The default set of backends shipped with the application.</summary>
     public static AudioBackendRegistry CreateDefault() =>
         new(
         [

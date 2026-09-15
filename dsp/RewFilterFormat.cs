@@ -2,12 +2,7 @@
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// REW "Filter Settings" text. The filter lines are identical to Equalizer APO
-/// (Filter N: ON PK Fc ... Gain ... dB Q ..., and LSC/HSC for the shelves), so
-/// parsing is shared; export adds REW's header and a preamp line so the value
-/// round-trips.
-/// </summary>
+/// <summary>REW "Filter Settings": filter lines are Equalizer APO's (shared parser); export adds REW's header and a preamp line.</summary>
 public sealed class RewFilterFormat : IEqProfileFormat
 {
     public string Name => "REW filter settings";
@@ -15,7 +10,7 @@ public sealed class RewFilterFormat : IEqProfileFormat
     public bool CanImport => true;
     public bool CanExport => true;
 
-    // The filter lines are APO's, and APO's AP is second-order only.
+    // APO's AP is second-order only.
     public bool SupportsAllPass(PeqBandType type) =>
         type == PeqBandType.AllPassSecondOrder;
 

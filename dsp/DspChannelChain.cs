@@ -2,31 +2,8 @@
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// The linear DSP chain of one virtual-crossover channel, mirroring what a DSP
-/// applies before the driver: gain, delay, a polarity switch, the crossover
-/// filters, the channel phase control of the devices that have one, a PEQ stage,
-/// and the FIR stage of the devices that convolve. Phase-only all-pass filters live inside the PEQ bank
-/// as bands (<see cref="PeqBandType.AllPassFirstOrder"/> /
-/// <see cref="PeqBandType.AllPassSecondOrder"/>), the way Audiotec-style hardware
-/// holds them in its EQ slot table. Because every stage is LTI, multiplying a
-/// measured transfer response by <see cref="Response"/> predicts exactly what the
-/// microphone would capture after dialing these settings into the hardware. Being
-/// LTI, the stages also commute: the order they are applied in here does not
-/// change the response.
-/// </summary>
-/// <param name="PhaseRotation">
-/// The channel's phase control, where the device being designed for has one — an
-/// all-pass the hardware derives from the crossover rather than from a corner the
-/// user types (see <see cref="PhaseRotationControl"/>). Default is no rotation, so
-/// every chain built before the control existed is unchanged.
-/// </param>
-/// <param name="Fir">
-/// The channel's FIR stage, where the device being designed for has one and a
-/// kernel is loaded: a convolution the processor runs at ITS rate (see
-/// <see cref="FirFilter"/>). Null is no FIR, so every chain built before the stage
-/// existed is unchanged. Compared by reference, like the kernel itself.
-/// </param>
+/// <summary>One channel's LTI DSP chain (gain, delay, polarity, crossover, phase control, PEQ incl. all-pass bands, FIR).
+/// Multiplying a measured transfer response by <see cref="Response"/> predicts the capture; stage order does not matter.</summary>
 public sealed record DspChannelChain(
     double GainDb = 0,
     double DelayMs = 0,
@@ -36,23 +13,11 @@ public sealed record DspChannelChain(
     PhaseRotationSpec PhaseRotation = default,
     FirFilter? Fir = null)
 {
-    /// <summary>
-    /// The supported |GainDb| range of a channel chain — the ONE figure the
-    /// project validator, the gain-balance proposals and the UI clamp must
-    /// agree on, so an automatic proposal can never produce a setting the
-    /// project file refuses to save.
-    /// </summary>
+    /// <summary>The one |GainDb| limit shared by validator, gain balance and UI.</summary>
     public const double MaximumGainDb = 60;
 
     public static DspChannelChain Identity { get; } = new();
 
-    /// <summary>
-    /// Complex response of the whole chain at the given frequency:
-    /// gain · (±1) · e^{-jw·tau} · H_crossover · H_phase · H_fir · H_peq. The delay term
-    /// realizes an exact fractional-sample delay; the filters are evaluated as the
-    /// digital biquads — and the FIR as the convolution — a DSP would run at this
-    /// sample rate.
-    /// </summary>
     public Complex Response(double frequencyHz, double sampleRateHz)
     {
         double linearGain = Math.Pow(10.0, GainDb / 20.0) * (InvertPolarity ? -1.0 : 1.0);

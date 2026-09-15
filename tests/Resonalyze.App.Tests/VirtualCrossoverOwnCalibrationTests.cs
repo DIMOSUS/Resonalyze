@@ -5,26 +5,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// "Own (as measured)": every curve read through the calibration ITS measurement
-/// recorded, instead of one curve chosen for the whole project.
-/// </summary>
-/// <remarks>
-/// The project's single calibration stopped being able to describe the measurements
-/// when an array arrived — several capsules, each corrected by its own file before
-/// the positions are averaged, and no one curve names that. It was never quite able
-/// to: a project whose channels were measured on different days with different
-/// microphones had the same problem, less visibly.
-/// <para>
-/// What the panel must not do is quietly average the difference away. A SUM used to
-/// be one magnitude with one correction subtracted from it, which cannot undo two
-/// microphones — so a set that disagreed was summed RAW beside corrected channels,
-/// and the gap between them read as summation loss. Each channel now carries its own
-/// correction INTO the sum (pinned in <c>MeasuredSumTests</c>, where the arithmetic
-/// is); what is left to say here is that the plot is reading more than one
-/// microphone.
-/// </para>
-/// </remarks>
+/// <summary>"Own (as measured)": each curve is read through the calibration its measurement recorded (arithmetic pinned in MeasuredSumTests).</summary>
 public sealed class VirtualCrossoverOwnCalibrationTests
 {
     private static readonly CalibrationFile PanelCurve =
@@ -40,8 +21,6 @@ public sealed class VirtualCrossoverOwnCalibrationTests
     {
         object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
         SetField(panel, "ownCalibrationSelected", own);
-        // What the panel holds when the selector names a curve — and deliberately
-        // null under Own, where no single field could hold a per-channel answer.
         SetProperty(panel, "Calibration", own ? null : PanelCurve);
         return panel;
     }
@@ -86,17 +65,13 @@ public sealed class VirtualCrossoverOwnCalibrationTests
         ProcessedChannel channel = Channel("left", CapsuleA);
 
         Assert.Same(CapsuleA, Invoke<CalibrationFile?>(Panel(own: true), "CalibrationFor", channel));
-        // And through the panel's under every other selection, which is what makes
-        // the selector mean anything at all.
         Assert.Same(PanelCurve, Invoke<CalibrationFile?>(Panel(own: false), "CalibrationFor", channel));
     }
 
     [Fact]
     public void AMeasurementNamingNoCalibrationIsReadThroughNone()
     {
-        // Not a fallback to the panel's: the file says it was read through none, and
-        // substituting a curve it never passed would be the panel deciding what a
-        // measurement means.
+        // No fallback to the panel's curve: the file says it was read through none.
         Assert.Null(
             Invoke<CalibrationFile?>(Panel(own: true), "CalibrationFor", Channel("left", null)));
     }
@@ -104,11 +79,7 @@ public sealed class VirtualCrossoverOwnCalibrationTests
     [Fact]
     public void ACaptureIsReadAsMeasuredRatherThanThroughTheResponseBesideIt()
     {
-        // The mapping that was wrong. A stored spatial average — a moving-microphone
-        // pass attached by hand, or an array recorded with the sweep — carries the
-        // correction IT was taken through. Handing the hybrid this side's impulse
-        // response calibration instead reads the capture through a microphone that
-        // did not take it, and the error is the whole difference between the files.
+        // A stored capture carries the correction IT was taken through, not the IR's.
         var state = new VirtualCrossoverChannelState
         {
             MicrophoneCalibration = VirtualCrossoverCalibrationSettings.From(
@@ -120,8 +91,6 @@ public sealed class VirtualCrossoverOwnCalibrationTests
             Invoke<SpatialAverageCalibration>(
                 Panel(own: true), "SpatialAverageCalibrationFor", state));
 
-        // And under a named selection it is that curve, which is what makes the
-        // selector mean anything for a capture that CAN be swapped.
         Assert.Equal(
             SpatialAverageCalibration.Specific(PanelCurve),
             Invoke<SpatialAverageCalibration>(
@@ -131,11 +100,7 @@ public sealed class VirtualCrossoverOwnCalibrationTests
     [Fact]
     public void ANamedCalibrationAnAggregateCannotTakeIsSaidOutLoud()
     {
-        // A capture of several capsules has an aggregate correction belonging to no
-        // single microphone, so a named curve has nothing to be swapped for and the
-        // hybrid keeps the capture's own. That is the right arithmetic and the wrong
-        // silence: the user chose a microphone, and part of the plot is not reading
-        // through it.
+        // A multi-capsule capture has no single mic to swap, so it keeps its own and the note must say so.
         var project = new VirtualCrossoverProjectFile
         {
             SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic
@@ -155,8 +120,6 @@ public sealed class VirtualCrossoverOwnCalibrationTests
 
         object panel = Panel(own: false);
         SetField(panel, "project", project);
-        // The message names the selection, and the selector is a Designer control an
-        // uninitialized panel does not have.
         SetField(panel, "comboBoxCalibration", new DarkComboBox());
         IReadOnlyList<ProcessedChannel> drawn = [Channel("left", CapsuleA) with
         {
@@ -167,8 +130,6 @@ public sealed class VirtualCrossoverOwnCalibrationTests
         Assert.NotNull(notice);
         Assert.Contains("belongs to no single microphone", notice!);
 
-        // Nothing to say under Own, which is what the note recommends, and nothing to
-        // say for a capture that CAN take the swap.
         object own = Panel(own: true);
         SetField(own, "project", project);
         SetField(own, "comboBoxCalibration", new DarkComboBox());
@@ -181,9 +142,6 @@ public sealed class VirtualCrossoverOwnCalibrationTests
     [Fact]
     public void ChannelsMeasuredThroughDifferentMicrophonesAreSaidOutLoud()
     {
-        // The sum is honest now, and the note says what is still true: the curves are
-        // being compared across microphones, so a difference between two channels
-        // holds the difference between their capsules as well.
         IReadOnlyList<ProcessedChannel> channels =
             [Channel("left", CapsuleA), Channel("right", CapsuleB)];
         object panel = Panel(own: true);
@@ -194,8 +152,6 @@ public sealed class VirtualCrossoverOwnCalibrationTests
         Assert.Contains("the sum carries each channel's correction with it", notice);
         Assert.DoesNotContain("drawn through none", notice);
 
-        // Nothing to say when they agree, and nothing to say under a selection that
-        // corrects everything with one curve by definition.
         Assert.Null(Invoke<string?>(
             panel,
             "DescribeOwnCalibrationMismatch",

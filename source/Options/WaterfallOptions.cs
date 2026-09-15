@@ -29,8 +29,7 @@ namespace Resonalyze.Options
             {
                 numericSampleRate.Value = numericSampleRate.ClampValue(expSweepMeasurement.SampleRate);
 
-                // The settings file clamps to wider ranges than the controls; an
-                // out-of-range persisted value must not throw when the panel opens.
+                // The settings file clamps wider than the controls; an out-of-range value must not throw.
                 numericWindow.Value = numericWindow.ClampValue(waterfallGenerateOptions.Window);
                 numericSlices.Value = numericSlices.ClampValue(waterfallGenerateOptions.SliceCount);
                 lastNonZeroStep = waterfallGenerateOptions.Step == 0 ? 1 : waterfallGenerateOptions.Step;

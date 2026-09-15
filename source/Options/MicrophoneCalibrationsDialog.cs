@@ -4,11 +4,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Options;
 
-/// <summary>
-/// Manages the calibrations beside the microphone's own 0° file: further files
-/// and curves estimated for an angle of incidence. Edits are made on a working
-/// copy and only handed back when the dialog is accepted.
-/// </summary>
+/// <summary>Edits a working copy of the additional calibrations, handed back on OK.</summary>
 internal sealed partial class MicrophoneCalibrationsDialog : Form
 {
     private readonly List<MicrophoneCalibrationDefinition> definitions;
@@ -37,8 +33,7 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
         listViewCalibrations.SelectedIndexChanged += (_, _) => UpdateButtonState();
         listViewCalibrations.DoubleClick += (_, _) => EditSelected();
         listViewCalibrations.AfterLabelEdit += ListViewAfterLabelEdit;
-        // Column headers are drawn by the system and ignore the control's dark
-        // colours; only they are taken over, the rows keep the default drawing.
+        // System-drawn column headers ignore dark colours; only they are owner-drawn.
         listViewCalibrations.OwnerDraw = true;
         listViewCalibrations.DrawColumnHeader += DrawColumnHeader;
         listViewCalibrations.DrawItem += (_, e) => e.DrawDefault = true;
@@ -46,7 +41,6 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
         RefreshList(selectedId: null);
     }
 
-    /// <summary>The edited list; valid once the dialog returned OK.</summary>
     public IReadOnlyList<MicrophoneCalibrationDefinition> Definitions => definitions;
 
     private void AddFile()
@@ -67,12 +61,7 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
         definition.Normalize();
         definitions.Add(definition);
         RefreshList(definition.Id);
-        // The file's own name is a SUGGESTION, not the name: it is whatever the
-        // capsule's maker called the download, and the list is read by the person
-        // who owns the microphone. So the new row opens straight into its rename
-        // with that suggestion selected — type over it, or leave it with Enter or
-        // Escape. Naming an entry otherwise meant finding it again and pressing
-        // Rename, which is a second decision about a name already on screen.
+        // The file name is only a suggestion (the maker's download name), so open straight into rename.
         BeginRename(definition.Id);
     }
 
@@ -125,8 +114,7 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
 
     private bool EditAngle(MicrophoneCalibrationDefinition definition)
     {
-        // Only file-backed entries may be a base, and never the entry itself, so
-        // an estimate can never be derived from another estimate.
+        // Only file-backed entries, never itself, so estimates never derive from estimates.
         List<MicrophoneCalibrationDefinition> baseCandidates = definitions
             .Where(candidate =>
                 candidate.Kind == MicrophoneCalibrationKind.File &&
@@ -159,9 +147,7 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
 
     private void BeginRename(ListViewItem item)
     {
-        // The list has to hold the focus first: the edit box belongs to it, and
-        // both callers arrive with the focus on a button — one of them from a
-        // file dialog that took it away entirely.
+        // The edit box belongs to the list, and callers arrive with focus elsewhere.
         listViewCalibrations.Focus();
         item.BeginEdit();
     }
@@ -173,9 +159,7 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
             return;
         }
 
-        // Removing a base would leave the estimates derived from it pointing at
-        // nothing; they fall back to the microphone's own 0° calibration, which
-        // is what an estimate means when it names no base of its own.
+        // Estimates of a removed base fall back to the 0° calibration.
         foreach (MicrophoneCalibrationDefinition derived in definitions)
         {
             if (string.Equals(derived.BaseId, definition.Id, StringComparison.OrdinalIgnoreCase))
@@ -195,8 +179,7 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
             listViewCalibrations.Items[e.Item].Tag is not string id ||
             Find(id) is not { } definition)
         {
-            // Rejecting the edit restores the previous text, so an empty rename
-            // cannot leave a nameless entry in the selectors.
+            // Cancelling restores the previous text, so no nameless entry.
             e.CancelEdit = true;
             return;
         }
@@ -234,8 +217,6 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
                 listViewCalibrations.Items.Add(item);
             }
 
-            // Widths follow the content instead of a fixed pixel count, so the
-            // columns stay readable at any DPI and in any font scaling.
             foreach (ColumnHeader column in listViewCalibrations.Columns)
             {
                 column.Width = -2;

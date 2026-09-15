@@ -6,12 +6,7 @@ using CalibrationOptions =
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The persisted calibration selection must stay selectable when its file is
-/// missing — or when the entry itself is gone; dropping the entry used to land
-/// the selection on "Off" and the next apply permanently overwrote the stored
-/// preference.
-/// </summary>
+/// <summary>A missing selection stays selectable; landing on Off would be persisted by the next apply.</summary>
 public sealed class MicrophoneCalibrationComboHelperTests
 {
     private static readonly MicrophoneCalibrationEntry[] Configured =
@@ -73,10 +68,7 @@ public sealed class MicrophoneCalibrationComboHelperTests
     [Fact]
     public void ASelectionLeftFromADeletedEntryStaysMissingAfterANewOneIsAdded()
     {
-        // A counted id would be handed out again after a deletion, and every
-        // stored selection still naming it — another view, a saved Virtual DSP
-        // session, a history entry — would silently start correcting with a
-        // calibration nobody pointed it at.
+        // A reused counted id would silently re-point every stored selection naming it.
         var definitions = new List<MicrophoneCalibrationDefinition>();
         string deleted = MicrophoneCalibrationDefinition.CreateId(definitions);
         definitions.Add(new MicrophoneCalibrationDefinition { Id = deleted, Name = "Old" });

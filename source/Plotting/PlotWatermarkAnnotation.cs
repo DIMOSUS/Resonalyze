@@ -3,8 +3,7 @@ using OxyPlot.Annotations;
 
 namespace Resonalyze;
 
-// A large, faded caption drawn behind the series and centred in the plot area —
-// a background watermark that stays centred regardless of zoom or pan.
+// Faded caption behind the series, centred in the plot area regardless of zoom or pan.
 public sealed class PlotWatermarkAnnotation : TextualAnnotation
 {
     public PlotWatermarkAnnotation()
@@ -12,8 +11,7 @@ public sealed class PlotWatermarkAnnotation : TextualAnnotation
         Layer = AnnotationLayer.BelowSeries;
     }
 
-    // Vertical placement as a fraction of the plot area height: 0 is the top edge,
-    // 0.5 the centre, 1 the bottom edge.
+    // Fraction of plot height from the top.
     public double VerticalPosition { get; init; } = 0.5;
 
     public override void Render(IRenderContext rc)

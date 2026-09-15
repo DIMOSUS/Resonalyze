@@ -36,11 +36,7 @@ internal sealed class MeasurementPlotContext
     public bool HasTransferImpulseResponse =>
         expSweepMeasurement.TransferImpulseResponse is { Length: > 0 };
 
-    /// <summary>
-    /// The estimated honest start of the transfer IR (ms) for the Auto gate
-    /// offset; null without a transfer IR. Memoized per IR in
-    /// <see cref="TransferIrStartCache"/>, shared with the options dialogs.
-    /// </summary>
+    /// <summary>Estimated IR start (ms) for the Auto gate offset, memoized in <see cref="TransferIrStartCache"/>.</summary>
     public double? ResolveAutoGateOffsetMs() =>
         expSweepMeasurement.Transfer is { ImpulseResponse.Length: > 0 } transfer &&
         expSweepMeasurement.SampleRate > 0
@@ -50,18 +46,12 @@ internal sealed class MeasurementPlotContext
                 transfer.PeakIndex)
             : null;
 
-    /// <summary>
-    /// The offset K that turns the loopback-referenced magnitude (dBr) into dB SPL:
-    /// <c>K = loopbackPeakDbFs + calibrationOffsetDb</c>. Null when SPL cannot be
-    /// shown — no calibration, no captured loopback level, or a calibration that does
-    /// not belong to the input that produced this result.
-    /// </summary>
+    /// <summary><c>K = loopbackPeakDbFs + calibrationOffsetDb</c> turns dBr into dB SPL. Null without a calibration matching this result's input.</summary>
     public double? SplOffsetDb
     {
         get
         {
-            // The result's own frozen calibration, not the configured one, so a live
-            // recalibration does not retroactively rescale the measurement on screen.
+            // The result's frozen calibration, so a live recalibration does not rescale what is on screen.
             if (expSweepMeasurement.MeasurementSplCalibration is not { } calibration)
             {
                 return null;
@@ -73,9 +63,6 @@ internal sealed class MeasurementPlotContext
                 return null;
             }
 
-            // Validate against the result's own input identity (a live snapshot, or a
-            // loaded file's). A loaded file's anchor matches its own identity, so it is
-            // trusted; a live anchor from a different input is refused.
             if (!expSweepMeasurement.InputMatches(calibration))
             {
                 return null;
@@ -85,9 +72,7 @@ internal sealed class MeasurementPlotContext
         }
     }
 
-    // All analysis (magnitude, phase, group delay, impulse, decays) is derived from the
-    // loopback transfer IR, which is now mandatory for every measurement. Callers must gate
-    // on HasTransferImpulseResponse; the sweep deconvolution is reserved for harmonics/noise.
+    // All analysis derives from the loopback transfer IR (callers gate on HasTransferImpulseResponse); sweep deconvolution is for harmonics/noise.
     public IImpulseMeasurement CreatePrimaryMeasurement()
     {
         MeasurementImpulseResponse transfer = expSweepMeasurement.Transfer
@@ -98,68 +83,37 @@ internal sealed class MeasurementPlotContext
             transfer.PeakIndex,
             expSweepMeasurement.SampleRate)
         {
-            // From the filter and the sweep the RESULT carries, never the
-            // configured ones: the live settings describe the next sweep, and
-            // reading them here would break a loaded file's curve at frequencies
-            // belonging to a measurement it never was.
+            // From the result's filter and sweep, never the configured ones (those describe the next sweep).
             LowestMeasuredFrequencyHz = MeasuredBand.LowEdgeHz,
             HighestMeasuredFrequencyHz = MeasuredBand.HighEdgeHz
         };
     }
 
-    /// <summary>
-    /// What the current result actually measured — the band every curve derived from
-    /// it stops at, and the one an overlay captured from it has to carry so it keeps
-    /// stopping there after the measurement is gone.
-    /// </summary>
+    /// <summary>Band every derived curve stops at; overlays carry it past the measurement's lifetime.</summary>
     public MeasuredBand MeasuredBand => MeasuredBand.Resolve(
         expSweepMeasurement.MeasurementProtectiveHighPass,
         expSweepMeasurement.MeasuredLowFrequencyHz,
         expSweepMeasurement.MeasuredHighFrequencyHz,
         expSweepMeasurement.SampleRate);
 
-    /// <summary>
-    /// The uncalibrated oversampled primary spectrum an overlay stores so it can
-    /// reproduce the mode's smoothing exactly. Calibration is captured separately
-    /// on the output grid and applied only after smoothing, like the primary curve.
-    /// Null when there is no transfer IR to analyze.
-    /// </summary>
+    /// <summary>Uncalibrated oversampled spectrum for exact re-smoothing; calibration applies after smoothing.</summary>
     public IReadOnlyList<SignalPoint>? CreateRawPrimarySpectrum(
         FrequencyResponseOptions options) =>
         HasTransferImpulseResponse
             ? BuildRawPrimarySpectrum(CreatePrimaryMeasurement(), options)
             : null;
 
-    /// <summary>
-    /// The uncalibrated oversampled primary spectrum, ready to be re-smoothed by
-    /// <see cref="DataHelper.LogarithmicResample"/>.
-    /// </summary>
     public static IReadOnlyList<SignalPoint> BuildRawPrimarySpectrum(
         IImpulseMeasurement measurement,
         FrequencyResponseOptions options) =>
         DataHelper.GetOversampledPrimarySpectrum(measurement, options);
 
-    // Magnitude comes from the transfer IR (referenced by loopback, free of DAC/amp
-    // colouration); harmonic distortion comes from the sweep deconvolution, whose
-    // linear packet is the denominator every HDn/THD ratio is measured against.
-    // The harmonic curves are smoothed at the SAME fractional-octave width the user
-    // picked for the primary response, so HD2..HDn read at the same resolution as
-    // HD1 rather than looking heavily blurred beside it.
+    // HD curves smoothed at the primary's width so HD2..HDn read at HD1's resolution.
     private const double HarmonicSmoothingWidthFactor = 1.0;
 
-    /// <summary>
-    /// Isolation warnings from the last frequency-response build: an order dropped
-    /// or drawn caveated because its harmonic packet overlaps a neighbour. Exposed
-    /// so the plot layer can explain a missing/marginal HD curve to the user
-    /// (increase the sweep duration) rather than leaving it silently absent.
-    /// </summary>
     public IReadOnlyList<string> DistortionWarnings { get; private set; } = Array.Empty<string>();
 
-    /// <summary>
-    /// Per-order packet validity from the last frequency-response build. The plot
-    /// layer uses it to tell a genuinely problematic drop (overlap — amber warning)
-    /// from a benign one (harmonic below the noise floor — neutral note).
-    /// </summary>
+    /// <summary>Separates overlap drops (amber) from below-noise drops (neutral note).</summary>
     public IReadOnlyList<HarmonicPacketValidity> DistortionPacketValidity
     { get; private set; } = Array.Empty<HarmonicPacketValidity>();
 
@@ -186,9 +140,7 @@ internal sealed class MeasurementPlotContext
     {
         DistortionWarnings = Array.Empty<string>();
         DistortionPacketValidity = Array.Empty<HarmonicPacketValidity>();
-        // The geometry of the sweep behind THIS result: for a restored measurement
-        // that is what the file recorded, not what the sweep rebuilt on load spans
-        // (its generation is length-capped, and legacy edges are unreachable).
+        // The result's recorded sweep geometry, not the rebuilt one (length-capped, legacy edges unreachable).
         if ((curves & SpectrumCurves.Distortion) == 0 ||
             expSweepMeasurement.SweepDeconvolution is not { } deconvolution ||
             expSweepMeasurement.AchievedSweepSampleCount <= 0 ||
@@ -214,16 +166,11 @@ internal sealed class MeasurementPlotContext
             real[i] = impulse[i].Real;
         }
 
-        // The noise floor is shown as its own trace (REW-style), so THD stays a
-        // clean harmonics-only figure and the noise level is honest at its stated
-        // analysis resolution — no fused THD+N, no arbitrary bandwidth convention.
+        // Noise floor as its own trace (REW-style), so THD stays harmonics-only.
         var distortionOptions = new DistortionOptions(
-            // Harmonic curves scale the display width by a factor; the
-            // psychoacoustic code contributes its plain base width — the dip
-            // floor is for the fundamental's magnitude trace only.
+            // The psychoacoustic dip floor applies to the fundamental's trace only.
             SmoothingOctaves: HarmonicSmoothingWidthFactor *
                 SpectrumSmoothing.SmoothingOctaves(options.SmoothingInverseOctaves),
-            // Estimate the noise floor only when its own curve is requested.
             IncludeNoise: (curves & SpectrumCurves.NoiseFloor) != 0);
 
         EssDistortion.DistortionCurveResult distortion =

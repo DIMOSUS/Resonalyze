@@ -3,12 +3,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// The resolved source measurement of one SIDE of a channel pair (null while
-/// unresolved), plus that side's interactive processed-IR cache. UI-free: the
-/// runtime model owns this, so the algorithmic paths never reach a WinForms
-/// control to read a channel's measurement state.
-/// </summary>
+/// <summary>Resolved source measurement of one side plus its processed-IR cache; UI-free.</summary>
 internal sealed class VirtualCrossoverChannelState
 {
     private Complex[]? transferImpulseResponse;
@@ -26,98 +21,33 @@ internal sealed class VirtualCrossoverChannelState
     }
     public VirtualCrossoverSourceSnapshot? ProcessingSource { get; private set; }
 
-    /// <summary>
-    /// The spatially averaged magnitude attached to this side — a stored capture of
-    /// this driver, taken with the DSP bypassed. Null when none is attached.
-    /// </summary>
-    /// <remarks>
-    /// Optional refinement, never the basis of anything: every complex computation
-    /// here keeps running on the honest impulse response. This curve only replaces
-    /// the MAGNITUDE the hybrid view draws, because a point measurement carries dips
-    /// that the average over the listening volume does not, and equalizing those is
-    /// the mistake the whole feature exists to avoid.
-    /// <para>
-    /// It rides on the SIDE rather than the pair: a moving-microphone pass is taken
-    /// per driver, and a pair's two drivers are two measurements.
-    /// </para>
-    /// </remarks>
+    /// <summary>Moving-mic average of this driver; only replaces the magnitude the hybrid view draws.</summary>
     public LiveCaptureDocument? SpatialAverage { get; set; }
 
-    /// <summary>
-    /// The spatial average the measurement on this side brought with it — the
-    /// microphone array it was recorded with — or null when it was recorded with
-    /// one microphone.
-    /// </summary>
-    /// <remarks>
-    /// Beside <see cref="SpatialAverage"/> and not instead of it: an attached
-    /// moving-microphone pass is a file the user chose, this one arrives with the
-    /// measurement, and the project decides which it reads. Cleared with the
-    /// measurement, because it IS part of it.
-    /// </remarks>
     public LiveCaptureDocument? ArrayCapture { get; set; }
 
-    /// <summary>
-    /// The microphone calibration the measurement on this side was READ through,
-    /// as its file recorded it; null when the file names none.
-    /// </summary>
-    /// <remarks>
-    /// The panel corrects with one calibration because one microphone usually took
-    /// every channel — but which one that was is a fact of each measurement, not of
-    /// the project, and the file has carried it since measurements became portable.
-    /// This is what the selector's "Own (as measured)" reads. Kept as the settings
-    /// rather than the curve so the name travels with it: the selector has to be able
-    /// to say what it is applying.
-    /// </remarks>
+    /// <summary>The calibration this side's measurement was read through, as its file recorded it ("Own (as measured)").</summary>
     public VirtualCrossoverCalibrationSettings? MicrophoneCalibration
     {
         get => microphoneCalibration;
         set
         {
             microphoneCalibration = value;
-            // Converted once. The redraw asks for it per channel per frame, and
-            // rebuilding a three-hundred-point curve on every ask is a cost with
-            // nothing to show for it.
             microphoneCalibrationCurve = value?.ToCalibrationFile();
         }
     }
 
-    /// <summary>
-    /// <see cref="MicrophoneCalibration"/> as the curve the analysis applies.
-    /// </summary>
     public CalibrationFile? MicrophoneCalibrationCurve => microphoneCalibrationCurve;
 
     private VirtualCrossoverCalibrationSettings? microphoneCalibration;
     private CalibrationFile? microphoneCalibrationCurve;
 
-    /// <summary>
-    /// How far apart <see cref="ArrayCapture"/>'s microphones sat at each band of the
-    /// shared grid, or null when this side carries no array.
-    /// </summary>
-    /// <remarks>
-    /// Beside the average rather than inside it, because it answers a different
-    /// question: the average says what the listening volume measures, the spread says
-    /// how much of a claim that is. The EQ Wizard gates its boosts on it — where seven
-    /// positions part by more than 20 dB, filling the dip six of them measured helps
-    /// the seventh and spends everyone's headroom.
-    /// </remarks>
+    /// <summary>Per-band spread of the array's positions; the EQ Wizard gates boosts on it.</summary>
     public double[]? ArraySpreadDb { get; set; }
 
-    /// <summary>
-    /// What this side's response actually measured; the whole range by default.
-    /// </summary>
-    /// <remarks>
-    /// Narrowed where a protective high-pass was divided back out, and where the
-    /// sweep behind it never reached. Either way the response is zeroed there, and a
-    /// gated spectrum of a zero draws the analysis window's leakage — smooth,
-    /// plausible, and none of it measured. Curves stop at these edges; sums do not,
-    /// because a sum plays wherever any of its channels does.
-    /// </remarks>
+    /// <summary>Zeroed outside this band (divided-out high-pass, unswept range): curves stop at its edges, sums do not.</summary>
     public MeasuredBand MeasuredBand { get; set; } = MeasuredBand.Everything;
 
-    /// <summary>
-    /// The spatial average this side contributes under <paramref name="mode"/>, or
-    /// null when it has none of that family.
-    /// </summary>
     public LiveCaptureDocument? SpatialAverageFor(
         VirtualCrossoverSpatialAverageMode mode) =>
         mode switch
@@ -129,46 +59,19 @@ internal sealed class VirtualCrossoverChannelState
     public int TransferPeakIndex { get; set; }
     public int SampleRate { get; set; }
 
-    // The measurement's per-bin coherence (γ²) on the linear FFT grid, when
-    // the source carried it. Only the auto-crossover wizard reads it, to
-    // discount frequencies the measurement did not trust when reading each
-    // driver's usable band; null when the source had none.
     public double[]? TransferCoherence { get; set; }
 
-    // The channel's harmonic distortion (THD, dB vs the fundamental) computed
-    // from the source's sweep deconvolution, when it carried one. Only the
-    // auto-crossover wizard reads it, to bound each driver by its
-    // distortion-clean band (a tweeter's low handover follows its measured
-    // distortion knee); null when the source had no sweep deconvolution.
     public IReadOnlyList<SignalPoint>? DistortionCurve { get; set; }
 
-    // The band-limited envelope arrival and gated band level of this
-    // side's PROCESSED response, keyed by the processed array's identity
-    // and the measured band — the L/R/Δ read-out re-runs on every redraw,
-    // and the Hilbert analysis of a full-length IR is far too heavy to
-    // repeat when nothing changed. The level rides in the same cache
-    // entry: it is measured over the same band from the same response.
-    // Probe: the SAME response read in the band's upper half (from the
-    // geometric-mean frequency up), or null where the band is too narrow to
-    // cut one. The read-out grades the full read against it — the alignment
-    // engine's modal-latch detection — but the verdict is NOT cached: which
-    // instrument the pair reads by (first peaks or energy onsets, see
-    // VirtualCrossoverMetrics.ComputeStereoDeltasAsync) depends on the OTHER
-    // side's SNR too, so it is decided at assembly, per pair, from what both
-    // sides' caches hold.
+    // Keyed by processed-array identity and band: the Hilbert read of a full IR is too heavy per redraw.
+    // The latch verdict is not cached: it depends on the other side's SNR, so it is decided per pair.
     public (Complex[] ProcessedIr, double LowHz, double HighHz,
         TimeAlignmentAnalysisResult Result, double? LevelDb,
         TimeAlignmentAnalysisResult? Probe)?
         ArrivalCache
     { get; set; }
 
-    // Invalidation counter for in-flight asynchronous source loads: a
-    // load captures the revision when it starts (BeginSourceLoad, which
-    // also invalidates any OLDER in-flight load into this slot, so the
-    // user's latest pick wins regardless of completion order) and may
-    // write back only while the revision still matches. Clear() bumps it
-    // too: a project import or mono toggle mid-load kills the landing
-    // instead of hiding a stale measurement in a slot that was wiped.
+    // A load may write back only while its revision matches; newer loads and Clear() bump it, so the latest pick wins.
     public int SourceRevision { get; private set; }
 
     public int BeginSourceLoad() => ++SourceRevision;
@@ -176,14 +79,9 @@ internal sealed class VirtualCrossoverChannelState
     public void Clear()
     {
         TransferImpulseResponse = null;
-        // The average belongs to the measurement that was here; a slot wiped for a
-        // new source must not keep the old driver's curve.
         SpatialAverage = null;
         ArrayCapture = null;
-        // They described the measurement that was here, like the array does. Every
-        // one of them is written by ResolvedVirtualDspSource.ApplyTo, so every one of
-        // them has to be cleared here: a slot wiped for a source that then failed to
-        // load would otherwise answer for the previous measurement's band.
+        // Everything ResolvedVirtualDspSource.ApplyTo writes must be cleared here.
         ArraySpreadDb = null;
         MeasuredBand = MeasuredBand.Everything;
         MicrophoneCalibration = null;

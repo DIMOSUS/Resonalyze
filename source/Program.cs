@@ -7,9 +7,7 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
-        // Audio callbacks and measurement tasks run on worker threads; without
-        // these hooks any exception escaping them killed the process with no
-        // trace at all. Best-effort: log, then let the failure proceed.
+        // Worker-thread exceptions otherwise killed the process with no trace. Log, then let it proceed.
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             TryWriteCrashLog(args.ExceptionObject as Exception);
         Application.ThreadException += (_, args) =>
@@ -28,9 +26,7 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
 
-        // Before anything reads the user's files: a second instance would load
-        // them, and whichever copy closed last would write its own view back
-        // over the other's.
+        // Before reading user files: the last instance to close would overwrite the other's.
         using SingleInstanceGuard? instance =
             SingleInstanceGuard.TryAcquire(ApplicationDataPaths.Current.RootDirectory);
         if (instance == null)
@@ -78,7 +74,6 @@ internal static class Program
         }
         catch
         {
-            // Logging must never make a crash worse.
             return null;
         }
     }

@@ -2,19 +2,8 @@ using Resonalyze.Ui;
 
 namespace Resonalyze.Options;
 
-/// <summary>
-/// Asks which channel of a multi-channel recording holds the measurement.
-/// <para>
-/// Shown only when the answer is not obvious — see
-/// <see cref="RecordedSweepChannels.IsAmbiguous"/>. The case it exists for is a
-/// DAW file carrying the played sweep on one track and the microphone on
-/// another: the played track is a copy of the excitation, so it matches better
-/// than any acoustic take ever will, wins any automatic choice, and then measures
-/// as a flat response that passes every credibility check there is. Nothing in
-/// the numbers says which track the microphone was on — only the person who made
-/// the recording knows.
-/// </para>
-/// </summary>
+/// <summary>Shown only when ambiguous (<see cref="RecordedSweepChannels.IsAmbiguous"/>): a DAW track holding the played
+/// sweep matches best and measures flat, and only the person who recorded it knows the microphone track.</summary>
 internal sealed partial class RecordedSweepChannelDialog : Form
 {
     public RecordedSweepChannelDialog(
@@ -37,8 +26,6 @@ internal sealed partial class RecordedSweepChannelDialog : Form
                 FormattableString.Invariant($"{level.PeakDbFs:0.0} dBFS"));
         }
 
-        // Preselected on the best match, which is the right answer whenever the
-        // file holds no reference track — the common case even here.
         SelectedChannel = RecordedSweepChannels.Best(qualities);
         channelGridView.Rows[SelectedChannel].Selected = true;
         channelGridView.SelectionChanged += (_, _) =>
@@ -50,7 +37,6 @@ internal sealed partial class RecordedSweepChannelDialog : Form
         };
     }
 
-    /// <summary>The channel to measure, valid once the dialog returns OK.</summary>
     public int SelectedChannel { get; private set; }
 
     private void StyleGrid()

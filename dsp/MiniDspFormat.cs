@@ -2,20 +2,10 @@
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// miniDSP advanced-biquad text (export only). Each PEQ band is converted to a
-/// normalised biquad at a fixed sample rate; the preamp is emitted as a leading
-/// gain biquad. Import is not supported because biquad coefficients do not map back
-/// to a unique frequency/Q/gain.
-/// </summary>
+/// <summary>miniDSP biquad text, export only: coefficients do not map back to unique frequency/Q/gain.</summary>
 public sealed class MiniDspFormat : IEqProfileFormat
 {
-    // Biquad coefficients are only meaningful for the sample rate they were
-    // computed at: the same file applied on a device processing at a different
-    // rate lands every band on a different frequency and Q. The rate is a
-    // constructor parameter and part of the visible format name, so the user
-    // picks the file knowing which device family it fits instead of silently
-    // getting 48 kHz coefficients.
+    // Coefficients are rate-specific, so the rate is part of the visible format name.
     private readonly double sampleRateHz;
     private const string CoefficientFormat = "0.00000000";
 
@@ -41,7 +31,6 @@ public sealed class MiniDspFormat : IEqProfileFormat
         var builder = new StringBuilder();
         int index = 1;
 
-        // The preamp becomes a flat gain biquad (b0 = 10^(preamp/20), rest passthrough).
         if (curve.PreampDb != 0)
         {
             double gain = Math.Pow(10.0, curve.PreampDb / 20.0);

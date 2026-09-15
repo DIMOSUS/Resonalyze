@@ -3,13 +3,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Characterization tests for the shared Auto delay <see cref="AlignmentReprocessor"/>:
-/// it returns snapshots in channel order, reuses a channel's processed IR while
-/// its chain is unchanged (value-equal chains hit the cache) and re-FFTs only the
-/// channels whose override actually moved — the behavior the single-side and
-/// stereo runs used to each hand-roll.
-/// </summary>
 public sealed class AlignmentReprocessorTests
 {
     private sealed class FakeChannel : IAlignmentChannel
@@ -61,9 +54,7 @@ public sealed class AlignmentReprocessorTests
     {
         AlignmentReprocessor reprocessor = Build(new FakeChannel("A"), new FakeChannel("B"));
 
-        // Each call rebuilds the per-channel chain from scratch (a fresh
-        // DspChannelChain instance), so an identical result reference proves the
-        // cache matched the chain by value, not by reference.
+        // Each call builds a fresh chain instance, so a reused result proves value-equality caching.
         IReadOnlyList<AlignmentSnapshot> first = reprocessor.Reprocess(NoOverrides);
         IReadOnlyList<AlignmentSnapshot> second = reprocessor.Reprocess(NoOverrides);
 
@@ -71,12 +62,8 @@ public sealed class AlignmentReprocessorTests
         Assert.Same(first[1].ImpulseResponse, second[1].ImpulseResponse);
     }
 
-    // The crop is sized by TIME: after the 1/8 pre-peak reserve it must
-    // still hold the longest window the band sizing can ask for (the 350 ms
-    // clamp) plus the channels' arrival/delay spread. The base 65_536 stays
-    // EXACT at the archived fleet's 48/96 kHz — results there may not move —
-    // and doubles at the rates where the fixed length used to truncate a
-    // sub junction's window.
+    // The crop must hold the 350 ms window clamp plus arrival spread after the 1/8 pre-peak reserve;
+    // 65 536 stays exact at 48/96 kHz so archived results do not move.
     [Theory]
     [InlineData(44_100, 65_536)]
     [InlineData(48_000, 65_536)]
@@ -101,11 +88,7 @@ public sealed class AlignmentReprocessorTests
             $"at {sampleRate} Hz");
     }
 
-    // The regression the sizing exists for, end to end through the
-    // production constructor: at 384 kHz a front cropped to the pre-peak
-    // reserve must keep the full 350 ms window clamp of MEASURED record
-    // after it. The old fixed crop left 149 ms there — a 33 Hz junction's
-    // 262 ms window read synthesized filter tail instead of the room.
+    // The old fixed crop left 149 ms at 384 kHz, so a 33 Hz junction's 262 ms window read filter tail.
     [Fact]
     public void Reprocess_At384kHz_TheCropHoldsAFullLowBandWindow()
     {
@@ -122,9 +105,7 @@ public sealed class AlignmentReprocessorTests
 
         int windowSamples = (int)Math.Round(
             VirtualCrossoverAnalysis.MaximumAlignmentGateMs / 1_000.0 * Rate);
-        // The MEASURED span inside the processed record is the crop's length
-        // (ApplyChain pads beyond it with synthesized filter tail, which no
-        // window may mistake for the room) — the valid range is what says so.
+        // ApplyChain pads beyond the crop with synthesized tail; the valid range marks the measured span.
         Assert.Equal(
             AlignmentReprocessor.SearchCropLength(Rate),
             snapshot.ValidRange.EndSample);
@@ -135,7 +116,6 @@ public sealed class AlignmentReprocessorTests
             snapshot.ValidRange.EndSample - snapshot.PeakIndex >= windowSamples,
             $"{snapshot.ValidRange.EndSample - snapshot.PeakIndex} measured " +
             $"samples after the front cannot hold a {windowSamples}-sample window");
-        // The discriminating figure: the fixed base crop could not.
         Assert.True(
             AlignmentReprocessor.BaseSearchCropLength -
                 AlignmentReprocessor.BaseSearchCropLength / 8 < windowSamples);
@@ -155,7 +135,6 @@ public sealed class AlignmentReprocessorTests
                 [a] = new AlignmentOverride(DelayMs: 1.0, InvertPolarity: false)
             });
 
-        // A's chain changed, so it is re-FFT'd; B is untouched and served from cache.
         Assert.NotSame(first[0].ImpulseResponse, moved[0].ImpulseResponse);
         Assert.Same(first[1].ImpulseResponse, moved[1].ImpulseResponse);
     }

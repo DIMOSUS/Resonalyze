@@ -2,11 +2,6 @@ using NAudio.Wave;
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// The single place NAudio <see cref="WaveFormat"/> is translated to and from
-/// the neutral <see cref="AudioFormat"/>, so the concrete NAudio type stays an
-/// implementation detail behind the audio boundary.
-/// </summary>
 internal static class AudioFormatConversions
 {
     private static readonly Guid FloatSubFormat =

@@ -2,29 +2,14 @@ using System.Text;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Word-wraps tooltip text. A WinForms tooltip never wraps by itself: one long sentence
-/// is drawn as a single line that can span — and run off — the whole screen, so the prose
-/// tooltips this app leans on have to arrive pre-broken.
-/// </summary>
-/// <remarks>
-/// The author's own newlines are kept as they are (they separate bullets and caveats) and
-/// each such paragraph is wrapped within them. Continuation lines of a bulleted paragraph
-/// are indented under the item's text so the list stays scannable. Wrapping is idempotent:
-/// text that already fits comes back unchanged, so re-wrapping is harmless.
-/// </remarks>
+/// <summary>Word-wraps tooltip text (WinForms tooltips never wrap). Author newlines are kept, bullet continuations indented; idempotent.</summary>
 internal static class ToolTipTextWrapper
 {
-    /// <summary>
-    /// Longest line the wrapper aims for, in characters. At the tooltip's default font
-    /// that is roughly 450 px — wide enough for a technical sentence, narrow enough to
-    /// stay next to the control it explains.
-    /// </summary>
+    /// <summary>About 450 px at the default tooltip font.</summary>
     public const int DefaultLineLength = 64;
 
     private static readonly string[] LineBreaks = ["\r\n", "\n", "\r"];
 
-    // Markers that open a list item; a wrapped continuation is indented past them.
     private static readonly string[] BulletMarkers = ["• ", "- ", "– ", "* "];
 
     public static string Wrap(string? text, int maxLineLength = DefaultLineLength)
@@ -42,7 +27,6 @@ internal static class ToolTipTextWrapper
             WrapParagraph(paragraph, maxLineLength, lines);
         }
 
-        // Windows tooltips take CRLF; normalize to it even when the input used \n.
         return string.Join("\r\n", lines);
     }
 
@@ -59,8 +43,6 @@ internal static class ToolTipTextWrapper
 
         string leading = paragraph[..(paragraph.Length - paragraph.TrimStart().Length)];
         string indent = leading + new string(' ', BulletWidth(paragraph));
-        // A deeply indented paragraph must not squeeze the text down to nothing: give up
-        // on the alignment rather than on the wrapping.
         if (indent.Length > maxLineLength - 8)
         {
             indent = string.Empty;
@@ -88,9 +70,7 @@ internal static class ToolTipTextWrapper
 
             line.Append(word);
 
-            // A single unbreakable token — a path, a URL — can outgrow the whole line
-            // budget on its own. Hard-split the overflow: one break inside a path beats
-            // a tooltip wider than the screen.
+            // An unbreakable token (path, URL) is hard-split rather than making the tooltip wider than the screen.
             while (line.Length > maxLineLength)
             {
                 output.Add(line.ToString(0, maxLineLength));

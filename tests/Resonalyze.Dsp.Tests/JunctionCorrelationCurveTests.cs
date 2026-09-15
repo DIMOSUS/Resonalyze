@@ -2,12 +2,6 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The drawable junction diagnostics behind the Virtual DSP correlation view:
-/// the band-limited correlation curve and the honest junction-loss sweep.
-/// Synthetic impulses at known offsets make every lobe position and polarity
-/// verifiable arithmetic.
-/// </summary>
 public sealed class JunctionCorrelationCurveTests
 {
     private const int SampleRate = 48_000;
@@ -29,9 +23,7 @@ public sealed class JunctionCorrelationCurveTests
     [Fact]
     public void CorrelationCurve_PeaksAtTheTrueOffsetWithFullCoefficient()
     {
-        // The second impulse fires 1.5 ms EARLIER, so aligning it to the first
-        // takes +1.5 ms of delay: the curve's maximum must sit there and — the
-        // channels being identical in the band — reach r ≈ 1.
+        // The second impulse fires 1.5 ms earlier, so the maximum is at +1.5 ms with r ≈ 1.
         Complex[] first = ImpulseAtMs(2.0);
         Complex[] second = ImpulseAtMs(0.5);
 
@@ -42,7 +34,6 @@ public sealed class JunctionCorrelationCurveTests
         SignalPoint peak = curve.MaxBy(point => point.Y);
         Assert.InRange(peak.X, 1.45, 1.55);
         Assert.InRange(peak.Y, 0.95, 1.001);
-        // The window is the requested ±3 ms at sample resolution.
         Assert.InRange(curve[0].X, -3.1, -2.9);
         Assert.InRange(curve[^1].X, 2.9, 3.1);
         Assert.Equal(curve.Count, 2 * (int)Math.Round(3.0 / 1000 * SampleRate) + 1);
@@ -51,8 +42,6 @@ public sealed class JunctionCorrelationCurveTests
     [Fact]
     public void CorrelationCurve_InvertedChannelShowsANegativeTrough()
     {
-        // An inverted second channel: the alignment lobe flips sign — the
-        // deepest trough marks the delay, and its coefficient approaches -1.
         Complex[] first = ImpulseAtMs(2.0);
         Complex[] second = ImpulseAtMs(0.5, -1.0);
 
@@ -68,9 +57,7 @@ public sealed class JunctionCorrelationCurveTests
     [Fact]
     public void CorrelationCurve_MatchesTheDelaySearchExtrema()
     {
-        // The curve and FindBandLimitedCorrelationDelay share one computation
-        // core: the search's reported peak must be the curve's maximum, at the
-        // same lag and coefficient (within the search's sub-sample refinement).
+        // Curve and FindBandLimitedCorrelationDelay share one core.
         Complex[] first = ImpulseAtMs(1.0);
         Complex[] second = ImpulseAtMs(0.25);
 
@@ -96,10 +83,7 @@ public sealed class JunctionCorrelationCurveTests
     [Fact]
     public void JunctionLossSweepBothPolarities_MatchesTwoSingleSweepsExactly()
     {
-        // The both-polarity sweep exists so the correlation view builds the
-        // (expensive, polarity-independent) alignment bins once — it must be
-        // a pure factoring: every point equal, bit for bit, to what the two
-        // single-polarity calls return.
+        // The both-polarity sweep must be a pure factoring, bit-identical to the single-polarity calls.
         Complex[] fixedIr = ImpulseAtMs(2.0);
         Complex[] variableIr = ImpulseAtMs(0.5);
 
@@ -124,10 +108,7 @@ public sealed class JunctionCorrelationCurveTests
     [Fact]
     public void JunctionLossSweep_IsMinimalAtTheTrueOffsetAndCyclicAround()
     {
-        // Two identical 1 kHz-band impulses 1.5 ms apart: the loss bottoms out
-        // (≈0 dB) at +1.5 ms on the variable channel, and a half period of the
-        // band center away (±0.5 ms) the sum cancels — the comb the display
-        // exists to show.
+        // ±0.5 ms (half a period) from the optimum the sum cancels.
         Complex[] fixedIr = ImpulseAtMs(2.0);
         Complex[] variableIr = ImpulseAtMs(0.5);
 
@@ -154,19 +135,11 @@ public sealed class JunctionCorrelationCurveTests
     [Fact]
     public void JunctionLossSweep_NegativeDelaysOnAnEarlyPeakStayHonest()
     {
-        // The review scenario: with the variable channel's direct sound near
-        // the record's START, a negative probe used to wrap it circularly to
-        // the END of the array; the shared gate then anchored on the
-        // remaining fixed channel alone, and the one-channel "sum" read a
-        // fake perfect ~0 dB. The guard frame must keep every probe honest:
-        // each point equals a cleanly CONSTRUCTED pair at the same relative
-        // offset (the gates re-anchor on the peaks, so only the relative
-        // offset matters).
+        // A negative probe once wrapped the variable channel's early front to the array end and read a fake ~0 dB;
+        // each point must equal a constructed pair at the same relative offset.
         Complex[] variable = ImpulseAtSample(96);   // 2 ms into the record
         Complex[] fixedIr = ImpulseAtSample(480);   // 10 ms
 
-        // Half-millisecond steps are whole samples at 48 kHz, so every
-        // reference impulse lands exactly on the shifted position.
         List<VirtualCrossoverAnalysis.JunctionSweepPoint> sweep =
             VirtualCrossoverAnalysis.JunctionLossSweep(
                 variable, fixedIr, SampleRate,
@@ -213,27 +186,8 @@ public sealed class JunctionCorrelationCurveTests
     [Fact]
     public void AlignmentCandidates_ReadTheFlatSumHonestlyByDefault()
     {
-        // A subwoofer and its woofer partner fired from the SAME impulse
-        // through the field cabin's edges (55 Hz, 36 dB/oct Butterworth):
-        // two filtered copies of one impulse in a silent record CAN sum
-        // flat, so any honest read of the true alignment must say so. This
-        // junction spent two generations of window placement being misread —
-        // a window on the pair's PEAKS started inside both drivers' rises
-        // and settled the field junction a half period out; a window on the
-        // pair's filtered FRONTS still cut the rise a 36 dB/oct filter
-        // spreads 8-13 ms ahead of any detectable front and invented
-        // -0.21 dB at the optimum (the placements were measured against each
-        // other here before the band-sized window; see the gate remarks in
-        // VirtualCrossoverAnalysis for the full history and figures).
-        //
-        // The band-sized window closed the question at a bass junction: at
-        // 27.5-110 Hz the window is ~315 ms with a ~20 ms fade-in, so every
-        // placement — even the peaks — admits the whole rise, and the
-        // default per-channel-front read and a deliberately peak-anchored
-        // shared window now agree on the flat sum to a few hundredths of a
-        // dB. Placement still matters where windows are short; what holds it
-        // to the front there is the detector itself (JunctionGateAnchorTests
-        // pins front-vs-peak directly).
+        // 55 Hz BW36 sub/woofer from one impulse must sum flat. The band-sized window (~315 ms, ~20 ms fade-in) admits the
+        // whole rise, so front- and peak-anchored reads agree (history in VirtualCrossoverAnalysis gate remarks).
         Complex[] sub = Filtered(new CrossoverSpec(
             CrossoverKind.LowPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
@@ -248,9 +202,6 @@ public sealed class JunctionCorrelationCurveTests
                 priorDelayMs: null, priorSigmaMs: 0, forcedPolarity: null,
                 levelMatch: true, out _, gateAnchorSample: anchor)[0];
 
-        // The default read: each channel windowed at its own front. The
-        // 36 dB/oct edges at one corner hand over inverted, and the flat sum
-        // reads flat.
         AlignmentCandidate byDefault = Best(null);
         Assert.True(
             byDefault.InvertPolarity,
@@ -259,10 +210,7 @@ public sealed class JunctionCorrelationCurveTests
         Assert.InRange(byDefault.LossDb, -0.05, 0.0);
         Assert.InRange(byDefault.DipDb, -0.10, 0.0);
 
-        // The shared window forced onto the pair's earliest PEAK — the
-        // placement that once drew this junction as antiphase — now reads the
-        // same optimum at the same flatness: the window's length, not its
-        // placement, is what buys the honesty at a bass junction.
+        // At a bass junction the window's length, not its placement, buys the honesty.
         int pairPeak = Math.Min(
             VirtualCrossoverAnalysis.FindPeakIndex(sub),
             VirtualCrossoverAnalysis.FindPeakIndex(woofer));
@@ -277,14 +225,7 @@ public sealed class JunctionCorrelationCurveTests
     [Fact]
     public void JunctionLossSweep_RotationKeepsTheMovedChannelInTheWindow()
     {
-        // The field plateau, reproduced: a 55 Hz sub/woofer junction swept the
-        // panel's full ±1.5 crossover periods. Re-gating each probe through
-        // the STATIONARY pair window lost the moved woofer into the fade a few
-        // ms out, the "sum" degenerated toward the sub alone, and both
-        // polarities converged to a fake near-0 dB plateau (the in-band level
-        // skew grew 3 → 19 dB across the sweep on the archived cabins). The
-        // rotation sweep reads the same two windowed cuts at every probe; three
-        // properties pin it.
+        // Re-gating each probe through a stationary window faded the moved woofer out and made a fake 0 dB plateau.
         Complex[] sub = Filtered(new CrossoverSpec(
             CrossoverKind.LowPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 55, 36)));
@@ -307,14 +248,7 @@ public sealed class JunctionCorrelationCurveTests
                 startDelayMs: -25.0, endDelayMs: 25.0, stepMs: 0.25,
                 invertVariable: invert, anchor);
 
-        // 1: no plateau anywhere in the panel's own sweep. With the two
-        // channels within a few dB of each other in-band, the parallelogram
-        // law |F+V|² + |F−V|² = 2(|F|²+|V|²) forbids both polarities summing
-        // flat at once — at least one must always be losing audibly (the
-        // band-sized window reads the shallowest min at -1.44 dB, far off the
-        // optimum where partial decorrelation softens the comb; the plateau
-        // this guards against read ≈ 0 for BOTH). The stationary-window sweep
-        // violated this across the whole negative half, the woofer faded out.
+        // Parallelogram law |F+V|² + |F−V|² = 2(|F|²+|V|²) forbids both polarities summing flat at once.
         List<VirtualCrossoverAnalysis.JunctionSweepPoint> normal =
             Sweep(false, pairFront);
         List<VirtualCrossoverAnalysis.JunctionSweepPoint> inverted =
@@ -329,9 +263,7 @@ public sealed class JunctionCorrelationCurveTests
                 "the plateau of a window the moved channel left");
         }
 
-        // 2: Δ = 0 is the pair's current alignment, and the drawn surface
-        // must agree with the read-out's measurement of it exactly — same
-        // anchor rule, same bins, same rotation as the search.
+        // Δ = 0 must match the read-out's own measurement exactly.
         (double LossDb, double DipDb)? atRest =
             VirtualCrossoverAnalysis.MeasureSumLoss(
                 woofer, [sub], SampleRate, 27.5, 110,
@@ -344,21 +276,8 @@ public sealed class JunctionCorrelationCurveTests
         Assert.InRange(
             zero.DipDb, atRest.Value.DipDb - 1e-6, atRest.Value.DipDb + 1e-6);
 
-        // 3: through one and the same window, rotation equals physical
-        // construction at every probe — the channel actually delayed through
-        // its chain (the probed delay on the woofer; its magnitude on the sub
-        // when negative — only the relative offset matters), measured by
-        // MeasureSumLoss through that window. Anchored at the drivers' shared
-        // source so the window holds every rise at every probe and the
-        // reference is the truth this synthetic makes knowable. Compared as
-        // LINEAR amplitude ratios — the quantity the estimator computes —
-        // because dB magnifies the floor: near a deep null a 0.016 linear
-        // disagreement (the construction's fixed window end truncating the
-        // ringing tail the traveling cut keeps) reads as a whole dB. Measured
-        // worst across ±25 ms, both polarities: 0.011 linear on the loss,
-        // 0.016 on the dip. What remains outside this equality is window
-        // PLACEMENT — the anchor work's business, not the sweep's: the sweep
-        // must read the search's window, wherever that rule puts it.
+        // Rotation equals physical construction through the same window. Compared linearly: dB magnifies a 0.016
+        // tail-truncation difference near a null into a whole dB (worst measured 0.011 loss, 0.016 dip).
         static double Linear(double decibels) => Math.Pow(10.0, decibels / 20.0);
         foreach (bool invert in new[] { false, true })
         {
@@ -404,15 +323,7 @@ public sealed class JunctionCorrelationCurveTests
     [Fact]
     public void JunctionLossSweep_DefaultReadsTheSearchsOwnWindows()
     {
-        // Two channels whose fronts sit 12 ms apart — further than the
-        // 800-1250 Hz band's 10.8 ms window spans. Windowed per channel (the
-        // search's default) each cut holds its channel wherever it sits;
-        // forced through one shared window at the earliest front, the late
-        // channel is lost off the window's end. The sweep once derived that
-        // shared anchor whenever the caller passed none, so the drawn surface
-        // silently stopped being the searched one exactly on such pairs; the
-        // null anchor must now reach the bins untouched, making the sweep
-        // point-identical to the evaluator the search reads.
+        // Fronts 12 ms apart exceed the 10.8 ms window: a null anchor must stay per-channel, matching the search's evaluator.
         Complex[] variable = ImpulseAtSample(96);        // 2 ms
         Complex[] fixedIr = ImpulseAtSample(96 + 576);   // 14 ms
 
@@ -433,9 +344,6 @@ public sealed class JunctionCorrelationCurveTests
             Assert.Equal(dipDb, point.DipDb, 9);
         }
 
-        // And the distinction is real on this pair: the shared window at the
-        // early channel's front cannot even hold the late channel, so the
-        // same probes read a different surface through it.
         int sharedFront = VirtualCrossoverAnalysis.FindGateAnchor(
             variable, VirtualCrossoverAnalysis.FindPeakIndex(variable),
             SampleRate, 800, 1_250);
@@ -456,12 +364,7 @@ public sealed class JunctionCorrelationCurveTests
     [Fact]
     public void JunctionLossSweep_LevelMatchReshapesUnequalChannels()
     {
-        // The Auto search always scores through the level match
-        // (FindAlignmentCandidates, levelMatch: true): the lobe choice must
-        // not depend on the channels' playback gains. A sweep drawn without
-        // it shows a different surface whenever the pair sits at different
-        // levels — equal-amplitude synthetics hid this. With the match ON the
-        // sweep must again be point-identical to the matched evaluator.
+        // The Auto search always level-matches; the sweep with the match on must equal the matched evaluator.
         Complex[] variable = ImpulseAtMs(0.5, amplitude: 0.25); // -12 dB
         Complex[] fixedIr = ImpulseAtMs(2.0);
 
@@ -484,9 +387,6 @@ public sealed class JunctionCorrelationCurveTests
             Assert.Equal(dipDb, point.DipDb, 9);
         }
 
-        // A 12 dB imbalance flattens the unmatched surface: at the aligned
-        // probe the matched pair cancels ~fully where the unmatched one
-        // cannot lose more than the weak channel contributes.
         List<VirtualCrossoverAnalysis.JunctionSweepPoint> unmatched =
             VirtualCrossoverAnalysis.JunctionLossSweep(
                 variable, fixedIr, SampleRate, 800, 1_250,
@@ -504,8 +404,7 @@ public sealed class JunctionCorrelationCurveTests
     [Fact]
     public void JunctionLossSweep_InvertedPolarityShiftsTheCombByHalfAPeriod()
     {
-        // With the variable channel inverted the comb flips: the optimum moves
-        // to the half-period-away lag and the true offset becomes the null.
+        // Inverted: the optimum moves half a period and the true offset becomes the null.
         Complex[] fixedIr = ImpulseAtMs(2.0);
         Complex[] variableIr = ImpulseAtMs(0.5);
 

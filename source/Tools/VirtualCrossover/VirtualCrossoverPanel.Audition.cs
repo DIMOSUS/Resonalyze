@@ -3,28 +3,10 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// The Virtual DSP "Audition track" command: sums both sides of the tune and
-/// hands them to <see cref="VirtualCrossoverAuditionDialog"/>, where the user
-/// picks a music file, a destination and a microphone calibration, and renders
-/// the track through the tune. The result is a headphone-only stereo
-/// auralization of the measured left and right acoustic paths at the
-/// microphone position — drivers, cabin and capsule included, but not a
-/// binaural head simulation; played back through the same system it would
-/// convolve the car twice.
-/// <para>
-/// When the tune's spatial averages allow it, a SECOND pair of sums is
-/// prepared beside it: the same tune with each channel's magnitude corrected
-/// onto its average over the listening volume instead of the one microphone
-/// position (<see cref="SpatialAverageAudition"/>). The dialog offers the
-/// choice; both pairs are built here because the correction reads the panel's
-/// own state, which the dialog has no business holding.
-/// </para>
-/// </summary>
+/// <summary>"Audition track": sums both sides (and, when possible, a spatial-average-corrected pair) for <see cref="VirtualCrossoverAuditionDialog"/>. Headphone-only auralization at the mic position.</summary>
 public partial class VirtualCrossoverPanel
 {
-    // Reentrancy guard: the side summing below awaits with the button still
-    // enabled, so a double-click would otherwise start two interleaved flows.
+    // The side summing awaits with the button enabled; a double-click would start two flows.
     private bool auditionInFlight;
 
     private async Task AuditionTrackAsync()
@@ -47,10 +29,6 @@ public partial class VirtualCrossoverPanel
 
     private async Task RunAuditionFlowAsync()
     {
-        // The wait cursor covers the PREPARATION only, and the dialog is opened
-        // outside it: summing both sides and levelling the captures against them is
-        // a second or so of work with nothing on screen, while the dialog that
-        // follows is the user's own to sit in.
         VirtualCrossoverAuditionContext? prepared;
         UseWaitCursor = true;
         try
@@ -71,19 +49,16 @@ public partial class VirtualCrossoverPanel
         dialog.ShowDialog(FindForm());
     }
 
-    // Everything the dialog needs, or null when the tune cannot be auditioned at all
-    // — in which case the refusal has already been shown.
+    // Null when the tune cannot be auditioned; the refusal has already been shown.
     private async Task<VirtualCrossoverAuditionContext?> PrepareAuditionAsync()
     {
-        // Both sides are summed from the SAME coordinator revision, so the two
-        // ears are rendered from one consistent state of the tune.
+        // Both sides from one coordinator revision, so both ears share one tune state.
         long revision = processingCoordinator.CurrentRevision;
         VirtualCrossoverSideSum? leftSide = await metrics.ComputeSideSumAsync(
             channels, rightSide: false, revision, minimumChannels: 1);
         VirtualCrossoverSideSum? rightSide = await metrics.ComputeSideSumAsync(
             channels, rightSide: true, revision, minimumChannels: 1);
-        // Staleness first: a mid-flight settings change nulls whichever sum ran
-        // second, and that null must not masquerade as a missing side below.
+        // Staleness first: a mid-flight change nulls the second sum, which must not read as a missing side.
         if (!processingCoordinator.IsCurrent(revision))
         {
             ShowError(
@@ -101,13 +76,9 @@ public partial class VirtualCrossoverPanel
             return null;
         }
 
-        // Half a tune is the normal mid-session state, so a missing side renders
-        // from the other one instead of refusing; the dialog's report carries
-        // the warning, in view the whole time the user sets the render up.
+        // A missing side renders from the other; the dialog report warns.
         string? borrowedSide = leftSide == null ? "left" : rightSide == null ? "right" : null;
-        // Which measured side each ear ends up on, BEFORE the borrowing collapses
-        // the two references into one. The spatial-average set is a set of
-        // measurements, and a borrowed ear must not enter it twice.
+        // Captured before borrowing, so a borrowed ear does not enter the spatial-average set twice.
         List<bool> measuredSides =
             MeasuredSides(leftSide != null, rightSide != null);
         leftSide ??= rightSide;
@@ -116,9 +87,6 @@ public partial class VirtualCrossoverPanel
         VirtualCrossoverSideSum right = rightSide!;
         if (left.SampleRate != right.SampleRate)
         {
-            // The project format admits one rate, so this is a guard rather than
-            // a case: a mixed-rate pair would render the two ears on different
-            // time bases.
             ShowError(
                 $"The two sides were measured at different rates " +
                 $"({left.SampleRate} Hz and {right.SampleRate} Hz).",
@@ -130,14 +98,8 @@ public partial class VirtualCrossoverPanel
         VirtualCrossoverAuditionSpatialAverage? spatialAverage = spatialVerdict.Coherent
             ? await BuildAuditionSpatialAverageAsync(left, right, measuredSides)
             : null;
-        // A coherent set that still produced nothing is its own answer: the recipes
-        // agreed, so the refusal came from the measurements themselves — a capture
-        // whose band never meets its channel's, typically — and saying "no spatial
-        // average" there would send the user looking for a file that is attached.
-        // The preparation above is the flow's second await, and the panel stays live
-        // behind the wait cursor — nothing disables it. A channel changed while it ran
-        // would leave these sums describing the tune the user has just moved on from,
-        // and neither the dialog nor the render it writes has any way to know.
+        // A coherent set that produced nothing is refused by the measurements (e.g. band mismatch), not by a missing file.
+        // Re-check the revision: the panel stays live during this await.
         if (!processingCoordinator.IsCurrent(revision))
         {
             ShowError(
@@ -168,43 +130,8 @@ public partial class VirtualCrossoverPanel
             spatialRefusal);
     }
 
-    /// <summary>
-    /// What the panel's "Own (as measured)" means for a RENDER: the one curve every
-    /// channel was read through, or the reason there is no such curve.
-    /// </summary>
-    /// <remarks>
-    /// The panel can hold that selection because it corrects each channel's curve
-    /// separately; a render cannot, because it bakes one filter into a side that
-    /// several channels have already been summed into. Where the channels agree —
-    /// one microphone measured the car, which is the ordinary case — the rule names a
-    /// curve after all and the render carries it.
-    /// <para>
-    /// A microphone ARRAY is that ordinary case, not the exception: the array shares
-    /// the sweep with the measurement microphone and stores level curves for its other
-    /// positions, so the impulse response has one microphone behind it however many
-    /// were listening, and the positions' individual calibrations never enter this
-    /// question.
-    /// </para>
-    /// <para>
-    /// The refusal is wider than the render strictly needs: the two ears have their own
-    /// kernels, so a car whose LEFT was measured through one microphone and whose RIGHT
-    /// was measured through another could be rendered with a correction each. What
-    /// cannot be done is a side whose own channels disagree, since they are summed
-    /// before the filter meets them. Both are refused today because the render applies
-    /// ONE calibration filter to both kernels; splitting it per side is a change to the
-    /// render, not to this, and a refusal is the safe side of it. What does reach it is a project assembled from measurements taken
-    /// through DIFFERENT microphones — channels measured on separate days, or files
-    /// written before a measurement recorded what it was read through mixed with newer
-    /// ones. There the honest answer is to refuse and let the user name one curve,
-    /// rather than pick a channel's and label the result as though it answered for all
-    /// of them.
-    /// </para>
-    /// <para>
-    /// It used to resolve through the app's calibration list, which has never heard of
-    /// this id: Own came back as no curve at all, so the render was UNCALIBRATED and
-    /// the report blamed a file it could not read.
-    /// </para>
-    /// </remarks>
+    /// <summary>"Own (as measured)" for a render: the one curve every channel used, or why there is none.</summary>
+    /// <remarks>One filter is baked into both summed sides, so mixed microphones are refused. See docs/tech/spatial-average.md#audition-render.</remarks>
     internal static VirtualCrossoverAuditionOwnCalibration ResolveOwnCalibration(
         VirtualCrossoverSideSum left,
         VirtualCrossoverSideSum right,
@@ -224,8 +151,7 @@ public partial class VirtualCrossoverPanel
             {
                 VirtualCrossoverChannelState state =
                     processed.Channel.SideState(rightSide);
-                // A mono pair hands the same measurement to both ears; counting it
-                // twice would say two channels agree when there is only one.
+                // A mono pair feeds both ears; count it once.
                 if (!seen.Add(state))
                 {
                     continue;
@@ -273,33 +199,11 @@ public partial class VirtualCrossoverPanel
                 "), and a render carries a single correction for both sides");
     }
 
-    /// <summary>
-    /// Which measured sides the two ears will render from, as the side flags every
-    /// per-side lookup takes — <c>false</c> is the left one.
-    /// </summary>
-    /// <remarks>
-    /// Half a tune renders both ears from the ONE side that has sources, so the list
-    /// names that side rather than both. Its flag is the side's own: a left-only tune
-    /// is <c>[false]</c>. Getting that backwards is invisible in the ordinary case and
-    /// silent in the half one — every per-side lookup would read the EMPTY side, so a
-    /// tune with averages on the side it renders from would report having none.
-    /// A caller with neither side has already refused.
-    /// </remarks>
+    /// <summary>Side flags (<c>false</c> = left) the ears render from; half a tune names only its measured side.</summary>
     internal static List<bool> MeasuredSides(bool hasLeft, bool hasRight) =>
         hasLeft && hasRight ? [false, true] : [!hasLeft];
 
-    /// <summary>
-    /// Whether the sides being rendered may be corrected onto their spatial averages
-    /// at all.
-    /// </summary>
-    /// <remarks>
-    /// The RECIPE decides, exactly as it does for the hybrid view: coverage alone
-    /// would admit captures taken at three frame lengths and two scales, which cannot
-    /// share the one offset that levels them. Both ears are judged as ONE set when
-    /// both are real, because a render levelled per side would put an L/R imbalance in
-    /// the track that the car does not have — the same objection that gates the plot's
-    /// dashed opposite sum.
-    /// </remarks>
+    /// <summary>Whether the rendered sides may be corrected onto spatial averages: the recipe decides, and both ears are judged as one set.</summary>
     private LiveCaptureSetVerdict JudgeAuditionSpatialAverages(IReadOnlyList<bool> sides)
     {
         if (SpatialAverageMode == VirtualCrossoverSpatialAverageMode.Off)
@@ -328,18 +232,7 @@ public partial class VirtualCrossoverPanel
                 : LiveCaptureSetVerdict.No("No side has a spatial average.");
     }
 
-    /// <summary>
-    /// The same tune with every channel's magnitude moved from the microphone position
-    /// onto its spatial average, or null when nothing could be corrected.
-    /// </summary>
-    /// <remarks>
-    /// Snapshot first, compute after: what the correction needs off the panel is
-    /// gathered on the UI thread (references only), and the transforms — a band
-    /// spectrum per channel, a filter design and a convolution each — run on a worker.
-    /// They are cheap next to the render that follows, and eager rather than lazy
-    /// because the dialog's toggle has to be able to say what it would do BEFORE the
-    /// user commits to a render.
-    /// </remarks>
+    /// <summary>The tune corrected onto spatial averages, or null. Snapshot on the UI thread, compute on a worker, eagerly so the dialog can describe it.</summary>
     private async Task<VirtualCrossoverAuditionSpatialAverage?>
         BuildAuditionSpatialAverageAsync(
             VirtualCrossoverSideSum left,
@@ -363,16 +256,7 @@ public partial class VirtualCrossoverPanel
                 {
                     entry = entries.Count;
                     entries.Add(new SpatialAverageAuditionChannel(
-                        // The CROPPED source, which is the array the processed response
-                        // was made from — the same reason the EQ Wizard handoff reads it.
-                        // The measurement's own record runs on for seconds past the
-                        // arrival at the noise floor, and a curve read over all of it
-                        // describes a longer record than the kernel being filtered: the
-                        // extra noise lifts the bands where a channel is quiet, which is
-                        // where the difference is least able to bear it. An unresolved
-                        // source cannot reach a side sum, so the fallback is a guard —
-                        // an empty response yields no curve and the channel keeps its
-                        // point measurement.
+                        // Cropped source, as for the EQ Wizard handoff: the full record's noise tail lifts quiet bands.
                         state.ProcessingSource?.CroppedImpulseResponse ?? [],
                         processed.SampleRate,
                         processed.MeasuredBand,
@@ -417,10 +301,7 @@ public partial class VirtualCrossoverPanel
         });
     }
 
-    // One side, every channel filtered onto its average and summed again. The sum is
-    // rebuilt from the corrected parts rather than corrected as a whole: a side's
-    // channels each have their own average, and one filter over their sum could only
-    // be a compromise between them wherever two of them overlap.
+    // Rebuilt from corrected channels: one filter over the sum would compromise overlapping channels.
     private static Complex[] CorrectedSum(
         VirtualCrossoverSideSum side,
         IReadOnlyList<int> entries,
@@ -439,7 +320,6 @@ public partial class VirtualCrossoverPanel
         return VirtualCrossoverAnalysis.SumImpulseResponses(corrected);
     }
 
-    // What the dialog's report says about the correction it is offering.
     private static IReadOnlyList<string> DescribeSpatialAverage(
         SpatialAverageAuditionPlan plan,
         IReadOnlyList<SpatialAverageAuditionChannel> entries,

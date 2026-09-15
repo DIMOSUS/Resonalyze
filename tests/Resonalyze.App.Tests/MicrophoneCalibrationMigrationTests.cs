@@ -4,13 +4,7 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The two fixed calibration slots became a named list. A settings file written
-/// before that must keep pointing at the same curve: a CONFIGURED 90° file
-/// becomes an entry every view still selects, while the old 90°-from-0°
-/// approximation — which needed no file and no geometry — is not recreated, so
-/// those views fall back to no correction instead of a curve nobody chose.
-/// </summary>
+/// <summary>A configured 90° file migrates to a list entry; the file-less 90°-from-0° approximation is not recreated.</summary>
 public sealed class MicrophoneCalibrationMigrationTests : IDisposable
 {
     private readonly string tempDirectory;
@@ -53,12 +47,8 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
 
         Assert.Equal(entry.Id, settings.FrequencyResponse.CalibrationId);
         Assert.Equal(entry.Id, settings.EqWizard.CalibrationId);
-        // Schema 12 moved the measurement microphone's own selection to the rig, and
-        // it is taken from the view that used to stamp the files, so the next sweep
-        // is labelled exactly as the last one was.
+        // Schema 12: the rig's selection is taken from the view that stamped the files, so the next sweep is labelled the same.
         Assert.Equal(entry.Id, settings.Measurement.MicrophoneCalibrationId);
-        // The copies that could drift from it are gone: the live capture follows the
-        // rig, phase and group delay follow the Frequency Response view.
         Assert.Null(settings.LiveSpectrum.CalibrationId);
         Assert.Null(settings.PhaseResponse.CalibrationId);
         Assert.Null(settings.GroupDelay.CalibrationId);
@@ -117,8 +107,7 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
     [Fact]
     public void ACurrentFileWithoutASelectionStaysUncalibrated()
     {
-        // The migration must not run again on a current file: an absent id there
-        // is a deliberate "Off", not a pre-list file to be re-derived.
+        // On a current file an absent id is a deliberate Off, not a pre-list file.
         string path = WriteSettings("""
             {
               "SchemaVersion": 11,
@@ -132,9 +121,6 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
     [Fact]
     public void AFirstRunStartsCorrectedByTheMicrophonesOwnCalibration()
     {
-        // No file at all: the measurement views used to start corrected (their
-        // persisted flag defaulted to true), and configuring a 0° file must keep
-        // working without visiting every mode's selector.
         MeasurementSettingsFile settings = MeasurementSettingsFile.LoadOrDefault(
             Path.Combine(tempDirectory, "absent.json"));
 
@@ -144,7 +130,6 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
         Assert.Equal(
             MicrophoneCalibrationIds.ZeroDegrees,
             settings.FrequencyResponse.CalibrationId);
-        // The EQ Wizard always defaulted to no correction.
         Assert.Null(settings.EqWizard.CalibrationId);
 
         var options = new FrequencyResponseOptions();
@@ -152,17 +137,7 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
         Assert.Equal(MicrophoneCalibrationIds.ZeroDegrees, options.CalibrationId);
     }
 
-    /// <summary>
-    /// The analysis views start on the measurement's OWN calibration, and that
-    /// selection is an ordinary persisted id like any other.
-    /// </summary>
-    /// <remarks>
-    /// It replaced a sentinel that could not be stored — the loaded measurement's
-    /// curve was offered as a pseudo-entry and stripped again before saving, because
-    /// an id naming a file's curve resolves to nothing on the next start. "Own" names
-    /// a RULE rather than a curve, so it survives a restart and means the same thing
-    /// against whatever measurement is open then.
-    /// </remarks>
+    /// <summary>"Own" names a rule rather than a curve, so unlike the old sentinel it persists across restarts.</summary>
     [Fact]
     public void TheOwnSelectionSurvivesASaveAndLoad()
     {
@@ -184,11 +159,7 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
         Assert.Equal(MicrophoneCalibrationIds.Own, options.CalibrationId);
     }
 
-    /// <summary>
-    /// The rig's calibration reaches the live analyzer, and the ids phase and group
-    /// delay used to store go: those views read timing rather than level and apply
-    /// no correction, so an id there was state nothing could act on.
-    /// </summary>
+    /// <summary>Phase and group delay read timing and apply no correction, so their stored ids are dropped.</summary>
     [Fact]
     public void TheLiveAnalyzerFollowsTheRigAndTheDeadSelectionsGo()
     {
@@ -220,8 +191,6 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
             new TimeAlignmentOptions());
 
         Assert.Equal("cal-90", frequencyResponse.CalibrationId);
-        // The rig's, which the migration took from the view that stamped the files —
-        // and the live capture is corrected by the rig now, not by a copy of its own.
         Assert.Equal("cal-90", settings.Measurement.MicrophoneCalibrationId);
         Assert.Equal("cal-90", live.CalibrationId);
         Assert.Null(settings.PhaseResponse.CalibrationId);
@@ -233,9 +202,7 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
     [Fact]
     public void CapturingTheMeasurementSettingsKeepsTheConfiguredCalibrations()
     {
-        // Capture rebuilds the measurement section from the measurement itself,
-        // which knows the audio configuration but nothing about calibration
-        // files; applying Record Settings used to drop the list.
+        // Capture rebuilds the measurement section from the measurement, which knows nothing about calibration files.
         var settings = new MeasurementSettingsFile();
         settings.Measurement.MicrophoneCalibration0DegreesPath = @"C:\mics\zero.txt";
         settings.Measurement.AdditionalMicrophoneCalibrations.Add(
@@ -295,14 +262,12 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
             Load(path).Measurement.AdditionalMicrophoneCalibrations;
 
         Assert.Equal(["cal1", "cal2", "cal3"], definitions.Select(entry => entry.Id));
-        // Out-of-range geometry is clamped rather than reaching the model.
         Assert.Equal(90.0, definitions[1].AngleDegrees);
         Assert.Equal(
             MicrophoneCalibrationDefinition.DefaultFrontDiameterMm,
             definitions[1].FrontDiameterMm);
         Assert.Equal("90°", definitions[1].Name);
-        // An estimate may only be derived from a file-backed entry, so a chain of
-        // estimates falls back to the microphone's own 0° calibration.
+        // Estimates derive only from file-backed entries, so a chain of estimates falls back to 0°.
         Assert.Null(definitions[2].BaseId);
     }
 

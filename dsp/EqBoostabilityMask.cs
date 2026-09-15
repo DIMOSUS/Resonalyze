@@ -1,46 +1,20 @@
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Decides, per frequency-grid point, whether an automatic equalizer may place a
-/// <b>boost</b> band there. Boosting the wrong place is the dangerous EQ move in a
-/// reflective car cabin: a deep, narrow interference null cannot be filled by EQ
-/// (the boost just burns amplifier headroom and wastes a band on a dip that returns
-/// the moment the mic moves), and a low-coherence bin is not a repeatable acoustic
-/// feature worth boosting at all. Cuts are always safe — they only remove energy —
-/// so they are never gated here; this mask exists purely to keep boosts honest.
-/// </summary>
+/// <summary>Per grid point, may a BOOST be centred here? Refuses narrow deep nulls and low-coherence bins; cuts are never gated.</summary>
 public static class EqBoostabilityMask
 {
     public sealed record Options
     {
-        /// <summary>
-        /// A boost is disallowed where the measured coherence γ² is below this. Only
-        /// applied when the caller supplies coherence; a source without it is gated by
-        /// the null detector and the fitting band alone.
-        /// </summary>
+        /// <summary>Boost refused below this γ²; applied only when coherence is supplied.</summary>
         public double CoherenceFloor { get; init; } = 0.5;
 
-        /// <summary>
-        /// A dip counts as a null when the magnitude recovers by at least this many dB
-        /// on BOTH sides within <see cref="NullHalfWidthOctaves"/>.
-        /// </summary>
         public double NullDepthDb { get; init; } = 6.0;
 
-        /// <summary>
-        /// How far to each side (in octaves) the recovery must happen for a dip to be
-        /// "narrow". A monotonic roll-off recovers on only one side within this window,
-        /// so it is deliberately NOT treated as a null (it is the fitting band's and the
-        /// boost-headroom cap's job, not the mask's).
-        /// </summary>
+        /// <summary>Recovery window per side; a monotonic roll-off recovers on one side only and is NOT a null.</summary>
         public double NullHalfWidthOctaves { get; init; } = 0.25;
     }
 
-    /// <summary>
-    /// Returns a per-point flag: may a boost band be centred at this grid point?
-    /// <paramref name="coherence"/> is optional (γ² aligned to <paramref name="gridHz"/>);
-    /// a null argument, or a non-finite entry, is treated as reliable so a source
-    /// carrying no coherence degrades to null-detection-only masking.
-    /// </summary>
+    /// <summary>Null or non-finite coherence counts as reliable (null detection only).</summary>
     public static bool[] ComputeBoostAllowed(
         IReadOnlyList<double> gridHz,
         IReadOnlyList<double> magnitudeDb,
@@ -73,9 +47,6 @@ public static class EqBoostabilityMask
         return allowed;
     }
 
-    // A point sits in a narrow deep null when, scanning outward within the half-width
-    // window, the magnitude climbs at least NullDepthDb above it on BOTH sides. A
-    // monotonic roll-off climbs on only one side and is therefore spared.
     private static bool IsInNarrowDeepNull(
         IReadOnlyList<double> gridHz,
         IReadOnlyList<double> magnitudeDb,
@@ -91,9 +62,7 @@ public static class EqBoostabilityMask
         return leftRise >= options.NullDepthDb && rightRise >= options.NullDepthDb;
     }
 
-    // The greatest amount (dB) the magnitude rises above the reference while scanning
-    // from index in one direction, stopping once the octave window is left or the grid
-    // ends. Invalid/non-finite neighbours are skipped, not treated as a barrier.
+    // Non-finite neighbours are skipped, not treated as a barrier.
     private static double MaxRiseWithin(
         IReadOnlyList<double> gridHz,
         IReadOnlyList<double> magnitudeDb,

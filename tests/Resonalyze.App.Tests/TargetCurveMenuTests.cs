@@ -2,11 +2,6 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The menu behind the Target button in the EQ Wizard and in Virtual DSP. It is
-/// the only place the app states which of the two shapes a target has, so what it
-/// ticks — and that it names the file when there is one — is the whole point of it.
-/// </summary>
 public sealed class TargetCurveMenuTests
 {
     [Fact]
@@ -32,8 +27,6 @@ public sealed class TargetCurveMenuTests
         Assert.False(Item(menu, 0).Checked);
         Assert.True(Item(menu, 1).Checked);
         Assert.Contains("my-house-curve.txt", Item(menu, 1).Text);
-        // The tooltip is what says how much of a curve it is: a file that read as
-        // two points and one that read as four hundred look alike on the button.
         Assert.Contains("2 points", Item(menu, 1).ToolTipText);
     }
 

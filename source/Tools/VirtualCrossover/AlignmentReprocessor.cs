@@ -3,15 +3,8 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// One channel/side's immutable inputs to an Auto delay run: its identity
-/// (reference equality keys the engine's override maps), the measured IR to
-/// search over, its sample rate, the rate the project's processor realizes filters
-/// at, and its base DSP chain (gain, crossover, PEQ — the delay and polarity are
-/// supplied per step as overrides). Captured before the search so the reprocessor
-/// reads no live model state while it runs — the processing rate included, which the
-/// user can change from the panel while a run is in flight.
-/// </summary>
+/// <summary>One channel/side's inputs to an Auto delay run, captured before the search so no live model state (processing rate included) is read mid-run.
+/// Channel identity is by reference: it keys the engine's override maps.</summary>
 internal sealed record AlignmentReprocessInput(
     IAlignmentChannel Channel,
     Complex[] MeasuredImpulseResponse,
@@ -19,18 +12,8 @@ internal sealed record AlignmentReprocessInput(
     int ProcessorSampleRate,
     DspChannelChain BaseChain);
 
-/// <summary>
-/// The shared Auto delay reprocessor for the single-side and stereo runs alike.
-/// It crops every channel's measured IR to one shared direct-sound window (a
-/// common offset keeps the inter-channel timing intact), then reprocesses the
-/// cropped IRs through the current delay/polarity overrides on demand — the
-/// delegate the <see cref="AutoAlignmentEngine"/> drives. A per-channel cache
-/// reuses a channel's processed IR when its chain is unchanged between junction
-/// steps (only one or two channels move per step), so the FFTs shrink to the
-/// crop and unchanged channels are never re-FFT'd. Cache misses run in parallel;
-/// the cache is written back on the calling (engine) thread only, so the whole
-/// object is used from one thread at a time.
-/// </summary>
+/// <summary>Crops every IR to one shared direct-sound window and reprocesses through the engine's overrides on demand, caching unchanged chains.
+/// Misses run in parallel; the cache is written on the calling thread only.</summary>
 internal sealed class AlignmentReprocessor
 {
     private readonly IReadOnlyList<IAlignmentChannel> channels;
@@ -42,20 +25,8 @@ internal sealed class AlignmentReprocessor
     private readonly Complex[]?[] bypassedImpulseResponses;
     private readonly ValidSampleRange[] bypassedValidRanges;
 
-    /// <summary>
-    /// The shared search crop, sized by TIME. The base length was tuned when
-    /// every field rate was 48 or 96 kHz (1.4 / 0.7 s of decay); the
-    /// band-sized alignment windows made the requirement explicit — after
-    /// the pre-peak reserve (1/8 of the crop) the crop must still hold the
-    /// longest window the band sizing can ask for
-    /// (<see cref="VirtualCrossoverAnalysis.MaximumAlignmentGateMs"/>) plus
-    /// the channels' arrival/delay spread (the fleet's worst measured is
-    /// ~46 ms; 175 ms of reserve): 8/7 · 525 = 600 ms. At 48/96 kHz the base
-    /// length already exceeds that and is kept EXACTLY, so archived results
-    /// do not move; higher rates double it until the budget fits (192 kHz →
-    /// 131_072, 384 kHz → 262_144 — where the fixed length left 149 ms after
-    /// the reserve, less than a single sub-band window).
-    /// </summary>
+    /// <summary>Base search crop; kept exactly at 48/96 kHz so archived results do not move, doubled at higher rates until
+    /// 8/7 · (<see cref="VirtualCrossoverAnalysis.MaximumAlignmentGateMs"/> + 175 ms spread reserve) = 600 ms fits after the 1/8 pre-peak reserve.</summary>
     internal const int BaseSearchCropLength = 65_536;
     private const double SearchCropSpreadReserveMs = 175.0;
 
@@ -72,15 +43,9 @@ internal sealed class AlignmentReprocessor
         return length;
     }
 
-    /// <summary>The pre-peak reserve: the crop's own 1/8, at every rate.</summary>
     internal static int SearchCropPrePeakSamples(int sampleRate) =>
         SearchCropLength(sampleRate) / 8;
 
-    /// <summary>
-    /// The production constructor: the crop sizes itself from the inputs'
-    /// sample rate (see <see cref="SearchCropLength"/>), so a high-rate
-    /// session cannot silently truncate the low junctions' windows.
-    /// </summary>
     public AlignmentReprocessor(IReadOnlyList<AlignmentReprocessInput> inputs)
         : this(
             inputs,
@@ -109,18 +74,12 @@ internal sealed class AlignmentReprocessor
             .Select(input => input.ProcessorSampleRate)
             .ToArray();
         baseChains = inputs.Select(input => input.BaseChain).ToArray();
-        // One shared crop offset for every channel keeps the inter-channel
-        // timing intact; the search only reads the gated direct sound, so the
-        // final delays match a full-length run at a fraction of the FFT cost.
+        // One shared crop offset keeps inter-channel timing; the search only reads gated direct sound.
         croppedImpulseResponses = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
             inputs.Select(input => input.MeasuredImpulseResponse).ToList(),
             cropLength,
             cropPrePeakSamples);
-        // The chain-free response of each channel, computed once: the
-        // engine's predicted-arrival honesty probe reads it to tell a
-        // crossover's own smear from a room mode the crossover steered the
-        // band into (see AlignmentSnapshot.BypassedImpulseResponse). It never
-        // changes with the overrides, so it stays out of the per-round cache.
+        // Chain-free response for the engine's predicted-arrival probe; independent of overrides, so outside the cache.
         bypassedImpulseResponses = new Complex[croppedImpulseResponses.Length][];
         bypassedValidRanges = new ValidSampleRange[croppedImpulseResponses.Length];
         Parallel.For(0, croppedImpulseResponses.Length, i =>
@@ -135,16 +94,8 @@ internal sealed class AlignmentReprocessor
         });
     }
 
-    /// <summary>The channels in input (and result) order.</summary>
     public IReadOnlyList<IAlignmentChannel> Channels => channels;
 
-    /// <summary>
-    /// Reprocesses every channel through its current override (delay + polarity
-    /// on top of its base chain) and returns the snapshots in channel order.
-    /// Cache misses (all channels on the first call, usually one or two per
-    /// cascade step afterwards) run in parallel; the cache is written back on
-    /// this (caller's) thread only.
-    /// </summary>
     public IReadOnlyList<AlignmentSnapshot> Reprocess(
         IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
     {
@@ -194,9 +145,7 @@ internal sealed class AlignmentReprocessor
                 results[i].ImpulseResponse,
                 results[i].PeakIndex,
                 results[i].ValidRange,
-                // The chain CAPTURED at construction, never the live model:
-                // the engine's predicted-arrival probe reads it on a
-                // background thread while the user may be editing the panel.
+                // Chain CAPTURED at construction: the probe reads it on a background thread while the panel may be edited.
                 baseChains[i],
                 bypassedImpulseResponses[i],
                 bypassedValidRanges[i]))
@@ -209,9 +158,7 @@ internal sealed class AlignmentReprocessor
         int PeakIndex,
         ValidSampleRange ValidRange);
 
-    // Identity of a processed result: the cropped source (reference), the sample
-    // rate and the chain by value (independent equal-valued PEQ chains match, so
-    // an unchanged chain hits the cache). Reuses the shared DspChannelChainCacheKey.
+    // Chain compared by value, so an unchanged chain hits the cache.
     private sealed class CacheKey : IEquatable<CacheKey>
     {
         private readonly Complex[] source;

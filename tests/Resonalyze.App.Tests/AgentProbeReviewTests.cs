@@ -3,15 +3,6 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The review of a <c>probe</c>: the one operation that writes nothing, so the
-/// only thing to check is that the question can be answered — and that the
-/// settings a variant states are ones a proposal could have written, since a
-/// variant that reads well is meant to become one. It is offered ticked and
-/// plain (no warning, nothing to be careful about) and it survives a package
-/// the session can no longer vouch for, because what it reads is the session as
-/// it is now.
-/// </summary>
 public sealed class AgentProbeReviewTests
 {
     private const string Package = "11111111-1111-1111-1111-111111111111";
@@ -19,8 +10,7 @@ public sealed class AgentProbeReviewTests
     private static CrossoverEdge Edge(CrossoverFilterFamily family, double hz, int slope) =>
         new(family, hz, slope);
 
-    // B mid (BP 80–2000) into C tweeter (HP 2000), both stereo and measured;
-    // A is a mono sub under B, D a rear fill in its own group.
+    // B mid (BP 80–2000) into C tweeter (HP 2000), both stereo; A a mono sub, D a rear fill in its own group.
     private static AgentSessionSnapshot Session(string? lastPackageId = Package)
     {
         var a = new VirtualCrossoverChannelSettings
@@ -104,8 +94,6 @@ public sealed class AgentProbeReviewTests
             Session());
 
         AgentOperationVerdict verdict = Assert.Single(review.Verdicts);
-        // A-D is no junction of this session (A is the sub, D the rear fill):
-        // the junction check refuses it the way it refuses any other probe's.
         if (refusal == null && junctionId == "left:A-D")
         {
             Assert.False(verdict.Applicable);
@@ -128,10 +116,7 @@ public sealed class AgentProbeReviewTests
     [Fact]
     public void Review_ReadsOneSeriesProbePerImport_AndRefusesTheRest()
     {
-        // A series probe names no variants, so the variant budget cannot see it,
-        // and the once-per-import rule exempts probes on purpose. Without a rule
-        // of its own a reply could re-gather the whole package at the densest
-        // grid in every operation slot; one already covers everything it names.
+        // Series probes escape the variant budget and the once-per-import rule, so one per junction set is enough.
         ProbeOperation Series(string id, string? junctionId = null) => new(
             id, "rows", AgentProtocol.SeriesProbe, junctionId, null,
             [AgentProtocol.BroadbandSeries, AgentProtocol.SweepSeries], null,
@@ -206,9 +191,7 @@ public sealed class AgentProbeReviewTests
     [Fact]
     public void Review_KeepsAProbe_OnAPackageTheSessionCannotVouchFor()
     {
-        // Every engine is refused there; a probe is not. It writes nothing, and
-        // what it reads is the session as it is now — which is exactly what a
-        // reader of a package that has gone stale needs.
+        // A probe writes nothing and reads the session as it is now, so a stale package does not refuse it.
         AgentProposalReview review = AgentProposalValidator.Review(
             Proposal(
                 Junction(),
@@ -264,7 +247,6 @@ public sealed class AgentProbeReviewTests
             Judge(new AgentProbeVariant(null, [Change()])));
         Assert.Contains("is not one of the junction's two channels",
             Judge(new AgentProbeVariant(null, [Change("A:mono", gainDb: -1)])));
-        // The side matters: the junction named is the left one.
         Assert.Contains("is not one of the junction's two channels",
             Judge(new AgentProbeVariant(null, [Change("B:right", gainDb: -1)])));
         Assert.Contains("states C:left twice",
@@ -272,7 +254,6 @@ public sealed class AgentProbeReviewTests
         Assert.Contains("changes at most 2 channels",
             Judge(new AgentProbeVariant(null,
                 [Change(gainDb: -1), Change("B:left", gainDb: -1), Change("C:left", delayMs: 1)])));
-        // The settings limits themselves, through the very path a proposal takes.
         Assert.Contains("Gain must be between", Judge(new AgentProbeVariant(null, [Change(gainDb: 500)])));
         Assert.Contains("Delay must be a multiple", Judge(new AgentProbeVariant(null, [Change(delayMs: 1.234)])));
         Assert.Contains("LinkwitzRiley offers slopes of",
@@ -288,8 +269,6 @@ public sealed class AgentProbeReviewTests
     [Fact]
     public void Review_TakesTheDiagnosticPassAsOneVariant_WithNothingApplied()
     {
-        // What the guide used to spend three replies and an undo on: read the
-        // junction with the bank cleared, beside the junction as it stands.
         AgentOperationVerdict verdict = AgentProposalValidator.Review(
             Proposal(Junction(variants: new AgentProbeVariant(
                 "both banks cleared",
@@ -317,9 +296,6 @@ public sealed class AgentProbeReviewTests
             [report], null, sessionMatchesPackage: false, sessionSteady: false,
             DateTimeOffset.UnixEpoch).Text;
 
-        // Absent is the ordinary case, so the reader only ever sees the flag
-        // when the readings really do describe more than one state. (The
-        // conventions carry the name in both, which is where it is explained.)
         Assert.DoesNotContain("\"sessionChangedWhileReading\":true", steady);
         Assert.Contains("\"sessionChangedWhileReading\":true", moved);
         Assert.Contains("sessionChangedWhileReading", AgentProbeBuilder.Conventions.Keys);
@@ -340,9 +316,6 @@ public sealed class AgentProbeReviewTests
     [Fact]
     public void Review_LetsAReplyAskTheSameJunctionSeveralQuestions()
     {
-        // A probe writes nothing, so a second one on the same junction is
-        // another question about it — not a second run of an engine, which is
-        // what the once-per-import rule exists to stop.
         AgentProposalReview review = AgentProposalValidator.Review(
             Proposal(
                 Junction(),
@@ -358,8 +331,7 @@ public sealed class AgentProbeReviewTests
     [Fact]
     public void Review_BudgetsTheVariantsOverTheWholeImport_NotPerProbe()
     {
-        // The budget is the user's wait and the size of the text they paste, so
-        // it cannot be dodged by splitting one long list into two probes.
+        // The budget cannot be dodged by splitting one list into two probes.
         AgentProbeVariant[] Variants(int count, int from) =>
             Enumerable.Range(from, count)
                 .Select(index => new AgentProbeVariant($"v{index}", [Change(gainDb: -0.1 * index)]))
@@ -374,7 +346,6 @@ public sealed class AgentProbeReviewTests
             Session());
 
         Assert.True(review.Verdicts[0].Applicable);
-        // Two more would pass the budget; one still fits after it.
         Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
         Assert.Contains($"{budget - 1} are already asked for above", review.Verdicts[1].Message);
         Assert.True(review.Verdicts[2].Applicable);
@@ -405,7 +376,6 @@ public sealed class AgentProbeReviewTests
         Assert.Equal(Edge(CrossoverFilterFamily.LinkwitzRiley, 2_500, 36), copy.HighPassEdge);
         Assert.Equal(-1, copy.PeqPreampDb);
         Assert.Single(copy.PeqBands);
-        // The channel the copy came from is untouched, which is the whole point.
         Assert.Equal(0, channel.Settings.GainDb);
         Assert.Equal(0, channel.Settings.DelayMs);
         Assert.False(channel.Settings.InvertPolarity);

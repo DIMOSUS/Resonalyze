@@ -6,12 +6,7 @@ public enum WaterfallMode
     BurstDecay
 }
 
-/// <summary>
-/// Waterfall / burst-decay generation settings. This is a persisted schema —
-/// <see cref="MeasurementSettingsFile"/> round-trips every property and the
-/// BurstDecay/Waterfall option panels edit it — so it lives apart from
-/// <c>WaterfallSeries</c>, which is the OxyPlot series that happens to consume it.
-/// </summary>
+/// <summary>Persisted schema (<see cref="MeasurementSettingsFile"/>), kept apart from the OxyPlot WaterfallSeries.</summary>
 public sealed class WaterfallGenerateOptions
 {
     public int SliceCount { get; set; } = 64;

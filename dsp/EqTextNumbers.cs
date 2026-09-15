@@ -2,8 +2,7 @@ using System.Globalization;
 
 namespace Resonalyze.Dsp;
 
-// Shared number handling for the text-based EQ profile formats: parsing accepts
-// both '.' and ',' decimals, formatting is always invariant so files are portable.
+// Parsing accepts '.' and ',' decimals; formatting is invariant so files are portable.
 internal static class EqTextNumbers
 {
     public static bool TryParse(string? token, out double value)

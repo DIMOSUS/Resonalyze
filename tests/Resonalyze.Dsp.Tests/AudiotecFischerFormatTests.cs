@@ -2,15 +2,10 @@ using System.Text;
 
 namespace Resonalyze.Dsp.Tests;
 
-// The Audiotec-Fischer bank both ways: what a real REW export reads as, what a
-// curve writes as (the row shapes the PC-Tool is known to accept), and what the
-// layout cannot carry — the preamp, more than 30 bands, the all-pass slots.
+// Audiotec-Fischer bank: real REW export shape, written rows, and what the layout cannot carry (preamp, >30 bands).
 public sealed class AudiotecFischerFormatTests
 {
-    // A real REW export ("Equaliser: Audiotec Fischer", Full EQ 30 bands) of a
-    // 20-band channel: 18 bells and both shelves, then ten unused slots. Kept
-    // byte for byte — trailing tabs, ragged shelf rows, four-significant-digit
-    // bandwidths — because that is the shape the PC-Tool imported.
+    // Real REW export of a 20-band channel, byte for byte (trailing tabs, ragged shelves, 4-digit bandwidths).
     private const string RewExport =
         "Audiotec_Fischer_Full_EQ_(30_bands)\r\n" +
         "Number\tEnabled\tControl\tType\tFrequency(Hz)\tGain(dB)\tQ\tBandwidth(Hz)\tTargetT60(ms)\t\r\n" +
@@ -45,8 +40,7 @@ public sealed class AudiotecFischerFormatTests
         "29\tTrue\tAuto\tNone\t\r\n" +
         "30\tTrue\tAuto\tNone\t\r\n";
 
-    // Typed as the interface: Import() is a default interface member and is not
-    // reachable through the class itself.
+    // Import() is a default interface member, not reachable through the class.
     private static readonly IEqProfileFormat Format = new AudiotecFischerFormat();
 
     private static EqualizationCurve Mixed() => new(
@@ -63,9 +57,7 @@ public sealed class AudiotecFischerFormatTests
             .Select(line => line.TrimEnd('\r'))
             .ToArray();
 
-    // A complete bank around the rows a test cares about: the layout is a fixed
-    // table, so anything short of thirty slots is not this format (see
-    // Import_RefusesATruncatedOrRenumberedBank) and every fixture must fill it.
+    // The layout is a fixed 30-slot table (see Import_RefusesATruncatedOrRenumberedBank).
     private static string Bank(params string[] rows)
     {
         var text = new StringBuilder("Audiotec_Fischer_Full_EQ_(30_bands)\n");
@@ -91,7 +83,6 @@ public sealed class AudiotecFischerFormatTests
     {
         Assert.True(Format.TryImport(RewExport, out EqualizationCurve curve));
 
-        // Twenty bands, in slot order; the ten None rows are not bands.
         Assert.Equal(20, curve.Bands.Count);
         Assert.Equal(0, curve.PreampDb);
 
@@ -105,8 +96,7 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_QWinsOverTheBandwidthColumn()
     {
-        // REW writes both; Q is what the slot means. A bandwidth that disagrees
-        // (here 500 Hz against Q 4 at 1 kHz, i.e. Q 2) must not move the band.
+        // Q is authoritative; a disagreeing bandwidth (500 Hz vs Q 4 at 1 kHz) must not move the band.
         EqualizationCurve curve = Format.Import(Bank("True\tAuto\tPK\t1000\t-3\t4.00\t500\t"));
 
         Assert.Equal(4.0, Assert.Single(curve.Bands).Q, 6);
@@ -132,8 +122,6 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_SkipsTheSlotsThatHoldNoBand()
     {
-        // A disabled row is an OFF filter (whatever it says after that); a None row
-        // is an empty slot. Both are slots the bank legitimately spends on nothing.
         EqualizationCurve curve = Format.Import(Bank(
             "True\tAuto\tPK\t100\t-2\t2.00\t50\t",
             "False\tAuto\tPK\t200\t-2\t2.00\t100\t",
@@ -149,11 +137,7 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_ReadsTheAllPassSlots()
     {
-        // AP1/AP2 are the PC-Tool's phase-only slots and map one to one onto the
-        // library's all-pass band types. An AP row's gain cell is ignored whatever
-        // it holds (blank in a hand-edited file, 0.0 in ours), a first order needs
-        // no Q (the sentinel keeps validators happy), and a second order's Q is
-        // read from its own cell.
+        // AP1/AP2 map to the all-pass band types; gain cell ignored, first order needs no Q, AP2 reads its own Q.
         EqualizationCurve curve = Format.Import(Bank(
             "True\tAuto\tAP1\t300",
             "True\tAuto\tAP2\t400\t\t1.50",
@@ -168,9 +152,7 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_RefusesASecondOrderAllPassWithoutAQ()
     {
-        // An AP2's Q is the phase turn itself; a row that lost it is a filter the
-        // import would misread, so the fixed table is refused like any unreadable
-        // band.
+        // An AP2 without Q would be misread, so the bank is refused.
         Assert.False(Format.TryImport(
             Bank("True\tAuto\tAP2\t400\t0.0"), out EqualizationCurve refused));
         Assert.Empty(refused.Bands);
@@ -179,8 +161,6 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Export_RoundTripsTheAllPassSlots()
     {
-        // A stale gain left in the slot by a type switch must not reach the file:
-        // the gain cell is written as 0.0 by construction.
         var curve = new EqualizationCurve(new[]
         {
             new PeqBand(300, 1.0, 0, PeqBandType.AllPassFirstOrder),
@@ -199,10 +179,7 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_RefusesASlotThatClaimsAFilterItCannotRead()
     {
-        // An enabled band row whose numbers do not read, and an enabled row of a type
-        // this reader does not know, are both bands that would go missing from a fixed
-        // table without a word. In a device bank that is a changed tune, so the file is
-        // refused instead — the same protection as a truncated bank.
+        // Unreadable or unknown enabled rows would silently change a device tune: refuse the file.
         foreach (string row in new[]
         {
             "True\tAuto\tPK\tnot-a-number\t-2\t2.00\t50\t",   // unreadable centre
@@ -216,7 +193,6 @@ public sealed class AudiotecFischerFormatTests
             Assert.Empty(refused.Bands);
         }
 
-        // ...while the same rows turned OFF are ordinary empty slots.
         Assert.True(Format.TryImport(
             Bank("False\tAuto\tNotch\t1000\t-6\t4.00\t250\t"), out EqualizationCurve disabled));
         Assert.Empty(disabled.Bands);
@@ -225,9 +201,7 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_ToleratesABomCrLfAndSpacesForTabs()
     {
-        // A copy that went through an editor or a chat window: BOM in front, CR/LF,
-        // tabs flattened to spaces. No cell of the layout contains a space, so the
-        // columns still separate.
+        // No cell contains a space, so columns survive tab-to-space flattening.
         string text =
             "\uFEFFAudiotec_Fischer_Full_EQ_(30_bands)\r\n" +
             "Number Enabled Control Type Frequency(Hz) Gain(dB) Q Bandwidth(Hz) TargetT60(ms)\r\n" +
@@ -246,9 +220,6 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_RecognisesAnEmptyBankAndNotForeignText()
     {
-        // Thirty None rows are a valid (neutral) bank, so the header alone
-        // recognises the file; an Equalizer APO profile or a CSV is not this
-        // format however many numbers it holds.
         string empty = "Audiotec_Fischer_Full_EQ_(30_bands)\n" +
             string.Concat(Enumerable.Range(1, 30).Select(slot => $"{slot}\tTrue\tAuto\tNone\t\n"));
         Assert.True(Format.TryImport(empty, out EqualizationCurve curve));
@@ -262,15 +233,7 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_ReadsARewModalRowAsABell()
     {
-        // REW's room-mode filter occupies a slot like any other and realizes a bell:
-        // the row carries Fc, gain and the Q of that bell, with the T60 the optimizer
-        // aimed at in the last cell. The three rows below are a byte-exact bank from
-        // REW 5.40 Beta 132 with this equaliser selected (two modal filters and a
-        // plain bell); note that a modal Q is not any textbook T60 identity — 120 Hz
-        // at -6 dB and T60 300 ms realizes Q 11.59, not the 16.4 that
-        // pi*f0*T60/ln(1000) would give — so the Q column is the only thing to read.
-        // Dropping these rows, as this format did before, silently left a room mode
-        // uncorrected.
+        // Modal rows realize a bell; read the Q column (120 Hz, -6 dB, T60 300 ms is Q 11.59, not pi*f0*T60/ln(1000)).
         EqualizationCurve curve = Format.Import(Bank(
             "True\tAuto\tModal\t120.0\t-6.0\t11.59\t10.35\t300\t",
             "True\tAuto\tModal\t45.0\t-4.5\t9.48\t4.75\t600\t",
@@ -282,8 +245,7 @@ public sealed class AudiotecFischerFormatTests
         Assert.All(curve.Bands, band => Assert.Equal(PeqBandType.Peaking, band.Type));
         Assert.Equal(new PeqBand(200, 4.0, -2.0), curve.Bands[2]);
 
-        // Written back they are plain bells: the processor has no modal slot, and the
-        // T60 was REW's optimizer metadata, not part of the filter the device runs.
+        // Written back as bells: the processor has no modal slot; T60 is REW optimizer metadata.
         Assert.Equal(
             "1\tTrue\tAuto\tPK\t120.0\t-6.0\t11.59\t10.35\t",
             Lines(Format.Export(curve))[2]);
@@ -292,35 +254,25 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Import_RefusesATruncatedOrRenumberedBank()
     {
-        // The bank is a fixed 30-slot table and a successful import REPLACES the
-        // EQ on screen, so anything that is not that table must fail recognition
-        // rather than arrive as an empty curve and wipe the user's tune.
+        // An import replaces the EQ on screen, so anything but the full table must fail recognition.
         string full = Bank("True\tAuto\tPK\t1000\t-3\t4.00\t250\t");
         Assert.True(Format.TryImport(full, out EqualizationCurve intact));
         Assert.Single(intact.Bands);
 
         string[] rows = full.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
-        // a bank cut short (a partial copy/paste, a truncated download)
         Assert.False(Format.TryImport(string.Join("\n", rows.Take(rows.Length - 1)), out _));
-        // the header alone — the case that used to import as "no bands"
         Assert.False(Format.TryImport("Audiotec_Fischer_Full_EQ_(30_bands)\n", out _));
-        // more rows than the channel has slots: this format would refuse to export it
         Assert.False(Format.TryImport(
             full + $"{AudiotecFischerFormat.SlotCount + 1}\tTrue\tAuto\tPK\t900\t-1\t2.00\t450\t\n",
             out _));
-        // renumbered/repeated rows are not the slot table either
         Assert.False(Format.TryImport(full.Replace("\n2\tTrue", "\n1\tTrue"), out _));
     }
 
     [Fact]
     public void Import_RequiresTheBankHeaderNotTheColumnLine()
     {
-        // REW prints the same "Number / Enabled / Control / Type ..." line above
-        // every equaliser's table, so thirty well-numbered rows under it may be
-        // another processor's bank entirely; only the bank header says whose slots
-        // these are. Recognising the columns alone would let a foreign table import
-        // and replace the EQ on screen.
+        // REW prints the same column line for every equaliser; only the bank header identifies the format.
         string columnsOnly =
             "Number\tEnabled\tControl\tType\tFrequency(Hz)\tGain(dB)\tQ\tBandwidth(Hz)\tTargetT60(ms)\t\r\n" +
             string.Concat(Enumerable
@@ -328,21 +280,15 @@ public sealed class AudiotecFischerFormatTests
                 .Select(slot => $"{slot}\tTrue\tAuto\tNone\t\r\n"));
         Assert.False(Format.TryImport(columnsOnly, out _));
 
-        // The column line is auxiliary the other way round: the bank header and its
-        // table are enough on their own, which is what a copy taken without the
-        // column row looks like.
         Assert.True(Format.TryImport(Bank("True\tAuto\tPK\t1000\t-3\t4.00\t250\t"), out EqualizationCurve curve));
         Assert.Single(curve.Bands);
 
-        // A real export carries both and still reads.
         Assert.True(Format.TryImport(RewExport, out _));
     }
 
     [Fact]
     public void Import_KeepsAFullBankOfBandsWithinTheSlotBudget()
     {
-        // Thirty bells fill the table; the curve type allows 32, the channel does
-        // not, and what imports must be what this format can write back.
         string full = Bank(Enumerable.Range(1, AudiotecFischerFormat.SlotCount)
             .Select(slot => $"True\tAuto\tPK\t{100 * slot}\t-1.0\t2.00\t{50 * slot}\t")
             .ToArray());
@@ -372,8 +318,6 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Export_WritesBellsAndShelvesInRewsRowShapes()
     {
-        // A bell row carries REW's Fc / Q bandwidth and ends in the empty TargetT60
-        // cell; a shelf row ends at its Q — the exact shapes of the real export.
         string[] lines = Lines(Format.Export(Mixed()));
 
         Assert.Equal("1\tTrue\tAuto\tLS_Q\t80.0\t4.5\t0.70", lines[2]);
@@ -393,8 +337,7 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void Export_RefusesMoreBandsThanTheBankHasSlots()
     {
-        // The library allows 32; the processor has 30. Dropping two silently is
-        // exactly the kind of quiet loss the caller cannot see, so refuse.
+        // The library allows 32 bands, the processor 30: refuse rather than drop silently.
         var overfull = new EqualizationCurve(
             Enumerable.Range(1, AudiotecFischerFormat.SlotCount + 1)
                 .Select(index => new PeqBand(100 * index, 2.0, -1.0)));
@@ -430,9 +373,7 @@ public sealed class AudiotecFischerFormatTests
     [Fact]
     public void RoundTrip_SurvivesARealExportUnchanged()
     {
-        // Import the REW file, write it back, import again: the same 20 bands. The
-        // bytes differ (our bandwidth is not truncated to four digits) but no band
-        // moves, which is what the PC-Tool would care about.
+        // Bytes differ (bandwidth not truncated) but no band moves.
         EqualizationCurve first = Format.Import(RewExport);
 
         EqualizationCurve second = Format.Import(Format.Export(first));

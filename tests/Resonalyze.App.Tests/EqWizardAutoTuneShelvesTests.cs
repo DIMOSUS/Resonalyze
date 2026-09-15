@@ -5,11 +5,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The Auto Tune Shelves switch. It changes the SHAPE of what a fit returns — a low
-/// and a high shelf may join the bells — so it is the user's to make, off unless they
-/// ask, and it has to survive a restart the way the rest of the fit's settings do.
-/// </summary>
 public sealed class EqWizardAutoTuneShelvesTests : IDisposable
 {
     private readonly string directory = Path.Combine(
@@ -51,8 +46,6 @@ public sealed class EqWizardAutoTuneShelvesTests : IDisposable
     [Fact]
     public void AFileFromBeforeTheSwitchExistedOpensWithBellsOnly()
     {
-        // Turning shelves on changes the curve a fit returns, so an existing
-        // installation must not find its Auto Tune quietly fitting a new shape.
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "measurement-settings.json");
         File.WriteAllText(
@@ -72,12 +65,7 @@ public sealed class EqWizardAutoTuneShelvesTests : IDisposable
     [InlineData(2.0f)]
     public void TheBoxSitsBesideCutsOnlyWithoutTouchingIt(float scale)
     {
-        // Shelves shares the row with Cuts only because the Auto Tune box has no room
-        // left below its button. Both are placed at designer coordinates and both
-        // auto-size to their text, and text grows faster than the slack between them
-        // does — which is exactly how the high-DPI overlaps in this app happened — so
-        // the row is measured at the scales a real display uses rather than at 96 DPI
-        // alone.
+        // Both controls auto-size at designer coordinates, so the row is measured at real display scales.
         using var panel = new EqWizardPanel();
         if (scale != 1.0f)
         {
@@ -99,12 +87,7 @@ public sealed class EqWizardAutoTuneShelvesTests : IDisposable
             $"at {scale:0.00}x Shelves ({shelves.Bounds}) leaves the Auto Tune box " +
             $"({box.ClientRectangle}).");
 
-        // Control.Scale moves the boxes without regrowing their text, so the loop above
-        // proves the positions separate and no more. What protects the row on a real
-        // 150% display is that DPI autoscaling grows the coordinates and the glyphs by
-        // the SAME factor, which preserves whatever proportion of slack the designer
-        // left — so the slack is what gets pinned, at the one scale where the text is
-        // measured honestly.
+        // Control.Scale does not regrow text, so only the designer slack is pinned at 1.0; DPI autoscaling preserves its proportion.
         if (scale == 1.0f)
         {
             Assert.True(

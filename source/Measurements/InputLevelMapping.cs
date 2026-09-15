@@ -1,14 +1,8 @@
 namespace Resonalyze;
 
-/// <summary>
-/// Maps recorded per-channel levels onto the input meter snapshot (microphone +
-/// loopback entries) — the one place that decides how a full-scale channel is
-/// flagged: the microphone counts as clipped, the loopback as the full-scale
-/// reference. Shared by the sweep and noise measurements.
-/// </summary>
+/// <summary>Single place deciding full-scale flags: mic counts as clipped, loopback as full-scale reference.</summary>
 internal static class InputLevelMapping
 {
-    /// <summary>Maps the audio layer's role-resolved live levels onto the meter snapshot.</summary>
     public static InputLevelMeterSnapshot Map(AudioInputLevels levels)
     {
         ArgumentNullException.ThrowIfNull(levels);

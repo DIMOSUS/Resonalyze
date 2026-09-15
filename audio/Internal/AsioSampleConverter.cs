@@ -3,10 +3,6 @@ using NAudio.Wave.Asio;
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Converts one copied ASIO queue channel to normalized floats on the capture
-/// worker. The driver callback only copies bytes into a preallocated pump slot.
-/// </summary>
 internal sealed class AsioSampleConverter
 {
     private const float Int32Scale = 1.0f / 2147483648.0f;

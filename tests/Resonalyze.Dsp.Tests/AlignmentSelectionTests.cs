@@ -2,18 +2,13 @@ namespace Resonalyze.Dsp.Tests;
 
 public sealed class AlignmentSelectionTests
 {
-    // PreferSubLeading scores through LossDb so the tests control the
-    // prior-free figure directly (the engine passes its dip-penalized
-    // AcousticScore the same way).
+    // Scores through LossDb so tests control the prior-free figure (the engine passes AcousticScore the same way).
     private static double Score(AlignmentCandidate candidate) => candidate.LossDb;
 
     [Fact]
     public void PreferSubLeading_TrailingPickYieldsToLeadingLobeWithinMargin()
     {
-        // The field shape (an 80 Hz sub junction, leadSign +1: the stack is
-        // searched, larger delay = sub leads): the chosen candidate leaves
-        // the sub trailing by ~1.8 ms and the leading lobe sits 0.7 dB down
-        // — inside the precedence margin, so psychoacoustics decide.
+        // 80 Hz sub junction, leadSign +1 (larger delay = sub leads): the leading lobe is 0.7 dB down, inside the precedence margin.
         var trailing = new AlignmentCandidate(0.1, false, -0.8, LossDb: -0.7);
         var leading = new AlignmentCandidate(5.8, true, -1.8, LossDb: -1.4);
 
@@ -42,8 +37,6 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void PreferSubLeading_InertWhenTheChosenAlreadyLeads()
     {
-        // Already on the leading side (and even inside the slack): nothing
-        // to re-decide, whatever else the pool holds.
         var chosenLead = new AlignmentCandidate(2.1, false, -0.8, LossDb: -0.9);
         var deeperLead = new AlignmentCandidate(4.5, false, -0.7, LossDb: -0.5);
 
@@ -58,8 +51,6 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void PreferSubLeading_IgnoresLeadsBeyondTheReach()
     {
-        // A sub leading by whole periods is detached the other way: the only
-        // "leading" candidate sits past the reach, so the trailing pick stands.
         var trailing = new AlignmentCandidate(0.1, false, -0.8, LossDb: -0.7);
         var farLead = new AlignmentCandidate(16.0, false, -1.0, LossDb: -0.8);
 
@@ -74,8 +65,7 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void PreferSubLeading_LeadSignFlipsWhenTheSubItselfIsSearched()
     {
-        // With the SUB searched (leadSign -1), the sub leads where its OWN
-        // delay is smaller than the anchor.
+        // Sub searched (leadSign -1): the sub leads where its own delay is smaller than the anchor.
         var trailing = new AlignmentCandidate(3.6, false, -0.8, LossDb: -0.7);
         var leading = new AlignmentCandidate(-2.1, true, -1.8, LossDb: -1.2);
 
@@ -107,11 +97,7 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void Select_JudgesPolarityPurityAgainstTheNeighbor()
     {
-        // With an INVERTED settled neighbor the pure pair is the
-        // equally-inverted candidate: an absolute-flag preference used to
-        // "rescue" the mixed pair here and pay a quarter period of delay for
-        // the cosmetics (the field tweeter that slid off the onset line its
-        // inverted twin sat on).
+        // Inverted settled neighbour: the pure pair is the equally-inverted candidate, not the absolute-flag 'rescue'.
         var mixedNormal = new AlignmentCandidate(1.6, false, -0.50);
         var pureInverted = new AlignmentCandidate(2.0, true, -0.60);
 
@@ -125,8 +111,6 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void Select_PrefersNonInvertedWithinMargin()
     {
-        // The inverted impostor wins by less than the invert margin, so the
-        // non-inverted candidate must be chosen.
         var inverted = new AlignmentCandidate(2.0, true, -0.50);
         var normal = new AlignmentCandidate(1.4, false, -0.65);
 
@@ -139,7 +123,6 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void Select_KeepsInvertedWinnerBeyondMargin()
     {
-        // A genuinely flipped driver wins by more than the margin and stays.
         var inverted = new AlignmentCandidate(2.0, true, -0.50);
         var normal = new AlignmentCandidate(1.4, false, -1.10);
 
@@ -152,8 +135,7 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void Select_BreaksNearTiesByClosenessToBase()
     {
-        // Two non-inverted candidates within the tie margin: the one closer to
-        // the arrival-based base delta wins even though it scores lower.
+        // Within the tie margin the candidate closer to the arrival-based delta wins despite a lower score.
         var farBetter = new AlignmentCandidate(3.0, false, -0.50);
         var nearSlightlyWorse = new AlignmentCandidate(1.1, false, -0.55);
 
@@ -166,7 +148,6 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void Select_DoesNotTieBreakAcrossTheMargin()
     {
-        // Outside the tie margin the score decides, regardless of distance.
         var farBetter = new AlignmentCandidate(3.0, false, -0.50);
         var nearMuchWorse = new AlignmentCandidate(1.1, false, -0.75);
 
@@ -179,9 +160,7 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void Select_TieBreakStaysWithinChosenPolarity()
     {
-        // The inverted winner keeps its polarity group for the delay tie-break:
-        // a near-tied non-inverted candidate beyond the invert margin must not
-        // participate.
+        // The inverted winner's delay tie-break excludes non-inverted candidates beyond the invert margin.
         var inverted = new AlignmentCandidate(2.0, true, -0.50);
         var invertedFar = new AlignmentCandidate(4.0, true, -0.58);
         var normal = new AlignmentCandidate(1.0, false, -1.10);
@@ -195,12 +174,7 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void Select_BreaksNearTiesTowardTheArrivalAcrossPolarities()
     {
-        // The 80 Hz sub/woofer junction under a modal-latched arrival,
-        // verbatim: the non-inverted lobe 3.50 ms from the prior outscored
-        // the true inverted lobe 0.54 ms from it by 0.04 dB, and the old
-        // same-polarity-only tie-break let the score hand the sub a 3.5 ms
-        // attack lag. Fractions of a dB never choose a lobe — the arrival
-        // does, regardless of polarity.
+        // 80 Hz latch: the normal lobe 3.50 ms from the prior beat the inverted lobe 0.54 ms away by 0.04 dB; the arrival decides.
         var normalFar = new AlignmentCandidate(7.359, false, -2.57);
         var invertedNear = new AlignmentCandidate(11.398, true, -2.61);
         var normalFarther = new AlignmentCandidate(14.077, false, -3.39);
@@ -214,10 +188,6 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void Select_StillPrefersAReachableNormalAfterTheCrossPolarityTieBreak()
     {
-        // The cross-polarity tie-break hands the near-tie to an inverted
-        // candidate at the arrival; the invert preference then still swaps to
-        // a non-inverted partner that sits within the arrival reach — the
-        // classic flip rescue is unaffected by the new first pass.
         var invertedNear = new AlignmentCandidate(1.5, true, -0.50);
         var normalFlip = new AlignmentCandidate(2.0, false, -0.55);
 
@@ -230,12 +200,7 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void Select_KeepsTheInvertedWinnerWhenTheRescueIsBeyondTheArrivalReach()
     {
-        // The 80 Hz sub/midbass field failure verbatim: the inverted winner
-        // sits 0.79 ms from the arrival (the whitened correlation put its
-        // trough at r -0.97 there), while the best non-inverted candidate is a
-        // lobe 4.98 ms out that the WIDE-SEED-diluted prior let within
-        // 0.03 dB. Swapping parked the sub 5 ms behind the midbass; the reach
-        // gate must keep the inverted winner.
+        // Inverted winner 0.79 ms from the arrival vs a normal lobe 4.98 ms out within 0.03 dB: the reach gate keeps the winner.
         var inverted = new AlignmentCandidate(0.499, true, -1.06);
         var normalFar = new AlignmentCandidate(-3.694, false, -1.10);
         var normalWorse = new AlignmentCandidate(4.752, false, -2.49);
@@ -249,9 +214,7 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void Select_SwapsToACloserRescueWhenTheBestNormalIsBeyondReach()
     {
-        // The reach gate filters candidates, not the preference itself: with
-        // the best-scoring non-inverted lobe beyond reach, a lower-scoring one
-        // near the arrival still rescues the polarity.
+        // The reach gate filters candidates: a nearer, lower-scoring normal lobe still rescues the polarity.
         var inverted = new AlignmentCandidate(0.5, true, -1.0);
         var normalFar = new AlignmentCandidate(-3.7, false, -1.1);
         var normalNear = new AlignmentCandidate(0.9, false, -1.45);
@@ -277,9 +240,6 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void DeclinedInvertRescue_IsNullWhenAReachableRescueExists()
     {
-        // A within-reach normal candidate means Select swapped rather than
-        // declined — nothing to report even though a farther one also sits in
-        // margin.
         var inverted = new AlignmentCandidate(0.5, true, -1.0);
         var normalFar = new AlignmentCandidate(-3.7, false, -1.1);
         var normalNear = new AlignmentCandidate(0.9, false, -1.45);
@@ -298,8 +258,6 @@ public sealed class AlignmentSelectionTests
             [inverted, normalOutscored], baseDeltaMs: 1.285));
     }
 
-    // AutoAlignmentEngine.AcousticScore: the prior-free figure the promotion
-    // compares across search windows.
     private static double AcousticScore(AlignmentCandidate candidate) =>
         candidate.LossDb + VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
         (candidate.DipDb - candidate.LossDb);
@@ -307,15 +265,8 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void SelectPromotionLobe_SnapsToArrivalNearestLobeNotDeepestSum()
     {
-        // The field failure verbatim: a left tweeter at a 1500 Hz mid/tweeter
-        // split (period 1000/1500 ≈ 0.667 ms). The arrival-anchored fine pick
-        // (10.320 ms) combs to a -5.7 dB dip, so a promotion is warranted, but
-        // the wide diagnostic window holds a comb of same-polarity lobes. The
-        // deepest sum, 8.926 ms, beats the user's physically-correct 9.524 ms by
-        // only 0.14 dB while sitting a full period farther from the arrival — so
-        // score alone hops the tweeter one lobe too far. The arrival must break
-        // that near-tie, exactly as it does for the fine pick. Values are the
-        // logged [diag] wide candidates (delay, invert, score, avg=Loss, dip).
+        // 1500 Hz tweeter: the deepest wide-window lobe beats the correct one by 0.14 dB a full period farther out; the arrival breaks the tie.
+        // Values are the logged [diag] wide candidates (delay, invert, score, avg=Loss, dip).
         AlignmentCandidate[] wide =
         [
             new(9.231, true, -1.27, -0.42, -1.9),
@@ -327,7 +278,6 @@ public sealed class AlignmentSelectionTests
         ];
         var finePick = new AlignmentCandidate(10.320, false, -3.27, -0.88, -5.7);
 
-        // The score-only winner IS the wrong lobe — this is the bug the snap fixes.
         AlignmentCandidate scoreWinner = AlignmentSelection.Select(wide, 10.302);
         Assert.Equal(8.926, scoreWinner.DelayMs);
 
@@ -347,8 +297,6 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void SelectPromotionLobe_KeepsDeepestWhenItIsAlreadyArrivalNearest()
     {
-        // A closer-to-arrival lobe that also sums deeper leaves nothing to snap:
-        // the gate winner is returned unchanged.
         AlignmentCandidate[] wide =
         [
             new(9.6, false, -1.20, -0.40, -1.6),
@@ -373,11 +321,7 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void SelectPromotionLobe_KeepsBelowMarginLobesOutOfTheSnap()
     {
-        // A lobe closer to the arrival that does NOT clear the gate on its own
-        // (it barely beats the fine pick) must not be snapped to — the snap only
-        // ranges over lobes that independently earn a promotion. Here the closer
-        // 9.9 ms lobe gains only ~0.5 dB over the fine pick, so the gate winner
-        // stands.
+        // The snap ranges only over lobes that independently earn a promotion (9.9 ms gains ~0.5 dB only).
         var gateWinner = new AlignmentCandidate(8.9, false, -1.27, -0.44, -1.7);
         AlignmentCandidate[] wide =
         [
@@ -402,8 +346,6 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void GateWideSeedLobe_PassesThroughAChosenWithinReach()
     {
-        // The chosen candidate sits inside the trusted window's reach — the
-        // gate has nothing to defend against and must not touch the pick.
         var chosen = new AlignmentCandidate(1.1, false, -0.90, -0.30, -1.5);
         AlignmentCandidate[] candidates =
         [
@@ -421,12 +363,7 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void GateWideSeedLobe_ReturnsTheArrivalLobeWhenTheHopLacksTheMargin()
     {
-        // The v3 field failure: at an 80 Hz sub/midbass junction the wide-seed
-        // window admitted a lobe 4.4 ms off the arrival that beat the
-        // arrival-adjacent inverted candidate by 0.13 dB — 0.03 dB past the
-        // tie margin — and started the midbass 4 ms early. Prior-free the hop
-        // gains only ~0.6 dB, far below the 1.6 dB a lobe hop needs, so the
-        // gate must hand the pick back to the arrival lobe.
+        // v3: a lobe 4.4 ms off beat the arrival lobe by 0.13 dB; prior-free the hop gains ~0.6 dB, under the 1.6 dB a hop needs.
         var farLobe = new AlignmentCandidate(-4.026, false, -1.00, -0.14, -0.8);
         var arrivalLobe = new AlignmentCandidate(-0.246, true, -1.13, -0.29, -2.0);
         AlignmentCandidate[] candidates =
@@ -446,9 +383,7 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void GateWideSeedLobe_KeepsAFarLobeThatClearsTheMargin()
     {
-        // A genuine recovery: the arrival-adjacent candidate sums badly and the
-        // far lobe is plainly (not marginally) better on the prior-free score,
-        // so it stands — the same standard the wide-window promotion applies.
+        // A plainly better far lobe stands (the wide-window promotion standard).
         var farLobe = new AlignmentCandidate(-4.0, false, -0.60, -0.10, -0.4);
         var arrivalLobe = new AlignmentCandidate(-0.2, true, -2.30, -1.20, -3.6);
 
@@ -462,8 +397,6 @@ public sealed class AlignmentSelectionTests
     [Fact]
     public void GateWideSeedLobe_StandsWhenNoCandidateSitsNearTheArrival()
     {
-        // With no local optimum inside the reach there is no arrival lobe to
-        // defend — the search's own pick stands rather than inventing one.
         var farLobe = new AlignmentCandidate(-4.0, false, -1.00, -0.14, -0.8);
         AlignmentCandidate[] candidates =
         [

@@ -2,13 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Pins the per-side gate placement of the Virtual DSP magnitude snapshot: the
-/// two sides' arrivals sit at different times and the project stores their
-/// pinned offsets separately, so the active side's pin must never window the
-/// opposite side's sum (the field case: L pinned at 10 ms, R pinned at 14 ms,
-/// viewing L — the dashed Sum R must be gated at 14 ms).
-/// </summary>
+/// <summary>Field case: L pinned at 10 ms, R at 14 ms, viewing L - the dashed Sum R must be gated at 14 ms.</summary>
 public sealed class VirtualCrossoverMagnitudeGateTests
 {
     private static VirtualCrossoverPanel.MagnitudeGateSnapshot Snapshot(

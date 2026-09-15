@@ -174,10 +174,7 @@ public sealed class DarkComboBox : UserControl
         LayoutInnerControls();
     }
 
-    /// <summary>
-    /// Optional default selection. When set, a small "R" reset button appears to the
-    /// right of the drop-down arrow that restores this item.
-    /// </summary>
+    /// <summary>When set, an "R" reset button restores this item.</summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public object? DefaultSelectedItem
@@ -202,8 +199,7 @@ public sealed class DarkComboBox : UserControl
 
         SelectedItem = defaultSelectedItem;
 
-        // Reset is a deliberate user commit; raise the committed event so listeners
-        // (e.g. the docked settings host) apply it, like picking from the drop-down.
+        // Reset is a user commit, so listeners apply it like a drop-down pick.
         SelectionChangeCommitted?.Invoke(this, EventArgs.Empty);
     }
 
@@ -448,12 +444,7 @@ public sealed class DarkComboBox : UserControl
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        // DeviceDpi is only final once the handle exists in its monitor's context, and
-        // the drop-down button column is positioned from it. A control created at
-        // runtime (e.g. an added Virtual DSP channel) lays out at the default 96 DPI in
-        // the constructor; re-run it here so the button and text are not left offset on
-        // a higher-DPI display. Designer-placed instances are covered by the form's
-        // startup scale pass; runtime-added ones are not.
+        // DeviceDpi is final only once the handle exists; runtime-added controls would keep a 96-DPI layout.
         LayoutInnerControls();
         Invalidate();
     }
@@ -495,8 +486,7 @@ public sealed class DarkComboBox : UserControl
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
-        // Enter is deliberately not handled: like a native ComboBox, it must
-        // reach the dialog so an AcceptButton can fire while the combo has focus.
+        // Enter is not handled so an AcceptButton can fire, like a native ComboBox.
         switch (keyData)
         {
             case Keys.F4:
@@ -526,8 +516,6 @@ public sealed class DarkComboBox : UserControl
             return;
         }
 
-        // A UserControl does not take focus on click by itself; without this the
-        // combo never shows keyboard focus and arrow keys keep going elsewhere.
         if (Enabled && !ContainsFocus)
         {
             Focus();
@@ -544,11 +532,7 @@ public sealed class DarkComboBox : UserControl
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
-        // Only a focused (i.e. clicked-into) combo responds to the wheel. Merely
-        // hovering must not change the selection — otherwise scrolling the channel
-        // list silently edits whatever combo the cursor happens to pass over. When
-        // unfocused the wheel is left unconsumed so it bubbles to the AutoScroll
-        // parent and scrolls the list as expected.
+        // Only a focused combo takes the wheel; unfocused it bubbles so scrolling the list does not edit combos.
         if (!Enabled || !ContainsFocus || dropDownVisible || modelComboBox.Items.Count == 0)
         {
             return;
@@ -556,9 +540,6 @@ public sealed class DarkComboBox : UserControl
 
         MoveSelection(e.Delta > 0 ? -1 : +1, committed: true);
 
-        // Consume the wheel so it only changes the selection, and does not bubble
-        // to an AutoScroll parent (e.g. the scrolling channel list) which would
-        // scroll the panel instead.
         if (e is HandledMouseEventArgs handled)
         {
             handled.Handled = true;

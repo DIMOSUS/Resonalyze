@@ -1,23 +1,10 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// The sample-count waiter list shared by the capture classes (SoundRecorder,
-/// AsioFullDuplexSession): callers await "N samples recorded" and the audio
-/// callback completes the due waiters as the accumulator advances.
-///
-/// The registry does no locking of its own — every member must be called under
-/// the owner's capture lock, the same lock that guards the accumulator, so a
-/// waiter can never be added after its threshold silently passed. Completing
-/// under the lock is safe because the signals run their continuations
-/// asynchronously.
-/// </summary>
+/// <summary>No locking of its own: call under the owner's capture lock, so a waiter cannot miss its threshold.</summary>
 internal sealed class SampleWaiterRegistry
 {
     private readonly List<SampleWaiter> waiters = new();
 
-    /// <summary>
-    /// A capture signal whose awaiters never run inline on the audio thread.
-    /// </summary>
     public static TaskCompletionSource<bool> NewSignal() =>
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -50,12 +37,7 @@ internal sealed class SampleWaiterRegistry
         waiters.Clear();
     }
 
-    /// <summary>
-    /// Faults every pending waiter. Called when the capture stops unexpectedly
-    /// (device unplugged, driver error): the stop event completes only the
-    /// first-buffer and stopped signals, so a waiter blocked on a sample count
-    /// that will never arrive would hang forever.
-    /// </summary>
+    /// <summary>The stop event completes only the first-buffer and stopped signals, so pending sample waiters must be faulted.</summary>
     public void FaultAll(Exception exception)
     {
         foreach (SampleWaiter waiter in waiters)

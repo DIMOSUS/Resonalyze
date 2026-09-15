@@ -1,24 +1,12 @@
 namespace Resonalyze.Audio;
 
-/// <summary>Which capture generation a slot's payload belongs to, so a block
-/// still in flight when the session moved on can be dropped.</summary>
+/// <summary>Capture generation of a slot's payload, so a block in flight across a reset is dropped.</summary>
 internal interface ICapturePumpSlot
 {
     int Generation { get; set; }
 }
 
-/// <summary>
-/// The shared machine behind <see cref="PcmCapturePump"/> and
-/// <see cref="AsioCapturePump"/>: a bounded slot pool, a worker that processes
-/// slots off the device callback, and the generation bookkeeping that lets a
-/// session reject a packet accepted before the last reset. Reset, completion and
-/// disposal drop queued blocks; completion preserves a terminal failure.
-///
-/// Filling a slot stays in the derived pump: the callback must not allocate, and
-/// only the derived pump knows the payload shape. Its <c>TryEnqueue</c> takes
-/// <see cref="Sync"/>, validates, then drives TryTakeSlot → copy → PublishSlot.
-/// Every "<see cref="Sync"/> held" member below is part of that sequence.
-/// </summary>
+/// <summary>Shared slot pool + worker + generation bookkeeping for the PCM and ASIO pumps. A derived <c>TryEnqueue</c> holds <see cref="Sync"/> and drives TryTakeSlot → copy → PublishSlot (no allocation in the callback).</summary>
 internal abstract class CapturePump<TSlot, TBlock> : IDisposable
     where TSlot : class, ICapturePumpSlot
 {
@@ -57,10 +45,7 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
         pendingSlots = new Queue<int>(slotCount);
         freeSlots = new Stack<int>(slotCount);
 
-        // Created, NOT started: a derived constructor still validates its own
-        // arguments and lays out its slots, and anything it throws leaves the
-        // object unreachable — a worker running by then could never be disposed.
-        // Every derived constructor ends with StartWorker().
+        // Not started here: a throwing derived constructor would leave an undisposable running worker. Derived constructors end with StartWorker().
         worker = new Thread(Run)
         {
             IsBackground = true,
@@ -68,11 +53,9 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
         };
     }
 
-    /// <summary>Last statement of a derived constructor — see the base one.</summary>
     protected void StartWorker()
     {
-        // Both under the lock so a concurrent Dispose cannot see the flag and the
-        // thread state out of step; Run() blocks on Sync until this returns.
+        // Flag and thread start under one lock so a concurrent Dispose sees them in step.
         lock (Sync)
         {
             worker.Start();
@@ -80,7 +63,6 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
         }
     }
 
-    /// <summary>Test seam: pins that the base constructor leaves the worker unstarted.</summary>
     internal bool WorkerStarted
     {
         get
@@ -92,7 +74,6 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
         }
     }
 
-    /// <summary>The lock guarding every field; a derived enqueue holds it.</summary>
     protected object Sync { get; } = new();
 
     internal bool IsStopping
@@ -143,8 +124,7 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
         }
     }
 
-    /// <summary>Waits out every block accepted before the callback source stopped.
-    /// Callers must prevent new enqueues before entering.</summary>
+    /// <summary>Waits out every accepted block; callers must stop new enqueues first.</summary>
     public void Drain()
     {
         if (Thread.CurrentThread == worker)
@@ -177,26 +157,21 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
             Monitor.PulseAll(Sync);
         }
 
-        // Join on a never-started thread throws, so a pump abandoned by a failed
-        // derived constructor still disposes cleanly.
+        // Join on a never-started thread throws.
         if (started && Thread.CurrentThread != worker)
         {
             worker.Join();
         }
     }
 
-    /// <summary>The payload handed to the consumer, built on the worker thread.</summary>
     protected abstract TBlock CreateBlock(TSlot slot);
 
-    /// <summary>Stopped or terminally failed: a derived enqueue returns false
-    /// without touching the pool. Sync held.</summary>
+    /// <summary>Sync held.</summary>
     protected bool IsStoppedOrFailed => stopping || failed;
 
-    /// <summary>A block is still queued. Sync held.</summary>
     protected bool HasPendingSlots => pendingSlots.Count > 0;
 
-    /// <summary>Blocks until no slot is in flight, so the pool can be
-    /// reallocated underneath the worker. Sync held.</summary>
+    /// <summary>Blocks until no slot is in flight, so the pool can be reallocated. Sync held.</summary>
     protected void WaitForIdle()
     {
         while (inFlightCount > 0)
@@ -205,7 +180,6 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
         }
     }
 
-    /// <summary>(Re)allocates the pool. Sync held, worker idle — see WaitForIdle.</summary>
     protected void AllocateSlots(Func<TSlot> createSlot)
     {
         slots = new TSlot[slotCount];
@@ -217,12 +191,9 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
         }
     }
 
-    /// <summary>The pool has been allocated. Sync held.</summary>
     protected bool HasSlots => slots.Length > 0;
 
-    /// <summary>Takes a free slot to fill. False — after arming the terminal
-    /// overflow failure — when the pool is exhausted, i.e. processing fell behind
-    /// the device. Sync held.</summary>
+    /// <summary>False, after arming the terminal overflow failure, when processing fell behind the device. Sync held.</summary>
     protected bool TryTakeSlot(int frameCount, out int slotIndex, out TSlot slot)
     {
         if (freeSlots.Count == 0)
@@ -237,8 +208,7 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
             return false;
         }
 
-        // Before the pop: an overflowing frame count must not leave a slot taken
-        // out of the pool and never returned. PublishSlot can then add blindly.
+        // Check before the pop so an overflow cannot leak a taken slot.
         _ = checked(acceptedFrames + frameCount);
 
         slotIndex = freeSlots.Pop();
@@ -246,15 +216,11 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
         return true;
     }
 
-    /// <summary>Returns a taken slot unused, for a derived validation that
-    /// rejects the packet after taking it. Sync held.</summary>
     protected void ReturnSlot(int slotIndex)
     {
         freeSlots.Push(slotIndex);
     }
 
-    /// <summary>Queues a filled slot: stamps the generation, counts the frames
-    /// (already checked by TryTakeSlot) and wakes the worker. Sync held.</summary>
     protected void PublishSlot(int slotIndex, int frameCount)
     {
         acceptedFrames = checked(acceptedFrames + frameCount);

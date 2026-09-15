@@ -1,13 +1,6 @@
 ﻿namespace Resonalyze.Audio;
 
-/// <summary>
-/// The shared finite play-and-capture session for the PCM backends (Wave/MME
-/// and WASAPI Shared/Exclusive). Opens the capture device + playback device
-/// once and replays across the runs of an averaged sweep; the accumulator
-/// resets between runs instead of reopening the endpoint. WASAPI counters are
-/// folded into an <see cref="AudioSessionDiagnostics"/> snapshot; MME produces
-/// none.
-/// </summary>
+/// <summary>Finite session for Wave/MME and WASAPI: devices open once and replay across averaged runs.</summary>
 internal sealed class PcmDuplexSession : IAudioDuplexSession
 {
     private readonly IAudioCaptureDevice capture;
@@ -18,8 +11,7 @@ internal sealed class PcmDuplexSession : IAudioDuplexSession
     private readonly string backendName;
     private readonly int requestedBufferMilliseconds;
     private readonly int signalSampleCount;
-    // Built once from the bound signal: the render device rejects a different
-    // source after the first run, so the session replays this one stream.
+    // The render device rejects a different source after the first run.
     private readonly PcmPlaybackStream playbackStream;
     private bool disposed;
 
@@ -65,9 +57,6 @@ internal sealed class PcmDuplexSession : IAudioDuplexSession
             signalSampleCount,
             captureTailSamples,
             cancellationToken).ConfigureAwait(false);
-        // Stop accumulating between runs: the device keeps running (meter stays
-        // live) but the gap between averaged runs no longer grows memory.
-        // The next run's orchestrator Reset resumes capture.
         captureSession.Pause();
 
         AudioCaptureAnomalies anomalies = AudioCaptureAnomalies.None;

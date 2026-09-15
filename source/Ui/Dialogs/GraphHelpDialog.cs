@@ -2,26 +2,10 @@ using Resonalyze.Ui;
 
 namespace Resonalyze.Ui.Dialogs;
 
-/// <summary>
-/// The graph controls on one card, opened with F1 over any graph
-/// (<see cref="PlotGestureHelp"/> is what it lists). Modeless and single-instance
-/// on purpose: a cheat sheet is read WHILE the other hand tries the gesture, so it
-/// must not hold the app, and F1 pressed again brings the one window forward rather
-/// than stacking another.
-/// </summary>
-/// <remarks>
-/// The window and its three parts are built in the designer, so the form gets the
-/// one scaling pass <c>AutoScaleMode.Dpi</c> owes it and every size stated there is
-/// in the designer's 96 DPI. The ROWS are added here because they come from a list,
-/// but only into the designer's <c>TableLayoutPanel</c> and only in logical units:
-/// each label auto-sizes to the already-scaled font, and the margins and the wrap
-/// width are scaled by the same pass. Nothing multiplies a size by the DPI itself —
-/// that pass and this one would square the factor.
-/// </remarks>
+/// <summary>F1 graph-controls card (<see cref="PlotGestureHelp"/>), modeless and single-instance: read while trying the gesture.</summary>
+/// <remarks>Rows are added in logical units into the designer's table; never multiply by DPI here, or the factor is squared.</remarks>
 internal sealed partial class GraphHelpDialog : Form
 {
-    // One window at a time, kept across F1 presses. Static because the window is
-    // the app's, not any one plot's: the same card describes every graph.
     private static GraphHelpDialog? openWindow;
 
     private GraphHelpDialog()
@@ -33,10 +17,6 @@ internal sealed partial class GraphHelpDialog : Form
         BuildRows();
     }
 
-    /// <summary>
-    /// Shows the card, or brings the open one forward. <paramref name="owner"/> is
-    /// the window it belongs to, so it stays above it and closes with it.
-    /// </summary>
     public static void ShowFor(IWin32Window? owner)
     {
         if (openWindow is { IsDisposed: false } already)
@@ -69,15 +49,11 @@ internal sealed partial class GraphHelpDialog : Form
     {
         base.OnShown(e);
 
-        // The card is as tall as it needs to be at 96 DPI, and a display that scales
-        // it further is not asked to make room: it is trimmed to the desktop rather
-        // than hanging off the bottom of it, and what does not fit scrolls. Device
-        // pixels on both sides of this line, which is why it converts.
+        // Trimmed to the desktop (device pixels on both sides); what does not fit scrolls.
         Rectangle desktop = Screen.FromControl(this).WorkingArea;
         Height = Math.Min(Height, desktop.Height - LogicalToDeviceUnits(40));
 
-        // CenterParent is a MODAL setting; a modeless window has to place itself,
-        // and it is placed once it knows its own scaled size.
+        // CenterParent only applies to modal windows.
         if (Owner is not Form parent)
         {
             return;
@@ -91,7 +67,6 @@ internal sealed partial class GraphHelpDialog : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        // Esc closes a modeless window too, but only because it is asked to:
         // DialogResult does nothing outside ShowDialog.
         if (keyData == Keys.Escape)
         {

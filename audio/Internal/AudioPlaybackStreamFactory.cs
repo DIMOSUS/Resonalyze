@@ -2,11 +2,7 @@ using NAudio.Wave;
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Builds the concrete NAudio playback stream a backend needs from a neutral
-/// <see cref="AudioPlaybackSignal"/>: PCM for Wave/MME/WASAPI, IEEE float for
-/// ASIO. The wave provider never escapes the audio library.
-/// </summary>
+/// <summary>PCM for Wave/MME/WASAPI, IEEE float for ASIO.</summary>
 internal static class AudioPlaybackStreamFactory
 {
     public static PcmPlaybackStream CreatePcm(AudioPlaybackSignal signal)
@@ -27,7 +23,6 @@ internal static class AudioPlaybackStreamFactory
     }
 }
 
-/// <summary>Owns a PCM stream set and its rewindable playback stream.</summary>
 internal sealed class PcmPlaybackStream : IDisposable
 {
     private readonly PcmStreamSet set;

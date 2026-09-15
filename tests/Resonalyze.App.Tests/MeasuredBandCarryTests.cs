@@ -2,21 +2,11 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The paths that draw a measured curve from something OTHER than the measurement —
-/// a captured overlay, a wizard preview — and have to break where it breaks.
-/// </summary>
-/// <remarks>
-/// Each of them stores or re-renders a raw spectrum, and the spectrum is deliberately
-/// stored UNMASKED so a later re-smoothing at any width is exact. That makes the band
-/// something these paths must carry and re-apply, and each one that forgot drew a
-/// confident curve beside a broken one, from the same response.
-/// </remarks>
+/// <summary>Raw spectra are stored unmasked for exact re-smoothing, so every re-rendering path must carry and re-apply the band.</summary>
 public sealed class MeasuredBandCarryTests
 {
     private const double LowHz = 565.0;
 
-    // A flat spectrum on the linear grid the renderer resamples from.
     private static List<SignalPoint> Spectrum() =>
         Enumerable.Range(1, 4_000)
             .Select(bin => new SignalPoint(bin * 6.0, -30.0))
@@ -33,9 +23,7 @@ public sealed class MeasuredBandCarryTests
             Spectrum(), [], smoothing, new MeasuredBand(LowHz, 8_000.0));
 
         Assert.NotEmpty(curve);
-        // The break lands where the measurement ended, not where the smoothing window
-        // happens to reach — which is the whole reason the mask is applied to the
-        // finished curve rather than to the spectrum feeding it.
+        // The mask applies to the finished curve, so the break lands where the measurement ended, not where smoothing reaches.
         Assert.All(
             curve,
             point => Assert.Equal(
@@ -45,8 +33,7 @@ public sealed class MeasuredBandCarryTests
     [Fact]
     public void ARawSpectrumWithNoBandIsLeftAlone()
     {
-        // The default, and what a legacy overlay, an imported text curve and a live
-        // RTA capture all read as: nothing was ever masked for them and nothing is now.
+        // A masked point must not consume a correction entry and shift the rest.
         List<SignalPoint> curve = RawCurveRenderer.Render(Spectrum(), [], 6);
 
         Assert.All(curve, point => Assert.True(double.IsFinite(point.Y)));
@@ -55,9 +42,6 @@ public sealed class MeasuredBandCarryTests
     [Fact]
     public void TheBandIsAppliedAfterTheCalibrationToo()
     {
-        // A break is not a level: correcting it would turn NaN into NaN anyway, but the
-        // order matters for the opposite case — a masked point must not consume a
-        // correction entry and shift the rest.
         var correction = new double[RawCurveRenderer.PointCount];
         Array.Fill(correction, 2.0);
 
@@ -106,8 +90,6 @@ public sealed class MeasuredBandCarryTests
     [Fact]
     public void AFileWrittenBeforeTheBandExistedMeasuresEverything()
     {
-        // Zero and zero, which MeasuredBand reads as "not narrowed" — an older overlay
-        // must keep drawing exactly what it drew.
         var band = new MeasuredBand(
             new OverlayFile().MeasuredLowFrequencyHz,
             new OverlayFile().MeasuredHighFrequencyHz);
@@ -137,9 +119,6 @@ public sealed class MeasuredBandCarryTests
     [Fact]
     public void TheWizardsGatedPreviewStopsWhereItsSourceDoes()
     {
-        // Both curves the wizard draws for a Virtual DSP handoff come from this
-        // renderer — the bare one and the corrected one — so a band it ignored showed
-        // as a break on the source and a continuous line on the preview beside it.
         var impulse = new System.Numerics.Complex[8_192];
         impulse[64] = System.Numerics.Complex.One;
         var gate = new PhaseAnalysisSettings(

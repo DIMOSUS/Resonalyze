@@ -4,25 +4,16 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A frequency field used to move by a fixed 10 Hz, which is nearly half an octave at
-/// 30 Hz and a rounding error at 15 kHz. With
-/// <see cref="DarkNumericUpDown.LogarithmicFrequencyStep"/> one step is a 96th of an
-/// octave instead — the same distance wherever it is taken on a logarithmic frequency
-/// axis — floored at the one unit a whole-Hz field can actually show.
-/// </summary>
 public sealed class DarkNumericUpDownLogarithmicStepTests
 {
-    // 2 ^ (1/96), the ratio one step multiplies the value by.
+    // 2 ^ (1/96).
     private const double StepRatio = 1.0072464014332754;
 
     [Theory]
-    // Under about 69 Hz a 96th of an octave is less than half a Hz, so a whole-Hz
-    // field steps by the 1 Hz it can show.
+    // Below ~69 Hz a 96th of an octave is under half a Hz, so a whole-Hz field steps by 1 Hz.
     [InlineData(10, 11)]
     [InlineData(20, 21)]
     [InlineData(50, 51)]
-    // Above it the ratio itself decides: 0.72 Hz at 100 Hz, 7.2 at 1 kHz, 145 at 20 kHz.
     [InlineData(100, 101)]
     [InlineData(500, 504)]
     [InlineData(1000, 1007)]
@@ -73,17 +64,12 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
         PressUp(control);
         PressDown(control);
 
-        // Why the steps walk an anchored ladder rather than measuring a fresh step off
-        // the value each time: at 10 kHz the step is 72 Hz and grows by half a Hz across
-        // one step of its own, so a re-measured step rounds to 73 coming back and hands
-        // the value back one Hz short.
+        // Steps walk an anchored ladder: a re-measured step at 10 kHz (72 Hz) rounds to 73 coming back.
         Assert.Equal(from, control.Value);
     }
 
     [Theory]
-    // 347 Hz is the case that showed the way down and the way up disagreeing: down to
-    // 345, and back up to 348. It is reachable by stepping, not only by typing — a
-    // step down from 350 lands on it.
+    // 347 Hz once went down to 345 and back up to 348.
     [InlineData(347)]
     [InlineData(1320)]
     [InlineData(4100)]
@@ -105,8 +91,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [Fact]
     public void EveryWholeHzInTheBand_ReturnsFromAStepAndAStepBack_BothWaysRound()
     {
-        // The range is opened up so nothing clamps: clamping is its own behaviour and
-        // would mask what this sweep is for.
+        // Range opened so clamping does not mask the sweep.
         using var control = new DarkNumericUpDown
         {
             DecimalPlaces = 0,
@@ -143,8 +128,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [Fact]
     public void AStepTheMaximumCutShort_StillStepsBackToWhereItCameFrom()
     {
-        // The wizard's From / To fields stop at 20 kHz, where the rung above 19 997 Hz
-        // does not exist. The value has to come back off the limit all the same.
+        // The 20 kHz limit has no rung above 19 997 Hz; the value must still come back off it.
         using DarkNumericUpDown control = NewWizardRangeControl();
         control.Value = 19_997;
 
@@ -161,7 +145,6 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
         using DarkNumericUpDown control = NewWizardRangeControl();
         control.Value = 19_997;
 
-        // Three notches into a limit that only had room for none of them.
         PressUp(control);
         PressUp(control);
         PressUp(control);
@@ -201,7 +184,6 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
 
         PressUp(control);
 
-        // 10 Hz is what this field carried before the mode existed.
         Assert.Equal(101m, control.Value);
     }
 
@@ -223,8 +205,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     {
         using DarkNumericUpDown control = NewFrequencyControl();
         control.Value = 100;
-        // Typed but not yet committed: stepping commits first, so the step must be
-        // measured off 5000 (36 Hz) and not off the 100 Hz still held in Value.
+        // Stepping commits typed text first, so the step is measured off 5000, not the 100 in Value.
         Editor(control).Text = 5000.ToString(CultureInfo.CurrentCulture);
 
         PressUp(control);
@@ -247,11 +228,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
             PressUp(control);
             decimal step = control.Value - before;
 
-            // A rung sits within half a unit of the exact 96th of an octave at each end
-            // of the step, so the pair can be a shade over one unit apart. That is also
-            // why the whole-Hz width alternates — 1, 1, 2, 1, 2 either side of 141 Hz,
-            // where a 96th of an octave is 1.02 Hz — which is the field's resolution
-            // showing, not the spacing changing.
+            // Rungs round to whole Hz at each end, so a pair can be a shade over one unit apart.
             Assert.True(
                 Math.Abs((double)control.Value - ((double)before * StepRatio)) <= 1.01,
                 $"{before} Hz stepped to {control.Value} Hz, off a 96th of an octave.");
@@ -265,10 +242,8 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
             Assert.True(steps < 5_000, "Stepping up never reached the top of the band.");
         }
 
-        // The 1 Hz the field can show at the bottom, a 96th of an octave at the top.
         Assert.Equal(1m, firstStep);
         Assert.InRange(lastStep, 143m, 147m);
-        // Ten octaves at 96 steps each, less the low end where the 1 Hz floor is wider.
         Assert.InRange(steps, 700, 900);
     }
 
@@ -281,7 +256,6 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
 
         PressUp(control);
 
-        // A tenth-Hz field shows the 7.2464 Hz the ratio asks for as 7.2.
         Assert.Equal(1007.2m, control.Value);
     }
 
@@ -294,11 +268,9 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
 
         PressUp(control);
 
-        // 0.1449 Hz rounds to 0.1 here, where a whole-Hz field has to spend a whole Hz.
         Assert.Equal(20.1m, control.Value);
     }
 
-    // The EQ Wizard's From / To fields, whose 20 kHz ceiling a step can run into.
     private static DarkNumericUpDown NewWizardRangeControl() => new()
     {
         DecimalPlaces = 0,
@@ -326,8 +298,6 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
 
     private static void PressDown(DarkNumericUpDown control) => PressKey(control, Keys.Down);
 
-    // ProcessCmdKey is the arrow-key route into the same StepUp/StepDown the spin
-    // buttons and the wheel take.
     private static void PressKey(DarkNumericUpDown control, Keys key)
     {
         MethodInfo method = typeof(DarkNumericUpDown).GetMethod(
@@ -336,7 +306,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
             ?? throw new InvalidOperationException("ProcessCmdKey is missing.");
         var message = new Message
         {
-            Msg = 0x0100, // WM_KEYDOWN
+            Msg = 0x0100,
             WParam = (IntPtr)key
         };
         object[] arguments = [message, key];

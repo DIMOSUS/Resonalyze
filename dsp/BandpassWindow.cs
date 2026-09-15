@@ -3,24 +3,10 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Builds a raised-cosine bandpass mask in the frequency domain.
-/// </summary>
 public static class BandpassWindow
 {
-    /// <summary>
-    /// Applies a frequency-domain mask to a real signal and returns the real part of
-    /// the result. The mask is real and even, so the filter is ZERO PHASE: it moves no
-    /// arrival in time, which is what makes a band-limited read of "when did this
-    /// arrive" honest — at the price of a symmetric pre-ringing skirt (see
-    /// <see cref="PeakSearchOptions.AnalysisKernelEnvelope"/>, which measures that skirt
-    /// so it is not mistaken for an earlier arrival).
-    ///
-    /// <paramref name="window"/> must be as long as <paramref name="signal"/>. The
-    /// transform is circular, so a caller filtering a CUT of a longer record should
-    /// zero-pad it first — otherwise a narrow low-frequency band, whose kernel is long,
-    /// wraps the tail back onto the head.
-    /// </summary>
+    /// <summary>Zero-phase mask (moves no arrival; pre-ringing handled via <see cref="PeakSearchOptions.AnalysisKernelEnvelope"/>).
+    /// Circular: zero-pad a cut of a longer record, or a long low-band kernel wraps the tail onto the head.</summary>
     public static double[] Apply(IReadOnlyList<double> signal, double[] window)
     {
         ArgumentNullException.ThrowIfNull(signal);

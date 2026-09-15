@@ -4,56 +4,25 @@ using Resonalyze.Audio;
 
 namespace Resonalyze.Screenshots;
 
-/// <summary>
-/// Where the tool reads its material and writes its results.
-/// </summary>
-/// <remarks>
-/// The measurements the screenshots are taken from are large and personal — they are
-/// one car, measured once — so they live outside the repository and their paths are a
-/// local setting. <c>screenshots.json</c> beside the executable (or named with
-/// <c>--config</c>) supplies them; <c>screenshots.example.json</c> is the committed
-/// template. The shot LIST is code, because each shot has to drive real panels.
-/// </remarks>
+/// <remarks>Measurements are large and personal, so their paths are a local setting (<c>screenshots.json</c>; template
+/// <c>screenshots.example.json</c>). The shot list is code.</remarks>
 internal sealed class ShotConfig
 {
-    /// <summary>An impulse response: the source for every analysis-mode shot.</summary>
     [JsonPropertyName("measurement")]
     public string Measurement { get; set; } = string.Empty;
 
-    /// <summary>A finished Virtual DSP project, for every Virtual DSP shot.</summary>
     [JsonPropertyName("session")]
     public string Session { get; set; } = string.Empty;
 
-    /// <summary>
-    /// A measurement recorded with a microphone array, for the array figures — both
-    /// the curves and the dialog, whose rows are read out of this same file so the
-    /// two cannot describe different sets. Optional: without it the array scene is
-    /// skipped rather than failed, since not every rig has one.
-    /// </summary>
+    /// <summary>Optional: without it the array scene is skipped. The dialog figure reads its rows from this same file.</summary>
     [JsonPropertyName("arrayMeasurement")]
     public string ArrayMeasurement { get; set; } = string.Empty;
 
-    /// <summary>
-    /// The interface the array DIALOG's figure is drawn for.
-    /// </summary>
-    /// <remarks>
-    /// The dialog states how many inputs are still free and where that count comes
-    /// from, and a measurement file records none of it: not the loopback's input, not
-    /// the backend, not how many inputs the device has. The tool used to fill that in
-    /// by itself, which put a status line in the manual that nobody had authored — so
-    /// the figure is not taken until the rig is stated here. It is the figure's rig
-    /// rather than the measurement's: a set may have been assembled over sittings on a
-    /// smaller interface, and which device the dialog should be shown for is the
-    /// author's decision to make out loud, not the tool's to guess.
-    /// </remarks>
+    /// <summary>Authored rig for the array dialog figure: the measurement records no device facts, and guessing them put an unauthored status line in the manual.</summary>
     [JsonPropertyName("arrayRig")]
     public ArrayRig? Rig { get; set; }
 
-    /// <summary>
-    /// Where the PNGs land. Empty means the repository's own <c>assets/images</c>,
-    /// found by walking up from the executable — the usual case, where re-shooting is
-    /// meant to overwrite the committed figures in place.
-    /// </summary>
+    /// <summary>Empty means the repository's <c>assets/images</c>, overwriting committed figures in place.</summary>
     [JsonPropertyName("output")]
     public string Output { get; set; } = string.Empty;
 
@@ -85,8 +54,7 @@ internal sealed class ShotConfig
         return config;
     }
 
-    // Beside the executable first, then in the project folder — which is where the
-    // .gitignore entry expects it, and where it survives a clean of bin/.
+    // Project folder second: where .gitignore expects it and where it survives a clean of bin/.
     private static string Discover()
     {
         string local = Path.Combine(AppContext.BaseDirectory, "screenshots.json");
@@ -128,7 +96,6 @@ internal sealed class ShotConfig
             }
         }
 
-        // Optional, but a path that is set and wrong is a typo rather than a choice.
         if (!string.IsNullOrWhiteSpace(ArrayMeasurement) && !File.Exists(ArrayMeasurement))
         {
             throw new FileNotFoundException(
@@ -155,17 +122,12 @@ internal sealed class ShotConfig
         }
     }
 
-    /// <summary>Turns a shot name into the file it writes.</summary>
     public string Resolve(string name) =>
         Path.GetFullPath(Path.Combine(OutputRoot, name + ".png"));
 
-    /// <summary>The folder the shots are written into.</summary>
     public string OutputRoot => resolvedOutput ??=
         string.IsNullOrWhiteSpace(Output) ? FindRepositoryAssets() : Output;
 
-    // The executable sits in tools/Resonalyze.Screenshots/bin/<config>/<tfm>, so the
-    // repository is a few levels up. Walking rather than counting survives a changed
-    // output path.
     private static string FindRepositoryAssets()
     {
         for (DirectoryInfo? directory = new(AppContext.BaseDirectory);
@@ -184,43 +146,19 @@ internal sealed class ShotConfig
     }
 }
 
-/// <summary>
-/// The interface an array measurement was recorded on, as the dialog counts it.
-/// </summary>
 internal sealed class ArrayRig
 {
-    /// <summary>How many inputs the backend offers on that device.</summary>
     [JsonPropertyName("inputs")]
     public int Inputs { get; set; }
 
-    /// <summary>
-    /// Which input carries the loopback, numbered the way the dialog prints inputs —
-    /// Input 1 is 1. It is excluded from the free ones, so the status line only comes
-    /// out right when this is the input the measurement actually used.
-    /// </summary>
+    /// <summary>1-based like the dialog; must be the input the measurement actually used.</summary>
     [JsonPropertyName("loopbackInput")]
     public int LoopbackInput { get; set; }
 
-    /// <summary>
-    /// Which backend recorded it: <c>asio</c>, <c>wasapiShared</c>,
-    /// <c>wasapiExclusive</c> or <c>wave</c> (MME). It decides the wording of the
-    /// status line's parenthesis, which is the application's own.
-    /// </summary>
     [JsonPropertyName("backend")]
     public AudioBackend Backend { get; set; } = AudioBackend.Asio;
 
-    /// <summary>
-    /// What to call each further microphone's calibration in the figure, in the
-    /// measurement's own order — one name per row, or absent to show the names the
-    /// measurement stored.
-    /// </summary>
-    /// <remarks>
-    /// A real array is individually calibrated: every capsule carries its own file,
-    /// and the guide says so. A SET can still be recorded through one microphone moved
-    /// between sittings, and then every row stores the same name — true of that file,
-    /// and a poor illustration of the dialog, since a reader cannot tell a column that
-    /// happens to repeat from one that cannot vary.
-    /// </remarks>
+    /// <summary>One name per row, or absent for the stored names (a set recorded with one moved mic repeats one name).</summary>
     [JsonPropertyName("calibrations")]
     public string[]? Calibrations { get; set; }
 }

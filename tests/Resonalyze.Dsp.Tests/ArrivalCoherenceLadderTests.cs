@@ -3,14 +3,7 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The junction coherence view's band ladder
-/// (<see cref="VirtualCrossoverAnalysis.ArrivalCoherenceLadder"/>): per band,
-/// the envelope optimum of the direct cuts' band-limited GCC-PHAT — its lag
-/// convention (a correction to the UPPER channel), the coherence it reaches
-/// against what the applied alignment collects, and the level gate that drops
-/// bands one channel no longer participates in.
-/// </summary>
+/// <summary>Band ladder of <see cref="VirtualCrossoverAnalysis.ArrivalCoherenceLadder"/>: lag is a correction to the UPPER channel.</summary>
 public sealed class ArrivalCoherenceLadderTests
 {
     private const int SampleRate = 48_000;
@@ -35,8 +28,7 @@ public sealed class ArrivalCoherenceLadderTests
             Band(2_000, lagMs: -0.40, peakR: 0.9)
         };
 
-        // A quarter period of a 1500 Hz junction is 0.167 ms: the first two
-        // bands sit inside it around 0.25 ms, the other two do not.
+        // A quarter period at 1500 Hz is 0.167 ms.
         Assert.Equal(
             2,
             VirtualCrossoverAnalysis.CountLadderAgreement(
@@ -49,8 +41,6 @@ public sealed class ArrivalCoherenceLadderTests
         var ladder = new[]
         {
             Band(1_000, lagMs: 0.25, peakR: 0.9),
-            // Right where the candidate is, and worthless: the ladder reports
-            // a lag for every band it probes, coherent or not.
             Band(1_200, lagMs: 0.25, peakR: 0.2)
         };
 
@@ -63,8 +53,6 @@ public sealed class ArrivalCoherenceLadderTests
     [Fact]
     public void CountLadderAgreement_SeparatesTwoCandidatesAHalfPeriodApart()
     {
-        // The shape the veto reads: the bands agree on one lobe, and the
-        // opposite-polarity candidate half a period away collects almost none.
         var ladder = new[]
         {
             Band(1_000, lagMs: 0.24, peakR: 0.9),
@@ -104,15 +92,10 @@ public sealed class ArrivalCoherenceLadderTests
     [Fact]
     public void Ladder_ReadsAPureDelayFlatAcrossTheBand()
     {
-        // The upper channel arrives 0.15 ms EARLY: every band's optimum is
-        // the same +0.15 ms correction to the upper channel — the ladder of a
-        // dispersion-free junction is a flat line at the misalignment, in the
-        // correlation view's own lag convention.
         List<VirtualCrossoverAnalysis.ArrivalCoherencePoint> ladder =
             Ladder(Impulse(), Impulse(-0.15));
 
         Assert.NotEmpty(ladder);
-        // The grid spans the pair band on sixth-octave steps.
         Assert.Equal(BandLowHz, ladder[0].FrequencyHz, 6);
         Assert.True(
             ladder[^1].FrequencyHz > BandHighHz / Math.Pow(2, 1.0 / 6) - 1,
@@ -134,11 +117,7 @@ public sealed class ArrivalCoherenceLadderTests
     [Fact]
     public void Ladder_ReadsAnInvertedPairAsCenteredAtLagZero()
     {
-        // Time-aligned but INVERTED: the envelope is polarity-blind, so the
-        // optimum stays at lag 0 and the band already collects its full
-        // coherence there — CurrentR equals PeakR. The ladder reports no
-        // polarity of its own (its probe band cannot separate opposite-signed
-        // lobes); that an inversion does not move the optimum is exactly why.
+        // The envelope is polarity-blind: an inversion leaves the optimum at 0 and CurrentR equals PeakR.
         List<VirtualCrossoverAnalysis.ArrivalCoherencePoint> ladder =
             Ladder(Impulse(), Impulse(0, -1.0));
 
@@ -159,11 +138,7 @@ public sealed class ArrivalCoherenceLadderTests
     [Fact]
     public void Ladder_DropsBandsWhereOneChannelStopsParticipating()
     {
-        // 40 dB down, the upper channel is a crossover remnant everywhere in
-        // the band: PHAT would still read "coherence" off it, so the level
-        // gate must empty the ladder. 20 dB down it participates and the
-        // ladder reads normally — the gate sits between, at the sum-loss
-        // curve's own 25 dB.
+        // The level gate sits at the sum-loss curve's 25 dB: -40 dB empties the ladder, -20 dB participates.
         Assert.Empty(Ladder(Impulse(), Impulse(0, 0.01)));
         Assert.NotEmpty(Ladder(Impulse(), Impulse(0, 0.1)));
     }
@@ -171,15 +146,7 @@ public sealed class ArrivalCoherenceLadderTests
     [Fact]
     public void Ladder_ResolvesADispersiveJunction()
     {
-        // The upper channel's band content arrives in two pieces: its lower
-        // part aligned with the lower channel, its upper part half a
-        // millisecond EARLY — the two-path shape a tweeter with a different
-        // acoustic path draws. One delay cannot reconcile them, and the
-        // ladder must say so: low bands read ~0, high bands read ~+0.5 ms.
-        // The paths are kept spectrally apart so the asserted probe bands
-        // each see exactly one arrival; where a probe band straddles both,
-        // the envelope reads their interference — real content, not a
-        // defect, and not what this test pins.
+        // Two paths kept spectrally apart so each asserted probe band sees one arrival.
         Complex[] lower = Impulse();
         Complex[] upper = BandPulse(600, 1_200, 0)
             .Zip(BandPulse(1_900, 3_600, -0.5), (a, b) => a + b)
@@ -206,11 +173,7 @@ public sealed class ArrivalCoherenceLadderTests
             "for the +0.5 ms high path"));
     }
 
-    // A linear-phase band-limited pulse: UNIT spectral density over
-    // [lowHz, highHz] (half-octave raised-cosine skirts) with its energy
-    // centered at BasePosition + offsetMs. Unit density on purpose — it
-    // matches the unit delta's density bin for bin, so the level gate sees
-    // two equal participants and only the timing differs.
+    // Unit spectral density matches the unit delta bin for bin, so only timing differs.
     private static Complex[] BandPulse(double lowHz, double highHz, double offsetMs)
     {
         var spectrum = new Complex[IrLength];

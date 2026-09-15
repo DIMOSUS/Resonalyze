@@ -1,11 +1,6 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The save-debounce timer/pending-flag pair moved off Form1 into
-/// <see cref="DebouncedSaver"/>; these pin the flush semantics the close
-/// paths rely on (the timer itself needs a message pump, so the tests drive
-/// Schedule/Flush directly).
-/// </summary>
+/// <summary>Drives Schedule/Flush directly: the timer needs a message pump.</summary>
 public sealed class DebouncedSaverTests
 {
     [Fact]

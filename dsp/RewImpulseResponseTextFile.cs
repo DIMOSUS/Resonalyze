@@ -2,30 +2,8 @@ using System.Globalization;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// REW's <c>File → Export → Impulse response as text</c>, read back.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Of the ways REW can hand an impulse response to another program, this is the only one
-/// that carries the absolute time base: the header states the time of sample 0, so a
-/// measurement taken against a loopback reference can be put back on the base it was
-/// measured on. A WAV export carries the samples and no timing at all unless t = 0 is
-/// pinned to a whole sample on the way out — which cannot state a fractional zero, and
-/// which rewrites the measurement's own start time to make the cut.
-/// </para>
-/// <para>
-/// Two things in the header decide whether the file is usable, and both have a safe
-/// default that is not the one wanted here. An export made with <em>normalise</em> on has
-/// its peak scaled to one, so it holds no level relation to any other channel; an export
-/// with the IR window applied is not the impulse response but a view of it. Both are
-/// refused rather than read, because neither announces itself in the samples.
-/// </para>
-/// <para>
-/// The samples are fractions of full scale — the same numbers REW's API serves for
-/// <c>?normalised=false</c>, to float precision.
-/// </para>
-/// </remarks>
+/// <summary>REW's "Impulse response as text" export: the only REW format carrying the absolute time base (time of sample 0).</summary>
+/// <remarks>Normalised exports (no level relation) and windowed exports (not the IR) are refused. Samples are fractions of full scale.</remarks>
 public sealed class RewImpulseResponseTextFile
 {
     private const string FileMarker = "Impulse Response data saved by REW";
@@ -40,116 +18,61 @@ public sealed class RewImpulseResponseTextFile
         Samples = samples;
     }
 
-    /// <summary>The impulse response as REW served it, as a fraction of full scale.</summary>
     public double[] Samples { get; }
 
     public int SampleRate { get; private init; }
 
     public double SampleIntervalSeconds { get; private init; }
 
-    /// <summary>
-    /// The time of sample 0, negative for every loopback measurement: REW anchors the
-    /// buffer on the microphone peak and lets the reference arrival fall where it falls.
-    /// </summary>
+    /// <summary>Negative for loopback measurements: REW anchors the buffer on the microphone peak.</summary>
     public double StartTimeSeconds { get; private init; }
 
-    /// <summary>
-    /// Where t = 0 — the loopback arrival — sits in this buffer, in samples. Fractional
-    /// in general: REW pins the peak to a whole sample, not the reference.
-    /// </summary>
+    /// <summary>Loopback arrival (t = 0) in samples; fractional in general.</summary>
     public double TimeZeroIndex => -StartTimeSeconds * SampleRate;
 
-    /// <summary>The largest sample's index, as REW states it.</summary>
     public int PeakIndex { get; private init; }
 
-    /// <summary>
-    /// The arrival this header implies BEFORE any timing offset is taken out, in
-    /// samples: the buffer's peak minus the reference. For a loopback-referenced sweep
-    /// measured with no offset it is the tract's delay, and it is positive by physics —
-    /// the microphone cannot hear the sweep before the reference does. A NEGATIVE value
-    /// here is the shadow of a timing offset larger than the arrival, which is a
-    /// question for the importer rather than a reason to refuse the file; an offset
-    /// SMALLER than the arrival leaves this positive and says nothing at all.
-    /// </summary>
+    /// <summary>Peak minus reference before any timing offset; a negative value implies a REW timing offset larger than the arrival.</summary>
     public double ImpliedArrivalSamples => PeakIndex - TimeZeroIndex;
 
-    /// <summary>
-    /// REW's peak before normalisation — <em>interpolated</em>, so it sits a little above
-    /// the largest sample in the data (0.002 dB on the file this reader was written
-    /// against). It is the sub-sample peak, not one of the numbers below it.
-    /// </summary>
+    /// <summary>Interpolated sub-sample peak, slightly above the largest sample.</summary>
     public double PeakValueBeforeNormalisation { get; private init; }
 
-    /// <summary>The SPL offset REW would add to turn these samples into dB SPL.</summary>
     public double DataOffsetDb { get; private init; }
 
-    /// <summary>The measurement's name in REW, if the header carried one.</summary>
     public string? MeasurementName { get; private init; }
 
-    /// <summary>The capture device line, if the header carried one.</summary>
     public string? Source { get; private init; }
 
     /// <summary>The excitation line verbatim — sweep length, count, level and reference.</summary>
     public string? Excitation { get; private init; }
 
-    /// <summary>
-    /// The swept band REW reports. Best effort: the header writes it in the exporting
-    /// machine's number format, so a file that cannot be read here still parses and
-    /// leaves this null rather than failing over metadata.
-    /// </summary>
+    /// <summary>Best effort: written in the exporting machine's number format; null rather than a parse failure.</summary>
     public double? LowFrequencyHz { get; private init; }
 
     public double? HighFrequencyHz { get; private init; }
 
-    /// <summary>
-    /// The sweep's length in samples, from the excitation line's <c>512k</c> / <c>1M</c>
-    /// label. The impulse response is often shorter than the sweep that produced it, so
-    /// this is the honest source for a sweep duration; null when the label is unfamiliar.
-    /// </summary>
+    /// <summary>From the <c>512k</c> / <c>1M</c> label; the IR is often shorter than the sweep. Null when unfamiliar.</summary>
     public int? SweepLengthSamples { get; private init; }
 
-    /// <summary>How many sweeps REW averaged, from the excitation line.</summary>
     public int? SweepCount { get; private init; }
 
-    /// <summary>
-    /// The impulse response re-referenced so that <b>sample 0 is the loopback arrival</b>,
-    /// which is the convention a transfer impulse response is stated in here. The whole
-    /// part of the offset is a rotation, the fractional part an exact shift; REW's
-    /// pre-roll wraps to the tail, where the harmonic images of a swept measurement
-    /// belong.
-    /// </summary>
+    /// <summary>Re-referenced so sample 0 is the loopback arrival; REW's pre-roll wraps to the tail.</summary>
     public double[] ToLoopbackReferencedImpulseResponse() =>
         ToLoopbackReferencedImpulseResponse(0);
 
-    /// <summary>
-    /// The same re-referencing with a stated REW timing offset taken back out, in
-    /// seconds and with REW's own sign (positive delays the measurement).
-    /// </summary>
-    /// <remarks>
-    /// REW folds the offset into the export's start time and records it nowhere else,
-    /// so undoing it is a move of t = 0 and nothing more: the samples are untouched.
-    /// Measured on six captures — a 4 ms offset at 96 kHz is 384 whole samples, and
-    /// adding the offset back to the reported IR start reproduces the un-offset
-    /// arrival to the last digit — so the correction is <b>subtracted from the
-    /// reference index</b>, which moves the arrival LATER by the offset.
-    /// </remarks>
+    /// <summary>Same, with a REW timing offset (seconds, REW's sign) taken back out by moving t = 0 later; samples untouched.</summary>
     public double[] ToLoopbackReferencedImpulseResponse(double timingOffsetSeconds) =>
         FractionalSampleShift.AdvanceCircular(
             Samples,
             ReferenceIndexWithOffset(timingOffsetSeconds));
 
-    /// <summary>Where t = 0 sits once a stated timing offset is taken back out.</summary>
     public double ReferenceIndexWithOffset(double timingOffsetSeconds) =>
         TimeZeroIndex - (timingOffsetSeconds * SampleRate);
 
-    /// <summary>The arrival once a stated timing offset is taken back out, in samples.</summary>
     public double ArrivalSamplesWithOffset(double timingOffsetSeconds) =>
         PeakIndex - ReferenceIndexWithOffset(timingOffsetSeconds);
 
-    /// <summary>
-    /// Reads an export, or explains in <paramref name="problem"/> why this one cannot be
-    /// trusted on the time base it claims.
-    /// </summary>
     public static bool TryParse(string text, out RewImpulseResponseTextFile? file, out string? problem)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -201,9 +124,7 @@ public sealed class RewImpulseResponseTextFile
                 }
                 else if (Says(note, "IR is", "normalised") || Says(note, "IR is", "normalized"))
                 {
-                    // "IR is not normalised" is the export this reader wants; the other
-                    // one has had its peak scaled to 1 and cannot be levelled against
-                    // any other channel again.
+                    // Only "IR is not normalised" keeps a level relation to other channels.
                     if (!note.Contains(" not ", StringComparison.OrdinalIgnoreCase))
                     {
                         problem = "the export is normalised: its peak has been scaled to one, " +
@@ -250,7 +171,6 @@ public sealed class RewImpulseResponseTextFile
                 continue;
             }
 
-            // "<number> // <label>" — the header's numeric half.
             int comment = line.IndexOf("//", StringComparison.Ordinal);
             if (comment < 0)
             {
@@ -323,12 +243,7 @@ public sealed class RewImpulseResponseTextFile
             return false;
         }
 
-        // An arrival that precedes the reference is NOT refused here any more. It is
-        // the signature of a timing offset applied in REW, and an offset is exactly
-        // what the importer now asks the user for: refusing the file at parse time
-        // would refuse the one case the question exists to answer. The reader states
-        // the arrival the header implies and leaves the judgement to whoever knows
-        // the offset — see ImpliedArrivalSamples and RewImportTiming.
+        // A negative implied arrival is not refused: it signals a REW timing offset, which the importer asks the user for.
         (int? sweepLength, int? sweepCount) = ReadExcitation(excitation);
 
         file = new RewImpulseResponseTextFile([.. samples])
@@ -352,9 +267,6 @@ public sealed class RewImpulseResponseTextFile
         return true;
     }
 
-    /// <summary>
-    /// Reads an export, throwing with the reason when it cannot be trusted.
-    /// </summary>
     public static RewImpulseResponseTextFile Parse(string text)
     {
         if (!TryParse(text, out RewImpulseResponseTextFile? file, out string? problem) || file == null)
@@ -366,12 +278,7 @@ public sealed class RewImpulseResponseTextFile
         return file;
     }
 
-    /// <summary>
-    /// Whether the excitation line says the sweep was measured against a loopback — the
-    /// only reference on which REW's t = 0 means what a synchronized-loopback capture
-    /// means here. An acoustic reference, or none, gives a shape whose position is its
-    /// own; it must not be placed on this base.
-    /// </summary>
+    /// <summary>Only a loopback reference gives REW's t = 0 the meaning of a synchronized-loopback capture.</summary>
     public bool IsLoopbackReferenced =>
         Excitation != null &&
         Excitation.Contains("loopback", StringComparison.OrdinalIgnoreCase) &&
@@ -401,19 +308,8 @@ public sealed class RewImpulseResponseTextFile
         }
     }
 
-    /// <summary>
-    /// Reads a number written with either grouping convention — "19,999.9" and
-    /// "19.999,9" are the same frequency on two different machines.
-    /// </summary>
-    /// <remarks>
-    /// The file was written somewhere else, so neither the invariant culture nor the
-    /// one this program is running under is the right authority: trying them in turn
-    /// gets "20,1" wrong twice over, once as 201 under a culture that groups by comma
-    /// and once by refusing it. The token itself says which character is the decimal
-    /// point — the rightmost of the two when both appear, and otherwise the only one,
-    /// unless it stands three digits from the end and alone, which is how a thousands
-    /// group looks in both conventions.
-    /// </remarks>
+    /// <summary>Reads "19,999.9" or "19.999,9": the token decides the decimal point (rightmost of two; a lone separator
+    /// three digits from the end is a thousands group). No culture is the right authority for a foreign file.</summary>
     private static bool TryReadGrouped(string token, out double value)
     {
         value = 0;
@@ -459,7 +355,7 @@ public sealed class RewImpulseResponseTextFile
             out value);
     }
 
-    // "512k Log Swept Sine, 1 sweep at -10.0 dBFS using a loopback as a timing reference"
+    // e.g. "512k Log Swept Sine, 1 sweep at -10.0 dBFS using a loopback as a timing reference"
     private static (int? Length, int? Count) ReadExcitation(string? excitation)
     {
         if (string.IsNullOrWhiteSpace(excitation))

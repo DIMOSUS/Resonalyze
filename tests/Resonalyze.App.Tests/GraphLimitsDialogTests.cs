@@ -2,10 +2,7 @@ using Resonalyze.Ui.Dialogs;
 
 namespace Resonalyze.App.Tests;
 
-// The limits dialog reads an axis's absolute bounds into decimal spinners. An axis that
-// was never given bounds carries OxyPlot's own defaults, which are finite doubles far
-// outside decimal's range — casting one took the double click down with an
-// OverflowException.
+// OxyPlot's default absolute bounds are finite doubles outside decimal's range.
 public sealed class GraphLimitsDialogTests
 {
     [Theory]

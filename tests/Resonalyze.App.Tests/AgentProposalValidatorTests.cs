@@ -5,12 +5,6 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The validator is what stands between a chat assistant's reply and a user's
-/// tune: it decides admissibility against the live session, with the same limits
-/// the project file and the channel block enforce, and it refuses to apply a
-/// value that was reasoned about a state the session has since left.
-/// </summary>
 public sealed class AgentProposalValidatorTests
 {
     private const string Package = "b6bd73c2-997b-4fe0-814a-d123cc403b8a";
@@ -43,7 +37,6 @@ public sealed class AgentProposalValidatorTests
             v => { Assert.Equal(AgentVerdictStatus.Warning, v.Status); Assert.Equal("2 bands, preamp 0.0 dB", v.Current); Assert.Equal("1 band, preamp -1.0 dB", v.Proposed); });
         Assert.Equal("B left", review.Verdicts[0].ChannelLabel);
 
-        // Reviewing mutates nothing: the live settings are what they were.
         Assert.False(bLeft.Settings.InvertPolarity);
         Assert.Equal(2, bLeft.Settings.PeqBands.Count);
         Assert.Equal(-2.0, session.Find("A:right")!.Settings.GainDb);
@@ -153,8 +146,7 @@ public sealed class AgentProposalValidatorTests
     [Fact]
     public void GainAndDelayLimits_MatchTheChannelBlocksFields()
     {
-        // The validator restates the block's numeric fields rather than reading them
-        // (it runs with no control in sight); this is what keeps the two together.
+        // The validator restates the block's numeric fields (no control in sight); this keeps them in sync.
         StaTest.Run(() =>
         {
             using var control = new VirtualCrossoverChannelControl();
@@ -226,8 +218,7 @@ public sealed class AgentProposalValidatorTests
         AgentProposalReview review = AgentProposalValidator.Review(proposal, Session());
 
         Assert.Contains("ripple is invalid", review.Verdicts[0].Message);
-        // op-2 is the only applicable crossover on B left, so no conflict; Butterworth
-        // ignores its ripple, so 4.0 there is stored, not refused.
+        // Butterworth ignores ripple, so 4.0 is stored, not refused.
         Assert.True(review.Verdicts[1].Applicable, review.Verdicts[1].Message);
     }
 
@@ -277,18 +268,13 @@ public sealed class AgentProposalValidatorTests
             Proposal(new ReplacePeqBankOperation("op-1", "B:left", "", hash, bank)), session)
             .Verdicts[0].Message;
 
-        // A +3 dB bell with nothing against it.
         string bare = Judge(new AgentPeqBank(0, [new AgentPeqBand("Peaking", 1_000, 1.5, 3)]));
-        // The peak sits on the headroom grid's nearest point to the bell's centre.
         Assert.Matches(@"rises to \+3\.0 dB at (9[89]\d|10[01]\d)(\.\d+)? Hz", bare);
         Assert.Contains("lower the preamp by 3.0 dB", bare);
-        // The same bell under a −3 dB preamp: net never above unity.
         Assert.DoesNotContain("rises",
             Judge(new AgentPeqBank(-3, [new AgentPeqBand("Peaking", 1_000, 1.5, 3)])));
-        // A +3 dB bell inside a −6 dB shelf that covers it: net stays below zero.
         Assert.DoesNotContain("rises",
             Judge(new AgentPeqBank(0, [new AgentPeqBand("LowShelf", 4_000, 0.7, -6), new AgentPeqBand("Peaking", 1_000, 1.5, 3)])));
-        // A cut only: no rise, no warning.
         Assert.DoesNotContain("rises",
             Judge(new AgentPeqBank(0, [new AgentPeqBand("Peaking", 1_000, 1.5, -3)])));
     }
@@ -296,8 +282,7 @@ public sealed class AgentProposalValidatorTests
     [Fact]
     public void Review_WarnsOnANarrowBellInsideTheChannelsOwnJunctionZone()
     {
-        // B left is band-passed 250 Hz .. 2800 Hz, so its junction zones run
-        // 125..500 Hz and 1400..5600 Hz.
+        // B left is 250..2800 Hz: junction zones 125..500 Hz and 1400..5600 Hz.
         AgentSessionSnapshot session = Session();
         AgentChannelSnapshot bLeft = session.Find("B:left")!;
         string hash = AgentPeqHash.Compute(bLeft.Settings.PeqPreampDb, bLeft.Settings.PeqBands);
@@ -311,13 +296,11 @@ public sealed class AgentProposalValidatorTests
         Assert.Contains("keep Q at or below 2", narrow);
         Assert.Contains("around the 2800 Hz crossover", Judge(new AgentPeqBand("Peaking", 2_000, 2.5, -3)));
 
-        // Wide enough, outside both zones, a shelf, or an all-pass: no comment.
         Assert.DoesNotContain("junction zone", Judge(new AgentPeqBand("Peaking", 300, 1.5, -3)));
         Assert.DoesNotContain("junction zone", Judge(new AgentPeqBand("Peaking", 1_000, 4, -3)));
         Assert.DoesNotContain("junction zone", Judge(new AgentPeqBand("LowShelf", 300, 4, -3)));
         Assert.DoesNotContain("junction zone", Judge(new AgentPeqBand("AllPassSecondOrder", 2_400, 4, 0)));
 
-        // A channel with no crossover has no junction zone of its own to warn about.
         string aRightHash = AgentPeqHash.Compute(0, []);
         string open = AgentProposalValidator.Review(
             Proposal(new ReplacePeqBankOperation("op-1", "A:right", "", aRightHash,
@@ -329,9 +312,7 @@ public sealed class AgentProposalValidatorTests
     [Fact]
     public void Review_JudgesTheJunctionZoneOnTheChannelAsItWouldEndUp()
     {
-        // B left holds a Q 4 bell at 1 kHz, outside both of its zones today (the
-        // corners are 250 Hz and 2.8 kHz). A crossover move alone puts the low-pass
-        // at 1.2 kHz and the existing bell in its zone: the crossover row says so.
+        // A crossover move to 1.2 kHz puts today's Q 4 bell at 1 kHz into the zone.
         AgentSessionSnapshot session = Session();
         AgentChannelSnapshot bLeft = session.Find("B:left")!;
         bLeft.Settings.PeqBands = [new PeqBand(1_000, 4, -3)];
@@ -345,8 +326,7 @@ public sealed class AgentProposalValidatorTests
         Assert.Contains("Band at 1000 Hz (Q 4)", alone.Verdicts[0].Message);
         Assert.Contains("around the 1200 Hz crossover", alone.Verdicts[0].Message);
 
-        // The crossover move plus a new bank with a narrow bell at 1.5 kHz: the bank
-        // is judged against the crossover the OTHER row proposes, not today's.
+        // The bank is judged against the crossover the other row proposes, not today's.
         AgentProposalReview both = AgentProposalValidator.Review(
             Proposal(
                 new SetCrossoverOperation("op-1", "B:left", "", current, moved),
@@ -358,7 +338,6 @@ public sealed class AgentProposalValidatorTests
         Assert.Contains("around the 1200 Hz crossover", both.Verdicts[1].Message);
         Assert.DoesNotContain("1000 Hz", both.Verdicts[1].Message);
 
-        // A narrow bell at 1 kHz alone, against today's crossover: in no zone.
         AgentProposalReview bankAlone = AgentProposalValidator.Review(
             Proposal(new ReplacePeqBankOperation("op-2", "B:left", "", hash,
                 new AgentPeqBank(0, [new AgentPeqBand("Peaking", 1_000, 5, -3)]))),
@@ -376,10 +355,7 @@ public sealed class AgentProposalValidatorTests
         (peakDb, _) = AgentPeqHeadroom.Peak(-2.5, [], 96_000);
         Assert.Equal(-2.5, peakDb);
 
-        // A narrow bell at the bottom of the band, and one so narrow that a
-        // 512-point log grid steps over it: both are found within a tenth of a dB
-        // of their top. Outside 20 Hz .. 20 kHz nothing is judged: a band there is
-        // legal, and what it does there is not a tuning question.
+        // The narrow bell falls between 512 log-grid points but must still be found; outside 20 Hz..20 kHz nothing is judged.
         (peakDb, peakHz) = AgentPeqHeadroom.Peak(0, [new PeqBand(25, 30, 12)], 96_000);
         Assert.Equal(12.0, peakDb, 1);
         Assert.InRange(peakHz, 24.5, 25.5);
@@ -388,7 +364,6 @@ public sealed class AgentProposalValidatorTests
         (peakDb, peakHz) = AgentPeqHeadroom.Peak(0, [new PeqBand(1_003, 60, 12)], 96_000);
         Assert.Equal(12.0, peakDb, 1);
         Assert.InRange(peakHz, 1_000, 1_006);
-        // Two bells that together top out between their centres.
         (peakDb, _) = AgentPeqHeadroom.Peak(0, [new PeqBand(900, 3, 4), new PeqBand(1_100, 3, 4)], 96_000);
         Assert.True(peakDb > 4.5, peakDb.ToString());
     }
@@ -421,13 +396,9 @@ public sealed class AgentProposalValidatorTests
 
         Assert.Single(AgentProposalValidator.Review(other, Session()).Warnings);
         Assert.Empty(AgentProposalValidator.Review(none, Session()).Warnings);
-        // A session that has copied nothing since it opened cannot vouch for any
-        // package: a reply naming one gets its warning too.
         string forgotten = Assert.Single(AgentProposalValidator.Review(other, Session(lastPackageId: null)).Warnings);
         Assert.Contains("has not copied", forgotten);
-        // A settings row still applies, on its expected current value — but is
-        // offered unticked and marked: the value can match after the measurement
-        // the row was reasoned from has been replaced.
+        // The value can match after the measurement the row was reasoned from was replaced, so it is offered unticked.
         AgentOperationVerdict row = AgentProposalValidator.Review(other, Session()).Verdicts[0];
         Assert.True(row.Applicable);
         Assert.False(row.Ticked);
@@ -441,8 +412,7 @@ public sealed class AgentProposalValidatorTests
     [Fact]
     public void Review_RefusesEngineRequests_InAReplyThatNamesNoPackage()
     {
-        // No expected current value guards an engine request, so without a
-        // package id nothing says which session it was written for.
+        // Engine requests have no expected-value guard, so they need a package id.
         AgentProposal proposal = Proposal(
             new SetGainOperation("op-1", "A:right", "", -2.0, -3.0),
             new RunAutoDelayOperation("op-2", "", null, null, null, null, null)) with
@@ -458,7 +428,6 @@ public sealed class AgentProposalValidatorTests
         Assert.True(review.Verdicts[0].Applicable);
         Assert.False(review.Verdicts[0].Ticked);
 
-        // Settings rows alone need no package: each carries its own guard.
         AgentProposalReview settingsOnly = AgentProposalValidator.Review(
             Proposal(new SetGainOperation("op-1", "A:right", "", -2.0, -3.0)) with { PackageId = null },
             Session());
@@ -474,9 +443,6 @@ public sealed class AgentProposalValidatorTests
             new RunAutoDelayOperation("op-2", "", null, null, null, null, null),
             new AutoTunePeqOperation("op-3", "B:left", "", null, null, null, null, null, null));
 
-        // Three ways the session cannot vouch for the package the reply answers:
-        // it copied none, it copied another, or it has changed since the copy —
-        // its fingerprint no longer matches the one the package was taken at.
         foreach (AgentSessionSnapshot session in new[]
         {
             Session(lastPackageId: null),
@@ -487,10 +453,7 @@ public sealed class AgentProposalValidatorTests
             AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
             string warning = Assert.Single(review.Warnings);
             Assert.Contains("copy a new package", warning);
-            // The settings row is judged on its expected current value, as always,
-            // and offered unticked; an engine reads the session as it is NOW,
-            // which the assistant has not seen, so the requests are refused
-            // rather than run blind.
+            // Engines read the session as it is now, which the assistant has not seen, so they are refused.
             Assert.True(review.Verdicts[0].Applicable);
             Assert.False(review.Verdicts[0].Ticked);
             Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
@@ -498,8 +461,6 @@ public sealed class AgentProposalValidatorTests
             Assert.Contains("copy a new package", review.Verdicts[1].Message);
         }
 
-        // The same fingerprint at the copy and now: the package is still good, and
-        // a session that took no fingerprint at all is not compared.
         Assert.Empty(AgentProposalValidator.Review(
             proposal, Session(lastFingerprint: "aaaaaaaaaaaaaaaa", fingerprint: "aaaaaaaaaaaaaaaa")).Warnings);
         Assert.Empty(AgentProposalValidator.Review(proposal, Session()).Warnings);
@@ -527,10 +488,7 @@ public sealed class AgentProposalValidatorTests
     [Fact]
     public void CheckSelection_RefusesACombinationThatIsInvalidAsAWhole()
     {
-        // Each operation alone passes; together they ask a low-pass corner below the
-        // high-pass one, which the project's validator has no rule against — so this
-        // pins that the whole-set check runs the SAME validator and nothing stricter,
-        // and that a combination it does refuse names the channel.
+        // Pins that the whole-set check runs the same validator and nothing stricter.
         AgentSessionSnapshot session = Session();
         AgentProposal proposal = Proposal(
             new SetGainOperation("op-1", "A:right", "", -2.0, -3.0),
@@ -539,8 +497,6 @@ public sealed class AgentProposalValidatorTests
 
         Assert.Null(AgentProposalValidator.CheckSelection(review.Verdicts));
 
-        // A verdict whose operation is invalid slips in only if the review was
-        // bypassed; the whole-set check still catches it.
         AgentOperationVerdict forged = review.Verdicts[0] with
         {
             Operation = new SetGainOperation("op-1", "A:right", "", -2.0, 500)
@@ -602,7 +558,6 @@ public sealed class AgentProposalValidatorTests
                     "cuts and boosts, from the point measurement", v.Proposed);
             });
 
-        // The list the package publishes is the list the review holds a reply to.
         Assert.Equal(
             ["setGainDb", "setDelayMs", "setPolarity", "setCrossover", "replacePeqBank",
                 "probe", "useSpatialAverage", "runAutoCrossover", "tuneJunction", "runAutoDelay",
@@ -619,8 +574,6 @@ public sealed class AgentProposalValidatorTests
         AgentOperationVerdict verdict = AgentProposalValidator.Review(
             proposal, Session(adjustGains: false)).Verdicts[0];
 
-        // What it leaves out is what the dialog would open with; the near-side
-        // cut appears only on the side of the line where the balance is on.
         Assert.Equal("scene 0.25 ms LHD, gains off, rear fill 15.00 ms", verdict.Current);
         Assert.Equal(
             "scene 0.25 ms RHD, gains on, near-side cut 2.0 dB, rear fill 12.50 ms",
@@ -642,8 +595,6 @@ public sealed class AgentProposalValidatorTests
         AgentOperationVerdict verdict = AgentProposalValidator.Review(proposal, Session()).Verdicts[0];
 
         Assert.Equal(AgentVerdictStatus.Rejected, verdict.Status);
-        // The value is wrong on its own terms, so that is what the row says —
-        // not that the engine happens to be unavailable in this build.
         Assert.Contains(words, verdict.Message);
     }
 
@@ -727,7 +678,6 @@ public sealed class AgentProposalValidatorTests
         Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
         Assert.Equal("Would be overwritten by Auto crossover (op-1).", review.Verdicts[1].Message);
         Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[2].Status);
-        // The wizard leaves delay and polarity alone; that is Auto delay's work.
         Assert.True(review.Verdicts[3].Applicable);
     }
 
@@ -752,8 +702,6 @@ public sealed class AgentProposalValidatorTests
     [Fact]
     public void Review_RefusesAnAutoTuneForTheSideNotOnScreen()
     {
-        // The fit is built on the handoff the PEQ menu would build, and that is
-        // the side on screen's: its gate pin, its anchor, its hybrid datum.
         AgentProposal proposal = Proposal(
             new AutoTunePeqOperation("op-1", "B:left", "", null, null, null, null, null, null),
             new AutoTunePeqOperation("op-2", "A:right", "", null, null, null, null, null, null));
@@ -788,10 +736,6 @@ public sealed class AgentProposalValidatorTests
     [Fact]
     public void Review_HoldsTheAutoTuneWindowToTheWizardsFields_AsTheRunWillUseIt()
     {
-        // B:left plays 250..2800 Hz. A lower edge stated above the passband's
-        // upper would be a window the run cannot fit; an edge past the From/To
-        // fields' 20 Hz..20 kHz is one the wizard could never hold; a window
-        // inside both is fine, with either edge left to the passband.
         AgentProposal proposal = Proposal(
             new AutoTunePeqOperation("op-1", "B:left", "", null, 3_000, null, null, null, null),
             new AutoTunePeqOperation("op-2", "A:left", "", null, 5, null, null, null, null),
@@ -807,7 +751,6 @@ public sealed class AgentProposalValidatorTests
         Assert.Contains("between 20 Hz and 20000 Hz", review.Verdicts[1].Message);
         Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[2].Status);
         Assert.Contains("between 20 Hz and 20000 Hz", review.Verdicts[2].Message);
-        // The other side is refused before its window is read.
         Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[3].Status);
         Assert.Contains("side not on screen", review.Verdicts[3].Message);
 
@@ -820,10 +763,7 @@ public sealed class AgentProposalValidatorTests
     [Fact]
     public void Review_RefusesAutoTunesThatDisagreeAboutTheProjectsTargetLevel()
     {
-        // The target level is one datum for the project: two fits at two levels
-        // would leave the first bank tuned against a level the project no
-        // longer holds. The first stated level stands; a request that states
-        // none, or the same, is fine.
+        // The target level is one project datum: the first stated level stands.
         AgentProposal proposal = Proposal(
             new AutoTunePeqOperation("op-1", "B:left", "", -6, null, null, null, null, null),
             new AutoTunePeqOperation("op-2", "A:left", "", -8, null, null, null, null, null),
@@ -836,7 +776,6 @@ public sealed class AgentProposalValidatorTests
         Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
         Assert.Contains("op-1 already states -6.0 dB", review.Verdicts[1].Message);
         Assert.True(review.Verdicts[2].Applicable);
-        // op-4 repeats op-2's channel: refused as a repeat, not for its level.
         Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[3].Status);
         Assert.Contains("Already requested by op-2", review.Verdicts[3].Message);
     }
@@ -864,8 +803,6 @@ public sealed class AgentProposalValidatorTests
         Assert.True(AgentProposalValidator.Overwrites(autoDelay, delay, session));
         Assert.True(AgentProposalValidator.Overwrites(autoDelay, polarity, session));
         Assert.False(AgentProposalValidator.Overwrites(autoDelay, crossover, session));
-        // The gain balance is an opt-in, and a run that does not ask for it
-        // leaves a hand-written trim standing.
         Assert.Equal(projectAdjustsGains, AgentProposalValidator.Overwrites(autoDelay, gain, session));
         Assert.True(AgentProposalValidator.Overwrites(
             autoDelay with { AdjustGains = true }, gain, session));
@@ -876,7 +813,6 @@ public sealed class AgentProposalValidatorTests
         Assert.True(AgentProposalValidator.Overwrites(autoCrossover, gain, session));
         Assert.False(AgentProposalValidator.Overwrites(autoCrossover, delay, session));
 
-        // Auto-tune reaches one channel's bank, and only that one.
         Assert.True(AgentProposalValidator.Overwrites(autoTune, bank, session));
         Assert.False(AgentProposalValidator.Overwrites(autoTune, otherBank, session));
         Assert.False(AgentProposalValidator.Overwrites(autoTune, crossover, session));
@@ -887,9 +823,7 @@ public sealed class AgentProposalValidatorTests
     {
         AgentSessionSnapshot session = Session();
         AgentChannelSnapshot bLeft = session.Find("B:left")!;
-        // B left runs LR24 250-2800. The bell at 1350 Hz sits in the junction zone
-        // of the PROPOSED 2600 Hz corner (an octave below it) and outside the zone
-        // of the 2800 Hz corner the channel actually keeps.
+        // The 1350 Hz bell is in the zone of the proposed 2600 Hz corner, not of the kept 2800 Hz one.
         AgentProposal proposal = Proposal(
             new RunAutoCrossoverOperation("op-1", "let the wizard split them"),
             new SetCrossoverOperation("op-2", "B:left", "",
@@ -901,8 +835,6 @@ public sealed class AgentProposalValidatorTests
 
         AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
 
-        // The crossover row is refused, so it moves no corner — and the bank must
-        // not be judged against a corner that is not going to be there.
         Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
         Assert.True(review.Verdicts[2].Applicable);
         Assert.DoesNotContain("junction zone", review.Verdicts[2].Message);
@@ -926,8 +858,6 @@ public sealed class AgentProposalValidatorTests
     [Fact]
     public void EngineInputLimits_MatchTheFieldsTheyWouldBeTypedInto()
     {
-        // Same reason as the gain and delay pin above: the validator restates
-        // these ranges rather than reading them off a control it cannot see.
         StaTest.Run(() =>
         {
             using var dialog = new VirtualCrossoverAutoDelayDialog();
@@ -952,8 +882,7 @@ public sealed class AgentProposalValidatorTests
         });
     }
 
-    // A field's step is its decimal places: the arrows' Increment is a
-    // convenience, the places are what a typed value is rounded to.
+    // A typed value is rounded to the field's decimal places; Increment is only the arrows' step.
     private static void AssertField(
         Control owner, string name, double minimum, double maximum, double step)
     {
@@ -995,8 +924,6 @@ public sealed class AgentProposalValidatorTests
                 new AgentChannelSnapshot("B", AgentChannelSide.Left, bLeft, true, captures ?? []),
                 new AgentChannelSnapshot("B", AgentChannelSide.Right, bRight, true, captures ?? []),
                 new AgentChannelSnapshot("C", AgentChannelSide.Mono, cMono, true, captures ?? []),
-                // The block a source was never resolved for: an engine asked to
-                // fit it has nothing to read.
                 new AgentChannelSnapshot("D", AgentChannelSide.Mono, dMono, false, [])
             ],
             processorRateHz,
@@ -1012,12 +939,7 @@ public sealed class AgentProposalValidatorTests
     [Fact]
     public void Review_SaysWhenTheReplyLeftItsProseOut()
     {
-        // Not a refusal: the operations are the proposal, and the user reads
-        // the values either way. But the missing words are exactly what they
-        // would have read to decide, so the review names their absence.
-        // Three operations, ONE of them unexplained: with two the count of the
-        // explained and of the unexplained are the same number, and a sentence
-        // that named the wrong one would read true.
+        // Three operations, one unexplained: with two, both counts would be equal and a wrong sentence would read true.
         AgentProposal proposal = new(
             Package, null, [], [],
             [

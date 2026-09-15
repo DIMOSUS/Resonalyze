@@ -4,12 +4,7 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Moving a channel block. Everything the block's POSITION decides has to move
-/// with it — the letter, the plot colour, the order the project persists — and
-/// everything the block OWNS has to stay: its settings, its sources, the
-/// measurements hanging off them.
-/// </summary>
+/// <summary>Position decides letter, colour and persisted order; the block owns settings and sources.</summary>
 public sealed class VirtualCrossoverChannelOrderTests
 {
     private const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
@@ -29,15 +24,12 @@ public sealed class VirtualCrossoverChannelOrderTests
     private static FlowLayoutPanel ChannelList(VirtualCrossoverPanel panel) =>
         (FlowLayoutPanel)Field(panel, "channelListPanel");
 
-    // The control bound to a channel, from the panel's own map.
     private static Control ControlOf(VirtualCrossoverPanel panel, VirtualCrossoverChannel channel)
     {
         var map = (System.Collections.IDictionary)Field(panel, "channelControls");
         return (Control)map[channel]!;
     }
 
-    // The control takes an accent but does not hand it back; the header label it
-    // paints with it is the honest place to read it from.
     private static Color Accent(VirtualCrossoverPanel panel, VirtualCrossoverChannel channel)
     {
         object control = ControlOf(panel, channel);
@@ -49,10 +41,7 @@ public sealed class VirtualCrossoverChannelOrderTests
         VirtualCrossoverPanel panel, VirtualCrossoverChannel channel, int delta) =>
         Call(panel, "MoveChannel", channel, delta);
 
-    // A panel with the given number of blocks, bound to the project's pairs the
-    // way applying a project binds them — the state every arrow press in the
-    // field happens in. Without that binding the two lists are unrelated objects,
-    // which is what a freshly constructed panel holds and its own test below.
+    // Bound as applying a project binds; a fresh panel's lists are unrelated objects.
     private static VirtualCrossoverPanel Loaded(int count)
     {
         var panel = new VirtualCrossoverPanel();
@@ -78,15 +67,11 @@ public sealed class VirtualCrossoverChannelOrderTests
         for (int i = 0; i < channels.Count; i++)
         {
             Assert.Equal(VirtualCrossoverSheet.ChannelName(i), channels[i].Name);
-            // The persisted order IS the block order: the file stores no letter,
-            // so the pair list is the only thing that remembers it.
+            // The file stores no letter: the pair list order is the block order.
             Assert.Same(channels[i].Pair, Project(panel).Pairs[i]);
             Assert.Equal(i, list.Controls.GetChildIndex(ControlOf(panel, channels[i])));
         }
 
-        // The child index is only the mechanism. What the user sees is where the
-        // flow panel actually puts each block, and a reorder that got that
-        // backwards would satisfy every assertion above.
         list.PerformLayout();
         IEnumerable<int> tops = channels.Select(channel => ControlOf(panel, channel).Top);
         Assert.Equal(tops.OrderBy(top => top), tops);
@@ -100,7 +85,6 @@ public sealed class VirtualCrossoverChannelOrderTests
         {
             using VirtualCrossoverPanel panel = Loaded(4);
             List<VirtualCrossoverChannel> channels = Channels(panel);
-            // A mark the block owns, so it can be followed across the move.
             for (int i = 0; i < channels.Count; i++)
             {
                 channels[i].Pair.Left.DelayMs = 10 + i;
@@ -133,10 +117,6 @@ public sealed class VirtualCrossoverChannelOrderTests
 
             Move(panel, second, -1);
 
-            // The colour belongs to the slot, not the channel: the block that
-            // moved up takes the colour of the row it moved into and the one it
-            // displaced takes the other, so a curve stays traceable to the block
-            // sitting at that position.
             Assert.Equal(firstAccent, Accent(panel, second));
             Assert.Equal(secondAccent, Accent(panel, first));
         });
@@ -183,9 +163,6 @@ public sealed class VirtualCrossoverChannelOrderTests
                 Assert.False(Enabled(panel, channels[^1], "buttonMoveDown"));
             }
 
-            // Right as the list is built, and right again after a block moves:
-            // the state is positional, so the block that WAS at the top has to be
-            // handed its up-arrow back when it stops being there.
             AssertEnds();
             Move(panel, Channels(panel)[0], +1);
             AssertEnds();
@@ -195,11 +172,7 @@ public sealed class VirtualCrossoverChannelOrderTests
     [Fact]
     public void MoveChannel_OnAPanelWithNoProjectApplied_KeepsTheProjectsOwnPairs()
     {
-        // A freshly constructed panel holds channels whose pairs are their own and
-        // a project holding unrelated default ones; the two are bound only when a
-        // project is applied. Rebuilding the project's list out of the channels
-        // there would quietly throw the project's pairs away, so the list is
-        // permuted by the same indices instead.
+        // Unbound panel: rebuilding the project list from channels would discard its pairs, so it is permuted by index.
         StaTest.Run(() =>
         {
             using var panel = new VirtualCrossoverPanel();
@@ -218,9 +191,6 @@ public sealed class VirtualCrossoverChannelOrderTests
     [Fact]
     public void ReorderIntoSlots_LeavesTheBlocksTheWizardNeverSawWhereTheyWere()
     {
-        // Auto crossover only ever sees the enabled channels that resolved a
-        // source. The rest have no place in a chain it worked out, so they keep
-        // the slot they had and the sorted ones fill the slots around them.
         string[] all = ["a", "b", "skipped", "c", "d"];
         string[] sorted = ["d", "c", "b", "a"];
 

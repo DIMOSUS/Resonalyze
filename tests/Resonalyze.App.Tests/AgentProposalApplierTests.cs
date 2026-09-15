@@ -3,11 +3,6 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The commit half of an import: a second look at the ticked rows against the
-/// live settings and the fingerprint the review showed, one write for the whole
-/// set, and an exact way back. The panel adds only the control refresh.
-/// </summary>
 public sealed class AgentProposalApplierTests
 {
     [Fact]
@@ -22,7 +17,6 @@ public sealed class AgentProposalApplierTests
         Assert.Null(problem);
         Assert.Equal(["op-1", "op-3"], toApply.Select(verdict => verdict.Id));
 
-        // The user turned the gain knob while the dialog was open.
         session.Find("A:right")!.Settings.GainDb = -2.5;
         problem = AgentProposalApplier.Prepare(
             proposal, ticked, session.Fingerprint, session, out toApply, out _);
@@ -144,10 +138,7 @@ public sealed class AgentProposalApplierTests
     [Fact]
     public void Prepare_WarnsAboutWhatTheTickedSubsetLeaves_WhenTheReviewJudgedTheWholeSet()
     {
-        // Current: LP 2800 Hz with a Q 4 bell at 1 kHz. The reply moves the low-pass
-        // to 1.2 kHz AND replaces the bank without the bell — together clean, so the
-        // review warns about nothing. Untick the bank and the bell sits in the new
-        // junction zone: the commit has to say so, since no row ever did.
+        // Together clean, but unticking the bank leaves the 1 kHz bell in the new 1.2 kHz junction zone: the commit must say so.
         (AgentSessionSnapshot session, _) = Scene();
         VirtualCrossoverChannelSettings bLeft = session.Find("B:left")!.Settings;
         bLeft.PeqBands = [new PeqBand(1_000, 4, -3)];
@@ -179,8 +170,6 @@ public sealed class AgentProposalApplierTests
         Assert.Contains("Band at 1000 Hz (Q 4)", warning);
         Assert.Contains("around the 1200 Hz crossover", warning);
 
-        // A row that touches neither the bank nor the corners says nothing about a
-        // zone problem the channel already has: that is the tune, not the import.
         bLeft.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1200, 24);
         var gainOnly = new AgentProposal(null, "summary", [], [],
             [new SetGainOperation("op-3", "B:left", "", 0, -1)], []);
@@ -203,15 +192,12 @@ public sealed class AgentProposalApplierTests
 
         List<AgentUndoEntry> undo = AgentProposalApplier.Apply(toApply);
 
-        // Ticked: gain on A right, polarity and the PEQ bank on B left.
         Assert.Equal(-3.0, aRight.GainDb);
         Assert.True(bLeft.InvertPolarity);
         Assert.Equal(-1.0, bLeft.PeqPreampDb);
         Assert.Single(bLeft.PeqBands);
         Assert.Equal(AgentProposalApplier.PeqSourceName, bLeft.PeqSourceName);
-        // Not ticked: the delay on A right stays.
         Assert.Equal(1.42, aRight.DelayMs);
-        // Untouched fields stay untouched.
         Assert.Equal(CrossoverKind.BandPass, bLeft.CrossoverKind);
         Assert.Equal("left mid.json", bLeft.DisplayName);
 
@@ -228,9 +214,7 @@ public sealed class AgentProposalApplierTests
     [Fact]
     public void Restore_PutsBackAPhaseRotation_NoOperationEverWrote()
     {
-        // Undo restores the whole editable chain, not just the fields an operation
-        // can write: a rotation dialled in between the import and the undo would
-        // otherwise be the one setting that survived it.
+        // Undo restores the whole editable chain, or a rotation dialled in between would survive it.
         (AgentSessionSnapshot session, AgentProposal proposal) = Scene();
         VirtualCrossoverChannelSettings aRight = session.Find("A:right")!.Settings;
         aRight.PhaseRotationDegrees = 56.25;
@@ -253,9 +237,6 @@ public sealed class AgentProposalApplierTests
         VirtualCrossoverChannelSettings aRight = session.Find("A:right")!.Settings;
         AgentProposalReview review = AgentProposalValidator.Review(proposal, session);
         AgentOperationVerdict gain = review.Verdicts.Single(verdict => verdict.Id == "op-1");
-        // A crossover naming a family the mapper cannot resolve: the review would
-        // have rejected it, so this is a forged row — the applier still has to
-        // leave the channel as it found it.
         AgentOperationVerdict forged = review.Verdicts.Single(verdict => verdict.Id == "op-2") with
         {
             Operation = new SetCrossoverOperation("op-2", "A:right", "", new AgentCrossover("Off", null, null),

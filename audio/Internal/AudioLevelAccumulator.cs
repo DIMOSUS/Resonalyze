@@ -1,10 +1,6 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Combines per-block meter statistics and creates snapshots at a bounded rate.
-/// This keeps packet size and driver callback frequency from controlling managed
-/// allocation and subscriber publication rates.
-/// </summary>
+/// <summary>Bounded snapshot rate, so packet size and callback frequency do not drive allocation or publication.</summary>
 internal sealed class AudioLevelAccumulator
 {
     private const int UpdatesPerSecond = 30;

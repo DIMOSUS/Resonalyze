@@ -137,15 +137,7 @@ public sealed class FrequencyDependentPhaseTests
     [Fact]
     public void DifferentGatePositions_ThatBothContainTheWholeResponse_AgreeOnRelativePhase()
     {
-        // The re-reference contract, stated on the case where it holds: two
-        // window POSITIONS whose plateaus both contain the whole (here
-        // one-sample) response. BuildMeasuredPhase moves each extraction to the
-        // absolute τ, so the placement cancels and only the content counts.
-        // This is what lets the Virtual DSP phase view gate each curve on its
-        // own arrival — but ONLY while the condition holds, which is why the
-        // placement is measured first (GateLeadingEdgeLossDb). The two tests
-        // below are its other half: what a window that cuts into its channel
-        // does, and that the guard sees the difference.
+        // Re-referencing cancels placement only while both plateaus contain the response; GateLeadingEdgeLossDb checks that.
         SyntheticMeasurement first = DelayedImpulse(480); // 10 ms
         SyntheticMeasurement second = DelayedImpulse(576); // 12 ms
         PhaseAnalysisSettings sharedReference = Settings(
@@ -178,17 +170,8 @@ public sealed class FrequencyDependentPhaseTests
     [Fact]
     public void AGatePlacedOnTheArrivalPeak_TruncatesALowPassedChannelAndMovesItsPhase()
     {
-        // Why the Virtual DSP phase view cannot gate each curve at its own
-        // arrival PEAK. A steeply low-passed channel peaks long after it
-        // starts, so a window whose plateau begins at the peak keeps only a
-        // short shoulder of the rise; the response the FFT sees is no longer
-        // the channel's, and the common τ cannot restore it. The same IR read
-        // through a window that contains it and through one placed on its peak
-        // must therefore DISAGREE: this shape reads 177° apart, the field pair
-        // 176°.
+        // A steeply low-passed channel peaks long after it starts: a peak-placed plateau reads 177° off (field 176°).
         SyntheticMeasurement channel = LowPassedArrival(startSample: 480);
-        // The field session's gate: long enough that, placed on the arrival, it
-        // holds the whole channel — so only the PLACEMENT differs below.
         PhaseAnalysisSettings containing = Settings(
             PhaseWindowMode.FrequencyDependent,
             6,
@@ -226,11 +209,7 @@ public sealed class FrequencyDependentPhaseTests
     [Fact]
     public void GateLeadingEdgeLoss_SeparatesAContainingPlacementFromATruncatingOne()
     {
-        // The guard the per-curve placement rests on. It must read the same
-        // channel as safe when the window opens before its response and unsafe
-        // when the plateau starts on its peak — the two placements the test
-        // above showed 177° apart. Field figures at the same gate: own-arrival
-        // placements -28.4 to -72.2 dB, peak placements -3.5 to -10.8 dB.
+        // Field figures at this gate: own-arrival placements -28.4 to -72.2 dB, peak placements -3.5 to -10.8 dB.
         SyntheticMeasurement channel = LowPassedArrival(startSample: 480);
 
         double containing = DataHelper.GateLeadingEdgeLossDb(
@@ -244,8 +223,6 @@ public sealed class FrequencyDependentPhaseTests
         Assert.True(
             onThePeak > -20.0,
             $"a window opening on the peak lost only {onThePeak:0.0} dB ahead of its plateau");
-        // And the two verdicts must not sit next to each other: the whole point
-        // is a gap wide enough to put a ceiling in.
         Assert.True(
             onThePeak - containing > 15.0,
             $"the guard separated the placements by only {onThePeak - containing:0.0} dB");
@@ -254,13 +231,7 @@ public sealed class FrequencyDependentPhaseTests
     [Fact]
     public void GateLeadingEdgeLoss_SeesTheWrappedContentAGateReachingBeforeZeroReads()
     {
-        // A gate offset smaller than its left shoulder — legal, and reachable
-        // now that the crossing walk is floored at the record start. The phase
-        // path extracts with wrap, so that shoulder reads the circular
-        // buffer's tail; the guard has to read the same samples or it would
-        // judge a window it never saw. Here the tail carries a full-scale
-        // sample inside the fade-in: treating the stretch before zero as empty
-        // would report nothing lost at all.
+        // An offset smaller than the left shoulder extracts with wrap, so the guard must read the circular tail too.
         var samples = new Complex[4_096];
         samples[0] = Complex.One;      // the arrival, at the plateau
         samples[^12] = Complex.One;    // negative time, inside the fade-in
@@ -272,22 +243,14 @@ public sealed class FrequencyDependentPhaseTests
         Assert.True(
             double.IsFinite(loss),
             "the wrapped shoulder read as empty, so nothing counted as lost");
-        // And it is enough content to refuse the placement, not a rounding
-        // artefact: this reads -2.2 dB against the guard's -20 dB ceiling,
-        // where ignoring the wrap reports -3233 dB, i.e. nothing lost at all.
+        // -2.2 dB against the -20 dB ceiling; ignoring the wrap read -3233 dB.
         Assert.True(loss > -20.0, $"the wrapped content only read {loss:0.0} dB");
     }
 
     [Fact]
     public void GateLeadingEdgeLoss_AWindowHoldingNoneOfTheChannelReadsAsUnsafe()
     {
-        // The degenerate placement: a 6 ms window at 0 ms against a channel
-        // that arrives at 20 ms. Everything the channel has is ahead of the
-        // plateau and nothing is kept, which is the WORST a placement can do —
-        // so it has to read that way. Reading it as "nothing lost" would make
-        // a window that contains none of the channel look like the safest
-        // placement on offer, and a caller comparing two placements would then
-        // pick it over one that actually holds the channel.
+        // A window holding none of the channel must read as the worst placement, not 'nothing lost'.
         var samples = new Complex[4_096];
         samples[SampleRate * 20 / 1_000] = Complex.One;
         var channel = new SyntheticMeasurement(
@@ -308,11 +271,7 @@ public sealed class FrequencyDependentPhaseTests
     [Fact]
     public void AGuardedPerCurvePlacement_ReadsTheSamePhaseAsAContainingSharedOne()
     {
-        // What the guard buys: once a placement passes it, moving the window
-        // from a shared position to the channel's own arrival must not move the
-        // curve where the channel actually plays. That is the invariant the
-        // Virtual DSP phase view relies on to give each channel its own FDW
-        // window without making the curves incomparable.
+        // A passing placement lets each channel take its own FDW window without making curves incomparable.
         SyntheticMeasurement channel = LowPassedArrival(startSample: 480);
         PhaseAnalysisSettings shared = Settings(
             PhaseWindowMode.FrequencyDependent,
@@ -334,11 +293,7 @@ public sealed class FrequencyDependentPhaseTests
         List<SignalPoint> sharedPhase = DataHelper.GetGatedPhaseData(channel, shared);
         List<SignalPoint> ownPhase = DataHelper.GetGatedPhaseData(channel, ownArrival);
 
-        // Judged where this channel plays — a 55 Hz ring decaying over 25 ms
-        // carries its energy within roughly ±15 Hz of that, and a phase
-        // difference read where there is no output is noise, not a defect.
-        // (Field corroboration on the real channels, each inside its own
-        // passband: 0.2-1.5° between the shared and the own-arrival placement.)
+        // Judged only where the 55 Hz ring has energy (field: 0.2-1.5° between placements).
         foreach ((SignalPoint a, SignalPoint b) in sharedPhase.Zip(ownPhase)
                      .Where(pair => pair.First.X is >= 45 and <= 70))
         {
@@ -350,10 +305,7 @@ public sealed class FrequencyDependentPhaseTests
         }
     }
 
-    // A band-limited arrival that keeps rising for some 15 ms after it starts —
-    // the shape a steep low-pass gives a subwoofer channel, where the peak the
-    // Auto gate used to anchor on sits nowhere near the arrival. Field figures
-    // for scale: start 15.6 ms, peak 36.7 ms.
+    // Steep-LP sub shape (field: start 15.6 ms, peak 36.7 ms).
     private static SyntheticMeasurement LowPassedArrival(int startSample)
     {
         const double CyclesHz = 55.0;
@@ -386,12 +338,7 @@ public sealed class FrequencyDependentPhaseTests
     [Fact]
     public void SumGatedSpectra_ReReferencesEachPartBeforeAdding()
     {
-        // One delta seen through two window POSITIONS (both plateaus contain
-        // it): the windowed content is identical up to the extraction shift,
-        // so re-referenced to one start the two spectra must coincide and
-        // their sum must equal exactly twice the directly extracted one —
-        // pinning the rotation's sign and scale, which the Virtual DSP Sum
-        // (the vector sum of individually gated channels) rests on.
+        // Pins the rotation's sign and scale, which the Virtual DSP Sum rests on.
         SyntheticMeasurement measurement = DelayedImpulse(960); // 20 ms
         PhaseAnalysisSettings at20 = Settings(
             PhaseWindowMode.Fixed, 6, PhaseDetrendMode.Manual, gateOffsetMs: 20.0);
@@ -419,14 +366,7 @@ public sealed class FrequencyDependentPhaseTests
     [Fact]
     public void SumOfOwnGatedSpectra_KeepsTheLateChannelsTreble()
     {
-        // The property the Virtual DSP Sum rests on, end to end: two unit
-        // arrivals 3 ms apart, each FDW-gated at its OWN arrival, summed as
-        // spectra. At high frequencies each window keeps its arrival, so the
-        // band-averaged summed POWER reads both (~2; the interference cross
-        // term averages out across the band). The old construction — one
-        // summed IR through a single window anchored at the earliest arrival —
-        // reads only the early channel (~1): the FDW window there is far
-        // shorter than the 3 ms spread.
+        // Each channel gated at its own arrival keeps both in the summed power (~2); one window at the earliest reads ~1.
         var early = new Complex[8_192];
         early[480] = Complex.One; // 10 ms
         var late = new Complex[8_192];
@@ -522,18 +462,8 @@ public sealed class FrequencyDependentPhaseTests
     [Fact]
     public void Fdw_IsLinear_SpectrumOfASumIsTheSumOfTheSpectra()
     {
-        // Virtual DSP's core invariant: the tool draws per-channel FDW phase
-        // next to the FDW phase of the sample-wise summed IR, so the analysis
-        // must satisfy FDW(A+B) = FDW(A) + FDW(B) bin for bin — otherwise the
-        // drawn Sum need not match the vector sum of the drawn channels. Two
-        // channels with DIFFERENT early reflections make the bank spectra
-        // rotate differently between window lengths, which is exactly where
-        // the earlier log-magnitude/shortest-arc interpolation broke
-        // superposition by tens of degrees; the complex-linear interpolation
-        // is exact here (the FFT and the window lerp are both linear). The
-        // comparison runs on the complex spectra across ALL bins, so it also
-        // covers every point BETWEEN the bank centers where the interpolation
-        // acts.
+        // FDW(A+B) = FDW(A) + FDW(B) bin for bin, including between bank centres; different reflections broke
+        // the old log-magnitude interpolation by tens of degrees.
         var first = new Complex[4_096];
         first[480] = Complex.One;
         first[480 + 62] = new Complex(0.7, 0.0); // +0.7 at 1.3 ms
@@ -576,9 +506,7 @@ public sealed class FrequencyDependentPhaseTests
     [Fact]
     public void WrappedPhase_MasksBinsBelowTheReliabilityGate()
     {
-        // A narrowband tone burst has no energy far above its band: the wrapped
-        // phase there is noise and must be blanked (NaN), not drawn as ±180°
-        // chaos. In-band bins stay finite.
+        // No energy far above the band: wrapped phase there is blanked (NaN).
         var impulse = new Complex[8_192];
         const int Start = 480;
         const int Length = 480; // 10 ms burst at 1 kHz
@@ -605,8 +533,6 @@ public sealed class FrequencyDependentPhaseTests
     [Fact]
     public void WrappedPhase_KeepsEveryBinOfAFlatSpectrum()
     {
-        // The masking must not over-fire: a pure delay is reliable everywhere,
-        // so no bin of its wrapped phase goes missing.
         SyntheticMeasurement measurement = DelayedImpulse(480);
         List<SignalPoint> phase = DataHelper.GetGatedPhaseData(
             measurement,

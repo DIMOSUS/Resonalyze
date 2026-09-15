@@ -2,15 +2,9 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Peak/RMS/dBFS metering of captured samples for the measurement layer's final
-/// input-level snapshot. Kept application-side (using the DSP dB helper) so the
-/// audio library owns only its own live metering; the two never share a type
-/// except the neutral <see cref="AudioChannelLevel"/> result.
-/// </summary>
+/// <summary>App-side metering of captured samples; shares only <see cref="AudioChannelLevel"/> with the audio library.</summary>
 internal static class RecordedLevelMetering
 {
-    /// <summary>Peak amplitude at or above which a channel counts as full scale.</summary>
     public const double FullScaleThreshold = 0.999;
 
     public static AudioChannelLevel Measure(double peak, double sumSquares, long sampleCount)

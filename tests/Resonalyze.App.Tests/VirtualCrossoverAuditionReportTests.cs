@@ -1,17 +1,8 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The audition dialog's report: what it says, and — because it is the only thing
-/// that reports a finished render — what it says FIRST.
-/// </summary>
 public sealed class VirtualCrossoverAuditionReportTests
 {
-    /// <summary>
-    /// A finished render leads. It used to trail three growing blocks, and on a tune
-    /// with a spatial average per channel it started below the bottom of the box: the
-    /// progress bar read 100% over a report that looked exactly like the one before
-    /// the render, and nothing said the file had been written.
-    /// </summary>
+    /// <summary>Trailing the briefing, a finished render started below the box and nothing said the file was written.</summary>
     [Fact]
     public void AFinishedRenderLeadsTheReport()
     {
@@ -23,15 +14,10 @@ public sealed class VirtualCrossoverAuditionReportTests
             resultSection: "== Result ==\r\nWritten: out.wav");
 
         Assert.StartsWith("== Result ==", report);
-        // And the briefing for the next render is still there, under it.
         Assert.Contains("== Tune ==", report);
         Assert.Contains("== Track ==", report);
     }
 
-    /// <summary>
-    /// Before anything has been rendered the briefing leads, which is what those
-    /// blocks are for while a render is being set up.
-    /// </summary>
     [Fact]
     public void WithNothingRenderedYet_TheBriefingLeads()
     {
@@ -45,11 +31,6 @@ public sealed class VirtualCrossoverAuditionReportTests
         Assert.StartsWith("== Tune ==", report);
     }
 
-    /// <summary>
-    /// The spatial-average section states what will be done — or, where it cannot be
-    /// done, why. A muted checkbox with no explanation beside it is a control the user
-    /// has no way to satisfy.
-    /// </summary>
     [Fact]
     public void TheMagnitudeSectionSaysWhereTheLevelsComeFrom()
     {
@@ -71,11 +52,6 @@ public sealed class VirtualCrossoverAuditionReportTests
         Assert.Contains("the two sides are not one set.", unavailable);
     }
 
-    /// <summary>
-    /// The calibration block appears only when there is something to say — under
-    /// "Own (as measured)", the one selection whose meaning depends on the
-    /// measurements rather than on a file the user picked.
-    /// </summary>
     [Fact]
     public void TheCalibrationBlockAppearsOnlyWhenItHasSomethingToSay()
     {

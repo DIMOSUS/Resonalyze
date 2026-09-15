@@ -2,13 +2,7 @@ using System.Text;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Every reader of a Resonalyze JSON document asks this before it opens one, and what
-/// it must be is two things at once: cheap enough to run on a file it is about to
-/// decline — an impulse response is tens of megabytes, and being asked "are you a
-/// capture?" used to parse all of it — and as well informed as the deserializer it
-/// stands in front of, since a wrong answer routes a measurement to the wrong loader.
-/// </summary>
+/// <summary>Must be cheap on files it declines (IRs are tens of MB) yet as informed as the deserializer behind it.</summary>
 public sealed class JsonFormatMarkerTests : IDisposable
 {
     private readonly string directory = Directory.CreateTempSubdirectory(
@@ -25,11 +19,7 @@ public sealed class JsonFormatMarkerTests : IDisposable
     [Fact]
     public void AMarkerBeyondTheFirstChunkIsStillFound()
     {
-        // Our writers put it first, but a document that has been through another tool
-        // — re-serialized with its keys sorted, say — can carry it past any fixed
-        // window into the file. The walk therefore continues chunk by chunk rather
-        // than giving up at a cut-off, which is what keeps this exactly as informed
-        // as the full parse it replaces.
+        // A key-sorted document can carry the marker past any fixed window, so the walk continues chunk by chunk.
         var json = new StringBuilder("{\"curveDb\": [");
         json.AppendJoin(", ", Enumerable.Range(0, 40_000));
         json.Append("], \"format\": \"resonalyze-live-capture\"}");
@@ -41,9 +31,7 @@ public sealed class JsonFormatMarkerTests : IDisposable
     [Fact]
     public void AMarkerSplitAcrossAChunkBoundaryIsReadWhole()
     {
-        // The property name can land at the end of one chunk and its value in the
-        // next. The reader's state crosses with it; a walk that started each chunk
-        // fresh would lose the value it was in the middle of.
+        // Reader state crosses chunk boundaries with a value split between them.
         var json = new StringBuilder("{\"pad\": \"");
         json.Append('x', 64 * 1024 - 16);
         json.Append("\", \"format\": \"resonalyze-virtual-crossover\"}");
@@ -53,8 +41,6 @@ public sealed class JsonFormatMarkerTests : IDisposable
 
     [Fact]
     public void OnlyTheRootObjectsOwnPropertyCounts() =>
-        // A nested marker names a PART of the document — a recipe, a channel — and
-        // answering with it would open the file as the thing inside it.
         Assert.Equal(
             "resonalyze-overlay",
             Marker("{\"recipe\": {\"format\": \"resonalyze-live-capture\"}, " +
@@ -71,10 +57,7 @@ public sealed class JsonFormatMarkerTests : IDisposable
     [Fact]
     public void ACommentBeforeTheMarkerIsSkippedTheWayTheReadersSkipIt()
     {
-        // Every document reader is configured to skip comments and to accept a
-        // trailing comma, so a hand-edited file carrying either is a file they would
-        // open. Turning it away here would send a capture to the impulse-response
-        // loader to be misreported as an unsupported format.
+        // Readers skip comments and accept trailing commas, so the probe must too.
         string json = string.Join(
             Environment.NewLine,
             "{",
@@ -88,10 +71,7 @@ public sealed class JsonFormatMarkerTests : IDisposable
 
     [Fact]
     public void TheNameIsMatchedAsStrictlyAsTheDeserializerMatchesIt() =>
-        // None of the readers' options ask for case-insensitive property names, so a
-        // file writing "Format" does not bind there — and must not read as declared
-        // here either, or the probe would send a file to a loader that then refuses
-        // it for carrying no format at all.
+        // Readers are case-sensitive, so "Format" must not read as declared.
         Assert.Null(Marker("{\"Format\": \"resonalyze-impulse-response\"}"));
 
     [Theory]
@@ -106,8 +86,6 @@ public sealed class JsonFormatMarkerTests : IDisposable
 
     [Fact]
     public void ATruncatedDocumentStillDeclaresWhatItGotTo() =>
-        // Where the saving of a large measurement was interrupted: the head is intact
-        // and says what it is, which is all this answers.
         Assert.Equal(
             "resonalyze-impulse-response",
             Marker("{\"format\": \"resonalyze-impulse-response\", \"samples\": [1, 2"));
@@ -116,9 +94,7 @@ public sealed class JsonFormatMarkerTests : IDisposable
     public void AFileThatIsNotThereReadsAsNothing() =>
         Assert.Null(JsonFormatMarker.Read(Path.Combine(directory, "gone.json")));
 
-    // The version-aware probe exists for a loader's preflight: a file from a future
-    // format version must be refused by its declared version BEFORE deserialization,
-    // where the reader would only trip over the representation it does not know.
+    // A future format version must be refused before deserialization.
 
     [Fact]
     public void TheVersionTravelsWithTheFormat() =>
@@ -134,7 +110,6 @@ public sealed class JsonFormatMarkerTests : IDisposable
 
     [Fact]
     public void OnlyTheRootObjectsOwnVersionCounts() =>
-        // Same rule as the format: a nested version numbers a PART of the document.
         Assert.Equal(
             ("resonalyze-overlay", 3),
             WithVersion("{\"recipe\": {\"version\": 12}, " +

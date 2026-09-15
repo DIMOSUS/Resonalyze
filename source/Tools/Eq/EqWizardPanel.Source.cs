@@ -5,12 +5,7 @@ using Resonalyze.Options;
 
 namespace Resonalyze;
 
-// The self-contained half of the EQ Wizard: the mode owns its source (an impulse
-// response, or a measured curve imported from an overlay slot or a text file) and
-// its target curve (edited through a reused, isolated instance of the overlay
-// target dialog). Importing a curve is a SNAPSHOT — nothing here keeps a link to
-// the slot, history entry or file it came from, and nothing reaches into the
-// overlay UI or the current measurement.
+// The wizard owns its source and target. An imported curve is a SNAPSHOT: no link back to its slot, history entry or file.
 public partial class EqWizardPanel
 {
     private const int DefaultSampleRateHz = 48_000;
@@ -26,13 +21,9 @@ public partial class EqWizardPanel
         "or a measured curve from an overlay slot or a text file.\n" +
         "Use Target… to shape the goal curve.";
 
-    // The source has no overlay behind it, so its colours are fixed and chosen to
-    // read against the target and the Source + EQ curve.
     private static readonly OxyColor SourceCurveColor = OxyColor.FromRgb(180, 190, 205);
     private static readonly OxyColor SourcePlusEqColor = OxyColor.FromRgb(0, 209, 255);
 
-    // The 20 Hz .. 20 kHz grid the target is drawn on when there is no source to
-    // borrow frequencies from.
     private static readonly double[] DefaultTargetGrid =
         EqualizationCurve.LogFrequencyGrid(20, 20_000, 512).ToArray();
 
@@ -56,40 +47,25 @@ public partial class EqWizardPanel
 
     private Func<string?, CalibrationFile?>? calibrationResolver;
     private IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries = [];
-    // The effective choice for the loaded source (may be Own). Distinct from the persisted
-    // impulse-response preference below: loading a curve forces this to Own/Off, which
-    // must NOT overwrite what the user chose for impulse responses. See EqWizardCalibration.
+    // Effective choice for the loaded source; loading a curve forces Own/Off without touching the persisted IR preference.
     private EqWizardCalibrationChoice calibrationChoice = EqWizardCalibrationChoice.Off;
-    // The user's standing configured choice for impulse responses; the only one persisted.
     private string? preferredIrCalibrationId;
     private bool suppressCalibrationEvents;
     private bool suppressSampleRateEvents;
     private bool suppressQConventionEvents;
     private bool suppressSettingsSave;
-    // The rate used when the source does not state one; persisted, unlike the source.
     private int manualSampleRateHz = DefaultSampleRateHz;
-    // The user's OWN convention, kept apart from the one a Virtual DSP handoff forces
-    // on the selector: that one belongs to the project's processor and must not
-    // overwrite what the user picked for their own exports.
+    // The user's own convention, kept apart from the one a Virtual DSP handoff forces on the selector.
     private PeqQConvention manualQConvention = PeqQConvention.Rbj;
 
-    /// <summary>Raised when a persisted setting changes so the host can save.</summary>
     internal event Action? SettingsChanged;
 
-    /// <summary>
-    /// Measurement history, so an impulse response already recorded can be equalized
-    /// without exporting it first. Wired by the host form; history is simply absent
-    /// from the source menu until then.
-    /// </summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal MeasurementHistoryService? HistoryService { get; set; }
 
-    // ------------------------------------------------------------------ source menu
-
-    // Opened from the source button. Rebuilt on every click because both lists behind
-    // it change while the panel is open (a new measurement, a fresh overlay capture).
+    // Rebuilt on every click: history and overlay slots change while the panel is open.
     private void ShowSourceMenu()
     {
         if (sourceMenu is { Visible: true })
@@ -119,9 +95,7 @@ public partial class EqWizardPanel
         menu.Items.Add(slotItem);
 
         menu.Items.Add(
-            // Named for what it IS: a moving microphone is one way to produce a
-            // spatial average and a microphone array is another, and this entry
-            // takes either file.
+            // Moving-mic captures and mic-array measurements are both spatial averages; this entry takes either.
             "Curve from spatial average…",
             null,
             (_, _) => _ = LoadCurveFromSpatialAverageAsync());
@@ -172,16 +146,13 @@ public partial class EqWizardPanel
         {
             var item = new ToolStripMenuItem(MenuText.Trim($"{slot.Slot}: {slot.Title}"))
             {
-                // A menu item's tooltip is drawn by the ToolStrip, not by the app's
-                // wrapping tooltip, and a slot description can carry a full file path.
+                // ToolStrip draws item tooltips itself (no app wrapping), and a description can carry a full path.
                 ToolTipText = ToolTipTextWrapper.Wrap(slot.Description)
             };
             item.Click += (_, _) => LoadCurveFromSlot(slot.Slot);
             slotItem.DropDownItems.Add(item);
         }
     }
-
-    // ------------------------------------------------------------- source loading
 
     private async Task LoadIrFromFileAsync()
     {
@@ -196,8 +167,7 @@ public partial class EqWizardPanel
             return;
         }
 
-        // Guard against overlapping loads: a slow earlier load must not overwrite a
-        // newer selection (or report its error) when it finally lands.
+        // A slow earlier load must not overwrite a newer selection when it lands.
         int generation = ++sourceLoadGeneration;
         ImpulseResponseFile file;
         try
@@ -227,17 +197,9 @@ public partial class EqWizardPanel
     }
 
     /// <summary>
-    /// Applies a measurement as a source, offering its microphone array first when it
-    /// carries one.
+    /// Applies a measurement as a source, offering (not forcing) its microphone array first when it carries one;
+    /// an average has no IR, so substituting it silently would also drop the gate preview.
     /// </summary>
-    /// <remarks>
-    /// Asked rather than decided. Equalizing the point measurement while an average of
-    /// the same driver sits unused in the same file is the mistake the array exists to
-    /// prevent, so the array is the default answer — but a user comparing the two is
-    /// doing something legitimate, and silently substituting the curve would also
-    /// change what the panel can do (a spatial average has no impulse response behind
-    /// it, so the gate preview goes away).
-    /// </remarks>
     private void ApplyMeasurementSource(
         ImpulseResponseFile file,
         string displayName,
@@ -305,8 +267,7 @@ public partial class EqWizardPanel
             return;
         }
 
-        // The entry can be deleted between opening the menu and choosing it; that is a
-        // silent no-op, exactly like the Compare picker.
+        // Deleted between opening the menu and choosing: silent no-op, like the Compare picker.
         if (snapshot == null)
         {
             return;
@@ -322,8 +283,6 @@ public partial class EqWizardPanel
 
     private void LoadCurveFromSlot(int slot)
     {
-        // Bumped for a synchronous load too, so an in-flight file or history load
-        // cannot land on top of the slot the user just chose.
         sourceLoadGeneration++;
         EqWizardCurveSource? source = sourceResolver.TryCreateFromOverlaySlot(slot);
         if (source == null)
@@ -340,14 +299,6 @@ public partial class EqWizardPanel
         ApplySource(source);
     }
 
-    // A spatial average equalized on its own, with no Virtual DSP set behind it: one
-    // driver's magnitude over the listening volume instead of at one microphone
-    // position, which is the shape a tune should be fitted to.
-    //
-    // Two files carry one: a moving-microphone capture, and a measurement recorded
-    // with a microphone array. They are the same curve taken two ways, so this reads
-    // whichever it was handed rather than making the user know which menu entry their
-    // file belongs to.
     private async Task LoadCurveFromSpatialAverageAsync()
     {
         using var dialog = new OpenFileDialog
@@ -407,8 +358,6 @@ public partial class EqWizardPanel
                 EqWizardSourceResolver.DescribeSpatialAverage(document, path));
         }
 
-        // Not a capture, so the other file that carries one: a measurement whose
-        // array was recorded beside its impulse response.
         ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
         return EqWizardSourceResolver.TryCreateFromArray(
             file,
@@ -446,27 +395,15 @@ public partial class EqWizardPanel
         ApplySource(source);
     }
 
-    // Installs a freshly imported source and re-derives everything that depends on what
-    // the source IS: which selectors apply, the sample rate, the axis, and where the
-    // target starts.
     private void ApplySource(EqWizardCurveSource source)
     {
-        // Installing a source ends any Virtual DSP handoff: the Return button must
-        // never send a bank tuned against some OTHER curve back to a channel. A
-        // handoff itself re-establishes its session right after this call.
+        // Ends any handoff so Return never sends a bank tuned against another curve; a handoff re-establishes it after.
         EndVirtualDspHandoff();
         loadedSource = source;
-        // Before anything draws: the phase view reads its window from here, and a
-        // window left over from the previous source would open on an arrival this one
-        // does not have.
+        // Before drawing: a phase window left from the previous source would open on an arrival this one lacks.
         SeedPhaseContext(source);
 
-        // Settle every selector that feeds the curve and fit the axis before drawing,
-        // all with redraws suppressed, so the single draw at the end paints the
-        // finished state. The Target Level is deliberately NOT touched: it is the
-        // user's knob alone, wherever the new source lands relative to it — a Virtual
-        // DSP handoff carries its own panel's level in, and every other source keeps
-        // whatever the user last set.
+        // Settle selectors and axis with redraws suppressed. Target Level is deliberately untouched: it is the user's knob.
         suppressRedraw = true;
         try
         {
@@ -493,11 +430,7 @@ public partial class EqWizardPanel
         DrawSelectedCurves();
     }
 
-    // The calibration a freshly loaded source starts on:
-    //  - a curve that stored its own correction defaults to reproducing it (Own);
-    //  - an impulse response restores the user's standing configured preference,
-    //    regardless of what a previously loaded curve forced the effective choice to;
-    //  - a curve with no uncalibrated reference cannot be re-calibrated at all (Off).
+    // See docs/tech/eq-auto-tuner.md#calibration-choice.
     private EqWizardCalibrationChoice ChooseCalibration(EqWizardCurveSource source)
     {
         if (source.HasOwnCalibration)
@@ -508,17 +441,10 @@ public partial class EqWizardPanel
         {
             return EqWizardCalibrationChoice.Microphone(preferredIrCalibrationId);
         }
-        // A Virtual DSP channel is pinned to the correction its panel renders with:
-        // a PEQ fitted under one calibration and summed under another would break the
-        // handoff's identity. The selector is disabled (SupportsCalibration is false)
-        // and the standing IR preference stays untouched. The panel's Off is Off.
+        // A handoff is pinned to the correction its panel renders with; the IR preference stays untouched.
         if (source.Kind == EqWizardSourceKind.VirtualDspChannel)
         {
-            // Pinned whenever the panel pinned ANY correction, curve or mode. Asking
-            // for the curve alone dropped the spatial average's own correction on
-            // every channel whose impulse response named no calibration file: the
-            // choice fell to Off, Off resolves the average to Uncalibrated, and the
-            // wizard fitted a curve the panel had never drawn.
+            // Pinned whenever the panel pinned ANY correction, curve or mode (curve-only dropped the average's own correction).
             return source.PinsCorrection
                 ? EqWizardCalibrationChoice.PinnedToSource
                 : EqWizardCalibrationChoice.Off;
@@ -527,11 +453,7 @@ public partial class EqWizardPanel
         return EqWizardCalibrationChoice.Off;
     }
 
-    // ------------------------------------------------------------- source curve
-
-    // The source FR is an expensive FFT that only changes with the loaded source, the
-    // source smoothing or the calibration — never with band/fader/target edits. It
-    // is cached so a fader drag (many redraws per second) does not recompute it.
+    // Cached: the FFT changes only with source, smoothing or calibration, never with band/fader/target edits.
     private EqWizardCurve? GetSourceCurve()
     {
         if (sourceCurveDirty)
@@ -546,14 +468,10 @@ public partial class EqWizardPanel
     private void InvalidateSourceCurve()
     {
         sourceCurveDirty = true;
-        // The corrected preview is built from the same measurement, gate and
-        // calibration, so whatever invalidated the bare curve invalidated it too.
         InvalidateGatedPreview();
     }
 
-    // One render request for the loaded gated source: the panel's live gate,
-    // calibration and smoothing, plus the bank to substitute (null for the bare
-    // curve). Captured here, on the UI thread, so the render itself touches no control.
+    // Captured on the UI thread so the render touches no control.
     private EqWizardGatedPreviewRequest BuildGatedPreviewRequest(
         EqWizardCurveSource source, EqualizationCurve? bank) =>
         new(
@@ -570,18 +488,7 @@ public partial class EqWizardPanel
                 source.Measurement.LowestMeasuredFrequencyHz,
                 source.Measurement.HighestMeasuredFrequencyHz));
 
-    // The curve the current choice corrects with: the one the source arrived pinned
-    // to, or the configured entry the choice names (none for Off and for Own, whose
-    // correction is read off the curve itself, see ResolveCurveCalibrationCorrection).
-    /// <summary>
-    /// How a stored spatial average should be read, from the choice in force.
-    /// </summary>
-    /// <remarks>
-    /// A capture carries its own correction, so "Own" here means the capture's — the
-    /// moving-microphone pass was a measurement of its own, taken through its own
-    /// file, and reading it through the impulse response beside it would be off by
-    /// the difference between the two.
-    /// </remarks>
+    /// <summary>How a stored spatial average is read; a capture's "Own" is its own correction, not the IR's beside it.</summary>
     private SpatialAverageCalibration ResolveSpatialAverageCalibration(
         EqWizardCurveSource source) =>
         calibrationChoice.Own ? SpatialAverageCalibration.Own
@@ -601,11 +508,7 @@ public partial class EqWizardPanel
             return null;
         }
 
-        // A spatial average wins over the measurement beside it: when one is present
-        // it IS the magnitude, and the impulse response is only there for the phase
-        // view. Gaps are kept for everything that is not computed from an impulse
-        // response — a stored curve says NaN where it has nothing to report, and the
-        // fitter reads those breaks rather than bridging them.
+        // A spatial average IS the magnitude when present (the IR only feeds phase). Stored curves keep NaN gaps for the fitter.
         IReadOnlyList<SignalPoint> points =
             source.SpatialAverage != null ? ComputeSpatialAverageCurve(source)
             : source.Measurement != null ? ComputeImpulseResponseSpectrum(source)
@@ -614,29 +517,9 @@ public partial class EqWizardPanel
     }
 
     /// <summary>
-    /// The channel's magnitude from its spatial average with its DSP chain on top —
-    /// the same builder the Virtual DSP plot uses, so the tune is fitted to the curve
-    /// the user just left.
+    /// Channel magnitude from its spatial average through its chain, with the edited bank substituted INTO the chain
+    /// (smoothing does not commute with the bank). See docs/tech/eq-auto-tuner.md#spatial-average-sources.
     /// </summary>
-    /// <remarks>
-    /// On the CAPTURE's own grid, which is the resolution the measurement actually
-    /// has; the panel samples it onto its plot grid instead, and the two are the same
-    /// function read at different densities.
-    /// <para>
-    /// The chain is realized at the CHANNEL's rate rather than the capture's: the bank
-    /// being fitted here is going back to that channel, and the panel will run it at
-    /// the project's rate.
-    /// </para>
-    /// <para>
-    /// <paramref name="bank"/> is the bank under edit, substituted INTO the chain the
-    /// way the Virtual DSP plot substitutes the channel's own PEQ — never added to the
-    /// finished curve afterwards. The builder's last step is the display smoothing, and
-    /// smoothing does not commute with the bank: measured on a real MMM tune (13 bands,
-    /// psychoacoustic width) the two orders part by up to 3.1 dB, most of it where a
-    /// narrow band sits beside a deep one, because the psychoacoustic mean is a
-    /// peak-weighted cubic mean and so not linear. Null draws the source alone.
-    /// </para>
-    /// </remarks>
     private IReadOnlyList<SignalPoint> ComputeSpatialAverageCurve(
         EqWizardCurveSource source,
         EqualizationCurve? bank = null)
@@ -648,12 +531,8 @@ public partial class EqWizardPanel
         List<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
             document,
             (source.PreviewChain ?? DspChannelChain.Identity) with { Peq = bank },
-            // The chain is realized at the PROCESSOR's rate, not the capture's.
             EqProcessorSampleRate,
-            // Pinned to the panel's, like every other part of a handoff: a bank fitted
-            // under one correction and summed under another would break the identity
-            // the handoff promises — and what the panel drew is a MODE, not only a
-            // curve, so the mode is what travels.
+            // Pinned to the panel's calibration MODE, not only its curve, like every part of a handoff.
             ResolveSpatialAverageCalibration(source),
             grid,
             SourceSmoothingInverseOctaves);
@@ -662,10 +541,7 @@ public partial class EqWizardPanel
             return Array.Empty<SignalPoint>();
         }
 
-        // The set's offset last, as one scalar: it belongs to the whole capture set,
-        // and the panel resolved it over every channel. Applied here so the curve hangs
-        // exactly where the plot had it, which is what makes the Target Level that
-        // travelled with the handoff mean the same thing on both sides.
+        // The set's scalar offset last, so the curve hangs where the panel plotted it and Target Level means the same.
         double offset = source.SpatialAverageOffsetDb;
         return offset == 0
             ? curve
@@ -675,23 +551,16 @@ public partial class EqWizardPanel
     private IReadOnlyList<SignalPoint> ComputeImpulseResponseSpectrum(
         EqWizardCurveSource source)
     {
-        // Only a configured calibration can be applied while computing an FR; "own"
-        // belongs to an imported curve and never reaches here.
+        // Only a configured calibration applies to a computed FR; "own" belongs to imported curves.
         string? calibrationId = calibrationChoice.MicrophoneCalibrationId;
 
-        // A Virtual DSP channel reads through the gate it arrived with — the same
-        // DataHelper call, template and offset the DSP panel's magnitude view uses —
-        // so the wizard shows the very curve the user just left on that plot. The bare
-        // curve is the corrected one's own path with no bank, so the two cannot drift.
+        // Same DataHelper call, template and offset as the DSP panel's magnitude view; the bare curve is the no-bank path.
         if (source.IsGated)
         {
             return EqWizardGatedPreview.Render(BuildGatedPreviewRequest(source, bank: null));
         }
 
-        // The same steady-state window every magnitude curve in the Virtual DSP tool
-        // reads — one definition in milliseconds, realized here as sample counts at
-        // this measurement's rate. Long, so the low end resolves and a bass EQ band's
-        // full depth is visible; zero-padded when the IR is shorter.
+        // The Virtual DSP steady-state window (ms), realised in samples at this rate; zero-padded when the IR is shorter.
         (int window, int leftTukey, int rightTukey) =
             FrequencyResponseOptions.SteadyStateWindowSamples(
                 source.Measurement!.SampleRate);
@@ -711,13 +580,7 @@ public partial class EqWizardPanel
         return curves.Count > 0 ? curves[0].Points : Array.Empty<SignalPoint>();
     }
 
-    // An imported curve is already a finished response. When its uncalibrated reference
-    // was stored it is re-rendered exactly the way the mode it came from would — same
-    // resampler, so the mode's smoothing reproduces the on-screen reference. Without that
-    // reference (a dB SPL capture) the curve's own points are the reference: the
-    // correction frozen onto them comes back out, the width applies on their own grid, and
-    // the chosen correction goes on instead. A curve that declared neither (a text import,
-    // a legacy slot) has nothing to undo and is drawn as stored.
+    // See docs/tech/eq-auto-tuner.md#imported-curve-calibration.
     private IReadOnlyList<SignalPoint> ComputeImportedCurve(EqWizardCurveSource source)
     {
         if (source.RawSpectrum is not { Count: >= 2 } raw)
@@ -736,8 +599,6 @@ public partial class EqWizardPanel
             source.RawSpectrumBand);
     }
 
-    // The same choice as ResolveCurveCalibrationCorrection, but frozen on the curve's own
-    // points instead of the raw output grid — the only frequencies a no-raw capture has.
     private IReadOnlyList<double> ResolvePointsCalibrationCorrection(
         EqWizardCurveSource source)
     {
@@ -753,8 +614,6 @@ public partial class EqWizardPanel
                 source.Points);
     }
 
-    // The correction subtracted after smoothing: none, the one frozen at capture, or a
-    // configured profile re-frozen on the same output grid.
     private IReadOnlyList<double> ResolveCurveCalibrationCorrection(
         EqWizardCurveSource source)
     {
@@ -780,22 +639,9 @@ public partial class EqWizardPanel
     }
 
     /// <summary>
-    /// Every spectrum this panel draws or fits becomes plot points HERE, so that all of
-    /// them keep — or drop — exactly the same ones.
+    /// The single conversion to plot points: curves are paired BY INDEX (target, shading, fit), so every render must
+    /// keep or drop the same gaps. See docs/tech/eq-auto-tuner.md#index-aligned-curves.
     /// </summary>
-    /// <remarks>
-    /// The curves are read against each other BY INDEX: the target is built on the
-    /// source's own frequencies, the deviation shading pairs each vertex with the one
-    /// beneath it, the read-out subtracts them and the tuner takes the error between
-    /// them. That only holds while they are the same frequencies, and the gaps are what
-    /// decide it — an unmeasured bin is masked by FREQUENCY alone
-    /// (<c>MaskUnmeasuredBands</c>), so two renders of one measurement mask the same
-    /// points and one conversion drops the same points from both. TWO conversions is
-    /// what broke it: the bare curve dropped the masked bins while the corrected
-    /// preview kept them, and a channel swept from 200 Hz then read its target 341 grid
-    /// points too high — the shading closed in a wedge at 2 kHz (the sweep's low edge
-    /// squared over the grid's 20 Hz start) instead of following the result to 20 kHz.
-    /// </remarks>
     private static List<DataPoint> ToPlotPoints(
         IReadOnlyList<SignalPoint> points,
         bool keepGaps)
@@ -818,17 +664,10 @@ public partial class EqWizardPanel
         return result;
     }
 
-    // A measured curve keeps its NaN gaps: they mark bands the measurement could not
-    // trust, and the fitter reads them instead of bridging them. A computed FR has no
-    // such convention, so a non-finite value there is just noise and is dropped.
-    // The answer belongs to the SOURCE and not to a call site: its bare curve, its
-    // corrected preview and the fit's own render all have to take the same one.
+    // Measured curves keep NaN gaps (untrusted bands); a computed FR drops non-finite values. Decided per SOURCE, not call site.
     private static bool KeepsGaps(EqWizardCurveSource source) =>
         source.SpatialAverage != null || source.Measurement == null;
 
-    // Builds everything the plot draws from the loaded source and the local target,
-    // without any overlay. The target is always present; the source (and therefore
-    // Source + EQ) exists only once a source is loaded.
     private EqWizardRenderSet BuildRenderSet(EqualizationCurve eq)
     {
         EqWizardCurve? source = GetSourceCurve();
@@ -871,11 +710,7 @@ public partial class EqWizardPanel
         IReadOnlyList<DataPoint> sourcePoints,
         EqualizationCurve eq)
     {
-        // A gated source is filtered and THEN windowed — a window does not commute with
-        // a filter, and at the Virtual DSP gate lengths the difference reaches several
-        // dB in the bass (see EqWizardGatedPreview). That render is far too heavy for a
-        // fader frame, so it runs asynchronously and the last landed one is drawn while
-        // the next is in flight.
+        // Filtered THEN windowed (they do not commute; several dB in the bass). Too heavy per frame, so it renders async.
         if (loadedSource is { IsGated: true } gated)
         {
             RequestGatedPreview(gated, eq);
@@ -889,13 +724,7 @@ public partial class EqWizardPanel
                     landedGatedPreview);
         }
 
-        // A spatial average is rebuilt through the chain with the bank INSIDE it — the
-        // same substitution the gated preview above makes, and the one the Virtual DSP
-        // plot makes for the same capture. Adding the bank's ideal magnitude to the
-        // curve below would put it AFTER the display smoothing, and the two orders are
-        // not the same reading: see ComputeSpatialAverageCurve. The grid, the gaps and
-        // the count come from the same builder as the source curve, so the two stay
-        // aligned by index for the target, the error fill and the fit statistics.
+        // Bank substituted inside the chain, not added after smoothing; same builder keeps points aligned by index.
         if (loadedSource is { SpatialAverage: not null } average)
         {
             List<DataPoint> corrected = ToPlotPoints(
@@ -919,20 +748,12 @@ public partial class EqWizardPanel
         return new EqWizardCurve("Source + EQ", SourcePlusEqColor, 2, LineStyle.Solid, points);
     }
 
-    // ------------------------------------------------- gated corrected preview
-
-    // The last render that landed, in plot coordinates, and the bank it belongs to.
-    // Kept on screen while a newer render is in flight: blanking the curve on every
-    // keystroke would strobe it.
+    // Kept on screen while a newer render is in flight, so the curve does not strobe.
     private IReadOnlyList<DataPoint>? landedGatedPreview;
     private PeqBankState? landedGatedPreviewBank;
     private bool gatedPreviewInFlight;
 
-    /// <summary>
-    /// Becoming visible is what starts a gated preview: it is deliberately not started
-    /// while the panel is hidden (see <see cref="RequestGatedPreview"/>), so a handoff
-    /// installed on the way in has nothing drawn for its corrected curve until here.
-    /// </summary>
+    /// <summary>Gated previews start only once visible (see <see cref="RequestGatedPreview"/>).</summary>
     protected override void OnVisibleChanged(EventArgs e)
     {
         base.OnVisibleChanged(e);
@@ -947,22 +768,14 @@ public partial class EqWizardPanel
         previewOrchestrator.Invalidate();
         landedGatedPreview = null;
         landedGatedPreviewBank = null;
-        // The phase view reads the same measurement through the same chain, so
-        // whatever invalidated the magnitude preview invalidated it too — including
-        // the neighbours, which are gated with it.
+        // Phase view reads the same measurement and chain, neighbours included.
         InvalidatePhaseCurves();
     }
 
-    // Starts a render unless the landed one already answers for this bank. The bank is
-    // the identity: two redraws for the same filters (a target nudge, a selection
-    // change) must not re-run a pair of transforms.
+    // The bank is the identity: redraws for the same filters must not re-run the transforms.
     private void RequestGatedPreview(EqWizardCurveSource source, EqualizationCurve eq)
     {
-        // Nothing is started before the panel exists on screen. A handoff installs its
-        // source while the wizard is still the hidden mode (the shell hands over, THEN
-        // switches tabs), and making the window pumps messages — a render landing inside
-        // that pump would draw into a half-created control. Becoming visible redraws,
-        // and the render starts from there.
+        // Not before the handle exists: a handoff installs while hidden, and a render landing in the creation pump draws into a half-created control.
         if (!IsHandleCreated)
         {
             return;
@@ -986,26 +799,18 @@ public partial class EqWizardPanel
         {
             IReadOnlyList<SignalPoint>? points =
                 await previewOrchestrator.RenderLatestAsync(request);
-            // A render started before the panel was ever shown can finish before its
-            // handle exists — the wizard is built while another mode is on screen, and
-            // a handoff installs its source on the way in. Touching the plot then
-            // forces creation out of order; the curve is simply picked up by the first
-            // real draw instead.
             if (IsDisposed || !IsHandleCreated || points == null)
             {
                 return;
             }
 
-            // The bare curve's own conversion, taken from the source that asked for
-            // this render: the two are the same measurement through the same gate, and
-            // only stay comparable while they keep the same points (see ToPlotPoints).
+            // Same conversion as the bare curve, so both keep the same points (see ToPlotPoints).
             landedGatedPreview = ToPlotPoints(points, keepGaps);
             landedGatedPreviewBank = bank;
         }
         catch (Exception exception)
         {
-            // A preview that throws must not take the panel with it: the curve simply
-            // stays as it was, and the bank is still exportable.
+            // A failed preview leaves the curve as it was; the bank stays exportable.
             System.Diagnostics.Debug.WriteLine($"EQ Wizard preview failed: {exception}");
         }
         finally
@@ -1015,8 +820,6 @@ public partial class EqWizardPanel
 
         if (!IsDisposed && IsHandleCreated)
         {
-            // The bank may have moved on while this rendered; drawing now both paints
-            // what landed and starts the follow-up render for the newer bank.
             DrawSelectedCurves();
         }
     }
@@ -1028,11 +831,7 @@ public partial class EqWizardPanel
             : PhaseMode ? PhaseModeHint() : string.Empty;
     }
 
-    // ------------------------------------------------------------------- plot axis
-
-    // Puts the dB axis where the source actually lives. An imported dB SPL curve sits
-    // near 80 dB, far outside the impulse-response bounds — and those are ABSOLUTE
-    // limits, so without this the curve cannot even be panned into view.
+    // An imported dB SPL curve sits near 80 dB, outside the IR bounds, which are ABSOLUTE limits.
     private void ApplyAxisForSource()
     {
         if (plotWizard.Model is not { } model ||
@@ -1049,8 +848,6 @@ public partial class EqWizardPanel
         };
         EqWizardAxisRange range = ComputeAxisRangeForSource();
 
-        // Widen the absolute bounds before the view, so setting the view can never be
-        // clipped by limits left over from the previous source.
         axis.AbsoluteMinimum = double.NegativeInfinity;
         axis.AbsoluteMaximum = double.PositiveInfinity;
         axis.Minimum = range.Minimum;
@@ -1061,8 +858,6 @@ public partial class EqWizardPanel
         axis.Reset();
     }
 
-    // The default view the plot gets for the current source — and the yardstick for
-    // whether the target is still visible after a source switch.
     private EqWizardAxisRange ComputeAxisRangeForSource() =>
         loadedSource is { Measurement: null }
             ? EqWizardPlotFit.ForCurve(
@@ -1070,20 +865,13 @@ public partial class EqWizardPanel
                     ?? Enumerable.Empty<SignalPoint>())
             : EqWizardPlotFit.ImpulseResponseRange;
 
-    // ---------------------------------------------------------------- target
-
     private void OnTargetOffsetChanged()
     {
         RaiseSettingsChanged();
         DrawSelectedCurves();
     }
 
-    /// <summary>
-    /// The target curve as one value. The wizard owns and persists it; the host
-    /// hands the same definition to the Virtual DSP tool, which draws it over
-    /// its predicted sum and can edit it back through
-    /// <see cref="ApplyTargetCurve"/>.
-    /// </summary>
+    /// <summary>The target as one value; the host shares it with the Virtual DSP tool, which edits it back via <see cref="ApplyTargetCurve"/>.</summary>
     internal EqTargetCurve TargetCurve => new(
         targetPreset,
         targetSpec,
@@ -1094,12 +882,7 @@ public partial class EqWizardPanel
         targetLineStyle,
         targetSmoothingInverseOctaves);
 
-    /// <summary>
-    /// Takes a target edited elsewhere (the Virtual DSP tool's own Target
-    /// dialog). Redraws and persists exactly as an edit made here would, and
-    /// ignores a value equal to the current one, so the host can push on every
-    /// settings change without looping.
-    /// </summary>
+    /// <summary>Takes a target edited elsewhere; ignores an equal value so the host can push on every change without looping.</summary>
     internal void ApplyTargetCurve(EqTargetCurve value)
     {
         ArgumentNullException.ThrowIfNull(value);
@@ -1125,10 +908,6 @@ public partial class EqWizardPanel
         targetSmoothingInverseOctaves = value.SmoothingInverseOctaves;
     }
 
-    // Opened from the target button. A target is either a parametric shape or a
-    // curve imported from a file, and this is where that choice is made; the menu
-    // is rebuilt on every click because both the tick and the imported file's name
-    // change with the target itself.
     private void ShowTargetMenu()
     {
         if (targetMenu is { Visible: true })
@@ -1152,19 +931,13 @@ public partial class EqWizardPanel
             return;
         }
 
-        // Through the same door a Virtual DSP edit comes in by, so the import is
-        // drawn, persisted and handed on exactly like any other target change.
         ApplyTargetCurve(TargetCurve with
         {
             Spec = targetSpec with { Imported = imported }
         });
     }
 
-    // Reuses the overlay target dialog in isolated mode (no source picker, no
-    // overlay side effects); its live preview redraws the wizard plot. Cancel
-    // reverts the previewed changes. An imported curve rides through the dialog as
-    // an entry in its preset list, so editing the tolerance or the colour does not
-    // silently drop it — see OverlayTargetSettingsDialog.
+    // Isolated overlay target dialog; Cancel reverts the preview. An imported curve rides as a preset entry so edits keep it.
     private void OpenTargetSettings()
     {
         EqTargetCurve before = TargetCurve;
@@ -1217,12 +990,6 @@ public partial class EqWizardPanel
         DrawSelectedCurves();
     }
 
-    // ---------------------------------------------------------- calibration
-
-    /// <summary>
-    /// Wires the microphone-calibration resolver and available profiles, then
-    /// rebuilds the selector. Called again whenever the configured files change.
-    /// </summary>
     internal void ConfigureCalibration(
         Func<string?, CalibrationFile?> resolver,
         IReadOnlyList<MicrophoneCalibrationEntry> entries)
@@ -1239,9 +1006,7 @@ public partial class EqWizardPanel
         DrawSelectedCurves();
     }
 
-    // Rebuilds the selector's items and selection without invalidating or redrawing, so
-    // a caller mid-way through installing a source (ApplySource) can settle the combo
-    // and then compute the curve and fit the axis exactly once.
+    // No redraw here, so ApplySource computes the curve and fits the axis once.
     private void PopulateCalibrationCombo()
     {
         suppressCalibrationEvents = true;
@@ -1265,15 +1030,10 @@ public partial class EqWizardPanel
                 }
             }
 
-            // BuildCalibrationOptions always yields at least "Off" and always includes
-            // the current choice, so index is found; the 0 fallback is only for the
-            // impossible empty list.
             comboBoxCalibration.SelectedIndex = index >= 0 ? index : 0;
             comboBoxCalibration.Enabled =
                 comboBoxCalibration.Items.Count > 1 &&
                 (loadedSource?.SupportsCalibration ?? true);
-            // The disabled selector still SHOWS a Virtual DSP channel's pinned
-            // correction; the tooltip says why it cannot be changed from here.
             toolTip.SetToolTip(
                 comboBoxCalibration,
                 loadedSource is { Kind: EqWizardSourceKind.VirtualDspChannel }
@@ -1289,10 +1049,7 @@ public partial class EqWizardPanel
         calibrationChoice = GetSelectedCalibration();
     }
 
-    // Off and every configured calibration are always offered; "own" only exists for a
-    // curve that stored the correction it was captured with. An entry that currently
-    // resolves to nothing stays listed and marked, and so does a selection the list no
-    // longer holds — dropping either would silently rewrite the user's choice.
+    // Entries resolving to nothing, and a selection the list lost, stay listed: dropping them would rewrite the user's choice.
     private IReadOnlyList<EqWizardCalibrationOption> BuildCalibrationOptions()
     {
         var options = new List<EqWizardCalibrationOption>
@@ -1306,28 +1063,18 @@ public partial class EqWizardPanel
                 EqWizardCalibrationChoice.OwnCapture, "Own (as captured)"));
         }
 
-        // A Virtual DSP channel's correction is listed under the name its panel
-        // shows for it — which may be a curve the session carries, absent from the
-        // wizard's own list — so the disabled selector still says what applies.
+        // Listed under the panel's name for it (may be a session curve absent from the wizard's list).
         if (loadedSource is { Kind: EqWizardSourceKind.VirtualDspChannel, PinsCorrection: true } pinned)
         {
             options.Add(new EqWizardCalibrationOption(
                 EqWizardCalibrationChoice.PinnedToSource,
-                // Nameless exactly when the pinned correction is the spatial average's
-                // own: it is whatever THAT capture was recorded through, which no file
-                // in this list need name. The panel's own words for it, so the disabled
-                // selector reads the same in both tools.
                 pinned.PinnedCalibrationName ??
                     (pinned.SpatialAverageCalibration.Mode == SpatialAverageCalibrationMode.Own
                         ? "Own (as measured)"
                         : "Virtual DSP")));
         }
 
-        // A curve whose correction is an aggregate of several microphones' files gets
-        // Own and Off and nothing else. Both of those are exact — the correction was
-        // measured, not copied — while swapping in one microphone's curve would apply
-        // it to positions that were never read through it, and would look no different
-        // on the plot from the two answers that are right.
+        // An aggregate (multi-mic) correction offers only Own and Off: one mic's file would apply to positions not read through it.
         if (loadedSource is not { CalibrationIsAggregate: true })
         {
             foreach (MicrophoneCalibrationEntry entry in calibrationEntries)
@@ -1366,8 +1113,6 @@ public partial class EqWizardPanel
         }
 
         calibrationChoice = GetSelectedCalibration();
-        // A configured choice made against an impulse response (or with nothing loaded)
-        // becomes the standing IR preference; one made against a curve does not.
         preferredIrCalibrationId = EqWizardCalibration.UpdatedIrPreference(
             preferredIrCalibrationId, loadedSource?.Kind, calibrationChoice);
         InvalidateSourceCurve();
@@ -1382,20 +1127,11 @@ public partial class EqWizardPanel
         public override string ToString() => Label;
     }
 
-    // --------------------------------------------------------------- sample rate
-
-    // The rate the fitted biquads are REALIZED at: a property of the processor being
-    // tuned, not of the measurement. The two are independent — a 48 kHz sound card can
-    // measure a system driven by a 96 kHz processor, and the filters must still be the
-    // ones that processor builds (see PreparedDspResponse) — so the selector answers
-    // for every source, and only a handoff that KNOWS the processor overrides it.
+    // Rate the biquads are REALISED at: the processor's, independent of the measurement's. See docs/tech/eq-auto-tuner.md#processor-rate-and-q-convention.
     private int EqProcessorSampleRate
     {
         get
         {
-            // A Virtual DSP handoff carries the project's processor. The bank returns
-            // to that project and is realized there, so letting the combo disagree
-            // would fit biquads for one rate and run them at another.
             if (loadedSource?.ProcessorProfile is { } profile)
             {
                 return profile.SampleRateHz;
@@ -1408,11 +1144,7 @@ public partial class EqWizardPanel
     }
 
     /// <summary>
-    /// How the DSP being tuned defines the Q of a peaking band. This moves the numbers
-    /// on the tuning sheet ONLY: the fit, the on-screen curve and the profile-file
-    /// exports all stay in the RBJ convention the library realizes, so switching it
-    /// never changes the tune that was designed — just how it has to be typed in for
-    /// the hardware to reproduce it.
+    /// The DSP's peaking-band Q convention. Moves the tuning-sheet numbers ONLY; fit, plot and profile exports stay RBJ.
     /// </summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
@@ -1437,12 +1169,7 @@ public partial class EqWizardPanel
         }
     }
 
-    /// <summary>
-    /// The convention the USER selected, which is what the application settings
-    /// persist. While a Virtual DSP handoff is loaded the selector shows that
-    /// project's processor instead, and saving THAT would silently retarget every
-    /// later export at a device the user never chose.
-    /// </summary>
+    /// <summary>The user's selected convention (persisted); a handoff's processor convention must never be saved over it.</summary>
     internal PeqQConvention ManualQConvention => manualQConvention;
 
     private void InitializeQConventionComboBox()
@@ -1459,8 +1186,7 @@ public partial class EqWizardPanel
             comboBoxQConvention.Items.Add(convention);
         }
 
-        // Selected before the handler is attached, so building the panel does not look
-        // like the user changing the setting.
+        // Selected before the handler is attached, so construction is not a user change.
         comboBoxQConvention.SelectedItem = PeqQConvention.Rbj;
         comboBoxQConvention.SelectedIndexChanged += (_, _) =>
         {
@@ -1472,10 +1198,7 @@ public partial class EqWizardPanel
         };
     }
 
-    // The convention a Virtual DSP handoff brings is the project processor's, and it
-    // is locked here for the same reason its rate is: the tune belongs to that
-    // project's device, and the place to change the device is that project's DSP
-    // processor dialog. Any other source leaves the selector to the user.
+    // A handoff locks the convention to its project's processor, like the rate.
     private void RefreshQConventionCombo()
     {
         PeqQConvention? fromProcessor = loadedSource?.ProcessorProfile?.QConvention;
@@ -1507,8 +1230,6 @@ public partial class EqWizardPanel
 
     private void RefreshSampleRateCombo()
     {
-        // The PROCESSOR's rate, not the measurement's: a handoff states it, and
-        // anything else leaves the user's own pick standing.
         int selectRate =
             loadedSource?.ProcessorProfile?.SampleRateHz ?? manualSampleRateHz;
 
@@ -1521,9 +1242,7 @@ public partial class EqWizardPanel
                 comboBoxSampleRate.Items.Add(rate);
             }
 
-            // A processor at a non-standard rate joins the list so the selector shows
-            // the true rate rather than the nearest standard one — the tune must be
-            // realized at exactly the rate the device runs.
+            // A non-standard processor rate joins the list: the tune must be realised at exactly that rate.
             if (!SelectableSampleRatesHz.Contains(selectRate))
             {
                 comboBoxSampleRate.Items.Add(selectRate);
@@ -1536,11 +1255,6 @@ public partial class EqWizardPanel
             suppressSampleRateEvents = false;
         }
 
-        // A Virtual DSP handoff brings the project's processor with it, and the bank
-        // goes back to be realized there — so the rate is shown but locked, and it is
-        // changed where it belongs, in that project's DSP processor dialog. Every other
-        // source leaves it editable: the measurement does not decide which device the
-        // tune is for (see EqProcessorSampleRate).
         comboBoxSampleRate.Enabled = loadedSource?.ProcessorProfile == null;
     }
 
@@ -1551,30 +1265,22 @@ public partial class EqWizardPanel
             return;
         }
 
-        // A manual pick is the user's preference and is persisted; it also becomes the
-        // rate the current source's filters are realized at (a handoff ignores it,
-        // being locked to its project's processor).
         if (comboBoxSampleRate.SelectedItem is int rate)
         {
             manualSampleRateHz = rate;
         }
 
-        // Only the next fit reads the rate, but an in-flight one was computed against
-        // the old value, so orphan it. The EQ response itself is rate-dependent too.
+        // Orphan any in-flight fit: it was computed at the old rate.
         RaiseSettingsChanged();
         DrawSelectedCurves();
     }
-
-    // ---------------------------------------------------------- persistence
 
     internal void ApplyPersistedSettings(MeasurementSettingsFile.EqWizardSettings settings)
     {
         suppressSettingsSave = true;
         try
         {
-            // Normalized like every target that comes off disk: the settings file
-            // can hold a non-finite number or an undefined enum, and this target
-            // goes on to fill the settings dialog, which cannot take either.
+            // Normalised: the settings file may hold non-finite numbers or undefined enums the dialog cannot take.
             AssignTargetCurve(new EqTargetCurve(
                 settings.Preset,
                 new TargetCurveSpec(
@@ -1589,10 +1295,7 @@ public partial class EqWizardPanel
                     settings.PresenceFrequencyHz,
                     settings.PresenceWidthOctaves)
                 {
-                    // Rebuilt through the importer, which is what makes a stored
-                    // curve safe: the file can hold anything, and what cannot be
-                    // read as a shape comes back as no shape at all — the
-                    // parametric terms beside it.
+                    // The importer returns no shape for anything unreadable.
                     Imported = ImportedTargetCurve.FromStorage(
                         settings.TargetImportedName,
                         settings.TargetImportedCurve)
@@ -1603,9 +1306,7 @@ public partial class EqWizardPanel
                 settings.TargetStrokeThickness,
                 settings.TargetLineStyle,
                 settings.TargetSmoothingInverseOctaves).Normalized());
-            // Only the configured impulse-response preference is persisted: "own" belongs
-            // to an imported curve, and no source is restored, so the effective choice
-            // simply starts from that preference.
+            // Only the configured IR preference persists; no source is restored.
             preferredIrCalibrationId = settings.ResolveCalibrationId();
             calibrationChoice =
                 EqWizardCalibrationChoice.Microphone(preferredIrCalibrationId);

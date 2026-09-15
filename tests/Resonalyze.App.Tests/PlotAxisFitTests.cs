@@ -4,7 +4,7 @@ using OxyPlot.Series;
 
 namespace Resonalyze.App.Tests;
 
-// "Fit to data" and "Fit Y to data" — REW's Ctrl+Alt+F and Ctrl+Alt+Y.
+// REW's Ctrl+Alt+F and Ctrl+Alt+Y.
 public sealed class PlotAxisFitTests
 {
     [Fact]
@@ -17,11 +17,8 @@ public sealed class PlotAxisFitTests
 
         Axis frequency = Axis(model, PlotModelFactory.FrequencyAxisKey);
         Axis decibel = Axis(model, PlotModelFactory.DecibelAxisKey);
-        // The frequency axis lands exactly on the data: padding an axis whose whole
-        // range IS the audio band would open every fit on empty decades.
         Assert.Equal(100, frequency.ActualMinimum, 6);
         Assert.Equal(5_000, frequency.ActualMaximum, 6);
-        // The value axis keeps a margin around the curve.
         Assert.True(decibel.ActualMinimum < -30);
         Assert.True(decibel.ActualMinimum > -35);
         Assert.True(decibel.ActualMaximum > -10);

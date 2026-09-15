@@ -3,19 +3,12 @@ using OxyPlot;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The house curve inside the wizard itself: the panel has to DRAW the imported
-/// shape (which is the same curve the fit is handed, since Auto Tune reads the
-/// target curve the plot builds), and it has to still be the target after a
-/// restart.
-/// </summary>
 public sealed class EqWizardImportedTargetTests
 {
     [Fact]
     public void TheWizardDrawsTheImportedShape()
     {
-        // Not the preset the target still names underneath it: what the plot
-        // builds is what Auto Tune corrects toward, so this is the whole feature.
+        // Auto Tune corrects toward what the plot builds, so drawing the imported shape is the feature.
         using var panel = new EqWizardPanel();
         panel.ApplyTargetCurve(TargetWith(House()));
 
@@ -53,8 +46,6 @@ public sealed class EqWizardImportedTargetTests
             .Invoke(restored, [saved.CaptureSettings()]);
 
         Assert.Equal(House(), restored.TargetCurve.Spec.Imported);
-        // And the parametric shape it was carrying rides back with it, because
-        // picking a preset in the target dialog is what returns to it.
         Assert.Equal(TargetPreset.Car, restored.TargetCurve.Preset);
         Assert.Equal(
             TargetCurveSpec.FromPreset(TargetPreset.Car).BassShelfGainDb,

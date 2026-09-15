@@ -5,11 +5,7 @@ using Resonalyze.Options;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Generates deterministic broadband noise for repeatable live-spectrum
-/// measurements. Pure signal generation: it exposes float sample data only;
-/// the audio layer builds any playback stream from it.
-/// </summary>
+/// <summary>Deterministic broadband noise for live measurements (sample data only).</summary>
 public sealed class NoiseSignal : IDisposable
 {
     private bool disposed;
@@ -47,9 +43,7 @@ public sealed class NoiseSignal : IDisposable
         Samples = checked((int)(sampleRate * requestedDuration));
         if (noiseColor == NoiseColor.PinkPeriodic)
         {
-            // The buffer is looped by playback; a length that is not a whole
-            // number of periods puts a phase jump at every loop seam, and the
-            // analyzer's rectangular window assumes exact periodicity.
+            // Looped by playback: a non-whole number of periods jumps phase at the seam and breaks the rectangular window.
             int period = Math.Max(2, periodLength);
             Samples = period * Math.Max(
                 1,
@@ -58,7 +52,6 @@ public sealed class NoiseSignal : IDisposable
 
         FloatData = new float[Samples];
 
-        // A fixed seed keeps measurements reproducible and makes regressions diagnosable.
         var random = new Random(42);
         switch (noiseColor)
         {
@@ -79,7 +72,6 @@ public sealed class NoiseSignal : IDisposable
         }
     }
 
-    // Uniform white noise in [-0.5, 0.5): equal energy per hertz.
     private void FillWhite(Random random)
     {
         for (int sampleIndex = 0; sampleIndex < Samples; sampleIndex++)
@@ -88,11 +80,7 @@ public sealed class NoiseSignal : IDisposable
         }
     }
 
-    // Pink noise (-3 dB/octave) via Paul Kellett's economical filter bank, then
-    // normalized to the same 0.5 peak as the white path so playback level matches.
-    // The coefficients live in Dsp.KellettPinkFilter, shared with the noise-tilt
-    // compensation, which must model this exact filter (the bank flattens below its
-    // lowest pole's corner) — a drifted copy would silently mis-compensate.
+    // Kellett bank from Dsp.KellettPinkFilter, shared with tilt compensation, which must model this exact filter.
     private void FillPink(Random random)
     {
         IReadOnlyList<(double A, double G)> poles = KellettPinkFilter.Poles;
@@ -130,10 +118,7 @@ public sealed class NoiseSignal : IDisposable
         }
     }
 
-    // Periodic pink noise: synthesise one period of length = the analyzer FFT block
-    // with an exactly pink magnitude spectrum (amplitude ∝ 1/sqrt(f)) and random
-    // phase, then tile it across the buffer. Being deterministic and period-synchronous
-    // with the FFT, it converges far faster than random noise with no spectral variance.
+    // One FFT-block period with exact 1/sqrt(f) magnitude and random phase, tiled: converges without spectral variance.
     private void FillPinkPeriodic(Random random, int periodLength)
     {
         int n = Math.Max(2, periodLength);
@@ -144,7 +129,6 @@ public sealed class NoiseSignal : IDisposable
             double magnitude = 1.0 / Math.Sqrt(k);
             if (k == n - k)
             {
-                // Nyquist bin has no conjugate partner and must stay real.
                 spectrum[k] = new Complex(random.NextDouble() < 0.5 ? -magnitude : magnitude, 0);
                 continue;
             }
@@ -172,15 +156,8 @@ public sealed class NoiseSignal : IDisposable
         }
     }
 
-    // Brown/red noise (-6 dB/octave) via a leaky integrator of white noise. The
-    // leak keeps the random walk from drifting off; the mean is removed and the
-    // result normalized to the same 0.5 peak as the other colours. The leak is
-    // derived from a FIXED corner frequency (fc ≈ Fs·(1−leak)/2π, below which
-    // the −6 dB/oct slope flattens): a fixed 0.99 coefficient put that corner
-    // at ~76 Hz at 48 kHz but ~305 Hz at 192 kHz — the same "Brown" mode
-    // changed its spectral shape with the sample rate.
-    // Shared with the noise-tilt compensation, whose leaky-integrator model must
-    // derive the same leak from the same corner.
+    // Leak derived from a fixed corner so the spectrum does not change with sample rate (0.99 put it at 76 Hz @48k, 305 Hz @192k).
+    // Shared with the tilt compensation's leaky-integrator model.
     internal const double BrownCornerHz = 76.0;
 
     private void FillBrown(Random random)

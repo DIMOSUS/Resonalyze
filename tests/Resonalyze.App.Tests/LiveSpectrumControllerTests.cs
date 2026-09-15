@@ -10,9 +10,7 @@ public sealed class LiveSpectrumControllerTests
     [Fact]
     public void SilentEnteringTransferMode_NormalizesToPeriodicPink()
     {
-        // Silent is the one mode-exclusive signal: a transfer function has nothing to
-        // correlate against without an excitation, so entering Transfer mode swaps it
-        // for the transfer reference.
+        // A transfer function has nothing to correlate without excitation, so Transfer mode swaps Silent out.
         var options = new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.TransferFunction,
@@ -28,8 +26,6 @@ public sealed class LiveSpectrumControllerTests
     [Fact]
     public void NormalizeSignalType_KeepsSilentInRtaMode()
     {
-        // In RTA mode Silent is valid at EITHER scale — an ambient RTA in dBFS is a
-        // legitimate display — so nothing (calibration changes included) swaps it.
         var options = new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Rta,
@@ -51,8 +47,6 @@ public sealed class LiveSpectrumControllerTests
         LiveAnalysisMode mode,
         NoiseColor color)
     {
-        // Every real excitation is valid in both modes — periodic pink included: in
-        // RTA it is simply a known (deterministic) excitation to measure.
         var options = new LiveSpectrumOptions { AnalysisMode = mode, NoiseColor = color };
 
         bool changed = LiveSpectrumController.NormalizeSignalType(options);
@@ -73,7 +67,6 @@ public sealed class LiveSpectrumControllerTests
             controller,
             new List<SignalPoint> { new(1000.0, 85.0) });
 
-        // PersistCalibration invokes this even when another mode owns the plot.
         controller.InvalidateCalibration();
 
         Assert.Null(peakHoldField.GetValue(controller));
@@ -82,11 +75,7 @@ public sealed class LiveSpectrumControllerTests
     [Fact]
     public async Task DiscardCapturedData_ClearsTheAccumulationAndTheKeptCurve()
     {
-        // The idle-recolour hole: a stopped curve is a record of the PREVIOUS
-        // acquisition setup, while the display transform (the slope compensation
-        // above all) reads the options live. When an acquisition parameter changes
-        // without a restart, the host discards the stale data instead of letting
-        // the next redraw silently re-interpret it as the new excitation.
+        // A stopped curve records the previous acquisition setup while the display reads options live, so a change discards it.
         var factory = new FakeAudioSessionFactory(
             streamingFactory: _ => new RecordingStreamingSession(
                 framesToRaise: 20,
@@ -120,8 +109,6 @@ public sealed class LiveSpectrumControllerTests
         SetField(controller, "measurement", noise);
         SetField(controller, "plotView", new OxyPlot.WindowsForms.PlotView());
         SetField(controller, "lastSnapshot", snapshot);
-        // Discarding hands the plot back to the rig, so the controller tells the
-        // shell — which this half-built object has to stand in for.
         int notified = 0;
         SetField(controller, "updateRecordButton", new Action(() => notified++));
 
@@ -138,10 +125,7 @@ public sealed class LiveSpectrumControllerTests
     [Fact]
     public void TiltToggle_ChangesThePeakHoldDisplayKey()
     {
-        // The peak-hold envelope holds FINISHED display values; toggling the noise
-        // tilt compensation reshapes the display, so it must change the display key
-        // (ApplyDisplayOptions then drops the stale envelope instead of max-ing the
-        // old values against tilted ones).
+        // Peak hold holds finished display values, so toggling tilt compensation must change the display key.
         using var sweep = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
         var options = new LiveSpectrumOptions
@@ -186,10 +170,7 @@ public sealed class LiveSpectrumControllerTests
     [Fact]
     public void ViewOnlySpl_ExplainsTheSuppressedCurveInsteadOfAnEmptyPlot()
     {
-        // dB SPL selected with no calibration configured: the snapshot's curves are
-        // suppressed (raw dBFS on an absolute axis would be garbage), and the model
-        // must say why instead of silently showing an empty plot. The notice is added
-        // by the series path, so it appears only when a curve really was suppressed.
+        // dB SPL without calibration suppresses curves; the notice appears only when a curve was really suppressed.
         using var sweep = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
         var controller = (LiveSpectrumController)RuntimeHelpers.GetUninitializedObject(
@@ -225,15 +206,10 @@ public sealed class LiveSpectrumControllerTests
             Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
         Assert.Contains("overlays only", note.Text, StringComparison.OrdinalIgnoreCase);
 
-        // A live tick re-adds the series into the SAME model: the notice must not
-        // stack up into duplicates.
         AddLiveSpectrumSeries(controller, model, snapshot);
         Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
 
-        // RebuildModel (a smoothing change, leaving and re-entering the mode)
-        // creates a NEW model while the old one still holds its notice. An OxyPlot
-        // element belongs to one PlotModel, so the notice must be created per model
-        // — reusing the first instance threw InvalidOperationException here.
+        // An OxyPlot element belongs to one PlotModel, so the notice is created per model.
         var rebuilt = new OxyPlot.PlotModel();
         AddLiveSpectrumSeries(controller, rebuilt, snapshot);
         Assert.Single(rebuilt.Annotations.OfType<OverlayTextAnnotation>());
@@ -242,13 +218,7 @@ public sealed class LiveSpectrumControllerTests
     [Fact]
     public void CaptureReadOut_IsCreatedPerModel()
     {
-        // The sibling of the view-only notice above, and it went wrong the same way:
-        // the read-out was pooled across ticks to stop it allocating thirty times a
-        // second, but an OxyPlot element belongs to ONE model, and every rebuild — a
-        // tab switch, a display option, a loaded capture — makes a new one. Carrying
-        // one instance across them threw on the add, which left the plot blank and
-        // surfaced later as "the element already belongs to a PlotModel" on the next
-        // load.
+        // Same rule for the pooled read-out: reusing one instance across rebuilt models threw on add.
         using var sweep = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
         var controller = (LiveSpectrumController)RuntimeHelpers.GetUninitializedObject(
@@ -256,8 +226,6 @@ public sealed class LiveSpectrumControllerTests
         SetField(controller, "measurement", noise);
         SetField(controller, "liveSpectrumOptions", new LiveSpectrumOptions());
         SetField(controller, "plotModelFactory", CreateMmmFactory(sweep, noise));
-        // A loaded capture reports its own recipe, so the read-out needs no running
-        // analyzer to have something to say.
         SetField(controller, "loadedCapture", new LiveCaptureDocument
         {
             Recipe = new LiveCaptureRecipe
@@ -274,11 +242,9 @@ public sealed class LiveSpectrumControllerTests
             Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
         Assert.Contains("25 frames", readOut.Text, StringComparison.Ordinal);
 
-        // Ticking onto the same model must not stack duplicates.
         UpdateCaptureProgressAnnotation(controller, model);
         Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
 
-        // And a rebuilt model gets its own, while the first keeps the one it has.
         var rebuilt = new OxyPlot.PlotModel();
         UpdateCaptureProgressAnnotation(controller, rebuilt);
         Assert.Single(rebuilt.Annotations.OfType<OverlayTextAnnotation>());

@@ -27,7 +27,6 @@ public sealed class OverlayFileTests
 
             Assert.NotNull(loaded);
             Assert.Equal(MagnitudeScale.SoundPressureLevel, loaded!.CapturedMagnitudeScale);
-            // A file written before the field existed defaults to Relative.
             Assert.Equal(MagnitudeScale.Relative, new OverlayFile().CapturedMagnitudeScale);
         }
         finally
@@ -58,7 +57,6 @@ public sealed class OverlayFileTests
 
             Assert.NotNull(loaded);
             Assert.Equal(AnalysisCurveKind.ExcessPhase, loaded!.CapturedCurveKind);
-            // A file written before the field existed leaves the kind unknown.
             Assert.Null(new OverlayFile().CapturedCurveKind);
         }
         finally
@@ -103,7 +101,6 @@ public sealed class OverlayFileTests
                 RawCurveRenderer.PointCount,
                 loaded.RawCalibrationCorrectionDb.Length);
             Assert.Equal(10.23, loaded.RawCalibrationCorrectionDb[^1], 6);
-            // A file written before the field existed carries no raw spectrum.
             Assert.Empty(new OverlayFile().RawSpectrum);
             Assert.Empty(new OverlayFile().RawCalibrationCorrectionDb);
         }
@@ -128,8 +125,6 @@ public sealed class OverlayFileTests
                 ColorArgb = Color.Green.ToArgb(),
                 CapturedMagnitudeScale = MagnitudeScale.SoundPressureLevel,
                 Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)],
-                // No raw spectrum: a dB SPL capture stores the drawn curve, plus the
-                // correction frozen onto those very points and the width behind them.
                 PointsCalibrationCorrectionDb = [1.5, -2.0],
                 CapturedSmoothingCode = 0
             };
@@ -141,7 +136,6 @@ public sealed class OverlayFileTests
             Assert.Empty(loaded!.RawSpectrum);
             Assert.Equal([1.5, -2.0], loaded.PointsCalibrationCorrectionDb);
             Assert.Equal(0, loaded.CapturedSmoothingCode);
-            // Files written before the fields existed say nothing at all.
             Assert.Empty(new OverlayFile().PointsCalibrationCorrectionDb);
             Assert.Null(new OverlayFile().CapturedSmoothingCode);
         }
@@ -165,8 +159,7 @@ public sealed class OverlayFileTests
                 Title = "Mismatched",
                 ColorArgb = Color.Green.ToArgb(),
                 Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)],
-                // Frozen per drawn point, so a different length would silently shift the
-                // correction in frequency.
+                // Frozen per point: a different length would shift the correction in frequency.
                 PointsCalibrationCorrectionDb = [1.5]
             };
 
@@ -181,9 +174,7 @@ public sealed class OverlayFileTests
     [Fact]
     public void SaveAndLoad_RoundTripsPsychoacousticSmoothingAsAPlainWidthPlusFlag()
     {
-        // Same additive-field pattern as CapturedMagnitudeScale: the file keeps
-        // a plain valid width in the legacy field (older builds read 1/6) and
-        // the psychoacoustic mode travels in its own flag.
+        // Legacy field keeps a valid width (older builds read 1/6); psychoacoustic travels in its own flag.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -301,7 +292,6 @@ public sealed class OverlayFileTests
             OverlayFile original = CreateMinimalOverlay(Mode.PhaseResponse, 6);
             original.Save(root);
 
-            // An older file simply never wrote the property, so it must load as unknown.
             OverlayFile? loaded = OverlayFile.Load(Mode.PhaseResponse, 6, root);
 
             Assert.NotNull(loaded);
@@ -378,8 +368,6 @@ public sealed class OverlayFileTests
         string root = CreateTemporaryDirectory();
         try
         {
-            // Complex sum reads the Main and Compare transfer IRs directly, so a
-            // valid file carries no operand slots or curve keys at all.
             var original = new OverlayFile
             {
                 SavedAtUtc = DateTimeOffset.UtcNow,
@@ -416,8 +404,6 @@ public sealed class OverlayFileTests
         string root = CreateTemporaryDirectory();
         try
         {
-            // The loss variant behaves like the complex sum: no operands, FR only, and it
-            // carries the same Compare delay / polarity that shape the underlying sum.
             var original = new OverlayFile
             {
                 SavedAtUtc = DateTimeOffset.UtcNow,
@@ -675,8 +661,6 @@ public sealed class OverlayFileTests
                 Kind = OverlayKind.Operation,
                 Title = "Pink-compensated RTA",
                 SourceSlotA = 4,
-                // Curve A alone needs no second operand: the slot B still carries is
-                // never read, and must not be validated as if it were.
                 SourceSlotB = 4,
                 Operation = OverlayOperation.CurveA,
                 TiltEnabled = true,
@@ -693,7 +677,6 @@ public sealed class OverlayFileTests
             Assert.True(loaded.TiltEnabled);
             Assert.Equal(-4.5, loaded.TiltDbPerOctave);
             Assert.Equal(250, loaded.TiltPivotHz);
-            // A file written before the tilt existed loads as off, at the defaults.
             var legacy = new OverlayFile();
             Assert.False(legacy.TiltEnabled);
             Assert.Equal(OverlayFile.DefaultTiltDbPerOctave, legacy.TiltDbPerOctave);
@@ -724,7 +707,6 @@ public sealed class OverlayFileTests
                 ColorArgb = Color.White.ToArgb()
             };
 
-            // dB per octave says nothing about milliseconds.
             Assert.Throws<InvalidDataException>(() => file.Save(root));
         }
         finally
@@ -920,7 +902,6 @@ public sealed class OverlayFileTests
             Assert.Equal(path + ".corrupt", quarantinePath);
             Assert.False(File.Exists(path));
             Assert.Equal("{ not valid json", File.ReadAllText(quarantinePath!));
-            // The slot now loads as empty instead of failing again.
             Assert.Null(OverlayFile.Load(Mode.FrequencyResponse, 3, root));
         }
         finally
@@ -1024,7 +1005,6 @@ public sealed class OverlayFileTests
 
             Assert.NotNull(loaded);
             Assert.Equal(96_000, loaded!.SampleRateHz);
-            // A file written before the field existed leaves the rate unstated.
             Assert.Null(new OverlayFile().SampleRateHz);
         }
         finally

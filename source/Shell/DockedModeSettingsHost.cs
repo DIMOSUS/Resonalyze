@@ -168,9 +168,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
         }
     }
 
-    // Both apply paths run in async void contexts (a Click handler and a
-    // BeginInvoke continuation); an exception escaping them would kill the
-    // process instead of surfacing as a dialog.
+    // Called from async void contexts, where an escaping exception kills the process.
     private static async Task ApplySafelyAsync(Form dialog, Func<Task> apply)
     {
         try
@@ -304,12 +302,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
     private bool HasRoomOutsideOwner(Form dialog)
     {
-        // Dock to the right only when the dialog fits on the monitor that holds the
-        // window's right edge. Keying on the right edge (rather than the window
-        // centre, which is what Screen.FromControl uses) keeps the decision stable
-        // while the window is dragged across a monitor boundary — the dialog always
-        // lands just past owner.Bounds.Right, so that edge's monitor is the one that
-        // actually matters.
+        // Keyed on the monitor of the window's right edge (where the dialog lands), not the centre, so it is stable across monitor boundaries.
         Rectangle workingArea = GetRightEdgeScreen().WorkingArea;
         int availableWidth = workingArea.Right - owner.Bounds.Right;
         return availableWidth >= dialog.Width;
@@ -368,9 +361,7 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
     private void DialogFormClosing(object? sender, FormClosingEventArgs e)
     {
-        // Only swallow direct user closes (the docked panel has no close UI of
-        // its own); cancelling owner/shutdown closes would block app exit and
-        // Windows logoff.
+        // Only user closes are swallowed; cancelling owner/shutdown closes would block exit and logoff.
         if (allowProgrammaticClose || e.CloseReason != CloseReason.UserClosing)
         {
             return;

@@ -2,11 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-// The Auto band with a Compare record loaded. Two arrivals are only comparable
-// where both drivers actually play, and — the reason this exists — a band taken
-// from Main alone makes the delta depend on which of the two records was loaded
-// first: a field mid pair detected 32.7-7671 Hz one way and 75.5-4695 Hz the
-// other, and the reported split moved 0.3 ms with it.
+// A Main-only band made the delta depend on load order: a field mid pair read 32.7-7671 vs 75.5-4695 Hz, moving the split 0.3 ms.
 public sealed class TimeAlignmentSharedBandTests
 {
     [Fact]
@@ -41,8 +37,6 @@ public sealed class TimeAlignmentSharedBandTests
     [Fact]
     public void SharedBand_KeepsThePeakInsideTheBandItReturns()
     {
-        // Main's own peak can sit outside the overlap (a woofer against a mid):
-        // the band's peak must stay a frequency of that band.
         var main = new DominantBand(30.0, 900.0, 45.0);
         var compare = new DominantBand(200.0, 4000.0, 800.0);
 
@@ -56,10 +50,7 @@ public sealed class TimeAlignmentSharedBandTests
     [Fact]
     public void TryDetectDominantBand_ReportsFailureInsteadOfThrowing()
     {
-        // A record whose coherence never clears the trust threshold has no
-        // dominant band, and the detector says so by throwing. Asking for
-        // COMPARE's band must not take Main's analysis down with it, so the
-        // question is answered with false and Main's own band stands.
+        // The detector throws on an incoherent record; Compare's failure must not take Main's analysis down.
         TimeAlignmentAnalysisSource source = Source(coherent: false);
 
         bool detected = TimeAlignmentPanelController.TryDetectDominantBand(
@@ -104,9 +95,6 @@ public sealed class TimeAlignmentSharedBandTests
     [Fact]
     public void SharedBand_KeepsMainsBandWhenTheTwoRecordsBarelyOverlap()
     {
-        // A subwoofer against a tweeter: the overlap is narrower than the
-        // third-octave floor the arrival analysis needs, so there is no shared
-        // band to read them in and Main's own band stands.
         var main = new DominantBand(25.0, 160.0, 60.0);
         var compare = new DominantBand(150.0, 18_000.0, 3_000.0);
 

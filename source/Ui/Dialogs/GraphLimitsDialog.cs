@@ -4,21 +4,10 @@ using OxyPlot.WindowsForms;
 
 namespace Resonalyze;
 
-/// <summary>
-/// REW's graph limits dialog: the four numbers behind the zoom gestures, so a range
-/// can be typed instead of dragged and two measurements can be framed identically.
-/// Opened by double-clicking the plot, which is where REW users reach for it.
-///
-/// It edits the axes of the model that is on screen. That model is rebuilt on every
-/// settings change and every new measurement, so what makes typed limits stick is
-/// the same viewport carry-over that keeps a dragged zoom
-/// (<see cref="PlotAxisViewport"/>), not anything stored here.
-/// </summary>
+/// <summary>REW-style graph limits dialog. Typed limits persist through the same viewport carry-over as a dragged zoom
+/// (<see cref="PlotAxisViewport"/>), since the model is rebuilt on every change.</summary>
 internal sealed partial class GraphLimitsDialog : Form
 {
-    // Fallback range for the numeric editors when an axis sets no absolute limit.
-    // Wide enough for every quantity the app plots (dB, degrees, milliseconds,
-    // hertz), finite so the editors have something to clamp to.
     private const decimal DefaultEditorLimit = 1_000_000;
 
     private readonly PlotView view;
@@ -55,16 +44,11 @@ internal sealed partial class GraphLimitsDialog : Form
             labelLeft,
             numericLeft);
 
-        // "Fit Y to data" is only meaningful while there is a vertical axis to fit.
         buttonFitY.Enabled = verticalAxis != null;
         LoadValues();
     }
 
-    /// <summary>
-    /// Opens the dialog for the plot's own axes. A plot whose axes are all pinned
-    /// (the waterfall and burst decay, which own their scale) has nothing to edit,
-    /// so nothing opens.
-    /// </summary>
+    /// <summary>Nothing opens when every axis is pinned (waterfall, burst decay).</summary>
     public static void ShowFor(PlotView view)
     {
         ArgumentNullException.ThrowIfNull(view);
@@ -110,8 +94,6 @@ internal sealed partial class GraphLimitsDialog : Form
         bool logarithmic = axis is LogarithmicAxis;
         foreach (DarkNumericUpDown editor in new[] { maximumEditor, minimumEditor })
         {
-            // A logarithmic axis is read in hertz, where a decimal place is noise and
-            // a step of one is a rounding error at the top of the range.
             editor.DecimalPlaces = logarithmic ? 0 : 2;
             editor.Increment = logarithmic ? 10 : 1;
             editor.Minimum = EditorLimit(axis.AbsoluteMinimum, -DefaultEditorLimit, logarithmic);
@@ -119,15 +101,8 @@ internal sealed partial class GraphLimitsDialog : Form
         }
     }
 
-    // A logarithmic axis has no meaning at or below zero, so an unbounded one still
-    // gets a positive floor.
-    //
-    // The clamp happens in DOUBLE, before the cast. An axis that was never given absolute
-    // bounds carries OxyPlot's own defaults — double.MinValue and double.MaxValue — which
-    // are perfectly finite and some 290 orders of magnitude outside what a decimal can
-    // hold, so casting first threw OverflowException and took the double click down with
-    // it. Every mode that leaves an axis unbounded reaches this, the impulse view's level
-    // axis and the autocorrelation plot among them.
+    // Clamped in double before the cast: unbounded OxyPlot axes carry double.MinValue/MaxValue, which overflowed decimal.
+    // A log axis gets a positive floor.
     internal static decimal EditorLimit(
         double absoluteLimit, decimal fallback, bool logarithmic)
     {
@@ -161,17 +136,10 @@ internal sealed partial class GraphLimitsDialog : Form
         ApplyAxis(horizontalAxis, numericLeft.Value, numericRight.Value);
         RefreshView(view);
 
-        // Read back what the axes accepted: they clamp to their own absolute limits,
-        // and showing the clamped numbers is how the user learns where the wall is.
+        // Read back the clamped values so the user learns where the axis limit is.
         LoadValues();
     }
 
-    /// <summary>
-    /// Hands the axes back to the mode that built them — the same thing Home and
-    /// <c>A</c> do on the plot itself. It lives here because this dialog is where a
-    /// user goes looking for the scale, and because the double click that opens it
-    /// used to be the reset.
-    /// </summary>
     private void RestoreDefaults()
     {
         if (view.ActualModel is not PlotModel model)
@@ -213,8 +181,7 @@ internal sealed partial class GraphLimitsDialog : Form
     {
         view.InvalidatePlot(false);
 
-        // ActualMinimum/ActualMaximum only settle on render; update the model in
-        // place so the dialog can read the applied range without waiting for a paint.
+        // ActualMinimum/Maximum settle only on render; update in place to read the applied range now.
         if (view.ActualModel is IPlotModel model)
         {
             model.Update(false);

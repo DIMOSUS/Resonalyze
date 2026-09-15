@@ -9,17 +9,12 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V7Project_MovesTheChannelAllPassIntoThePeqBank()
     {
-        // v7 ran one all-pass per side as its own stage; v8 carries it as a band of the
-        // PEQ bank. The migration is what stops a saved tune from silently losing its
-        // phase rotation, so it is pinned per order: a second-order stage keeps its Q, a
-        // first-order one has none to keep (the band stores the 1.0 the section ignores),
-        // and a side that ran no all-pass must not gain a band out of nowhere.
+        // v7 all-pass stage migrates to a v8 PEQ band: 2nd order keeps Q, 1st order stores 1.0, no stage adds nothing.
         string root = CreateTemporaryDirectory();
         try
         {
             new VirtualCrossoverProjectFile().Save(root);
 
-            // Rewrite the payload as v7 wrote it: the all-pass flat on each channel.
             string path = VirtualCrossoverProjectFile.GetPath(root);
             JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
             file["version"] = 7;
@@ -30,7 +25,7 @@ public sealed class VirtualCrossoverProjectFileTests
             JsonObject right = file["pairs"]![0]!["right"]!.AsObject();
             right["allPassType"] = "FirstOrder";
             right["allPassFrequencyHz"] = 300;
-            right["allPassQ"] = 4.0; // a first order has no Q; the migration drops it
+            right["allPassQ"] = 4.0;
             File.WriteAllText(path, file.ToJsonString());
 
             VirtualCrossoverProjectFile loaded =
@@ -47,12 +42,8 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(300, first.FrequencyHz);
             Assert.Equal(1.0, first.Q);
 
-            // A side that carried no all-pass stays empty — the stage was off on every
-            // channel of a default project but the first pair.
             Assert.Empty(loaded.Pairs[1].Left.PeqBands);
 
-            // The migrated project must itself be valid, or the very next save would
-            // throw on a tune the user only opened.
             loaded.Validate();
         }
         finally
@@ -64,11 +55,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V7ProjectWithAFullBank_KeepsTheAllPassAndSaysWhatItCost()
     {
-        // A v7 side could hold all 32 bands AND an all-pass stage beside them; v8 has
-        // no room for both. Something is lost either way, so the migration loses the
-        // one that can be put back — a bell is a magnitude correction Auto Tune can
-        // propose again, an all-pass sits on a junction aligned by ear — and says so
-        // instead of reporting a clean conversion over a changed tune.
+        // A full v7 bank has no room for the all-pass: the last bell yields (Auto Tune can re-propose it) and the load says so.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -94,8 +81,6 @@ public sealed class VirtualCrossoverProjectFileTests
 
             List<PeqBand> bands = loaded.Pairs[0].Left.PeqBands;
             Assert.Equal(EqualizationCurve.MaxBandCount, bands.Count);
-            // The all-pass is there, and the band it displaced is the LAST bell — the
-            // ones before it are untouched.
             Assert.Equal(
                 new PeqBand(120, 2.5, 0, PeqBandType.AllPassSecondOrder), bands[^1]);
             Assert.Equal(
@@ -103,8 +88,6 @@ public sealed class VirtualCrossoverProjectFileTests
                     .Select(i => new PeqBand(100 + i, 2.0, -1.0)),
                 bands.Take(EqualizationCurve.MaxBandCount - 1));
 
-            // And the load says what it cost, so the next save is not the first the
-            // user hears of it.
             Assert.NotNull(loaded.MigrationNoticeText);
             Assert.Contains("all-pass", loaded.MigrationNoticeText!);
             loaded.Validate();
@@ -118,8 +101,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V7ProjectThatLosesNothing_SaysNothing()
     {
-        // The notice is for a migration that COST something. A file with room for its
-        // all-pass converts silently, or every opened session would cry wolf.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -148,10 +129,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V7ProjectWithAnUnreadableAllPassType_KeepsTheRestOfTheFile()
     {
-        // The tolerance the migration promises has to cover the TYPE as well as the
-        // numbers. Typed as the enum it never could: the converter throws on a name
-        // it does not know, and that throw lands during deserialization — before
-        // Migrate runs — taking the whole session to .backup over one bad word.
+        // Type is read as a string: an unknown enum name would throw during deserialization, before Migrate runs.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -171,7 +149,6 @@ public sealed class VirtualCrossoverProjectFileTests
             VirtualCrossoverProjectFile loaded =
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
 
-            // The all-pass is gone, and NOTHING else is: the rest of the tune loaded.
             Assert.Empty(loaded.Pairs[0].Left.PeqBands);
             Assert.Equal(4.25, loaded.Pairs[0].Left.DelayMs);
             Assert.Null(loaded.BackupNoticePath);
@@ -186,9 +163,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V7ProjectWithANonsenseAllPass_DropsItRatherThanFailing()
     {
-        // Migrate runs before Validate, so a hand-edited or truncated stage must degrade
-        // to "no all-pass" instead of taking the whole session down: the user would lose
-        // every other channel over one bad number.
+        // Migrate runs before Validate: a bad stage must degrade to no all-pass, not discard the session.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -204,7 +179,7 @@ public sealed class VirtualCrossoverProjectFileTests
             JsonObject right = file["pairs"]![0]!["right"]!.AsObject();
             right["allPassType"] = "SecondOrder";
             right["allPassFrequencyHz"] = 300;
-            right["allPassQ"] = 0; // divides by zero in the section's alpha
+            right["allPassQ"] = 0;
             File.WriteAllText(path, file.ToJsonString());
 
             VirtualCrossoverProjectFile loaded =
@@ -223,12 +198,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void ANewProject_OpensOnAGateThatReachesTheBassJunctions()
     {
-        // The tool exists to align channels across their junctions, and the lowest of
-        // those sits in the bass — a junction-length gate (Phase Response mode's own
-        // default) reads nothing below ~170 Hz, which is where the sub meets the
-        // midbass. So the phase view opens on a long window, read through FDW so the
-        // mid and high junctions still see the direct arrival rather than the whole
-        // reflection tail, and unpinned, so it follows each side's own front.
+        // Long FDW gate, unpinned: a junction-length gate reads nothing below ~170 Hz, where the sub meets the midbass.
         var project = new VirtualCrossoverProjectFile();
 
         Assert.Equal(
@@ -250,16 +220,12 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V4Project_CopiesItsOneGateOntoBothSides()
     {
-        // v4 kept a single gate for the whole project. Both sides must inherit it, so a
-        // migrated project draws exactly as it did before the split — the sides only
-        // diverge once the user moves one of them.
         string root = CreateTemporaryDirectory();
         try
         {
             var saved = new VirtualCrossoverProjectFile();
             saved.Save(root);
 
-            // Rewrite the payload as v4 wrote it: the gate flat on the project.
             string path = VirtualCrossoverProjectFile.GetPath(root);
             JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
             JsonObject root4 = file.AsObject();
@@ -284,8 +250,6 @@ public sealed class VirtualCrossoverProjectFileTests
                 Assert.Equal(13.07, gate.DetrendMs);
             }
 
-            // The window's lengths never moved off the project, so they carry across
-            // untouched rather than through the migration.
             Assert.Equal(0.25, loaded.PhaseGateLeftMs);
             Assert.Equal(6.5, loaded.PhaseGatePlateauMs);
             Assert.Equal(2.0, loaded.PhaseGateRightMs);
@@ -299,8 +263,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V4ProjectOnAnAutoGate_KeepsBothSidesOnAuto()
     {
-        // v4 spelled "follow the earliest arrival" as a null offset/detrend. That has to
-        // migrate to the same thing, not to a pinned zero.
+        // v4 null offset meant "follow the earliest arrival", not a pinned zero.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -332,9 +295,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_LegacyNegativeSceneOffset_BecomesRightHandDrive()
     {
-        // The wire format carries the steering layout in the offset's SIGN
-        // (negative = right-seated driver). A pre-flag payload must open as
-        // an RHD project with the equivalent magnitude.
+        // The wire carries the layout in the offset's sign (negative = RHD).
         string root = CreateTemporaryDirectory();
         try
         {
@@ -360,11 +321,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_RhdSurvivesAnOldBuildResaveThatDropsTheFlag()
     {
-        // An older build knows nothing of stereoRightHandDrive: it reads the
-        // layout from the offset's sign (the wire keeps the pre-flag
-        // format exactly for this) and a resave DROPS the unknown flag. The
-        // sign must carry the layout back in — without it the resave would
-        // silently and permanently flip an RHD session to LHD.
+        // Older builds drop the unknown flag on resave; the sign must carry RHD back.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -392,12 +349,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_RhdWithZeroOffsetSurvivesAnOldBuildResave()
     {
-        // The edge of the signed wire format: a zero magnitude has no sign
-        // to carry the layout (IEEE -0.0 neither compares below zero nor
-        // survives a decimal round-trip), so RHD+0 serializes as a tiny
-        // negative marker the runtime reads back as zero. Without it, an
-        // old build's resave — which drops the unknown flag — would
-        // silently flip the session to LHD.
+        // Zero has no sign on the wire (-0.0 does not round-trip), so RHD+0 writes a tiny negative marker.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -425,9 +377,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void AllPassBand_RoundTripsThroughTheProjectFile()
     {
-        // The band type is the only thing separating a phase rotator from a bell with no
-        // gain, and it travels as a string on the wire: a round trip that lost it would
-        // reopen the tune with the all-pass silently turned into a transparent filter.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -452,9 +401,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void ToChain_AppliesAnAllPassBandEvenWithTheCrossoverOff()
     {
-        // The all-pass rides in the PEQ bank, and the bank is not gated by the crossover
-        // kind. At its corner a second-order section is -180° with the magnitude
-        // untouched — which is also what makes it invisible to a magnitude-only check.
+        // At its corner a 2nd-order all-pass is -180 deg with flat magnitude.
         var settings = new VirtualCrossoverChannelSettings
         {
             CrossoverKind = CrossoverKind.Off,
@@ -482,8 +429,6 @@ public sealed class VirtualCrossoverProjectFileTests
                 ShowSumCurve = false,
                 ShowLossCurve = true,
                 ShowPhaseView = true,
-                // Deliberately different per side: the round trip has to keep the
-                // PLACEMENT apart, which is the whole point of it being per-side.
                 PhaseGateLeft = new VirtualCrossoverPhaseGateSettings
                 {
                     OffsetMs = 12.34,
@@ -494,7 +439,6 @@ public sealed class VirtualCrossoverProjectFileTests
                     OffsetMs = 15.5,
                     DetrendMs = 16.25
                 },
-                // …while the window's lengths are one setting for the whole project.
                 PhaseGateLeftMs = 0.25,
                 PhaseGatePlateauMs = 6.5,
                 PhaseGateRightMs = 2.0,
@@ -506,7 +450,6 @@ public sealed class VirtualCrossoverProjectFileTests
             original.StereoLevelDifferenceDb = -1.5;
             original.ActiveSideRight = true;
             original.Pairs[0].Mono = true;
-            // Mute, Bypass and the curve toggles belong to the PAIR, not to a side.
             original.Pairs[0].Enabled = false;
             original.Pairs[0].Bypass = true;
             original.Pairs[0].ShowRawCurve = true;
@@ -603,8 +546,6 @@ public sealed class VirtualCrossoverProjectFileTests
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
             Assert.Equal(3, corrupt.Pairs.Count);
 
-            // The unusable file is parked as .backup so the next scheduled
-            // save cannot silently destroy it.
             Assert.False(File.Exists(path));
             Assert.Equal("{ not json ", File.ReadAllText(path + ".backup"));
         }
@@ -634,12 +575,9 @@ public sealed class VirtualCrossoverProjectFileTests
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
             Assert.Equal(0, loaded.Pairs[0].Left.GainDb);
 
-            // A downgraded app keeps the newer session parked next to the
-            // fresh default instead of overwriting it on the next save.
             Assert.False(File.Exists(path));
             Assert.Equal(futureText, File.ReadAllText(path + ".backup"));
 
-            // The path is surfaced so the tool can tell the user a backup exists.
             Assert.Equal(path + ".backup", loaded.BackupNoticePath);
         }
         finally
@@ -730,9 +668,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void AStatedProcessorRate_SurvivesTheMeasurementsBeingReplaced()
     {
-        // "Follow the measurements" and "48 kHz" describe the same simulation while
-        // the measurements are at 48 kHz, and they part company the moment those are
-        // replaced — so the two must be stored apart. Stating 48 kHz keeps 48 kHz.
+        // "Follow the measurements" and "48 kHz" coincide only while the measurements are 48 kHz, so they are stored apart.
         var stated = new VirtualCrossoverProjectFile();
         stated.SetDspProcessor(
             DspProcessorProfile.Custom(48_000, PeqQConvention.Rbj),
@@ -756,7 +692,6 @@ public sealed class VirtualCrossoverProjectFileTests
         Assert.True(following.DspProcessorRateFollowsMeasurements);
         Assert.Equal(48_000, following.ResolveDspProcessor(48_000).SampleRateHz);
         Assert.Equal(96_000, following.ResolveDspProcessor(96_000).SampleRateHz);
-        // The convention is the user's either way.
         Assert.Equal(
             PeqQConvention.Symmetric,
             following.ResolveDspProcessor(96_000).QConvention);
@@ -769,8 +704,7 @@ public sealed class VirtualCrossoverProjectFileTests
         DspProcessorProfile helix =
             DspProcessorCatalog.Preset("helix-dsp-ultra-s")!.ToProfile();
 
-        // Even asked to follow: a device brings its own rate, and storing "follow"
-        // for it would make the model's own preset a lie the next time it resolves.
+        // A device brings its own rate: storing "follow" for it would contradict the preset on the next resolve.
         project.SetDspProcessor(helix, followsMeasurements: true);
 
         Assert.False(project.DspProcessorRateFollowsMeasurements);
@@ -780,10 +714,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void SaveToAndLoadFrom_CarryTheNotesForAi_AndWriteNothingWhenThereAreNone()
     {
-        // The notes are additive: a session without them must serialize exactly as
-        // before the field existed (no key at all, so an older build resaves it
-        // untouched), and one with them must bring them back verbatim, line breaks
-        // included — they are the user's own words about the car.
+        // No notes = no key at all, so an older build resaves the file untouched.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -812,8 +743,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void SaveToAndLoadFrom_CarryTheProcessorTheProjectIsDesignedFor()
     {
-        // The processor decides the rate every simulated filter is BUILT at, so it is
-        // part of the project rather than of the machine that opens it.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -841,9 +770,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_AProjectFromBeforeTheProcessorSelector_FollowsItsMeasurements()
     {
-        // Additive: an existing file names no processor, so it opens as Custom with no
-        // stored rate — which the panel reads as "follow the measurements", the exact
-        // simulation that file described.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -873,9 +799,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void SaveToAndLoadFrom_CarryTheCalibrationCurveItself()
     {
-        // The session states the correction it was tuned with as the CURVE, so a
-        // machine that never configured that file draws what the author saw. The id
-        // travels too, but only as a hint.
+        // The session stores the calibration CURVE; the id is only a hint.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -897,7 +821,6 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal("ECM8000_90deg.txt", loaded.Calibration.FileName);
             Assert.True(CalibrationFile.SameCurve(curve, loaded.Calibration.ToCalibrationFile()));
 
-            // A curve from an estimate has no file: the name is what it has.
             string json = File.ReadAllText(path);
             Assert.Contains("\"calibration\"", json);
             Assert.Contains("\"fileName\"", json);
@@ -906,7 +829,6 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.DoesNotContain("\"fileName\"", File.ReadAllText(path));
             Assert.Null(VirtualCrossoverProjectFile.LoadFrom(path).Calibration!.FileName);
 
-            // Off, and a session written before the curve travelled, carry no block.
             original.Calibration = null;
             original.SaveTo(path);
             Assert.DoesNotContain("\"calibration\"", File.ReadAllText(path));
@@ -931,8 +853,7 @@ public sealed class VirtualCrossoverProjectFileTests
         };
         Assert.Throws<InvalidDataException>(() => tooFew.Validate());
 
-        // Two points at one frequency merge into one knot on reading: no curve, and
-        // the merged form would fail this check on the next save.
+        // Two points at one frequency merge on read, and the merged form would fail validation on the next save.
         var oneFrequency = new VirtualCrossoverProjectFile
         {
             Calibration = new VirtualCrossoverCalibrationSettings
@@ -1040,8 +961,6 @@ public sealed class VirtualCrossoverProjectFileTests
         };
         Assert.Throws<InvalidDataException>(() => badSmoothing.Validate());
 
-        // Both sides are validated, not just the left: an imported project must not
-        // smuggle a broken gate in through the side that happens to be off screen.
         var badGateOffset = new VirtualCrossoverProjectFile();
         badGateOffset.PhaseGateLeft.OffsetMs = -1;
         Assert.Throws<InvalidDataException>(() => badGateOffset.Validate());
@@ -1062,14 +981,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void SumLossWindow_DefaultsToTheDirectRead_ButAnOldShownCurveStaysFull()
     {
-        // A file written before the selector existed carries only the curve
-        // toggle. Its default was off, so "false" cannot be told from a toggle
-        // never touched and gets the new default, like a fresh project. "True"
-        // was set by hand, and the curve it turned on was the steady-state one:
-        // that file keeps Full rather than silently swapping the meaning of a
-        // number its user chose to watch. Setting the selector writes the toggle
-        // alongside, so a build that knows only the toggle still draws (or hides)
-        // the curve this file asks for.
+        // Pre-selector files: "false" is indistinguishable from untouched and gets the new default; "true" was set by hand and keeps Full.
         var fresh = new VirtualCrossoverProjectFile();
         var legacyShown = new VirtualCrossoverProjectFile { ShowLossCurve = true };
         var legacyHidden = new VirtualCrossoverProjectFile { ShowLossCurve = false };
@@ -1129,8 +1041,6 @@ public sealed class VirtualCrossoverProjectFileTests
             VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadFrom(path);
 
             Assert.True(loaded.Pairs[0].Collapsed);
-            // The flag is additive: a file written before it existed simply has no
-            // such property, and its blocks open the way they always did.
             Assert.False(loaded.Pairs[1].Collapsed);
         }
         finally
@@ -1171,7 +1081,6 @@ public sealed class VirtualCrossoverProjectFileTests
         string root = CreateTemporaryDirectory();
         try
         {
-            // A real v1 payload shape: a "channels" list, no "pairs".
             string path = VirtualCrossoverProjectFile.GetPath(root);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, """
@@ -1197,8 +1106,6 @@ public sealed class VirtualCrossoverProjectFileTests
             VirtualCrossoverProjectFile loaded =
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
 
-            // The historical single-sided channels become the LEFT sides of
-            // fresh pairs; the right sides start empty and nothing is lost.
             Assert.Equal(VirtualCrossoverProjectFile.CurrentVersion, loaded.Version);
             Assert.Null(loaded.BackupNoticePath);
             Assert.Equal(2, loaded.Pairs.Count);
@@ -1212,7 +1119,6 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.False(loaded.Pairs[0].Mono);
             Assert.False(loaded.Pairs[0].Right.HasSource);
 
-            // The migrated project persists as v2 and round-trips.
             loaded.Save(root);
             VirtualCrossoverProjectFile reloaded =
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
@@ -1281,10 +1187,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void PsychoacousticSmoothing_RoundTripsAsAPlainWidthPlusFlag()
     {
-        // The psychoacoustic mode persists as its plain base width plus a
-        // separate additive flag, so an OLDER build opens the session as plain
-        // 1/6-octave smoothing instead of rejecting an unknown code — the same
-        // pattern as every other additive project field.
+        // Psycho mode = plain base width + additive flag, so an older build opens it as plain 1/6 oct.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1301,7 +1204,6 @@ public sealed class VirtualCrossoverProjectFileTests
 
             Assert.Equal(
                 Dsp.SpectrumSmoothing.PsychoacousticCode, loaded.SmoothingCode);
-            // Selecting a plain width afterwards clears the flag.
             loaded.SetSmoothingCode(12);
             Assert.False(loaded.PsychoacousticSmoothing);
             Assert.Equal(12, loaded.SmoothingCode);
@@ -1315,10 +1217,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void CorrelationPlotMode_RoundTripsAsALegacyValuePlusFlag()
     {
-        // Same additive pattern as the psychoacoustic smoothing: the stored
-        // enum field keeps a value every build can parse (an older build opens
-        // the session on the magnitude view), the correlation mode travels in
-        // its own flag, and the selected pair index rides along.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1337,8 +1235,6 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(DspPlotMode.Correlation, loaded.EffectiveDspPlotMode);
             Assert.Equal(2, loaded.CorrelationPairIndex);
 
-            // Selecting a chain view afterwards clears the flag and stores the
-            // mode plainly.
             loaded.SetDspPlotMode(DspPlotMode.GroupDelay);
             Assert.False(loaded.DspPlotCorrelationView);
             Assert.Equal(DspPlotMode.GroupDelay, loaded.DspPlotMode);
@@ -1352,10 +1248,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void CoherencePlotMode_RoundTripsAsALegacyValuePlusFlag()
     {
-        // The second junction mode follows the correlation mode's additive
-        // pattern, on its own flag; switching between the two junction modes
-        // must move exactly one flag at a time — a file with both set would
-        // silently open on the correlation view.
+        // Switching junction modes must move exactly one flag: with both set the file opens on the correlation view.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1390,9 +1283,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void ShowSumCurveOnPhase_WithNoAnswerOfItsOwn_InheritsTheMagnitudeOne()
     {
-        // A session written before the two views answered separately carries one
-        // flag, and that is what it used to draw on BOTH plots. Inheriting it is
-        // what makes such a file open looking the way it was left.
         var project = new VirtualCrossoverProjectFile { ShowSumCurve = false };
         Assert.Null(project.ShowSumCurvePhase);
         Assert.False(project.ShowSumCurveOnPhase);
@@ -1407,8 +1297,6 @@ public sealed class VirtualCrossoverProjectFileTests
         string root = CreateTemporaryDirectory();
         try
         {
-            // The panel writes the phase flag beside the group-delay one, so a
-            // build that knows only the older flag opens on the phase view.
             var saved = new VirtualCrossoverProjectFile
             {
                 ShowPhaseView = true,
@@ -1436,9 +1324,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void GroupDelayView_AbsentFromAnOlderFile_OpensThePriorView()
     {
-        // A file written before the view existed carries neither flag: it opens
-        // on whatever it did — phase here — and the Sum on the group-delay view
-        // inherits the phase answer until it is set.
         var project = new VirtualCrossoverProjectFile
         {
             ShowPhaseView = true,
@@ -1464,8 +1349,6 @@ public sealed class VirtualCrossoverProjectFileTests
         string root = CreateTemporaryDirectory();
         try
         {
-            // The panel writes the impulse flag beside the step one, so a build
-            // that knows only the older flag opens on the impulse view.
             var saved = new VirtualCrossoverProjectFile
             {
                 ShowImpulseView = true,
@@ -1492,10 +1375,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void StepView_AbsentFromAnOlderFile_OpensThePriorView()
     {
-        // A file written before the view existed carries no step flag: it opens
-        // on whatever it did — the impulse view here — and the Sum on the step
-        // view inherits the magnitude answer until it is set (the impulse view,
-        // its nearest, has no Sum to inherit from).
+        // The impulse view has no Sum, so the step view's Sum inherits the magnitude answer.
         var project = new VirtualCrossoverProjectFile
         {
             ShowImpulseView = true,
@@ -1544,10 +1424,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_ProjectWithoutATarget_LoadsWithTheCurveHidden()
     {
-        // The EQ target on the acoustic plot is additive, like the all-pass above:
-        // a session written before it existed carries neither key. Where its
-        // absence lands matters — a target the user never asked for must not
-        // appear over their sum, and it must not appear at some inherited level.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1581,9 +1457,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void Save_CarriesTheCustomTargetShapeUnchanged()
     {
-        // The shape itself, not a preset name: a preset's numbers can change
-        // between versions, while a session has to open aiming at exactly the
-        // curve it was tuned against.
+        // Stored as a shape, not a preset name: preset numbers can change between versions.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1607,8 +1481,6 @@ public sealed class VirtualCrossoverProjectFileTests
                 VirtualCrossoverProjectFile.LoadOrDefault(root);
 
             Assert.NotNull(loaded.Target);
-            // Value equality on the record is the check: a field the mapping
-            // dropped would hand back a different curve than the one tuned.
             Assert.Equal(curve, loaded.Target!.ToCurve());
         }
         finally
@@ -1620,9 +1492,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void Save_CarriesAnImportedTargetShapeByValue()
     {
-        // A house curve is stored the way the rest of the target is — as what it
-        // says, not as a path to the file it came from, which the session cannot
-        // promise is still there (or still holds the same numbers) tomorrow.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1656,8 +1525,6 @@ public sealed class VirtualCrossoverProjectFileTests
             EqTargetCurve restored = loaded.Target!.ToCurve();
             Assert.Equal(imported, restored.Spec.Imported);
             Assert.Equal(curve, restored);
-            // The parametric terms travel beside it: they are what picking a
-            // preset in the target dialog goes back to.
             Assert.Equal(
                 TargetCurveSpec.FromPreset(TargetPreset.Car).BassShelfGainDb,
                 restored.Spec.BassShelfGainDb);
@@ -1671,9 +1538,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_ProjectWithoutATarget_CarriesNone()
     {
-        // Absence is a real state, and it means "no target of its own" rather
-        // than a default one: the panel keeps the app's current target and
-        // starts storing it, instead of retuning it to a flat line.
+        // Absence means "no target of its own": the panel keeps the app's current target instead of resetting to flat.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1699,8 +1564,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void Save_KeepsTheTargetVisibilityAndLevel()
     {
-        // The target SHAPE is the EQ Wizard's and is deliberately not stored
-        // here; the level is, because it belongs to this plot's dB reference.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1726,9 +1589,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V6Project_ReadsTheSwitchesOffTheLoadedSides()
     {
-        // v6 kept Mute, Bypass and the curve toggles per side. The pair inherits the
-        // sides that actually carry a measurement, so a mono pair (its right slot is
-        // unreachable and still holds the defaults) opens exactly as it looked.
+        // v6 per-side toggles: the pair inherits from sides carrying a measurement; a mono pair's right slot holds defaults.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1752,7 +1613,6 @@ public sealed class VirtualCrossoverProjectFileTests
             left["bypass"] = true;
             left["showRawCurve"] = true;
             left["showProcessedCurve"] = false;
-            // The unreachable right slot still holds v6 defaults; they must not win.
             JsonObject right = pair["right"]!.AsObject();
             right["enabled"] = true;
             right["bypass"] = false;
@@ -1778,9 +1638,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V6ProjectWhoseSidesDisagree_KeepsTheLouderAnswer()
     {
-        // Two loaded sides could hold opposite switches, and one answer has to win.
-        // Muted, bypassed and "curve shown" each survive: a mute lost in a migration
-        // is the one outcome the tuner has no way to see coming.
+        // Conflicting sides: muted, bypassed and shown each win, since a mute lost in migration is invisible to the tuner.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1822,11 +1680,6 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
-    /// <summary>
-    /// A session remembers which moving-microphone capture each side was tuned with.
-    /// Re-picking seven files by hand on every open would make the hybrid view a
-    /// ceremony rather than a toggle.
-    /// </summary>
     [Fact]
     public void SaveToAndLoadFrom_RoundTripTheSpatialAverageReference()
     {
@@ -1843,11 +1696,7 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(
                 original.Pairs[0].Left.SpatialAveragePath,
                 loaded.Pairs[0].Left.SpatialAveragePath);
-            // Additive: a session written before the hybrid view existed carries none,
-            // and opens with nothing attached rather than failing to open.
             Assert.Null(loaded.Pairs[1].Left.SpatialAveragePath);
-            // The view goes with the captures: bringing them back and then opening on
-            // the point measurements would mean re-ticking the toggle every time.
             Assert.False(loaded.ShowHybridCurves);
             original.ShowHybridCurves = true;
             original.SaveTo(path);
@@ -1859,11 +1708,6 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
-    /// <summary>
-    /// The capture travels with the measurements, so an export restates its path
-    /// against the export's own folder — the same rescue the sources get, and the
-    /// only thing that lets a session opened on another machine find it at all.
-    /// </summary>
     [Fact]
     public void SaveTo_RestatesTheSpatialAveragePathAgainstTheExportsFolder()
     {
@@ -1881,8 +1725,6 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(
                 Path.Combine("captures", "sub mmm.json"),
                 loaded.Pairs[0].Left.SpatialAverageRelativePath);
-            // Strictly a property of the WRITE: the live project keeps whatever it
-            // was imported with, so a relink still has the hint it needs.
             Assert.Null(original.Pairs[0].Left.SpatialAverageRelativePath);
         }
         finally
@@ -1894,11 +1736,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V8Project_GuessesEachBlockZoneFromItsMonoFlagAndFilter()
     {
-        // v9 gave every block a zone. A v8 file records none, so it is guessed from
-        // the two facts such a file does hold — and the three branches are pinned
-        // here because a user's saved tune is what walks through them. Mono meant
-        // "shared subwoofer" for the tool's whole history, so a mono block is a Sub
-        // unless it HIGH-PASSES, which no subwoofer does: that one is a centre.
+        // v8 has no zone: mono = Sub unless it high-passes (then Centre), stereo = Front.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1908,16 +1746,12 @@ public sealed class VirtualCrossoverProjectFileTests
             JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
             file["version"] = 8;
 
-            // A stereo pair — the front stage, and the only reading a v8 file
-            // supports (a rear pair is byte-for-byte identical in it).
             file["pairs"]![0]!["mono"] = false;
             file["pairs"]![0]!["left"]!["crossoverKind"] = "BandPass";
 
-            // A mono block playing low: the historical shared subwoofer.
             file["pairs"]![1]!["mono"] = true;
             file["pairs"]![1]!["left"]!["crossoverKind"] = "LowPass";
 
-            // A mono block high-passed at 290 Hz: a centre, not a sub.
             file["pairs"]![2]!["mono"] = true;
             file["pairs"]![2]!["left"]!["crossoverKind"] = "HighPass";
             File.WriteAllText(path, file.ToJsonString());
@@ -1940,10 +1774,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_V8Project_KeepsEveryTunedSettingThroughTheZoneMigration()
     {
-        // The zone step is purely additive, and that is the promise this test holds
-        // the code to: a user opening a tune saved by the previous version must find
-        // every delay, gain, polarity, crossover corner and PEQ band exactly where
-        // they left it. A mis-guessed zone then costs one combo box, never a tune.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -1962,8 +1792,6 @@ public sealed class VirtualCrossoverProjectFileTests
             original.StereoSceneOffsetMs = 0.25;
             original.Save(root);
 
-            // Back-date the payload to v8 without touching anything else, so the
-            // only difference the loader sees is the version it migrates from.
             string path = VirtualCrossoverProjectFile.GetPath(root);
             JsonNode file = JsonNode.Parse(File.ReadAllText(path))!;
             file["version"] = 8;
@@ -2000,10 +1828,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadFrom_ZoneOutsideTheEnum_IsRejectedRatherThanReadAsFront()
     {
-        // The enum rides the wire as a name, so a typo cannot deserialize — but a
-        // NUMBER can, and would land silently outside the enum. Validate has to
-        // catch it: a block in no zone would be dropped from every grouped view
-        // without a word.
+        // A numeric zone deserializes outside the enum; Validate must catch it or the block drops from grouped views.
         string root = CreateTemporaryDirectory();
         string path = Path.Combine(root, "session.json");
         try
@@ -2022,12 +1847,7 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
-    /// <summary>
-    /// Reset writes the project in MEMORY, not the autosave beside it: the panel
-    /// saves on a debounce, so the file lags the screen by up to two seconds and on
-    /// a never-saved session does not exist at all. The copy is an ordinary session
-    /// file, so Load session… brings the tune back whole.
-    /// </summary>
+    /// <summary>The autosave lags the screen by a debounce (or does not exist), so the backup writes the in-memory project.</summary>
     [Fact]
     public void SaveResetBackup_WritesTheProjectItIsCalledOnRatherThanTheAutosave()
     {
@@ -2038,7 +1858,6 @@ public sealed class VirtualCrossoverProjectFileTests
             saved.Pairs[0].Left.DelayMs = 5.0;
             saved.Save(root);
 
-            // The panel's live project, an edit ahead of what reached the disk.
             var live = new VirtualCrossoverProjectFile();
             live.Pairs[0].Left.DelayMs = 7.0;
 
@@ -2049,7 +1868,6 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.Equal(
                 7.0,
                 VirtualCrossoverProjectFile.LoadFrom(path!).Pairs[0].Left.DelayMs);
-            // And the autosave it did not come from is untouched.
             Assert.Equal(
                 5.0,
                 VirtualCrossoverProjectFile.LoadOrDefault(root).Pairs[0].Left.DelayMs);
@@ -2060,11 +1878,6 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
-    /// <summary>
-    /// A session that has never been written has the most to lose, not the least:
-    /// the old copy-the-file backup reported "nothing here" and let the reset run
-    /// with a whole tune standing in memory.
-    /// </summary>
     [Fact]
     public void SaveResetBackup_WritesEvenWhenNoAutosaveExists()
     {
@@ -2088,12 +1901,7 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
-    /// <summary>
-    /// The backup lives in the application data folder, where no measurement sits,
-    /// so it writes source paths the way the autosave does — none at all. An EXPORT
-    /// states them relative to its own folder, and reusing that here would write a
-    /// confident wrong answer into a file meant to be loaded back.
-    /// </summary>
+    /// <summary>The backup lives in app data, so it writes no relative source paths (unlike an export).</summary>
     [Fact]
     public void SaveResetBackup_WritesNoRelativeSourcePaths()
     {
@@ -2108,7 +1916,6 @@ public sealed class VirtualCrossoverProjectFileTests
 
             Assert.Null(
                 VirtualCrossoverProjectFile.LoadFrom(path!).Pairs[0].Left.SourceRelativePath);
-            // The live project keeps the hint it was imported with.
             Assert.Equal(@"..\elsewhere\driver.json", live.Pairs[0].Left.SourceRelativePath);
         }
         finally
@@ -2117,12 +1924,7 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
-    /// <summary>
-    /// The reset copy has its own name because the other backup holds a file the tool
-    /// could NOT read: overwriting that with a tune it read perfectly well would throw
-    /// away the only copy of an unreadable project while the user was still deciding
-    /// what to do about it.
-    /// </summary>
+    /// <summary>The .backup name already holds an unreadable file the user may still want.</summary>
     [Fact]
     public void SaveResetBackup_LeavesTheUnreadableFileBackupAlone()
     {
@@ -2143,11 +1945,6 @@ public sealed class VirtualCrossoverProjectFileTests
         }
     }
 
-    /// <summary>
-    /// One copy is kept, and it is the reset just performed — the question a reset
-    /// leaves is "undo THAT", and a pile of dated files would be a second archive
-    /// beside the user's own exported sessions.
-    /// </summary>
     [Fact]
     public void SaveResetBackup_KeepsOnlyTheMostRecentCopy()
     {
@@ -2175,9 +1972,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void PhaseReference_IsTheLowPassOnASubwoofer_AndTheHighPassEverywhereElse()
     {
-        // The device's own rule, and the reason ToChain has to be told the block's
-        // zone: the side alone cannot know which of its two corners the angle is
-        // stated at.
+        // The phase-rotation angle is stated at a corner that depends on the block's zone.
         var settings = new VirtualCrossoverChannelSettings
         {
             CrossoverKind = CrossoverKind.BandPass,
@@ -2194,9 +1989,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void PhaseReference_IsTheConfiguredCorner_EvenWithTheFilterSwitchedOff()
     {
-        // Measured on the bench: a bypassed filter and one set to slope = OFF both go
-        // on supplying the reference. Reading the ACTIVE crossover instead would put
-        // the all-pass somewhere else on every channel whose filter is disabled.
+        // Bench-measured: a bypassed or slope-OFF filter still supplies the reference corner.
         var settings = new VirtualCrossoverChannelSettings
         {
             CrossoverKind = CrossoverKind.Off,
@@ -2210,8 +2003,6 @@ public sealed class VirtualCrossoverProjectFileTests
         DspChannelChain chain = settings.ToChain(VirtualCrossoverZone.Front);
 
         Assert.Equal(CrossoverKind.Off, chain.Crossover!.Kind);
-        // 180 degrees puts the all-pass corner ON the reference, so the chain turns
-        // the phase exactly half a turn at 500 Hz while leaving the level alone.
         Assert.Equal(-180.0, chain.Response(500, 96_000).Phase * 180.0 / Math.PI, 0.01);
         Assert.Equal(1.0, chain.Response(500, 96_000).Magnitude, 9);
     }
@@ -2246,8 +2037,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_AProjectFromBeforeThePhaseControl_OpensWithNoRotation()
     {
-        // v9 -> v10 is additive: an absent angle is no rotation and an absent switch
-        // is off, so the session opens as the simulation it was saved as.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -2286,9 +2075,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void Validate_AcceptsAnAngleBetweenTwoPositions()
     {
-        // Range only: the editors snap to the device's 64 positions, but an angle a
-        // hand-edited file states between two of them is still a filter this library
-        // can build, and refusing to OPEN the session over it would be worse.
+        // Range only: the editors snap to 64 positions, but an off-grid hand-edited angle must still open.
         var settings = new VirtualCrossoverChannelSettings { PhaseRotationDegrees = 7 };
 
         settings.Validate();
@@ -2297,10 +2084,7 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void LoadOrDefault_ClearsAPhaseRotationTheNamedProcessorCannotDial()
     {
-        // The invariant: a non-zero angle in a session means a device that can dial
-        // one. Without it the all-pass would go on bending every curve with no field
-        // on screen to explain it, and the tuning sheet would go on naming a control
-        // the device does not have.
+        // Invariant: a non-zero angle requires a device with the control.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -2342,7 +2126,6 @@ public sealed class VirtualCrossoverProjectFileTests
 
             Assert.Equal(90, loaded.Pairs[0].Left.PhaseRotationDegrees);
             Assert.Null(loaded.MigrationNoticeText);
-            // And a Custom profile the user vouched for keeps its own.
             Assert.Equal(
                 0,
                 new VirtualCrossoverProjectFile { DspProcessorPhaseControl = true }
@@ -2357,8 +2140,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void ResolveDspPhaseControl_AsksTheCatalogUntilTheUserAnswers()
     {
-        // A project naming a device that HAS the control finds it without hunting
-        // through a dialog; one that names something else, or nothing, does not.
         var helix = new VirtualCrossoverProjectFile { DspProcessorModelId = "helix-dsp-ultra-s" };
         var panacea = new VirtualCrossoverProjectFile { DspProcessorModelId = "amp-panacea-v1-v2" };
         var custom = new VirtualCrossoverProjectFile();
@@ -2367,7 +2148,6 @@ public sealed class VirtualCrossoverProjectFileTests
         Assert.False(panacea.ResolveDspPhaseControl());
         Assert.False(custom.ResolveDspPhaseControl());
 
-        // And a stored answer wins over the catalog in both directions.
         helix.DspProcessorPhaseControl = false;
         custom.DspProcessorPhaseControl = true;
 

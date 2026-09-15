@@ -4,9 +4,6 @@ public sealed class CrossoverAutoSetupTests
 {
     private const double SampleRate = 48_000;
 
-    // A synthetic driver curve on a log grid: flat at `levelDb` inside the band,
-    // rolling off at 24 dB/octave beyond both edges — the shape the band and
-    // crossover analysis has to read.
     private static List<SignalPoint> BandCurve(
         double lowHz,
         double highHz,
@@ -50,8 +47,6 @@ public sealed class CrossoverAutoSetupTests
             SampleRate,
             SampleRate);
 
-    // Peak-to-peak ripple (dB) of the predicted magnitude sum over the system's
-    // passband — the quantity the optimizer is trying to shrink.
     private static double SumRippleDb(
         IReadOnlyList<AutoSetupSource> channels,
         IReadOnlyList<CrossoverProposal> proposals)
@@ -61,8 +56,7 @@ public sealed class CrossoverAutoSetupTests
         DriverBandEstimate high = CrossoverAutoSetup.EstimateBand(
             channels.OrderBy(c => c.Type).Last().MagnitudeDb);
 
-        // Trim half an octave inside the outer band edges: the outermost drivers'
-        // own roll-off skirts are unavoidable and not what the crossover controls.
+        // Trim half an octave inside the outer edges: the outermost drivers' skirts are not the crossover's doing.
         double trim = Math.Pow(2.0, 0.5);
         var window = CrossoverAutoSetup
             .SummedResponseDb(channels, proposals, SampleRate, SampleRate)
@@ -75,9 +69,6 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_HandlesAFourWaySystem()
     {
-        // Sub / woofer / midrange / tweeter — the four-way case the wizard now
-        // carries end to end. Three junctions, ordered low to high, with every
-        // handover inside both classes' sensible range and a sane summed ripple.
         var sources = new List<AutoSetupSource>
         {
             new(BandCurve(20, 100, 0), DriverType.Subwoofer),
@@ -96,14 +87,9 @@ public sealed class CrossoverAutoSetupTests
         Assert.True(subToWoofer < wooferToMid);
         Assert.True(wooferToMid < midToTweeter);
         Assert.InRange(subToWoofer, 40, 80);
-        // The placement heuristics cross the woofer/midrange handover as low as
-        // the midrange's sensible floor (200 Hz) allows — below its cone-breakup
-        // region — so the wide woofer/mid overlap does not linger up where it
-        // interferes; still gated by the measured midrange band.
+        // Placement crosses woofer/mid as low as the midrange floor (200 Hz), below cone breakup.
         Assert.InRange(wooferToMid, 200, 500);
-        // The placement heuristics cross the mid/tweeter as low as the tweeter's
-        // resonance bound and its measured band allow, out of the 2–4 kHz
-        // ear-sensitivity band; a low tweeter handover must protect Fs.
+        // Mid/tweeter crosses as low as the tweeter's resonance bound allows, out of the 2-4 kHz ear band.
         Assert.InRange(midToTweeter, 1_500, 4_000);
         CrossoverEdge tweeterHp = proposals[3].HighPassEdge!.Value;
         double resonance = CrossoverAutoSetup.TweeterResonanceHz(
@@ -119,11 +105,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_LocalizationBias_LowersTheMidrangeHandoverButNotTheTweeters()
     {
-        // A broad-band midbass whose flatness-optimal handover to the midrange would
-        // otherwise sit near the top of the Midbass->Midrange class band (~500 Hz).
-        // The localization bias pulls THAT handover down below the ~300 Hz threshold,
-        // but is scoped to a handover INTO the midrange — the midrange->tweeter
-        // handover (upper driver a Tweeter) is left to the resonance floor, unmoved.
+        // The localization bias lowers only a handover INTO the midrange; mid->tweeter stays on the resonance floor.
         var sources = new List<AutoSetupSource>
         {
             new(BandCurve(20, 100, 0), DriverType.Subwoofer),
@@ -146,10 +128,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_LocalizationBias_SelfLimitsWhenTheMidrangeCannotPlayLow()
     {
-        // The bias is a nudge, not a clamp: a midrange that only plays down to ~450 Hz
-        // cannot take the handover at 250 without a gaping hole, and the flatness cost
-        // of that hole holds the junction up — the midbass keeps carrying the low-mids
-        // it must. So the handover stays well above the 250 Hz threshold here.
+        // The bias is a nudge, not a clamp: a midrange playing only down to ~450 Hz holds the junction up.
         var sources = new List<AutoSetupSource>
         {
             new(BandCurve(20, 100, 0), DriverType.Subwoofer),
@@ -170,13 +149,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_PrefersTheStandardSlopeOverDraggingTheTweeterLow()
     {
-        // A tweeter that measures clean down to ~1.2 kHz: rather than pin it
-        // maximally low on a steep 48 dB/oct slope (the specialist choice), the auto
-        // keeps the 24 dB/oct standard and lets the handover sit a little higher —
-        // even into the 2–4 kHz ear-sensitive band. Deviations from 24 must be
-        // justified by the flatness/protection they buy, and a clean tweeter does not
-        // justify one, so the slope stays 24 and the crossover respects the resonance
-        // floor at that slope.
+        // A clean tweeter does not justify leaving the 24 dB/oct standard.
         var sources = new List<AutoSetupSource>
         {
             new(BandCurve(60, 900, 0), DriverType.Midbass),
@@ -200,10 +173,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_StillSteepensWhenTheTweeterIsForcedLow()
     {
-        // The 24 dB/oct preference is a penalty, not a lock. When the crossover is
-        // constrained below the tweeter's 24 dB/oct resonance floor (here by a low
-        // max-crossover limit), the resonance protection overrides the penalty and
-        // still forces the steep slope that keeps the tweeter safe.
+        // The 24 dB/oct preference is a penalty: a low max-crossover forces the steep protective slope.
         var sources = new List<AutoSetupSource>
         {
             new(BandCurve(40, 3_000, 0), DriverType.Woofer),
@@ -228,12 +198,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_MidbassHandoversStayInItsSensibleRange()
     {
-        // A three-way with an explicit Midbass driver exercises the Midbass row of
-        // SensibleRange (80-500 Hz), which the other systems never hit. Its lower
-        // handover to the sub lands inside that range; the upper handover to the
-        // tweeter is pulled up by the tweeter's own resonance protection (crossing
-        // this 2 kHz-band tweeter no lower than ~3 kHz at 24 dB/oct) and must stay
-        // ordered and respect that floor.
+        // Explicit Midbass exercises SensibleRange's Midbass row (80-500 Hz).
         var sub = new AutoSetupSource(BandCurve(20, 120, 0), DriverType.Subwoofer);
         var midbass = new AutoSetupSource(BandCurve(100, 800, 0), DriverType.Midbass);
         var tweeter = new AutoSetupSource(BandCurve(2_000, 20_000, 0), DriverType.Tweeter);
@@ -285,10 +250,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void EstimateBand_IgnoresAnIsolatedResonancePastADeadGap()
     {
-        // A woofer flat 40-400 Hz, then a deep dead gap, then a lone breakup
-        // resonance up near 3 kHz. The usable band must stay on the woofer: the
-        // isolated peak past the gap must not stretch HighHz and relabel the
-        // driver a midbass.
+        // A lone breakup island past a dead gap must not stretch HighHz.
         var points = new List<SignalPoint>();
         foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 512))
         {
@@ -322,9 +284,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void EstimateBand_BridgesANarrowInBandNull()
     {
-        // A wide band (100 Hz - 2 kHz) with a single narrow deep null inside it
-        // (an interference or room dip). The narrow gap is bridged, so the band
-        // stays whole rather than splitting at the notch.
+        // A narrow deep null inside the band is bridged, not split.
         var points = new List<SignalPoint>();
         foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 512))
         {
@@ -358,11 +318,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void EstimateBand_UsesCoherenceToRejectAnIncoherentRegion()
     {
-        // A driver with a real, coherent passband (100-300 Hz) plus a broad,
-        // LOUD but incoherent region up high (2-8 kHz, γ² 0.2 — a rattle, buzz,
-        // or a channel picking up another driver). By magnitude area alone the
-        // loud broad region wins, so without coherence the band is read there.
-        // With coherence it is gated out and the real band is chosen.
+        // A loud incoherent region (γ² 0.2) wins by magnitude area; coherence gates it out.
         var mag = new List<SignalPoint>();
         var coh = new List<double>();
         foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 512))
@@ -393,7 +349,6 @@ public sealed class CrossoverAutoSetupTests
         Assert.InRange(withCoh.LowHz, 90, 110);
         Assert.InRange(withCoh.HighHz, 250, 350); // the real coherent band
 
-        // A mismatched-length coherence is ignored, not trusted.
         DriverBandEstimate mismatched = CrossoverAutoSetup.EstimateBand(mag, new[] { 0.9 });
         Assert.Equal(noCoh.HighHz, mismatched.HighHz);
     }
@@ -401,8 +356,6 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void EstimateBand_CoherenceDoesNotChopACoherentBand()
     {
-        // Guard against over-tightening: a clean band whose γ² stays above the
-        // floor everywhere must read identically with and without coherence.
         var mag = BandCurve(100, 2_000, 0);
         var coh = Enumerable.Repeat(0.95, mag.Count).ToList();
 
@@ -415,9 +368,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_WooferToMidrange_KeepsTheCrossoverInTheWooferRange()
     {
-        // Regression: a woofer whose measured response extends into the midband
-        // (its -8 dB point sits near 850 Hz) must still hand over to the midrange
-        // down in the woofer's sensible range (~250 Hz), not up at 850 Hz.
+        // A woofer measuring up to ~850 Hz must still hand over near 250 Hz.
         var woofer = new AutoSetupSource(BandCurve(35, 850, 0), DriverType.Woofer);
         var midrange = new AutoSetupSource(BandCurve(200, 5_000, 0), DriverType.Midrange);
 
@@ -432,8 +383,6 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_SubwooferToWoofer_CrossesInTheirOverlap()
     {
-        // Subwoofer (20-80 Hz) and woofer (40-250 Hz) overlap only at 40-80 Hz;
-        // the handover must land there, not up in the woofer's midband skirt.
         var sub = new AutoSetupSource(BandCurve(20, 120, 0), DriverType.Subwoofer);
         var woofer = new AutoSetupSource(BandCurve(50, 600, 0), DriverType.Woofer);
 
@@ -448,9 +397,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_TwoWay_SplitsInsideTheOverlapWithAllowedFilters()
     {
-        // A wide woofer so the driver overlap comfortably contains the tweeter's
-        // resonance-protected low handover (a tweeter measuring down to 1 kHz is
-        // held above ~2.3 kHz at 24 dB/oct, not crossed at its resonance).
+        // A tweeter measuring down to 1 kHz is held above ~2.3 kHz at 24 dB/oct.
         var woofer = new AutoSetupSource(BandCurve(40, 4_000, 0), DriverType.Woofer);
         var tweeter = new AutoSetupSource(BandCurve(1_000, 20_000, 0), DriverType.Tweeter);
 
@@ -509,7 +456,6 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_GainsAreCutOnly_AndReferenceTheLoudestChannel()
     {
-        // The tweeter plays 6 dB louder; it gets the cut, the woofer stays put.
         var woofer = new AutoSetupSource(BandCurve(40, 2_000, -6), DriverType.Woofer);
         var tweeter = new AutoSetupSource(BandCurve(1_000, 20_000, 0), DriverType.Tweeter);
 
@@ -519,7 +465,6 @@ public sealed class CrossoverAutoSetupTests
 
         Assert.True(proposals.All(proposal => proposal.GainDb <= 0.0001));
         Assert.Contains(proposals, proposal => Math.Abs(proposal.GainDb) < 0.0001);
-        // The tweeter is the loud one, so it must be the channel that gets cut.
         Assert.True(proposals[1].GainDb < proposals[0].GainDb);
     }
 
@@ -541,12 +486,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_IsAtLeastAsFlatAsAFixedLr24Split()
     {
-        // A woofer that rolls off gently below where a flat tweeter takes over: a
-        // fixed LR24 electrical split overshoots the acoustic slope and dips. The
-        // optimizer is free to pick gentler/other filters and must not do worse
-        // than the naive LR24-at-the-crossover baseline. The crossover sits at
-        // ~2.3 kHz — above the tweeter's resonance-protection floor — so the
-        // comparison is a fair one the protected search can actually reach.
+        // The crossover (~2.3 kHz) sits above the tweeter's protection floor, so the LR24 baseline is reachable.
         var woofer = new AutoSetupSource(BandCurve(40, 2_000, 0), DriverType.Woofer);
         var tweeter = new AutoSetupSource(BandCurve(1_500, 20_000, 0), DriverType.Tweeter);
         var channels = new[] { woofer, tweeter };
@@ -599,19 +539,14 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_WalksTheCallersOrder_NotTheDriverTypes()
     {
-        // The chain is the order it was given in, and nothing else: a caller that
-        // hands over the channels shuffled gets a chain walked in THAT order — the
-        // tweeter first, handing down to the woofer — not a quietly re-sorted one.
-        // Which is the whole point: with two drivers of one class (the case this
-        // exists for) the type cannot say which plays lower, so the caller must.
+        // Shuffled input is walked in the given order: with two drivers of one class only the caller knows which plays lower.
         var tweeter = new AutoSetupSource(BandCurve(2_500, 20_000, 0), DriverType.Tweeter);
         var woofer = new AutoSetupSource(BandCurve(30, 500, 0), DriverType.Woofer);
 
         IReadOnlyList<CrossoverProposal> shuffled = CrossoverAutoSetup.Propose(
             [tweeter, woofer], Options());
 
-        // Position 0 is the chain's BOTTOM, so it takes the low-pass — even though
-        // the driver sitting there is the tweeter.
+        // Position 0 is the chain's bottom, so it takes the low-pass even though it is the tweeter.
         Assert.Equal(CrossoverKind.LowPass, shuffled[0].Kind);
         Assert.Equal(CrossoverKind.HighPass, shuffled[1].Kind);
     }
@@ -619,8 +554,6 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_IndependentSlopes_MayDifferAcrossAJunction()
     {
-        // A woofer with a lot of natural high-end roll-off paired with a tweeter
-        // that stays flat: independent slopes let the two sides differ.
         var woofer = new AutoSetupSource(BandCurve(40, 900, 0), DriverType.Woofer);
         var tweeter = new AutoSetupSource(BandCurve(1_500, 20_000, 0), DriverType.Tweeter);
         var channels = new[] { woofer, tweeter };
@@ -632,8 +565,6 @@ public sealed class CrossoverAutoSetupTests
             channels,
             Options(independentSlopes: true));
 
-        // Matched keeps both sides equal; independent is allowed to differ and
-        // must never come out worse.
         Assert.Equal(
             matched[0].LowPassEdge!.Value.SlopeDbPerOctave,
             matched[1].HighPassEdge!.Value.SlopeDbPerOctave);
@@ -644,8 +575,6 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_LowerLimit_AddsASubsonicHighPassToTheWoofer()
     {
-        // The woofer reaches well below 75 Hz; a 75 Hz lower limit must band-limit
-        // it with a high-pass, turning it into a band-pass.
         var woofer = new AutoSetupSource(BandCurve(28, 2_000, 0), DriverType.Woofer);
         var tweeter = new AutoSetupSource(BandCurve(1_000, 20_000, 0), DriverType.Tweeter);
 
@@ -657,7 +586,6 @@ public sealed class CrossoverAutoSetupTests
         Assert.NotNull(limited[0].HighPassEdge);
         Assert.Equal(75, limited[0].HighPassEdge!.Value.FrequencyHz, 0);
 
-        // Left at the full range there is nothing to band-limit.
         IReadOnlyList<CrossoverProposal> full = CrossoverAutoSetup.Propose(
             [woofer, tweeter],
             Options(minHz: 20));
@@ -683,7 +611,6 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_LowerLimitAboveTheWooferEdge_AddsNothing()
     {
-        // The woofer already rolls off above the 75 Hz limit — nothing to cut.
         var woofer = new AutoSetupSource(BandCurve(120, 2_000, 0), DriverType.Woofer);
         var tweeter = new AutoSetupSource(BandCurve(1_000, 20_000, 0), DriverType.Tweeter);
 
@@ -716,9 +643,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_WideOverlap_PrefersSteeperThanTheFloor()
     {
-        // Two flat drivers overlapping across three octaves: pure flatness is
-        // indifferent to the slope, but the overlap penalty makes the engineer's
-        // choice — a steeper filter that narrows the overlap — win.
+        // Flatness is indifferent to slope here; the overlap penalty makes the steeper filter win.
         var woofer = new AutoSetupSource(BandCurve(40, 5_000, 0), DriverType.Woofer);
         var tweeter = new AutoSetupSource(BandCurve(500, 20_000, 0), DriverType.Tweeter);
 
@@ -744,9 +669,6 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_SplitsTwoSubwoofersBetweenThemselves()
     {
-        // The case the wizard used to refuse outright: two drivers of one class,
-        // here a pair of subwoofers dividing the bottom, which is an ordinary car
-        // install and not a mistake in the type assignment.
         var lower = new AutoSetupSource(BandCurve(20, 60, 0), DriverType.Subwoofer);
         var upper = new AutoSetupSource(BandCurve(35, 120, 0), DriverType.Subwoofer);
 
@@ -757,24 +679,15 @@ public sealed class CrossoverAutoSetupTests
         Assert.Equal(CrossoverKind.HighPass, proposals[1].Kind);
         double split = proposals[0].LowPassEdge!.Value.FrequencyHz;
         Assert.Equal(split, proposals[1].HighPassEdge!.Value.FrequencyHz);
-        // Inside the band the two actually share, not shoved to the top of the
-        // subwoofer class's range by the hand-over-up bias.
+        // Inside the shared band, not pushed up by the hand-over-up bias.
         Assert.InRange(split, 35, 60);
     }
 
     [Fact]
     public void Propose_SameClassJunction_CarriesNoClassPlacementBias()
     {
-        // "A sub hands over where it stops being localizable (~80 Hz)" answers
-        // which of two CLASSES owns the region they share. Between two subs there
-        // is no such question, and the bias applied anyway would drag their split
-        // toward 80 Hz for no reason at all.
-        //
-        // The two runs below differ ONLY in the upper driver's class, and the
-        // 40 Hz lower limit pins them to the same search window: the measured
-        // edges put the floor under 40 either way, and the ceiling is the
-        // subwoofer class's own 80 Hz in both. So the whole difference in where
-        // the split lands is the bias — present across classes, absent within one.
+        // The localization bias answers which CLASS owns a region; between two subs it must not apply.
+        // The runs differ only in the upper driver's class and share one search window, so any difference is the bias.
         var lower = new AutoSetupSource(BandCurve(20, 100, 0), DriverType.Subwoofer);
         var curve = BandCurve(25, 500, 0);
         CrossoverAutoSetupOptions options = Options(minHz: 40);
@@ -795,10 +708,6 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_FiveWayWithTwoSubwoofers_OrdersEveryHandover()
     {
-        // The installation this whole grouping exists for: a pair of subs
-        // splitting the bottom under a three-way front. Five channels, four
-        // junctions, two of the five sharing a driver type — which the wizard
-        // used to refuse outright.
         var sources = new List<AutoSetupSource>
         {
             new(BandCurve(20, 55, 0), DriverType.Subwoofer),
@@ -819,8 +728,6 @@ public sealed class CrossoverAutoSetupTests
             .ToArray();
         Assert.Equal(splits.OrderBy(frequency => frequency), splits);
 
-        // Each handover inside the band its two drivers actually share, the
-        // sub-to-sub one included — no junction invented where nothing overlaps.
         for (int j = 0; j < splits.Length; j++)
         {
             Assert.InRange(
@@ -829,8 +736,6 @@ public sealed class CrossoverAutoSetupTests
                 CrossoverAutoSetup.EstimateBand(sources[j].MagnitudeDb).HighHz);
         }
 
-        // Every channel between the two ends is a band-pass: the second sub is a
-        // chain member like any other, not an appendage.
         Assert.All(
             proposals.Skip(1).Take(3),
             proposal => Assert.Equal(CrossoverKind.BandPass, proposal.Kind));
@@ -839,10 +744,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_SecondSubwoofer_DoesNotSetTheLevelTheSystemIsCutTo()
     {
-        // The flat top is fitted to the quietest driver that is not a sub, because
-        // a sub is separately amped and a quiet one must not drag the whole system
-        // down to it. That holds for EVERY sub in the chain: with the upper sub 10
-        // dB down, the midrange and tweeter must still level to each other.
+        // Subs are separately amped: a quiet sub must not drag the flat top down, for every sub in the chain.
         var lowSub = new AutoSetupSource(BandCurve(20, 60, 0), DriverType.Subwoofer);
         var highSub = new AutoSetupSource(BandCurve(35, 120, -10), DriverType.Subwoofer);
         var midrange = new AutoSetupSource(BandCurve(150, 4_000, 0), DriverType.Midrange);
@@ -858,11 +760,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void ProposeSingle_ProtectsTheDriverBelowWhereItPlays()
     {
-        // A rear fill measured down to ~90 Hz (the -8 dB edge of an 110 Hz
-        // driver): the high-pass goes an octave above that, which is the same
-        // bound the optimizer holds the upper driver of a junction to. Nothing
-        // low-passes it — there is nothing above it to hand over to — and the
-        // gain stays put, because levelling this group is a separate step.
+        // Rear fill: high-pass an octave above its measured edge, no low-pass, gain untouched (levelling is separate).
         var rear = new AutoSetupSource(BandCurve(110, 15_000, 0), DriverType.Midrange);
 
         CrossoverProposal proposal = CrossoverAutoSetup.ProposeSingle(rear, Options());
@@ -876,10 +774,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void ProposeSingle_HoldsATweeterAboveItsResonance()
     {
-        // A tweeter measured well down into its own roll-off: an octave above the
-        // measured edge (~700 Hz → 1.4 kHz) would sit barely above the resonance
-        // floor, so the excursion rule takes over and lifts the corner to where
-        // the filter attenuates Fs by the target.
+        // An octave above the edge would sit barely above the resonance; the excursion rule lifts the corner.
         var tweeter = new AutoSetupSource(BandCurve(880, 20_000, 0), DriverType.Tweeter);
 
         CrossoverProposal proposal = CrossoverAutoSetup.ProposeSingle(tweeter, Options());
@@ -898,12 +793,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_AChainOfNothingButSubs_LevelsThemToEachOtherEitherWayRound()
     {
-        // Two subs and no mid or treble anywhere in the group — the rest of the
-        // car is in other groups. There is no flat top for an elevation to be
-        // measured over, so the pair simply levels to its quieter member. Read
-        // off the chain's first driver instead, the answer would depend on which
-        // of the two happens to be the loud one: the same drivers levelled one
-        // way round and left 8 dB apart the other.
+        // No flat top in a two-sub group: level to the quieter member regardless of order.
         List<SignalPoint> lowCurve = BandCurve(20, 60, 8);
         List<SignalPoint> highCurve = BandCurve(35, 120, 0);
         var loudLow = new AutoSetupSource(lowCurve, DriverType.Subwoofer);
@@ -912,14 +802,10 @@ public sealed class CrossoverAutoSetupTests
         IReadOnlyList<CrossoverProposal> loudFirst = CrossoverAutoSetup.Propose(
             [loudLow, quietHigh], Options());
 
-        // The loud one comes down to the quiet one; the quiet one is not boosted.
-        // Not exactly 8 dB: each level is averaged over that driver's own
-        // passband, and the two passbands are different stretches of the curve.
+        // Not exactly 8 dB: each level is averaged over that driver's own passband.
         Assert.InRange(loudFirst[0].GainDb, -10, -6.5);
         Assert.Equal(0, loudFirst[1].GainDb, 1);
 
-        // And the mirror image: the same pair with the levels swapped over cuts
-        // the other member by the same amount, rather than keeping a downslope.
         IReadOnlyList<CrossoverProposal> quietFirst = CrossoverAutoSetup.Propose(
             [
                 new AutoSetupSource(BandCurve(20, 60, 0), DriverType.Subwoofer),
@@ -934,10 +820,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void ProposeSingle_RefusesRatherThanCrossUnderTheDriversOwnSafetyFloor()
     {
-        // A tweeter's high-pass has to attenuate its resonance, which for this one
-        // lands around 2.3 kHz. Told the crossover window stops at 1.5 kHz, the
-        // honest answer is that there is no protective filter to be had inside it
-        // — not a 1.5 kHz corner with the word "protective" on it.
+        // No protective corner fits inside a 1.5 kHz window: report none rather than a mislabeled one.
         var tweeter = new AutoSetupSource(BandCurve(880, 20_000, 0), DriverType.Tweeter);
 
         ArgumentException refused = Assert.Throws<ArgumentException>(
@@ -949,9 +832,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void ProposeSingle_SqueezesTheHeadroomMarginForANarrowDriver()
     {
-        // The octave of headroom over the measured edge is a preference, not
-        // safety: a driver narrower than two octaves cannot be given it, and a
-        // corner inside its own band is the right answer rather than a refusal.
+        // The octave of headroom is a preference: a driver narrower than two octaves gets a corner inside its band.
         var narrow = new AutoSetupSource(BandCurve(1_000, 1_500, 0), DriverType.Midrange);
 
         CrossoverProposal proposal = CrossoverAutoSetup.ProposeSingle(narrow, Options());
@@ -963,9 +844,6 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void ProposeSingle_KeepsTheCornerInsideTheUsersWindow()
     {
-        // The window is the user's, and it binds a protective filter as it binds
-        // a junction — including the brickwall the topmost driver of a chain gets
-        // when the window is pulled in below where it still plays.
         var rear = new AutoSetupSource(BandCurve(110, 15_000, 0), DriverType.Midrange);
 
         CrossoverProposal proposal = CrossoverAutoSetup.ProposeSingle(
@@ -979,9 +857,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void OffsetToReferenceLevel_CutsALoudGroupOntoTheFrontStage_Rigidly()
     {
-        // A two-way rear fitted on its own, then levelled against a front stage
-        // 6 dB quieter. The whole group slides; what its own fit decided about
-        // the balance between its two drivers must survive untouched.
+        // The whole group slides; its internal balance must survive.
         var midbass = new AutoSetupSource(BandCurve(80, 2_000, 6), DriverType.Midbass);
         var tweeter = new AutoSetupSource(BandCurve(2_000, 20_000, 4), DriverType.Tweeter);
         var group = new List<AutoSetupSource> { midbass, tweeter };
@@ -1002,8 +878,7 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void OffsetToReferenceLevel_LeavesAQuietGroupAlone()
     {
-        // Cut-only, as everywhere else in the wizard: a group already under the
-        // front stage is not boosted into the amplifier's headroom to meet it.
+        // Cut-only: a group under the front stage is not boosted.
         var midbass = new AutoSetupSource(BandCurve(80, 2_000, -8), DriverType.Midbass);
         var tweeter = new AutoSetupSource(BandCurve(2_000, 20_000, -8), DriverType.Tweeter);
         var group = new List<AutoSetupSource> { midbass, tweeter };
@@ -1020,17 +895,13 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void OffsetToReferenceLevel_LevelsAGroupOfOne()
     {
-        // The rear fill and the centre are groups of one, and they are levelled
-        // by the same call as a two-way rear — a lone channel is not a special
-        // case, it is a group whose internal fit had nothing to decide.
         var rear = new AutoSetupSource(BandCurve(110, 15_000, 5), DriverType.Midrange);
         CrossoverProposal single = CrossoverAutoSetup.ProposeSingle(rear, Options());
 
         IReadOnlyList<CrossoverProposal> levelled = CrossoverAutoSetup.OffsetToReferenceLevel(
             [rear], [single], SampleRate, 0);
 
-        // Not exactly -5: the level is read over the passband the high-pass
-        // leaves, whose top edge runs a little way into the driver's own roll-off.
+        // Not exactly -5: the level is read over the passband the high-pass leaves.
         Assert.InRange(levelled[0].GainDb, -5.3, -4.7);
         Assert.Equal(single.HighPassEdge, levelled[0].HighPassEdge);
     }

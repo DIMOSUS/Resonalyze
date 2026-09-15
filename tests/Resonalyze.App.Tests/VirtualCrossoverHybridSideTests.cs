@@ -4,13 +4,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Which SIDE a hybrid curve is built from. The opposite side's dashed sum is drawn
-/// by the same method as the shown side's, so the builder is asked for a side that
-/// is not the channel's active one — and a builder that quietly read the active side
-/// there would draw one side's tuning under the other's label, at levels close
-/// enough to pass for a real L/R difference.
-/// </summary>
+/// <summary>The opposite side's dashed sum asks for a non-active side; reading the active one would pass for a real L/R difference.</summary>
 public sealed class VirtualCrossoverHybridSideTests
 {
     [Fact]
@@ -25,8 +19,6 @@ public sealed class VirtualCrossoverHybridSideTests
 
         IReadOnlyList<SignalPoint> reference = Grid();
 
-        // No chain on either side, so the curve is the stored average itself and the
-        // two sides are told apart by their level alone.
         IReadOnlyList<SignalPoint> left = Build(channel, rightSide: false, reference);
         IReadOnlyList<SignalPoint> right = Build(channel, rightSide: true, reference);
 
@@ -34,11 +26,6 @@ public sealed class VirtualCrossoverHybridSideTests
         Assert.Equal(-32, right[right.Count / 2].Y, 3);
     }
 
-    /// <summary>
-    /// A mono pair has one slot, and both sides must find the capture in it — the
-    /// shared subwoofer feeds both sums, so an opposite-side build that went looking
-    /// in the empty right slot would drop it out of the other side's sum entirely.
-    /// </summary>
     [Fact]
     public void AMonoPair_AnswersWithItsSingleCaptureForBothSides()
     {
@@ -56,18 +43,11 @@ public sealed class VirtualCrossoverHybridSideTests
         Assert.Equal(-14, right[right.Count / 2].Y, 3);
     }
 
-    /// <summary>
-    /// The panel's display smoothing reaches the hybrid curve too. The honest curves
-    /// beside it carry the selector, so a hybrid that ignored it would answer a
-    /// different question from the rest of the plot every time it was moved.
-    /// </summary>
     [Fact]
     public void ThePanelsSmoothing_ReachesTheHybridCurve()
     {
         VirtualCrossoverChannel channel = new("A");
         channel.PhysicalSideState(false).SampleRate = 48_000;
-        // A capture with scatter in it: smoothing has something to remove, and a
-        // builder that ignored the selector would return the scatter untouched.
         LiveCaptureDocument document = Capture(-20);
         for (int i = 0; i < document.CurveDb.Length; i++)
         {
@@ -86,7 +66,6 @@ public sealed class VirtualCrossoverHybridSideTests
             $"smoothing left {Scatter(smoothed):0.0} dB of {Scatter(raw):0.0}");
     }
 
-    // Mean absolute step between neighbours: what smoothing is there to reduce.
     private static double Scatter(IReadOnlyList<SignalPoint> points)
     {
         double total = 0;
@@ -113,11 +92,7 @@ public sealed class VirtualCrossoverHybridSideTests
             "BuildHybridChannelCurve",
             BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new InvalidOperationException("BuildHybridChannelCurve is gone.");
-        // An uninitialized panel: the builder reads the channel, the side, the
-        // panel's calibration (null here) and the project's spatial-average method,
-        // so this asks the production code the question without a Windows message
-        // loop. The method is set explicitly rather than left to resolve, which
-        // would reach for the channel list a constructor builds.
+        // Uninitialized panel: the method is set explicitly, since resolving it reaches for the constructor-built channel list.
         object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
         typeof(VirtualCrossoverPanel)
             .GetField("project", BindingFlags.NonPublic | BindingFlags.Instance)!
@@ -130,8 +105,6 @@ public sealed class VirtualCrossoverHybridSideTests
         return Assert.IsAssignableFrom<IReadOnlyList<SignalPoint>>(result);
     }
 
-    // A flat capture at a known level, on the same logarithmic grid the reference
-    // uses, so the level is what identifies it.
     private static LiveCaptureDocument Capture(double db)
     {
         IReadOnlyList<SignalPoint> grid = Grid();

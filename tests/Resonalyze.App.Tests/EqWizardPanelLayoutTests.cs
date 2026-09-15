@@ -5,14 +5,7 @@ using OxyPlot.WindowsForms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// What a bigger window buys the EQ wizard. The curve being equalized is what
-/// the tool is read on, so every pixel the window gains goes to the plot — out to
-/// the panel's right edge and down to the PEQ bank. The bank and the auto-tune
-/// box keep their size and ride down to the bottom-left corner: the bank is a
-/// fixed grid of strips on percent styles, so room given to it would only enlarge
-/// the strips.
-/// </summary>
+/// <summary>Extra window space goes to the plot; the bank keeps its size (percent-styled strips) and rides to the bottom-left.</summary>
 public sealed class EqWizardPanelLayoutTests
 {
     [Fact]
@@ -23,8 +16,6 @@ public sealed class EqWizardPanelLayoutTests
         Rectangle bankDesign = Field<Control>(panel, "panelPEQ").Bounds;
         Rectangle autoTuneDesign = Field<Control>(panel, "panelAutoTune").Bounds;
 
-        // Nothing below the designed size shrinks: the panel scrolls, the way it
-        // did before it could stretch at all.
         panel.Size = new Size(panel.Width - 200, panel.Height - 200);
 
         Assert.Equal(plotDesign, Plot(panel).Bounds);
@@ -61,16 +52,12 @@ public sealed class EqWizardPanelLayoutTests
 
         panel.Size = new Size(design.Width + 500, design.Height + 300);
 
-        // Same size, same left edge, moved down by exactly what the plot grew —
-        // which is what "anchored to the bottom-left corner" means here.
         Assert.Equal(bankDesign.Size, bank.Size);
         Assert.Equal(autoTuneDesign.Size, autoTune.Size);
         Assert.Equal(bankDesign.Left, bank.Left);
         Assert.Equal(autoTuneDesign.Left, autoTune.Left);
         Assert.Equal(bankDesign.Top + 300, bank.Top);
         Assert.Equal(autoTuneDesign.Top + 300, autoTune.Top);
-        // The gap under the plot is what stops the growing plot from running over
-        // the bank, and the gap under the bank is what keeps the pair on-screen.
         Assert.Equal(bankGap, bank.Top - plot.Bottom);
         Assert.Equal(bottomGap, panel.ClientSize.Height - bank.Bottom);
         Assert.True(plot.Bottom < bank.Top);
@@ -92,9 +79,6 @@ public sealed class EqWizardPanelLayoutTests
 
         Assert.Equal(plotDesign, plot.Bounds);
         Assert.Equal(bankDesign, bank.Bounds);
-        // The controls being right is only half of it: the scrollable area has to
-        // shrink back with them, or the panel comes back scrolled with its bars
-        // stuck on.
         Assert.Equal(scrollableDesign, panel.DisplayRectangle);
         Assert.Equal(Point.Empty, panel.AutoScrollPosition);
     }
@@ -106,11 +90,7 @@ public sealed class EqWizardPanelLayoutTests
         PlotView plot = Plot(panel);
         Control bank = Field<Control>(panel, "panelPEQ");
 
-        // What a 150% display does: the container scales every control, so the
-        // arrangement the stretch measures against has to scale with them.
-        // Measured against the designer's 96-DPI numbers instead, the panel would
-        // read its own scaled size as "the user enlarged the window" and blow the
-        // plot up by the scale factor on top of it.
+        // The baseline scales with the container, or a 150% display reads as a user enlargement.
         panel.Scale(new SizeF(1.5f, 1.5f));
         Size scaledPlot = plot.Size;
         int scaledBankTop = bank.Top;
@@ -125,22 +105,13 @@ public sealed class EqWizardPanelLayoutTests
         Assert.Equal(scaledPlot.Height + 300, plot.Height);
         Assert.Equal(scaledBankTop + 300, bank.Top);
 
-        // And back: the scaled arrangement is what it must return to, not the
-        // designer's 96-DPI one.
         panel.Size = scaled;
         Assert.Equal(scaledPlot, plot.Size);
         Assert.Equal(scaledBankTop, bank.Top);
     }
 
 
-    /// <summary>
-    /// The panel's padding is part of the arrangement, and the anchored controls
-    /// are placed against it: the channel column and the buttons under it sit at
-    /// the padding's own corner. A padding left at the designer's 96-DPI number
-    /// while everything around it scaled put every one of them 6 px off at 192 DPI
-    /// (#120) — which is what the shell re-assigning `Padding = new Padding(6)`
-    /// after this panel had scaled its own did.
-    /// </summary>
+    /// <summary>Anchored controls sit at the padding's corner, so padding must scale with the arrangement.</summary>
     [Fact]
     public void ItsPadding_ScalesWithTheArrangement()
     {
@@ -148,15 +119,12 @@ public sealed class EqWizardPanelLayoutTests
         Padding designedPadding = panel.Padding;
         Point designedCorner = Field<Control>(panel, "buttonSource").Location;
 
-        // Factor 2, the arithmetic of a 192 DPI display.
         panel.AutoScaleDimensions = new SizeF(48F, 48F);
 
         Assert.Equal(designedPadding.Left * 2, panel.Padding.Left);
         Assert.Equal(designedPadding.Top * 2, panel.Padding.Top);
 
-        // And the shell's cascade, which leaves the arrangement alone, must leave
-        // the padding alone with it: base.ScaleControl scales Padding on every
-        // pass, so counted twice it reads 24 where 12 was drawn.
+        // base.ScaleControl scales Padding on every pass: counted twice it reads 24 where 12 was drawn.
         ScaleBoundsOnly(panel, 2F);
 
         Assert.Equal(designedPadding.Left * 2, panel.Padding.Left);
@@ -174,21 +142,12 @@ public sealed class EqWizardPanelLayoutTests
     {
         using var panel = new EqWizardPanel();
 
-        // A real auto-scale pass, at whatever DPI the machine runs: declaring a
-        // lower source DPI makes the container scale itself by 96/76.8 = 1.25, the
-        // arithmetic a 125% display puts it through. The arrangement inside moves
-        // with it, and so must the baseline the stretch measures against.
+        // A lower source DPI (76.8) makes the container scale by 1.25, as a 125% display does.
         panel.AutoScaleDimensions = new SizeF(76.8F, 76.8F);
         Size scaledArrangement = Plot(panel).Size;
         Size scaledPanel = panel.Size;
 
-        // Then the shell's own scale reaches the panel, and that pass resizes the
-        // PANEL ONLY — measured at a real 125%, a form scaling its children leaves
-        // the arrangement inside an auto-scaling container where it was. So the
-        // baseline must sit this one out: counted twice it ran a whole factor ahead
-        // and the stretch sized the plot for a panel a quarter wider than the one
-        // it is in, which is the field report — both scrollbars at 125%, the plot
-        // cut off at the right.
+        // The shell's pass resizes only the panel, so the baseline sits it out (counted twice: scrollbars and a cut-off plot at 125%).
         ScaleBoundsOnly(panel, 1.25F);
         panel.Size = scaledPanel;
 
@@ -201,8 +160,6 @@ public sealed class EqWizardPanelLayoutTests
             $"content {panel.DisplayRectangle.Height} tall in a {panel.ClientSize.Height} client");
     }
 
-    // The pass a parent makes over this panel: Control.ScaleControl, the protected
-    // entry point WinForms itself calls, and the one the panel overrides.
     private static void ScaleBoundsOnly(Control panel, float factor) =>
         typeof(Control)
             .GetMethod(
@@ -214,8 +171,6 @@ public sealed class EqWizardPanelLayoutTests
 
     private static PlotView Plot(EqWizardPanel panel) => Field<PlotView>(panel, "plotWizard");
 
-    // The panel's controls are private designer fields; the layout they end up
-    // with is the whole subject here, so the test reads them by name.
     private static T Field<T>(EqWizardPanel panel, string name) =>
         (T)typeof(EqWizardPanel)
             .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!

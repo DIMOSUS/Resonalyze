@@ -6,16 +6,10 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The crossover wizard driven end to end over a grouped installation: the whole
-/// point of the grouping is what comes back out of Apply, and the split, the
-/// chain order and the per-group levelling only meet there.
-/// </summary>
 public sealed class VirtualCrossoverAutoSetupGroupTests
 {
     private const double SampleRate = 48_000;
 
-    // A synthetic driver: flat inside the band, 24 dB/octave off each edge.
     private static List<SignalPoint> BandCurve(double lowHz, double highHz, double levelDb = 0)
     {
         var points = new List<SignalPoint>();
@@ -60,10 +54,7 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
             null);
     }
 
-    // The reference installation's shape, handed in the panel's order rather than
-    // any sensible one: three front ways, two subwoofers under them, a rear fill
-    // and a centre. Both subs measure the same because they are the same driver;
-    // only the corners already set on them say which plays lower.
+    // Handed in panel order; both subs measure the same, so only their preset corners order them.
     private static IReadOnlyList<AutoSetupWizardChannel> ReferenceCar() =>
     [
         Channel("A tweeter", VirtualCrossoverAlignmentStage.FrontChain, 2_200, 20_000),
@@ -81,9 +72,7 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     [Fact]
     public void ChannelOrderControlsRemainInsideTheClientArea()
     {
-        // These are ordinary imported filenames, not pathological labels. At the
-        // designed fixed width their table reaches past the right edge and clips
-        // the Down arrow, exactly where the user needs it to reorder the chain.
+        // Ordinary filenames overflow the fixed-width table and clip the Down arrow.
         string[] names =
         [
             "A — f R TWEET.json",
@@ -113,11 +102,7 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
         });
     }
 
-    // Apply's handler is async void and, with no impulse responses to rank
-    // against, finishes inside the call — the ranked path is the one that awaits.
-    // Every fixture here must leave the order unambiguous (corners on the subs):
-    // an ambiguous one puts up the confirmation dialog, which nothing here can
-    // answer.
+    // Without IRs Apply finishes synchronously; fixtures must be unambiguous or a confirmation dialog blocks.
     private static IReadOnlyList<CrossoverProposal> Apply(
         IReadOnlyList<AutoSetupWizardChannel> channels)
     {
@@ -136,8 +121,6 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
         return result!;
     }
 
-    // The order the wizard asks the panel to put its blocks into, or null when
-    // the user cleared the checkbox.
     private static IReadOnlyList<int>? ChainOrder(
         IReadOnlyList<AutoSetupWizardChannel> channels,
         bool reorder)
@@ -164,28 +147,19 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     [Fact]
     public void Apply_AsksForTheBlocksInTheOrderTheDialogCrossedThem()
     {
-        // Init indices, group by group: the front chain from the sub the corners
-        // put lowest up to the tweeter, then the rear, then the centre. Nothing
-        // like the order they were handed in, which is the point.
         Assert.Equal([6, 5, 2, 1, 0, 3, 4], ChainOrder(ReferenceCar(), reorder: true));
     }
 
     [Fact]
     public void Apply_AsksForNothingWhenTheUserClearedTheReorder()
     {
-        // The proposal still applies; only the blocks are left alone.
         Assert.Null(ChainOrder(ReferenceCar(), reorder: false));
     }
 
     [Fact]
     public void MovingTheBassAnchor_MovesTheCeilingOnTheElevationWithIt()
     {
-        // The elevation is measured at the chain's LOWEST bass driver, and the
-        // arrows can change which one that is. Here the two subwoofers differ by
-        // 8 dB: with the quiet one at the bottom there is no elevation to offer
-        // and the field is capped at zero, and if that cap were read once and
-        // kept, swapping them could never open it again — the user would be
-        // locked out of an elevation the measurement now supports.
+        // The elevation cap follows the lowest bass driver, so reordering must re-open it rather than keep the first cap.
         var channels = new List<AutoSetupWizardChannel>
         {
             Channel("quiet sub", VirtualCrossoverAlignmentStage.FrontChain, 20, 50, lowPassHz: 50),
@@ -205,10 +179,8 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
             var field = (DarkNumericUpDown)typeof(VirtualCrossoverAutoSetupDialog)
                 .GetField("subElevation", BindingFlags.NonPublic | BindingFlags.Instance)!
                 .GetValue(dialog)!;
-            // Not exactly zero: the quiet sub averages a hair over the reference.
             Assert.True(field.Maximum <= 1m, $"capped at {field.Maximum} dB to begin with");
 
-            // Bring the loud sub to the bottom of the chain: it is the anchor now.
             var rows = (System.Collections.IList)typeof(VirtualCrossoverAutoSetupDialog)
                 .GetField("rows", BindingFlags.NonPublic | BindingFlags.Instance)!
                 .GetValue(dialog)!;
@@ -226,17 +198,13 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     [Fact]
     public void Apply_ReturnsOneProposalPerChannel_InTheOrderTheyWereHandedIn()
     {
-        // The dialog reorders its rows into chain order inside each group; the
-        // panel writes the result back by position, so what comes out must be in
-        // the INPUT order however the rows were shuffled to get there.
+        // The panel writes back by position, so proposals come out in INPUT order.
         IReadOnlyList<AutoSetupWizardChannel> channels = ReferenceCar();
 
         IReadOnlyList<CrossoverProposal> proposals = Apply(channels);
 
         Assert.Equal(channels.Count, proposals.Count);
         Assert.All(proposals, Assert.NotNull);
-        // Index 0 is the tweeter, the top of the front chain: a high-pass and
-        // nothing above it. Index 2 is the midbass, in the middle of that chain.
         Assert.Equal(CrossoverKind.HighPass, proposals[0].Kind);
         Assert.Equal(CrossoverKind.BandPass, proposals[2].Kind);
     }
@@ -246,8 +214,6 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     {
         IReadOnlyList<CrossoverProposal> proposals = Apply(ReferenceCar());
 
-        // Chain order: rear sub (6), front sub (5), midbass (2), mid (1),
-        // tweeter (0) — the two subs put in that order by their corners alone.
         int[] chain = [6, 5, 2, 1, 0];
         for (int i = 0; i + 1 < chain.Length; i++)
         {
@@ -258,8 +224,6 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
             Assert.Equal(lowPass!.Value.FrequencyHz, highPass!.Value.FrequencyHz, 3);
         }
 
-        // And the bottom of the chain is the sub whose corner says it plays
-        // lowest, which is not the one that came first in the input.
         Assert.Null(proposals[6].HighPassEdge);
         Assert.Equal(CrossoverKind.LowPass, proposals[6].Kind);
     }
@@ -276,8 +240,6 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
             Assert.NotNull(proposals[index].HighPassEdge);
         }
 
-        // Their corners come from their own measured band, not from a handover:
-        // an octave over where each of them starts playing.
         foreach (int index in new[] { 3, 4 })
         {
             double measured = CrossoverAutoSetup
@@ -288,18 +250,12 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
                 measured * 2.3);
         }
 
-        // What says they are not in the chain is that the chain pairs up without
-        // them — asserted where the chain is walked, above — and NOT that their
-        // corners differ from its junctions. Two unrelated filters are perfectly
-        // free to land on the same frequency, and these two do: the rear's
-        // protective corner and the midbass-to-midrange handover are both 200 Hz.
+        // The rear's 200 Hz protective corner coincides with the mid handover; exclusion is asserted by chain pairing, not by frequency.
     }
 
     [Fact]
     public void Apply_CutsALoudRearOntoTheFrontStage()
     {
-        // The rear measures 6 dB hotter than the front. Left alone it would be
-        // applied at its raw level, which is not a starting point anybody wants.
         IReadOnlyList<CrossoverProposal> proposals = Apply(ReferenceCar());
 
         Assert.InRange(proposals[3].GainDb, -7.5, -4.5);
@@ -308,8 +264,6 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     [Fact]
     public void Apply_LeavesAQuietGroupWhereItIs()
     {
-        // Cut-only: the same rear measured 6 dB UNDER the front is not boosted up
-        // to meet it.
         List<AutoSetupWizardChannel> channels = ReferenceCar().ToList();
         channels[3] = Channel(
             "D rear", VirtualCrossoverAlignmentStage.Rear, 120, 15_000, levelDb: -6);
@@ -322,9 +276,6 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
     [Fact]
     public void Apply_WithNoRearOrCentre_IsOneGroupAndOneChain()
     {
-        // The front-only car, which is what every project was before zones: one
-        // group, so nothing is levelled onto anything and the chain is the whole
-        // system exactly as it always was.
         List<AutoSetupWizardChannel> channels = ReferenceCar()
             .Where(channel => channel.Group == VirtualCrossoverAlignmentStage.FrontChain)
             .ToList();

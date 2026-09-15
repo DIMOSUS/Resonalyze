@@ -2,19 +2,9 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// What an export to a given format would silently leave behind, worded once.
-/// Two panels export the same banks now — the EQ Wizard and a Virtual DSP channel's
-/// PEQ menu — and these warnings carry real instructions (which gain to type into
-/// the device afterwards), so a second copy of them is a second chance to drift.
-/// UI-free: each caller shows the text in its own dialog.
-/// </summary>
+/// <summary>Export-loss warnings worded once for the EQ Wizard and the Virtual DSP PEQ menu (they carry device instructions).</summary>
 internal static class EqExportWarnings
 {
-    /// <summary>
-    /// The warning for shelving filters a format cannot state, or null when it
-    /// carries them — or when the bank has none.
-    /// </summary>
     public static string? ShelvingBandsDropped(
         EqWizardExportTarget target, EqualizationCurve curve)
     {
@@ -36,11 +26,6 @@ internal static class EqExportWarnings
             "the curve on screen. Export anyway?";
     }
 
-    /// <summary>
-    /// The warning for all-pass bands a format cannot state, or null when it
-    /// carries them — or when the bank has none. Support splits by order (Equalizer
-    /// APO's AP is second-order only), so the wording names what is actually lost.
-    /// </summary>
     public static string? AllPassBandsDropped(
         EqWizardExportTarget target, EqualizationCurve curve)
     {
@@ -54,8 +39,7 @@ internal static class EqExportWarnings
             return null;
         }
 
-        // When only the first order is unsupported, say so — "cannot carry an
-        // all-pass" would read as a lie next to the AP2 rows that do export.
+        // "cannot carry an all-pass" would read as a lie next to exported AP2 rows.
         bool onlyFirstOrder =
             target.SupportsAllPass(PeqBandType.AllPassSecondOrder) &&
             !target.SupportsAllPass(PeqBandType.AllPassFirstOrder);
@@ -69,10 +53,6 @@ internal static class EqExportWarnings
             "does. Export anyway?";
     }
 
-    /// <summary>
-    /// The warning for a preamp a format has no field for, or null when it has one —
-    /// or when the preamp is 0.
-    /// </summary>
     public static string? PreampDropped(
         EqWizardExportTarget target, EqualizationCurve curve)
     {
@@ -86,8 +66,6 @@ internal static class EqExportWarnings
         }
 
         string gain = FormattableString.Invariant($"{preampDb:+0.0;-0.0} dB");
-        // The preamp is signed: leaving out a cut makes the export louder than the
-        // curve on screen, leaving out a boost makes it quieter. Say which.
         string direction = preampDb < 0 ? "louder" : "quieter";
         return $"{target.Name} has no place for the preamp, so the {gain} would be left " +
             $"out and the exported bands alone are that much {direction} than the tune " +

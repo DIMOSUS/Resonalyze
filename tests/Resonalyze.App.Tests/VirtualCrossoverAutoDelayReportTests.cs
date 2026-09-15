@@ -2,12 +2,6 @@
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The Auto delay dialog's report formatter: one row per channel, values the
-/// proposal changes written "before -> after" and everything else
-/// "value (kept)", the confidence columns, and the per-channel notes.
-/// Text-shaping only — the values come in pre-computed.
-/// </summary>
 public sealed class VirtualCrossoverAutoDelayReportTests
 {
     private static AutoDelayChannelOutcome Outcome(
@@ -47,11 +41,7 @@ public sealed class VirtualCrossoverAutoDelayReportTests
     [Fact]
     public void Format_StatesTheRearFillOffsetIncludingADeliberateZero()
     {
-        // Zero is a CHOICE — the second row wants the rear co-arriving — and it
-        // is the one the reader most needs told, because a report silent about
-        // the offset reads the same whether the rear was co-arrived or held
-        // back fifteen milliseconds. Printing it only when non-zero left the
-        // line unable to disambiguate the very case it was added for.
+        // Zero is printed: silence would not distinguish a co-arrived rear from one held back.
         var request = new AutoDelayRunRequest(0.25, false, false, 0.0, 0.0);
 
         string report = VirtualCrossoverAutoDelayReport.Format(
@@ -81,9 +71,7 @@ public sealed class VirtualCrossoverAutoDelayReportTests
     [Fact]
     public void Format_SaysNothingAboutARearFillAProjectDoesNotHave()
     {
-        // The offset is stored per project, so it carries a value even for a
-        // front-only car. Printing it there would describe a group that is not
-        // in the run.
+        // The offset is stored per project; a front-only run must not print it.
         var request = new AutoDelayRunRequest(0.25, false, false, 0.0, 15.0);
 
         string report = VirtualCrossoverAutoDelayReport.Format(
@@ -128,21 +116,13 @@ public sealed class VirtualCrossoverAutoDelayReportTests
             rightSumLoss: new AutoDelaySumLossForecast(-2.4, -0.8));
 
         Assert.Contains("stereo", report);
-        // Both figures are layout-neutral magnitudes; the layout names the
-        // sides they act on.
         Assert.Contains("Scene offset 0.27 ms (LHD: right side leads)", report);
         Assert.Contains("near-side cut 1.5 dB", report);
-        // The at-a-glance summary NAMES the channels each kind of change
-        // lands on, so the table only has to be read for the values.
         Assert.Contains(
             "Changes: 3 delays (A L, B L, C R), 1 polarity (B L), 1 gain (A L)",
             report);
-        // The forecast states what the proposal buys instead of leaving two
-        // similar numbers to be subtracted by eye.
         Assert.Contains("Left   -2.0 -> -0.6 dB (1.4 dB better)", report);
         Assert.Contains("Right  -2.4 -> -0.8 dB (1.6 dB better)", report);
-        // One warning line per kind, naming the channels; the reason for each
-        // is printed once, down in the notes, instead of twice.
         Assert.Contains(
             "Warning: LOW delay confidence — B L (reasons in Notes)", report);
         Assert.Equal(
@@ -153,25 +133,16 @@ public sealed class VirtualCrossoverAutoDelayReportTests
         Assert.Contains("norm -> inv", report);
         Assert.Contains("high", report);
         Assert.Contains("LOW", report);
-        // A locked pick is a constraint of the task, not a measurement vote:
-        // its row reads "locked" instead of a confidence, and it raises no
-        // LOW warning even without a confidence figure.
+        // A locked pick is a constraint, not a vote: "locked" and no LOW warning.
         Assert.Contains("locked", Row(report, "C R"));
         Assert.DoesNotContain("Warning: LOW delay confidence — C R", report);
-        // The gain confidence column is shown because the balance scored a
-        // channel here.
         Assert.Contains("Gain conf", report);
         Assert.Contains("medium", Row(report, "A L"));
-        // The notes wrap each channel into short indented lines, so the
-        // dialog's word-wrapping report box never needs a horizontal scroll.
         Assert.Contains("  B L\r\n", report);
         Assert.Contains("    delay: vs A L: margin 0.2 dB, wide seed", report);
         Assert.Contains("    gain:  kept (mono channel)", report);
     }
 
-    // The complaint this replaced: "2.43 -> 2.43" made every row look like a
-    // change, and the one row that WAS a change carried a wider number, which
-    // pushed its whole line sideways.
     [Fact]
     public void Format_KeepsUnchangedValuesAndAlignsTheDecimalPoints()
     {
@@ -184,19 +155,13 @@ public sealed class VirtualCrossoverAutoDelayReportTests
             stereo: true,
             new AutoDelayRunRequest(0.26, RightHandDrive: false, AdjustGains: false, 0));
 
-        // Row-scoped throughout: the cells are what this pins, not the legend
-        // at the foot of the report that describes them.
         Assert.Contains("2.43 (kept)", Row(report, "B L"));
         Assert.DoesNotContain("2.43 -> 2.43", report);
         Assert.Contains("10.07 -> 10.37", Row(report, "D L"));
         Assert.Contains("Changes: 1 delay (D L), 1 polarity (D L)", report);
-        // The first dot of a row is its delay figure: the narrower number is
-        // padded inside its cell, so the two land in the same column.
         Assert.Equal(
             Row(report, "B L").IndexOf('.', StringComparison.Ordinal),
             Row(report, "D L").IndexOf('.', StringComparison.Ordinal));
-        // Nothing scored a gain, so that confidence column would be a wall of
-        // dashes — it is dropped instead.
         Assert.DoesNotContain("Gain conf", report);
     }
 
@@ -216,9 +181,7 @@ public sealed class VirtualCrossoverAutoDelayReportTests
         Assert.DoesNotContain("->", Row(report, "A L"));
     }
 
-    // The forecast's arrow and its verdict have to agree: both are read off
-    // the rounded figures the line prints, so a pair straddling a rounding
-    // boundary cannot show a moved arrow next to "0.0 dB worse".
+    // Arrow and verdict both read the rounded figures, so a rounding boundary cannot disagree.
     [Theory]
     [InlineData(-2.449, -2.451, "-2.4 -> -2.5 dB (0.1 dB worse)")]
     [InlineData(-2.451, -2.449, "-2.5 -> -2.4 dB (0.1 dB better)")]
@@ -248,15 +211,10 @@ public sealed class VirtualCrossoverAutoDelayReportTests
                 AdjustGains: false,
                 NearSideCutDb: 0));
 
-        // RHD mirrors the reference: the right side is fitted to lag, so the
-        // LEFT side is the one the offset makes lead.
         Assert.Contains("Scene offset 0.25 ms (RHD: left side leads)", report);
     }
 
-    // The user enters the tilt as a layout-neutral near-side cut; the sign
-    // of the gain engine's L-R figure comes from the layout alone (near =
-    // left on LHD, right on RHD) — switching LHD/RHD must never require
-    // re-entering a sign, exactly like the scene offset.
+    // The tilt is a layout-neutral near-side cut; the L-R sign comes from the layout alone.
     [Fact]
     public void RunRequest_SignsTheNearSideCutByTheLayout()
     {
@@ -289,16 +247,12 @@ public sealed class VirtualCrossoverAutoDelayReportTests
         Assert.Contains("single side", report);
         Assert.DoesNotContain("Scene offset", report);
         Assert.Contains("Gains not adjusted", report);
-        // One side, so the forecast needs no side label — and with gains off
-        // the summary drops the gain part the header line already covered.
         Assert.Contains("Changes: 1 delay (A), no polarity changes", report);
         Assert.DoesNotContain("gain changes", report);
         Assert.Contains("Predicted sum loss (avg over the crossover window):", report);
         Assert.Contains("  -1.5 -> -0.3 dB (1.2 dB better)", report);
         Assert.DoesNotContain("Warning:", report);
         Assert.Contains("0.0 (kept)", report);
-        // The reference was not chosen at all — its row reads "ref", not a
-        // confidence.
         Assert.Contains("ref", Row(report, "A "));
     }
 

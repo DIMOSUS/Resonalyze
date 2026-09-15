@@ -1,22 +1,12 @@
 namespace Resonalyze;
 
-/// <summary>
-/// The row-major geometry of the PEQ strip grid: which cell a slot index lives
-/// in, and which slot index a point falls on while a strip is being dragged.
-/// Kept apart from the panel (and from WinForms layout) because the hit test is
-/// where an off-by-one silently drops a strip in the wrong place.
-/// </summary>
+/// <summary>Row-major strip grid geometry, kept apart from WinForms so the off-by-one-prone hit test is testable.</summary>
 internal static class PeqSlotGrid
 {
-    /// <summary>The (column, row) of a slot index, filling each row left to right.</summary>
     public static (int Column, int Row) CellOf(int index, int columnCount) =>
         (index % columnCount, index / columnCount);
 
-    /// <summary>
-    /// The slot index under a point given in the grid's content coordinates (the
-    /// panel's padding already subtracted). Points outside the grid clamp to the
-    /// nearest cell, so a drag that strays past an edge still has a target.
-    /// </summary>
+    /// <summary>Point in content coordinates (padding subtracted); outside points clamp to the nearest cell.</summary>
     public static int IndexAt(
         IReadOnlyList<int> columnWidths,
         IReadOnlyList<int> rowHeights,
@@ -35,8 +25,6 @@ internal static class PeqSlotGrid
         return row * columnWidths.Count + column;
     }
 
-    // The index of the band containing an offset along one axis, clamped to the
-    // first/last band for offsets before or past the track.
     private static int TrackIndexAt(IReadOnlyList<int> sizes, int offset)
     {
         int start = 0;

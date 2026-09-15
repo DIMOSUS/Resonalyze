@@ -1,8 +1,5 @@
 namespace Resonalyze.Dsp
 {
-    /// <summary>
-    /// Analysis window applied before the FFT in spectrum measurements.
-    /// </summary>
     public enum WindowType
     {
         Hann,
@@ -11,21 +8,9 @@ namespace Resonalyze.Dsp
         Rectangular
     }
 
-    /// <summary>
-    /// Creates asymmetric Tukey windows used to isolate impulse-response regions
-    /// and symmetric analysis windows applied before spectral FFTs.
-    /// </summary>
     public static class Windowing
     {
-        /// <summary>
-        /// Builds a symmetric analysis window of the requested type and length.
-        /// </summary>
-        // One-entry cache for the analysis window: a live session recomputes
-        // the same (type, length) window thousands of times — once per
-        // analysis frame plus once per UI snapshot — each costing `length`
-        // trig calls and an allocation right next to the audio pipeline. The
-        // cached array is SHARED: callers must treat it as read-only (all
-        // in-repo callers only multiply by its values).
+        // One-entry cache: live sessions rebuild the same window thousands of times. The array is SHARED and read-only.
         private sealed record CachedAnalysisWindow(
             WindowType Type,
             int Length,
@@ -33,12 +18,7 @@ namespace Resonalyze.Dsp
 
         private static volatile CachedAnalysisWindow? analysisWindowCache;
 
-        /// <summary>
-        /// The cached shared window — internal, and the caller MUST NOT write
-        /// to the returned array (every in-repo caller only multiplies by its
-        /// values). The public <see cref="CreateAnalysisWindow"/> hands out a
-        /// private copy instead, so external code cannot corrupt the cache.
-        /// </summary>
+        /// <summary>The cached shared array: callers MUST NOT write to it. <see cref="CreateAnalysisWindow"/> returns a private copy.</summary>
         internal static double[] SharedAnalysisWindow(WindowType windowType, int length)
         {
             if (length < 1)
@@ -70,14 +50,7 @@ namespace Resonalyze.Dsp
             return copy;
         }
 
-        /// <summary>
-        /// The window's equivalent noise bandwidth, in FFT bins:
-        /// <c>ENBW = N·Σw² / (Σw)²</c>. It is the factor by which a windowed
-        /// periodogram over-states broadband noise power relative to the coherent
-        /// (tone) calibration, so dividing a band's summed bin power by it recovers
-        /// the true noise power. Rectangular is 1.0 (Hann ≈ 1.5, Blackman-Harris
-        /// ≈ 2.0, flat-top ≈ 3.77). Always ≥ 1.
-        /// </summary>
+        /// <summary>ENBW = N·Σw² / (Σw)², in bins (≥ 1): divide a band's summed bin power by it to get true noise power.</summary>
         public static double EquivalentNoiseBandwidthBins(WindowType windowType, int length)
         {
             if (length <= 1)
@@ -102,13 +75,7 @@ namespace Resonalyze.Dsp
             return length * sumOfSquares / (sum * sum);
         }
 
-        /// <summary>
-        /// The full width of the window's spectral main lobe, in FFT bins (twice the
-        /// first-null distance). Unlike the equivalent NOISE bandwidth, this bounds a
-        /// coherent tone's energy: a band at least this wide captures essentially the
-        /// whole main lobe, so summing its bin power and dividing by ENBW recovers the
-        /// tone's amplitude. Rectangular 2, Hann 4, Blackman-Harris 8, flat-top 10.
-        /// </summary>
+        /// <summary>Main-lobe full width in bins: a band this wide holds a tone's whole lobe (unlike ENBW).</summary>
         public static int MainLobeWidthBins(WindowType windowType) => windowType switch
         {
             WindowType.Rectangular => 2,
@@ -135,7 +102,6 @@ namespace Resonalyze.Dsp
                     - 0.48829 * Math.Cos(phase)
                     + 0.14128 * Math.Cos(2.0 * phase)
                     - 0.01168 * Math.Cos(3.0 * phase),
-                // SRS five-term flat-top: excellent amplitude accuracy for tones.
                 WindowType.FlatTop =>
                     0.21557895
                     - 0.41663158 * Math.Cos(phase)
@@ -146,13 +112,7 @@ namespace Resonalyze.Dsp
             };
         }
 
-        /// <summary>
-        /// Asymmetric Tukey window: a cosine fade-in over the leftmost
-        /// <c>leftTukeyWindow / 2</c> of the window, a unity plateau, and a cosine
-        /// fade-out over the rightmost <c>rightTukeyWindow / 2</c>. Negative fade
-        /// fractions are treated as zero; fades that together would exceed the whole
-        /// window are scaled down proportionally so they meet without overlapping.
-        /// </summary>
+        /// <summary>Asymmetric Tukey: fades over <c>left/2</c> and <c>right/2</c> of the window; negative fractions are zero, overlapping fades scale down proportionally.</summary>
         public static double[] TukeyWindow(int window, double leftTukeyWindow, double rightTukeyWindow)
         {
             double[] windowFunction = new double[window];

@@ -5,9 +5,7 @@ public sealed class SweepBandMigrationTests
     [Fact]
     public void Settings_LegacyOctaves_MigrateAndClampIntoTheAllowedRange()
     {
-        // A pre-band settings file carries only the (read-only) octave count of 12
-        // with no explicit band; the derived 5.4 Hz–22.05 kHz band clamps to the
-        // 20 Hz–20 kHz default.
+        // Pre-band settings: 12 octaves derive 5.4 Hz-22.05 kHz, clamped to the 20 Hz-20 kHz default.
         var settings = new MeasurementSettingsFile.SweepMeasurementSettings
         {
             Octaves = 12,
@@ -41,9 +39,7 @@ public sealed class SweepBandMigrationTests
     [Fact]
     public void ImpulseResponseFile_LegacyOctaves_DeriveTheNyquistBand()
     {
-        // Legacy impulse-response files keep their exact measured band: the sweep
-        // ran from Nyquist / 2^octaves up to Nyquist (no [20, 20000] clamp, so the
-        // harmonic geometry is unchanged on reload).
+        // Legacy IR files keep Nyquist/2^octaves..Nyquist unclamped, so harmonic geometry is unchanged.
         (double lowHz, double highHz) = ImpulseResponseFile.ResolveSweepBand(
             lowFrequencyHz: 0,
             highFrequencyHz: 0,
@@ -86,9 +82,6 @@ public sealed class SweepBandMigrationTests
     [Fact]
     public void AchievedBand_ForALegacyFile_IsTheBandTheSweepRan()
     {
-        // A pre-band file has no request to widen: its octave count already names
-        // the band that was swept, so it must come back untouched. Feeding it back
-        // through the guard bands would move the harmonic packets.
         (double lowHz, double highHz) = ImpulseResponseFile.ResolveAchievedSweepBand(
             achievedLowFrequencyHz: 0,
             achievedHighFrequencyHz: 0,
@@ -100,16 +93,13 @@ public sealed class SweepBandMigrationTests
 
         Assert.Equal(24_000.0, highHz);
         Assert.Equal(24_000.0 / 4096.0, lowHz, 9);
-        // The ratio the harmonic offsets are keyed to survives exactly.
         Assert.Equal(4096.0, highHz / lowHz, 6);
     }
 
     [Fact]
     public void AchievedBand_WhenOnlyTheRequestWasStored_IsRederivedNotAssumed()
     {
-        // Files written by the band-based generator before the achieved band was
-        // stored alongside it. The request must not be mistaken for what was
-        // swept: ComputeSpec is deterministic, so the real edges come back.
+        // ComputeSpec is deterministic, so the real edges are recovered from the stored request.
         ExpSweepSpec expected = ExponentialSineSweep.ComputeSpec(20, 20_000, 10.55, 48_000);
         Assert.True(expected.IsValid);
 

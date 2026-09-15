@@ -62,11 +62,7 @@ public sealed class SweepRunQualityCheckTests
         Assert.Contains("the loopback reference signal is silent", issues);
     }
 
-    // Quiet-but-present is ACCEPTED per run, however far down it sits:
-    // transfer estimation is scale-invariant, so a cleanly attenuated wire
-    // (the readme itself says to turn the playback level well down) measures
-    // fine. Whether the reference was USABLE is judged by the transfer IR's
-    // shape after the runs — a bleed-fed capture cannot pass that gate.
+    // Transfer estimation is scale-invariant; reference usability is judged later by the transfer IR's shape.
     [Fact]
     public void Assess_QuietButPresentLoopbackIsAccepted()
     {
@@ -102,9 +98,7 @@ public sealed class SweepRunQualityCheckTests
             issue => issue.StartsWith("the capture is shorter than the sweep"));
     }
 
-    // Both recorders reset per run and the whole snapshot (including the
-    // pre-playback roll) feeds the analysis, so a knock BEFORE the sweep
-    // started must be caught too - the checked and analyzed ranges match.
+    // The pre-playback roll feeds the analysis too, so a clip there must be caught.
     [Fact]
     public void Assess_ClipInThePrePlaybackRollIsCaught()
     {
@@ -129,10 +123,6 @@ public sealed class SweepRunQualityCheckTests
     [Fact]
     public void Report_NamesTheRunThatStoppedTheMeasurement()
     {
-        // There is no retry any more, so there is no "recovered" case to separate: a
-        // bad run stops the measurement, and the report says which one and why. The
-        // retry never recovered anything in the field — a gain set wrong or a cable in
-        // the wrong socket is reproduced exactly by the next sweep.
         var report = new SweepRunQualityReport(
             RequestedRuns: 4,
             AcceptedRuns: 2,
@@ -149,9 +139,7 @@ public sealed class SweepRunQualityCheckTests
         Assert.DoesNotContain("retry", text);
     }
 
-    // The notice quotes the reading, offers BOTH shapes it can come in, and picks
-    // neither: what separates them cannot be measured reliably enough to say, and
-    // naming one would send a tuner to check wiring that was correct all along.
+    // The two causes cannot be separated reliably, so the notice names neither.
     [Fact]
     public void ResultCautionQuotesTheReadingAndNamesNoSingleCause()
     {
@@ -159,7 +147,6 @@ public sealed class SweepRunQualityCheckTests
 
         Assert.Contains("-19.0 dB", text);
         Assert.Contains("100 to 600 ms AHEAD of the peak", text);
-        // Both candidates present, neither asserted.
         Assert.Contains("either the reference", text);
         Assert.Contains("strongest sample is not its direct sound", text);
         Assert.Contains("cannot tell which", text);

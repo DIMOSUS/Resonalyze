@@ -1,10 +1,6 @@
 ﻿namespace Resonalyze.Audio;
 
-/// <summary>
-/// Continuous play-and-capture over an ASIO driver for live analysis. Waits on
-/// both the user's cancellation and the driver's own stop, so an unplugged
-/// device surfaces as an error instead of a frozen run.
-/// </summary>
+/// <summary>Waits on cancellation AND the driver stop, so an unplugged device errors instead of freezing.</summary>
 internal sealed class AsioStreamingSession : IAudioStreamingSession
 {
     private readonly AsioFullDuplexSession session;
@@ -30,7 +26,7 @@ internal sealed class AsioStreamingSession : IAudioStreamingSession
 
     public event Action<AudioCaptureFrame>? FrameAvailable;
     public event Action<AudioInputLevels>? InputLevelsAvailable;
-    // ASIO does not report packet discontinuities; this event never fires.
+    // ASIO does not report discontinuities: never fires.
     public event Action? CaptureDiscontinuity;
 
     public async Task RunAsync(

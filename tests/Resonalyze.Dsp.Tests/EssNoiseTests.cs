@@ -6,12 +6,7 @@ using Xunit;
 
 namespace Resonalyze.Dsp.Tests;
 
-// The noise floor is a separate trace (|N|/|H1|), not fused into THD. These pin the
-// bias-corrected level: silent capture => no floor; adding white noise gives a floor
-// at the level the bias-corrected estimator predicts; doubling the noise lifts it
-// 6 dB. The level depends only on the noise region and the noise window (a fixed
-// analysis resolution), never on the linear-packet window / sweep geometry, since
-// EssNoise no longer reads the linear length.
+// Noise floor is a separate trace (|N|/|H1|), bias-corrected, dependent only on the noise region and window.
 public sealed class EssNoiseTests
 {
     private const int SampleRate = 48_000;
@@ -80,9 +75,7 @@ public sealed class EssNoiseTests
         DistortionSpectrum spectrum = Run(BasePackets(), NoiseOptions);
 
         Assert.NotNull(spectrum.NoiseFloorRatio);
-        // Silent region => no noise level anywhere.
         Assert.All(spectrum.NoiseFloorRatio!, v => Assert.True(double.IsNaN(v)));
-        // THD is harmonics only (HD2 = 0.02 = -34 dB), independent of the noise trace.
         int probe = Array.FindIndex(spectrum.Frequencies, f => f >= 1_000);
         Assert.True(spectrum.Reliable[probe]);
         Assert.Equal(-33.98, 20.0 * Math.Log10(spectrum.ThdRatio[probe]), 1);
@@ -96,8 +89,7 @@ public sealed class EssNoiseTests
         AddNoise(impulse, sigma, seed: 4242);
         DistortionSpectrum spectrum = Run(impulse, NoiseOptions);
 
-        // For rectangular windows the per-bin noise power is sigma^2 * L, so the
-        // bias-corrected magnitude is sigma*sqrt(L); with |H1| = 1 that is the floor.
+        // Rectangular window: per-bin noise power is sigma^2 * L, so the corrected magnitude is sigma*sqrt(L).
         int noiseLength = (int)Math.Round(SampleRate / spectrum.Noise!.EquivalentNoiseBandwidthHz);
         double expectedDb = 20.0 * Math.Log10(sigma * Math.Sqrt(noiseLength));
         double measuredDb = BandNoiseFloorDb(spectrum, 500, 5_000);
@@ -123,15 +115,12 @@ public sealed class EssNoiseTests
         double[] impulse = BasePackets();
         AddNoise(impulse, sigma: 0.002, seed: 4242);
 
-        // The THD flag alone no longer emits the noise floor — the two are separate
-        // traces under separate flags now.
         IReadOnlyList<AnalysisCurve> thdOnly = EssDistortion.ComputeDistortionCurves(
             impulse, Sweep(), NoiseOptions, calibration: null, SpectrumCurves.ThdPlusNoise);
         Assert.Contains(thdOnly, c => c.Kind == AnalysisCurveKind.ThdPlusNoise);
         Assert.DoesNotContain(thdOnly, c => c.Kind == AnalysisCurveKind.NoiseFloor);
 
-        // The noise flag alone emits the noise floor (no THD), and its label carries
-        // the equivalent noise bandwidth so the level is not read as resolution-free.
+        // The label carries the equivalent noise bandwidth, so the level is not read as resolution-free.
         IReadOnlyList<AnalysisCurve> noiseOnly = EssDistortion.ComputeDistortionCurves(
             impulse, Sweep(), NoiseOptions, calibration: null, SpectrumCurves.NoiseFloor);
         Assert.DoesNotContain(noiseOnly, c => c.Kind == AnalysisCurveKind.ThdPlusNoise);
@@ -152,8 +141,6 @@ public sealed class EssNoiseTests
     [Fact]
     public void NoiseLevelIsIndependentOfTheLinearPacketWindow()
     {
-        // EssNoise reads only the noise region, so the estimate is identical no
-        // matter how the linear packet is windowed (here via the fade fraction).
         double[] impulse = BasePackets();
         AddNoise(impulse, 0.001, seed: 11);
 

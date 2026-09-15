@@ -1,16 +1,6 @@
 namespace Resonalyze.Ui.Dialogs;
 
-/// <summary>
-/// The one dialog of the REW export: what the measurement will be called there, and
-/// where REW is listening.
-/// </summary>
-/// <remarks>
-/// It states the two things about the arriving copy that are not obvious and cannot
-/// be read off it afterwards — what REW will and will not be able to say about its
-/// time, and whether it arrives on an absolute level scale. The address stays
-/// editable even when REW did not answer, because the setting that would fix that is
-/// the one this dialog holds.
-/// </remarks>
+/// <summary>REW export dialog: name and address. The address stays editable when REW did not answer, since it is the fix.</summary>
 internal sealed class RewExportDialog : Form
 {
     private readonly TextBox nameInput = new();
@@ -26,10 +16,8 @@ internal sealed class RewExportDialog : Form
         InitializeDialog(suggestedName, baseUrl, rewVersion, splOffsetDb, timingReference);
     }
 
-    /// <summary>The name REW will file the measurement under.</summary>
     public string MeasurementName => nameInput.Text.Trim();
 
-    /// <summary>The address the user settled on, whether or not it was changed.</summary>
     public string BaseUrl => addressInput.Text.Trim();
 
     private void InitializeDialog(
@@ -132,12 +120,7 @@ internal sealed class RewExportDialog : Form
                 "of its own, which looks like a calibration and is not: the levels there " +
                 "are relative.";
 
-    /// <summary>
-    /// What REW will be able to say about this measurement's time. Two separate
-    /// losses, and a measurement whose own origin was chosen suffers both: REW gives
-    /// an imported response no timing reference of its own, and a recorded sweep had
-    /// none to give it.
-    /// </summary>
+    /// <summary>REW gives an import no timing reference, and a recorded sweep had none to give.</summary>
     private static string DescribeTiming(TimingReference timingReference) =>
         timingReference == TimingReference.SynchronizedLoopback
             ? "REW files an imported response with no timing reference, so its arrival " +

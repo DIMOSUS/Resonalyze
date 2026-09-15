@@ -1,18 +1,9 @@
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Shared sampling of (Hz, dB) curves with ascending X: linear interpolation in dB
-/// over log frequency, via binary search.
-/// </summary>
+/// <summary>Linear in dB over log frequency for ascending (Hz, dB) curves.</summary>
 internal static class CurveSampling
 {
-    /// <summary>
-    /// Interpolates the curve at <paramref name="frequencyHz"/>. With
-    /// <paramref name="clampEnds"/> a frequency outside the curve's range holds the
-    /// endpoint value (a measured driver outside its range has simply rolled off);
-    /// without it the point reads NaN so callers can ignore it. A NaN gap in the
-    /// curve always reads NaN.
-    /// </summary>
+    /// <summary>Out of range: endpoint value with <paramref name="clampEnds"/>, else NaN. NaN gaps read NaN.</summary>
     public static double InterpolateDbLog(
         IReadOnlyList<SignalPoint> points,
         double frequencyHz,

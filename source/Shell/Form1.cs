@@ -14,8 +14,7 @@ namespace Resonalyze
         public Mode CurrentMode { get; private set; }
 
         private readonly OverlayCollection overlayCollection;
-        // Composition root: the one place the audio backends are wired together.
-        // Everything downstream depends only on the IAudioSessionFactory abstraction.
+        // Composition root: the one place audio backends are wired.
         private readonly IAudioSessionFactory audioSessionFactory =
             new AudioSessionFactory(AudioBackendRegistry.CreateDefault());
         private readonly ExpSweepMeasurement expSweepMeasurement;
@@ -37,19 +36,12 @@ namespace Resonalyze
         private readonly FrequencyResponseOptions frequencyResponseOptions = new();
         private readonly FrequencyResponseOptions phaseResponseOptions = new()
         {
-            // Phase windowing (gate ms + τ) comes from the FrequencyResponseOptions
-            // defaults; only the smoothing default differs from the shared value.
             SmoothingInverseOctaves = FrequencyResponseOptions.DefaultPhaseSmoothingInverseOctaves,
         };
         private readonly FrequencyResponseOptions groupDelayOptions = new()
         {
-            // Group delay uses the ms-based gate (left fade + plateau + right fade)
-            // from the FrequencyResponseOptions defaults; only smoothing differs from
-            // the shared value.
             SmoothingInverseOctaves = FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves,
         };
-        // Per-mode curve visibility (presentation flags), one instance per
-        // frequency-response-family mode, mirroring the options objects above.
         private readonly CurveVisibilityOptions frequencyResponseVisibility = new();
         private readonly CurveVisibilityOptions phaseResponseVisibility = new();
         private readonly CurveVisibilityOptions groupDelayVisibility = new();
@@ -75,12 +67,10 @@ namespace Resonalyze
         private bool closingPrepared;
         private bool closingInProgress;
         private bool resourcesDisposed;
-        // Set on CloseReason.WindowsShutDown: DisposeAppResources must skip its
-        // blocking device teardown while the OS is waiting for the process to exit.
+        // DisposeAppResources skips blocking device teardown during OS shutdown.
         private bool shutdownFastClose;
         private bool updateCheckStarted;
-        // Serializes the live applies of the measurement options panel: an edit
-        // arriving while one is in flight is coalesced into a single re-run.
+        // Edits arriving during an apply are coalesced into one re-run.
         private bool applyingSweepSettings;
         private bool sweepSettingsApplyPending;
         private readonly DebouncedSaver measurementSettingsSaver;
@@ -95,11 +85,7 @@ namespace Resonalyze
             expSweepMeasurement = new ExpSweepMeasurement(audioSessionFactory);
             noiseMeasurement = new NoiseMeasurement(audioSessionFactory);
             ConfigureToolTips();
-            // The surface the plots are drawn on, from the palette rather than a
-            // designer literal that has to be kept equal to it by hand. A PlotView
-            // paints no background of its own — WinForms does, from BackColor — and
-            // it never reads ForeColor either: the axis colours come from the model
-            // (PlotModelStyle.ApplyChrome), not from the control.
+            // PlotView paints only BackColor; axis colours come from the model (PlotModelStyle.ApplyChrome).
             plotView1.BackColor = UiPalette.GraphSurface;
             PlotInteraction.Enable(plotView1);
             plotView1.Paint += (_, _) => AppProfiler.FrameMark("main-plot");
@@ -129,14 +115,8 @@ namespace Resonalyze
             overlayCollection = dependencies.OverlayCollection;
             plotLabelsPanelController = dependencies.PlotLabelsPanelController;
             plotModelFactory = dependencies.PlotModelFactory;
-            // Overlays are tagged with, and gated by, the magnitude scale of the axis
-            // the plot shows — which now simply follows the SELECTION: without a valid
-            // calibration the plot keeps the SPL axis in a view-only state instead of
-            // falling back to dBr, so overlays track the axis exactly. Live Spectrum
-            // shares Frequency Response's overlay slots, so it must report its OWN
-            // scale here; otherwise a Live SPL plot would gate overlays as Relative
-            // and show dBr overlays on the dB SPL axis. Every other mode is Relative.
-            // Wired after plotModelFactory is assigned (the lambda reads it).
+            // Overlays gate on the shown axis scale. Live Spectrum shares FR's overlay slots, so it reports its own scale.
+            // Wired after plotModelFactory is assigned.
             overlayCollection.SetMagnitudeScaleProvider(
                 () => CurrentMode switch
                 {
@@ -145,18 +125,12 @@ namespace Resonalyze
                     _ => Dsp.MagnitudeScale.Relative
                 });
             liveSpectrumController = dependencies.LiveSpectrumController;
-            // Lets a captured overlay store the RAW (unsmoothed) reference and seed its
-            // own smoothing with the mode's, so lowering the overlay's smoothing to Off
-            // reveals the original curve instead of the mode-smoothed one. The live RTA
-            // is served by its controller (which holds the drawn snapshot); every swept
-            // curve by the plot factory. Wired after both are assigned.
+            // Overlays store the raw curve so smoothing Off reveals the original. Wired after both providers are assigned.
             overlayCollection.SetRawCurveProvider(tag =>
                 tag == LiveSpectrumController.LiveSpectrumInputMagnitudeTag
                     ? liveSpectrumController.BuildRawRtaCapture()
                     : plotModelFactory.BuildRawCurve(tag));
-            // The impulse view's axes are all view settings — unit, origin, scale,
-            // polarity — so its overlays store the record's own coordinates and are
-            // re-framed on every draw instead of freezing the ones they were taken in.
+            // Impulse axes are view settings, so overlays store record coordinates and re-frame on draw.
             overlayCollection.SetImpulseCaptureProvider(
                 tag => plotModelFactory.BuildImpulseCapture(tag));
             overlayCollection.SetImpulseFrameProvider(
@@ -173,11 +147,7 @@ namespace Resonalyze
             eqWizardPanel.ResultsChanged = eqResultsPanel.SetResults;
             eqWizardPanel.HistoryService = measurementHistoryService;
             eqWizardPanel.ApplyPersistedSettings(measurementSettings.EqWizard);
-            // The Q convention is a property of the DSP being tuned, not of one mode, so
-            // it lives at the top level of the settings. It seeds the EQ Wizard's own
-            // selector; a Virtual DSP project names its processor instead and reads the
-            // convention off that (see VirtualCrossoverPanel.ProcessorProfile), and a
-            // handoff carries it into the wizard for as long as that source is loaded.
+            // Q convention belongs to the DSP being tuned, so it is top-level; VDSP reads it off its processor profile instead.
             eqWizardPanel.TargetDspQConvention = measurementSettings.TargetDspQConvention;
             eqWizardPanel.SettingsChanged += () =>
             {
@@ -191,34 +161,23 @@ namespace Resonalyze
             virtualCrossoverPanel.HistoryService = measurementHistoryService;
             RefreshCalibrationConsumers();
             virtualCrossoverPanel.OverlayCaptureRequested = SaveVirtualCrossoverOverlay;
-            // One EQ target, two panels. The wizard owns and persists it, so the
-            // shell pushes the current shape into Virtual DSP and hands back
-            // whatever its own Target dialog produced. The wizard ignores a value
-            // equal to what it holds, so the write-back cannot loop through the
-            // SettingsChanged handler above.
+            // The wizard owns the EQ target; it ignores an equal value, so the write-back cannot loop.
             virtualCrossoverPanel.SetTargetCurve(eqWizardPanel.TargetCurve);
             virtualCrossoverPanel.TargetCurveChanged = eqWizardPanel.ApplyTargetCurve;
-            // The PEQ handoff, both directions: a channel side goes into the wizard
-            // for editing and the finished bank comes back, the active mode following
-            // the work each way. The only failure is a channel that no longer exists —
-            // then the wizard stays open so the tune is not lost with it.
+            // If the channel no longer exists the wizard stays open so the tune is not lost.
             virtualCrossoverPanel.EditPeqInWizardRequested = request =>
             {
                 eqWizardPanel.BeginVirtualDspHandoff(request);
                 _ = modeController.SelectAsync(ModeTab.ToolsEqWizard);
             };
-            // An AI import that fits a bank without the wizard fits it with the
-            // wizard's own Auto Tune settings, as they stand: the same project
-            // gets the same bank from the button and from the import.
+            // AI import fits with the wizard's current Auto Tune settings, matching the button.
             virtualCrossoverPanel.AutoTunePolicyProvider = () => eqWizardPanel.CurrentAutoTunePolicy;
             virtualCrossoverPanel.OpenSourceInAnalyzersRequested =
                 (entryId, filePath) =>
                     _ = OpenVirtualDspSourceInAnalyzersAsync(entryId, filePath);
             eqWizardPanel.BackToVirtualDspRequested = () =>
                 _ = modeController.SelectAsync(ModeTab.ToolsVirtualCrossover);
-            // The FIR handoff, both directions, on the PEQ handoff's pattern: a channel
-            // side's FIR stage goes into the constructor, and the designed kernel comes
-            // back. A refused return leaves the constructor open with its design.
+            // A refused return leaves the constructor open with its design.
             virtualCrossoverPanel.EditFirInConstructorRequested = request =>
             {
                 firConstructorPanel.BeginVirtualDspHandoff(request);
@@ -230,8 +189,7 @@ namespace Resonalyze
             {
                 if (virtualCrossoverPanel.TryApplyFirFromConstructor(token, kernel, design))
                 {
-                    // Landed: the session is over. Its token names the kernel the side
-                    // held before, so a second return would only be refused.
+                    // The token names the previous kernel, so a second return would be refused.
                     firConstructorPanel.EndVirtualDspHandoff();
                     _ = modeController.SelectAsync(ModeTab.ToolsVirtualCrossover);
                     return;
@@ -281,10 +239,7 @@ namespace Resonalyze
                 virtualDspMetricLabel.Text = text;
                 virtualDspMetricDetail = detail;
             };
-            // The panel's warning goes in the free right-hand column, above the
-            // read-out it invalidates: the panel itself runs plot edge to plot
-            // edge. Its detail is shown manually like the metric's, and a
-            // WinForms tooltip never wraps prose by itself, so wrap it here.
+            // Warning in the free right column; WinForms tooltips never wrap prose, so wrap here.
             virtualCrossoverPanel.WarningChanged = (text, detail, color) =>
             {
                 virtualDspWarningLabel.ForeColor = color;
@@ -302,16 +257,10 @@ namespace Resonalyze
             WireFormEvents();
         }
 
-        // The full Virtual DSP metric breakdown and the warning's explanation,
-        // both shown as persistent tooltips by the wiring in the constructor.
         private string virtualDspMetricDetail = string.Empty;
         private string virtualDspWarningDetail = string.Empty;
 
-        // These read-outs explain themselves at length, and an automatic ToolTip
-        // auto-pops after seconds (capped at ~32 s) — unreadable. Shown manually
-        // it stays until the mouse leaves the label. The tip is placed fully to
-        // the LEFT of the label on purpose: a tip under the cursor steals the
-        // mouse, fires MouseLeave and flickers in a show-hide-show loop.
+        // Shown manually: auto ToolTips pop after at most ~32 s. Placed left of the label, since a tip under the cursor flickers.
         private void WirePersistentTooltip(Control control, Func<string> detail)
         {
             control.MouseEnter += (_, _) =>
@@ -329,9 +278,7 @@ namespace Resonalyze
             control.MouseLeave += (_, _) => toolTip1.Hide(control);
         }
 
-        // BeginInvoke can still throw if the handle is destroyed between the guard
-        // and the call — measurement events arrive from audio worker threads while
-        // the form closes on the UI thread.
+        // BeginInvoke can throw if the handle dies after the guard (events come from audio threads during close).
         private bool TryBeginInvokeOnUiThread(Action action)
         {
             if (IsDisposed || !IsHandleCreated)
@@ -350,8 +297,6 @@ namespace Resonalyze
             }
         }
 
-        // Surfaces the stored exception text: an "Error" record button alone
-        // leaves the user with no idea what actually failed.
         private void ShowMeasurementError(string summary, Exception? error)
         {
             if (error == null || closingInProgress)
@@ -388,11 +333,7 @@ namespace Resonalyze
             }
         }
 
-        // A configured calibration that fails to load must not silently produce
-        // uncalibrated curves. MicrophoneCalibrationService already deduplicates
-        // (once per path per session) and calls this from Task.Run plot builds,
-        // so the warning is queued through BeginInvoke — a plot build is never
-        // interrupted by a modal dialog.
+        // Called from Task.Run plot builds (deduplicated per path), so queued via BeginInvoke rather than a modal dialog mid-build.
         private void ShowCalibrationProblem(string path, string? reason)
         {
             if (closingInProgress)

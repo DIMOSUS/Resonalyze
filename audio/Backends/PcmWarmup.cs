@@ -1,10 +1,6 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Shared warm-up for the PCM backends: briefly open a duplex session and play a
-/// fraction of a second of silence so the first real measurement does not pay
-/// cold-start device latency. Best-effort and bounded by a short timeout.
-/// </summary>
+/// <summary>Opens a duplex session and plays brief silence to absorb cold-start latency; best-effort, short timeout.</summary>
 internal static class PcmWarmup
 {
     public static async Task WarmUpAsync(

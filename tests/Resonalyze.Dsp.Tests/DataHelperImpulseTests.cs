@@ -10,7 +10,6 @@ public sealed class DataHelperImpulseTests
         int peakIndex, int length, double amplitude = 1.0)
     {
         var ir = new Complex[length];
-        // A clear dominant peak plus a smaller lobe so "the peak" is unambiguous.
         ir[peakIndex] = new Complex(amplitude, 0.0);
         if (peakIndex + 40 < length)
         {
@@ -20,9 +19,7 @@ public sealed class DataHelperImpulseTests
         return new SyntheticMeasurement(ir, SampleRate, peakIndex);
     }
 
-    // One tap and nothing else: the smoothing tests need an arrival whose envelope
-    // has no neighbour to merge with, or a wide average legitimately slides the
-    // maximum towards the second tap and the test reads that as a centring bug.
+    // A lone tap: with a neighbour a wide average legitimately slides the maximum.
     private static SyntheticMeasurement WithSingleTapAt(int peakIndex, int length)
     {
         var ir = new Complex[length];
@@ -46,8 +43,7 @@ public sealed class DataHelperImpulseTests
     [Fact]
     public void Impulse_UsesAbsoluteSamplesAndClampsToTheAvailableLength()
     {
-        // peakIndex + Length (1000 + 4096 = 5096) exceeds the 2000-sample response, so
-        // the curve must clamp to the available length and keep the X axis absolute.
+        // 1000 + 4096 exceeds the 2000-sample response: clamp and keep the X axis absolute.
         SyntheticMeasurement measurement = WithPeakAt(peakIndex: 1_000, length: 2_000);
 
         ImpulseCurveSet set = DataHelper.GetImpulseCurves(
@@ -99,7 +95,6 @@ public sealed class DataHelperImpulseTests
 
         SignalPoint peak = set.Impulse!.Points.MaxBy(p => Math.Abs(p.Y));
         Assert.Equal(expectedPeakX, peak.X, precision: 9);
-        // The samples themselves are untouched by the framing.
         Assert.Equal(1.0, peak.Y, precision: 12);
         Assert.Equal(480, set.PeakSample);
     }
@@ -131,8 +126,7 @@ public sealed class DataHelperImpulseTests
             Options(o => o.AmplitudeScale = scale),
             new ImpulseRenderFrame());
 
-        // Read the peak at its known index: in dB the largest MAGNITUDE is the
-        // silence floor, not the arrival.
+        // In dB the largest magnitude is the silence floor, not the arrival.
         Assert.Equal(expectedPeakY, set.Impulse!.Points[100].Y, precision: 9);
         Assert.Equal(0.5, set.PeakReference, precision: 12);
     }
@@ -140,9 +134,7 @@ public sealed class DataHelperImpulseTests
     [Fact]
     public void Impulse_SharedReferenceKeepsTheLevelDifferenceBetweenRecords()
     {
-        // The lesson the Time Alignment envelopes already learned: normalizing each
-        // record to its own peak erases exactly the difference being compared. Half
-        // the amplitude must read as -6 dB, not as another 0 dB peak.
+        // Per-record normalization would erase the compared difference: half amplitude reads -6 dB.
         SyntheticMeasurement main = WithPeakAt(100, 2_000, amplitude: 1.0);
         SyntheticMeasurement quiet = WithPeakAt(100, 2_000, amplitude: 0.5);
         ImpulseResponseOptions opt =
@@ -194,21 +186,14 @@ public sealed class DataHelperImpulseTests
         Assert.Equal(1.0, a.Impulse!.Points[100].Y, precision: 12);
         Assert.Equal(-1.0, b.Impulse!.Points[100].Y, precision: 12);
         Assert.Equal(-a.Step!.Points[200].Y, b.Step!.Points[200].Y, precision: 12);
-        // A magnitude has no polarity to flip.
         Assert.Equal(a.Envelope!.Points[100].Y, b.Envelope!.Points[100].Y, precision: 12);
-        // The peak reference is a magnitude too, so the scale does not move.
         Assert.Equal(a.PeakReference, b.PeakReference, precision: 12);
     }
 
     [Fact]
     public void Envelope_IsTheOneTheEngineReadsOffTheSameRecord()
     {
-        // The view must not compute a VARIANT of the envelope the rest of the app works
-        // from. An earlier attempt padded the record before transforming, to keep the
-        // Hilbert kernel from wrapping; measured on the archived cabins that was the
-        // worse model — the record is one period of the deconvolution, and the padding's
-        // edge lifted its silent region three orders of magnitude, inflating the
-        // signal-to-noise figure by up to 32 dB against what Time Alignment reads.
+        // Same envelope as the rest of the app: padding before the transform lifted the silent region and inflated SNR by up to 32 dB.
         var ir = new Complex[8_192];
         for (int i = 0; i < 400; i++)
         {
@@ -260,20 +245,14 @@ public sealed class DataHelperImpulseTests
             measurement, Options(), new ImpulseRenderFrame());
 
         Assert.Null(set.Envelope);
-        // The confidence figure reads that envelope, so it is absent for the same reason.
         Assert.Null(set.SnrDb);
     }
 
     [Fact]
     public void EnvelopeSmoothing_IsCentredSoNothingMovesInTime()
     {
-        // A trailing average would drag every arrival half a window later and quietly
-        // falsify the timing the rest of the app measures off this record. Measured
-        // against the UNSMOOTHED envelope rather than against the tap's index: the
-        // discrete analytic signal of a delta in an even-length buffer is not exactly
-        // symmetric (the Nyquist bin survives), so a wide average can settle a single
-        // sample off centre — an order of magnitude less than the 24 samples the bug
-        // this pins would cost.
+        // A trailing average would drag arrivals half a window late. Compared against the unsmoothed envelope:
+        // an even-length delta's analytic signal is not exactly symmetric (Nyquist bin survives).
         SyntheticMeasurement measurement = WithSingleTapAt(peakIndex: 300, length: 4_000);
         const double smoothingMs = 1.0; // 48 samples at 48 kHz
 
@@ -319,8 +298,6 @@ public sealed class DataHelperImpulseTests
     [Fact]
     public void Step_IsTheRunningIntegralOfTheImpulse()
     {
-        // Two taps of +1 and +0.25: the step rises to 1 at the first and to 1.25 at
-        // the second, then holds — the integral, not the samples.
         SyntheticMeasurement measurement = WithPeakAt(peakIndex: 100, length: 2_000);
 
         ImpulseCurveSet set = DataHelper.GetImpulseCurves(
@@ -354,7 +331,6 @@ public sealed class DataHelperImpulseTests
             }),
             new ImpulseRenderFrame());
 
-        // Normalized to the step's own maximum (1.25), the tail sits at exactly 1.
         Assert.Equal(1.0, set.Step!.Points[^1].Y, precision: 12);
         Assert.Equal(0.8, set.Step.Points[100].Y, precision: 12);
     }
@@ -366,10 +342,7 @@ public sealed class DataHelperImpulseTests
     public void Step_IsNormalizedInEveryScaleForAnAxisOfItsOwn(
         ImpulseAmplitudeScale scale)
     {
-        // The step never takes the level axis's units. dB cannot hold a signed
-        // quantity that crosses zero, and in the linear scales a record with any DC
-        // or low-frequency content integrates into a step many times the impulse
-        // peak, which flattens the impulse against the bottom of its own plot.
+        // The step never takes the level axis units: dB cannot hold a signed quantity, and DC integrates huge in linear.
         SyntheticMeasurement measurement =
             WithPeakAt(peakIndex: 100, length: 2_000, amplitude: 0.5);
 
@@ -385,9 +358,6 @@ public sealed class DataHelperImpulseTests
         Assert.Equal(1.0, set.Step!.Points[100].Y, precision: 12);
     }
 
-    // A tone burst at one frequency plus a much later burst at another: a band filter
-    // has to keep its own and drop the other, which is exactly the "when does this band
-    // arrive" reading the filter exists for.
     private static SyntheticMeasurement WithTwoBandsAt(
         int lowIndex, double lowHz, int highIndex, double highHz, int length)
     {
@@ -440,7 +410,6 @@ public sealed class DataHelperImpulseTests
             }),
             new ImpulseRenderFrame());
 
-        // Each band peaks on its own burst, not on the record's strongest sample.
         Assert.InRange(low.PeakSample, 350, 450);
         Assert.InRange(high.PeakSample, 1_150, 1_250);
     }
@@ -460,7 +429,6 @@ public sealed class DataHelperImpulseTests
         ImpulseCurveSet set =
             DataHelper.GetImpulseCurves(measurement, opt, new ImpulseRenderFrame());
 
-        // The 4 kHz burst is five octaves outside a one-octave band around 125 Hz.
         double atHighBurst = set.Impulse!.Points
             .Skip(1_150).Take(100).Max(p => Math.Abs(p.Y));
         Assert.True(
@@ -471,9 +439,7 @@ public sealed class DataHelperImpulseTests
     [Fact]
     public void BandFilter_IsZeroPhaseSoTheArrivalDoesNotMove()
     {
-        // A filter with phase would delay the band it passes, and the view would report
-        // the filter's own group delay as the band's arrival time — at 1 kHz through a
-        // one-octave minimum-phase section that is tens of samples.
+        // A phase-bearing filter would report its own group delay as the band's arrival.
         var ir = new Complex[8_192];
         AddBurst(ir, 400, 1_000);
         var measurement = new SyntheticMeasurement(ir, SampleRate, 400);
@@ -501,7 +467,6 @@ public sealed class DataHelperImpulseTests
 
         ImpulseCurveSet filtered = DataHelper.GetImpulseCurves(
             measurement,
-            // A centre without a width is not a band: nothing may be filtered.
             Options(o => o.BandCenterHz = 125),
             new ImpulseRenderFrame());
         ImpulseCurveSet plain = DataHelper.GetImpulseCurves(
@@ -512,12 +477,8 @@ public sealed class DataHelperImpulseTests
     }
 
     [Theory]
-    // Above Nyquist outright.
     [InlineData(30_000.0, 1.0)]
-    // Centre under Nyquist, but the band is symmetric in OCTAVES around it: a full
-    // octave at 20 kHz asks for a passband to 28.3 kHz, which a 48 kHz record cannot
-    // carry, and the mask would simply stop at the end of the spectrum — a lopsided
-    // band under the name of a symmetric one.
+    // Octave-symmetric band: a full octave at 20 kHz needs 28.3 kHz, which 48 kHz cannot carry.
     [InlineData(20_000.0, 1.0)]
     [InlineData(23_000.0, 1.0 / 3.0)]
     public void BandFilter_ThatCannotBeRealizedIsRefusedRatherThanTruncated(
@@ -538,8 +499,7 @@ public sealed class DataHelperImpulseTests
     }
 
     [Theory]
-    // The passband must fit; the fade skirt beyond it may clip, which costs roll-off
-    // steepness rather than the band's identity.
+    // The passband must fit; a clipped fade skirt only costs roll-off steepness.
     [InlineData(16_000.0, 1.0, 48_000, true)]
     [InlineData(16_000.0, 1.0, 44_100, false)]   // 22.6 kHz passband against 22.05 Nyquist
     [InlineData(20_000.0, 1.0 / 3.0, 44_100, false)]

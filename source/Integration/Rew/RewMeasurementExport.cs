@@ -1,11 +1,7 @@
 namespace Resonalyze.Integration.Rew;
 
-/// <summary>What one measurement is worth sending as.</summary>
-/// <param name="ImpulseResponse">The transfer IR, sample 0 being the loopback reference.</param>
-/// <param name="PeakIndex">The arrival's index in that buffer.</param>
-/// <param name="SampleRate">The rate it was measured at.</param>
-/// <param name="Identifier">The name REW files it under.</param>
-/// <param name="SplOffsetDb">This measurement's own dBr → dB SPL offset, or null.</param>
+/// <param name="ImpulseResponse">Transfer IR, sample 0 being the loopback reference.</param>
+/// <param name="SplOffsetDb">This measurement's dBr to dB SPL offset, or null.</param>
 internal sealed record RewExportRequest(
     double[] ImpulseResponse,
     int PeakIndex,
@@ -13,37 +9,15 @@ internal sealed record RewExportRequest(
     string Identifier,
     double? SplOffsetDb);
 
-/// <summary>
-/// The result of a send. <see cref="Problem"/> is null when the import went through
-/// and REW's copy agrees with what was sent — which is the ordinary case, and the
-/// one the user is told nothing about.
-/// </summary>
+/// <summary><see cref="Problem"/> is null when the import went through and REW's copy agrees.</summary>
 internal sealed record RewExportResult(string? Problem)
 {
     public bool Verified => Problem == null;
 }
 
-/// <summary>
-/// Sends one measurement to REW and checks that its copy landed on the time base it
-/// was sent with.
-/// </summary>
-/// <remarks>
-/// The check reads the new measurement's SUMMARY — a small JSON, no impulse payload
-/// — and compares <c>timeOfIRPeakSeconds</c> with the arrival the payload was framed
-/// to produce. It deliberately does not pin REW's version: that is a moving beta, and
-/// requiring a matching build would make the user's problem out of something this
-/// comparison catches directly. The version REW announces goes into the failure text
-/// instead, so a report says what it was talking to.
-/// <para>
-/// One measured caveat behind the choice of field (REW 5.40 Beta 132 / API 0.9.6):
-/// the summary's <c>timeOfIRStartSeconds</c> is NOT the start time that was sent. It
-/// is REW's own onset detection — a unit impulse sent with a start time of −20.8 ms
-/// reads back 0, and a band-limited arrival reads back six samples before its peak.
-/// <c>timeOfIRPeakSeconds</c> is the field that carries the start time back, because
-/// REW locates the peak on the same rule this application does (the largest absolute
-/// sample), so the two agree on the index and the difference is the start time alone.
-/// </para>
-/// </remarks>
+/// <summary>Sends one measurement to REW and verifies its time base via <c>timeOfIRPeakSeconds</c> in the summary (REW version not pinned).</summary>
+/// <remarks><c>timeOfIRStartSeconds</c> is REW's own onset detection, not the sent start time (REW 5.40 b132 / API 0.9.6);
+/// the peak uses the same largest-|sample| rule as ours, so its difference is the start time alone.</remarks>
 internal sealed class RewMeasurementExport
 {
     private static readonly TimeSpan FilingTimeout = TimeSpan.FromSeconds(15);
@@ -57,20 +31,8 @@ internal sealed class RewMeasurementExport
         this.client = client;
     }
 
-    /// <summary>
-    /// The version REW announces, or null when it is not answering, within
-    /// <paramref name="timeout"/>. Asked before the export dialog opens, so a REW
-    /// that is not running is a line the user can act on rather than an exception
-    /// after the click.
-    /// </summary>
-    /// <remarks>
-    /// The deadline is owned here rather than by the caller for a reason. An address
-    /// that drops packets instead of refusing the connection reaches the timeout, and
-    /// a caller-supplied token that has just been cancelled is indistinguishable from
-    /// the caller having given up — so the cancellation escaped as an unhandled
-    /// exception on the UI thread. Cancelling a token this method owns keeps the two
-    /// apart: the caller's own cancellation still propagates, as it should.
-    /// </remarks>
+    /// <summary>REW version, or null when not answering within <paramref name="timeout"/>.</summary>
+    /// <remarks>Owns its deadline token: a just-cancelled caller token is indistinguishable from a timeout and escaped unhandled on the UI thread.</remarks>
     public async Task<string?> ProbeAsync(
         TimeSpan timeout,
         CancellationToken cancellationToken)
@@ -84,8 +46,6 @@ internal sealed class RewMeasurementExport
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            // Our deadline, not the caller's: a REW that neither answers nor refuses
-            // in the time allowed is a REW that is not answering.
             return null;
         }
     }
@@ -144,11 +104,6 @@ internal sealed class RewMeasurementExport
         return new RewExportResult(VerifyPeak(filed, import, request.SampleRate, version));
     }
 
-    /// <summary>
-    /// The one comparison. A start time that arrived intact puts the arrival exactly
-    /// where the payload was framed to put it; anything else is reported in samples,
-    /// which is the unit the disagreement would be in.
-    /// </summary>
     private static string? VerifyPeak(
         RewMeasurementSummary filed,
         RewImpulseResponseImport import,
@@ -162,8 +117,7 @@ internal sealed class RewMeasurementExport
         }
 
         double differenceSeconds = reported - import.PeakTimeSeconds;
-        // Half a sample separates "the same sample, to double rounding" from "a
-        // different sample": REW cannot report a peak between two of them.
+        // REW cannot report a peak between samples, so half a sample separates rounding from a different sample.
         if (Math.Abs(differenceSeconds) * sampleRate <= 0.5)
         {
             return null;
@@ -176,22 +130,8 @@ internal sealed class RewMeasurementExport
             $"with, so delays read from it are not this session's. (REW reported: {version}.)";
     }
 
-    /// <summary>
-    /// The measurement this send produced: new since the snapshot AND filed under the
-    /// name it was sent with. Both halves are load-bearing. The UUID alone would pick
-    /// up a measurement the user made in REW while this one was being filed — REW
-    /// stays usable throughout — and verify its timing instead. The title alone would
-    /// pick the older of two measurements sharing a name.
-    /// </summary>
-    /// <remarks>
-    /// The name is compared as a PREFIX rather than for equality, because REW
-    /// truncates a long title as it files it and reports the shortened one back.
-    /// Measured on 5.40 Beta 132 / API 0.9.6: a 54-character name came back at 48
-    /// and a 64-character one at 45, the cut depending on the characters rather than
-    /// their count — a display width, not a fixed limit. Requiring equality
-    /// therefore made every export of a long name wait out the filing timeout and
-    /// then report that REW had not filed it, while REW had filed it perfectly well.
-    /// </remarks>
+    /// <summary>New since the snapshot AND filed under the sent name: the UUID alone catches a user's concurrent REW measurement, the title alone an older namesake.</summary>
+    /// <remarks>Prefix match: REW truncates long titles by display width (54 chars -> 48, 64 -> 45 on 5.40 b132).</remarks>
     private async Task<(RewMeasurementSummary? Filed, bool Ambiguous)> WaitForNewMeasurementAsync(
         HashSet<string> known,
         string identifier,
@@ -203,11 +143,7 @@ internal sealed class RewMeasurementExport
             IReadOnlyDictionary<string, RewMeasurementSummary> current =
                 await client.GetMeasurementsAsync(cancellationToken).ConfigureAwait(false);
 
-            // The best candidate is the one REW cut LEAST: an untruncated title is the
-            // whole identifier and so always wins, and between two shortenings the
-            // longer is the better claim to being ours. Two candidates that are equally
-            // good is not something waiting can settle, and guessing between them is
-            // how the wrong measurement gets verified.
+            // The least-cut title wins; an equal tie cannot be settled by waiting, and guessing verifies the wrong measurement.
             RewMeasurementSummary? best = null;
             bool ambiguous = false;
             foreach (RewMeasurementSummary summary in current.Values)
@@ -249,28 +185,10 @@ internal sealed class RewMeasurementExport
         }
     }
 
-    /// <summary>
-    /// The shortest title REW has been seen to shorten a name TO. Measured on 5.40
-    /// Beta 132 / API 0.9.6: 40 characters came back whole, 47 came back at 45, 54 at
-    /// 48 and 64 at 45 — the cut follows the drawn width rather than a count, so this
-    /// sits below the shortest cut observed instead of at it.
-    /// </summary>
-    /// <remarks>
-    /// It exists to keep a SHORT name from passing as a truncation of a long one.
-    /// "Resonalyze" begins "Resonalyze 2026-09-01 12-00-00" without being a shortening
-    /// of it, and a measurement the user makes under that name while a send is filing
-    /// is new exactly as ours is — so without this floor the export could verify their
-    /// measurement, and the live test's cleanup could delete it.
-    /// </remarks>
+    /// <summary>Below the shortest observed REW truncation (40 whole, 47 -> 45, 64 -> 45), so a short user title is not taken for a cut of ours.</summary>
     private const int ShortestTruncation = 40;
 
-    /// <summary>
-    /// Whether REW filed this measurement under the name it was sent. What REW stores
-    /// is the name, possibly cut short — never anything added — so an exact match is
-    /// accepted outright, and a shorter one only when REW could plausibly have cut a
-    /// title to that length. An empty title is never a match: it is a prefix of
-    /// everything.
-    /// </summary>
+    /// <summary>Exact match, or a prefix at least <see cref="ShortestTruncation"/> long; empty never matches.</summary>
     internal static bool IsFiledAs(string? filedTitle, string identifier)
     {
         if (string.IsNullOrEmpty(filedTitle))
@@ -287,11 +205,7 @@ internal sealed class RewMeasurementExport
             identifier.StartsWith(filedTitle, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Identifying the new measurement by UUID rather than by the name it was sent
-    /// under: REW allows two measurements to share a title, and a second send of the
-    /// same name would otherwise verify against the first one's numbers.
-    /// </summary>
+    /// <summary>By UUID: REW allows two measurements to share a title.</summary>
     private static HashSet<string> UuidsOf(
         IReadOnlyDictionary<string, RewMeasurementSummary> measurements)
     {

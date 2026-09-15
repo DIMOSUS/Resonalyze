@@ -3,51 +3,12 @@ using System.Text.RegularExpressions;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Reads a FIR kernel out of the text formats the filter designers write: one
-/// coefficient per line (rePhase, REW's impulse export, miniDSP's and most others'
-/// <c>.txt</c>, the <c>.fir</c> the same tools name their exports).
-/// </summary>
-/// <remarks>
-/// <para>
-/// Every line that parses as one number is a tap, in file order. ABOVE the first
-/// tap anything goes: the designers differ in what they write there (<c>* Impulse
-/// Response data saved by REW</c>, <c>// rePhase</c>, nothing at all) and a reader
-/// that pinned one dialect would refuse the next. A line with several numbers on it
-/// up there is skipped, not read as its first or last column: a two-column file is
-/// another format, and guessing the column would load a kernel nobody designed. The
-/// message for a file with no taps says what the reader wanted.
-/// </para>
-/// <para>
-/// ONCE THE TAPS BEGIN the reader is strict: a line that is not a number, and not a
-/// comment by its first character (<c>*</c>, <c>//</c>, <c>#</c>, <c>;</c>,
-/// <c>%</c>), refuses the whole file and names the line. Skipping it would be far
-/// worse than refusing: a tap that goes missing shifts every tap after it by one
-/// sample, which is a different filter with the same file name — and <c>0.3 0.4</c>
-/// or <c>0.25 garbage</c> in the middle of a kernel is exactly the line a reader
-/// must not guess about.
-/// </para>
-/// <para>
-/// A decimal COMMA is a decimal separator, not a column separator: a tool run under
-/// a locale that writes <c>0,5</c> exports the same kernel as one that writes
-/// <c>0.5</c>, and a reader that skipped those lines would load a shorter kernel
-/// with a hole where every fraction stood, and say nothing. So a line that is one
-/// number with a single comma and no point (<c>-0,25</c>, <c>1,5e-3</c>) is a tap.
-/// The price is the two-column file of bare integers (<c>1,5</c>), read here as
-/// 1.5 — a shape no designer exports. A file that mixes the two conventions is
-/// refused: one of them is a column separator there, and the reader cannot tell
-/// which.
-/// </para>
-/// <para>
-/// A header line stating the sample rate (<c>Sample rate: 48000</c>, in any spelling
-/// with the number after it) is picked up as the kernel's DECLARED rate, purely so
-/// the editors can warn when it is not the processor's. The taps are never
-/// resampled — see <see cref="FirFilter"/>.
-/// </para>
-/// </remarks>
+/// <summary>One-coefficient-per-line FIR text (rePhase, REW, miniDSP .txt/.fir).</summary>
+/// <remarks>Lenient above the first tap (multi-number lines skipped, never column-guessed); strict after it: a stray line refuses the file,
+/// since a missing tap shifts every later tap. A lone decimal comma is a decimal point; mixed conventions are refused.
+/// A "Sample rate" header is only the declared rate; taps are never resampled.</remarks>
 public static partial class FirFilterTextFile
 {
-    /// <summary>Parses the file's text. Throws <see cref="InvalidDataException"/> when it holds no kernel.</summary>
     public static FirFilter Parse(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -56,8 +17,7 @@ public static partial class FirFilterTextFile
         int skippedNumeric = 0;
         bool sawDecimalPoint = false;
         bool sawDecimalComma = false;
-        // Line numbers count every line of the file, blank ones included, so the
-        // refusal names the line an editor shows.
+        // Counts blank lines so the refusal names the line an editor shows.
         int lineNumber = 0;
         foreach (string rawLine in text.Split('\n'))
         {
@@ -106,8 +66,6 @@ public static partial class FirFilterTextFile
                 continue;
             }
 
-            // A header line of several numbers: counted so the refusal can name the
-            // shape it saw.
             if (LooksLikeNumberColumns(line))
             {
                 skippedNumeric++;
@@ -147,7 +105,6 @@ public static partial class FirFilterTextFile
         taps.Add(tap);
     }
 
-    // The comment markers the designers' exports and hand-edited files use.
     private static bool IsComment(string line) =>
         line[0] is '*' or '#' or ';' or '%' || line.StartsWith("//", StringComparison.Ordinal);
 
@@ -162,8 +119,6 @@ public static partial class FirFilterTextFile
             double.TryParse(column, NumberStyles.Float, CultureInfo.InvariantCulture, out _));
     }
 
-    // One number whose only comma is its decimal separator: digits either side of
-    // it, a sign and an exponent allowed, nothing else on the line.
     [GeneratedRegex(@"^[+-]?\d*,\d+(?:[eE][+-]?\d+)?$", RegexOptions.CultureInvariant)]
     private static partial Regex DecimalCommaPattern();
 

@@ -3,20 +3,8 @@ using System.Text;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// A simple, self-describing CSV layout:
-/// <code>
-/// Preamp (dB),-6.0
-/// Filter,Frequency (Hz),Gain (dB),Q,Type
-/// 1,600,6.0,4.0,PK
-/// 2,80,3.0,0.7,LS
-/// </code>
-/// Import is tolerant: the header row and comments are skipped, the preamp row is
-/// recognised by its label, and each data row is read as frequency/gain/Q from its
-/// numeric fields (a leading index column is ignored). The type column is read from
-/// the row's non-numeric fields, so a file written before shelves existed — which
-/// has no such column — still reads, every row as a bell.
-/// </summary>
+/// <summary>Self-describing CSV (<c>Preamp (dB),-6.0</c> then <c>Filter,Frequency (Hz),Gain (dB),Q,Type</c> rows). Tolerant import:
+/// optional index column; a missing type column (pre-shelf files) reads every row as a bell.</summary>
 public sealed class GenericCsvFormat : IEqProfileFormat
 {
     public string Name => "Generic CSV";
@@ -39,12 +27,7 @@ public sealed class GenericCsvFormat : IEqProfileFormat
                 .Append(',')
                 .Append(EqTextNumbers.Format(band.FrequencyHz, "0.###"))
                 .Append(',')
-                // An all-pass has no gain, and the slot it came from may still be
-                // holding the figure the band had before it became one (so switching
-                // back restores it). Writing that into the file would state a gain
-                // the filter does not have, to a reader that has no reason to doubt
-                // it — the column carries a 0.0 instead, which is what the reader
-                // below expects and what the Audiotec bank writes.
+                // All-pass writes 0.0 gain: the slot may still hold its pre-all-pass gain.
                 .Append(EqTextNumbers.Format(
                     band.Type.IsAllPass() ? 0 : band.GainDb, "0.0"))
                 .Append(',')
@@ -109,14 +92,12 @@ public sealed class GenericCsvFormat : IEqProfileFormat
             double q;
             if (numbers.Count >= 4)
             {
-                // index, frequency, gain, Q
                 frequencyHz = numbers[1];
                 gainDb = numbers[2];
                 q = numbers[3];
             }
             else if (numbers.Count == 3)
             {
-                // frequency, gain, Q
                 frequencyHz = numbers[0];
                 gainDb = numbers[1];
                 q = numbers[2];
@@ -150,11 +131,7 @@ public sealed class GenericCsvFormat : IEqProfileFormat
         _ => "PK"
     };
 
-    // The type is looked up by keyword rather than by column index, so it survives
-    // the leading-index column being present or absent — the same tolerance the
-    // numeric fields already get. An unreadable or missing type is a bell. The
-    // all-pass rows still write a 0.0 in the gain column — the numeric reader
-    // needs its three numbers whatever the type.
+    // Type found by keyword, not column index, so the optional index column does not matter.
     private static PeqBandType ReadType(string[] fields)
     {
         foreach (string field in fields)

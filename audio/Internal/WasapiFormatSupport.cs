@@ -14,12 +14,7 @@ public sealed record DuplexFormatSupport(
     public bool Supported => CaptureSupported && RenderSupported;
 }
 
-/// <summary>
-/// WASAPI Exclusive format probing. <see cref="CheckExclusive"/> is the only
-/// NAudio-free (bool-returning) surface exposed to the settings UI;
-/// <see cref="CreateDeviceFormat"/> stays internal because it returns a NAudio
-/// <see cref="WaveFormat"/> that must not cross the audio boundary.
-/// </summary>
+/// <summary><see cref="CreateDeviceFormat"/> stays internal: it returns a NAudio <see cref="WaveFormat"/>.</summary>
 public static class WasapiFormatSupport
 {
     public static DuplexFormatSupport CheckExclusive(

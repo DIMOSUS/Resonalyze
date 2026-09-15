@@ -10,10 +10,8 @@ public sealed class ExponentialSineSweepTests
         ExpSweepSpec spec = ExponentialSineSweep.ComputeSpec(30, 18_000, 1.0, 48_000);
 
         Assert.True(spec.IsValid);
-        // Low rounds down, high rounds up: the achieved band contains the request.
         Assert.True(spec.LowFrequencyHz <= 30.0);
         Assert.True(spec.HighFrequencyHz >= 18_000.0);
-        // ...and never past Nyquist.
         Assert.True(spec.HighFrequencyHz < 24_000.0);
     }
 
@@ -22,8 +20,7 @@ public sealed class ExponentialSineSweepTests
     {
         ExpSweepSpec spec = ExponentialSineSweep.ComputeSpec(20, 20_000, 1.0, 48_000);
 
-        // phi(0) = 2*pi*p and phi(N) = 2*pi*q with integer p, q, so both endpoints
-        // are zero crossings whatever the achieved band — phase alignment is kept.
+        // phi(0) = 2πp and phi(N) = 2πq with integer p, q: both endpoints are zero crossings.
         Assert.True(spec.StartCycles >= 1);
         Assert.True(spec.EndCycles > spec.StartCycles);
         double startPhase = 2.0 * Math.PI * spec.StartCycles;
@@ -44,9 +41,6 @@ public sealed class ExponentialSineSweepTests
         Assert.True(spec.FadeInSamples + spec.FadeOutSamples < spec.SampleCount);
 
         double beta = Math.Log((double)spec.EndCycles / spec.StartCycles);
-        // The fade-in ends exactly where the sweep reaches the requested low edge,
-        // and the fade-out starts at the requested high edge, so the whole
-        // [low, high] band is excited at full amplitude.
         double freqAtFadeInEnd =
             spec.LowFrequencyHz * Math.Exp(spec.FadeInSamples / (double)spec.SampleCount * beta);
         double freqAtFadeOutStart =
@@ -67,15 +61,13 @@ public sealed class ExponentialSineSweepTests
 
         Assert.True(spec.IsValid);
         Assert.True(spec.OctaveSpan >= requestedOctaves);
-        // The guard bands stay modest — a couple of octaves at most.
         Assert.True(spec.OctaveSpan < requestedOctaves + 2.0);
     }
 
     [Fact]
     public void ComputeSpec_NarrowBandDoesNotBlowUp()
     {
-        // Regression: a sub-octave request must not run away to a multi-octave
-        // sweep (the endpoint search is direct, not iterative widening).
+        // The endpoint search is direct, so a sub-octave request must not widen to multiple octaves.
         double low = 1000;
         double high = 1200;
         double requestedOctaves = Math.Log2(high / low);
@@ -92,9 +84,7 @@ public sealed class ExponentialSineSweepTests
     [Fact]
     public void ComputeSpec_LongHighRateSweepCoversTheTopEdge()
     {
-        // Regression: sampleRate*q must be evaluated in double — at 192 kHz over
-        // 20 s q reaches tens of thousands and an int product would overflow,
-        // corrupting the band so the requested top is not covered.
+        // sampleRate*q in double: at 192 kHz over 20 s an int product overflows.
         ExpSweepSpec spec = ExponentialSineSweep.ComputeSpec(20, 20_000, 20.0, 192_000);
 
         Assert.True(spec.IsValid);
@@ -118,8 +108,6 @@ public sealed class ExponentialSineSweepTests
         ExpSweepSpec spec = ExponentialSineSweep.ComputeSpec(low, high, total, sampleRate);
 
         Assert.True(spec.IsValid);
-        // The sweep runs ~perOctaveSeconds per achieved octave, and the inverse
-        // recovers the pace.
         Assert.Equal(perOctaveSeconds, total / spec.OctaveSpan, 2);
         Assert.Equal(
             perOctaveSeconds,
@@ -139,7 +127,6 @@ public sealed class ExponentialSineSweepTests
             1000, 1200, perOctaveSeconds, sampleRate);
 
         Assert.True(narrow > 0);
-        // Fewer octaves to sweep at the same pace → a shorter total.
         Assert.True(narrow < wide);
     }
 
@@ -173,8 +160,6 @@ public sealed class ExponentialSineSweepTests
         }
         double rms = Math.Sqrt(sumSquares / ir.Length);
 
-        // A matched sweep/inverse pair deconvolves to a sharp peak that towers over
-        // the residual energy floor.
         Assert.True(peak > 0);
         Assert.True(peak / rms > 5.0, $"peak/rms = {peak / rms:0.0}");
     }
@@ -191,14 +176,10 @@ public sealed class ExponentialSineSweepTests
             peak = Math.Max(peak, Math.Abs(sample));
         }
 
-        // The sweep must never leave the interface less than the headroom it was
-        // given: a full-scale excitation clipped the output stage of the field rig
-        // at a level the Signal Generator's own tone (-6 dBFS) played cleanly.
+        // A full-scale excitation clipped the field rig's output stage where the -6 dBFS tone played cleanly.
         Assert.True(
             peak <= ExponentialSineSweep.PlaybackAmplitude,
             $"peak {peak:0.####} exceeded {ExponentialSineSweep.PlaybackAmplitude:0.####}");
-        // ...and it does reach it — the crest of a sweep this long lands on a
-        // sample, so a silently attenuated excitation is caught too.
         Assert.True(
             peak > ExponentialSineSweep.PlaybackAmplitude * 0.999,
             $"peak {peak:0.####} fell short of {ExponentialSineSweep.PlaybackAmplitude:0.####}");
@@ -212,11 +193,7 @@ public sealed class ExponentialSineSweepTests
         float[] samples = sweep.SweepData;
         float[] inverse = sweep.InverseFilter;
 
-        // Playing the attenuated sweep through a unity ("wire") system records the
-        // attenuated sweep itself; its own inverse filter must still hand back a
-        // 0 dB impulse response, because the filter inverts the excitation that is
-        // actually played. Without the reciprocal scale the whole result would sit
-        // 6 dB low and every stored measurement would step down with this change.
+        // The inverse filter carries the reciprocal scale, or every result would sit 6 dB low.
         SweepDeconvolutionResult result = SweepAnalysis.DeconvolveWithInverseFilter(
             samples, inverse, 2.0 / inverse.Length);
 
@@ -229,9 +206,6 @@ public sealed class ExponentialSineSweepTests
         Assert.InRange(meanInBandDb, -1.0, 1.0);
     }
 
-    // Mean magnitude (dB) over the reliable interior of the swept band. Mirrors
-    // SweepDeconvolutionFlatnessTests, which pins the same unity round trip
-    // against a locally regenerated sweep; this one runs the real generator.
     private static double MeanInBandMagnitudeDb(
         double[] impulseResponse,
         int sampleRate,

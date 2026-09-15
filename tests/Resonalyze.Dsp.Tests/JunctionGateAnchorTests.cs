@@ -2,24 +2,14 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// Where a junction measurement opens its direct-sound window
-/// (<see cref="VirtualCrossoverAnalysis.FindGateAnchor"/>). The rule it
-/// replaced — the earliest PEAK of the channels in play — answers "where is
-/// this loudest", which a crossover's group delay and a strong late feature
-/// both move away from the front the window has to hold; these pin that the
-/// front is what the anchor now reads, and that neither guard around it lets
-/// the answer land later than the peak it replaces.
-/// </summary>
+/// <summary>Pins <see cref="VirtualCrossoverAnalysis.FindGateAnchor"/> reading the front, never later than the peak it replaced.</summary>
 public sealed class JunctionGateAnchorTests
 {
     private const int SampleRate = 48_000;
     private const int IrLength = 16_384;
     private const int FrontSample = 2_048;
 
-    // The alignment gate's fade at 48 kHz (see the gate remarks in
-    // VirtualCrossoverAnalysis): the window's plateau starts this far behind
-    // its anchor, so content before that point is what a placement discards.
+    // The alignment gate's fade at 48 kHz: content before the plateau is what a placement discards.
     private const int GateFadeSamples = 256;
 
     private static int Samples(double milliseconds) =>
@@ -43,9 +33,6 @@ public sealed class JunctionGateAnchorTests
             SampleRate,
             SampleRate);
 
-    // The share of a response's energy that falls AHEAD of a placement's
-    // plateau (dB against its total): what that window throws away of the very
-    // channel it is measuring.
     private static double EnergyAheadOfPlateauDb(Complex[] impulseResponse, int anchor)
     {
         double ahead = 0;
@@ -66,9 +53,6 @@ public sealed class JunctionGateAnchorTests
     [Fact]
     public void Anchor_MarksTheFront_WhereThePeakIsALaterFeature()
     {
-        // A direct front with a stronger reflection 6 ms behind it — the shape
-        // of every channel whose peak is not its arrival, whether the delay
-        // comes from a cabin boundary or from the channel's own crossover.
         Complex[] ir = Taps((0, 1.0), (6.0, 2.0));
         int peak = VirtualCrossoverAnalysis.FindPeakIndex(ir);
         Assert.Equal(FrontSample + Samples(6.0), peak);
@@ -76,14 +60,9 @@ public sealed class JunctionGateAnchorTests
         int anchor = VirtualCrossoverAnalysis.FindGateAnchor(
             ir, peak, SampleRate, bandLowHz: 1_000, bandHighHz: 4_000);
 
-        // The front, to a hundredth of a millisecond — six milliseconds ahead
-        // of the peak the old rule would have anchored on.
         Assert.InRange(
             (anchor - FrontSample) * 1000.0 / SampleRate, -0.10, 0.10);
-        // And that is what it buys: anchored on the peak this window opens
-        // past the front and discards a fifth of the channel's own energy
-        // (-7 dB against what it keeps); anchored on the front it discards
-        // none of it.
+        // Peak-anchored the window discards a fifth of the channel's energy (-7 dB); front-anchored, none.
         Assert.InRange(EnergyAheadOfPlateauDb(ir, peak), -8.0, -6.0);
         Assert.True(
             EnergyAheadOfPlateauDb(ir, anchor) < -100.0,
@@ -93,9 +72,6 @@ public sealed class JunctionGateAnchorTests
     [Fact]
     public void Anchor_OnAChannelWhosePeakIsItsFront_StaysWhereThePeakIs()
     {
-        // The other half of the claim: this is not a blanket shift. A clean
-        // band-passed arrival peaks at its own front, and the anchor agrees
-        // with the peak rule to a fraction of a millisecond.
         Complex[] midrange = Filtered(new CrossoverSpec(
             CrossoverKind.BandPass,
             new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24),
@@ -111,11 +87,7 @@ public sealed class JunctionGateAnchorTests
     [Fact]
     public void Anchor_IsNeverLaterThanThePeak()
     {
-        // A tweeter read in a band it only leaks residue into: the envelope
-        // there fronts 0.4 ms BEHIND the channel's peak. A window opening
-        // after the peak is exactly what this whole placement exists to
-        // prevent — at a low junction the same late read is what a room mode
-        // produces — so the peak caps the answer.
+        // An envelope fronting 0.4 ms behind the peak: the peak caps the answer.
         Complex[] tweeter = Filtered(new CrossoverSpec(
             CrossoverKind.HighPass,
             HighPassEdge: new CrossoverEdge(
@@ -142,10 +114,7 @@ public sealed class JunctionGateAnchorTests
                 CrossoverFilterFamily.LinkwitzRiley, 2_000, 48)));
         int peak = VirtualCrossoverAnalysis.FindPeakIndex(tweeter);
 
-        // A band narrower than MinimumArrivalBandRatio is refused by the
-        // detector rather than silently widened, and silence carries no
-        // arrival at all. Both fall back to the peak — the rule this
-        // replaced — instead of anchoring on a fabricated front.
+        // A too-narrow band or silence falls back to the peak rather than a fabricated front.
         Assert.Equal(
             peak,
             VirtualCrossoverAnalysis.FindGateAnchor(
@@ -160,12 +129,7 @@ public sealed class JunctionGateAnchorTests
     [Fact]
     public void SumLoss_FindsACancellationNotchBetweenTheOldBins()
     {
-        // Two equal arrivals 12.2 ms apart cancel completely at 41 Hz (and at
-        // every odd multiple), which a 33-130 Hz junction band must report as
-        // a deep dip. Padded only to the 85 ms gate, the bins sat 11.7 Hz
-        // apart at 96 kHz — 35.2, 46.9, 58.6 Hz — and this notch fell straight
-        // between two of them, so the dip read a fraction of its depth. The
-        // measurement is the same; only how densely it is sampled changed.
+        // Padded only to the 85 ms gate, 96 kHz bins (11.7 Hz apart) straddled the 41 Hz notch and missed its depth.
         const int Rate = 96_000;
         var first = new Complex[65_536];
         var second = new Complex[65_536];

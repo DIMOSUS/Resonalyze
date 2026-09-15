@@ -2,11 +2,7 @@ namespace Resonalyze;
 
 internal static class SignalFade
 {
-    /// <summary>
-    /// Applies a raised-cosine fade-in and fade-out in place, so generated
-    /// signals start and end at zero instead of a step — an abrupt edge is an
-    /// audible (and at high level tweeter-unfriendly) click.
-    /// </summary>
+    /// <summary>Raised-cosine fades in place; an abrupt edge is an audible, tweeter-unfriendly click.</summary>
     public static void ApplyFadeInOut(float[] samples, int fadeSamples)
     {
         ArgumentNullException.ThrowIfNull(samples);

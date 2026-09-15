@@ -7,9 +7,6 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-// Pins the shared gated-IR rendering used by both the gate dialog's preview
-// and the Virtual DSP impulse view: per-trace normalization, the Tukey gate
-// outline, the gate-offset mark, and the tag the host sweeps on redraw.
 public sealed class ImpulseWindowPreviewTests
 {
     private const int SampleRate = 48_000;
@@ -33,8 +30,6 @@ public sealed class ImpulseWindowPreviewTests
     public void AddGatedTraceSeries_NormalizesEachTraceAndTagsEverything()
     {
         var model = new PlotModel();
-        // Two arrivals 10 ms apart with very different amplitudes: independent
-        // normalization must bring BOTH peaks to ±1 so each stays visible.
         IrPreviewTrace loud = MakeTrace("A", peakSample: 480, amplitude: 0.5);
         IrPreviewTrace quiet = MakeTrace("B", peakSample: 960, amplitude: -0.02);
 
@@ -44,8 +39,6 @@ public sealed class ImpulseWindowPreviewTests
                 gateOffsetMs: 10, leftMs: 0.5, plateauMs: 15, rightMs: 5, Tag);
 
         Assert.NotNull(window);
-        // The display window covers the whole gate (9.5 ms to 30.5 ms) plus
-        // context on both sides.
         Assert.True(window.Value.StartMs < 9.5);
         Assert.True(window.Value.EndMs > 30.5);
 
@@ -53,7 +46,6 @@ public sealed class ImpulseWindowPreviewTests
             .OfType<LineSeries>()
             .Where(item => Equals(item.Tag, Tag))
             .ToList();
-        // Two traces plus the untitled gate-window outline.
         Assert.Equal(3, series.Count);
         Assert.Equal("A", series[0].Title);
         Assert.Equal("B", series[1].Title);
@@ -61,10 +53,8 @@ public sealed class ImpulseWindowPreviewTests
 
         Assert.Equal(1.0, series[0].Points.Max(point => Math.Abs(point.Y)), 12);
         Assert.Equal(1.0, series[1].Points.Max(point => Math.Abs(point.Y)), 12);
-        // The Tukey gate plateau reaches weight 1 and never leaves [0, 1].
         Assert.Equal(1.0, series[2].Points.Max(point => point.Y), 12);
         Assert.True(series[2].Points.All(point => point.Y is >= 0 and <= 1));
-        // The window outline is dashed so it reads apart from the solid IR traces.
         Assert.Equal(LineStyle.Dash, series[2].LineStyle);
 
         LineAnnotation mark = Assert.IsType<LineAnnotation>(
@@ -77,9 +67,7 @@ public sealed class ImpulseWindowPreviewTests
     public void AddGatedTraceSeries_WithEnvelopes_WrapsEachTraceOnTheEnvelopesScale()
     {
         var model = new PlotModel();
-        // A tone burst whose envelope crests where its carrier crosses zero: the
-        // sample peak sits a quarter cycle off, ~12 % under the crest, so on the
-        // sample peak's scale the envelope would run past the ±1 axis.
+        // The envelope crests where the carrier crosses zero: the sample peak is ~12 % under the crest.
         IrPreviewTrace burst = MakeBurst("A", centerSample: 720, carrierHz: 500);
 
         ImpulseWindowPreview.AddGatedTraceSeries(
@@ -88,7 +76,6 @@ public sealed class ImpulseWindowPreviewTests
             envelopes: true);
 
         List<LineSeries> series = model.Series.OfType<LineSeries>().ToList();
-        // The upper and lower guide, then the trace over them, then the gate.
         Assert.Equal(4, series.Count);
         (LineSeries upper, LineSeries lower, LineSeries trace) =
             (series[0], series[1], series[2]);
@@ -132,14 +119,12 @@ public sealed class ImpulseWindowPreviewTests
         Assert.Equal(2, EnvelopeGuides(view.Model!, "A"));
         Assert.Equal(2, EnvelopeGuides(view.Model!, "B"));
 
-        // The step of an envelope is nothing; the step view draws none.
         plot.ConfigureForView(AcousticView.Step);
         plot.Draw(new AcousticRender(string.Empty, [], impulse with { Step = true }));
         Assert.DoesNotContain(
             view.Model!.Series.OfType<LineSeries>(),
             item => item.Title?.EndsWith(" envelope", StringComparison.Ordinal) == true);
 
-        // Nor does the gate dialog's compact preview.
         using var preview = new OxyPlot.WindowsForms.PlotView();
         ImpulseWindowPreview.UpdateGatedMulti(
             preview, traces, SampleRate,
@@ -151,10 +136,8 @@ public sealed class ImpulseWindowPreviewTests
     public void Envelopes_AreReadOverTheWholeRecord_NotTheDisplayedWindow()
     {
         var model = new PlotModel();
-        // A burst straddling the window's right edge: a transform over the
-        // displayed samples alone cuts it in half and wraps the cut onto the
-        // window's quiet start, so the two readings part company near both ends.
-        const int displayEnd = 1_563; // gate 456 + 984, plus a 123-sample context
+        // A burst straddling the window edge: a transform over displayed samples alone wraps the cut onto the start.
+        const int displayEnd = 1_563;
         IrPreviewTrace burst = MakeBurst("A", centerSample: displayEnd, carrierHz: 500);
 
         ImpulseWindowPreview.AddGatedTraceSeries(
@@ -181,15 +164,13 @@ public sealed class ImpulseWindowPreviewTests
                 Math.Abs(windowed[i] / windowedPeak - upper.Points[i].Y));
         }
 
-        // The test would notice a window-only transform: it reads differently.
         Assert.True(largestWindowedGap > 0.05, $"gap {largestWindowedGap}");
     }
 
     [Fact]
     public void EnvelopeOf_IsMemoizedPerArray_SoAWarmUpServesTheDraw()
     {
-        // The Virtual DSP computes the envelopes off the UI thread before the
-        // frame; the draw only stays cheap if it reads that very result.
+        // Envelopes are computed off the UI thread; the draw must read that result.
         IrPreviewTrace burst = MakeBurst("A", centerSample: 720, carrierHz: 500);
 
         double[] warmed = ImpulseWindowPreview.EnvelopeOf(burst.Samples);
@@ -203,8 +184,6 @@ public sealed class ImpulseWindowPreviewTests
     private static int EnvelopeGuides(PlotModel model, string channel) =>
         model.Series.OfType<LineSeries>().Count(item => item.Title == channel + " envelope");
 
-    // A Gaussian-modulated sine, 1 ms sigma, its carrier crossing zero at the
-    // envelope's crest.
     private static IrPreviewTrace MakeBurst(string title, int centerSample, double carrierHz)
     {
         const double sigmaSamples = SampleRate / 1_000.0;

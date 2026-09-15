@@ -1,10 +1,5 @@
 namespace Resonalyze;
 
-/// <summary>
-/// How the Time Alignment analysis limits its frequency band: the raw
-/// record as-is, an automatic window around the driver's own dominant band
-/// (detected from the record's smoothed response), or a hand-set window.
-/// </summary>
 public enum TimeAlignmentBandMode
 {
     FullBand,

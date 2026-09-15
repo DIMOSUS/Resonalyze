@@ -3,22 +3,11 @@ using System.Drawing.Drawing2D;
 
 namespace Resonalyze;
 
-/// <summary>
-/// A dark, mixing-console style vertical gain fader used by the EQ Wizard PEQ
-/// strips. It is a view/controller over a gain value in dB: the strip keeps a
-/// <see cref="DarkNumericUpDown"/> as the source of truth and mirrors this fader
-/// to it, so dragging the cap and typing the number stay in lock-step. The
-/// control paints its own dB scale beside the track (the upper/lower limits plus
-/// the 0 dB unity mark), so a band's boost or cut reads at a glance.
-/// </summary>
+/// <summary>Console-style gain fader for EQ Wizard PEQ strips; the strip's <see cref="DarkNumericUpDown"/> stays the source of truth.</summary>
 internal sealed class GainFader : Control
 {
-    // The track is offset to the right of centre to leave a gutter on the left
-    // for the dB scale labels; everything else is derived from the client size.
     private const float TrackCenterFraction = 0.62f;
 
-    // PageUp/PageDown step. Fixed: unlike Increment (which follows the paired
-    // numeric field), nothing configures a per-fader page size.
     private const double PageIncrement = 1.0;
 
     private double minimum = -15;
@@ -39,28 +28,20 @@ internal sealed class GainFader : Control
             ControlStyles.Selectable,
             true);
 
-        // The strips drive the tab order through the numeric fields; the fader is
-        // reached by clicking (which also focuses it, enabling the arrow keys).
+        // Reached by clicking; the tab order runs through the numeric fields.
         TabStop = false;
         BackColor = Color.FromArgb(44, 50, 60);
         ForeColor = UiPalette.TextSecondary;
         Font = new Font("Segoe UI", 7.5f, FontStyle.Regular, GraphicsUnit.Point);
     }
 
-    /// <summary>Raised whenever the value changes, whether by drag, wheel or keyboard.</summary>
     public event EventHandler? ValueChanged;
 
-    /// <summary>
-    /// Set by the owning strip: true when this fader's band is the selected one.
-    /// A click only jumps the value when the strip was already active; the click
-    /// that first selects the band does not move the fader.
-    /// </summary>
+    /// <summary>A click jumps the value only when the strip was already active; the selecting click does not move it.</summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal bool StripActive { get; set; }
 
-    // The strip configures these from code (mirroring the gain field), never from
-    // the designer, so keep them out of the property grid and designer serializer.
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public double Minimum
@@ -129,12 +110,7 @@ internal sealed class GainFader : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         Graphics graphics = e.Graphics;
-        // OUR OWN BackColor, which the strip keeps at its band tint
-        // (PeqSlotControl.ApplyStripColor). Not the parent's: this used to read it
-        // back when the strip's layout was the direct parent, and the fader host
-        // put between them since is Color.Transparent — clearing with an alpha-0
-        // colour writes black, which is what turned every strip's fader area into
-        // a black box.
+        // Own BackColor, not the parent's: the fader host is Transparent, and clearing with alpha 0 paints black.
         graphics.Clear(BackColor);
         if (Width <= 4 || Height <= 4)
         {
@@ -158,9 +134,6 @@ internal sealed class GainFader : Control
         float thumbY = ValueToY(value);
         bool enabled = Enabled;
 
-        // Fill the groove from the unity mark to the current value: green above
-        // (boost), red below (cut), so the departure from 0 dB is obvious. A
-        // disabled band fills in a flat, faint grey instead.
         float fillTop = Math.Min(zeroY, thumbY);
         float fillBottom = Math.Max(zeroY, thumbY);
         if (fillBottom - fillTop > 0.5f)
@@ -256,7 +229,6 @@ internal sealed class GainFader : Control
             graphics.DrawPath(capPen, capPath);
         }
 
-        // The bright grip line down the middle of the cap marks the exact value.
         Color gripColor = enabled
             ? Color.FromArgb(220, UiPalette.TextPrimarySoft)
             : Color.FromArgb(120, UiPalette.TextDisabled);
@@ -266,10 +238,7 @@ internal sealed class GainFader : Control
 
     protected override void WndProc(ref Message m)
     {
-        // Capture whether this fader's band was already the selected one the
-        // instant the button goes down — before the click's own focus/selection
-        // side effects flip it — so OnMouseDown can tell an activating click from
-        // a value-setting one regardless of when WinForms moves focus.
+        // Captured at button-down, before focus/selection side effects flip it.
         const int WM_LBUTTONDOWN = 0x0201;
         if (m.Msg == WM_LBUTTONDOWN)
         {
@@ -292,10 +261,6 @@ internal sealed class GainFader : Control
             Focus();
         }
 
-        // A click that first selects this fader's band only activates the strip;
-        // it must not jump the value. Once the band is the selected one — whether
-        // it was selected via this fader or one of its numeric fields — clicks
-        // drag it. This stops switching between slots from overwriting their gain.
         if (!wasActiveOnPress)
         {
             return;
@@ -351,8 +316,7 @@ internal sealed class GainFader : Control
 
         Value = value + (e.Delta > 0 ? increment : -increment);
 
-        // Consume the wheel so it steps the fader instead of bubbling to an
-        // AutoScroll parent that would scroll the whole strip bank.
+        // Consumed so the wheel does not scroll the AutoScroll strip bank.
         if (e is HandledMouseEventArgs handled)
         {
             handled.Handled = true;

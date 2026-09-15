@@ -3,9 +3,6 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// DSP helpers for waterfall and burst-decay generation.
-/// </summary>
 public static class WaterfallAnalysis
 {
     public static IReadOnlyList<BurstDecaySlice> BuildBurstDecayRawSlices(
@@ -33,9 +30,7 @@ public static class WaterfallAnalysis
         double frequencyStep = (double)measurement.SampleRate / spectrum.Length;
         double frequencyRatio = Math.Pow(2.0, 0.5 * smoothingOctaves);
 
-        // The grid never reaches past Nyquist: at sample rates below 40 kHz a
-        // fixed 20 kHz start would generate wavelet slices for frequencies the
-        // capture physically cannot contain.
+        // Below 40 kHz sample rate a fixed 20 kHz start would exceed Nyquist.
         double initFrequency = Math.Min(20_000.0, measurement.SampleRate * 0.49);
         var frequencies = new List<double>(100);
         while (initFrequency >= frequencyStep * 4 && initFrequency >= 20)
@@ -81,16 +76,8 @@ public static class WaterfallAnalysis
         return result;
     }
 
-    /// <summary>
-    /// Resamples one burst-decay envelope onto a periods axis.
-    /// <paramref name="measuredSamples"/> is how much of the raw envelope is
-    /// real data (the analysis window length): everything past it is the
-    /// zero-padding of the FFT, not an observed decay, so those points read
-    /// NaN instead of a fabricated cliff to the floor — at 20 Hz a 30-period
-    /// axis spans 1.5 s while a default window measures only 85 ms.
-    /// <paramref name="peakOffsetSamples"/> anchors period 0 on the IR peak
-    /// (the raw envelope starts a left-fade earlier, at the gate start).
-    /// </summary>
+    /// <summary>Points past <paramref name="measuredSamples"/> (FFT zero-padding) read NaN, not a fabricated decay.
+    /// <paramref name="peakOffsetSamples"/> anchors period 0 on the IR peak.</summary>
     public static IReadOnlyList<SignalPoint> ResampleBurstDecaySlice(
         IReadOnlyList<SignalPoint> rawData,
         double frequency,
@@ -128,10 +115,7 @@ public static class WaterfallAnalysis
 
         double periodsTime = periods / frequency;
         double periodsSamples = sampleRate * periodsTime;
-        // measuredSamples counts REAL samples, so the last measured index is
-        // measuredSamples − 1 — and the interpolation taps are clamped to it
-        // too, so points just inside the boundary do not blend the FFT's
-        // zero-padding into the last measured readings.
+        // Taps clamped to the last real sample so zero-padding never blends in.
         int lastMeasuredIndex = (int)Math.Min(
             Math.Min((long)measuredSamples - 1, rawData.Count - 1),
             int.MaxValue);

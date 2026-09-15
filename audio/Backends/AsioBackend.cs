@@ -1,10 +1,6 @@
 ﻿namespace Resonalyze.Audio;
 
-/// <summary>
-/// The ASIO backend. Microphone/loopback are absolute driver input channels;
-/// playback targets an output channel pair. Sessions keep the driver open across
-/// runs. Warm-up pre-rolls the driver with a low-amplitude signal.
-/// </summary>
+/// <summary>Microphone/loopback are absolute driver inputs; warm-up pre-rolls the driver with a low-amplitude signal.</summary>
 public sealed class AsioBackend : IAudioBackend
 {
     private const double WarmupAmplitude = 0.00025;

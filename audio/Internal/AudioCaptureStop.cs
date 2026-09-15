@@ -1,11 +1,6 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// The stop-and-wait machinery shared by the capture classes: request a device
-/// stop (a stop on an already-stopped device throws InvalidOperationException,
-/// which counts as stopped) and await the stopped signal with the shared
-/// timeout. Detaching and disposing the device stays with the caller.
-/// </summary>
+/// <summary>Stopping an already stopped device throws InvalidOperationException, which counts as stopped.</summary>
 internal static class AudioCaptureStop
 {
     public static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(3);

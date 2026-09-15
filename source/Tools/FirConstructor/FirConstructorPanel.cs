@@ -8,35 +8,10 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// The FIR Constructor: designs a linear-phase low-pass, high-pass or band-pass
-/// kernel and shows what it does — its magnitude and phase on one plot, and its
-/// impulse response on the other, with no measurement behind them. It stands alone (a rate of its own, a file on the way out) or edits
-/// one Virtual DSP channel side, which it returns the kernel to.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The panel holds either a DESIGN, from which the kernel is built on every edit, or a
-/// bare kernel that arrived without one — a file imported here, or a kernel a Virtual
-/// DSP side imported. A bare kernel is only shown: there is nothing to edit in it,
-/// and the first touch of any control replaces it with a design built from the
-/// controls.
-/// </para>
-/// <para>
-/// In a handoff the rate is the processor's and cannot be changed here. A design that
-/// arrives made at another rate is therefore rebuilt at the processor's on the way in,
-/// which is the rebuild the block's red FIR button asks for. Whatever the constructor
-/// held on its own before the first handoff is kept aside and put back when the
-/// session ends, so opening a channel never costs an unexported design.
-/// </para>
-/// <para>
-/// Building a kernel and its curves is not a UI-thread job: at the tap ceiling a design
-/// is a quarter-million-bin magnitude, an inverse FFT and 1400 evaluations of a
-/// 16k-tap response. Every edit therefore starts a rebuild in the background after a
-/// short settle, cancels the one before it, and only the latest lands; while one is
-/// pending the plots show the previous kernel and Export and Return wait.
-/// </para>
-/// </remarks>
+/// <summary>Designs linear-phase LP/HP/BP FIR kernels, standalone or for one Virtual DSP channel side.</summary>
+/// <remarks>Holds a design (rebuilt on every edit) or a bare imported kernel (shown only; any control edit replaces it).
+/// In a handoff the rate is the processor's; standalone work is set aside and restored when the session ends.
+/// Rebuilds run in the background after a short settle; only the latest lands, and Export/Return wait meanwhile.</remarks>
 public partial class FirConstructorPanel : UserControl
 {
     private static readonly int[] SampleRates = [44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
@@ -49,12 +24,9 @@ public partial class FirConstructorPanel : UserControl
     private const string PhaseAxisKey = "phase";
     private const string AmplitudeAxisKey = "amplitude";
 
-    // The phase is drawn only where the kernel passes something: below this many dB
-    // under its own loudest point, the angle is that of a few taps' rounding and flips
-    // between ±180° over the magnitude's slope.
+    // Phase is hidden this far below the peak: there it is tap rounding flipping between +-180.
     private const double PhaseFloorDb = 60;
 
-    // The deepest level the impulse's dB view goes to, under its largest tap.
     private const double ImpulseFloorDb = 120;
 
     private readonly PlotModel responseModel;
@@ -65,43 +37,30 @@ public partial class FirConstructorPanel : UserControl
     private readonly LineSeries impulseSeries;
     private readonly LinearAxis amplitudeAxis;
 
-    // The last curves that landed, kept so the impulse's scale can be switched without
-    // a rebuild.
     private Rendering? lastRendering;
 
-    // What the plots show: the kernel, and the design it was built from — null for a
-    // bare kernel. kernelName is the file a bare kernel came from.
+    // Design is null for a bare kernel.
     private FirFilter? kernel;
     private FirCrossoverDesign? design;
     private string? kernelName;
 
-    // The running Virtual DSP session; null when the constructor stands alone.
     private FirConstructorReturnToken? virtualDspToken;
     private string? sessionLabel;
 
-    // Set while the panel writes its own controls, so those writes are not edits.
     private bool suppressEdits;
 
-    // The rate the kernel on screen is read at: its design's, or the one selected when
-    // a bare kernel was shown.
     private int displayRate = 48_000;
 
-    // The background rebuild: the latest request's cancellation and generation. Only
-    // the generation current when a rebuild finishes may land.
+    // Only the generation current when a rebuild finishes may land.
     private CancellationTokenSource? rebuildCancellation;
     private int rebuildGeneration;
 
-    // The bare kernel most recently ASKED for, before its curves land — what a handoff
-    // has to keep aside even when the rebuild showing it is still running.
+    // Kept so a handoff can set it aside while its rebuild is still running.
     private FirFilter? requestedBareKernel;
     private string? requestedBareName;
 
-    // What the constructor held on its own when the first handoff began; put back when
-    // the session ends. Null while standalone.
     private StandaloneWork? standaloneWork;
 
-    // How long an edit settles before its rebuild starts: long enough to swallow a burst
-    // of wheel steps, short enough not to be seen.
     private const int RebuildSettleMs = 60;
 
     public FirConstructorPanel()
@@ -122,8 +81,6 @@ public partial class FirConstructorPanel : UserControl
             MinorGridlineStyle = LineStyle.Dot,
             Title = "dB"
         });
-        // The phase owns no gridlines — the magnitude's draw them — and says which curve
-        // it belongs to by its colour.
         PlotModelStyle.AddAxis(responseModel, new LinearAxis
         {
             Key = PhaseAxisKey,
@@ -182,9 +139,7 @@ public partial class FirConstructorPanel : UserControl
             Title = "Amplitude"
         };
         PlotModelStyle.AddAxis(impulseModel, amplitudeAxis);
-        // Decimated, as ImpulseLineSeries is: an imported kernel may carry 131072 taps,
-        // and a plain GDI+ line through every one of them takes seconds per repaint on
-        // the UI thread, whatever the background rebuild saved.
+        // Decimated: an imported kernel may carry 131072 taps, and GDI+ through all of them takes seconds per repaint.
         impulseSeries = new LineSeries
         {
             Color = KernelColor,
@@ -207,46 +162,27 @@ public partial class FirConstructorPanel : UserControl
         LayoutPlots();
     }
 
-    /// <summary>
-    /// Raised when the user sends the designed kernel back to Virtual DSP. The host
-    /// lands it and switches the mode, because the constructor knows nothing of other
-    /// panels.
-    /// </summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Action<FirConstructorReturnToken, FirFilter, FirCrossoverDesign>? ReturnFirRequested { get; set; }
 
-    /// <summary>
-    /// Raised when the user leaves the session without applying: nothing is written,
-    /// and the constructor keeps the design.
-    /// </summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Action? BackToVirtualDspRequested { get; set; }
 
-    /// <summary>The design on screen, or null when a bare kernel is shown or the controls cannot build one.</summary>
     internal FirCrossoverDesign? CurrentDesign => design;
 
-    /// <summary>The kernel on screen, or null when the controls cannot build one.</summary>
     internal FirFilter? CurrentKernel => kernel;
 
-    /// <summary>Whether a Virtual DSP session is running.</summary>
     internal bool InVirtualDspHandoff => virtualDspToken != null;
 
-    /// <summary>Whether a rebuild is still running; the kernel on screen is then the previous one.</summary>
     internal bool RebuildPending { get; private set; }
 
-    /// <summary>
-    /// Installs a channel side sent over by Virtual DSP: its design (rebuilt at the
-    /// processor's rate) or its bare kernel, or a first design started at the side's
-    /// IIR corners; the rate is locked to the processor's and the Return button shows.
-    /// </summary>
+    /// <summary>Installs a side's design (rebuilt at the processor rate), bare kernel, or a seed from its IIR corners.</summary>
     internal void BeginVirtualDspHandoff(FirConstructorHandoffRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // The first handoff keeps the standalone work aside; a handoff that replaces
-        // another session keeps what was set aside the first time.
         standaloneWork ??= virtualDspToken == null
             ? new StandaloneWork(
                 ReadControls(),
@@ -292,12 +228,7 @@ public partial class FirConstructorPanel : UserControl
         }
     }
 
-    /// <summary>
-    /// Ends the Virtual DSP session, if any: the Return button goes, the rate is the
-    /// constructor's own again, and the work the constructor held before the session —
-    /// its controls, its rate, a bare kernel it was showing — is put back. Back to
-    /// Virtual DSP does not end a session, so a design can still be returned later.
-    /// </summary>
+    /// <summary>Restores the pre-session standalone work. Back to Virtual DSP does not end a session.</summary>
     internal void EndVirtualDspHandoff()
     {
         virtualDspToken = null;
@@ -331,8 +262,6 @@ public partial class FirConstructorPanel : UserControl
             OnDesignEdited();
         }
     }
-
-    // ---------------------------------------------------------------- set-up
 
     private void InitializeChoices()
     {
@@ -411,7 +340,6 @@ public partial class FirConstructorPanel : UserControl
         checkBoxImpulseDb.CheckedChanged += (_, _) => ApplyImpulse(lastRendering, rescale: true);
     }
 
-    // The two plots share the height beside the controls, half each.
     private void LayoutPlots()
     {
         int gap = plotImpulse.Top - plotResponse.Bottom;
@@ -425,8 +353,6 @@ public partial class FirConstructorPanel : UserControl
         plotImpulse.Top = plotResponse.Bottom + gap;
         plotImpulse.Height = available - available / 2;
     }
-
-    // ---------------------------------------------------------------- editing
 
     private void OnFamilyChanged(DarkComboBox family, DarkComboBox slope)
     {
@@ -449,9 +375,7 @@ public partial class FirConstructorPanel : UserControl
         OnDesignEdited();
     }
 
-    // An even count is stepped to the odd one beside it in the direction the user was
-    // going, rather than refused: the arrows step by two from an odd start, so only a
-    // typed number lands here.
+    // Only a typed even count lands here (arrows step by two); stepped to the odd neighbour in the user's direction.
     private void OnTapsChanged()
     {
         if (suppressEdits)
@@ -476,10 +400,6 @@ public partial class FirConstructorPanel : UserControl
         OnDesignEdited();
     }
 
-    /// <summary>
-    /// Rebuilds the design and its kernel from the controls. A bare kernel on screen
-    /// is replaced — any touch of a control means "design one".
-    /// </summary>
     private void OnDesignEdited()
     {
         if (suppressEdits)
@@ -493,7 +413,6 @@ public partial class FirConstructorPanel : UserControl
         requestedBareName = null;
         if (candidate.Problem() is { } problem)
         {
-            // Nothing to build: whatever was running is stale, and the plots empty.
             CancelRebuild();
             design = null;
             kernel = null;
@@ -523,8 +442,6 @@ public partial class FirConstructorPanel : UserControl
         RebuildPending = false;
     }
 
-    // Builds (or takes) the kernel and its curves off the UI thread and lands them only
-    // if no later request has been made meanwhile.
     private async Task ShowAsync(FirCrossoverDesign? candidate, FirFilter? bare, string? name, bool settle)
     {
         rebuildCancellation?.Cancel();
@@ -559,7 +476,6 @@ public partial class FirConstructorPanel : UserControl
         }
         catch (OperationCanceledException)
         {
-            // A later edit took over; it owns the pending state.
         }
         catch (Exception exception) when (generation == rebuildGeneration && !IsDisposed)
         {
@@ -595,7 +511,6 @@ public partial class FirConstructorPanel : UserControl
             (int)numericTaps.Value,
             Selected(comboBoxSampleRate, 48_000));
 
-    // Writes a design into the controls; the rate stays what the caller selected.
     private void WriteControls(FirCrossoverDesign source)
     {
         SelectChoice(comboBoxType, source.Kind);
@@ -607,8 +522,6 @@ public partial class FirConstructorPanel : UserControl
         numericTaps.Value = numericTaps.ClampValue(source.TapCount);
     }
 
-    // The side's IIR crossover as a starting point: its kind and corners, and its
-    // family and slope where the constructor offers them.
     private void WriteSeed(CrossoverSpec seed)
     {
         if (seed.Kind is CrossoverKind.Off)
@@ -648,7 +561,6 @@ public partial class FirConstructorPanel : UserControl
         SelectChoice(comboBoxSampleRate, rate);
     }
 
-    // The slopes a family offers, with the nearest one to the slope asked for selected.
     private static void FillSlopes(DarkComboBox slope, CrossoverFilterFamily family, int preferred)
     {
         IReadOnlyList<int> slopes = FirCrossoverDesign.SupportedSlopes(family);
@@ -690,8 +602,6 @@ public partial class FirConstructorPanel : UserControl
         }
     }
 
-    // ---------------------------------------------------------------- session
-
     private void UpdateSessionControls(string? note = null)
     {
         bool linked = virtualDspToken != null;
@@ -705,11 +615,8 @@ public partial class FirConstructorPanel : UserControl
 
     private void UpdateActions()
     {
-        // Nothing leaves while a rebuild runs: the kernel on screen is then not the one
-        // the controls describe.
         buttonExport.Enabled = kernel != null && !RebuildPending;
-        // Only a DESIGN returns: a bare kernel came from a file, and a file is imported
-        // on the Virtual DSP side, where it keeps its name.
+        // Only a design returns; bare kernel files are imported on the Virtual DSP side, where they keep their name.
         buttonReturnToDsp.Enabled =
             virtualDspToken != null && kernel != null && design != null && !RebuildPending;
     }
@@ -721,8 +628,6 @@ public partial class FirConstructorPanel : UserControl
             ReturnFirRequested?.Invoke(token, built, designed);
         }
     }
-
-    // ---------------------------------------------------------------- files
 
     private void ImportFile()
     {
@@ -795,9 +700,6 @@ public partial class FirConstructorPanel : UserControl
         }
     }
 
-    // ---------------------------------------------------------------- plots
-
-    // A kernel with everything the panel draws of it, computed off the UI thread.
     private sealed record Rendering(
         FirFilter Kernel,
         DataPoint[] Magnitude,
@@ -807,7 +709,6 @@ public partial class FirConstructorPanel : UserControl
         DataPoint[] ImpulseDb,
         double DeviationDb);
 
-    // What the panel held on its own before a handoff (see standaloneWork).
     private sealed record StandaloneWork(
         FirCrossoverDesign Controls,
         int RateHz,
@@ -822,9 +723,7 @@ public partial class FirConstructorPanel : UserControl
     {
         double highHz = Math.Min(20_000, rate / 2.0);
         const int Points = 800;
-        // The delay the phase is referenced to: a symmetric kernel's exact centre,
-        // (N − 1) / 2 — half a sample off the grid for an even length, where the largest
-        // tap sits half a sample from it — and the peak for any other kernel.
+        // Symmetric kernel: exact centre (N-1)/2 (half-sample off grid for even N); otherwise the peak.
         double referenceSamples = shown.IsSymmetric ? shown.LinearPhaseDelaySamples : shown.PeakIndex;
         var magnitude = new DataPoint[Points + 1];
         var target = new List<DataPoint>(designed is { HasTargetMagnitude: true } ? Points + 1 : 0);
@@ -847,9 +746,7 @@ public partial class FirConstructorPanel : UserControl
                 target.Add(new DataPoint(frequency, targetDb));
             }
 
-            // With a linear-phase kernel's delay removed it reads 0° in its passband
-            // (180° past a zero) instead of a phase wrapped thousands of times; for a
-            // kernel that is not linear-phase the peak is simply the stated reference.
+            // Removing the linear-phase delay reads 0 deg in the passband instead of thousands of wraps.
             Complex aligned = response *
                 Complex.FromPolarCoordinates(1, Math.Tau * frequency * referenceSamples / rate);
             phase[i] = new DataPoint(
@@ -857,8 +754,6 @@ public partial class FirConstructorPanel : UserControl
                 response.Magnitude > 1e-9 ? aligned.Phase * 180 / Math.PI : double.NaN);
         }
 
-        // A NaN is a gap in the line: the phase is left out wherever the kernel passes
-        // nothing worth an angle.
         for (int i = 0; i <= Points; i++)
         {
             if (magnitude[i].Y < loudestDb - PhaseFloorDb)
@@ -867,8 +762,7 @@ public partial class FirConstructorPanel : UserControl
             }
         }
 
-        // The impulse against time from its peak: negative time is the ringing ahead of
-        // it, which is what a linear-phase kernel costs and what this plot is for.
+        // Negative time is the pre-ringing a linear-phase kernel costs.
         ReadOnlySpan<double> taps = shown.Taps;
         double largest = Math.Max(Math.Abs(taps[shown.PeakIndex]), double.Epsilon);
         var impulse = new DataPoint[taps.Length];
@@ -906,9 +800,7 @@ public partial class FirConstructorPanel : UserControl
         lastRendering = rendering;
     }
 
-    // The impulse at the scale the box asks for: the taps themselves, or their level in
-    // dB under the largest. A new kernel or a switched scale refits the view to it;
-    // the same kernel redrawn keeps the user's zoom.
+    // A new kernel or scale refits the view; the same kernel redrawn keeps the user's zoom.
     private void ApplyImpulse(Rendering? rendering, bool rescale)
     {
         impulseSeries.Points.Clear();
@@ -956,8 +848,6 @@ public partial class FirConstructorPanel : UserControl
         }
     }
 
-    // ---------------------------------------------------------------- choices
-
     private static T Selected<T>(DarkComboBox combo, T fallback) =>
         combo.SelectedItem is Choice<T> choice ? choice.Value : fallback;
 
@@ -973,7 +863,6 @@ public partial class FirConstructorPanel : UserControl
         }
     }
 
-    // A combo entry: the value, and the text the list shows for it.
     private sealed record Choice<T>(T Value, string Text)
     {
         public override string ToString() => Text;

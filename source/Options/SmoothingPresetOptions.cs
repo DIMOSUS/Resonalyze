@@ -23,12 +23,7 @@ internal static class SmoothingPresetOptions
                 ? "Psycho"
                 : $"1/{inverseOctaves}";
 
-    /// <summary>
-    /// Fills a smoothing combo with the width presets.
-    /// <paramref name="includePsychoacoustic"/> adds psychoacoustic magnitude
-    /// smoothing. Phase and group-delay combos must stay width-only because
-    /// cubic averaging is defined for amplitudes, not signed values.
-    /// </summary>
+    /// <summary>Phase and GD combos stay width-only: cubic averaging is defined for amplitudes, not signed values.</summary>
     public static void Configure(
         DarkComboBox comboBox, bool includePsychoacoustic = false)
     {
@@ -49,14 +44,8 @@ internal static class SmoothingPresetOptions
         comboBox.DropDownStyle = ComboBoxStyle.DropDownList;
     }
 
-    /// <summary>
-    /// Maps a stored smoothing value onto this preset list.
-    /// <paramref name="includePsychoacoustic"/> must match the combo's
-    /// <see cref="Configure"/> call: a combo WITH the psycho item keeps the
-    /// code as itself (snapping it to the numerically nearest width would land
-    /// on "Off"), a width-only combo decodes it to the plain base width so the
-    /// returned value always resolves to an existing item.
-    /// </summary>
+    /// <summary><paramref name="includePsychoacoustic"/> must match <see cref="Configure"/>: with the item the code is kept
+    /// (nearest width would be Off); without it the code decodes to its base width.</summary>
     public static int Normalize(
         double inverseOctaves, bool includePsychoacoustic = true)
     {

@@ -78,7 +78,6 @@ public sealed class TargetOverlayCurveBuilderTests
     [Fact]
     public void BuildDeviation_FollowsTheSelectedMode()
     {
-        // Source sits 4 dB above a flat 0 dB target everywhere.
         OverlayPoint[] source =
         [
             new OverlayPoint(100, 4),

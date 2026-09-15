@@ -3,20 +3,14 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The rounded card the app draws its panels as. Nothing cuts the corners away —
-/// they are painted with the colour behind the control — so what the tests below
-/// look at is the three colours a card is made of and where each one lands:
-/// the colour behind in the corner, the outline on the edge, the surface inside.
-/// </summary>
+/// <summary>Corners are painted with the colour behind the control, not cut away.</summary>
 public sealed class RoundedSurfaceTests
 {
     private static readonly Color Outside = Color.FromArgb(10, 20, 30);
     private static readonly Color Fill = Color.FromArgb(200, 100, 50);
     private static readonly Color Border = Color.FromArgb(0, 200, 120);
 
-    // A radius stated in 96-DPI pixels has to grow with the display, or it shrinks
-    // against the text beside it. 6 logical pixels at 125% is 7.5, which rounds to 8.
+    // 6 logical px at 125% is 7.5, which rounds to 8.
     [Theory]
     [InlineData(96, 6)]
     [InlineData(120, 8)]
@@ -25,8 +19,7 @@ public sealed class RoundedSurfaceTests
     public void ScaleRadius_FollowsTheDisplay(int dpi, int expected) =>
         Assert.Equal(expected, RoundedSurface.ScaleRadius(6, dpi, new Size(400, 300)));
 
-    // Past half the shorter side the four arcs would meet and the path would fold
-    // on itself, so a strip only a few pixels tall clamps rather than folds.
+    // Past half the shorter side the arcs would meet and the path fold.
     [Fact]
     public void ScaleRadius_StopsAtHalfTheShorterSide() =>
         Assert.Equal(5, RoundedSurface.ScaleRadius(20, 96, new Size(40, 10)));
@@ -46,10 +39,7 @@ public sealed class RoundedSurfaceTests
         Assert.Equal(Outside.ToArgb(), surface.GetPixel(39, 29).ToArgb());
     }
 
-    // One pixel of the outline colour exactly, on the outermost row and column.
-    // Anti-aliased GDI+ places a line's colour by coverage, and a half-pixel error
-    // in either direction spreads it over two rows at a fraction of its strength —
-    // which is what the outline looked like before the pixel offset was set.
+    // Anti-aliased GDI+ spreads a half-pixel-off line over two rows; hence the pixel offset.
     [Fact]
     public void Paint_DrawsTheOutlineOnTheEdgeItself()
     {
@@ -63,9 +53,6 @@ public sealed class RoundedSurfaceTests
         Assert.Equal(Fill.ToArgb(), surface.GetPixel(20, 15).ToArgb());
     }
 
-    // No radius is a square card, not a cut-away one: nothing of the colour behind
-    // is left in the corners. Read on the unbordered surface, where the corner is
-    // one flat colour rather than whatever coverage the outline's mitre gives it.
     [Fact]
     public void Paint_WithoutARadiusFillsTheCornersToo()
     {
@@ -86,8 +73,6 @@ public sealed class RoundedSurfaceTests
         Assert.Equal(Outside.ToArgb(), surface.GetPixel(0, 0).ToArgb());
     }
 
-    // The corners show what is BEHIND the control, which a transparent parent is
-    // not: the walk has to carry on to the first parent that paints something.
     [Fact]
     public void ColorBehind_LooksPastTransparentParents()
     {
@@ -100,8 +85,6 @@ public sealed class RoundedSurfaceTests
         Assert.Equal(Outside.ToArgb(), RoundedSurface.ColorBehind(panel).ToArgb());
     }
 
-    // With nothing behind it there is no honest answer, and the surface's own
-    // colour is the one that draws square corners rather than a guessed frame.
     [Fact]
     public void ColorBehind_WithoutAParentIsTheControlsOwnColour()
     {
@@ -110,8 +93,6 @@ public sealed class RoundedSurfaceTests
         Assert.Equal(Fill.ToArgb(), RoundedSurface.ColorBehind(panel).ToArgb());
     }
 
-    // The control end of it: a panel realised in a form paints the form's colour
-    // into its corners and its own inside them.
     [Fact]
     public void RoundedPanel_PaintsItsParentsColourIntoTheCorners() =>
         StaTest.Run(() =>

@@ -2,9 +2,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-// Two promises about shelves leaving the EQ Wizard: a format that cannot state
-// one never receives it, and the tuning sheet prints them apart from the bells
-// without renumbering either.
 public sealed class EqWizardShelfExportTests
 {
     private static EqualizationCurve Mixed() => new(
@@ -42,8 +39,6 @@ public sealed class EqWizardShelfExportTests
 
         Assert.True(result.Success);
         Assert.NotNull(written);
-        // Both bells survive; neither shelf is written as something the reader
-        // would realize with a different shape.
         Assert.Contains("1000", written);
         Assert.Contains("2500", written);
         Assert.DoesNotContain("80.0", written);
@@ -58,13 +53,11 @@ public sealed class EqWizardShelfExportTests
             EqWizardImportExportCoordinator.CountShelvingBandsDroppedBy(
                 TargetFor(new EasyEffectsFormat()), Mixed()));
 
-        // Nothing to warn about when the format carries them...
         Assert.Equal(
             0,
             EqWizardImportExportCoordinator.CountShelvingBandsDroppedBy(
                 TargetFor(new EqualizerApoFormat()), Mixed()));
 
-        // ...nor when the bank holds no shelf at all.
         Assert.Equal(
             0,
             EqWizardImportExportCoordinator.CountShelvingBandsDroppedBy(
@@ -92,9 +85,7 @@ public sealed class EqWizardShelfExportTests
             IReadOnlyList<PdfSheet.NumberedBand> allPass) =
             PdfSheet.SplitByShape(Mixed().Bands);
 
-        // Filter 2 is a shelf and filter 3 a bell; each keeps the number the panel
-        // shows and an exported profile writes, rather than being renumbered 1..n
-        // inside its own table.
+        // Each filter keeps the panel's number rather than being renumbered inside its table.
         Assert.Equal(new[] { 1, 3 }, peaking.Select(entry => entry.Number));
         Assert.Equal(new[] { 2, 4 }, shelving.Select(entry => entry.Number));
         Assert.Empty(allPass);
@@ -102,10 +93,7 @@ public sealed class EqWizardShelfExportTests
         Assert.Equal(PeqBandType.HighShelf, shelving[1].Band.Type);
     }
 
-    // A settings or project file can carry a number no enum member matches. Whatever
-    // the app decides it is, it has to decide the SAME thing everywhere: the filter
-    // that gets realized, the profile that gets exported and the table it is printed
-    // in must not disagree about whether it is a shelf.
+    // An out-of-range stored shape must be a bell to the realizer, the exporter and the sheet alike.
     [Fact]
     public void AnUnknownShapeIsABellToEveryConsumerAlike()
     {
@@ -113,17 +101,14 @@ public sealed class EqWizardShelfExportTests
         var curve = new EqualizationCurve(new[] { unknown });
 
         Assert.False(unknown.Type.IsShelving());
-        // Realized as a bell rather than throwing out of the audio path...
         Assert.Equal(
             PeakingBiquad.Compute(unknown, 48_000),
             PeqBiquad.Compute(unknown, 48_000));
-        // ...kept by an export that drops shelves...
         Assert.Equal(
             0,
             EqWizardImportExportCoordinator.CountShelvingBandsDroppedBy(
                 TargetFor(new EasyEffectsFormat()), curve));
         Assert.Single(EqWizardImportExportCoordinator.WithoutShelvingBands(curve).Bands);
-        // ...and printed in the bell table, not labelled as a shelf or an all-pass.
         (IReadOnlyList<PdfSheet.NumberedBand> peaking,
             IReadOnlyList<PdfSheet.NumberedBand> shelving,
             IReadOnlyList<PdfSheet.NumberedBand> allPass) = PdfSheet.SplitByShape(curve.Bands);

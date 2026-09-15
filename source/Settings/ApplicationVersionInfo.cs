@@ -30,7 +30,6 @@ internal static class ApplicationVersionInfo
     public static bool IsOlderThan(string otherVersion) =>
         IsOlderThan(GetInformationalVersion(), otherVersion);
 
-    // Exposed for tests: pure comparison of two raw version strings.
     internal static bool IsOlderThan(string currentRawVersion, string otherVersion)
     {
         if (!TryParseComparableVersion(currentRawVersion, out Version? current, out string? currentPrerelease) ||
@@ -53,9 +52,7 @@ internal static class ApplicationVersionInfo
         return ComparePrereleaseIdentifiers(currentPrerelease, otherPrerelease) < 0;
     }
 
-    // SemVer 2.0 §11: a prerelease sorts before its release; identifiers are compared
-    // dot by dot — numerics numerically, alphanumerics ordinally, numeric before
-    // alphanumeric — and a shorter identifier list sorts before a longer equal prefix.
+    // SemVer 2.0 §11 prerelease precedence.
     private static int ComparePrereleaseIdentifiers(string? current, string? other)
     {
         if (current == null)

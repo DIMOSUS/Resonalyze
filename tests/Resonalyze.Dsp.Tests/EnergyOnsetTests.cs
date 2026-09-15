@@ -6,8 +6,6 @@ public sealed class EnergyOnsetTests
 {
     private const int SampleRate = 48_000;
 
-    // The field midbass pair's band, analyzed exactly as the engine analyzes a
-    // 65-200 Hz junction or link band.
     private static TimeAlignmentAnalysisOptions MidbassBand => new()
     {
         UseBandpassWindow = true,
@@ -27,7 +25,6 @@ public sealed class EnergyOnsetTests
         return signal;
     }
 
-    // Deterministic Gaussian noise added to a copy of the signal.
     private static double[] WithNoise(double[] signal, double sigma, int seed)
     {
         var noisy = (double[])signal.Clone();
@@ -42,9 +39,7 @@ public sealed class EnergyOnsetTests
         return noisy;
     }
 
-    // A midbass front as the field measures it: an impulse through the pair's
-    // own crossover (BW36 high-pass 65 Hz, BW48 low-pass 200 Hz), whose band
-    // envelope climbs for milliseconds rather than peaking at once.
+    // Field midbass front: an impulse through BW36 HP 65 Hz / BW48 LP 200 Hz, climbing for milliseconds.
     private static Complex[] MidbassFront(double atMs)
     {
         var impulse = new Complex[16_384];
@@ -59,7 +54,6 @@ public sealed class EnergyOnsetTests
             SampleRate);
     }
 
-    // The front plus a stronger arrival behind it (a reflection, a mode).
     private static double[] FrontWithLaterArrival(double gapMs, double laterAmplitude)
     {
         Complex[] front = MidbassFront(30.0);
@@ -80,10 +74,7 @@ public sealed class EnergyOnsetTests
         TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
             Pulses((30.0, 1.0)), SampleRate, MidbassBand);
 
-        // A zero-phase band-limited pulse is symmetric around its centre, so
-        // the first-arrival peak sits ON the pulse and a tenth of its energy
-        // has arrived before the centre — inside the kernel's own rise, which
-        // is ~1/bandwidth (7 ms for 65-200 Hz).
+        // A zero-phase pulse is symmetric: a tenth of its energy arrives within the kernel's ~7 ms rise before the centre.
         Assert.InRange(result.FirstArrivalDelayMilliseconds, 29.5, 30.5);
         Assert.True(result.EnergyOnsetDelayMilliseconds < result.FirstArrivalDelayMilliseconds);
         Assert.InRange(result.EnergyOnsetDelayMilliseconds, 22.0, 30.0);
@@ -106,14 +97,7 @@ public sealed class EnergyOnsetTests
             2.9, 3.1);
     }
 
-    // The field coin, in the small: the same midbass front in both channels,
-    // each followed by the same stronger arrival — one 8 ms behind the front,
-    // the other 7 ms. At 8 ms the front's hump stays a local maximum of the
-    // band envelope and the first-peak read sits on the front; at 7 ms the
-    // hump melts into the climb toward the later arrival, and the first peak
-    // jumps 5 ms to that arrival. The fronts are identical, so the true split
-    // is zero: the running energy reads it within a fraction of the band's
-    // rise time, the first peak reads a split that no geometry produced.
+    // Identical fronts, stronger arrival 8 vs 7 ms behind: at 7 ms the first peak jumps 5 ms; the energy onset reads zero split.
     [Fact]
     public void Analyze_EnergyOnsetReadsTheFrontWhereTheFirstPeakMeltsIntoTheLaterArrival()
     {
@@ -128,17 +112,10 @@ public sealed class EnergyOnsetTests
         Assert.InRange(
             Math.Abs(melted.EnergyOnsetDelayMilliseconds - humped.EnergyOnsetDelayMilliseconds),
             0.0, 0.5);
-        // ... and the onset is a front, not the later arrival: before the
-        // front's own peak.
         Assert.True(humped.EnergyOnsetDelayMilliseconds < humped.FirstArrivalDelayMilliseconds);
     }
 
-    // The onset is a property of the signal, not of the record's noise: two
-    // identical drivers measured with different noise floors must read the
-    // same front. One channel is clean, the other carries a floor ~45 dB
-    // down — above the engine's admission for the onset — and 60 ms of noisy
-    // pre-roll ahead of the front, where an ungated integral would already
-    // have collected a share of the total.
+    // A floor ~45 dB down with 60 ms noisy pre-roll must not move the onset.
     [Fact]
     public void Analyze_EnergyOnsetDoesNotMoveWithTheRecordsNoiseFloor()
     {
@@ -157,13 +134,7 @@ public sealed class EnergyOnsetTests
             -0.1, 0.1);
     }
 
-    // The admission itself, on a front shaped like the field's: a midbass
-    // front through its crossover with a 1.4× arrival 7 ms behind it, under
-    // white noise that leaves the record at ~30 dB. The onset holds within a
-    // fraction of the band's rise while the first PEAK has already broken to
-    // the noise — which is why the admission sits at 30 and not higher: every
-    // decibel above what the onset needs hands the pair back to the peaks,
-    // and on the field pair the peaks are the coin.
+    // At ~30 dB SNR the onset holds while the first peak breaks; every dB of admission above that returns the pair to the peaks.
     [Fact]
     public void Analyze_EnergyOnsetHoldsAtTheAdmissionSnrOnAShapedFront()
     {
@@ -184,9 +155,7 @@ public sealed class EnergyOnsetTests
             65, 200, cleanRead.SignalToNoiseDecibels, noisyRead.SignalToNoiseDecibels));
     }
 
-    // ... and well below the admission the onset is NOT trusted, because at
-    // that SNR the noise ahead of the front does reach the gate and the read
-    // drifts — this is what EnergyOnsetMinimumSnrDb exists for.
+    // Below the admission the pre-front noise reaches the gate: why EnergyOnsetMinimumSnrDb exists.
     [Fact]
     public void Analyze_EnergyOnsetDriftsUnderTheAdmissionSnr_WhichTheLinkGuards()
     {
@@ -209,20 +178,16 @@ public sealed class EnergyOnsetTests
     [Fact]
     public void LinkReadsEnergyOnset_IsDecidedByTheBandCentreAndBothSidesSnr()
     {
-        // The field link and junction bands of the low end...
         Assert.True(AutoAlignmentEngine.LinkBandReadsEnergyOnset(65, 200));
         Assert.True(AutoAlignmentEngine.LinkBandReadsEnergyOnset(33, 130));
         Assert.True(AutoAlignmentEngine.LinkBandReadsEnergyOnset(100, 400));
         Assert.True(AutoAlignmentEngine.LinkBandReadsEnergyOnset(70, 180));
-        // ... against a mid pair's link band, whose low edge sits under the
-        // centre rule's figure but whose 0.7 ms rise makes the peak the better
-        // instrument, and the bands above the localization edge.
+        // A mid pair's 0.7 ms rise makes the peak the better instrument there.
         Assert.False(AutoAlignmentEngine.LinkBandReadsEnergyOnset(200, 1610));
         Assert.False(AutoAlignmentEngine.LinkBandReadsEnergyOnset(300, 1610));
         Assert.False(AutoAlignmentEngine.LinkBandReadsEnergyOnset(1800, 20_000));
 
-        // The SNR guard is for BOTH sides: one noisy side sends the whole link
-        // back to first peaks, never one side each.
+        // One noisy side sends the whole link back to first peaks.
         Assert.True(AutoAlignmentEngine.LinkReadsEnergyOnset(65, 200, 60, 45));
         Assert.True(AutoAlignmentEngine.LinkReadsEnergyOnset(65, 200, 60, 32));
         Assert.False(AutoAlignmentEngine.LinkReadsEnergyOnset(65, 200, 60, 25));
@@ -265,18 +230,12 @@ public sealed class EnergyOnsetTests
             -0.2, 0.2);
     }
 
-    // The onset decision is taken from the full-band reads; the upper-half
-    // probe that certifies them can be far noisier (a steep low-pass leaves
-    // little above the corner). Under the onset admission such a probe is no
-    // witness either way: it must not convict a clean onset as a latch, nor
-    // certify it — the read stays uncertified, as with an unmeasurable half.
+    // A probe under the onset admission neither convicts nor certifies an onset read.
     [Fact]
     public void ClassifyLinkArrival_LeavesAnOnsetReadUncertifiedWhenItsProbeIsTooNoisy()
     {
         TimeAlignmentAnalysisResult full = TimeAlignmentAnalysis.Analyze(
             Pulses((60.0, 1.0)), SampleRate, MidbassBand);
-        // A probe read that would CONVICT (it sits 10 ms ahead of the full
-        // read) but carries only 25 dB of SNR.
         TimeAlignmentAnalysisResult noisyProbe = full with
         {
             FirstArrivalDelayMilliseconds = full.FirstArrivalDelayMilliseconds - 10.0,
@@ -290,7 +249,6 @@ public sealed class EnergyOnsetTests
         Assert.Equal(
             AutoAlignmentEngine.ArrivalCertificate.Unverified,
             AutoAlignmentEngine.ClassifyLinkArrival(full, noisyProbe, 1.0, energyOnset: true));
-        // A peak read keeps the ordinary rule: 25 dB is a measurable half.
         Assert.Equal(
             AutoAlignmentEngine.ArrivalCertificate.Latched,
             AutoAlignmentEngine.ClassifyLinkArrival(full, noisyProbe, 1.0, energyOnset: false));

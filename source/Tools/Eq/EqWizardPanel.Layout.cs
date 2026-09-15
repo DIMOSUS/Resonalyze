@@ -2,27 +2,15 @@ namespace Resonalyze;
 
 public partial class EqWizardPanel
 {
-    // The designer's arrangement, captured before anything moves it: the panel's
-    // client size and the plot's size. Everything this pass does is a DELTA on
-    // these, never an absolute coordinate — the designer's numbers are the ones
-    // the font autoscale has already put into the running DPI's units, and a
-    // coordinate written here would be stuck at 96 DPI (see AGENTS.md).
+    // Layout is DELTAS on the designer's (already DPI-scaled) sizes; absolute coordinates would stick at 96 DPI (see AGENTS.md).
     private Size baselineClientSize;
     private Size baselinePlotSize;
 
-    // The two blocks that sit at the bottom-left of the panel and keep their own
-    // size: the PEQ strip bank and the auto-tune box. Held as the designer's gap
-    // below the plot's bottom edge, so a taller window moves them down by exactly
-    // what the plot grew and the gaps are what survives every window size.
-    // Measured from the plot's CURRENT bottom on each pass, which keeps them right
-    // while the panel is scrolled (AutoScroll shifts the children out from under
-    // their own coordinates, and both ends of the offset shift together).
+    // Designer gap below the plot, measured from its CURRENT bottom each pass so it holds while scrolled.
     private readonly List<(Control Control, int Offset)> bottomRiders = [];
 
     private bool layoutInProgress;
 
-    // Captured at the end of construction, when the controls still stand where the
-    // designer put them.
     private void CaptureLayoutBaseline()
     {
         baselineClientSize = ClientSize;
@@ -34,20 +22,8 @@ public partial class EqWizardPanel
         }
     }
 
-    // Container autoscaling (a font change, a DPI move) scales the controls; the
-    // baseline is in the same units and has to follow, or the next layout pass
-    // would add 96-DPI deltas to scaled controls.
-    //
-    // But only when the pass in question actually moves the children, and one of
-    // the two this panel gets does not. Its OWN auto-scale rearranges everything
-    // inside it; the shell's cascade afterwards resizes the panel ALONE, because
-    // ContainerControl.ScaleChildren is false for a container that declares an
-    // AutoScaleMode. Scaled on both, the baseline ends a whole factor ahead of the
-    // arrangement it is supposed to measure: at 125% it read 1.5625, so the stretch
-    // sized the plot for a panel a quarter wider than the one it sits in and the
-    // panel came up with both scrollbars and the plot cut off at the right.
-    // The panel's own pass is the one where its declared dimensions still differ
-    // from the current ones — the auto-scale is what brings them into step.
+    // Scale the baseline only on the panel's OWN autoscale (declared size still differs from current); the shell's
+    // cascade resizes the panel alone, and scaling on both left the baseline a whole factor ahead (1.5625 at 125%).
     protected override void ScaleControl(SizeF factor, BoundsSpecified specified)
     {
         bool rearrangesChildren = AutoScaleDimensions != CurrentAutoScaleDimensions;
@@ -57,12 +33,7 @@ public partial class EqWizardPanel
 
         if (!rearrangesChildren)
         {
-        // base.ScaleControl scales Padding along with the bounds, and the padding
-        // is part of the ARRANGEMENT: anchored controls are placed against the
-        // padded rectangle. So the pass that leaves the arrangement alone has to
-        // leave the padding alone too — scaled on both it doubles, 6 -> 12 -> 24
-        // at 192 DPI, and every anchored control ends up 12 px inside a rectangle
-        // that starts 12 px further in (#120).
+        // Padding is part of the arrangement: scaling it on both passes doubles it (6 -> 12 -> 24 at 192 DPI).
             Padding = padding;
             return;
         }
@@ -85,14 +56,9 @@ public partial class EqWizardPanel
         (int)Math.Round(size.Width * factor.Width),
         (int)Math.Round(size.Height * factor.Height));
 
-    // BEFORE the base pass, not after: the base is what sizes the scrollable area
-    // from the children (AutoScroll) and settles the anchored ones, and it has to
-    // see the plot at its final size.
+    // Before the base pass, which sizes the AutoScroll area and anchors from the plot's final size.
     protected override void OnLayout(LayoutEventArgs e)
     {
-        // Resizing a child re-enters this. The guard keeps the stretch itself from
-        // nesting, while the base pass below still runs for every one of those
-        // calls, which is what keeps the scroll area in step.
         if (!layoutInProgress)
         {
             layoutInProgress = true;
@@ -109,17 +75,7 @@ public partial class EqWizardPanel
         base.OnLayout(e);
     }
 
-    /// <summary>
-    /// Spends the room a bigger window gives the panel on the plot alone: it takes
-    /// the extra width out to the panel's right edge and the extra height down to
-    /// the PEQ bank, which rides down with it at the designer's gap. The bank and
-    /// the auto-tune box keep their size and stay in the bottom-left corner: the
-    /// bank is a FIXED 16x2 grid of strips on percent styles, so room given to it
-    /// would enlarge the strips rather than show more of them, and the curve being
-    /// equalized is what a bigger window is opened for. Below the designer's size
-    /// nothing shrinks: the panel scrolls instead (AutoScroll), the way it did
-    /// before it could stretch at all.
-    /// </summary>
+    /// <summary>Extra room goes to the plot only (the bank is a fixed 16x2 percent grid); below designer size the panel scrolls.</summary>
     private void ApplyStretchLayout()
     {
         if (baselineClientSize.IsEmpty || bottomRiders.Count == 0)

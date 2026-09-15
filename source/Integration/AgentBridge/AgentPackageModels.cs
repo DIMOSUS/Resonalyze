@@ -1,10 +1,6 @@
 namespace Resonalyze.Integration.AgentBridge;
 
-// The wire shape of a package, one record per JSON object. Property names go
-// out camelCase through the serializer; a null property is not written, which is
-// how "unavailable" and "not applicable" both read: the field is simply absent,
-// and where the absence needs a reason, a sibling `unavailableReason` says it.
-// Normative description with a full example: docs/agent/PROTOCOL.md.
+// Package wire shape (normative: docs/agent/PROTOCOL.md). Null properties are not written: absent means unavailable or not applicable, with `unavailableReason` where a reason is needed.
 
 internal sealed record AgentPackage(
     string Kind,
@@ -24,9 +20,6 @@ internal sealed record AgentPackage(
     IReadOnlyList<AgentPackageJunction> Junctions,
     IReadOnlyList<AgentPackageStereo> Stereo,
     IReadOnlyList<AgentPackageGroup> Groups,
-    // The densities this package's curves were sampled at (see AgentSampling):
-    // nominal when it fit whole, thinner where a large installation had to be
-    // brought under the size target. Figures are unaffected by it.
     AgentSampling Sampling,
     IReadOnlyList<string> Omitted);
 
@@ -43,11 +36,6 @@ internal sealed record AgentPackageProcessor(
     string MaxDelaySource,
     int? PeqBandsPerChannel);
 
-/// <param name="Operations">
-/// The `op` names this build can execute. The protocol describes more than a
-/// given build runs, so a reply is written against this list: an operation
-/// missing from it is read and reviewed, then refused.
-/// </param>
 internal sealed record AgentPackageLimits(
     double[] GainDb,
     double GainStepDb,
@@ -59,15 +47,9 @@ internal sealed record AgentPackageLimits(
     IReadOnlyDictionary<string, int[]> Slopes,
     double[] ChebyshevRippleDb,
     IReadOnlyList<string> Operations,
-    // What a `probe` operation may ask this build to read, and how much of it at
-    // once — a reply asking for a probe not on this list is refused as one
-    // asking for an operation the build does not run.
     IReadOnlyList<string> Probes,
     int ProbeVariantsPerImport,
     int ProbeChanges,
-    // The densest a `series` probe may ask for: points per octave on the
-    // frequency grids, rows of the two lag series — and how many such probes an
-    // import reads (one; it already covers everything it names).
     int SeriesPointsPerOctave,
     int SeriesRows,
     int SeriesProbesPerImport);
@@ -90,20 +72,7 @@ internal sealed record AgentPackageAnalysis(
     double StereoLevelDifferenceDb,
     double RearFillOffsetMs);
 
-/// <summary>
-/// Whether the tune is being judged on spatial averages, and if not, why not —
-/// stated as one word so the assistant does not have to count captures across
-/// the channels: <c>none</c> (no shown channel carries one),
-/// <c>capturedNotShown</c> (captures exist, no hybrid curve is in the package),
-/// <c>partial</c> (hybrid curves for some shown channels), <c>active</c> (for
-/// all). Counted over the channels the current view shows — the ones whose
-/// curves the package's diagnostics are built from — and "drawn" is read off
-/// the hybrid curves actually present, not off what is attached.
-/// <see cref="SmoothingInverseOctaves"/> is the hybrid curves' and sums' own
-/// smoothing: the package's grid width rather than its psychoacoustic one,
-/// because the manual reads an average with the smoothing off, and off cannot
-/// travel on a grid.
-/// </summary>
+/// <summary>Spatial-average status as one word (none, capturedNotShown, partial, active) over the shown channels. See docs/tech/agent-bridge.md#package-smoothing.</summary>
 internal sealed record AgentPackageSpatialAverage(
     string? Mode,
     bool HybridTicked,
@@ -158,41 +127,18 @@ internal sealed record AgentPackageDsp(
     bool InvertPolarity,
     AgentPackageCrossover Crossover,
     AgentPackagePeq Peq,
-    // The channel phase control where one is dialled in, and absent otherwise —
-    // most devices have no such control and every channel would carry a zero. It
-    // is stated at the channel's own crossover (the low-pass on a subwoofer, the
-    // high-pass otherwise), so it cannot be read without the crossover above it.
+    // Absent where not dialled in; stated at the channel's own crossover (low-pass on a sub, else high-pass).
     double? PhaseRotationDeg = null,
-    // The channel's FIR kernel where one is loaded, and absent otherwise. Read-only
-    // like the phase control: no operation writes it, and it is already inside every
-    // curve the package carries.
+    // Read-only, and already inside every curve.
     AgentPackageFir? Fir = null);
 
-/// <summary>
-/// A loaded FIR kernel as the package describes it: the file by name (the path is
-/// the user's machine's business), its length, and where its peak sits in time at
-/// the processor's rate. A peak position, NOT a group delay: for a conventional
-/// linear-phase kernel it is roughly the bulk delay the kernel adds, and already
-/// inside every curve; for a minimum-phase kernel it says nothing about delay. The
-/// protocol tells the assistant exactly that, so it never "compensates" a delay
-/// the kernel does not have.
-/// </summary>
-/// <remarks>
-/// <see cref="Crossover"/> is present only for a kernel designed in the FIR
-/// Constructor, and read-only like the rest: the assistant sees where a side is cut
-/// by a kernel, and no operation designs one.
-/// </remarks>
+/// <summary>A loaded FIR kernel. PeakMs is a peak position, NOT a group delay (see docs/tech/agent-bridge.md#fir-in-the-package); Crossover is present only for FIR Constructor kernels.</summary>
 internal sealed record AgentPackageFir(
     string File,
     int Taps,
     double PeakMs,
     AgentPackageFirCrossover? Crossover = null);
 
-/// <summary>
-/// The linear-phase crossover a FIR kernel was designed as: its kind and the edges
-/// it uses (the family and slope matter only for the IIR-magnitude method), the
-/// method and window, the rate it was designed at, and the delay it adds there.
-/// </summary>
 internal sealed record AgentPackageFirCrossover(
     string Kind,
     AgentPackageEdge? HighPass,
@@ -213,7 +159,7 @@ internal sealed record AgentPackageEdge(
     int SlopeDbPerOctave,
     double RippleDb);
 
-/// <param name="PeakDb">The net response's highest point, preamp included; above 0 dB is a headroom problem.</param>
+/// <param name="PeakDb">Net response maximum, preamp included; above 0 dB is a headroom problem.</param>
 internal sealed record AgentPackagePeq(
     double PreampDb,
     string Hash,
@@ -230,12 +176,8 @@ internal sealed record AgentPackageSide(
     IReadOnlyList<string> Channels,
     AgentSeries? SumDb,
     AgentPackageLoss? TotalSumLoss,
-    // The same total through the direct-sound window; see AgentPackageJunction.
     AgentPackageLoss? TotalSumLossDirect,
-    // The median of sum minus target over the broadband grid: where the target
-    // level datum sits against what the side actually plays. Sign: positive =
-    // the side plays above the target. The hybrid twin reads the same off the
-    // sum the hybrid view draws, while it is drawn.
+    // Median of sum minus target over the broadband grid; positive = the side plays above the target.
     double? SumVsTargetDb,
     double? HybridSumVsTargetDb,
     string? UnavailableReason);
@@ -250,9 +192,7 @@ internal sealed record AgentPackageJunction(
     double CrossoverHz,
     double[] BandHz,
     AgentPackageLoss? SumLoss,
-    // The loss through the direct-sound window (the panel's FDW-8 read), beside
-    // the full one whatever the panel's selector shows: two families of numbers,
-    // never compared with each other — the guide says which answers what.
+    // Direct-sound (FDW-8) loss beside the full one; the two families are never compared with each other.
     AgentPackageLoss? SumLossDirect,
     AgentPackagePhase? Phase,
     IReadOnlyList<AgentPackageLobe>? Lobes,
@@ -309,5 +249,4 @@ internal sealed record AgentPackageGroup(
     double[] BandHz,
     bool LevelFromSpatialAverage);
 
-/// <summary>A columnar series: the column names once, then one row per frequency or lag.</summary>
 internal sealed record AgentSeries(IReadOnlyList<string> Columns, IReadOnlyList<double?[]> Rows);

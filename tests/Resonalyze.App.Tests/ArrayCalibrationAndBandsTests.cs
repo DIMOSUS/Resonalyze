@@ -3,11 +3,6 @@ using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Three ways an array could reach a consumer describing itself wrongly, all found
-/// by review rather than by a failing curve — which is what they have in common:
-/// each produced a plausible number rather than a visible fault.
-/// </summary>
 public sealed class ArrayCalibrationAndBandsTests
 {
     private static readonly IReadOnlyList<double> Grid = SpatialAverage.BuildGrid();
@@ -40,9 +35,7 @@ public sealed class ArrayCalibrationAndBandsTests
     [Fact]
     public void AMatchedArrayDeclaresTheCorrectionItSubtracted()
     {
-        // The document's curve carries the microphone correction, so it has to say so:
-        // a consumer reads an empty correction as "uncalibrated" and applies the
-        // panel's calibration on top of one already there, which corrects twice.
+        // An empty correction reads as uncalibrated, and the panel's calibration would be applied twice.
         LiveCaptureDocument document = ArrayCaptureDocument.TryCreate(
         [
             Microphone(70.0, measurement: true, channel: 0, Calibration(-2.0)),
@@ -56,8 +49,6 @@ public sealed class ArrayCalibrationAndBandsTests
             document.CalibrationCorrectionDb,
             correction => Assert.Equal(-2.0, correction, 6));
 
-        // Undoing it — adding it back, the convention the pipeline uses — returns the
-        // level that was measured.
         for (int band = 0; band < document.CurveDb.Length; band++)
         {
             Assert.Equal(
@@ -70,10 +61,7 @@ public sealed class ArrayCalibrationAndBandsTests
     [Fact]
     public void AMixedArrayDeclaresWhatWasActuallySubtracted()
     {
-        // No single calibration file describes a mixed array, which is why the
-        // document names none. The correction is still exact, because it is MEASURED
-        // as the difference between the calibrated average and the raw one rather
-        // than copied from a file.
+        // The mixed-array correction is measured (calibrated minus raw average), so it is exact without a file.
         LiveCaptureDocument document = ArrayCaptureDocument.TryCreate(
         [
             Microphone(70.0, measurement: true, channel: 0, Calibration(-2.0)),
@@ -95,14 +83,8 @@ public sealed class ArrayCalibrationAndBandsTests
     [Fact]
     public void AMixedArrayReachesVirtualDspWithItsOwnCorrectionsIntact()
     {
-        // The accurate case, not the odd one: an array of individually calibrated
-        // capsules is what the feature is for. No single curve undoes a mixed
-        // correction and none could replace it, so the hybrid honours the panel's
-        // INTENT — calibrated, and every position keeps the file it was measured
-        // with; uncalibrated, and the exact undo gives the raw average back. Stripping
-        // the mixture and applying the measurement microphone's file to all of them
-        // put the Virtual DSP a decibel away from the frequency response's answer for
-        // the same array.
+        // Mixed calibrations cannot be swapped: calibrated keeps each position's file, uncalibrated undoes exactly.
+        // Applying the measurement mic's file to all put VDSP a decibel off the FR view.
         LiveCaptureDocument document = ArrayCaptureDocument.TryCreate(
         [
             Microphone(70.0, measurement: true, channel: 0, Calibration(-2.0)),
@@ -147,10 +129,6 @@ public sealed class ArrayCalibrationAndBandsTests
     [Fact]
     public void AMatchedArrayIsStillRebasedOntoThePanelsCalibration()
     {
-        // The rule above must not swallow the ordinary case. One shared file is a
-        // correction that CAN be undone and replaced exactly, and the hybrid has to
-        // keep doing it — otherwise the array would be the one curve on the plot that
-        // ignores the calibration selector.
         LiveCaptureDocument document = ArrayCaptureDocument.TryCreate(
         [
             Microphone(70.0, measurement: true, channel: 0, Calibration(-2.0)),
@@ -169,7 +147,6 @@ public sealed class ArrayCalibrationAndBandsTests
             [Grid[500]],
             smoothingCode: 0)!;
 
-        // Its own −2 dB added back, the panel's +5 dB taken off.
         Assert.Equal(
             document.CurveDb[500] + document.CalibrationCorrectionDb[500] - 5.0,
             curve[0].Y,
@@ -195,10 +172,7 @@ public sealed class ArrayCalibrationAndBandsTests
     [Fact]
     public void AHistoryEntryHandsOverItsArrayAndItsFilter()
     {
-        // Loading a measurement from history and loading the same file from disk have
-        // to be the same measurement. They were not: the conversion dropped both, so
-        // the EQ Wizard offered only the point response and read its band from a
-        // filter nobody recorded.
+        // History and disk loads must be the same measurement (conversion used to drop both fields).
         var snapshot = new MeasurementHistorySnapshot
         {
             SampleRate = 48_000,
@@ -220,19 +194,13 @@ public sealed class ArrayCalibrationAndBandsTests
         Assert.Single(file.ArrayMicrophones!.Microphones);
         Assert.NotNull(file.ProtectiveHighPass);
         Assert.Equal(1_000, file.ProtectiveHighPass!.FrequencyHz, 6);
-        // And the microphone correction the response is READ through, which
-        // ImpulseResponseFile.Capture stamps: without it the two ways of writing the
-        // same measurement to disk produce files that mean different things.
         Assert.NotNull(file.MicrophoneCalibration);
     }
 
     [Fact]
     public void ASumBreaksInTheHoleBetweenTwoDisjointSweeps()
     {
-        // A woofer swept to 500 Hz beside a tweeter swept from 1 kHz: between them the
-        // summed response is zero from every contributor at once, so the curve there
-        // is the analysis window. The outer edges alone cannot say that — the hull of
-        // the two bands is one continuous interval.
+        // Between a woofer to 500 Hz and a tweeter from 1 kHz the sum is only the window; the hull cannot say that.
         var channels = new[]
         {
             Channel(new MeasuredBand(20, 500)),
@@ -249,7 +217,6 @@ public sealed class ArrayCalibrationAndBandsTests
         Assert.True(double.IsFinite(masked[2].Y), "2 kHz is the tweeter's");
         Assert.False(double.IsFinite(masked[3].Y), "30 kHz is past both");
 
-        // And the hull still describes the ends, for the callers that only need those.
         MeasuredBand hull = ProcessedChannels.UnionOfMeasuredBands(channels);
         Assert.Equal(20, hull.LowEdgeHz, 6);
         Assert.Equal(20_000, hull.HighEdgeHz, 6);
@@ -268,11 +235,7 @@ public sealed class ArrayCalibrationAndBandsTests
     [Fact]
     public void APositionThatCouldNotBePlacedDoesNotVoteOnTheCalibration()
     {
-        // Six positions through one file and a seventh that never overlapped the
-        // anchor's working band. The seventh is absent from the curve — that is what
-        // PlacedCount is for — so its calibration is absent from the correction too.
-        // Letting it vote declared a swappable correction an aggregate, and Virtual
-        // DSP then refuses to swap what it could have swapped exactly.
+        // An unplaced position is absent from the curve, so its calibration must not vote on the correction.
         IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
         var shared = VirtualCrossoverCalibrationSettings.From(
             CalibrationFile.FromPoints(
@@ -300,7 +263,6 @@ public sealed class ArrayCalibrationAndBandsTests
             });
         }
 
-        // Nothing but NaN: no band overlaps the anchor, so it cannot be placed.
         microphones.Add(new ArrayMicrophoneCurve(
             6,
             IsMeasurementMicrophone: false,

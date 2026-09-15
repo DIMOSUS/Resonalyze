@@ -60,8 +60,7 @@ public static class AsioInputProbe
             await session.StopAsync().ConfigureAwait(false);
         }
 
-        // StopAsync prevents new callbacks; drain the blocks already accepted by
-        // the worker before snapshot resets the capture generation and queue.
+        // Drain accepted blocks before the snapshot resets the generation and queue.
         session.DrainCapture();
         float[][] samples = session.CompleteCaptureSnapshot();
         return driverInfo.InputChannels

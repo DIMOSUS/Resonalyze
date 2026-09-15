@@ -72,8 +72,6 @@ public sealed class ToolTipTextWrapperTests
         string[] lines = Lines(wrapped);
         Assert.Equal("Excitation noise played during the measurement.", lines[0]);
         Assert.StartsWith("• Pink noise", lines[1], StringComparison.Ordinal);
-        // The bullet's own wrapped remainder lines up with its text, and the next
-        // bullet still starts at the left edge.
         Assert.StartsWith("  ", lines[2]);
         Assert.DoesNotContain(
             "•",
@@ -105,8 +103,7 @@ public sealed class ToolTipTextWrapperTests
         Assert.All(lines, line => Assert.True(
             line.Length <= ToolTipTextWrapper.DefaultLineLength,
             $"line too long ({line.Length}): {line}"));
-        // A break replaces the space it lands on, so compare with whitespace removed:
-        // nothing inside the path may be dropped.
+        // A break replaces the space it lands on, so compare with whitespace removed.
         Assert.Equal(
             ("Source: " + path).Replace(" ", string.Empty),
             string.Concat(lines).Replace(" ", string.Empty));
@@ -126,8 +123,6 @@ public sealed class ToolTipTextWrapperTests
             () => ToolTipTextWrapper.Wrap("text", maxLineLength: 4));
     }
 
-    // The app assigns tooltips through WrappingToolTip, including from designer code;
-    // this is the interception every one of those assignments relies on.
     [Fact]
     public void WrappingToolTip_StoresTheWrappedTextForTheControl()
     {

@@ -27,8 +27,7 @@ internal sealed class FloatArrayWaveStream : WaveStream
         int sampleRate,
         PlaybackChannel playbackChannel)
     {
-        // ASIO does not duplicate mono providers to stereo outputs for us. Keep the
-        // provider stereo and encode the requested routing explicitly.
+        // ASIO does not duplicate mono to stereo outputs: encode the routing explicitly.
         const int channels = 2;
         byte[] data = new byte[monoSamples.Count * channels * sizeof(float)];
         for (int frame = 0; frame < monoSamples.Count; frame++)
@@ -63,8 +62,6 @@ internal sealed class FloatArrayWaveStream : WaveStream
 
     private static void WriteFloat(byte[] destination, int offset, float value)
     {
-        // No per-sample byte[] allocation: this runs once per sample over
-        // buffers up to minutes long when the signal is prepared.
         BitConverter.TryWriteBytes(destination.AsSpan(offset), value);
     }
 }

@@ -5,25 +5,17 @@ using System.Linq;
 
 namespace Resonalyze.Dsp
 {
-    /// <summary>
-    /// Loads a two-column microphone calibration curve and interpolates it in log-frequency space.
-    /// </summary>
+    /// <summary>Two-column microphone calibration, interpolated in log frequency.</summary>
     public sealed class CalibrationFile
     {
-        // Matches File.ReadAllLines' line breaking so the text and file paths parse
-        // byte-identically.
+        // Matches File.ReadAllLines' line breaking so text and file parse identically.
         private static readonly string[] LineSeparators = ["\r\n", "\r", "\n"];
 
         private readonly List<SignalPoint> calibration = new();
         private readonly CalibrationFile? baseCalibration;
         private readonly Func<double, double>? decibelOffset;
 
-        /// <summary>
-        /// Loads a calibration curve from a file on disk. Filesystem problems
-        /// (missing or unreadable file) and the content problem (no parsable
-        /// frequency/level pairs) are surfaced through <see cref="LoadError"/>
-        /// rather than thrown.
-        /// </summary>
+        /// <summary>Filesystem and content problems surface through <see cref="LoadError"/>, not exceptions.</summary>
         public CalibrationFile(string file)
             : this(LoadFromFile(file))
         {
@@ -44,26 +36,13 @@ namespace Resonalyze.Dsp
             LoadError = baseCalibration.LoadError;
         }
 
-        /// <summary>
-        /// Parses a calibration curve from in-memory text without touching the
-        /// filesystem, mirroring the "parser accepts text" shape of the EQ profile
-        /// formats. Only the content-level problem — fewer than two parsable
-        /// frequency/level pairs — can arise here and surfaces through
-        /// <see cref="LoadError"/>; <paramref name="sourceName"/>, when supplied, is
-        /// woven into that message so a file-backed load reads identically.
-        /// </summary>
         public static CalibrationFile Parse(string text, string? sourceName = null)
         {
             ArgumentNullException.ThrowIfNull(text);
             return new CalibrationFile(ParseText(text, sourceName));
         }
 
-        /// <summary>
-        /// Builds a calibration from (Hz, dB) points already in memory — the
-        /// curve a Virtual DSP session carries inside itself. The points go
-        /// through the same sort-and-merge as a parsed file, so a curve written
-        /// out by <see cref="Points"/> and read back here corrects identically.
-        /// </summary>
+        /// <summary>From in-memory points (a session's curve); same sort-and-merge as a parsed file.</summary>
         public static CalibrationFile FromPoints(
             IEnumerable<CalibrationPoint> points,
             string? sourceName = null)
@@ -85,21 +64,8 @@ namespace Resonalyze.Dsp
             return new CalibrationFile(Normalize(signalPoints, sourceName));
         }
 
-        /// <summary>
-        /// The curve as ascending (Hz, dB) points, which is what a file states
-        /// and what a session stores. A file-backed calibration returns its own
-        /// points; an angular estimate — a function, not a table — is sampled on
-        /// a 1/24-octave grid plus the base points themselves, which reproduces
-        /// <see cref="GetDecibelCorrection"/> at every knot and to within the
-        /// estimate's own smoothness between them. The grid runs over the whole
-        /// range a calibration is ever read at (<see cref="SampleGridLowHz"/> to
-        /// <see cref="SampleGridHighHz"/>, widened to the base file when that
-        /// reaches further), not just over the base file: outside the file the
-        /// base holds its edge value while the angular difference keeps moving,
-        /// and a table cut at the file's edges would clamp the WHOLE correction
-        /// there — the audition FIR reads it up to Nyquist. Empty when nothing
-        /// loaded.
-        /// </summary>
+        /// <summary>Ascending points. An angular estimate is sampled on a 1/24-octave grid over the whole read range (not just the base file),
+        /// since the angular difference keeps moving beyond the file's edges and the audition FIR reads up to Nyquist.</summary>
         public IReadOnlyList<CalibrationPoint> Points
         {
             get
@@ -137,23 +103,13 @@ namespace Resonalyze.Dsp
             }
         }
 
-        // 1/24 octave: fine enough that the piecewise-linear reading of the
-        // sampled angular estimate stays within hundredths of a dB of the model.
         private static readonly double SampleGridStep = Math.Pow(2.0, 1.0 / 24.0);
 
-        // Below 1 Hz nothing is ever plotted or rendered; 192 kHz is the Nyquist
-        // frequency of a 384 kHz stream, above every rate the audition can run at.
-        // Beyond the grid the table holds its edge value, as the model itself
-        // holds its last tabulated value above its references.
+        // 192 kHz = Nyquist of 384 kHz, above every audition rate.
         private const double SampleGridLowHz = 1.0;
         private const double SampleGridHighHz = 192_000.0;
 
-        /// <summary>
-        /// Whether two calibrations correct identically: the same points, Hz and
-        /// dB alike, within rounding. Two nulls are the same (no correction), a
-        /// null and a curve are not. This — not an id — is what says whether a
-        /// curve that arrived inside a session is one the machine already has.
-        /// </summary>
+        /// <summary>Same points within rounding; this, not an id, decides whether a session's curve is already known.</summary>
         public static bool SameCurve(CalibrationFile? left, CalibrationFile? right)
         {
             if (ReferenceEquals(left, right))
@@ -186,16 +142,9 @@ namespace Resonalyze.Dsp
             return true;
         }
 
-        // Far below anything a calibration file states (three decimals at most)
-        // and far above the dB -> amplitude -> dB round trip the points take.
         private const double FrequencyTolerance = 1e-9;
         private const double DecibelTolerance = 1e-6;
 
-        /// <summary>
-        /// The curve as the plain two-column text every calibration reader —
-        /// this one included — accepts, one <c>frequency level</c> pair per line.
-        /// <see cref="Parse"/> of the result yields the same points.
-        /// </summary>
         public string ToText()
         {
             var text = new System.Text.StringBuilder();
@@ -246,15 +195,11 @@ namespace Resonalyze.Dsp
             return Normalize(points, sourceName);
         }
 
-        // The one path from raw points to a usable table, shared by the text
-        // parser and the in-memory constructor so both read identically.
         private static ParseResult Normalize(List<SignalPoint> points, string? sourceName)
         {
             points.Sort((left, right) => left.X.CompareTo(right.X));
 
-            // Duplicate frequencies would make an interpolation segment
-            // zero-width (a division by zero straight into the correction);
-            // merge them by averaging the amplitudes.
+            // Duplicate frequencies would make a zero-width segment; average them.
             for (int i = points.Count - 1; i > 0; i--)
             {
                 if (points[i].X == points[i - 1].X)
@@ -276,30 +221,11 @@ namespace Resonalyze.Dsp
 
         private readonly record struct ParseResult(List<SignalPoint> Points, string? LoadError);
 
-        /// <summary>
-        /// True when at least two calibration points were loaded, i.e.
-        /// <see cref="GetDecibelCorrection"/> returns a real correction rather than
-        /// the 0 dB fallback of a missing or unparsable file.
-        /// </summary>
         public bool HasData => baseCalibration?.HasData ?? calibration.Count >= 2;
 
-        /// <summary>
-        /// Human-readable reason why no usable correction was loaded (missing
-        /// file, unreadable file, or no parsable frequency/level pairs), or null
-        /// when the calibration loaded. Callers surface this instead of letting
-        /// a measurement silently run uncalibrated.
-        /// </summary>
         public string? LoadError { get; }
 
-        /// <summary>
-        /// The calibration <paramref name="zeroDegreeCalibration"/> becomes when
-        /// the microphone is turned by an angle, given that angle's estimated
-        /// difference. The file states the microphone's own response, which the
-        /// measurement then divides out (see
-        /// <see cref="DataHelper.LogarithmicResample"/>), so the angular
-        /// difference ADDS to it: turning the microphone off-axis really does
-        /// lower what it reports at high frequency.
-        /// </summary>
+        /// <summary>The angular difference ADDS to the 0° file, which the measurement divides out.</summary>
         public static CalibrationFile CreateAngled(
             CalibrationFile zeroDegreeCalibration,
             Func<double, double> angleDeltaDb)
@@ -372,13 +298,7 @@ namespace Resonalyze.Dsp
                 out value) &&
             double.IsFinite(value);
 
-        // The correction is EXACT piecewise-linear interpolation in
-        // (log frequency, dB) — the natural reading of a calibration file. The
-        // previous Lanczos-smoothed lookup silently half-octave-smoothed every
-        // correction (a +12 dB point read back as ~+5.6 dB) and overshot near
-        // steps even at zero smoothing; a calibration must reproduce its own
-        // points, and any smoothing belongs to the measurement's display
-        // smoothing, not to the correction.
+        // Exact piecewise-linear in (log f, dB): a calibration must reproduce its own points; smoothing belongs to display.
         public double GetDecibelCorrection(double frequency)
         {
             if (baseCalibration != null && decibelOffset != null)
@@ -396,9 +316,7 @@ namespace Resonalyze.Dsp
                 return DataHelper.AmplitudeToDecibels(calibration[0].Y);
             }
 
-            // Outside the calibrated range the nearest point's value holds:
-            // extrapolating an edge segment arbitrarily far invents corrections
-            // the file never measured.
+            // Hold the edge value; extrapolation invents corrections.
             if (frequency <= calibration[0].X)
             {
                 return DataHelper.AmplitudeToDecibels(calibration[0].Y);
@@ -434,6 +352,5 @@ namespace Resonalyze.Dsp
         }
     }
 
-    /// <summary>One calibration point: the correction the file states at a frequency.</summary>
     public readonly record struct CalibrationPoint(double FrequencyHz, double Decibels);
 }

@@ -4,12 +4,6 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The review dialog is the one gate between an assistant's reply and the tune,
-/// so what it lets through is pinned: admissible rows start ticked, rejected
-/// rows are listed and cannot be ticked, Apply needs at least one tick, and the
-/// status is a word before it is a colour.
-/// </summary>
 public sealed class AgentProposalDialogTests
 {
     [Fact]
@@ -20,7 +14,6 @@ public sealed class AgentProposalDialogTests
             using var dialog = new AgentProposalDialog(Review());
             DataGridView grid = Grid(dialog);
 
-            // The parser's rejections lead, then the operations in reply order.
             Assert.Equal(4, grid.Rows.Count);
             Assert.Equal(false, grid.Rows[0].Cells[0].Value);
             Assert.Equal("Rejected", grid.Rows[0].Cells[5].Value);
@@ -33,7 +26,6 @@ public sealed class AgentProposalDialogTests
             Assert.Equal("Rejected", grid.Rows[3].Cells[5].Value);
             Assert.True(grid.Rows[3].Cells[0].ReadOnly);
 
-            // Even a value forced into a rejected row's box is not a selection.
             grid.Rows[3].Cells[0].Value = true;
             Assert.Equal(["op-1", "op-2"], dialog.Selected.Select(verdict => verdict.Id));
 
@@ -81,9 +73,6 @@ public sealed class AgentProposalDialogTests
             Button apply = dialog.Controls.OfType<Button>().Single(button => button.Text == "Apply selected");
 
             Assert.Contains("different package", dialog.Controls["labelWarnings"]!.Text);
-            // The settings rows stay, marked and unticked: an expected current
-            // value can still match after the measurement the row was reasoned
-            // from was replaced, so the user ticks what still applies.
             Assert.Equal(false, grid.Rows[1].Cells[0].Value);
             Assert.False(grid.Rows[1].Cells[0].ReadOnly);
             Assert.Equal("Warning", grid.Rows[1].Cells[5].Value);
@@ -127,9 +116,6 @@ public sealed class AgentProposalDialogTests
             Assert.Equal(true, grid.Rows[0].Cells[0].Value);
             Assert.Contains("can reorder the chain", grid.Rows[0].Cells[5].ToolTipText);
 
-            // Current and Proposed are 170 px wide and an engine states its whole
-            // set of inputs there, so both have to be readable off the row and
-            // off the detail box rather than only clipped into the cell.
             Assert.Equal(
                 "the corners, slopes and gains as they stand", grid.Rows[0].Cells[3].ToolTipText);
             Assert.Equal(
@@ -141,7 +127,6 @@ public sealed class AgentProposalDialogTests
             Assert.Contains("Current: the corners, slopes and gains as they stand", detail);
             Assert.Contains("Proposed: the wizard's corners", detail);
 
-            // The hand-written corner the wizard would erase is listed, greyed.
             Assert.Equal(false, grid.Rows[1].Cells[0].Value);
             Assert.Equal("Rejected", grid.Rows[1].Cells[5].Value);
             Assert.Equal(["op-1"], dialog.Selected.Select(verdict => verdict.Id));
@@ -164,7 +149,6 @@ public sealed class AgentProposalDialogTests
             new AgentAutoDelaySettings(0.25, RightHandDrive: false, AdjustGains: false, 1.0, 15.0),
             VirtualCrossoverSpatialAverageMode.MovingMic,
             HybridTicked: false);
-        // An engine request needs the package it was written for named.
         var proposal = new AgentProposal(
             "11111111-1111-1111-1111-111111111111", "The corners are guesses.", [], [],
             [

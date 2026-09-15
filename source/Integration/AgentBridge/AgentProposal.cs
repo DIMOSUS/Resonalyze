@@ -1,22 +1,6 @@
 namespace Resonalyze.Integration.AgentBridge;
 
-/// <summary>
-/// What an assistant proposed, as the parser understood it: the prose that is
-/// shown, and a closed set of typed operations that may be applied. Nothing in
-/// here can address anything but the five editable parameters of one physical
-/// channel and the four engines the panel already runs from its own buttons —
-/// there is no path from a reply to a file, a source or a setting.
-/// </summary>
-/// <param name="PackageId">
-/// The id of the package the assistant says it answered, echoed from that
-/// package; null when the reply did not carry one. A correlation hint, never a
-/// gate: the stale-state guard is every operation's expected current value.
-/// </param>
-/// <param name="Rejected">
-/// Operation objects the parser could not turn into a typed operation — unknown
-/// <c>op</c>, missing fields, out-of-limit strings, duplicate ids. Kept so the
-/// review can list them, greyed out, with the reason; never applied.
-/// </param>
+/// <summary>A parsed reply: prose plus a closed set of typed operations. No path leads from a reply to a file, source or setting beyond channel parameters and panel engines. PackageId is a correlation hint, never a gate.</summary>
 internal sealed record AgentProposal(
     string? PackageId,
     string? Summary,
@@ -25,43 +9,24 @@ internal sealed record AgentProposal(
     IReadOnlyList<AgentOperation> Operations,
     IReadOnlyList<AgentRejectedOperation> Rejected);
 
-/// <summary>A page the assistant cited; shown as text, never opened.</summary>
+/// <summary>Shown as text, never opened.</summary>
 internal sealed record AgentSource(string Url, string? Title, IReadOnlyList<string> FactsUsed);
 
-/// <summary>An operation object the parser refused, and why.</summary>
 internal sealed record AgentRejectedOperation(string? Id, string? Op, string Problem);
 
-/// <summary>
-/// One thing a reply asks for. Two families sit under this: an operation that
-/// WRITES one channel's settings, which carries what the assistant believes the
-/// current value is — a current value that no longer matches means the tune
-/// moved on since the package was copied, and the operation is refused rather
-/// than applied to a state it was not reasoned about — and an operation that
-/// asks for one of the panel's own ENGINES to be run, which carries the
-/// engine's inputs instead, because what an engine will write is not knowable
-/// until it has run.
-/// </summary>
+/// <summary>Settings operations carry the expected current value (a mismatch refuses them); engine operations carry inputs, since what an engine writes is unknown until it runs.</summary>
 internal abstract record AgentOperation(string Id, string? Reason)
 {
-    /// <summary>The protocol's name for the operation: what its <c>op</c> said.</summary>
     public abstract string Op { get; }
 
-    /// <summary>
-    /// The parameter family the operation edits, the unit conflicts are judged in:
-    /// two operations on one channel's same family cannot both be right.
-    /// </summary>
+    /// <summary>Conflict unit: two operations on one channel's same family cannot both be right.</summary>
     public abstract string Parameter { get; }
 }
 
-/// <summary>An operation addressed at one physical channel, by the package's id for it.</summary>
 internal abstract record AgentChannelOperation(string Id, string ChannelId, string? Reason)
     : AgentOperation(Id, Reason);
 
-/// <summary>
-/// An operation that writes one channel's editable settings directly — the five
-/// the bridge has always had. These are the only operations the importer applies
-/// itself; everything else it asks an engine to do.
-/// </summary>
+/// <summary>Writes one channel's settings directly; the only operations the importer applies itself.</summary>
 internal abstract record AgentSettingsOperation(string Id, string ChannelId, string? Reason)
     : AgentChannelOperation(Id, ChannelId, Reason);
 
@@ -101,10 +66,7 @@ internal sealed record SetCrossoverOperation(
     public override string Parameter => "Crossover";
 }
 
-/// <param name="ExpectedCurrentHash">
-/// The bank's hash as the package printed it (see <see cref="AgentPeqHash"/>),
-/// standing in for the whole current bank so the reply need not repeat it.
-/// </param>
+/// <param name="ExpectedCurrentHash">The package's <see cref="AgentPeqHash"/>, standing in for the whole current bank.</param>
 internal sealed record ReplacePeqBankOperation(
     string Id, string ChannelId, string? Reason, string ExpectedCurrentHash, AgentPeqBank Proposed)
     : AgentSettingsOperation(Id, ChannelId, Reason)
@@ -114,17 +76,7 @@ internal sealed record ReplacePeqBankOperation(
     public override string Parameter => "PEQ bank";
 }
 
-/// <summary>
-/// Run Auto delay. Every input is optional, and a missing one means "what the
-/// project holds now" — which is what the dialog would open with — so a reply
-/// that wants only the scene offset changed states only that. Whether the run is
-/// stereo or single-sided the panel decides exactly as its button does; nothing
-/// in a reply can.
-/// </summary>
-/// <param name="NearSideCutDb">
-/// How much quieter the near side plays, as the dialog edits it. The layout
-/// toggle owns the sign, so this magnitude is never negative.
-/// </param>
+/// <summary>Run Auto delay; omitted inputs mean the project's current values. Stereo vs single-sided is decided as the button decides. NearSideCutDb is a magnitude: the layout toggle owns the sign.</summary>
 internal sealed record RunAutoDelayOperation(
     string Id,
     string? Reason,
@@ -139,11 +91,6 @@ internal sealed record RunAutoDelayOperation(
     public override string Parameter => "Auto delay";
 }
 
-/// <summary>
-/// Open the Auto crossover wizard. It takes no inputs: what it proposes comes
-/// from the drivers' own bands, and the choices it does offer are made in its
-/// own dialog, in front of the user.
-/// </summary>
 internal sealed record RunAutoCrossoverOperation(string Id, string? Reason)
     : AgentOperation(Id, Reason)
 {
@@ -152,43 +99,7 @@ internal sealed record RunAutoCrossoverOperation(string Id, string? Reason)
     public override string Parameter => "Auto crossover";
 }
 
-/// <summary>
-/// Read something and change NOTHING: the reply asks a question about the tune
-/// as it stands — what a set of crossovers would do at one junction, what
-/// clearing or replacing a PEQ bank would do there, what a delay search would
-/// find, the excess group delay of every channel — and the panel computes it,
-/// puts the answer on the clipboard and asks the user to paste it back. The
-/// tune is not touched, so there is nothing to undo and nothing to be careful
-/// about: a probe is the cheap way to ask before proposing.
-/// </summary>
-/// <param name="Probe">Which reading: one of <see cref="AgentProtocol.Probes"/>.</param>
-/// <param name="JunctionId">
-/// The junction the reading is about, as the package prints it
-/// (<c>left:C-D</c>); null for a probe that reads every channel.
-/// </param>
-/// <param name="Variants">
-/// For the <c>junction</c> probe: the settings to read the junction under,
-/// beside the ones it has now. Each variant is a set of changes to the
-/// junction's own channels, stated exactly as the settings operations state
-/// them — so a variant that reads well converts to a proposal word for word.
-/// </param>
-/// <param name="Series">
-/// For the <c>series</c> probe: which of the package's series to read again
-/// (<see cref="AgentProtocol.SeriesNames"/>), at the density the reply asks
-/// for and with no size target.
-/// </param>
-/// <param name="ChannelIds">
-/// For the <c>series</c> probe: the channels whose broadband curves are wanted;
-/// null means every channel that has them.
-/// </param>
-/// <param name="PointsPerOctave">
-/// For the <c>series</c> probe: the density of every frequency grid in the
-/// answer; null means the protocol's nominal densities.
-/// </param>
-/// <param name="Rows">
-/// For the <c>series</c> probe: the most rows of the sweep and correlation
-/// series; null means the protocol's nominal cap.
-/// </param>
+/// <summary>A read-only question; the answer goes to the clipboard for pasting back. Variants state changes exactly as settings operations do, so a good variant converts word for word.</summary>
 internal sealed record ProbeOperation(
     string Id,
     string? Reason,
@@ -205,17 +116,9 @@ internal sealed record ProbeOperation(
     public override string Parameter => "Probe";
 }
 
-/// <param name="Label">What the reply calls this variant; the result echoes it back.</param>
 internal sealed record AgentProbeVariant(string? Label, IReadOnlyList<AgentProbeChange> Changes);
 
-/// <summary>
-/// One channel read as if it held these settings. Every field is optional and
-/// the ones left out keep what the channel has: a variant that states only a
-/// crossover is asking about that crossover with everything else in place. An
-/// empty <see cref="Peq"/> bank (no bands, no preamp) is the bank cleared,
-/// which is how a reply asks the diagnostic pass's question without the user
-/// applying and undoing anything.
-/// </summary>
+/// <summary>One channel read as if it held these settings; omitted fields keep the channel's. An empty <see cref="Peq"/> bank means the bank cleared.</summary>
 internal sealed record AgentProbeChange(
     string ChannelId,
     double? GainDb,
@@ -229,17 +132,7 @@ internal sealed record AgentProbeChange(
         Crossover == null && Peq == null;
 }
 
-/// <summary>
-/// Tune ONE junction of the tune without its wizard: search the lower
-/// channel's low-pass and the upper channel's high-pass — corner, family,
-/// slopes — scored on the pair's coherent sum at the current delays and
-/// polarity, on every side the pair is measured on, and write one crossover to
-/// both sides. Gains, delays, polarity, PEQ and every other junction stay. The
-/// junction is named by the package's own id for it (<c>left:C-D</c>); a
-/// missing input means the tuner's own answer: the corner window half an
-/// octave each way from the current corner, the families the junction uses
-/// today, every practical slope, one slope for both edges.
-/// </summary>
+/// <summary>Tune one junction's facing low-pass/high-pass on the pair's coherent sum at current delays and polarity, writing one crossover to both sides; nothing else moves. Omitted inputs: half-octave window, current families, every practical slope, one slope for both edges.</summary>
 internal sealed record TuneJunctionOperation(
     string Id,
     string? Reason,
@@ -255,14 +148,7 @@ internal sealed record TuneJunctionOperation(
     public override string Parameter => "Junction tune";
 }
 
-/// <summary>
-/// Fit a PEQ bank to the target on one channel. A missing input means the
-/// wizard's own answer for it.
-/// </summary>
-/// <param name="Source">
-/// <c>point</c> or <c>spatialAverage</c>: which curve the fit reads. Null leaves
-/// the choice where it is, with the channel and the panel.
-/// </param>
+/// <summary>Fit a PEQ bank on one channel; omitted inputs mean the wizard's own answer. Null Source leaves the choice with the panel.</summary>
 internal sealed record AutoTunePeqOperation(
     string Id,
     string ChannelId,
@@ -279,15 +165,7 @@ internal sealed record AutoTunePeqOperation(
     public override string Parameter => "Auto-tune";
 }
 
-/// <summary>
-/// Judge the tune on spatial averages: read the capture family named here and
-/// tick Hybrid. The one operation addressed at the whole project rather than a
-/// channel, because the mode and the tick are the project's.
-/// </summary>
-/// <param name="Hybrid">
-/// Only <c>true</c> is accepted. Turning the hybrid OFF is not something a reply
-/// has a reason to ask for, and refusing it costs nothing.
-/// </param>
+/// <summary>Read the named capture family and tick Hybrid (project-wide). Only Hybrid=true is accepted.</summary>
 internal sealed record UseSpatialAverageOperation(
     string Id, string? Reason, string Mode, bool Hybrid) : AgentOperation(Id, Reason)
 {
@@ -296,21 +174,13 @@ internal sealed record UseSpatialAverageOperation(
     public override string Parameter => "Spatial average";
 }
 
-/// <summary>
-/// A crossover as the reply states it: the kind by its <see cref="Dsp.CrossoverKind"/>
-/// name and each edge by its <see cref="Dsp.CrossoverFilterFamily"/> name — the
-/// enum names the package published, so nothing is translated on the way in. An
-/// edge the kind does not use may be omitted; the edges it does use may not.
-/// </summary>
+/// <summary>Kind and families by their published enum names; edges the kind does not use may be omitted.</summary>
 internal sealed record AgentCrossover(string Kind, AgentCrossoverEdge? HighPass, AgentCrossoverEdge? LowPass);
 
-/// <param name="RippleDb">
-/// Chebyshev passband ripple; null leaves the stored value alone (and, on the
-/// expected side, skips the comparison), since every other family ignores it.
-/// </param>
+/// <param name="RippleDb">Chebyshev only; null keeps the stored value and skips the expected comparison.</param>
 internal sealed record AgentCrossoverEdge(string Family, double FrequencyHz, int SlopeDbPerOctave, double? RippleDb);
 
 internal sealed record AgentPeqBank(double PreampDb, IReadOnlyList<AgentPeqBand> Bands);
 
-/// <summary>One band; <paramref name="Q"/> is RBJ cookbook Q, as everywhere inside.</summary>
+/// <summary>Q is RBJ cookbook Q.</summary>
 internal sealed record AgentPeqBand(string Type, double FrequencyHz, double Q, double GainDb);

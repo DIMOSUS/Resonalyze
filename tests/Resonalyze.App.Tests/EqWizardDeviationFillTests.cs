@@ -8,12 +8,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The shaded deviation between Source + EQ and the target. It is a statement about a
-/// measurement, so it may only be drawn where there IS one: a driver swept over its
-/// own band, or a capture that measured nothing under a protective high-pass, has no
-/// level below its edge and nothing to deviate by.
-/// </summary>
 public sealed class EqWizardDeviationFillTests
 {
     private const int SampleRate = 48_000;
@@ -32,9 +26,7 @@ public sealed class EqWizardDeviationFillTests
         Assert.NotEmpty(fills);
         foreach (AreaSeries fill in fills)
         {
-            // A NaN vertex used to enter the polygon like any other, and the renderer
-            // closed the shape across the gap: whole octaves came out shaded as a
-            // deviation from the target with no measurement under them.
+            // A NaN vertex let the renderer close the polygon across the gap.
             Assert.All(fill.Points, point => Assert.True(double.IsFinite(point.Y)));
             Assert.All(fill.Points2, point => Assert.True(double.IsFinite(point.Y)));
             Assert.All(fill.Points, point => Assert.True(point.X >= GapBelowHz));
@@ -48,8 +40,6 @@ public sealed class EqWizardDeviationFillTests
 
         ApplySource(panel, GappedHandoff());
 
-        // Breaking the fill at the gap must not cost the part that belongs there:
-        // the run above the edge is still shaded end to end.
         IReadOnlyList<AreaSeries> fills = Fills(panel);
         Assert.All(fills, fill => Assert.True(fill.Points.Count > 100));
         Assert.All(fills, fill => Assert.True(fill.Points[^1].X > 19_000));
@@ -64,11 +54,7 @@ public sealed class EqWizardDeviationFillTests
         ApplySource(panel, BandLimitedHandoff());
         PumpUntilCorrectedCurveLands(panel);
 
-        // The fill is two polylines — the result on top, the target underneath — and
-        // it only means anything while a vertex and the vertex under it are the SAME
-        // frequency. They are read off two renders of one measurement, and the one
-        // that keeps its unmeasured bins as NaN while the other drops them is the one
-        // that slid the target sideways.
+        // Result and target vertices must share frequencies; one render dropping NaN bins slid the target sideways.
         IReadOnlyList<AreaSeries> fills = Fills(panel);
         Assert.NotEmpty(fills);
         foreach (AreaSeries fill in fills)
@@ -90,10 +76,7 @@ public sealed class EqWizardDeviationFillTests
         ApplySource(panel, BandLimitedHandoff());
         PumpUntilCorrectedCurveLands(panel);
 
-        // What the misalignment looked like on screen: a channel swept from 200 Hz
-        // had its shading close in a wedge at about 2 kHz — the square of the sweep's
-        // low edge over the grid's 20 Hz start — instead of following the result to
-        // the top of the band.
+        // Symptom: a 200 Hz sweep's shading closed in a wedge near 2 kHz (200²/20).
         IReadOnlyList<AreaSeries> fills = Fills(panel);
         Assert.NotEmpty(fills);
         Assert.True(
@@ -105,9 +88,6 @@ public sealed class EqWizardDeviationFillTests
                 fill.Points, point => Assert.True(point.X >= SweptFromHz)));
     });
 
-    // A midrange handed over from Virtual DSP the ordinary way: no spatial average, so
-    // its magnitude IS gated, and swept over its own band rather than the whole
-    // spectrum — which is what leaves the analysis grid masked outside it.
     private static EqWizardCurveSource BandLimitedHandoff()
     {
         var response = new Complex[16_384];
@@ -144,8 +124,7 @@ public sealed class EqWizardDeviationFillTests
         };
     }
 
-    // The corrected curve of a gated source is convolved off the UI thread, so nothing
-    // is shaded until that render lands and redraws.
+    // Gated sources are convolved off the UI thread.
     private static void PumpUntilCorrectedCurveLands(EqWizardPanel panel)
     {
         for (int attempt = 0; attempt < 400 && Fills(panel).Count == 0; attempt++)
@@ -157,8 +136,6 @@ public sealed class EqWizardDeviationFillTests
         Assert.NotEmpty(Fills(panel));
     }
 
-    // A tweeter handed over from Virtual DSP with a moving-microphone capture that
-    // measured nothing below 600 Hz — the shape a real session has.
     private static EqWizardCurveSource GappedHandoff()
     {
         var response = new Complex[16_384];

@@ -4,16 +4,10 @@ namespace Resonalyze.Ui;
 
 internal static class UiStyle
 {
-    // Remembers each control's real (enabled) text colour so it can be restored after a
-    // muted pass, keyed weakly so controls are not kept alive.
     private static readonly ConditionalWeakTable<Control, object> enabledForeColors = new();
 
-    // Standard Label/CheckBox/RadioButton controls paint disabled text with a dark emboss
-    // (Label) or a low-contrast system grey (CheckBox/RadioButton), which reads as near-black
-    // on the dark theme. Rather than letting WinForms disable them, keep them Enabled and mute
-    // the text colour instead — matching how DarkComboBox/DarkNumericUpDown render their own
-    // disabled state. Pass interactive:true for check boxes and radio buttons so the muted look
-    // also stops them toggling or taking focus.
+    // WinForms paints disabled Label/CheckBox/RadioButton text near-black on the dark theme, so they stay Enabled with muted text.
+    // interactive:true also stops toggling and focus.
     public static void SetTextEnabledLook(Control control, bool enabled, bool interactive = false)
     {
         if (enabled)
@@ -38,9 +32,6 @@ internal static class UiStyle
             return;
         }
 
-        // RadioButton and CheckBox both expose AutoCheck/TabStop but share no common
-        // property for them, so switch on the concrete type. AutoCheck:false makes a
-        // click leave the state untouched, matching a disabled control's behaviour.
         switch (control)
         {
             case RadioButton radioButton:
@@ -62,14 +53,8 @@ internal static class UiStyle
         bool fixedDialog = true,
         Padding? padding = null)
     {
-        // A dialog built in code lays itself out in 96-DPI pixels, so say so:
-        // without declared dimensions the first auto-scale adopts the CURRENT
-        // ones and the factor is 1 — the boxes stayed 96-DPI while the text grew
-        // with the display, which is what clipped these dialogs at 125%.
-        // Declaring the designer's DPI is what gives the mode something to scale
-        // FROM, and it makes this the ONLY scaling pass such a dialog gets: a
-        // caller that also walked its own tree by DeviceDpi/96 would square the
-        // factor (1.56x at 125%). One such pass was deleted for this line.
+        // Declared 96-DPI dimensions give AutoScale something to scale from (otherwise factor 1, clipped at 125%).
+        // This must be the only scaling pass; a DeviceDpi/96 walk on top squares the factor.
         form.AutoScaleDimensions = new SizeF(96F, 96F);
         form.AutoScaleMode = AutoScaleMode.Dpi;
         form.BackColor = UiPalette.DialogBackground;

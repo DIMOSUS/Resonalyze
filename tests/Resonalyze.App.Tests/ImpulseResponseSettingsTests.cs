@@ -2,10 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-// The impulse view's single "logarithmic" flag became a three-way scale selector.
-// A settings file written before that change must still open the view the way its
-// user left it, and a file written after it must stay readable by a build that
-// only knows the flag.
+// The logarithmic flag became a three-way scale: old files must open as left, and new files stay readable by old builds.
 public sealed class ImpulseResponseSettingsTests
 {
     [Theory]
@@ -27,7 +24,6 @@ public sealed class ImpulseResponseSettingsTests
     [Fact]
     public void AmplitudeScaleWinsOverTheLegacyFlagWhenBothArePresent()
     {
-        // A file written by this build carries both; the flag is only the fallback.
         var settings = new MeasurementSettingsFile();
         settings.ImpulseResponse.Logarithmic = true;
         settings.ImpulseResponse.AmplitudeScale = ImpulseAmplitudeScale.PercentOfPeak;
@@ -41,8 +37,7 @@ public sealed class ImpulseResponseSettingsTests
     [Fact]
     public void CaptureStillWritesTheLegacyFlagSoAnOlderBuildCanParseTheFile()
     {
-        // An older build deserializes Logarithmic into a NON-nullable bool: a null
-        // there fails the whole settings file, not just this section.
+        // Older builds read Logarithmic into a non-nullable bool: a null fails the whole settings file.
         var options = new ImpulseResponseOptions
         {
             AmplitudeScale = ImpulseAmplitudeScale.Decibels

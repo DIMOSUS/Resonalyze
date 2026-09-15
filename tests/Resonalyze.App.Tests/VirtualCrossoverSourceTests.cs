@@ -3,12 +3,6 @@ using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Characterization tests for the shared Virtual DSP source pipeline
-/// (<see cref="ResolvedVirtualDspSource"/>): the loopback-transfer-IR requirement,
-/// the transfer-peak clamp and the write into a channel side's runtime state —
-/// the logic the file, history and restore paths used to each hand-roll.
-/// </summary>
 public sealed class VirtualCrossoverSourceTests
 {
     private static MeasurementHistorySnapshot Snapshot(
@@ -24,8 +18,6 @@ public sealed class VirtualCrossoverSourceTests
             TransferImpulseResponse = transferIr,
             TransferPeakIndex = transferPeak,
             TransferCoherence = coherence,
-            // Present but with no sweep metadata (Octaves defaults to 0), so the
-            // distortion curve resolves to null.
             SweepDeconvolutionImpulseResponse = [Complex.One],
             MeterSnapshot = InputLevelMeterSnapshot.Empty,
             Preview = new MeasurementHistoryPreview()
@@ -38,9 +30,7 @@ public sealed class VirtualCrossoverSourceTests
         Assert.Null(ResolvedVirtualDspSource.FromSnapshot(Snapshot([])));
     }
 
-    // Summing two drivers is summing their arrivals, so a measurement imported
-    // from a recorded sweep cannot take part: its arrival is set by when the
-    // recorder was started, not by the tract.
+    // An imported recording's arrival is set by when the recorder started, so it cannot be summed.
     [Fact]
     public void FromSnapshot_ReturnsNull_ForAnImportedRecording()
     {
@@ -53,9 +43,9 @@ public sealed class VirtualCrossoverSourceTests
     }
 
     [Theory]
-    [InlineData(10, 3)]   // beyond the end → last sample
-    [InlineData(-5, 0)]   // before the start → first sample
-    [InlineData(2, 2)]    // in range → unchanged
+    [InlineData(10, 3)]
+    [InlineData(-5, 0)]
+    [InlineData(2, 2)]
     public void FromSnapshot_ClampsTransferPeakIndexIntoTheIr(int rawPeak, int expected)
     {
         Complex[] ir = [Complex.One, Complex.Zero, Complex.Zero, Complex.Zero];
@@ -80,7 +70,6 @@ public sealed class VirtualCrossoverSourceTests
         Assert.Equal(0, resolved.TransferPeakIndex);
         Assert.Equal(44_100, resolved.SampleRate);
         Assert.Same(coherence, resolved.TransferCoherence);
-        // No sweep metadata on the snapshot, so no distortion curve.
         Assert.Null(resolved.DistortionCurve);
     }
 
@@ -97,7 +86,6 @@ public sealed class VirtualCrossoverSourceTests
         Assert.Same(ir, state.TransferImpulseResponse);
         Assert.Equal(1, state.TransferPeakIndex);
         Assert.Equal(48_000, state.SampleRate);
-        // Writing the IR arms the write-once processing snapshot the coordinator reads.
         Assert.NotNull(state.ProcessingSource);
     }
 }

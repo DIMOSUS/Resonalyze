@@ -5,15 +5,9 @@ using Resonalyze.Options;
 
 namespace Resonalyze;
 
-/// <summary>One step of a running audition render, for the progress read-out.</summary>
 internal readonly record struct AuditionProgress(string Status, double Fraction);
 
-/// <summary>
-/// Everything the audition dialog needs from the panel, captured at the moment
-/// the button was pressed: the two sides' summed responses (immutable
-/// snapshots), the project rate, and the microphone-calibration sources the
-/// panel itself uses for its curves.
-/// </summary>
+/// <summary>Panel state captured when the audition button was pressed.</summary>
 internal sealed record VirtualCrossoverAuditionContext(
     Complex[] LeftSum,
     Complex[] RightSum,
@@ -28,77 +22,26 @@ internal sealed record VirtualCrossoverAuditionContext(
     VirtualCrossoverAuditionSpatialAverage? SpatialAverage,
     string? SpatialAverageReason);
 
-/// <summary>
-/// What the panel's "Own (as measured)" resolves to for a render.
-/// </summary>
-/// <param name="Curve">
-/// The one curve every channel was read through; null both when they recorded none
-/// (a render with no correction is then the right answer) and when they disagree.
-/// </param>
-/// <param name="Name">What that curve is called, for the read-out. Null with no curve.</param>
-/// <param name="Conflict">
-/// Why Own cannot be rendered, or null when it can. A render bakes one filter into a
-/// side several channels have already been summed into, so channels read through
-/// different calibrations have no single answer — and inventing one would label a
-/// render as though it carried corrections it does not.
-/// </param>
+/// <summary>What "Own (as measured)" resolves to; <c>Conflict</c> is set when channels used different calibrations (no single filter can be baked into a summed side).</summary>
 internal sealed record VirtualCrossoverAuditionOwnCalibration(
     CalibrationFile? Curve,
     string? Name,
     string? Conflict);
 
-/// <summary>
-/// The same tune with every channel's magnitude read from its spatial average
-/// instead of from the one microphone position, as a second pair of side sums the
-/// dialog can render instead of the measured pair.
-/// </summary>
-/// <remarks>
-/// Prepared by the panel, which owns the captures, the project's averaging method
-/// and the levelling. What arrives here is finished audio: two summed responses and
-/// the lines that say what was done to them.
-/// </remarks>
+/// <summary>The same tune's side sums with magnitudes from spatial averages, prepared by the panel.</summary>
 internal sealed record VirtualCrossoverAuditionSpatialAverage(
     Complex[] LeftSum,
     Complex[] RightSum,
     IReadOnlyList<string> ReportLines);
 
-/// <summary>
-/// The Virtual DSP audition dialog: pick a track and a destination, optionally a
-/// microphone calibration, render, and read what happened. The render runs on a
-/// worker task behind the progress bar and stays cancellable; the report block
-/// accumulates the input file's shape, the tune's responses and the result.
-/// <para>
-/// The chosen calibration becomes a linear-phase FIR baked into BOTH side
-/// kernels before the track convolution — one filter, both sides, so the
-/// magnitude matches the calibrated on-screen curves while the inter-side
-/// timing (the thing being auditioned) shifts by exactly the same constant on
-/// each channel.
-/// </para>
-/// <para>
-/// "Subtract cabin" optionally removes a typical body-style cabin transfer
-/// function (see <see cref="CabinTransferFunction"/>) the same way — an
-/// inverse FIR in both kernels. The raw render carries the full in-car bass
-/// rise (+15…+27 dB at 20 Hz), which headphones reproduce as boom the in-car
-/// listener never perceives; with the typical rise subtracted, what remains
-/// audible at low frequencies is this car's deviation from it. The subtracted
-/// render is level-matched to the same tune WITHOUT the subtraction (the
-/// reference kernels below), so an A/B between cabin choices differs in tone,
-/// not loudness — the removed bass reads as quieter bass rather than a track
-/// the normalizer turned back up.
-/// </para>
-/// </summary>
+/// <summary>Virtual DSP audition dialog: renders a track through the tune on a cancellable worker.</summary>
+/// <remarks>Calibration and cabin subtraction are linear-phase FIRs in both side kernels. See docs/tech/spatial-average.md#audition-render.</remarks>
 internal sealed partial class VirtualCrossoverAuditionDialog : Form
 {
-    // A render holds the decoded material, its resampled copy and the result in
-    // memory at once, so length is bounded rather than left to fail as an
-    // out-of-memory crash deep in a background task. The duration cap alone is
-    // not a memory cap — ten minutes at 192 kHz is six times ten minutes at
-    // 32 kHz — so the pipeline's projected bytes are bounded separately.
+    // Duration cap plus a separate projected-bytes cap (memory scales with rate).
     private const int MaximumTrackMinutes = 10;
     private const long MaximumPipelineBytes = 1_000_000_000;
 
-    // Progress budget: decoding and writing are single passes over the material
-    // against the render's block transforms, so they get the ends of the bar.
     private const double DecodeShare = 0.06;
     private const double RenderShare = 0.86;
 
@@ -107,12 +50,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     private string? sourcePath;
     private string? targetPath;
 
-    // Whether overwriting targetPath has been consented to IN THIS DIALOG.
-    // Only the SaveFileDialog's OverwritePrompt over an EXISTING file (or the
-    // render-time question below) grants it; a path restored from the
-    // previous opening and a freshly created new file both lack it — in
-    // either case the file on disk is the PREVIOUS render, and silently
-    // replacing it would collapse an A/B pair into just B.
+    // Overwrite consent granted in this dialog only (OverwritePrompt on an existing file, or the render-time question); otherwise an A/B pair could collapse.
     private bool targetOverwriteConfirmed;
     private string trackSection = string.Empty;
     private string resultSection = string.Empty;
@@ -120,29 +58,15 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     private CancellationTokenSource? activeRender;
     private bool closeRequested;
 
-    // The last accepted inputs, remembered for the lifetime of the process: a
-    // tuning session renders the SAME track through several tune variants, and
-    // re-picking the files on every opening made that loop needlessly slow.
-    // Deliberately not persisted to disk — a stale path
-    // from last week is noise, within one run it is the workflow. The source
-    // is re-probed on restore (the file may have changed or vanished since),
-    // so a dead path degrades to the usual refusal in the report.
+    // Remembered per process, not persisted: a session renders one track through several tunes. Re-probed on restore.
     private static string? lastSourcePath;
     private static string? lastTargetPath;
 
-    // Ticked by default wherever it is offered: a set of spatial averages exists
-    // because the point measurement's dips are not what the car sounds like, and a
-    // render that keeps them is the exception rather than the norm. Remembered like
-    // every other choice once the user has made one.
     private static bool lastSpatialAverage = true;
 
-    // Seeded with the averaged sedan — the typical headphone listener wants
-    // the typical rise gone; "off (as measured)" stays one click away and is
-    // remembered like any other choice once picked.
     private static CabinBodyStyle? lastCabinStyle = CabinBodyStyle.Sedan;
 
-    // "off" first so index 0 — the fallback everywhere — is the honest raw
-    // render; the styles follow the CabinTransferFunction presets.
+    // "off" first: index 0 is the fallback everywhere.
     private static readonly CabinOption[] CabinOptions =
     [
         new(null, "off (as measured)"),
@@ -159,11 +83,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         this.context = context ?? throw new ArgumentNullException(nameof(context));
         InitializeComponent();
 
-        // The PANEL decides, every opening. The render is supposed to sound the way
-        // the panel's curves look, and the panel already keeps that choice in the
-        // project — a copy of it remembered here could only disagree with it. (The
-        // track and the cabin are remembered below: those are about this render, not
-        // about the tune.)
+        // The panel decides the calibration each opening; a local copy could only disagree with the project.
         MicrophoneCalibrationComboHelper.Configure(
             comboBoxCalibration,
             context.InitialCalibrationId,
@@ -178,17 +98,13 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         comboBoxCabin.SelectedIndex = Math.Max(
             0, Array.FindIndex(CabinOptions, option => option.Style == lastCabinStyle));
 
-        // Muted by hand rather than disabled, the way the panel's own hybrid toggle
-        // is: a CheckBox WinForms disables paints its text in a system grey that
-        // reads as near-black on this theme. The tick is ignored while there is
-        // nothing behind it (RequestedSpatialAverage), and the report says why.
+        // Muted by hand, not disabled (WinForms disabled grey is unreadable on this theme).
         checkBoxSpatialAverage.Checked =
             context.SpatialAverage != null && lastSpatialAverage;
         UiStyle.SetTextEnabledLook(
             checkBoxSpatialAverage, context.SpatialAverage != null, interactive: true);
         checkBoxSpatialAverage.CheckedChanged += (_, _) => RefreshReport();
-        // Wired AFTER Configure, whose own SelectedIndex assignment would otherwise
-        // run this before the rest of the dialog exists.
+        // Wired after Configure, whose SelectedIndex assignment would fire this too early.
         comboBoxCalibration.SelectedIndexChanged += (_, _) =>
         {
             RefreshRenderEnabled();
@@ -205,8 +121,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         }
         if (lastTargetPath != null)
         {
-            // Restored WITHOUT overwrite consent: the file at this path is the
-            // previous opening's render, and Render asks before replacing it.
+            // Restored without overwrite consent: the file is the previous render.
             targetPath = lastTargetPath;
             labelTargetFile.Text = lastTargetPath;
             targetOverwriteConfirmed = false;
@@ -216,8 +131,6 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         RefreshReport();
     }
 
-    // The dialog cannot close while a render is writing: cancel it and let the
-    // completion path below close the form once the worker has unwound.
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         if (activeRender != null)
@@ -231,17 +144,13 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         base.OnFormClosing(e);
     }
 
-    // Unconditional on purpose: a restore that failed (the file vanished)
-    // leaves null here, and saving that null stops the next opening from
-    // retrying a dead path.
+    // Unconditional: saving null stops the next opening retrying a dead path.
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         lastSourcePath = sourcePath;
         lastTargetPath = targetPath;
         lastCabinStyle = SelectedCabinStyle;
-        // Only where the choice was real: an unticked box on a tune that HAS no
-        // averages is not a preference, and remembering it would silently turn the
-        // correction off on the next project that does have them.
+        // Remember only a real choice: an unticked box with no averages is not a preference.
         if (context.SpatialAverage != null)
         {
             lastSpatialAverage = checkBoxSpatialAverage.Checked;
@@ -249,8 +158,6 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 
         base.OnFormClosed(e);
     }
-
-    // ---------------------------------------------------------------- pickers
 
     private void ChooseSource()
     {
@@ -282,11 +189,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         ApplySourceSelection(dialog.FileName);
     }
 
-    // Shared by the picker and the same-run restore: probes the file and
-    // either adopts it (path plus the track report section) or leaves the slot
-    // empty with the refusal in the report. Probing here, not at render time,
-    // means an unreadable, over-long or over-sized file says so the moment it
-    // enters, with Render disabled.
+    // Probes at pick time so an unreadable, too long or too large file is refused before Render.
     private void ApplySourceSelection(string fileName)
     {
         try
@@ -309,9 +212,6 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             }
             else if (projectedBytes > MaximumPipelineBytes)
             {
-                // The duration alone does not bound memory: the render keeps the
-                // decoded stereo source, its resampled copy and both rendered
-                // sides alive at its peak, and that scales with the rates.
                 double allowedMinutes = MaximumPipelineBytes
                     / (ProjectedPipelineBytes(
                         info with { Duration = TimeSpan.FromMinutes(1) },
@@ -363,9 +263,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         RefreshReport();
     }
 
-    // WAV only, and deliberately so: re-encoding to a lossy format would put
-    // codec artifacts inside the very thing being auditioned, and Windows does
-    // not guarantee an MP3 encoder is installed at all.
+    // WAV only: lossy encoding would add codec artifacts to what is being auditioned.
     private void ChooseTarget()
     {
         using var dialog = new SaveFileDialog
@@ -387,8 +285,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             return;
         }
 
-        // Writing onto the source would destroy it on the first render — and
-        // the advertised A/B re-render would then process the processed file.
+        // Writing onto the source would destroy it and make the A/B re-render process the processed file.
         if (PathsEqual(dialog.FileName, sourcePath))
         {
             MessageBox.Show(
@@ -401,11 +298,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             return;
         }
 
-        // Consent tracks what the SaveFileDialog actually asked. For an
-        // EXISTING file its OverwritePrompt just did. A NEW file had nothing
-        // to ask about — the first render creates it freely, and the next
-        // render in this same dialog finds it existing and unconfirmed, so it
-        // asks before replacing variant A with variant B.
+        // An existing file was just confirmed by OverwritePrompt; a new one will ask on the next render.
         targetOverwriteConfirmed = File.Exists(dialog.FileName);
         targetPath = dialog.FileName;
         labelTargetFile.Text = dialog.FileName;
@@ -419,11 +312,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             Path.GetFullPath(second),
             StringComparison.OrdinalIgnoreCase);
 
-    // The render's peak working set: the decoded stereo source, its resampled
-    // copy (absent when the rates already match) and the two rendered sides,
-    // all float32 and all alive at once. Channels beyond two are never stored
-    // (the decoder is told to keep two), so two is the multiplier even for
-    // multichannel files.
+    // Peak working set: decoded stereo, resampled copy (if rates differ) and two rendered sides, all float32.
     private static long ProjectedPipelineBytes(
         long sourceFrames, int sourceRate, int projectRate)
     {
@@ -438,8 +327,6 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             (long)Math.Ceiling(info.Duration.TotalSeconds * info.SampleRate),
             info.SampleRate,
             projectRate);
-
-    // ----------------------------------------------------------------- render
 
     private async Task OnRenderClickedAsync()
     {
@@ -471,13 +358,10 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             targetOverwriteConfirmed = true;
         }
 
-        // Resolved on the UI thread: the combo and the resolver belong here.
-        // A configured-but-unreadable file degrades to Off, called out in the
-        // result rather than silently.
+        // A configured but unreadable file degrades to Off, reported in the result.
         string? calibrationId =
             MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration);
-        // "Own (as measured)" is a RULE, not an entry, and the app's calibration list
-        // cannot resolve it — the panel already worked out which curve it names here.
+        // "Own" is a rule the calibration list cannot resolve; the panel already resolved it.
         bool own = VirtualCrossoverCalibrationSelection.IsOwn(calibrationId);
         CalibrationFile? calibration = own
             ? context.OwnCalibration.Curve
@@ -514,11 +398,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         resultSection = string.Empty;
         RefreshReport();
 
-        // The ONE asynchronous hop in the whole progress chain: created here on
-        // the UI thread, so Progress<T> posts to the UI context — in order.
-        // Every layer below it relays synchronously (SynchronousProgress); a
-        // worker-created Progress<T> would post to the thread pool and reorder.
-        // The IsDisposed guard covers reports still queued when the form goes.
+        // The only async hop: created on the UI thread so reports post in order. Lower layers relay synchronously.
         var progress = new Progress<AuditionProgress>(update =>
         {
             if (IsDisposed)
@@ -544,9 +424,6 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
                     cancellation.Token),
                 cancellation.Token);
             resultSection = FormatResult(outcome, target);
-            // Names the file it wrote. "Finished." alone left the one question a
-            // render ends on — did it actually write anything? — to be answered by
-            // reading the report.
             labelStatus.Text = $"Finished — wrote {Path.GetFileName(target)}";
         }
         catch (OperationCanceledException)
@@ -607,11 +484,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         buttonRender.Enabled = activeRender != null ||
             (sourcePath != null && targetPath != null && CalibrationNote()?.Refused != true);
 
-    /// <summary>
-    /// What the report says about the calibration, when there is anything to say —
-    /// which is only under "Own (as measured)", the one selection whose meaning
-    /// depends on the measurements rather than on a file the user picked.
-    /// </summary>
+    /// <summary>Calibration note for the report; only "Own (as measured)" has anything to say.</summary>
     private (string Text, bool Refused)? CalibrationNote()
     {
         if (!VirtualCrossoverCalibrationSelection.IsOwn(
@@ -637,13 +510,10 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     private CabinBodyStyle? SelectedCabinStyle =>
         comboBoxCabin.SelectedItem is CabinOption option ? option.Style : null;
 
-    // Both halves matter: the tick is a preference that outlives a project, and a
-    // ticked box with no captures behind it must not render something else.
     private VirtualCrossoverAuditionSpatialAverage? RequestedSpatialAverage =>
         checkBoxSpatialAverage.Checked ? context.SpatialAverage : null;
 
-    // The whole pipeline on the worker thread: trim, calibrate, decode, render,
-    // write. Static and argument-fed so it cannot touch a control.
+    // Worker thread; static and argument-fed so it cannot touch a control.
     private static RenderOutcome ExecuteRender(
         VirtualCrossoverAuditionContext context,
         string sourcePath,
@@ -658,8 +528,6 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         CancellationToken cancellationToken)
     {
         progress.Report(new AuditionProgress("Preparing the responses…", 0));
-        // The corrected sums arrive already summed from corrected channels, so the
-        // choice is made once, here, and everything below is the same pipeline.
         Complex[] leftSum = spatialAverage?.LeftSum ?? context.LeftSum;
         Complex[] rightSum = spatialAverage?.RightSum ?? context.RightSum;
         double[] leftKernel = Auralization.TrimResponse(
@@ -667,22 +535,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         double[] rightKernel = Auralization.TrimResponse(
             rightSum, context.SampleRate, out AuralizationTrim rightTrim);
 
-        // The mic calibration and the cabin subtraction go into the KERNELS as
-        // linear-phase FIRs (Design() negates the correction it is handed, so the
-        // calibration's correction and the cabin GAIN both come out right —
-        // calibration applied, cabin rise subtracted). The two combine into ONE
-        // FIR — their dB corrections add — so the OUTPUT kernels cost one
-        // convolution pass and one truncation window, not two, and add half the
-        // constant delay. Applied identically to both sides, so the inter-side
-        // scene is untouched.
-        //
-        // When the cabin is subtracted, a REFERENCE pair of kernels carries the
-        // calibration ALONE (the same tune with the cabin OFF). The render is
-        // level-matched against it below, so an A/B between cabin choices differs
-        // in tone, not loudness — the removed bass reads as quieter bass, not as
-        // a track the normalizer quietly turned back up. The reference is built
-        // BEFORE the combined FIR overwrites the kernels; Convolve returns fresh
-        // arrays, so the two pairs never alias.
+        // Calibration and cabin combine into one linear-phase FIR in both kernels; with cabin subtraction a calibration-only
+        // reference pair is built first for level matching. See docs/tech/spatial-average.md#audition-render.
         double[]? referenceLeftKernel = null;
         double[]? referenceRightKernel = null;
         if (cabin != null)
@@ -717,13 +571,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         }
 
         progress.Report(new AuditionProgress("Decoding the track…", 0.01));
-        // Only the first two channels are kept — the render feeds channel 1 to
-        // the left side and channel 2 to the right, and storing a 7.1 layout
-        // would quadruple the decoded footprint for nothing.
-        // The byte cap makes the budget hold DURING the decode as well: a file
-        // swapped after the pick or a container lying about its duration stops
-        // at the budget instead of exhausting memory before the post-decode
-        // check below ever runs.
+        // Only two channels are decoded; the byte cap also bounds the decode itself.
         AudioFileContent material = AudioFileCodec.Read(
             sourcePath,
             TimeSpan.FromMinutes(MaximumTrackMinutes),
@@ -731,11 +579,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             MaximumPipelineBytes,
             cancellationToken);
 
-        // The pick-time budget was a preflight over the container's CLAIMED
-        // duration; the decode is the truth — the file may have been replaced
-        // since the pick, or the header may simply lie — so the same bound is
-        // enforced again on the actual frame count, before the resampled and
-        // rendered buffers come into existence.
+        // Re-check the budget on the actual frame count: the header may lie or the file may have changed.
         long actualBytes = ProjectedPipelineBytes(
             material.FrameCount, material.SampleRate, context.SampleRate);
         if (actualBytes > MaximumPipelineBytes)
@@ -785,9 +629,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             magnitudeLabel);
     }
 
-    // Through a temporary file beside the target: a cancel or a failure part-way
-    // through a multi-hundred-megabyte write must not leave a truncated WAV in
-    // place of the user's chosen file, which they may have asked to overwrite.
+    // Via a temporary file so a cancel or failure never leaves a truncated WAV in place.
     private static void WriteRenderedTrack(
         string targetPath,
         AuralizationResult result,
@@ -810,14 +652,11 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             }
             catch (IOException)
             {
-                // Losing the temporary file matters less than the original error.
             }
 
             throw;
         }
     }
-
-    // ----------------------------------------------------------------- report
 
     private void RefreshReport() =>
         textBoxReport.Text = ComposeReport(
@@ -827,19 +666,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             trackSection,
             resultSection);
 
-    /// <summary>
-    /// The whole report as one string. Pure and separate so what it puts first can be
-    /// pinned without a dialog.
-    /// </summary>
-    /// <remarks>
-    /// The RESULT leads once there is one. It used to be appended last, which was fine
-    /// while the report was three short blocks and stopped being fine as they grew: on
-    /// a tune with a spatial average per channel the result starts below the bottom of
-    /// the box, so a finished render showed a full progress bar over a report that
-    /// looked exactly like the one before it — nothing said the file had been written.
-    /// Everything above it is the briefing for the NEXT render, which is what the
-    /// blocks are for while one is being set up.
-    /// </remarks>
+    /// <summary>The whole report; the result leads once present so a finished render is visible without scrolling.</summary>
     internal static string ComposeReport(
         VirtualCrossoverAuditionContext context,
         bool spatialAverageRequested,
@@ -884,9 +711,6 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         return report.ToString().TrimEnd();
     }
 
-    // Where the render's levels come from, and what that costs — in view the whole
-    // time the user sets a render up, because it is the one choice here that changes
-    // what the tune SOUNDS like rather than how loud or how long it is.
     private static void AppendMagnitudeSection(
         StringBuilder report,
         VirtualCrossoverAuditionContext context,
@@ -942,7 +766,6 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
                 : string.Empty));
         if (outcome.CorrectionFirTaps > 0)
         {
-            // One filter carries both corrections, so it is reported once.
             section.AppendLine(
                 $"Correction FIR: {outcome.CorrectionFirTaps} taps, linear " +
                 "phase (calibration and cabin combined)");
@@ -990,8 +813,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         return section.ToString();
     }
 
-    // Total minutes, not the minutes component: a refused over-an-hour file
-    // must not display as its remainder ("1:02:03" as "2:03").
+    // Total minutes, so over-an-hour durations do not show only the remainder.
     private static string FormatDuration(TimeSpan duration) =>
         $"{(int)duration.TotalMinutes}:{duration.Seconds:00}";
 

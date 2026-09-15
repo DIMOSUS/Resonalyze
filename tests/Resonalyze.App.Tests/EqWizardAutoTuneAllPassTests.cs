@@ -3,13 +3,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Auto Tune against a bank holding all-pass bands. The tuner fits magnitude and
-/// emits bells only, so a run would replace the user's phase work with filters the
-/// error curve never asked to change — the panel asks first, and these pin what
-/// "keep" then has to mean: the bands survive the run, and the fit is given a
-/// budget that leaves room for them.
-/// </summary>
+/// <summary>The tuner emits bells only, so kept all-pass bands must survive the run and be reserved from its budget.</summary>
 public sealed class EqWizardAutoTuneAllPassTests
 {
     private static readonly PeqBand AllPass =
@@ -25,7 +19,6 @@ public sealed class EqWizardAutoTuneAllPassTests
             EqWizardPanel.WithAllPassBands(tuned, [AllPass]);
 
         Assert.Equal([.. tuned.Bands, AllPass], merged.Bands);
-        // The preamp belongs to the fit — an all-pass carries no level of its own.
         Assert.Equal(-3.5, merged.PreampDb);
     }
 
@@ -40,10 +33,7 @@ public sealed class EqWizardAutoTuneAllPassTests
     [Fact]
     public void WithAllPassBands_OverTheSlotBudget_DropsFittedBandsNotTheAllPass()
     {
-        // The tuner can regenerate a bell on the next run; the all-pass sits on a
-        // junction the user aligned by hand and no run will propose it again. This
-        // only bites when the fit ignored the reduced budget, so it is the backstop
-        // rather than the normal path.
+        // Backstop: the tuner can regenerate a bell, but a hand-aligned all-pass would never be proposed again.
         var tuned = new EqualizationCurve(
             Enumerable.Range(0, EqualizationCurve.MaxBandCount)
                 .Select(i => new PeqBand(100 + i, 2, -1)),
@@ -62,8 +52,6 @@ public sealed class EqWizardAutoTuneAllPassTests
     [Fact]
     public void AutoTuneOptions_TakeTheKeptBandsOffTheFitsBudget()
     {
-        // The two halves have to agree: if the fit spent the whole bank, the merge
-        // above would have to throw away bands the user watched it place.
         using var panel = new EqWizardPanel();
 
         int full = MaxBandsFor(panel, reservedBands: 0);
@@ -76,10 +64,7 @@ public sealed class EqWizardAutoTuneAllPassTests
     [Fact]
     public void AutoTuneOptions_TakeTheKeptBandsOffTheCHOSENLimit_NotOffTheSlotCount()
     {
-        // Max Filters is a budget for the BANK. A user who set it to eight because
-        // their processor has eight slots must not get eleven filters back because
-        // three of them were kept — which is what subtracting from the 32-slot
-        // ceiling instead of from their own number would do.
+        // Max Filters budgets the bank: subtract kept bands from the user's number, not from the 32-slot ceiling.
         using var panel = new EqWizardPanel();
         SetBandLimit(panel, 8);
 
@@ -90,12 +75,7 @@ public sealed class EqWizardAutoTuneAllPassTests
     [Fact]
     public void AutoTuneOptions_WithNoRoomLeft_StillHandTheTunerARangeItCanHonour()
     {
-        // A reserve that swallows the whole budget is refused before the fit is asked
-        // for — AutoTune says so and does not run, because one band placed anyway
-        // would hand back more filters than Max Filters allows. What this pins is only
-        // that the options builder cannot produce an impossible range on the way
-        // there: MaxBands is a clamped value, and a zero or negative budget must
-        // degrade rather than throw.
+        // AutoTune refuses a reserve that swallows the budget; the options builder must only degrade, not throw.
         using var panel = new EqWizardPanel();
 
         Assert.Equal(

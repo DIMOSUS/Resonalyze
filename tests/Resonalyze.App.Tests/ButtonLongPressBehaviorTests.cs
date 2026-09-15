@@ -2,12 +2,7 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The record-button long-press state machine moved off Form1 into
-/// <see cref="ButtonLongPressBehavior"/>; these drive the internal handlers
-/// directly (the WinForms timer needs a message pump) and pin the fire-once
-/// and click-suppression semantics.
-/// </summary>
+/// <summary>Drives the internal handlers directly: the WinForms timer needs a message pump.</summary>
 public sealed class ButtonLongPressBehaviorTests
 {
     [Fact]

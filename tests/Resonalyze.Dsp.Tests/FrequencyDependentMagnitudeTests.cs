@@ -9,10 +9,7 @@ public sealed class FrequencyDependentMagnitudeTests
     [Fact]
     public void Fdw_KeepsTheFixedResponseWhileTheWindowStillSpansTheReflection()
     {
-        // Below the frequency where the FDW window still contains the whole
-        // reflection inside its plateau (~800 Hz here, asserted with margin for
-        // the bank interpolation), the magnitude must read exactly like the
-        // fixed window: FDW only removes what the shrinking window excludes.
+        // Below ~800 Hz the FDW window holds the whole reflection, so it must equal the fixed window.
         IReadOnlyList<SignalPoint> fixedCurve = Spectrum(Options(PhaseWindowMode.Fixed));
         IReadOnlyList<SignalPoint> fdwCurve = Spectrum(
             Options(PhaseWindowMode.FrequencyDependent));
@@ -31,10 +28,7 @@ public sealed class FrequencyDependentMagnitudeTests
     [Fact]
     public void Fdw_SuppressesTheLateReflectionRippleAtHighFrequency()
     {
-        // The point of the feature: a 2 ms reflection combs the fixed-window
-        // treble with ~7 dB peak-to-peak ripple; a 6-cycle window at 8+ kHz is
-        // under 1 ms long, so the reflection falls outside it and the ripple
-        // collapses.
+        // A 2 ms reflection combs the treble ~7 dB; a 6-cycle window at 8+ kHz is under 1 ms.
         double fixedRipple = PeakToPeakDb(
             Spectrum(Options(PhaseWindowMode.Fixed)), 8_000, 16_000);
         double fdwRipple = PeakToPeakDb(
@@ -49,9 +43,6 @@ public sealed class FrequencyDependentMagnitudeTests
     [Fact]
     public void Fdw_FewerCyclesSuppressTheReflectionMore()
     {
-        // In the transition band (a 2 ms reflection against 8-cycle windows of
-        // 1.3-2.7 ms) the longer window still sees part of the reflection while
-        // the 4-cycle window has already dropped it.
         double fourCycles = PeakToPeakDb(
             Spectrum(Options(PhaseWindowMode.FrequencyDependent, cycles: 4)),
             3_000,
@@ -82,12 +73,7 @@ public sealed class FrequencyDependentMagnitudeTests
     [Fact]
     public void GatedSpectrum_MatchesTheFrequencyResponseFdwCurveOnTheSameGate()
     {
-        // The gate-driven magnitude (the Virtual DSP view) and the Frequency
-        // Response mode's FDW curve must be ONE analysis when their gates
-        // coincide — the FR window maps onto a gate anchored at the response's
-        // own START (TransferIrStartCache, the anchor every magnitude window
-        // shares). Bit-equal, not approximate: both paths must run through the
-        // same bank and the same resample, or the two views drift apart.
+        // The Virtual DSP gate-driven magnitude and the FR-mode FDW curve must be bit-equal when gates coincide (start anchor).
         SyntheticMeasurement measurement = ReflectedImpulse();
         int anchor = TransferIrStartCache.ResolveStartIndex(
             measurement.ImpulseResponse!, SampleRate, measurement.PeakIndex);
@@ -140,8 +126,6 @@ public sealed class FrequencyDependentMagnitudeTests
             $"{point.Y:0.###} dB at {point.X:0.#} Hz for a unit delta."));
     }
 
-    // Direct arrival plus a 0.4 reflection 2 ms later — the fixture FDW exists
-    // for. The IR is long enough that neither extraction path runs off its end.
     private static SyntheticMeasurement ReflectedImpulse()
     {
         var impulse = new Complex[8_192];

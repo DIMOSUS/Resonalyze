@@ -5,13 +5,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Characterization tests for <see cref="VirtualCrossoverMetrics"/>: the metric
-/// curve building (shared anchor, complex sum), the participating-channel gating
-/// of the opposite-side sum and the eligibility gating of the stereo Δ read-out —
-/// exercised through a real processing coordinator, with the magnitude-curve
-/// builder faked so no calibration/options are needed.
-/// </summary>
 public sealed class VirtualCrossoverMetricsTests
 {
     private static readonly AnalysisCurve EmptyCurve = new("x", []);
@@ -30,7 +23,6 @@ public sealed class VirtualCrossoverMetricsTests
         return new ProcessedChannel(channel, ir, peak, rate, OxyColors.White);
     }
 
-    // A channel with a resolved source on its LEFT side (the default active side).
     private static VirtualCrossoverChannel ResolvedChannel(string name, int rate)
     {
         var channel = new VirtualCrossoverChannel(name);
@@ -40,8 +32,6 @@ public sealed class VirtualCrossoverMetricsTests
         return channel;
     }
 
-    // A full complex FFT whose every bin above DC is one phasor: the spectrum of
-    // a channel that is flat, at a gain and a phase, through whatever window built it.
     private static Complex[] FlatSpectrum(double gain, double phaseRadians, int length = 4_096)
     {
         var spectrum = new Complex[length];
@@ -61,10 +51,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public void BuildDirectLossCurve_ReadsTheLossOutOfThePrebuiltSpectra()
     {
-        // Two channels in phase sum to twice either: no loss. One at half the
-        // level and inverted against the other sums to 0.5 against a magnitude
-        // sum of 1.5: 20·log10(0.5 / 1.5) = −9.54 dB, everywhere. The windows are
-        // whatever built the spectra — the metric never touches the responses.
+        // Half level inverted: |0.5| vs magnitude sum 1.5 = -9.54 dB everywhere.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         ProcessedChannel a = Processed("A", Impulse(), 10, 48_000);
@@ -86,9 +73,6 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public void BuildDirectLossCurve_HasNoMetric_ForOneChannelOrMixedRates()
     {
-        // The same rule as BuildCurves for one channel, and a rule of its own for
-        // rates: the spectra's bins only line up at one rate, and a sum across two
-        // would add unrelated frequencies.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         ProcessedChannel a = Processed("A", Impulse(), 10, 48_000);
@@ -102,12 +86,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public void BuildCurves_ReadsTheSnapshotRate_NotTheLiveChannel()
     {
-        // Importing a session rebinds every channel's runtime state on the UI
-        // thread while a metric rebuild is still in flight, so the LIVE
-        // channel can momentarily report a zero rate against a real processed
-        // response — the ArgumentOutOfRangeException crash on opening a
-        // session over a loaded one. The render is a snapshot: zeroing the
-        // live channel after processing must change nothing the metric reads.
+        // Session import can zero the live channel's rate mid-rebuild (a real crash); the render must read a snapshot.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var seenRates = new ConcurrentBag<int>();
         var metrics = new VirtualCrossoverMetrics(
@@ -134,11 +113,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public void BuildCurves_StillDrawsTheChannel_WithNoMetricToGoWithIt()
     {
-        // One channel has no metric: its sum is itself and its summation loss is zero
-        // by definition. It still has a CURVE, and withholding that was a bug with a
-        // long reach — everything downstream gates on the magnitudes being present,
-        // so muting every channel but one silently turned off the hybrid view and the
-        // spatial average the EQ Wizard would have been handed.
+        // One channel has no loss but still has a curve: withholding it silently disabled the hybrid view downstream.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
 
@@ -168,11 +143,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public void BuildCurves_AnchorsEveryCurveToTheEarliestFront()
     {
-        // A channel whose peak is a later, louder feature than its front: the
-        // shared window must open at the FRONT, or it opens after part of the
-        // response it is supposed to measure. (The other channel arrives after
-        // both, so the anchor is the first one's front either way — what is
-        // pinned here is front vs peak, not which channel wins.)
+        // Peak later and louder than the front: the shared window must open at the front.
         var early = new Complex[1_024];
         early[300] = 1.0;
         early[400] = 2.0;
@@ -223,15 +194,9 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.NotNull(magnitudes);
         Assert.Equal(2, magnitudes.Count);
         Assert.NotNull(sum);
-        // Two channel spectra + one sum spectrum, all anchored to the SAME
-        // sample: one shared window is what keeps the drawn Sum the vector sum
-        // of the drawn channels and the loss under its 0 dB ceiling. These
-        // records are 64 samples — too short for the front estimator, which
-        // refuses rather than guesses — so the anchor falls back to the
-        // earliest declared peak, the rule this one used to follow outright.
+        // 64-sample records are too short for the front estimator, so the anchor falls back to the earliest peak.
         Assert.Equal(3, captured.Count);
         Assert.All(captured, entry => Assert.Equal(2, entry.Peak));
-        // One of the calls built the complex sum of the two responses.
         Complex[] expectedSum = VirtualCrossoverAnalysis.SumImpulseResponses([a, b]);
         Assert.Contains(captured, entry => entry.Ir.SequenceEqual(expectedSum));
     }
@@ -249,21 +214,13 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public void JunctionSpectra_KeepEachCurveOnItsOwnWindowAndStillCarryTheDelay()
     {
-        // The window placement and the cross-phase pull against each other: an
-        // unpinned gate puts each curve on its OWN arrival, which is what keeps
-        // a late channel inside the short high-frequency windows, and that is a
-        // different time reference per channel. A junction is read from the
-        // CROSS-phase of two of them, so unless every spectrum is rotated back
-        // to the record's origin the placement difference reads as a delay —
-        // and here it would cancel the very misalignment under test.
+        // Per-curve placement is a different time reference per channel; spectra must be rotated back to the record origin or placement reads as delay.
         List<ProcessedChannel> ordered =
         [
             ProcessedThroughChain("A", CrossoverKind.LowPass, 200),
             ProcessedThroughChain("B", CrossoverKind.HighPass, 200, delayMs: 2.0)
         ];
 
-        // The placement really is per curve here — otherwise this test would
-        // pass on a bug, both curves sharing one window and nothing to rotate.
         List<double> offsets = PhaseGatePlacement.ResolvePerCurveOffsets(
             PlacementChannel.From(ordered),
             PhaseGatePlacement.EarliestStartMs(
@@ -273,8 +230,6 @@ public sealed class VirtualCrossoverMetricsTests
             leftMs: 0.5,
             plateauMs: 4.0,
             rightMs: 1.5);
-        // Well over one period of the 200 Hz junction (5 ms), so a spectrum left
-        // on its own placement could not read as this pair at all.
         Assert.True(
             offsets[1] - offsets[0] > 1.0,
             $"the placements have to differ: {offsets[0]} and {offsets[1]} ms");
@@ -287,15 +242,10 @@ public sealed class VirtualCrossoverMetricsTests
             bandLowHz: 100,
             bandHighHz: 400);
 
-        // B is 2 ms late, so the lower channel needs the same 2 ms — the whole
-        // of it, not the fraction a lost re-reference would leave.
         Assert.NotNull(result);
         Assert.InRange(result!.BestExtraDelayMs, 1.9, 2.1);
     }
 
-    // A channel processed through a real crossover chain, for the junction
-    // phase read-out: the settings carry the crossover (so the junction and its
-    // overlap band resolve) and the IR is the chain-applied impulse.
     private static ProcessedChannel ProcessedThroughChain(
         string name,
         CrossoverKind kind,
@@ -325,8 +275,6 @@ public sealed class VirtualCrossoverMetricsTests
             OxyColors.White);
     }
 
-    // The panel's own window, unpinned (each curve on its own arrival) with the
-    // project's default Tukey shoulders — the placement the read-out ships with.
     private static IReadOnlyList<Complex[]> JunctionSpectra(
         IReadOnlyList<ProcessedChannel> ordered) =>
         JunctionPhaseSpectra.Build(
@@ -354,11 +302,7 @@ public sealed class VirtualCrossoverMetricsTests
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
 
-        // Passed upper-first on purpose: the entries must order by band, not by
-        // argument order. The upper channel runs 2 ms late, so the read-out
-        // recommends the same extra delay on the lower one — a misalignment the
-        // gated window has to recover through the panel's own placement, which
-        // is what makes this a test of the read-out and not of the dsp maths.
+        // Passed upper-first on purpose: entries must order by band, not argument order.
         List<VirtualCrossoverMetric.PhaseEntry> entries = metrics.BuildPhaseEntries(
         [
             ProcessedThroughChain("B", CrossoverKind.HighPass, 200, delayMs: 2.0),
@@ -373,11 +317,7 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.Equal(100, entry.LowHz);
         Assert.Equal(400, entry.HighHz);
         Assert.InRange(entry.Result.BestExtraDelayMs, 1.9, 2.1);
-        // Not ~1.00: the read goes through the panel's gate, and the project's
-        // default 0.5/4/1.5 ms window holds barely more than one period of a
-        // 200 Hz junction, so the band's own skirts cost it a few hundredths.
-        // The figure under test is the recovered delay above; this bound only
-        // asserts the band still reads as aligned.
+        // The default 0.5/4/1.5 ms gate holds barely one period of 200 Hz, so skirts cost a few hundredths.
         Assert.InRange(entry.Result.BestScore, 0.90, 1.0);
     }
 
@@ -399,12 +339,6 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.NotEmpty(side.ImpulseResponse);
     }
 
-    /// <summary>
-    /// The side sum hands back the PARTS it was made of, not only the total. The
-    /// hybrid view rebuilds that sum a different way — magnitudes added, with the
-    /// summation loss on top, because a spatial average carries no phase — and with
-    /// one summed response and nothing else it could not take part at all.
-    /// </summary>
     [Fact]
     public async Task ComputeSideSumAsync_HandsBackThePartsThatWentIntoTheSum()
     {
@@ -412,9 +346,6 @@ public sealed class VirtualCrossoverMetricsTests
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         VirtualCrossoverChannel a = ResolvedChannel("A", 48_000);
         VirtualCrossoverChannel b = ResolvedChannel("B", 48_000);
-        // A channel with nothing behind it takes no part, so it must not appear
-        // among the parts either — a caller walking them beside its own per-channel
-        // data would be one out from there on.
         VirtualCrossoverChannel silent = new("C");
         long revision = coordinator.Invalidate();
 
@@ -430,7 +361,6 @@ public sealed class VirtualCrossoverMetricsTests
             Assert.Equal(side.ImpulseResponse.Length, item.ImpulseResponse.Length);
         }
 
-        // And they really are that sum's parts: added back up they reproduce it.
         for (int i = 0; i < side.ImpulseResponse.Length; i++)
         {
             Complex total = side.Channels
@@ -447,8 +377,6 @@ public sealed class VirtualCrossoverMetricsTests
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
 
-        // One resolved channel: enough for the audition (minimum 1), not for
-        // the opposite-side overlay (minimum 2).
         VirtualCrossoverSideSum? forAudition = await metrics.ComputeSideSumAsync(
             [ResolvedChannel("A", 48_000)], rightSide: false, revision,
             minimumChannels: 1);
@@ -467,9 +395,7 @@ public sealed class VirtualCrossoverMetricsTests
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
-        // A mono channel (a sub) resolved on its single slot: program material
-        // routes it into BOTH ears at full level, so both side sums must carry
-        // its response unattenuated.
+        // A mono sub plays into both ears at full level, so both side sums carry it unattenuated.
         VirtualCrossoverChannel mono = ResolvedChannel("Sub", 48_000);
         mono.Pair.Mono = true;
         long revision = coordinator.Invalidate();
@@ -510,16 +436,12 @@ public sealed class VirtualCrossoverMetricsTests
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
 
-        // A stereo pair (not mono) with only the left side resolved is not eligible
-        // for a stereo Δ — it needs both sides present and unbypassed.
         List<VirtualCrossoverMetric.StereoDelta> deltas =
             await metrics.ComputeStereoDeltasAsync([ResolvedChannel("A", 48_000)], revision);
 
         Assert.Empty(deltas);
     }
 
-    // A longer impulse so the band-limited arrival analysis has real bins to work
-    // with; both physical slots are resolved for a stereo pair.
     private static Complex[] LongImpulse()
     {
         var ir = new Complex[4_096];
@@ -549,19 +471,14 @@ public sealed class VirtualCrossoverMetricsTests
 
         VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
         Assert.Equal("A", delta.Channel);
-        // No crossover configured, so the shared band is the full audio range.
         Assert.Equal(20, delta.LowHz);
         Assert.Equal(20_000, delta.HighHz);
-        // The arrival result is cached on the side for reuse on the next redraw.
         Assert.NotNull(channel.PhysicalSideState(false).ArrivalCache);
     }
 
     [Fact]
     public async Task ComputeStereoDeltasAsync_TakesTheLevelFromTheHybridReaderWhenSupplied()
     {
-        // The panel supplies the reader while the hybrid mode is on: the level
-        // row then reports what the spatial averages say — asked once, in the
-        // pair's shared band — and the row says which measurement it read.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
@@ -589,8 +506,6 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeStereoDeltasAsync_AReaderWithNothingToSayLeavesThePointMeasuredLevel()
     {
-        // An array set may have gaps: a pair the captures cannot speak for keeps
-        // its gated point-measured level, unmarked as spatial.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
@@ -603,7 +518,6 @@ public sealed class VirtualCrossoverMetricsTests
                 [channel], revision, hybridLevelDeltaDb: (_, _, _) => null);
 
         VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
-        // The two sides are byte-identical impulses, so the point level says 0.
         Assert.Equal(0.0, delta.LevelDeltaDb!.Value, 6);
         Assert.False(delta.LevelFromSpatialAverage);
     }
@@ -611,9 +525,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeStereoDeltasAsync_NeverAsksTheHybridReaderForAMonoChannel()
     {
-        // One physical driver serving both sides has no L−R to compare, so the
-        // reader must not be consulted for it — a capture could answer, and the
-        // row would then invent an imbalance for a channel that cannot have one.
+        // A shared driver has no L-R; consulting the reader would invent an imbalance.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
@@ -633,8 +545,6 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.False(delta.LevelFromSpatialAverage);
     }
 
-    // A Hann-windowed tone burst: toneHz for cycles periods, scaled by
-    // amplitude, placed at startMs.
     private static void AddBurst(
         Complex[] ir, double toneHz, int cycles, double amplitude, double startMs)
     {
@@ -651,14 +561,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeStereoDeltasAsync_FlagsAModalLatchedSide()
     {
-        // The left side reproduces the field failure the alignment engine's
-        // cross-side links detect: a weak direct wavelet (34 dB below the
-        // late modal ringing — under the first-arrival detector's −25 dB
-        // prominence floor) followed by a huge low-frequency build-up. The
-        // full 100–400 Hz band then times the build-up, while the band's
-        // upper half (where the 130 Hz ringing is filtered out) times the
-        // wavelet — the disagreement IS the latch. The right side has a
-        // clean dominant direct and must stay unflagged.
+        // Field latch: weak direct wavelet 34 dB under late modal ringing; full band times the build-up, upper half the wavelet.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
@@ -687,27 +590,16 @@ public sealed class VirtualCrossoverMetricsTests
             await metrics.ComputeStereoDeltasAsync([channel], revision);
 
         VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
-        // 100–400 Hz is centred at 200 Hz and both records are clean, so the
-        // pair reads energy onsets — and the latch shows on that instrument
-        // too: a tenth of the full band's energy sits in the build-up, a
-        // tenth of the upper half's in the wavelet.
         Assert.True(delta.EnergyOnset);
         Assert.True(delta.LeftLatched);
         Assert.False(delta.RightLatched);
-        // The upper-half probe the verdict is graded against rides in the
-        // per-side cache with the arrival; the verdict itself is per pair.
         Assert.NotNull(channel.PhysicalSideState(false).ArrivalCache!.Value.Probe);
     }
 
     [Fact]
     public async Task ComputeStereoDeltasAsync_TheCoinTheFieldPairTossed_ReadsTheSameSplitByOnsets()
     {
-        // The engine's coin, on the read-out: a front and a 1.4× arrival
-        // 8 ms behind it on the left, 7 ms on the right, through the same
-        // BW36 65 Hz / BW48 200 Hz band-pass. The first peaks read the two
-        // sides 5 ms apart (the left's hump stands as a peak, the right's
-        // melts into the arrival) for a true skew of zero; the onsets read
-        // them within 0.2 ms, and the row reads the onsets.
+        // The engine's coin: first peaks read the sides 5 ms apart for a true skew of zero; onsets agree within 0.2 ms.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
@@ -732,7 +624,6 @@ public sealed class VirtualCrossoverMetricsTests
         VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
         TimeAlignmentAnalysisResult left = channel.PhysicalSideState(false).ArrivalCache!.Value.Result;
         TimeAlignmentAnalysisResult right = channel.PhysicalSideState(true).ArrivalCache!.Value.Result;
-        // The fixture IS the coin: the peaks disagree by milliseconds.
         Assert.True(
             Math.Abs(left.FirstArrivalDelayMilliseconds - right.FirstArrivalDelayMilliseconds) > 3.0,
             $"peaks split {left.FirstArrivalDelayMilliseconds - right.FirstArrivalDelayMilliseconds:0.00} ms");
@@ -742,9 +633,6 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.False(delta.RightLatched);
     }
 
-    // A stereo pair whose both sides play the given response through a
-    // Linkwitz-Riley 24 band-pass between lowHz and highHz — the shared
-    // band the read-out times the pair in.
     private static VirtualCrossoverChannel BandPassPair(
         string name, double lowHz, double highHz, Complex[] left, Complex[] right)
     {
@@ -765,7 +653,6 @@ public sealed class VirtualCrossoverMetricsTests
         return channel;
     }
 
-    // A clean midbass-like packet: one Hann-windowed 130 Hz burst.
     private static Complex[] MidbassPacket(double amplitude = 1.0)
     {
         var ir = new Complex[8_192];
@@ -778,7 +665,6 @@ public sealed class VirtualCrossoverMetricsTests
         var random = new Random(seed);
         for (int i = 0; i < ir.Length; i++)
         {
-            // Box-Muller: Gaussian noise of the given RMS.
             double u1 = 1.0 - random.NextDouble();
             double u2 = random.NextDouble();
             ir[i] += rms * Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(Math.Tau * u2);
@@ -788,10 +674,6 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeStereoDeltasAsync_ReadsALowPairByItsEnergyOnsets()
     {
-        // The pair's shared band is centred at 114 Hz, under the engine's
-        // 300 Hz rule, and both sides are clean: the row reads the bands'
-        // energy onsets — the instrument the stereo Auto delay's cross-side
-        // target uses — on BOTH sides, and says so.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
@@ -808,8 +690,6 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.True(left.SignalToNoiseDecibels >= AutoAlignmentEngine.EnergyOnsetMinimumSnrDb);
         Assert.Equal(left.EnergyOnsetDelayMilliseconds, delta.LeftMs!.Value, 9);
         Assert.Equal(right.EnergyOnsetDelayMilliseconds, delta.RightMs!.Value, 9);
-        // The onset is a different instant from the first peak — on a Hann
-        // burst it leads the envelope's maximum — so the row visibly moved.
         Assert.True(delta.LeftMs.Value < left.FirstArrivalDelayMilliseconds - 0.5);
         Assert.False(delta.LeftLatched);
         Assert.False(delta.RightLatched);
@@ -818,10 +698,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeStereoDeltasAsync_ALowPairReadsFirstPeaksOnBothSidesWhenOneCannotWitnessAnOnset()
     {
-        // The right record is noisy: measurable (above the 12 dB arrival
-        // floor) but under the 30 dB an energy onset needs. The link rule
-        // then reads first peaks on BOTH sides — never a peak against an
-        // onset — and the row does not claim the onset instrument.
+        // Right side above the 12 dB arrival floor but under the 30 dB onset SNR: both sides fall back to first peaks.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
@@ -841,8 +718,6 @@ public sealed class VirtualCrossoverMetricsTests
             AutoAlignmentEngine.MinimumArrivalSnrDb,
             AutoAlignmentEngine.EnergyOnsetMinimumSnrDb - 0.01);
         Assert.False(delta.EnergyOnset);
-        // ...and the row says the onset was withheld, not that the band
-        // never asked for one.
         Assert.True(delta.EnergyOnsetWithheld);
         Assert.Equal(left.FirstArrivalDelayMilliseconds, delta.LeftMs!.Value, 9);
         Assert.Equal(right.FirstArrivalDelayMilliseconds, delta.RightMs!.Value, 9);
@@ -851,8 +726,6 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeStereoDeltasAsync_APairCentredAboveTheOnsetRegionReadsFirstPeaks()
     {
-        // 300–1200 Hz is centred at 600 Hz: a sharp front, where the first
-        // peak is the better instrument, as in the engine.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
@@ -873,9 +746,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeStereoDeltasAsync_AMonoChannelReadsItsFirstPeakEvenInAnOnsetBand()
     {
-        // A mono channel has no twin for the onset's bias to cancel against:
-        // it keeps the first peak, the junction timelines' instrument,
-        // however low its band sits.
+        // A mono channel has no twin to cancel the onset bias, so it keeps the first peak.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         long revision = coordinator.Invalidate();
@@ -907,23 +778,15 @@ public sealed class VirtualCrossoverMetricsTests
 
         VirtualCrossoverMetric.StereoDelta delta = Assert.Single(deltas);
         Assert.Equal("Sub", delta.Channel);
-        // One physical driver serving both sides: no right-side arrival or delta.
         Assert.Null(delta.RightMs);
     }
 
     [Fact]
     public void BuildEntries_KeepsTheRealJunctionAndWithholdsTheTotalAcrossAHole()
     {
-        // The reference car's Rear + Sub view, read end to end rather than through
-        // the predicate underneath: two subwoofers that genuinely cross, then a
-        // rear fill above a hole. The subwoofers' row is information the tuner
-        // wants and must survive; the total must not, because averaging that real
-        // handover with a span only one member plays in presents a figure about a
-        // chain that is not one.
+        // Two crossing subs then a rear fill above a hole: the sub row survives, the total must not.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
-        // A flat loss across the audio band: the entries' arithmetic is not what
-        // is under test here, only which rows are minted at all.
         List<SignalPoint> loss =
             [.. Enumerable.Range(0, 400).Select(i =>
                 new SignalPoint(20.0 * Math.Pow(1_000.0, i / 399.0), -1.0))];
@@ -933,8 +796,6 @@ public sealed class VirtualCrossoverMetricsTests
             ProcessedThroughChain("B", CrossoverKind.HighPass, 50),
             ProcessedThroughChain("C", CrossoverKind.HighPass, 290)
         ];
-        // B is the 50-110 Hz subwoofer; give it its upper corner so the hole in
-        // front of C is real rather than an artefact of a missing low-pass.
         brokenChain[1].Channel.Settings.CrossoverKind = CrossoverKind.BandPass;
         brokenChain[1].Channel.Settings.LowPassEdge =
             new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 110, 24);
@@ -945,8 +806,6 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.Equal("A/B", Assert.Single(entries).Junction);
         Assert.DoesNotContain(entries, entry => entry.IsTotal);
 
-        // Drop the rear fill and the same two subwoofers ARE a chain, so the total
-        // comes back — the rule bites on the hole, not on the view.
         List<VirtualCrossoverMetric.Entry> whole =
             metrics.BuildEntries([brokenChain[0], brokenChain[1]], loss);
 
@@ -956,13 +815,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public void BuildEntries_ReadsJunctionsOffTheSummingSet_ACentreBetweenTwoFrontDriversInventsNone()
     {
-        // Front + Center draws a centre beside the front stage without summing it.
-        // High-passed with no upper corner, its band centre lands between the
-        // midrange's and the tweeter's, so ordered WITH the front it wedges into
-        // the chain: the rows would name two junctions the sum never had and lose
-        // the real mid/tweeter one. The screen's UpdateMetric and the AI package's
-        // capture both pass the SUMMING set for that reason; this pins what the
-        // drawn set would have produced instead.
+        // A high-passed centre ordered with the front wedges between mid and tweeter; callers pass the SUMMING set.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(coordinator, (_, _, _, _, _) => EmptyMagnitude);
         List<SignalPoint> loss =
@@ -986,11 +839,6 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public void BuildCurves_SumsOnlyTheSubsetItIsGiven_ButStillDrawsEveryChannel()
     {
-        // The grouped views draw a centre beside the front stage without adding it
-        // to anything, so the drawn set and the summed set differ. Both must come
-        // out right at once: a curve missing from the plot is a channel the user
-        // cannot see, and a channel silently inside the sum is a number they
-        // cannot explain.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var summedSets = new List<int>();
         var metrics = new VirtualCrossoverMetrics(
@@ -1020,8 +868,6 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public void BuildCurves_WithFewerThanTwoSummingChannels_StillDrawsThem()
     {
-        // A front stage of one driver beside an unsummed centre: there is no sum
-        // and no loss to state, but both curves are still what the plot is for.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(
             coordinator,
@@ -1045,9 +891,6 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeSideSumAsync_HonoursTheZoneFilterItIsGiven()
     {
-        // The opposite side's sum has to be the same part of the installation as
-        // the side on screen, or the dashed comparison curve reads as an L/R
-        // difference that is really a difference of scope.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(
             coordinator,
@@ -1071,8 +914,6 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.NotNull(frontAndSub);
         Assert.Equal(2, frontAndSub.ChannelCount);
 
-        // And the filter can starve the sum below its minimum, which is a null
-        // rather than a sum of one.
         VirtualCrossoverSideSum? rearOnly = await metrics.ComputeSideSumAsync(
             [front, rear, sub],
             rightSide: false,
@@ -1083,9 +924,6 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.Null(rearOnly);
     }
 
-    // A channel whose processed response is a lone impulse at a known sample,
-    // long enough for the band-limited arrival analysis to have something to
-    // work with, tagged with the zone the grouped views sort it by.
     private static ProcessedChannel Zoned(
         string name,
         VirtualCrossoverZone zone,
@@ -1108,12 +946,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeGroupDeltas_ReusesTheReadOutWhileTheResponsesStand()
     {
-        // The group Δ read-out costs arrival FFTs over the summed groups, and the
-        // whole redraw waits on them. A view switch rebuilds the frame without
-        // touching a single response, so it must be answered from memory the way
-        // the coordinator answers for the responses themselves — otherwise
-        // Front + Center pays for those FFTs again on every magnitude/phase/
-        // impulse toggle while Front + Sub, which quotes no group Δ, is instant.
+        // A view switch touches no response, so group deltas must come from memory rather than re-running arrival FFTs.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(
             coordinator, (_, _, _, _, _) => EmptyMagnitude);
@@ -1126,29 +959,20 @@ public sealed class VirtualCrossoverMetricsTests
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> first =
             await metrics.ComputeGroupDeltasAsync(
                 shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.Invalidate());
-        // The second frame is asked the way a real toggle asks: RequestRedraw
-        // invalidates first and the frame then carries the NEW revision, so a
-        // repeat call at the old one would prove nothing about the path the user
-        // takes.
+        // RequestRedraw invalidates first, so the repeat frame carries a NEW revision like a real toggle.
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> second =
             await metrics.ComputeGroupDeltasAsync(
                 shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.Invalidate());
 
         Assert.Single(first);
         Assert.Equal(VirtualCrossoverZone.Center, first[0].Zone);
-        // The same instance: a recompute builds a new list, so identity is what
-        // says the arrival analysis did not run a second time.
         Assert.Same(first, second);
     }
 
     [Fact]
     public async Task ComputeGroupDeltas_TakesTheLevelFromTheHybridReaderAndKeysTheCacheOnIt()
     {
-        // The panel supplies the reader while the hybrid mode is on: the ΔdB
-        // then reports what the groups' spatial averages say. The answer joins
-        // the cache key — toggling the hybrid leaves every response standing,
-        // and the remembered point-measured set must not answer for the
-        // capture-based one.
+        // The hybrid answer joins the cache key: point-measured memory must not answer for capture-based deltas.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(
             coordinator, (_, _, _, _, _) => EmptyMagnitude);
@@ -1171,11 +995,8 @@ public sealed class VirtualCrossoverMetricsTests
         VirtualCrossoverMetric.GroupDelta delta = Assert.Single(hybrid);
         Assert.Equal(-5.5, delta.LevelDb);
         Assert.True(delta.LevelFromSpatialAverage);
-        // Asked once, with the compared group, the front and their shared band.
         Assert.Equal((1, 1, 20.0, 20_000.0), Assert.Single(asked));
 
-        // The hybrid off again: the same responses must be re-read rather than
-        // answered from the capture-based memory.
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> point =
             await metrics.ComputeGroupDeltasAsync(
                 shown, VirtualCrossoverGroupView.FrontAndCenter, coordinator.Invalidate());
@@ -1187,11 +1008,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeGroupDeltas_AnswerNothingForASupersededFrame()
     {
-        // The other half of remembering the set: a frame the user has already
-        // overtaken is answered as it was before the cache existed — with
-        // nothing. Cheap to get wrong, because a cache hit is tempting to serve
-        // unconditionally, and then a stale frame carries a read-out the caller
-        // was supposed to drop.
+        // An overtaken frame still gets nothing; a cache hit must not bypass the staleness check.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(
             coordinator, (_, _, _, _, _) => EmptyMagnitude);
@@ -1213,9 +1030,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeGroupDeltas_RecomputesWhenAResponseIsReplaced()
     {
-        // The other half of the bargain. The coordinator manufactures a NEW array
-        // for a channel the moment anything feeding it moves, so a remembered
-        // read-out must be answered for by the very arrays it was measured from.
+        // The coordinator makes new arrays when inputs move, so the cache is keyed on array identity.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(
             coordinator, (_, _, _, _, _) => EmptyMagnitude);
@@ -1234,7 +1049,6 @@ public sealed class VirtualCrossoverMetricsTests
 
         Assert.NotSame(first, second);
         Assert.Single(second);
-        // And the answer moved with the response: the centre now arrives later.
         Assert.NotNull(first[0].DelayMs);
         Assert.NotNull(second[0].DelayMs);
         Assert.True(second[0].DelayMs > first[0].DelayMs);
@@ -1243,8 +1057,6 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeGroupDeltas_StaySilentInASingleGroupView()
     {
-        // Front + Sub spans one listening group, so it quotes a summation loss
-        // and no group Δ at all — which is why it was the fast view to begin with.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(
             coordinator, (_, _, _, _, _) => EmptyMagnitude);
@@ -1261,10 +1073,6 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeGroupDeltas_ReportOneRowPerComparedGroup()
     {
-        // Everything compares two groups against the front, and both are timed
-        // over the same span here — the path where the front stage's own arrival
-        // is read once for the band rather than once per group. The rows must
-        // still be the two the view promises, each against the same reference.
         using var coordinator = new VirtualCrossoverProcessingCoordinator();
         var metrics = new VirtualCrossoverMetrics(
             coordinator, (_, _, _, _, _) => EmptyMagnitude);
@@ -1282,7 +1090,6 @@ public sealed class VirtualCrossoverMetricsTests
         Assert.Equal(2, deltas.Count);
         Assert.Equal(VirtualCrossoverZone.Rear, deltas[0].Zone);
         Assert.Equal(VirtualCrossoverZone.Center, deltas[1].Zone);
-        // 100 samples at 48 kHz is 2.083 ms behind the front, 50 is 1.042 ms.
         Assert.Equal(100.0 / 48.0, deltas[0].DelayMs!.Value, 2);
         Assert.Equal(50.0 / 48.0, deltas[1].DelayMs!.Value, 2);
     }
@@ -1290,14 +1097,7 @@ public sealed class VirtualCrossoverMetricsTests
     [Fact]
     public async Task ComputeStereoDeltas_DoesNotEvictTheFramesProcessedResponses()
     {
-        // A block's POSITION in the list handed to the stereo Δ read-out is its
-        // identity in the coordinator's cache. Hand over a filtered list and every
-        // block after the first omission is renumbered onto a slot belonging to
-        // another channel: the read-out overwrites responses the frame had just
-        // processed, the next frame misses on them, reprocesses, overwrites the
-        // read-out's in turn — and the two thrash each other for as long as the
-        // view stays open. On the reference car that is every view except the one
-        // whose blocks happen to sit at the head of the list.
+        // List position is the coordinator cache slot: a filtered list renumbers blocks and the read-out and frame thrash each other.
         int processCount = 0;
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
             (source, chain, sampleRate, _, _) =>
@@ -1307,8 +1107,6 @@ public sealed class VirtualCrossoverMetricsTests
             });
         var metrics = new VirtualCrossoverMetrics(
             coordinator, (_, _, _, _, _) => EmptyMagnitude);
-        // Three mono blocks: the read-out below covers the LAST one only, so with
-        // a shortened list it would take slot 0 — the first block's.
         List<VirtualCrossoverChannel> channels =
             [ResolvedMono("A"), ResolvedMono("B"), ResolvedMono("C")];
         long revision = coordinator.Invalidate();
@@ -1327,15 +1125,12 @@ public sealed class VirtualCrossoverMetricsTests
 
         await metrics.ComputeStereoDeltasAsync(
             channels, revision, includePair: pair => ReferenceEquals(pair, channels[2].Pair));
-        // The frame runs again with nothing changed, exactly as a view or mode
-        // toggle makes it: every response must still be in the cache.
         Assert.NotNull(await coordinator.ProcessAsync(frame));
 
         Assert.Equal(3, afterFirstFrame);
         Assert.Equal(3, processCount);
     }
 
-    // A mono block with a resolved source on the side the panel draws.
     private static VirtualCrossoverChannel ResolvedMono(string name)
     {
         VirtualCrossoverChannel channel = ResolvedChannel(name, 48_000);

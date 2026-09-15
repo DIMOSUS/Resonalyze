@@ -2,14 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// How the Virtual DSP selector reads the calibration a project stores — the four
-/// ways a session can arrive (its own curve; a curve this machine has under some
-/// name; a legacy id that resolves; a legacy id that does not) and what each
-/// persists as. The ids are deliberately the colliding ones: "90deg" exists on
-/// every machine that migrated a legacy 90° slot, and an id agreeing says nothing
-/// about the files.
-/// </summary>
+/// <summary>Ids deliberately collide: "90deg" exists on every machine that migrated a legacy slot, so an id match says nothing about the file.</summary>
 public sealed class VirtualCrossoverCalibrationSelectionTests
 {
     private static readonly CalibrationFile AuthorsCurve =
@@ -21,7 +14,6 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
     private static readonly CalibrationFile ZeroCurve =
         CalibrationFile.Parse("20 0\n20000 0\n");
 
-    // A curve no entry of the recipient's list resolves to.
     private static readonly CalibrationFile ForeignCurve =
         CalibrationFile.Parse("20 0\n1000 0.5\n20000 -6\n");
 
@@ -57,8 +49,7 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
     [Fact]
     public void ACarriedCurveNobodyHas_IsOfferedAndSelected_AndTheIdCollisionIsIgnored()
     {
-        // The loud branch of #108 and the silent one at once: the session names
-        // "90deg", the recipient HAS a "90deg" — a different microphone's file.
+        // The session names "90deg" and the recipient has a "90deg" from a different microphone.
         VirtualCrossoverCalibrationDecision decision =
             Decide("90deg", Carried(ForeignCurve));
 
@@ -73,8 +64,6 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
     [Fact]
     public void ACarriedCurveThisMachineHasUnderAnotherName_SelectsThatEntry()
     {
-        // The author's own round trip, and a recipient who already kept the file:
-        // the curve is found under whatever id and name this machine gave it.
         VirtualCrossoverCalibrationDecision decision =
             Decide("cal-authors-id", Carried(AuthorsCurve));
 
@@ -103,9 +92,7 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
     [Fact]
     public void TheAutosave_FollowsItsOwnEntryEvenWhenTheFileWasEditedSince()
     {
-        // The autosave's id is this machine's by construction, and an entry exists
-        // so that editing the file updates every view reading it — the stored
-        // curve is the previous state of that file, not a rival to it.
+        // The autosave's id is this machine's; its stored curve is the file's previous state, not a rival.
         VirtualCrossoverCalibrationDecision decision =
             Decide("90deg", Carried(AuthorsCurve), imported: false);
 
@@ -117,13 +104,9 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
     [Fact]
     public void TheAutosave_OffersItsOwnCurve_WhenTheEntryIsGone()
     {
-        // An entry deleted after the session was tuned: the curve is still the
-        // session's, and it carries on drawing with it, silently — the user did
-        // this themselves.
         VirtualCrossoverCalibrationDecision decision =
             Decide("cal-deleted", Carried(AuthorsCurve, name: "Seat", fileName: "seat.txt"), imported: false);
 
-        // ...except that this machine still has the curve under "cal-local".
         Assert.Equal("cal-local", decision.SelectedId);
 
         VirtualCrossoverCalibrationDecision unmatched =
@@ -136,18 +119,13 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
     [Fact]
     public void TheAutosave_KeepsItsUnavailableEntrySelected_AndAnImportDoesNot()
     {
-        // The user's own entry with its file unplugged: it stays selected and marked,
-        // as every view's selection does (Persist keeps the stored curve for it), so
-        // it is still the same selection when the file returns — even if the file
-        // was edited meanwhile and the curve alone would no longer find it.
+        // An unplugged entry stays selected (Persist keeps its curve), so it survives the file being edited meanwhile.
         VirtualCrossoverCalibrationDecision autosave =
             Decide("cal-gone", Carried(RecipientsCurve, name: "Unplugged"), imported: false);
 
         Assert.Equal("cal-gone", autosave.SelectedId);
         Assert.Null(autosave.Session);
 
-        // An import has no such claim on an unavailable entry of the same id: the
-        // curve decides, and RecipientsCurve IS configured here, as "90deg".
         VirtualCrossoverCalibrationDecision import =
             Decide("cal-gone", Carried(RecipientsCurve, name: "Unplugged"), imported: true);
 
@@ -167,8 +145,6 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
     [Fact]
     public void ALegacySlotId_ThatResolvesHere_IsMatchedByNameAndSaysSo()
     {
-        // A session written before the curve travelled, naming "90deg": the match is
-        // by slot name only, and the user is told rather than left to assume.
         VirtualCrossoverCalibrationDecision decision = Decide("90deg", null);
 
         Assert.Equal("90deg", decision.SelectedId);
@@ -191,14 +167,12 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
     [Fact]
     public void ALegacyId_ThatDoesNotResolve_KeepsWhatThePanelHad()
     {
-        // The issue's first ask: a valid selection must not be lost to an invalid one.
         VirtualCrossoverCalibrationDecision decision =
             Decide("cal-authors-id", null, previousId: "cal-local");
 
         Assert.Equal("cal-local", decision.SelectedId);
         Assert.Equal(VirtualCrossoverCalibrationNotice.KeptPrevious, decision.Notice);
 
-        // ...including when what it had was a curve carried by the previous session.
         var previousSession = new VirtualCrossoverSessionCalibration(AuthorsCurve, "Prev", null);
         VirtualCrossoverCalibrationDecision kept = Decide(
             "cal-gone", null,
@@ -207,7 +181,6 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
         Assert.Equal(VirtualCrossoverCalibrationSelection.SessionId, kept.SelectedId);
         Assert.Same(previousSession, kept.Session);
 
-        // ...and when it had nothing, nothing: the notice still says so.
         VirtualCrossoverCalibrationDecision off = Decide("cal-authors-id", null, previousId: null);
         Assert.Null(off.SelectedId);
         Assert.Equal(VirtualCrossoverCalibrationNotice.KeptPrevious, off.Notice);
@@ -232,10 +205,6 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
             VirtualCrossoverCalibrationSelection.EntriesWith(Recipient, session);
 
         Assert.Equal(Recipient.Length + 2, entries.Count);
-        // First, straight after the combo's own Off: it is the answer that needs no
-        // configuring and cannot be wrong about what was measured. The configured
-        // entries below it are this machine's opinions about what to read the
-        // measurements through.
         Assert.Equal(VirtualCrossoverCalibrationSelection.OwnId, entries[0].Id);
         Assert.Equal("Own (as measured)", entries[0].Name);
         Assert.True(entries[0].Available);
@@ -254,8 +223,6 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
         IReadOnlyList<MicrophoneCalibrationEntry> entries =
             VirtualCrossoverCalibrationSelection.EntriesWith(Recipient, null);
 
-        // It describes the MEASUREMENTS, so it is on offer whether or not the project
-        // brought a curve of its own.
         Assert.Equal(Recipient.Length + 1, entries.Count);
         Assert.Equal(VirtualCrossoverCalibrationSelection.OwnId, entries[0].Id);
         Assert.DoesNotContain(
@@ -266,10 +233,7 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
     [Fact]
     public void Own_SurvivesABindAndPersistsAsARuleWithNoCurve()
     {
-        // It names no curve, so a stored one beside it — from a project saved under a
-        // different selection and migrated — has nothing to say about it, and none is
-        // written back. Storing one of the measurements' would make the project read
-        // every channel through whichever file happened to be first.
+        // Own names no curve, so no stored curve is written back (it would read every channel through one file).
         VirtualCrossoverCalibrationDecision decision =
             VirtualCrossoverCalibrationSelection.Resolve(
                 VirtualCrossoverCalibrationSelection.OwnId,
@@ -312,21 +276,15 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
         (id, curve) = VirtualCrossoverCalibrationSelection.Persist(
             VirtualCrossoverCalibrationSelection.SessionId, session, Recipient, Resolve,
             storedId: null, stored: null);
-        // No id: the persisted form of "the curve the session carries" is the curve
-        // itself, so an autosave re-read on this machine cannot be captured by an
-        // entry that merely shares a slot name.
         Assert.Null(id);
         Assert.Equal("Theirs", curve!.Name);
         Assert.True(CalibrationFile.SameCurve(RecipientsCurve, curve.ToCalibrationFile()));
 
-        // An entry with no usable file: the id alone says what was meant...
         (id, curve) = VirtualCrossoverCalibrationSelection.Persist(
             "cal-gone", null, Recipient, Resolve, storedId: "cal-local", stored: Carried(AuthorsCurve));
         Assert.Equal("cal-gone", id);
         Assert.Null(curve);
 
-        // ...unless the project already held that entry's curve: an unplugged file
-        // must not erase the record of what the session was tuned with.
         VirtualCrossoverCalibrationSettings held = Carried(RecipientsCurve, name: "Unplugged");
         (id, curve) = VirtualCrossoverCalibrationSelection.Persist(
             "cal-gone", null, Recipient, Resolve, storedId: "cal-gone", stored: held);
@@ -355,7 +313,6 @@ public sealed class VirtualCrossoverCalibrationSelectionTests
         Assert.Equal(
             Path.Combine(directory, "mic.cal"),
             SessionCalibrationFiles.UniquePath(directory, "mic.cal", taken.Contains));
-        // A free-form entry name: file-system-safe, with an extension every reader takes.
         Assert.Equal(
             Path.Combine(directory, "90° seat_.txt"),
             SessionCalibrationFiles.UniquePath(directory, "90° seat?", taken.Contains));

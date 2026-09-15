@@ -1,14 +1,6 @@
 namespace Resonalyze.Integration.AgentBridge;
 
-/// <summary>
-/// The <c>series</c> probe: the package's own rows again, at the density the
-/// reply asked for and under no size target. A package over its target is
-/// thinned before anything is dropped (see <see cref="AgentSampling"/>), and
-/// this is how a reader gets the rows it was thinned out of — any of the
-/// package's series, for the channels or the one junction it names, built by
-/// the very methods the package is built by, so the columns, the ids and the
-/// rounding are the package's.
-/// </summary>
+/// <summary>The <c>series</c> probe: the package's rows again at the reply's density, unthinned, built by the package's own methods.</summary>
 internal static class AgentSeriesProbe
 {
     public static AgentProbeReport Build(ProbeOperation probe, AgentPackageInputs inputs)
@@ -17,8 +9,6 @@ internal static class AgentSeriesProbe
         ArgumentNullException.ThrowIfNull(inputs);
 
         var wanted = new HashSet<string>(probe.Series ?? [], StringComparer.Ordinal);
-        // One density for every frequency grid when the reply names one; the
-        // protocol's nominal pair otherwise. The lag series share one row cap.
         int points = probe.PointsPerOctave ?? 0;
         var sampling = new AgentSampling(
             points > 0 ? points : AgentSampling.Nominal.BroadbandPointsPerOctave,

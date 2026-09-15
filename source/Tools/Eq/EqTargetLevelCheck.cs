@@ -2,38 +2,15 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Where the target level datum sits against the curve about to be fitted. A
-/// target far above the source makes the fit boost across the whole window and
-/// spend headroom on level, not on shape; a target far below makes it cut the
-/// whole window and hand the level to the amplifier gain, with its noise. Both
-/// are a datum set wrong, and the fit will do them faithfully — so the wizard
-/// asks first. UI-free so the reading is the same wherever a fit starts.
-/// </summary>
+/// <summary>A target level far from the source makes the fit correct level instead of shape, so the wizard asks first.</summary>
 internal static class EqTargetLevelCheck
 {
-    /// <summary>
-    /// A target this far above the source (dB, median over the window) needs
-    /// broadband boost. A fit that may boost spends headroom to get there; a
-    /// Cuts-only fit cannot get there at all — its preamp is capped at 0 dB and
-    /// its bands only cut — so the curve stays below the target, and a bump
-    /// that stays under the target line is not a cut the fit will make.
-    /// </summary>
+    /// <summary>Median dB above source needing broadband boost (cuts-only cannot reach it at all).</summary>
     public const double BoostWarningDb = 3;
 
-    /// <summary>
-    /// A target this far below the source (dB, median over the window) is a
-    /// broadband cut, in either mode.
-    /// </summary>
     public const double CutWarningDb = 10;
 
-    /// <summary>
-    /// The median of target minus source over the window: positive = the target
-    /// sits above the source. Null when the window holds no comparable point.
-    /// The two curves are expected on one frequency grid, as the wizard builds
-    /// its target on the source's own frequencies; a point whose frequencies
-    /// disagree is skipped rather than compared.
-    /// </summary>
+    /// <summary>Median of target minus source over the window; points with mismatched frequencies are skipped.</summary>
     public static double? TargetAboveSourceDb(
         IReadOnlyList<SignalPoint> source,
         IReadOnlyList<SignalPoint> target,
@@ -67,8 +44,7 @@ internal static class EqTargetLevelCheck
             return null;
         }
 
-        // The median: a junction dip or a modal null in the window is a feature
-        // the fit will look at on its own, not a level, and must not move the datum.
+        // Median: a junction dip or modal null is shape, not level.
         differences.Sort();
         int middle = differences.Count / 2;
         return differences.Count % 2 == 1
@@ -76,10 +52,6 @@ internal static class EqTargetLevelCheck
             : (differences[middle - 1] + differences[middle]) / 2;
     }
 
-    /// <summary>
-    /// The question to put to the user before the fit, or null when the datum
-    /// is close enough that the fit is about shape.
-    /// </summary>
     public static string? Warning(
         double? targetAboveSourceDb,
         bool cutsOnly,

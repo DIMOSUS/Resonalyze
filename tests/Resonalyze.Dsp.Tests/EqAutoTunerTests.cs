@@ -30,11 +30,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_TotalGainCapPreventsAClippingProfile()
     {
-        // Target sits +10 dB above source with an extra +6 dB local bump: the
-        // unconstrained fit hands out preamp +10 plus a +6 boost band — a
-        // profile that clips by +16 dB before the UI ever shows the headroom.
-        // With the total-gain ceiling the preamp is capped so preamp + band
-        // boost never exceeds 0 dB anywhere; the fitted band shape stays.
+        // The total-gain ceiling caps preamp + band boost at 0 dB; the fitted band shape stays.
         var bump = new PeqBand(1_000, 2.0, 6.0);
         IReadOnlyList<SignalPoint> source = Grid(_ => -40.0);
         IReadOnlyList<SignalPoint> target = Grid(
@@ -55,13 +51,8 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_PinnedPreamp_RaisesAWindowBelowTargetInsteadOfLoweringTheCurve()
     {
-        // The wizard's boost mode pins the preamp to the user's value (min = max)
-        // and applies no total-gain ceiling. The source sits 5 dB below the target
-        // inside the fit window: the correction must come from boost bands, with
-        // the preamp untouched. The old wizard options (a free preamp plus a 0 dB
-        // ceiling) mean-centred the preamp UP, fitted the bands against that level,
-        // then the ceiling slammed the preamp to -(peak boost) AFTER the fit — the
-        // realised curve dropped by the peak boost instead of the window rising.
+        // Boost mode pins the preamp and has no ceiling: correction must come from boost bands.
+        // A post-fit ceiling once dropped the realised curve by the peak boost.
         IReadOnlyList<SignalPoint> source = Grid(_ => -5.0);
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
 
@@ -79,11 +70,10 @@ public sealed class EqAutoTunerTests
 
         Assert.Equal(0, curve.PreampDb, 9);
         Assert.NotEmpty(curve.Bands);
-        // The window is lifted towards the target...
         Assert.True(
             curve.MagnitudeDbAt(100) > 3.0,
             $"the window got {curve.MagnitudeDbAt(100):0.0} dB of the needed +5.");
-        // ...and nothing anywhere is pulled down — the failure mode being pinned.
+        // ...and nothing is pulled down (the failure being pinned).
         double minGain = EqualizationCurve
             .LogFrequencyGrid(20, 20_000, 400)
             .Min(curve.MagnitudeDbAt);
@@ -93,11 +83,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_ReadsAnUnmeasuredBandAsUnknown_NotAsSilence()
     {
-        // A tweeter measured through a protective high-pass carries NaN below the
-        // point that became unrecoverable: nothing was measured there, and the
-        // response the compensation left behind is a zero. Read as a level, that
-        // zero is a 40 dB hole the tuner would try to fill — the single most
-        // damaging thing an equalizer can be asked to do.
+        // NaN below a divided-out protective high-pass must not read as a 40 dB hole to fill.
         IReadOnlyList<SignalPoint> source = Grid(
             f => f < 560 ? double.NaN : 0.0);
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
@@ -111,7 +97,6 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_StillCorrectsWhatWasMeasured_BesideAnUnmeasuredBand()
     {
-        // The unknown band must not cost the tuner the rest of the curve.
         var bump = new PeqBand(4_000, 2.0, 6.0);
         IReadOnlyList<SignalPoint> source = Grid(
             f => f < 560 ? double.NaN : 0.0);
@@ -140,7 +125,6 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_SingleBump_RecoversCorrection()
     {
-        // Target = source plus a single peaking bump; the tuner should invert it.
         var bump = new PeqBand(1_000, 2.0, 6.0);
         IReadOnlyList<SignalPoint> source = Grid(_ => 0.0);
         IReadOnlyList<SignalPoint> target = Grid(f => bump.MagnitudeDbAt(f));
@@ -148,7 +132,6 @@ public sealed class EqAutoTunerTests
         EqualizationCurve curve = EqAutoTuner.Tune(source, target);
 
         Assert.NotEmpty(curve.Bands);
-        // The curve must reconstruct the error (= bump) across the band.
         Assert.True(Math.Abs(curve.MagnitudeDbAt(1_000) - 6.0) < 0.5);
         Assert.True(FitRmsDb(curve, source, target) < 0.75);
     }
@@ -180,7 +163,6 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_RespectsBandBudget()
     {
-        // A jagged target forces many corrections; the band count must stay bounded.
         var random = new Random(7);
         IReadOnlyList<SignalPoint> source = Grid(_ => 0.0);
         IReadOnlyList<SignalPoint> target = Grid(_ => (random.NextDouble() - 0.5) * 20);
@@ -196,7 +178,6 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_ClampsBandGainToConfiguredRange()
     {
-        // A +20 dB deficit cannot be met by a single band capped at +6 dB.
         IReadOnlyList<SignalPoint> source = Grid(_ => 0.0);
         var bump = new PeqBand(1_000, 3.0, 20.0);
         IReadOnlyList<SignalPoint> target = Grid(f => bump.MagnitudeDbAt(f));
@@ -212,9 +193,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_LowFrequencyRollOff_CapsBoostAndDoesNotStackBands()
     {
-        // Source rolls off below 100 Hz (a deficit EQ cannot recover); target is
-        // flat. The fit must not stack many max-boost bands at 20 Hz nor exceed the
-        // boost ceiling.
+        // A roll-off below 100 Hz is unrecoverable: no stacked max-boost bands at 20 Hz.
         IReadOnlyList<SignalPoint> source = Grid(f => f < 100 ? -30.0 : 0.0);
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
 
@@ -228,11 +207,9 @@ public sealed class EqAutoTunerTests
         double maxBoost = EqualizationCurve
             .LogFrequencyGrid(20, 20_000, 256)
             .Max(curve.MagnitudeDbAt);
-        // The boost stays near the per-band ceiling (overlapping tails add a little)
-        // rather than blowing up to tens of dB as an uncapped fit would.
+        // Overlapping tails add a little over the per-band cap.
         Assert.True(maxBoost <= 8.0, $"Max boost {maxBoost:0.0} dB exceeded the cap.");
 
-        // No more than one band should sit in the bottom octave (20-40 Hz).
         int lowBands = curve.Bands.Count(b => b.FrequencyHz < 40);
         Assert.True(lowBands <= 1, $"{lowBands} bands stacked in the low bass.");
     }
@@ -240,9 +217,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_ClampsCutBandsToTheConfiguredFloor()
     {
-        // A +20 dB peak needs a -20 dB cut, but the band floor is -15 dB: every band
-        // must respect Math.Max(desired, BandGainMinDb). The existing test only pins
-        // the boost ceiling; this pins the cut floor.
+        // Pins the -15 dB cut floor (BandGainMinDb).
         IReadOnlyList<SignalPoint> source = Grid(f => new PeqBand(1_000, 3.0, 20.0).MagnitudeDbAt(f));
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
 
@@ -258,9 +233,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_PartialOverlap_FitsTheOverlapWithoutNaN()
     {
-        // The source only covers 50-5000 Hz, so grid bins outside it resample to NaN
-        // and the valid[]/validCount mask must exclude them (validCount > 0). This is
-        // the realistic case; every other fitting test spans the full grid.
+        // Source covers 50-5000 Hz only: grid bins outside resample to NaN and must be masked.
         IReadOnlyList<double> full = EqualizationCurve.LogFrequencyGrid(20, 20_000, 400);
         var bump = new PeqBand(1_000, 2.0, 8.0);
         IReadOnlyList<SignalPoint> source = full
@@ -273,9 +246,7 @@ public sealed class EqAutoTunerTests
 
         Assert.NotEmpty(curve.Bands);
         Assert.All(curve.Bands, b => Assert.InRange(b.FrequencyHz, 50, 5_000));
-        // No band produces a NaN anywhere on the audible grid.
         Assert.All(full, f => Assert.True(double.IsFinite(curve.MagnitudeDbAt(f))));
-        // The fit substantially reduces the error inside the overlap.
         double initial = FitRmsDb(new EqualizationCurve([]), source, source.Select(p => new SignalPoint(p.X, 0.0)).ToList());
         double final = FitRmsDb(curve, source, source.Select(p => new SignalPoint(p.X, 0.0)).ToList());
         Assert.True(final < initial * 0.5, $"Overlap error not reduced: {initial:0.00} -> {final:0.00} dB.");
@@ -284,10 +255,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_MaxQ_KeepsEveryBandAtOrBelowTheCeiling()
     {
-        // A resonance sharp enough that the unbounded fit reaches for its narrowest
-        // bands. That is the fit the EQ Wizard's Max Q exists to refuse: the peak is
-        // read at one microphone position, and a filter that narrow corrects that
-        // position alone.
+        // Max Q exists to refuse the narrowest bands: a peak read at one mic position.
         IReadOnlyList<SignalPoint> source = Grid(
             f => new PeqBand(1_000, 10.0, 12.0).MagnitudeDbAt(f));
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
@@ -306,9 +274,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_QRangeExcludingAllCandidates_FallsBackWithoutThrowing()
     {
-        // [QMin, QMax] = [3, 3.5] excludes every entry of the fixed candidate-Q list
-        // (2.8 and 4.0 straddle it), so the fitter must fall back to a single clamped
-        // Q rather than crash on an empty candidate array.
+        // [3, 3.5] excludes every fixed candidate Q (2.8, 4.0): fall back to one clamped Q.
         IReadOnlyList<SignalPoint> source = Grid(_ => 0.0);
         IReadOnlyList<SignalPoint> target = Grid(f => new PeqBand(1_000, 3.0, 6.0).MagnitudeDbAt(f));
 
@@ -324,7 +290,6 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_NoOverlappingFrequencyData_ReturnsEmptyCurve()
     {
-        // Source and target cover disjoint frequency ranges -> nothing to fit.
         var source = new List<SignalPoint>
         {
             new(20, 0), new(40, 0), new(80, 0)
@@ -343,8 +308,6 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_CutsOnlyMode_NeverBoosts()
     {
-        // Source has a +8 dB peak at 500 Hz and a -8 dB dip at 3000 Hz against a flat
-        // target. Cuts-only must shave the peak but leave the dip alone (no boost).
         var peak = new PeqBand(500, 3.0, 8.0);
         var dip = new PeqBand(3_000, 3.0, -8.0);
         IReadOnlyList<SignalPoint> source = Grid(f => peak.MagnitudeDbAt(f) + dip.MagnitudeDbAt(f));
@@ -354,24 +317,17 @@ public sealed class EqAutoTunerTests
             source, target, new EqAutoTuner.Options { CutsOnlyMode = true });
 
         Assert.All(curve.Bands, band => Assert.True(band.GainDb <= 0 + 1e-9));
-        // The whole EQ (bands + preamp) never boosts anywhere.
         double maxGain = EqualizationCurve
             .LogFrequencyGrid(20, 20_000, 400)
             .Max(curve.MagnitudeDbAt);
         Assert.True(maxGain <= 0.05, $"Cuts-only produced a {maxGain:0.0} dB boost.");
-        // The +8 dB peak is still corrected downward.
         Assert.True(curve.MagnitudeDbAt(500) < -1.0);
     }
 
     [Fact]
     public void Tune_CutsOnly_DoesNotLowerBelowTargetRegionsWithANegativePreamp()
     {
-        // The source sits a uniform +5 dB above a flat target across the window, EXCEPT a
-        // dip that falls 5 dB BELOW it. Cuts-only can shave the excess but can never lift
-        // the dip. Centring on the mean error would drop the preamp toward -5 to fit the
-        // dominant excess — pushing the already-too-low dip a further 5 dB from the
-        // target, for no gain, since a cut cannot bring it back. The fit must instead
-        // keep the level (preamp ~0) and let cuts alone remove the excess.
+        // Cuts-only cannot lift the dip, so the preamp must not centre on the mean error (-5) and push the dip further down.
         var dip = new PeqBand(1_000, 3.0, -10.0); // 5 above baseline (+5) → 5 below target
         IReadOnlyList<SignalPoint> source = Grid(f => 5.0 + dip.MagnitudeDbAt(f));
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
@@ -379,34 +335,23 @@ public sealed class EqAutoTunerTests
         EqualizationCurve curve = EqAutoTuner.Tune(
             source, target, new EqAutoTuner.Options { CutsOnlyMode = true });
 
-        // The fix: no broadband drop — the preamp stays at the ceiling, not the mean
-        // error (~ -4). This is the whole discriminator; the old mean-centred preamp
-        // fails it outright.
+        // The discriminator: a mean-centred preamp (~ -4) fails this.
         Assert.True(
             curve.PreampDb >= -0.5,
             $"Cuts-only lowered the whole curve by {curve.PreampDb:0.0} dB preamp.");
-        // Consequently the below-target dip is not collapsed: with a -4 preamp it would
-        // land near -9, far worse; here it stays close to its own level (a shallow cut
-        // from an adjacent band's skirt is tolerated, a preamp-driven drop is not).
         double dipCorrected = source.First(p => p.X >= 1_000).Y
             + curve.MagnitudeDbAt(1_000);
         Assert.True(
             dipCorrected is <= 0.5 and >= -8.0,
             $"The below-target dip was pushed to {dipCorrected:0.0} dB (target 0).");
-        // The +5 dB excess is still corrected down toward the target away from the dip.
         Assert.True(source.First(p => p.X >= 5_000).Y + curve.MagnitudeDbAt(5_000) < 1.5);
     }
 
     [Fact]
     public void Tune_CutsOnly_DoesNotGougeAShoulderBelowTargetToCutABroadHfPlateau()
     {
-        // A rising HF excess — near the flat target below ~4 kHz, an ~+11 dB plateau above
-        // ~10 kHz, with a sharp bump at 9.5 kHz. The bump forces a deep cut; a wide peaking
-        // band that also shaved the broad plateau would drag the 4-6 kHz shoulder — barely
-        // above the target — several dB BELOW it, the visible "hole" a moving-mic tune must
-        // not create. The fit must prefer tighter bands, leaving the plateau a little high
-        // rather than gouging the shoulder. Measured on the DIGITAL response the DSP and
-        // the wizard realize, which diverges from the analog one this high in frequency.
+        // A wide band shaving the HF plateau would gouge the 4-6 kHz shoulder below target; prefer tighter bands.
+        // Measured on the digital response, which diverges from analog this high.
         const double sampleRate = 44_100;
         var bump = new PeqBand(9_500, 2.5, 5.0);
         IReadOnlyList<SignalPoint> source = Grid(f =>
@@ -429,7 +374,6 @@ public sealed class EqAutoTunerTests
         double atHz = 0;
         foreach (double f in EqualizationCurve.LogFrequencyGrid(2_000, 20_000, 400))
         {
-            // Target is 0; corrected below 0 is a gouge.
             double corrected = SampleDb(source, f)
                 + DigitalEqualizationResponse.MagnitudeDbAt(curve, f, sampleRate);
             if (-corrected > worstBelow)
@@ -447,9 +391,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_BoostsAllowed_SkipsANarrowDeepNull()
     {
-        // A narrow deep null at 3 kHz (uncorrectable) and a broad shallow dip at 200 Hz
-        // (a correctable trend) against a flat target. With boosts enabled, the fit must
-        // boost the broad dip but never centre a boost inside the narrow null.
+        // Boost the broad 200 Hz dip, never centre a boost in the narrow 3 kHz null.
         IReadOnlyList<SignalPoint> source = Grid(f =>
             NotchDb(f, 3_000, 12, 0.15) + NotchDb(f, 200, 6, 0.7));
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
@@ -468,9 +410,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_BoostsAllowed_LowCoherenceRegionIsNotBoosted()
     {
-        // A broad, boostable dip at 1 kHz that the fit WOULD boost — but the coherence
-        // there is below the floor, so the boost is withheld. Without the coherence it
-        // is boosted (the control assertion), isolating the coherence gate.
+        // Low coherence withholds a boost the fit would otherwise apply (control assertion without coherence).
         IReadOnlyList<SignalPoint> source = Grid(f => NotchDb(f, 1_000, 6, 0.7));
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
         var options = new EqAutoTuner.Options { CutsOnlyMode = false };
@@ -492,16 +432,12 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_BoostSkirtDoesNotFillAForbiddenBin()
     {
-        // A broad, boostable dip at 1 kHz with a low-coherence core (900-1100 Hz). The
-        // core's own centre is forbidden, but the reliable shoulders just outside it are
-        // deep and get boosted. A wide boost on a shoulder pours several dB into the
-        // forbidden core through its skirt — the exact case the centre-only mask misses.
+        // A wide boost on a reliable shoulder pours dB into the low-coherence core through its skirt.
         IReadOnlyList<SignalPoint> source = Grid(f => NotchDb(f, 1_000, 6, 0.8));
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
         IReadOnlyList<SignalPoint> coherence = Grid(
             f => f is >= 900 and <= 1_100 ? 0.2 : 0.95);
 
-        // Control: with the cap lifted, a shoulder band's skirt fills the forbidden core.
         EqualizationCurve spilled = EqAutoTuner.Tune(
             source,
             target,
@@ -517,7 +453,6 @@ public sealed class EqAutoTunerTests
             spilled.MagnitudeDbAt(1_000) > 0.5,
             $"Control: skirt should have filled the core, got {spilled.MagnitudeDbAt(1_000):0.00} dB.");
 
-        // Treatment: the default cap keeps the core quiet while the shoulders are still boosted.
         EqualizationCurve gated = EqAutoTuner.Tune(
             source,
             target,
@@ -540,11 +475,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_MaskedNullInsideABroadDip_StillCorrectsTheShoulders()
     {
-        // A broad, boostable dip (centre 1 kHz, ±1 octave) with a narrow deep null carved
-        // at its floor. The deepest point is the forbidden null; the old code then blocked
-        // the WHOLE positive residual and abandoned the wide dip. Blocking only the
-        // forbidden core leaves the reliable shoulders to be corrected while the null floor
-        // itself stays unfilled.
+        // Blocking only the forbidden null core lets the reliable shoulders be corrected.
         IReadOnlyList<SignalPoint> source = Grid(
             f => NotchDb(f, 1_000, 6, 1.0) + NotchDb(f, 1_000, 12, 0.12));
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
@@ -559,14 +490,12 @@ public sealed class EqAutoTunerTests
                 PreampMaxDb = 0
             });
 
-        // Both reliable shoulders of the broad dip are boosted back toward the target...
         Assert.True(
             curve.MagnitudeDbAt(750) > 1.5,
             $"Low shoulder left uncorrected ({curve.MagnitudeDbAt(750):0.00} dB).");
         Assert.True(
             curve.MagnitudeDbAt(1_350) > 1.5,
             $"High shoulder left uncorrected ({curve.MagnitudeDbAt(1_350):0.00} dB).");
-        // ...but the narrow null at the floor is not filled.
         Assert.True(
             curve.MagnitudeDbAt(1_000) <= 0.5,
             $"Null floor boosted by {curve.MagnitudeDbAt(1_000):0.00} dB.");
@@ -575,10 +504,7 @@ public sealed class EqAutoTunerTests
     [Fact]
     public void Tune_CutsOnly_ClusterOfNarrowPeaks_EachGetsCut()
     {
-        // Five narrow peaks packed ~0.2 octave apart between 1-2 kHz above a flat
-        // target. The old fixed 0.33-octave band spacing let the first cut sterilise
-        // its neighbours, leaving most of the cluster above target; the per-band
-        // footprint must now cut essentially the whole cluster.
+        // Five narrow peaks ~0.2 oct apart: the old fixed 0.33-oct spacing let one cut sterilise its neighbours.
         double[] centres = { 1050, 1200, 1400, 1600, 1850 };
         IReadOnlyList<SignalPoint> source = Grid(
             f => centres.Sum(c => new PeqBand(c, 8, 5).MagnitudeDbAt(f)));
@@ -595,24 +521,17 @@ public sealed class EqAutoTunerTests
                 BandGainMinDb = -18
             });
 
-        // Nothing in the cluster still pokes meaningfully above the target.
         double worstAbove = EqualizationCurve
             .LogFrequencyGrid(1_000, 2_000, 200)
             .Max(f => SampleDb(source, f) + curve.MagnitudeDbAt(f));
         Assert.True(worstAbove <= 1.0, $"Cluster peak of +{worstAbove:0.0} dB left uncut.");
-        // It took more than the ~2 bands the old coarse spacing allowed in one octave.
         Assert.True(curve.Bands.Count >= 3, $"Only {curve.Bands.Count} bands used on the cluster.");
     }
 
     [Fact]
     public void Tune_CutsOnly_SmoothLobeBetweenDipsGetsAWideBandNotASwarmOfSlivers()
     {
-        // The moving-mic RTA shape that shredded the fit: a smooth ~+3.5 dB lobe around
-        // 10.5 kHz whose neighbours on BOTH sides sit below the target (dips cuts-only
-        // cannot lift). Any over-cut penalty that scales with the depth a point already
-        // had charges every wide candidate for merely grazing those dips, so all bands
-        // collapse to the maximum Q and the smooth lobe comes back as a comb of narrow
-        // notches. The lobe must instead be carried by a band of moderate width.
+        // A smooth lobe flanked by dips: a depth-scaled over-cut penalty collapsed bands to max Q and combed the lobe.
         const double sampleRate = 44_100;
         IReadOnlyList<SignalPoint> source = Grid(f =>
             3.5 * Math.Exp(-Math.Pow(Math.Log2(f / 10_500.0) / 0.4, 2))
@@ -632,7 +551,6 @@ public sealed class EqAutoTunerTests
                 BandGainMinDb = -15
             });
 
-        // The lobe's main correction is one moderately wide band, not a max-Q sliver.
         PeqBand deepest = curve.Bands.OrderBy(band => band.GainDb).First();
         Assert.True(
             deepest.FrequencyHz is >= 8_000 and <= 14_000,
@@ -640,9 +558,6 @@ public sealed class EqAutoTunerTests
         Assert.True(
             deepest.Q <= 5.6,
             $"The smooth lobe was cut with a Q={deepest.Q:0.0} sliver.");
-        // And the corrected lobe reads flat, not combed: on the digital response the
-        // wizard realises, no point inside the lobe pops back above the target by more
-        // than a fraction of the lobe.
         double worstAbove = EqualizationCurve
             .LogFrequencyGrid(8_500, 13_000, 200)
             .Max(f => SampleDb(source, f)
@@ -666,7 +581,7 @@ public sealed class EqAutoTunerTests
         return below.Y + t * (above.Y - below.Y);
     }
 
-    // A symmetric V-notch used to synthesise correctable dips and uncorrectable nulls.
+    // Symmetric V-notch for correctable dips and uncorrectable nulls.
     private static double NotchDb(double f, double centerHz, double depthDb, double halfWidthOctaves)
     {
         double octaves = Math.Abs(Math.Log2(f / centerHz));

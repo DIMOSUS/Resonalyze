@@ -1,10 +1,6 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A saved device/driver/channel that is no longer present must be reported as
-/// absent (-1), never silently remapped to the first list entry — the options
-/// panel would re-persist the wrong device on the next apply.
-/// </summary>
+/// <summary>A missing device reports -1, never the first entry, which the panel would re-persist.</summary>
 public sealed class DeviceCatalogLookupTests
 {
     [Fact]

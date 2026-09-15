@@ -1,10 +1,5 @@
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Registry of the available EQ profile formats. Callers build file-dialog filters
-/// from <see cref="Importable"/> / <see cref="Exportable"/> and pick a format by its
-/// index in that list.
-/// </summary>
 public static class EqProfileFormats
 {
     public static IReadOnlyList<IEqProfileFormat> All { get; } = new IEqProfileFormat[]
@@ -15,11 +10,7 @@ public static class EqProfileFormats
         new EasyEffectsFormat(),
         new CamillaDspYamlFormat(),
         new AudiotecFischerFormat(),
-        // Biquad coefficients are rate-specific, and biquad-consuming devices
-        // process at different internal rates (car DSPs commonly at 44.1 kHz,
-        // miniDSP 2x4 at 48 kHz, HD/DDRC-class at 96 kHz) — one dialog entry
-        // per rate, each labeled with it, so the user picks the one matching
-        // the device instead of silently getting 48 kHz coefficients.
+        // Coefficients are rate-specific, so one labelled entry per device rate (car DSPs 44.1k, miniDSP 2x4 48k, HD 96k).
         new MiniDspFormat(44_100),
         new MiniDspFormat(48_000),
         new MiniDspFormat(96_000),

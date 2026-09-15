@@ -2,14 +2,7 @@ using System.Drawing;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The EQ target is one definition shared by the EQ Wizard, which owns and
-/// persists it, and the Virtual DSP tool, which draws it over its predicted sum
-/// and can edit it back through the host. These pin the wizard's end of that
-/// contract: the round trip has to carry every field, and a push of the value
-/// the wizard already holds must not look like an edit — the host pushes on
-/// every settings change, so a false edit there would loop.
-/// </summary>
+/// <summary>The host pushes the target on every settings change, so pushing the held value must not count as an edit (it would loop).</summary>
 public sealed class EqTargetCurveSharingTests
 {
     [Fact]
@@ -28,9 +21,7 @@ public sealed class EqTargetCurveSharingTests
 
         panel.ApplyTargetCurve(curve);
 
-        // Value equality on the record is the whole point: a field the setter
-        // forgot would silently reset that part of the user's target on the
-        // first visit to the Virtual DSP Target dialog.
+        // A field the setter forgot would reset part of the target on the first VDSP Target dialog visit.
         Assert.Equal(curve, panel.TargetCurve);
     }
 

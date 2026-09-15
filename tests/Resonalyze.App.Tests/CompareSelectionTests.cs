@@ -3,12 +3,6 @@ using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The Compare selection moved off Form1 into <see cref="CompareSelection"/>;
-/// these pin the analysis-source mapping the mode plots rely on (all Compare
-/// analysis runs on the transfer IR — loopback is mandatory) and the Changed
-/// notification driving the UI refresh.
-/// </summary>
 public sealed class CompareSelectionTests
 {
     [Fact]
@@ -61,9 +55,7 @@ public sealed class CompareSelectionTests
         Assert.Same(coherence, source.Value.TransferCoherence);
     }
 
-    // The Compare curve is drawn on the absolute axis with its OWN K, so the
-    // selection has to carry it: loopback peak (-6 dBFS) + anchor offset
-    // (94 - -20 = 114) = 108 dB SPL at 0 dBr.
+    // K = loopback peak (-6 dBFS) + anchor offset (94 - -20) = 108 dB SPL at 0 dBr.
     [Fact]
     public void GetAnalysisSource_CarriesTheComparedMeasurementsSplOffset()
     {
@@ -84,8 +76,6 @@ public sealed class CompareSelectionTests
         Assert.Equal(108.0, source!.Value.SplOffsetDb!.Value, tolerance: 1e-9);
     }
 
-    // Half a recipe is no recipe: an anchor without the measurement's loopback
-    // level cannot place the curve absolutely, and neither can a level alone.
     [Fact]
     public void GetAnalysisSource_HasNoSplOffsetWithoutBothHalves()
     {
@@ -115,10 +105,7 @@ public sealed class CompareSelectionTests
         Assert.NotNull(selection.GetTimeAlignmentMeasurement());
     }
 
-    // A measurement imported from a recorded sweep may be compared as a CURVE —
-    // a magnitude response does not care what time it arrived at — but never as a
-    // timing partner: Time Alignment compares one arrival against another, and
-    // this one's is set by when its recorder was started.
+    // An imported sweep's arrival is set by when its recorder started, so it compares only as a curve.
     [Fact]
     public void AnImportedMeasurementComparesAsACurveButNotAsATimingPartner()
     {

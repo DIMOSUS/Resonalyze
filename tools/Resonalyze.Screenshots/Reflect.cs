@@ -2,17 +2,8 @@ using System.Reflection;
 
 namespace Resonalyze.Screenshots;
 
-/// <summary>
-/// Reaches the shell's private parts. The tool drives the real application rather
-/// than a mock, so it has to name fields the app never meant to expose.
-/// </summary>
-/// <remarks>
-/// Every accessor throws with the name it could not find. That is the whole design:
-/// a renamed field must stop the tool with "no field buttonExport on
-/// VirtualCrossoverPanel", not quietly skip a shot and leave a stale image in
-/// <c>assets/images</c>. Compile-time breakage is preferable and the project is in
-/// the solution for that reason, but names reached by string cannot have it.
-/// </remarks>
+/// <summary>Reflection into the real app. Every accessor throws naming what it could not find, so a rename stops the tool
+/// instead of silently leaving a stale image.</summary>
 internal static class Reflect
 {
     private const BindingFlags Any =

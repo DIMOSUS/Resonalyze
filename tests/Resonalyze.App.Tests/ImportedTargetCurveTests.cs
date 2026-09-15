@@ -1,19 +1,11 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A target imported from a file is an arbitrary text file becoming a shape the
-/// auto-tuner corrects toward, so what the reading does to it matters as much as
-/// that it reads: where it is anchored, what it says between the points, what it
-/// says outside them, and what survives being stored.
-/// </summary>
 public sealed class ImportedTargetCurveTests
 {
     [Fact]
     public void TheShapeIsAnchoredAtOneKilohertz()
     {
-        // A house curve written around 75 dB SPL and the same shape written
-        // around 0 dB are one target: the level a target hangs at belongs to the
-        // plot, and the wizard's Target Level is where the user sets it.
+        // The target's level belongs to the wizard's Target Level, not the file.
         ImportedTargetCurve absolute = Build(
             (100, 81.0), (1_000, 75.0), (10_000, 72.0));
         ImportedTargetCurve relative = Build(
@@ -31,9 +23,7 @@ public sealed class ImportedTargetCurveTests
     [Fact]
     public void BetweenPointsTheCurveIsStraightInLogFrequency()
     {
-        // The midpoint of a decade is its geometric centre, not its arithmetic
-        // one: 316 Hz sits halfway between 100 Hz and 1 kHz on the plot the
-        // target is drawn on, and that is where half the step belongs.
+        // 316 Hz is the geometric midpoint of the decade on the log plot.
         ImportedTargetCurve curve = Build((100, 6.0), (1_000, 0.0));
 
         Assert.Equal(3, curve.Evaluate(Math.Sqrt(100 * 1_000)), 9);
@@ -43,11 +33,7 @@ public sealed class ImportedTargetCurveTests
     [Fact]
     public void OutsideItsRangeTheCurveHoldsItsEnds()
     {
-        // A file that stops at 200 Hz says nothing about 10 kHz. Continuing its
-        // last slope would invent a target it never stated — and the auto-tuner
-        // would then chase that invention with real filters. A bass-only curve is
-        // therefore flat above its top point, and the anchor lands on that held
-        // value: +8 over +2 at the top becomes +6 over a flat 1 kHz reference.
+        // No extrapolation beyond the last point: flat above, anchor on the held value (+8 over +2 becomes +6).
         ImportedTargetCurve curve = Build((50, 8.0), (200, 2.0));
 
         Assert.Equal(6, curve.Evaluate(20), 12);
@@ -79,8 +65,6 @@ public sealed class ImportedTargetCurveTests
     [Fact]
     public void TwoValuesAtOneFrequencyAreAveraged()
     {
-        // Two levels at one frequency have no order to interpolate along, and
-        // dropping one would let the file's line order decide the target.
         ImportedTargetCurve curve = Build((100, 4.0), (100, 8.0), (1_000, 0.0));
 
         Assert.Equal(2, curve.PointCount);
@@ -90,7 +74,6 @@ public sealed class ImportedTargetCurveTests
     [Fact]
     public void FewerThanTwoUsablePointsIsNotAShape()
     {
-        // One point is a level, not a shape, and a file of prose is not a curve.
         Assert.Null(ImportedTargetCurve.FromPoints("one.txt", [new OverlayPoint(1_000, 3)]));
         Assert.Null(ImportedTargetCurve.FromPoints("none.txt", []));
         Assert.Null(ImportedTargetCurve.FromPoints(
@@ -101,18 +84,13 @@ public sealed class ImportedTargetCurveTests
     [Fact]
     public void LevelsThatOverflowTheAnchoringAreRefused()
     {
-        // Both levels are finite, so the cleaning above accepts them — their
-        // difference is not, and anchoring is a subtraction. An infinite target
-        // would draw as a broken line, hand Auto Tune an infinite goal, and throw
-        // on the way into the settings file, so there is no curve here at all.
+        // Finite levels whose difference overflows: anchoring is a subtraction.
         Assert.Null(ImportedTargetCurve.FromPoints(
             "overflow.txt",
             [new OverlayPoint(100, 1e308), new OverlayPoint(1_000, -1e308)]));
         Assert.Null(ImportedTargetCurve.FromStorage(
             "overflow.json",
             [100, 1e308, 1_000, -1e308]));
-        // Large but survivable levels are still read: the refusal is about the
-        // arithmetic overflowing, not about a number being unusually big.
         Assert.NotNull(ImportedTargetCurve.FromPoints(
             "loud.txt",
             [new OverlayPoint(100, 1e30), new OverlayPoint(1_000, -1e30)]));
@@ -121,8 +99,6 @@ public sealed class ImportedTargetCurveTests
     [Fact]
     public void ADenseFileIsThinnedButStillReadsTheSame()
     {
-        // A full-resolution export runs to tens of thousands of lines, and the
-        // curve is carried by value into the settings file and into a session.
         var points = new List<OverlayPoint>();
         for (int index = 0; index < 40_000; index++)
         {
@@ -133,11 +109,8 @@ public sealed class ImportedTargetCurveTests
         ImportedTargetCurve curve = ImportedTargetCurve.FromPoints("dense.txt", points)!;
 
         Assert.Equal(ImportedTargetCurve.MaximumPoints, curve.PointCount);
-        // The band it covers is still the band the file stated, ends included.
         Assert.Equal(20, curve.LowFrequencyHz, 6);
         Assert.Equal(20_000, curve.HighFrequencyHz, 6);
-        // And it is still the same curve: thinning a smooth shape onto a log grid
-        // costs far less than the dB the tune is judged in.
         for (double frequency = 20; frequency <= 20_000; frequency *= 1.1)
         {
             Assert.Equal(-2 * Math.Log2(frequency / 1_000), curve.Evaluate(frequency), 3);
@@ -159,9 +132,7 @@ public sealed class ImportedTargetCurveTests
     [Fact]
     public void AStoredCurveIsCleanedAgainOnTheWayIn()
     {
-        // The settings file and a session file are where a NaN or an unordered
-        // pair can enter, so the stored form goes through the same reading as a
-        // freshly imported file rather than being trusted.
+        // Stored forms can be hand-edited, so they go through the same reading as an import.
         ImportedTargetCurve? restored = ImportedTargetCurve.FromStorage(
             "hand-edited.json",
             [10_000, -3, double.NaN, 4, 100, 6, 1_000, 0, 250]);
@@ -183,9 +154,7 @@ public sealed class ImportedTargetCurveTests
     [Fact]
     public void CurvesAreComparedByWhatTheyHold()
     {
-        // The target rides inside a record and a plot cache key is one of the
-        // things that compares it, so equality has to read the points rather
-        // than the reference a fresh import happens to produce.
+        // Plot cache keys compare the target, so equality reads the points.
         ImportedTargetCurve curve = Build((100, 6.0), (1_000, 0.0));
         ImportedTargetCurve same = Build((100, 6.0), (1_000, 0.0));
         ImportedTargetCurve other = Build((100, 5.0), (1_000, 0.0));
@@ -201,9 +170,6 @@ public sealed class ImportedTargetCurveTests
     [Fact]
     public void AnImportedShapeReplacesTheParametricTerms()
     {
-        // The one evaluation every consumer asks — the overlay math, the wizard
-        // plot, the Virtual DSP plot, the dialog's preview and the auto-tuner
-        // behind them — so this is what makes the import reach all of them.
         TargetCurveSpec car = TargetCurveSpec.FromPreset(TargetPreset.Car);
         TargetCurveSpec imported = car with
         {
@@ -213,8 +179,6 @@ public sealed class ImportedTargetCurveTests
         Assert.Equal(6, imported.Evaluate(100), 12);
         Assert.Equal(0, imported.Evaluate(1_000), 12);
         Assert.Equal(-3, imported.Evaluate(10_000), 12);
-        // The parametric numbers are still there, untouched, because picking a
-        // preset in the settings dialog is how the user comes back to them.
         Assert.Equal(car.BassShelfGainDb, imported.BassShelfGainDb);
         Assert.Equal(car.Evaluate(100), (imported with { Imported = null }).Evaluate(100));
     }
@@ -222,9 +186,7 @@ public sealed class ImportedTargetCurveTests
     [Fact]
     public void NormalizingATargetKeepsTheImportedShape()
     {
-        // Every target that comes off disk is normalized, and normalizing rebuilds
-        // the spec: an imported shape dropped there would turn a user's house
-        // curve back into a preset on the next launch.
+        // Normalizing rebuilds the spec: dropping the shape would revert a house curve to a preset on launch.
         var curve = new EqTargetCurve(
             TargetPreset.Custom,
             TargetCurveSpec.FromPreset(TargetPreset.Custom) with

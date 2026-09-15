@@ -86,9 +86,7 @@ public sealed class ProtectiveHighPassCompensationTests
 
         Complex[] corrected = result.ImpulseResponse.ToArray();
         Fourier.Forward(corrected, FourierOptions.Matlab);
-        // The IR uses the complete six-decibel reliability fade itself. A
-        // second confidence-domain threshold here would collapse that smooth
-        // transition back into a near-brick-wall frequency edge.
+        // The IR uses the whole six-decibel reliability fade; a second threshold would make a brick-wall edge.
         Assert.Equal(result.Reliability[fadeBin], corrected[fadeBin].Magnitude, 8);
 
         double[] coherence = new double[result.Reliability.Length];
@@ -131,9 +129,7 @@ public sealed class ProtectiveHighPassCompensationTests
         Assert.True(arrival.IsValid);
         Assert.InRange(Math.Abs(arrival.FirstArrivalDelayMilliseconds), 0.0, 0.05);
 
-        // A dangerous zero-phase mask would leave a sidelobe above the normal
-        // first-arrival threshold far from the circular impulse. Keep the
-        // central ±500 ms region below that -25 dB decision level.
+        // Keep far sidelobes of the zero-phase mask under the -25 dB first-arrival threshold.
         int farGuard = (int)Math.Round(0.5 * SampleRate);
         double farPeak = arrival.EnvelopeSamples
             .Skip(farGuard)

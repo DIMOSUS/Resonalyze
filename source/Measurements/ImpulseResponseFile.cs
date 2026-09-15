@@ -6,31 +6,16 @@ using Resonalyze.History;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Versioned, human-readable representation of a captured impulse response.
-/// </summary>
 public sealed class ImpulseResponseFile
 {
     public const string CurrentFormat = "resonalyze-impulse-response";
-    // Version 8: the bulk sample arrays became base64 float32 strings (see
-    // Float32SampleArrayJsonConverter). A representational change to existing
-    // fields, unlike the additive metadata below, so it IS a bump. Builds up to
-    // v7 validate the version only AFTER deserializing and cannot be changed
-    // now, so on a v8 file they still fail with a parse error; what the bump
-    // buys is the future — LoadAsync now refuses a LATER version up front, so
-    // from this build on a format change reads as "unsupported version 9",
-    // never as a broken file.
+    // v8: sample arrays as base64 float32. Later versions are refused before deserializing. See docs/tech/sweep-measurement.md#impulse-response-file-format.
     public const int CurrentVersion = 8;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         AllowTrailingCommas = true,
-        // An array microphone's curve carries NaN where the sweep never reached —
-        // a load-bearing value, not a defect: the band was not measured, and the
-        // one thing it must not become is a very low level an equalizer would try
-        // to fill. The same setting the live-capture format uses for the same
-        // reason; it only affects non-finite values, so every ordinary number is
-        // written exactly as before.
+        // Array curves carry NaN where the sweep never reached; it must not become a low level an EQ would fill.
         NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
         ReadCommentHandling = JsonCommentHandling.Skip,
         WriteIndented = true,
@@ -43,37 +28,24 @@ public sealed class ImpulseResponseFile
     public DateTimeOffset SavedAtUtc { get; set; }
     public int SampleRate { get; set; }
     public int Bits { get; set; }
-    // Legacy field: the sweep used to be defined by an octave count with the top
-    // pinned to Nyquist. Kept ONLY so pre-band files deserialize; the band is now
-    // stored explicitly in LowFrequencyHz/HighFrequencyHz (see ResolveSweepBand).
+    // Legacy octave count (top pinned to Nyquist), kept only so pre-band files deserialize; see ResolveSweepBand.
     public int Octaves { get; set; }
     public double LowFrequencyHz { get; set; }
     public double HighFrequencyHz { get; set; }
-    // The band the sweep actually swept, which is wider than the requested one
-    // and is what the harmonic geometry of this IR is keyed to. Written since the
-    // band-based generator; absent files fall back through ResolveAchievedSweepBand.
+    // Band actually swept (wider than requested); harmonic geometry is keyed to it. Missing: ResolveAchievedSweepBand.
     public double AchievedLowFrequencyHz { get; set; }
     public double AchievedHighFrequencyHz { get; set; }
-    // The band the sweep excited at FULL amplitude, which is what the measurement may
-    // be READ over; the achieved pair above is what it reaches, guard bands included,
-    // and the harmonic geometry needs that one. Zero in a file written before this was
-    // recorded, where the reader falls back to the achieved band.
+    // Full-amplitude band the measurement may be read over; zero in older files (reader falls back to achieved).
     public double MeasuredLowFrequencyHz { get; set; }
     public double MeasuredHighFrequencyHz { get; set; }
-    // When the measurement was taken, as opposed to when this file was written.
-    // SavedAtUtc is re-stamped by every save; this is not. Default for a file written
-    // before it existed, where the reader falls back to the save stamp.
+    // Unlike SavedAtUtc, never re-stamped by a save; default in older files (reader falls back to the save stamp).
     public DateTimeOffset MeasuredAtUtc { get; set; }
     public double SweepDurationSeconds { get; set; }
     public PlaybackChannel PlayChannel { get; set; }
     public SweepMeasurementMode MeasurementMode { get; set; } =
         SweepMeasurementMode.SweepDeconvolution;
 
-    /// <summary>
-    /// What this result's arrival time is referenced to. Absent from files
-    /// written before sweeps could be imported, and the default is right for
-    /// every one of them: they were all measured against their own loopback.
-    /// </summary>
+    /// <summary>Default is right for files predating import: all were loopback-referenced.</summary>
     public TimingReference TimingReference { get; set; } =
         TimingReference.SynchronizedLoopback;
     public int SweepDeconvolutionPeakIndex { get; set; }
@@ -86,30 +58,11 @@ public sealed class ImpulseResponseFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? TransferPeakIndex { get; set; }
 
-    // The SPL calibration in effect when the measurement ran. Its microphone-side
-    // offset, combined with this file's own loopback levels, is what later places
-    // the response on an SPL axis.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SplCalibration? SplCalibration { get; set; }
 
-    /// <summary>
-    /// The protective high-pass that was divided out of the transfer impulse
-    /// response, or null when the file predates this record.
-    /// </summary>
-    /// <remarks>
-    /// Null and <see cref="ProtectiveHighPassKind.Off"/> are DIFFERENT answers, which
-    /// is why this is a nullable entry rather than three scalars: "no filter" can be
-    /// checked against a reference-free capture that carries one, while "not recorded"
-    /// cannot, and silently treating the second as the first would pass a tweeter
-    /// whose two measurements sit a whole filter slope apart.
-    /// <para>
-    /// The setting itself lives in the application's measurement options, so until
-    /// now nothing tied a saved impulse response to the filter it was corrected for.
-    /// Deliberately NOT a format version bump: the field is additive and optional, and
-    /// bumping would make every file this build writes unreadable to older ones for
-    /// the sake of metadata they would ignore anyway.
-    /// </para>
-    /// </remarks>
+    /// <summary>Protective high-pass divided out of the transfer IR; null (not recorded) differs from Off.</summary>
+    /// <remarks>Additive, so no version bump: older builds would reject files over metadata they ignore.</remarks>
     public ProtectiveHighPassFileEntry? ProtectiveHighPass { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -121,38 +74,15 @@ public sealed class ImpulseResponseFile
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PreviewFrequencyResponseFileEntry? PreviewFrequencyResponse { get; set; }
 
-    /// <summary>
-    /// The microphone calibration in force when this response was measured, as a
-    /// CURVE rather than as the name of a file only this machine has.
-    /// </summary>
-    /// <remarks>
-    /// A measurement is not portable without it. The impulse response is raw — no
-    /// calibration is ever baked into one — so a recipient who does not have the
-    /// author's calibration file sees a different curve from the author's, and
-    /// nothing in the file used to say so. Carried the same way a Virtual DSP
-    /// session carries its own (see <c>VirtualCrossoverCalibrationSettings</c>):
-    /// the curve is the truth and the name is a hint, because two machines' lists
-    /// mint their own ids.
-    /// <para>
-    /// Additive and optional, like <see cref="ProtectiveHighPass"/>, and for the
-    /// same reason: bumping the version would make every file this build writes
-    /// unreadable to older ones over metadata they would ignore.
-    /// </para>
-    /// </remarks>
+    /// <summary>Mic calibration as a curve, so the raw IR is portable; the name is only a hint (ids differ per machine).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; set; }
 
-    /// <summary>
-    /// The spatially averaged microphones recorded alongside this measurement,
-    /// or null when it was made with one microphone.
-    /// </summary>
+    /// <summary>Null for a single-microphone measurement.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ArrayMicrophonesFileEntry? ArrayMicrophones { get; set; }
 
-    // The bulk of the file lives in these five arrays, so they alone are stored
-    // as base64 float32 (little-endian) rather than JSON numbers; pre-v8 number
-    // arrays are still read, at their full double precision. In memory they are
-    // double[] either way — all analysis after a load runs in double as before.
+    // The bulk of the file: base64 float32 LE; pre-v8 number arrays still read. Doubles in memory either way.
     [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[] SweepDeconvolutionRealSamples { get; set; } = Array.Empty<double>();
 
@@ -199,11 +129,7 @@ public sealed class ImpulseResponseFile
         LevelSnapshotFileEntry? loopbackLevels =
             CreateLevelSnapshotFileEntry(levels.Loopback);
 
-        // Stamp the calibration frozen onto this result at run time (not the current
-        // configured one), and only when it belongs to this measurement's own input.
-        // A calibration left over from a different device/rate/bits/channel would
-        // otherwise be trusted on reload (loaded files skip the live match) and show
-        // a confidently wrong dB SPL offset.
+        // Stamp the run-time snapshot, only when it matches this input: loaded files skip the live match.
         SplCalibration? splCalibration =
             measurement.MeasurementSplCalibration is { } anchor && measurement.InputMatches(anchor)
                 ? anchor
@@ -221,8 +147,7 @@ public sealed class ImpulseResponseFile
             MeasuredLowFrequencyHz = measurement.MeasuredLowFrequencyHz,
             MeasuredHighFrequencyHz = measurement.MeasuredHighFrequencyHz,
             MeasuredAtUtc = measurement.MeasuredAtUtc,
-            // The sweep that produced this IR, which for a re-saved measurement is
-            // longer than the one rebuilt on load if it outran the generation cap.
+            // May exceed the length rebuilt on load if it outran the generation cap.
             SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
@@ -231,12 +156,7 @@ public sealed class ImpulseResponseFile
             AverageRunCount = measurement.AverageRunCount,
             AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
             SplCalibration = splCalibration,
-            // The filter that belongs to THIS result — snapshotted at run start, or
-            // carried in from the file it was loaded from — never the app's current
-            // setting. Recorded whether or not it is enabled, because "Off" is an
-            // answer a later consistency check can use and a missing record is not;
-            // null stays null, so re-saving a response measured before this existed
-            // does not invent a filter for it.
+            // This result's filter, never the current setting; Off is recorded, null stays null.
             ProtectiveHighPass = measurement.MeasurementProtectiveHighPass is { } filter
                 ? ProtectiveHighPassFileEntry.From(filter)
                 : null,
@@ -275,9 +195,7 @@ public sealed class ImpulseResponseFile
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         Validate();
 
-        // Write to a sibling temp file first: creating the target directly would
-        // truncate it before writing, so a failure mid-write (crash, full disk)
-        // destroys the previously saved measurement. The final move is atomic.
+        // Temp file then atomic move: writing the target directly truncates it before a possible failure.
         string tempPath = path + ".tmp";
         try
         {
@@ -325,13 +243,7 @@ public sealed class ImpulseResponseFile
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
-        // A file from a FUTURE format version is refused by its declared version
-        // BEFORE deserialization. Waiting for Validate() is too late: a later
-        // version exists to change how something is represented, and this
-        // build's reader would trip over that representation first and report a
-        // parse error where the version is the answer — exactly what a v7 build
-        // does on v8's base64 sample strings. Anything else falls through to the
-        // full read: the errors it produces are already right for those files.
+        // Refuse a future version before deserializing, or its new representation reads as a parse error (v7 on v8 base64).
         (string? format, int? version) = JsonFormatMarker.ReadWithVersion(path);
         if (string.Equals(format, CurrentFormat, StringComparison.Ordinal) &&
             version is > CurrentVersion)
@@ -356,11 +268,7 @@ public sealed class ImpulseResponseFile
         return file;
     }
 
-    /// <summary>
-    /// The sweep band that was REQUESTED. Pre-band files carry only an octave
-    /// count, whose sweep ran from Nyquist / 2^octaves up to Nyquist; for those
-    /// there was no separate request, so the band they swept is returned.
-    /// </summary>
+    /// <summary>Requested band; pre-band files return their swept band Nyquist / 2^octaves .. Nyquist.</summary>
     public (double LowHz, double HighHz) ResolveSweepBand() =>
         ResolveSweepBand(LowFrequencyHz, HighFrequencyHz, Octaves, SampleRate);
 
@@ -379,10 +287,7 @@ public sealed class ImpulseResponseFile
         return (nyquist / Math.Pow(2.0, octaveSpan), nyquist);
     }
 
-    /// <summary>
-    /// The band the sweep ACTUALLY swept — the one harmonic geometry is keyed to,
-    /// which is wider than the request by the guard bands the fades live in.
-    /// </summary>
+    /// <summary>Band actually swept, including the fade guard bands; harmonic geometry is keyed to it.</summary>
     public (double LowHz, double HighHz) ResolveAchievedSweepBand() =>
         ResolveAchievedSweepBand(
             AchievedLowFrequencyHz,
@@ -408,9 +313,7 @@ public sealed class ImpulseResponseFile
         }
         if (lowFrequencyHz > 0 && highFrequencyHz > lowFrequencyHz)
         {
-            // Written by the band-based generator before the achieved band was
-            // stored: it is deterministic, so re-derive rather than mistake the
-            // request for what was swept.
+            // Band-generator file without stored achieved band: the generator is deterministic, so re-derive.
             ExpSweepSpec spec = ExponentialSineSweep.ComputeSpec(
                 lowFrequencyHz,
                 highFrequencyHz,
@@ -420,7 +323,6 @@ public sealed class ImpulseResponseFile
                 ? (spec.LowFrequencyHz, spec.HighFrequencyHz)
                 : (lowFrequencyHz, highFrequencyHz);
         }
-        // Pre-band file: the octave count describes the swept band directly.
         return ResolveSweepBand(lowFrequencyHz, highFrequencyHz, octaves, sampleRate);
     }
 
@@ -584,10 +486,7 @@ public sealed class ImpulseResponseFile
         }
         if (TransferCoherence != null)
         {
-            // The pipeline produces exactly N/2 + 1 coherence bins for a
-            // transfer IR of length N; anything else would draw the curve on a
-            // wrong frequency grid, because the FFT length is reconstructed
-            // from the coherence itself.
+            // FFT length is reconstructed from coherence, so exactly N/2 + 1 bins are required.
             if (TransferRealSamples == null)
             {
                 throw new InvalidDataException(
@@ -861,8 +760,7 @@ public sealed class ImpulseResponseFile
                 throw new InvalidDataException(
                     "An array microphone accepted-run count is negative.");
             }
-            // A gap is a legitimate value here — it is how a band the sweep never
-            // reached is recorded — so only an infinity is refused.
+            // NaN gaps are legitimate (unswept bands); only infinity is refused.
             foreach (double level in microphone.LevelsDb)
             {
                 if (double.IsInfinity(level))
@@ -926,17 +824,13 @@ public sealed class ImpulseResponseFile
         public double[] MagnitudesDb { get; set; } = Array.Empty<double>();
     }
 
-    /// <summary>
-    /// The protective high-pass configured in the user's own DSP between the sound
-    /// card output and the loudspeaker, as it stood when this response was measured.
-    /// </summary>
+    /// <summary>Protective high-pass in the user's DSP between sound card and loudspeaker, as measured.</summary>
     public sealed class ProtectiveHighPassFileEntry
     {
         public ProtectiveHighPassKind Kind { get; set; }
         public double FrequencyHz { get; set; } = 2_000.0;
         public int SlopeDbPerOctave { get; set; } = 24;
 
-        /// <summary>The configuration this record stands for.</summary>
         public ProtectiveHighPassConfiguration ToConfiguration() =>
             new(Kind, FrequencyHz, SlopeDbPerOctave);
 
@@ -953,54 +847,28 @@ public sealed class ImpulseResponseFile
         }
     }
 
-    /// <summary>
-    /// One microphone's contribution to this measurement's spatial average.
-    /// </summary>
-    /// <param name="LevelsDb">
-    /// The steady-state transfer level on the grid, RAW: the protective high-pass
-    /// is divided out, the microphone calibration is NOT applied. Storing it
-    /// uncalibrated is what lets a reader change the calibration, and what lets
-    /// the frequency-response view's own calibration switch mean something for
-    /// these curves too.
-    /// </param>
+    /// <summary>One microphone of the spatial average.</summary>
+    /// <param name="LevelsDb">Steady-state level on the grid, RAW: high-pass divided out, mic calibration NOT applied (so readers can change it).</param>
     public sealed class ArrayMicrophoneFileEntry
     {
         public int ChannelOffset { get; set; }
 
-        /// <summary>
-        /// Whether this is the microphone that also produced the impulse response
-        /// — the one the others are levelled onto.
-        /// </summary>
+        /// <summary>The microphone that produced the IR; others are levelled onto it.</summary>
         public bool IsMeasurementMicrophone { get; set; }
 
-        /// <summary>What the user called the position, if anything.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Note { get; set; }
 
-        /// <summary>How many of the measurement's runs this microphone survived.</summary>
         public int AcceptedRunCount { get; set; }
 
         public double[] LevelsDb { get; set; } = Array.Empty<double>();
 
-        /// <summary>
-        /// This microphone's own calibration curve, or null when it was recorded
-        /// uncalibrated. Per microphone because an array is not required to be one
-        /// model of capsule.
-        /// </summary>
+        /// <summary>Per microphone: an array need not be one capsule model. Null when uncalibrated.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public VirtualCrossoverCalibrationSettings? Calibration { get; set; }
     }
 
-    /// <summary>
-    /// The measurement's spatial-average microphones and the grid their curves
-    /// live on.
-    /// </summary>
-    /// <remarks>
-    /// The grid is stored rather than assumed even though it is a constant today.
-    /// A stored curve outlives the code that wrote it, and a grid that silently
-    /// changed under a reader would shift every level in frequency while still
-    /// looking like a perfectly ordinary response.
-    /// </remarks>
+    /// <summary>Array microphones and their grid; the grid is stored because curves outlive the code that wrote them.</summary>
     public sealed class ArrayMicrophonesFileEntry
     {
         public double GridStartHz { get; set; }
@@ -1035,21 +903,9 @@ public sealed class ImpulseResponseFile
         }
 
         /// <summary>
-        /// The stored curves, or none when they are not on the grid this build reads.
+        /// Curves, or none when the stored grid endpoints differ from this build's (would shift levels in frequency).
+        /// None rather than refusing the file: the IR beside it is readable.
         /// </summary>
-        /// <remarks>
-        /// The endpoints travel with the file for exactly this check, and it was the
-        /// one thing missing: a file whose grid ran from somewhere else would have
-        /// been read band for band on this one, shifting every position in FREQUENCY
-        /// with nothing to show for it. The band COUNT is checked further down, where
-        /// the curves are placed; the ends have to be checked here, because by then
-        /// they are gone.
-        /// <para>
-        /// None rather than a refusal to open the file: the impulse response beside
-        /// the array is perfectly readable, and the tools that wanted the array say
-        /// out loud when a channel is drawn from its point measurement instead.
-        /// </para>
-        /// </remarks>
         internal IReadOnlyList<ArrayMicrophoneCurve> ToCurves()
         {
             IReadOnlyList<double> grid = SpatialAverage.BuildGrid();
@@ -1058,9 +914,7 @@ public sealed class ImpulseResponseFile
                 : [];
         }
 
-        // The two constructions of one logarithmic grid differ in their last ULPs
-        // (20 against 20.000000000000004), so this asks whether they are the same
-        // grid rather than the same double.
+        // Two constructions of one log grid differ in the last ULPs (20 vs 20.000000000000004).
         private static bool SameFrequency(double stored, double expected) =>
             Math.Abs(stored - expected) <= 1e-6 * expected;
 

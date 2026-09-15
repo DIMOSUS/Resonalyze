@@ -3,7 +3,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>Which band shape an add zone stands for.</summary>
 internal sealed class PeqAddBandEventArgs : EventArgs
 {
     public PeqAddBandEventArgs(PeqBandType type)
@@ -15,18 +14,9 @@ internal sealed class PeqAddBandEventArgs : EventArgs
 }
 
 /// <summary>
-/// The "add a filter" tile that trails the PEQ strips: an empty slot outline split
-/// into one zone per band shape, each with its own frame, plus and label. It always
-/// sits in the cell after the last strip and disappears once the bank is full, so
-/// the grid reads as a list the user extends rather than a fixed bank of 32 with
-/// most of it greyed out.
+/// Trailing "add a filter" tile, one zone per shape (adding is the most repeated action; a menu costs a click).
+/// Hidden once the bank is full.
 /// </summary>
-/// <remarks>
-/// One zone per shape rather than one tile opening a menu: adding a filter is the
-/// most repeated action in the panel, and a menu costs a second click and a jump
-/// away from the strip. The zones keep the shapes visible — the tile says what the
-/// bank can hold — and each one lands directly on the shape it names.
-/// </remarks>
 internal sealed class PeqAddSlotControl : Control
 {
     private static readonly Color OutlineColor = Color.FromArgb(70, 78, 94);
@@ -34,9 +24,7 @@ internal sealed class PeqAddSlotControl : Control
     private static readonly Color GlyphColor = Color.FromArgb(120, 130, 148);
     private static readonly Color GlyphHoverColor = UiPalette.TextPrimarySoft;
 
-    // Top to bottom: the bell first as the one used most, then the shelves in the
-    // order they sit on a frequency axis drawn upwards — high above low — and the
-    // two phase-only all-pass orders last, first order above second.
+    // Bell first (most used), shelves high above low, then all-pass first order above second.
     private static readonly (PeqBandType Type, string Label)[] Zones =
     {
         (PeqBandType.Peaking, "PK"),
@@ -62,7 +50,6 @@ internal sealed class PeqAddSlotControl : Control
         TabStop = false;
     }
 
-    /// <summary>Raised with the shape of the zone that was clicked.</summary>
     public event EventHandler<PeqAddBandEventArgs>? AddRequested;
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -110,13 +97,10 @@ internal sealed class PeqAddSlotControl : Control
             return -1;
         }
 
-        // Bounded rather than trusted: the last zone carries the rounding remainder,
-        // so a click on the final pixel row must not index past the array.
+        // Clamped: the last zone carries the rounding remainder.
         return Math.Clamp(y * Zones.Length / Height, 0, Zones.Length - 1);
     }
 
-    // The zones split the tile evenly, the last one taking whatever the division
-    // left over, so together they cover it exactly with no seam at the bottom.
     private Rectangle ZoneBounds(int zone)
     {
         int top = Height * zone / Zones.Length;
@@ -149,8 +133,6 @@ internal sealed class PeqAddSlotControl : Control
 
         bool hovered = hoveredZone == zone;
 
-        // A wash of the colour the filter itself will wear, so the zone and the
-        // strip it creates are recognisably the same thing.
         using (var wash = new SolidBrush(PeqBandPalette.TileZone(Zones[zone].Type)))
         {
             graphics.FillRectangle(wash, bounds);
@@ -164,8 +146,6 @@ internal sealed class PeqAddSlotControl : Control
 
         Color glyphColor = hovered ? GlyphHoverColor : GlyphColor;
 
-        // The plus sits above the label, both sized off the zone so they stay
-        // proportional at any DPI and at any panel width.
         int arm = Math.Max(3, Math.Min(bounds.Width, bounds.Height) / 7);
         int plusY = bounds.Top + bounds.Height * 2 / 5;
         int centerX = bounds.Left + bounds.Width / 2;
@@ -175,8 +155,6 @@ internal sealed class PeqAddSlotControl : Control
             graphics.DrawLine(glyph, centerX, plusY - arm, centerX, plusY + arm);
         }
 
-        // The label names the shape with the same token the strip header shows once
-        // the filter exists, so the tile and the bank speak one vocabulary.
         var labelArea = Rectangle.FromLTRB(
             bounds.Left,
             plusY + arm,

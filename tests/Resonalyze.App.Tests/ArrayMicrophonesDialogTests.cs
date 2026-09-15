@@ -6,12 +6,6 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The array dialog's job is to make an unusable array impossible to configure:
-/// an input already carrying the microphone, the loopback or another array
-/// microphone is never on offer, because a duplicate would enter the spatial
-/// average twice and weigh double while looking like a perfectly ordinary curve.
-/// </summary>
 public sealed class ArrayMicrophonesDialogTests
 {
     private static readonly IReadOnlyList<MicrophoneCalibrationEntry> Calibrations =
@@ -32,9 +26,7 @@ public sealed class ArrayMicrophonesDialogTests
             microphoneChannel: 0,
             loopbackChannel: loopbackChannel,
             "test inputs");
-        // Shown off-screen rather than merely constructed: a ListView raises no
-        // selection event and a combo has no selection until their handles exist,
-        // so an unrealised dialog would pass every test by doing nothing.
+        // Shown off-screen: ListView and combo raise no selection until their handles exist.
         dialog.StartPosition = FormStartPosition.Manual;
         dialog.Location = new Point(-6000, -6000);
         dialog.Show();
@@ -66,7 +58,6 @@ public sealed class ArrayMicrophonesDialogTests
             [new ArrayMicrophoneDefinition { ChannelOffset = 2 }],
             [0, 1, 2, 3]);
 
-        // 1 and 2 are the measurement pair, 3 is already an array microphone.
         Assert.Equal("Input 4", Offered(dialog));
     });
 
@@ -87,8 +78,6 @@ public sealed class ArrayMicrophonesDialogTests
 
         Control<ListView>(dialog, "listViewMicrophones").Items[0].Selected = true;
 
-        // Otherwise its calibration could not be changed without also moving it
-        // to a different input.
         Assert.Equal("Input 3, Input 4", Offered(dialog));
     });
 
@@ -116,9 +105,6 @@ public sealed class ArrayMicrophonesDialogTests
 
         Click(dialog, "buttonAdd");
 
-        // The added microphone is selected, which puts its own input back on
-        // offer so it can be edited in place; what a NEW microphone may take is
-        // what the list says with nothing selected.
         Control<ListView>(dialog, "listViewMicrophones").SelectedIndices.Clear();
         Assert.Equal("Input 4", Offered(dialog));
 
@@ -132,12 +118,7 @@ public sealed class ArrayMicrophonesDialogTests
     [Fact]
     public void AddingTwiceInARowCannotDuplicateTheFirst() => StaTest.Run(() =>
     {
-        // What a user actually does: Add, Add. The row Add just made is selected,
-        // which puts its own input back on offer so its calibration can be edited
-        // without moving it — and that offer used to be a second Add away from a
-        // duplicate. Nothing downstream would have said so: the settings layer drops
-        // a duplicate silently, to stay able to start on its own file, so the panel
-        // went on promising seven microphones while six were recorded.
+        // Add, Add: the selected new row offers its own input, which was one Add away from a duplicate the settings layer drops silently.
         using ArrayMicrophonesDialog dialog = CreateDialog([], [0, 1, 2, 3]);
 
         Click(dialog, "buttonAdd");
@@ -153,10 +134,7 @@ public sealed class ArrayMicrophonesDialogTests
     [Fact]
     public void AnInputTheMeasurementTookIsNamedRatherThanDroppedInSilence() => StaTest.Run(() =>
     {
-        // Impossible to configure here and perfectly possible to arrive at: the array
-        // is stored per backend, and the measurement microphone can be moved onto one
-        // of its inputs afterwards, elsewhere in the panel. The measurement layer then
-        // drops that position — so the dialog has to name it.
+        // Reachable by moving the measurement mic onto an array input elsewhere; the measurement layer drops it, so the dialog names it.
         using ArrayMicrophonesDialog dialog = CreateDialog(
             [new ArrayMicrophoneDefinition { ChannelOffset = 0 }],
             [0, 1, 2, 3]);
@@ -170,7 +148,6 @@ public sealed class ArrayMicrophonesDialogTests
     [Fact]
     public void EveryInputTakenLeavesNothingToAdd() => StaTest.Run(() =>
     {
-        // The MME case: two channels, both already the measurement pair.
         using ArrayMicrophonesDialog dialog = CreateDialog([], [0, 1]);
 
         Assert.Equal(string.Empty, Offered(dialog));
@@ -222,8 +199,6 @@ public sealed class ArrayMicrophonesDialogTests
             [new ArrayMicrophoneDefinition { ChannelOffset = 2, CalibrationId = "cal-gone" }],
             [0, 1, 2, 3]);
 
-        // "None" would say the microphone is uncalibrated. It is not: its
-        // calibration is missing, and the two want different fixes.
         ListViewItem row = Control<ListView>(dialog, "listViewMicrophones").Items[0];
         Assert.Equal("cal-gone (missing)", row.SubItems[1].Text);
     });

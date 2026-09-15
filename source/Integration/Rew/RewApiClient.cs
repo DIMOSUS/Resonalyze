@@ -4,18 +4,9 @@ using System.Text.Json.Serialization;
 
 namespace Resonalyze.Integration.Rew;
 
-/// <summary>
-/// The only place this application speaks HTTP to REW. Everything above it works
-/// in payloads and summaries, so the transport can be driven by a fake handler in
-/// tests and REW is never needed to prove the code that builds a request.
-/// </summary>
-/// <remarks>
-/// The <see cref="HttpClient"/> is supplied rather than created here for that
-/// reason; the shell hands it the one it owns.
-/// </remarks>
+/// <summary>The only HTTP path to REW; the HttpClient is injected so tests drive a fake handler.</summary>
 internal sealed class RewApiClient
 {
-    /// <summary>Where REW's API listens when nobody has moved it.</summary>
     public const string DefaultBaseUrl = "http://localhost:4735/";
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -34,11 +25,7 @@ internal sealed class RewApiClient
         this.baseAddress = baseAddress;
     }
 
-    /// <summary>
-    /// Turns a typed address into one that can be combined with a relative path.
-    /// Returns false for anything that is not an absolute http(s) URL, so a
-    /// mistyped setting is a refusal at the dialog rather than an exception later.
-    /// </summary>
+    /// <summary>False for anything but an absolute http(s) URL, so a mistyped setting is refused at the dialog.</summary>
     public static bool TryParseBaseAddress(string? url, out Uri? baseAddress)
     {
         baseAddress = null;
@@ -63,10 +50,7 @@ internal sealed class RewApiClient
         return true;
     }
 
-    /// <summary>
-    /// The version string REW announces, or null when it does not answer. Never
-    /// throws for an absent REW: not running is the ordinary case, not a fault.
-    /// </summary>
+    /// <summary>Null when REW does not answer; never throws for an absent REW.</summary>
     public async Task<string?> TryGetVersionAsync(CancellationToken cancellationToken)
     {
         try
@@ -82,7 +66,6 @@ internal sealed class RewApiClient
         }
     }
 
-    /// <summary>Posts one impulse response. The import itself runs asynchronously in REW.</summary>
     public async Task ImportImpulseResponseAsync(
         RewImpulseResponseData body,
         CancellationToken cancellationToken)
@@ -108,11 +91,7 @@ internal sealed class RewApiClient
         }
         catch (Exception exception) when (IsUnreadable(exception))
         {
-            // A body that is not REW's error shape tells us nothing; the status does.
-            // Classified the same way as the measurement list, so an unreadable answer
-            // is unreadable wherever it arrives — an unusable charset raises
-            // InvalidOperationException here exactly as it does there, and escaping
-            // from this catch would turn REW refusing an import into a crash.
+            // Classified like the measurement list; letting InvalidOperationException escape here would turn a refused import into a crash.
         }
 
         throw new RewApiException(
@@ -121,29 +100,9 @@ internal sealed class RewApiClient
                 : $"REW refused the import: {reported}");
     }
 
-    /// <summary>Every measurement REW currently holds, keyed by its index.</summary>
-    /// <remarks>
-    /// A body that is not the shape this expects is turned into a
-    /// <see cref="RewApiException"/> rather than left to escape. This is the route
-    /// where that matters: the export deliberately does not gate on REW's version —
-    /// it is a moving beta — so a REW that still answers while having changed this
-    /// shape is the expected way the design fails, and it has to arrive as a
-    /// reported problem rather than as an unhandled exception.
-    /// <para>
-    /// The two types caught are the two this route can actually raise, which was
-    /// measured rather than assumed (.NET 10.0.301). <see cref="JsonException"/>
-    /// covers both a malformed body and a body of another kind entirely: the
-    /// generic <c>ReadFromJsonAsync</c> does not reject a foreign content type, it
-    /// parses the bytes anyway, so an HTML error page arrives as "'&lt;' is an
-    /// invalid start of a value" rather than as the
-    /// <see cref="NotSupportedException"/> one would expect.
-    /// <see cref="InvalidOperationException"/> is the one that does come from the
-    /// header — an unusable charset ("The character set provided in ContentType is
-    /// invalid") — and it is excluded for <see cref="ObjectDisposedException"/>,
-    /// which derives from it and means this application misused its own client
-    /// rather than anything about REW.
-    /// </para>
-    /// </remarks>
+    /// <remarks>Unexpected shapes become <see cref="RewApiException"/> (REW's version is not gated). Measured on .NET 10.0.301: ReadFromJsonAsync
+    /// parses any content type, so an HTML page is a <see cref="JsonException"/>; a bad charset is <see cref="InvalidOperationException"/>
+    /// (excluding <see cref="ObjectDisposedException"/>, our own misuse).</remarks>
     public async Task<IReadOnlyDictionary<string, RewMeasurementSummary>> GetMeasurementsAsync(
         CancellationToken cancellationToken)
     {
@@ -175,21 +134,11 @@ internal sealed class RewApiClient
             .ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Whether a failure means "the answer was not something this can read" — the
-    /// body, or the header that says how to decode it. Shared so the version probe
-    /// and the measurement list agree on what an unreadable answer is; they only
-    /// differ in what they do about it.
-    /// </summary>
     private static bool IsUnreadable(Exception exception) =>
         exception is JsonException ||
         (exception is InvalidOperationException and not ObjectDisposedException);
 
-    /// <summary>
-    /// Whether a failure means "REW is not there", as opposed to the caller having
-    /// cancelled. A timeout surfaces as a cancellation whose token is not ours, so
-    /// the token has to be consulted rather than the exception type.
-    /// </summary>
+    /// <summary>A timeout surfaces as a cancellation whose token is not ours, so the token is consulted, not the type.</summary>
     private static bool IsUnreachable(Exception exception, CancellationToken cancellationToken) =>
         exception switch
         {
@@ -200,7 +149,6 @@ internal sealed class RewApiClient
         };
 }
 
-/// <summary>REW answered, and said no.</summary>
 internal sealed class RewApiException : Exception
 {
     public RewApiException(string message)
@@ -209,18 +157,12 @@ internal sealed class RewApiException : Exception
     }
 }
 
-/// <summary>REW's one-line reply shape, used by <c>/version</c> and the import routes.</summary>
 internal sealed class RewApiMessage
 {
     [JsonPropertyName("message")]
     public string? Message { get; set; }
 }
 
-/// <summary>
-/// The part of REW's measurement summary this export reads back. The whole summary
-/// is much larger; the fields here are the ones the round-trip check needs — which
-/// measurement is the new one, and where REW put its peak.
-/// </summary>
 internal sealed class RewMeasurementSummary
 {
     [JsonPropertyName("title")]
@@ -229,11 +171,7 @@ internal sealed class RewMeasurementSummary
     [JsonPropertyName("uuid")]
     public string? Uuid { get; set; }
 
-    /// <summary>
-    /// The arrival's time on REW's axis. This is the field that proves the start
-    /// time survived: REW finds the peak itself, so the number combines what it
-    /// was told (the start time) with what it found (the same peak sample).
-    /// </summary>
+    /// <summary>REW finds the peak itself, so this combines the sent start time with the same peak sample.</summary>
     [JsonPropertyName("timeOfIRPeakSeconds")]
     public double? TimeOfIRPeakSeconds { get; set; }
 }

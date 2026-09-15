@@ -3,12 +3,6 @@ using Resonalyze.Audio;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// End-to-end hardware smoke tests for the measurement stack over real WASAPI
-/// endpoints, driven entirely through the public audio abstraction (no direct
-/// device construction). Skipped unless the endpoint environment variables are
-/// set, so a normal CI run does not report them as executed.
-/// </summary>
 public sealed class WasapiHardwareSmokeTests
 {
     private static readonly IAudioSessionFactory Factory =
@@ -35,7 +29,6 @@ public sealed class WasapiHardwareSmokeTests
             wasapiCaptureEndpointId: captureId, wasapiRenderEndpointId: renderId, asioDriverName: null,
             bufferMilliseconds: 100, expectedCaptureSamples: sampleRate);
 
-    // Proves the endpoints were released: opening a fresh duplex session succeeds.
     private static async Task AssertEndpointsReusableAsync(string captureId, string renderId, int sampleRate)
     {
         var signal = new AudioPlaybackSignal(
@@ -213,10 +206,7 @@ public sealed class WasapiHardwareSmokeTests
         await Factory.WarmUpAsync(request, CancellationToken.None);
     }
 
-    // Deliberately a failure, not a skip: the endpoint variables are set, so the
-    // caller asserted hardware is present. Hardware that cannot negotiate an
-    // exclusive duplex format is a real result worth surfacing, and xUnit v2 has
-    // no runtime skip to express it more softly.
+    // A failure, not a skip: the endpoint variables assert hardware is present, and xUnit v2 has no runtime skip.
     private static int RequireExclusiveRate(string captureId, string renderId) =>
         FirstExclusiveRate(captureId, renderId)
         ?? throw new InvalidOperationException(

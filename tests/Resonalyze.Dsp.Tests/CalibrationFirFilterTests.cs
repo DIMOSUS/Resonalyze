@@ -2,18 +2,11 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The calibration FIR must do exactly two things: reproduce the calibration's
-/// magnitude inverted (the correction the curves subtract, applied as a filter)
-/// and stay strictly linear-phase, because the auralization runs it over BOTH
-/// sides of the car and any phase behavior must cancel in the inter-side
-/// comparison.
-/// </summary>
+/// <summary>Inverted calibration magnitude, strictly linear-phase (the auralization runs it on both sides).</summary>
 public sealed class CalibrationFirFilterTests
 {
     private const int Rate = 48_000;
 
-    // The filter's frequency response probed directly: |Σ h[n]·e^(−j2πfn/fs)|.
     private static double MagnitudeDbAt(double[] kernel, double frequencyHz)
     {
         double real = 0;
@@ -31,9 +24,6 @@ public sealed class CalibrationFirFilterTests
     [Fact]
     public void Design_InvertsAFlatCorrection()
     {
-        // A microphone reading +6 dB hot everywhere: the filter must sit at
-        // −6 dB everywhere, so the calibrated render matches the calibrated
-        // on-screen curves.
         double[] kernel = CalibrationFirFilter.Design(_ => 6.0, Rate);
 
         foreach (double frequency in new[] { 40.0, 300.0, 1_000.0, 8_000.0, 16_000.0 })
@@ -45,9 +35,7 @@ public sealed class CalibrationFirFilterTests
     [Fact]
     public void Design_TracksAShelfAwayFromItsEdge()
     {
-        // A +6 dB high shelf above 1 kHz. The frequency-sampling design smooths
-        // the step over a couple of grid bins, so the assertion stays away from
-        // the edge itself.
+        // Frequency sampling smooths the step over a few bins: assert away from the edge.
         double[] kernel = CalibrationFirFilter.Design(
             frequency => frequency >= 1_000.0 ? 6.0 : 0.0, Rate);
 
@@ -60,11 +48,7 @@ public sealed class CalibrationFirFilterTests
     [Fact]
     public void Design_IsExactlyLinearPhase()
     {
-        // Linear phase = the STANDARD FIR symmetry h[n] == h[N−1−n] over an
-        // odd length (Type I) — every tap has a pair, including the edges. Not
-        // required for the inter-side scene (any shared filter cancels out of
-        // the phase difference), but it is what this design promises — exact
-        // magnitude, constant delay — so hold it to exactly that.
+        // Type I symmetry h[n] == h[N−1−n] over an odd length.
         double[] kernel = CalibrationFirFilter.Design(
             frequency => 3.0 * Math.Sin(frequency / 700.0), Rate);
 
@@ -82,8 +66,6 @@ public sealed class CalibrationFirFilterTests
     [Fact]
     public void Design_DelaysByExactlyHalfItsLength()
     {
-        // The peak of a near-flat filter sits at the centre tap: the constant
-        // group delay both sides share.
         double[] kernel = CalibrationFirFilter.Design(_ => 0.0, Rate);
 
         int peakIndex = 0;

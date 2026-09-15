@@ -2,9 +2,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Immutable input captured from the EQ Wizard controls before a fit leaves the UI thread.
-/// </summary>
 internal sealed class EqWizardAutoTuneRequest
 {
     public EqWizardAutoTuneRequest(
@@ -27,15 +24,10 @@ internal sealed class EqWizardAutoTuneRequest
     public IReadOnlyList<SignalPoint> Target { get; }
     public EqAutoTuner.Options Options { get; }
 
-    /// <summary>Optional (Hz, γ²) coherence used to gate boosts; null when the source carries none.</summary>
     public IReadOnlyList<SignalPoint>? Coherence { get; }
 }
 
-/// <summary>
-/// Runs EQ fits away from the UI thread and accepts only the newest result.
-/// Invalidation lets a control change orphan an in-flight fit without sharing
-/// mutable panel state with the worker.
-/// </summary>
+/// <summary>Newest-wins fits off the UI thread; invalidation orphans an in-flight fit without shared mutable state.</summary>
 internal sealed class EqWizardAutoTuneOrchestrator
 {
     private readonly Func<EqWizardAutoTuneRequest, EqualizationCurve> tune;

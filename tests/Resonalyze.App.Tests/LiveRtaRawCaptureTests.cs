@@ -20,8 +20,6 @@ public sealed class LiveRtaRawCaptureTests
 
             foreach (int smoothing in new[] { 0, 6, 24 })
             {
-                // What the plot draws (PlotModelFactory.ResampleLiveSpectrumMagnitude):
-                // bins to dB, then one resample that also applies the correction.
                 List<SignalPoint> drawn = DataHelper.LogarithmicResample(
                     BuildBinCurve(spectrum),
                     RawCurveRenderer.StartFrequency,
@@ -31,8 +29,6 @@ public sealed class LiveRtaRawCaptureTests
                     SpectrumSmoothing.SmoothingOctaves(smoothing),
                     psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(smoothing));
 
-                // What a captured overlay stores and re-renders: uncalibrated bins plus
-                // the correction frozen on the output grid, applied after smoothing.
                 List<SignalPoint> raw = LiveRtaRawCapture.BuildRelativeRaw(
                     spectrum, FftLength, SampleRate);
                 List<SignalPoint> rendered = RawCurveRenderer.Render(
@@ -57,15 +53,12 @@ public sealed class LiveRtaRawCaptureTests
     [Fact]
     public void RelativeRawWithTilt_BakesTheCompensationTheDisplayApplies()
     {
-        // The noise-tilt compensation is baked into the raw capture per bin, at the
-        // same spot the display path applies it (before the resample), so a captured
-        // overlay stays the compensated curve the user saw under any re-smoothing.
+        // Tilt compensation is baked per bin before the resample, as the display path does.
         double[] spectrum = CreateSpectrum();
         NoiseSpectralModel pink = NoiseSpectralModel.PowerLaw(-10.0 * Math.Log10(2.0));
 
         foreach (int smoothing in new[] { 0, 6 })
         {
-            // What the plot draws: bins to dB, per-bin compensation, then the resample.
             List<SignalPoint> compensatedBins = BuildBinCurve(spectrum);
             for (int i = 0; i < compensatedBins.Count; i++)
             {
@@ -107,7 +100,6 @@ public sealed class LiveRtaRawCaptureTests
         List<SignalPoint> raw = LiveRtaRawCapture.BuildRelativeRaw(
             spectrum, FftLength, SampleRate);
 
-        // Bin 0 is DC, which has no place on a logarithmic frequency axis.
         Assert.Equal((FftLength / 2) - 1, raw.Count);
         Assert.Equal((double)SampleRate / FftLength, raw[0].X, precision: 9);
         Assert.Equal(DataHelper.AmplitudeToDecibels(spectrum[1]), raw[0].Y, precision: 9);
@@ -121,11 +113,7 @@ public sealed class LiveRtaRawCaptureTests
         Assert.Empty(LiveRtaRawCapture.BuildRelativeRaw(CreateSpectrum(), FftLength, 0));
     }
 
-    // The band-power integrator the SPL RTA is drawn with places its grid over the range
-    // where a whole band fits inside the resolved spectrum — NOT over the 20 Hz .. 20 kHz
-    // display range. This is why an SPL capture stores no raw form: re-gridding its bands
-    // onto the display range would hold the lowest one down to 20 Hz and invent a bass
-    // tail that was never measured.
+    // The SPL band grid covers only where whole bands fit; re-gridding to 20 Hz would invent a bass tail, so SPL stores no raw form.
     [Fact]
     public void PowerBandGrid_DoesNotStartAtTheDisplayRange()
     {
@@ -146,7 +134,6 @@ public sealed class LiveRtaRawCaptureTests
             $"expected the band grid to start well above the display range, got {bands[0].X} Hz");
     }
 
-    // Mirrors ResampleLiveSpectrumMagnitude's point construction.
     private static List<SignalPoint> BuildBinCurve(double[] spectrum)
     {
         var points = new List<SignalPoint>();
@@ -161,8 +148,6 @@ public sealed class LiveRtaRawCaptureTests
         return points;
     }
 
-    // A tilted, rippled spectrum, so smoothing actually changes the curve and a
-    // mis-ordered reconstruction shows up instead of cancelling.
     private static double[] CreateSpectrum()
     {
         var spectrum = new double[(FftLength / 2) + 1];
@@ -174,8 +159,7 @@ public sealed class LiveRtaRawCaptureTests
         return spectrum;
     }
 
-    // A frequency-dependent correction: a constant one would hide a grid mismatch
-    // between the stored samples and the stored correction.
+    // Frequency-dependent, so a grid mismatch between samples and correction shows.
     private static string WriteCalibrationFile()
     {
         string path = Path.Combine(

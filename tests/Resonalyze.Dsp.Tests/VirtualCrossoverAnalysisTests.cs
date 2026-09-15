@@ -17,12 +17,8 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void MeasureSumLoss_LevelMatchedMinus60DbTail_HasNoDelayEvidence()
     {
-        // A variable channel that is only a -60 dB residue of the fixed one:
-        // the capped (+30 dB) search-side level match lifts it to exactly
-        // the -30 dB reliability gate, where a matched-magnitude evidence
-        // read would pass it as measurable overlap. Observability must be
-        // judged on the RAW balance — the level match rescales the scoring
-        // frame, it cannot manufacture a measurable delay.
+        // A -60 dB residue lifted by the +30 dB level match sits exactly at the -30 dB gate:
+        // observability must be judged on the RAW balance.
         Complex[] fixedIr = UnitImpulse(4_096, 100);
         var tail = new Complex[4_096];
         tail[120] = 0.001; // -60 dB, same broadband spectral shape.
@@ -50,9 +46,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void PredictedAverageSumLossDb_HalfPeriodOffsetLosesEnergy()
     {
-        // 0.5 ms is half a period at 1 kHz: around the band center the two
-        // impulses cancel, and the averaged loss over the octave-wide window
-        // must show it clearly.
+        // 0.5 ms is half a period at 1 kHz: the band center cancels.
         Complex[] a = UnitImpulse(4_096, 100);
         Complex[] b = UnitImpulse(4_096, 100 + SampleRate / 2_000);
 
@@ -66,9 +60,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void PredictedAverageSumLossDb_GainScaleShiftsTheBalance()
     {
-        // With one channel scaled to near-zero the "sum" degenerates to the
-        // other channel alone: no cancellation is possible, so the misaligned
-        // pair's deep loss must mostly disappear.
         Complex[] a = UnitImpulse(4_096, 100);
         Complex[] b = UnitImpulse(4_096, 100 + SampleRate / 2_000);
 
@@ -96,19 +87,13 @@ public sealed class VirtualCrossoverAnalysisTests
         double octaves = VirtualCrossoverAnalysis.EffectiveOverlapOctaves(
             b, [a], SampleRate, 500, 2_000);
 
-        // Two flat, equal spectra overlap perfectly (O=1) across the entire
-        // band, whose nominal width is log2(2000/500) = 2 octaves.
         Assert.InRange(octaves, 1.7, 2.05);
     }
 
     [Fact]
     public void EffectiveOverlapOctaves_GatesBandWhereBothChannelsAreFarBelowSignal()
     {
-        // Both channels are the SAME steep band-pass, so O(f)=1 across the whole
-        // 500-2000 Hz band — yet outside the 500-700 Hz pass-band both fall far
-        // below the in-band peak. Equal levels there are not usable shared band,
-        // so the reliability gate drops them: the overlap reads the pass-band
-        // alone (~1 oct), not the full ~2 that ungated equal levels would count.
+        // Same steep band-pass on both: equal levels outside the 500-700 Hz pass-band are not shared band.
         Complex[] bandPass = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(8_192, 100),
             new DspChannelChain(Crossover: new CrossoverSpec(
@@ -129,10 +114,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void EffectiveOverlapOctaves_DisjointDriversBarelyOverlap()
     {
-        // The fixed driver rolls off almost two octaves below the band; the
-        // variable is flat. Across 500-2000 Hz only one driver radiates, so
-        // the genuinely shared band collapses toward zero — the degenerate
-        // hand-over the engine's trust floor is there to catch.
+        // Only one driver radiates across the band: the degenerate hand-over the trust floor catches.
         Complex[] fixedIr = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(4_096, 100),
             new DspChannelChain(Crossover: new CrossoverSpec(
@@ -152,11 +134,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void EffectiveOverlapOctaves_CrossoverPairKeepsAFractionOfTheBand()
     {
-        // A real hand-over: a low-pass and a high-pass sharing a 1 kHz corner.
-        // The two genuinely overlap around the corner but each rolls off alone
-        // toward the band edges, so the effective overlap is a healthy fraction
-        // of the nominal 2 octaves — comfortably above the trust floor and well
-        // clear of the disjoint case.
         Complex[] lower = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(4_096, 100),
             new DspChannelChain(Crossover: new CrossoverSpec(
@@ -180,11 +157,7 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.InRange(octaves, 0.3, 1.4);
     }
 
-    // A low-frequency junction scene at an arbitrary sample rate: a direct
-    // arrival plus an early reflection ~30 ms later (inside the ~85 ms gate at
-    // every rate, but outside the 21 ms window a fixed 4096-sample gate would
-    // give at 192 kHz), band-limited to the 80 Hz overlap so window duration —
-    // hence frequency resolution — actually bears on the recovered delay.
+    // Reflection ~30 ms late: inside the time-sized gate at every rate, outside a fixed 4096-sample gate at 192 kHz.
     private static Complex[] LowJunctionArrival(int sampleRate, double arrivalMs)
     {
         int length = sampleRate / 2; // 0.5 s, room for the gate at any rate
@@ -210,8 +183,6 @@ public sealed class VirtualCrossoverAnalysisTests
 
     private static double RecoveredJunctionDelayMs(int sampleRate, double knownDelayMs)
     {
-        // The variable arrives knownDelayMs LATER, so the delay that realigns
-        // it is the negative of that (delay to ADD to the variable).
         Complex[] fixedIr = LowJunctionArrival(sampleRate, 10.0);
         Complex[] variableIr = LowJunctionArrival(sampleRate, 10.0 + knownDelayMs);
         IReadOnlyList<AlignmentCandidate> candidates =
@@ -223,12 +194,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindAlignmentCandidates_RecoversTheSameDelayAcrossSampleRates()
     {
-        // The gate is sized in time, so the same physical scene must yield the
-        // same delay whatever the sample rate. 192 kHz is the discriminating
-        // case: a fixed 4096-sample gate is only 21 ms there, so it CUTS the
-        // 30 ms reflection this scene carries and drifts the estimate — the old
-        // implementation fails this assertion while 48 and 96 kHz (85 / 43 ms
-        // windows, both past the ~40 ms plateau) would pass either way.
+        // 192 kHz discriminates: a fixed 4096-sample gate (21 ms) would cut the 30 ms reflection.
         const double knownDelayMs = 0.30;
         double at48k = RecoveredJunctionDelayMs(48_000, knownDelayMs);
         double at96k = RecoveredJunctionDelayMs(96_000, knownDelayMs);
@@ -246,9 +212,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindAlignmentCandidates_OneSidedSilence_ReturnsEmpty()
     {
-        // With one side silent the loss |F+V|/(|F|+|V|) is flat 0 dB for every
-        // delay and polarity — no delay evidence exists, and returning
-        // prior-shaped "candidates" would let a caller fabricate an alignment.
+        // One side silent: loss is flat 0 dB, so returning prior-shaped candidates would fabricate an alignment.
         Complex[] active = UnitImpulse(4_096, 100);
         var silent = new Complex[4_096];
 
@@ -293,8 +257,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void ApplyChain_DelayMovesThePeakByWholeSamples()
     {
-        // 1 ms at 48 kHz is exactly 48 samples, so the impulse lands on a sample
-        // with no interpolation spread.
         Complex[] ir = UnitImpulse(2_048, 100);
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
@@ -321,8 +283,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void ApplyChain_KeepsARealImpulseReal()
     {
-        // The chain response is conjugate-mirrored across Nyquist, so filtering a
-        // real impulse must not leak into the imaginary part.
         Complex[] ir = UnitImpulse(1_024, 50);
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
@@ -424,8 +384,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void ApplyChain_DelayedTailDoesNotWrapAround()
     {
-        // The impulse sits near the end of the IR; the padding must absorb the
-        // delay shift instead of wrapping it back to sample 0.
+        // Impulse near the end: padding must absorb the delay instead of wrapping to sample 0.
         Complex[] ir = UnitImpulse(1_024, 1_000);
 
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
@@ -466,9 +425,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void StepResponse_OfAnImpulse_IsAUnitStep_SummedFromTheRecordsStart()
     {
-        // Summed from the record's start whatever stretch is asked for: what
-        // came before the stretch is in the sum it opens on, and a stretch
-        // running past the record reads silence.
         Complex[] ir = UnitImpulse(64, 20);
         ir[5] = new Complex(3.0, 0.0);
 
@@ -478,7 +434,6 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.All(step.Take(10), value => Assert.Equal(3.0, value));
         Assert.All(step.Skip(10), value => Assert.Equal(4.0, value));
 
-        // The same samples read the same whichever stretch holds them.
         double[] whole = VirtualCrossoverAnalysis.StepResponse(ir, 0, 80);
         for (int i = 0; i < step.Length; i++)
         {
@@ -514,9 +469,6 @@ public sealed class VirtualCrossoverAnalysisTests
             Assert.Equal(lowStep[i] + highStep[i], sumStep[i], 9);
         }
 
-        // The branches read as a step should: the high-pass steps up and
-        // returns to zero (it passes no DC), the low-pass climbs to the full
-        // step, and their sum is the all-pass reconstruction — a unit step.
         Assert.Equal(0.0, highStep[^1], 3);
         Assert.Equal(1.0, lowStep[^1], 3);
         Assert.Equal(1.0, sumStep[^1], 3);
@@ -525,9 +477,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void LinkwitzRileySplit_SumsBackToTheOriginal()
     {
-        // Splitting one impulse into LR24 low-pass and high-pass branches and
-        // summing them reconstructs an allpass copy of the original: same
-        // magnitude everywhere, in particular unit total energy.
+        // LR24 low + high sum to an allpass copy: unit total energy.
         Complex[] ir = UnitImpulse(4_096, 200);
 
         Complex[] lowBranch = VirtualCrossoverAnalysis.ApplyChain(
@@ -554,8 +504,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindBestDelayMs_RecoversAWholeSampleOffset()
     {
-        // The fixed channel arrives 48 samples (1 ms) later, so the variable
-        // channel needs exactly 1 ms of delay to line up.
         Complex[] variable = UnitImpulse(4_096, 100);
         Complex[] fixedIr = UnitImpulse(4_096, 148);
 
@@ -584,8 +532,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindBestDelayMs_ReturnsNegative_WhenTheVariableChannelLags()
     {
-        // The variable channel already arrives 0.5 ms late; the best "delay"
-        // is negative, telling the caller to move it to the other channel.
+        // Negative best delay tells the caller to delay the other channel.
         Complex[] variable = UnitImpulse(4_096, 124);
         Complex[] fixedIr = UnitImpulse(4_096, 100);
 
@@ -598,9 +545,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindBestDelayMs_AlignsCrossoverBranches()
     {
-        // A realistic use: LR24 low/high branches of one impulse with the high
-        // branch offset by 0.4 ms. Aligning inside the crossover window must
-        // recover that offset even though the branches only overlap around 1 kHz.
         Complex[] low = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(8_192, 300),
             new DspChannelChain(Crossover: new CrossoverSpec(
@@ -627,8 +571,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void AverageSumLossDb_IsZeroForCoherentCurves_AndNegativeUnderCancellation()
     {
-        // Two identical +0 dB channels sum to +6.02 dB: zero loss. A sum sitting
-        // at the channel level instead loses 6.02 dB.
         var channel = new List<SignalPoint>
         {
             new(500, 0.0), new(1_000, 0.0), new(2_000, 0.0)
@@ -660,8 +602,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void MinimumSumLossDb_ReadsTheDeepestNotch()
     {
-        // A narrow -12 dB notch barely moves the average but must read at full
-        // depth as the dip.
         var channel = new List<SignalPoint>
         {
             new(500, 0.0), new(1_000, 0.0), new(2_000, 0.0)
@@ -698,8 +638,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void SumLossCurve_IsThePerPointComplexVsMagnitudeSumGap()
     {
-        // Two identical +0 dB channels: their phase-blind magnitude sum is +6.02 dB,
-        // so the loss at each point is the sum curve minus 6.02.
         var channel = new List<SignalPoint>
         {
             new(500, 0.0), new(1_000, 0.0), new(2_000, 0.0)
@@ -721,11 +659,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void SumLossCurve_ReadsAChannelThatMeasuredNothingAsContributingNothing()
     {
-        // A tweeter whose protective high-pass was divided out carries NaN below the
-        // point that became unrecoverable — it measured nothing there, and the
-        // woofer beside it carries the whole sum. Added rather than skipped, that
-        // NaN would travel into the magnitude sum and break a loss reading that is
-        // perfectly good.
+        // NaN below a divided-out protective high-pass must not poison the sum.
         var woofer = new List<SignalPoint>
         {
             new(200, 0.0), new(500, 0.0), new(2_000, 0.0)
@@ -742,11 +676,8 @@ public sealed class VirtualCrossoverAnalysisTests
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
             sum, [woofer, tweeter]);
 
-        // Below the tweeter's limit the sum IS the woofer, so nothing is lost.
         Assert.Equal(0.0, loss[0].Y, 3);
         Assert.Equal(0.0, loss[1].Y, 3);
-        // Where both play, the arithmetic is untouched: two equal channels summing
-        // coherently lose nothing against their magnitude sum.
         Assert.Equal(0.0, loss[2].Y, 3);
     }
 
@@ -760,8 +691,6 @@ public sealed class VirtualCrossoverAnalysisTests
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
             sum, [first, second]);
 
-        // Whatever the summed response shows there is the analysis window's leakage,
-        // and a loss measured against nothing is not a number.
         Assert.False(double.IsFinite(loss[0].Y));
         Assert.Equal(0.0, loss[1].Y, 3);
     }
@@ -769,12 +698,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void SumLossCurve_SmoothsTheRatio_NotTheOperands()
     {
-        // An ideal complementary crossover at 70 Hz: the two amplitudes are in
-        // phase and add to exactly 1 at every frequency, each rolling off at
-        // 48 dB/octave past the corner. The sum is therefore flat 0 dB and the
-        // honest loss is 0 dB everywhere — flat sum, steep operands, which is the
-        // geometry of every real crossover corner. 70 Hz is also where the
-        // psychoacoustic window is at its widest. Any dip here is invented.
+        // Ideal complementary 70 Hz split: flat sum, steep operands, so any dip is invented by smoothing order.
         static double Complementary(double frequency)
         {
             double ratio = Math.Pow(frequency / 70.0, 8);
@@ -793,15 +717,11 @@ public sealed class VirtualCrossoverAnalysisTests
             [Resample(lowPass, 0), Resample(highPass, 0)],
             psycho);
 
-        // Smoothing the finished ratio cannot move a curve that is flat at 0 dB.
         Assert.All(
             honest.Where(point => point.X is >= 50 and <= 15_000),
             point => Assert.Equal(0.0, point.Y, 2));
 
-        // The order the panel used to run — smooth the operands, then divide.
-        // The wide low-frequency window pulls the skirt up toward its own
-        // passband while the flat sum barely moves, and the difference draws a
-        // dip at the corner that no measurement contains.
+        // Smoothing the operands before dividing draws a fake dip at the corner.
         List<SignalPoint> fromSmoothedOperands = VirtualCrossoverAnalysis.SumLossCurve(
             Resample(together, psycho),
             [Resample(lowPass, psycho), Resample(highPass, psycho)]);
@@ -814,7 +734,6 @@ public sealed class VirtualCrossoverAnalysisTests
             $"the operand-first order should invent a dip at the corner: {invented}");
     }
 
-    // A 2 Hz linear grid standing in for the FFT bins the display resamples.
     private static List<SignalPoint> LinearBins(Func<double, double> decibelsAt)
     {
         var bins = new List<SignalPoint>(10_000);
@@ -854,13 +773,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void SumLossCurve_GatesPointsFarBelowTheirLocalNeighborhoodPeak()
     {
-        // Outside every channel's band the "loss" is the phase arithmetic of
-        // noise floors — it swings to deep fake dips no listener can hear. A
-        // point whose combined channel magnitude sits more than the level gate
-        // below the loudest level within an octave of it reads NaN, so the drawn
-        // curve breaks there and the avg/dip read-outs skip it. The reference is
-        // local, so a quiet-but-in-band region (a tilted treble) is judged against
-        // its own level rather than a distant louder band.
+        // Out-of-band loss is noise-floor phase arithmetic: gated to NaN against the loudest level within an octave.
         var channel = new List<SignalPoint>
         {
             new(500, 0.0), new(1_000, 0.0), new(1_500, -40.0), new(6_000, -3.0)
@@ -872,13 +785,10 @@ public sealed class VirtualCrossoverAnalysisTests
 
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(sum, [channel]);
 
-        // 1500 Hz sits 40 dB below its neighbor at 1000 Hz (within an octave) — gated.
         Assert.True(double.IsNaN(loss[2].Y));
-        // The in-band points read their true 0 dB single-channel loss.
         Assert.Equal(0.0, loss[0].Y, 3);
         Assert.Equal(0.0, loss[1].Y, 3);
-        // 6 kHz is quiet in absolute terms, but no louder neighbor sits within an
-        // octave (nearest is 1.5 kHz, further down and quieter), so it is kept.
+        // No louder neighbour within an octave of 6 kHz, so it is kept.
         Assert.Equal(0.0, loss[3].Y, 3);
         double? dip = VirtualCrossoverAnalysis.MinimumSumLossDb(loss, 20, 8_000);
         Assert.NotNull(dip);
@@ -888,7 +798,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void GroupDelayMs_OfAPureDelay_EqualsTheDelay()
     {
-        // A pure delay has a constant group delay equal to the delay itself.
         PreparedDspResponse prepared =
             PreparedDspResponse.Create(new DspChannelChain(DelayMs: 1.5), SampleRate);
 
@@ -936,11 +845,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindBestAlignment_WideWindowKeepsTheTrueSolutionAtACrossover()
     {
-        // A realistic crossover pair: LR24 low-pass vs high-pass at 1 kHz sum
-        // in phase, so the truth is the applied 0.4 ms delay with no flip. The
-        // ±1.5 ms window spans the (flip + half-period) impostors at ±0.5 ms
-        // around it; the loss-based score must reject them by the off-corner
-        // cancellations they create, without any prior.
+        // Flip + half-period impostors sit at ±0.5 ms; the loss score must reject them without a prior.
         Complex[] variable = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(8_192, 200),
             new DspChannelChain(Crossover: new CrossoverSpec(
@@ -968,10 +873,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindAlignmentCandidates_ReportsBothSidesOfTheDegeneracy()
     {
-        // The same echo-bait construction: both the flipped solution against
-        // the stronger echo and the direct alignment are local optima, and the
-        // candidate list must expose both so a caller can disambiguate with
-        // outside evidence (the channel's other junction).
+        // Both the flipped echo solution and the direct alignment are local optima; both must be exposed.
         Complex[] variable = UnitImpulse(4_096, 100);
         var fixedIr = new Complex[4_096];
         fixedIr[100] = Complex.One;
@@ -986,11 +888,7 @@ public sealed class VirtualCrossoverAnalysisTests
             item.InvertPolarity && Math.Abs(item.DelayMs - 0.5) < 0.1);
         Assert.Contains(candidates, item =>
             !item.InvertPolarity && Math.Abs(item.DelayMs) < 0.1);
-        // Best first.
         Assert.True(candidates[0].ScoreDb >= candidates[^1].ScoreDb);
-        // Without a prior the score is the raw in-band average plus the
-        // dip-excess penalty; the dip (a minimum) can never sit above the
-        // average.
         Assert.All(candidates, item =>
         {
             Assert.Equal(
@@ -1010,11 +908,8 @@ public sealed class VirtualCrossoverAnalysisTests
         double q,
         double gainDb)
     {
-        // The pole radius must be read in the ADDITIVE feedback convention
-        // BiquadCoefficients uses (z² − A1·z − A2): the textbook 1 + a1 + a2
-        // formulas mis-read every ordinary stable section as unstable and
-        // pinned the padding at the 262144-sample maximum — ballooning every
-        // Virtual DSP / Auto delay FFT for any crossover or PEQ.
+        // Pole radius in BiquadCoefficients' additive convention (z² − A1·z − A2); the textbook 1 + a1 + a2
+        // reading misjudged stable sections and pinned padding at the 262144-sample cap.
         var chain = new DspChannelChain(Peq: new EqualizationCurve(
             new[] { new PeqBand(frequencyHz, q, gainDb) }));
         PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
@@ -1038,9 +933,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void RequiredTailSamples_LowFrequencyHighQPeqIsLongButFinite()
     {
-        // 20 Hz / Q 10 rings for ~100k samples to −120 dB at 48 kHz — well
-        // past the floor but comfortably under the cap; hitting the cap would
-        // mean the section was misread as unstable.
+        // 20 Hz / Q 10 rings ~100k samples to −120 dB: past the floor, under the cap.
         var chain = new DspChannelChain(Peq: new EqualizationCurve(
             new[] { new PeqBand(20, 10, 12) }));
         PreparedDspResponse prepared = PreparedDspResponse.Create(chain, 48_000);
@@ -1053,11 +946,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void ApplyChain_LowFrequencyHighQPeqDoesNotWrapIntoTheEarlyResponse()
     {
-        // A 20 Hz / Q 10 / +12 dB peaking filter rings for hundreds of
-        // milliseconds — far past the old fixed 8192-sample tail. With the IR
-        // length near the FFT boundary the ring wrapped circularly into the
-        // early response, corrupting the IR, the phase and every alignment
-        // sum built on it. The padding now follows the chain's slowest pole.
+        // A 20 Hz / Q 10 ring outlasts a fixed 8192-sample tail and wrapped into the early IR.
         var ir = new Complex[57_000];
         ir[24_000] = Complex.One;
         var chain = new DspChannelChain(Peq: new EqualizationCurve(
@@ -1084,13 +973,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindAlignmentCandidates_ReportsEachPolaritysOwnOptimumAtAGappedJunction()
     {
-        // The field regime where the polarity curves run shallow and nearly
-        // tied: a gapped junction (LP 1300 / HP 1800 leaves a 0.66-octave
-        // spectral hole). Candidates are seeded per polarity, so the list must
-        // carry the best lobe of EACH polarity — AlignmentSelection's
-        // normal-polarity preference needs the runner-up polarity present to
-        // have anything to prefer. Also pins that a candidate's polarity is
-        // its own optimum: refinement never flips it.
+        // Gapped junction (LP 1300 / HP 1800): the list must carry each polarity's best lobe, never flipped by refinement.
         Complex[] woofer = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(16_384, 400),
             new DspChannelChain(Crossover: new CrossoverSpec(
@@ -1113,9 +996,6 @@ public sealed class VirtualCrossoverAnalysisTests
 
         AlignmentCandidate bestNormal = candidates.First(item => !item.InvertPolarity);
         AlignmentCandidate bestInverted = candidates.First(item => item.InvertPolarity);
-        // The true handover (no delay, no flip) wins; the flipped lobe half a
-        // period off stays in the list as a genuine near-tie the downstream
-        // selection rules must see.
         Assert.Equal(bestNormal, candidates[0]);
         Assert.InRange(bestNormal.DelayMs, -0.05, 0.25);
         Assert.InRange(bestInverted.DelayMs, -0.4, -0.05);
@@ -1125,12 +1005,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindAlignmentCandidates_ForcedPolarityReturnsThatSignHonestlyScored()
     {
-        // The stereo polarity-inheritance path forces a driver's sign to match its
-        // counterpart's. Forcing must generate ONLY that polarity's grid, so every
-        // candidate is a genuine optimum of that sign — its delay and score belong
-        // to it. Regression against the earlier fake: taking the opposite polarity's
-        // winner and merely re-stamping its InvertPolarity bit, which kept a delay
-        // (~half a period off) and a score that were never evaluated for the sign.
+        // Forcing a sign must search that sign's grid, not re-stamp the other polarity's winner.
         Complex[] woofer = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(16_384, 400),
             new DspChannelChain(Crossover: new CrossoverSpec(
@@ -1155,12 +1030,9 @@ public sealed class VirtualCrossoverAnalysisTests
                 tweeter, [woofer], SampleRate, 650, 2_600, -1.5, 1.5,
                 forcedPolarity: true);
 
-        // Only the forced sign is returned.
         Assert.NotEmpty(forced);
         Assert.All(forced, candidate => Assert.True(candidate.InvertPolarity));
 
-        // The forced winner IS the free search's inverted optimum — same delay and
-        // score, honestly evaluated — not the (winning) normal candidate re-stamped.
         AlignmentCandidate freeInverted = free.First(item => item.InvertPolarity);
         AlignmentCandidate freeNormal = free.First(item => !item.InvertPolarity);
         Assert.Equal(freeInverted.DelayMs, forced[0].DelayMs, 3);
@@ -1173,23 +1045,8 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindAlignmentCandidates_DipExcessOutranksASlightlyBetterAverage()
     {
-        // A bass junction whose woofer carries a strong inverted narrowband
-        // build-up behind its direct front (the modal shape of the archived
-        // 80 Hz failure). The lobe that stays on the DIRECT sound averages
-        // better across the band, but the un-cancelled build-up leaves it a
-        // deeper 1/6-octave notch; the lobe that follows the build-up
-        // averages slightly worse and notches less. Ranked by average alone
-        // the direct lobe wins; the dip-excess penalty must outrank the
-        // difference. (WHICH lobe deserves to win the junction is not this
-        // test's question — that is the mono co-move's sub-band veto — this
-        // pins only that the score orders by dip excess, not by average.)
-        //
-        // An earlier construction (an asymmetric LR12/BW48 pair with an
-        // in-band reflection) lost its meaning with per-channel windows: the
-        // "notch" its impostor carried was the shared peak-anchored window
-        // cutting the woofer's group-delayed content, and with each channel
-        // windowed at its own front the same candidate reads genuinely flat
-        // and wins on merit.
+        // Inverted narrowband build-up behind the woofer front: the dip-excess penalty must outrank the average.
+        // Pins only the score ordering, not which lobe deserves the junction.
         Complex[] woofer = ImpulseAt(8.0);
         Complex[] mode = VirtualCrossoverAnalysis.ApplyChain(
             ImpulseAt(8.0 + 6.25, -6.0),
@@ -1215,7 +1072,6 @@ public sealed class VirtualCrossoverAnalysisTests
         AlignmentCandidate notched = candidates.Single(item =>
             !item.InvertPolarity && Math.Abs(item.DelayMs + 1.0) < 0.5);
         Assert.True(winner.InvertPolarity);
-        // The direct lobe averages better yet notches deeper — and loses.
         Assert.True(notched.LossDb > winner.LossDb);
         Assert.True(notched.DipDb < winner.DipDb);
         Assert.True(notched.ScoreDb < winner.ScoreDb);
@@ -1231,11 +1087,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindBestAlignment_PriorBreaksTheFlippedLobeDegeneracy()
     {
-        // The fixed channel carries an inverted echo (1.1x) half a period after
-        // the arrival, so summing the variable channel flipped against the echo
-        // genuinely scores a little better in-band than the direct alignment.
-        // Without the prior the search takes that bait; a prior at the
-        // arrival-based delay keeps the non-inverted solution.
+        // Inverted 1.1x echo half a period after the arrival: without the prior the search takes the bait.
         Complex[] variable = UnitImpulse(4_096, 100);
         var fixedIr = new Complex[4_096];
         fixedIr[100] = Complex.One;
@@ -1256,8 +1108,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindBandLimitedArrivalMs_ReadsTheArrivalInsideTheBand()
     {
-        // A crossover-filtered impulse: the band-passed arrival detector must
-        // land near the true excitation time despite the filter ringing.
         Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
             UnitImpulse(8_192, 480),
             new DspChannelChain(Crossover: new CrossoverSpec(
@@ -1269,19 +1119,14 @@ public sealed class VirtualCrossoverAnalysisTests
         double arrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
             ir, SampleRate, 20, 1_000);
 
-        // 480 samples at 48 kHz = 10 ms; the LR24 low-pass group delay adds a small
-        // fraction of a millisecond. The previous ±1.5 ms window was wide enough to
-        // pass even if the estimate ignored the offset entirely; this tighter window
-        // (commensurate with the actual group delay) requires it to track the arrival.
+        // LR24 low-pass GD adds a fraction of a ms; the window is tight enough to require tracking it.
         Assert.InRange(arrivalMs, 10.0, 10.6);
     }
 
     [Fact]
     public void MeasureBandLevelDb_ReadsTheGainDifferenceBetweenResponses()
     {
-        // The absolute figure carries an arbitrary reference; the contract is
-        // the DIFFERENCE between two responses over the same band — here an
-        // exact virtual -6 dB gain stage.
+        // The absolute figure has an arbitrary reference; the contract is the difference over the same band.
         Complex[] reference = UnitImpulse(8_192, 480);
         Complex[] quieter = VirtualCrossoverAnalysis.ApplyChain(
             reference,
@@ -1302,13 +1147,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void MeasureBandLevelDb_AveragesEnergy_SoAnInterferenceCombBarelyDropsIt()
     {
-        // A comb (impulse minus an equal copy 200 samples later) is the archetype
-        // of cabin interference: |H|^2 = 2 - 2cos(200w), a train of deep nulls whose
-        // period (48 kHz / 200 = 240 Hz) packs ~10 nulls into 400-2800 Hz. Its mean
-        // energy is 2 (the peaks reach +6 dB), so an energy average reads +3.01 dB
-        // over the single impulse, while a dB (geometric-mean) average reads ~0 dB
-        // because the nulls' depth exactly cancels the peaks in the log domain.
-        // Pins that the metric averages POWER, not dB.
+        // Comb |H|^2 = 2 - 2cos(200w): power average reads +3 dB, a dB average ~0. Pins POWER averaging.
         Complex[] single = UnitImpulse(8_192, 480);
         Complex[] comb = UnitImpulse(8_192, 480);
         comb[680] = -Complex.One;
@@ -1320,20 +1159,13 @@ public sealed class VirtualCrossoverAnalysisTests
 
         Assert.NotNull(singleLevel);
         Assert.NotNull(combLevel);
-        // Power domain: ~+3 dB (measured 2.85, shy of the ideal 3.01 by finite-band
-        // and discrete-bin effects). A dB-domain mean would land near 0 dB.
         Assert.InRange(combLevel.Value - singleLevel.Value, 2.5, 3.1);
     }
 
     [Fact]
     public void MeasureBandLevelDb_BandWithoutBinsReturnsNull()
     {
-        // A band above the last usable FFT bin and below Nyquist holds no
-        // bins, so there is no level to report. The gap is one bin wide, and
-        // the analysis grid is 2.93 Hz at 48 kHz (the gate padded by
-        // AlignmentFftInterpolationFactor), which puts the last bin at
-        // 23 997.1 Hz — so the band has to start above that, not merely
-        // near Nyquist.
+        // Last bin at 23 997.1 Hz (2.93 Hz grid): the band must start above it to hold no bins.
         Complex[] ir = UnitImpulse(8_192, 480);
 
         Assert.Null(VirtualCrossoverAnalysis.MeasureBandLevelDb(
@@ -1343,12 +1175,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void AnalyzeBandLimitedArrival_RefusesABandNarrowerThanAThirdOctave()
     {
-        // The band used to be widened to at least half an octave behind the
-        // caller's back, so a deliberately exact band (an L/R shared band, a
-        // localization sub-band) was silently replaced by a different
-        // question. Now the band passes through as given and a band too
-        // narrow to place an arrival in is refused as invalid — not answered
-        // with a plausible-looking number from a wider band.
+        // A band too narrow is refused, not silently widened.
         Complex[] ir = UnitImpulse(8_192, 480);
 
         TimeAlignmentAnalysisResult narrow =
@@ -1361,10 +1188,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void AnalyzeBandLimitedArrival_FindsAnArrivalParkedBeyondTheSearchWindowByChainLatency()
     {
-        // Field case (3RC): a DSP/amplifier chain buffers the playback for
-        // ~160 ms — far beyond the 80 ms peak-search window. The Virtual DSP
-        // arrival reads (delay suggestions, gate placement) must find the
-        // real front there instead of the buffer-seam residue at zero.
+        // 3RC field case: ~160 ms playback buffering, beyond the 80 ms peak-search window.
         Complex[] ir = UnitImpulse(131_072, 7_680); // 160 ms at 48 kHz
 
         TimeAlignmentAnalysisResult result =
@@ -1410,11 +1234,7 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.True(result.BestByMagnitude.Coefficient > 0.95);
     }
 
-    // The opposite-polarity NEIGHBOUR, which is an adjacency fact rather than
-    // a strength ranking: a caller bounding a cycle-skip needs the distance to
-    // the lobe next door, and the window's strongest opposite extremum can sit
-    // several lobes away. Each side's neighbour carries the polarity opposite
-    // to its own — a minimum beside the peak, a maximum beside the trough.
+    // The neighbour is adjacency (next lobe), not the strongest opposite extremum.
     [Fact]
     public void FindBandLimitedCorrelationDelay_ReportsTheAdjacentOppositeLobe()
     {
@@ -1435,14 +1255,11 @@ public sealed class VirtualCrossoverAnalysisTests
         CorrelationDelayCandidate besideTrough =
             Assert.IsType<CorrelationDelayCandidate>(result.NegativeOppositeNeighbor);
 
-        // Polarity is the main extremum's opposite, not its copy.
         Assert.True(besidePeak.InvertPolarity);
         Assert.True(besidePeak.Coefficient < 0);
         Assert.False(besideTrough.InvertPolarity);
         Assert.True(besideTrough.Coefficient > 0);
 
-        // Adjacent, not strongest: the neighbour is no farther from the peak
-        // than the window's deepest trough is.
         double neighborDistanceMs =
             Math.Abs(besidePeak.DelayMs - result.PositivePeak.DelayMs);
         double strongestDistanceMs =
@@ -1450,16 +1267,10 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.True(neighborDistanceMs <= strongestDistanceMs + 1e-9,
             $"neighbour {neighborDistanceMs:0.000} ms is farther than the " +
             $"strongest opposite extremum {strongestDistanceMs:0.000} ms");
-        // A 1 kHz correlation puts the adjacent lobe about half a period out.
         Assert.InRange(neighborDistanceMs, 0.2, 0.8);
     }
 
-    // A real whitened correlation is not a clean sinc — a shoulder or a
-    // reflection's bump can sit INSIDE the first opposite-sign lobe. The
-    // neighbour must be that lobe's crest, not the first local extremum met
-    // on the way to it, or the spacing it reports is far shorter than the
-    // lobe's and would refuse a good seed. A reflection at a fraction of the
-    // direct level puts exactly such a bump into the correlation.
+    // A reflection bump inside the first opposite lobe: the neighbour must be the lobe crest, not the first local extremum.
     [Fact]
     public void FindBandLimitedCorrelationDelay_NeighborIsTheLobeCrestNotARipple()
     {
@@ -1483,12 +1294,6 @@ public sealed class VirtualCrossoverAnalysisTests
         CorrelationDelayCandidate besidePeak =
             Assert.IsType<CorrelationDelayCandidate>(result.PositiveOppositeNeighbor);
 
-        // These reflections put a weak bump on the EARLY side of the peak,
-        // shallower than the real lobe crest on the late side. Taking the
-        // first local extremum met — what the search did before — returns
-        // that bump: the wrong direction and a fraction of the depth. Both
-        // assertions therefore fail on the previous implementation, which is
-        // what makes this a regression rather than a restatement.
         Assert.True(besidePeak.DelayMs > result.PositivePeak.DelayMs,
             $"neighbour at {besidePeak.DelayMs:0.000} ms is on the wrong side " +
             $"of the peak at {result.PositivePeak.DelayMs:0.000} ms");
@@ -1542,10 +1347,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindBandLimitedCorrelationDelay_CenterLagReachesAnOffsetBeyondTheZeroWindow()
     {
-        // The channels are 400 samples (8.33 ms) apart — far outside a ±3 ms
-        // window around zero. Centering the window on that arrival estimate is
-        // what lets the search reach the true peak; without it the search is
-        // trapped inside ±3 ms and cannot find the offset.
+        // 400 samples (8.33 ms) apart, beyond a ±3 ms window around zero: centering on the arrival is required.
         Complex[] first = UnitImpulse(16_384, 4_000);
         Complex[] second = UnitImpulse(16_384, 3_600);
         const double offsetMs = 400.0 / SampleRate * 1_000.0;
@@ -1564,8 +1366,6 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.Equal(offsetMs, centered.PositivePeak.DelayMs, 2);
         Assert.True(centered.PositivePeak.Coefficient > 0.95);
 
-        // Trapped in ±3 ms around zero, the uncentered search cannot reach the
-        // 8.33 ms peak and reports a weak in-window extremum instead.
         Assert.True(Math.Abs(uncentered.BestByMagnitude.DelayMs) <= 3.05);
         Assert.True(Math.Abs(uncentered.PositivePeak.Coefficient) < 0.5);
     }
@@ -1573,9 +1373,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindBandLimitedCorrelationDelay_ExposesPositivePeakAndInvertedTrough()
     {
-        // The positive peak and the negative trough are reported independently of
-        // which one wins by magnitude: the seed path reads PositivePeak directly,
-        // so its non-inverted flag and the trough's inverted flag must hold.
+        // The seed reads PositivePeak directly, so both flags must hold regardless of which wins.
         Complex[] first = UnitImpulse(8_192, 2_000);
         Complex[] second = UnitImpulse(8_192, 1_952);
 
@@ -1596,12 +1394,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindBandLimitedCorrelationDelay_FlagsWindowEdgeExtremaAsEdgePinned()
     {
-        // The true peak sits ~4.1 ms out while the window reaches 3 ms: the
-        // argmax lands on (or one grid sample inside) the boundary — a cut
-        // through the rising lobe, not a measured extremum, so its position
-        // AND magnitude are artifacts of where the window ended. The flag is
-        // the honest signal callers gate on; re-centering the window on the
-        // true lag clears it.
+        // Edge-pinned argmax is a cut through the rising lobe; position and magnitude are artifacts.
         Complex[] first = UnitImpulse(8_192, 2_000);
         Complex[] second = UnitImpulse(8_192, 2_000 - 197);
         const double offsetMs = 197.0 / SampleRate * 1_000.0;
@@ -1619,19 +1412,13 @@ public sealed class VirtualCrossoverAnalysisTests
 
         Assert.True(pinned.PositivePeak.EdgePinned);
         Assert.False(centered.PositivePeak.EdgePinned);
-        // Sub-sample refinement may move the interior peak a hair off the
-        // sample grid; the point here is the flag, not the position.
         Assert.InRange(centered.PositivePeak.DelayMs, offsetMs - 0.05, offsetMs + 0.05);
     }
 
     [Fact]
     public void FindBandLimitedCorrelationDelay_ReportsTheSamePolarityRival()
     {
-        // Two positive copies ~a period apart in the second channel produce
-        // two same-polarity alignment lobes. The strongest OTHER lobe must
-        // come back as PositiveRival — the ambiguity peak-vs-trough
-        // Confidence cannot see — while a clean single-copy pair reports no
-        // comparable rival (kernel side structure only).
+        // Two positive copies a period apart: PositiveRival exposes what peak-vs-trough Confidence cannot see.
         Complex[] first = UnitImpulse(8_192, 2_000);
         var second = new Complex[8_192];
         second[1_800] = 0.97;
@@ -1647,8 +1434,6 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.NotNull(result.PositiveRival);
         Assert.False(result.PositiveRival!.InvertPolarity);
         Assert.True(result.PositiveRival.Coefficient > 0);
-        // The two lobes sit the copies' spacing apart and carry comparable
-        // whitened correlation — the near-tie the seed gate must refuse.
         Assert.InRange(
             Math.Abs(result.PositivePeak.DelayMs - result.PositiveRival.DelayMs),
             10.0, 13.5);
@@ -1659,10 +1444,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void AnalyzeBandLimitedArrival_ZeroPaddedTailDoesNotInflateTheSnr()
     {
-        // The band-limited twin of the broadband-onset padding contract: the
-        // synthetic power-of-two tail ApplyChain appends must not collapse the
-        // quantile noise floor behind the arrival SNR that the stereo bridge
-        // and the cross-side ladder gate on.
+        // ApplyChain's power-of-two padding must not collapse the quantile noise floor behind the arrival SNR.
         var random = new Random(20_260_718);
         var raw = new Complex[65_536];
         for (int i = 0; i < raw.Length; i++)
@@ -1689,10 +1471,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void AnalyzeBandLimitedArrival_ApplyChainMetadataPinsTheAnalysisRange()
     {
-        // The band-limited twin of the onset metadata contract: a short
-        // record through a REAL scale-only ApplyChain (content far before the
-        // padded record's midpoint) analyzed with the validSampleCount
-        // metadata must read exactly like an explicit crop to it.
+        // validSampleCount metadata must read exactly like an explicit crop.
         var random = new Random(20_260_723);
         var raw = new Complex[4_096];
         for (int i = 0; i < raw.Length; i++)
@@ -1716,9 +1495,7 @@ public sealed class VirtualCrossoverAnalysisTests
         TimeAlignmentAnalysisResult raw2 = VirtualCrossoverAnalysis
             .AnalyzeBandLimitedArrival(raw, SampleRate, 1_900, 20_000);
 
-        // The delay prefix is excluded from the noise floor while the arrival
-        // position stays in full-record coordinates: the raw read plus the
-        // 25 ms delay, at the raw record's SNR.
+        // Delay prefix excluded from the noise floor; position stays in full-record coordinates.
         Assert.True(viaMetadata.IsValid);
         Assert.InRange(
             viaMetadata.SignalToNoiseDecibels,
@@ -1734,10 +1511,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void FindBandLimitedCorrelationDelay_ReportsTheSameSignRivalForTheTrough()
     {
-        // The mirror of the positive-rival case: two INVERTED copies ~a
-        // period apart produce two same-polarity trough lobes, and a caller
-        // seeding from the dominant trough owes it the same rival scrutiny —
-        // the strongest OTHER negative lobe must come back as NegativeRival.
         Complex[] first = UnitImpulse(8_192, 2_000);
         var second = new Complex[8_192];
         second[1_800] = -0.97;
@@ -1782,9 +1555,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void EstimatePolarity_IgnoresALargerLaterRingingLobe()
     {
-        // A band-limited driver: the arrival swings positive, then the ringing
-        // grows into a bigger negative lobe. The polarity is set by the first
-        // significant excursion, not the global extremum.
+        // Polarity is set by the first significant excursion, not the global extremum.
         var ir = new Complex[256];
         for (int i = 0; i < 8; i++)
         {
@@ -1796,8 +1567,6 @@ public sealed class VirtualCrossoverAnalysisTests
             PolarityEstimate.Positive,
             VirtualCrossoverAnalysis.EstimatePolarity(ir));
 
-        // Low-level noise ahead of the arrival stays below the threshold and
-        // must not steal the polarity call.
         ir[10] = new Complex(-0.2, 0);
         Assert.Equal(
             PolarityEstimate.Positive,
@@ -1807,10 +1576,7 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void EstimatePolarity_ReadsASmallLeadingLobeDespitePreRinging()
     {
-        // A wide-band driver: symmetric anti-aliasing pre-ringing (~8% of the
-        // peak, arbitrary signs), then a modest positive leading lobe (~35%)
-        // followed by much larger ringing in both directions. The polarity is
-        // set by the leading lobe, not by the pre-ringing or the deep ringing.
+        // Pre-ringing (~8%) and deep ringing must not override the ~35% leading lobe.
         var ir = new Complex[512];
         for (int i = 0; i < 40; i++)
         {

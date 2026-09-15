@@ -4,17 +4,11 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Importing a sweep recorded outside Resonalyze: the channel that matches the
-/// configured sweep is what gets measured, and the analysis runs against that
-/// sweep standing in for the loopback reference.
-/// </summary>
 public sealed class RecordedSweepImportTests
 {
     private const int SampleRate = 48_000;
 
-    // Where an import puts its arrival: 10 ms, by convention, because the
-    // recorder's start offset is not a time anybody measured.
+    // 10 ms by convention: the recorder's start offset is not a measured time.
     private const int Arrival = SampleRate / 100;
 
     private static SweepMeasurementConfiguration Configuration() =>
@@ -37,9 +31,6 @@ public sealed class RecordedSweepImportTests
         return measurement;
     }
 
-    // A recording of the sweep as a recorder would hold it: the excitation
-    // starts once the recorder is already running, at some attenuation, and the
-    // file keeps running after it stops.
     private static float[] RecordSweep(
         ExpSweepMeasurement measurement,
         int startOffset,
@@ -56,7 +47,6 @@ public sealed class RecordedSweepImportTests
         return recording;
     }
 
-    // A file that is not a recording of this sweep at all.
     private static float[] Noise(ExpSweepMeasurement measurement)
     {
         var noise = new float[measurement.Sweep!.SweepSamples + 4_096];
@@ -69,9 +59,6 @@ public sealed class RecordedSweepImportTests
         return noise;
     }
 
-    // Wherever the excitation sat in the file, the published arrival lands on the
-    // convention: the recorder's start offset is not a time anybody measured, and
-    // leaving it in place put 730 ms of "group delay" on an axis that spans tens.
     [Theory]
     [InlineData(2_400)]
     [InlineData(40_000)]
@@ -117,9 +104,7 @@ public sealed class RecordedSweepImportTests
                     .MaxBy(sample => sample.Magnitude)));
     }
 
-    // Which channel holds the measurement is a question about the sweep, not
-    // about loudness: a dead input is rarely silent, and hum or hiss on it can
-    // easily out-measure a quiet microphone that actually recorded the take.
+    // A dead input is rarely silent: hum on it can out-measure a quiet microphone.
     [Fact]
     public void ImportMeasuresTheChannelThatMatchesRatherThanTheLoudest()
     {
@@ -139,9 +124,6 @@ public sealed class RecordedSweepImportTests
         Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
     }
 
-    // A dead input is no competition, whatever it is doing: the choice is not
-    // ambiguous and the import makes it on its own, as it did before there was
-    // anything to ask about.
     [Fact]
     public void ADeadInputIsNoCompetitionForTheChannelHoldingTheTake()
     {
@@ -162,18 +144,12 @@ public sealed class RecordedSweepImportTests
             $"hum {qualities[0]:0.000} against the take {qualities[1]:0.000}");
     }
 
-    // The case no ranking can settle: a DAW wrote the played sweep to a reference
-    // track beside the microphone. The reference is a COPY of the excitation, so
-    // it matches better than any acoustic take ever will — it would win, measure
-    // as a flat response and pass every credibility check on the way out. The
-    // import has to notice that it cannot choose.
+    // A DAW reference track is a copy of the excitation: it matches best and would measure flat, so the import must not choose.
     [Fact]
     public void AReferenceTrackBesideTheMicrophoneIsNotTheImportsChoiceToMake()
     {
         using ExpSweepMeasurement measurement = CreateMeasurement();
-        // The reference track: the played sweep, nothing else on it.
         float[] reference = RecordSweep(measurement, 1_500, gain: 0.5f);
-        // The microphone: direct sound a few ms later, two reflections, some room.
         float[] sweep = measurement.Sweep!.SweepData;
         var microphone = new float[reference.Length];
         var random = new Random(77);
@@ -194,22 +170,16 @@ public sealed class RecordedSweepImportTests
         double[] qualities =
             RecordedSweepChannels.Rank(Configuration(), [reference, microphone]);
 
-        // The copy does win — that is the whole problem.
         Assert.Equal(0, RecordedSweepChannels.Best(qualities));
         Assert.True(
             RecordedSweepChannels.IsAmbiguous(qualities),
             $"reference {qualities[0]:0.000} against the microphone {qualities[1]:0.000}");
-        // And the caller can then measure the channel it was told to.
         measurement.ImportRecordedSweep(
             Configuration(), [reference, microphone], SampleRate, channel: 1);
         Assert.Equal(1, measurement.ImportedChannelIndex);
         Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
     }
 
-    // The point of the transfer estimate: what comes back is the PATH the sweep
-    // travelled, not just where it started. A recording of the sweep through a
-    // direct arrival plus one reflection must come back as those two arrivals,
-    // at their spacing and their relative strength.
     [Fact]
     public void ImportRecoversThePathTheSweepTravelled()
     {
@@ -233,21 +203,13 @@ public sealed class RecordedSweepImportTests
 
         Complex[] transfer = measurement.TransferImpulseResponse!;
         int peak = measurement.Transfer!.PeakIndex;
-        // The shift that places the arrival is rigid, so the reflection is still
-        // exactly its own delay behind the direct sound.
         Assert.Equal(Arrival, peak);
         double directLevel = Math.Abs(transfer[peak].Real);
         double reflectionLevel = Math.Abs(transfer[peak + reflectionDelay].Real);
         Assert.Equal(reflectionGain, reflectionLevel / directLevel, tolerance: 0.02);
     }
 
-    // Two attempts in one file, the second one louder and cut off by the end of
-    // the recording. The complete take is the usable one, and it has to be
-    // measured on its own: a second excitation inside the analyzed stretch is
-    // indistinguishable from an enormous reflection of the first, which either
-    // fails the shape gate — refusing a file that holds a perfectly good take —
-    // or wins the arrival outright. Each take carries its own reflection, so the
-    // result says which one was measured.
+    // A second excitation in the analyzed stretch reads as a huge reflection of the first; each take has its own reflection.
     [Fact]
     public void ASecondLouderAttemptDoesNotCostTheCompleteTake()
     {
@@ -260,13 +222,11 @@ public sealed class RecordedSweepImportTests
         int second = lead + sweep.Length + (SampleRate / 4);
         var recording = new float[second + (int)(sweep.Length * 0.85)];
 
-        // The complete take, 17 dB below the second one.
         for (int i = 0; i < sweep.Length; i++)
         {
             recording[lead + i] += sweep[i] * 0.14f;
             recording[lead + firstReflection + i] += sweep[i] * 0.14f * reflectionGain;
         }
-        // The second attempt: louder, and the file stops partway through it.
         for (int i = 0; i < sweep.Length && second + i < recording.Length; i++)
         {
             recording[second + i] += sweep[i];
@@ -281,8 +241,6 @@ public sealed class RecordedSweepImportTests
         Complex[] transfer = measurement.TransferImpulseResponse!;
         int peak = measurement.Transfer!.PeakIndex;
         Assert.Equal(Arrival, peak);
-        // The complete take's own reflection, at its own spacing and strength —
-        // and nothing at the second take's spacing.
         double direct = Math.Abs(transfer[peak].Real);
         Assert.Equal(
             reflectionGain,
@@ -293,10 +251,7 @@ public sealed class RecordedSweepImportTests
             $"the second take's reflection came through at {Math.Abs(transfer[peak + secondReflection].Real) / direct:0.000}");
     }
 
-    // A take made the way people actually make them: recorder started, walk to the
-    // seat, play the sweep, walk back, stop. The minutes of silence must not reach
-    // the FFTs — they would size every spectrum and the stored transfer IR with
-    // them — and the path must still come back correctly.
+    // Minutes of silence must not reach the FFTs (they would size every spectrum and the stored IR).
     [Fact]
     public void ALongTakeIsAnalyzedAroundTheExcitationOnly()
     {
@@ -307,19 +262,14 @@ public sealed class RecordedSweepImportTests
 
         measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
 
-        // Bounded by the sweep plus the 0.5 s lead-in and 2 s tail the window
-        // keeps, not by the 92 seconds of file it came from.
+        // Sweep plus the kept 0.5 s lead-in and 2 s tail.
         Assert.True(
             measurement.MicrophoneRecordedSamples!.Length <= sweepSamples + (int)(2.5 * SampleRate),
             $"analyzed {measurement.MicrophoneRecordedSamples.Length} samples of {recording.Length}");
-        // The excitation sits behind the kept lead-in, wherever it was in the file.
         Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
     }
 
-    // Ranking candidate stretches by level cannot be certain: a burst of speech or
-    // handling noise before the sweep is loud and sustained, and here it is longer
-    // than the sweep, so it ranks FIRST. The import has to fall through to the
-    // next candidate rather than refuse a usable recording.
+    // The interference is longer than the sweep, so it ranks first; the import must fall through to the next candidate.
     [Fact]
     public void ALouderInterferenceBeforeTheSweepDoesNotCostTheImport()
     {
@@ -338,9 +288,7 @@ public sealed class RecordedSweepImportTests
         Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
     }
 
-    // The busy state has to span the DECODE too, which happens before any samples
-    // exist to import: a claim taken first keeps the record button out for the
-    // whole operation, and the import must run inside it rather than refuse it.
+    // The claim spans the decode, which precedes any samples.
     [Fact]
     public void AClaimCoversTheDecodeAndTheImportTogether()
     {
@@ -350,14 +298,10 @@ public sealed class RecordedSweepImportTests
         using (measurement.Claim())
         {
             Assert.True(measurement.InProgress);
-            // Nothing else may start a measurement while the claim is held. A run
-            // has to be refused by name: it does not consult InProgress, and its
-            // own completion would hand back the busy flag the import still owns.
+            // A run does not consult InProgress, so it must be refused by name.
             Assert.Throws<InvalidOperationException>(() => measurement.Init(Configuration()));
-            // Thrown synchronously, before there is any task to await.
             Assert.Throws<InvalidOperationException>(() => { _ = measurement.RunAsync(); });
             Assert.True(measurement.InProgress);
-            // The import is what the claim was taken for, so it proceeds.
             measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
             Assert.True(measurement.HasImpulseResponse);
             Assert.True(measurement.InProgress);
@@ -371,8 +315,6 @@ public sealed class RecordedSweepImportTests
         });
     }
 
-    // Every other way to reconfigure the measurement gates on InProgress, so the
-    // import has to hold it for its whole run — and give it back either way.
     [Fact]
     public void ImportHoldsTheMeasurementBusyAndReleasesIt()
     {
@@ -387,11 +329,7 @@ public sealed class RecordedSweepImportTests
         Assert.False(measurement.InProgress);
     }
 
-    // A recording out of scale with the sweep it is analyzed against — separate
-    // crystals in the player and the recorder, or a duration the per-octave field
-    // cannot express exactly. Either way the deconvolution smears, and neither the
-    // shape gate nor the sharpness gate refuses it: the result just quietly loses
-    // its timing and its top-end phase. The import has to find the stretch.
+    // Separate crystals or an inexact per-octave duration smear the deconvolution, and no gate refuses it.
     [Theory]
     [InlineData(-500.0)]
     [InlineData(-100.0)]
@@ -400,8 +338,7 @@ public sealed class RecordedSweepImportTests
     [InlineData(500.0)]
     public void ImportFindsAndCorrectsARecordingOutOfScale(double ppm)
     {
-        // Long enough for the stretch to be worth samples: 50 ppm of a two-second
-        // sweep is five samples, of a fifth of a second it is half of one.
+        // 50 ppm of a 2 s sweep is five samples.
         SweepMeasurementConfiguration configuration = LongConfiguration();
         using var played = new ExponentialSineSweep();
         played.FillData(20, 20_000, configuration.Signal.RequestedDurationSeconds, 24, SampleRate);
@@ -419,30 +356,20 @@ public sealed class RecordedSweepImportTests
         measurement.ImportRecordedSweep(configuration, recording, SampleRate);
 
         Assert.NotNull(measurement.ImportedTimeScalePpm);
-        // Fifty parts per million is what the search actually resolves: the
-        // refinement lattice is 12.5 ppm wide, but within a few tens of ppm of the
-        // optimum the objective is flat enough to wander, and the residual costs a
-        // few samples of smear over a two-second sweep. Measured accuracy across
-        // both builds of the drift is +-40 ppm.
+        // The lattice is 12.5 ppm but the objective is flat near the optimum; measured accuracy is +-40 ppm.
         Assert.Equal(ppm, measurement.ImportedTimeScalePpm!.Value, tolerance: 50.0);
-        // And the correction is what makes the arrival readable again.
         double sharpness = TransferIrDiagnostics.MeasureArrivalSharpnessDb(
             measurement.TransferImpulseResponse!, SampleRate) ?? double.NaN;
         Assert.True(sharpness >= 20.0, $"sharpness after correction was {sharpness:0.0} dB");
     }
 
-    // The same recovery, with the drift built by an INDEPENDENT route: the played
-    // sweep resampled through windowed-sinc interpolation, the way a second clock
-    // really samples it, rather than regenerated by the same FillStretched the
-    // import corrects with. A test that generates and corrects with one function
-    // can only prove that function is its own inverse.
+    // Drift built by an independent sinc resampler: generating and correcting with FillStretched proves only self-inversion.
     [Theory]
     [InlineData(-300.0)]
     [InlineData(150.0)]
     public void ImportFindsAScaleBuiltByAResampler(double ppm)
     {
-        // Kept clear of Nyquist: a 32-tap interpolator is honest well below it,
-        // and the point here is the scale, not the resampler.
+        // Kept clear of Nyquist, where a 32-tap interpolator is honest.
         var configuration = new SweepMeasurementConfiguration(
             new SweepSignalConfiguration(20, 15_000, SampleRate, 24, 2.0, PlaybackChannel.Mono),
             Configuration().Audio,
@@ -464,7 +391,6 @@ public sealed class RecordedSweepImportTests
         Assert.Equal(ppm, measurement.ImportedTimeScalePpm!.Value, tolerance: 50.0);
     }
 
-    // Windowed-sinc resampling: output sample n reads the source at n / scale.
     private static float[] Resample(float[] source, double scale)
     {
         const int half = 16;
@@ -523,9 +449,6 @@ public sealed class RecordedSweepImportTests
         }
     }
 
-    // And it does not invent one: a recording of the very sweep the settings
-    // describe needs no stretch, and saying it did would be a claim about the
-    // user's two devices that the data does not support.
     [Fact]
     public void ImportReportsNoScaleCorrectionWhenNoneIsNeeded()
     {
@@ -544,10 +467,7 @@ public sealed class RecordedSweepImportTests
             Configuration().Audio,
             Configuration().Averaging);
 
-    // The obvious sanity check a user runs first: import the exported sweep file
-    // itself. It is bit-identical to the reference, which the live path treats as
-    // a duplicated mono input — an import must simply measure a flat, undelayed
-    // path instead of refusing.
+    // The sweep file is bit-identical to the reference, which the live path treats as a duplicated mono input.
     [Fact]
     public void ImportOfTheSweepItselfMeasuresAnUndelayedPath()
     {
@@ -569,19 +489,12 @@ public sealed class RecordedSweepImportTests
         measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
 
         Assert.Equal(recording, measurement.MicrophoneRecordedSamples);
-        // The reference is generated, not captured: it must not be reported as a
-        // recorded loopback channel or metered as an input.
         Assert.Null(measurement.LoopbackRecordedSamples);
         Assert.True(measurement.CurrentLevels.Microphone.Available);
         Assert.False(measurement.CurrentLevels.Loopback.Available);
     }
 
-    // An imported measurement is NOT scale-invariant, and the difference from a
-    // live run is worth pinning. There, the loopback carries the recording gain
-    // too and H1 divides it out; here the reference is generated, so the gain
-    // rides entirely on the target and multiplies the whole transfer. WHEN the
-    // arrival happens is unaffected; WHERE the magnitude curve sits vertically is
-    // the recorder's business, and two takes at different gains do not line up.
+    // The reference is generated, so the recording gain multiplies the whole transfer (unlike live H1).
     [Fact]
     public void ImportTimingIsLevelIndependentButItsMagnitudeIsNot()
     {
@@ -597,10 +510,7 @@ public sealed class RecordedSweepImportTests
         Assert.Equal(10.0, loudPeak / quietPeak, tolerance: 0.1);
     }
 
-    // An import is a measurement like any other, so Save has to accept it: the
-    // capture must validate and come back through the normal restore path. What it
-    // must NOT lose on the way is where its timing came from — that is the whole
-    // defence against a delay being compared against another measurement's.
+    // The timing origin must survive the round trip: it guards against comparing delays across clocks.
     [Fact]
     public async Task ImportedMeasurementSurvivesASaveAndLoadRoundTrip()
     {
@@ -648,8 +558,6 @@ public sealed class RecordedSweepImportTests
         }
     }
 
-    // A measured sweep keeps the meaning it always had, and starting a new
-    // measurement clears the imported one rather than inheriting it.
     [Fact]
     public void AMeasuredSweepIsReferencedToItsOwnLoopback()
     {
@@ -664,8 +572,6 @@ public sealed class RecordedSweepImportTests
         Assert.Equal(TimingReference.SynchronizedLoopback, measurement.TimingReference);
     }
 
-    // The same promise loading a file makes: a rejected import must not take the
-    // measurement already on screen down with it.
     [Fact]
     public void ARejectedImportLeavesThePreviousResultAlone()
     {
@@ -686,17 +592,13 @@ public sealed class RecordedSweepImportTests
         Assert.Same(impulseResponseBefore, measurement.SweepDeconvolutionImpulseResponse);
     }
 
-    // The take runs out mid-sweep after a pre-roll: the FILE is longer than the
-    // sweep, and so is the analyzed span, but the excitation inside it is not.
-    // Only counting from where the excitation begins catches this.
+    // The file and the analyzed span are longer than the sweep; only counting from the excitation start catches it.
     [Fact]
     public void ImportRefusesATakeThatRunsOutMidSweep()
     {
         using ExpSweepMeasurement measurement = CreateMeasurement();
         int sweepSamples = measurement.Sweep!.SweepSamples;
         float[] full = RecordSweep(measurement, SampleRate / 2, tail: 0);
-        // Keeps the half-second pre-roll and 85 % of the excitation, so the file
-        // still holds more samples than the sweep does.
         float[] truncated = full[..(SampleRate / 2 + (int)(sweepSamples * 0.85))];
         Assert.True(truncated.Length > sweepSamples);
 
@@ -706,9 +608,7 @@ public sealed class RecordedSweepImportTests
         Assert.Contains("cut short", exception.Message);
     }
 
-    // Clipping is an unambiguous capture failure the live path refuses a run for,
-    // and a clipped sweep still deconvolves into a compact impulse response — full
-    // of harmonic products — so the shape gate cannot be what catches it.
+    // A clipped sweep still deconvolves compactly, so the shape gate cannot catch it.
     [Fact]
     public void ImportRefusesAClippedRecording()
     {
@@ -753,11 +653,7 @@ public sealed class RecordedSweepImportTests
         Assert.False(measurement.HasImpulseResponse);
     }
 
-    // A recording of a REAL sweep, analyzed against a sweep 5 % longer. It is the
-    // likeliest mistake a user makes — the per-octave time is a free-text field —
-    // and the shape gate alone does not catch it: on both field takes a mismatched
-    // pace scored AS HIGH as the correct one for compactness while its arrival was
-    // smeared over thousands of samples.
+    // On field takes a 5 % pace mismatch scored as high for compactness as the correct one.
     [Fact]
     public void ImportRefusesASweepTheSettingsDoNotDescribe()
     {
@@ -772,17 +668,11 @@ public sealed class RecordedSweepImportTests
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
             measurement.ImportRecordedSweep(mismatched, recording, SampleRate));
 
-        // Either gate may be the one that speaks: on this ideal synthetic take the
-        // shape gate fails too, while on the field takes it passed — sometimes
-        // scoring the mismatch higher than the truth — and only the arrival's
-        // sharpness told them apart. Both name the setting to go and check.
+        // Either gate may speak: here the shape gate fails too; on field takes only arrival sharpness did.
         Assert.Contains("per-octave time", exception.Message);
         Assert.False(measurement.HasImpulseResponse);
     }
 
-    // The honest refusal for the wrong file: noise deconvolves into nothing that
-    // looks like an impulse response, and the message has to say so instead of
-    // publishing the garbage.
     [Fact]
     public void ImportRefusesARecordingThatIsNotThisSweep()
     {

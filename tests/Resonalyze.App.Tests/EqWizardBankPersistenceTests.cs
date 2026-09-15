@@ -3,10 +3,6 @@ using PeqBandSettings = Resonalyze.MeasurementSettingsFile.PeqBandSettings;
 
 namespace Resonalyze.App.Tests;
 
-// The EQ Wizard's filter bank is user-curated — the filters, and the order they
-// are numbered in — so it is stored in the settings file rather than rebuilt
-// from a count. These pin the file layer: what is written comes back, and a file
-// from before the bank was persisted still opens.
 public sealed class EqWizardBankPersistenceTests : IDisposable
 {
     private readonly string directory = Path.Combine(
@@ -33,8 +29,7 @@ public sealed class EqWizardBankPersistenceTests : IDisposable
         Assert.Null(reloaded.LoadWarning);
         List<MeasurementSettingsFile.PeqBandSettings> bands = reloaded.EqWizard.Bands!;
         Assert.Equal(3, bands.Count);
-        // Order is what an exported profile numbers its filters by: the 4 kHz cut
-        // must still be filter 1, not sorted back into frequency order.
+        // Exported profiles number filters by order, so no sorting by frequency.
         Assert.Equal(4000, bands[0].FrequencyHz);
         Assert.Equal(8.5, bands[0].Q);
         Assert.Equal(-4.5, bands[0].GainDb);
@@ -46,8 +41,7 @@ public sealed class EqWizardBankPersistenceTests : IDisposable
     [Fact]
     public void AnEmptyBankIsAStateOfItsOwn()
     {
-        // A cleared bank must reopen cleared. It is only the absence of the whole
-        // list — an older file — that means "rebuild from the count".
+        // Only an absent list (older file) means rebuild from the count.
         string path = NewSettingsPath();
         MeasurementSettingsFile settings = MeasurementSettingsFile.LoadOrDefault(path);
         settings.EqWizard.Bands = new List<MeasurementSettingsFile.PeqBandSettings>();
@@ -62,10 +56,7 @@ public sealed class EqWizardBankPersistenceTests : IDisposable
     [Fact]
     public void AShapeNoMemberMatchesIsAcceptedByTheFileAndNormalisedOnLoad()
     {
-        // The enum converter takes a number outside the enum, so the settings file
-        // can hold one. The panel normalises it to a bell when it rebuilds the bank
-        // (ApplyPersistedBank); this pins the half the file layer owns — that such a
-        // file loads at all instead of failing the whole settings read.
+        // The enum converter accepts out-of-range numbers; the file layer must still load (the panel normalises to a bell).
         string path = NewSettingsPath();
         File.WriteAllText(
             path,
@@ -91,7 +82,6 @@ public sealed class EqWizardBankPersistenceTests : IDisposable
         MeasurementSettingsFile settings = MeasurementSettingsFile.LoadOrDefault(path);
 
         Assert.Null(settings.LoadWarning);
-        // No bank in the file: the panel rebuilds the ISO spread that version showed.
         Assert.Null(settings.EqWizard.Bands);
         Assert.Equal(6, settings.EqWizard.BandCount);
         Assert.Equal(0, settings.EqWizard.PreampDb);

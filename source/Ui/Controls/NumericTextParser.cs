@@ -2,14 +2,8 @@ using System.Globalization;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Culture-tolerant numeric text parsing for the dark numeric fields. A lone
-/// '.' or ',' is treated as the decimal separator regardless of culture:
-/// decimal.TryParse's group-separator leniency would otherwise parse "1.5"
-/// typed in a comma-decimal locale as 15. The only exception is the culture's
-/// own group separator in a plausible thousands position — "12,000" in en-US
-/// must keep round-tripping from the thousands display format.
-/// </summary>
+/// <summary>A lone '.' or ',' is the decimal separator in any culture (TryParse would read "1.5" as 15 in comma locales),
+/// except the culture's group separator in a thousands position ("12,000" in en-US).</summary>
 internal static class NumericTextParser
 {
     public static bool TryParse(string? text, CultureInfo culture, out decimal value)

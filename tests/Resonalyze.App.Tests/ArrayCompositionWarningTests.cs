@@ -3,18 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// What the "not averaged over the same array" warning is judged over.
-/// </summary>
-/// <remarks>
-/// A spatial average describes the volume its microphones stood in, so two captures
-/// averaged over different numbers of positions answer slightly different questions.
-/// Nothing else in the app objects to that: an array set is levelled by the loopback
-/// each measurement carries, so the set verdict has no levelling complaint to make
-/// and — rightly — returns Ok. This warning is the only thing that notices, which is
-/// why the set it reads has to be every array in the PROJECT rather than the ones
-/// currently on screen.
-/// </remarks>
+/// <summary>Array sets are levelled by the loopback, so this warning is the only check on composition; it reads the whole project.</summary>
 public sealed class ArrayCompositionWarningTests
 {
     private static LiveCaptureDocument Array(
@@ -79,12 +68,7 @@ public sealed class ArrayCompositionWarningTests
     [Fact]
     public void SidesAveragedOverDifferentArraysAreReported()
     {
-        // The cross-side case, and the reason the warning cannot be judged one side
-        // at a time: each side is internally consistent — every left capture is a
-        // seven-position average, every right one a five — so a side-by-side view
-        // finds nothing to say. The dashed opposite-side sum then draws two
-        // different listening volumes against each other as though the difference
-        // were the car.
+        // Each side is consistent (7 left, 5 right), but the dashed opposite-side sum compares two volumes.
         string? mismatch = Describe(
             Channel("A", leftMicrophones: 7, rightMicrophones: 5),
             Channel("B", leftMicrophones: 7, rightMicrophones: 5));
@@ -98,12 +82,7 @@ public sealed class ArrayCompositionWarningTests
     [Fact]
     public void TwoDIFFERENTAggregateCorrectionsAreReported()
     {
-        // An array whose positions carried different calibration files declares no
-        // calibration at all — there is no one curve a reader could undo. Comparing
-        // only the named curve made two such arrays agree with each other, and with an
-        // array that was never calibrated at all: three different corrections, every
-        // one reading null, all declared identical. What an aggregate can be compared
-        // on is the correction it actually declares.
+        // Mixed-calibration arrays all declare null; compare on the declared correction, not the named curve.
         var a = new VirtualCrossoverChannel("A");
         a.SideState(rightSide: false).ArrayCapture = Array(7, [0.0, 1.5]);
         a.SideState(rightSide: true).ArrayCapture = Array(7, [0.0, 1.5]);
@@ -113,7 +92,6 @@ public sealed class ArrayCompositionWarningTests
 
         Assert.NotNull(Describe(a, b));
 
-        // The same aggregate on both is one correction written twice.
         b.SideState(rightSide: false).ArrayCapture = Array(7, [0.0, 1.5]);
         b.SideState(rightSide: true).ArrayCapture = Array(7, [0.0, 1.5]);
         Assert.Null(Describe(a, b));
@@ -140,9 +118,6 @@ public sealed class ArrayCompositionWarningTests
     [Fact]
     public void AMutedChannelIsJudgedAndMarked()
     {
-        // A mute says which curves to draw. What a set is MADE OF is a property of
-        // the measurements, so a warning that came and went with the mute buttons
-        // would be describing the buttons.
         string? mismatch = Describe(
             Channel("A", leftMicrophones: 7, rightMicrophones: 7),
             Channel("B", leftMicrophones: 4, rightMicrophones: 4, enabled: false));
@@ -155,9 +130,6 @@ public sealed class ArrayCompositionWarningTests
     [Fact]
     public void AMonoPairIsListedOnceRatherThanComparedWithItself()
     {
-        // A mono pair answers both sides from one slot. Listed twice it would be an
-        // entry per side of one measurement — and if it were ever the only channel
-        // with an array, a difference reported between a capture and itself.
         var sub = new VirtualCrossoverChannel("Sub");
         sub.Pair.Mono = true;
         sub.SideState(rightSide: false).ArrayCapture = Array(7);

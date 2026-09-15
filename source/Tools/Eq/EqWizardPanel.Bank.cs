@@ -2,40 +2,24 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-// The filter-bank half of the EQ Wizard: the PEQ strips, the grid they live in,
-// the drag-and-drop that reorders and removes them, and the undo history over
-// the whole bank.
-//
-// The bank starts empty and grows by the "+" tile. A strip's index in
-// `peqSlots` IS its filter number, its cell in the grid and its position in an
-// exported profile, so every structural change ends in LayoutSlots(), and the
-// order is part of the undo state rather than a display detail.
+// A strip's index in `peqSlots` IS its filter number, grid cell and export position: structural changes end in
+// LayoutSlots(), and order is part of the undo state.
 public partial class EqWizardPanel
 {
-    // A bell added by the "+" tile: mid-band and narrow. A new filter starts as
-    // a deliberate, tight correction the user then drags into place, not as a
-    // wide bell that colours half the spectrum on the first nudge.
+    // Narrow and mid-band: a deliberate correction to drag into place, not a wide bell colouring half the spectrum.
     private const double AddedBandFrequencyHz = 1000;
     private const double AddedBandQ = 5;
 
-    // A new shelf starts at the corner the target curve's own shelves default to,
-    // with the steepest knee that stays monotonic — the neutral shelf, before the
-    // user decides it should overshoot.
+    // Target curve's default shelf corners, with the steepest monotonic knee.
     private const double AddedLowShelfFrequencyHz = 100;
     private const double AddedHighShelfFrequencyHz = 5000;
     private const double AddedShelfQ = 0.7;
 
-    // A new all-pass starts where the Virtual DSP channel card's stage did: an
-    // all-pass is placed on a crossover region, so mid-band with a gentle turn is
-    // the neutral start the user then drags onto the junction. Q is also what a
-    // first-order band carries as its sentinel — the order has no Q, but every
-    // validator on the way to a project file requires a positive one.
+    // Q is the first-order band's sentinel too: the order has no Q, but project-file validators require a positive one.
     private const double AddedAllPassFrequencyHz = 2000;
     private const double AddedAllPassQ = 1.0;
 
-    // How long the bank must sit still before a burst of field or fader edits is
-    // recorded as one undo step. The timer restarts on every change, so a whole
-    // fader drag — however long — collapses into a single step.
+    // The timer restarts on every change, so a whole fader drag is one undo step.
     private const int BankEditIdleMilliseconds = 600;
 
     private readonly List<PeqSlotControl> peqSlots = new();
@@ -47,8 +31,7 @@ public partial class EqWizardPanel
 
     private TableLayoutPanel peqSlotTable = null!;
     private PeqAddSlotControl addSlotTile = null!;
-    // Rebuilt on every open (the checkmarks follow the strip it was opened on), so
-    // the last one is not owned by the designer container — see Dispose.
+    // Rebuilt per open, so the last one is not owned by the designer container (see Dispose).
     private ContextMenuStrip? bandTypeMenu;
     private PeqBankState committedBankState = PeqBankState.Empty;
     private PeqSlotControl? selectedSlot;
@@ -59,11 +42,7 @@ public partial class EqWizardPanel
     private bool restoringBank;
     private bool suppressBandCountSync;
 
-    // ISO 266 preferred 1/3-octave centre frequencies, the ones a 31/32-band
-    // graphic EQ is built on. 32 values (16 Hz .. 20 kHz) match the maximum bank
-    // exactly: the standard 31-band 20 Hz..20 kHz set plus 16 Hz below it. They
-    // are the starting spread when a whole bank is created at once; a single
-    // band added by hand starts at AddedBandFrequencyHz instead.
+    // ISO 266 1/3-octave centres, 16 Hz..20 kHz: 32 values match the maximum bank; used for whole-bank spreads.
     private static readonly double[] IsoThirdOctaveCentersHz =
     {
         16, 20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
@@ -71,7 +50,6 @@ public partial class EqWizardPanel
         10000, 12500, 16000, 20000
     };
 
-    // The neutral Q a whole-bank spread starts on.
     private const double DefaultBandQ = 1.0;
 
     private static double DefaultBandFrequencyHz(int index) =>
@@ -126,10 +104,6 @@ public partial class EqWizardPanel
         LayoutSlots();
     }
 
-    // The EQ Filters selector creates or trims a whole bank at once: picking N
-    // brings the bank to N filters, appending them spread over the ISO centres
-    // or dropping the trailing ones. It stays in step with what the "+" tile and
-    // drag-removal do, so it always reads as the current filter count.
     private void InitializeBandsComboBox()
     {
         darkComboBoxBands.Items.Clear();
@@ -157,7 +131,6 @@ public partial class EqWizardPanel
         suppressBandCountSync = true;
         try
         {
-            // Items are 0..MaxPeqSlotCount in order, so the index IS the count.
             darkComboBoxBands.SelectedIndex = peqSlots.Count;
         }
         finally
@@ -166,8 +139,6 @@ public partial class EqWizardPanel
         }
     }
 
-    // Brings the bank to a given number of filters, keeping the ones already
-    // there. Appended filters take the ISO centre of the position they land on.
     private void SetBandCount(int count)
     {
         count = Math.Clamp(count, 0, MaxPeqSlotCount);
@@ -205,8 +176,6 @@ public partial class EqWizardPanel
         CommitBankChange();
     }
 
-    // The shapes as the right-click menu offers them. The add tile names them with
-    // its own short tokens (PK/HS/LS/AP1/AP2); a menu has room for the full words.
     private static readonly (PeqBandType Type, string Label)[] BandTypeChoices =
     {
         (PeqBandType.Peaking, "Peaking (bell)"),
@@ -216,9 +185,7 @@ public partial class EqWizardPanel
         (PeqBandType.AllPassSecondOrder, "All-pass, 2nd order (phase only)")
     };
 
-    // Changing an existing filter's shape keeps its frequency, Q and gain: the
-    // alternative is deleting the strip and dialling it in again, and a bell and a
-    // shelf at the same corner are exactly what a tuner compares.
+    // Keeps frequency, Q and gain: a bell and a shelf at the same corner are what a tuner compares.
     private void ShowBandTypeMenu(PeqSlotControl slot, Point screenPoint)
     {
         if (!peqSlots.Contains(slot))
@@ -256,7 +223,6 @@ public partial class EqWizardPanel
         CommitBankChange();
     }
 
-    // The band a freshly added slot starts on, per shape.
     private static PeqBand NewBand(PeqBandType type) => type switch
     {
         PeqBandType.LowShelf =>
@@ -268,8 +234,6 @@ public partial class EqWizardPanel
         _ => new PeqBand(AddedBandFrequencyHz, AddedBandQ, 0, type)
     };
 
-    // Adds one filter at the end of the bank and selects it, so its curve is
-    // highlighted straight away and the next fader move is obviously its own.
     private void AddBand(PeqBandType type)
     {
         if (peqSlots.Count >= MaxPeqSlotCount)
@@ -287,8 +251,7 @@ public partial class EqWizardPanel
         CommitBankChange();
     }
 
-    // Builds a strip for a band and puts it in the list. The caller lays the grid
-    // out afterwards, so a batch of inserts costs one layout pass.
+    // The caller lays the grid out, so a batch of inserts costs one layout pass.
     private PeqSlotControl InsertSlot(int index, PeqBand band)
     {
         var slot = new PeqSlotControl
@@ -298,8 +261,7 @@ public partial class EqWizardPanel
         };
         slot.SetGainRange(numericGainMin.Value, numericGainMax.Value);
         slot.SampleRateHz = EqProcessorSampleRate;
-        // Values first, handlers second: a fresh strip is not an edit of the
-        // bank and must not arm the undo timer or redraw the plot three times.
+        // Values before handlers: a fresh strip must not arm the undo timer or redraw.
         WriteBand(slot, band);
         slot.FrequencyInput.ValueChanged += BankValueChanged;
         slot.QInput.ValueChanged += BankValueChanged;
@@ -353,9 +315,7 @@ public partial class EqWizardPanel
         (double)slot.GainInput.Value,
         slot.BandType);
 
-    // Moves a strip to another position in the bank, shifting the ones in
-    // between. Called repeatedly while dragging, so it does nothing when the
-    // target is where the strip already is.
+    // Called repeatedly while dragging; no-op when already in place.
     private void MoveSlot(PeqSlotControl slot, int index)
     {
         int current = peqSlots.IndexOf(slot);
@@ -369,10 +329,7 @@ public partial class EqWizardPanel
         LayoutSlots();
     }
 
-    // Re-seats every strip in its cell and renumbers it, then parks the "+" tile
-    // after the last one. Cell assignments are made with layout suspended, so
-    // the two-controls-in-one-cell states in the middle of the loop are never
-    // laid out — the table only ever sees the finished, collision-free set.
+    // Layout is suspended so the transient two-controls-in-one-cell states are never laid out.
     private void LayoutSlots()
     {
         peqSlotTable.SuspendLayout();
@@ -395,8 +352,7 @@ public partial class EqWizardPanel
             }
             else if (peqSlotTable.Controls.Contains(addSlotTile))
             {
-                // Hiding it is not enough: an invisible control still holds its
-                // cell, and the 32nd strip would be pushed out of the grid.
+                // An invisible control still holds its cell and would push the 32nd strip out.
                 peqSlotTable.Controls.Remove(addSlotTile);
             }
         }
@@ -414,8 +370,6 @@ public partial class EqWizardPanel
             new TableLayoutPanelCellPosition(column, row));
     }
 
-    // Selects a band so its individual contribution is highlighted on the plot.
-    // Selecting another band replaces the previous highlight.
     private void SelectSlot(PeqSlotControl slot)
     {
         if (slot == selectedSlot || !peqSlots.Contains(slot))
@@ -432,7 +386,6 @@ public partial class EqWizardPanel
         DrawSelectedCurves();
     }
 
-    // Clears the single-band highlight and removes its curve from the plot.
     private void DeselectBand()
     {
         if (selectedSlot == null)
@@ -449,8 +402,6 @@ public partial class EqWizardPanel
         DrawSelectedCurves();
     }
 
-    // A band or preamp edit is a step in the undo history, but only once the user
-    // stops: the timer restarts here and records the whole burst as one step.
     private void BankValueChanged(object? sender, EventArgs e)
     {
         ArmBankEditTimer();
@@ -471,8 +422,7 @@ public partial class EqWizardPanel
     private PeqBankState CaptureBankState() =>
         new(peqSlots.Select(ReadBand), (double)NumericGain.Value);
 
-    // Rebuilds the strips to match a bank state, reusing the ones already there.
-    // Pure UI: what this means for the undo history is the caller's call.
+    // Pure UI: undo-history consequences are the caller's.
     private void SetBank(PeqBankState state)
     {
         int selectedIndex = selectedSlot == null ? -1 : peqSlots.IndexOf(selectedSlot);
@@ -514,8 +464,6 @@ public partial class EqWizardPanel
         DrawSelectedCurves();
     }
 
-    // Keeps the highlight on the same position in the bank across a rebuild, and
-    // drops it when that position no longer exists.
     private void RestoreSelection(int index)
     {
         if (index < 0 || index >= peqSlots.Count)
@@ -528,10 +476,7 @@ public partial class EqWizardPanel
         SelectSlot(peqSlots[index]);
     }
 
-    // Records everything edited since the last step as one undo step. Called
-    // when the bank goes quiet, and up front by every structural change so a
-    // half-typed field never rides along with the add/remove/reorder that
-    // follows it.
+    // Also called before every structural change so a half-typed field does not ride along with it.
     private void CommitBankChange()
     {
         bankEditTimer.Stop();
@@ -549,24 +494,13 @@ public partial class EqWizardPanel
         bankHistory.Push(committedBankState);
         committedBankState = current;
         UpdateUndoRedoButtons();
-        // The bank is persisted, and a step is exactly the granularity worth
-        // saving at: a whole fader gesture becomes one write, not one per frame.
         RaiseSettingsChanged();
     }
 
     /// <summary>
-    /// Lands an edit that is still in flight, so a caller about to persist the
-    /// panel's settings reads the bank the user can see rather than the one from
-    /// before their last keystroke.
+    /// Lands in-flight edits before persisting: editors first (typed text commits only on focus loss/Enter, and an OS
+    /// shutdown flushes with the caret still in the box), then the pending bank step.
     /// </summary>
-    /// <remarks>
-    /// Two things can be pending, and the text is the earlier of them: a field
-    /// carries typed text until it loses focus or takes Enter, and only then does
-    /// the value change that starts the coalescing pause. An ordinary close
-    /// disables the form first, which takes the focus out of the field and commits
-    /// the text on the way; an OS shutdown flushes immediately, with the caret
-    /// still in the box. So the editors are landed first and the bank second.
-    /// </remarks>
     internal void CommitPendingBankEdit()
     {
         NumericGain.CommitText();
@@ -578,9 +512,7 @@ public partial class EqWizardPanel
         CommitBankChange();
     }
 
-    // Adopts the current bank as the baseline with no history behind it — the
-    // starting point after settings are restored, which is not an edit anyone
-    // should be able to undo into.
+    // Restored settings are not an edit anyone should undo into.
     private void ResetBankHistory()
     {
         bankEditTimer.Stop();
@@ -610,11 +542,7 @@ public partial class EqWizardPanel
     private void ApplyHistoryState(PeqBankState state)
     {
         SetBank(state);
-        // What the strips ended up holding, not what was asked for. A gain range
-        // narrowed since the step was recorded clamps the restored values, and
-        // adopting the unclamped state as the baseline would make the very next
-        // commit see a change nobody made — recording a phantom step and throwing
-        // the redo trail away with it.
+        // What the strips hold after clamping, or the next commit would record a phantom step and drop the redo trail.
         committedBankState = CaptureBankState();
         UpdateUndoRedoButtons();
     }
@@ -625,11 +553,7 @@ public partial class EqWizardPanel
         buttonRedo.Enabled = bankHistory.CanRedo;
     }
 
-    // Undo/redo are bound at the panel rather than the focused field: the fields
-    // are where the editing happens, and a text box's own Ctrl+Z would otherwise
-    // swallow the shortcut and undo a keystroke instead of a filter. Losing
-    // in-field text undo is the deliberate trade — a field commits its value on
-    // Enter or focus loss, and that value is what the history holds.
+    // Bound at the panel so a text box's own Ctrl+Z does not undo a keystroke instead of a filter (deliberate trade).
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
         switch (keyData)
@@ -646,9 +570,7 @@ public partial class EqWizardPanel
         }
     }
 
-    // Runs the drag of one strip. The bank re-orders live under the pointer, so
-    // by the time the drop lands there is nothing left to apply; what remains is
-    // deciding what a drag that did NOT land on the bank meant.
+    // The bank re-orders live under the pointer; what remains is a drag that did NOT land on the bank.
     private void BeginSlotDrag(PeqSlotControl slot)
     {
         if (draggedSlot != null || !peqSlots.Contains(slot))
@@ -674,14 +596,11 @@ public partial class EqWizardPanel
 
         if (draggedSlotCancelled)
         {
-            // Escape puts the strip back where it was picked up from.
             MoveSlot(slot, draggedSlotOrigin);
         }
         else if (!draggedSlotDropped)
         {
-            // Dropped away from the bank: the strip is thrown away. Moving it
-            // through the grid on the way out left the others in their original
-            // relative order, so removing it now is the whole of the change.
+            // Dropped outside the bank: the others kept their relative order, so removal is the whole change.
             RemoveSlot(slot);
             LayoutSlots();
             SyncBandCountCombo();
@@ -696,10 +615,7 @@ public partial class EqWizardPanel
     {
         if (draggedSlot == null)
         {
-            // Not a strip being moved. It may still be a file dragged in from
-            // Explorer, which the whole window accepts and which is registered on
-            // these same controls: refusing it here would make the bank the one
-            // place a measurement cannot be dropped.
+            // May be an Explorer file drop, registered on these controls too; refusing it would block drops on the bank.
             if (!FileDropTarget.CarriesFiles(e.Data))
             {
                 e.Effect = DragDropEffects.None;
@@ -723,8 +639,7 @@ public partial class EqWizardPanel
         draggedSlotDropped = true;
     }
 
-    // The slot index a screen point falls on, clamped to the filters that exist:
-    // the empty cells past the end (and the "+" tile) all mean "last".
+    // Empty cells past the end and the "+" tile all mean "last".
     private int TargetIndexAt(Point screenPoint)
     {
         if (peqSlots.Count == 0)
@@ -741,8 +656,7 @@ public partial class EqWizardPanel
         return Math.Clamp(index, 0, peqSlots.Count - 1);
     }
 
-    // The pointer feedback IS the removal warning: inside the bank the strip is
-    // being moved, outside it is being thrown away.
+    // The pointer feedback IS the removal warning.
     protected override void OnGiveFeedback(GiveFeedbackEventArgs e)
     {
         base.OnGiveFeedback(e);
@@ -769,9 +683,7 @@ public partial class EqWizardPanel
     private bool IsOverBank(Point screenPoint) =>
         peqSlotTable.RectangleToScreen(peqSlotTable.ClientRectangle).Contains(screenPoint);
 
-    // Clears the filter bank outright: no filters and no preamp. The source, the
-    // target and the Auto Tune settings are deliberately untouched — this clears
-    // the tune, not the setup it was made against.
+    // Source, target and Auto Tune settings are deliberately untouched: this clears the tune, not the setup.
     private void ResetBands()
     {
         if (peqSlots.Count == 0 && NumericGain.Value == 0)
@@ -779,8 +691,6 @@ public partial class EqWizardPanel
             return;
         }
 
-        // A tune can represent a lot of manual work, so the one button that
-        // throws all of it away at once asks first — Ctrl+Z or not.
         if (MessageBox.Show(
                 FindForm(),
                 "Reset the whole filter bank?" +
@@ -801,19 +711,9 @@ public partial class EqWizardPanel
     }
 
     /// <summary>
-    /// A tuned bank with the all-pass bands of the bank it replaces carried over.
-    /// The tuner fits magnitude and emits bells only, so a run would otherwise take
-    /// the user's phase work with it — and an all-pass, being flat, is invisible in
-    /// the error curve that decided the fit.
+    /// Carries the replaced bank's all-pass bands over into a tuned bank (the tuner emits bells only). On overflow the
+    /// FITTED bands give way: they can be regenerated, a hand-aligned all-pass cannot.
     /// </summary>
-    /// <remarks>
-    /// The kept bands go last, which is also where the slot budget bites: when the
-    /// merged bank would overflow, the FITTED bands give way. An all-pass sits on a
-    /// junction the user aligned by hand and the tuner cannot propose one, so the
-    /// bands it can regenerate on the next run are the cheaper ones to lose.
-    /// Deliberately UI-free — the keep-or-clobber decision is the panel's to ask
-    /// and arrives here already made.
-    /// </remarks>
     internal static EqualizationCurve WithAllPassBands(
         EqualizationCurve tuned,
         IReadOnlyList<PeqBand> allPass)
@@ -832,8 +732,6 @@ public partial class EqWizardPanel
             tuned.PreampDb);
     }
 
-    // Replaces the bank with a computed or imported one (Auto Tune, Import) as a
-    // single undo step, however many filters it holds.
     private void ApplyEqualizationCurve(EqualizationCurve curve)
     {
         CommitBankChange();
@@ -843,10 +741,7 @@ public partial class EqWizardPanel
         CommitBankChange();
     }
 
-    // Restores the bank saved with the settings, and makes it the baseline the
-    // history starts from — reopening the app is not an edit anyone should be
-    // able to undo past. A file from before the bank was persisted carries only
-    // a filter count, and rebuilds the ISO-centred spread those versions showed.
+    // Restored bank becomes the history baseline. Old files carry only a count and rebuild the ISO-centred spread.
     private void ApplyPersistedBank(MeasurementSettingsFile.EqWizardSettings settings)
     {
         IEnumerable<PeqBand> bands = settings.Bands != null
@@ -856,22 +751,17 @@ public partial class EqWizardPanel
                     band.FrequencyHz,
                     band.Q,
                     band.GainDb,
-                    // The enum converter accepts a number no member matches, and a
-                    // shape nothing recognises must become a bell HERE — the one
-                    // place it enters the app — rather than at each of the places
-                    // that later ask what it is.
+                    // An undefined enum number becomes a bell HERE, where it enters the app.
                     Enum.IsDefined(band.Type) ? band.Type : PeqBandType.Peaking))
             : Enumerable
                 .Range(0, Math.Clamp(settings.BandCount, 0, MaxPeqSlotCount))
                 .Select(index => new PeqBand(DefaultBandFrequencyHz(index), DefaultBandQ, 0));
 
-        // Out-of-range or corrupt numbers are clamped by the strips themselves
-        // (see WriteBand), so a hand-edited file loses the odd value, not the bank.
+        // Strips clamp corrupt values (see WriteBand), so a hand-edited file loses a value, not the bank.
         SetBank(new PeqBankState(bands, settings.PreampDb));
         ResetBankHistory();
     }
 
-    // The bank as the settings file stores it, in slot order.
     private List<MeasurementSettingsFile.PeqBandSettings> CaptureBands() =>
         peqSlots
             .Select(ReadBand)

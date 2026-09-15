@@ -2,10 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Resolves EQ Wizard import/export targets and executes either text-profile or
-/// tuning-sheet I/O. WinForms owns only the dialogs and result presentation.
-/// </summary>
+/// <summary>Resolves import/export targets and runs profile or tuning-sheet I/O; WinForms owns only dialogs.</summary>
 internal sealed class EqWizardImportExportCoordinator
 {
     private readonly IReadOnlyList<EqWizardImportTarget> importTargets;
@@ -76,12 +73,8 @@ internal sealed class EqWizardImportExportCoordinator
         {
             string text = readAllText(request.Path);
 
-            // The parsers are readers, not validators, and do not throw on
-            // rubbish — so the format has to say whether it recognised the file.
-            // Band count cannot stand in for that: a profile carrying only a
-            // "Preamp:" line is valid and has none. Treating it as failure used
-            // to be the destructive path, since the panel cleared bypass and
-            // applied the empty curve over whatever the user had just tuned.
+            // Parsers never throw, so the format must say whether it recognised the file; a preamp-only profile has no bands
+            // yet is valid (treating it as failure applied an empty curve over the user's tune).
             if (!request.Target.Format.TryImport(text, out EqualizationCurve curve))
             {
                 return EqWizardFileResult<EqualizationCurve>.Failed(
@@ -122,11 +115,7 @@ internal sealed class EqWizardImportExportCoordinator
                 IEqProfileFormat effectiveFormat = format is GraphicEqFormat
                     ? new GraphicEqFormat(request.SampleRate)
                     : format;
-                // Dropping the shelves (and unsupported all-pass orders) here as
-                // well as in the UI is deliberate: the warning is the user's
-                // decision, this is the guarantee. A format that cannot state our
-                // filter must never receive one written as something its reader
-                // would realize differently.
+                // Dropped here as well as warned in the UI: the warning is the user's decision, this is the guarantee.
                 EqualizationCurve curve = request.Target.SupportsShelvingFilters
                     ? request.Curve
                     : WithoutShelvingBands(request.Curve);
@@ -141,11 +130,6 @@ internal sealed class EqWizardImportExportCoordinator
         }
     }
 
-    /// <summary>
-    /// How many shelving filters an export to <paramref name="target"/> would have
-    /// to leave out. Zero when the format carries them, or when there are none —
-    /// the panel asks only when the answer is going to cost the user something.
-    /// </summary>
     internal static int CountShelvingBandsDroppedBy(
         EqWizardExportTarget target,
         EqualizationCurve curve)
@@ -158,18 +142,7 @@ internal sealed class EqWizardImportExportCoordinator
             : curve.Bands.Count(band => band.Type.IsShelving());
     }
 
-    /// <summary>
-    /// The preamp an export to <paramref name="target"/> would leave behind, in dB.
-    /// Zero when the format carries it, and zero when there is none to lose — the
-    /// panel asks only when the answer is going to cost the user something.
-    /// </summary>
-    /// <remarks>
-    /// A format without a preamp slot (a car DSP's per-channel bank: the gain is a
-    /// separate control on the device) writes the bands only. The whole curve is
-    /// then quietly that many dB off the tune on screen, which is worse than a
-    /// dropped band: nothing in the exported file hints at it, so the user has to
-    /// be told which gain to enter by hand.
-    /// </remarks>
+    /// <summary>Preamp (dB) a format without a preamp slot would silently lose; the user must enter it by hand.</summary>
     internal static double PreampDroppedBy(
         EqWizardExportTarget target,
         EqualizationCurve curve)
@@ -191,11 +164,7 @@ internal sealed class EqWizardImportExportCoordinator
             curve.PreampDb);
     }
 
-    /// <summary>
-    /// How many all-pass bands an export to <paramref name="target"/> would have to
-    /// leave out. Asked per band, because support splits by order: Equalizer APO's
-    /// AP is second-order only, while other formats carry both or neither.
-    /// </summary>
+    /// <summary>Asked per band: APO's AP is second-order only, other formats carry both or neither.</summary>
     internal static int CountAllPassBandsDroppedBy(
         EqWizardExportTarget target,
         EqualizationCurve curve)
@@ -285,13 +254,11 @@ internal sealed class EqWizardExportTarget : IEqWizardFileTarget
     public string Extension { get; }
     public bool IsTuningSheet => Format == null;
 
-    // The tuning sheet prints shelves in a table of their own, so it carries them.
+    // The tuning sheet (null Format) prints shelves, all-pass bands and preamp in its own tables.
     internal bool SupportsShelvingFilters => Format?.SupportsShelvingFilters ?? true;
 
-    // ... prints the all-pass bands in their own table too ...
     internal bool SupportsAllPass(PeqBandType type) => Format?.SupportsAllPass(type) ?? true;
 
-    // ... and prints the preamp with them, so it carries that too.
     internal bool CarriesPreamp => Format?.CarriesPreamp ?? true;
 
     internal static EqWizardExportTarget TuningSheet() =>
@@ -311,8 +278,7 @@ internal sealed record EqWizardExportRequest(
     double MinHz,
     double MaxHz,
     EqTuneStats? Stats,
-    // Only the tuning sheet honours this: the profile formats are read back by
-    // software that defines Q the RBJ way, so restating theirs would corrupt them.
+    // Tuning sheet only: profile formats are read by RBJ-Q software, so restating Q would corrupt them.
     PeqQConvention QConvention = PeqQConvention.Rbj);
 
 internal sealed record EqWizardTuningSheetRequest(

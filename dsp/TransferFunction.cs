@@ -4,14 +4,8 @@ using MathNet.Numerics.IntegralTransforms;
 namespace Resonalyze.Dsp;
 
 /// <summary>
-/// The spectral validity of a band-limited excitation, as fractions of Nyquist.
-/// Weight is zero outside [LowZero, HighZero] (the achieved sweep edges — nothing
-/// was excited beyond them), unity inside [LowFull, HighFull] (the requested band,
-/// excited at full amplitude), and a raised cosine across the fade guard bands
-/// between them. Placing the ramps INSIDE the excited guard bands matters: a ramp
-/// below the achieved edge half-passes bins the sweep never reached, where
-/// Gxy/Gxx is microphone noise over the reference's leakage skirt — garbage that
-/// shows up as large spikes just outside the sweep band.
+/// Excitation validity as Nyquist fractions: zero outside the achieved edges, unity inside the requested band, raised-cosine
+/// ramps inside the fade guard bands. See docs/tech/sweep-measurement.md#excitation-band-gate.
 /// </summary>
 public readonly record struct ExcitationBandGate(
     double LowZeroNyquistFraction,
@@ -19,7 +13,6 @@ public readonly record struct ExcitationBandGate(
     double HighFullNyquistFraction,
     double HighZeroNyquistFraction)
 {
-    /// <summary>A gate that passes everything — for full-band excitation.</summary>
     public static ExcitationBandGate FullBand => new(0.0, 0.0, 1.0, 1.0);
 
     public void Validate()
@@ -41,48 +34,17 @@ public readonly record struct ExcitationBandGate(
     }
 }
 
-/// <summary>
-/// Estimates relative impulse responses between two captured channels.
-/// </summary>
 public static class TransferFunction
 {
-    // H1 regularization relative to the strongest excitation bin. An absolute
-    // epsilon changes meaning with the record level and with the accumulated
-    // average count (the spectra below are unnormalized running sums), so its
-    // strength silently drifted between measurements; -100 dB of the peak bin
-    // is scale-invariant. Note it does no gating work of its own: any bin the
-    // gates let through already has at least gateLow (-74 dB re max) in the
-    // denominator, so λ biases it by under 0.25% — it only keeps the division
-    // Tikhonov-safe should the gate constants ever loosen.
+    // Scale-invariant (-100 dB of the peak bin); gates already bias passed bins < 0.25 %. See docs/tech/sweep-measurement.md#h1-transfer-estimate.
     private const double RelativeRegularization = 1e-10;
 
-    // The power gate: bins whose reference power sits more than 60 dB under
-    // the strongest excitation bin fade out over a raised cosine that reaches
-    // zero another 14 dB down. This is only a safety net for bins at the true
-    // capture noise floor (below -90 dB even for 16-bit loopbacks) — it
-    // deliberately canNOT mark the region below the sweep start, because at
-    // measurement FFT lengths the sweep's own spectral leakage skirts hold
-    // the reference power at just -40..-20 dB re max all the way down to DC
-    // (verified on reconstructed field captures), while genuinely excited
-    // bins reach -45 dB (~36 dB of 1/f tilt across 12 octaves plus the
-    // first-octave fade-in). Cutting below the sweep start is the caller's
-    // job via the explicit excitation edge — the sweep parameters are known,
-    // the spectrum alone cannot reveal them.
+    // Safety net at the true noise floor only; cannot find the sweep start (leakage skirts). See docs/tech/sweep-measurement.md#h1-transfer-estimate.
     private const double ExcitationGatePowerRatio = 1e-6;
     private const double ExcitationGateFloorShare = 0.04;
 
-    /// <param name="excitationLowNyquistFraction">
-    /// The excitation's low edge as a fraction of Nyquist. LEGACY edge shape:
-    /// bins fade out over a raised cosine between this frequency and half of
-    /// it — i.e. the ramp sits below the edge, in unexcited territory. Callers
-    /// that know the achieved and the requested band should use the
-    /// <see cref="ExcitationBandGate"/> overload, whose ramps live inside the
-    /// excited fade regions. Zero (the default) disables the edge.
-    /// </param>
-    /// <param name="excitationHighNyquistFraction">
-    /// The excitation's high edge as a fraction of Nyquist, mirroring the low
-    /// edge (legacy ramp toward Nyquist). One (the default) disables the edge.
-    /// </param>
+    /// <param name="excitationLowNyquistFraction">Legacy edge: ramp sits below the edge, in unexcited bins; prefer the <see cref="ExcitationBandGate"/> overload. 0 disables.</param>
+    /// <param name="excitationHighNyquistFraction">Legacy high edge, mirrored toward Nyquist. 1 disables.</param>
     public static TransferEstimateResult ComputeAveragedRelativeIr(
         IReadOnlyList<TransferFunctionFrame> frames,
         double excitationLowNyquistFraction = 0.0,
@@ -107,15 +69,7 @@ public static class TransferFunction
             0.5 * (excitationHighNyquistFraction + 1.0)));
     }
 
-    /// <summary>
-    /// H1 estimate of the relative impulse response, with spectral validity
-    /// taken from <paramref name="excitationGate"/>: zero outside the achieved
-    /// sweep band, unity inside the requested band, raised-cosine ramps across
-    /// the fade guard bands between them. The returned coherence carries the
-    /// same validity — the reference's leakage skirts are deterministic across
-    /// runs, so raw γ² reads ~1 exactly where the estimate is zeroed as
-    /// unexcited.
-    /// </summary>
+    /// <summary>H1 relative IR gated by <paramref name="excitationGate"/>; the returned coherence carries the same gate.</summary>
     public static TransferEstimateResult ComputeAveragedRelativeIr(
         IReadOnlyList<TransferFunctionFrame> frames,
         ExcitationBandGate excitationGate)
@@ -150,38 +104,16 @@ public static class TransferFunction
     }
 
     /// <summary>
-    /// The same H1 estimate as <see cref="ComputeAveragedRelativeIr"/>, stopped
-    /// one step earlier: the gated transfer MAGNITUDE on its own bin grid, with
-    /// no inverse transform and no window.
+    /// The H1 estimate stopped before the inverse transform: gated magnitude on its own bin grid (spatial averages need it).
+    /// Closed bins are exactly zero, so "never swept" is distinguishable from "low".
     /// </summary>
-    /// <remarks>
-    /// This is what a spatial average needs from a microphone. It wants the
-    /// steady-state magnitude — the whole decay, no gate — and taking that from an
-    /// impulse response means an inverse transform followed immediately by a
-    /// forward one over the same full length, which returns exactly this array.
-    /// <para>
-    /// Bins the excitation gate closed come back as zero rather than as a very
-    /// small number, so a caller can tell "the sweep never went here" from "the
-    /// response is low here" — the first is a gap in the measurement and must not
-    /// become a −200 dB point on a curve.
-    /// </para>
-    /// </remarks>
     public static TransferMagnitudeEstimate ComputeAveragedMagnitude(
         IReadOnlyList<TransferFunctionFrame> frames,
         ExcitationBandGate excitationGate) =>
         ComputeAveragedMagnitudeAndIr(frames, excitationGate, wantImpulseResponse: false)
             .Magnitude;
 
-    /// <summary>
-    /// The gated magnitude AND the impulse response it came from, from one
-    /// accumulation of the frames.
-    /// </summary>
-    /// <remarks>
-    /// A caller that wants the steady-state magnitude and also has to judge whether
-    /// the channel measured anything at all needs both, and the accumulation — the
-    /// forward transform of every frame — is what costs. The inverse transform on top
-    /// of it is one more pass over one array.
-    /// </remarks>
+    /// <summary>Gated magnitude and its impulse response from one accumulation (the forward transforms are the cost).</summary>
     public static (TransferMagnitudeEstimate Magnitude, Complex[]? ImpulseResponse)
         ComputeAveragedMagnitudeAndIr(
             IReadOnlyList<TransferFunctionFrame> frames,
@@ -217,34 +149,9 @@ public static class TransferFunction
     }
 
     /// <summary>
-    /// How compact one frame's impulse response is, for each of several targets that
-    /// share a single reference — the whole point being that the reference is
-    /// transformed ONCE, and that no caller ever holds them all.
+    /// Compactness of each target's IR against one shared reference transformed once (2n+1 transforms instead of 3n).
+    /// Only verdicts return; null for unusable targets. See docs/tech/sweep-measurement.md#run-acceptance.
     /// </summary>
-    /// <remarks>
-    /// A run of a microphone array is exactly this shape: one loopback recorded
-    /// beside every microphone, sample for sample. Judging each microphone on its own
-    /// transformed that same loopback again for every one of them, which is most of
-    /// the work: n targets cost 3n transforms that way and 2n + 1 this way. Measured
-    /// on eight channels of a 96 kHz / 20 s take, **3993 ms one at a time against
-    /// 2093 ms** — the transforms account for most of it and the reused scratch
-    /// buffers for the rest, which at 4 194 304 bins is 64 MB an allocation the
-    /// garbage collector no longer sees. The answers are identical bin for bin,
-    /// because the excitation gate and the regularization are functions of the
-    /// reference alone.
-    /// <para>
-    /// A COMPACTNESS and not an impulse response, because the responses are the
-    /// expensive part and nothing needs two of them at once: at the transform length
-    /// a 96 kHz twenty-second take reaches, one is 64 MiB, and handing back eight
-    /// would have peaked near a gigabyte for a diagnostic that reduces each of them
-    /// to a single number. They are measured and dropped one at a time instead.
-    /// </para>
-    /// <para>
-    /// Entries are null where the target is unusable (empty, or shorter than the
-    /// reference) or where its shape could not be measured; the caller decides what
-    /// that means.
-    /// </para>
-    /// </remarks>
     public static TransferIrCompactness?[] MeasureSingleFrameCompactness(
         IReadOnlyList<double> reference,
         IReadOnlyList<IReadOnlyList<double>> targets,
@@ -276,7 +183,6 @@ public static class TransferFunction
             referencePowerSpectrum[bin] = MagnitudeSquared(referenceSpectrum[bin]);
         }
 
-        // Built from the reference, so it is the same gate for every target.
         (double[] gateWeights, double regularization) = BuildExcitationGate(
             referencePowerSpectrum,
             excitationGate);
@@ -304,8 +210,6 @@ public static class TransferFunction
                     targetSpectrum[bin] * Complex.Conjugate(referenceSpectrum[bin]);
             }
 
-            // Measured and dropped inside the loop: the response is the large
-            // allocation and the verdict is one number.
             Complex[] response = InverseGatedH1(
                 crossSpectrum,
                 referencePowerSpectrum,
@@ -317,9 +221,6 @@ public static class TransferFunction
         return results;
     }
 
-    // The shared core of both estimates: the cross/auto spectra summed over the
-    // frames, the excitation gate built from the reference, and the debiased
-    // coherence carrying that same gate.
     private static GatedH1Accumulation AccumulateGatedH1(
         IReadOnlyList<TransferFunctionFrame> frames,
         ExcitationBandGate excitationGate)
@@ -353,13 +254,7 @@ public static class TransferFunction
                 targetPowerSpectrum);
         }
 
-        // γ² from the shared cross/auto-spectra formula; epsilon 0 keeps the
-        // previous denominator > 0 gate. Only the first half is retained — the
-        // upper half mirrors it for the real inputs here. The raw estimate is
-        // debiased by the average count before anything stores or consumes it:
-        // at 2-4 averages the raw MSC of pure noise reads 1/K (0.5 at K=2 —
-        // straddling the very thresholds the unwrap and the PHAT weighting
-        // trust), which is estimator bias, not information.
+        // Coherence debiased by the average count: raw MSC of pure noise reads 1/K (0.5 at K=2), straddling downstream thresholds.
         (double[] gateWeights, double regularization) = BuildExcitationGate(
             referencePowerSpectrum,
             excitationGate);
@@ -373,12 +268,7 @@ public static class TransferFunction
                     epsilon: 0.0)[..(fftLength / 2 + 1)],
             frames.Count);
 
-        // The gate is the estimate's validity, and the coherence must carry
-        // it too: below the sweep start the sweep's own deterministic leakage
-        // repeats across runs, so raw γ² reads ~1 exactly where H1 is zeroed
-        // as unexcited — and downstream consumers (the phase unwrap's trust
-        // gate, the PHAT weighting, the plotted coherence curve) would keep
-        // presenting those bins as reliable.
+        // Coherence carries the gate: deterministic leakage below the sweep start reads gamma^2 ~1 where H1 is zeroed.
         for (int bin = 0; bin < coherence.Length; bin++)
         {
             coherence[bin] *= gateWeights[bin];
@@ -399,8 +289,6 @@ public static class TransferFunction
         double Regularization,
         double[] Coherence);
 
-    // Forward-transforms one zero-padded frame pair and adds its cross- and
-    // auto-spectra to the running sums.
     private static void AccumulateFrameSpectra(
         IReadOnlyList<double> reference,
         IReadOnlyList<double> target,
@@ -432,18 +320,8 @@ public static class TransferFunction
         }
     }
 
-    // The validity of every bin of the H1 estimate: the excitation edge from
-    // the caller's known sweep start times the power-floor safety net read
-    // from the reference's own accumulated spectrum. The weights are real and
-    // Hermitian-symmetric (frequencies fold through min(bin, N - bin); a real
-    // capture's power spectrum already is), so applying them is zero-phase
-    // filtering: nothing moves in time. The peak scan that anchors the power
-    // thresholds and the regularization only looks at bins at FULL edge
-    // weight: a bin the estimate discards or attenuates must not scale the
-    // gate it is excluded from — a loud mains-adjacent hum below (or inside
-    // the ramp of) a narrow sweep's start, or DC, whose converter-offset
-    // splatter can rival the sweep bins at measurement FFT lengths, would
-    // otherwise fade genuinely excited bins.
+    // Real, Hermitian-symmetric weights (zero-phase). Peak scan uses only full-weight bins so hum or DC cannot scale the gate.
+    // See docs/tech/sweep-measurement.md#h1-transfer-estimate.
     private static (double[] Weights, double Regularization) BuildExcitationGate(
         double[] referencePowerSpectrum,
         ExcitationBandGate gate)
@@ -456,8 +334,6 @@ public static class TransferFunction
         bool hasLowEdge = gate.LowFullNyquistFraction > 0.0;
         bool hasHighEdge = gate.HighFullNyquistFraction < 1.0;
 
-        // The peak scan only trusts bins at FULL edge weight (see the method
-        // comment) — that is the requested band, not the fade guard bands.
         double maxReferencePower = 0;
         for (int bin = 1; bin < fftLength; bin++)
         {
@@ -478,8 +354,6 @@ public static class TransferFunction
                 referencePowerSpectrum[bin], gateLow, gateHigh);
             if (weight > 0 && hasLowEdge)
             {
-                // Zero below the achieved low edge (nothing was excited there),
-                // rising to unity where the fade-in completes.
                 weight *= DspMath.RaisedCosineGate(
                     NyquistFraction(bin),
                     gate.LowZeroNyquistFraction,
@@ -487,8 +361,6 @@ public static class TransferFunction
             }
             if (weight > 0 && hasHighEdge)
             {
-                // Mirror: unity where the fade-out starts, zero above the
-                // achieved high edge.
                 weight *= 1.0 - DspMath.RaisedCosineGate(
                     NyquistFraction(bin),
                     gate.HighFullNyquistFraction,
@@ -500,8 +372,6 @@ public static class TransferFunction
         return (weights, maxReferencePower * RelativeRegularization);
     }
 
-    // The H1 estimate cross / (auto + λ), shaped by the validity weights and
-    // transformed back to the time domain.
     private static Complex[] InverseGatedH1(
         Complex[] crossSpectrum,
         double[] referencePowerSpectrum,
@@ -527,28 +397,9 @@ public static class TransferFunction
         value.Real * value.Real + value.Imaginary * value.Imaginary;
 
     /// <summary>
-    /// Computes the phase-transform (GCC-PHAT) correlation of a loopback-referenced
-    /// transfer impulse response. Its spectrum already carries the
-    /// microphone/loopback cross-phase, so whitening it to unit magnitude over the
-    /// band where the response has energy collapses the correlation to a sharp,
-    /// low-side-lobe peak at the true broadband delay — independent of the driver's
-    /// magnitude shape (and its polarity: an inverted channel simply flips the
-    /// peak, which <see cref="PhaseTransformCorrelation.RefineAround"/> handles).
-    /// The correlation is indexed to match the impulse response, so envelope-peak
-    /// lags refine directly.
+    /// GCC-PHAT correlation of a loopback-referenced transfer IR, index-aligned with it. See docs/tech/sweep-measurement.md#gcc-phat.
     /// </summary>
-    /// <param name="coherence">
-    /// Optional per-bin γ² (the half spectrum from
-    /// <see cref="TransferEstimateResult.Coherence"/>, length
-    /// <c>fftLength / 2 + 1</c>). When supplied and length-matched, each in-band bin
-    /// is scaled by a floored-linear coherence weight, so bins whose phase does not
-    /// repeat across averages (noise, level- or drift-varying distortion,
-    /// non-averaging reflections) carry less say in the whitened correlation.
-    /// Repeatable content — including stationary harmonic distortion — reads as
-    /// coherent and is not de-weighted. It must come from
-    /// the same transfer FFT that produced <paramref name="impulseResponse"/>; a
-    /// null or wrong-length array is ignored and leaves the result bit-identical.
-    /// </param>
+    /// <param name="coherence">Optional half-spectrum gamma^2 from the same transfer FFT; soft-weights bins. Wrong length is ignored (bit-identical result).</param>
     public static PhaseTransformCorrelation ComputePhaseTransformFromResponse(
         IReadOnlyList<double> impulseResponse,
         double referenceGate = 0.02,
@@ -560,22 +411,13 @@ public static class TransferFunction
             throw new ArgumentException("Impulse response must not be empty.");
         }
 
-        // Padding up to a power of two keeps MathNet on the fast radix-2 path (an
-        // odd length would silently fall back to the much slower Bluestein
-        // algorithm). It is a no-op for the pipeline's own IRs, which are already
-        // power-of-two, and zero-padding does not move the correlation peak: the
-        // lag axis stays index-aligned with the impulse response.
+        // Power of two keeps MathNet off the slow Bluestein path; zero-padding does not move the peak.
         int fftLength = DspMath.NextPowerOfTwo(impulseResponse.Count);
         return ComputePhaseTransformFromSpectrum(
             RealForwardSpectrum(impulseResponse, fftLength), referenceGate, coherence);
     }
 
-    /// <summary>
-    /// The same correlation for a caller that ALREADY holds the response's
-    /// forward spectrum on the correlation's own grid — a band-limited analysis
-    /// that transformed the record once and band-limited it in place. The
-    /// spectrum is read, never written.
-    /// </summary>
+    /// <summary>Correlation from a caller-held forward spectrum on the correlation grid; read-only.</summary>
     internal static PhaseTransformCorrelation ComputePhaseTransformFromSpectrum(
         Complex[] spectrum,
         double referenceGate = 0.02,
@@ -596,18 +438,9 @@ public static class TransferFunction
         return BuildPhaseTransform(spectrum, gateReference, filter: null, referenceGate, coherence);
     }
 
-    // The lowest fraction of its whitened phasor a fully incoherent (γ²=0) in-band
-    // bin keeps. A floored-linear map — not a bin-selector — because sub-sample
-    // refinement precision follows the Cramér-Rao bound (∝ 1/(SNR·B_rms²)): it comes
-    // from broadband phase agreement, so keeping every in-band bin at ≥ this share of
-    // its weight preserves occupied bandwidth (and avoids punching a spectral hole
-    // that would ring back as the very side lobes the soft gate exists to suppress),
-    // while still demoting untrustworthy bins 4:1 against coherent ones.
+    // Floored-linear, not a bin selector: refinement precision needs occupied bandwidth. See docs/tech/sweep-measurement.md#gcc-phat.
     private const double CoherenceWeightFloor = 0.25;
 
-    // Shared core: whiten the cross-spectrum to unit magnitude, weight it by a soft
-    // band mask taken from where the gate reference has energy, and inverse-
-    // transform to the correlation.
     private static PhaseTransformCorrelation BuildPhaseTransform(
         Complex[] crossSpectrum,
         double[] gateReference,
@@ -622,19 +455,11 @@ public static class TransferFunction
             maxReference = Math.Max(maxReference, gateReference[bin]);
         }
 
-        // γ² is the DC..Nyquist half spectrum (length fftLength/2 + 1). Only apply it
-        // when the length matches exactly: a different length means a different
-        // frequency grid, and folding by this FFT's length would misattribute SNR to
-        // the wrong bins — a full-weight no-op is strictly safer than mis-indexing.
+        // Apply only on an exact length match; another grid would misattribute SNR to wrong bins.
         int half = fftLength / 2;
         bool useCoherence = coherence != null && coherence.Count == half + 1;
 
-        // A soft band mask instead of a hard energy gate. Bins fade in over a
-        // raised cosine between gateLow and gateHigh of the reference peak, so the
-        // band tapers smoothly at the excitation edges rather than as a brick wall
-        // — a brick wall rings into the correlation as side lobes that can bias the
-        // sub-sample refinement. The whole passband still sits at weight one; only
-        // the true roll-off edges taper.
+        // Soft band mask: a brick wall rings into side lobes that bias sub-sample refinement.
         double gateHigh = maxReference * referenceGate;
         double gateLow = gateHigh * 0.2;
         var whitened = new Complex[fftLength];
@@ -650,10 +475,7 @@ public static class TransferFunction
 
             if (useCoherence)
             {
-                // Fold the full-spectrum bin onto its half-spectrum γ² partner. Bin i
-                // and its Hermitian mirror fftLength-i fold to the same index, so both
-                // get an identical real weight and the whitened spectrum stays
-                // conjugate-symmetric (the inverse transform stays real).
+                // Bin and its Hermitian mirror fold to one weight, keeping the inverse transform real.
                 int folded = bin <= half ? bin : fftLength - bin;
                 double g2 = coherence![folded];
                 if (!(g2 > 0))
@@ -665,9 +487,7 @@ public static class TransferFunction
                     g2 = 1;
                 }
 
-                // Complement form (not the affine floor + (1-floor)*g2): at g2==1 it is
-                // 1 - (1-floor)*0 = 1.0 bit-exactly for any floor, so flat/unit coherence
-                // is a guaranteed no-op regardless of the constant.
+                // Complement form: exactly 1.0 at g2 == 1 for any floor, so unit coherence is a guaranteed no-op.
                 bandWeight *= 1.0 - (1.0 - CoherenceWeightFloor) * (1.0 - g2);
             }
 
@@ -697,20 +517,12 @@ public static class TransferFunction
             }
         }
 
-        // The peak of a perfectly aligned unit-phasor sum is weightSum/N, so this
-        // normalizes the coefficient to [0, 1].
         double normalizer = weightSum / fftLength;
         return new PhaseTransformCorrelation(correlation, normalizer);
     }
 
-    // Sub-sample peak location by a fine windowed-sinc (Lanczos) upsampling around
-    // the integer extremum, then one parabolic step between the winning grid node
-    // and its neighbours to remove the residual grid quantisation. The PHAT
-    // correlation is band-limited, so sinc interpolation is the correct, unbiased
-    // reconstruction — unlike a raw 3-point parabola on the samples, which
-    // systematically mislocates a sinc-shaped peak. The sign of the extremum is
-    // preserved so a polarity-inverted arrival (a trough) refines to its true
-    // minimum instead of a nearby positive side lobe.
+    // Lanczos upsampling then a parabolic step: the band-limited peak is sinc-shaped (a raw 3-point parabola is biased).
+    // Extremum sign is kept so an inverted arrival refines to its trough.
     internal static double RefinePeakLag(
         double[] correlation,
         int peakLag,
@@ -733,8 +545,6 @@ public static class TransferFunction
             }
         }
 
-        // Parabolic vertex between the winning fine node and its two neighbours,
-        // reconstructed with the same interpolator so the finish is consistent.
         double center = bestValue;
         double left = sign * InterpolateCircular(
             correlation, peakLag + (bestNode - 1) * step, kernelHalfWidth);
@@ -790,16 +600,7 @@ public readonly record struct TransferFunctionFrame(
     IReadOnlyList<double> Reference,
     IReadOnlyList<double> Target);
 
-/// <summary>
-/// The gated transfer magnitude on its own bin grid, with the coherence that
-/// judges it and the transform length the bins are spaced by
-/// (<c>sampleRate / FftLength</c> hertz per bin).
-/// </summary>
-/// <param name="Magnitude">
-/// Linear |H| per bin, index 0..FftLength/2. Zero where the excitation gate is
-/// closed — a bin the sweep never reached, not a quiet one.
-/// </param>
-/// <param name="Coherence">Null for a single frame, which has none to give.</param>
+/// <summary>Gated transfer magnitude (linear, bins 0..FftLength/2; zero = gate closed) and coherence (null for one frame).</summary>
 public readonly record struct TransferMagnitudeEstimate(
     double[] Magnitude,
     double[]? Coherence,
@@ -811,24 +612,15 @@ public readonly record struct TransferEstimateResult(
     double[]? Coherence);
 
 /// <summary>
-/// A phase-transform (GCC-PHAT) delay estimate. <see cref="LagSamples"/> is the
-/// refined lag in the raw correlation-index space of the coarse anchor it was
-/// searched around; <see cref="PeakCorrelation"/> is the normalized peak height
-/// in [0, 1] (magnitude, so it is polarity-blind); <see cref="Refined"/> is false
-/// when the peak sat on the search window edge, meaning the estimate should not be
-/// trusted over the anchor.
+/// GCC-PHAT delay: <see cref="LagSamples"/> in the anchor's correlation-index space; <see cref="PeakCorrelation"/> in [0, 1],
+/// polarity-blind; <see cref="Refined"/> false when the peak sat on the window edge.
 /// </summary>
 public readonly record struct PhaseTransformDelay(
     double LagSamples,
     double PeakCorrelation,
     bool Refined);
 
-/// <summary>
-/// A precomputed GCC-PHAT correlation, from
-/// <see cref="TransferFunction.ComputePhaseTransformFromResponse"/>. Refine any
-/// number of coarse lags of the same capture from it without recomputing the
-/// transform.
-/// </summary>
+/// <summary>Precomputed GCC-PHAT correlation; refine many coarse lags of one capture without recomputing.</summary>
 public sealed class PhaseTransformCorrelation
 {
     private readonly double[] correlation;
@@ -840,14 +632,7 @@ public sealed class PhaseTransformCorrelation
         this.normalizer = normalizer;
     }
 
-    /// <summary>
-    /// Refines <paramref name="coarseLagSamples"/> to sub-sample precision by the
-    /// extremum of the whitened correlation within
-    /// <paramref name="searchRadiusSamples"/>. The extremum is taken by magnitude,
-    /// so a polarity-inverted arrival (a strong negative trough) is found just as
-    /// a normal arrival (a positive peak) is; its sign is preserved through the
-    /// interpolation. A peak pinned to the window edge is reported as not refined.
-    /// </summary>
+    /// <summary>Sub-sample extremum by magnitude within the radius (inverted arrivals found too); edge-pinned peaks are not refined.</summary>
     public PhaseTransformDelay RefineAround(int coarseLagSamples, int searchRadiusSamples)
     {
         if (searchRadiusSamples < 1)

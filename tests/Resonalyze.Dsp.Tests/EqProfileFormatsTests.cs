@@ -19,8 +19,7 @@ public sealed class EqProfileFormatsTests
 
         EqualizationCurve parsed = format.Import(format.Export(original));
 
-        // A format whose layout has no place for the preamp (a car DSP bank, where
-        // the gain is a separate control) reads it back as 0 by declaration.
+        // A layout with no preamp place (a car DSP bank) reads it back as 0 by declaration.
         Assert.Equal(format.CarriesPreamp ? original.PreampDb : 0, parsed.PreampDb, 4);
         Assert.Equal(original.Bands.Count, parsed.Bands.Count);
         for (int i = 0; i < original.Bands.Count; i++)
@@ -87,8 +86,7 @@ public sealed class EqProfileFormatsTests
     [Fact]
     public void EasyEffects_ReadsAnEqualizerAtTheRootWithoutTheOutputWrapper()
     {
-        // Older presets have the equalizer at the JSON root (no "output" wrapper) and
-        // some place bands directly under the equalizer (no "left" host).
+        // Older presets: equalizer at the JSON root and bands without a 'left' host.
         string json =
             "{ \"num-bands\": 1, \"output-gain\": -2," +
             " \"band0\": { \"type\": \"Bell\", \"frequency\": 1000, \"gain\": 6, \"q\": 1 } }";
@@ -111,8 +109,6 @@ public sealed class EqProfileFormatsTests
     [Fact]
     public void EasyEffects_DropsDegenerateBellBands()
     {
-        // A Bell band with q = 0 and one with a negative frequency are degenerate and
-        // must be rejected by the TryReadBand guard, leaving only the valid band.
         string json =
             "{ \"output\": { \"equalizer\": { \"output-gain\": 0, \"left\": {" +
             " \"band0\": { \"type\": \"Bell\", \"frequency\": 1000, \"gain\": 6, \"q\": 0 }," +
@@ -179,10 +175,7 @@ public sealed class EqProfileFormatsTests
     [Fact]
     public void MiniDsp_ExportsThePreampGainAndBandCoefficients()
     {
-        // These export-only formats have no round-trip safety net, so their numeric
-        // payload is otherwise unverified. Pin the actual coefficients: a leading
-        // gain biquad for the -6 dB preamp plus one biquad per band, matching
-        // PeakingBiquad.Compute at 48 kHz.
+        // Export-only formats have no round trip: pin the coefficients (gain biquad for the preamp plus one per band).
         EqualizationCurve curve = SampleCurve();
         string text = new MiniDspFormat().Export(curve);
 
@@ -231,13 +224,11 @@ public sealed class EqProfileFormatsTests
         Assert.Equal(64, pairs.Length);
         Assert.Equal(20.0, freqs[0]);
         Assert.Equal(20_000.0, freqs[^1]);
-        // The frequency column is strictly ascending; the gain column is not — if the
-        // two columns were swapped this would fail, pinning the column order.
+        // Only the frequency column is ascending, pinning column order.
         for (int i = 1; i < freqs.Length; i++)
         {
             Assert.True(freqs[i] > freqs[i - 1], "Frequencies must ascend.");
         }
-        // The gain at each grid point is the curve's magnitude there (to one decimal).
         IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 64);
         for (int i = 0; i < grid.Count; i++)
         {
@@ -271,7 +262,7 @@ public sealed class EqProfileFormatsTests
     [Fact]
     public void Rew_ImportsRealRewLayout()
     {
-        // REW aligns fields with extra spaces; the shared parser is whitespace-agnostic.
+        // REW aligns fields with extra spaces.
         string text =
             "Filter Settings file\n" +
             "\n" +
@@ -334,8 +325,7 @@ public sealed class EqProfileFormatsTests
         Assert.Equal(4000, curve.Bands[1].FrequencyHz, 4);
     }
 
-    // The formats implement TryImport; Import is a default interface member and
-    // is therefore only reachable through the interface.
+    // Import is a default interface member, reachable only through the interface.
     private static EqualizationCurve Import(IEqProfileFormat format, string text) =>
         format.Import(text);
 }

@@ -4,12 +4,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-// Pins the dB reference of the Time Alignment "Envelope Around Peak" plot.
-// Both curves must be drawn against ONE amplitude (the Main record's strongest
-// peak). Normalizing each curve by its own first-arrival level — which the plot
-// used to do — makes the axis mean something different per curve, so two
-// equally loud records whose picks sit at different depths read as decades
-// apart on screen.
+// Both curves share ONE dB reference (Main's strongest peak); per-curve arrival normalization made equal records read decades apart.
 public sealed class TimeAlignmentEnvelopePlotTests
 {
     private const int SampleRate = 96_000;
@@ -18,8 +13,6 @@ public sealed class TimeAlignmentEnvelopePlotTests
     [Fact]
     public void EnvelopeSeries_PicksAtDifferentDepths_KeepEqualPeaksLevel()
     {
-        // Same peak amplitude, wildly different first-arrival prominence: a
-        // near-peak pick (-6 dB) against one on a broad leading edge (-25 dB).
         TimeAlignmentAnalysisResult main = MakeResult(peak: 1.0, arrivalBelowPeakDb: 6);
         TimeAlignmentAnalysisResult compare = MakeResult(peak: 1.0, arrivalBelowPeakDb: 25);
 
@@ -34,8 +27,6 @@ public sealed class TimeAlignmentEnvelopePlotTests
     public void EnvelopeSeries_QuieterCompareRecord_ShowsItsTrueLevelOffset()
     {
         TimeAlignmentAnalysisResult main = MakeResult(peak: 1.0, arrivalBelowPeakDb: 6);
-        // Half the amplitude, and a pick depth that differs from Main's on top
-        // of it: only the level difference may reach the plot.
         TimeAlignmentAnalysisResult compare = MakeResult(peak: 0.5, arrivalBelowPeakDb: 25);
 
         DrawnCurve mainCurve = Draw(main, main.StrongestEnvelopePeak);
@@ -52,9 +43,6 @@ public sealed class TimeAlignmentEnvelopePlotTests
         TimeAlignmentAnalysisResult compare = MakeResult(peak: 0.5, arrivalBelowPeakDb: 25);
         double reference = main.StrongestEnvelopePeak;
 
-        // A marker must land on its own curve: the compare peak marker at the
-        // compare curve's maximum, the compare arrival marker at its prominence
-        // below THAT — not at 0 dB, which is what a per-curve reference gave.
         double comparePeakDb = TimeAlignmentPanelController.GetPeakMarkerDecibels(
             compare, reference, compare.StrongestEnvelopePeakIndex);
         double compareArrivalDb = TimeAlignmentPanelController.GetPeakMarkerDecibels(
@@ -70,9 +58,7 @@ public sealed class TimeAlignmentEnvelopePlotTests
     [Fact]
     public void EnvelopeSeries_MuchQuieterCompareRecord_KeepsItsOwnFloor()
     {
-        // A sub against a tweeter: 40 dB apart. The shared reference must move
-        // the Compare curve down, not flatten its lower 40 dB onto an absolute
-        // floor 80 dB under Main's peak.
+        // 40 dB apart: the shared reference must shift Compare down, not flatten it onto the 80 dB floor.
         TimeAlignmentAnalysisResult main = MakeResult(peak: 1.0, arrivalBelowPeakDb: 6);
         TimeAlignmentAnalysisResult compare = MakeResult(peak: 0.01, arrivalBelowPeakDb: 6);
 
@@ -84,9 +70,6 @@ public sealed class TimeAlignmentEnvelopePlotTests
         Assert.Equal(-40.0, compareCurve.PointsMaxDb, 1);
         Assert.Equal(-120.0, compareCurve.PointsMinDb, 1);
 
-        // The axis figures must describe the line that was actually drawn:
-        // clamping only the reported minimum would leave the plot wrong while
-        // every assertion above still passed.
         Assert.Equal(compareCurve.PointsMinDb, compareCurve.MinDb, 6);
         Assert.Equal(compareCurve.PointsMaxDb, compareCurve.MaxDb, 6);
     }
@@ -109,10 +92,6 @@ public sealed class TimeAlignmentEnvelopePlotTests
         return new DrawnCurve(series, maxDb, minDb);
     }
 
-    // The points are what the user sees; MaxDb/MinDb only size the axis. Every
-    // assertion below reads the points, and the floor test also pins the two to
-    // each other — a reported range that no longer described the drawn line
-    // would leave the plot wrong with the axis still looking right.
     private sealed record DrawnCurve(LineSeries Series, double MaxDb, double MinDb)
     {
         public double PointsMaxDb => Series.Points.Max(point => point.Y);
@@ -120,8 +99,6 @@ public sealed class TimeAlignmentEnvelopePlotTests
         public double PointsMinDb => Series.Points.Min(point => point.Y);
     }
 
-    // An envelope with two humps: the arrival at index 400 and the strongest
-    // peak 100 samples later.
     private static TimeAlignmentAnalysisResult MakeResult(
         double peak,
         double arrivalBelowPeakDb)
@@ -132,8 +109,6 @@ public sealed class TimeAlignmentEnvelopePlotTests
         double arrival = peak * Math.Pow(10.0, -arrivalBelowPeakDb / 20.0);
         for (int i = 0; i < envelope.Length; i++)
         {
-            // Pedestal 100 dB under this record's own peak, so the 80 dB
-            // curve floor is what the drawn minimum reports.
             envelope[i] =
                 arrival * Hump(i - arrivalIndex) +
                 peak * Hump(i - strongestIndex) +

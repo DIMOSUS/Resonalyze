@@ -3,13 +3,6 @@ using NAudio.Wave;
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// The WASAPI backend, shared between the Shared and Exclusive modes. Owns
-/// endpoint opening, exclusive-format negotiation, capture/render channel
-/// validation and diagnostics; the Shared/Exclusive difference is only the
-/// <see cref="AudioClientShareMode"/> and whether an explicit device format is
-/// required.
-/// </summary>
 public sealed class WasapiBackend : IAudioBackend
 {
     private readonly AudioClientShareMode shareMode;
@@ -188,10 +181,7 @@ public sealed class WasapiBackend : IAudioBackend
         }
     }
 
-    // Best-effort rollback of a partially-opened session: every resource is
-    // released even if an earlier release throws, and cleanup failures are
-    // swallowed so they never mask the primary open/validation exception (e.g.
-    // a ValidateDevices mismatch) the caller is about to rethrow.
+    // Release everything, swallowing cleanup errors so they never mask the open/validation exception being rethrown.
     private static ValueTask DisposeQuietlyAsync(
         WasapiPlaybackDevice? playback,
         WasapiCaptureDevice? capture) =>

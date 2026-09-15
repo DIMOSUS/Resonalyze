@@ -27,8 +27,6 @@ public sealed class EqBoostabilityMaskTests
         return best;
     }
 
-    // A symmetric V-notch centred at centerHz: 0 dB outside +/-halfWidthOctaves,
-    // dropping linearly to -depthDb at the centre.
     private static double Notch(double f, double centerHz, double depthDb, double halfWidthOctaves)
     {
         double octaves = Math.Abs(Math.Log2(f / centerHz));
@@ -38,8 +36,7 @@ public sealed class EqBoostabilityMaskTests
     [Fact]
     public void NarrowDeepNull_IsNotBoostable()
     {
-        // A 12 dB notch that recovers within +/-0.15 octave — narrower than the
-        // default 0.25-octave window, so both sides climb the full depth.
+        // Narrower than the default 0.25-octave window, so both sides climb the full depth.
         double[] magnitude = Magnitude(f => Notch(f, 1_000, 12, 0.15));
 
         bool[] allowed = EqBoostabilityMask.ComputeBoostAllowed(
@@ -62,8 +59,7 @@ public sealed class EqBoostabilityMaskTests
     [Fact]
     public void BroadDip_IsStillBoostable()
     {
-        // A wide, shallow bowl (recovers only beyond +/-0.7 octave) is a correctable
-        // trend, not an interference null: the mask must leave it boostable.
+        // A wide shallow bowl is a correctable trend, not a null.
         double[] magnitude = Magnitude(f => Notch(f, 1_000, 8, 0.7));
 
         bool[] allowed = EqBoostabilityMask.ComputeBoostAllowed(
@@ -75,8 +71,7 @@ public sealed class EqBoostabilityMaskTests
     [Fact]
     public void MonotonicRollOff_IsNotTreatedAsANull()
     {
-        // A low-frequency roll-off recovers on the high side only; it must not be
-        // masked (it is the boost-headroom cap's job, not the null detector's).
+        // A roll-off is the boost-headroom cap's job, not the null detector's.
         double[] magnitude = Magnitude(f => f >= 100 ? 0.0 : -30.0 * Math.Log2(100 / f));
 
         bool[] allowed = EqBoostabilityMask.ComputeBoostAllowed(
@@ -88,8 +83,6 @@ public sealed class EqBoostabilityMaskTests
     [Fact]
     public void LowCoherence_IsNotBoostable()
     {
-        // Flat magnitude (nothing the null detector would flag), but the coherence
-        // dips below the floor around 1 kHz — boosting there is disallowed.
         double[] magnitude = Magnitude(_ => 0.0);
         double[] coherence = Grid
             .Select(f => Math.Abs(Math.Log2(f / 1_000)) < 0.2 ? 0.2 : 0.95)

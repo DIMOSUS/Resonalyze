@@ -7,25 +7,18 @@ public sealed class LogarithmicPowerBandResampleTests
     [Fact]
     public void PowerBandLevels_AreFftLengthInvariant_ForTheSameNoise()
     {
-        // The whole point of the power-integrated RTA: the same acoustic noise must
-        // read the same absolute band level whatever the FFT size. The old amplitude
-        // path dropped a broadband level ~3.01 dB per doubling of N; this must not.
+        // The same noise must read the same band level at any FFT size (the amplitude path lost ~3 dB per doubling).
         float[] signal = WhiteNoise(2_048 * 200, seed: 20260718);
 
         List<SignalPoint> bands2048 = BandLevels(signal, 2_048);
         List<SignalPoint> bands4096 = BandLevels(signal, 4_096);
 
-        // The two FFT sizes clamp their grids to their own resolved range, so the log
-        // grids no longer share a frequency per index — compare at matching frequencies
-        // (nearest point in each), over a mid band where every band holds several bins
-        // so the estimate is stable and the comparison is about scale, not variance.
+        // Grids differ per FFT size: compare at matching frequencies over a band with several bins per band.
         double sum2048 = 0.0;
         double sum4096 = 0.0;
         double maxAbsDiff = 0.0;
         int count = 0;
-        // Compare from 1 kHz up, where the fixed 1/12-octave band is wider than the
-        // rectangular main lobe at both FFT sizes, so the band (and level) is
-        // FFT-independent rather than resolution-limited.
+        // From 1 kHz the 1/12-octave band is wider than the rectangular main lobe at both sizes.
         for (double frequency = 1_000.0; frequency <= 6_000.0; frequency *= 1.05)
         {
             double level2048 = NearestLevel(bands2048, frequency);
@@ -37,18 +30,13 @@ public sealed class LogarithmicPowerBandResampleTests
         }
 
         double meanDiff = Math.Abs(sum2048 / count - sum4096 / count);
-        // A 3 dB FFT-size error would blow straight past this; 0.5 dB leaves room for
-        // the finite-average estimation scatter of two independent noise runs.
+        // 0.5 dB leaves room for the scatter of two independent noise runs.
         Assert.True(meanDiff < 0.5, $"mean band level differed by {meanDiff:0.000} dB across FFT sizes");
         Assert.True(maxAbsDiff < 2.0, $"a band differed by {maxAbsDiff:0.000} dB across FFT sizes");
     }
 
     [Theory]
-    // Above each window's main-lobe crossover (where the fixed 1/12-octave band already
-    // exceeds the lobe at BOTH FFT sizes) the band is FFT-independent. The lower bound is
-    // the N=2048 crossover with margin: Hann (4-bin lobe) ~1.6 kHz, Flat Top (10-bin lobe)
-    // ~4.1 kHz. The old invariance test only exercised Rectangular from 1 kHz, whose lobe
-    // crosses at ~0.97 kHz, so it never caught a wide-lobe window in its resolved region.
+    // Lower bounds are the N=2048 main-lobe crossovers with margin: Hann ~1.6 kHz, Flat Top ~4.1 kHz.
     [InlineData(WindowType.Hann, 1_800.0)]
     [InlineData(WindowType.FlatTop, 4_400.0)]
     public void PowerBandLevels_AreFftLengthInvariant_AboveResolution_ForWideLobeWindows(
@@ -82,12 +70,7 @@ public sealed class LogarithmicPowerBandResampleTests
     [Fact]
     public void PowerBandLevels_AreResolutionLimited_BelowTheMainLobeCrossover()
     {
-        // The documented cost of the main-lobe floor: below the crossover the band width
-        // IS the main lobe (mainLobeBins·Fs/N), which halves when N doubles, so a broadband
-        // level drops ~3 dB per doubling — the resolution limit of a single FFT, not a bug.
-        // Pin it so a future change cannot silently claim invariance it does not have here.
-        // At 300 Hz the Hann lobe (~94 Hz at 2048, ~47 Hz at 4096) dwarfs the 1/12-octave
-        // band (~17 Hz), so both FFT sizes are floored to their lobe.
+        // Below the crossover the band IS the main lobe, so ~3 dB per doubling is the resolution limit, not a bug.
         float[] signal = WhiteNoise(4_096 * 220, seed: 515_151);
 
         double level2048 = NearestLevel(BandLevels(signal, 2_048, WindowType.Hann), 300.0);
@@ -102,15 +85,12 @@ public sealed class LogarithmicPowerBandResampleTests
     [Fact]
     public void PowerBandLevel_ReadsAFullScaleToneAtItsCalibratedLevel()
     {
-        // A power sum over a band containing a full-scale on-bin tone (rectangular,
-        // leakage-free, ENBW 1) must still read 0 dBFS — the same level the tone
-        // calibration is anchored to, so the SPL offset stays valid for tones.
+        // On-bin full-scale tone must read 0 dBFS, the level tone calibration is anchored to.
         const int length = 2_048;
         const int bin = 256; // 256 * 48000 / 2048 = 6000 Hz
         double toneFrequency = (double)bin * SampleRate / length;
 
-        // Smoothing off, so the tone reads its band level directly; smoothing would
-        // (correctly) dilute a spike toward the surrounding silence.
+        // Smoothing would dilute a spike toward the surrounding silence.
         List<SignalPoint> bands = BandLevels(
             CreateSine(length, bin), length, smoothingOctaves: 0.0);
 
@@ -129,9 +109,7 @@ public sealed class LogarithmicPowerBandResampleTests
     [Fact]
     public void PowerBandLevel_WindowEnbwRemovesTheNoiseOverEstimate()
     {
-        // Under a Hann window the coherent-gain-normalized bin power over-states a
-        // noise band by the window ENBW (~1.5). Dividing by ENBW must bring the Hann
-        // band level back onto the rectangular one for the same noise.
+        // Hann over-states a noise band by ENBW (~1.5).
         float[] signal = WhiteNoise(4_096 * 120, seed: 4242);
 
         double rectangular = MeanBandLevel(BandLevels(signal, 4_096, WindowType.Rectangular));
@@ -145,10 +123,7 @@ public sealed class LogarithmicPowerBandResampleTests
     [Fact]
     public void PowerBandLevels_SmoothingDoesNotLiftTheLevel()
     {
-        // The bug: smoothing was the integration band width, so wider smoothing swept
-        // more power into each band and lifted the whole curve (up to ~20 dB on a quiet
-        // signal). With a fixed reference band and level-preserving averaging, the mid
-        // band level must stay put from Smoothing Off through the widest setting.
+        // Smoothing once set the integration width and lifted the curve up to ~20 dB.
         float[] signal = WhiteNoise(2_048 * 250, seed: 33_221);
 
         double off = MeanBandLevel(BandLevels(signal, 2_048, smoothingOctaves: 0.0));
@@ -162,11 +137,7 @@ public sealed class LogarithmicPowerBandResampleTests
     [Fact]
     public void PowerBandLevels_DoNotRollOffAtTheTopEdgeOnAFlatSpectrum()
     {
-        // At 32 kHz the 20 kHz request sits above Nyquist, so the grid clamps below it.
-        // For a perfectly flat spectrum the 1/6-octave band power rises monotonically
-        // with frequency (wider bands hold more power), so the last emitted band must be
-        // ABOVE the band an octave below it. A band straddling Nyquist would instead be
-        // half-empty and dip below it — the roll-off artifact.
+        // A band straddling Nyquist would be half-empty and dip.
         const int sampleRate = 32_000;
         const int fftLength = 2_048;
         var amplitude = new double[fftLength / 2];
@@ -193,11 +164,7 @@ public sealed class LogarithmicPowerBandResampleTests
     [Fact]
     public void PowerBandLevels_HaveNoAlignmentJumpBelowTheFftResolution()
     {
-        // With smoothing off, the 1024-point log grid is far finer than the FFT bins
-        // near 1 kHz. The old whole-bin-or-fraction rule made a band that caught a bin
-        // centre read ~5.4 dB above its neighbour that did not. Fractional-overlap
-        // integration plus the resolution floor must keep adjacent bands within a
-        // fraction of that, dominated only by the noise estimate's own scatter.
+        // The whole-bin rule made adjacent fine-grid bands differ by ~5.4 dB.
         float[] signal = WhiteNoise(2_048 * 300, seed: 71755);
         List<SignalPoint> bands = BandLevels(signal, 2_048, smoothingOctaves: 0.0);
 
@@ -218,9 +185,7 @@ public sealed class LogarithmicPowerBandResampleTests
     [Fact]
     public void PowerBandLevels_StopAtNyquist_AndDoNotFabricateAboveTheLastBin()
     {
-        // At a 32 kHz sample rate Nyquist is 16 kHz, but the plot still asks for 20 kHz.
-        // The grid must stop at the highest resolved bin instead of reusing it to
-        // invent a 16–20 kHz region.
+        // At 32 kHz the grid must stop at the highest resolved bin, not invent 16-20 kHz.
         const int sampleRate = 32_000;
         const int fftLength = 2_048;
         double nyquist = (fftLength / 2 - 1) * ((double)sampleRate / fftLength);
@@ -243,7 +208,6 @@ public sealed class LogarithmicPowerBandResampleTests
         Assert.All(bands, point => Assert.True(
             point.X <= nyquist + 1e-6,
             $"band at {point.X:0} Hz is above Nyquist {nyquist:0} Hz"));
-        // The grid should actually reach up toward Nyquist, not stop far short.
         Assert.True(bands[^1].X > nyquist * 0.9);
     }
 
@@ -257,10 +221,7 @@ public sealed class LogarithmicPowerBandResampleTests
         double smoothingOctaves,
         double frequencyHz)
     {
-        // The resolution floor is the window's main lobe, not its ENBW, so a full-scale
-        // tone keeps its whole main lobe and reads its calibrated 0 dBFS level even with
-        // narrow smoothing and a wide-lobe window — an ENBW floor left a bin-centred Hann
-        // tone ~1.25 dB low.
+        // The floor is the main lobe, not ENBW (an ENBW floor left a bin-centred Hann tone ~1.25 dB low).
         double peak = TonePeakLevel(frequencyHz, windowType, smoothingOctaves, fftLength: 2_048);
         Assert.InRange(peak, -1.0, 0.4);
     }
@@ -304,9 +265,7 @@ public sealed class LogarithmicPowerBandResampleTests
         return peak;
     }
 
-    // Mean over 1–5 kHz, where the fixed 1/12-octave reference band is wider than any
-    // window's main lobe, so every window integrates the same band (isolating the ENBW
-    // correction / smoothing under test from the low-frequency resolution limit).
+    // 1-5 kHz: the reference band exceeds every window's main lobe.
     private static double MeanBandLevel(List<SignalPoint> bands)
     {
         double sum = 0.0;
@@ -369,8 +328,6 @@ public sealed class LogarithmicPowerBandResampleTests
         return level;
     }
 
-    // Averages the mic auto-power over non-overlapping frames, matching the live
-    // analyzer's accumulation, so the amplitude spectrum is a stable noise estimate.
     private static double[] AccumulateTargetPower(float[] signal, int fftLength, WindowType windowType)
     {
         int frames = signal.Length / fftLength;
@@ -405,19 +362,13 @@ public sealed class LogarithmicPowerBandResampleTests
         double smoothingOctaves,
         bool psychoacoustic)
     {
-        // A consumer that stored the FINISHED band levels (a captured dB SPL RTA overlay,
-        // and through it the EQ Wizard) has no raw spectrum left, but smoothing is a second
-        // pass over the band powers rather than part of the integration. Replaying it over
-        // the stored levels must therefore land on exactly the curve the analyzer would
-        // have drawn at that width — not merely something similar, because that curve is
-        // what the EQ is fitted against. This is the guard against the two drifting apart.
+        // Re-smoothing stored band levels must reproduce the analyzer's curve exactly: the EQ is fitted against it.
         const int sampleRate = 48_000;
         const int fftLength = 4_096;
         var rng = new Random(11);
         var amplitude = new double[fftLength / 2];
         for (int i = 0; i < amplitude.Length; i++)
         {
-            // Scatter plus a couple of narrow peaks, where smoothing differences show up.
             amplitude[i] = 0.01 + (rng.NextDouble() * 0.02);
             if (i is 300 or 301 or 900)
             {
@@ -438,8 +389,6 @@ public sealed class LogarithmicPowerBandResampleTests
                 smoothingOctaves: octaves,
                 psychoacoustic: psycho);
 
-        // What the analyzer draws at this width, versus the unsmoothed levels a capture
-        // stores, re-smoothed afterwards to the same width.
         List<SignalPoint> drawn = Resample(smoothingOctaves, psychoacoustic);
         List<SignalPoint> replayed = DataHelper.SmoothBandLevels(
             Resample(0.0, false), smoothingOctaves, psychoacoustic);
@@ -468,8 +417,6 @@ public sealed class LogarithmicPowerBandResampleTests
         List<SignalPoint> smoothed = DataHelper.SmoothBandLevels(levels, 1.0 / 3.0, false);
 
         Assert.True(double.IsNaN(smoothed[100].Y));
-        // The gap contributes nothing, so its neighbours keep the surrounding level
-        // instead of being dragged toward a floor.
         Assert.Equal(80, smoothed[99].Y, 6);
         Assert.Equal(80, smoothed[101].Y, 6);
     }
@@ -479,11 +426,7 @@ public sealed class LogarithmicPowerBandResampleTests
     [InlineData(true)]
     public void SmoothRatioLevels_AveragesDecibelsWithoutTheMagnitudeBias(bool psychoacoustic)
     {
-        // A ratio curve is not a level: across a -6 dB step it must read the mean of
-        // DECIBELS, near the -3 dB middle. A power mean of the same window — the
-        // magnitude path — would read about -2.0 dB there, and the cubic peak
-        // weighting higher still. Gaps stay gaps and are excluded from their
-        // neighbours' means.
+        // A ratio curve averages decibels (~-3 dB at a -6 dB step); a power mean would read ~-2.0 dB.
         var ratio = new List<SignalPoint>();
         for (int i = 0; i < 400; i++)
         {
@@ -505,11 +448,7 @@ public sealed class LogarithmicPowerBandResampleTests
     [Fact]
     public void SmoothRatioLevels_KeepsThePsychoacousticBandwidth()
     {
-        // Dropping the cubic weighting must not drop the WIDTH schedule with it: the
-        // psychoacoustic mode is 1/3 octave below 100 Hz, narrowing to its 1/6-octave
-        // base by 1 kHz. A one-point notch therefore smooths away harder than a plain
-        // 1/6 octave does in the bass, and no harder than it in the treble — which is
-        // exactly what a caller that flattened the mode to a fixed 1/6 would lose.
+        // The psychoacoustic width schedule (1/3 oct below 100 Hz to 1/6 by 1 kHz) must survive dropping the cubic weighting.
         List<SignalPoint> WithNotchAt(double frequency)
         {
             var curve = new List<SignalPoint>();
@@ -539,14 +478,11 @@ public sealed class LogarithmicPowerBandResampleTests
         List<SignalPoint> bassNotch = WithNotchAt(50);
         List<SignalPoint> trebleNotch = WithNotchAt(4_000);
 
-        // 50 Hz: the psychoacoustic window is twice as wide, so the notch is spread
-        // thinner and reads shallower than under a fixed 1/6 octave.
         Assert.True(
             DepthAt(bassNotch, 50, psychoacoustic: true) >
             DepthAt(bassNotch, 50, psychoacoustic: false) + 0.3,
             "the psychoacoustic mode must smooth wider than 1/6 octave in the bass");
 
-        // 4 kHz: both are 1/6 octave wide, so the two agree within the kernel shape.
         Assert.Equal(
             DepthAt(trebleNotch, 4_000, psychoacoustic: false),
             DepthAt(trebleNotch, 4_000, psychoacoustic: true),

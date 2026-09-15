@@ -1,13 +1,7 @@
 using Resonalyze.Screenshots;
 
-// Re-takes the documentation's screenshots from the current build.
-//
-//   dotnet run --project tools/Resonalyze.Screenshots                 all of them
-//   dotnet run --project tools/Resonalyze.Screenshots -- fr gd        just those
-//   dotnet run --project tools/Resonalyze.Screenshots -- --list       what there is
-//
-// STA because the panels register drag-drop targets, which OLE refuses off one, and
-// because the whole run drives real windows.
+// Re-takes the documentation's screenshots: no args = all, names = those, --list = catalogue.
+// STA: drag-drop registration (OLE) and real windows require it.
 int exitCode = 0;
 var thread = new Thread(() => exitCode = Run(args));
 thread.SetApartmentState(ApartmentState.STA);
@@ -73,13 +67,7 @@ static int Run(string[] args)
 
     Application.EnableVisualStyles();
     Application.SetHighDpiMode(HighDpiMode.SystemAware);
-    // The whole point of this tool is that the figures are of the application the
-    // user runs, and text rendering is not a detail of that. Program.cs gets this
-    // from ApplicationConfiguration.Initialize(); without it every control here is
-    // built for GDI+ instead of GDI, which measures differently — a fixed-size
-    // AutoEllipsis label whose box is a pixel under its line height then draws
-    // NOTHING (StringFormatFlags.LineLimit), and the figure quietly loses a
-    // read-out the application shows. Must precede the first window.
+    // As in the app's ApplicationConfiguration: GDI+ text measures differently, and a tight AutoEllipsis label then draws nothing.
     Application.SetCompatibleTextRenderingDefault(false);
     Console.WriteLine($"Writing to {config.OutputRoot}");
 
@@ -87,13 +75,7 @@ static int Run(string[] args)
     foreach (Scene scene in scenes)
     {
         Console.WriteLine($"{scene.Name}:");
-        // Material this config does not have is not a failure in a SWEEP: the scene
-        // says what it is missing and the run goes on, so a rig that cannot take that
-        // figure still reports green for the ones it can. Asked for BY NAME it is a
-        // failure — a named shot that was never written must not exit 0, or a script
-        // that re-shoots one figure reports success having produced nothing. Every
-        // scene here was reached through a shot the user named, so the two cases are
-        // exactly whether anything was named at all.
+        // Missing material skips a scene in a sweep but fails a shot asked for by name, so a named re-shoot never exits 0 empty-handed.
         if (scene.Unavailable?.Invoke(config) is { } reason)
         {
             if (requested.Count > 0)
@@ -113,9 +95,7 @@ static int Run(string[] args)
         }
         catch (Exception exception)
         {
-            // One scene failing must not cost the others: a renamed control in the
-            // EQ Wizard should not also block re-shooting the analysis modes. The
-            // run still ends non-zero, so nothing reads a partial sweep as a success.
+            // One failing scene must not block the others; the run still exits non-zero.
             Console.Error.WriteLine($"  {scene.Name} FAILED: {Unwrap(exception).Message}");
             failed = true;
         }

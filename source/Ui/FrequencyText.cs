@@ -1,9 +1,6 @@
 namespace Resonalyze;
 
-/// <summary>
-/// The shared short frequency rendering for read-outs and previews:
-/// "820 Hz", "2.25 kHz".
-/// </summary>
+/// <summary>"820 Hz", "2.25 kHz".</summary>
 internal static class FrequencyText
 {
     public static string Format(double frequencyHz) =>

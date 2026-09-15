@@ -3,23 +3,10 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Shared FFT helpers for spectrum-based measurements.
-/// </summary>
 public static class SpectrumAnalysis
 {
 
-    /// <summary>
-    /// Computes the single-sided power spectrum of a Hann-windowed block.
-    /// The result is normalized by the window's coherent gain so the level of a
-    /// tone is independent of the analysis window (a rectangular window and a
-    /// Hann window report the same level). This is a tone-correct
-    /// (amplitude-calibrated) spectrum, not a power spectral density: broadband
-    /// noise reads about 1.76 dB high for Hann relative to an ENBW-normalized
-    /// estimate, because coherent-gain correction cannot calibrate tones and
-    /// noise power simultaneously. Averaging in the power domain still removes
-    /// the downward bias of magnitude averaging for noise-like signals.
-    /// </summary>
+    /// <summary>Hann single-sided power spectrum normalized by coherent gain: tone-correct, not a PSD (noise reads ~1.76 dB high).</summary>
     public static double[] ComputePowerSpectrum(
         IReadOnlyList<float> samples,
         WindowType windowType = WindowType.Hann)
@@ -42,11 +29,7 @@ public static class SpectrumAnalysis
 
         Fourier.Forward(spectrum, FourierOptions.Matlab);
 
-        // Tone calibration (dBFS): a full-scale bin-centred sine reads
-        // amplitude 1.0 for any FFT length and any window — |X_k| = N·CG/2,
-        // so the amplitude is 2|X_k|/(N·CG). Without the 2/N the level jumped
-        // 6 dB per FFT-size doubling. DC has no conjugate mirror, so it takes
-        // half the scale (a DC level of 1.0 also reads 1.0).
+        // 2|X_k|/(N·CG): a full-scale sine reads 1.0 at any FFT length or window; DC takes half the scale.
         double coherentGain = windowSum / length;
         double scale = coherentGain > 0.0
             ? 2.0 / (length * coherentGain)
@@ -61,21 +44,8 @@ public static class SpectrumAnalysis
         return power;
     }
 
-    /// <summary>
-    /// Converts an accumulated single-input auto-power spectrum — the windowed,
-    /// not-yet-gain-corrected |FFT|² produced as the target power by
-    /// <see cref="ComputeTransferSpectrumFrame"/> — into a tone-calibrated
-    /// magnitude spectrum. The result is normalized by the analysis window's
-    /// coherent gain, so a tone reads the same level regardless of window, the
-    /// same convention as <see cref="ComputePowerSpectrum"/>. This is the
-    /// reference-free RTA magnitude: it reflects the input level alone with no
-    /// division by any reference channel, so unlike the H1 transfer function it
-    /// carries neither coherence nor phase. <paramref name="frameLength"/> is the
-    /// pre-FFT block length the auto-power was measured with (twice the bin count
-    /// for a real signal); it is needed to recover the window's coherent gain.
-    /// By the identity sqrt(|FFT|²)·scale, the result equals the square root of
-    /// <see cref="ComputePowerSpectrum"/> of the same block bin-for-bin.
-    /// </summary>
+    /// <summary>Tone-calibrated reference-free RTA magnitude from accumulated |FFT|² (no coherence, no phase); equals sqrt of
+    /// <see cref="ComputePowerSpectrum"/> bin for bin. <paramref name="frameLength"/> recovers the window's coherent gain.</summary>
     public static double[] ComputeInputMagnitudeSpectrum(
         IReadOnlyList<double> autoPowerSpectrum,
         WindowType windowType,
@@ -96,12 +66,7 @@ public static class SpectrumAnalysis
 
         double coherentGain = windowSum / frameLength;
 
-        // Tone calibration (dBFS): a full-scale bin-centred sine has
-        // |X_k| = N·CG/2, so the amplitude is 2|X_k|/(N·CG) — INDEPENDENT of
-        // the FFT length. Without the 2/N the same input jumped 6 dB per
-        // FFT-size doubling, on the same axis as the length-invariant H1
-        // transfer gain. DC (no conjugate mirror) takes half the scale,
-        // matching ComputePowerSpectrum bin for bin.
+        // Same 2/(N·CG) scale as ComputePowerSpectrum: length-independent, DC takes half.
         double scale = coherentGain > 0.0
             ? 2.0 / (frameLength * coherentGain)
             : 2.0 / frameLength;
@@ -176,13 +141,7 @@ public static class SpectrumAnalysis
             targetPowerSpectrum);
     }
 
-    /// <summary>
-    /// The single-channel auto-power spectrum <c>|FFT(x·w)|²</c> of one captured
-    /// channel, one value per bin (0..N/2). This is exactly the target auto-power
-    /// <see cref="ComputeTransferSpectrumFrame"/> produces, but with a single FFT: a
-    /// reference-free RTA needs no cross-spectrum, reference power or coherence, so a
-    /// mic-only capture accumulates just this.
-    /// </summary>
+    /// <summary>Target auto-power of <see cref="ComputeTransferSpectrumFrame"/> with a single FFT, for mic-only captures.</summary>
     public static double[] ComputeAutoPowerSpectrumFrame(
         IReadOnlyList<float> samples,
         WindowType windowType = WindowType.Hann)
@@ -212,12 +171,7 @@ public static class SpectrumAnalysis
         return power;
     }
 
-    /// <summary>
-    /// Computes the magnitude-squared coherence γ² from averaged cross- and
-    /// auto-spectra: |&lt;Sxy&gt;|² / (&lt;Sxx&gt;·&lt;Syy&gt;). The inputs must
-    /// be accumulated over several frames; for a single frame coherence is
-    /// always unity. Values are clamped to [0, 1].
-    /// </summary>
+    /// <summary>|&lt;Sxy&gt;|² / (&lt;Sxx&gt;·&lt;Syy&gt;) over several frames (one frame is always unity), clamped to [0, 1].</summary>
     public static double[] ComputeCoherence(
         IReadOnlyList<Complex> crossSpectrum,
         IReadOnlyList<double> referencePowerSpectrum,
@@ -251,15 +205,7 @@ public static class SpectrumAnalysis
         return coherence;
     }
 
-    /// <summary>
-    /// Removes the small-sample positive bias of the raw γ² estimate, in place.
-    /// The MSC estimator over K averages has E[γ̂²] = 1/K for fully incoherent
-    /// signals — at K = 2 pure noise reads ~0.5, exactly at the thresholds the
-    /// unwrap and PHAT weighting trust — so raw values are rescaled by the
-    /// standard first-order correction (K·γ̂² − 1)/(K − 1), which maps the null
-    /// expectation to 0 and keeps 1 at 1. With one average (no estimate at all)
-    /// everything collapses to 0. Returns the same array for chaining.
-    /// </summary>
+    /// <summary>In place: (K·γ̂² − 1)/(K − 1), since E[γ̂²] = 1/K for noise (0.5 at K = 2, right at the PHAT/unwrap thresholds). K = 1 gives 0.</summary>
     public static double[] DebiasCoherence(double[] coherence, int averageCount)
     {
         ArgumentNullException.ThrowIfNull(coherence);

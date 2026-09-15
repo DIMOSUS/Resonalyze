@@ -12,15 +12,8 @@ namespace Resonalyze
         BottomUp
     }
 
-    /// <summary>
-    /// Plot-area overlay text. <c>TextPosition.X</c> is the 0..1 fraction across the
-    /// plot area; <c>TextPosition.Y</c> is the line slot counted from the flowing
-    /// edge (top for <see cref="TextFlowDirection.TopDown"/>, bottom for
-    /// <see cref="TextFlowDirection.BottomUp"/>). The FIRST line of the text sits in
-    /// that slot and a multi-line block grows with the flow — into the plot, never
-    /// past its edge. (The block used to be centred on the slot instead, which
-    /// pushed the first line of any multi-line note half out of the plot area.)
-    /// </summary>
+    /// <summary><c>TextPosition.X</c>: 0..1 across the plot area; <c>TextPosition.Y</c>: line slot from the flowing edge.
+    /// The first line sits in the slot and extra lines grow into the plot, never past its edge.</summary>
     public class OverlayTextAnnotation : TextualAnnotation
     {
         public bool IsPlotLabelOverlay { get; init; }
@@ -45,9 +38,6 @@ namespace Resonalyze
                 (1.0 - x) * axisRect.BottomLeft.X + x * axisRect.TopRight.X,
                 screenY);
 
-            // Anchor the block's flowing edge at the slot: a single line renders
-            // exactly where the old centre-on-slot math put it, while extra lines
-            // extend into the plot instead of being clipped by its border.
             this.GetActualTextAlignment(out var ha, out _);
             var va = TextFlowDirection == TextFlowDirection.TopDown
                 ? VerticalAlignment.Top

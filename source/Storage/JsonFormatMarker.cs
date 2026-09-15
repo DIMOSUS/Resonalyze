@@ -2,46 +2,16 @@ using System.Text.Json;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Reads the <c>format</c> marker a Resonalyze JSON document declares, out of the head
-/// of the file, without deserializing the rest of it.
-/// </summary>
-/// <remarks>
-/// Which document a file holds has to be answered before anything can open it, and the
-/// documents are nothing like the same size: a spatial-average capture is a few
-/// hundred kilobytes, an impulse response tens of megabytes. Deserializing one to read
-/// a string its first line already carries means reading and allocating all of it to
-/// answer "not yours" — which is what every load of an impulse response did on its way
-/// past the capture reader.
-/// <para>
-/// The scan is a token walk with the reader's state carried from chunk to chunk, so it
-/// knows as much as a full parse would about WHERE the marker is: only a property of
-/// the root object counts — a nested <c>format</c> belongs to a recipe or a channel,
-/// and naming a file after one of its parts is how a document gets opened as the thing
-/// inside it — and the walk ends with the root object. It also reads a document on
-/// exactly the terms the deserializers behind it do, in both directions: their options
-/// accept comments and trailing commas, so the probe does too — a file they would open
-/// must not be turned away at the door — and none of them ask for case-insensitive
-/// property names, so <c>format</c> matches and <c>Format</c> does not, here as there.
-/// </para>
-/// </remarks>
+/// <summary>Reads the root <c>format</c> marker from the file head without deserializing (IRs are tens of MB).</summary>
+/// <remarks>Token walk across chunks: only a root-object property counts (nested ones belong to parts). Same leniency as the
+/// deserializers (comments, trailing commas; case-sensitive names) so a file they open is not turned away.</remarks>
 internal static class JsonFormatMarker
 {
     private const string MarkerProperty = "format";
     private const string VersionProperty = "version";
 
-    /// <summary>
-    /// How much of the file is held at a time. Our own documents declare the marker
-    /// first, so the first read answers; a file that declares one later is walked
-    /// without ever holding more than this.
-    /// </summary>
     private const int ChunkBytes = 64 * 1024;
 
-    /// <summary>
-    /// The leniency every one of the document readers is configured with. A capture
-    /// carrying a comment before its marker is a capture they would open, so it must
-    /// not be declined here and sent on to another loader to be misreported.
-    /// </summary>
     private static readonly JsonReaderOptions ProbeOptions = new()
     {
         AllowTrailingCommas = true,
@@ -50,26 +20,10 @@ internal static class JsonFormatMarker
 
     private static ReadOnlySpan<byte> Utf8ByteOrderMark => [0xEF, 0xBB, 0xBF];
 
-    /// <summary>
-    /// The <c>format</c> of the root object in the file at <paramref name="path"/>, or
-    /// null when there is none to read.
-    /// </summary>
-    /// <remarks>
-    /// Null covers every way of not knowing — an unreadable file, one that is not
-    /// JSON, one whose root is not an object, one that declares no format — and they
-    /// are deliberately not told apart. A caller asks this to decide whether a file is
-    /// its own, and every one of those answers that question with "no"; the loader
-    /// that can say more never gets the file.
-    /// </remarks>
+    /// <remarks>Null covers every way of not knowing, deliberately not told apart: each means "not yours".</remarks>
     internal static string? Read(string path) => Read(path, wantVersion: false).Format;
 
-    /// <summary>
-    /// The <c>format</c> AND the <c>version</c> the root object declares, either being
-    /// null when there is none to read. For a loader's preflight: a file from a future
-    /// format version must be refused by its declared version before deserialization,
-    /// because past that point the reader trips over a representation it does not know
-    /// and reports a parse error where the version is the answer.
-    /// </summary>
+    /// <summary>For preflight: a future version must be refused before deserialization reports a misleading parse error.</summary>
     internal static (string? Format, int? Version) ReadWithVersion(string path) =>
         Read(path, wantVersion: true);
 
@@ -78,8 +32,7 @@ internal static class JsonFormatMarker
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         try
         {
-            // Shared read: the file may be one the application is itself writing, and
-            // asking what it is must not fail for holding a lock nobody asked for.
+            // Shared read: the application may be writing the file itself.
             using var stream = new FileStream(
                 path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
             return Scan(stream, wantVersion);
@@ -99,8 +52,7 @@ internal static class JsonFormatMarker
         var buffer = new byte[ChunkBytes];
         int filled = 0;
         bool rootSeen = false;
-        // Which marker's property name was just read, so its value can still be picked
-        // up when the two fall either side of a chunk boundary.
+        // Survives a property name and value falling either side of a chunk boundary.
         bool expectingFormat = false;
         bool expectingVersion = false;
         string? format = null;
@@ -117,8 +69,6 @@ internal static class JsonFormatMarker
             {
                 if (expectingFormat)
                 {
-                    // A format that is not a string declares nothing, and nothing that
-                    // asks for the version cares about it without the format.
                     format = reader.TokenType == JsonTokenType.String
                         ? reader.GetString()
                         : null;
@@ -149,7 +99,6 @@ internal static class JsonFormatMarker
 
                 if (!rootSeen)
                 {
-                    // A document whose root is not an object declares nothing.
                     if (reader.TokenType != JsonTokenType.StartObject)
                     {
                         return (null, null);
@@ -189,8 +138,7 @@ internal static class JsonFormatMarker
             filled -= consumed;
             if (filled == buffer.Length)
             {
-                // One token longer than the whole buffer, which no document of ours
-                // carries near its head. Nothing left to do but decline it.
+                // A token longer than the buffer; no document of ours has one near its head.
                 return (format, version);
             }
         }

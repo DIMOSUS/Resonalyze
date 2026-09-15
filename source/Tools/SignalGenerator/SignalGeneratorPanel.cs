@@ -31,9 +31,6 @@ public partial class SignalGeneratorPanel : UserControl
     public SignalGeneratorPanel()
     {
         InitializeComponent();
-        // Below its designed size the panel scrolls on native scrollbars; theme
-        // them dark so they match the app instead of showing the default light
-        // bar, the way the Virtual DSP panel already does.
         Ui.DarkScrollBars.Apply(this);
         InitializeOptions();
         UpdateSignalControls();
@@ -82,10 +79,7 @@ public partial class SignalGeneratorPanel : UserControl
             IAudioSessionFactory factory = AudioSessionFactory ??
                 throw new InvalidOperationException("Audio session factory is not connected.");
 
-            // A sine above Nyquist does not become ultrasound — it aliases to
-            // an arbitrary audible tone (96 kHz at a 44.1 kHz device plays as
-            // ~7.8 kHz, loud). Refuse instead of silently playing a different
-            // signal than the user asked for.
+            // Above Nyquist a sine aliases to an audible tone (96 kHz at 44.1 kHz plays ~7.8 kHz), so refuse.
             double nyquistLimit = settings.SampleRate * 0.49;
             if (SelectedSignalType == SignalGeneratorType.Sine &&
                 (double)numericFrequency.Value > nyquistLimit)
@@ -104,8 +98,7 @@ public partial class SignalGeneratorPanel : UserControl
                 SelectedSignalType,
                 (double)numericFrequency.Value,
                 (double)numericLevel.Value / 100.0);
-            // 10 ms ramps: an abrupt start/end is an audible click, unfriendly
-            // to tweeters at the levels this tool is used at.
+            // 10 ms ramps: an abrupt edge clicks, hard on tweeters at these levels.
             SignalFade.ApplyFadeInOut(monoSamples, settings.SampleRate / 100);
 
             var signal = new AudioPlaybackSignal(
@@ -142,7 +135,6 @@ public partial class SignalGeneratorPanel : UserControl
         }
         catch (OperationCanceledException)
         {
-            // A user stop cancels the wait; the stop path resets the UI.
             return;
         }
         catch (Exception exception)
@@ -201,7 +193,6 @@ public partial class SignalGeneratorPanel : UserControl
             }
             catch
             {
-                // Best-effort stop; teardown follows regardless.
             }
         }
         await DisposePlaybackAsync();
@@ -220,7 +211,6 @@ public partial class SignalGeneratorPanel : UserControl
             }
             catch
             {
-                // A device teardown failure must not surface as a UI error here.
             }
         }
         playbackCancellation?.Dispose();
@@ -229,8 +219,7 @@ public partial class SignalGeneratorPanel : UserControl
 
     private void TearDownPlayback()
     {
-        // The control is being disposed; cancel and release the session without
-        // blocking the UI thread on the async teardown.
+        // Disposing: cancel without blocking the UI thread on async teardown.
         playbackCancellation?.Cancel();
         IAudioPlaybackSession? session = playbackSession;
         playbackSession = null;

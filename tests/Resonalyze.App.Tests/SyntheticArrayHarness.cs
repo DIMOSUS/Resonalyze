@@ -9,23 +9,9 @@ using Xunit.Abstractions;
 namespace Resonalyze.App.Tests;
 
 /// <summary>
-/// Runs a folder of measurements carrying microphone arrays through the two tools
-/// that consume one — the Virtual DSP hybrid and the EQ Wizard — and reports what
-/// they make of it.
+/// Runs a folder of microphone-array measurements through the Virtual DSP hybrid and the EQ Wizard and reports.
+/// Skipped unless the folder is named; asserts only car-independent invariants, the numbers are for reading.
 /// </summary>
-/// <remarks>
-/// Skipped unless the folder is named, like the Auto delay battery: measurements do
-/// not live in the repository. It was written against the synthetic seven-driver
-/// set (each driver's array modelled on the owner's own v8 positions around his own
-/// moving-microphone curve), but nothing here knows that — point it at real arrays
-/// and it reports on those.
-/// <para>
-/// It REPORTS and asserts only the invariants that cannot be a property of one car:
-/// that every array resolves, that the hybrid draws, that a boost is never allowed
-/// where the positions disagree past the limit. The numbers themselves are evidence
-/// to read, not bounds to pin — the next cabin is a different car.
-/// </para>
-/// </remarks>
 public sealed class SyntheticArrayHarness(ITestOutputHelper output)
 {
     private const int PreviewSmoothing = 6;
@@ -59,9 +45,6 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
             }
             catch (InvalidDataException)
             {
-                // A folder of measurements is also where a Virtual DSP project ends
-                // up, and where a session autosave lands. Not something to fail on:
-                // the harness is pointed at a working directory, not at a curated one.
                 report.AppendLine($"  {name,-14} not a measurement — skipped");
                 continue;
             }
@@ -76,10 +59,7 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
             ResolvedVirtualDspSource? source = ResolvedVirtualDspSource.FromSnapshot(snapshot);
             Assert.NotNull(source);
 
-            // Every array in the folder has to survive the trip into the tool. A
-            // curve on a grid this build does not use, or a set nothing could be
-            // levelled onto, would come back null here and quietly disable the
-            // hybrid rather than fail.
+            // A curve on an unused grid would come back null and silently disable the hybrid.
             Assert.NotNull(source!.ArrayCapture);
             Assert.NotNull(source.ArraySpreadDb);
 
@@ -94,10 +74,7 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
             report.AppendLine(
                 $"  {name,-14} {source.ArrayCapture!.Recipe.MicrophoneCount} positions, " +
                 $"band {band.LowEdgeHz,7:0.0}-{(double.IsPositiveInfinity(band.HighEdgeHz) ? double.NaN : band.HighEdgeHz),8:0} Hz, " +
-                // "several" is not "none", and the document says only that no ONE
-                // curve describes it — which is what an array of individually
-                // calibrated capsules looks like, and the state a consumer must not
-                // read as uncalibrated.
+                // "several" = individually calibrated capsules; must not be read as uncalibrated.
                 $"calibration {DescribeCalibration(source.ArrayCapture)}");
         }
 
@@ -107,8 +84,6 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
         ReportWizard(loaded, report);
         output.WriteLine(report.ToString());
     }
-
-    // ------------------------------------------------------------- Virtual DSP
 
     private static void ReportHybrid(
         IReadOnlyList<VirtualCrossoverChannel> channels, StringBuilder report)
@@ -156,8 +131,6 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
         {
             IReadOnlyList<SignalPoint> curve = hybrid.Channels[i];
             int drawn = curve.Count(point => double.IsFinite(point.Y));
-            // Which bands went missing, not just how many: a gap in the middle is a
-            // different animal from an edge the measured band cut off.
             double[] blank = curve
                 .Where(point => !double.IsFinite(point.Y))
                 .Select(point => point.X)
@@ -174,14 +147,9 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
                 (hybrid.PointMeasuredChannels[i] ? "   (point measurement)" : string.Empty));
         }
 
-        // The whole reason the hybrid exists: every channel that HAS an array must be
-        // drawn from it. A channel silently falling back would put one point
-        // measurement's dips into a tune fitted to spatial averages.
         Assert.Equal(0, hybrid.PointMeasuredCount);
         Assert.All(hybrid.ChannelOffsetsDb, offset => Assert.NotNull(offset));
     }
-
-    // ---------------------------------------------------------------- EQ Wizard
 
     private static void ReportWizard(
         IReadOnlyList<(string Name, ImpulseResponseFile File)> loaded, StringBuilder report)
@@ -209,8 +177,6 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
                 point.X >= lowHz && point.X <= highHz && point.Y == 0.0);
             int inBand = agreement.Count(point => point.X >= lowHz && point.X <= highHz);
 
-            // A flat target across what the driver measured: the fit itself is not the
-            // subject, the gate's effect on it is.
             double level = measured.Select(point => point.Y).OrderBy(value => value)
                 .ElementAt(measured.Length / 2);
             SignalPoint[] target = source.Points
@@ -233,13 +199,10 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
                 $"boosts allowed: {boosts.Bands.Count,2} bands of which " +
                 $"{boosted,2} boost, preamp {boosts.PreampDb,5:0.0} dB");
 
-            // Cuts-only must never boost, whatever the curve looks like.
             Assert.All(cuts.Bands, band => Assert.True(
                 band.GainDb <= 0.0,
                 $"{name}: a cuts-only fit placed {band.GainDb:+0.0} dB at {band.FrequencyHz:0} Hz"));
 
-            // And a boost must never be CENTRED where the positions disagree past the
-            // limit — that is the whole job of the agreement curve.
             foreach (PeqBand band in boosts.Bands.Where(band => band.GainDb > 0.0))
             {
                 SignalPoint nearest = agreement
@@ -265,10 +228,6 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
             SampleRateHz = 96_000
         };
 
-    // ------------------------------------------------------------------ plumbing
-
-    // The panel with only what the hybrid builder reads: a project that says the
-    // spatial average is a microphone array, and the canonical magnitude gate.
     private static object ArrayPanel()
     {
         object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
@@ -312,10 +271,6 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
             as HybridMagnitudes;
 }
 
-/// <summary>
-/// Runs the array harness only when a folder of measurements carrying arrays is
-/// named, the way the Auto delay battery is gated.
-/// </summary>
 public sealed class ArrayHarnessFactAttribute : FactAttribute
 {
     public const string RootVariable = "RESONALYZE_ARRAY_SET";

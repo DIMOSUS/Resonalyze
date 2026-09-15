@@ -1,12 +1,6 @@
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The channel phase control against the bench that reverse-engineered it (issue
-/// #88, HELIX DSP ULTRA S, ~60 electrical sweeps). The numbers below are that
-/// session's fitted corners and the angles its ceiling delivers; they are literals
-/// here rather than a data file, because what has to stay true is the LAW, and the
-/// law is six numbers wide.
-/// </summary>
+/// <summary>Against the HELIX DSP ULTRA S bench (~60 electrical sweeps): fitted corners and delivered angles as literals.</summary>
 public sealed class PhaseRotationControlTests
 {
     private const double Rate96 = 96_000;
@@ -29,8 +23,7 @@ public sealed class PhaseRotationControlTests
             new PhaseRotationSpec(degrees, referenceHz), Rate96);
         Assert.NotNull(spec);
 
-        // The bench resolves the corner to about 0.2 %; anything inside that is the
-        // measurement's own spread rather than a disagreement with the model.
+        // The bench resolves the corner to ~0.2 %.
         Assert.Equal(
             measuredCornerHz,
             spec.FrequencyHz,
@@ -46,10 +39,7 @@ public sealed class PhaseRotationControlTests
     [InlineData(65)]
     public void Realize_At180Degrees_PutsTheCornerExactlyOnTheReference(double referenceHz)
     {
-        // The cleanest check the law offers: a second-order all-pass sits at exactly
-        // -180° at its own corner, so the 180° setting must place the corner ON the
-        // crossover — at any rate, since both sides of that identity are the same
-        // digital filter.
+        // A second-order all-pass is exactly -180° at its corner, so 180° places the corner on the crossover at any rate.
         foreach (double rate in new[] { Rate96, Rate48 })
         {
             AllPassSpec? spec = PhaseRotationControl.Realize(
@@ -62,10 +52,7 @@ public sealed class PhaseRotationControlTests
     [Fact]
     public void Realize_SolvesInTheDigitalDomain_SoTheCornerFollowsTheProcessorsRate()
     {
-        // The same 90° is a different filter on a 48 kHz device: the corner is placed
-        // by the digital phase, and the bilinear warping at 8 kHz is not the same at
-        // the two rates. A model that solved an analog prototype would return one
-        // number for both, and would be 1.4 % out at 96 kHz against the bench.
+        // The corner is placed by digital phase: an analog-prototype solve would be 1.4 % out at 96 kHz.
         double at96 = PhaseRotationControl
             .Realize(new PhaseRotationSpec(90, 5_000), Rate96)!.FrequencyHz;
         double at48 = PhaseRotationControl
@@ -76,10 +63,7 @@ public sealed class PhaseRotationControlTests
     }
 
     [Theory]
-    // reference, the smallest rotation still reachable, and how many of the 63
-    // settings collapse. The angles are this model's, computed at an exactly 18 kHz
-    // ceiling; the bench's own figures — fitted to its measured 18009 Hz — agree to
-    // a few hundredths (11.30, 17.12, 29.46, 51.04), and the counts agree exactly.
+    // Reference, smallest reachable rotation, collapsed settings of 63 at an 18 kHz ceiling (bench agrees within hundredths).
     [InlineData(500, 5.625, 0)]
     [InlineData(1_000, 5.625, 0)]
     [InlineData(2_000, 11.31, 2)]
@@ -91,10 +75,7 @@ public sealed class PhaseRotationControlTests
         double smallestRotationDeg,
         int settingsLost)
     {
-        // Measured three ways at two references: the corner will not go above about
-        // 18 kHz, so at a high crossover the first few positions of the control are
-        // one and the same filter and deliver an angle that is not even on the
-        // control's 5.625° grid. Below a 1 kHz reference nothing is capped.
+        // The corner cannot exceed ~18 kHz, so high crossovers collapse the first positions onto one off-grid filter.
         double delivered = PhaseRotationControl.DeliveredDegrees(
             new PhaseRotationSpec(PhaseRotationControl.StepDegrees, referenceHz), Rate96);
         Assert.Equal(smallestRotationDeg, delivered, 0.05);
@@ -116,8 +97,6 @@ public sealed class PhaseRotationControlTests
     [Fact]
     public void DeliveredDegrees_IsWhatWasAskedFor_WhereNothingIsCapped()
     {
-        // A subwoofer channel and any midrange crossed under a kilohertz keep the
-        // whole control, so the readout must agree with the dial to the last step.
         foreach (double reference in new[] { 65.0, 250.0, 500.0 })
         {
             for (int step = 1; step < PhaseRotationControl.StepCount; step++)
@@ -135,9 +114,7 @@ public sealed class PhaseRotationControlTests
     [Fact]
     public void Realize_LeavesTheMagnitudeAlone()
     {
-        // Measured flat to 0.016-0.028 dB rms across every setting. Here it is exact:
-        // the section is the library's own RBJ all-pass, whose numerator is its
-        // denominator reversed.
+        // Bench flat to 0.016-0.028 dB rms; exact here (RBJ all-pass).
         var rotation = new PhaseRotationSpec(270, 110);
         AllPassSpec? spec = PhaseRotationControl.Realize(rotation, Rate96);
         Assert.NotNull(spec);
@@ -154,8 +131,6 @@ public sealed class PhaseRotationControlTests
     public void ATransparentSetting_BuildsNothing()
     {
         Assert.Null(PhaseRotationControl.Realize(new PhaseRotationSpec(0, 5_000), Rate96));
-        // No crossover to state the angle against: the control has no reference and
-        // cannot mean anything, so it does not silently pick one.
         Assert.Null(PhaseRotationControl.Realize(new PhaseRotationSpec(90, 0), Rate96));
         Assert.Equal(
             0,
@@ -188,9 +163,7 @@ public sealed class PhaseRotationControlTests
     [Fact]
     public void AChain_CarriesTheRotation_AndThePreparedResponseAgreesWithIt()
     {
-        // The two ways a chain is evaluated — point by point for a plot, and as a
-        // prepared biquad cascade for the FFT path — have to realize the same filter,
-        // and the cascade is where a new stage is easiest to forget.
+        // The point-by-point and prepared-cascade paths must realize the same filter.
         var chain = new DspChannelChain(
             Crossover: CrossoverSpec.Off,
             PhaseRotation: new PhaseRotationSpec(90, 110));
@@ -204,7 +177,6 @@ public sealed class PhaseRotationControlTests
             Assert.Equal(direct.Imaginary, viaCascade.Imaginary, 9);
         }
 
-        // And it is a real rotation, not a no-op: 90° at the reference, as dialled.
         Assert.Equal(
             -90.0,
             chain.Response(110, Rate96).Phase * 180.0 / Math.PI,

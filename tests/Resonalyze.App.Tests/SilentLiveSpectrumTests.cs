@@ -14,8 +14,7 @@ public sealed class SilentLiveSpectrumTests
                 framesToRaise: 1,
                 failAfterFrames: false));
         using var measurement = new NoiseMeasurement(factory);
-        // A hand-off from an RTA session: the stored signal is still Silent while the
-        // selected mode is now Transfer, which needs a real excitation to reference.
+        // Hand-off from RTA: stored signal still Silent while Transfer mode needs a real excitation.
         var options = new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.TransferFunction,
@@ -51,10 +50,7 @@ public sealed class SilentLiveSpectrumTests
     [Fact]
     public void NormalizedSilentSignal_IsCapturedAsPeriodicPinkForPersistence()
     {
-        // The persistence follow-up: once the runtime signal is normalized away from
-        // Silent (Transfer mode selected), capturing the live options for the settings
-        // file must record the normalized value, so a stale Silent cannot return on
-        // next launch.
+        // The persisted options must record the normalized signal, or Silent returns on next launch.
         var options = new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.TransferFunction,
@@ -77,8 +73,6 @@ public sealed class SilentLiveSpectrumTests
                 framesToRaise: 20,
                 failAfterFrames: false));
         using var measurement = new NoiseMeasurement(factory);
-        // Silent lives in RTA mode only (the invariant NormalizeSignalType keeps), so
-        // the capture is configured the way the app would actually run it.
         var options = new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Rta,

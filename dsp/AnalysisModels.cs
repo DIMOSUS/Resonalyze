@@ -2,15 +2,8 @@
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Represents a numeric sample without coupling DSP code to a plotting framework.
-/// </summary>
 public readonly record struct SignalPoint(double X, double Y);
 
-/// <summary>
-/// Describes the semantic role of an analysis curve.
-/// Presentation layers may use this value to select colors and line styles.
-/// </summary>
 public enum AnalysisCurveKind
 {
     Primary,
@@ -20,41 +13,20 @@ public enum AnalysisCurveKind
     ThdPlusNoise,
     MinimumPhase,
     ExcessPhase,
-    // The measurement noise floor, shown as its own trace next to the distortion
-    // curves (REW-style) rather than fused into a single THD+N number.
     NoiseFloor,
-    // The reference-free input spectrum (RTA): the microphone's own spectrum, with
-    // no loopback reference behind it. Unlike a transfer function it carries an
-    // absolute level, which is what makes a moving-microphone RTA average usable as
-    // an equalization source.
+    // Reference-free RTA: carries absolute level, usable as an EQ source.
     InputSpectrum,
-    // The group-delay counterparts of MinimumPhase/ExcessPhase: the delay the
-    // gated magnitude alone implies (Bode relation), and the all-pass remainder
-    // measured − minimum that no minimum-phase equalizer can move. Appended at
-    // the end: the kind is persisted in overlay files.
+    // Kinds are persisted in overlay files: append only, never reorder.
     MinimumPhaseGroupDelay,
     ExcessGroupDelay,
-    // The impulse view's derived time traces: the analytic-signal envelope (ETC)
-    // and the running integral of the impulse (step response). Appended for the
-    // same reason as the pair above.
     ImpulseEnvelope,
     ImpulseStep,
-    // A measurement's spatial average and the microphones behind it, plus the
-    // spread between those microphones. Appended, like every kind before them:
-    // the kind is persisted in overlay files, so the numbers cannot move.
     ArrayAverage,
     ArrayMicrophone,
-    // A dB RANGE rather than a level, which is why it is drawn on an axis of its
-    // own and smoothed as a ratio.
+    // A dB range: own axis, smoothed as a ratio.
     ArraySpread
 }
 
-/// <summary>
-/// Selects which frequency-response curves <see cref="DataHelper.GetSpectrum"/>
-/// computes. The DSP layer takes this instead of reading presentation-layer
-/// visibility flags: callers translate their own "show" state (and any
-/// computational scoping) into this set.
-/// </summary>
 [System.Flags]
 public enum SpectrumCurves
 {
@@ -64,48 +36,24 @@ public enum SpectrumCurves
     ThirdHarmonic = 1 << 2,
     FourthHarmonic = 1 << 3,
     ThdPlusNoise = 1 << 4,
-    // The measurement noise floor, selectable on its own: it is not a harmonic,
-    // so it does not ride on the THD flag.
     NoiseFloor = 1 << 5,
     Harmonics = SecondHarmonic | ThirdHarmonic | FourthHarmonic | ThdPlusNoise,
-    // Everything derived from the sweep deconvolution — harmonics AND the noise
-    // floor. The ESS decomposition is computed when any of these is requested.
     Distortion = Harmonics | NoiseFloor,
     All = Primary | Distortion
 }
 
-/// <summary>
-/// Contains one named analysis curve produced by the DSP layer.
-/// </summary>
 public sealed record AnalysisCurve(
     string Name,
     IReadOnlyList<SignalPoint> Points,
     AnalysisCurveKind Kind = AnalysisCurveKind.Primary);
 
-/// <summary>
-/// The Group Delay mode's curve family, computed in one pass over one gate
-/// extraction: the measured group delay plus, when requested, the minimum-phase
-/// group delay implied by the gated magnitude alone and the excess
-/// (measured − minimum). The optional curves are null when the caller did not
-/// ask for the minimum-phase work. All present curves share one frequency grid
-/// and one validity gate: a bin is finite in every curve or NaN in every curve.
-/// </summary>
+/// <summary>All present curves share one grid and one validity gate (finite in all or NaN in all); optional curves null when not requested.</summary>
 public sealed record GroupDelayCurveSet(
     AnalysisCurve Measured,
     AnalysisCurve? Minimum,
     AnalysisCurve? Excess);
 
-/// <summary>
-/// One channel's gated analysis spectrum together with its time-weighted twin,
-/// both in ONE time reference: <see cref="Spectrum"/> is FFT(w·h) and
-/// <see cref="TimeWeighted"/> is FFT(t·w·h) with t the time from the
-/// extraction start, so Re[T·conj(H)] / |H|² reads the group delay as the
-/// energy-weighted arrival time inside the window. Callers that add channels
-/// before reading a group delay (the Virtual DSP Sum) add both members
-/// through <c>DataHelper.SumGatedSpectraPairs</c>, which carries the time
-/// weight across differing extraction starts; adding them bin by bin
-/// themselves would not.
-/// </summary>
+/// <summary>FFT(w·h) and FFT(t·w·h) in one time reference. Sum channels via <c>DataHelper.SumGatedSpectraPairs</c>, not bin by bin.</summary>
 public sealed record GroupDelaySpectra(
     Complex[] Spectrum,
     Complex[] TimeWeighted);

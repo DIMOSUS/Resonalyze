@@ -5,7 +5,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Integration.AgentBridge;
 
-/// <summary>What Copy for AI produced: the clipboard text, or one sentence why not.</summary>
 internal sealed record AgentPackageBuildResult(
     string? Text,
     int JsonBytes,
@@ -15,27 +14,15 @@ internal sealed record AgentPackageBuildResult(
     public bool Succeeded => Text != null;
 }
 
-/// <summary>
-/// Turns the panel's gathered inputs into the text that goes on the clipboard:
-/// the envelope with the inline rules, and inside it one compact JSON package.
-/// Pure — the same inputs, id and clock give the same bytes — and sized for a
-/// chat: over the ceiling it drops optional series in a fixed order and says
-/// which in <c>omitted</c>, so a large installation is trimmed the same way
-/// every time rather than differently per run.
-/// </summary>
+/// <summary>Builds the clipboard text: envelope, inline rules and one compact JSON package. Pure (same inputs, id and clock give the same bytes). See docs/tech/agent-bridge.md#package-size.</summary>
 internal static class AgentPackageBuilder
 {
     private const int MaxLobes = 5;
 
-    // Which optional series are in, in the order they go out. Each name is what
-    // `omitted` reports; the reader can tell what it is not seeing.
+    // Optional series in removal order; each name is what `omitted` reports.
     private static readonly string[] OmissionOrder =
     [
-        // First out: the direct loss's CURVE column. Its figures (sumLossDirect,
-        // totalSumLossDirect) are mandatory and stay; the column is the shape,
-        // which the full loss's column beside it already gives, and on the
-        // reference car it alone tipped a package over the target and cost it
-        // the sweep — a series worth far more to a reader.
+        // First out: the direct-loss curve column (its figures stay); the full loss column already gives the shape, and it alone cost the reference car its sweep.
         "junctions[].curves.lossDirectDb",
         "junctions[].sweep",
         "junctions[].coherenceLadder",
@@ -53,8 +40,7 @@ internal static class AgentPackageBuilder
         NumberHandling = JsonNumberHandling.Strict
     };
 
-    // The units and signs a reader has to know to use the numbers. Stated in the
-    // package itself because the guide may be out of reach.
+    // Stated in the package because the guide may be out of reach.
     private static readonly IReadOnlyDictionary<string, string> Conventions =
         new Dictionary<string, string>
         {
@@ -78,14 +64,7 @@ internal static class AgentPackageBuilder
             ["groups"] = "each zone against the front stage: delayMs = the zone's arrival minus the front's; levelDb = the zone's level minus the front's"
         };
 
-    /// <param name="targetBytes">
-    /// What the builder aims under: optional series go, in order, until the JSON
-    /// fits it. The size a chat with a modest context takes comfortably.
-    /// </param>
-    /// <param name="maxBytes">
-    /// The ceiling: once every optional series is gone, the mandatory payload may
-    /// grow up to here; beyond it nothing is copied.
-    /// </param>
+    /// <param name="maxBytes">Once every optional series is gone, the mandatory payload may grow to here; beyond it nothing is copied.</param>
     public static AgentPackageBuildResult Build(
         AgentPackageInputs inputs,
         Guid packageId,
@@ -98,10 +77,7 @@ internal static class AgentPackageBuilder
         var omitted = new List<string>();
         string json = string.Empty;
         int bytes = 0;
-        // Thinning before omission: every series stays, sampled less densely,
-        // for as long as a step of the ladder brings the package under the
-        // target. Only when the thinnest package is still over it do whole
-        // optional series go, in the fixed order, at that thinnest density.
+        // Thin every series down the ladder first; only when the thinnest package is still over target do whole optional series go.
         AgentSampling thinnest = AgentSampling.Ladder[^1];
         foreach (AgentSampling sampling in AgentSampling.Ladder)
         {
@@ -206,9 +182,7 @@ internal static class AgentPackageBuilder
             // The catalog knows no per-device PEQ count; saying so beats guessing.
             PeqBandsPerChannel: null);
 
-    // The ranges the import will hold a reply to. The crossover corner range and
-    // the preamp cap restate VirtualCrossoverChannelSettings.Validate, pinned by
-    // AgentPackageBuilderTests so the two cannot drift.
+    // Corner range and preamp cap restate VirtualCrossoverChannelSettings.Validate, pinned by AgentPackageBuilderTests.
     private static AgentPackageLimits BuildLimits() =>
         new(
             [AgentProposalValidator.MinimumGainDb, AgentProposalValidator.MaximumGainDb],
@@ -252,14 +226,7 @@ internal static class AgentPackageBuilder
             analysis.StereoLevelDifferenceDb,
             analysis.RearFillOffsetMs);
 
-    // One word for where the tune stands with spatial averages, counted over the
-    // channels the current view SHOWS — the sides' channel lists — since those
-    // are the channels the package's diagnostics are built from; a channel the
-    // view left out has its own curves but no hybrid ones, whatever it holds, and
-    // a muted one has no curves at all. "Drawn" is read off the hybrid curves
-    // actually present, not off the attachment: a capture the mode does not read,
-    // or a tick the view cannot honour, leaves the point measurement in charge,
-    // and that is what the assistant has to tell the user.
+    // Counted over the channels the view shows (the diagnostics' channels). "Drawn" is read off hybrid curves present, not attachments: an unread capture leaves the point measurement in charge.
     private static AgentPackageSpatialAverage BuildSpatialAverage(
         AgentAnalysisInputs analysis,
         IReadOnlyList<AgentChannelInputs> channels,
@@ -288,7 +255,6 @@ internal static class AgentPackageBuilder
             drawn);
     }
 
-    /// <summary>The target curve as a series on the broadband grid at the given density.</summary>
     internal static AgentSeries TargetSeries(AgentTargetInputs target, AgentSampling sampling)
     {
         TargetCurveSpec spec = target.Spec;
@@ -390,10 +356,7 @@ internal static class AgentPackageBuilder
             design.SampleRateHz,
             Math.Round(design.LatencyMs, 2));
 
-    // One row per grid point: the acoustic columns from the screen's curves, the
-    // chain columns from the filters alone (built at the PROCESSOR's rate, as the
-    // simulation builds them). A column the channel has nothing for is left out
-    // of the series rather than filled with nulls.
+    // Chain columns come from the filters alone at the PROCESSOR's rate; a column the channel lacks is left out, not nulled.
     internal static AgentPackageChannelCurves? BuildChannelCurves(
         AgentChannelInputs channel, bool keepCoherence, AgentSampling sampling)
     {
@@ -459,7 +422,6 @@ internal static class AgentPackageBuilder
     private static double Decibels(PreparedDspResponse response, double frequencyHz) =>
         DataHelper.AmplitudeToDecibels(response.Response(frequencyHz).Magnitude);
 
-    /// <summary>A side's coherent sum as a series on the broadband grid at the given density.</summary>
     internal static AgentSeries? SumSeries(AgentSideInputs side, AgentSampling sampling)
     {
         if (side.Sum == null)
@@ -485,17 +447,14 @@ internal static class AgentPackageBuilder
         AgentSideInputs side, AgentPackageInputs inputs, AgentSampling sampling)
     {
         string sideName = AgentChannelIds.SideName(side.Side);
-        // The ids the capture says went into this side's sum — not every channel
-        // with curves, since channels outside the view get curves of their own.
+        // Only the channels that went into this side's sum.
         List<string> channels = side.ChannelIds.ToList();
 
         AgentSeries? sum = SumSeries(side, sampling);
         double? sumVsTarget = null;
         if (side.Sum != null)
         {
-            // The datum is a FIGURE, read on the nominal grid whatever density the
-            // rows went out at: thinning changes what the rows show, never what
-            // the numbers say.
+            // A figure is read on the nominal grid whatever density the rows went out at.
             sumVsTarget = MedianAboveTarget(
                 side.Sum,
                 AgentCurveSampling.LogGrid(
@@ -535,15 +494,10 @@ internal static class AgentPackageBuilder
                     : null));
     }
 
-    /// <summary>The id a junction carries in the package: side, lower and upper block.</summary>
     internal static string JunctionId(AgentSideInputs side, AgentJunctionInputs junction) =>
         $"{AgentChannelIds.SideName(side.Side)}:{junction.LowerBlock}-{junction.UpperBlock}";
 
-    /// <summary>
-    /// The junction's frequency table — both channels, the sum, the full loss
-    /// and (when asked and available) the direct loss — on the dense grid around
-    /// its corner at the given density. Null where neither channel has a curve.
-    /// </summary>
+    /// <summary>The junction's frequency table on the dense grid around its corner; null where neither channel has a curve.</summary>
     internal static AgentSeries? JunctionCurves(
         AgentSideInputs side, AgentJunctionInputs junction, AgentSampling sampling, bool withDirectLoss)
     {
@@ -555,10 +509,7 @@ internal static class AgentPackageBuilder
         List<double> grid = AgentCurveSampling.JunctionGrid(
             junction.CrossoverHz, AgentCurveSampling.BroadbandLowHz, AgentCurveSampling.BroadbandHighHz,
             sampling.JunctionPointsPerOctave);
-        // The direct loss rides as one more column — a few dozen numbers per
-        // junction — only where the read exists, so a reader never meets a
-        // column of nulls standing for "no such read", and only while the
-        // size target allows it (it is the first optional series to go).
+        // Only where the read exists (no column of nulls) and while the size target allows.
         bool withDirect = side.DirectLoss != null && withDirectLoss;
         List<string> columns = ["frequencyHz", "lowerDb", "upperDb", "sumDb", "lossDb"];
         if (withDirect)
@@ -585,7 +536,6 @@ internal static class AgentPackageBuilder
             }).ToList());
     }
 
-    /// <summary>The coherence ladder as a series; null where the junction has none.</summary>
     internal static AgentSeries? LadderSeries(AgentJunctionInputs junction) =>
         junction.Coherence == null
             ? null
@@ -697,10 +647,9 @@ internal static class AgentPackageBuilder
             Round2(result.FitDelayMs),
             Round1(result.FitRmsDeg));
 
-    /// <summary>The junction's delay-search surface, both polarities, at most <paramref name="maxRows"/> rows.</summary>
     internal static AgentSeries Sweep(JunctionCorrelationView view, int maxRows)
     {
-        // The two polarities are swept on one delay grid, so one row holds both.
+        // Both polarities share one delay grid, so one row holds both.
         List<SignalPoint> normal = AgentCurveSampling.Thin(view.ScoreNormal, maxRows);
         List<SignalPoint> inverted = AgentCurveSampling.Thin(view.ScoreInverted, maxRows);
         var rows = new List<double?[]>(normal.Count);
@@ -716,7 +665,6 @@ internal static class AgentPackageBuilder
         return new AgentSeries(["extraDelayMs", "scoreNormalDb", "scoreInvertedDb"], rows);
     }
 
-    /// <summary>The whitened correlation of the pair — whole capture and direct sound — at most <paramref name="maxRows"/> rows.</summary>
     internal static AgentSeries CorrelationCurve(JunctionCorrelationView view, int maxRows)
     {
         List<SignalPoint> full = AgentCurveSampling.Thin(view.Whitened, maxRows);
@@ -787,8 +735,7 @@ internal static class AgentPackageBuilder
             [AgentCurveSampling.Frequency(delta.LowHz), AgentCurveSampling.Frequency(delta.HighHz)],
             delta.LevelFromSpatialAverage);
 
-    // A junction on a side names the channel that side holds for the block: a
-    // mono block sits on both sides under its one id.
+    // A mono block sits on both sides under its one id.
     private static string ChannelIdOn(AgentPackageInputs inputs, string block, AgentChannelSide side)
     {
         AgentChannelInputs? channel = inputs.Channels.FirstOrDefault(candidate =>
@@ -801,8 +748,7 @@ internal static class AgentPackageBuilder
 
     private static double Round1(double value) => Math.Round(value, 1);
 
-    // The median, not the mean: a junction dip or the sub's roll-off is
-    // interference or a band edge, not a level, and must not pull the datum.
+    // Median, not mean: a junction dip or the sub's roll-off must not pull the datum.
     private static double? MedianAboveTarget(
         IReadOnlyList<SignalPoint> curve,
         IReadOnlyList<double> grid,

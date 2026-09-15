@@ -4,24 +4,11 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// What a Virtual DSP handoff is corrected through once it reaches the wizard. Two
-/// corrections travel with a channel and only one of them is a curve: the impulse
-/// response's, and the MODE the panel read the spatial average through. The wizard
-/// has to reproduce both — a channel it draws through a different correction than the
-/// panel did is the one thing the handoff exists to prevent.
-/// </summary>
 public sealed class EqWizardHandoffCalibrationTests
 {
     private const int SampleRate = 48_000;
 
-    /// <summary>
-    /// The field case: an impulse response measured before calibrations were stamped
-    /// into files, with a moving-microphone capture beside it taken through the
-    /// microphone's own 90° curve, and the panel on "Own (as measured)". The measured
-    /// correction reaches 2.4 dB across the tweeter's band, so reading the capture
-    /// uncalibrated is a different curve and a different tune.
-    /// </summary>
+    /// <summary>Field case: an unstamped IR beside a capture taken through a 90° curve (up to 2.4 dB across the tweeter band).</summary>
     [Fact]
     public void ACaptureKeepsItsOwnCorrectionWhenTheMeasurementNamesNoFile()
     {
@@ -35,9 +22,6 @@ public sealed class EqWizardHandoffCalibrationTests
         Assert.Equal(
             SpatialAverageCalibration.Own,
             ResolvedSpatialAverageCalibration(panel, source));
-        // And the disabled selector says so, in the panel's own words: the correction
-        // is whatever that capture was recorded through, which no entry in the
-        // wizard's list need name.
         Assert.Contains("Own (as measured)", CalibrationOptionNames(panel));
     }
 
@@ -66,8 +50,6 @@ public sealed class EqWizardHandoffCalibrationTests
 
         ApplySource(panel, source);
 
-        // Nothing is invented in the other direction either: the panel applied no
-        // correction, and Off is what reproduces that exactly.
         Assert.Equal(
             SpatialAverageCalibration.Off,
             ResolvedSpatialAverageCalibration(panel, source));
@@ -148,7 +130,6 @@ public sealed class EqWizardHandoffCalibrationTests
                 BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(panel, [])!)
         .Cast<object>()
-        // The option renders itself into the combo through ToString.
         .Select(option => option.ToString()!)
         .ToList();
 }

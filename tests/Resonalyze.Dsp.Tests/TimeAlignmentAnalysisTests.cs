@@ -7,8 +7,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_FlagsALaterStrongestPeakAsASeparateArrival()
     {
-        // A weak direct arrival followed by a much stronger, much later peak — the
-        // narrowband-subwoofer trap where the strongest peak is a room mode.
+        // Narrowband-sub trap: the strongest peak is a room mode, not the direct arrival.
         var impulseResponse = new double[8_192];
         impulseResponse[100] = 0.3;
         impulseResponse[500] = 1.0;
@@ -17,15 +16,10 @@ public sealed class TimeAlignmentAnalysisTests
             impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
 
         Assert.True(result.StrongestPeakIsSeparateArrival);
-        // (500 - 100) samples at 48 kHz ≈ 8.33 ms.
         Assert.InRange(result.StrongestPeakSeparationMilliseconds, 8.0, 8.7);
     }
 
-    // A COMPLETE record whose length is not a power of two. Its transforms run
-    // at that length — circular is exact for it — but the whitened correlation
-    // pads to the next power of two, a grid the record's own spectrum is not
-    // on, so the read reconstructs the band-limited signal for it instead of
-    // sharing that spectrum. Both routes have to place the same arrival.
+    // Non-power-of-two length: transforms run circular at that length, the whitened correlation pads; both must agree.
     [Fact]
     public void Analyze_PlacesTheSameArrivalWhenTheLengthIsNotAPowerOfTwo()
     {
@@ -49,9 +43,7 @@ public sealed class TimeAlignmentAnalysisTests
 
         Assert.True(power.IsValid);
         Assert.True(notPower.IsValid);
-        // Not bit for bit: the two lengths put the zero-phase mask on different
-        // bin grids, which is worth about a twentieth of a microsecond here —
-        // a four-hundredth of a sample at this rate.
+        // Not bit for bit: different bin grids, ~1/400 of a sample.
         Assert.Equal(
             power.FirstArrivalDelayMilliseconds,
             notPower.FirstArrivalDelayMilliseconds,
@@ -80,8 +72,6 @@ public sealed class TimeAlignmentAnalysisTests
         TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
             impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
 
-        // The strongest peak (the analytic-envelope main lobe) lands on the arrival:
-        // 300 samples at 48 kHz = 6.25 ms. The refined sample and its ms twin agree.
         Assert.Equal(300, result.StrongestEnvelopePeakIndex);
         Assert.InRange(result.StrongestPeakSample, 299.5, 300.5);
         Assert.InRange(result.StrongestDelayMilliseconds, 6.24, 6.26);
@@ -89,7 +79,6 @@ public sealed class TimeAlignmentAnalysisTests
             result.StrongestPeakSample * 1000.0 / SampleRate,
             result.StrongestDelayMilliseconds,
             precision: 9);
-        // The first arrival is at or before the strongest, never after it.
         Assert.True(result.FirstArrivalPeakSample <= result.StrongestPeakSample + 0.5);
     }
 
@@ -103,13 +92,9 @@ public sealed class TimeAlignmentAnalysisTests
         TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
             impulseResponse, SampleRate, new TimeAlignmentAnalysisOptions());
 
-        // The strongest peak main lobe sits on the 1.0 arrival (500 samples, 10.417 ms).
         Assert.Equal(500, result.StrongestEnvelopePeakIndex);
         Assert.InRange(result.StrongestPeakSample, 499.0, 501.0);
         Assert.InRange(result.StrongestDelayMilliseconds, 10.38, 10.44);
-        // The first arrival is detected near the weak 100-sample pulse — hundreds of
-        // samples earlier than the strongest, i.e. the module did not collapse both
-        // onto the dominant peak.
         Assert.InRange(result.FirstArrivalPeakSample, 90.0, 110.0);
         Assert.True(result.StrongestPeakSample - result.FirstArrivalPeakSample > 300.0);
     }
@@ -117,11 +102,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_FindsAnArrivalParkedBeyondTheSearchWindowByChainLatency()
     {
-        // Field case (3RC): a DSP/amplifier chain buffers the playback for
-        // ~160 ms, so the whole transfer IR sits beyond the 80 ms peak-search
-        // window and the start-anchored search used to report a confident
-        // zero (the strongest thing it could reach was the buffer-seam
-        // residue at sample 0).
+        // 3RC field case: ~160 ms chain buffering, beyond the 80 ms start-anchored search.
         var impulseResponse = new double[131_072];
         impulseResponse[7_680] = 1.0; // 160 ms at 48 kHz
 
@@ -138,10 +119,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_ReportsALeadingArrivalBeyondTheWindowAsANegativeDelay()
     {
-        // An IR whose energy leads the reference wraps to the buffer's far
-        // end — unreachable for the start-anchored window; the re-anchored
-        // search finds it there and the wrap maps it to the negative delay
-        // it is.
+        // Energy leading the reference wraps to the buffer end; the wrap maps it to a negative delay.
         var impulseResponse = new double[131_072];
         impulseResponse[131_072 - 480] = 1.0; // -10 ms at 48 kHz
 
@@ -156,12 +134,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_FindsADirectArrivalAFullWindowAheadOfTheStrongestPeak()
     {
-        // The review counter-example for the re-anchored window's placement:
-        // a weak direct arrival 55 ms ahead of a stronger room mode, with
-        // the start-anchored window empty (chain latency). Centring the
-        // window on the mode would leave only 40 ms of pre-history and lose
-        // the direct sound; anchored at the window's far edge, almost the
-        // full 80 ms ahead of the mode stays searchable.
+        // Window anchored at its far edge, not centred on the mode: centring would leave only 40 ms of pre-history.
         var impulseResponse = new double[131_072];
         impulseResponse[7_680] = 0.3;  // direct arrival, 160 ms at 48 kHz
         impulseResponse[10_320] = 1.0; // stronger room mode, 215 ms
@@ -178,10 +151,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_KeepsTheTwoPeakTrapGeometryUnderChainLatency()
     {
-        // The weak-direct/strong-mode pair of the classic trap, shifted whole
-        // by a 160 ms chain latency: the separation and the separate-arrival
-        // flag must read exactly as they do at the buffer start, measured in
-        // the re-anchored window's frame.
+        // The classic trap shifted by 160 ms latency must read identically in the re-anchored frame.
         var impulseResponse = new double[131_072];
         impulseResponse[7_680] = 0.3; // weak direct arrival
         impulseResponse[8_080] = 1.0; // strong late arrival (room mode)
@@ -198,11 +168,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_WrapPeakPositionsLeavesASubHalfArrivalUnchanged()
     {
-        // The peak search is capped at length/2, so a real arrival always lands in
-        // the lower half of the buffer and ToSignedDelaySamples' pivot (length*0.5)
-        // must leave it untouched. A flipped comparison would wrap this normal
-        // arrival to a large negative delay; running with and without the flag and
-        // requiring identical output pins the pivot and its direction.
+        // Pins ToSignedDelaySamples' pivot direction: a flipped comparison would wrap a normal arrival negative.
         var impulseResponse = new double[8_192];
         impulseResponse[300] = 1.0;
 
@@ -219,8 +185,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_DoesNotFlagACloseSecondPeakBelowTheThreshold()
     {
-        // Two peaks only ~0.4 ms apart: too close to matter for alignment, so no
-        // warning even though the strongest is technically a different index.
+        // ~0.4 ms apart: too close to matter, so no warning.
         var impulseResponse = new double[8_192];
         impulseResponse[300] = 0.6;
         impulseResponse[320] = 1.0;
@@ -234,12 +199,6 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_ReportsHighConfidenceAndPhatRefinementForTheStrongestArrival()
     {
-        // A flat-spectrum delta whitens to a sharp GCC-PHAT peak at its arrival, which
-        // coincides with the strongest envelope peak, so that arrival refines by PHAT
-        // with a strong, in-range confidence — the number the UI shows to say "trust
-        // this alignment". Sidelobe rejection puts the first arrival on the same
-        // sample (the Hilbert skirt's own bumps are mirror-symmetric and read as
-        // pre-ringing), so it refines by PHAT just as well.
         var impulseResponse = new double[8_192];
         impulseResponse[300] = 1.0;
 
@@ -257,10 +216,6 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_CleanImpulseHasZeroProminenceGapAndHighSnr()
     {
-        // A clean single arrival: the first arrival IS the strongest peak, so
-        // the prominence gap is exactly 0 dB, and the signal grade reflects the
-        // recording's SNR (peak vs the Hilbert-skirt-plus-silence remainder) —
-        // the two figures a single folded "quality" number used to conflate.
         var impulseResponse = new double[8_192];
         impulseResponse[300] = 1.0;
 
@@ -276,11 +231,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_FirstArrivalDoesNotSitOnTheHilbertSkirtOfACleanImpulse()
     {
-        // The discrete Hilbert envelope of a delta has a 1/t skirt whose odd-offset
-        // bumps are local maxima; the first one above the -25 dB threshold sits
-        // ~11 samples early and used to be reported as the first arrival on every
-        // clean, high-SNR measurement. The skirt is mirror-symmetric, so sidelobe
-        // rejection must put the first arrival on the true peak.
+        // A delta's Hilbert envelope has a 1/t skirt whose bumps sit ~11 samples early; sidelobe rejection must skip them.
         var impulseResponse = new double[8_192];
         impulseResponse[300] = 1.0;
 
@@ -294,11 +245,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_BandpassPreRingingDoesNotPullTheFirstArrivalEarly()
     {
-        // The zero-phase bandpass window rings symmetrically around the arrival;
-        // at 1 kHz / 1 octave its -24 dB pre-lobe clears the -25 dB threshold
-        // ~2.1 ms before the true peak and used to be reported as the first
-        // arrival — a ~72 cm alignment error on a clean measurement. The mirror
-        // test must reject the whole pre-ring train.
+        // The zero-phase bandpass pre-lobe (-24 dB, ~2.1 ms early) clears the -25 dB threshold: reject the pre-ring train.
         var impulseResponse = new double[32_768];
         impulseResponse[300] = 1.0;
 
@@ -318,13 +265,8 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_ReverberantBassKeepsTheGenuineDirectArrival()
     {
-        // Field regression from the crossover Auto delay: a midbass direct sound
-        // ~9 dB below a reverberant reflection cluster, analyzed in a narrow low
-        // band (88-350 Hz, gentle fades, 15 dB threshold). In a room the
-        // mirrored position after the cluster is always energized, so a
-        // mirror-symmetry test alone read the direct sound as pre-ringing and
-        // shifted the first arrival ~8 ms late. The kernel-level ceiling must
-        // keep it: at 7.6 ms distance the analysis window cannot ring at -9 dB.
+        // Direct sound ~9 dB under a reflection cluster whose mirror position is energized:
+        // the kernel-level ceiling keeps it (at 7.6 ms the window cannot ring at -9 dB).
         var impulseResponse = new double[65_536];
         void Add(double ms, double amplitude) =>
             impulseResponse[(int)Math.Round(ms * SampleRate / 1000.0)] += amplitude;
@@ -358,10 +300,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_AGenuineWeakEarlyArrivalSurvivesSidelobeRejection()
     {
-        // A -10 dB direct arrival 5 ms before a strong reflection, analyzed in
-        // the same band that rings: the early arrival has no mirror counterpart
-        // in the reflection's tail, so it must be kept as the first arrival while
-        // its own pre-ring (and the reflection's) is still rejected.
+        // The early arrival has no mirror counterpart, so it is kept while pre-rings are rejected.
         var impulseResponse = new double[32_768];
         impulseResponse[300] = 0.316;
         impulseResponse[540] = 1.0;
@@ -382,10 +321,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_ZeroSignalReportsAnInvalidResult()
     {
-        // A silent IR (or a bandpass entirely outside the measured band): every
-        // zero sample used to pass the collapsed thresholds and the sidelobe
-        // walk returned a confident-looking delay near the end of the search
-        // window. The result must say "no signal", not invent an alignment.
+        // Silent IR: report no signal, not a delay near the window end.
         var impulseResponse = new double[8_192];
 
         TimeAlignmentAnalysisResult result = TimeAlignmentAnalysis.Analyze(
@@ -403,8 +339,7 @@ public sealed class TimeAlignmentAnalysisTests
     [InlineData(3)]
     public void Analyze_TinyImpulseResponsesDoNotThrow(int length)
     {
-        // The search-end floor of 3 (needed by the parabolic refinement) used
-        // to run the peak scan past the end of a 1-2 sample envelope.
+        // The search-end floor of 3 (parabolic refinement) once ran past a 1-2 sample envelope.
         var impulseResponse = new double[length];
         impulseResponse[0] = 1.0;
 
@@ -417,12 +352,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_ABroadLowFrequencyRiseIsNotASeparateArrival()
     {
-        // Two impulses 1.5 ms apart under a 200 Hz octave bandpass merge into
-        // one wave packet: the first local maximum sits ~3 ms before the
-        // strongest, but the envelope never dips between them (valley −0.2 dB).
-        // The separation alone used to call this "a room mode or reflection" —
-        // a band-limited driver's own rise time, misread. The valley test must
-        // keep the flag down while the separation still exceeds the threshold.
+        // 1.5 ms apart under a 200 Hz octave band: one packet (valley −0.2 dB), so no separate-arrival flag.
         var impulseResponse = new double[65_536];
         impulseResponse[4_000] = 0.9;
         impulseResponse[4_072] = 1.0;
@@ -444,9 +374,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_TwoArrivalsWithARealValleyStayFlagged()
     {
-        // The same band, but the impulses sit far enough apart (2.5 ms) that
-        // the envelope dips ~22 dB between them — a genuine second arrival the
-        // valley test must not suppress.
+        // 2.5 ms apart the envelope dips ~22 dB: a genuine second arrival.
         var impulseResponse = new double[65_536];
         impulseResponse[4_000] = 0.75;
         impulseResponse[4_120] = 1.0;
@@ -464,8 +392,6 @@ public sealed class TimeAlignmentAnalysisTests
         Assert.True(result.StrongestPeakIsSeparateArrival);
     }
 
-    // A Hann-windowed tone burst: band-limited content whose envelope peaks
-    // mid-burst, the building block of the honesty-probe scenarios below.
     private static void AddToneBurst(
         double[] impulseResponse,
         double startMs,
@@ -508,8 +434,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void ProbeArrivalHonesty_PassBandTooNarrowForAnUpperHalf_ReturnsNull()
     {
-        // Upper half spans passOctaves/2; MinimumArrivalBandRatio is 1/3
-        // octave, so anything under 2/3 octave of pass band cannot be probed.
+        // MinimumArrivalBandRatio is 1/3 octave, so under 2/3 octave of pass band cannot be probed.
         var impulseResponse = new double[8_192];
         impulseResponse[300] = 1.0;
         var options = new TimeAlignmentAnalysisOptions
@@ -530,8 +455,6 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void ProbeArrivalHonesty_CleanImpulse_VerifiesTheArrival()
     {
-        // A broadband impulse arrives at the same instant in every sub-band,
-        // so the upper-half re-read agrees and certifies the full-band figure.
         var impulseResponse = new double[32_768];
         impulseResponse[300] = 1.0;
 
@@ -544,8 +467,6 @@ public sealed class TimeAlignmentAnalysisTests
         Assert.Equal(
             AutoAlignmentEngine.ArrivalCertificate.Verified,
             probe.Value.Certificate);
-        // The probe band is the upper half of the 707-1414 Hz pass band:
-        // [center, f3].
         Assert.Equal(1000.0, probe.Value.ProbeLowHz, precision: 6);
         Assert.InRange(probe.Value.ProbeHighHz, 1414.0, 1414.5);
         Assert.InRange(
@@ -559,11 +480,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void ProbeArrivalHonesty_LateFullBandArrival_FlagsTheModalLatch()
     {
-        // The under-seat-midbass shape: the band's upper half carries a weak
-        // early direct front (-30 dB, below the full-band -25 dB first-peak
-        // threshold), while the band's lower edge carries the loud late
-        // build-up. The full band confidently times the late feature; only
-        // the upper-half re-read exposes that it is not the direct sound.
+        // Weak early front in the upper half (-30 dB, under the -25 dB threshold) and a loud late build-up at the lower edge.
         var impulseResponse = new double[32_768];
         AddToneBurst(impulseResponse, startMs: 5.0, frequencyHz: 1200, periods: 5, amplitude: 0.0316);
         AddToneBurst(impulseResponse, startMs: 12.0, frequencyHz: 800, periods: 20, amplitude: 1.0);
@@ -588,13 +505,7 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void ProbeArrivalHonesty_NoiseFloorUpperHalf_ReturnsUnverified()
     {
-        // All the signal sits below the probe band (a long 600 Hz burst
-        // against a 1000 Hz probe floor) over a -50 dB noise floor: the full
-        // band measures fine, but the upper half holds only noise (a pure
-        // digital-silence "upper half" is impossible in a synthetic — window
-        // leakage of the burst's edges reads as an early transient — the
-        // noise floor is what buries it, exactly as in a real record) and
-        // cannot certify either way: usable, no certificate.
+        // Signal below the probe band over a -50 dB floor: usable, no certificate (digital silence would leak edge transients).
         var impulseResponse = new double[32_768];
         var random = new Random(7);
         for (int i = 0; i < impulseResponse.Length; i++)
@@ -626,9 +537,6 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_FlatUnityCoherence_ReproducesTheNullResultExactly()
     {
-        // Threading coherence must be a no-op when it is flat/unity: an all-ones γ² of
-        // the correct half-spectrum length must reproduce the null-coherence samples
-        // and confidences bit-for-bit, proving the plumbing does not perturb the path.
         var impulseResponse = new double[8_192];
         impulseResponse[300] = 1.0;
         // fftLength = NextPowerOfTwo(8192) = 8192 -> half spectrum length 4097.
@@ -648,20 +556,13 @@ public sealed class TimeAlignmentAnalysisTests
     [Fact]
     public void Analyze_ReadsAPairOfIdenticalDriversAtTheSamePointOfTheirFronts()
     {
-        // Two identical drivers in opposite doors, 1.5 ms of path apart, each
-        // front followed by a stronger cabin reflection — 0.625 ms on one side,
-        // 0.5 ms on the other, because the two doors are not mirror images. No
-        // ripple is placed by hand: band-limiting these two wavefronts is what
-        // leaves comb structure on the leading edge, and on the near record one
-        // of those bumps clears the search threshold 0.27 ms before its front.
-        // Reading it as the arrival reports 1.771 ms for a 1.5 ms split.
+        // Band-limiting two door wavefronts with asymmetric reflections leaves a leading-edge bump 0.27 ms early (1.771 ms for 1.5).
         var near = new double[8_192];
         near[500] = 0.6;
         near[530] = 1.0;
         var far = new double[8_192];
         far[572] = 0.6;
         far[596] = 1.0;
-        // The band the field pair was read in (33-7671 Hz), as centre and width.
         var options = new TimeAlignmentAnalysisOptions
         {
             UseBandpassWindow = true,
@@ -678,10 +579,7 @@ public sealed class TimeAlignmentAnalysisTests
         double splitMs =
             farResult.FirstArrivalDelayMilliseconds -
             nearResult.FirstArrivalDelayMilliseconds;
-        // (572 - 500) samples at 48 kHz = 1.5 ms.
         Assert.InRange(splitMs, 1.45, 1.55);
-        // And the two figures are the same observable: both picks sit at the
-        // same depth under their own packet, so the delta is path, not level.
         Assert.InRange(
             Math.Abs(
                 nearResult.FirstArrivalProminenceDecibels -

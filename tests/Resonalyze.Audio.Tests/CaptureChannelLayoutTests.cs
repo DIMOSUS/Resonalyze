@@ -44,8 +44,6 @@ public sealed class CaptureChannelLayoutTests
     [Fact]
     public void WaveCount_ReachesTheHighestArrayMicrophone()
     {
-        // The array is what makes the capture wide: microphone and loopback sit
-        // on 0/1, and a microphone on input 6 still has to be recorded.
         Assert.Equal(
             7,
             CaptureChannelLayout.RequiredWaveInputChannelCount(Routing(0, 1, 4, 6, 2)));
@@ -54,8 +52,7 @@ public sealed class CaptureChannelLayoutTests
     [Fact]
     public void AsioWindow_SpansTheArrayInBothDirections()
     {
-        // An array microphone BELOW the measurement pair moves the window's
-        // start, not just its width — the driver is asked for inputs 1..7.
+        // An array microphone below the pair moves the window's start (inputs 1..7).
         AudioCaptureRouting routing = Routing(4, 5, 1, 7);
 
         Assert.Equal(1, CaptureChannelLayout.AsioFirstInputOffset(routing));
@@ -76,9 +73,7 @@ public sealed class CaptureChannelLayoutTests
     [Fact]
     public void AsioRelative_KeepsTheArrayInItsRequestedOrder()
     {
-        // The order is the identity of each microphone: the caller pairs these
-        // with its configured array entries by position, so sorting them here
-        // would hand every reading to the wrong microphone.
+        // Order is each microphone's identity: sorting would misassign readings.
         AudioCaptureRouting relative =
             CaptureChannelLayout.ToAsioRelative(Routing(0, 1, 6, 2, 4));
 

@@ -1,10 +1,6 @@
 namespace Resonalyze.Dsp.Tests;
 
-// Moving a signal by part of a sample. The tests below check the two things that make
-// such a shift trustworthy: that a whole-sample shift changes nothing at all, and that a
-// fractional one lands exactly where the underlying continuous signal says it should —
-// including which direction "advance" means, since a sign error here is invisible in a
-// magnitude plot and moves every arrival by twice the offset.
+// A sign error in 'advance' is invisible in a magnitude plot and moves every arrival by twice the offset.
 public sealed class FractionalSampleShiftTests
 {
     [Fact]
@@ -13,7 +9,6 @@ public sealed class FractionalSampleShiftTests
         double[] signal = [1.0, 2.0, 3.0, 4.0, 5.0];
 
         Assert.Equal([3.0, 4.0, 5.0, 1.0, 2.0], FractionalSampleShift.AdvanceCircular(signal, 2));
-        // A negative shift delays, and the tail wraps back to the head.
         Assert.Equal([4.0, 5.0, 1.0, 2.0, 3.0], FractionalSampleShift.AdvanceCircular(signal, -2));
         Assert.Equal(signal, FractionalSampleShift.AdvanceCircular(signal, 0));
         Assert.Equal(signal, FractionalSampleShift.AdvanceCircular(signal, signal.Length));
@@ -22,9 +17,7 @@ public sealed class FractionalSampleShiftTests
     [Fact]
     public void AdvanceCircular_LandsWhereTheContinuousSignalIs()
     {
-        // A band-limited signal is known everywhere between its samples, so there is an
-        // exact answer to compare against: three partials well below Nyquist, evaluated
-        // at the shifted times.
+        // A band-limited signal is known between samples, giving an exact reference.
         const int n = 128;
         const double shift = 7.37;
         (int Bin, double Amplitude, double Phase)[] partials =
@@ -48,10 +41,7 @@ public sealed class FractionalSampleShiftTests
     {
         const int n = 256;
         var random = new Random(20260820);
-        // Band-limited by construction: energy only in the lower eighth of the spectrum,
-        // which is what a sweep measured to 20 kHz at 96 kHz looks like. A signal with
-        // energy at Nyquist could not survive this round trip and should not: that bin
-        // holds no phase to shift, so an exact shift can only scale it.
+        // Energy at Nyquist holds no phase to shift, so only band-limited signals round-trip.
         double[] amplitudes = [.. Enumerable.Range(0, (n / 8) + 1).Select(_ => random.NextDouble())];
         double[] signal = [.. Enumerable.Range(0, n).Select(i =>
             Enumerable.Range(1, n / 8).Sum(k =>

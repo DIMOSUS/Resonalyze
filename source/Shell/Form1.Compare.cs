@@ -74,15 +74,7 @@ public partial class Form1
         await LoadCompareFileAsync(dialog.FileName);
     }
 
-    /// <summary>
-    /// An impulse response dropped on the Compare button from Explorer: the
-    /// button's Choose file... without the dialog, so it lands as the reference
-    /// rather than replacing the measurement the way a drop anywhere else on the
-    /// window does. The window has already checked the extension; what the file
-    /// holds is read here, once, and only an impulse response is taken — the other
-    /// documents the shell opens have no meaning as a Compare partner, and are
-    /// named for what they are rather than reported as a failed load.
-    /// </summary>
+    /// <summary>A drop on the Compare button lands as the reference, not the measurement. Only impulse responses are taken; other documents are named.</summary>
     private async Task OpenDroppedCompareFileAsync(string path)
     {
         DroppedFileKind kind = DroppedFile.Classify(path);
@@ -92,9 +84,6 @@ public partial class Form1
             return;
         }
 
-        // Where to take it instead is said only for the documents the window opens
-        // somewhere: an overlay slot is refused everywhere (the overlay panel owns
-        // those, by slot), and a file nobody recognizes has nowhere to go.
         string what = kind switch
         {
             DroppedFileKind.SpatialAverageCapture =>
@@ -117,8 +106,6 @@ public partial class Form1
             MessageBoxIcon.Warning);
     }
 
-    // Shared by Choose file... and by a file dropped on the Compare button, so both
-    // install the same reference in the same way and report a bad file alike.
     private async Task LoadCompareFileAsync(string path)
     {
         try
@@ -168,8 +155,6 @@ public partial class Form1
         }
     }
 
-    // Compare drives Time Alignment, the Phase / Group Delay plots, and the gated IR
-    // preview inside their docked settings, so refresh whichever of those is live.
     private void OnCompareMeasurementChanged()
     {
         UpdateCompareButton();
@@ -179,16 +164,7 @@ public partial class Form1
         dockedModeSettingsHost.InvokeIfOpen<GDOpt>(dialog => dialog.RefreshComparePreview());
     }
 
-    // The complex (vector) sum of the Main and Compare transfer responses for the
-    // ComplexSum calculated overlay in Frequency Response. Null while unavailable
-    // (no Compare, either side lacks a transfer IR, or the sample rates differ);
-    // the overlay stays armed and draws once the data appears. The delay and
-    // polarity flip apply to the Compare response, mirroring a DSP channel setup.
-    // When showLoss is set, returns the signed dB gap of the complex sum relative to the
-    // magnitude sum (<= 0: how much the real phase-aware sum falls short of the phase-blind
-    // addition) instead of the sum itself, smoothed at lossSmoothingInverseOctaves — the
-    // asking slot's own width, applied to the finished ratio, so the loss overlay neither
-    // inherits the plot's smoothing nor takes a second pass on top of it.
+    // Null while unavailable (the overlay stays armed). showLoss returns the sum-loss gap instead, smoothed at the slot's own width.
     internal OverlayPoint[]? BuildComplexSumOverlayPoints(
         double compareDelayMs,
         bool invertComparePolarity,

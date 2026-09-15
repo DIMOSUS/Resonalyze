@@ -14,9 +14,7 @@ public partial class Form1
     {
         await liveSpectrumController.ReconfigureFromAsync(measurementSettings.Measurement);
         timeAlignmentController.RefreshConfiguration();
-        // The audio routing may have gained or lost the loopback reference — the
-        // prerequisite of the live Transfer mode — so an open live panel re-evaluates
-        // its amber states here, the one chokepoint every routing change passes.
+        // Routing may have gained or lost the loopback (needed by live Transfer); every routing change passes here.
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
             panel => panel.RefreshAvailability(
                 plotModelFactory.LiveSplOffsetDb.HasValue,
@@ -27,17 +25,8 @@ public partial class Form1
     private void PrepareSweepMeasurementForRun()
     {
         measurementSettings.Measurement.ApplyTo(expSweepMeasurement);
-        // The calibration a response is READ through belongs to the result. The
-        // impulse response itself is raw — no calibration is ever baked into one —
-        // so unless the file carries the curve, a recipient draws a different
-        // response from the author's and nothing says why. Pushed here, the one
-        // chokepoint every run passes; the measurement freezes it at run start.
-        //
-        // From Record Settings, beside the array microphones' own choices, and NOT
-        // from the Frequency Response view: a view is where a chart is read, and
-        // taking the stamp from it meant a calibration selected after the sweeps
-        // labelled none of them, while one adopted to read someone else's file
-        // labelled all of them with a stranger's microphone.
+        // The IR is raw, so the file must carry the calibration curve it was read through. From Record Settings, not the FR view,
+        // so a later view selection neither relabels nor strips past runs.
         expSweepMeasurement.MicrophoneCalibration =
             FreezeCalibration(measurementSettings.Measurement.MicrophoneCalibrationId);
         expSweepMeasurement.ArrayMicrophoneMetadata =
@@ -49,25 +38,8 @@ public partial class Form1
                 .ToList();
     }
 
-    /// <summary>
-    /// Installs everything that belongs to the RESULT rather than to the next run.
-    /// </summary>
-    /// <remarks>
-    /// Both paths that bring a result in — opening a file and stepping back through
-    /// history — go through here, because they diverged once already. Restoring an
-    /// impulse response goes through Init, which clears ALL of this, so a path that
-    /// forgets a line hands over a measurement that differs from the stored one with
-    /// nothing on screen to say so: no array, and the tools fall back to the one
-    /// point the response came from; no microphone calibration, and a re-save writes
-    /// a file that lost it; no protective high-pass, and the band the filter took
-    /// past recovering stops being masked and draws the analysis window's leakage as
-    /// a driver rolloff.
-    /// <para>
-    /// The SPL anchor's capture identity stands in for the result's input, so
-    /// re-saving validates the anchor against the input it was MEASURED on rather
-    /// than against the app's current device, and keeps it.
-    /// </para>
-    /// </remarks>
+    /// <summary>Installs what belongs to the result, not the next run; shared by file open and history (Init clears all of it).</summary>
+    /// <remarks>The SPL anchor's capture identity stands in for the result's input, so a re-save validates against the measured input.</remarks>
     private void AdoptRestoredResult(
         SplCalibration? splCalibration,
         VirtualCrossoverCalibrationSettings? microphoneCalibration,
@@ -77,41 +49,20 @@ public partial class Form1
         expSweepMeasurement.MeasurementSplCalibration = splCalibration;
         expSweepMeasurement.MeasurementMicrophoneCalibration = microphoneCalibration;
         expSweepMeasurement.ArrayMicrophones = arrayMicrophones;
-        // Including "nothing": the app's own setting describes the next run, not the
-        // response just restored, and "nobody recorded which filter this passed
-        // through" is a different answer from "none".
+        // Including null: "unknown filter" differs from "none".
         expSweepMeasurement.MeasurementProtectiveHighPass = protectiveHighPass;
         expSweepMeasurement.MeasurementInput = splCalibration?.CaptureIdentity;
-        // For the history path, which restores a result without going through
-        // ApplyLoadedImpulseResponseState; the file path selects it there and lands
-        // here first, so the second call is a no-op on an already-correct selection.
+        // For the history path; a no-op when the file path already selected it.
         SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
     }
 
-    /// <summary>
-    /// The calibration a selector id names, the open measurement's own included.
-    /// </summary>
-    /// <remarks>
-    /// Every consumer resolves through here rather than through the calibration
-    /// service directly, because the measurement's own curve is not in that list —
-    /// it belongs to whatever is open, not to this machine.
-    /// </remarks>
+    /// <remarks>The measurement's own curve is not in the calibration service's list, so always resolve through here.</remarks>
     private CalibrationFile? ResolveCalibration(string? calibrationId) =>
         MicrophoneCalibrationIds.IsOwn(calibrationId)
             ? expSweepMeasurement.MeasurementMicrophoneCalibration?.ToCalibrationFile()
             : microphoneCalibration.Get(calibrationId);
 
-    /// <summary>
-    /// The analysis selectors' list: the measurement's own calibration first, then
-    /// the configured ones.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="MicrophoneCalibrationIds.Own"/> is an entry rather than a special
-    /// case so it can be selected, persisted and named like any other — and it is
-    /// marked unavailable when the open measurement carries no calibration, which is
-    /// how the selector says "there is nothing to read this through" instead of
-    /// silently correcting with nothing.
-    /// </remarks>
+    /// <remarks><see cref="MicrophoneCalibrationIds.Own"/> is a regular entry, marked unavailable when the open measurement carries none.</remarks>
     private IReadOnlyList<MicrophoneCalibrationEntry> CalibrationEntries() =>
     [
         new MicrophoneCalibrationEntry(
@@ -121,17 +72,10 @@ public partial class Form1
         .. microphoneCalibration.GetEntries()
     ];
 
-    /// <summary>
-    /// Points the analysis views at a calibration and tells the open settings panel.
-    /// </summary>
     private void SelectAnalysisCalibration(string? calibrationId) =>
         SelectFrequencyResponseCalibration(calibrationId);
 
-    /// <summary>
-    /// One calibration as a portable CURVE: the name and file name are what the
-    /// author's list showed, and the points are what actually decide, because two
-    /// machines' calibration lists mint their own ids.
-    /// </summary>
+    /// <summary>Portable curve: points decide, since each machine mints its own ids.</summary>
     private VirtualCrossoverCalibrationSettings? FreezeCalibration(string? calibrationId)
     {
         if (MicrophoneCalibrationIds.IsOff(calibrationId))
@@ -160,9 +104,7 @@ public partial class Form1
     private void SetImpulseResponseAvailability(bool available)
     {
         sessionTracker.SetImpulseResponseAvailable(available);
-        // Through the shared decision: in a capture mode the button belongs to the
-        // live analyzer, and setting it straight from the impulse-response state
-        // would take it away from a finished moving-mic pass.
+        // In a capture mode the button belongs to the live analyzer.
         RefreshSaveAvailability();
         commandController.SetLoadAvailable(true);
     }
@@ -179,11 +121,7 @@ public partial class Form1
 
     private void ApplyLoadedImpulseResponseState(string? filePath)
     {
-        // Everything that arrives from disk lands here — a Resonalyze file, a REW
-        // export, a recorded WAV — and every one of them is a new measurement to be
-        // read through its own calibration. The imports matter most: they carry NONE,
-        // so a view left on one of the user's own curves would correct an imported
-        // response with a microphone that had nothing to do with it, silently.
+        // Every file from disk is read through its own calibration; imports carry none and must not get the user's mic curve.
         SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
         ApplyMeasurementConfigurationToControllers();
         SetImpulseResponseSourceFile(filePath);

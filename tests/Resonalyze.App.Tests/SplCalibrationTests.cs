@@ -4,12 +4,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The SPL calibration anchor and its persistence into the settings and impulse
-/// response files. The anchor is stored as raw ingredients (reference level,
-/// measured level, capture identity); these tests hold that they round-trip and
-/// that a broken anchor never takes a whole file down with it.
-/// </summary>
 public sealed class SplCalibrationTests
 {
     private static SplCalibration ValidAnchor() => new()
@@ -52,7 +46,6 @@ public sealed class SplCalibrationTests
 
         Assert.True(anchor.MatchesInput(
             AudioBackend.WasapiShared, 48_000, 24, 0, null, "capture-id", null));
-        // A different endpoint, rate, bits, or channel each break the match.
         Assert.False(anchor.MatchesInput(
             AudioBackend.WasapiShared, 48_000, 24, 0, null, "other-id", null));
         Assert.False(anchor.MatchesInput(
@@ -68,9 +61,7 @@ public sealed class SplCalibrationTests
     [Fact]
     public void NextRunHasSplAnchor_PredictsFromTheConfiguredCalibrationAndInput()
     {
-        // The record button decides BEFORE a sweep whether the display may stay in
-        // dB SPL: only when the run ahead will carry an anchor. The previous
-        // measurement's anchor is irrelevant — it dies the moment the run starts.
+        // Decided BEFORE a sweep: only the run ahead's anchor counts; the previous one dies when it starts.
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         Assert.False(measurement.NextRunHasSplAnchor);
 
@@ -90,7 +81,6 @@ public sealed class SplCalibrationTests
         measurement.SplCalibration = anchor;
         Assert.True(measurement.NextRunHasSplAnchor);
 
-        // A calibration from a different digital input does not light SPL up.
         anchor.SampleRate = identity.SampleRate + 1;
         Assert.False(measurement.NextRunHasSplAnchor);
     }
@@ -118,7 +108,6 @@ public sealed class SplCalibrationTests
 
             string json = await File.ReadAllTextAsync(path);
             Assert.Contains("\"splCalibration\"", json);
-            // The derived offset is never written; it is recomputed on load.
             Assert.DoesNotContain("\"offsetDb\"", json);
 
             ImpulseResponseFile loaded = await ImpulseResponseFile.LoadAsync(path);
@@ -139,8 +128,6 @@ public sealed class SplCalibrationTests
     [Fact]
     public async Task ImpulseResponseFile_LoadsVersion6WithoutAnAnchor()
     {
-        // The version bump (6 -> 7) must not reject a file written before the
-        // anchor existed; it simply carries none.
         string path = Path.Combine(Path.GetTempPath(), $"resonalyze-ir-{Guid.NewGuid():N}.json");
         const string json = """
             {
@@ -172,8 +159,6 @@ public sealed class SplCalibrationTests
         }
     }
 
-    // Matches the default (Wave, 44.1 kHz, 24-bit, channel 0) input a restored
-    // measurement carries, so the anchor is stamped rather than dropped.
     private static SplCalibration MatchingWaveAnchor() => new()
     {
         ReferenceLevelDbSpl = 94.0,
@@ -185,8 +170,6 @@ public sealed class SplCalibrationTests
         InputDeviceNumber = -1
     };
 
-    // The default Wave 44.1 kHz / 24-bit / channel-0 input a fresh restored
-    // measurement represents.
     private static readonly MeasurementInputIdentity WaveInput =
         new(AudioBackend.Wave, 44_100, 24, 0, -1, null, null);
 
@@ -203,9 +186,7 @@ public sealed class SplCalibrationTests
             playChannel: PlaybackChannel.Right,
             sweepDeconvolutionImpulseResponse: [Complex.Zero, Complex.One, Complex.Zero],
             sweepDeconvolutionPeakIndex: 1);
-        // The result's own frozen calibration and input identity (Restore clears both
-        // via Init); Capture stamps and validates against these, not the configured
-        // calibration or the app's current device.
+        // Restore clears both via Init; Capture validates against these, not the app's current device.
         measurement.MeasurementSplCalibration = anchor;
         measurement.MeasurementInput = input ?? WaveInput;
         return measurement;
@@ -238,24 +219,17 @@ public sealed class SplCalibrationTests
                 request,
                 frameLength: 2048,
                 SplToneCriteria.Default,
-                // The fake session ends the capture itself after its fixed frame
-                // count, so the duration is only a hang guard and must sit far
-                // above CI scheduling noise: a 300 ms budget lost the race on a
-                // stalled runner and cancelled the session BEFORE its
-                // discontinuity frame, reading Overran == false.
+                // Only a hang guard: a 300 ms budget cancelled a stalled CI run before its discontinuity frame.
                 TimeSpan.FromSeconds(30),
                 progress: null,
                 CancellationToken.None);
 
-        // The tone itself is clean, but a single backend discontinuity (loss before
-        // the FFT queue) must still reject the capture.
         Assert.True(result.Reading.HasClearPeak);
         Assert.True(result.Overran);
         Assert.Equal(
             SplCalibrationFailure.CaptureOverrun, SplCalibrationListener.Evaluate(result));
     }
 
-    // Delivers a clean, continuous 1 kHz tone and raises CaptureDiscontinuity once.
     private sealed class ToneWithDiscontinuitySession : IAudioStreamingSession
     {
         private readonly int sampleRate;
@@ -272,11 +246,7 @@ public sealed class SplCalibrationTests
             double phase = 0.0;
             double delta = 2.0 * Math.PI * 1_000.0 / sampleRate;
 
-            // Deliver a fixed, small number of frames (within the listener's bounded
-            // channel capacity, so none is dropped by flooding), raise one backend
-            // discontinuity, then return to end the capture. No wall-clock delay: the
-            // test must be deterministic on a loaded CI runner, not race the capture
-            // duration (paced frames vs a fixed timeout previously flaked here).
+            // Fixed frame count within channel capacity and no wall-clock pacing, so the test is deterministic on loaded CI.
             for (int frame = 0; frame < 8 && !cancellationToken.IsCancellationRequested; frame++)
             {
                 var block = new float[sequenceLength];
@@ -292,8 +262,6 @@ public sealed class SplCalibrationTests
                     CaptureDiscontinuity?.Invoke();
                 }
 
-                // Yield so the processing task drains the channel between frames,
-                // keeping the queue well under capacity regardless of scheduling.
                 await Task.Yield();
             }
         }
@@ -322,9 +290,6 @@ public sealed class SplCalibrationTests
     [Fact]
     public void Capture_DropsAnAnchorCapturedOnADifferentInput()
     {
-        // ValidAnchor is a WASAPI 48 kHz calibration; the measurement ran on the
-        // default Wave 44.1 kHz input. A mismatched anchor must not ride along, or a
-        // reopened file would show a confidently wrong dB SPL offset.
         using ExpSweepMeasurement measurement = RestoredMeasurement(ValidAnchor());
 
         ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
@@ -335,10 +300,7 @@ public sealed class SplCalibrationTests
     [Fact]
     public void Capture_KeepsALoadedFilesAnchorWhenReSavedOnAnotherDevice()
     {
-        // A file measured on WASAPI, reopened while the app is configured for Wave.
-        // Its result identity is the file's own input (the anchor's capture identity),
-        // so re-saving validates the anchor against that — not the current Wave device
-        // — and keeps it. Without this, Save would silently drop the calibration.
+        // Re-saving validates the anchor against the file's own input identity, not the current device.
         SplCalibration anchor = ValidAnchor();
         using ExpSweepMeasurement measurement =
             RestoredMeasurement(anchor, anchor.CaptureIdentity);
@@ -401,7 +363,7 @@ public sealed class SplCalibrationTests
             MeasurementSettingsFile settings = MeasurementSettingsFile.LoadOrDefault(path);
             settings.Measurement.SplCalibration = new SplCalibration
             {
-                ReferenceLevelDbSpl = 5_000, // out of range
+                ReferenceLevelDbSpl = 5_000,
                 MeasuredLevelDbFs = -20.0,
                 Backend = AudioBackend.Wave,
                 SampleRate = 48_000,
@@ -412,7 +374,6 @@ public sealed class SplCalibrationTests
             MeasurementSettingsFile loaded = MeasurementSettingsFile.LoadOrDefault(path);
 
             Assert.Null(loaded.Measurement.SplCalibration);
-            // The rest of the settings survived — no backup, no fresh-start warning.
             Assert.Null(loaded.LoadWarning);
         }
         finally

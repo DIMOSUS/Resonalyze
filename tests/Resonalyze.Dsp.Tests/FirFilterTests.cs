@@ -3,18 +3,11 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The FIR stage of a channel chain: the kernel type, the text reader, and the
-/// identities the simulation rests on — a kernel that is a shifted unit sample IS a
-/// delay, so the FIR path and the delay path must produce the same record to
-/// numerical precision, at every rate pairing the two read the kernel under.
-/// </summary>
+/// <summary>A shifted unit-sample kernel IS a delay: FIR and delay paths must match at every rate pairing.</summary>
 public sealed class FirFilterTests
 {
     private const int Length = 16_384;
     private const int ArrivalSample = 64;
-
-    // ---------------------------------------------------------------- kernel
 
     [Fact]
     public void Kernel_ReadsItsOwnShape()
@@ -46,7 +39,6 @@ public sealed class FirFilterTests
     [Fact]
     public void AShiftedUnitSample_HasTheDelaysResponseAndGroupDelay()
     {
-        // h[n] = δ[n − 3] is a pure three-sample delay: |H| = 1, arg H = −3ω, τ = 3.
         var fir = new FirFilter([0, 0, 0, 1.0]);
         foreach (double frequencyHz in new[] { 100.0, 1_000.0, 12_000.0 })
         {
@@ -63,7 +55,6 @@ public sealed class FirFilterTests
     [Fact]
     public void ALinearPhaseKernel_HasAConstantGroupDelayOfHalfItsLength()
     {
-        // A nine-tap raised cosine: symmetric about tap 4, so τ = 4 wherever |H| > 0.
         double[] taps = Enumerable.Range(0, 9)
             .Select(n => 0.5 * (1 - Math.Cos(Math.Tau * (n + 1) / 10.0)))
             .ToArray();
@@ -96,8 +87,7 @@ public sealed class FirFilterTests
     [Fact]
     public void ChirpSpectrum_MatchesTheDirectSum_OnAGridNoDftLandsOn()
     {
-        // A 44.1 kHz record's bins on a 48 kHz processor: ω_k = k·2π·(44100/48000)/4096.
-        // The chirp-z answer has to be the direct sum to rounding, at every bin.
+        // 44.1 kHz bins on a 48 kHz processor: chirp-z must equal the direct sum at every bin.
         var random = new Random(1234);
         double[] taps = Enumerable.Range(0, 1_000).Select(_ => random.NextDouble() * 2 - 1).ToArray();
         var fir = new FirFilter(taps);
@@ -120,9 +110,7 @@ public sealed class FirFilterTests
     [Fact]
     public void GroupDelay_IsUndefinedAtAKernelsNull_EvenWhereRoundingLeavesADust()
     {
-        // h = [0.5, 0.5] has H(π) = 0 exactly; in floating point e^{-jπ} is not quite
-        // −1, so H lands at some 1e-17 rather than (0, 0). The answer is still NaN,
-        // not the 1e17 a literal zero test would let through.
+        // e^{-jπ} is not exactly −1, so H(π) lands near 1e-17; the answer is still NaN.
         var fir = new FirFilter([0.5, 0.5]);
         Complex z1 = Complex.Exp(new Complex(0, -Math.PI));
 
@@ -130,8 +118,6 @@ public sealed class FirFilterTests
         Assert.True(double.IsNaN(fir.GroupDelaySamples(z1)));
         Assert.Equal(0.5, fir.GroupDelaySamples(Complex.Exp(new Complex(0, -0.3))), 9);
     }
-
-    // ------------------------------------------------------------- text file
 
     [Fact]
     public void TextFile_ReadsOneCoefficientPerLine_SkippingHeadersAndComments()
@@ -178,8 +164,7 @@ public sealed class FirFilterTests
     [Fact]
     public void TextFile_ReadsADecimalCommaAsADecimalSeparator()
     {
-        // A designer run under a locale that writes 0,5: every line is a tap, in
-        // order, with no hole where the fractions stood.
+        // A locale writing 0,5: every line is a tap, no holes.
         FirFilter fir = FirFilterTextFile.Parse("0\r\n0\r\n1\r\n0,5\r\n-0,25\r\n1,5e-3\r\n0\r\n");
 
         Assert.Equal(new[] { 0.0, 0.0, 1.0, 0.5, -0.25, 1.5e-3, 0.0 }, fir.Taps.ToArray());
@@ -189,8 +174,7 @@ public sealed class FirFilterTests
     [Fact]
     public void TextFile_RefusesAFileThatMixesDecimalPointsAndCommas()
     {
-        // One of the two is a column separator there, and the reader cannot tell
-        // which — so it refuses rather than load a kernel with a hole in it.
+        // Mixed separators are ambiguous: refuse rather than load a kernel with a hole.
         InvalidDataException mixed = Assert.Throws<InvalidDataException>(
             () => FirFilterTextFile.Parse("0.5\n0,25\n0.125\n"));
         Assert.Contains("decimal comma", mixed.Message);
@@ -199,9 +183,7 @@ public sealed class FirFilterTests
     [Fact]
     public void TextFile_RefusesAMalformedLineInsideTheKernel_ButTakesAComment()
     {
-        // A skipped tap would shift every later one by a sample: a different filter
-        // under the same file name. So a line inside the coefficients that is not one
-        // number refuses the file, and the refusal names the line.
+        // A skipped tap shifts every later one: a different filter.
         InvalidDataException columns = Assert.Throws<InvalidDataException>(
             () => FirFilterTextFile.Parse("0.1\n0.2\n0.3 0.4\n0.5\n"));
         Assert.Contains("Line 3", columns.Message);
@@ -211,7 +193,6 @@ public sealed class FirFilterTests
             () => FirFilterTextFile.Parse("* header\r\n\r\n0.1\r\n0.25 garbage\r\n0.5\r\n"));
         Assert.Contains("Line 4", garbage.Message);
 
-        // Comments and blank lines inside the kernel are fine; headers above it too.
         FirFilter fir = FirFilterTextFile.Parse(
             "// rePhase\n0.1\n\n# the centre tap\n0.2\n; and a trailing remark\n0.3\n");
         Assert.Equal(new[] { 0.1, 0.2, 0.3 }, fir.Taps.ToArray());
@@ -224,8 +205,6 @@ public sealed class FirFilterTests
 
         Assert.Throws<InvalidDataException>(() => FirFilterTextFile.Parse(text));
     }
-
-    // ------------------------------------------------------------ the chain
 
     [Fact]
     public void ChainResponse_CarriesTheKernel()
@@ -261,9 +240,7 @@ public sealed class FirFilterTests
     }
 
     [Theory]
-    // record rate, processor rate: the same rate (kernel DFT on the record's grid),
-    // a 48 kHz record through a 96 kHz processor (grid twice as long), the reverse
-    // (grid half as long), and 44.1 against 48 (no common grid: evaluated bin by bin).
+    // Same rate, 2x grid, 0.5x grid, and 44.1 vs 48 (no common grid: bin by bin).
     [InlineData(48_000, 48_000)]
     [InlineData(48_000, 96_000)]
     [InlineData(96_000, 48_000)]
@@ -272,10 +249,7 @@ public sealed class FirFilterTests
         int recordRate,
         int processorRate)
     {
-        // δ[n − k] at the PROCESSOR's rate is a delay of k processor samples — a time,
-        // which the delay stage states in milliseconds. Whatever grid the two are read
-        // on, they must agree to numerical precision, or the FIR path is reading the
-        // kernel at the wrong rate.
+        // δ[n − k] at the PROCESSOR rate is k processor samples; any grid mismatch shows as a rate error.
         const int shift = 37;
         var taps = new double[shift + 1];
         taps[shift] = 1.0;
@@ -294,9 +268,6 @@ public sealed class FirFilterTests
     [Fact]
     public void AKernelBesideBiquads_MultipliesIntoTheSameCascade()
     {
-        // The stages commute, so a kernel applied with a crossover is the crossover's
-        // record convolved by the kernel — checked as delay-plus-filter against
-        // filter-plus-delay through the two different code paths.
         const int shift = 11;
         var taps = new double[shift + 1];
         taps[shift] = 1.0;
@@ -322,8 +293,7 @@ public sealed class FirFilterTests
     [Fact]
     public void ARealKernel_LeavesARealRecord()
     {
-        // The conjugate mirroring has to hold for the FIR bins as for the biquads, or
-        // the inverse FFT leaks the kernel into the imaginary half.
+        // Conjugate mirroring must hold for FIR bins, or the inverse FFT leaks into the imaginary half.
         double[] taps = Enumerable.Range(0, 64)
             .Select(n => Math.Sin(n * 0.37) * Math.Exp(-n / 20.0))
             .ToArray();
@@ -341,8 +311,7 @@ public sealed class FirFilterTests
     [Fact]
     public void TailPadding_GrowsByTheKernelInTheRecordsSamples()
     {
-        // A 1000-tap kernel at 96 kHz is 500 samples of a 48 kHz record — and it is
-        // added outside the clamp, since a convolution's tail does not decay away.
+        // Added outside the clamp: a convolution's tail does not decay away.
         PreparedDspResponse bare = PreparedDspResponse.Create(DspChannelChain.Identity, 96_000);
         PreparedDspResponse withFir = PreparedDspResponse.Create(
             new DspChannelChain(Fir: new FirFilter(new double[1_000])), 96_000);
@@ -361,10 +330,7 @@ public sealed class FirFilterTests
     [InlineData(1_000, 999)]
     public void TailPadding_IsTheKernelsLengthLessOne_AtEqualRates(int taps, int expectedExtra)
     {
-        // An N-tap convolution is N − 1 samples longer, not N: a one-tap kernel is a
-        // gain and needs no room. One sample too many matters here because the caller
-        // rounds the render up to a power of two, and a sample past the boundary
-        // doubles it.
+        // N − 1 samples, not N: the caller rounds up to a power of two, so one extra sample can double it.
         PreparedDspResponse withFir = PreparedDspResponse.Create(
             new DspChannelChain(Fir: new FirFilter(new double[taps])), 48_000);
 
@@ -374,9 +340,7 @@ public sealed class FirFilterTests
     [Fact]
     public void ValidRange_StartsAfterTheKernelsLeadingZeros_AndEndsAfterItsTail()
     {
-        // Three exact zeros shift the content by three samples of manufactured
-        // silence; the four taps after them extend it by four. Both at the record's
-        // rate — here twice the processor's, so twice the samples.
+        // Leading zeros shift by three samples, trailing taps extend by four, both at the record rate (2x here).
         var chain = new DspChannelChain(Fir: new FirFilter([0, 0, 0, 1.0, 0.5, 0.25, 0.125]));
 
         ValidSampleRange range = VirtualCrossoverAnalysis.ChainValidRange(
@@ -385,8 +349,6 @@ public sealed class FirFilterTests
         Assert.Equal(6, range.StartSample);
         Assert.Equal(100 + 12, range.EndSample);
     }
-
-    // ---------------------------------------------------------------- helpers
 
     private static Complex[] BandLimitedArrival(int sampleRate, int length)
     {

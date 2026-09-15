@@ -5,13 +5,7 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The mode row of the Live Spectrum options. It held two radio buttons laid out by
-/// hand at designer coordinates; MMM made it three, which meant moving the other two.
-/// A row that fits at 96 DPI and collides at 150% is the classic form of that
-/// mistake, so what is asserted here is the RELATIVE geometry — no overlaps, and the
-/// last one inside the panel — which holds at any scale the whole row scales by.
-/// </summary>
+/// <summary>Asserts relative geometry (no overlaps, last radio inside the panel), which holds at any DPI scale.</summary>
 public sealed class LiveSpectrumOptLayoutTests
 {
     [Fact]
@@ -24,8 +18,6 @@ public sealed class LiveSpectrumOptLayoutTests
             RadioButton rta = Radio(panel, "radioModeRta");
             RadioButton mmm = Radio(panel, "radioModeMmm");
 
-            // The label the row starts after; running under it reads as a broken row
-            // just as surely as running over the next radio.
             Control mode = Find(panel, "labelAnalysisMode");
             Assert.True(
                 mode.Right <= transfer.Left,
@@ -50,8 +42,6 @@ public sealed class LiveSpectrumOptLayoutTests
             var spl = (CheckBox)Find(panel, "checkSpl");
             var tilt = (CheckBox)Find(panel, "checkTilt");
 
-            // Forced ON and non-interactive. AutoCheck is how this panel locks a
-            // control while keeping it readable, so it is what "pinned" means here.
             Assert.True(spl.Checked);
             Assert.False(spl.AutoCheck);
             Assert.True(tilt.Checked);
@@ -82,8 +72,6 @@ public sealed class LiveSpectrumOptLayoutTests
             var applied = new LiveSpectrumOptions();
             panel.SetOptions(applied);
 
-            // A trip through MMM must not rewrite what the user picked for the RTA:
-            // the pins are the mode's, not the operator's.
             Assert.Equal(LiveAnalysisMode.Rta, applied.AnalysisMode);
             Assert.Equal(MagnitudeScale.Relative, applied.MagnitudeScale);
             Assert.False(applied.CompensateNoiseTilt);
@@ -105,10 +93,7 @@ public sealed class LiveSpectrumOptLayoutTests
         {
             using LiveSpectrumOpt panel = CreatePanel(options);
 
-            // The host calls this when it drops a view-only SPL display for a run,
-            // and its own comment says the panel must not write SPL back on its next
-            // apply. SetOptions persists the remembered choice, not the checkbox, so
-            // unchecking alone would have left the old value to be re-applied.
+            // SetOptions persists the remembered choice, not the checkbox, so unchecking alone would re-apply SPL.
             panel.ForceSplScaleOff();
 
             var applied = new LiveSpectrumOptions();
@@ -117,16 +102,7 @@ public sealed class LiveSpectrumOptLayoutTests
         });
     }
 
-    /// <summary>
-    /// The calibration box is a read-out: it shows what the plot is corrected
-    /// through and never offers a choice, however often it is rebuilt.
-    /// </summary>
-    /// <remarks>
-    /// It held entries once, and <see cref="MicrophoneCalibrationComboHelper.Configure"/>
-    /// enables the box whenever it holds more than one — so disabling it at
-    /// construction lasted exactly until a calibration was added or removed, and a
-    /// selection made in it changed nothing and then snapped back.
-    /// </remarks>
+    /// <summary><see cref="MicrophoneCalibrationComboHelper.Configure"/> enables a box holding more than one entry, so disabling at construction does not last.</summary>
     [Fact]
     public void TheCalibrationReadOutStaysReadOnlyWhenTheListIsRebuilt() =>
         StaTest.Run(() =>
@@ -163,8 +139,7 @@ public sealed class LiveSpectrumOptLayoutTests
             $"{left.Name} ends at {left.Left + Preferred(left)}, " +
             $"{right.Name} starts at {right.Left}");
 
-    // The designer size of an AutoSize control is only a hint; what it will really
-    // occupy is what it asks for with the font actually in effect.
+    // An AutoSize control's designer size is only a hint.
     private static int Preferred(Control control) =>
         Math.Max(control.Width, control.GetPreferredSize(Size.Empty).Width);
 

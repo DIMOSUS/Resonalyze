@@ -2,13 +2,8 @@
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The predicted-arrival probe against fronts that are NOT impulses. The
-/// prediction measures its chain term on a flat reference impulse, so the
-/// question these pin is how far that transfers to a real driver's shaped
-/// front — and, where it does not, that the shortfall can never manufacture
-/// a conviction.
-/// </summary>
+/// <summary>The predicted-arrival probe against shaped (non-impulse) fronts: how far the impulse-measured chain term transfers,
+/// and that a shortfall never manufactures a conviction.</summary>
 public sealed class ShapedFrontProbe
 {
     private const int SampleRate = 48_000;
@@ -45,8 +40,6 @@ public sealed class ShapedFrontProbe
             Edge(CrossoverFilterFamily.Butterworth, lowPassHz, slope),
             Edge(CrossoverFilterFamily.Butterworth, highPassHz, slope)));
 
-    // A front SHAPED by an independent acoustic response, then processed by
-    // the channel's own chain — the arrangement the prediction has to survive.
     private static (AlignmentSnapshot Snapshot, double MeasuredMs) Shaped(
         DspChannelChain source,
         DspChannelChain chain,
@@ -55,9 +48,7 @@ public sealed class ShapedFrontProbe
     {
         var impulse = new Complex[Length];
         impulse[Position] = Complex.One;
-        // Built the way production builds it: the bypassed response carries
-        // the ValidSampleRange ApplyChain reports, so the predictor sees the
-        // measured-content length rather than the padded array's.
+        // Built as production builds it: the bypassed response carries ApplyChain's ValidSampleRange.
         Complex[] bypassed = VirtualCrossoverAnalysis.ApplyChain(
             impulse, source, SampleRate, SampleRate, out ValidSampleRange bypassedRange);
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
@@ -70,7 +61,6 @@ public sealed class ShapedFrontProbe
             chain,
             bypassed,
             bypassedRange);
-        // Analyzed with the range production carries, not without it.
         double measuredMs = VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
             processed, SampleRate, lowHz, highHz, processedRange)
             .FirstArrivalDelayMilliseconds;
@@ -92,10 +82,7 @@ public sealed class ShapedFrontProbe
         return data;
     }
 
-    // A driver's own roll-off is a gentle second-order high-pass below or
-    // near the junction band, and there the impulse-derived chain term
-    // transfers: the prediction lands within a millisecond of the arrival the
-    // detector actually reports for the processed response.
+    // A gentle second-order roll-off near the band: the chain term transfers to within a millisecond.
     [Theory]
     [MemberData(nameof(RealisticFronts))]
     public void PredictedArrival_TransfersToARealisticDriverFront(
@@ -123,15 +110,8 @@ public sealed class ShapedFrontProbe
         }
     }
 
-    // Where the source has strong structure INSIDE the band — a steep
-    // low-pass that leaves the channel barely radiating there, or an
-    // all-pass twisting its phase — the impulse-derived term does NOT
-    // transfer, and the prediction can be several milliseconds out. That is a
-    // real limit of the estimator, so what has to hold is the safety
-    // property: such a shortfall may never be mistaken for a modal latch.
-    // (The BW24 row is the review's own counterexample, which lands ~5 ms
-    // out; the BW48 row doubles the source's steepness so the property is
-    // held by two poses rather than standing on one.)
+    // Strong in-band source structure (steep LP, all-pass) breaks transfer by several ms; that must never read as a latch.
+    // BW24 is the counterexample (~5 ms); BW48 doubles the steepness.
     [Theory]
     [InlineData("BW24 LP 80 over 40-160", 24, 40, 160)]
     [InlineData("BW48 LP 80 over 40-160", 48, 40, 160)]
@@ -153,20 +133,8 @@ public sealed class ShapedFrontProbe
             $"(measured {measuredMs:0.000}, predicted {predictedMs:0.000} ms)");
     }
 
-    // The same source graded a band higher used to sit in the theory above,
-    // and it passed on an artifact: the arrival detector read the processed
-    // front at 169.91 ms — 0.76 ms BEFORE the source impulse at 170.67 — off
-    // a ripple of the analysis kernel's acausal pedestal (see
-    // AcausalPedestalTests), and the acausal read graded Inconsistent by
-    // luck. With the front-rise gate the measured read is the honest band
-    // envelope peak, and for a channel this deep under its own roll-off
-    // (an LP 80 graded at 100-400 is tens of dB down across the band) the
-    // estimator's shortfall honestly passes the conviction factor.
-    //
-    // What holds instead is that the conviction is CORRECTIVE: the prediction
-    // the pair would re-anchor to sits at the bypassed front, ahead of the
-    // measured envelope peak — so acting on it moves the anchor toward the
-    // wavefront, never away from it.
+    // Extreme shaping (LP 80 graded at 100-400 Hz) honestly exceeds the conviction factor; the conviction must be corrective,
+    // moving the anchor toward the bypassed front. See AcausalPedestalTests for the earlier artifact.
     [Fact]
     public void PredictedArrival_ExtremeShapingConviction_PullsTowardTheFront()
     {
@@ -205,12 +173,7 @@ public sealed class ShapedFrontProbe
                 snapshot, measuredMs, 40, 160, out _));
     }
 
-    // The production window, pinned. A bypassed response is itself an
-    // ApplyChain output, so its ARRAY is twice the measured content; taking
-    // the array's length instead of the reported range ran the chain-shift
-    // measurement through a window twice the one the real reads use. This
-    // asserts the precondition (array longer than range) before asserting the
-    // prediction, so the case cannot quietly stop covering the branch.
+    // A bypassed response's array is twice its measured content; the predictor must use the reported range. Asserts the precondition.
     [Theory]
     [InlineData("driver HP 60", 100, 400)]
     [InlineData("driver HP 120", 40, 160)]
@@ -281,17 +244,7 @@ public sealed class ShapedFrontProbe
         _ => throw new ArgumentOutOfRangeException(nameof(name))
     };
 
-    // The upper-half probe's allowance is built from the SAME estimator and
-    // is NOT protected by the conviction factor — the credited skew is added
-    // to the tolerance directly, so whatever it over-credits is room a real
-    // modal latch could hide in.
-    //
-    // What this pins is the size of that room. The credit may never exceed
-    // the skew the clean front honestly shows by more than one base
-    // allowance, whatever the source does — so the window this PR opens is
-    // bounded by the physics it is meant to cover, not by the estimator's
-    // luck. Held across sources the estimator handles well and sources it
-    // handles badly alike.
+    // The probe's credited skew is not protected by the conviction factor: over-credit must stay under half a base allowance.
     [Theory]
     [MemberData(nameof(ToleranceSources))]
     public void ArrivalProbeTolerance_OverCreditsNoSourceByMoreThanHalfTheBase(
@@ -305,10 +258,7 @@ public sealed class ShapedFrontProbe
             double overCreditMs =
                 toleranceMs - baseToleranceMs - Math.Max(0, honestSkewMs);
 
-            // The bound has to bite: asserting against the clamp's own
-            // ceiling would hold for any finite skew and prove nothing
-            // Half a base allowance is well inside the clamp,
-            // so this fails if the credit stops tracking the honest skew.
+            // Asserting against the clamp's ceiling would prove nothing.
             Assert.True(overCreditMs < 0.5 * baseToleranceMs,
                 $"{sourceName} in {lowHz:0}-{highHz:0} Hz: over-credited " +
                 $"{overCreditMs:0.000} ms (tolerance {toleranceMs:0.000}, " +
@@ -316,14 +266,7 @@ public sealed class ShapedFrontProbe
         }
     }
 
-    // The window between the base allowance and the clamped ceiling is where
-    // a credited tolerance decides the verdict, and no test reached it while
-    // the mode fixtures only produced skews past both. This
-    // sweeps the build-up's delay and level so the resulting skew lands
-    // inside that window, and pins the POLICY there: the probe declines to
-    // convict, because a 200-400 Hz comparison cannot attribute energy that
-    // close behind the front — see the body for why, and for the ceiling
-    // that keeps declining bounded.
+    // Skews landing between the base allowance and the clamped ceiling: the probe declines to convict there.
     [Fact]
     public void ArrivalProbeTolerance_DoesNotConvictInsideTheCreditedWindow()
     {
@@ -332,13 +275,7 @@ public sealed class ShapedFrontProbe
         double probeLowHz = Math.Sqrt(LowHz * HighHz);
         double baseToleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
 
-        // The credited window is the 2.5-5 ms band here, and reaching it
-        // needs a NEAR build-up: the detector's first peak either finds the
-        // front or the feature, with nothing in between, so a distant mode
-        // only ever produces a skew far past the window however its level is
-        // scaled. Both the delay and the level are therefore swept, and the
-        // sweep itself is asserted — a run that lands nothing fails rather
-        // than passing silently.
+        // Only a near build-up lands in the 2.5-5 ms window; delay and level are swept and the sweep itself is asserted.
         var landed = new List<(double DelayMs, double Level, double SkewMs)>();
         for (double modeDelayMs = 2.0; modeDelayMs <= 9.0; modeDelayMs += 0.5)
         {
@@ -356,13 +293,7 @@ public sealed class ShapedFrontProbe
                 }
 
                 landed.Add((modeDelayMs, level, skewMs));
-                // The POLICY: inside this window the probe declines to
-                // convict. A 200-400 Hz probe resolves features about
-                // 1/(400-200) = 5 ms apart, so energy 3-4 ms behind the front
-                // is not something this comparison can attribute — it may be
-                // a dispersion-stretched front or an early reflection, and
-                // convicting it would fire on real crossover dispersion.
-                // Field modal latches run 7 ms and up, clear of the ceiling.
+                // A 200-400 Hz probe resolves ~5 ms: energy 3-4 ms behind the front may be dispersion. Field latches run 7 ms and up.
                 double toleranceMs = AutoAlignmentEngine.ArrivalProbeToleranceMs(
                     snapshot, full.FirstArrivalDelayMilliseconds,
                     probe.FirstArrivalDelayMilliseconds,
@@ -370,10 +301,7 @@ public sealed class ShapedFrontProbe
                 Assert.Equal(
                     AutoAlignmentEngine.ArrivalCertificate.Verified,
                     AutoAlignmentEngine.ClassifyArrival(full, probe, toleranceMs));
-                // And the ceiling that makes the policy bounded: the credit
-                // may never carry the tolerance past the probe's resolution,
-                // or the estimator would start excusing separated features
-                // too.
+                // The credit may never push the tolerance past the probe's resolution.
                 Assert.True(toleranceMs <= 1000.0 / probeLowHz,
                     $"mode {modeDelayMs:0.0} ms at {level:0.00}: tolerance " +
                     $"{toleranceMs:0.000} ms exceeds the probe's resolution " +
@@ -421,10 +349,7 @@ public sealed class ShapedFrontProbe
                 processed, SampleRate, probeLowHz, highHz, processedRange));
     }
 
-    // And for a front the estimator DOES handle — a driver's own roll-off —
-    // the allowance must actually cover the skew, or the probe convicts a
-    // channel for its own crossover. That is the defect this PR started
-    // from, restated against a shaped front rather than an impulse.
+    // For a driver roll-off the allowance must cover the skew, or the probe convicts a channel for its own crossover.
     [Theory]
     [InlineData("driver HP 60")]
     [InlineData("driver HP 120")]
@@ -469,9 +394,7 @@ public sealed class ShapedFrontProbe
             Math.Max(1.0, 500.0 / probeLowHz));
     }
 
-    // A real late mode on a shaped front must still be convicted by the
-    // upper-half probe, credited allowance and all — the credit exists to
-    // excuse a channel's own dispersion, never a room's.
+    // The credit excuses a channel's own dispersion, never a room mode.
     [Theory]
     [InlineData("driver HP 60")]
     [InlineData("driver HP 120")]
@@ -511,7 +434,6 @@ public sealed class ShapedFrontProbe
             VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
                 processed, SampleRate, probeLowHz, HighHz);
 
-        // The fixture has to latch before the assertion means anything.
         Assert.True(
             full.FirstArrivalDelayMilliseconds -
                 probe.FirstArrivalDelayMilliseconds > 5.0,
@@ -528,10 +450,7 @@ public sealed class ShapedFrontProbe
                     LowHz, probeLowHz, HighHz)));
     }
 
-    // Two shaped fronts through two DIFFERENT chains — the junction case.
-    // Each side may be VERIFIED on its own while their residuals differ, and
-    // it is the DIFFERENCE that the timeline stores; the pair anchor is only
-    // as good as that difference.
+    // The timeline stores the DIFFERENCE of the two sides' residuals; the pair anchor is only as good as that.
     [Fact]
     public void PredictionResiduals_AreWhatTheJunctionAnchorInherits()
     {
@@ -547,8 +466,6 @@ public sealed class ShapedFrontProbe
         double differentialResidualMs = Math.Abs(
             (lowerMs - lowerPredicted) - (upperMs - upperPredicted));
 
-        // Realistic fronts: the residuals largely cancel, which is what makes
-        // the pair anchor usable at all.
         Assert.True(differentialResidualMs < 1.0,
             $"differential residual {differentialResidualMs:0.000} ms");
     }

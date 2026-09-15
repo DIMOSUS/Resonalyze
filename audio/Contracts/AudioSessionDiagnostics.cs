@@ -1,11 +1,6 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// An immutable snapshot of one capture/render session's low-level counters and
-/// negotiated formats. Produced by the audio layer; the application may persist
-/// a copy in a measurement file. Backend-neutral — formats are
-/// <see cref="AudioFormat"/>, never NAudio <c>WaveFormat</c>.
-/// </summary>
+/// <summary>Immutable counters and negotiated formats of one session; may be persisted in a measurement file.</summary>
 public sealed record AudioSessionDiagnostics(
     string Backend,
     string CaptureEndpointId,

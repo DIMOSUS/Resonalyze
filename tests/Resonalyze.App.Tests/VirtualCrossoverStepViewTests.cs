@@ -7,19 +7,13 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The Virtual DSP step view on synthetic channels: which responses go in (the
-/// shown channels, plus the Sum of every summing channel whether shown or
-/// not), and how the presenter draws them — every step on ONE common scale, so
-/// the curves keep their sizes relative to each other and to the Sum, where
-/// the impulse view normalizes each trace to its own peak.
-/// </summary>
+/// <summary>Steps share ONE scale (unlike the per-trace normalized impulse view); the Sum includes hidden summing channels.</summary>
 public sealed class VirtualCrossoverStepViewTests
 {
     private const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
     private const int SampleRate = 48_000;
-    private const int FirstArrival = 480;   // 10 ms.
-    private const int SecondArrival = 960;  // 20 ms.
+    private const int FirstArrival = 480;
+    private const int SecondArrival = 960;
     private const double SecondAmplitude = 0.5;
 
     [Fact]
@@ -47,8 +41,6 @@ public sealed class VirtualCrossoverStepViewTests
     [Fact]
     public void AHiddenChannel_LeavesTheTraces_ButStaysInTheSum()
     {
-        // The Sum adds every SUMMING channel, as the magnitude Sum does — a
-        // hidden curve is hidden, not silenced.
         using VirtualCrossoverPanel panel = Loaded();
         ((CheckBox)Field(panel, "checkBoxShowSum")).Checked = true;
         List<ProcessedChannel> processed = Processed(panel);
@@ -72,8 +64,6 @@ public sealed class VirtualCrossoverStepViewTests
         showSum.Checked = false;
         Assert.Equal(2, Build(panel, processed, processed)!.Traces.Count);
 
-        // A centre drawn beside a stage is compared, not added: with one summing
-        // channel there is no Sum to draw.
         showSum.Checked = true;
         Assert.Equal(2, Build(panel, processed, [processed[0]])!.Traces.Count);
     }
@@ -93,11 +83,7 @@ public sealed class VirtualCrossoverStepViewTests
     [Fact]
     public void StepTraces_ShareOneScale_WhereImpulseTracesEachFillTheAxis()
     {
-        // Two impulses of 1.0 and 0.5 and their sum. As impulses each trace is
-        // normalized to its own peak, so both read 1. As steps the three share
-        // the largest excursion — the Sum's 1.5 — so they read 2/3, 1/3 and 1:
-        // the second driver is visibly the smaller, and the Sum is what the
-        // two add up to.
+        // Common scale is the Sum's 1.5 excursion, so steps read 2/3, 1/3 and 1.
         IrPreviewTrace first = Trace("A", FirstArrival, 1.0);
         IrPreviewTrace second = Trace("B", SecondArrival, SecondAmplitude);
         IrPreviewTrace sum = new(
@@ -114,7 +100,6 @@ public sealed class VirtualCrossoverStepViewTests
         (double StartMs, double EndMs)? stepWindow = ImpulseWindowPreview.AddStepTraceSeries(
             stepModel, traces, SampleRate, gateOffsetMs: 10, leftMs: 0.5, plateauMs: 15, rightMs: 5);
 
-        // One window for both views, so a toggle between them keeps the zoom.
         Assert.Equal(impulseWindow, stepWindow);
 
         Assert.Equal(1.0, PeakOf(impulseModel, "A"), 9);
@@ -125,8 +110,6 @@ public sealed class VirtualCrossoverStepViewTests
         Assert.Equal(1.0, LastOf(stepModel, "Sum"), 9);
         Assert.Equal(2.4, Series(stepModel, "Sum").StrokeThickness);
 
-        // Before its arrival a step is flat at zero: nothing before the front
-        // has entered the running sum.
         LineSeries late = Series(stepModel, "B");
         double secondMs = SecondArrival * 1_000.0 / SampleRate;
         Assert.All(
@@ -137,12 +120,7 @@ public sealed class VirtualCrossoverStepViewTests
     [Fact]
     public void TheGate_FramesTheView_AndNeverEntersTheCurve()
     {
-        // The window follows the phase gate, so a gate edit moves the window;
-        // the step is a property of the response and must read the same at the
-        // same absolute time under any gate. A sum that started at the window's
-        // edge would not. Both windows hold the arrivals, so the common scale
-        // (the largest excursion inside the window) is the same too and the
-        // values compare exactly.
+        // The step integrates from the record start, not the window edge, so a gate edit must not change it.
         IrPreviewTrace first = Trace("A", FirstArrival, 1.0);
         IrPreviewTrace second = Trace("B", SecondArrival, SecondAmplitude);
         IrPreviewTrace[] traces = [first, second];
@@ -183,9 +161,6 @@ public sealed class VirtualCrossoverStepViewTests
     [Fact]
     public void TheOppositeSidesSum_RidesAlong_ThinDashedTranslucent_OnTheSameClock()
     {
-        // As on the magnitude view: the other side's summed response beside this
-        // side's Sum, so the two tunes compare without flipping the selector. It
-        // needs the Sum on, and the shown side's sample rate.
         using VirtualCrossoverPanel panel = Loaded();
         var showSum = (CheckBox)Field(panel, "checkBoxShowSum");
         List<ProcessedChannel> processed = Processed(panel);
@@ -193,8 +168,6 @@ public sealed class VirtualCrossoverStepViewTests
             Delta(SecondArrival + 48, 1.5), SecondArrival + 48, SampleRate, processed);
 
         showSum.Checked = true;
-        // Named for the side it belongs to: the right side on screen, so the
-        // trace is the left's.
         Project(panel).ActiveSideRight = true;
         AcousticImpulseRender render = Build(panel, processed, processed, opposite)!;
         Assert.Equal(4, render.Traces.Count);
@@ -206,7 +179,6 @@ public sealed class VirtualCrossoverStepViewTests
         Assert.Equal(110, trace.Color.A);
         Assert.Equal(OxyColors.White.R, trace.Color.R);
 
-        // Off with the Sum, and at another rate.
         showSum.Checked = false;
         Assert.Equal(2, Build(panel, processed, processed, opposite)!.Traces.Count);
         showSum.Checked = true;
@@ -245,7 +217,6 @@ public sealed class VirtualCrossoverStepViewTests
         return impulse;
     }
 
-    // A panel bound to its project's pairs, the way applying a project binds them.
     private static VirtualCrossoverPanel Loaded()
     {
         var panel = new VirtualCrossoverPanel();

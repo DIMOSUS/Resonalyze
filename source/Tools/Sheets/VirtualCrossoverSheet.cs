@@ -4,11 +4,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Formats the Virtual DSP settings as a human-readable tuning sheet — the
-/// exact list a user types into the DSP: per channel the gain, delay (ms and the
-/// mm ruler check), polarity, crossover filters and PEQ bands.
-/// </summary>
+/// <summary>The Virtual DSP settings as the plain-text list a user types into the DSP.</summary>
 internal static class VirtualCrossoverSheet
 {
 
@@ -23,20 +19,14 @@ internal static class VirtualCrossoverSheet
         builder.AppendLine("Resonalyze — Virtual DSP tuning sheet");
         builder.AppendLine(
             $"Generated {DateTime.Now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)}");
-        // Named on every sheet, not only when it deviates: a sheet that stays silent
-        // about its Q convention is exactly how a tune ends up measuring wider than it
-        // was designed, and the reader cannot tell a silent sheet from an RBJ one.
+        // Named on every sheet: a silent sheet cannot be told from an RBJ one, and a wrong convention measures wider.
         builder.AppendLine($"PEQ Q convention: {PeqQConventions.Describe(qConvention)}");
         if (!string.IsNullOrWhiteSpace(metricLine))
         {
             builder.AppendLine(metricLine);
         }
 
-        // One run of sections per zone, in the order a tune is typed into a DSP
-        // (Sub, Front, Rear, Center) — with the zone named above its run. A
-        // single-zone project skips the headings and keeps the flat sheet it
-        // always had: a heading that names the only group there is would be
-        // scaffolding around nothing.
+        // One run per zone in DSP typing order; a single-zone project stays flat.
         IReadOnlyList<(VirtualCrossoverZone Zone, IReadOnlyList<int> PairIndices)>
             sections = VirtualCrossoverSheetGroups.Sections(project);
         bool grouped = sections.Count > 1;
@@ -59,8 +49,6 @@ internal static class VirtualCrossoverSheet
         return builder.ToString();
     }
 
-    // The body of one pair's printed sections, shared by the grouped and flat
-    // layouts above so the two cannot come to print a channel differently.
     private static void AppendPairSections(
         StringBuilder builder,
         VirtualCrossoverProjectFile project,
@@ -78,10 +66,7 @@ internal static class VirtualCrossoverSheet
             builder.AppendLine();
             builder.AppendLine(
                 $"Channel {ChannelName(i)}{sideSuffix} — {channel.DisplayName}");
-            // Many DSPs have no separate preamp for their equalizer, so the PEQ preamp
-            // has to be folded into the channel gain when the tune is typed in. The
-            // combined figure rides along on the same line, where it cannot be
-            // mistaken for a second, independent gain to enter.
+            // Many DSPs have no separate EQ preamp; the combined figure rides on the same line so it is not read as a second gain.
             string gainLine = $"  Gain       {Signed(channel.GainDb)} dB";
             if (channel.PeqPreampDb != 0)
             {
@@ -96,16 +81,12 @@ internal static class VirtualCrossoverSheet
             builder.AppendLine(
                 $"  Polarity   {(channel.InvertPolarity ? "Inverted" : "Normal")}");
             builder.AppendLine($"  Crossover  {DescribeCrossover(channel)}");
-            // Only where one is dialled in: the field exists on the devices that
-            // have the control, and a "Phase 0°" line on a sheet for one that does
-            // not is an instruction to go looking for a knob that is not there.
+            // Only where dialled in: a "Phase 0" line sends the reader looking for a knob the device may not have.
             if (channel.PhaseRotationDegrees > 0)
             {
                 builder.AppendLine(
                     $"  Phase      {Number(channel.PhaseRotationDegrees, "0.###")}°");
             }
-            // The kernel by file name, only where one is loaded, for the same reason
-            // as the phase line: it is the file to load into the device.
             if (channel.HasFir)
             {
                 builder.AppendLine($"  FIR        {DescribeFir(channel)}");
@@ -119,11 +100,7 @@ internal static class VirtualCrossoverSheet
                 {
                     PeqBand peq = PeqQConventions.ToConvention(
                         channel.PeqBands[band], qConvention);
-                    // The keyword comes from the profile writer rather than being
-                    // spelled here: a shelf printed as PK is an instruction to
-                    // dial in the wrong filter. An all-pass line carries no gain
-                    // (the filter has none) and drops the Q on a first order,
-                    // which has no Q to dial in.
+                    // Keyword from the profile writer: a shelf printed as PK dials in the wrong filter.
                     string tail = peq.Type.IsAllPass()
                         ? peq.Type == PeqBandType.AllPassFirstOrder
                             ? string.Empty
@@ -139,15 +116,7 @@ internal static class VirtualCrossoverSheet
 
     public static string ChannelName(int index) => ((char)('A' + index)).ToString();
 
-    /// <summary>
-    /// The printable sides of one channel pair: a mono pair is a single
-    /// "(mono)" section, a stereo pair prints its left and right sides
-    /// separately.
-    /// </summary>
-    // The side suffixes a section heading carries. Spelled out rather than "L"/"R":
-    // a printed sheet is read in a car, often upside down on a phone. Named constants
-    // because consumers switch on the suffix, and a literal would silently stop matching
-    // the moment the wording changed.
+    // Spelled out (read in a car on a phone); constants because consumers switch on the suffix.
     internal const string LeftSuffix = " Left";
     internal const string RightSuffix = " Right";
     internal const string MonoSuffix = " (mono)";
@@ -181,15 +150,9 @@ internal static class VirtualCrossoverSheet
         };
     }
 
-    /// <summary>The value printed where a channel does not use that edge at all.</summary>
     public const string OffText = "Off";
 
-    /// <summary>
-    /// The FIR kernel as the sheet names it: the file it was imported from and its
-    /// length — the file is what the installer loads into the device, and the length
-    /// is how they check it is the same one — or, for a kernel designed in the FIR
-    /// Constructor, the crossover it was designed as. Empty for a side without a kernel.
-    /// </summary>
+    /// <summary>Imported kernel: file name and length (to verify the loaded file); designed kernel: its crossover. Empty without one.</summary>
     public static string DescribeFir(VirtualCrossoverChannelSettings channel)
     {
         ArgumentNullException.ThrowIfNull(channel);
@@ -200,13 +163,7 @@ internal static class VirtualCrossoverSheet
             : string.Empty;
     }
 
-    /// <summary>
-    /// The high-pass (resp. low-pass) edge as a value of its own — family, slope and
-    /// corner, without naming which edge it is. The PDF sheet gives each edge a row of
-    /// its own, so the row label already says that; a channel whose crossover kind does
-    /// not use the edge prints <see cref="OffText"/>, which is itself a setting to dial
-    /// in rather than a blank to skip over.
-    /// </summary>
+    /// <summary>The edge's family, slope and corner without naming the edge; an unused edge prints <see cref="OffText"/>, itself a setting.</summary>
     public static string DescribeHighPass(VirtualCrossoverChannelSettings channel)
     {
         ArgumentNullException.ThrowIfNull(channel);

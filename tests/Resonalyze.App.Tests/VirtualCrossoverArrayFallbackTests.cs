@@ -4,18 +4,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A channel with no spatial average, in a project reading microphone arrays.
-/// </summary>
-/// <remarks>
-/// For a moving-microphone set this is all-or-nothing, and rightly: those captures
-/// are levelled by one analyzer session and a channel drawn from its impulse
-/// response instead would put a second reference on the same axis. An array is
-/// levelled by the loopback the impulse responses already use, so the two are one
-/// measurement — which is what makes a subwoofer without an array legitimate. It
-/// gains almost nothing from one anyway: below the cabin's first mode a point and
-/// an average are the same measurement.
-/// </remarks>
+/// <remarks>Moving-mic sets are all-or-nothing (one analyzer session); an array is levelled by the IRs' own loopback, so a sub without one is legitimate.</remarks>
 public sealed class VirtualCrossoverArrayFallbackTests
 {
     private const int Points = 64;
@@ -43,16 +32,10 @@ public sealed class VirtualCrossoverArrayFallbackTests
         };
     }
 
-    // The panel, uninitialized but for the two fields the builder reads: the
-    // project (for the method) and nothing else. The channels list stays null, so
-    // the method is set explicitly rather than resolved.
     private static object Panel(VirtualCrossoverSpatialAverageMode mode)
     {
         object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
         SetField(panel, "project", new VirtualCrossoverProjectFile { SpatialAverageMode = mode });
-        // The offset datum is read through the panel's canonical gate, which a
-        // constructor sets: the same steady-state window the panel uses, so the test
-        // measures what the panel would.
         SetField(panel, "magnitudeGate", new VirtualCrossoverPanel.MagnitudeGateSnapshot(
             new PhaseAnalysisSettings(
                 PhaseWindowMode.Fixed,
@@ -87,8 +70,6 @@ public sealed class VirtualCrossoverArrayFallbackTests
             "BuildHybridMagnitudes",
             BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new InvalidOperationException("BuildHybridMagnitudes is gone.");
-        // Only the Channel matters to the builder; the rest of a ProcessedChannel is
-        // the plot's business.
         List<ProcessedChannel> processed = channels
             .Select(channel => new ProcessedChannel(
                 channel,
@@ -108,9 +89,7 @@ public sealed class VirtualCrossoverArrayFallbackTests
             VirtualCrossoverChannelState state = channel.PhysicalSideState(side);
             state.SampleRate = 48_000;
             state.ArrayCapture = array;
-            // A real impulse response, because the offset datum is read on the two
-            // MEASUREMENTS: without one a channel contributes nothing whether or not
-            // it has an array, and the test would pass for the wrong reason.
+            // The offset datum is read on the measurements, so without a real IR the test passes for the wrong reason.
             var impulse = new System.Numerics.Complex[4_096];
             impulse[64] = System.Numerics.Complex.One;
             state.TransferImpulseResponse = impulse;
@@ -137,9 +116,7 @@ public sealed class VirtualCrossoverArrayFallbackTests
         Assert.Equal([false, true], hybrid!.PointMeasuredChannels);
         Assert.Equal(1, hybrid.PointMeasuredCount);
 
-        // The set's curves are held WITHOUT the offset, which is added on the way to
-        // the plot — so the fallback curve, already on the impulse responses' axis,
-        // arrives pre-subtracted and lands back where it started.
+        // Set curves are held without the offset, so the fallback curve arrives pre-subtracted.
         double drawn = hybrid.Channels[1][Points / 2].Y + hybrid.OffsetDb;
         Assert.Equal(-30, drawn, 6);
     }
@@ -157,9 +134,6 @@ public sealed class VirtualCrossoverArrayFallbackTests
 
         HybridMagnitudes? hybrid = Build(panel, channels, references);
 
-        // It has no capture to compare against its measurement, so it says nothing
-        // about whether the set hangs together — and a datum invented for it would
-        // read as perfect agreement and pull the spread toward zero.
         Assert.NotNull(hybrid!.ChannelOffsetsDb[0]);
         Assert.Null(hybrid.ChannelOffsetsDb[1]);
     }
@@ -177,7 +151,6 @@ public sealed class VirtualCrossoverArrayFallbackTests
             Capture(-20, SpatialAverageMethod.MovingMic);
         AnalysisCurve[] references = [Reference(-24), Reference(-30)];
 
-        // Two references on one axis is exactly what that family cannot survive.
         Assert.Null(Build(panel, channels, references));
     }
 

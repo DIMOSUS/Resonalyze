@@ -1,10 +1,6 @@
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// SPL conversion turns the loopback-referenced curves into an absolute dB SPL
-/// axis: the primary shifts by K, and every fundamental-relative trace is lifted
-/// by the primary's own SPL at its frequency so a ratio becomes a level.
-/// </summary>
+/// <summary>The primary shifts by K; ratio traces are lifted by the primary's SPL at their frequency.</summary>
 public sealed class SplConversionTests
 {
     private static AnalysisCurve Curve(AnalysisCurveKind kind, params (double X, double Y)[] points) =>
@@ -28,8 +24,6 @@ public sealed class SplConversionTests
     [Fact]
     public void Harmonic_LiftedByFlatPrimary()
     {
-        // primary flat at -10 dBr, K = 100 -> primary SPL = 90 everywhere.
-        // A -50 dBc harmonic becomes 90 + (-50) = 40 dB SPL.
         AnalysisCurve primary = Curve(AnalysisCurveKind.Primary, (100, -10), (10_000, -10));
         AnalysisCurve hd2 = Curve(AnalysisCurveKind.SecondHarmonic, (100, -50), (10_000, -50));
 
@@ -42,9 +36,7 @@ public sealed class SplConversionTests
     [Fact]
     public void Harmonic_LiftedBySlopedPrimaryWithInterpolation()
     {
-        // primary: 0 dBr at 100 Hz, -20 dBr at 1000 Hz. At 550 Hz (halfway in
-        // frequency) the interpolated primary is -10 dBr. With K = 90 that point's
-        // primary SPL is 80; a -40 dBc harmonic there reads 80 + (-40) = 40.
+        // Interpolated primary at 550 Hz is -10 dBr; with K = 90 a -40 dBc harmonic reads 40.
         AnalysisCurve primary = Curve(AnalysisCurveKind.Primary, (100, 0), (1_000, -20));
         AnalysisCurve hd3 = Curve(AnalysisCurveKind.ThirdHarmonic, (550, -40));
 
@@ -72,7 +64,6 @@ public sealed class SplConversionTests
         IReadOnlyList<AnalysisCurve> result =
             SplConversion.ToSoundPressureLevel(curves, offsetDb: 100.0);
 
-        // primary SPL at 1 kHz is 0 + 100; each -60 dBc trace becomes 40 dB SPL.
         foreach (AnalysisCurve curve in result.Where(c => c.Kind != AnalysisCurveKind.Primary))
         {
             Assert.Equal(40.0, curve.Points[0].Y, 9);
@@ -82,8 +73,7 @@ public sealed class SplConversionTests
     [Fact]
     public void MissingPrimary_LeavesFundamentalRelativeUnchanged()
     {
-        // With nothing to anchor to, a ratio cannot become a level; leave it as-is
-        // (the caller only enters SPL mode when a primary and a valid K exist).
+        // No primary: a ratio cannot become a level, so leave it.
         AnalysisCurve hd2 = Curve(AnalysisCurveKind.SecondHarmonic, (1_000, -60));
 
         AnalysisCurve result =

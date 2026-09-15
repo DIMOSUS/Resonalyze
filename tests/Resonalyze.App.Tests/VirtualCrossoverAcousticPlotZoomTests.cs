@@ -8,13 +8,7 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// What the Virtual DSP acoustic plot lets the mouse do per view, and when its
-/// right-hand sum-loss axis is there to be moved. Phase is a wrapped angle, so
-/// its height is the whole range there is and stays locked; the impulse view's
-/// time axis and the loss axis zoom, which only works if the constant redraws
-/// stop re-arming them behind the user's back.
-/// </summary>
+/// <summary>Phase height is the whole wrapped range and stays locked; other axes zoom only if redraws stop re-arming them.</summary>
 public sealed class VirtualCrossoverAcousticPlotZoomTests
 {
     private const int SampleRate = 48_000;
@@ -33,8 +27,6 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         Assert.False(value.IsZoomEnabled);
         Assert.False(value.IsPanEnabled);
 
-        // Locked for the phase view only — the toggle back must give the dB and
-        // the normalized impulse axes their zoom again.
         plot.ConfigureForView(AcousticView.Magnitude);
         Assert.True(value.IsZoomEnabled);
         Assert.True(value.IsPanEnabled);
@@ -58,13 +50,11 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         Assert.True(double.IsNaN(value.Minimum));
         Assert.True(double.IsNaN(value.Maximum));
 
-        // Two flat channels at 10 and 20 ms: the axis fits itself around them.
         plot.Draw(GroupDelayRender(10, 20));
         UpdateData(view);
         Assert.True(value.ActualMinimum < 10 && value.ActualMinimum > 5);
         Assert.True(value.ActualMaximum > 20 && value.ActualMaximum < 25);
 
-        // Every chain edit redraws this view; a zoom the user set survives it.
         value.Zoom(12, 14);
         Update(view);
         plot.Draw(GroupDelayRender(10, 20));
@@ -72,7 +62,6 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         Assert.Equal(12, value.ActualMinimum, 6);
         Assert.Equal(14, value.ActualMaximum, 6);
 
-        // Back to the phase view: the ±180° lock, and its own range.
         plot.ConfigureForView(AcousticView.Phase);
         Assert.False(value.IsZoomEnabled);
         Assert.False(value.IsPanEnabled);
@@ -95,8 +84,6 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         Assert.Equal(9.8, time.ActualMinimum, 6);
         Assert.Equal(10.2, time.ActualMaximum, 6);
 
-        // Every chain edit redraws this view. The window has not moved, so the
-        // zoom must still be there afterwards.
         plot.Draw(Render(gateOffsetMs: 10));
         Update(view);
 
@@ -115,8 +102,7 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         time.Zoom(9.8, 10.2);
         Update(view);
 
-        // A gate move is a new timeline, not a redraw of the old one: the zoom
-        // was taken on a window that no longer exists.
+        // A gate move is a new timeline, so the zoom is dropped.
         plot.Draw(Render(gateOffsetMs: 25));
         Update(view);
 
@@ -136,8 +122,6 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         time.Zoom(9.8, 10.2);
         Update(view);
 
-        // The step view draws on the impulse view's ms axis and unitless value
-        // axis; the window is the same one, so the zoom taken on it survives.
         plot.ConfigureForView(AcousticView.Step);
         plot.Draw(StepRender(gateOffsetMs: 10));
         Update(view);
@@ -151,7 +135,6 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         Assert.Equal(9.8, time.ActualMinimum, 6);
         Assert.Equal(10.2, time.ActualMaximum, 6);
 
-        // Back on the frequency views, the ms axis leaves with the step view.
         plot.ConfigureForView(AcousticView.Magnitude);
         Assert.Contains(view.Model!.Axes, axis => axis is LogarithmicAxis);
         Assert.DoesNotContain(view.Model!.Axes, axis => ReferenceEquals(axis, time));
@@ -183,12 +166,10 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         plot.Draw(MagnitudeRender(lossDepthDb: -10));
         Assert.True(loss.IsAxisVisible);
         Assert.Equal(AxisPosition.Right, loss.Position);
-        // The curve binds to the right axis, the channel stays on the left one.
         List<LineSeries> drawn = view.Model!.Series.OfType<LineSeries>().ToList();
         Assert.Equal(loss.Key, Assert.Single(drawn, s => s.Title == "Sum loss").YAxisKey);
         Assert.Null(Assert.Single(drawn, s => s.Title == "A").YAxisKey);
 
-        // The toggle off redraws without the curve: no scale for nothing.
         plot.Draw(MagnitudeRender(lossDepthDb: null));
         Assert.False(loss.IsAxisVisible);
     }
@@ -223,19 +204,14 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         Axis loss = LossAxis(view);
         Update(view);
 
-        // An ordinary junction reads on the nominal scale: 0 dB just below the
-        // top, -24 dB at the bottom.
         Assert.Equal(3, loss.ActualMaximum, 6);
         Assert.Equal(-24, loss.ActualMinimum, 6);
 
-        // A notch past the nominal depth extends the range a whole step at a
-        // time — the curve must not fall off its own axis.
         plot.Draw(MagnitudeRender(lossDepthDb: -31));
         Update(view);
         Assert.Equal(-36, loss.ActualMinimum, 6);
         Assert.Equal(-36, loss.AbsoluteMinimum, 6);
 
-        // Below the floor a cancellation is total; the scale stops there.
         plot.Draw(MagnitudeRender(lossDepthDb: -200));
         Update(view);
         Assert.Equal(-60, loss.ActualMinimum, 6);
@@ -255,16 +231,12 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         Assert.Equal(-12, loss.ActualMinimum, 6);
         Assert.Equal(0, loss.ActualMaximum, 6);
 
-        // Every chain edit redraws this view; a loss that stayed within the
-        // nominal depth is not a new scale, so the zoom must survive it.
         plot.Draw(MagnitudeRender(lossDepthDb: -11));
         Update(view);
         Assert.Equal(-12, loss.ActualMinimum, 6);
         Assert.Equal(0, loss.ActualMaximum, 6);
     }
 
-    // A magnitude frame: one channel on the left dB axis and, unless the
-    // depth is null, a sum-loss curve dipping to that depth at 1 kHz.
     private static AcousticRender MagnitudeRender(double? lossDepthDb)
     {
         var channel = new List<SignalPoint>();
@@ -288,7 +260,6 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         return new AcousticRender(string.Empty, curves, null);
     }
 
-    // A group-delay frame: two flat channels at the given arrivals.
     private static AcousticRender GroupDelayRender(double firstMs, double secondMs)
     {
         var first = new List<SignalPoint>();
@@ -350,12 +321,10 @@ public sealed class VirtualCrossoverAcousticPlotZoomTests
         view.Model!.Axes.First(axis =>
             axis.Position == AxisPosition.Bottom && axis is LinearAxis);
 
-    // ActualMinimum/Maximum are only recomputed while the model updates, which
-    // a headless test never triggers by painting.
+    // ActualMinimum/Maximum are only recomputed on model update, which headless tests never trigger by painting.
     private static void Update(PlotView view) =>
         ((IPlotModel)view.Model!).Update(false);
 
-    // The auto-fit reads the series' own ranges, which only a data update fills.
     private static void UpdateData(PlotView view) =>
         ((IPlotModel)view.Model!).Update(true);
 }

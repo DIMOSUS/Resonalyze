@@ -2,47 +2,25 @@ using NAudio.Wave;
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Reads program material out of media files and writes rendered audio back as
-/// WAV. This is the only place file codecs live: decoding MP3/FLAC/M4A means
-/// NAudio and Media Foundation, and the app project cannot reference either.
-/// <para>
-/// Reading accepts whatever the platform can decode; writing is deliberately WAV
-/// only. Re-encoding a render to a lossy format would put codec artifacts inside
-/// the very thing being auditioned, and Windows does not guarantee an MP3 encoder
-/// is even installed.
-/// </para>
-/// </summary>
+/// <summary>The only home of file codecs (NAudio / Media Foundation). Writing is WAV only: no lossy artifacts in auditioned renders.</summary>
 public static class AudioFileCodec
 {
-    /// <summary>
-    /// The file dialog filter for material this decoder accepts. WAV, MP3 and
-    /// AIFF are decoded by NAudio itself; the rest go through Media Foundation,
-    /// which covers a stock Windows install's FLAC/M4A/WMA support.
-    /// </summary>
+    /// <summary>WAV, MP3 and AIFF via NAudio; the rest via Media Foundation.</summary>
     public const string ReadableFilesFilter =
         "Audio files (*.wav;*.mp3;*.flac;*.m4a;*.aac;*.wma;*.aiff)" +
         "|*.wav;*.mp3;*.flac;*.m4a;*.aac;*.wma;*.aiff;*.aif" +
         "|All files (*.*)|*.*";
 
-    /// <summary>Bit depth of written files: transparent, and universally playable.</summary>
     private const int WriteBitsPerSample = 24;
 
     private const int WriteBytesPerSample = WriteBitsPerSample / 8;
 
-    // Frames pulled from the decoder per call. Large enough that the per-call
-    // overhead disappears, small enough that the copy churn stays bounded.
     private const int ReadBlockFrames = 32_768;
 
-    // The subformat GUIDs of a WAVE_FORMAT_EXTENSIBLE header that carry ordinary
-    // uncompressed samples: KSDATAFORMAT_SUBTYPE_PCM and _IEEE_FLOAT.
+    // KSDATAFORMAT_SUBTYPE_PCM and _IEEE_FLOAT.
     private static readonly Guid PcmSubFormat = new("00000001-0000-0010-8000-00aa00389b71");
     private static readonly Guid IeeeFloatSubFormat = new("00000003-0000-0010-8000-00aa00389b71");
 
-    /// <summary>
-    /// Reads a media file's format without decoding its samples, so a picker
-    /// can report (or refuse) the file the moment it is chosen.
-    /// </summary>
     public static AudioFileInfo Probe(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -53,7 +31,6 @@ public static class AudioFileCodec
             source.Duration);
     }
 
-    /// <summary>A decoded file as float samples, with the reader that owns them.</summary>
     private sealed record AudioFileSource(
         ISampleProvider Samples,
         WaveFormat Format,
@@ -63,20 +40,7 @@ public static class AudioFileCodec
         public void Dispose() => Reader.Dispose();
     }
 
-    /// <summary>
-    /// Opens any readable file as float samples.
-    /// <para>
-    /// WAV goes through <see cref="WaveFileReader"/> rather than
-    /// <see cref="AudioFileReader"/> because of one format:
-    /// <c>WAVE_FORMAT_EXTENSIBLE</c> (0xFFFE), which is what most recorders and
-    /// DAWs write for 24-bit and multichannel files. <c>AudioFileReader</c>
-    /// treats anything that is not literally tagged PCM or IEEE float as
-    /// compressed and hands it to ACM, which has no driver for it and fails with
-    /// "NoDriver calling acmFormatSuggest" — a perfectly ordinary 24-bit
-    /// recording, refused. The header's subformat GUID says what the samples
-    /// really are, and for PCM or float that is a plain WaveFormat away.
-    /// </para>
-    /// </summary>
+    /// <summary>WAV bypasses AudioFileReader: it sends WAVE_FORMAT_EXTENSIBLE 24-bit files to ACM, which fails. See docs/tech/audio-layer.md#wave-format-extensible.</summary>
     private static AudioFileSource OpenSource(string path)
     {
         if (!IsWaveFile(path))
@@ -110,19 +74,14 @@ public static class AudioFileCodec
             throw;
         }
 
-        // A genuinely compressed payload inside a .wav container (ADPCM, µ-law,
-        // MP3-in-WAV). ACM is what decodes those, so leave them to the reader
-        // that uses it.
+        // Genuinely compressed payload in a .wav: leave it to the ACM-based reader.
         wave.Dispose();
         var file = new AudioFileReader(path);
         return new AudioFileSource(file, file.WaveFormat, file.TotalTime, file);
     }
 
-    // The plain WaveFormat an extensible header really describes, or null when it
-    // describes something else (a compressed subformat) or is not extensible at
-    // all. NAudio surfaces the extension as raw bytes on WaveFormatExtraData —
-    // NOT as WaveFormatExtensible, which a type test would miss — laid out as
-    // validBitsPerSample (2), channel mask (4), then the subformat GUID.
+    // NAudio exposes the extension as raw WaveFormatExtraData bytes (not WaveFormatExtensible):
+    // validBitsPerSample (2), channel mask (4), subformat GUID.
     private static WaveFormat? StandardizeExtensible(WaveFormat format)
     {
         if (format.Encoding != WaveFormatEncoding.Extensible ||
@@ -149,34 +108,8 @@ public static class AudioFileCodec
             extension.Equals(".wave", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Decodes a media file to deinterleaved float PCM at its native rate,
-    /// keeping only the first <paramref name="channelLimit"/> channels.
-    /// <para>
-    /// The stream is deinterleaved AS IT DECODES, into per-channel chunk lists:
-    /// no full interleaved copy ever exists beside the per-channel data, and
-    /// channels beyond the limit are never stored at all — a 7.1 file read for
-    /// a stereo render costs a quarter of its decoded size, not the whole of it
-    /// twice. The transient peak is the kept chunks plus one channel's final
-    /// array during assembly.
-    /// </para>
-    /// </summary>
-    /// <param name="maximumDuration">
-    /// Refuses anything longer. A render holds the decoded material, its
-    /// resampled copy and the result in memory at once, so an unbounded file is
-    /// an out-of-memory crash rather than a slow operation.
-    /// </param>
-    /// <param name="channelLimit">
-    /// How many leading channels to keep. The full channel layout still drives
-    /// frame alignment, so dropped channels cost decoding time but no memory.
-    /// </param>
-    /// <param name="maximumStoredBytes">
-    /// Hard cap on the decode's PEAK memory — the kept samples plus the
-    /// assembly-time copy of one channel — checked after every decoder block.
-    /// The duration limit trusts the file to be what its header claims; this
-    /// one holds when it is not — a swapped file or a lying container stops
-    /// decoding at the budget instead of exhausting memory first.
-    /// </param>
+    /// <summary>Decodes to deinterleaved float at the native rate, deinterleaving while decoding so dropped channels never take memory.</summary>
+    /// <param name="maximumStoredBytes">Cap on PEAK decode memory, checked per block; holds even when the header lies about duration.</param>
     public static AudioFileContent Read(
         string path,
         TimeSpan maximumDuration,
@@ -216,11 +149,7 @@ public static class AudioFileCodec
             current[channel] = new float[ReadBlockFrames];
         }
 
-        // The cursor walks the FULL channel layout by a running count across
-        // read boundaries: a decoder is not contractually bound to return whole
-        // frames per call, and restarting the channel assignment per block
-        // would rotate every later sample's channel (L/R swapped from that
-        // point on) if a call ever ended mid-frame.
+        // A running channel cursor across reads: decoders may return partial frames, and restarting per block would swap channels.
         var buffer = new float[channelCount * ReadBlockFrames];
         long totalSamples = 0;
         long keptSamples = 0;
@@ -257,12 +186,7 @@ public static class AudioFileCodec
                     $"The file is longer than {maximumDuration.TotalMinutes:0} " +
                     "minutes; use a shorter excerpt.");
             }
-            // The budget bounds the decode's PEAK, not only the payload:
-            // while the first channel's final array fills during assembly,
-            // every chunk still exists, so the peak reaches
-            // payload + payload / keptChannels. Partial chunks and list
-            // overhead stay outside the count — a few chunk lengths at most,
-            // noise against any realistic budget.
+            // Peak during assembly is payload + payload / keptChannels.
             long payloadBytes = keptSamples * sizeof(float);
             if (payloadBytes + payloadBytes / keptChannels > maximumStoredBytes)
             {
@@ -279,10 +203,7 @@ public static class AudioFileCodec
             throw new InvalidOperationException("The file decoded to no audio.");
         }
 
-        // Assemble channel by channel, releasing each channel's chunks as its
-        // final array fills, so the transient peak stays one channel wide. A
-        // kept channel may carry one sample past frameCount (a trailing partial
-        // frame at the end of the file); the copy bounds drop it.
+        // Release each channel's chunks as its array fills; a trailing partial frame is dropped by the copy bounds.
         var channels = new float[keptChannels][];
         for (int channel = 0; channel < keptChannels; channel++)
         {
@@ -314,10 +235,7 @@ public static class AudioFileCodec
         return new AudioFileContent(channels, sampleRate);
     }
 
-    /// <summary>
-    /// Writes deinterleaved float PCM as a 24-bit WAV file. Samples outside
-    /// [-1, 1] are clipped rather than allowed to wrap into full-scale noise.
-    /// </summary>
+    /// <summary>24-bit WAV; samples outside [-1, 1] clip rather than wrap.</summary>
     public static void WriteWav(
         string path,
         AudioFileContent content,
@@ -333,9 +251,7 @@ public static class AudioFileCodec
         {
             throw new ArgumentException("The sample rate is invalid.", nameof(content));
         }
-        // The interleaving loop below indexes every channel by the first one's
-        // frame count; a shorter channel would crash it mid-write and a longer
-        // one would be silently truncated, so refuse loudly instead.
+        // Unequal channel lengths would crash or truncate the interleave: refuse.
         foreach (float[] channel in content.Channels)
         {
             if (channel.Length != content.FrameCount)
@@ -350,9 +266,7 @@ public static class AudioFileCodec
         var format = new WaveFormat(content.SampleRate, WriteBitsPerSample, channelCount);
         using var writer = new WaveFileWriter(path, format);
 
-        // Interleaving into a byte block and writing that beats WaveFileWriter's
-        // per-sample path, which allocates on every call — tens of millions of
-        // allocations over a full track.
+        // Own interleaving: WaveFileWriter's per-sample path allocates on every call.
         int blockFrames = ReadBlockFrames;
         var bytes = new byte[blockFrames * channelCount * WriteBytesPerSample];
         for (int start = 0; start < frameCount; start += blockFrames)
@@ -375,12 +289,7 @@ public static class AudioFileCodec
         }
     }
 
-    /// <summary>
-    /// Writes deinterleaved float PCM as a 32-bit IEEE float WAV file — every sample
-    /// as it is, no scaling and no clipping. For data that is not a recording: a FIR
-    /// kernel's taps run past ±1 whenever the filter has gain, and 24-bit integer PCM
-    /// would clip them into another filter.
-    /// </summary>
+    /// <summary>32-bit float WAV without scaling or clipping, for non-recordings such as FIR taps beyond ±1.</summary>
     public static void WriteWavFloat32(string path, AudioFileContent content)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);

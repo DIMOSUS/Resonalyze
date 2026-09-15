@@ -16,8 +16,7 @@ public sealed class CurveTagTests
         Assert.Equal("PhaseResponse:Primary:Main", main.Key);
         Assert.Equal("PhaseResponse:Primary:Compare", compare.Key);
 
-        // The phase-wrap flag is carried for difference math but must not affect the
-        // binding key (so a wrap toggle keeps a linked slot pointing at the same curve).
+        // The wrap flag must not affect the binding key, so a wrap toggle keeps linked slots bound.
         var wrapped = compare with { PhaseUnwrapped = false };
         Assert.Equal(compare.Key, wrapped.Key);
     }

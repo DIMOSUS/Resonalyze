@@ -5,9 +5,7 @@ using OxyPlot.WindowsForms;
 
 namespace Resonalyze.App.Tests;
 
-// Ctrl+Z on a plot. The stack holds axis ranges named by key, and the same key
-// means a different quantity from one model to the next ("decibel" is dBr in one
-// build and dB SPL in the next), so what it may be replayed onto is the point.
+// The same axis key means different quantities across models (dBr vs dB SPL), so replay targets matter.
 public sealed class PlotGestureUndoTests
 {
     [Fact]
@@ -17,8 +15,7 @@ public sealed class PlotGestureUndoTests
         PlotInteraction.Enable(view);
         PlotModel model = FrequencyModel();
         view.Model = model;
-        // A headless view never paints, so the axes only learn their actual range
-        // when the model is updated by hand.
+        // A headless view never paints; axes learn their range only on a manual update.
         Update(model);
         Axis decibel = Axis(model, PlotModelFactory.DecibelAxisKey);
         double minimum = decibel.ActualMinimum;
@@ -42,12 +39,9 @@ public sealed class PlotGestureUndoTests
         PlotInteraction.Enable(view);
         view.Model = FrequencyModel();
 
-        // A zoom worth undoing, recorded against the first model.
         Axis(view.Model, PlotModelFactory.FrequencyAxisKey).Zoom(100, 500);
         Send(view, OxyKey.F, OxyModifierKeys.Control | OxyModifierKeys.Alt);
 
-        // The mode switched, or a setting changed what the axes mean: a different
-        // model is on screen now, and the old ranges are not ranges on it.
         PlotModel rebuilt = FrequencyModel(soundPressureLevel: true);
         view.Model = rebuilt;
         Update(rebuilt);
@@ -64,9 +58,6 @@ public sealed class PlotGestureUndoTests
     [Fact]
     public void Undo_AfterAnAxisIsRearmedInPlace_LeavesItAlone()
     {
-        // The Virtual DSP acoustic view: switching between magnitude, phase and
-        // impulse re-arms ONE axis object to a different quantity without replacing
-        // the model, so a model reference alone would not notice.
         using var view = new PlotView();
         PlotInteraction.Enable(view);
         PlotModel model = FrequencyModel();
@@ -76,7 +67,6 @@ public sealed class PlotGestureUndoTests
 
         Send(view, OxyKey.F, OxyModifierKeys.Control | OxyModifierKeys.Alt);
 
-        // What ConfigureForView does: same axis, degrees now.
         value.Title = "deg";
         value.AbsoluteMinimum = -180;
         value.AbsoluteMaximum = 180;
@@ -97,8 +87,6 @@ public sealed class PlotGestureUndoTests
             view,
             new OxyKeyEventArgs { Key = key, ModifierKeys = modifiers });
 
-    // The relative (dBr) plot by default; pass the SPL window for the "the axis
-    // means something else now" half of the story.
     private static PlotModel FrequencyModel(bool soundPressureLevel = false)
     {
         var model = new PlotModel();

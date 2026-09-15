@@ -2,66 +2,27 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Renders program material through measured virtual-crossover responses, so a
-/// tune can be listened to instead of only read off a plot.
-/// <para>
-/// The model is a HEADPHONE-ONLY stereo auralization of the measured left and
-/// right acoustic paths: each program channel is convolved with the summed
-/// response of its side (drivers, cabin and microphone capsule included, not
-/// only the DSP), and each side goes to its own ear. That preserves the tune's
-/// inter-side level and timing differences — the things being auditioned. It
-/// is NOT a binaural simulation of a listener's ears, and not literally what
-/// the microphone heard either: the capsule hears both sides SUMMED at one
-/// point, while the render keeps them separate so the balance stays audible.
-/// </para>
-/// </summary>
+/// <summary>Headphone-only stereo auralization: each program channel convolved with its side's measured summed response, one side per ear.
+/// Keeps inter-side level and timing audible; not binaural, and not the summed signal the microphone heard.</summary>
 public static class Auralization
 {
-    // The decay window the tail search reads. Five milliseconds is short enough
-    // to follow a cabin's decay (RT60 in a car is tens of milliseconds) and long
-    // enough that a single zero crossing cannot end the response early.
+    // Short enough to follow a car's decay, long enough that one zero crossing cannot end it.
     private const double DecayWindowMs = 5.0;
 
-    // Where the response stops being the car and starts being the measurement's
-    // own noise floor. Sixty dB below the arrival is past anything audible under
-    // program material, and a clean cabin sweep's floor sits above it.
     private const double DecayFloorDb = 60.0;
 
-    // The tail is bounded both ways: too short truncates the cabin's decay into
-    // an audibly dry response, too long convolves the track with half a second
-    // of recorded hiss. A car's decay fits comfortably inside the upper bound.
+    // Too short sounds dry; too long convolves recorded hiss.
     private const double MinimumTailMs = 60.0;
     private const double MaximumTailMs = 400.0;
 
-    // The kernel must not end on a step — that is a click on every sample of the
-    // program material, spread across the whole track by the convolution.
+    // A kernel ending on a step clicks on every program sample.
     private const double FadeMs = 8.0;
 
-    /// <summary>
-    /// Peak target for the rendered file, dBFS. One dB of headroom leaves room
-    /// for the inter-sample overshoots any later lossy encode or resampler
-    /// introduces.
-    /// </summary>
+    /// <summary>1 dB headroom for inter-sample overshoot in later encodes.</summary>
     public const double DefaultPeakTarget = -1.0;
 
-    /// <summary>
-    /// Cuts a processed virtual response down to the part worth convolving with,
-    /// and fades its end.
-    /// <para>
-    /// The response arrives as the tool's chain output: a power-of-two record
-    /// whose late region is the measurement's noise floor, the deconvolution's
-    /// numerical tail, and — for a negative chain delay — the samples the shift
-    /// wrapped past zero. Convolving music with all of that adds audible hiss and
-    /// a wrapped pre-echo, so the record is cut where the decay reaches the floor.
-    /// </para>
-    /// <para>
-    /// The cut is at the END only: sample 0 stays sample 0, so the measurement's
-    /// own propagation delay — and with it the difference between the two sides,
-    /// which is the whole point of the alignment being auditioned — survives
-    /// intact.
-    /// </para>
-    /// </summary>
+    /// <summary>Cuts the chain output where decay reaches the floor (noise, numerical tail, wrapped negative delay) and fades the end.
+    /// Only the end is cut: sample 0 stays, preserving propagation delay and the inter-side difference.</summary>
     public static double[] TrimResponse(
         Complex[] response,
         int sampleRate,
@@ -112,7 +73,6 @@ public static class Auralization
         int fade = Math.Min(length, Math.Max(1, (int)Math.Round(FadeMs * sampleRate / 1000.0)));
         for (int i = 0; i < fade; i++)
         {
-            // Raised cosine from 1 down to 0 across the last `fade` samples.
             double phase = Math.PI * (i + 1) / (fade + 1);
             kernel[length - fade + i] *= 0.5 * (1.0 + Math.Cos(phase));
         }
@@ -124,12 +84,7 @@ public static class Auralization
         return kernel;
     }
 
-    /// <summary>
-    /// Runs the program material through the two side responses: channel 1 of the
-    /// source through the left kernel, channel 2 through the right. A mono source
-    /// feeds both sides; a source with more than two channels contributes its
-    /// first two, and the caller is expected to have said so.
-    /// </summary>
+    /// <summary>Channel 1 through the left kernel, channel 2 through the right; mono feeds both, extra channels are ignored.</summary>
     public static AuralizationResult Render(
         AuralizationRequest request,
         IProgress<double>? progress = null,
@@ -147,11 +102,7 @@ public static class Auralization
             ? request.SourceChannels[1]
             : request.SourceChannels[0];
 
-        // The MATERIAL is converted to the response's rate, never the response to
-        // the material's. The kernels are the measurement — their timing and phase
-        // are the object under test, and a converter's own phase response would
-        // land inside the thing being auditioned. The rendered file therefore
-        // comes out at the project's rate.
+        // Resample the material, never the kernels: a converter's phase would land inside the thing under test.
         bool resampled = request.SourceSampleRate != request.KernelSampleRate;
         if (resampled)
         {
@@ -175,15 +126,7 @@ public static class Auralization
             right = convertedRight;
         }
 
-        // Reference kernels turn the normalization into a level-MATCHED one: the
-        // same source is convolved through a second pair of kernels (typically
-        // the tune WITHOUT the cabin subtraction) purely to read that render's
-        // peak. Rendered from the already-resampled source, so the material is
-        // converted only once. Their peak feeds the divisor below, so two renders
-        // that differ only by the reference (an A/B of cabin choices) come out at
-        // one shared gain and the difference stays audible instead of being
-        // normalized away. The reference outputs are read for their peak and
-        // dropped; only the real render is kept.
+        // Reference kernels (e.g. without cabin subtraction) are rendered only for their peak, so A/B renders share one gain.
         bool hasReference =
             request.ReferenceLeftKernel != null && request.ReferenceRightKernel != null;
         int convolvePasses = hasReference ? 4 : 2;
@@ -220,10 +163,7 @@ public static class Auralization
             Scaled(progress, convolveBase + passShare * pass++, passShare),
             cancellationToken);
 
-        // The kernels are trimmed per side, so the two convolutions come out at
-        // DIFFERENT lengths (source + kernel − 1 each). A stereo file needs one
-        // frame count; the shorter side gets trailing zeros, which is exactly
-        // what it is — that side's response ended earlier.
+        // Per-side trimmed kernels give different lengths; pad the shorter side with zeros.
         int commonLength = Math.Max(renderedLeft.Length, renderedRight.Length);
         renderedLeft = PadTo(renderedLeft, commonLength);
         renderedRight = PadTo(renderedRight, commonLength);
@@ -239,18 +179,9 @@ public static class Auralization
             resampled);
     }
 
-    // Resampling is a single pass over the material against two block-FFT passes,
-    // so it is a modest slice of the whole job; the split only has to keep the
-    // bar moving at a believable rate.
     private const double ResampleProgressShare = 0.2;
 
-    // One gain for BOTH channels: scaling the sides independently would level the
-    // very inter-side balance the tune is being auditioned for. The divisor is
-    // the LARGEST peak in play — both channels and, when a level-matched render
-    // was asked for, the reference render's peak too. Dividing by the larger
-    // peak is the smaller of the two candidate gains: it cannot clip either
-    // render, and it pins this render to the reference's level so the two are
-    // directly comparable.
+    // One gain for both channels (preserves balance), divided by the largest peak including the reference render.
     private static double Normalize(
         float[] left,
         float[] right,
@@ -265,10 +196,7 @@ public static class Auralization
             return 1.0;
         }
 
-        // The summed transfer response has no absolute scale — it is
-        // loopback-referenced and then run through arbitrary gains and PEQ boosts
-        // — so the raw render lands anywhere from far below to far above full
-        // scale, and the factor is reported to the caller rather than hidden.
+        // The summed response has no absolute scale, so the gain is reported, not hidden.
         double gain = Math.Pow(10.0, peakTargetDbfs / 20.0) / peak;
         cancellationToken.ThrowIfCancellationRequested();
         Scale(left, gain);
@@ -329,11 +257,7 @@ public static class Auralization
         return Math.Sqrt(sumSquares / (end - start));
     }
 
-    // Synchronous on purpose: Progress<T> created here — on a worker thread —
-    // would post every report to the thread pool, and two chained layers of
-    // that reorder freely (a left channel's report after the right's, a stage's
-    // update after the final status). Only the caller's outermost progress may
-    // hop threads.
+    // Synchronous: Progress<T> created on a worker thread posts to the pool and reorders reports.
     private static IProgress<double>? Scaled(
         IProgress<double>? progress, double offset, double share) =>
         progress == null
@@ -342,39 +266,25 @@ public static class Auralization
                 value => progress.Report(offset + value * share));
 }
 
-/// <summary>
-/// What <see cref="Auralization.TrimResponse"/> kept: the kernel length, the
-/// decay window past the arrival, and whether anything was actually cut.
-/// </summary>
 public readonly record struct AuralizationTrim(
     int Length,
     double TailMilliseconds,
     bool Cut);
 
-/// <summary>The inputs of one auralization render.</summary>
 public sealed record AuralizationRequest
 {
-    /// <summary>Trimmed summed response of the left side of the car.</summary>
     public required double[] LeftKernel { get; init; }
 
-    /// <summary>Trimmed summed response of the right side of the car.</summary>
     public required double[] RightKernel { get; init; }
 
-    /// <summary>
-    /// Optional left kernel of a REFERENCE render used only for level matching:
-    /// the source is convolved through it to read its peak, and the main render
-    /// is normalized to the larger of its own and this peak, so the two land at
-    /// one gain. Both reference kernels must be set together, or neither.
-    /// </summary>
+    /// <summary>Level-matching reference render; set both reference kernels or neither.</summary>
     public double[]? ReferenceLeftKernel { get; init; }
 
-    /// <summary>Right counterpart of <see cref="ReferenceLeftKernel"/>.</summary>
     public double[]? ReferenceRightKernel { get; init; }
 
-    /// <summary>The project's rate — both kernels share it, and the render adopts it.</summary>
+    /// <summary>The project's rate; both kernels share it and the render adopts it.</summary>
     public required int KernelSampleRate { get; init; }
 
-    /// <summary>Deinterleaved program material.</summary>
     public required float[][] SourceChannels { get; init; }
 
     public required int SourceSampleRate { get; init; }
@@ -382,7 +292,6 @@ public sealed record AuralizationRequest
     public double PeakTargetDbfs { get; init; } = Auralization.DefaultPeakTarget;
 }
 
-/// <summary>The rendered stereo pair and what the render had to do to it.</summary>
 public sealed record AuralizationResult(
     float[][] Channels,
     int SampleRate,

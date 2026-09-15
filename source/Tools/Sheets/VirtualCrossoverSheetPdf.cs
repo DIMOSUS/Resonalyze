@@ -7,36 +7,28 @@ using OxyPlot.Axes;
 using OxyPlot.Series;
 using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
-// Disambiguates against System.Drawing.Color, which the WinForms implicit usings pull in.
 using Color = MigraDoc.DocumentObjectModel.Color;
-// One printed side of a channel pair, as the graphs consume it.
 using SheetEntry = (int Index, string SideSuffix, bool Dashed,
     Resonalyze.VirtualCrossoverChannelSettings Channel,
     Resonalyze.VirtualCrossoverZone Zone);
 
 namespace Resonalyze;
 
-// Renders the Virtual DSP settings as a phone-friendly "tuning sheet" PDF
-// (MigraDoc / PDFsharp, same style as TuningSheetPdf): the product banner, the
-// title, a combined graph of every channel's DSP chain, and one section per
-// channel PAIR with the values to dial into the DSP plus the PEQ band cards —
-// a stereo pair prints its L and R values side by side in one table, a mono
-// pair (or a pair with one loaded side) prints the single-channel layout.
-// The shared layout (scaffold, images, filter cards) lives in PdfSheet.
+// Virtual DSP settings as a phone-friendly tuning-sheet PDF: a stereo pair prints L/R side by side, mono or one-sided pairs a single column.
+// Shared layout lives in PdfSheet.
 internal static class VirtualCrossoverSheetPdf
 {
-    // Print-friendly (white background) variants of the on-screen channel
-    // palette, hue for hue, one per possible channel so colours never repeat.
+    // Print-friendly variants of the on-screen channel palette, one per channel letter.
     private static readonly OxyColor[] ChainColors =
     [
-        OxyColor.FromRgb(0x1F, 0x77, 0xB4),   // A: blue
-        OxyColor.FromRgb(0xE0, 0x7A, 0x28),   // B: orange
-        OxyColor.FromRgb(0x2C, 0xA0, 0x50),   // C: green
-        OxyColor.FromRgb(0x8A, 0x56, 0xC8),   // D: purple
-        OxyColor.FromRgb(0x1F, 0x9A, 0xA8),   // E: cyan
-        OxyColor.FromRgb(0xC8, 0x50, 0x6E),   // F: pink
-        OxyColor.FromRgb(0x9A, 0x8A, 0x20),   // G: olive
-        OxyColor.FromRgb(0x5A, 0x9A, 0x28)    // H: lime
+        OxyColor.FromRgb(0x1F, 0x77, 0xB4),
+        OxyColor.FromRgb(0xE0, 0x7A, 0x28),
+        OxyColor.FromRgb(0x2C, 0xA0, 0x50),
+        OxyColor.FromRgb(0x8A, 0x56, 0xC8),
+        OxyColor.FromRgb(0x1F, 0x9A, 0xA8),
+        OxyColor.FromRgb(0xC8, 0x50, 0x6E),
+        OxyColor.FromRgb(0x9A, 0x8A, 0x20),
+        OxyColor.FromRgb(0x5A, 0x9A, 0x28)
     ];
 
     public static void Export(
@@ -50,10 +42,7 @@ internal static class VirtualCrossoverSheetPdf
         sheet.Save(filePath);
     }
 
-    // Builds the sheet without rendering it, so a test can walk the MigraDoc
-    // document model (section tables, rows, cells) and assert the layout — a
-    // stereo pair as one L/R table, a mono/one-sided pair as a single column —
-    // without parsing a rendered PDF. The caller owns disposal.
+    // Unrendered so tests can walk the MigraDoc document model. The caller owns disposal.
     internal static PdfSheet Build(
         VirtualCrossoverProjectFile project,
         string? metricLine,
@@ -72,11 +61,7 @@ internal static class VirtualCrossoverSheetPdf
 
         var sheet = new PdfSheet("Virtual DSP", subtitleText, qConvention);
 
-        // One run of sections per zone, in the order a tune is typed into a DSP
-        // (Sub, Front, Rear, Center), each run led by the zone's name and a
-        // graph of ITS chains — a system of a dozen channels on one graph is a
-        // tangle, and a group's is readable. A single-zone project keeps the
-        // flat sheet it always had: one combined graph, no group scaffolding.
+        // One run per zone in DSP typing order, each with its own graph (a dozen channels on one graph is a tangle); single-zone stays flat.
         IReadOnlyList<(VirtualCrossoverZone Zone, IReadOnlyList<int> PairIndices)>
             sections = VirtualCrossoverSheetGroups.Sections(project);
         if (sections.Count <= 1)
@@ -100,9 +85,7 @@ internal static class VirtualCrossoverSheetPdf
             return sheet;
         }
 
-        // The subwoofer group's chains reappear pale on the FRONT group's graph:
-        // the front chain hands its bass over to those subs, and the handover
-        // cannot be judged on a graph that shows only one side of it.
+        // Sub chains reappear pale on the front graph: the bass handover cannot be judged from one side of it.
         List<SheetEntry> subwooferMembers = [.. sections
             .Where(section => section.Zone == VirtualCrossoverZone.Sub)
             .SelectMany(section => Participants(project, section.PairIndices))];
@@ -110,12 +93,7 @@ internal static class VirtualCrossoverSheetPdf
         foreach ((VirtualCrossoverZone zone, IReadOnlyList<int> pairIndices)
             in sections)
         {
-            // Every group after the first starts a page of its own: the sheet
-            // is read standing at the DSP one group at a time, and a page that
-            // begins with the group's name and graph needs no scrolling back to
-            // see which zone the values belong to. The first group stays on the
-            // title page — breaking before it would leave that page holding
-            // nothing but the banner.
+            // Each group after the first starts a new page; the first stays on the title page.
             AddGroupHeading(
                 sheet.Section,
                 VirtualCrossoverZones.DisplayName(zone),
@@ -136,8 +114,6 @@ internal static class VirtualCrossoverSheetPdf
         return sheet;
     }
 
-    // Both sides of every pair print in one sheet; a mono pair prints once. On
-    // the graphs the right side reuses the pair's hue dashed.
     private static List<SheetEntry> Participants(
         VirtualCrossoverProjectFile project,
         IReadOnlyList<int> pairIndices)
@@ -161,10 +137,6 @@ internal static class VirtualCrossoverSheetPdf
         return participants;
     }
 
-    // A stereo pair with both sides loaded prints as ONE section with an
-    // L/R value table — the two sides of a pair are dialed in together,
-    // so their numbers belong side by side. A mono pair (or a pair with
-    // one loaded side) keeps the single-channel layout.
     private static void AddPairOrChannelSections(
         PdfSheet sheet,
         VirtualCrossoverProjectFile project,
@@ -187,15 +159,9 @@ internal static class VirtualCrossoverSheetPdf
         }
     }
 
-    // The size of a group heading: well above the channel headings (15 pt) and
-    // just under the document title (24 pt), so a page's first glance says
-    // which zone it belongs to. A named constant because the tests find the
-    // group headings BY this size — a literal changed in one place would make
-    // them silently find nothing.
+    // Tests find group headings by this size.
     internal const int GroupHeadingPointSize = 22;
 
-    // The zone's name above its run of channel sections — a tier above the
-    // channel headings, so the sheet's two levels read at a glance.
     private static void AddGroupHeading(Section section, string title, bool newPage)
     {
         Paragraph heading = section.AddParagraph(title);
@@ -204,7 +170,6 @@ internal static class VirtualCrossoverSheetPdf
         heading.Format.PageBreakBefore = newPage;
         heading.Format.SpaceBefore = Unit.FromMillimeter(7);
         heading.Format.SpaceAfter = Unit.FromMillimeter(1);
-        // Never break between the group's name and the graph it introduces.
         heading.Format.KeepWithNext = true;
     }
 
@@ -242,18 +207,14 @@ internal static class VirtualCrossoverSheetPdf
         AddPairRow(table, "Delay", DelayText(left), DelayText(right));
         AddPairRow(table, "Polarity", PolarityText(left), PolarityText(right),
             PolarityColor(left), PolarityColor(right));
-        // A row per edge rather than one "Crossover" row: high- and low-pass are two
-        // separate entries in the DSP, and a band-pass channel used to print both on a
-        // single line joined by "+" — the one value on the sheet that was not one entry.
+        // A row per edge: high- and low-pass are separate DSP entries.
         AddPairRow(table, HighPassLabel,
             VirtualCrossoverSheet.DescribeHighPass(left),
             VirtualCrossoverSheet.DescribeHighPass(right));
         AddPairRow(table, LowPassLabel,
             VirtualCrossoverSheet.DescribeLowPass(left),
             VirtualCrossoverSheet.DescribeLowPass(right));
-        // Printed only where one is dialled in: the control exists on some devices
-        // and not others, and a "0" on a sheet for one without it sends the reader
-        // looking for a knob that is not there.
+        // Only where dialled in: devices without the control would send the reader looking for a missing knob.
         if (HasPhaseRotation(left) || HasPhaseRotation(right))
         {
             AddPairRow(table, "Phase", PhaseText(left), PhaseText(right));
@@ -274,8 +235,6 @@ internal static class VirtualCrossoverSheetPdf
         AddPeqCards(sheet, $"Channel {channelName} Right — PEQ", right);
     }
 
-    // The value strings shared by the pair table and the single-channel
-    // section, so the two layouts cannot print the same field differently.
     private static string DelayText(VirtualCrossoverChannelSettings channel) =>
         $"{Number(channel.DelayMs, "0.00")} ms " +
         $"(= {Number(channel.DelayMs * Acoustics.SpeedOfSoundAt20CMetersPerSecond, "0.#")} mm in air)";
@@ -286,15 +245,12 @@ internal static class VirtualCrossoverSheetPdf
     private static bool HasPhaseRotation(VirtualCrossoverChannelSettings channel) =>
         channel.PhaseRotationDegrees > 0;
 
-    // The angle alone, which is what the device is set to. The all-pass corner it
-    // lands on is not printed: the device derives that itself from the crossover
-    // rows above, and a second frequency here would read as one more to type in.
+    // The all-pass corner is not printed: the device derives it, and it would read as another value to type.
     private static string PhaseText(VirtualCrossoverChannelSettings channel) =>
         HasPhaseRotation(channel)
             ? $"{Number(channel.PhaseRotationDegrees, "0.###")} deg"
             : "0 deg";
 
-    // The kernel file to load, or a dash for the side without one.
     private static string FirText(VirtualCrossoverChannelSettings channel) =>
         channel.HasFir ? VirtualCrossoverSheet.DescribeFir(channel) : "—";
 
@@ -303,15 +259,10 @@ internal static class VirtualCrossoverSheetPdf
             ? PdfSheet.InvertedPolarityColor
             : PdfSheet.NormalPolarityColor;
 
-    // The crossover row labels, shared by both layouts so the pair table and the
-    // single-channel table cannot end up naming the same edge differently.
     private const string HighPassLabel = "High-pass";
     private const string LowPassLabel = "Low-pass";
 
-    // Many DSPs have no separate preamp for their equalizer, so the PEQ's preamp has to be
-    // folded into the channel gain when the tune is typed in. Both numbers are printed:
-    // the gain as dialled here, and the single figure such a DSP wants. Only shown when
-    // there IS a preamp — otherwise the row would just repeat the gain.
+    // Many DSPs have no separate EQ preamp, so the combined figure is printed too (only when a preamp exists).
     private const string CombinedGainLabel = "Gain + PEQ preamp";
 
     private static bool HasPeqPreamp(VirtualCrossoverChannelSettings channel) =>
@@ -323,8 +274,6 @@ internal static class VirtualCrossoverSheetPdf
     private static bool HasPeq(VirtualCrossoverChannelSettings channel) =>
         channel.PeqBands.Count > 0 || channel.PeqPreampDb != 0;
 
-    // Names the profile, how many filters it holds and its preamp — the three things
-    // needed to check a channel against the DSP being typed into, without counting cards.
     private static string PeqSummary(VirtualCrossoverChannelSettings channel)
     {
         if (!HasPeq(channel))
@@ -339,8 +288,6 @@ internal static class VirtualCrossoverSheetPdf
             $"preamp {Signed(channel.PeqPreampDb)} dB";
     }
 
-    // The pair table names each side's PEQ in one summary row; the band cards
-    // print below it per side, captioned, so the two sides cannot be mixed up.
     private static void AddPeqCards(
         PdfSheet sheet,
         string caption,
@@ -351,14 +298,10 @@ internal static class VirtualCrossoverSheetPdf
             return;
         }
 
-        // The caption goes INSIDE the card table as its heading row, so it repeats when a
-        // long bank breaks across pages; a paragraph above the table would name only the
-        // first page and leave the rest looking like the previous channel's filters.
+        // Caption as the card table's heading row, so it repeats when a long bank breaks across pages.
         sheet.AddFilterTable(channel.PeqBands, caption);
     }
 
-    // Binds a value table into one block so a page break cannot strand the crossover and
-    // PEQ rows on the next page, away from the channel heading that names them.
     private static void KeepTogether(Table table)
     {
         if (table.Rows.Count > 1)
@@ -382,8 +325,6 @@ internal static class VirtualCrossoverSheetPdf
         WriteValue(row.Cells[2], rightValue, rightColor);
     }
 
-    // Every value on the sheet is bold; a colour is set only where one was asked for,
-    // so an uncoloured value keeps the document's default text colour.
     private static void WriteValue(Cell cell, string value, Color? color)
     {
         Paragraph paragraph = cell.AddParagraph(value);
@@ -433,15 +374,12 @@ internal static class VirtualCrossoverSheetPdf
         }
 
         KeepTogether(table);
-        // Captioned like the pair layout, so a page of cards always says whose they are.
         AddPeqCards(
             sheet,
             $"Channel {VirtualCrossoverSheet.ChannelName(index)}{sideSuffix} — PEQ",
             channel);
     }
 
-    // The section heading and the label-column value table shared by the pair
-    // and single-channel layouts; the caller adds the value column(s) it needs.
     private static void AddSectionHeading(Section section, string title)
     {
         Paragraph heading = section.AddParagraph(title);
@@ -449,13 +387,10 @@ internal static class VirtualCrossoverSheetPdf
         heading.Format.Font.Size = 15;
         heading.Format.SpaceBefore = Unit.FromMillimeter(5);
         heading.Format.SpaceAfter = Unit.FromMillimeter(1);
-        // Never break between a channel heading and the values it introduces.
         heading.Format.KeepWithNext = true;
     }
 
-    // The value tables run to the same right edge as the filter-card grid below them
-    // (4 x 4.3 cm), so every block on the sheet lines up instead of the tables stopping
-    // short. A4 less the 1.5 cm margins leaves 18 cm, so this still has room to spare.
+    // Value tables end at the filter-card grid's right edge (4 x 4.3 cm).
     private static readonly Unit LabelColumnWidth = Unit.FromCentimeter(3.4);
     private static readonly Unit SideColumnWidth = Unit.FromCentimeter(6.9);
     private static readonly Unit SingleValueColumnWidth = Unit.FromCentimeter(13.8);
@@ -482,12 +417,7 @@ internal static class VirtualCrossoverSheetPdf
         WriteValue(row.Cells[1], value, valueColor);
     }
 
-    /// <summary>
-    /// One line on a chains graph: the magnitude of the complex SUM of its
-    /// chains — a channel's own curve is a sum of one. The chains carry
-    /// everything the DSP is told except the delay (see
-    /// <see cref="DesignChain"/>).
-    /// </summary>
+    /// <summary>Magnitude of the complex sum of its chains (a channel is a sum of one); chains omit delay, see <see cref="DesignChain"/>.</summary>
     internal sealed record ChainCurve(
         string Title,
         OxyColor Color,
@@ -495,26 +425,14 @@ internal static class VirtualCrossoverSheetPdf
         double Thickness,
         IReadOnlyList<DspChannelChain> Chains);
 
-    // The neutral tones of the sum curves: dark for the group's own sum, pale
-    // for the subwoofer context on the front graph — context must never compete
-    // with the channels the graph is about.
     private static readonly OxyColor SumColor = OxyColor.FromRgb(0x38, 0x38, 0x38);
     private static readonly OxyColor SubContextColor =
         OxyColor.FromRgb(0xB4, 0xB4, 0xB4);
     private const double CurveThickness = 2;
     private const double SumThickness = 2.5;
 
-    // The chain as the DSP realizes it, less the time compensation. Only the
-    // delay is stripped: it exists to mirror the cabin's path differences, and
-    // folded into a sum it would bury the filter graph in combing. Polarity
-    // STAYS — it is a design term like any filter phase (an LR2 crossover
-    // knits flat only through its deliberate inversion), and the complex sum
-    // already carries every other phase term the chain has (crossover, PEQ,
-    // all-pass), so dropping this one 180° would make the sum neither the
-    // electrical answer nor an envelope. A junction inverted for ACOUSTIC
-    // reasons therefore shows an electrical notch here — honestly: that
-    // junction knits through timing this graph does not model, and the
-    // acoustic summation lives on the panel's plot.
+    // Only delay is stripped (it would bury the graph in combing). Polarity stays as a design phase term (LR2 knits through its inversion);
+    // a junction inverted for acoustic reasons honestly shows a notch here.
     private static DspChannelChain DesignChain(SheetEntry entry) =>
         entry.Channel.ToChain(entry.Zone) with { DelayMs = 0 };
 
@@ -526,14 +444,7 @@ internal static class VirtualCrossoverSheetPdf
             CurveThickness,
             [DesignChain(entry)]);
 
-    /// <summary>
-    /// The curves of ONE group's graph: every member's own chain; the group's
-    /// design sum per side — drawn only where a side has at least two chains
-    /// to sum (a sum of one would retrace the channel), and never for the
-    /// centre, whose signal is derived from L and R so no sum involving it is
-    /// honest; and, on the front group, the subwoofer group's sum in a pale
-    /// tone as context for the bass handover.
-    /// </summary>
+    /// <summary>Members' chains; per-side design sum where a side has 2+ chains (never centre, derived from L/R); front adds the pale sub sum.</summary>
     internal static IReadOnlyList<ChainCurve> GroupCurves(
         VirtualCrossoverZone zone,
         IReadOnlyList<SheetEntry> members,
@@ -555,10 +466,7 @@ internal static class VirtualCrossoverSheetPdf
         return curves;
     }
 
-    // A sum is per SIDE — left and right carry different programs, so one line
-    // through both would be the comb-filter fiction this tool refuses
-    // everywhere. Mono members feed both sides identically; a group of nothing
-    // but mono members has one sum, not two copies of it.
+    // Sums are per side (L and R carry different programs); mono members feed both, an all-mono group has one sum.
     private static void AddSumCurves(
         List<ChainCurve> curves,
         IReadOnlyList<SheetEntry> members,
@@ -599,8 +507,7 @@ internal static class VirtualCrossoverSheetPdf
         }
     }
 
-    // A compact white graph of DSP chain magnitudes (gain + crossover + PEQ).
-    // Left and right sides of one pair share a hue; the right side is dashed.
+    // The right side of a pair shares the hue, dashed.
     internal static PlotModel BuildChainsModel(
         IReadOnlyList<ChainCurve> curves,
         int sampleRate)
@@ -614,12 +521,7 @@ internal static class VirtualCrossoverSheetPdf
             TextColor = OxyColors.Black,
             IsLegendVisible = true
         };
-        // OxyPlot 2.x renders no legend unless one is explicitly added; the
-        // per-series channel titles were invisible in the exported sheet.
-        // The legend lives OUTSIDE the plot area, laid out in rows below it:
-        // inside it is an opaque box, and on a real car's front group it sat
-        // exactly where the tweeters and the sums run (~0 dB, upper right),
-        // hiding everything above the last crossover corner.
+        // OxyPlot 2.x renders no legend unless added. Outside the plot area: inside, it hid the tweeters and sums near 0 dB.
         model.Legends.Add(new OxyPlot.Legends.Legend
         {
             LegendPlacement = OxyPlot.Legends.LegendPlacement.Outside,
@@ -689,8 +591,6 @@ internal static class VirtualCrossoverSheetPdf
 
     private static byte[] RenderPng(PlotModel model)
     {
-        // A little taller than the old 280: the legend now takes rows under
-        // the plot area rather than a box inside it.
         var exporter = new PngExporter { Width = 900, Height = 330 };
         using var stream = new MemoryStream();
         exporter.Export(model, stream);

@@ -1,12 +1,6 @@
 namespace Resonalyze.Audio.Tests;
 
-/// <summary>
-/// The shared pump base creates its worker thread but must not start it: a
-/// derived constructor still validates its arguments and lays out its slots
-/// after the base one returns, and anything it throws leaves the object
-/// unreachable. A worker already running at that point could never be disposed
-/// and would sit on Monitor.Wait for the process lifetime.
-/// </summary>
+/// <summary>The pump base must not start its worker: a throwing derived constructor would leave it running, undisposable.</summary>
 public sealed class CapturePumpConstructionTests
 {
     [Fact]
@@ -16,8 +10,7 @@ public sealed class CapturePumpConstructionTests
 
         Assert.False(pump.WorkerStarted);
 
-        // And a pump in that state still disposes cleanly — Thread.Join on an
-        // unstarted thread would otherwise throw ThreadStateException.
+        // Thread.Join on an unstarted thread would throw ThreadStateException.
         pump.Dispose();
     }
 
@@ -26,8 +19,6 @@ public sealed class CapturePumpConstructionTests
     {
         Assert.Throws<InvalidOperationException>(() => new ProbePump(failInConstructor: true));
 
-        // The instance the failed constructor was building, captured on the way
-        // through: the base must not have started its worker.
         ProbePump abandoned = Assert.IsType<ProbePump>(ProbePump.LastConstructed);
         Assert.False(abandoned.WorkerStarted);
         abandoned.Dispose();
@@ -64,8 +55,6 @@ public sealed class CapturePumpConstructionTests
         private ProbePump(bool failInConstructor, bool start)
             : base(2, "Probe", "probe overflow", _ => { }, (_, _) => { })
         {
-            // Captured before the throw so the test can inspect the instance the
-            // failed construction abandoned.
             LastConstructed = this;
             if (failInConstructor)
             {

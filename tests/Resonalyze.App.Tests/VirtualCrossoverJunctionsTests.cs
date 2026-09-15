@@ -101,10 +101,7 @@ public sealed class VirtualCrossoverJunctionsTests
     public void OverlapBand_IsAnOctaveEachSideClampedToTheAudioBand()
     {
         Assert.Equal((500, 2_000), VirtualCrossoverJunctions.OverlapBand(1_000));
-        // Low side clamps to the 20 Hz floor: 30/2 = 15 -> 20; high side 30*2 = 60.
         Assert.Equal((20, 60), VirtualCrossoverJunctions.OverlapBand(30));
-        // High side clamps to the 20 kHz ceiling: 15_000*2 = 30_000 -> 20_000;
-        // low side 15_000/2 = 7_500.
         Assert.Equal((7_500, 20_000), VirtualCrossoverJunctions.OverlapBand(15_000));
     }
 
@@ -131,7 +128,6 @@ public sealed class VirtualCrossoverJunctionsTests
             HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 4_000, 24)
         };
 
-        // Lowest corner 200 -> /2 = 100; highest corner 4000 -> *2 = 8000.
         Assert.Equal((100, 8_000), VirtualCrossoverJunctions.GetCrossoverWindow([low, high]));
     }
 }

@@ -1,12 +1,6 @@
 namespace Resonalyze;
 
-/// <summary>
-/// Owns the one-shot, best-effort audio warm-up started when the shell is
-/// first shown: the cancellation source and its task are managed here, in one
-/// place, rather than as raw <c>Form1</c> fields cancelled from three different
-/// close paths. The warm-up body itself is injected so this class stays free of
-/// device and UI concerns.
-/// </summary>
+/// <summary>One-shot best-effort audio warm-up; body injected to keep device and UI concerns out.</summary>
 internal sealed class StartupAudioWarmup : IDisposable
 {
     private readonly Func<CancellationToken, Task> warmUp;
@@ -18,7 +12,6 @@ internal sealed class StartupAudioWarmup : IDisposable
         this.warmUp = warmUp;
     }
 
-    /// <summary>Starts the warm-up once; later calls are no-ops.</summary>
     public void Start()
     {
         if (task != null)
@@ -30,11 +23,7 @@ internal sealed class StartupAudioWarmup : IDisposable
         task = warmUp(cancellation.Token);
     }
 
-    /// <summary>
-    /// Completes when the warm-up has finished (immediately when it never
-    /// started). Warm-up failures are intentionally non-fatal, so faults are
-    /// swallowed here.
-    /// </summary>
+    /// <summary>Completes immediately when never started; faults are swallowed (non-fatal).</summary>
     public async Task WaitAsync()
     {
         Task? started = task;
@@ -49,14 +38,10 @@ internal sealed class StartupAudioWarmup : IDisposable
         }
         catch
         {
-            // Warm-up failures are intentionally non-fatal.
         }
     }
 
-    /// <summary>
-    /// Requests cancellation without disposing — the fast OS-shutdown close
-    /// path cancels and lets the process exit.
-    /// </summary>
+    /// <summary>Cancels without disposing, for the fast OS-shutdown close.</summary>
     public void Cancel()
     {
         cancellation?.Cancel();

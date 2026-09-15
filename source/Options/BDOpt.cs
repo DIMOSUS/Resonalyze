@@ -21,10 +21,7 @@ namespace Resonalyze.Options
                 numericRightWindow,
                 afterWindowChanged: () =>
                     numericCaptureTime.Value = (decimal)CalcCapturedTime);
-            // Width presets only: burst decay integrates per-frequency energy
-            // envelopes, and its pipeline has no magnitude grid to apply the
-            // psychoacoustic magnitude weighting to — offering the mode here would be
-            // a silent alias of plain 1/6.
+            // Width presets only: burst decay has no magnitude grid, so psychoacoustic would silently alias 1/6.
             SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
             InitializeToolTips();
         }

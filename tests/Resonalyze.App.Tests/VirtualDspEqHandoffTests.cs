@@ -5,11 +5,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-// The PEQ handoff between Virtual DSP and the EQ Wizard. The claims worth holding:
-// what travels (the chain minus the PEQ under edit, or the raw measurement), how the
-// curve is windowed (the DSP plot's own gate, so the wizard shows the very curve the
-// user just left), which Auto Tune window a crossover implies, and where — and
-// whether — a finished bank may land back.
 public sealed class VirtualDspEqHandoffTests
 {
     private const int SampleRate = 48_000;
@@ -27,8 +22,6 @@ public sealed class VirtualDspEqHandoffTests
         Unwrap: false,
         SmoothingInverseOctaves: 0.0);
 
-    // ----------------------------------------------------------------- builder
-
     [Fact]
     public void WithChain_AppliesTheChainWithoutItsPeq()
     {
@@ -38,9 +31,7 @@ public sealed class VirtualDspEqHandoffTests
 
         VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
 
-        // Bit-exact against the same ApplyChain with only the PEQ removed: gain,
-        // delay, polarity and the crossover all still shape the curve. The all-pass
-        // does not — it is a band of the bank, and the bank is what is under edit.
+        // The all-pass is a PEQ band, so it is excluded along with the bank under edit.
         Complex[] expected = VirtualCrossoverAnalysis.ApplyChain(
             channel.TransferImpulseResponse!,
             channel.Settings.ToChain(channel.Pair.Zone) with { Peq = null },
@@ -59,9 +50,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void WithChain_CarriesTheNeighboursThePhaseViewDrawsAgainst()
     {
-        // What makes an all-pass tunable at all: the drivers it has to line up with.
-        // They travel as processed responses, so the wizard can re-read them at a gate
-        // of its own, and with the window and τ the whole set was placed under.
         VirtualCrossoverChannel channel = BuildChannel();
         var neighbourResponse = new Complex[1_024];
         neighbourResponse[500] = 1.0;
@@ -88,12 +76,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void RawHandoff_DrawsNoNeighbours()
     {
-        // A raw curve has no crossover, no delay and no polarity in front of it, while
-        // the neighbours have all of theirs — a Linkwitz-Riley corner alone turns 360°
-        // through the overlap, and the delay moves the very arrival the phase is
-        // referenced to. Drawing them together would invite lining up a system nobody
-        // is building, and an all-pass tuned against that picture is wrong exactly
-        // where it is supposed to help.
+        // A raw curve must not travel with processed neighbours: an LR corner alone turns 360 deg through the overlap.
         VirtualCrossoverChannel channel = BuildChannel();
         var context = new EqWizardPhaseContext(
             GateTemplate,
@@ -126,7 +109,6 @@ public sealed class VirtualDspEqHandoffTests
             channel, withChain: true, pinnedGateOffsetMs: 12.5, renderAnchorIndex: 480);
         Assert.Equal(12.5, pinned.Source.GateSettings!.GateOffsetMs, 6);
 
-        // The rest of the template must travel untouched — it IS the DSP gate.
         Assert.Equal(
             GateTemplate with { GateOffsetMs = 12.5 },
             pinned.Source.GateSettings);
@@ -140,7 +122,6 @@ public sealed class VirtualDspEqHandoffTests
         VirtualDspEqHandoffRequest request = Build(
             channel, withChain: true, renderAnchorIndex: null);
 
-        // The same rule the plot applies to a lone channel: the response START.
         Complex[] response = VirtualCrossoverAnalysis.ApplyChain(
             channel.TransferImpulseResponse!,
             channel.Settings.ToChain(channel.Pair.Zone) with { Peq = null },
@@ -164,12 +145,7 @@ public sealed class VirtualDspEqHandoffTests
     {
         VirtualCrossoverChannel channel = BuildChannel();
 
-        // A pin belongs to the processed view's time; the panel's Raw curve ignores
-        // it and so must the raw handoff. Like the panel's Raw curve, the window
-        // anchors on the raw response's own START (the peak only answers when the
-        // estimator refuses the record) — a woofer's peak trails its onset by more
-        // than the steady-state window's 2 ms fade-in, so a peak anchor would hand
-        // the wizard the record minus its direct arrival.
+        // Raw handoff ignores the pin and anchors on the raw START: a woofer's peak trails its onset by more than the 2 ms fade-in.
         VirtualDspEqHandoffRequest request = Build(
             channel, withChain: false, pinnedGateOffsetMs: 12.5, renderAnchorIndex: 480);
 
@@ -190,10 +166,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void TheWizardRendersTheRequestExactlyAsTheDspPanelWould()
     {
-        // The invariant the handoff promises: the wizard's source-curve call
-        // (GetGatedPrimarySpectrum with the request's measurement and gate) equals the
-        // DSP magnitude view's own build of the bypass-chain response — same helper,
-        // same inputs, composed independently here.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqHandoffRequest request = Build(
             channel, withChain: true, renderAnchorIndex: 480);
@@ -227,10 +199,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void TheCorrectedPreviewIsThePanelsOwnBuildOfTheSameBank()
     {
-        // The invariant the whole handoff exists for, at the point it is hardest to
-        // hold: with a bank loaded. The wizard filters and THEN gates — one ApplyChain
-        // of the whole chain from the original measurement — which is exactly what the
-        // panel does for a channel carrying that PEQ.
+        // The wizard filters THEN gates, from the original measurement, exactly as the panel does.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqHandoffRequest request = Build(
             channel, withChain: true, renderAnchorIndex: 480);
@@ -272,10 +241,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void TheCorrectedPreviewDivergesFromTheIdealMagnitude_WhichIsWhyItIsComputed()
     {
-        // The reason the preview cannot simply add the filter's ideal magnitude to the
-        // bare curve: a window does not commute with a filter. A Q 5 band at 100 Hz
-        // under a 6 ms gate reads several dB apart between the two, so if this ever
-        // stops being true the expensive path has lost its justification.
+        // A window does not commute with a filter (Q 5 at 100 Hz under 6 ms reads dB apart), which justifies the full-render preview.
         VirtualCrossoverChannel channel = BuildChannel();
         channel.Settings.CrossoverKind = CrossoverKind.Off;
         VirtualDspEqHandoffRequest request = Build(
@@ -309,8 +275,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void TheBareCurveIsTheCorrectedPathWithNoBank()
     {
-        // Both curves come from one renderer, so they cannot drift: the source curve is
-        // literally the corrected one with nothing substituted in.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqHandoffRequest request = Build(
             channel, withChain: true, renderAnchorIndex: 480);
@@ -359,14 +323,11 @@ public sealed class VirtualDspEqHandoffTests
         Assert.Equal(20, lowPass.AutoTuneMinHz);
         Assert.Equal(500, lowPass.AutoTuneMaxHz);
 
-        // No crossover means no opinion: the wizard's window stays where it was.
         channel.Settings.CrossoverKind = CrossoverKind.Off;
         VirtualDspEqHandoffRequest off = Build(channel, withChain: true);
         Assert.Null(off.AutoTuneMinHz);
         Assert.Null(off.AutoTuneMaxHz);
 
-        // Raw edits deliberately get none either — the band belongs to the chain
-        // the raw curve is measured without.
         channel.Settings.CrossoverKind = CrossoverKind.BandPass;
         VirtualDspEqHandoffRequest raw = Build(channel, withChain: false);
         Assert.Null(raw.AutoTuneMinHz);
@@ -390,17 +351,13 @@ public sealed class VirtualDspEqHandoffTests
 
         Assert.Equal(channel.Settings.PeqBands, request.BankSeed.Bands);
         Assert.Equal(-2.5, request.BankSeed.PreampDb);
-        // The DSP panel's target level travels verbatim: the source is rendered in
-        // that plot's own dB frame, so "one target" means one height too.
         Assert.Equal(-41, request.TargetLevelDb);
         Assert.Equal(EqWizardSourceKind.VirtualDspChannel, request.Source.Kind);
-        // The curve itself travels, not an id: the panel may be drawing with a curve
-        // its session carries, which the wizard's own list could never resolve.
+        // The curve travels, not an id: a session-carried curve is not in the wizard's list.
         Assert.Same(calibration, request.Source.PinnedCalibration);
         Assert.Equal("mic-1", request.Source.PinnedCalibrationName);
         Assert.Same(calibration, request.Token.Calibration);
         Assert.Equal(SampleRate, request.Source.SampleRateHz);
-        // Pinned: the selector must come up disabled, yet smoothing stays live.
         Assert.False(request.Source.SupportsCalibration);
         Assert.True(request.Source.SupportsSmoothing);
         Assert.Same(channel, request.Token.Channel);
@@ -410,9 +367,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void AMonoHandoffAddressesTheLeftSet_EvenFromTheRightView()
     {
-        // Mono routes the right view to the single left set; the token must say LEFT
-        // outright, so a pair un-mono'd mid-edit still receives the result on the set
-        // the tune was taken from — not on a right slot the wizard never saw.
+        // Mono token says LEFT outright, so un-mono'ing mid-edit still returns to the set the tune came from.
         VirtualCrossoverChannel channel = BuildChannel();
         channel.Pair.Mono = true;
         channel.ActiveRight = true;
@@ -426,7 +381,7 @@ public sealed class VirtualDspEqHandoffTests
     public void TheMeasurementsCoherenceTravels()
     {
         VirtualCrossoverChannel channel = BuildChannel();
-        // 5 bins pair with an 8-sample FFT: k = 1..4 at k · rate / 8.
+        // 5 bins pair with an 8-sample FFT: k = 1..4 at k * rate / 8.
         channel.TransferCoherence = [1.0, 0.95, 0.9, 0.8, 0.7];
 
         VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
@@ -437,14 +392,11 @@ public sealed class VirtualDspEqHandoffTests
         Assert.Equal(0.95, request.Source.Coherence[0].Y);
     }
 
-    // ------------------------------------------------------------------ return
-
     [Fact]
     public void ReturnLandsOnTheSideTheTokenNames_NotTheActiveOne()
     {
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: true);
-        // The user flipped back to the left side while editing.
         channel.ActiveRight = false;
         var curve = new EqualizationCurve(
             new[] { new PeqBand(250, 3, -6) }, preampDb: -1.5);
@@ -456,15 +408,12 @@ public sealed class VirtualDspEqHandoffTests
         Assert.Equal(curve.Bands, right.PeqBands);
         Assert.Equal(-1.5, right.PeqPreampDb);
         Assert.Equal("EQ Wizard", right.PeqSourceName);
-        // The left side — the one on screen — is untouched.
         Assert.Empty(channel.Pair.SideFor(rightSide: false).PeqBands);
     }
 
     [Fact]
     public void AHandoffTakenFromAMonoPair_LandsOnItsSurvivingSet()
     {
-        // Mono routes both sides to the single left set, so the handoff addresses it
-        // outright and a write into the unreachable right slot cannot happen.
         VirtualCrossoverChannel channel = BuildChannel();
         channel.Pair.Mono = true;
         channel.ActiveRight = true;
@@ -480,9 +429,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterThePairChangedRouting_Refuses()
     {
-        // Taken from the right side of a stereo pair; the pair then became mono,
-        // which sends SideFor(true) to the LEFT settings. Delivering there would put
-        // the right side's tune on the shared set without a word.
+        // Pair turned mono after the handoff: SideFor(true) now resolves to LEFT, so delivery must refuse.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: true);
         channel.Pair.Mono = true;
@@ -496,10 +443,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterTheSideGotANewMeasurement_Refuses()
     {
-        // The session survives a trip back to Virtual DSP by the tab, so the user can
-        // give that very side a different measurement there. The bank was computed
-        // from a curve that no longer exists — and the wizard, still showing the old
-        // one, gives no sign of it.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
         channel.SideState(rightSide: false).BeginSourceLoad();
@@ -513,11 +456,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterTheCalibrationChanged_Refuses()
     {
-        // The wizard disables its own calibration selector during a handoff, because
-        // a bank fitted under one correction and summed under another is not the same
-        // bank. The Virtual DSP panel's selector is reachable by a plain tab switch —
-        // which a session deliberately survives — so the same rule has to hold on the
-        // way back, or that lock is decorative.
+        // The wizard locks calibration during a handoff; the panel's selector is a tab away, so the return must enforce it too.
         VirtualCrossoverChannel channel = BuildChannel();
         CalibrationFile fitted = CalibrationFile.Parse("20 0\n20000 1.5\n");
         VirtualDspEqReturnToken token =
@@ -529,14 +468,11 @@ public sealed class VirtualDspEqHandoffTests
             CalibrationFile.Parse("20 0\n20000 -1.5\n"), SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
         Assert.Empty(channel.Settings.PeqBands);
 
-        // Turning it off entirely is a change too — not a way back to "no opinion".
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
         Assert.Empty(channel.Settings.PeqBands);
 
-        // The same correction, re-read (a settings refresh hands the panel a fresh
-        // instance of the same file), is the same correction: curves compare by
-        // content, never by reference or by the name this machine gives them.
+        // Curves compare by content, not reference or name.
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve, projectGeneration: 1,
             CalibrationFile.Parse("20 0\n20000 1.5\n"), SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
@@ -546,9 +482,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterThePanelsPeqWasReplacedOrCleared_Refuses()
     {
-        // A lost update the chain check cannot see, because it excludes the very stage
-        // under edit: with a session open, the panel's own PEQ row still offers Load
-        // from file and Clear, and the older bank would silently win.
+        // The chain check excludes the PEQ stage itself; the panel can still Load/Clear the bank meanwhile.
         VirtualCrossoverChannel channel = BuildChannel();
         channel.Settings.PeqBands = new List<PeqBand> { new(120, 2, -4) };
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
@@ -561,7 +495,6 @@ public sealed class VirtualDspEqHandoffTests
             projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
         Assert.Equal(newer, channel.Settings.PeqBands);
 
-        // Cleared counts the same: an empty bank is a state, not an absence.
         VirtualDspEqReturnToken second = TokenFor(channel, rightSide: false);
         channel.Settings.PeqBands = new List<PeqBand>();
         channel.Settings.PeqPreampDb = 0;
@@ -574,9 +507,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterTheGateMoved_Refuses()
     {
-        // The window is half of what the curve IS, and the panel's gate dialog is a
-        // tab switch away while a session runs. Both the shape of the window and where
-        // the user pinned it count.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
@@ -597,9 +527,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterThePanelsTargetLevelMoved_Refuses()
     {
-        // The bank's preamp was fitted against an absolute level. If the panel's own
-        // has been moved independently meanwhile, the wizard's answer and the panel's
-        // conflict — and silently picking either would be a guess.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
@@ -615,10 +542,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterTheGainChanged_Refuses()
     {
-        // The gain does not bend the curve, but the handoff carries the panel's
-        // ABSOLUTE target level and the bank's preamp was fitted against it. Moving
-        // the channel 6 dB after the fact leaves the returned tune exactly 6 dB off
-        // the target the wizard was aiming at — while still drawing the old level.
+        // Gain does not bend the curve, but the preamp was fitted against the absolute target level.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
         channel.Settings.GainDb -= 6;
@@ -632,8 +556,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterTheCrossoverChanged_Refuses()
     {
-        // The crossover is the one chain stage that BENDS the magnitude: the bank was
-        // fitted to a shape that a different corner or slope no longer produces.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
         channel.Settings.LowPassEdge =
@@ -644,7 +566,6 @@ public sealed class VirtualDspEqHandoffTests
             new[] { channel }, token, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
         Assert.Empty(channel.Settings.PeqBands);
 
-        // Switching it off entirely is a change too.
         VirtualDspEqReturnToken fresh = TokenFor(channel, rightSide: false);
         channel.Settings.CrossoverKind = CrossoverKind.Off;
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
@@ -655,13 +576,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterADelayOrAnAllPassBandEdit_Refuses()
     {
-        // Swept across the ranges the UI allows, these are NOT free: at 192 kHz, where
-        // the rate clamps the window to 171 ms, a delay edit moves the gated shape by
-        // up to 1.70 dB and an all-pass by 4.77 dB (40 Hz, Q 20 — 318 ms of group
-        // delay against that window). See SteadyStateWindowTests. The delay refuses
-        // through the chain comparison; the all-pass now rides in the bank, so it
-        // refuses through the PEQ guard instead — a phase-only band is exactly the
-        // edit a magnitude-only comparison would wave through.
+        // Not free: at 192 kHz (171 ms window) a delay edit moves the gated shape up to 1.70 dB, an all-pass up to 4.77 dB. See SteadyStateWindowTests.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken delayToken = TokenFor(channel, rightSide: false);
         channel.Settings.DelayMs += 4.2;
@@ -684,9 +599,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterAPolarityFlip_IsAllowed()
     {
-        // The one chain stage that survives: a polarity flip is -1 at every frequency,
-        // so it changes neither the shape the bank corrects nor the level it was
-        // fitted against — measured as exactly 0 dB at every rate.
+        // Polarity is -1 at every frequency: measured exactly 0 dB change at every rate.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
         channel.Settings.InvertPolarity = !channel.Settings.InvertPolarity;
@@ -700,10 +613,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void AChainSessionWithNoCrossoverStillNoticesOneBeingTurnedOn()
     {
-        // The distinction a null crossover could blur: "raw handoff, no crossover in
-        // the curve" versus "chain handoff whose crossover happened to be off". They
-        // stay apart because ToChain yields CrossoverSpec.Off — a value, not null —
-        // while only DspChannelChain.Identity (the raw preview chain) carries null.
+        // ToChain yields CrossoverSpec.Off (a value); only DspChannelChain.Identity carries null.
         VirtualCrossoverChannel channel = BuildChannel();
         channel.Settings.CrossoverKind = CrossoverKind.Off;
         VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
@@ -722,10 +632,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ChangingHowThePhaseViewReads_DoesNotRefuseTheReturn()
     {
-        // The gate template is shared with the phase and impulse views, and the
-        // magnitude forces Fixed and ignores its FDW cycles, detrend and unwrap
-        // entirely. Refusing over those would cost a finished tune because the user
-        // changed a view the handoff's curve never came from.
+        // Magnitude forces Fixed and ignores FDW cycles, detrend and unwrap, so those edits must not refuse.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
@@ -748,7 +655,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ChangingTheMagnitudeWindowItself_StillRefuses()
     {
-        // The other half: the durations and the mode ARE what the magnitude reads.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
@@ -763,9 +669,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void TheRequestCarriesTheLevelRangeThePanelCanHold()
     {
-        // The wizard's own box is wider than the panel's, and the level travels back:
-        // without the range the wizard could offer a level that arrives clamped, and
-        // the tune would realize a height it was never fitted to.
         VirtualCrossoverChannel channel = BuildChannel();
 
         VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
@@ -777,9 +680,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ARawSessionIsImmuneToTheProcessedGatePin()
     {
-        // A raw handoff anchors on the measurement's own start and never reads the
-        // processed view's pin, so moving that pin cannot have changed its curve —
-        // refusing the return would cost the user a finished tune for nothing.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqHandoffRequest request = Build(channel, withChain: false);
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
@@ -794,8 +694,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void AChainSessionIsNotImmuneToThatPin()
     {
-        // The other half, so the exemption above cannot silently widen: a chain
-        // handoff DOES read the pin, and a moved pin re-windows its curve.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqHandoffRequest request = Build(channel, withChain: true);
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
@@ -810,8 +708,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ARawSessionIsImmuneToCrossoverEdits()
     {
-        // A raw handoff's curve is measured WITHOUT the chain, so the crossover cannot
-        // have shaped it and changing one cannot invalidate the bank.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqHandoffRequest request = Build(channel, withChain: false);
         channel.Settings.LowPassEdge =
@@ -828,14 +724,10 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterTheProjectWasReplaced_RefusesEvenThoughTheChannelSurvives()
     {
-        // Binding a project REUSES the runtime channel objects when the channel count
-        // matches — only its Pair is swapped — so the object the token names is still
-        // in the panel's list afterwards while describing a different session. Without
-        // the generation this wrote a bank tuned against one car into another.
+        // Binding a project reuses channel objects when counts match, so only the generation tells sessions apart.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token =
             TokenFor(channel, rightSide: false) with { ProjectGeneration = 4 };
-        // What an import does to the very object the token holds.
         channel.Pair = new VirtualCrossoverChannelPairSettings();
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
 
@@ -843,9 +735,6 @@ public sealed class VirtualDspEqHandoffTests
             new[] { channel }, token, curve, projectGeneration: 5, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
         Assert.Empty(channel.Settings.PeqBands);
 
-        // The generation ALONE is what refuses it: an untouched channel of the same
-        // shape, addressed at its own generation, still lands — so the test cannot
-        // pass merely because some other guard happened to fire.
         VirtualCrossoverChannel untouched = BuildChannel();
         VirtualDspEqReturnToken control =
             TokenFor(untouched, rightSide: false) with { ProjectGeneration = 4 };
@@ -874,10 +763,7 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterTheProjectChangedProcessors_Refuses()
     {
-        // The DSP processor dialog is one tab switch away while the wizard is open,
-        // and the bank was FITTED at the rate the handoff carried. Installing it into
-        // a project that has moved to another rate would run those very numbers as
-        // different filters, with nothing on screen to say so.
+        // The bank was fitted at the handed-off rate; the same numbers at another rate are different filters.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
         var curve = new EqualizationCurve(new[] { new PeqBand(8_000, 4, -5) });
@@ -887,7 +773,6 @@ public sealed class VirtualDspEqHandoffTests
             GateTemplate, null, TargetLevel, spatialAverage: null, 96_000));
         Assert.Empty(channel.Settings.PeqBands);
 
-        // The rate it was fitted for still lands.
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off,
             GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
@@ -907,10 +792,6 @@ public sealed class VirtualDspEqHandoffTests
         Assert.Equal(96_000, request.Token.ProcessorSampleRateHz);
     }
 
-    // ------------------------------------------------------------------ helpers
-
-    // A token addressing a channel exactly as it stands now — what Build would
-    // write for it — so a test can then change ONE thing and see the return judged.
     private static VirtualDspEqReturnToken TokenFor(
         VirtualCrossoverChannel channel, bool rightSide) =>
         new(
@@ -979,13 +860,7 @@ public sealed class VirtualDspEqHandoffTests
             spatialAverage,
             spatialAverageOffsetDb);
 
-    // -------------------------------------------------------- spatial average
-
-    /// <summary>
-    /// On the hybrid view the capture REPLACES the magnitude, and the impulse response
-    /// stays for the phase view. That split is the whole feature: the average is where
-    /// tonal balance is honest, the impulse response is where timing is.
-    /// </summary>
+    /// <summary>On the hybrid view the capture replaces the magnitude; the impulse response stays for phase.</summary>
     [Fact]
     public void WithASpatialAverage_TheCaptureTravelsAndTheMagnitudeStopsBeingGated()
     {
@@ -997,22 +872,13 @@ public sealed class VirtualDspEqHandoffTests
 
         Assert.Same(capture, request.Source.SpatialAverage);
         Assert.Equal(-73.5, request.Source.SpatialAverageOffsetDb);
-        // Not gated: an average is a steady-state curve with no window at all, so the
-        // magnitude side must not be routed through the gated preview.
         Assert.False(request.Source.IsGated);
-        // But the phase side still has everything it needs, and reads the impulse
-        // response through the panel's gate.
         Assert.NotNull(request.Source.Measurement);
         Assert.NotNull(request.Source.PreviewImpulseResponse);
         Assert.NotNull(request.Source.GateSettings);
         Assert.Contains("MMM", request.Source.DisplayName);
     }
 
-    /// <summary>
-    /// The receipt names the METHOD the average was taken by, the way the channel
-    /// card's button does. It is the one line that says what is about to be equalized,
-    /// and a project reading microphone arrays has no MMM capture to go looking for.
-    /// </summary>
     [Fact]
     public void WithAnArrayAverage_TheReceiptNamesTheArrayRatherThanMmm()
     {
@@ -1028,10 +894,6 @@ public sealed class VirtualDspEqHandoffTests
         Assert.DoesNotContain("MMM", request.Source.DisplayName);
     }
 
-    /// <summary>
-    /// Without one, nothing changes: the panel is drawing impulse responses and the
-    /// handoff hands impulse responses over, gated exactly as before.
-    /// </summary>
     [Fact]
     public void WithoutASpatialAverage_TheMagnitudeIsStillGated()
     {
@@ -1041,17 +903,10 @@ public sealed class VirtualDspEqHandoffTests
         Assert.True(request.Source.IsGated);
     }
 
-    /// <summary>
-    /// The bank the wizard fits is fitted against the CAPTURE, not against the
-    /// impulse response — which is what the whole hybrid exists for. Driven through a
-    /// live panel, because the choice is made where the source curve is computed.
-    /// </summary>
     [Fact]
     public void TheWizardsSourceCurveComesFromTheCapture()
     {
         VirtualCrossoverChannel channel = BuildChannel();
-        // No chain and no offset, so the curve IS the capture: a level nothing in the
-        // impulse-response path could produce.
         channel.Settings.GainDb = 0;
         channel.Settings.CrossoverKind = CrossoverKind.Off;
         VirtualDspEqHandoffRequest request = Build(
@@ -1075,12 +930,6 @@ public sealed class VirtualDspEqHandoffTests
             point => Assert.Equal(-20, point.Y, 3));
     }
 
-    /// <summary>
-    /// A bank fitted against the spatial average must not land on a panel that has
-    /// gone back to its impulse responses. It is the same invisible divergence the
-    /// calibration guard refuses, and by the same line: it moves the MAGNITUDE the
-    /// bank was fitted against, and the wizard is still showing what it opened on.
-    /// </summary>
     [Fact]
     public void ReturnAfterTheHybridWasTurnedOff_Refuses()
     {
@@ -1090,36 +939,22 @@ public sealed class VirtualDspEqHandoffTests
             channel, withChain: true, spatialAverage: capture).Token;
         var curve = new EqualizationCurve([new PeqBand(120, 1.4, -3)], -1.5);
 
-        // The panel is back on impulse responses: nothing to hand over now.
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off,
             GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
 
-        // A DIFFERENT capture is refused too, even one whose numbers match: it is a
-        // different measurement, and a re-attached file is a different capture.
+        // A re-attached file is a different capture even with equal numbers.
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off,
             GateTemplate, null, TargetLevel, spatialAverage: Capture(), SampleRate));
 
-        // The one it was fitted against still lands.
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, token, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off,
             GateTemplate, null, TargetLevel, spatialAverage: capture, SampleRate));
         Assert.Equal(curve.Bands, channel.Settings.PeqBands);
     }
 
-    /// <summary>
-    /// A bank fitted against a capture read one way must not land on a panel reading
-    /// it another way.
-    /// </summary>
-    /// <remarks>
-    /// Off, Own and Specific turn one stored average into three different magnitudes,
-    /// and the calibration guard cannot see the difference: two of those switches
-    /// leave the panel's own correction identical. Reading a capture through the very
-    /// file the impulse response beside it names is not the same as reading it as it
-    /// was measured, and for a moving-microphone pass taken on another day through
-    /// another microphone the two are the whole difference between the files.
-    /// </remarks>
+    /// <remarks>Off/Own/Specific give three magnitudes from one capture, yet two leave the panel's correction identical.</remarks>
     [Fact]
     public void ReturnAfterTheCaptureWasReadAnotherWay_Refuses()
     {
@@ -1133,8 +968,6 @@ public sealed class VirtualDspEqHandoffTests
             spatialAverageCalibration: SpatialAverageCalibration.Own).Token;
         var curve = new EqualizationCurve([new PeqBand(120, 1.4, -3)], -1.5);
 
-        // The panel moved from "as measured" to a named file — the impulse response's
-        // own, so the correction it reports has not moved at all.
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel },
             token,
@@ -1149,9 +982,6 @@ public sealed class VirtualDspEqHandoffTests
             SampleRate));
         Assert.Empty(channel.Settings.PeqBands);
 
-        // And from "as measured" to none at all, which is what a mixed array whose
-        // measurement microphone carries no calibration looks like from here: both
-        // readings report no correction, and the curve moves by the whole aggregate.
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel },
             token,
@@ -1166,7 +996,6 @@ public sealed class VirtualDspEqHandoffTests
             SampleRate));
         Assert.Empty(channel.Settings.PeqBands);
 
-        // The reading it was fitted under still lands.
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel },
             token,
@@ -1182,10 +1011,6 @@ public sealed class VirtualDspEqHandoffTests
         Assert.Equal(curve.Bands, channel.Settings.PeqBands);
     }
 
-    /// <summary>
-    /// The same named calibration read twice is the same reading, so a returning tune
-    /// is not refused for an object identity nobody promised.
-    /// </summary>
     [Fact]
     public void ReturnUnderTheSameNamedCalibrationReadAgain_Lands()
     {
@@ -1214,7 +1039,6 @@ public sealed class VirtualDspEqHandoffTests
             SampleRate));
         Assert.Equal(curve.Bands, channel.Settings.PeqBands);
 
-        // A different curve under the same mode is still a different reading.
         channel.Settings.PeqBands = [];
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel },
@@ -1232,8 +1056,6 @@ public sealed class VirtualDspEqHandoffTests
         Assert.Empty(channel.Settings.PeqBands);
     }
 
-    // A flat spatial average at a known level, so what the wizard draws identifies
-    // which of the two measurements it read.
     private static LiveCaptureDocument Capture() => new()
     {
         SavedAtUtc = DateTimeOffset.UnixEpoch,
@@ -1248,15 +1070,10 @@ public sealed class VirtualDspEqHandoffTests
         }
     };
 
-    // A channel whose left side holds a synthetic measurement: a decaying wavelet
-    // arriving at sample 480 (10 ms), through a full DSP chain so every stage has
-    // something to prove it travelled — or was left out.
     [Fact]
     public void AHandoff_CarriesTheProjectsProcessorAndRealizesTheChainAtItsRate()
     {
-        // The wizard has to tune for the DEVICE, not for the sound card: the profile
-        // travels so its rate reaches the fit, the previews and the exported profile,
-        // while the measurement keeps stating its own rate for gates and windows.
+        // The processor rate reaches the fit; the measurement keeps its own rate for gates.
         VirtualCrossoverChannel channel = BuildChannel();
         DspProcessorProfile processor =
             DspProcessorCatalog.Preset("helix-dsp-ultra-s")!.ToProfile();
@@ -1266,12 +1083,9 @@ public sealed class VirtualDspEqHandoffTests
 
         Assert.Equal(processor, request.Source.ProcessorProfile);
         Assert.Equal(96_000, request.Source.ProcessorProfile!.SampleRateHz);
-        // The record is still the measurement's, at its own rate.
         Assert.Equal(SampleRate, request.Source.SampleRateHz);
         Assert.Equal(SampleRate, request.Source.Measurement!.SampleRate);
 
-        // And the curve the wizard opens on is the chain realized at the PROCESSOR's
-        // rate — the panel's own arithmetic for that channel.
         Complex[] expected = VirtualCrossoverAnalysis.ApplyChain(
             channel.SideState(channel.ActiveRight).ProcessingSource!.CroppedImpulseResponse,
             request.Source.PreviewChain!,

@@ -5,13 +5,7 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Characterization test for the burst-decay render path. The resampler marks
-/// periods past the measured window with <see cref="double.NaN"/> (no fabricated
-/// decay); those markers must never reach the render context as screen
-/// coordinates — a NaN point overflows GDI+ (<c>System.OverflowException</c> in
-/// <c>DrawLine</c>) and blanks the whole plot.
-/// </summary>
+/// <summary>NaN tails past the measured window must never reach the render context: a NaN point overflows GDI+ DrawLine.</summary>
 public sealed class WaterfallSeriesRenderTests
 {
     [Fact]
@@ -29,9 +23,7 @@ public sealed class WaterfallSeriesRenderTests
         plot.Update(true);
         plot.Render(context, new OxyRect(0, 0, 900, 600));
 
-        // Low-frequency slices span far more periods than the measured window,
-        // so resampling must have blanked their tails to NaN — otherwise the
-        // test would pass vacuously without exercising the guard.
+        // Guards against a vacuous pass: the tails must actually be NaN.
         bool producedNaNTail = waterfall.ResampleSlices
             .Any(slice => slice.Data.Any(point => double.IsNaN(point.Y)));
         Assert.True(producedNaNTail,
@@ -44,8 +36,6 @@ public sealed class WaterfallSeriesRenderTests
 
     private static ExpSweepMeasurement CreateBroadbandTransferMeasurement()
     {
-        // A decaying, oscillating impulse gives content across the band so the
-        // burst-decay analysis produces many frequency slices (Render needs >= 8).
         var ir = new Complex[8192];
         int peak = 256;
         for (int i = 0; i < 4000 && peak + i < ir.Length; i++)
@@ -94,12 +84,6 @@ public sealed class WaterfallSeriesRenderTests
                 BurstDecay: new WaterfallGenerateOptions { WaterfallMode = WaterfallMode.BurstDecay }));
     }
 
-    /// <summary>
-    /// A headless <see cref="IRenderContext"/> that records nothing but flags the
-    /// first non-finite coordinate it is asked to draw. Real GDI+ throws on such
-    /// input; recording it instead lets the test assert the stronger invariant
-    /// that no NaN is ever handed to the renderer.
-    /// </summary>
     private sealed class RecordingRenderContext : IRenderContext
     {
         public int LineCount { get; private set; }

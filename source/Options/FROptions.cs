@@ -14,8 +14,6 @@ namespace Resonalyze.Options
 {
     public partial class FROptions : ImpulsePreviewOptionsForm
     {
-        // The designer's normal dB SPL text colour, restored when the choice leaves
-        // the amber view-only state.
         private readonly Color splChoiceReadyForeColor;
 
         public FROptions()
@@ -66,9 +64,7 @@ namespace Resonalyze.Options
                 checkBoxShowHd4.Checked = visibility.ShowHd4;
                 checkBoxShowThdPlusNoise.Checked = visibility.ShowThdPlusNoise;
                 checkBoxShowNoiseFloor.Checked = visibility.ShowNoiseFloor;
-                // The selection follows the options verbatim: dB SPL is choosable even
-                // without a valid calibration (view-only, amber), so it must not be
-                // silently rewritten to relative here.
+                // dB SPL stays selected without a calibration (view-only, amber); do not rewrite to relative.
                 UpdateSplChoiceLook();
                 bool spl = frequencyResponseOptions.MagnitudeScale ==
                     MagnitudeScale.SoundPressureLevel;
@@ -80,22 +76,14 @@ namespace Resonalyze.Options
             UpdateIrPreview();
         }
 
-        /// <summary>
-        /// Rebuilds the calibration list without disturbing the selection — the
-        /// host calls this when the configured calibrations change while the
-        /// panel is open. A selection the list no longer holds stays selected
-        /// and marked missing rather than being silently rewritten.
-        /// </summary>
+        /// <summary>A selection the list no longer holds stays selected and marked missing.</summary>
         internal void RefreshCalibrationEntries(
             IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
             SelectCalibration(
                 MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration),
                 calibrationEntries);
 
-        /// <summary>
-        /// Shows a calibration the panel did not choose itself — the one a loaded
-        /// measurement carries.
-        /// </summary>
+        /// <summary>Shows the calibration a loaded measurement carries.</summary>
         internal void SelectCalibration(
             string? calibrationId,
             IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
@@ -140,47 +128,24 @@ namespace Resonalyze.Options
             UpdateIrPreview();
         }
 
-        // The cycles choice only participates in FDW mode; the window fields stay
-        // active either way because in FDW mode they define the outer gate that
-        // the frequency-dependent windows never exceed.
+        // In FDW mode the window fields still define the outer gate.
         private void UpdateMagnitudeWindowControlState() =>
             comboFdwCycles.Enabled = comboWindowMode.SelectedIndex == 1;
 
-        // SPL is offerable exactly when the plot can render it — mirror
-        // MeasurementPlotContext.SplOffsetDb: this measurement's own (snapshot)
-        // calibration, a captured loopback level, and an input that matches the anchor.
-        // Using the snapshot rather than the configured calibration keeps the panel in
-        // step with the plot for a completed run and for a loaded file (whose anchor is
-        // its own, not the app's currently configured one).
+        // Mirrors MeasurementPlotContext.SplOffsetDb using the measurement's own snapshot calibration (loaded files carry theirs).
         private bool IsSplAvailable() =>
             Measurement is { } measurement &&
             measurement.MeasurementSplCalibration is { } calibration &&
             measurement.CurrentLevels.Loopback.Available &&
             measurement.InputMatches(calibration);
 
-        /// <summary>
-        /// Re-evaluates whether this measurement can supply dB SPL and recolours the
-        /// choice accordingly, in both directions, without disturbing the selection:
-        /// the scale stays selectable either way and is merely view-only (overlays,
-        /// no measurement curves) until a valid calibration and loopback level exist.
-        /// The host calls this after every run completion and file load.
-        /// </summary>
+        /// <summary>Called after every run and file load; recolours without changing the selection.</summary>
         public void RefreshSplAvailability() => UpdateSplChoiceLook();
 
-        /// <summary>
-        /// Drops the scale selection back to dBr/dBc. The host calls this when a run
-        /// starts while the display is view-only SPL, so the fresh measurement is not
-        /// born hidden; switching back to SPL afterwards stays available.
-        /// </summary>
+        /// <summary>Called when a run starts in view-only SPL, so the fresh measurement is not born hidden.</summary>
         public void ForceRelativeScale() => radioMagnitudeRelative.Checked = true;
 
-        // The scale choice is never locked: without a valid SPL calibration the dB SPL
-        // axis is still useful for VIEWING overlays captured in SPL, so the choice
-        // stays clickable. Amber flags a REAL conflict only — a measurement is on
-        // screen whose curves cannot be rendered in SPL, so choosing SPL hides them.
-        // Before any measurement there is nothing to hide and nothing to warn about:
-        // the choice keeps its normal colour, and with an SPL calibration configured
-        // the first run simply comes up in dB SPL.
+        // Never locked (SPL axis still shows SPL overlays). Amber only when a measurement on screen cannot render in SPL.
         private void UpdateSplChoiceLook()
         {
             bool available = IsSplAvailable();
@@ -232,8 +197,7 @@ namespace Resonalyze.Options
                 (int)numericLeftWindow.Value,
                 (int)numericRightWindow.Value,
                 offset: 0,
-                // FR magnitude is windowed on the transfer IR at its estimated
-                // START, so preview the window where the analysis opens it.
+                // FR magnitude is windowed at the IR's estimated start.
                 IrPreviewSource.PrimaryAtStart);
         }
 
@@ -271,8 +235,7 @@ namespace Resonalyze.Options
                 radioMagnitudeRelative,
                 "Native scale: the response in dBr (relative to the loopback reference), " +
                 "distortion and noise in dBc (relative to the fundamental).");
-            // radioMagnitudeSpl's tooltip is owned by UpdateSplChoiceLook: it names
-            // the current availability state, which a static line here cannot.
+            // radioMagnitudeSpl's tooltip is owned by UpdateSplChoiceLook.
             toolTip.SetToolTip(
                 checkBoxShowPrimary,
                 "Shows the primary frequency-response curve.");

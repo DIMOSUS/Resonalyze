@@ -1,9 +1,6 @@
 namespace Resonalyze.Dsp.Tests;
 
-// What the all-pass bands survive on the way out to another program and back.
-// Support splits by order: CamillaDSP, the generic CSV and the Audiotec bank have
-// both orders, Equalizer APO / REW only the second (APO's AP), and the magnitude
-// formats none — declared, so the EQ Wizard warns instead of writing a 0 dB bell.
+// All-pass support by format: CamillaDSP, CSV and Audiotec carry both orders, APO/REW only second, magnitude formats none.
 public sealed class EqProfileAllPassFormatsTests
 {
     private static EqualizationCurve Mixed() => new(
@@ -20,11 +17,9 @@ public sealed class EqProfileAllPassFormatsTests
     {
         string text = new EqualizerApoFormat().Export(Mixed());
 
-        // "AP" is APO's own spelling — second order, Fc and Q, no gain token.
         Assert.Contains("Filter 2: ON AP Fc 120 Hz Q 1.5", text);
         Assert.DoesNotContain("AP Fc 120 Hz Gain", text);
-        // APO has no first-order all-pass; the band is skipped, its number with it,
-        // so the gap is visible instead of a wrong filter being written.
+        // APO has no first-order all-pass: skipped with its number, so the gap is visible.
         Assert.DoesNotContain("Filter 3:", text);
     }
 
@@ -43,8 +38,7 @@ public sealed class EqProfileAllPassFormatsTests
     [Fact]
     public void EqualizerApo_RefusesAnApLineWithoutAQ()
     {
-        // An all-pass's Q is the phase turn itself — reading one at an assumed
-        // width would place a different filter.
+        // An all-pass Q is the phase turn; an assumed width would place a different filter.
         new EqualizerApoFormat().TryImport(
             "Filter 1: ON AP Fc 120 Hz", out EqualizationCurve curve);
 
@@ -78,10 +72,7 @@ public sealed class EqProfileAllPassFormatsTests
     [InlineData(typeof(AudiotecFischerFormat))]
     public void AGainColumn_ReadsZeroForAnAllPassWhateverTheBandCarries(Type formatType)
     {
-        // A band can arrive holding a gain it does not use: the wizard's slot keeps
-        // the figure a bell had when it was switched to an all-pass, so switching
-        // back restores it. Writing that into a file states a gain the filter does
-        // not have, to a reader with no reason to doubt it.
+        // A slot keeps a bell's gain after switching to all-pass; writing it would state a gain the filter lacks.
         var format = (IEqProfileFormat)Activator.CreateInstance(formatType)!;
         var curve = new EqualizationCurve(
             [new PeqBand(120, 1.5, 6.0, PeqBandType.AllPassSecondOrder)]);
@@ -98,8 +89,7 @@ public sealed class EqProfileAllPassFormatsTests
     {
         string text = new CamillaDspYamlFormat().Export(Mixed());
 
-        // Allpass takes freq + q and no gain; AllpassFO takes freq alone. A gain
-        // key CamillaDSP does not define would fail its config validation.
+        // An undefined gain key fails CamillaDSP's config validation.
         Assert.Contains("Allpass", text);
         Assert.Contains("AllpassFO", text);
         int allpassIndex = text.IndexOf("Allpass", StringComparison.Ordinal);
@@ -110,8 +100,6 @@ public sealed class EqProfileAllPassFormatsTests
     [Fact]
     public void MiniDsp_RealizesAnAllPassAsItsOwnCoefficients()
     {
-        // Coefficients carry any shape by construction; the check is that the
-        // exporter went through the dispatcher and not through the peaking formula.
         var band = new PeqBand(120, 1.5, 0, PeqBandType.AllPassSecondOrder);
         string text = new MiniDspFormat(48_000).Export(new EqualizationCurve(new[] { band }));
         BiquadCoefficients expected = AllPassFilter.BuildSections(
@@ -124,26 +112,22 @@ public sealed class EqProfileAllPassFormatsTests
     [Fact]
     public void TheCapabilityIsDeclaredPerOrder()
     {
-        // Read through the interface: the capability is a default interface member,
-        // which is exactly how every caller sees it.
+        // The capability is a default interface member, which is how callers see it.
         static bool Ap1(IEqProfileFormat format) =>
             format.SupportsAllPass(PeqBandType.AllPassFirstOrder);
         static bool Ap2(IEqProfileFormat format) =>
             format.SupportsAllPass(PeqBandType.AllPassSecondOrder);
 
-        // APO's AP is second-order only, and REW shares its filter lines.
         Assert.False(Ap1(new EqualizerApoFormat()));
         Assert.True(Ap2(new EqualizerApoFormat()));
         Assert.False(Ap1(new RewFilterFormat()));
         Assert.True(Ap2(new RewFilterFormat()));
 
-        // Both orders: our CSV, CamillaDSP, the Audiotec bank, raw coefficients.
         Assert.True(Ap1(new GenericCsvFormat()) && Ap2(new GenericCsvFormat()));
         Assert.True(Ap1(new CamillaDspYamlFormat()) && Ap2(new CamillaDspYamlFormat()));
         Assert.True(Ap1(new AudiotecFischerFormat()) && Ap2(new AudiotecFischerFormat()));
         Assert.True(Ap1(new MiniDspFormat(48_000)) && Ap2(new MiniDspFormat(48_000)));
 
-        // Neither: a mode/slope parameterisation, and a sampled magnitude curve.
         Assert.False(Ap1(new EasyEffectsFormat()) || Ap2(new EasyEffectsFormat()));
         Assert.False(Ap1(new GraphicEqFormat()) || Ap2(new GraphicEqFormat()));
     }

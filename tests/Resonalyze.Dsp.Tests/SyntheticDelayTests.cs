@@ -64,13 +64,7 @@ public sealed class SyntheticDelayTests
     [Fact]
     public void GroupDelay_MarksBinsFarBelowTheLocalEnvelopeAsNaN()
     {
-        // The validity gate reads against the LOCAL octave-smoothed energy
-        // envelope (a smooth quiet shelf — a differencer's low end here — is a
-        // measured response and stays valid; the old global −30 dB gate blanked
-        // it), while a stretch below the −60 dB global backstop is true silence
-        // and must still read NaN. A differencer with content only in the first
-        // two samples: everything is defined, so the curve is finite down to
-        // the deep global floor and NaN below it.
+        // Validity reads the local octave envelope (a quiet shelf stays valid); below the −60 dB global backstop is silence.
         var response = new Complex[TransformLength];
         response[0] = Complex.One;
         response[1] = -Complex.One;
@@ -87,9 +81,7 @@ public sealed class SyntheticDelayTests
             rightMs: 0,
             smoothingInverseOctaves: 0).Points;
 
-        // |H(f)| = 2·sin(πf/fs) crosses −60 dB re its Nyquist peak at
-        // f ≈ fs/π · 10^(−60/20) ≈ 15 Hz: below that the global backstop
-        // gates, above it the locally-consistent slope is a valid reading.
+        // |H| = 2·sin(πf/fs) crosses −60 dB re Nyquist at f ≈ 15 Hz.
         SignalPoint firstValidPoint =
             groupDelay.First(point => !double.IsNaN(point.Y));
         Assert.InRange(firstValidPoint.X, 5.0, 50.0);
@@ -104,9 +96,6 @@ public sealed class SyntheticDelayTests
     [Fact]
     public void GroupDelay_ReadsAbsoluteDelayFromIrStart()
     {
-        // The gate's left shoulder lands on the peak and the buffer offset is added
-        // back, so the group delay reads the absolute arrival time of a peak that sits
-        // well into the IR (not relative to the peak).
         const int peakSample = 800;
         var response = new Complex[TransformLength];
         response[peakSample] = Complex.One;
@@ -140,12 +129,7 @@ public sealed class SyntheticDelayTests
     [Fact]
     public void GroupDelay_AQuietBandSurvivesNextToATallResonance()
     {
-        // A 50 Hz resonance whose spectral line rings ~47 dB above a broadband
-        // arrival (a subwoofer's cabin peak next to the rest of the system).
-        // The old validity gate compared every bin against the GLOBAL energy
-        // maximum, so the resonance blanked the measured mid band to NaN; the
-        // local-envelope gate must keep it, and the −60 dB global backstop
-        // must not swallow it either.
+        // A 50 Hz resonance ~47 dB over the broadband arrival: a global gate would blank the mid band.
         var response = new Complex[65_536];
         response[1_000] = Complex.One;
         for (int i = 0; i < 4_800; i++)
@@ -168,9 +152,6 @@ public sealed class SyntheticDelayTests
             rightMs: 500,
             smoothingInverseOctaves: 0).Points;
 
-        // The old global gate blanked this band completely (it sits ~52 dB
-        // below the resonance line); the local gate keeps it, apart from the
-        // genuine deep interference notches the local rule still gates.
         List<SignalPoint> midBand = groupDelay
             .Where(point => point.X is >= 500 and <= 5_000)
             .ToList();
@@ -185,12 +166,7 @@ public sealed class SyntheticDelayTests
     [Fact]
     public void GatedPhase_ReadsTheCyclicTailLikeGroupDelayDoes()
     {
-        // The dialog advertises ONE gate for phase and group delay, and GD has
-        // always read a left shoulder that precedes the IR start from the
-        // cyclic tail (the transfer IR is circular; negative time lives there).
-        // Phase used to zero-pad the same region — silently a different signal.
-        // Pin the wrap: content placed in negative time (the buffer's end) must
-        // reach the phase curve.
+        // Phase and GD share one gate: a left shoulder before the IR start reads the circular tail in both.
         const int peakSample = 5;
         var clean = new Complex[TransformLength];
         clean[peakSample] = Complex.One;
@@ -225,9 +201,6 @@ public sealed class SyntheticDelayTests
     [Fact]
     public void GroupDelay_WrapsWhenLeftShoulderPrecedesIrStart()
     {
-        // Peak near the IR start: the left shoulder runs into negative indices, so the
-        // gate must read the cyclic tail (wrap) and the time correction must still
-        // recover the true absolute arrival.
         const int peakSample = 5;
         var response = new Complex[TransformLength];
         response[peakSample] = Complex.One;
@@ -261,11 +234,7 @@ public sealed class SyntheticDelayTests
     [Fact]
     public void GroupDelay_ReflectionNulls_DoNotSpike()
     {
-        // A 0.7 reflection 5 ms behind the arrival combs the spectrum every 200 Hz.
-        // At each null the per-bin group delay legitimately diverges to about
-        // -aΔ/(1-a) ≈ -11.7 ms, but those bins carry almost no energy: the
-        // energy-weighted evaluation must keep the curve near the real arrivals
-        // even with display smoothing off.
+        // Comb nulls push per-bin GD to -aΔ/(1-a) ≈ -11.7 ms with almost no energy; energy weighting keeps the curve near the arrivals.
         const int peakSample = 100;
         const int reflectionDelaySamples = 240; // 5 ms at 48 kHz.
         var response = new Complex[8192];
@@ -291,8 +260,7 @@ public sealed class SyntheticDelayTests
             .ToList();
 
         Assert.NotEmpty(analysisBand);
-        // The legitimate comb oscillation stays within aΔ/(1+a) ≈ +2.1 ms of the
-        // arrival; anything approaching the raw -11.7 ms null excursion is a spike.
+        // The legitimate comb swing stays within aΔ/(1+a) ≈ +2.1 ms.
         Assert.All(
             analysisBand,
             point => Assert.InRange(

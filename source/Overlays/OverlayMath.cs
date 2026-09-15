@@ -2,9 +2,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Contains plotting-independent calculations used by overlay comparisons.
-/// </summary>
 public static class OverlayMath
 {
     private const double GaussianRadiusSigma = 3.0;
@@ -15,12 +12,7 @@ public static class OverlayMath
         return mode is Mode.FrequencyResponse or Mode.LiveSpectrum;
     }
 
-    /// <summary>
-    /// Fractional-octave smoothing of an overlay curve.
-    /// <paramref name="psychoacousticMagnitude"/> gates psychoacoustic magnitude
-    /// semantics. The caller must pass false for phase, group-delay and
-    /// coherence curves, where the code decodes to plain 1/6-octave smoothing.
-    /// </summary>
+    /// <summary>Pass <paramref name="psychoacousticMagnitude"/> false for phase, GD and coherence (decodes to plain 1/6 octave).</summary>
     public static OverlayPoint[] SmoothByOctaves(
         IReadOnlyList<OverlayPoint> points,
         int inverseOctaves,
@@ -129,12 +121,7 @@ public static class OverlayMath
         return result;
     }
 
-    /// <summary>
-    /// Builds the target curve, the deviation of a measurement from it, and the
-    /// optional tolerance band. The shared slot offset shifts the target, and the
-    /// deviation is computed against that shifted target. The measurement is
-    /// smoothed before the deviation so it does not jitter.
-    /// </summary>
+    /// <summary>The slot offset shifts the target before the deviation; the measurement is smoothed first to avoid jitter.</summary>
     public static TargetCurveResult BuildTarget(
         IReadOnlyList<OverlayPoint> source,
         TargetCurveSpec spec,
@@ -171,8 +158,6 @@ public static class OverlayMath
             target.Add(new OverlayPoint(point.X, targetValue));
             if (hasDeviation)
             {
-                // Correction is the EQ gain to reach the target (target − source);
-                // Deviation is how far the response sits from it (source − target).
                 double value = deviationMode == TargetDeviationMode.Correction
                     ? targetValue - point.Y
                     : point.Y - targetValue;
@@ -189,14 +174,7 @@ public static class OverlayMath
             lower?.ToArray() ?? Array.Empty<OverlayPoint>());
     }
 
-    /// <summary>
-    /// The decibels a straight slope of <paramref name="tiltDbPerOctave"/> dB per octave
-    /// adds at <paramref name="frequencyHz"/>. The line hinges at
-    /// <paramref name="pivotHz"/>, where it adds nothing, so the tilt rotates a curve
-    /// about that frequency instead of moving it. Typical use is undoing the slope of the
-    /// excitation itself: pink noise falls 3 dB per octave through a constant-bandwidth
-    /// analyzer, and either sign is allowed.
-    /// </summary>
+    /// <summary>dB added by a slope hinged at <paramref name="pivotHz"/> (0 dB there); either sign.</summary>
     public static double TiltDb(
         double frequencyHz,
         double tiltDbPerOctave,
@@ -225,8 +203,7 @@ public static class OverlayMath
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(b);
 
-        // Curve A alone: there is no operand to interpolate onto A's grid, so B is not
-        // read at all — the caller may not even have resolved one.
+        // B is not read; the caller may not have resolved one.
         if (operation == OverlayOperation.CurveA)
         {
             return a.ToArray();
@@ -281,17 +258,11 @@ public static class OverlayMath
                 continue;
             }
 
-            // Acoustic curves live on a logarithmic frequency axis, so the
-            // interpolation position is logarithmic too — on sparse imported
-            // curves a linear-Hz blend lands visibly off between octave-spaced
-            // points. (Linear fallback only for degenerate non-positive X.)
+            // Log-frequency interpolation: linear Hz lands visibly off on sparse octave-spaced curves.
             double position = left.X > 0 && aPoint.X > 0
                 ? Math.Log(aPoint.X / left.X) / Math.Log(right.X / left.X)
                 : (aPoint.X - left.X) / (right.X - left.X);
-            // Wrapped phase must interpolate through the branch cut: a curve
-            // stepping from +170° to −170° passes through ±180°, not through 0°
-            // the way a linear blend of the raw numbers would — and the wrap of
-            // the difference afterwards cannot recover the lost branch.
+            // Wrapped phase interpolates through ±180°, not 0°; wrapping the difference later cannot recover the branch.
             double bValue = wrapPhaseDifference
                 ? InterpolateWrappedDegrees(left.Y, right.Y, position)
                 : left.Y + (right.Y - left.Y) * position;
@@ -306,9 +277,7 @@ public static class OverlayMath
                 : ApplyOperation(aValue, bValue, operation, wrapPhaseDifference);
             if (useAmplitudeSpace)
             {
-                // A non-positive amplitude difference has no dB representation;
-                // emit NaN so the plot draws an honest gap instead of the
-                // -160 dB floor the conversion would clamp to.
+                // NaN for a non-positive amplitude difference: an honest gap instead of the -160 dB floor.
                 value = value > 0
                     ? DataHelper.AmplitudeToDecibels(value)
                     : double.NaN;
@@ -340,9 +309,7 @@ public static class OverlayMath
         };
     }
 
-    // Interpolates between two wrapped phase readings along the SHORT way
-    // around the circle, by blending the unit phasors and taking the angle of
-    // the result.
+    // Short way around the circle via blended unit phasors.
     private static double InterpolateWrappedDegrees(
         double fromDegrees,
         double toDegrees,
@@ -355,9 +322,7 @@ public static class OverlayMath
         return Math.Atan2(y, x) * 180.0 / Math.PI;
     }
 
-    // Maps a phase difference in degrees to the shortest angular distance in (-180, 180]
-    // via atan2(sin, cos). Used only when comparing wrapped phase curves; left untouched
-    // otherwise so unwrapped curves keep their accumulated slope.
+    // Only for wrapped curves; unwrapped curves keep their accumulated slope.
     private static double WrapDegrees(double degrees, bool wrap)
     {
         if (!wrap || !double.IsFinite(degrees))

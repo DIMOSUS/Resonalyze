@@ -5,13 +5,8 @@ using Xunit;
 
 namespace Resonalyze.Dsp.Tests;
 
-// Pins the below-noise classification of harmonic packets. The overlap check reads
-// the window edges RELATIVE to the packet's own peak, so a harmonic that fell below
-// the measurement noise floor — a windowful of flat noise, edges roughly at the
-// plateau peak — used to be misread as "packet overlaps its neighbour" and scolded
-// the user's cleanest captures with an amber warning. Such an order must instead be
-// classified below-noise: still dropped (its "curve" would be the noise floor), but
-// with no warning, because an unresolvably small harmonic is good news.
+// A harmonic below the noise floor (edges near the plateau peak) was misread as overlap and warned;
+// it is dropped silently as below-noise instead.
 public sealed class EssHarmonicBelowNoiseTests
 {
     private const int SampleRate = 48_000;
@@ -24,15 +19,13 @@ public sealed class EssHarmonicBelowNoiseTests
     private static EssSweepMetadata Sweep() =>
         EssSweepMetadata.FromExponentialSweep(SampleRate, Octaves, SweepSamples, PeakIndex);
 
-    // A linear delta over a deterministic white-noise floor, with no harmonic
-    // content at all — the record every clean electrical capture approximates.
     private static double[] NoisyCleanImpulse(int seed = 12345)
     {
         var random = new Random(seed);
         double[] impulse = new double[ImpulseLength];
         for (int i = 0; i < ImpulseLength; i++)
         {
-            // Sum of 12 uniforms minus 6: zero-mean, unit-variance, deterministic.
+            // Sum of 12 uniforms minus 6: zero-mean, unit-variance.
             double gaussian = -6.0;
             for (int k = 0; k < 12; k++)
             {
@@ -57,7 +50,6 @@ public sealed class EssHarmonicBelowNoiseTests
             Assert.False(packet.IsReliable);
             Assert.Null(packet.Warning);
         });
-        // No warnings: nothing here is a fault, so IsValid stays true.
         Assert.Empty(decomposition.Validity.Warnings);
         Assert.True(decomposition.Validity.IsValid);
     }
@@ -86,8 +78,6 @@ public sealed class EssHarmonicBelowNoiseTests
         HarmonicWindowDefinition h2 = EssHarmonicAnalysis.BuildWindow(sweep, 2, 0.5);
 
         double[] impulse = NoisyCleanImpulse();
-        // HD2 content far above the noise that persists to the window edge — the
-        // real leak the overlap warning exists for.
         for (int i = h2.PeakSample; i <= h2.EndSample && i < ImpulseLength; i++)
         {
             impulse[i] = 0.3 * Math.Cos(0.3 * (i - h2.PeakSample));
@@ -109,7 +99,6 @@ public sealed class EssHarmonicBelowNoiseTests
     {
         var sweep = Sweep();
         double[] impulse = NoisyCleanImpulse();
-        // A contained HD2 delta far above the noise floor stays a reliable packet.
         impulse[PeakIndex - EssHarmonicAnalysis.HarmonicOffsetSamples(sweep, 2)] = 0.02;
 
         EssHarmonicDecomposition decomposition = EssHarmonicAnalysis.AnalyzeEssHarmonics(
@@ -126,11 +115,7 @@ public sealed class EssHarmonicBelowNoiseTests
     [InlineData(false)]
     public void AContaminatedEdgeOverANoisePlateau_IsNotBlessedAsBelowNoise(bool leading)
     {
-        // A neighbour's undecayed tail sits in ONE edge region of HD2's window
-        // while the plateau itself holds nothing above the noise floor. The
-        // below-noise verdict must not swallow that on either side: the window
-        // is polluted, which is exactly what the edge-based overlap warning
-        // exists to say.
+        // A neighbour's tail in one edge region is a polluted window: the overlap warning must still fire.
         var sweep = Sweep();
         HarmonicWindowDefinition h2 = EssHarmonicAnalysis.BuildWindow(sweep, 2, 0.5);
         double[] impulse = NoisyCleanImpulse();
@@ -156,11 +141,7 @@ public sealed class EssHarmonicBelowNoiseTests
     [Fact]
     public void ASignalInTheShoulder_BetweenPlateauAndEdge_IsNotBlessedAsBelowNoise()
     {
-        // The below-noise verdict must survey the WHOLE window. A burst in the
-        // shoulder between the central plateau and the trailing edge leaves both
-        // the plateau maximum and the edge RMS values at the noise floor — the
-        // only regions the verdict used to consult — yet the window plainly
-        // holds a packet, so blessing it as a clean capture would be a lie.
+        // The verdict must survey the whole window: a shoulder burst leaves plateau max and edge RMS at the floor.
         var sweep = Sweep();
         HarmonicWindowDefinition h2 = EssHarmonicAnalysis.BuildWindow(sweep, 2, 0.5);
         double[] impulse = NoisyCleanImpulse();
@@ -170,8 +151,6 @@ public sealed class EssHarmonicBelowNoiseTests
             h2.EndSample - Math.Max(1, (int)Math.Round(0.15 * length)) + 1;
         const int burstLength = 500;
         int burstStart = plateauTo + (trailingEdgeStart - plateauTo - burstLength) / 2;
-        // The burst must sit strictly between the plateau and the edge region,
-        // or this test would degenerate into one of the already-covered cases.
         Assert.True(burstStart > plateauTo);
         Assert.True(burstStart + burstLength < trailingEdgeStart);
         for (int i = burstStart; i < burstStart + burstLength; i++)
@@ -191,10 +170,7 @@ public sealed class EssHarmonicBelowNoiseTests
     [Fact]
     public void WithoutAUsableTail_TheOldOverlapVerdictIsKept()
     {
-        // The noise stops right after the linear window, leaving a silent tail
-        // whose RMS is zero — no usable floor estimate, so the below-noise test
-        // must stand down and the noise-filled harmonic windows fall back to the
-        // edge-based isolation verdict.
+        // A silent tail gives no floor estimate: fall back to the edge-based isolation verdict.
         var sweep = Sweep();
         HarmonicWindowDefinition linear = EssHarmonicAnalysis.BuildWindow(sweep, 1, 0.5);
         double[] impulse = NoisyCleanImpulse();
@@ -207,9 +183,6 @@ public sealed class EssHarmonicBelowNoiseTests
         EssHarmonicDecomposition decomposition = EssHarmonicAnalysis.AnalyzeEssHarmonics(
             impulse, sweep, new HarmonicAnalysisOptions(MaxHarmonic: 4));
 
-        // Whether each noise-filled window lands on the marginal or the invalid
-        // side of the edge margin, it must be warned about the OLD way — never
-        // silently blessed as below-noise without a floor to judge against.
         Assert.All(decomposition.Validity.Packets, packet =>
         {
             Assert.False(packet.IsBelowNoiseFloor);

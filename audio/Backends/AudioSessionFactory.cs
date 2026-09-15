@@ -1,10 +1,5 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// The single entry point the measurement/application layer uses to open audio
-/// sessions. Resolves the backend from each request via the registry and
-/// delegates; this is the seam a fake implementation replaces in tests.
-/// </summary>
 public sealed class AudioSessionFactory : IAudioSessionFactory
 {
     private readonly IAudioBackendRegistry registry;

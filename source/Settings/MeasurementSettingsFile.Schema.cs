@@ -3,25 +3,16 @@ using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
-// The persisted schema sections of MeasurementSettingsFile: one nested class per
-// mode, each owning its own Capture/ApplyTo and its own clamping. Split out of
-// the main file, which handles load/save/backup, so a new mode's settings do not
-// have to be threaded past 600 lines of unrelated schema.
-
 namespace Resonalyze;
 
 internal sealed partial class MeasurementSettingsFile
 {
     internal sealed class SweepMeasurementSettings
     {
-        // The lowest/highest sweep frequency the user may request; the achieved
-        // band is rounded outward from here for phase alignment.
         public const double MinSweepFrequencyHz = 20.0;
         public const double MaxSweepFrequencyHz = 20_000.0;
 
-        // Legacy: the sweep used to be defined by an octave count with the top
-        // pinned to Nyquist. Kept for migration only; the band is now stored in
-        // LowFrequencyHz/HighFrequencyHz (0 = derive from the legacy octave count).
+        // Legacy (top pinned to Nyquist), migration only; 0 in LowFrequencyHz/HighFrequencyHz = derive from this.
         public int Octaves { get; set; } = 12;
         public double LowFrequencyHz { get; set; }
         public double HighFrequencyHz { get; set; }
@@ -40,85 +31,41 @@ internal sealed partial class MeasurementSettingsFile
         public string? AsioDriverName { get; set; }
         public int WaveInputChannelOffset { get; set; }
         public int? WaveLoopbackInputChannelOffset { get; set; }
-        // Legacy field (pre removal of the separate-loopback-device
-        // capability), kept ONLY so old files deserialize into the migration
-        // (see MigrateLegacyDualDeviceLoopback); always null after loading
-        // and never written back.
+        // Legacy, deserialized only for MigrateLegacyDualDeviceLoopback; null after load, never written.
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? WaveLoopbackDeviceNumber { get; set; }
         public int AsioInputChannelOffset { get; set; }
         public int? AsioLoopbackInputChannelOffset { get; set; }
         public int AsioOutputChannelOffset { get; set; }
-        // Two runs by default: averaging is what the Measurements control offers
-        // (its minimum is 2), and a lone sweep gives nothing to average away.
         public int AverageRunCount { get; set; } = 2;
         public ProtectiveHighPassKind ProtectiveHighPassKind { get; set; }
         public double ProtectiveHighPassFrequencyHz { get; set; } = 2_000.0;
         public int ProtectiveHighPassSlopeDbPerOctave { get; set; } = 24;
         public string? MicrophoneCalibration0DegreesPath { get; set; }
-        // Which calibration the measurement microphone is read through, by id in
-        // AdditionalMicrophoneCalibrations or the 0° slot; null is uncalibrated.
-        // It belongs to the RIG, beside the array microphones' own choices, because
-        // it is what a run freezes into its file — a decision about the capsule that
-        // is about to record, not about how a chart is drawn. It used to live in the
-        // Frequency Response view, where selecting it after the sweeps stamped every
-        // file with the calibration that happened to be showing before them.
+        // Belongs to the rig: a run freezes it into its file. Null = uncalibrated.
         public string? MicrophoneCalibrationId { get; set; } =
             MicrophoneCalibrationIds.ZeroDegrees;
-        // Legacy field (schema <= 10, when 90° was a second fixed slot), kept
-        // ONLY so old files deserialize into the migration, which turns the file
-        // into a named entry of AdditionalMicrophoneCalibrations; always null
-        // after loading and never written back.
+        // Legacy (schema <= 10), migrated into AdditionalMicrophoneCalibrations; never written.
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? MicrophoneCalibration90DegreesPath { get; set; }
-        // Every calibration beside the microphone's own 0° file: further files
-        // and curves estimated for an angle of incidence, in the order the user
-        // arranged them.
         public List<MicrophoneCalibrationDefinition> AdditionalMicrophoneCalibrations
         { get; set; } = [];
-        // The array microphones, per backend: a channel number means a different
-        // input on each, so switching backend must not point them at whatever
-        // input happens to share the number.
+        // Per backend: a channel number names a different input on each.
         public List<ArrayMicrophoneDefinition> WaveArrayMicrophones { get; set; } = [];
         public List<ArrayMicrophoneDefinition> AsioArrayMicrophones { get; set; } = [];
-        // ...and the DEVICE each was configured on, because per-backend is not
-        // enough. Two interfaces with eight inputs each present the same channel
-        // NUMBERS, so swapping one for the other leaves every position reachable,
-        // every calibration attached, every note intact — and every microphone
-        // pointed at a different physical input. Nothing downstream could notice:
-        // the measurement succeeds and the curves look entirely ordinary.
-        //
-        // Null means "configured before this was stamped", which is not a mismatch
-        // and must not throw the setup away; the next edit stamps it.
-        //
-        // WASAPI stamps the endpoint id. ASIO stamps the DRIVER NAME, because that is
-        // all ASIO exposes — there is no endpoint identity behind it. For a vendor
-        // driver bound to its own interface that is an identity; for a wrapper
-        // (ASIO4ALL, FlexASIO, an aggregate) the same name can front different
-        // hardware, and an array carried across that swap passes this check. Adding
-        // the driver's channel count was considered and rejected: some drivers report
-        // different counts at different sample rates, so it would invalidate working
-        // setups to catch a case it would only sometimes catch.
+        // Also per device: two 8-input interfaces share channel numbers, so a swap silently re-points every mic.
+        // Null = configured before stamping (not a mismatch). WASAPI stamps the endpoint id; ASIO only the driver name,
+        // so wrappers (ASIO4ALL, FlexASIO) can pass. Channel count was rejected: some drivers report it per sample rate.
         public string? WaveArrayDeviceId { get; set; }
         public string? AsioArrayDeviceId { get; set; }
         public SplCalibration? SplCalibration { get; set; }
 
-        /// <summary>The array configured for the backend in use.</summary>
-        // Read-only, so serializing it writes a third copy of one of the two lists
-        // above that nothing can read back — noise in the file, and a reader's
-        // invitation to edit the copy that is ignored.
+        // Not serialized: a third, ignored copy of one of the lists above.
         [JsonIgnore]
         public List<ArrayMicrophoneDefinition> ArrayMicrophones =>
             AudioBackend == AudioBackend.Asio ? AsioArrayMicrophones : WaveArrayMicrophones;
 
-        /// <summary>
-        /// Carries the microphone calibrations over from <paramref name="previous"/>.
-        /// <see cref="Capture"/> rebuilds this section from the measurement, which
-        /// knows the audio configuration and the SPL anchor but nothing about the
-        /// calibration files — so without this they would be dropped on every
-        /// capture. Kept here rather than at the call site so a calibration added
-        /// later cannot be forgotten by one caller.
-        /// </summary>
+        /// <summary>Carries calibrations over: <see cref="Capture"/> rebuilds from the measurement, which knows none.</summary>
         public void CopyCalibrationFrom(SweepMeasurementSettings previous)
         {
             ArgumentNullException.ThrowIfNull(previous);
@@ -127,35 +74,24 @@ internal sealed partial class MeasurementSettingsFile
             AdditionalMicrophoneCalibrations = previous.AdditionalMicrophoneCalibrations
                 .Select(definition => definition.Clone())
                 .ToList();
-            // Same reason: the measurement knows which CHANNELS its array was on
-            // but nothing about the calibrations chosen for them or what the user
-            // named the positions, so a capture would drop both.
             WaveArrayMicrophones = previous.WaveArrayMicrophones
                 .Select(definition => definition.Clone())
                 .ToList();
             AsioArrayMicrophones = previous.AsioArrayMicrophones
                 .Select(definition => definition.Clone())
                 .ToList();
-            // With the device each was configured on: carrying the positions over
-            // without it would launder a stale array into a fresh-looking one.
+            // With the device stamp, or a stale array would look fresh.
             WaveArrayDeviceId = previous.WaveArrayDeviceId;
             AsioArrayDeviceId = previous.AsioArrayDeviceId;
         }
 
-        // A loopback reference channel is mandatory: every analysis mode is derived from the
-        // transfer IR, which only exists when the loopback is captured alongside the microphone.
+        // Every analysis mode derives from the transfer IR, which needs the loopback.
         public bool HasLoopbackConfigured =>
             AudioBackend == AudioBackend.Asio
                 ? AsioLoopbackInputChannelOffset.HasValue
                 : WaveLoopbackInputChannelOffset.HasValue;
 
-        /// <summary>
-        /// Resolves the requested sweep band into the allowed range, migrating
-        /// pre-band settings (only an octave count, with the top pinned to
-        /// Nyquist) — for the historical read-only octave count of 12 this lands
-        /// at the 20 Hz–20 kHz default. <paramref name="sampleRate"/> is the
-        /// already-normalized rate the sweep will run at.
-        /// </summary>
+        /// <summary>Clamps the requested band, migrating pre-band settings (octave count 12 lands at 20 Hz–20 kHz).</summary>
         public (double LowHz, double HighHz) ResolveBand(int sampleRate)
         {
             double low;
@@ -213,39 +149,10 @@ internal sealed partial class MeasurementSettingsFile
         public void ApplyTo(ExpSweepMeasurement measurement)
         {
             measurement.Init(BuildConfiguration());
-            // Metadata, applied after Init (which does not touch it).
             measurement.SplCalibration = SplCalibration;
         }
 
-        /// <summary>
-        /// These settings as the measurement configuration they describe, with
-        /// every value normalized against the devices actually present. Separate
-        /// from <see cref="ApplyTo"/> for the callers that need the configuration
-        /// without committing it — importing a recording resolves the sweep from it
-        /// first and only applies it once the analysis has succeeded.
-        /// </summary>
-        /// <summary>
-        /// The array channels a stored configuration can actually be run with.
-        /// </summary>
-        /// <remarks>
-        /// A settings FILE is not a dialog: it can hold a channel that collided
-        /// with the measurement inputs after the user moved the microphone or the
-        /// loopback, or a duplicate left by hand-editing, and the measurement
-        /// layer refuses both outright. Refusing here would make the application
-        /// unable to start on its own saved settings, so a stored array is
-        /// filtered instead — the dialog is where a collision is reported, and it
-        /// prevents one being made in the first place.
-        /// </remarks>
-        /// <summary>
-        /// Whether an array configured on <paramref name="configuredOn"/> may be used
-        /// with the device now selected.
-        /// </summary>
-        /// <remarks>
-        /// An unstamped array is accepted: it was configured before the stamp
-        /// existed, and refusing what cannot be checked would throw away a setup to
-        /// protect it. Everything else must match exactly — this is an identity, not
-        /// a name to be interpreted.
-        /// </remarks>
+        /// <summary>An unstamped array (configured before stamping) is accepted; otherwise an exact identity match.</summary>
         internal static bool ArrayMatchesDevice(string? configuredOn, string? deviceId) =>
             string.IsNullOrWhiteSpace(configuredOn) ||
             string.Equals(configuredOn, deviceId, StringComparison.Ordinal);
@@ -257,9 +164,7 @@ internal sealed partial class MeasurementSettingsFile
             Func<int, bool> reachable,
             bool deviceMatches)
         {
-            // The device the array was configured on is gone, so its channel NUMBERS
-            // name inputs nobody chose. Reachability cannot catch this: two eight-input
-            // interfaces agree about every number and about nothing else.
+            // Filtered, not refused: the app must start on its own saved settings. A gone device means numbers name unchosen inputs.
             if (!deviceMatches)
             {
                 return [];
@@ -272,13 +177,7 @@ internal sealed partial class MeasurementSettingsFile
                     microphone.ChannelOffset == microphoneChannel ||
                     microphone.ChannelOffset == loopbackChannel ||
                     channels.Contains(microphone.ChannelOffset) ||
-                    // And it has to exist on the device now selected. The array is
-                    // stored per BACKEND, not per interface, so an eight-input card
-                    // swapped for a two-input one leaves inputs 3 to 8 behind — and
-                    // the capture window is opened wide enough to span every array
-                    // channel, so those would be asked of a driver that has no such
-                    // inputs. The measurement microphone and the loopback are already
-                    // normalized against the device; these were not.
+                    // Stored per backend, not per interface, so offsets beyond a smaller card's inputs must be dropped.
                     !reachable(microphone.ChannelOffset))
                 {
                     continue;
@@ -290,16 +189,7 @@ internal sealed partial class MeasurementSettingsFile
             return channels;
         }
 
-        /// <summary>
-        /// Whether an input offset exists on the device this configuration selects.
-        /// </summary>
-        /// <remarks>
-        /// Deliberately permissive when the device cannot be asked: a driver that is
-        /// unplugged right now reports nothing, and silently emptying a configured
-        /// array over that would lose the user's setup rather than protect it. The
-        /// session refuses an unreachable channel outright when it tries to open, and
-        /// that refusal is the honest one.
-        /// </remarks>
+        /// <remarks>Permissive when the device cannot be asked (unplugged); the session refuses on open instead.</remarks>
         private static Func<int, bool> ReachableInput(
             AudioBackend backend,
             string? asioDriverName,
@@ -322,7 +212,6 @@ internal sealed partial class MeasurementSettingsFile
                 return count <= 0 ? _ => true : offset => offset < count;
             }
 
-            // MME opens a stereo record and nothing wider.
             return offset => offset < 2;
         }
 
@@ -397,10 +286,7 @@ internal sealed partial class MeasurementSettingsFile
                             ? NormalizeOptionalWasapiChannelOffset(WaveLoopbackInputChannelOffset)
                             : NormalizeOptionalWaveChannelOffset(WaveLoopbackInputChannelOffset),
                         ReachableInput(backend, AsioDriverName, sampleRate, captureEndpointId),
-                        // The RAW selection, not the resolved one: the question is
-                        // whether the user has since chosen a different device, and
-                        // it must answer the same whether that device is plugged in
-                        // right now — the same permissiveness ReachableInput keeps.
+                        // Raw selection, not resolved: must answer the same whether the device is plugged in now.
                         ArrayMatchesDevice(WaveArrayDeviceId, WasapiCaptureEndpointId)),
                     AsioArrayInputChannelOffsets: ResolveArrayChannels(
                         AsioArrayMicrophones,
@@ -420,16 +306,7 @@ internal sealed partial class MeasurementSettingsFile
                 ToProtectiveHighPass());
         }
 
-        /// <summary>
-        /// The protective high-pass these settings describe, normalized.
-        /// </summary>
-        /// <remarks>
-        /// Its own accessor because the live analyzer needs it WITHOUT building a whole
-        /// sweep configuration: that filter sits in the user's hardware ahead of the
-        /// loudspeaker, so a reference-free capture carries it and has to divide it
-        /// back out, and the sweep measurement's own copy is only refreshed when a
-        /// sweep is configured to run.
-        /// </remarks>
+        /// <remarks>Separate accessor: the live analyzer divides this hardware filter out without building a sweep configuration.</remarks>
         public ProtectiveHighPassConfiguration ToProtectiveHighPass() =>
             ProtectiveHighPassConfiguration.Normalize(
                 new ProtectiveHighPassConfiguration(
@@ -443,21 +320,15 @@ internal sealed partial class MeasurementSettingsFile
         public int Window { get; set; } = 4096;
         public int LeftTukeyWindow { get; set; } = 256;
         public int RightTukeyWindow { get; set; } = 256;
-        // Magnitude FDW ships with a Fixed default, so a file without these
-        // fields keeps its meaning without a migration case.
         public PhaseWindowMode? MagnitudeWindowMode { get; set; } =
             Resonalyze.Dsp.PhaseWindowMode.Fixed;
         public int MagnitudeFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
         public double SmoothingInverseOctaves { get; set; } = 6;
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;
-        // Which calibration this view corrects with, by id; null means none.
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? CalibrationId { get; set; }
-        // Legacy selections (schema <= 10): first a bare on/off flag, then the
-        // three fixed modes. Read for migration only — deliberately nullable and
-        // without an initializer, so "absent" stays distinguishable from a
-        // stored value — and never written back.
+        // Legacy (schema <= 10), migration only; nullable without initializer so absent is distinguishable.
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public bool? UseCalibration { get; set; }
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -479,10 +350,7 @@ internal sealed partial class MeasurementSettingsFile
         public bool ShowGroupDelay { get; set; } = true;
         public bool ShowMinimumPhaseGroupDelay { get; set; } = true;
         public bool ShowExcessGroupDelay { get; set; } = true;
-        // Nullable and deliberately WITHOUT an initializer: System.Text.Json
-        // never assigns a missing property, so an initializer value would
-        // survive deserialization and a pre-Auto file (v <= 9, field absent)
-        // would be indistinguishable from a stored true — see ApplyTo.
+        // No initializer: System.Text.Json never assigns a missing property, so a pre-Auto file (v <= 9) must read as null.
         public bool? PhaseGateAutoFit { get; set; }
         public double PhaseGateOffsetMs { get; set; } = FrequencyResponseOptions.DefaultPhaseGateOffsetMs;
         public double PhaseLeftMs { get; set; } = FrequencyResponseOptions.DefaultPhaseLeftMs;
@@ -499,12 +367,7 @@ internal sealed partial class MeasurementSettingsFile
         public double GroupDelayLeftMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayLeftMs;
         public double GroupDelayPlateauMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayPlateauMs;
         public double GroupDelayRightMs { get; set; } = FrequencyResponseOptions.DefaultGroupDelayRightMs;
-        // Starts on FDW like the Phase tab's field above: a first run builds
-        // this object and applies it, so the initializer IS the fresh-install
-        // default. A file written before the window existed is told apart by
-        // its schema version (below 13) in MeasurementSettingsFile.LoadOrDefault,
-        // which puts it on the Fixed gate its owner has been looking at; the
-        // null case in ApplyTo is a backstop for an explicit null only.
+        // Initializer is the fresh-install default; pre-v13 files are put on Fixed in MeasurementSettingsFile.LoadOrDefault.
         public PhaseWindowMode? GroupDelayWindowMode { get; set; } =
             Resonalyze.Dsp.PhaseWindowMode.FrequencyDependent;
         public int GroupDelayFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
@@ -560,8 +423,7 @@ internal sealed partial class MeasurementSettingsFile
 
         public void ApplyTo(FrequencyResponseOptions options, CurveVisibilityOptions visibility)
         {
-            // Lower bound matches the UI (numericWindow.Minimum = 4); clamping to a
-            // higher floor would corrupt small windows on a settings/history roundtrip.
+            // Floor matches the UI minimum (4); a higher floor would corrupt small windows on roundtrip.
             int window = Clamp(Window, 4, 32768);
             options.Window = window;
             (options.LeftTukeyWindow, options.RightTukeyWindow) =
@@ -600,10 +462,7 @@ internal sealed partial class MeasurementSettingsFile
             visibility.ShowGroupDelay = ShowGroupDelay;
             visibility.ShowMinimumPhaseGroupDelay = ShowMinimumPhaseGroupDelay;
             visibility.ShowExcessGroupDelay = ShowExcessGroupDelay;
-            // Absent in a pre-Auto file: enable Auto only when the stored
-            // offset is the untouched default. A deliberately fitted/typed
-            // gate must stay manual — the Auto re-snap would silently
-            // overwrite the user's placement and persist over it.
+            // Pre-Auto file: Auto only if the offset is the untouched default, so a placed gate is not re-snapped.
             options.PhaseGateAutoFit = PhaseGateAutoFit ??
                 PhaseGateOffsetMs == FrequencyResponseOptions.DefaultPhaseGateOffsetMs;
             options.PhaseGateOffsetMs = ClampMilliseconds(PhaseGateOffsetMs, 0.0, 2000.0);
@@ -611,8 +470,6 @@ internal sealed partial class MeasurementSettingsFile
             options.PhasePlateauMs = ClampMilliseconds(PhasePlateauMs, 0.0, 1000.0);
             options.PhaseRightMs = ClampMilliseconds(PhaseRightMs, 0.0, 1000.0);
             options.PhaseDetrendMs = ClampMilliseconds(PhaseDetrendMs, -2000.0, 2000.0);
-            // Missing fields identify the pre-FDW format: retain its Fixed/manual
-            // representation rather than silently changing existing projects.
             options.PhaseWindowMode = PhaseWindowMode is { } windowMode &&
                 Enum.IsDefined(windowMode)
                     ? windowMode
@@ -630,8 +487,6 @@ internal sealed partial class MeasurementSettingsFile
             options.GroupDelayLeftMs = ClampMilliseconds(GroupDelayLeftMs, 0.0, 1000.0);
             options.GroupDelayPlateauMs = ClampMilliseconds(GroupDelayPlateauMs, 0.0, 1000.0);
             options.GroupDelayRightMs = ClampMilliseconds(GroupDelayRightMs, 0.0, 1000.0);
-            // Null (an explicit null, or the version-13 migration's Fixed) keeps
-            // the Fixed gate rather than silently changing the curve.
             options.GroupDelayWindowMode = GroupDelayWindowMode is { } groupDelayWindowMode &&
                 Enum.IsDefined(groupDelayWindowMode)
                     ? groupDelayWindowMode
@@ -645,24 +500,17 @@ internal sealed partial class MeasurementSettingsFile
             double.IsFinite(value) ? Math.Clamp(value, min, max) : 0.0;
     }
 
-    // One PEQ filter of the persisted bank. Deliberately its own three numbers
-    // rather than a Dsp PeqBand: a settings file is a format with defaults and
-    // tolerance for missing fields, and PeqBand is the analysis type.
+    // Own type rather than Dsp PeqBand: a file format needs defaults and tolerance for missing fields.
     internal sealed class PeqBandSettings
     {
         public double FrequencyHz { get; set; } = 1000;
         public double Q { get; set; } = 1;
         public double GainDb { get; set; }
 
-        // Absent in a file written before shelves existed, which read back as the
-        // bells they were.
         public PeqBandType Type { get; set; } = PeqBandType.Peaking;
     }
 
-    // Self-contained EQ Wizard state — the mode derives nothing from overlays or
-    // the current measurement: the isolated target curve, the filter
-    // bank and its gain range, source smoothing and the microphone calibration
-    // applied to the loaded IR. The loaded IR itself is not persisted.
+    // Self-contained: derives nothing from overlays or the current measurement. The loaded IR is not persisted.
     internal sealed class EqWizardSettings
     {
         public TargetPreset Preset { get; set; } = TargetPreset.Flat;
@@ -676,12 +524,8 @@ internal sealed partial class MeasurementSettingsFile
         public double PresenceGainDb { get; set; }
         public double PresenceFrequencyHz { get; set; } = 3000;
         public double PresenceWidthOctaves { get; set; } = 1.0;
-        // An imported target shape, which replaces the parametric terms above
-        // while it is there (they are still stored: picking a preset in the
-        // settings dialog is how the user goes back to them). The curve travels by
-        // value, as the flat "frequency, level, …" list ImportedTargetCurve writes
-        // — a path would name a file the settings cannot promise is still there —
-        // and the name beside it is the label the menu shows, nothing more.
+        // Imported target replaces the parametric terms while present; stored by value (flat frequency, level list)
+        // since a path may no longer exist.
         public string? TargetImportedName { get; set; }
         public double[]? TargetImportedCurve { get; set; }
         public double ToleranceDb { get; set; } = 3;
@@ -693,27 +537,16 @@ internal sealed partial class MeasurementSettingsFile
         public double TargetOffsetDb { get; set; }
         public double GainMinDb { get; set; } = -15;
         public double GainMaxDb { get; set; } = 6;
-        // The filter bank in slot order. The order is not decoration — it is what
-        // an exported profile numbers its filters by — so it is stored as written
-        // rather than re-derived on load. An empty list is a real state (a bank
-        // the user cleared) and restores as one.
-        //
-        // Null only in a file written before the bank was persisted (schema 9 and
-        // earlier). Such a file carries BandCount alone, and the bank is rebuilt
-        // as that many ISO-spread filters — exactly what those versions showed.
+        // Slot order is the export numbering. Empty = user cleared. Null only in schema <= 9 files:
+        // rebuilt as BandCount ISO-spread filters.
         public List<PeqBandSettings>? Bands { get; set; }
 
-        // The EQ preamp, part of the bank rather than of the target.
         public double PreampDb { get; set; }
 
-        // How many filters the bank holds. Kept in step with Bands and read only
-        // when Bands is absent (see above).
         public int BandCount { get; set; }
         public int SourceSmoothingInverseOctaves { get; set; }
 
-        // The wizard's standing preference for impulse responses. Unlike the
-        // measurement views it defaults to no correction, so a file that carries
-        // neither the id nor the legacy mode restores as Off.
+        // Unlike the measurement views, defaults to no correction.
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? CalibrationId { get; set; }
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -725,32 +558,16 @@ internal sealed partial class MeasurementSettingsFile
                 CalibrationMode,
                 legacyUseCalibration: false);
 
-        // The rate the fitted biquads are realized at when the source does not state one
-        // (a foreign text curve). A source that knows its own rate overrides this without
-        // changing it, so the manual choice survives loading such a source.
+        // Used when the source states no rate; a source rate overrides without changing this.
         public int ManualSampleRateHz { get; set; } = 48_000;
 
-        // Auto Tune only cuts, never boosts. The safe default for a car tune; see
-        // EqAutoTuner.Options.CutsOnlyMode.
         public bool CutsOnly { get; set; } = true;
 
-        // Whether Auto Tune may fit low/high shelves as well as bells
-        // (EqAutoTuner.Options.AllowShelves). Off by default, which is what a file
-        // written before the stage existed restores to — and the curve those versions
-        // fitted.
         public bool AllowShelves { get; set; }
 
-        // The narrowest band Auto Tune may place (EqAutoTuner.Options.QMax). Well
-        // below the 20 a strip accepts by hand: the fit reads a single microphone
-        // position, and a sharp notch fitted to it is a filter for that position
-        // alone. A file written before the ceiling existed restores this default,
-        // which is the change those files see.
+        // Well below the manual limit of 20: the fit reads one mic position, and a sharp notch fits that position alone.
         public double AutoTuneMaxQ { get; set; } = 6.0;
 
-        // Whether the bank's own response is drawn on the plot's right-hand axis.
-        // A view preference, persisted the way the Impulse view persists which of
-        // its curves are shown: a user who cleared the plot of it does not want it
-        // back on the next launch.
         public bool ShowEqCurve { get; set; } = true;
     }
 
@@ -758,14 +575,7 @@ internal sealed partial class MeasurementSettingsFile
     {
         public int Length { get; set; } = 4096;
 
-        /// <summary>
-        /// The pre-scale-selector setting: a plain "logarithmic amplitude" flag. It
-        /// is read only when <see cref="AmplitudeScale"/> is absent, so a file
-        /// written by an older build still opens the view the way its user left it,
-        /// and it is still WRITTEN (mirroring the scale) so a file written here
-        /// stays loadable by an older build, which cannot parse a null into its
-        /// non-nullable flag.
-        /// </summary>
+        /// <summary>Legacy flag, read only when <see cref="AmplitudeScale"/> is absent; still written so older builds can load.</summary>
         public bool? Logarithmic { get; set; }
 
         public ImpulseAmplitudeScale? AmplitudeScale { get; set; }
@@ -813,8 +623,7 @@ internal sealed partial class MeasurementSettingsFile
             options.EnvelopeSmoothingMs = Math.Clamp(EnvelopeSmoothingMs, 0.0, 100.0);
             options.Invert = Invert;
             options.NormalizeStepToImpulsePeak = NormalizeStepToImpulsePeak;
-            // Anything outside the offered widths reads as "no band filter" rather than
-            // as an arbitrary one: a hand-edited width is not a band anyone chose.
+            // A hand-edited width outside the offered ones reads as no band filter.
             options.BandFilterOctaves =
                 BandFilterOctaves > 0.0 && BandFilterOctaves <= 1.0
                     ? BandFilterOctaves
@@ -877,13 +686,10 @@ internal sealed partial class MeasurementSettingsFile
 
     internal sealed class LiveSpectrumSettings
     {
-        // Null when the file predates the explicit analysis mode; ApplyTo infers it
-        // from what used to imply an RTA session (see there).
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public LiveAnalysisMode? AnalysisMode { get; set; }
         public NoiseColor NoiseColor { get; set; } = NoiseColor.PinkPeriodic;
         public bool CompensateNoiseTilt { get; set; }
-        // See FrequencyResponseSettings for the id and the two legacy fields.
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? CalibrationId { get; set; }
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -938,19 +744,14 @@ internal sealed partial class MeasurementSettingsFile
             options.NoiseColor = Enum.IsDefined(NoiseColor)
                 ? NoiseColor
                 : NoiseColor.PinkPeriodic;
-            // Settings written before the explicit mode existed: the SPL scale and
-            // the Silent signal were both RTA-exclusive back then, so either marks
-            // an RTA session; everything else was the transfer analyzer.
+            // Pre-mode files: SPL scale or Silent signal were RTA-exclusive, so either marks RTA.
             options.AnalysisMode = AnalysisMode is { } mode && Enum.IsDefined(mode)
                 ? mode
                 : MagnitudeScale == MagnitudeScale.SoundPressureLevel ||
                     options.NoiseColor == NoiseColor.Silent
                     ? LiveAnalysisMode.Rta
                     : LiveAnalysisMode.TransferFunction;
-            // The invariant the panel and the controller both rely on: Silent exists
-            // only in RTA mode (a transfer function has nothing to correlate against
-            // without an excitation). Only a hand-edited file can break it — repair
-            // the signal, keeping the explicitly stated mode.
+            // Invariant: Silent only in RTA (nothing to correlate). Repair a hand-edited file's signal, keep the mode.
             if (options.AnalysisMode == LiveAnalysisMode.TransferFunction &&
                 options.NoiseColor == NoiseColor.Silent)
             {
@@ -1011,9 +812,6 @@ internal sealed partial class MeasurementSettingsFile
         public int MicrophoneInputChannelOffset { get; set; }
         public int LoopbackInputChannelOffset { get; set; }
         public int AsioOutputChannelOffset { get; set; }
-        // Pre-band-mode files carry only this bool; BandMode is null there
-        // and the migration below keeps an explicit manual window, otherwise
-        // adopts the new AutoBand default.
         public bool UseBandpassWindow { get; set; }
         public string? BandMode { get; set; }
         public double BandpassCenterHz { get; set; } = 1000;

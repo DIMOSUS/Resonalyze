@@ -2,62 +2,16 @@ using System.Buffers.Binary;
 
 namespace Resonalyze.Integration.Rew;
 
-/// <summary>
-/// Builds the body of a REW impulse-response import from a measurement's transfer
-/// IR. Pure: no HTTP, no WinForms, no measurement types — samples in, payload out,
-/// which is what makes the framing and the encoding testable without REW.
-/// </summary>
-/// <remarks>
-/// <para><b>Framing.</b> A loopback-referenced transfer IR has the reference at
-/// sample 0, so sending it as it stands means <c>startTime = 0</c> and no pre-roll
-/// — correct, but REW draws nothing before t = 0 and the deconvolution's acausal
-/// part is wrapped into the buffer's tail, far to the right of where it belongs.
-/// The buffer is therefore rolled by whole samples and the shift stated as a
-/// negative start time. A circular roll moves no energy and loses no sample, and
-/// t = 0 still lands exactly on the loopback reference.</para>
-/// <para><b>Fractions.</b> None are needed here. REW carries a fractional start
-/// time exactly (measured on 5.40 Beta 132 / API 0.9.6: a half-sample and a
-/// third-of-a-sample offset both came back bit for bit, with the peak still on its
-/// original index), so a fraction would live in <c>startTime</c> rather than in a
-/// resampled buffer. This export has no fraction to state — its reference is a
-/// sample of its own recording — so the roll stays whole and the payload stays the
-/// samples that were measured.</para>
-/// </remarks>
+/// <summary>REW IR import body from a transfer IR (pure). The buffer is rolled by whole samples with a negative startTime so the
+/// acausal tail shows before t = 0; REW carries fractional start times exactly, but this export has no fraction to state.</summary>
 internal static class RewImpulseResponsePayload
 {
-    /// <summary>
-    /// How much of the wrapped tail to bring round to the front, in seconds. Long
-    /// enough that the acausal ringing of a deconvolution is visible where it
-    /// belongs, short enough to stay a margin rather than half the graph — and, the
-    /// binding constraint, long enough for REW's own left gate.
-    /// </summary>
-    /// <remarks>
-    /// The pre-roll is what REW has to build a left gate out of, and REW CLAMPS a
-    /// gate to the pre-roll present rather than reporting that it could not apply
-    /// the one it was asked for. Measured on 5.40 Beta 132 / API 0.9.6: REW gives an
-    /// IMPORT a 100 ms left window by default, while the swept measurements it makes
-    /// itself carry 125 ms. At 0.1 s — the value this started with — an imported
-    /// measurement therefore could not be given the same gate as the REW measurement
-    /// beside it: asking for 125 ms yielded 100.4. Comparing the two then compares
-    /// REW's windowing as much as the responses, and over a nine-measurement
-    /// crossover bench that showed up as 0.18 dB rms and 0.94 degrees rms. With the
-    /// gates equal the same round trip agrees to 1.2e-5 dB rms and 7.7e-5 degrees
-    /// rms — the same response to the precision a float32 payload can carry. 0.15 s
-    /// leaves 25 ms above the 125 ms an imported measurement has to be able to
-    /// match.
-    /// </remarks>
+    /// <summary>REW clamps a left gate to the pre-roll present; its own sweeps use 125 ms, so 0.1 s gave 100.4 ms and a 0.18 dB rms mismatch
+    /// (REW 5.40 b132). 0.15 s leaves 25 ms margin; with equal gates the round trip agrees to 1.2e-5 dB rms.</summary>
     public const double PreRollSeconds = 0.15;
 
-    /// <summary>
-    /// Builds the import for one measurement.
-    /// </summary>
-    /// <param name="impulseResponse">The transfer IR, sample 0 being the reference.</param>
-    /// <param name="peakIndex">The arrival's index in that buffer.</param>
-    /// <param name="sampleRate">The rate the measurement was made at.</param>
-    /// <param name="identifier">The name REW files it under.</param>
-    /// <param name="splOffsetDb">
-    /// The measurement's own dBr → dB SPL offset, or null when it has no SPL anchor.
-    /// </param>
+    /// <param name="impulseResponse">Transfer IR, sample 0 being the reference.</param>
+    /// <param name="splOffsetDb">dBr to dB SPL offset, or null without an SPL anchor.</param>
     public static RewImpulseResponseImport Build(
         ReadOnlySpan<double> impulseResponse,
         int peakIndex,
@@ -94,8 +48,6 @@ internal static class RewImpulseResponsePayload
         var bytes = new byte[length * sizeof(float)];
         for (int i = 0; i < length; i++)
         {
-            // Read the source through the roll rather than materializing a rolled
-            // copy: the destination index is the one that has to advance evenly.
             double value = impulseResponse[(i + length - preRoll) % length];
             BinaryPrimitives.WriteSingleBigEndian(
                 bytes.AsSpan(i * sizeof(float)),

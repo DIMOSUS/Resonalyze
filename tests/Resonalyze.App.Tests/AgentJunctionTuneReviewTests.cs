@@ -3,14 +3,6 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The review of a <c>tuneJunction</c> request: the junction it names must be
-/// one the package could have printed — two measured blocks on that side, in
-/// the sum, in one group, neighbours along the spectrum that hand over to each
-/// other — and its inputs must be ones the tuner can use. What it writes over,
-/// and what writes over it, follows from the crossover being one filter for
-/// both sides.
-/// </summary>
 public sealed class AgentJunctionTuneReviewTests
 {
     private const string Package = "11111111-1111-1111-1111-111111111111";
@@ -18,9 +10,7 @@ public sealed class AgentJunctionTuneReviewTests
     private static CrossoverEdge Edge(CrossoverFilterFamily family, double hz, int slope) =>
         new(family, hz, slope);
 
-    // A three-way front with a subwoofer, and a rear fill: A sub (mono, LP 80),
-    // B mid (BP 80–2000), C tweeter (HP 2000 at 48 dB/oct), D rear (HP 100,
-    // its own group). Every stereo block carries both sides.
+    // A sub (mono, LP 80), B mid (BP 80–2000), C tweeter (HP 2000, 48 dB/oct), D rear (HP 100, own group).
     private static AgentSessionSnapshot Session(
         bool cMeasured = true, bool cEnabled = true, bool bBypass = false, string? lastPackageId = Package)
     {
@@ -107,8 +97,6 @@ public sealed class AgentJunctionTuneReviewTests
     [Fact]
     public void Review_NamesTheSubJunction_ThroughTheMonoBlock()
     {
-        // A mono subwoofer plays on both sides; the junction under the mid is
-        // real on either.
         AgentProposalReview review = AgentProposalValidator.Review(
             Proposal(Tune("left:A-B"), Tune("right:A-B", "op-2")), Session());
 
@@ -197,7 +185,6 @@ public sealed class AgentJunctionTuneReviewTests
         Assert.True(review.Verdicts[0].Applicable);
         Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
         Assert.Equal("Would be overwritten by Junction tune (op-1).", review.Verdicts[1].Message);
-        // The tune leaves gains alone, and blocks outside the junction.
         Assert.True(review.Verdicts[2].Applicable);
         Assert.True(review.Verdicts[3].Applicable);
     }

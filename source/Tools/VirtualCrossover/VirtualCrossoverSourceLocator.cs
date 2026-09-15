@@ -1,50 +1,16 @@
 namespace Resonalyze;
 
 /// <summary>
-/// Finds the measurement file a Virtual DSP session refers to when the stored
-/// absolute path no longer resolves.
-/// <para>
-/// A session file travels: it is exported, mailed, copied to another machine or
-/// simply moved together with the measurements it was tuned on. Its channel
-/// paths, however, are absolute and written on the machine that made them, so on
-/// arrival every one of them points at a folder that does not exist and the whole
-/// session opens with unresolved channels. Since the measurements normally travel
-/// WITH the session, the folder the session file itself was opened from is the one
-/// honest hint about where they went — so the stored path is retried against it,
-/// in two steps.
-/// </para>
-/// <para>
-/// FIRST the path stored RELATIVE to the exporting session's own folder (see
-/// <see cref="Relativize"/>), which reproduces the original layout exactly,
-/// including measurements kept in a SIBLING folder (<c>..\v4\mid.json</c>) — the
-/// common case in a real tuning session, and one no search under the session's
-/// folder can reach.
-/// </para>
-/// <para>
-/// THEN the stored path's TAIL, LONGEST first: the deepest chunk of the stored
-/// path under the session's folder, then one folder less, down to the bare file
-/// name. That resolves a whole tree copied across and, last, the flat case
-/// (everything in one folder), and it is the only route for a session exported by
-/// a build that wrote no relative path. Neither step ever enumerates a directory —
-/// only paths the stored ones actually name are probed, so a same-named
-/// measurement sitting in an unrelated sibling folder is never picked up.
-/// </para>
+/// Finds a session's measurement when its stored absolute path is dead: first the export-relative path, then the
+/// stored path's tails (longest first) under the session folder. Never enumerates directories.
+/// See docs/tech/virtual-dsp-session-file.md#source-paths.
 /// </summary>
 internal static class VirtualCrossoverSourceLocator
 {
-    // How many leading folders of the stored path may be dropped. Deep enough for
-    // the real trees (car\v5\left\woofer.json), shallow enough that a stored path
-    // can never be reduced to a tail so generic that it matches by accident.
+    // Deep enough for real trees, shallow enough that a tail never becomes generic enough to match by accident.
     private const int MaximumTailDepth = 6;
 
-    /// <summary>
-    /// The path the measurement can actually be read from: the stored one when it
-    /// still exists, otherwise the relative path or the first tail match under
-    /// <paramref name="searchDirectory"/> — the folder the session file was loaded
-    /// from, or one the user pointed at to relink. Null for the internal autosave,
-    /// which has no companion folder to search. Null result: nothing resolves and
-    /// the channel stays unresolved.
-    /// </summary>
+    /// <summary>Stored path if it exists, else the relative or first tail match under <paramref name="searchDirectory"/>; null when nothing resolves.</summary>
     internal static string? Locate(
         string? storedPath, string? relativePath, string? searchDirectory)
     {
@@ -77,18 +43,7 @@ internal static class VirtualCrossoverSourceLocator
         return null;
     }
 
-    /// <summary>
-    /// The measurement's path as an EXPORTED session records it beside the absolute
-    /// one: relative to <paramref name="exportDirectory"/>, so a session copied to
-    /// another machine together with its measurements finds them wherever the pair
-    /// landed, as long as their relative arrangement survived the copy.
-    /// <para>
-    /// Null across volumes — a relative path cannot cross one (<see
-    /// cref="Path.GetRelativePath"/> would just hand back the absolute path, which
-    /// is already stored) — and null for a path that is not fully qualified, which
-    /// has no fixed meaning to be relative TO.
-    /// </para>
-    /// </summary>
+    /// <summary>Path relative to <paramref name="exportDirectory"/>; null across volumes or for a path that is not fully qualified.</summary>
     internal static string? Relativize(string? absolutePath, string exportDirectory)
     {
         if (string.IsNullOrWhiteSpace(absolutePath) ||
@@ -116,11 +71,7 @@ internal static class VirtualCrossoverSourceLocator
         }
     }
 
-    // One candidate under the search directory, or null when it does not exist (or
-    // cannot even be formed). A rooted "relative" part is refused rather than
-    // silently probed as an absolute path: only Combine's own behaviour would make
-    // it one, and a hand-edited session must not gain a second absolute reference
-    // that never passed through Relativize.
+    // A rooted relative part is refused: a hand-edited session must not gain an absolute reference this way.
     private static string? Resolve(string searchDirectory, string? relativePart)
     {
         if (string.IsNullOrWhiteSpace(relativePart) || Path.IsPathRooted(relativePart))
@@ -140,15 +91,7 @@ internal static class VirtualCrossoverSourceLocator
         }
     }
 
-    // The stored path's tails, LONGEST first: "v5\left\woofer.json",
-    // "left\woofer.json", "woofer.json". Longest first because the number of path
-    // components that still agree is the whole evidence a tail match has — a new
-    // tree holding both <session>\left\woofer.json and a different
-    // <session>\woofer.json would otherwise answer with the shallow one, and two
-    // measurements of the same rate and format swap silently. Dropping components
-    // one at a time still reaches the flat case, just last. Collection stops at the
-    // root (the drive or UNC share is not a folder name that could repeat under the
-    // session's folder).
+    // Longest first: the count of agreeing components is the only evidence, and a shallow match could swap measurements.
     private static IEnumerable<string> TrailingSegments(string storedPath)
     {
         string tail = Path.GetFileName(storedPath);
@@ -178,9 +121,6 @@ internal static class VirtualCrossoverSourceLocator
         }
     }
 
-    // A path the platform refuses to even form (illegal characters, too long, a
-    // device name). It is not a locate failure worth reporting — the candidate
-    // simply does not exist.
     private static bool IsPathFailure(Exception exception) =>
         exception is ArgumentException or PathTooLongException or NotSupportedException;
 }

@@ -2,22 +2,15 @@ using System.Runtime.InteropServices;
 
 namespace Resonalyze.Integration.AgentBridge;
 
-/// <summary>
-/// The bridge's one transport, behind two delegates so the flow can be driven
-/// in tests without a Windows clipboard. The clipboard is a shared resource —
-/// a remote desktop or a clipboard manager may hold it for a moment — so each
-/// call is retried a few times before it is reported, never thrown.
-/// </summary>
+/// <summary>The bridge's one transport, swappable for tests. Each call is retried a few times (a remote desktop or clipboard manager may hold it) and failures are reported, never thrown.</summary>
 internal static class AgentClipboard
 {
     private const int Attempts = 5;
     private const int RetryDelayMs = 40;
 
-    /// <summary>Reads the clipboard's text, or null when it holds none. Swappable for tests.</summary>
     public static Func<string?> ReadText { get; set; } =
         () => Clipboard.ContainsText() ? Clipboard.GetText() : null;
 
-    /// <summary>Replaces the clipboard's content with the text. Swappable for tests.</summary>
     public static Action<string> WriteText { get; set; } =
         text => Clipboard.SetText(text);
 

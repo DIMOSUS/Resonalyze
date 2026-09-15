@@ -1,10 +1,5 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The per-mode active-overlay-slot memory moved off Form1 into
-/// <see cref="ActiveOverlaySlotTracker"/>; these pin the capture/restore
-/// roundtrip and the Virtual DSP arm-new-slot path.
-/// </summary>
 public sealed class ActiveOverlaySlotTrackerTests
 {
     [Fact]

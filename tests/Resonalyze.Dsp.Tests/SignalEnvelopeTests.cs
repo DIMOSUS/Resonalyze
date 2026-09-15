@@ -112,10 +112,7 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindPeak_ReAnchorsOnAGlobalPeakBeyondAnEmptyWindow()
     {
-        // A chain latency parks the whole IR beyond the search window: the
-        // start-anchored window holds only residue far below the first-arrival
-        // search depth, so the search re-anchors on the global envelope
-        // maximum and reports it in the envelope's own coordinates.
+        // Chain latency parks the IR beyond the window: re-anchor on the global envelope maximum.
         var envelope = new double[48_000];
         Array.Fill(envelope, 1e-6);
         envelope[19_999] = 0.6;
@@ -139,10 +136,7 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindPeak_ReAnchorsPastALoudSeamResidue()
     {
-        // The 3RC head shape: the acausal residue wrapped across the buffer
-        // seam decays from sample 0, sitting tens of dB above the noise
-        // floor yet more than the search depth below the real peak — loud
-        // residue is still residue, and the window re-anchors past it.
+        // 3RC head: acausal residue wrapped across the seam, loud but still beyond the search depth.
         var envelope = new double[48_000];
         Array.Fill(envelope, 1e-6);
         for (int i = 0; i < 200; i++)
@@ -170,12 +164,7 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindPeak_ReAnchorsWhenTheWindowHoldsOnlySubNoiseContent()
     {
-        // A near-noise record with a weak but real event beyond the window:
-        // the window's noise sits within the 25 dB search depth of that weak
-        // global peak, but below the noise gate — depth alone would keep the
-        // start-anchored window, whose content then fails the first-arrival
-        // threshold and the fallback returns a noise sample. Sub-noise
-        // content must not block the re-anchor.
+        // Sub-noise window content must not block the re-anchor to a weak real event.
         var envelope = new double[48_000];
         Array.Fill(envelope, 0.01);
         envelope[19_999] = 0.06;
@@ -199,10 +188,7 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindPeak_KeepsTheStartAnchoredWindowWhenItHoldsReachableContent()
     {
-        // The re-anchor gate is conservative: content inside the start-anchored
-        // window within the first-arrival search depth of the global peak means
-        // the true front may live there (the modal-cabin geometry, where a room
-        // mode out-rings the direct front), so the legacy window must stay.
+        // In-window content within the search depth keeps the legacy window (a mode may out-ring the front).
         var envelope = new double[48_000];
         Array.Fill(envelope, 1e-6);
         envelope[499] = 0.12;
@@ -240,31 +226,24 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindFractionalPeakOffset_FlatTripleReturnsZero()
     {
-        // previous - 2*center + next == 0: the parabola is degenerate, so the offset
-        // must be exactly the flat-guard value rather than a division by ~zero.
+        // Degenerate parabola: the flat-guard value, not a division by ~zero.
         Assert.Equal(0.0, SignalEnvelope.FindFractionalPeakOffset(1.0, 1.0, 1.0));
     }
 
     [Fact]
     public void FindFractionalPeakOffset_ReturnsTheParabolicVertex()
     {
-        // 0.5 * (previous - next) / (previous - 2*center + next)
-        // = 0.5 * (1 - 2) / (1 - 8 + 2) = 0.5 * (-1) / (-5) = 0.1.
         Assert.Equal(0.1, SignalEnvelope.FindFractionalPeakOffset(1.0, 4.0, 2.0), precision: 12);
     }
 
     [Fact]
     public void FindPeak_SnrGateRejectsASubNoiseEarlyBumpUnlessSnrIsRelaxed()
     {
-        // A 0.01 noise bed with an early bump (0.08) and a much later strong peak
-        // (1.0). The bump clears the -25 dB-below-max threshold (0.056), so only the
-        // SNR gate can decide it. Raising FirstPeakMinimumSnrDb lifts the noise-based
-        // threshold above the bump; relaxing it lets the bump through. This is the
-        // only lever that changes, so the flip pins the SNR branch.
+        // The bump clears the -25 dB threshold, so only FirstPeakMinimumSnrDb decides it.
         var envelope = new double[2_000];
         Array.Fill(envelope, 0.01);
-        envelope[100] = 0.08; // early candidate arrival
-        envelope[500] = 1.0;  // dominant peak
+        envelope[100] = 0.08;
+        envelope[500] = 1.0;
 
         PeakSearchResult strict = SignalEnvelope.FindPeak(
             envelope, 48_000,
@@ -290,9 +269,7 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindPeak_RejectsASymmetricPreRingingSidelobeOfAStrongerPeak()
     {
-        // A zero-phase kernel rings symmetrically: the early bump at 14 has an
-        // equal-height mirror at 26 around the main peak at 20, so it must be
-        // read as pre-ringing, not as an earlier arrival.
+        // Equal-height mirror around the peak: pre-ringing, not an earlier arrival.
         var envelope = new double[64];
         envelope[13] = 0.05;
         envelope[14] = 0.2;
@@ -322,11 +299,7 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindPeak_KeepsAGenuineEarlyArrivalWithoutAMirrorCounterpart()
     {
-        // Same early bump, but nothing at the mirrored position after the main
-        // peak — a genuine earlier arrival, so it must stay the first arrival.
-        // It is also 14 dB under a stronger peak 0.125 ms later: the envelope
-        // nulls to zero between them, which resolves the two as separate events,
-        // so the packet-rise floor has no say here.
+        // No mirror and a null between the two: separate events, the packet-rise floor has no say.
         var envelope = new double[64];
         envelope[13] = 0.05;
         envelope[14] = 0.2;
@@ -353,14 +326,7 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindPeak_RejectsARippleOnTheFootOfItsOwnWavePacket()
     {
-        // A ripple 20 dB under the packet it belongs to, 0.83 ms ahead of that
-        // packet's peak, riding a foot that only dips 4 dB behind it — the comb
-        // structure a cabin leaves on a leading edge. It is too loud to be the
-        // transform's own pre-ringing (the symmetry rule keeps it) and too quiet,
-        // with nothing resolving it from the rise it sits on, to be the front.
-        // Reading it as the arrival is what made two identical drivers
-        // incomparable: one measured at its packet peak, the other 20 dB down
-        // its own foot.
+        // A ripple 20 dB under its own packet on a foot dipping only 4 dB: too loud for pre-ringing, too quiet to be the front.
         var envelope = new double[4_096];
         Ramp(envelope, 480, 500, 0.0, 0.10);   // foot rising to the ripple
         Ramp(envelope, 500, 510, 0.10, 0.06);  // the ripple's own shallow dip
@@ -384,11 +350,7 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindPeak_KeepsADirectArrivalResolvedFromTheNextPacketByANull()
     {
-        // The same 20 dB gap inside the same millisecond, but the envelope nulls
-        // to nothing between the two: destructive interference resolves them, so
-        // these are two arrivals and the earlier one is the direct sound. Its
-        // timing must survive — the packet ends at the null, and what rises
-        // after it is somebody else's packet.
+        // A null between them resolves two arrivals: the earlier one keeps its timing.
         var envelope = new double[4_096];
         Ramp(envelope, 480, 500, 0.0, 0.10);
         Ramp(envelope, 500, 515, 0.10, 0.0);   // resolved: a null, not a dip
@@ -412,11 +374,7 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindPeak_KeepsADirectArrivalWhenOnlyALaterPacketsRisingEdgeIsInReach()
     {
-        // A reflection that PEAKS 1.25 ms after the direct sound — a separate
-        // arrival by every rule here — but whose rising edge is already inside
-        // the one-millisecond packet window, and by its end stands seven times
-        // the direct arrival. The look-ahead must not borrow that edge to dwarf
-        // the arrival in front of it.
+        // A later reflection's rising edge inside the 1 ms look-ahead must not dwarf the direct arrival.
         var envelope = new double[4_096];
         Ramp(envelope, 480, 500, 0.0, 0.10);
         Ramp(envelope, 500, 515, 0.10, 0.0);
@@ -437,10 +395,6 @@ public sealed class SignalEnvelopeTests
         Assert.False(result.FallbackUsed);
     }
 
-    // Writes a linear segment into the envelope, endpoints included, so a test
-    // can shape a real leading edge instead of isolated spikes: whether two
-    // bumps are one packet or two arrivals is a question about what lies
-    // BETWEEN them.
     private static void Ramp(
         double[] envelope, int from, int to, double fromValue, double toValue)
     {
@@ -454,9 +408,7 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindPeak_KeepsASoftArrivalWhenTheStrongPeakIsMillisecondsLater()
     {
-        // The same 20 dB gap, but the strong peak sits 4.2 ms later — a room
-        // mode, not this arrival's own packet. The soft direct sound the 25 dB
-        // search depth exists to find must survive: the packet floor is local.
+        // A strong peak 4.2 ms later is a room mode: the packet floor is local.
         var envelope = new double[4_096];
         envelope[500] = 0.1;
         envelope[700] = 1.0;
@@ -478,10 +430,7 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void FindPeak_KeepsAFrontThatReachesAQuarterOfItsPacketPeak()
     {
-        // The floor is a quarter of the packet's amplitude: a front at 0.3 of a
-        // 1.0 packet — connected to it, no null between them — is that packet's
-        // own leading edge and stays selected, so the guard cannot quietly
-        // promote every arrival to its strongest lobe.
+        // The floor is a quarter of the packet: a connected 0.3 front stays selected.
         var envelope = new double[4_096];
         Ramp(envelope, 480, 500, 0.0, 0.3);
         Ramp(envelope, 500, 510, 0.3, 0.25);
@@ -505,8 +454,6 @@ public sealed class SignalEnvelopeTests
     [Fact]
     public void EstimatePeakConfidenceDecibels_ReadsTheQuietFloorNotThePeak()
     {
-        // A flat 0.01 floor with a peak cluster (wrapping the array end): the
-        // noise estimate must read the floor, so peak/floor = 40 dB.
         double[] envelope = Enumerable.Repeat(0.01, 1000).ToArray();
         envelope[998] = 1.0;
         envelope[999] = 1.0;
@@ -520,20 +467,14 @@ public sealed class SignalEnvelopeTests
             envelope,
             peak: 1.0);
 
-        // peak/floor is 40 dB; the reported figure compensates the Rayleigh
-        // bias of the quartile floor (+20·log10(0.370) ≈ −8.64 dB), so the
-        // metric reads peak vs the FULL envelope noise RMS, not vs the
-        // flattering quartile.
+        // Rayleigh bias of the quartile floor compensated (+20·log10(0.370) ≈ −8.64 dB).
         Assert.InRange(confidence, 31.2, 31.5);
     }
 
     [Fact]
     public void EstimatePeakConfidenceDecibels_ReverbTailDoesNotCountAsNoise()
     {
-        // Half the record is a −20 dB reverb tail over a 0.001 floor. The old
-        // everything-but-the-peak mean read the tail as noise (~ −20 dB SNR
-        // reference → ~20 dB grade); the quietest-quarter floor must grade the
-        // recording by its true 60 dB headroom.
+        // A −20 dB reverb tail must not count as noise: grade by the quietest quarter.
         double[] envelope = Enumerable.Repeat(0.001, 1000).ToArray();
         for (int i = 100; i < 600; i++)
         {
@@ -545,20 +486,13 @@ public sealed class SignalEnvelopeTests
             envelope,
             peak: 1.0);
 
-        // 60 dB against the raw floor, minus the Rayleigh-bias compensation
-        // (≈ 8.64 dB) — and nowhere near the ~20 dB the reverb-tail mean gave.
         Assert.InRange(confidence, 51.2, 51.5);
     }
 
     [Fact]
     public void EstimatePeakConfidenceDecibels_IgnoresTheDeconvolutionFftTail()
     {
-        // A transfer IR's long FFT tail sits 100+ dB below the peak — far under
-        // any real floor. Here 40% of the record is such a −140 dB tail over a
-        // −60 dB real noise floor. The quietest quarter would otherwise land in
-        // the tail and read ~131 dB; the valid-region bound must grade the
-        // recording by its real −60 dB floor instead (the bug that reported a
-        // clean cabin sweep as 123 dB while its envelope showed ~65).
+        // A −140 dB FFT tail would put the quietest quarter off the real floor (a clean sweep once graded 123 dB).
         double[] envelope = Enumerable.Repeat(0.001, 1000).ToArray();
         for (int i = 400; i < 800; i++)
         {
@@ -570,15 +504,10 @@ public sealed class SignalEnvelopeTests
             envelope,
             peak: 1.0);
 
-        // The −60 dB floor minus the Rayleigh compensation (≈ 8.64 dB), the same
-        // as the reverb-tail case — NOT the ~131 dB the raw quartile would read.
         Assert.InRange(confidence, 51.2, 51.5);
     }
 
-    // The premise of the band-limited read's single transform: a caller that
-    // already holds the forward spectrum gets exactly the envelope it would have
-    // got by transforming back and asking for it, and its spectrum survives the
-    // call (the analysis reads that same array again for the correlation).
+    // The caller's spectrum must survive the call: the analysis reads it again for the correlation.
     [Fact]
     public void EnvelopeFromSpectrum_MatchesTheEnvelopeOfTheSignalItCameFrom()
     {
@@ -610,8 +539,7 @@ public sealed class SignalEnvelopeTests
         Assert.Equal(untouched, spectrum);
     }
 
-    // An odd length takes the other half of the analytic mask, so it is pinned
-    // on both sides of that branch.
+    // An odd length takes the other half of the analytic mask.
     [Fact]
     public void EnvelopeFromSpectrum_MatchesForAnOddLength()
     {

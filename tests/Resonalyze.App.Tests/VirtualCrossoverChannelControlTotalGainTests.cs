@@ -2,11 +2,6 @@ using System.Globalization;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The channel block's all-in gain readout: the level the two broadband stages of
-/// the chain — the channel gain and the loaded PEQ's preamp — come to together,
-/// which is what gets typed into a DSP whose equalizer has no preamp of its own.
-/// </summary>
 public sealed class VirtualCrossoverChannelControlTotalGainTests
 {
     [Fact]
@@ -16,8 +11,6 @@ public sealed class VirtualCrossoverChannelControlTotalGainTests
 
         control.GainInput.Value = -6.0m;
 
-        // Nothing to add to the gain: the readout would only repeat the field
-        // standing next to it.
         Assert.Equal(string.Empty, control.TotalGainLabel.Text);
     }
 
@@ -58,9 +51,7 @@ public sealed class VirtualCrossoverChannelControlTotalGainTests
     [Fact]
     public void ABatchUpdate_LeavesTheReadoutMatchingTheAppliedGain()
     {
-        // The host applies stored settings with the change events suppressed, so the
-        // readout has to be refreshed by the batch itself rather than by the
-        // SettingsChanged the suppressed field never raises.
+        // Stored settings apply with change events suppressed, so the batch itself must refresh the readout.
         using var control = new VirtualCrossoverChannelControl();
         control.PeqPreampDb = -4.5;
         control.SettingsChanged += (_, _) => Assert.Fail(
@@ -71,8 +62,6 @@ public sealed class VirtualCrossoverChannelControlTotalGainTests
         Assert.Equal(Expected(-6.0), control.TotalGainLabel.Text);
     }
 
-    // The block sits next to a numeric field that formats in the user's culture, so
-    // the readout follows it rather than pinning an invariant separator.
     private static string Expected(double totalDb) =>
         "All " + totalDb.ToString("+0.0;-0.0;0.0", CultureInfo.CurrentCulture);
 }

@@ -2,17 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// One array, two tools, one answer — for every setting of the calibration, not
-/// only the one that happens to cancel.
-/// </summary>
-/// <remarks>
-/// These compare the PATHS against each other rather than a document against
-/// itself. A document checked against its own declared correction is a tautology:
-/// it proves the two halves of one construction agree, which they must, and says
-/// nothing about the other construction the frequency response performs from the
-/// same stored curves. That was the hole the first fix left.
-/// </remarks>
+/// <summary>Compares the document path against the frequency-response path; a document checked against itself is a tautology.</summary>
 public sealed class ArrayCalibrationCrossPathTests
 {
     private static readonly IReadOnlyList<double> Grid = SpatialAverage.BuildGrid();
@@ -42,8 +32,7 @@ public sealed class ArrayCalibrationCrossPathTests
             Calibration = calibration
         };
 
-    // The reviewer's own example: two positions six decibels apart, corrected by
-    // files five decibels apart. Everything that could disagree, disagrees.
+    // Positions 6 dB apart, files 5 dB apart: everything that could disagree does.
     private static ArrayMicrophoneCurve[] MixedArray() =>
     [
         Microphone(70.0, measurement: true, channel: 0, Calibration(-2.0)),
@@ -69,10 +58,7 @@ public sealed class ArrayCalibrationCrossPathTests
             [Grid[100], Grid[500], Grid[900]],
             smoothingCode: 0)!;
 
-        // Turning the view's calibration off changes what is DRAWN. It does not
-        // re-measure where the microphones sat: a trim is a placement, computed
-        // once, on the curves that make a level difference a level difference
-        // rather than a difference between capsules.
+        // Calibration Off changes what is drawn, not the trims, which are computed once on corrected curves.
         int[] bands = [100, 500, 900];
         for (int i = 0; i < bands.Length; i++)
         {
@@ -107,11 +93,7 @@ public sealed class ArrayCalibrationCrossPathTests
     [Fact]
     public void OwnReadsAnAttachedCaptureThroughItsOwnCalibration()
     {
-        // A moving-microphone capture is a MEASUREMENT of its own, taken on its own
-        // day through its own correction, and only attached to this channel. Reading
-        // it through the calibration of the impulse response beside it is the one
-        // thing "Own (as measured)" must never do — and the error is the whole
-        // difference between the two files.
+        // A capture is its own measurement: "Own" must read it through its own correction, not the IR's.
         var capture = new LiveCaptureDocument
         {
             SavedAtUtc = DateTimeOffset.UnixEpoch,
@@ -134,9 +116,6 @@ public sealed class ArrayCalibrationCrossPathTests
             smoothingCode: 0)!;
         Assert.Equal(70.0, own[0].Y, 6);
 
-        // Off still undoes it exactly, and a curve the user names is still applied —
-        // that is what makes the selector mean something for a capture that CAN say
-        // what one correction it carries.
         List<SignalPoint> off = SpatialAverageHybrid.BuildChannelCurve(
             capture,
             DspChannelChain.Identity,
@@ -150,10 +129,6 @@ public sealed class ArrayCalibrationCrossPathTests
     [Fact]
     public void OwnHoldsWhenTheMeasurementMicrophoneItselfIsUncalibrated()
     {
-        // A mixture the other way round: the anchor carries no file and a further
-        // position does. The array is still an aggregate — some of it was corrected —
-        // and "read it as it was measured" still means the curve the document holds,
-        // not the nothing the anchor's file names.
         ArrayMicrophoneCurve[] microphones =
         [
             Microphone(70.0, measurement: true, channel: 0, calibration: null),

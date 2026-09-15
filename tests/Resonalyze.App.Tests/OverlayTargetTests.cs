@@ -38,9 +38,9 @@ public sealed class OverlayTargetTests
     {
         TargetCurveSpec spec = Spec(bassGain: 6, bassFreq: 100, bassWidth: 1.0);
 
-        Assert.Equal(3.0, spec.Evaluate(100), precision: 6); // half gain at corner
-        Assert.True(spec.Evaluate(10) > 5.5); // approaches full gain well below
-        Assert.True(spec.Evaluate(2_000) < 0.5); // approaches zero well above
+        Assert.Equal(3.0, spec.Evaluate(100), precision: 6);
+        Assert.True(spec.Evaluate(10) > 5.5);
+        Assert.True(spec.Evaluate(2_000) < 0.5);
     }
 
     [Fact]
@@ -48,9 +48,9 @@ public sealed class OverlayTargetTests
     {
         TargetCurveSpec spec = Spec(trebleGain: -10, trebleFreq: 4_000, trebleWidth: 1.0);
 
-        Assert.Equal(-5.0, spec.Evaluate(4_000), precision: 6); // half gain at corner
-        Assert.True(spec.Evaluate(16_000) < -9.0); // approaches full gain well above
-        Assert.True(spec.Evaluate(500) > -1.0); // approaches zero well below
+        Assert.Equal(-5.0, spec.Evaluate(4_000), precision: 6);
+        Assert.True(spec.Evaluate(16_000) < -9.0);
+        Assert.True(spec.Evaluate(500) > -1.0);
     }
 
     [Fact]
@@ -58,19 +58,12 @@ public sealed class OverlayTargetTests
     {
         TargetCurveSpec spec = Spec(presenceGain: 4, presenceFreq: 3_000, presenceWidth: 0.5);
 
-        Assert.Equal(4.0, spec.Evaluate(3_000), precision: 6); // peak at center
-        Assert.True(spec.Evaluate(1_000) < 1.0); // fades away from center
+        Assert.Equal(4.0, spec.Evaluate(3_000), precision: 6);
+        Assert.True(spec.Evaluate(1_000) < 1.0);
         Assert.True(spec.Evaluate(9_000) < 1.0);
     }
 
-    /// <summary>
-    /// The third-octave in-car target the Car preset is fitted to, and the
-    /// reference of record for the car presets: a bass shelf that has reached
-    /// its full ≈+9 dB by 31.5 Hz, a flat 400 Hz…5 kHz band, and a gentle
-    /// rolloff of 3 dB from there to 20 kHz. The preset builds that from two
-    /// tanh shelves, so it follows the table closely rather than exactly — the
-    /// tolerance below is the fit error, not measurement slack.
-    /// </summary>
+    /// <summary>Third-octave in-car target: full ≈+9 dB shelf by 31.5 Hz, flat 400 Hz…5 kHz, -3 dB to 20 kHz. Tolerance is the tanh-shelf fit error.</summary>
     public static TheoryData<double, double> CarTargetTable => new()
     {
         { 20, 9.0 }, { 25, 9.0 }, { 31.5, 9.0 }, { 40, 8.8 }, { 50, 8.5 },
@@ -96,8 +89,6 @@ public sealed class OverlayTargetTests
     [Fact]
     public void Evaluate_CarPresetsKeepTheMidrangeFlat()
     {
-        // The midrange must not inherit a downslope: the whole point of the car
-        // shape is that the bass shelf sits on top of a flat 400 Hz…5 kHz band.
         foreach (TargetPreset preset in
                  new[] { TargetPreset.Car, TargetPreset.CarMild, TargetPreset.CarBass })
         {
@@ -121,26 +112,16 @@ public sealed class OverlayTargetTests
         Assert.True(mild.Evaluate(20) < car.Evaluate(20) - 2.0);
         Assert.True(bass.Evaluate(20) > car.Evaluate(20) + 2.0);
 
-        // The corner and width are shared, so the variants must not drag the
-        // lower midrange with them — that is where cabin boom lives.
         Assert.Equal(car.BassShelfFrequencyHz, mild.BassShelfFrequencyHz);
         Assert.Equal(car.BassShelfFrequencyHz, bass.BassShelfFrequencyHz);
         Assert.Equal(car.BassShelfWidthOctaves, mild.BassShelfWidthOctaves);
         Assert.Equal(car.BassShelfWidthOctaves, bass.BassShelfWidthOctaves);
 
-        // All three keep the identical treble shelf; only the bass shelf differs,
-        // and its residue at 20 kHz is far below a tenth of a dB.
         Assert.Equal(car.Evaluate(20_000), mild.Evaluate(20_000), tolerance: 1e-6);
         Assert.Equal(car.Evaluate(20_000), bass.Evaluate(20_000), tolerance: 1e-6);
     }
 
-    /// <summary>
-    /// The X-curve of ISO 2969 / SMPTE ST 202: flat to 2 kHz, then -3 dB per
-    /// octave. A tanh shelf cannot make a hard knee followed by a straight line,
-    /// so the tolerance below is the fit error of the closest shelf; what it
-    /// really guards is that the rolloff starts at the knee and not an octave
-    /// early, which is how this preset was wrong before (-2.1 dB at 1 kHz).
-    /// </summary>
+    /// <summary>ISO 2969 X-curve: flat to 2 kHz, then -3 dB/oct. Tolerance is the tanh-shelf fit error; guards the knee position.</summary>
     public static TheoryData<double, double> XCurveTable => new()
     {
         { 200, 0.0 }, { 500, 0.0 }, { 1_000, 0.0 }, { 2_000, 0.0 },
@@ -163,8 +144,6 @@ public sealed class OverlayTargetTests
     {
         TargetCurveSpec spec = TargetCurveSpec.FromPreset(TargetPreset.XCurve);
 
-        // The standard is flat all the way to the 2 kHz knee, so the shelf tail
-        // must not reach the midrange — the old preset was 2.1 dB down at 1 kHz.
         Assert.Equal(0.0, spec.Evaluate(1_000), tolerance: 0.2);
         Assert.Equal(0.0, spec.Evaluate(500), tolerance: 0.1);
         Assert.Equal(0.0, spec.Evaluate(100), tolerance: 0.1);
@@ -173,8 +152,6 @@ public sealed class OverlayTargetTests
     [Fact]
     public void DefaultPreset_IsTheInCarShape()
     {
-        // A new target overlay opens on this preset; this is a car analyzer, so
-        // it must not open on a room curve.
         TargetCurveSpec spec = TargetCurveSpec.FromPreset(OverlayTargets.DefaultPreset);
 
         Assert.Equal(TargetPreset.Car, OverlayTargets.DefaultPreset);
@@ -193,9 +170,7 @@ public sealed class OverlayTargetTests
     }
 
     [Theory]
-    // The shapes these two presets had before they were refitted. A target saved
-    // back then persisted these numbers plus the preset name, so on load the name
-    // would advertise the new shape over the old curve.
+    // Pre-refit shapes: a stored preset name must not advertise the new shape over old numbers.
     [InlineData(TargetPreset.XCurve, 0, 0, 100, 1.5, -10, 2_500, 2.0)]
     [InlineData(TargetPreset.Car, -1.0, 8, 80, 1.5, 0, 5_000, 1.5)]
     public void ResolvePreset_FallsBackToCustomWhenTheStoredShapeMovedOn(
@@ -216,8 +191,6 @@ public sealed class OverlayTargetTests
     [Fact]
     public void ResolvePreset_LeavesCustomAlone()
     {
-        // Custom has no canonical shape to compare against, so any parameters
-        // are its parameters.
         TargetCurveSpec spec = Spec(tilt: -3, bassGain: 11, presenceGain: 2);
 
         Assert.Equal(
@@ -266,7 +239,6 @@ public sealed class OverlayTargetTests
             smoothingInverseOctaves: 0,
             TargetDeviationMode.Correction);
 
-        // Deviation would be +3; correction is the EQ gain to reach the target.
         Assert.All(result.Deviation, point => Assert.Equal(-3.0, point.Y, precision: 9));
     }
 

@@ -32,8 +32,7 @@ public sealed class WindowingTests
     [Fact]
     public void TukeyWindow_NormalizesOverlappingFades()
     {
-        // left + right > 2 used to let the two fade loops overwrite each other,
-        // producing a malformed shape; the fades must scale down and meet instead.
+        // left + right > 2 once made the fades overwrite each other; they must scale down and meet.
         double[] window = Windowing.TukeyWindow(
             256,
             leftTukeyWindow: 2.0,
@@ -44,7 +43,6 @@ public sealed class WindowingTests
         Assert.True(window[128] > 0.95);
         Assert.All(window, value => Assert.InRange(value, 0.0, 1.0));
 
-        // Monotone rise then fall: no dips from overlapping fades.
         for (int i = 1; i < 128; i++)
         {
             Assert.True(window[i] >= window[i - 1] - 1e-12);
@@ -69,9 +67,7 @@ public sealed class WindowingTests
     [Fact]
     public void CreateAnalysisWindow_BlackmanHarrisHasItsKnownEndpointAndUnityCentre()
     {
-        // Odd length -> the centre index has phase exactly pi, where the four terms
-        // sum to 1. The endpoints (phase 0) sum to the tiny 6e-5 pedestal. Both are
-        // fingerprints of the exact coefficients; a wrong term breaks them.
+        // Odd length: the centre (phase pi) sums to 1, endpoints to the 6e-5 pedestal; both fingerprint the coefficients.
         double[] window = Windowing.CreateAnalysisWindow(WindowType.BlackmanHarris, 65);
 
         Assert.Equal(0.00006, window[0], precision: 8);
@@ -84,13 +80,11 @@ public sealed class WindowingTests
     {
         double[] window = Windowing.CreateAnalysisWindow(WindowType.FlatTop, 65);
 
-        // SRS five-term flat-top endpoint = 0.21557895 - 0.41663158 + 0.277263158
-        //   - 0.083578947 + 0.006947368 = -0.000421051 (slightly negative by design).
+        // SRS five-term flat-top endpoint = -0.000421051 (slightly negative by design).
         Assert.Equal(-0.000421051, window[0], precision: 9);
         Assert.Equal(window[0], window[^1], precision: 12); // symmetric
-        // The published five-term coefficients sum to 1.000000003, so the unity
-        // plateau is exact only to ~7 places.
-        Assert.Equal(1.0, window[32], precision: 7);         // centre
+        // The published coefficients sum to 1.000000003, so unity holds to ~7 places.
+        Assert.Equal(1.0, window[32], precision: 7);
     }
 
     [Fact]

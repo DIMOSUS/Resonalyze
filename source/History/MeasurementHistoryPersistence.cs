@@ -6,10 +6,7 @@ namespace Resonalyze.History;
 internal sealed class MeasurementHistoryPersistence
 {
     private const int CurrentSchemaVersion = 1;
-    // The oldest schema this build can still read. Kept as its own constant so
-    // the next bump is a migration rather than a mass move to .backup: with a
-    // strict equality check, raising CurrentSchemaVersion would have sent every
-    // user's whole history to a backup file on first launch of the new build.
+    // Separate from CurrentSchemaVersion so a bump is a migration, not a move of all history to .backup.
     private const int MinimumSupportedSchemaVersion = 1;
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -20,8 +17,7 @@ internal sealed class MeasurementHistoryPersistence
     };
 
     private readonly string pathOnDisk;
-    // History operations save immediately, so a transient load/access failure
-    // must not turn the empty recovery view into the persisted source of truth.
+    // Saves are immediate, so a transient load failure must not persist the empty recovery view.
     private bool preserveExistingFileBeforeSave;
 
     public string? LoadWarning { get; private set; }
@@ -43,9 +39,7 @@ internal sealed class MeasurementHistoryPersistence
                 return Array.Empty<MeasurementHistoryEntry>();
             }
 
-            // A block, not a using declaration: the read stream must be closed
-            // before the removal rewrite below, or the atomic replace fails
-            // against our own open handle.
+            // A block: the stream must close before the rewrite below, or the atomic replace hits our own handle.
             StoreFile? file;
             using (FileStream stream = File.OpenRead(pathOnDisk))
             {
@@ -62,9 +56,7 @@ internal sealed class MeasurementHistoryPersistence
                     $"History schema version {file.SchemaVersion} is not supported.");
             }
 
-            // Migration seam. Nothing to do while the only supported version is
-            // the current one; a future bump adds its upgrade step here instead
-            // of failing the load.
+            // Migration seam for future schema bumps.
             file.SchemaVersion = CurrentSchemaVersion;
 
             var reachable = new List<MeasurementHistoryEntry>(file.Entries.Count);
@@ -75,10 +67,7 @@ internal sealed class MeasurementHistoryPersistence
             {
                 if (string.IsNullOrWhiteSpace(entry.SourceFilePath))
                 {
-                    // No path at all is a broken record: dropped like a missing
-                    // file — silently, it never counted as a measurement — but
-                    // it still marks the store dirty, or it would sit in the
-                    // JSON forever without ever tripping the removal message.
+                    // Dropped silently, but marks the store dirty so it does not linger in the JSON.
                     storeChanged = true;
                     continue;
                 }
@@ -106,14 +95,8 @@ internal sealed class MeasurementHistoryPersistence
 
             if (storeChanged)
             {
-                // A row whose file is gone is dead weight: it can do nothing but
-                // repeat a warning on every launch — which is exactly what the
-                // previous design did by retaining such rows for the
-                // unplugged-drive case. Drop it from the store NOW, not at the
-                // next mutation's Save: a session without history changes never
-                // saves, and the warning would survive it. Best effort — if the
-                // store cannot be rewritten this launch, the in-memory list is
-                // already clean and the next launch repeats the removal.
+                // Drop rows whose file is gone now (a session without changes never saves, so the warning would repeat).
+                // Best effort: the next launch repeats the removal.
                 try
                 {
                     WriteStore(retained);
@@ -188,7 +171,6 @@ internal sealed class MeasurementHistoryPersistence
             Entries = entries
         };
 
-        // Temp file + move keeps the store intact if the write is interrupted.
         AtomicFile.Write(
             pathOnDisk,
             stream => JsonSerializer.Serialize(stream, file, SerializerOptions));

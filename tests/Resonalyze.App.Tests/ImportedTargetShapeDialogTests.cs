@@ -3,26 +3,15 @@ using System.Reflection;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The target settings dialog edits the parametric shape, but it is also where
-/// the tolerance, the colour and the line style are edited — and those belong to
-/// a target whichever shape it has. So an imported curve has to survive a visit
-/// to this dialog, and there has to be a way back to a parametric shape that is
-/// not "import a different file".
-/// </summary>
 public sealed class ImportedTargetShapeDialogTests
 {
     [Fact]
     public void AnImportedShapeSurvivesAVisitToTheDialog()
     {
-        // Opened to change a colour, saved, and the house curve is still the
-        // target: the numbers below it describe nothing while it is selected.
         ImportedTargetCurve imported = House();
         using OverlayTargetSettingsDialog dialog = Open(imported);
 
         Assert.Equal(imported, dialog.Spec.Imported);
-        // The preset rides through untouched — it names the parametric shape the
-        // inputs still hold, which is what a preset choice returns to.
         Assert.Equal(TargetPreset.Car, dialog.Preset);
         Assert.False(Input(dialog, "tiltInput").Enabled);
         Assert.False(Input(dialog, "bassGainInput").Enabled);
@@ -47,8 +36,6 @@ public sealed class ImportedTargetShapeDialogTests
     [Fact]
     public void TheImportedShapeStaysInTheListToComeBackTo()
     {
-        // Trying a preset against your own curve must not cost you the curve:
-        // the imported entry stays in the selector for the dialog's lifetime.
         ImportedTargetCurve imported = House();
         using OverlayTargetSettingsDialog dialog = Open(imported);
 

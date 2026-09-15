@@ -1,12 +1,6 @@
 namespace Resonalyze;
 
-/// <summary>
-/// Remembers which overlay slots are checked per overlay mode across tab
-/// switches, replacing the raw dictionary on <c>Form1</c>: the shell captures
-/// the active set when leaving a mode, restores it when entering one, and the
-/// Virtual DSP overlay capture arms its freshly saved slot so it arrives
-/// already checked. UI-thread only.
-/// </summary>
+/// <summary>Checked overlay slots per mode across tab switches. UI-thread only.</summary>
 internal sealed class ActiveOverlaySlotTracker
 {
     private readonly Dictionary<Mode, List<int>> slotsByMode = new();

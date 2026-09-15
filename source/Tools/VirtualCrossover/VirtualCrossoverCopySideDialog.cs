@@ -1,24 +1,7 @@
 namespace Resonalyze;
 
-/// <summary>
-/// The picker behind the Virtual DSP "L→R" / "R→L" commands: which pairs have
-/// their settings copied from one side onto the other, and which parts of the
-/// chain travel with them. Mono pairs never appear here — they have a single
-/// settings set by definition. Sources are never copied: each side picks its
-/// own measurement.
-/// <para>
-/// The default selection is the crossover and the PEQ — the magnitude shape,
-/// which describes the driver. Everything that aligns one side against its own
-/// level and geometry is offered too but starts off: gain, delay, polarity and
-/// the all-pass. The all-pass lives inside the PEQ bank as bands now, but it
-/// still belongs with the alignment scopes rather than with the filters, because
-/// it exists exactly where a delay and a polarity flip are too blunt — it is
-/// tuned against that side's own junction, and a left tweeter's arrival is not a
-/// right tweeter's. So the two checkboxes split one band list by type: PEQ moves
-/// the gain-bearing bands, All-pass the phase-only ones, and whichever kind is
-/// not copied survives on the target side.
-/// </para>
-/// </summary>
+/// <summary>Picker for the L-to-R / R-to-L copy. Defaults to crossover + PEQ (driver shape); alignment scopes (gain, delay, polarity,
+/// all-pass, phase) start off because they are tuned against each side's own geometry. PEQ and All-pass split one band list by type.</summary>
 internal sealed class VirtualCrossoverCopySideDialog : Form
 {
     private readonly List<CheckBox> channelBoxes = new();
@@ -27,12 +10,9 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
     private readonly CheckBox invertBox = CreateScopeBox("Invert", checkedByDefault: false);
     private readonly CheckBox crossoverBox = CreateScopeBox("Crossover", checkedByDefault: true);
     private readonly CheckBox allPassBox = CreateScopeBox("All-pass", checkedByDefault: false);
-    // Off by default like Delay, and for the same reason: it is a timing tool, and
-    // the two sides are not at the same distance from the microphone.
     private readonly CheckBox phaseBox = CreateScopeBox("Phase", checkedByDefault: false);
     private readonly CheckBox peqBox = CreateScopeBox("PEQ", checkedByDefault: true);
-    // Off by default: a kernel is usually designed against one side's own response,
-    // and the two sides' drivers rarely share one.
+    // Off by default: a kernel is usually designed against one side's response.
     private readonly CheckBox firBox = CreateScopeBox("FIR", checkedByDefault: false);
     private readonly Button copyButton =
         UiStyle.CreateDialogButton("Copy", DialogResult.OK, accent: true);
@@ -48,9 +28,7 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
             this,
             new Size(340, 300),
             fromRightToLeft ? "Copy R → L" : "Copy L → R");
-        // The channel list is as long as the project has stereo pairs, so the
-        // dialog sizes itself around the finished layout instead of around
-        // hand-computed 96-DPI coordinates that a scaled font would overrun.
+        // AutoSize: the list length varies, and hand-computed 96-DPI coordinates would be overrun by a scaled font.
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
@@ -97,8 +75,6 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         layout.Controls.Add(channelList);
 
         layout.Controls.Add(CreateSectionLabel("What to copy"));
-        // Two columns that read as the split they are: what aligns this side
-        // (left, off) against what shapes the driver (right, on).
         var scopeTable = new TableLayoutPanel
         {
             AutoSize = true,
@@ -113,7 +89,6 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         scopeTable.Controls.Add(invertBox, 0, 2);
         scopeTable.Controls.Add(firBox, 1, 2);
         scopeTable.Controls.Add(allPassBox, 0, 3);
-        // The phase control is a timing scope like the all-pass, so it sits with it.
         scopeTable.Controls.Add(phaseBox, 0, 4);
         foreach (CheckBox box in ScopeBoxes)
         {
@@ -147,14 +122,12 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         PerformLayout();
     }
 
-    /// <summary>Indices (into the constructor's label list) the user left checked.</summary>
     public IReadOnlyList<int> SelectedIndices => channelBoxes
         .Select((box, index) => (box.Checked, index))
         .Where(item => item.Checked)
         .Select(item => item.index)
         .ToList();
 
-    /// <summary>The parts of the chain the user asked to carry over.</summary>
     public VirtualCrossoverCopyScope Scope => new(
         Gain: gainBox.Checked,
         Delay: delayBox.Checked,
@@ -191,18 +164,13 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         };
     }
 
-    // A copy with no channel or no part selected would do nothing at all, which
-    // is worth saying with the button rather than with a silent no-op.
     private void UpdateCopyEnabled()
     {
         copyButton.Enabled = channelBoxes.Exists(box => box.Checked) && !Scope.IsEmpty;
     }
 }
 
-/// <summary>
-/// Which parts of a channel's chain a side-to-side copy carries. Everything the
-/// user did not tick is left as the target side had it.
-/// </summary>
+/// <summary>Unticked parts are left as the target side had them.</summary>
 internal readonly record struct VirtualCrossoverCopyScope(
     bool Gain,
     bool Delay,
@@ -213,7 +181,6 @@ internal readonly record struct VirtualCrossoverCopyScope(
     bool Peq,
     bool Fir = false)
 {
-    /// <summary>True when the copy would carry nothing.</summary>
     public bool IsEmpty =>
         !Gain && !Delay && !InvertPolarity && !Crossover && !AllPass && !Phase && !Peq && !Fir;
 }

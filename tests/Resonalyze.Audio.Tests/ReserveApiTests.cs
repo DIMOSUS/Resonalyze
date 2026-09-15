@@ -1,11 +1,6 @@
 namespace Resonalyze.Audio.Tests;
 
-/// <summary>
-/// Members kept as a deliberate reserve (see AGENTS.md): nothing in the app
-/// calls them yet, so these tests are their only consumer. Without a consumer a
-/// reserve member compiles forever without anyone noticing that its behaviour
-/// drifted or that its signature no longer fits the callers it was kept for.
-/// </summary>
+/// <summary>Reserve members (see AGENTS.md): these tests are their only consumer.</summary>
 public sealed class ReserveApiTests
 {
     [Theory]
@@ -23,9 +18,7 @@ public sealed class ReserveApiTests
         AudioBackendCapabilities requested,
         bool expected)
     {
-        // A combined request is all-of, not any-of: asking for
-        // MultiChannelInput | ExclusiveAccess of a shared-mode backend is false
-        // even though it does have multi-channel input.
+        // A combined request is all-of, not any-of.
         var descriptor = new AudioBackendDescriptor(
             AudioBackend.WasapiShared,
             "WASAPI Shared",

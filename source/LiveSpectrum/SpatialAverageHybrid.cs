@@ -2,59 +2,13 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// One channel's magnitude built from a stored spatial average instead of from an
-/// impulse response measured at one point: the capture, rebased onto the caller's
-/// microphone calibration, with that channel's DSP chain added as its ANALYTIC
-/// magnitude, on the caller's frequency grid and at the caller's display smoothing.
-/// </summary>
-/// <remarks>
-/// Shared by the Virtual DSP plot and the EQ Wizard so the curve a tune is fitted to
-/// is the curve the panel drew. It is exact rather than a convenience: a spatial
-/// average is √⟨|H(f, r)|²⟩ over the listening volume, and a filter D(f) does not
-/// depend on position, so ⟨|D·H|²⟩ = |D|²·⟨|H|²⟩ — the filter comes straight out of
-/// the average. Delay and polarity are absent for the same reason: they are pure
-/// phase, so this is the tonal balance alone.
-/// <para>
-/// The chain is added analytically and NOT as the difference between two gated
-/// spectra. A spatial average is a steady-state curve with no window, and a gate does
-/// not commute with a filter — the two readings part by several dB wherever the bank
-/// rings longer than the window.
-/// </para>
-/// </remarks>
+/// <summary>A channel magnitude from a spatial average plus the chain's analytic magnitude; shared by Virtual DSP and the EQ Wizard.</summary>
+/// <remarks>Exact because a filter is position-independent. See docs/tech/spatial-average.md#hybrid-channel-curve.</remarks>
 internal static class SpatialAverageHybrid
 {
-    /// <summary>
-    /// The hybrid curve on <paramref name="frequenciesHz"/>, or null when the capture
-    /// or the rate cannot support one. The level is the capture's own — the offset
-    /// that puts a whole SET on the impulse responses' axis belongs to the set and is
-    /// applied by the caller that knows it.
-    /// </summary>
-    /// <param name="chainSampleRateHz">
-    /// The rate <paramref name="chain"/> is realized at — the CHANNEL's, not the
-    /// capture's. A biquad's response depends on the rate it runs at, and the rate
-    /// that matters is the one the DSP will use; the capture's own rate is already
-    /// folded into its stored levels and has no say over a filter. Passing the
-    /// capture's rate here would draw a prediction of a DSP nobody is building.
-    /// </param>
-    /// <param name="calibration">
-    /// Which correction the result should carry, as a MODE rather than a curve.
-    /// <list type="bullet">
-    /// <item><b>Off</b> — the capture back at the level it was taken. Its own
-    /// correction is undone on its own grid, before anything is interpolated: these
-    /// corrections are additive per frequency, so the undo is exact, and doing it
-    /// first keeps each value on the frequency it was frozen at.</item>
-    /// <item><b>Own</b> — the capture exactly as stored. A moving-microphone pass was
-    /// a measurement of its own through its own file; an array is several capsules
-    /// each through theirs. Either way the answer is the one the capture already
-    /// holds, and nothing beside it has standing to replace it.</item>
-    /// <item><b>Specific</b> — a named curve in place of the capture's own. Defined
-    /// only when the capture declares ONE correction; a capture whose positions
-    /// carried different files has an aggregate that belongs to no single microphone,
-    /// and no curve can be swapped for it. That case falls back to Own, which is the
-    /// nearest thing that is true, rather than to a swap that is not.</item>
-    /// </list>
-    /// </param>
+    /// <summary>Hybrid curve at the capture's own level (the set offset is the caller's), or null.</summary>
+    /// <param name="chainSampleRateHz">The channel's DSP rate, not the capture's.</param>
+    /// <param name="calibration">Off undoes the capture's correction; Own keeps it; Specific swaps it unless the correction is an aggregate (then Own).</param>
     public static List<SignalPoint>? BuildChannelCurve(
         LiveCaptureDocument document,
         DspChannelChain chain,
@@ -71,7 +25,6 @@ internal static class SpatialAverageHybrid
             return null;
         }
 
-        // A swap the capture cannot support is not performed; it reads as Own.
         bool swap = calibration.Mode == SpatialAverageCalibrationMode.Specific &&
             !document.CalibrationIsAggregate;
         CalibrationFile? curve = swap ? calibration.Curve : null;
@@ -86,10 +39,7 @@ internal static class SpatialAverageHybrid
             double level = Sample(document, capture, hz);
             if (double.IsNaN(level))
             {
-                // The capture says it has nothing here — below a protective high-pass,
-                // typically, or past the end of its grid. A break is the honest answer;
-                // inventing a level would put a curve where no measurement exists, and
-                // downstream that gap is what says "do not equalize here".
+                // No capture data here (e.g. below the protective high-pass): a break, which downstream means "do not equalize".
                 points.Add(new SignalPoint(hz, double.NaN));
                 continue;
             }
@@ -99,12 +49,7 @@ internal static class SpatialAverageHybrid
                 level + DataHelper.AmplitudeToDecibels(prepared.Response(hz).Magnitude)));
         }
 
-        // Smoothing goes on the FINISHED curve, after the chain — the way a measured
-        // curve through the same chain is smoothed. Smoothing the capture alone and
-        // then adding an unsmoothed analytic filter would leave a steep crossover
-        // corner razor sharp here while the measured curve beside it rounds off, and a
-        // corner is exactly where the two get compared. A level-preserving mean of band
-        // POWER, which passes a gap through and excludes it from its neighbours' means.
+        // Smooth the finished curve after the chain, as measured curves are; power mean that passes gaps through.
         List<SignalPoint> smoothed = smoothingCode == 0 || points.Count < 2
             ? points
             : DataHelper.SmoothBandLevels(
@@ -112,12 +57,7 @@ internal static class SpatialAverageHybrid
                 SpectrumSmoothing.SmoothingOctaves(smoothingCode),
                 SpectrumSmoothing.IsPsychoacoustic(smoothingCode));
 
-        // Calibration LAST, after the smoothing — the operation order the rest of the
-        // app's frequency-response pipeline uses, and the one the same capture is
-        // corrected under when the EQ Wizard opens it directly rather than through a
-        // handoff. Correcting first and smoothing afterwards smooths the correction
-        // too, so a frequency-dependent calibration file made one capture read
-        // slightly differently by which route it arrived.
+        // Calibration last, after smoothing, matching the app pipeline and the EQ Wizard's direct route.
         if (curve == null)
         {
             return smoothed;
@@ -133,22 +73,7 @@ internal static class SpatialAverageHybrid
         return smoothed;
     }
 
-    /// <summary>
-    /// How much louder the first curve is than the second over the band they share,
-    /// in dB: the mean of the point POWERS on each curve over the indices where BOTH
-    /// are finite, converted back to dB once. Null when no point is finite on both.
-    /// </summary>
-    /// <remarks>
-    /// The energy-mean rule is the one the impulse-response band level uses
-    /// (<c>VirtualCrossoverAnalysis.MeasureBandLevelDb</c>): averaging power lets the
-    /// figure track loudness and shrug off narrow dips, where a dB mean would follow
-    /// them down. That method weights its linear-spaced bins by 1/f; on the
-    /// log-spaced grid these curves are built on, uniform weights say the same thing.
-    /// The two curves must share one grid, and the points are paired on purpose: a
-    /// gap on either side (a protective high-pass, the end of a capture's grid)
-    /// removes that frequency from BOTH, rather than comparing one side's band
-    /// against a different part of the other's.
-    /// </remarks>
+    /// <summary>Power-mean level of <paramref name="left"/> over <paramref name="right"/>, dB, over points finite on both (one shared grid); null when none.</summary>
     public static double? BandLevelDeltaDb(
         IReadOnlyList<SignalPoint> left,
         IReadOnlyList<SignalPoint> right)
@@ -171,42 +96,13 @@ internal static class SpatialAverageHybrid
             rightPower += Math.Pow(10.0, rightDb / 10.0);
         }
 
-        // Both sums count the same points, so one ratio is the difference of the
-        // two means; a zero says no shared point (or a level beyond any real dB
-        // scale), and either way there is nothing honest to report.
         return leftPower > 0 && rightPower > 0
             ? 10.0 * Math.Log10(leftPower / rightPower)
             : null;
     }
 
-    /// <summary>
-    /// Several channels' hybrid curves on ONE grid combined into a group's level
-    /// curve by adding their POWERS point by point. Each curve comes with its
-    /// channel's configured band, which separates the two things a member's gap
-    /// can mean. OUTSIDE its band a NaN is an absent contribution — the
-    /// crossover has removed that driver from the group's output, and the rest
-    /// carry on without it. INSIDE its band it means the capture has nothing to
-    /// say about a driver the DSP says is playing — its grid ended, a stretch
-    /// did not survive the protective high-pass — and the whole group point
-    /// becomes a gap: summing the remaining members would quote part of the
-    /// group as all of it, an error that looks exactly like a valid level. A
-    /// band-level read then pairs such a point away from both sides of a
-    /// comparison instead.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately not the phasor sum the plot's hybrid Sum uses: a spatial
-    /// average carries no phase, so the only sum a set of captures can state by
-    /// themselves is the incoherent one. In a junction overlap that is an
-    /// approximation — two coherent in-phase contributions sum up to 3 dB above
-    /// their powers — and how much of it survives a group-to-group DIFFERENCE
-    /// depends on how alike the groups' junction layouts are: much cancels
-    /// between a front and a rear of the same architecture, little is
-    /// guaranteed against a single-driver centre. The overlaps are still a
-    /// fraction of a band spanning octaves, and resolving them would borrow the
-    /// point-measured phase — one microphone position's interference, the very
-    /// thing the hybrid mode distrusts — at the price of full-length gated FFTs
-    /// per group per frame.
-    /// </remarks>
+    /// <summary>Group level curve as a power sum. A NaN outside a member's band is absence; inside it breaks the group point.</summary>
+    /// <remarks>Incoherent by necessity (no phase). See docs/tech/spatial-average.md#level-read-outs.</remarks>
     public static List<SignalPoint> PowerSum(
         IReadOnlyList<IReadOnlyList<SignalPoint>> curves,
         IReadOnlyList<(double LowHz, double HighHz)> bands)
@@ -237,9 +133,6 @@ internal static class SpatialAverageHybrid
                 double db = curves[c][i].Y;
                 if (double.IsFinite(db))
                 {
-                    // A finite value counts wherever it sits — a crossover
-                    // skirt outside the configured band is a real, if quiet,
-                    // contribution.
                     power += Math.Pow(10.0, db / 10.0);
                     any = true;
                 }
@@ -258,9 +151,7 @@ internal static class SpatialAverageHybrid
         return points;
     }
 
-    // The capture back at the level the analyzer measured, before any microphone
-    // correction: the pipeline SUBTRACTS the correction, so undoing it adds it back.
-    // On the capture's own grid, where each stored value belongs.
+    // Undo the subtracted correction on the capture's own grid.
     private static List<SignalPoint> Uncalibrated(LiveCaptureDocument document)
     {
         List<SignalPoint> points = document.ToCurvePoints();
@@ -278,21 +169,13 @@ internal static class SpatialAverageHybrid
         return points;
     }
 
-    // The stored curve at one frequency, interpolated on its own logarithmic grid.
-    // Linear in dB between neighbours, and NaN as soon as either neighbour is NaN: a
-    // gap must not be bridged by the points around it.
+    // Linear in dB; NaN if either neighbour is NaN (gaps are never bridged).
     private static double Sample(
         LiveCaptureDocument document, IReadOnlyList<SignalPoint> curve, double hz)
     {
         int count = curve.Count;
         double position = document.IndexOf(hz);
-        // The SAME tolerance the snap below uses, and for the same reason. The drawn
-        // grid and a capture's own grid are one logarithmic grid built two ways, and
-        // their endpoints differ in the last ULPs: the capture stores 20.000000000000004
-        // and the curve is drawn at exactly 20, which puts the first band at an index
-        // of -3.3e-14. Rejected as "outside", that dropped the lowest band of every
-        // hybrid channel — 20 Hz on a subwoofer, where there is content — for no
-        // reason but arithmetic.
+        // Grid endpoints differ by ULPs (20.000000000000004 vs 20); exact bounds dropped the lowest band.
         const double SnapTolerance = 1e-9;
         if (double.IsNaN(position) ||
             position < -SnapTolerance || position > count - 1 + SnapTolerance)
@@ -304,17 +187,7 @@ internal static class SpatialAverageHybrid
         int low = (int)Math.Floor(position);
         int high = Math.Min(low + 1, count - 1);
         double fraction = position - low;
-        // Landing ON a stored point must read that point, never its neighbour. The
-        // interpolation below cannot do it: NaN·0 is NaN, so a finite value whose
-        // successor is a gap would come back NaN and the gap would spread one point
-        // backwards — the opposite of "a break is neither bridged nor spread".
-        //
-        // Snapped with a tolerance rather than tested for zero, because the display
-        // grid and a capture's own grid are the SAME log grid: a frequency that
-        // round-trips through the exponential and back lands a few ULPs off the
-        // index it came from, and an exact test would miss the case that matters
-        // most. A billionth of an index step is nothing — the step itself is about
-        // a hundredth of an octave.
+        // Snap onto a stored point (tolerance for log-grid round-trip): NaN·0 would otherwise spread a gap backwards.
         if (fraction <= SnapTolerance || high == low)
         {
             return curve[low].Y;

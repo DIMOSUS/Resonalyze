@@ -4,11 +4,6 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A diagnostic the assistant asks for by name travels as a text of its own,
-/// beside the package: the same envelope shape, the package's grid and
-/// rounding, holes left out, and the id of the package it belongs beside.
-/// </summary>
 public sealed class AgentDiagnosticBuilderTests
 {
     private static readonly DateTimeOffset Clock = new(2026, 9, 2, 10, 0, 0, TimeSpan.FromHours(3));
@@ -22,9 +17,6 @@ public sealed class AgentDiagnosticBuilderTests
     [Fact]
     public void ExcessGroupDelay_TravelsOnThePackagesGrid_NamedAfterThePackage()
     {
-        // A ramp from 40 Hz to 10 kHz with a hole near 1 kHz, as the package's
-        // own synthetic curves: the diagnostic samples it at 12 points per
-        // octave, to a hundredth of a ms, and leaves the hole out.
         var curve = new List<SignalPoint>();
         for (double frequency = 40; frequency <= 10_000; frequency *= 1.02)
         {
@@ -49,9 +41,7 @@ public sealed class AgentDiagnosticBuilderTests
         Assert.Equal("excessGroupDelay", root.GetProperty("diagnostic").GetString());
         Assert.Equal("b6bd73c2-997b-4fe0-814a-d123cc403b8a", root.GetProperty("packageId").GetString());
         Assert.Equal("2026-09-02T07:00:00Z", root.GetProperty("createdAtUtc").GetString());
-        // The window it was read through, in the package's own names, so the
-        // document says on its own whether this is the Fixed gate's classical
-        // excess or FDW's windowed reading.
+        // The window names say whether this is the Fixed gate's classical excess or FDW's windowed reading.
         JsonElement window = root.GetProperty("window");
         Assert.Equal("FrequencyDependent", window.GetProperty("phaseWindowMode").GetString());
         Assert.Equal(8, window.GetProperty("fdwCycles").GetInt32());
@@ -66,13 +56,10 @@ public sealed class AgentDiagnosticBuilderTests
         Assert.Equal("B:left", channels[0].GetProperty("id").GetString());
         Assert.Equal(["frequencyHz", "excessGdMs"], series.GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
         List<JsonElement> rows = series.GetProperty("rows").EnumerateArray().ToList();
-        // 40 Hz .. 10 kHz at 12 points per octave, less the hole: nothing below
-        // 40 Hz is invented, and one octave up reads 0.5 ms.
         Assert.Equal(40, rows[0][0].GetDouble());
         Assert.Equal(0.5, rows[12][1].GetDouble(), 2);
         Assert.True(rows.All(row => Math.Abs(row[0].GetDouble() - 1_000) > 10));
         Assert.True(rows[^1][0].GetDouble() <= 10_000);
-        // An empty curve is a channel with nothing to read: listed, no rows.
         Assert.Equal(0, channels[1].GetProperty("series").GetProperty("rows").GetArrayLength());
     }
 

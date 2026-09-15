@@ -2,31 +2,11 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The hybrid view's sum, and the conditions it is drawn under.
-/// </summary>
-/// <remarks>
-/// The sum is a COMPLEX one: each channel's gated spectrum rescaled to the level its
-/// spatial average reports, then summed as phasors — DataHelper.GetGatedSubstitutedMagnitudeSum,
-/// pinned in the dsp suite. It used to add the magnitudes and lay the impulse
-/// responses' own summation loss on top, which is only valid while the two families
-/// agree about the RELATIVE levels of the channels. At a steep junction on a real car
-/// they disagreed by 23 dB, and the borrowed loss drew a 13 dB dip into a sum whose
-/// own channels could not have made more than 1.9 dB.
-/// <para>
-/// What survives from that: the phase is still the impulse responses' own, measured
-/// at ONE microphone position, so the sum draws a point's interference rather than a
-/// spatially averaged one. Which way that errs is not determined; only the tendency
-/// holds, that the gap grows the faster the relative phase turns across the volume.
-/// </para>
-/// </remarks>
+/// <remarks>Complex sum of gated spectra rescaled to the captures' levels (magnitudes + borrowed IR loss drew a 13 dB dip on a real car).
+/// The phase is still one position's, so the sum shows a point's interference.</remarks>
 public sealed class VirtualCrossoverHybridSumTests
 {
-    /// <summary>
-    /// A channel whose capture stops where its impulse response says it is INAUDIBLE
-    /// drops out of that point: it is below its own crossover, the others carry the
-    /// point, and breaking the whole sum would cost more than it protects.
-    /// </summary>
+    /// <summary>A capture gap where the IR says the channel is inaudible drops only that channel from the point.</summary>
     [Fact]
     public void AChannelThatBreaksFarBelowTheOthers_DropsOutOfThatPointOnly()
     {
@@ -34,7 +14,6 @@ public sealed class VirtualCrossoverHybridSumTests
         List<SignalPoint> quiet = Flat(-12);
         quiet[3] = new SignalPoint(quiet[3].X, double.NaN);
 
-        // Its impulse response puts it 40 dB under the other channel here.
         List<SignalPoint> quietReference = Flat(-12);
         quietReference[3] = new SignalPoint(quietReference[3].X, -52);
 
@@ -44,10 +23,6 @@ public sealed class VirtualCrossoverHybridSumTests
         Assert.Equal(-10, masked[3].Y, 10);
     }
 
-    /// <summary>
-    /// A channel whose capture stops while it is still PLAYING takes the point with
-    /// it. Carrying on would present a sum of the remaining sources as the whole.
-    /// </summary>
     [Fact]
     public void AChannelThatBreaksWhileStillPlaying_TakesThePointWithIt()
     {
@@ -79,13 +54,7 @@ public sealed class VirtualCrossoverHybridSumTests
         }
     }
 
-    /// <summary>
-    /// The dashed opposite sum borrows the ACTIVE side's offset, so both sides'
-    /// captures have to be one set. Judging each side on its own cannot see this:
-    /// two relative capture runs, one per side, are each internally consistent and
-    /// say nothing about how their levels compare, so a gain that moved between them
-    /// would be drawn as an L/R imbalance the car does not have.
-    /// </summary>
+    /// <summary>Two relative capture runs per side are each consistent but not comparable; the opposite sum borrows the active offset.</summary>
     [Fact]
     public void RelativeCapturesFromDifferentSessionsAcrossSidesDoNotShareAnOffset()
     {
@@ -95,7 +64,6 @@ public sealed class VirtualCrossoverHybridSumTests
         List<LiveCaptureDocument> opposite =
             [SideCapture(rightSession), SideCapture(rightSession)];
 
-        // Each side alone passes — which is exactly why the pair must be judged too.
         Assert.True(LiveCaptureDocument.JudgeSet(active).Coherent);
         Assert.True(LiveCaptureDocument.JudgeSet(opposite).Coherent);
 
@@ -106,8 +74,6 @@ public sealed class VirtualCrossoverHybridSumTests
     [Fact]
     public void AnchoredCapturesFromDifferentSessionsAcrossSidesMayShareAnOffset()
     {
-        // An absolute anchor re-establishes the reference each session, which is the
-        // whole reason separate sessions are allowed at all.
         List<LiveCaptureDocument> active =
             [SideCapture(Guid.NewGuid(), 94.0), SideCapture(Guid.NewGuid(), 94.0)];
         List<LiveCaptureDocument> opposite =
@@ -143,11 +109,7 @@ public sealed class VirtualCrossoverHybridSumTests
         return points;
     }
 
-    /// <summary>
-    /// The Groups view sums each zone on its own, so the set's hybrid is sliced by
-    /// POSITION — and a slice that shifted by one would draw a zone's line from
-    /// another zone's captures, which looks entirely plausible on the plot.
-    /// </summary>
+    /// <summary>Sliced by position: an off-by-one draws a zone from another zone's captures, plausibly.</summary>
     [Fact]
     public void HybridSubset_TakesEachListAtTheSamePositions()
     {
@@ -170,10 +132,6 @@ public sealed class VirtualCrossoverHybridSumTests
         Assert.Equal([true, true], slice.PointMeasuredChannels);
     }
 
-    /// <summary>
-    /// The set offset is not a property of the slice: it is what puts every group's
-    /// line on the impulse responses' one axis, so all of them have to carry it.
-    /// </summary>
     [Fact]
     public void HybridSubset_KeepsTheSetsOwnOffset()
     {
@@ -183,10 +141,6 @@ public sealed class VirtualCrossoverHybridSumTests
         Assert.Equal(-3.25, VirtualCrossoverPanel.HybridSubset(whole, [0]).OffsetDb);
     }
 
-    /// <summary>
-    /// A set that carried no per-channel fallback flags stays without them rather
-    /// than growing a false "point measured" answer for the slice.
-    /// </summary>
     [Fact]
     public void HybridSubset_LeavesAnEmptyFallbackListEmpty()
     {

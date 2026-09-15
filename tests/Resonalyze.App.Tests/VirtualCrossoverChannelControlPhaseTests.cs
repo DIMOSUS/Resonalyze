@@ -4,19 +4,12 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The phase row of a Virtual DSP block: the field a processor with a channel phase
-/// control gets, the readout that says what the angle actually builds, and the height
-/// the block stands at with and without it.
-/// </summary>
 public sealed class VirtualCrossoverChannelControlPhaseTests
 {
     [Fact]
     public void WithoutTheControl_TheRowIsHiddenRatherThanClipped()
     {
-        // Clipping was the obvious way to do this and the wrong one: a clipped field
-        // still takes focus on Tab, and still counts towards the height the fold is
-        // measured against.
+        // Not clipped: a clipped field still takes Tab focus and counts toward the fold height.
         using var control = new VirtualCrossoverChannelControl();
 
         Assert.False(control.PhaseControlShown);
@@ -38,7 +31,6 @@ public sealed class VirtualCrossoverChannelControlPhaseTests
         Assert.Equal(without + rowPitch, control.Height);
         Assert.True(control.PhaseInput.Visible);
         Assert.True(control.PhaseInput.Bottom <= control.ClientSize.Height);
-        // The pin moves with the height, or the flow list stretches the block back.
         Assert.Equal(control.Height, control.MinimumSize.Height);
         Assert.Equal(control.Height, control.MaximumSize.Height);
 
@@ -51,11 +43,7 @@ public sealed class VirtualCrossoverChannelControlPhaseTests
     [Fact]
     public void FoldingWithThePhaseRowShown_LeavesTheSameBlockAsWithout()
     {
-        // The folded block is measured from its last KEPT row plus the margin the
-        // designer left, and the phase row is far below the fold either way — so the
-        // two must fold to the same thing. They did not while the margin was measured
-        // on demand: with a row parked below the pin it came out zero, and the block
-        // drew its own border across the fold button.
+        // Measured on demand, the margin came out zero with a row parked below the pin and the border crossed the fold button.
         using var withRow = new VirtualCrossoverChannelControl { PhaseControlShown = true };
         using var without = new VirtualCrossoverChannelControl();
 
@@ -82,8 +70,6 @@ public sealed class VirtualCrossoverChannelControlPhaseTests
         Assert.True(control.PhaseInput.Bottom <= control.ClientSize.Height);
         Assert.Equal(control.Height, control.MaximumSize.Height);
 
-        // And the row can still be taken away at the scaled size without clipping the
-        // PEQ row that becomes the last one.
         control.PhaseControlShown = false;
 
         Assert.True(control.PeqMenuButton.Bottom <= control.ClientSize.Height);
@@ -98,14 +84,12 @@ public sealed class VirtualCrossoverChannelControlPhaseTests
         control.HighPassFrequencyInput.Value = 500;
         control.LowPassFrequencyInput.Value = 5_000;
 
-        // A front block states its angle at its high-pass...
         control.ZoneComboBox.SelectedItem = VirtualCrossoverZone.Front;
         control.PhaseInput.Value = 180;
 
         Assert.Contains("500 Hz", control.PhaseInfoLabel.Text);
         Assert.Contains("AP2 500 Hz", control.PhaseInfoLabel.Text);
 
-        // ...and a subwoofer block at its low-pass, without the angle changing.
         control.ZoneComboBox.SelectedItem = VirtualCrossoverZone.Sub;
 
         Assert.Equal(180m, control.PhaseInput.Value);
@@ -116,9 +100,7 @@ public sealed class VirtualCrossoverChannelControlPhaseTests
     [Fact]
     public void TheReadout_SaysWhenTheDeviceCannotDeliverTheAngle()
     {
-        // At a 5 kHz reference the first five settings all collapse onto the one
-        // filter the ceiling allows, and it turns the phase 29.5° rather than the
-        // 5.625° asked for. Saying "5.625" there would be the readout lying.
+        // At a 5 kHz reference the first five settings collapse onto one filter turning 29.5 deg, not 5.625.
         using var control = new VirtualCrossoverChannelControl { PhaseControlShown = true };
         control.ProcessorSampleRateHz = 96_000;
         control.ZoneComboBox.SelectedItem = VirtualCrossoverZone.Front;
@@ -126,14 +108,12 @@ public sealed class VirtualCrossoverChannelControlPhaseTests
 
         control.PhaseInput.Value = (decimal)PhaseRotationControl.StepDegrees;
 
-        // The number is formatted in the running culture (29.5 or 29,5), so the
-        // assert reads the parts around the separator rather than pinning one.
+        // Culture-formatted (29.5 or 29,5).
         Assert.Contains("29", control.PhaseInfoLabel.Text);
         Assert.Contains("min", control.PhaseInfoLabel.Text);
         Assert.DoesNotContain("AP2", control.PhaseInfoLabel.Text);
         Assert.Equal(Resonalyze.Ui.UiPalette.WarningAmber, control.PhaseInfoLabel.ForeColor);
 
-        // A reference low enough to leave the whole grid reachable reads plainly again.
         control.HighPassFrequencyInput.Value = 500;
 
         Assert.DoesNotContain("min", control.PhaseInfoLabel.Text);
@@ -155,11 +135,7 @@ public sealed class VirtualCrossoverChannelControlPhaseTests
     [Fact]
     public void AnAngleTheHostLoads_IsShownAsTheSessionStatedIt()
     {
-        // The file format accepts any angle in range — the DSP builds one, it is the
-        // DEVICE that has 64 positions — so a hand-edited session must not be quietly
-        // re-dialled by being displayed. Snapping it here without telling the project
-        // would leave the field and the simulation disagreeing until some unrelated
-        // edit wrote the snapped value back.
+        // Any in-range angle is valid in the file (the DEVICE has 64 positions), so display must not silently snap it.
         using var control = new VirtualCrossoverChannelControl { PhaseControlShown = true };
         control.ProcessorSampleRateHz = 96_000;
         control.HighPassFrequencyInput.Value = 500;
@@ -167,10 +143,8 @@ public sealed class VirtualCrossoverChannelControlPhaseTests
         control.RunBatchUpdate(() => control.PhaseInput.Value = 7m);
 
         Assert.Equal(7m, control.PhaseInput.Value);
-        // And it still says what that angle builds.
         Assert.Contains("AP2", control.PhaseInfoLabel.Text);
 
-        // One press of an arrow puts it back on the grid.
         control.PhaseInput.Value = 7m + (decimal)PhaseRotationControl.StepDegrees;
 
         Assert.Equal(11.25m, control.PhaseInput.Value);
@@ -189,8 +163,6 @@ public sealed class VirtualCrossoverChannelControlPhaseTests
     }
 
     [Fact]
-    // Shown, so the list is built and realised on one STA thread — the phase row
-    // moves the same size pin the fold does.
     public void TogglingTheRowInsideTheChannelList_NeverStacksOneBlockOverAnother() =>
         StaTest.Run(ToggleEveryBlockInTurn);
 

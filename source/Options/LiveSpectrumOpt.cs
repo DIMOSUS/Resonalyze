@@ -6,63 +6,39 @@ namespace Resonalyze.Options
 {
     public partial class LiveSpectrumOpt : Form
     {
-        // Shared with the settings schema, which used to keep its own copy and would
-        // floor a newly offered length straight back out of the saved file.
+        // Shared with the settings schema, so a newly offered length is not floored out of the saved file.
         private static readonly IReadOnlyList<int> SequenceLengths =
             LiveSequenceLengths.Supported;
         private static readonly int[] OverlapPercents = { 0, 50, 75 };
         private static readonly int[] CoherenceLimits = { 0, 10, 20, 25, 30, 40, 50 };
         private readonly WrappingToolTip toolTip = new();
 
-        // The user's chosen analysis window and overlap, tracked independently of the
-        // combos so they survive the periodic-pink override that forces the window to
-        // Rectangular and the overlap to Off.
+        // The user's picks, surviving the periodic-pink override (Rectangular, overlap Off).
         private WindowType userWindowType = WindowType.Hann;
         private int userOverlapPercent = 50;
 
-        // The user's RTA (input magnitude) choice, tracked independently so RTA mode
-        // — which forces the RTA on and locks its checkbox, it being the only curve
-        // there — can restore the real preference when the panel returns to Transfer
-        // mode.
+        // Restored when leaving RTA mode, which forces the RTA on and locks it.
         private bool userShowInputMagnitude;
 
-        // The user's last chosen signal, remembered so a mode switch keeps it when
-        // the new mode still offers it, and restores it on the way back. Silent (an
-        // ambient RTA with no excitation) is the one mode-exclusive signal — a
-        // transfer function has nothing to correlate against without an excitation —
-        // so it exists in RTA mode only; every real noise colour is shared.
+        // Silent is RTA-only (a transfer function needs an excitation); every noise colour is shared.
         private NoiseColor userSignalType = NoiseColor.PinkPeriodic;
 
-        // The user's real choices for the three settings MMM pins. MMM forces the
-        // controls themselves (see UpdateMmmPinnedControls), so without these a trip
-        // through MMM and back would silently rewrite the RTA preferences — the same
-        // contract userWindowType and userOverlapPercent already have for periodic
-        // pink. Captured on a real toggle only, never from the forced state.
+        // Real choices for the settings MMM pins, captured only on real toggles, never from the forced state.
         private bool userCompensateNoiseTilt;
         private bool userSplScale;
         private AveragingSpeed userAveragingSpeed = AveragingSpeed.Medium;
         private int userSmoothingInverseOctaves = 6;
 
-        // The designer's normal text colours, restored when a choice leaves its
-        // amber conflict state.
         private readonly Color splChoiceReadyForeColor;
         private readonly Color transferChoiceReadyForeColor;
 
-        // Whether the configured input carries a loopback reference — the
-        // prerequisite of Transfer mode. Without one the effective mode falls back
-        // to RTA, and a SELECTED Transfer choice is coloured amber to say so. Kept
-        // as a field so mode clicks can recolour between availability refreshes.
+        // Without a loopback the effective mode falls back to RTA and a selected Transfer is coloured amber.
         private bool hasTransferReference = true;
 
-        // Whether dB SPL currently has no matching calibration while a live curve
-        // exists that the view-only state would hide — the one situation the SPL
-        // choice is coloured amber for. Kept as a field for the same reason.
+        // dB SPL has no calibration while a live curve exists that view-only would hide: the amber case.
         private bool splViewOnlyConflict;
 
-        /// <summary>
-        /// Raised when the user clicks Reset Average. Handled live (without an
-        /// Apply / restart) so the Infinite averaging preset can be cleared.
-        /// </summary>
+        /// <summary>Handled live, without Apply, so the Infinite averaging preset can be cleared.</summary>
         public event Action? ResetAverageRequested;
 
         public LiveSpectrumOpt()
@@ -101,8 +77,6 @@ namespace Resonalyze.Options
             bool hasTransferReference,
             int sampleRateHz)
         {
-            // The signal list is populated per mode in UpdateModeDependentControls
-            // below; remember the stored signal so it survives a mode round-trip.
             signalTypeComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
             userSignalType = options.NoiseColor;
 
@@ -165,44 +139,25 @@ namespace Resonalyze.Options
             checkTilt.Checked = options.CompensateNoiseTilt;
             userCompensateNoiseTilt = options.CompensateNoiseTilt;
 
-            // The selection follows the options verbatim: dB SPL is choosable even
-            // without a matching calibration (view-only), and Transfer even without
-            // a loopback (effective mode falls back to RTA) — neither is silently
-            // rewritten here; amber and the tooltips do the explaining.
+            // Selection follows options verbatim (SPL without calibration, Transfer without loopback); amber and tooltips explain.
             RefreshAvailability(isSplAvailable, hasLiveCurve, hasTransferReference);
             checkSpl.Checked =
                 options.MagnitudeScale == MagnitudeScale.SoundPressureLevel;
             userSplScale = checkSpl.Checked;
-            // Assign all three: WinForms clears the siblings when one is set, so the
-            // single true value wins whichever order the assignments run in.
+            // Assign all three: WinForms clears siblings, so the single true value wins in any order.
             radioModeMmm.Checked = options.AnalysisMode == LiveAnalysisMode.Mmm;
             radioModeRta.Checked = options.AnalysisMode == LiveAnalysisMode.Rta;
             radioModeTransfer.Checked =
                 options.AnalysisMode == LiveAnalysisMode.TransferFunction;
             UpdateModeDependentControls();
 
-            // A placeholder until the shell says what the plot is corrected through;
-            // it calls ShowCalibration immediately after Init.
+            // Placeholder; the shell calls ShowCalibration right after Init.
             ShowCalibration(string.Empty);
         }
 
-        /// <summary>
-        /// Rebuilds the calibration list without disturbing the selection — the
-        /// host calls this when the configured calibrations change while the
-        /// panel is open.
-        /// </summary>
-        /// <summary>
-        /// Shows what the plot is corrected through, as a read-out.
-        /// </summary>
-        /// <remarks>
-        /// Not a selection, and not even an entry from a list: a loaded capture names
-        /// a calibration that belongs to whoever took it and need not exist on this
-        /// machine, and a held accumulation names the one frozen on it — neither is a
-        /// choice this panel may offer. A second selection here would let an MMM pass
-        /// and the sweeps beside it disagree about which microphone was used, which is
-        /// a difference nothing downstream could see. The box is disabled on every
-        /// call, because it is rebuilt on every call.
-        /// </remarks>
+        /// <summary>Read-out of what the plot is corrected through, not a selection.</summary>
+        /// <remarks>A loaded capture's calibration need not exist here, and a second selection could let MMM and sweeps
+        /// disagree about the microphone. Disabled on every call.</remarks>
         internal void ShowCalibration(string text)
         {
             comboCalibration.Items.Clear();
@@ -211,25 +166,13 @@ namespace Resonalyze.Options
             comboCalibration.Enabled = false;
         }
 
-        /// <summary>
-        /// Recolours the dB SPL and Transfer choices, in both directions, without
-        /// disturbing the selections: dB SPL stays selectable and is merely view-only
-        /// (overlays, no live curves) until a matching SPL calibration exists for the
-        /// live input, and Transfer stays selectable while a missing loopback merely
-        /// forces the effective mode to RTA. The host calls this when the configured
-        /// calibration or the audio routing changes while the panel is open.
-        /// </summary>
+        /// <summary>Recolours dB SPL and Transfer without changing selections; called when calibration or routing changes.</summary>
         public void RefreshAvailability(
             bool isSplAvailable,
             bool hasLiveCurve,
             bool hasTransferReference)
         {
-            // The SPL choice is never locked: without a calibration the dB SPL axis
-            // is still useful for VIEWING overlays captured in SPL, so it stays
-            // clickable. Amber flags a REAL conflict only — a live curve exists that
-            // the view-only state would hide. On a freshly started application there
-            // is nothing to hide and nothing to warn about, so the choice keeps its
-            // normal colour and the tooltip does the explaining.
+            // Never locked: the SPL axis still shows SPL overlays. Amber only when a live curve would be hidden.
             splViewOnlyConflict = !isSplAvailable && hasLiveCurve;
             this.hasTransferReference = hasTransferReference;
             UpdateSplChoiceColor();
@@ -239,17 +182,11 @@ namespace Resonalyze.Options
             toolTip.SetToolTip(checkSpl, splDescription);
         }
 
-        // Colour precedence for the dB SPL row: muted (not applicable in Transfer
-        // mode) → amber (a real view-only conflict) → normal. The label's colour is
-        // managed manually rather than through SetTextEnabledLook, which memorizes
-        // whatever colour it mutes and would hand a stale amber back on restore; the
-        // textless checkbox only needs its AutoCheck toggled.
+        // Precedence: muted (Transfer) → amber → normal. Managed manually: SetTextEnabledLook memorizes the muted
+        // colour and would restore a stale amber.
         private void UpdateSplChoiceColor()
         {
-            // MMM renders band-power dB SPL by definition and needs no anchor, so the
-            // row is neither muted nor amber there — it is pinned, and
-            // UpdateMmmPinnedControls owns its interactivity. Calling
-            // SetTextEnabledLook here would hand AutoCheck back and undo that pin.
+            // MMM is band-power dB SPL by definition: pinned, not muted. SetTextEnabledLook would undo the pin.
             if (radioModeMmm.Checked)
             {
                 labelSpl.ForeColor = splChoiceReadyForeColor;
@@ -265,9 +202,7 @@ namespace Resonalyze.Options
             UiStyle.SetTextEnabledLook(checkSpl, rta, interactive: true);
         }
 
-        // Amber flags a real, ACTIVE override only: Transfer is selected but the
-        // input has no loopback reference, so the analyzer actually runs as an RTA.
-        // An unselected Transfer choice keeps its normal colour; the tooltip warns.
+        // Amber only for an active override: Transfer selected without a loopback.
         private void UpdateTransferChoiceColor()
         {
             radioModeTransfer.ForeColor =
@@ -323,21 +258,8 @@ namespace Resonalyze.Options
                 "shown either way.";
         }
 
-        /// <summary>
-        /// Unchecks the dB SPL scale. The host calls this when the analyzer starts
-        /// (or loses its calibration mid-run) while the display is view-only SPL;
-        /// checking it again afterwards stays available.
-        /// </summary>
-        /// <summary>
-        /// Moves the panel onto <paramref name="mode"/> without a user click. The
-        /// host calls this when something outside the panel changes the analysis mode
-        /// — opening a stored capture switches to the mode that capture belongs to.
-        /// </summary>
-        /// <remarks>
-        /// An open panel that kept showing the old radio would write it straight back
-        /// on its next apply-on-change, since SetOptions reads the controls. Setting
-        /// Checked runs the CheckedChanged handler, so the pinned settings follow.
-        /// </remarks>
+        /// <summary>Switches mode without a user click (e.g. opening a stored capture).</summary>
+        /// <remarks>Otherwise the stale radio would be written back on the next apply. Checked runs the pinning handler.</remarks>
         public void ForceAnalysisMode(LiveAnalysisMode mode)
         {
             radioModeMmm.Checked = mode == LiveAnalysisMode.Mmm;
@@ -347,10 +269,7 @@ namespace Resonalyze.Options
 
         public void ForceSplScaleOff()
         {
-            // The remembered choice has to go with the checkbox. Unchecking alone
-            // raises no Click, so CaptureUserSplScale never runs, and SetOptions —
-            // which persists the CACHE, not the control — would write dB SPL straight
-            // back on the panel's next apply, undoing the very reset the caller made.
+            // Unchecking raises no Click, and SetOptions persists the cache, so reset the cache too.
             userSplScale = false;
             checkSpl.Checked = false;
         }
@@ -362,9 +281,7 @@ namespace Resonalyze.Options
                 : radioModeRta.Checked
                     ? LiveAnalysisMode.Rta
                     : LiveAnalysisMode.TransferFunction;
-            // MMM offers periodic pink alone, so the combo carries no choice there:
-            // persist the user's real one instead. NoiseMeasurement pins the played
-            // colour through EffectiveNoiseColor either way.
+            // MMM offers periodic pink only; persist the user's real choice.
             options.NoiseColor = radioModeMmm.Checked
                 ? userSignalType
                 : signalTypeComboBox.SelectedItem is NoiseColorOption noiseColorOption
@@ -374,20 +291,12 @@ namespace Resonalyze.Options
                 sequenceLengthComboBox.SelectedItem is SequenceLengthOption lengthOption
                     ? lengthOption.Length
                     : SequenceLengths[0];
-            // Persist the user's real overlap choice, not the Off value the combo is
-            // forced to (and disabled at) while periodic pink noise is selected.
+            // Persist the user's real choices below, not values forced by periodic pink, MMM or RTA mode.
             options.OverlapPercent = userOverlapPercent;
-            // The user's real choice, not the Off value MMM forces the combo to.
             options.SmoothingInverseOctaves = userSmoothingInverseOctaves;
-            // Persist the user's real window choice, not the Rectangular value the combo
-            // is forced to (and disabled at) while periodic pink noise is selected.
             options.WindowType = userWindowType;
-            // Likewise the user's real averaging choice, not the Infinite value MMM
-            // forces the combo to.
             options.AveragingSpeed = userAveragingSpeed;
             options.ShowMainCurve = checkMainCurve.Checked;
-            // Persist the user's real RTA choice, not the value forced (and locked) on
-            // while RTA mode is selected.
             options.ShowInputMagnitude = userShowInputMagnitude;
             options.PeakHold = checkPeakHold.Checked;
             options.ShowCoherence = checkCoherence.Checked;
@@ -395,9 +304,6 @@ namespace Resonalyze.Options
                 coherenceLimitComboBox.SelectedItem is CoherenceLimitOption limitOption
                     ? limitOption.Percent
                     : CoherenceLimits[0];
-            // The SPL and tilt checkboxes are muted (never rewritten) in Transfer
-            // mode and FORCED ON in MMM, so these persist the user's real RTA-mode
-            // choices; the effective scale and tilt ignore them in both.
             options.CompensateNoiseTilt = userCompensateNoiseTilt;
             options.MagnitudeScale = userSplScale
                 ? MagnitudeScale.SoundPressureLevel
@@ -407,9 +313,7 @@ namespace Resonalyze.Options
         private static int FindCoherenceLimitIndex(int thresholdPercent) =>
             FloorIndex(CoherenceLimits, thresholdPercent);
 
-        // Index of the largest entry that does not exceed target, or 0 when target
-        // sits below the whole array. Shared by the coherence-limit, overlap and
-        // sequence-length combos, whose option arrays are all ascending.
+        // Largest entry not exceeding target, or 0. Arrays are ascending.
         private static int FloorIndex(IReadOnlyList<int> ascending, int target)
         {
             int index = 0;
@@ -424,13 +328,7 @@ namespace Resonalyze.Options
             return index;
         }
 
-        // The analysis frame, shown by its DURATION as well as its sample count.
-        // Duration is the rate-independent quantity: a rectangular window resolves
-        // 2/T hertz and a Hann one 4/T, so 32768 means 341 ms at 96 kHz and 683 ms
-        // at 48 kHz — the same list entry, two very different measurements. Naming
-        // the milliseconds is what stops a rate change from silently coarsening the
-        // bass of a spatial average. The count alone is shown until the analyzer
-        // reports a rate.
+        // Shown with its duration: resolution is 2/T (rect) or 4/T (Hann), so 32768 is 341 ms at 96 kHz but 683 ms at 48 kHz.
         private sealed class SequenceLengthOption
         {
             private readonly int sampleRateHz;
@@ -461,9 +359,7 @@ namespace Resonalyze.Options
             public override string ToString() => Percent == 0 ? "Off" : $"{Percent}%";
         }
 
-        // Periodic pink noise is measured leakage-free with a rectangular window and
-        // gains nothing from overlap, so both controls are forced (Rectangular / Off)
-        // and disabled while it is selected. Any other signal restores the user's picks.
+        // Periodic pink is leakage-free with a rectangular window and gains nothing from overlap.
         private void UpdatePeriodicPinkControls()
         {
             bool periodicPink =
@@ -486,23 +382,16 @@ namespace Resonalyze.Options
             }
         }
 
-        // In RTA mode the plot is the reference-free microphone spectrum. The
-        // transfer function and coherence do not exist there, so their curve
-        // controls are muted; the RTA is the one shown curve, forced on and locked,
-        // its Transfer-mode preference kept in userShowInputMagnitude and restored
-        // on the way back. The dB SPL scale and the noise-slope compensation are
-        // properties of the RTA and are muted in Transfer mode instead.
+        // RTA mode: no transfer/coherence curves (muted); RTA forced on. SPL and tilt are muted in Transfer mode instead.
         private void UpdateModeDependentControls()
         {
             bool mmm = radioModeMmm.Checked;
-            // MMM is a reference-free mode too: it shares the whole mic-only path
-            // with the RTA and differs only in which settings it allows.
+            // MMM shares the mic-only RTA path.
             bool rta = mmm || radioModeRta.Checked;
             UpdateSignalTypesForMode(rta, mmm);
             UpdateMmmPinnedControls(mmm);
 
-            // Mute (rather than WinForms-disable) the transfer/coherence controls so
-            // they read as the theme's muted colour, not the near-black system grey.
+            // Mute rather than disable, for the theme's muted colour instead of system grey.
             UiStyle.SetTextEnabledLook(labelMainCurve, !rta);
             UiStyle.SetTextEnabledLook(checkMainCurve, !rta, interactive: true);
             UiStyle.SetTextEnabledLook(labelInputMagnitude, !rta);
@@ -510,7 +399,6 @@ namespace Resonalyze.Options
             UiStyle.SetTextEnabledLook(label9, !rta);
             UiStyle.SetTextEnabledLook(checkCoherence, !rta, interactive: true);
             UiStyle.SetTextEnabledLook(label10, !rta);
-            // The coherence-limit combo is a DarkComboBox, which mutes itself on Enabled.
             coherenceLimitComboBox.Enabled = !rta;
 
             UpdateSplChoiceColor();
@@ -520,13 +408,9 @@ namespace Resonalyze.Options
             checkInputMagnitude.Checked = rta || userShowInputMagnitude;
         }
 
-        // The compensation needs a KNOWN excitation spectrum, so it is offered in
-        // RTA mode with a real noise signal only: the transfer function divides the
-        // excitation out, and Silent means an external source of unknown colour.
+        // Needs a known excitation spectrum: RTA with a real noise only (transfer divides it out; Silent is unknown).
         private void UpdateTiltAvailability()
         {
-            // In MMM the compensation is not offered but REQUIRED, so the row keeps
-            // its normal colour and is pinned instead of muted (UpdateMmmPinnedControls).
             if (radioModeMmm.Checked)
             {
                 UiStyle.SetTextEnabledLook(labelTilt, true);
@@ -539,11 +423,7 @@ namespace Resonalyze.Options
             UiStyle.SetTextEnabledLook(checkTilt, applicable, interactive: true);
         }
 
-        // MMM pins the settings a spatial average is only valid under. They are
-        // FORCED, not muted: a muted control reads "not applicable / ignored", and
-        // these are the opposite — mandatory. So the rows keep their normal colour
-        // and only stop responding, with the tooltip saying why. The user's own
-        // choices live in the userXxx fields and come back on the way out.
+        // MMM settings are forced, not muted (mandatory, not ignored): normal colour, unresponsive, tooltip says why.
         private void UpdateMmmPinnedControls(bool mmm)
         {
             if (mmm)
@@ -568,18 +448,14 @@ namespace Resonalyze.Options
             comboSmoothingInverseOctaves.Enabled = !mmm;
         }
 
-        // Stops a checkbox responding without giving it the muted "not applicable"
-        // colour: AutoCheck:false makes a click leave the state untouched, exactly
-        // as UiStyle.SetTextEnabledLook does for the muted case.
+        // AutoCheck:false keeps the state on click without the muted colour.
         private static void SetPinned(CheckBox checkBox, bool pinned)
         {
             checkBox.AutoCheck = !pinned;
             checkBox.TabStop = !pinned;
         }
 
-        // Only a real user toggle updates the remembered preference; the pinned
-        // state above sets Checked programmatically and must not pollute it. The
-        // AutoCheck guard is the same one CaptureUserInputMagnitude uses.
+        // Only real toggles update the preference; the pinned state sets Checked programmatically.
         private void CaptureUserTilt()
         {
             if (checkTilt.AutoCheck)
@@ -617,23 +493,13 @@ namespace Resonalyze.Options
                 ? option.NoiseColor
                 : NoiseColor.PinkPeriodic;
 
-        // The signal list follows the analysis mode. Silent (an ambient RTA with no
-        // excitation) is RTA-only — a transfer function has nothing to correlate
-        // against without an excitation — while every real noise colour, periodic
-        // pink included, is valid in both modes (in RTA it is simply a known
-        // excitation, and the one whose spectrum the slope compensation knows
-        // exactly). The last signal is kept when the new mode still has it, so a
-        // mode round-trip does not silently swap the excitation.
+        // Keep the last signal when the new mode offers it, so a round-trip does not swap the excitation.
         private void UpdateSignalTypesForMode(bool referenceFree, bool mmm)
         {
             signalTypeComboBox.Items.Clear();
             if (mmm)
             {
-                // MMM offers periodic pink alone. Its spectrum is exactly 1/√f and,
-                // unlike the Kellett bank behind plain "Pink noise" (whose poles sit
-                // in normalized frequency), the model the slope compensation undoes
-                // does not move with the sample rate. Silent has no known spectrum
-                // at all, so it cannot be compensated even in principle.
+                // MMM: periodic pink only; its exact 1/√f spectrum, unlike the Kellett bank, does not move with sample rate.
                 signalTypeComboBox.Items.Add(
                     new NoiseColorOption(NoiseColor.PinkPeriodic, "Pink noise (periodic)"));
                 signalTypeComboBox.SelectedIndex = 0;
@@ -654,9 +520,7 @@ namespace Resonalyze.Options
             signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.Brown, "Brown / red noise"));
             signalTypeComboBox.Items.Add(new NoiseColorOption(NoiseColor.White, "White noise"));
 
-            // Keep the remembered signal if this mode offers it. Only Silent can be
-            // missing (leaving RTA for Transfer): fall back to the transfer
-            // reference, matching the controller's normalization.
+            // Only Silent can be missing (leaving RTA): fall back like the controller's normalization.
             int index = TryFindNoiseColorIndex(userSignalType);
             if (index < 0)
             {
@@ -667,8 +531,6 @@ namespace Resonalyze.Options
             UpdatePeriodicPinkControls();
         }
 
-        // Only a real user commit updates the remembered signal — never the programmatic
-        // re-selection above, which would pollute it with an auto-picked default.
         private void CaptureUserSignalType()
         {
             if (signalTypeComboBox.SelectedItem is NoiseColorOption option)
@@ -677,9 +539,7 @@ namespace Resonalyze.Options
             }
         }
 
-        // Only a real user toggle updates the remembered RTA preference. In RTA mode
-        // the checkbox is muted (AutoCheck off), so a click cannot change it — guard on
-        // that rather than Enabled, which stays true for the muted look.
+        // Guard on AutoCheck, not Enabled (which stays true for the muted look).
         private void CaptureUserInputMagnitude()
         {
             if (checkInputMagnitude.AutoCheck)
@@ -835,8 +695,7 @@ namespace Resonalyze.Options
                 "DSP adds the channel's chain to the capture itself, so a capture " +
                 "taken through a chain gets that chain applied twice — and the result " +
                 "still looks entirely plausible.");
-            // radioModeTransfer's tooltip is owned by UpdateTransferChoiceColor: it
-            // names the loopback availability, which a static line here cannot.
+            // radioModeTransfer's tooltip is owned by UpdateTransferChoiceColor.
             toolTip.SetToolTip(
                 signalTypeComboBox,
                 "Excitation noise. Pink (periodic): one looped FFT period,\r\n" +
@@ -888,8 +747,7 @@ namespace Resonalyze.Options
                 "spectrum is unknown.";
             toolTip.SetToolTip(labelTilt, tiltDescription);
             toolTip.SetToolTip(checkTilt, tiltDescription);
-            // labelSpl's / checkSpl's tooltip is owned by RefreshAvailability: it
-            // names the current availability state, which a static line here cannot.
+            // labelSpl/checkSpl tooltips are owned by RefreshAvailability.
         }
     }
 }

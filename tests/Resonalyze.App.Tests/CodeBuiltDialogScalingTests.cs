@@ -5,15 +5,7 @@ using Resonalyze.Ui.Dialogs;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The dialogs that build themselves in code instead of in a designer. They lay
-/// out in 96-DPI pixels, so the one thing that must be true of them on a scaled
-/// display is that something scales that layout — and that only ONE something
-/// does. Both halves have been wrong here: before
-/// <see cref="UiStyle.ApplyDarkDialog"/> declared the DPI it scales from, the
-/// factor was 1 and the 96-DPI boxes held 125% text; once it did, a hand-written
-/// pass that walked the same tree by the same DeviceDpi/96 squared the factor.
-/// </summary>
+/// <summary>Code-built dialogs lay out in 96-DPI pixels and must be scaled exactly once (<see cref="UiStyle.ApplyDarkDialog"/>).</summary>
 public sealed class CodeBuiltDialogScalingTests
 {
     [Fact]
@@ -22,16 +14,12 @@ public sealed class CodeBuiltDialogScalingTests
         using var form = new Form();
         UiStyle.ApplyDarkDialog(form, new Size(300, 200));
 
-        // Without the declared dimensions the first auto-scale adopts the
-        // current ones, and a form that scales from "whatever it already is"
-        // never scales at all.
+        // Without declared dimensions the first auto-scale adopts the current ones and never scales.
         Assert.Equal(AutoScaleMode.Dpi, form.AutoScaleMode);
         Assert.Equal(new SizeF(96F, 96F), form.AutoScaleDimensions);
     }
 
-    // The size each dialog asks ApplyDarkDialog for, mirrored from its own call.
-    // A deliberate resize breaks this and the number gets updated; a second
-    // scaling pass breaks it by the DPI factor, which is the point.
+    // Mirrored from the dialog's own call; a second scaling pass breaks it by the DPI factor.
     [Theory]
     [InlineData(452, 448)]
     public void ColorPickerDialog_ScalesItsDesignedSizeExactlyOnce(int width, int height) =>
@@ -69,11 +57,7 @@ public sealed class CodeBuiltDialogScalingTests
             AssertScaledOnce(dialog, new Size(width, height));
         });
 
-    // Shown, so the dialog is built and realised on the caller's STA thread.
-    // On a 100% display this says the dialog is its designed size; on a scaled
-    // one it says the layout grew by the display's factor and no more. The
-    // second pass this guards against squared it — 1.56x at 125%, which walks
-    // the buttons off the bottom of the screen.
+    // A second pass squared the factor (1.56x at 125%), walking buttons off screen.
     private static void AssertScaledOnce(Form dialog, Size designed)
     {
         dialog.StartPosition = FormStartPosition.Manual;
@@ -85,8 +69,6 @@ public sealed class CodeBuiltDialogScalingTests
             var expected = new Size(
                 (int)Math.Round(designed.Width * factor),
                 (int)Math.Round(designed.Height * factor));
-            // A pixel of slack for the rounding WinForms does per dimension —
-            // far below the gap a doubled pass opens.
             Assert.InRange(dialog.ClientSize.Width, expected.Width - 1, expected.Width + 1);
             Assert.InRange(dialog.ClientSize.Height, expected.Height - 1, expected.Height + 1);
         }

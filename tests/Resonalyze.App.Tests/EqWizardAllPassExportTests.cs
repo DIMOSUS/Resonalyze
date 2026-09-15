@@ -2,10 +2,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-// What the export path does with all-pass bands a format cannot state: counts
-// them per order (support genuinely splits there — Equalizer APO's AP is
-// second-order only), warns in words that name what is actually lost, and drops
-// them from the written file regardless of the warning — the guarantee.
 public sealed class EqWizardAllPassExportTests
 {
     private static EqualizationCurve Mixed() => new(
@@ -22,7 +18,7 @@ public sealed class EqWizardAllPassExportTests
     [Fact]
     public void TheCountFollowsPerOrderSupport()
     {
-        // EasyEffects can state neither order; APO only the second; CamillaDSP both.
+        // EasyEffects states neither order; APO only the second; CamillaDSP both.
         Assert.Equal(2, EqWizardImportExportCoordinator.CountAllPassBandsDroppedBy(
             TargetFor(new EasyEffectsFormat()), Mixed()));
         Assert.Equal(1, EqWizardImportExportCoordinator.CountAllPassBandsDroppedBy(
@@ -34,8 +30,6 @@ public sealed class EqWizardAllPassExportTests
     [Fact]
     public void TheWarningNamesTheFirstOrderWhenThatIsAllThatIsLost()
     {
-        // Next to AP2 rows that do export, "cannot carry an all-pass" would be a
-        // lie; the wording narrows to the order actually dropped.
         string? apo = EqExportWarnings.AllPassBandsDropped(
             TargetFor(new EqualizerApoFormat()), Mixed());
         Assert.NotNull(apo);
@@ -46,7 +40,6 @@ public sealed class EqWizardAllPassExportTests
         Assert.NotNull(easyEffects);
         Assert.DoesNotContain("first-order", easyEffects);
 
-        // Nothing to warn about when the format carries them, or the bank has none.
         Assert.Null(EqExportWarnings.AllPassBandsDropped(
             TargetFor(new CamillaDspYamlFormat()), Mixed()));
         Assert.Null(EqExportWarnings.AllPassBandsDropped(
@@ -77,8 +70,6 @@ public sealed class EqWizardAllPassExportTests
 
         Assert.True(result.Success);
         Assert.NotNull(written);
-        // The bell and the second-order all-pass survive; the first-order band is
-        // not written as anything at all.
         Assert.Contains("ON PK Fc 1000 Hz", written);
         Assert.Contains("ON AP Fc 120 Hz Q 1.5", written);
         Assert.DoesNotContain("2000", written);

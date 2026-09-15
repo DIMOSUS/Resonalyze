@@ -28,8 +28,7 @@ public partial class Form1
                     () => new IROpt(),
                     opt => opt.Init(expSweepMeasurement, impulseResponseOptions),
                     opt => opt.SetOptions(impulseResponseOptions),
-                    // Each of these rescales or re-origins an axis, so a restored zoom
-                    // would describe a picture that no longer exists: refit instead.
+                    // These rescale or re-origin an axis, so refit instead of restoring zoom.
                     viewResetKey: () => (
                         impulseResponseOptions.AmplitudeScale,
                         impulseResponseOptions.TimeUnit,
@@ -52,8 +51,6 @@ public partial class Form1
                         frequencyResponseVisibility,
                         CalibrationEntries()),
                     opt => opt.SetOptions(frequencyResponseOptions, frequencyResponseVisibility),
-                    // Switching dBr <-> SPL rescales the axis, so the old zoom is
-                    // meaningless: refit instead of restoring it.
                     viewResetKey: () => frequencyResponseOptions.MagnitudeScale)),
             [ModeTab.Phase] = new(
                 ModeTab.Phase,
@@ -220,28 +217,14 @@ public partial class Form1
 
         public bool ShowsFirConstructorPanel => MainContent == MainContentKind.FirConstructor;
 
-        /// <summary>
-        /// The Tools modes (EQ Wizard, Signal Generator, Virtual DSP, FIR Constructor) do not measure:
-        /// they own their sources and their own controls. The shell's capture block —
-        /// input meters, Start, Record Settings, Save/Load/Compare, History and Mode
-        /// Settings — has nothing to act on there, so it is hidden rather than left
-        /// standing as buttons that would start a sweep behind the open tool.
-        /// </summary>
+        /// <summary>Tools modes own their sources; the capture block is hidden so no button starts a sweep behind the tool.</summary>
         public bool HasCaptureControls => MainContent
             is not MainContentKind.EqWizard
             and not MainContentKind.SignalGenerator
             and not MainContentKind.VirtualCrossover
             and not MainContentKind.FirConstructor;
 
-        /// <summary>
-        /// Whether the mode draws the measurement that is loaded — true of every
-        /// analyzer, Time Alignment included, since they all read the same impulse
-        /// response. False of Live Spectrum, which shows what the microphone hears
-        /// right now, and of the Tools modes, which resolve sources of their own. It
-        /// is what decides whether an impulse response arriving from a file has
-        /// anywhere to be shown, or has to take the application to Frequency Response
-        /// first.
-        /// </summary>
+        /// <summary>False for Live Spectrum and Tools; an IR arriving elsewhere takes the app to Frequency Response first.</summary>
         public bool ShowsLoadedMeasurement =>
             HasCaptureControls && Tab != ModeTab.LiveSpectrum;
     }

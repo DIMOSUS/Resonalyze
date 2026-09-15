@@ -8,43 +8,15 @@ using Xunit.Abstractions;
 namespace Resonalyze.App.Tests;
 
 /// <summary>
-/// The window probe behind the junction-phase read-out. The same junction
-/// arithmetic (<see cref="JunctionPhaseAlignment"/>) is read through the
-/// steady-state window it ships with AND through the gated / frequency-
-/// dependent windows the phase VIEW draws, over every archived cabin, on the
-/// owner's own saved tuning.
-/// <para>
-/// It exists to re-open a decision: the read-out deliberately ignores FDW
-/// because, when it was written (2026-07-19), direct-sound phase disagreed with
-/// the steady state by several milliseconds at subwoofer junctions. The phase
-/// gates have been re-anchored since — on the arrival rather than the peak
-/// (#78), per-curve with a leading-edge transparency guard, and every magnitude
-/// window on the response start (#107) — so the disagreement is measured again
-/// rather than assumed.
-/// </para>
-/// <para>
-/// A RUNNER, not a pinned expectation, exactly like
-/// <see cref="SessionBatteryHarness"/>: it asserts only that every session was
-/// found and read through every window. What the numbers mean is a reading.
-/// </para>
+/// Reads <see cref="JunctionPhaseAlignment"/> through the steady-state window and the phase view's gated/FDW windows
+/// over every archived cabin. A runner like <see cref="SessionBatteryHarness"/>: asserts only that every session was read.
 /// </summary>
 public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
 {
-    /// <summary>Where the report is written.</summary>
     public const string OutputVariable = "RESONALYZE_JUNCTION_PHASE_WINDOW_OUT";
 
-    /// <summary>
-    /// One window under test. <see cref="Mode"/> null is the production
-    /// steady-state spectrum (the full processed IR, 0.68 s, origin at sample
-    /// 0); everything else is the phase view's own gate, placed by
-    /// <see cref="PhaseGatePlacement"/> the way the panel places it.
-    /// </summary>
-    /// <param name="Shared">
-    /// Forces ONE window for the whole set instead of the panel's per-curve
-    /// placement — the discriminator for whether a disagreement comes from the
-    /// window's LENGTH or from each channel's own arrival estimate, which only
-    /// the per-curve placement depends on.
-    /// </param>
+    /// <summary>Null <see cref="Mode"/> is the production steady-state spectrum (full IR, origin at sample 0).</summary>
+    /// <param name="Shared">One window for the whole set: separates window length from per-channel arrival estimates.</param>
     private sealed record Window(
         string Name, PhaseWindowMode? Mode, int Cycles, bool Shared = false);
 
@@ -58,18 +30,11 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
         new("fdw8s", PhaseWindowMode.FrequencyDependent, 8, Shared: true)
     ];
 
-    // The two windows whose recommendation is actually APPLIED and judged by the
-    // panel's own summation-loss metric. Judging all five would multiply the run
-    // time for windows nobody is proposing to ship.
+    // Only these windows are applied and judged by the summation-loss metric (run time).
     private static readonly string[] JudgedWindows = ["steady", "fdw8", "fdw8s"];
 
-    /// <summary>One junction read through one window.</summary>
     private sealed record Reading(string Window, JunctionPhaseResult? Result);
 
-    /// <summary>
-    /// One junction of one cabin: what every window said, and what the metric
-    /// says after each judged window's fix is applied.
-    /// </summary>
     private sealed record JunctionRow(
         string Session,
         string Junction,
@@ -158,11 +123,7 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
             return [];
         }
 
-        // Every window's spectra for the whole set, once. Timed COLD (the first
-        // build of these responses) and WARM (the cache DataHelper keeps per
-        // impulse array), because this runs on the UI thread inside the redraw:
-        // the steady state is one FFT per channel, an FDW spectrum is one per
-        // distinct effective gate.
+        // Timed cold and warm: this runs on the UI thread inside the redraw.
         var spectra = new Dictionary<string, List<Complex[]>>(StringComparer.Ordinal);
         var cold = new Dictionary<string, double>(StringComparer.Ordinal);
         var warm = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -182,14 +143,10 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
             string.Join("  ", Windows.Select(window =>
                 $"{window.Name} {cold[window.Name]:0.0}/{warm[window.Name]:0.0}")));
 
-        // The block AS THE PANEL RENDERS IT, through the shipped path end to
-        // end: the read-out is what ships, not the table above it, and the
-        // withheld figures only exist in this rendering.
         using (var coordinator = new VirtualCrossoverProcessingCoordinator())
         {
             var metrics = new VirtualCrossoverMetrics(
                 coordinator,
-                // Never called: the phase entries read spectra, not magnitudes.
                 (_, _, _, _, _) => throw new InvalidOperationException(
                     "the junction phase block reads no magnitude curve"));
             List<VirtualCrossoverMetric.PhaseEntry> shipped =
@@ -217,20 +174,14 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
         {
             string junction =
                 $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}";
-            // By REFERENCE: a processed channel is a record, so two channels
-            // that happen to hold equal values would collide on value equality.
+            // By reference: processed channels are records and equal values would collide.
             int lower = IndexOf(ordered, pair.Lower);
             int upper = IndexOf(ordered, pair.Upper);
             report.AppendLine();
             report.AppendLine(
                 $"  {junction}  fc {pair.CrossoverHz:0.#} Hz  " +
                 $"band {pair.BandLowHz:0.#}-{pair.BandHighHz:0.#} Hz");
-            // The independent witness: the whitened (PHAT) correlation of the
-            // pair's DIRECT sound. Its readings are corrections to the UPPER
-            // channel, so the junction fix (extra delay on the LOWER one) is
-            // comparable to the NEGATED lag. The owner's tune sits on the
-            // extremum, so on saved settings an on-lobe lag near zero is what a
-            // correct read-out should be recommending nothing against.
+            // PHAT lags correct the UPPER channel, so the junction fix (delay on the LOWER one) compares to the negated lag.
             JunctionCorrelationView correlation =
                 VirtualCrossoverPanel.BuildCorrelationView(pair, ordered);
             if (correlation.WhitenedDirect.Count > 0)
@@ -273,11 +224,6 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
                 continue;
             }
 
-            // The recommendation, applied: the fix goes on the LOWER channel of
-            // this junction (a signed delay — the chain takes a negative one),
-            // together with the polarity the window recommends, and the panel's
-            // own metric re-reads the junction. Nothing else about the session
-            // moves, so the delta is this window's advice and nothing else.
             var afterFix = new Dictionary<string, (double, double?)>(
                 StringComparer.Ordinal);
             foreach (string windowName in JudgedWindows)
@@ -329,7 +275,6 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
         return rows;
     }
 
-    // One window's spectra for the whole set, on ONE absolute time origin.
     private static List<Complex[]> BuildSpectra(
         List<ProcessedChannel> ordered,
         VirtualCrossoverProjectFile project,
@@ -345,10 +290,7 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
                 .ToList();
         }
 
-        // The shipped window goes through the SHIPPED builder, so this row
-        // measures the read-out rather than a second implementation of it. The
-        // remaining rows are the comparison it was chosen against, and they
-        // vary cycles and placement, which the product code does not.
+        // The shipped window goes through the shipped builder, so this row measures the read-out itself.
         if (window is { Mode: PhaseWindowMode.FrequencyDependent, Shared: false } &&
             window.Cycles == JunctionPhaseSpectra.FdwCycles)
         {
@@ -361,10 +303,6 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
                 project.PhaseGateRightMs);
         }
 
-        // The panel's own placement: the session's pin when it has one, else
-        // each curve on its own estimated arrival start, with the whole set
-        // falling back to one shared window when any placement fails the
-        // leading-edge guard.
         double? pinned = project.PhaseGateFor(project.ActiveSideRight).OffsetMs;
         IReadOnlyList<PlacementChannel> placement = PlacementChannel.From(ordered);
         double sharedOffsetMs = PhaseGatePlacement.ResolveSharedOffsetMs(
@@ -373,7 +311,6 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
             placement,
             sharedOffsetMs,
             sampleRate,
-            // A non-null pin is what makes the placement one shared window.
             window.Shared ? sharedOffsetMs : pinned,
             project.PhaseGateLeftMs,
             project.PhaseGatePlateauMs,
@@ -381,10 +318,7 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
         var template = new PhaseAnalysisSettings(
             window.Mode.Value,
             window.Cycles == 0 ? PhaseAnalysisSettings.DefaultFdwCycles : window.Cycles,
-            // The detrend is a display convenience (it flattens a curve for the
-            // eye). The cross-phase between two channels must not be detrended
-            // at all: a common τ cancels, and anything per-channel would BE the
-            // answer this probe is measuring.
+            // No detrend: per-channel detrend would be the very answer being measured.
             PhaseDetrendMode.Off,
             ManualDetrendMilliseconds: 0.0,
             GateOffsetMs: 0.0,
@@ -401,9 +335,7 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
                 new ImpulseMeasurementView(ordered[i].ImpulseResponse, 0, sampleRate),
                 template with { GateOffsetMs = offsets[i] },
                 out int extractionStart);
-            // Re-referenced to sample 0, the origin the steady-state spectra
-            // already sit on: a window placed per curve otherwise reads its own
-            // placement as the junction's delay.
+            // Re-referenced to sample 0, or a per-curve window reads its own placement as the junction delay.
             spectra.Add(DataHelper.SumGatedSpectra([(gated, extractionStart)], 0));
         }
 
@@ -636,7 +568,6 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
             "The junction names a channel that is not in the ordered set.");
     }
 
-    // The best in-phase score the sweep reaches over the band, per junction.
     private static List<double> Ceilings(List<JunctionRow> rows, string window) =>
         rows
             .Select(row => row.Readings

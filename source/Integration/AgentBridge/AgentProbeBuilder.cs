@@ -5,14 +5,9 @@ using System.Text.Json.Serialization;
 
 namespace Resonalyze.Integration.AgentBridge;
 
-/// <summary>What a probe read, ready for the clipboard.</summary>
 internal sealed record AgentProbeBuildResult(string Text, int JsonBytes);
 
-/// <param name="SessionChangedWhileReading">
-/// Written only when it is true: the tune moved across one of the readings'
-/// boundaries, so they do not all describe one state. Absent — the ordinary
-/// case — means every reading below was taken off the same session.
-/// </param>
+/// <param name="SessionChangedWhileReading">Written only when true: the readings do not all describe one state.</param>
 internal sealed record AgentProbeDocument(
     string Kind,
     int ProtocolVersion,
@@ -24,10 +19,6 @@ internal sealed record AgentProbeDocument(
     IReadOnlyDictionary<string, string> Conventions,
     IReadOnlyList<AgentProbeReport> Probes);
 
-/// <summary>
-/// One probe's answer. The fields a kind does not use are absent, as everywhere
-/// else in the protocol.
-/// </summary>
 internal sealed record AgentProbeReport(
     string Id,
     string Probe,
@@ -38,24 +29,15 @@ internal sealed record AgentProbeReport(
     double[]? SharedBandHz,
     IReadOnlyList<AgentProbeEntry>? Entries,
     IReadOnlyList<AgentProbeDelaySide>? Sides,
-    // The excess group delay probe's curves, and the series probe's broadband
-    // curves: one {id, series} per channel either way.
+    // One {id, series} per channel for both the excess-group-delay and series probes.
     IReadOnlyList<AgentDiagnosticSeries>? Channels,
-    // The series probe's own blocks: what density it was read at, then the
-    // target curve, each side's sum and each junction's series, whichever the
-    // reply asked for.
     AgentSampling? Sampling = null,
     AgentSeries? Target = null,
     IReadOnlyList<AgentProbeSumSeries>? Sums = null,
     IReadOnlyList<AgentProbeJunctionSeries>? Junctions = null);
 
-/// <summary>One side's coherent sum for a series probe, on the requested grid.</summary>
 internal sealed record AgentProbeSumSeries(string Side, AgentSeries Series);
 
-/// <summary>
-/// One junction's series for a series probe: the fields a reply did not ask
-/// for are absent, as everywhere else in the protocol.
-/// </summary>
 internal sealed record AgentProbeJunctionSeries(
     string Id,
     AgentSeries? Curves,
@@ -63,12 +45,7 @@ internal sealed record AgentProbeJunctionSeries(
     AgentSeries? Correlation,
     AgentSeries? CoherenceLadder);
 
-/// <param name="Current">Whether this entry is the tune as it stands.</param>
-/// <param name="AffectedJunctions">
-/// The other junctions THIS entry's channels hand over at, written only when
-/// there are any: the entry says nothing about them. Absent on the baseline,
-/// which changes nothing.
-/// </param>
+/// <param name="AffectedJunctions">Other junctions THIS entry's channels hand over at; the entry says nothing about them.</param>
 internal sealed record AgentProbeEntry(
     string Label,
     bool Current,
@@ -79,11 +56,7 @@ internal sealed record AgentProbeEntry(
     string? Unavailable,
     IReadOnlyList<AgentProbeSide> Sides);
 
-/// <param name="Shared">The same three figures on the probe's shared band, the one comparisons go on.</param>
-/// <param name="AfterBestDelay">
-/// What the junction would measure once the alignment had been re-run for this
-/// entry: the extra delay on the upper channel and the loss it would leave.
-/// </param>
+/// <param name="AfterBestDelay">After re-running alignment for this entry: extra upper-channel delay and the loss left.</param>
 internal sealed record AgentProbeSide(
     string Side,
     double? SumLossDb,
@@ -95,7 +68,7 @@ internal sealed record AgentProbeSide(
 
 internal sealed record AgentProbeBandReading(double? SumLossDb, double? DipDb, double? RippleDb);
 
-/// <param name="InvertUpper">The upper channel's RESULTING polarity, not a flip of its current one.</param>
+/// <param name="InvertUpper">The RESULTING polarity, not a flip of the current one.</param>
 internal sealed record AgentProbeAfterDelay(
     double? ExtraDelayMs,
     bool InvertUpper,
@@ -118,7 +91,7 @@ internal sealed record AgentProbeDelaySide(
     string? Unavailable,
     IReadOnlyList<AgentProbeDelayCandidate> Candidates);
 
-/// <param name="InvertUpper">The upper channel's RESULTING polarity, not a flip of its current one.</param>
+/// <param name="InvertUpper">The RESULTING polarity, not a flip of the current one.</param>
 internal sealed record AgentProbeDelayCandidate(
     double? ExtraDelayMs,
     bool InvertUpper,
@@ -127,12 +100,7 @@ internal sealed record AgentProbeDelayCandidate(
     double? DipDb,
     bool Chosen);
 
-/// <summary>
-/// The text a probe hands back: what the tune WOULD measure under the readings
-/// a reply asked for, with nothing in the tune changed. Same rounding, same
-/// channel ids and the same holes-as-null rule as the package, so the reader
-/// can lay the two side by side.
-/// </summary>
+/// <summary>What the tune WOULD measure, nothing changed; same rounding, ids and holes-as-null rule as the package.</summary>
 internal static class AgentProbeBuilder
 {
     private static readonly JsonSerializerOptions Options = new()
@@ -144,10 +112,6 @@ internal static class AgentProbeBuilder
         NumberHandling = JsonNumberHandling.Strict
     };
 
-    /// <summary>
-    /// The conventions every probe document carries — what the numbers are, and
-    /// the two rules a reader of them has to know.
-    /// </summary>
     public static IReadOnlyDictionary<string, string> Conventions { get; } =
         new Dictionary<string, string>
         {

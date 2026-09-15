@@ -2,40 +2,24 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>The dB axis bounds a source curve needs: the view, and how far it may pan.</summary>
 internal readonly record struct EqWizardAxisRange(
     double Minimum,
     double Maximum,
     double AbsoluteMinimum,
     double AbsoluteMaximum);
 
-/// <summary>
-/// Fits the wizard plot to whatever the source curve actually is. An impulse response is
-/// loopback-referenced dB around zero and gets fixed bounds; an imported curve can sit
-/// anywhere — a dB SPL room average lives near 80 dB — and would otherwise be outside the
-/// axis's ABSOLUTE limits, where no amount of panning brings it back.
-/// </summary>
+/// <summary>An imported dB SPL curve (~80 dB) would sit outside the IR axis's ABSOLUTE limits, beyond panning.</summary>
 internal static class EqWizardPlotFit
 {
-    /// <summary>
-    /// Bounds used for an impulse-response source (relative dB around zero). The
-    /// pan ceiling is the one the Frequency Response and Live Spectrum plots use,
-    /// because it is the same loopback-referenced quantity and rises with any
-    /// attenuation of the reference (see <see cref="PlotModelStyle"/>).
-    /// </summary>
+    /// <summary>Pan ceiling shared with the FR and Live Spectrum plots (same loopback-referenced quantity).</summary>
     public static readonly EqWizardAxisRange ImpulseResponseRange =
         new(-80, 10, -90, PlotModelStyle.RelativeDecibelAbsoluteMaximum);
 
-    // Rounding the view to whole tens keeps the gridlines on the familiar 10 dB step,
-    // and the margin leaves room for the target and the corrected curve around the data.
     private const double Step = 10;
     private const double ViewMarginDb = 10;
     private const double PanMarginDb = 40;
 
-    /// <summary>
-    /// The axis for a curve source. Falls back to the impulse-response bounds when the
-    /// curve has no finite level at all (every band unmeasured).
-    /// </summary>
+    /// <summary>Falls back to the IR bounds when no level is finite.</summary>
     public static EqWizardAxisRange ForCurve(IEnumerable<SignalPoint> points)
     {
         ArgumentNullException.ThrowIfNull(points);
@@ -62,7 +46,6 @@ internal static class EqWizardPlotFit
         double maximum = Math.Ceiling((dataMax + ViewMarginDb) / Step) * Step;
         if (maximum - minimum < Step)
         {
-            // A dead-flat curve would collapse the axis onto a single gridline.
             maximum = minimum + Step;
         }
 
@@ -73,18 +56,9 @@ internal static class EqWizardPlotFit
             maximum + PanMarginDb);
     }
 
-    /// <summary>The major-step the right EQ-gain axis snaps its bounds to.</summary>
     private const double EqGainAxisStepDb = 6;
 
-    /// <summary>
-    /// The bounds of the right-hand EQ-gain axis. The axis reads as the boost/cut budget
-    /// at minimum (so it doubles as a read-out of the per-band gain limits even when the
-    /// filter curve is flat), but the drawn curve is the SUMMED response of many
-    /// overlapping bands and can reach several times a single band's limit — so the actual
-    /// curve extent extends the range outward, and the result is snapped to the 6 dB step
-    /// with one step of headroom on each side so the curve never touches the frame. Pass
-    /// 0/0 for the curve extent when no curve is drawn yet (budget-only).
-    /// </summary>
+    /// <summary>Budget range extended by the summed curve's extent, snapped to 6 dB with one step margin; 0/0 = no curve.</summary>
     public static (double Minimum, double Maximum) EqGainAxisRange(
         double budgetMinDb,
         double budgetMaxDb,

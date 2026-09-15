@@ -18,7 +18,6 @@ public sealed class AudioFileCodecTests : IDisposable
         }
         catch (IOException)
         {
-            // Temp cleanup is best-effort.
         }
     }
 
@@ -55,8 +54,7 @@ public sealed class AudioFileCodecTests : IDisposable
     [Fact]
     public void WriteWavFloat32_ReadBack_IsExact_AndKeepsSamplesPastFullScale()
     {
-        // The float writer exists for data that is not a recording — a FIR kernel
-        // whose taps run past ±1 — so nothing may be scaled or clipped.
+        // Float writer data is not a recording (FIR taps past ±1): no scaling or clipping.
         float[] left = [0f, 1.5f, -2.25f, 0.125f, 1e-7f, -1f];
         float[] right = [3f, 0f, 0f, 0f, 0f, 0f];
         string path = PathFor("float.wav");
@@ -79,27 +77,19 @@ public sealed class AudioFileCodecTests : IDisposable
         AudioFileCodec.WriteWav(path, new AudioFileContent([channel], 48_000));
         AudioFileContent read = AudioFileCodec.Read(path, TimeSpan.FromMinutes(1));
 
-        // A wrapped +2.0 would come back near -1; clipping keeps the signs.
         Assert.True(read.Channels[0][0] > 0.99f);
         Assert.True(read.Channels[0][1] < -0.99f);
         Assert.Equal(0.5f, read.Channels[0][2], 3);
     }
 
-    // Unique per channel AND per position: a channel rotation, a swap, or a
-    // one-frame slip each break the equality somewhere. The inter-channel step
-    // (0.004) is far above the 24-bit round-trip tolerance.
+    // Unique per channel and position, so rotation, swap or slip all break equality; step 0.004 is far above 24-bit tolerance.
     private static float MultichannelSample(int channel, int frame) =>
         (frame % 997 - 498) / 1_000f + channel * 0.004f;
 
     [Fact]
     public void Read_ChannelLimitKeepsExactlyTheLeadingChannels()
     {
-        // Four channels over MORE frames than one decoder block (32768), so
-        // the running channel cursor crosses several Read calls — the place a
-        // per-block restart would rotate the channel assignment. A WAV reader
-        // always returns whole frames, so the mid-frame boundary itself cannot
-        // be staged here; the cursor continuity across calls is what this
-        // exercises.
+        // More frames than one 32768 decoder block: the channel cursor must survive across Read calls.
         const int Rate = 48_000;
         const int Frames = 70_000;
         const int ChannelCount = 4;
@@ -132,9 +122,6 @@ public sealed class AudioFileCodecTests : IDisposable
             }
         }
 
-        // Without a limit the same file yields every channel, and the LAST one
-        // carries its own signal — the limited read kept the right two, not
-        // just any two.
         AudioFileContent full = AudioFileCodec.Read(path, TimeSpan.FromMinutes(1));
         Assert.Equal(ChannelCount, full.ChannelCount);
         for (int i = 0; i < Frames; i += 1_000)
@@ -157,17 +144,13 @@ public sealed class AudioFileCodecTests : IDisposable
             AudioFileCodec.Read(path, TimeSpan.FromSeconds(2)));
     }
 
-    // One second of mono 8 kHz float is a 32 kB payload, but the decode's
-    // PEAK is twice that: while the final array fills, every chunk still
-    // exists. 20 kB fails on the payload alone; 50 kB fits the payload and
-    // must still be refused for the assembly peak (64 kB).
+    // 1 s mono 8 kHz float is 32 kB but the decode peak is twice that: 50 kB fits the payload, not the peak.
     [Theory]
     [InlineData(20_000)]
     [InlineData(50_000)]
     public void Read_RefusesMaterialPastTheByteBudget(long budget)
     {
-        // The duration bound trusts the header; the byte bound holds when the
-        // header lies or the file was swapped after probing.
+        // The byte bound holds when the header lies.
         const int Rate = 8_000;
         string path = PathFor($"oversized-{budget}.wav");
         AudioFileCodec.WriteWav(
@@ -190,10 +173,7 @@ public sealed class AudioFileCodecTests : IDisposable
                 new AudioFileContent(Array.Empty<float[]>(), 48_000)));
     }
 
-    // WAVE_FORMAT_EXTENSIBLE (0xFFFE) is what most recorders and DAWs write for
-    // 24-bit and multichannel files. Read used to hand it to ACM as if it were
-    // compressed and fail with "NoDriver calling acmFormatSuggest" — an ordinary
-    // 24-bit recording, refused.
+    // WAVE_FORMAT_EXTENSIBLE (0xFFFE) was handed to ACM as compressed and failed.
     [Theory]
     [InlineData(24)]
     [InlineData(16)]
@@ -229,8 +209,6 @@ public sealed class AudioFileCodecTests : IDisposable
         Assert.Equal(96_000, info.SampleRate);
     }
 
-    // A 40-byte extensible fmt chunk with the PCM subformat GUID, plus a LIST
-    // chunk between fmt and data — both of which real recorders write.
     private static void WriteExtensiblePcm(
         string path,
         int sampleRate,
@@ -278,8 +256,7 @@ public sealed class AudioFileCodecTests : IDisposable
     [Fact]
     public void WriteWav_RefusesMismatchedChannelLengths()
     {
-        // The interleaver indexes every channel by the first one's frame count;
-        // a shorter channel used to crash it mid-write with an index error.
+        // The interleaver indexes by the first channel's frame count.
         Assert.Throws<ArgumentException>(() =>
             AudioFileCodec.WriteWav(
                 PathFor("mismatched.wav"),

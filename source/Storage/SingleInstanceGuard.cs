@@ -3,35 +3,19 @@ using System.Text;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Refuses a second instance, because two of them share one set of files and
-/// silently destroy each other's work: settings and history are read at startup
-/// and written back whole, so whichever copy closes LAST wins and the other's
-/// session is gone. It also breaks the silent updater, which waits on a single
-/// process id.
-///
-/// Scoped to the application data directory rather than to the machine. A second
-/// Windows user has their own <c>%LocalAppData%</c> and must not be blocked by
-/// the first, while a portable copy (its own directory beside the executable) is
-/// free to run alongside an installed one — different files, no conflict.
-/// </summary>
+/// <summary>Settings and history are written back whole, so the last instance to close wins; the updater also waits on one pid.
+/// Scoped per data directory, so other Windows users and portable copies are not blocked.</summary>
 internal sealed class SingleInstanceGuard : IDisposable
 {
     private readonly Mutex mutex;
 
     private SingleInstanceGuard(Mutex mutex) => this.mutex = mutex;
 
-    /// <summary>
-    /// Returns the guard when this process is the only instance for
-    /// <paramref name="dataDirectory"/>, or null when another one holds it. Keep
-    /// the returned guard alive for the lifetime of the process.
-    /// </summary>
     public static SingleInstanceGuard? TryAcquire(string dataDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
 
-        // Global\ so the guard also covers a second logon session of the same
-        // user (fast user switching, RDP), which shares the same data directory.
+        // Global\ so a second logon session of the same user (RDP, fast switching) is covered.
         var mutex = new Mutex(initiallyOwned: true, NameFor(dataDirectory), out bool createdNew);
         if (createdNew)
         {
@@ -50,7 +34,6 @@ internal sealed class SingleInstanceGuard : IDisposable
         }
         catch (ApplicationException)
         {
-            // Not the owner (should not happen); nothing to release.
         }
 
         mutex.Dispose();
@@ -58,9 +41,7 @@ internal sealed class SingleInstanceGuard : IDisposable
 
     private static string NameFor(string dataDirectory)
     {
-        // Hashed because the directory contains backslashes, which are the
-        // namespace separator in a kernel object name, and because the path can
-        // exceed the 260-character name limit.
+        // Hashed: backslashes are kernel namespace separators, and paths can exceed the 260-char name limit.
         byte[] hash = SHA256.HashData(
             Encoding.UTF8.GetBytes(dataDirectory.TrimEnd(
                 Path.DirectorySeparatorChar,

@@ -5,10 +5,7 @@ namespace Resonalyze;
 
 public partial class Form1
 {
-    // One client for the whole session, as the update checker keeps one: a new
-    // HttpClient per send would leak sockets. The timeout is the transport's own
-    // ceiling; the probe imposes a much shorter one of its own, because a REW that
-    // is not there must not make the button wait.
+    // One client for the session (a client per send leaks sockets); the probe uses its own much shorter timeout.
     private static readonly HttpClient RewHttpClient = new()
     {
         Timeout = TimeSpan.FromSeconds(30)
@@ -16,14 +13,7 @@ public partial class Form1
 
     private static readonly TimeSpan RewProbeTimeout = TimeSpan.FromSeconds(2);
 
-    /// <summary>
-    /// Whether a send is already on its way. The handler is <c>async void</c> and the
-    /// form stays live across both the probe and a send that may run for thirty
-    /// seconds, so without this a second click starts a second export — two imports
-    /// under one name, and each verification then has the other's measurement to pick
-    /// between. Disabling the button is not enough on its own: the click that is
-    /// already queued arrives after the check and before the disable takes effect.
-    /// </summary>
+    /// <summary>A queued second click passes before the button disable takes effect; two exports would confuse each verification.</summary>
     private bool rewExportInFlight;
 
     private string RewBaseUrl =>
@@ -31,16 +21,10 @@ public partial class Form1
             ? RewApiClient.DefaultBaseUrl
             : measurementSettings.RewApiBaseUrl;
 
-    /// <summary>
-    /// Sends the current measurement to REW, having first asked REW whether it is
-    /// there. The question is asked here rather than behind the button, so a REW
-    /// that is not running is a line in the dialog the user can act on — the
-    /// address that would fix it is the setting that dialog holds.
-    /// </summary>
+    /// <summary>Probes REW here so a missing REW is a line in the dialog that holds the address setting.</summary>
     private async void buttonRewExport_Click(object? sender, EventArgs e)
     {
-        // The button is frozen in every state this cannot serve, so these are
-        // assertions rather than the guards they were when the gesture was hidden.
+        // The button is frozen in states this cannot serve; these are assertions.
         if (!CanExportToRew || rewExportInFlight)
         {
             return;
@@ -85,12 +69,7 @@ public partial class Form1
         await SendToRewAsync(version);
     }
 
-    /// <summary>
-    /// Whether this measurement can go to REW at all: a finished transfer response
-    /// that the impulse-response side of the shell owns. In MMM the Save/Load pair
-    /// belongs to that mode's own capture, not to the response this sends (see
-    /// Form1.LiveCapture).
-    /// </summary>
+    /// <summary>A finished transfer response owned by the IR side (in MMM Save/Load belong to the capture).</summary>
     internal bool CanExportToRew =>
         !LiveCaptureOwnsSaveLoad &&
         !expSweepMeasurement.InProgress &&
@@ -150,8 +129,6 @@ public partial class Form1
         {
             RewExportResult result = await CreateRewExport(baseAddress!)
                 .SendAsync(request, CancellationToken.None);
-            // Nothing is shown when the numbers agree: the measurement is in REW,
-            // which is where the user is looking.
             if (!result.Verified)
             {
                 ReportRewProblem(result.Problem!);
@@ -178,10 +155,6 @@ public partial class Form1
     private RewMeasurementExport CreateRewExport(Uri baseAddress) =>
         new(new RewApiClient(RewHttpClient, baseAddress));
 
-    /// <summary>
-    /// What to call the measurement in REW: the file this response came from, so the
-    /// two sides can be told apart there, or the clock when it came from a live run.
-    /// </summary>
     private string SuggestRewMeasurementName()
     {
         string? fileName = plotModelFactory.ImpulseResponseFileName;
@@ -190,12 +163,7 @@ public partial class Form1
             : Path.GetFileNameWithoutExtension(fileName);
     }
 
-    /// <summary>
-    /// Reports a problem, unless the window it would be shown over has gone. A send
-    /// lives up to thirty seconds and the form stays interactive throughout, so
-    /// closing the application inside that window would otherwise turn a message
-    /// into a crash on a disposed handle.
-    /// </summary>
+    /// <summary>A send lasts up to 30 s with the form live; closing meanwhile must not crash on a disposed handle.</summary>
     private void ReportRewProblem(string message)
     {
         if (IsDisposed || Disposing)

@@ -4,24 +4,14 @@ using System.Runtime.InteropServices;
 
 namespace Resonalyze.Ui;
 
-/// <summary>
-/// The "drop it here and it is gone" cursor shown while a PEQ strip is dragged
-/// outside its bank. Drawn rather than shipped as a <c>.cur</c> asset so it
-/// follows the application palette, and built through
-/// <c>CreateIconIndirect</c> because that is the only way to place the hotspot:
-/// a cursor made from an <c>HICON</c> alone lands its hotspot wherever the icon
-/// says, which is not the middle of the bin.
-/// </summary>
+/// <summary>Drawn in the app palette; built via <c>CreateIconIndirect</c>, the only way to put the hotspot in the middle of the bin.</summary>
 internal static class TrashCursor
 {
     private const int Size = 32;
 
     private static Cursor? cursor;
 
-    /// <summary>
-    /// The shared cursor, created on first use. Never disposed: it lives for the
-    /// process, and a <see cref="Cursor"/> built from a handle does not own it.
-    /// </summary>
+    /// <summary>Never disposed: process lifetime, and a handle-built <see cref="Cursor"/> does not own it.</summary>
     public static Cursor Instance => cursor ??= Create();
 
     private static Cursor Create()
@@ -33,16 +23,10 @@ internal static class TrashCursor
             Draw(graphics);
         }
 
-        // The hotspot sits in the middle of the bin, so what the pointer covers
-        // is what is about to be thrown away.
         return FromBitmap(bitmap, new Point(Size / 2, Size / 2));
     }
 
-    // Flat line art in the application's own idiom — thin strokes with rounded
-    // joins, no fill — rather than a solid pictogram, which reads as borrowed
-    // from another program's icon set. A single dark contour sits under the
-    // strokes: the app is dark throughout, but a strip can be dragged past the
-    // window onto whatever the desktop is showing.
+    // Dark contour under the strokes: the strip can be dragged over any desktop background.
     private static void Draw(Graphics graphics)
     {
         using var body = new GraphicsPath();
@@ -72,7 +56,6 @@ internal static class TrashCursor
             graphics.DrawPath(stroke, handle);
         }
 
-        // The two ribs stay inside the body outline, so they need no contour.
         using var ribs = RoundedPen(Color.FromArgb(190, UiPalette.ErrorSoft), 1.4f);
         graphics.DrawLine(ribs, 13.5f, 15f, 13.5f, 23f);
         graphics.DrawLine(ribs, 18.5f, 15f, 18.5f, 23f);
@@ -110,7 +93,7 @@ internal static class TrashCursor
             }
             finally
             {
-                // GetIconInfo hands out copies of both bitmaps; they are ours to free.
+                // GetIconInfo returns copies of both bitmaps; they are ours to free.
                 DeleteObject(info.MaskBitmap);
                 DeleteObject(info.ColorBitmap);
             }

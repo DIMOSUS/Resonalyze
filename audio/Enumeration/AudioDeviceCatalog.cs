@@ -40,13 +40,7 @@ public static class AudioDeviceCatalog
         return devices;
     }
 
-    /// <summary>
-    /// Index of the device with the given number, or -1 when it is absent.
-    /// Callers must keep an absent device visible (see
-    /// <see cref="CreateMissingDevice"/>) instead of remapping the selection —
-    /// falling back to another entry would silently re-target the persisted
-    /// configuration on the next apply.
-    /// </summary>
+    /// <summary>-1 when absent; keep it visible via <see cref="CreateMissingDevice"/>, never remap, or apply re-targets the saved config.</summary>
     public static int FindDeviceIndex(
         IReadOnlyList<AudioDeviceInfo> devices,
         int deviceNumber)
@@ -62,10 +56,6 @@ public static class AudioDeviceCatalog
         return -1;
     }
 
-    /// <summary>
-    /// Placeholder entry for a persisted device that is not currently present,
-    /// keeping its number so an apply re-persists the same configuration.
-    /// </summary>
     public static AudioDeviceInfo CreateMissingDevice(int deviceNumber) =>
         new(deviceNumber, $"(missing) Device #{deviceNumber}");
 

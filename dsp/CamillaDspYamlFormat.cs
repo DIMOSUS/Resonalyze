@@ -3,14 +3,7 @@ using YamlDotNet.Serialization;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// CamillaDSP config (YAML). Exports each PEQ band as a Biquad — Peaking, Lowshelf
-/// and Highshelf take the freq/gain/q triple, Allpass takes freq/q and AllpassFO
-/// freq alone — plus a Gain filter for the preamp, wired into a two-channel
-/// pipeline. Imports those five biquad types and the first Gain filter; anything
-/// else is skipped. The filters are cascaded, and a cascade of biquads commutes,
-/// so filter order does not affect the result.
-/// </summary>
+/// <summary>CamillaDSP YAML: Peaking/Lowshelf/Highshelf/Allpass/AllpassFO biquads plus a Gain filter for the preamp; other filters skipped on import.</summary>
 public sealed class CamillaDspYamlFormat : IEqProfileFormat
 {
     private const string PreampFilterName = "preamp";
@@ -40,11 +33,8 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
         for (int i = 0; i < curve.Bands.Count; i++)
         {
             PeqBand band = curve.Bands[i];
-            // The key names the slot, not the shape: a filter that changed type
-            // between two exports keeps its place in the pipeline list.
+            // Key names the slot, not the shape, so a type change keeps pipeline order.
             string key = $"band_{i:000}";
-            // An all-pass takes no gain — CamillaDSP's Allpass has no such
-            // parameter — and its first-order variant (AllpassFO) takes no Q either.
             var parameters = new Dictionary<string, object?>
             {
                 ["type"] = FilterTypeName(band.Type),
@@ -102,7 +92,6 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
             return false;
         }
 
-        // Valid YAML without a "filters" map is not a CamillaDSP config.
         if (graph is not IDictionary<object, object> root ||
             GetMap(root, "filters") is not { } filters)
         {
@@ -153,8 +142,6 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
                 continue;
             }
 
-            // An Allpass block carries no gain, and an AllpassFO no Q either; the
-            // gain-bearing shapes still require all three numbers.
             double bandGain = 0;
             if (!bandType.IsAllPass() &&
                 (!EqTextNumbers.TryParse(GetString(parameters, "gain"), out bandGain) ||
@@ -178,11 +165,7 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
         return true;
     }
 
-    // CamillaDSP names the shelves Lowshelf/Highshelf and takes the same freq/gain/q
-    // triple for them as for Peaking (it also accepts a "slope" instead of "q";
-    // exports state q, which is what the library holds). Its all-pass types match
-    // ours one to one: Allpass is the second-order section (freq + q), AllpassFO
-    // the single-pole first order (freq only).
+    // CamillaDSP also accepts "slope" for shelves; exports state q, which the library holds.
     private static string FilterTypeName(PeqBandType type) => type switch
     {
         PeqBandType.LowShelf => "Lowshelf",
@@ -192,8 +175,7 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
         _ => "Peaking"
     };
 
-    // A biquad with no stated sub-type is a Peaking one; anything outside the five
-    // the library can hold (LowpassFO, Notch, the FO shelves, ...) is skipped.
+    // No sub-type means Peaking; types the library cannot hold are skipped.
     private static bool TryReadFilterType(string? name, out PeqBandType type)
     {
         type = PeqBandType.Peaking;

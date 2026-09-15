@@ -3,36 +3,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// One redraw's hybrid magnitudes: every processed channel's spatially averaged
-/// curve with that channel's own DSP chain on top, plus the single offset that
-/// puts the whole set on the impulse responses' axis.
-/// </summary>
-/// <remarks>
-/// The channel curves are held WITHOUT the offset. It is one scalar for the set,
-/// so adding it at the end keeps the drawing and the summation reading the very
-/// same arrays — and the sum shifts by exactly that scalar too, since a common
-/// gain factors straight out of a magnitude sum.
-/// </remarks>
-/// <param name="Channels">
-/// What the plot draws: each channel at the display smoothing.
-/// </param>
-/// <param name="UnsmoothedChannels">
-/// What the SUM is built from, and the reason the two exist separately — the same
-/// split, for the same reason, as <see cref="GatedMagnitude"/>. The sum substitutes
-/// these levels bin by bin into the channels' gated spectra, so it wants them before
-/// any display smoothing: smoothing does not commute with the substitution, and a
-/// fractional-octave window straddling a steep crossover skirt pulls each channel's
-/// level up toward its own passband — exactly at the corners a hybrid gets read at.
-/// The finished sum is smoothed once, the order the measured Sum beside it is built
-/// in.
-/// </param>
-/// <param name="ChannelOffsetsDb">
-/// Each channel's own offset IN CHANNEL ORDER, null where the two curves never
-/// overlap enough to compare. Positional rather than packed: the spread read-out
-/// names the channel beside its figure, and a packed list silently shifted those
-/// names onto the wrong drivers as soon as one channel had nothing to say.
-/// </param>
 /// <summary>One channel of the set and how far its capture sits from its response.</summary>
 internal readonly record struct SetDatum(
     VirtualCrossoverChannel Channel,
@@ -44,41 +14,12 @@ internal sealed record HybridMagnitudes(
     IReadOnlyList<double?> ChannelOffsetsDb,
     double OffsetDb)
 {
-    /// <summary>
-    /// Which channels were drawn from their own point measurement because they had
-    /// no spatial average, in channel order.
-    /// </summary>
-    /// <remarks>
-    /// The hybrid exists to keep a point measurement's dips out of an equalizer's
-    /// way, so a channel drawn from one is the exception the user has to be told
-    /// about. It is legitimate — a subwoofer gains almost nothing from an array,
-    /// because below the cabin's first mode a point and an average are the same
-    /// measurement — but it must never be silent.
-    /// </remarks>
+    /// <summary>Channels drawn from their point measurement for lack of a spatial average; must always be surfaced to the user.</summary>
     public IReadOnlyList<bool> PointMeasuredChannels { get; init; } = [];
 
-    /// <summary>How many channels fell back to their point measurement.</summary>
     public int PointMeasuredCount => PointMeasuredChannels.Count(fallback => fallback);
 
-    /// <summary>
-    /// How far apart the channels are about where the captures sit relative to the
-    /// impulse responses — the largest per-channel offset minus the smallest, in dB.
-    /// </summary>
-    /// <remarks>
-    /// The one number that judges a SET. Every capture in a valid set was taken with
-    /// one analyzer recipe at one input gain, so whatever separates the two families
-    /// of measurement separates them by the SAME amount in every channel, and the
-    /// offsets agree. They stop agreeing when something entered per capture: a
-    /// changed input gain, a different frame length or window (the noise-slope
-    /// compensation is a curve, not a constant), a mixed scale, a capture from an
-    /// unrelated session. The detector does not care which — it says the set does not
-    /// hang together, and one offset therefore cannot serve it.
-    /// <para>
-    /// What it does NOT claim is that the captures and the impulse responses agree.
-    /// They are different measurements of different things and their levels may sit
-    /// tens of dB apart; only the DISAGREEMENT between channels is evidence.
-    /// </para>
-    /// </remarks>
+    /// <summary>Largest minus smallest per-channel offset, dB: judges set coherence, not capture/IR agreement. See docs/tech/spatial-average.md#set-offset-and-spread.</summary>
     public double SpreadDb
     {
         get
@@ -93,71 +34,21 @@ internal sealed record HybridMagnitudes(
         }
     }
 
-    /// <summary>
-    /// Every channel's datum on this side, muted ones included — what
-    /// <see cref="OffsetDb"/> is the median of and <see cref="SpreadDb"/> the range
-    /// of. Empty for a caller that supplied none, which then falls back to the drawn
-    /// channels.
-    /// </summary>
-    /// <remarks>
-    /// The set is the measurements, not the selection of them a user happens to be
-    /// listening to. Judging its coherence on the drawn channels alone made the
-    /// warning appear and vanish with the mute buttons, and moved every curve on the
-    /// plot while it did.
-    /// </remarks>
+    /// <summary>Every channel's datum on this side, muted ones included, so mutes cannot move the offset or the warning.</summary>
     public IReadOnlyList<SetDatum> SetDatumsDb { get; init; } = [];
 }
 
-// Attaching a spatially averaged magnitude to a channel, and deciding whether the
-// hybrid view can be shown at all.
-//
-// The average is an optional REFINEMENT of what the magnitude view draws, never the
-// basis of a computation: delays, polarity, junctions and the summation loss keep
-// reading the honest impulse responses. What it changes is that the curve stops
-// carrying the dips of one microphone position, which are the dips a tune must not
-// chase.
+// Hybrid magnitude view: spatial averages refine the drawn magnitude only; timing, polarity and loss still read the IRs.
+// See docs/tech/spatial-average.md.
 public partial class VirtualCrossoverPanel
 {
-    /// <summary>
-    /// Which spatial average this project reads: the stored choice, or — for a
-    /// project that has nothing stored and nothing attached yet — a fallback that
-    /// <see cref="SettleSpatialAverageMode"/> replaces with a stored choice the
-    /// moment the project has anything to guess from.
-    /// </summary>
     internal VirtualCrossoverSpatialAverageMode SpatialAverageMode =>
         project.SpatialAverageMode ?? (HasAnyArrayCapture()
             ? VirtualCrossoverSpatialAverageMode.MicArray
             : VirtualCrossoverSpatialAverageMode.MovingMic);
 
-    /// <summary>
-    /// Stores the guessed method the first time the project has any spatial average
-    /// to guess from. True when it wrote one, so the caller can persist.
-    /// </summary>
-    /// <remarks>
-    /// The guess has to be made ONCE and kept, because it is the answer to "where do
-    /// the levels come from" for the whole project — and computing it live made it
-    /// change under a project that never chose. A session written before arrays
-    /// existed carries attachments and no stored mode; loading a single new
-    /// measurement that happens to carry an array flipped the whole project to the
-    /// array method, at which point the attachments went unread and every channel
-    /// without an array quietly fell back to its point response. The user changed
-    /// one channel's source and the source of every channel's levels changed.
-    /// <para>
-    /// What is stored is whatever the fallback ALREADY says, so a project that opens
-    /// today opens the same way tomorrow. Freezing is the whole fix: by the time a
-    /// new measurement can arrive the mode is stored, so it cannot move the project
-    /// under the user. Preferring one family over the other on top of that was a
-    /// second rule doing no extra work, and it changed what a session holding BOTH an
-    /// array and attachments displayed — which is a live session of the owner's, and
-    /// a surprise is exactly what this is supposed to prevent.
-    /// </para>
-    /// <para>
-    /// A project with nothing to guess from is left unstored, so the first
-    /// measurement to arrive still gets to decide — an array arrives WITH the
-    /// measurement, and asking a user who just recorded one to find a menu would be
-    /// asking twice.
-    /// </para>
-    /// </remarks>
+    /// <summary>Stores the guessed mode once, the first time there is anything to guess from; true when it wrote one.</summary>
+    /// <remarks>Freezing keeps a later measurement from flipping the project's level source. See docs/tech/spatial-average.md#mode-selection.</remarks>
     private bool SettleSpatialAverageMode()
     {
         if (project.SpatialAverageMode != null)
@@ -204,9 +95,6 @@ public partial class VirtualCrossoverPanel
     {
         var menu = new ContextMenuStrip();
 
-        // The method is the project's, so it is offered on every channel's button
-        // rather than hidden somewhere else: the button is where a user notices the
-        // curve is missing, and it is where they will look for why.
         foreach ((VirtualCrossoverSpatialAverageMode mode, string label) in new[]
         {
             (VirtualCrossoverSpatialAverageMode.MicArray, "Use microphone arrays"),
@@ -230,8 +118,6 @@ public partial class VirtualCrossoverPanel
         chooseItem.Click += (_, _) => ChooseSpatialAverage(channel);
         menu.Items.Add(chooseItem);
 
-        // Offered for a capture the session refers to but could not read, too: that
-        // is the state a user most wants to be rid of.
         if (channel.SpatialAverage != null ||
             !string.IsNullOrWhiteSpace(channel.Settings.SpatialAveragePath))
         {
@@ -279,9 +165,7 @@ public partial class VirtualCrossoverPanel
 
             channel.SpatialAverage = document;
             channel.Settings.SpatialAveragePath = dialog.FileName;
-            // The relative path names the capture the session was IMPORTED with, and
-            // this is a different file: left standing it would send the next search
-            // after the one just replaced.
+            // The relative path names the previously imported capture; left standing it would steer the next search to it.
             channel.Settings.SpatialAverageRelativePath = null;
             OnSpatialAverageChanged(channel);
         }
@@ -299,13 +183,9 @@ public partial class VirtualCrossoverPanel
 
     private void OnSpatialAverageChanged(VirtualCrossoverChannel channel)
     {
-        // The first attachment is what a project with no stored method is waiting
-        // for; from here the method is the project's own and cannot drift.
         SettleSpatialAverageMode();
         RefreshSpatialAverageStatus(channel);
         RefreshHybridAvailability();
-        // The attachment is session state, so it travels with the session — the whole
-        // point of storing the reference rather than re-picking it every time.
         ScheduleSave();
         OnViewChanged();
     }
@@ -320,10 +200,7 @@ public partial class VirtualCrossoverPanel
         VirtualCrossoverSpatialAverageMode mode = SpatialAverageMode;
         LiveCaptureDocument? document =
             channel.SideState(channel.ActiveRight).SpatialAverageFor(mode);
-        // A stored path with no document behind it is the missing case: name it from
-        // the path, since the file that carried the title is the file that is gone.
-        // Only in the moving-microphone method — an array is not attached by path,
-        // so there is nothing that could go missing.
+        // Missing capture: name it from the stored path. Arrays are not attached by path, so only MovingMic can go missing.
         string? path = mode == VirtualCrossoverSpatialAverageMode.MovingMic
             ? channel.Settings.SpatialAveragePath
             : null;
@@ -338,17 +215,8 @@ public partial class VirtualCrossoverPanel
             document?.SavedAtUtc);
     }
 
-    /// <summary>
-    /// Re-attaches one side's persisted capture: the stored path, then the same file
-    /// beside the session it was imported from, then beside the folder the user
-    /// pointed at when relinking — the very ladder the measurements climb.
-    /// </summary>
-    /// <remarks>
-    /// A capture that no longer resolves degrades to an unattached side rather than
-    /// failing the project load, and the stored path is LEFT standing: it is the only
-    /// hint a later relink has, and it is what tells the button to warn instead of
-    /// showing a channel that never had an average.
-    /// </remarks>
+    /// <summary>Re-attaches a persisted capture via the same path ladder as measurements.</summary>
+    /// <remarks>An unresolved capture leaves the stored path standing: it drives relink and the button's warning.</remarks>
     private void ResolveSpatialAverage(
         VirtualCrossoverChannelSettings settings,
         VirtualCrossoverChannelState state)
@@ -378,43 +246,21 @@ public partial class VirtualCrossoverPanel
             if (LiveCaptureDocument.TryLoad(path, out LiveCaptureDocument document))
             {
                 state.SpatialAverage = document;
-                // Pin where it was actually read from, the same rule the source path
-                // follows: this project becomes the internal autosave right after the
-                // import, and that copy has no session file beside it to search from.
+                // Pin the actual read location: the autosave copy has no session file beside it to search from.
                 settings.SpatialAveragePath = path;
             }
         }
         catch (Exception exception)
         {
-            // An unreadable or foreign file is an unattached side, not a failed load.
             _ = exception;
         }
     }
 
-    /// <summary>
-    /// Whether every channel that plays has a spatial average, and therefore whether
-    /// the hybrid view is offered at all.
-    /// </summary>
-    /// <remarks>
-    /// All or nothing, deliberately. A sum mixing spatially averaged channels with
-    /// point-measured ones puts two different references on one axis and looks
-    /// exactly like a measurement, so a partial set mutes the toggle rather than
-    /// drawing something that cannot be read.
-    /// </remarks>
+    /// <summary>Whether every playing channel has a spatial average forming one set (the hybrid toggle's gate).</summary>
     private LiveCaptureSetVerdict JudgeSpatialAverages =>
         JudgeSideSpatialAverages(project.ActiveSideRight);
 
-    /// <summary>
-    /// A channel's bypass response read on CANONICAL terms — its own onset, the fixed
-    /// steady-state window, no calibration and no display smoothing.
-    /// </summary>
-    /// <remarks>
-    /// Both halves of the datum have to be read the same way or the difference between
-    /// them stops being a property of the measurements. Calibration would cancel if it
-    /// were on both, but smoothing would not: it is applied to two differently shaped
-    /// curves and does not commute with their subtraction. Pinning both here also
-    /// keeps the panel's figure identical to the one the threshold was calibrated on.
-    /// </remarks>
+    /// <summary>Bypass response on canonical terms (own onset, fixed window, no calibration, no smoothing), matching how the spread threshold was calibrated.</summary>
     private AnalysisCurve BuildCanonicalRawCurve(
         Complex[] impulseResponse,
         int peakIndex,
@@ -438,20 +284,7 @@ public partial class VirtualCrossoverPanel
             smoothingInverseOctaves: 0).Unsmoothed;
     }
 
-    /// <summary>
-    /// Whether the dashed opposite-side hybrid sum may be drawn: BOTH sides' captures
-    /// have to form one set, not each side its own.
-    /// </summary>
-    /// <remarks>
-    /// That curve borrows the active side's offset outright
-    /// (<see cref="BuildOppositeHybridSumCurve"/>) — deliberately, since levelling
-    /// the sides separately would erase the very L/R difference it exists to show.
-    /// Judging the sides independently leaves that borrowing unchecked: two relative
-    /// capture runs, one per side, are each internally consistent and say nothing
-    /// about how their levels compare, so an input gain that moved between them would
-    /// be drawn as an L/R imbalance the car does not have. A recipe that differs
-    /// across the sides is the same hole.
-    /// </remarks>
+    /// <summary>Both sides' captures must form one set: the opposite sum borrows the active side's offset. See docs/tech/spatial-average.md#coverage-and-set-verdict.</summary>
     private bool CanDrawOppositeHybridSum(bool oppositeRight)
     {
         if (!TryCollectSideCaptures(project.ActiveSideRight, out var active).Coherent ||
@@ -463,28 +296,8 @@ public partial class VirtualCrossoverPanel
         return JudgeSidesShareAnOffset(active, opposite).Coherent;
     }
 
-    /// <summary>
-    /// The Δ L−R read-out's level source while the hybrid mode is on, or null to
-    /// leave that read-out on its gated point-measured levels: a pair's L−R level
-    /// is then read off the two sides' spatial averages through their chains, in
-    /// the pair's shared band — the levels the hybrid view draws and the levels a
-    /// gain trim is being judged against.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately the hybrid INTENT plus coverage rather than
-    /// <see cref="HybridRequested"/>: that flag follows the current Show view, and
-    /// a level that flipped basis when the user glanced at the phase view would
-    /// read as two different imbalances in one tune. The captures do not stop
-    /// being the authoritative levels because the plot is momentarily drawing
-    /// something else.
-    /// <para>
-    /// Comparing levels ACROSS the sides assumes one recipe at one input gain
-    /// held both sides' captures — exactly the condition the dashed opposite-side
-    /// sum borrows the active side's offset under, so it is the same check. The
-    /// set offset is common to both sides by that construction and cancels out of
-    /// every difference, which is why none is applied here.
-    /// </para>
-    /// </remarks>
+    /// <summary>Δ L−R level source in hybrid mode (spatial averages through chains), or null for point levels.</summary>
+    /// <remarks>Follows hybrid intent, not the current view, so the basis does not flip on a view glance. See docs/tech/spatial-average.md#level-read-outs.</remarks>
     private Func<VirtualCrossoverChannel, double, double, double?>?
         HybridStereoLevelReader() =>
         checkBoxHybrid.Checked && hybridAvailable &&
@@ -492,11 +305,7 @@ public partial class VirtualCrossoverPanel
             ? HybridStereoLevelDeltaDb
             : null;
 
-    // One pair's L−R spatial-average level difference, both sides built on ONE
-    // grid so the band-level rule can pair their points (see
-    // SpatialAverageHybrid.BandLevelDeltaDb). Null when a side has no capture —
-    // an array set may have gaps — or the captures never overlap in this band;
-    // the read-out then keeps that pair's point-measured level and says so.
+    // Null when a side has no capture or the captures do not overlap the band; the read-out then falls back to point levels.
     private double? HybridStereoLevelDeltaDb(
         VirtualCrossoverChannel channel, double lowHz, double highHz)
     {
@@ -510,9 +319,6 @@ public partial class VirtualCrossoverPanel
             : SpatialAverageHybrid.BandLevelDeltaDb(left, right);
     }
 
-    // One side's capture through that side's own chain, calibration and processor
-    // rate — the same reading BuildHybridChannelCurve makes for the plot, on the
-    // caller's grid and with no display smoothing (an energy mean needs none).
     private IReadOnlyList<SignalPoint>? BuildHybridSideLevelCurve(
         VirtualCrossoverChannel channel, bool rightSide, List<double> grid)
     {
@@ -524,8 +330,6 @@ public partial class VirtualCrossoverPanel
 
         return SpatialAverageHybrid.BuildChannelCurve(
             document,
-            // A bypassed pair never reaches the Δ block, but the rule stays the
-            // plot's: bypass contributes the raw measured signal.
             channel.Pair.Bypass
                 ? DspChannelChain.Identity
                 : channel.Pair.ToChain(rightSide),
@@ -535,34 +339,14 @@ public partial class VirtualCrossoverPanel
             smoothingCode: 0);
     }
 
-    /// <summary>
-    /// The "vs Front" read-out's level source while the hybrid mode is on, or
-    /// null to leave those rows on their gated point-measured levels: a compared
-    /// group's ΔdB against the front is then read off both groups' spatial
-    /// averages through their chains, each group power-summed (see
-    /// <see cref="SpatialAverageHybrid.PowerSum"/> for why not phasors).
-    /// </summary>
-    /// <remarks>
-    /// Follows the mode rather than the view for the reason
-    /// <see cref="HybridStereoLevelReader"/> does. The condition is the ACTIVE
-    /// side's coverage alone — both groups sit on the same side, so the set
-    /// offset is one figure and cancels out of the difference; nothing here
-    /// compares across the sides, and the stereo reader's one-set-of-both-sides
-    /// check would refuse comparisons it has no stake in.
-    /// </remarks>
+    /// <summary>"vs Front" level source in hybrid mode, or null for point levels. Active side only, so the set offset cancels.</summary>
     private Func<IReadOnlyList<ProcessedChannel>, IReadOnlyList<ProcessedChannel>,
         double, double, double?>? HybridGroupLevelReader() =>
         checkBoxHybrid.Checked && hybridAvailable
             ? HybridGroupLevelDeltaDb
             : null;
 
-    // One compared group's level against the front, both groups' member curves
-    // built on ONE grid so the band-level rule can pair their points. Null when
-    // any member of either group has no capture at all (an array set may have
-    // gaps) — power-summing the rest would understate that group by a playing
-    // member — and when the captures leave no point in the band where both
-    // groups have a value; either way the row falls back to its point-measured
-    // level whole and says so.
+    // Null when any member lacks a capture (power sum would understate the group) or the groups share no in-band point.
     private double? HybridGroupLevelDeltaDb(
         IReadOnlyList<ProcessedChannel> members,
         IReadOnlyList<ProcessedChannel> front,
@@ -580,9 +364,6 @@ public partial class VirtualCrossoverPanel
     private List<SignalPoint>? BuildHybridGroupPowerCurve(
         IReadOnlyList<ProcessedChannel> members, List<double> grid)
     {
-        // The shown set is the ACTIVE side's processed responses, so the
-        // captures are that side's too; SideState routes a mono member (a mono
-        // centre is legitimate) to its single slot the way the plot does.
         bool rightSide = project.ActiveSideRight;
         var curves = new List<IReadOnlyList<SignalPoint>>(members.Count);
         var bands = new List<(double LowHz, double HighHz)>(members.Count);
@@ -597,9 +378,7 @@ public partial class VirtualCrossoverPanel
 
             IReadOnlyList<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
                 document,
-                // Bypassed members DO reach the grouped read-outs (unlike the
-                // stereo block, which skips the pair), contributing their raw
-                // measured signal — the same rule the plot applies.
+                // Bypassed members do reach grouped read-outs, contributing their raw signal as on the plot.
                 member.Channel.Pair.Bypass
                     ? DspChannelChain.Identity
                     : member.Channel.Pair.ToChain(rightSide),
@@ -619,23 +398,8 @@ public partial class VirtualCrossoverPanel
         return SpatialAverageHybrid.PowerSum(curves, bands);
     }
 
-    /// <summary>
-    /// The band a group member is expected to PLAY in — what separates a
-    /// capture's silence from an absent driver in the group power sum (see
-    /// <see cref="SpatialAverageHybrid.PowerSum"/>): inside it a capture with
-    /// nothing to say breaks the group's point, outside it the member is simply
-    /// absent.
-    /// </summary>
-    /// <remarks>
-    /// Normally the configured crossover band, the same rule the comparison's
-    /// own span is keyed on. A BYPASSED member is the exception the review
-    /// caught: its chain is Identity, so it plays its raw full-range response
-    /// wherever its measurement reaches — the configured corners it is not
-    /// running say nothing about where it is present, and reading them here
-    /// turned "the capture does not know" below an idle high-pass back into
-    /// "the driver is absent", the very confusion the band exists to prevent.
-    /// Static and pure so the rule can be pinned without a panel.
-    /// </remarks>
+    /// <summary>Band where a group member is expected to play: inside it a silent capture breaks the group point, outside the member is absent.</summary>
+    /// <remarks>Bypassed members use their full measured range: their idle crossover corners say nothing about presence.</remarks>
     internal static (double LowHz, double HighHz) HybridGroupMemberBand(
         VirtualCrossoverChannel channel, bool rightSide) =>
         channel.Pair.Bypass
@@ -643,10 +407,7 @@ public partial class VirtualCrossoverPanel
             : VirtualCrossoverJunctions.GetChannelBand(
                 channel.SideSettings(rightSide));
 
-    // Log-spaced through the band at a resolution comfortably past the captures'
-    // own (~1/48 octave): the figure is an energy mean of a smooth curve, and a
-    // log grid with uniform weights is what reproduces the impulse-response band
-    // level's 1/f weighting.
+    // Log grid finer than the captures (~1/48 oct); uniform weights on it reproduce the IR band level's 1/f weighting.
     private static List<double> HybridLevelGrid(double lowHz, double highHz)
     {
         const double PointsPerOctave = 48.0;
@@ -661,10 +422,6 @@ public partial class VirtualCrossoverPanel
         return grid;
     }
 
-    /// <summary>
-    /// Whether one offset may level both sides' captures — the condition the dashed
-    /// opposite sum is drawn under. Static and pure so it can be pinned directly.
-    /// </summary>
     internal static LiveCaptureSetVerdict JudgeSidesShareAnOffset(
         IReadOnlyList<LiveCaptureDocument> active,
         IReadOnlyList<LiveCaptureDocument> opposite)
@@ -680,8 +437,6 @@ public partial class VirtualCrossoverPanel
         union.AddRange(active);
         union.AddRange(opposite);
 
-        // A mono pair contributes the same capture to both lists; a document matches
-        // itself, so the duplicate costs nothing.
         LiveCaptureSetVerdict verdict = LiveCaptureDocument.JudgeSet(union);
         return verdict.Coherent
             ? verdict
@@ -690,18 +445,7 @@ public partial class VirtualCrossoverPanel
                 "offset cannot level them both. " + verdict.Reason);
     }
 
-    /// <summary>
-    /// Whether that side's playing channels can produce a hybrid: every one of them
-    /// carries a capture, and those captures form one set.
-    /// </summary>
-    /// <remarks>
-    /// Coverage alone is not enough, and the difference matters. Attaching seven
-    /// captures taken at three frame lengths and two scales leaves every channel
-    /// covered while putting curves compensated by different amounts on one axis,
-    /// under one offset that fits none of them. The set-spread warning is a
-    /// heuristic backstop reading a median over the working band; the recipe is the
-    /// fact, and it is what decides here.
-    /// </remarks>
+    /// <summary>That side's playing channels all carry captures and those form one set (recipe decides, not coverage).</summary>
     private LiveCaptureSetVerdict JudgeSideSpatialAverages(bool rightSide)
     {
         LiveCaptureSetVerdict gathered =
@@ -709,13 +453,9 @@ public partial class VirtualCrossoverPanel
         return gathered.Coherent ? LiveCaptureDocument.JudgeSet(captures) : gathered;
     }
 
-    // That side's captures, or why it has none to give.
     private LiveCaptureSetVerdict TryCollectSideCaptures(
         bool rightSide, out List<LiveCaptureDocument> captures)
     {
-        // The channels that actually play on that side: an enabled pair with a
-        // measurement behind it. A disabled or empty one contributes nothing to the
-        // sum and so cannot hold the hybrid view back.
         List<VirtualCrossoverChannelState> playing = channels
             .Where(channel => channel.Pair.Enabled)
             .Select(channel => channel.SideState(rightSide))
@@ -731,14 +471,7 @@ public partial class VirtualCrossoverPanel
         {
             if (state.SpatialAverageFor(SpatialAverageMode) is not { } capture)
             {
-                // An ARRAY set may have gaps. Both families are levelled by the same
-                // loopback the impulse responses are referenced to, so a channel
-                // drawn from its own measurement is on the same axis as the rest —
-                // the objection that makes this all-or-nothing for a moving
-                // microphone (two different references on one axis) does not apply.
-                // What remains is a shape difference, and on the band a channel
-                // without an array usually covers it is small: below the cabin's
-                // first mode a point measurement IS the average.
+                // Array sets may have gaps: both families share the loopback reference, and below the first cabin mode a point equals the average.
                 if (SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray)
                 {
                     continue;
@@ -763,56 +496,25 @@ public partial class VirtualCrossoverPanel
         return LiveCaptureSetVerdict.Ok;
     }
 
-    // Whether the set could produce a hybrid at all, as of the last refresh. Cached
-    // rather than recomputed per redraw, and it is the same answer the toggle's own
-    // look is built from — the toggle stays ENABLED and is muted by hand (see below),
-    // so its enabled state cannot stand in for this.
+    // Cached set verdict; the toggle is muted by hand, so its Enabled state cannot stand in for this.
     private bool hybridAvailable;
 
-    // Whether this redraw should draw the hybrid. Both halves matter: the tick
-    // survives a view switch, and a ticked toggle with no coverage behind it must not
-    // put a half-built hybrid on the plot.
-    //
-    // The Groups view is INCLUDED. It once was not, on the grounds that a spatial
-    // average belongs to a driver and a group's line is a sum — but so is the Sum
-    // every other view draws, and it is built the hybrid way there: the members'
-    // captures through their chains, held together by the phase their impulse
-    // responses measure (BuildHybridSumCurve). A group's line is that same
-    // construction over that group's members. Leaving it out was the mismatch, not
-    // the fix: the view's own "vs Front ΔdB" rows already read the captures
-    // (HybridGroupLevelReader), so the read-out compared groups on one basis while
-    // the plot drew them on another.
+    // Groups view included: a group line is the same hybrid sum construction over its members. See docs/tech/spatial-average.md#hybrid-toggle.
     private bool HybridRequested =>
         checkBoxHybrid.Checked &&
         hybridAvailable;
 
     private void RefreshHybridAvailability()
     {
-        // The tick is INTENT and outlives the coverage: HybridRequested needs both,
-        // so a set that is short of a capture draws honest curves whether or not the
-        // box is ticked, and clearing the tick would only mean the user has to find
-        // it again after re-attaching. Same reason a pinned gate outlives its
-        // sources.
+        // The tick is intent and outlives coverage (like a pinned gate outlives its sources).
         LiveCaptureSetVerdict verdict = JudgeSpatialAverages;
         hybridAvailable = verdict.Coherent;
 
-        // Magnitude-only: a spatial average carries no phase, so there is no hybrid
-        // phase or impulse view to offer. MUTED and not unticked — a look at another
-        // view must not cost the tick. Coloured by hand rather than through
-        // UiStyle.SetTextEnabledLook, for the reason UpdateTargetToggleLook states:
-        // the helper memorizes the colour it mutes, and this toggle wears a REMINDER
-        // colour whenever it is live and unticked, which would then become the colour
-        // it comes back to. AutoCheck and TabStop carry the disabling, as they do
-        // there; WinForms' own disabled paint is a system grey that reads as
-        // near-black on this theme, which is why Enabled is not used.
+        // Muted, not unticked or disabled: UiStyle.SetTextEnabledLook would memorize the reminder colour, and WinForms' disabled grey is unreadable here.
         bool live = hybridAvailable && radioViewMagnitude.Checked;
         checkBoxHybrid.ForeColor = !live
             ? UiPalette.TextDisabled
-            // Live, available and NOT ticked: captures are attached and the plot is
-            // ignoring them, drawing one microphone position's dips at every channel
-            // where an average was recorded. That is a tune about to be fitted to the
-            // wrong curve, so the toggle says so in the error colour rather than
-            // waiting to be noticed.
+            // Available but unticked: the plot ignores attached captures, so warn in the error colour.
             : checkBoxHybrid.Checked ? hybridToggleColor : UiPalette.ErrorSoft;
         checkBoxHybrid.AutoCheck = live;
         checkBoxHybrid.TabStop = live;
@@ -852,15 +554,7 @@ public partial class VirtualCrossoverPanel
                     "small in the bass, largest at a crossover high up.");
     }
 
-    /// <summary>
-    /// This redraw's hybrid magnitudes, or null when the set cannot produce one.
-    /// </summary>
-    /// <remarks>
-    /// Built once per redraw and shared by the drawing and the summation. Every
-    /// channel or none: a set where one channel failed to yield a curve would
-    /// otherwise sum a spatial average against a point measurement, the mix the whole
-    /// feature exists to avoid.
-    /// </remarks>
+    /// <summary>This redraw's hybrid magnitudes, shared by drawing and summation; null unless every channel yields a curve.</summary>
     private HybridMagnitudes? BuildHybridMagnitudes(
         IReadOnlyList<ProcessedChannel> processed,
         IReadOnlyList<AnalysisCurve> references,
@@ -872,17 +566,8 @@ public partial class VirtualCrossoverPanel
             return null;
         }
 
-        // The datum is read on the two measurements BEFORE any chain, never on the
-        // curves below. Those carry the DSP on both sides and it does NOT cancel: the
-        // impulse response is filtered and then gated while the capture is filtered
-        // analytically, and a gate does not commute with a filter; and the band the
-        // median is taken over is set by the channel's peak, which the crossover
-        // moves. Reading it there made the whole hybrid set drift up and down the
-        // axis while the user tuned — and that offset travels to the EQ Wizard.
-        // Resolved FIRST because a channel falling back to its point measurement has
-        // to be lowered by it: the set's curves are held without the offset and it is
-        // added on the way to the plot, so a curve already on the impulse responses'
-        // axis must arrive pre-subtracted to land back where it started.
+        // Datum is read on the raw pair, never the processed curves (gate does not commute with the chain; tuning would drift the offset).
+        // Resolved first so point-measured fallbacks can be pre-subtracted. See docs/tech/spatial-average.md#set-offset-and-spread.
         (double?[] offsets, double setOffset, IReadOnlyList<SetDatum> setDatums) =
             ResolveRawHybridOffsetsDb(processed, rightSide);
 
@@ -891,10 +576,7 @@ public partial class VirtualCrossoverPanel
         var pointMeasured = new bool[processed.Count];
         for (int i = 0; i < processed.Count; i++)
         {
-            // Built RAW and smoothed here rather than twice through the chain: the
-            // shared builder's own last step is this same smoothing, so smoothing its
-            // unsmoothed output reproduces what it would have returned, and the
-            // expensive part — the analytic chain over the whole grid — runs once.
+            // Built raw and smoothed here: the shared builder's last step is this smoothing, so the expensive chain runs once.
             IReadOnlyList<SignalPoint>? raw = BuildHybridChannelCurve(
                 processed[i].Channel, rightSide, references[i].Points, smoothingCode: 0);
             if (raw == null)
@@ -904,9 +586,6 @@ public partial class VirtualCrossoverPanel
                     return null;
                 }
 
-                // This channel has no array. Its own processed magnitude is already
-                // on the impulse responses' axis and is a perfectly good curve — it
-                // is simply a point measurement, which is what the badge says.
                 raw = ShiftedBy(references[i].Points, -setOffset);
                 pointMeasured[i] = true;
             }
@@ -927,27 +606,15 @@ public partial class VirtualCrossoverPanel
         };
     }
 
-    /// <summary>
-    /// One channel's magnitude drawn from its spatial average instead of from the
-    /// impulse response measured at one point, on the reference curve's frequency grid
-    /// and at the capture's own level. Null when the channel has no average attached.
-    /// </summary>
-    /// <remarks>
-    /// The arithmetic lives in <see cref="SpatialAverageHybrid"/>, shared with the EQ
-    /// Wizard so a tune is fitted to the curve this plot drew. What is decided HERE is
-    /// the context: which side, which chain, and the panel's own calibration, which the
-    /// capture is rebased onto so the hybrid and the measured curves beside it carry
-    /// one correction rather than two.
-    /// </remarks>
+    /// <summary>One channel's magnitude from its spatial average through its chain, on the reference grid; null without an average.</summary>
+    /// <remarks>Arithmetic lives in <see cref="SpatialAverageHybrid"/>, shared with the EQ Wizard.</remarks>
     private IReadOnlyList<SignalPoint>? BuildHybridChannelCurve(
         VirtualCrossoverChannel channel,
         bool rightSide,
         IReadOnlyList<SignalPoint> reference,
         int smoothingCode)
     {
-        // Explicitly the side asked for, never the channel's ACTIVE one: the opposite
-        // side's sum is built from this too, and reading the shown side's capture there
-        // would draw one side's tuning under the other's label.
+        // The requested side, never the active one: the opposite-side sum is built from this too.
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
         if (state.SpatialAverageFor(SpatialAverageMode) is not { } document ||
             reference.Count == 0)
@@ -957,50 +624,20 @@ public partial class VirtualCrossoverPanel
 
         return SpatialAverageHybrid.BuildChannelCurve(
             document,
-            // The SAME chain the processed response was built through, Bypass included:
-            // a bypassed channel contributes its raw measured signal, so putting the
-            // chain on its average would make the hybrid the one curve on the plot that
-            // ignores the switch.
+            // Same chain as the processed response, Bypass included.
             channel.Pair.Bypass
                 ? DspChannelChain.Identity
                 : channel.Pair.ToChain(rightSide),
-            // The PROCESSOR's rate: the chain is what the user's DSP will run, and it
-            // runs at the device's rate — not at whatever the capture, or the
-            // measurement beside it, was taken at. The capture's own rate is already
-            // folded into its stored levels.
+            // Processor rate: the chain is what the device runs; the capture's rate is already folded into its levels.
             channel.ProcessorSampleRateFor(rightSide),
-            // This channel's own under "Own (as measured)". For a capture whose
-            // positions shared one file the swap is exact and — since that file is
-            // normally the one the impulse response beside it was read through — it
-            // comes out a no-op; for one whose positions did not, the capture keeps
-            // its own corrections and this is ignored, because no single curve could
-            // replace a mixture (see SpatialAverageHybrid).
+            // Swap to the panel calibration is exact for single-file captures; mixed-calibration captures keep their own (see SpatialAverageHybrid).
             SpatialAverageCalibrationFor(state),
             reference.Select(point => point.X).ToList(),
             smoothingCode);
     }
 
-    /// <summary>
-    /// Each drawn channel's datum, and the SET's, read on the RAW pair: the capture
-    /// with no chain against the channel's bypass response. A property of the two
-    /// measurements, so nothing the user tunes can move it.
-    /// </summary>
-    /// <remarks>
-    /// The raw impulse-response curve is built here rather than taken from the
-    /// redraw, which only has it when the Raw view is switched on. One gated build
-    /// per channel while the hybrid is drawn; the alternative — reading the datum off
-    /// the processed curves — is what this exists to stop.
-    /// <para>
-    /// The set's offset is the median over EVERY channel of this side that carries a
-    /// capture, muted or not, and that distinction is the whole reason this takes the
-    /// channel list rather than only the drawn ones. A mute says which curves to
-    /// draw; it does not say which measurements the set is made of. Taking the median
-    /// over the drawn ones alone moved every remaining curve each time one was muted
-    /// — a quarter of a decibel per channel on the owner's cabins, in the arrays and
-    /// the moving-microphone captures alike — so a level read off the plot depended
-    /// on which channels happened to be listening.
-    /// </para>
-    /// </remarks>
+    /// <summary>Per-channel and set datums on the raw pair (capture without chain vs bypass response), so tuning cannot move them.</summary>
+    /// <remarks>Median over every channel with a capture, muted included. See docs/tech/spatial-average.md#set-offset-and-spread.</remarks>
     private (double?[] PerChannel, double SetOffsetDb, IReadOnlyList<SetDatum> SetDatums)
         ResolveRawHybridOffsetsDb(
             IReadOnlyList<ProcessedChannel> processed,
@@ -1013,9 +650,7 @@ public partial class VirtualCrossoverPanel
         {
             double? datum = ResolveRawDatumDb(channel, rightSide);
             datums[channel] = datum;
-            // A channel with no capture at all is not part of this set and must not
-            // appear in what the warning lists; one WITH a capture it cannot compare
-            // stays, as a named hole.
+            // No capture: not part of the set. A capture that cannot compare stays as a named hole.
             if (channel.SideState(rightSide).SpatialAverageFor(SpatialAverageMode) != null)
             {
                 setDatums.Add(new SetDatum(channel, datum));
@@ -1037,8 +672,7 @@ public partial class VirtualCrossoverPanel
         return (perChannel, known.Count == 0 ? 0.0 : SpatialAverageOffsets.Median(known), setDatums);
     }
 
-    // Every channel that could contribute a datum: the panel's own list, plus any
-    // drawn channel it does not hold (a harness builds those directly).
+    // The panel's list plus drawn channels it does not hold (harness-built).
     private IEnumerable<VirtualCrossoverChannel> AllChannelsWith(
         IReadOnlyList<ProcessedChannel> processed)
     {
@@ -1060,9 +694,7 @@ public partial class VirtualCrossoverPanel
         }
     }
 
-    // One channel side's datum, or null when it cannot produce the raw pair. Such a
-    // channel contributes nothing rather than falling back to the processed curves,
-    // which would put its offset on a different footing from the rest.
+    // Null when the raw pair is unavailable; never falls back to processed curves (different footing).
     private double? ResolveRawDatumDb(VirtualCrossoverChannel channel, bool rightSide)
     {
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
@@ -1082,11 +714,7 @@ public partial class VirtualCrossoverPanel
             document,
             DspChannelChain.Identity,
             state.SampleRate,
-            // Canonical, not what the plot happens to be showing: identity chain, no
-            // calibration, no display smoothing. A datum that moved with the
-            // smoothing selector would not be a property of the two measurements, and
-            // the threshold the spread is judged against is calibrated on these very
-            // terms (HybridOffsetDatumMeasurement reads them the same way).
+            // Canonical terms, matching HybridOffsetDatumMeasurement and the spread threshold's calibration.
             SpatialAverageCalibration.Off,
             rawIr.Points.Select(point => point.X).ToList(),
             smoothingCode: 0);
@@ -1095,7 +723,6 @@ public partial class VirtualCrossoverPanel
             : SpatialAverageOffsets.ChannelDatumDb(rawCapture, rawIr.Points);
     }
 
-    // The set's common offset, applied on the way to the plot.
     private static IReadOnlyList<SignalPoint> ShiftedBy(
         IReadOnlyList<SignalPoint> points,
         double offsetDb)
@@ -1114,35 +741,8 @@ public partial class VirtualCrossoverPanel
         return shifted;
     }
 
-    /// <summary>
-    /// The hybrid channels summed as PHASORS: each channel's gated spectrum rescaled,
-    /// bin by bin, to the level its spatial average reports, and the rescaled phasors
-    /// added. Null when the set has no usable grid.
-    /// </summary>
-    /// <remarks>
-    /// A spatial average carries no phase, so the phase can only come from the impulse
-    /// response — which is why the two measurements travel side by side. Nothing is
-    /// borrowed here, which is the point: the previous construction added the
-    /// magnitudes and laid the impulse responses' own summation loss on top, and a
-    /// loss is a property of the LEVELS it was measured at. At a steep junction on the
-    /// owner's car the two families disagreed about the relative levels of two
-    /// channels by 23 dB — a gate does not commute with a 48 dB/octave filter, so a
-    /// stopband reads far above its analytic slope — and the borrowed loss drew a
-    /// 13 dB dip into a sum whose own channels could not have made more than 1.9 dB.
-    /// <para>
-    /// An ESTIMATE, unlike the per-channel curves, and the distinction is not
-    /// pedantry. A channel's own hybrid is exact because a filter does not depend on
-    /// position. The phase holding these phasors together does: it was measured at ONE
-    /// microphone position, so this draws a point's interference, and its peaks and
-    /// dips may come out either stronger OR weaker than the volume's average — nothing
-    /// makes one position's relationship the more extreme of the two, and a position
-    /// where two channels sit near quadrature carries almost none of a cross-term the
-    /// average may hold firmly. What holds is only a tendency: the gap grows the
-    /// faster the relative phase turns across the volume, so it is generally small in
-    /// the bass and largest at a crossover high up. Nothing downstream treats this as
-    /// measured.
-    /// </para>
-    /// </remarks>
+    /// <summary>Hybrid channels summed as phasors: each gated spectrum rescaled per bin to its spatial-average level.</summary>
+    /// <remarks>An estimate: the phase is from one mic position. See docs/tech/spatial-average.md#hybrid-sum.</remarks>
     private static List<SignalPoint>? BuildHybridSumCurve(
         HybridMagnitudes hybrid,
         IReadOnlyList<ProcessedChannel> processed,
@@ -1161,19 +761,13 @@ public partial class VirtualCrossoverPanel
             new List<(IImpulseMeasurement, IReadOnlyList<SignalPoint>)>(processed.Count);
         for (int c = 0; c < processed.Count; c++)
         {
-            // Raw levels in, one smoothing at the end: the same rule the measured Sum
-            // beside this one is built under.
             channels.Add((
                 new ImpulseMeasurementView(
                     processed[c].ImpulseResponse, anchorIndex, processed[c].SampleRate),
                 hybrid.UnsmoothedChannels[c]));
         }
 
-        // Unsmoothed, then masked, THEN smoothed. The order is the contract: a point
-        // the mask will break must not have taken part in its neighbours' means on
-        // the way, or the hole is filled by the very values that are not allowed to
-        // stand. SmoothBandLevels passes a NaN through and excludes it from the
-        // neighbours it would otherwise pollute, which is exactly what is wanted.
+        // Unsmoothed, masked, then smoothed: masked points must not feed neighbours' means (SmoothBandLevels skips NaN).
         List<SignalPoint> sum = DataHelper.GetGatedSubstitutedMagnitudeSum(
             channels, gate, smoothingInverseOctaves: 0);
         if (sum.Count == 0)
@@ -1192,17 +786,7 @@ public partial class VirtualCrossoverPanel
                 SpectrumSmoothing.IsPsychoacoustic(smoothingCode));
     }
 
-    /// <summary>
-    /// The finished sum with the set's offset on it, broken at the points where a
-    /// channel has no capture while its impulse response says it is still playing.
-    /// </summary>
-    /// <remarks>
-    /// Dropping a channel that still contributes would sum one set of sources and
-    /// present it as the whole; it is ignorable only below
-    /// <see cref="HybridDropoutFloorDb"/> under the loudest channel, where its own
-    /// crossover has removed it anyway. Pure and separate so the rule can be pinned
-    /// without a panel.
-    /// </remarks>
+    /// <summary>Adds the set offset and breaks the sum where a still-playing channel has no capture.</summary>
     internal static List<SignalPoint> MaskMissingContributors(
         IReadOnlyList<SignalPoint> sum,
         IReadOnlyList<IReadOnlyList<SignalPoint>> hybridChannels,
@@ -1223,8 +807,6 @@ public partial class VirtualCrossoverPanel
         var points = new List<SignalPoint>(Math.Max(0, count));
         for (int i = 0; i < count; i++)
         {
-            // The loudest impulse-response level here, so a missing capture can be
-            // judged against what is actually playing rather than against a constant.
             double loudest = double.NegativeInfinity;
             for (int c = 0; c < channelReferences.Count; c++)
             {
@@ -1262,28 +844,10 @@ public partial class VirtualCrossoverPanel
         return points;
     }
 
-    /// <summary>
-    /// How far under the loudest channel an absent capture must sit before the sum
-    /// carries on without it, in dB.
-    /// </summary>
-    /// <remarks>
-    /// A capture stops below its channel's protective high-pass, which is usually far
-    /// under that channel's own crossover, so in practice this is never reached and
-    /// the sum simply continues. When it IS reached the honest answer is a break: the
-    /// alternative sums one set of sources and corrects it with a loss measured across
-    /// another, which reads as a confident curve rather than as the gap it is.
-    /// </remarks>
+    /// <summary>dB under the loudest channel below which a missing capture is ignored; above it the sum breaks.</summary>
     private const double HybridDropoutFloorDb = 25;
 
-    /// <returns>
-    /// Each channel's own offset, in channel order and skipping the channels with
-    /// nothing to compare, together with the set's single figure — the median of
-    /// them. Both, because the SPREAD between the per-channel offsets is what judges
-    /// the set (see <see cref="HybridMagnitudes.SpreadDb"/>) and taking the median
-    /// alone would throw it away. Zero for an empty set: with nothing to align
-    /// against, the captures are drawn at their own level rather than pushed
-    /// somewhere by an invented figure.
-    /// </returns>
+    /// <returns>Per-channel offsets (positional; spread judges the set) and their median; zero for an empty set.</returns>
     private static (double?[] PerChannel, double SetOffsetDb) ResolveHybridOffsetsDb(
         IReadOnlyList<IReadOnlyList<SignalPoint>> hybrids,
         IReadOnlyList<AnalysisCurve> references)

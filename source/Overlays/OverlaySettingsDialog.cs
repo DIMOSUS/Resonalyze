@@ -3,13 +3,9 @@
 internal sealed partial class OverlaySettingsDialog : Form
 {
     private readonly bool supportsSmoothing;
-    // Whether the Psychoacoustic smoothing mode is offered: only for a curve
-    // with dB magnitude semantics — the caller withholds it for a captured
-    // coherence trace, and non-magnitude modes exclude it here.
+    // Only for dB magnitude curves (the caller withholds it for coherence).
     private readonly bool includePsychoacousticSmoothing;
-    // Live preview: fired with a snapshot of the candidate settings on every control
-    // change so the caller can restyle the shown curve immediately. Nothing is
-    // committed until Save; the caller restores its stored state on Cancel.
+    // Nothing is committed until Save; the caller restores on Cancel.
     private readonly Action<OverlayCapturedPreview>? previewChanged;
     private readonly bool initialized;
     private Color selectedColor;
@@ -32,8 +28,7 @@ internal sealed partial class OverlaySettingsDialog : Form
         selectedColor = color;
 
         InitializeComponent();
-        // The accent fill is a palette value, not a literal the designer keeps a
-        // copy of: the two drifted apart once already.
+        // Palette value, not a designer literal: the two drifted apart once.
         Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill);
         PopulateControls();
         WireEvents();
@@ -145,8 +140,6 @@ internal sealed partial class OverlaySettingsDialog : Form
         }
     }
 
-    // Smoothing is not meaningful for every mode; rather than reflowing the layout
-    // the row is simply greyed out so the dialog keeps a single fixed shape.
     private void ApplyModeAvailability()
     {
         Ui.UiStyle.SetTextEnabledLook(smoothingLabel, supportsSmoothing);
@@ -181,7 +174,6 @@ internal sealed partial class OverlaySettingsDialog : Form
         }
     }
 
-    // Suppressed during construction, where control values are still being seeded.
     private void NotifyPreview()
     {
         if (!initialized || previewChanged == null)
@@ -212,9 +204,7 @@ internal sealed partial class OverlaySettingsDialog : Form
     }
 }
 
-// A snapshot of the candidate settings in the captured-overlay dialog, fired on
-// every control change for the live preview. Mirrors the dialog's output
-// properties so the caller can render exactly what Save would commit.
+// Mirrors the dialog's output so the caller renders exactly what Save would commit.
 internal sealed record OverlayCapturedPreview(
     string Name,
     Color Color,

@@ -14,8 +14,6 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     private const int LogicalArrowHalfWidth = 4;
     private const int LogicalArrowHalfHeight = 2;
 
-    // One step of LogarithmicFrequencyStep is this fraction of an octave, which is
-    // what makes it the same distance everywhere on a logarithmic frequency axis.
     private const int LogarithmicStepsPerOctave = 96;
 
     private readonly TextBox editor;
@@ -98,9 +96,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             minimum = value;
             if (initializing)
             {
-                // Between BeginInit and EndInit the designer sets properties in
-                // arbitrary order; defer the range/value reconciliation to EndInit
-                // so Value is never clamped against a not-yet-assigned bound.
+                // Designer sets properties in arbitrary order; reconcile in EndInit so Value is not clamped against an unassigned bound.
                 return;
             }
 
@@ -153,21 +149,8 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         }
     }
 
-    /// <summary>
-    /// Makes one step — spin button, wheel or arrow key — a fixed fraction of an
-    /// octave (a 96th) rather than the fixed <see cref="Increment"/>, so one wheel
-    /// notch covers the same distance wherever it is taken on a logarithmic
-    /// frequency axis. It is meant for fields in Hz, where no absolute step fits
-    /// the whole band: the 10 Hz a crossover corner used to move by is nearly half
-    /// an octave at 30 Hz and a rounding error at 15 kHz. The step comes out at
-    /// 1 Hz at 100 Hz, 7 Hz at 1 kHz and 145 Hz at 20 kHz — rounded to what the
-    /// field can show and never below one unit of it, which is why a whole-Hz field
-    /// under about 69 Hz moves by 1 Hz and so covers more than a 96th of an octave
-    /// there. The steps walk a ladder anchored on wherever the value last came from,
-    /// so a step and a step straight back always land on the value they left, whichever
-    /// way round they are taken. Off by default, which leaves the control stepping by
-    /// <see cref="Increment"/> as before.
-    /// </summary>
+    /// <summary>One step = 1/96 octave instead of <see cref="Increment"/>, for Hz fields; rounded to the display, never below one unit.
+    /// Steps walk an anchored ladder, so a step and a step back return to the same value.</summary>
     [Browsable(true)]
     [DefaultValue(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
@@ -216,12 +199,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         set => editor.TextAlign = value;
     }
 
-    /// <summary>
-    /// Optional caption painted inside the field, glued to the inner-left edge in
-    /// a muted half-tone. It reserves no space: the value is still right-aligned
-    /// across the full field and its digits draw over the caption. Empty by
-    /// default, which leaves the control's behaviour unchanged.
-    /// </summary>
+    /// <summary>Muted caption at the inner-left; reserves no space, the value draws over it.</summary>
     [Browsable(true)]
     [DefaultValue("")]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
@@ -237,18 +215,12 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             }
 
             inlineLabel = newValue;
-            // With a caption the value is self-painted at rest so the caption can
-            // show behind it; the editor only appears while editing.
             UpdateEditorVisibility();
             Invalidate();
         }
     }
 
-    /// <summary>
-    /// Optional unit painted just to the right of the value inside the field
-    /// (e.g. "dB" or "Hz"), in a muted tone so the number stays primary. It
-    /// reserves its own space, so the value never overlaps it. Empty by default.
-    /// </summary>
+    /// <summary>Muted unit right of the value; reserves its own space.</summary>
     [Browsable(true)]
     [DefaultValue("")]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
@@ -306,10 +278,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         }
     }
 
-    /// <summary>
-    /// Optional default value. When set, a small "R" reset button appears to the
-    /// right of the spin buttons that restores this value.
-    /// </summary>
+    /// <summary>When set, an "R" reset button restores this value.</summary>
     [Browsable(true)]
     [DefaultValue(null)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Visible)]
@@ -398,9 +367,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     protected override void OnEnabledChanged(EventArgs e)
     {
         base.OnEnabledChanged(e);
-        // A disabled control paints its own value (see UpdateEditorVisibility) — the
-        // native EDIT under a disabled parent is coloured by Windows, not by us.
-        // ReadOnly is a safety net against programmatic edits meanwhile.
+        // A disabled control self-paints its value (Windows colours a native EDIT under a disabled parent).
         editor.ReadOnly = readOnly || !Enabled;
         editor.ForeColor = Enabled ? ForeColor : UiPalette.TextDisabled;
         editor.BackColor = Enabled ? BackColor : UiPalette.ButtonDisabledBackground;
@@ -434,8 +401,6 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     {
         base.OnEnter(e);
         Invalidate();
-        // A hidden editor (inline-label mode, at rest) cannot take focus; reveal
-        // it first so typing works and the caret shows.
         editor.Visible = true;
         if (!editor.Focused)
         {
@@ -454,11 +419,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
-        // Only a focused (i.e. clicked-into) field responds to the wheel. Merely
-        // hovering must not step the value — otherwise scrolling the channel list
-        // silently edits whatever field the cursor happens to pass over. When
-        // unfocused the wheel is left unconsumed so it bubbles to the AutoScroll
-        // parent and scrolls the list as expected.
+        // Only a focused field takes the wheel; unfocused it bubbles so scrolling the channel list does not edit fields.
         if (!Enabled || !ContainsFocus)
         {
             return;
@@ -473,10 +434,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             StepDown();
         }
 
-        // Consume the wheel so it only steps the value: otherwise WinForms bubbles
-        // it to an AutoScroll parent (e.g. the scrolling channel list) which then
-        // scrolls instead. The inner editor forwards its wheel here too, so this
-        // covers hovering over the number as well as the spin buttons.
+        // Consumed, or WinForms bubbles it to the AutoScroll parent. The inner editor forwards its wheel here too.
         if (e is HandledMouseEventArgs handled)
         {
             handled.Handled = true;
@@ -638,11 +596,6 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
                 TextFormatFlags.NoPadding);
         }
 
-        // Whenever the editor is hidden — inline-label mode at rest, or a disabled
-        // control, which hides it so the value is not left to the system's grey —
-        // paint the value here: the caption, if any, sits at the inner-left in a
-        // half-tone, and the value is right-aligned across the whole field and
-        // drawn last so its digits cover the caption where they meet.
         if (!editor.Visible)
         {
             Rectangle textBounds = editor.Bounds;
@@ -670,9 +623,6 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
                 TextFormatFlags.NoPadding);
         }
 
-        // The unit sits in the reserved slice just right of the number (whose
-        // right edge is the editor's right edge because the value is
-        // right-aligned), in a muted tone so the number stays primary.
         if (HasSuffix)
         {
             var suffixBounds = new Rectangle(
@@ -693,25 +643,16 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
 
     private bool HasSuffix => valueSuffix.Length > 0;
 
-    // A leading space separates the unit from the number ("-15 dB", "20000 Hz").
     private string SuffixDisplay => " " + valueSuffix;
 
     private int MeasureSuffixWidth() => HasSuffix
         ? TextRenderer.MeasureText(SuffixDisplay, Font, Size.Empty, TextFormatFlags.NoPadding).Width
         : 0;
 
-    // The editor is opaque and would hide the inline caption, so in inline-label
-    // mode it is shown only while the control is focused (i.e. being edited);
-    // otherwise the value is self-painted with the caption behind it. Without an
-    // inline label the editor is always visible and behaviour is unchanged.
+    // The opaque editor would hide the inline caption, so in inline-label mode it shows only while focused.
     private void UpdateEditorVisibility()
     {
-        // A disabled control hides the editor and paints the value itself. Keeping
-        // the inner EDIT's own Enabled=true is not enough: a native edit under a
-        // DISABLED PARENT is painted by Windows in the system's grey (109,109,109)
-        // whatever ForeColor says — 2.5:1 here, and it is the value in force that
-        // goes unreadable (#116). Self-painting is the only way the palette's
-        // colour actually reaches those digits.
+        // Disabled hides the editor: a native edit under a disabled parent is painted system grey (2.5:1), unreadable.
         bool shouldShow = Enabled && (!HasInlineLabel || ContainsFocus);
         if (editor.Visible != shouldShow)
         {
@@ -741,18 +682,11 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
 
         if (keyData == Keys.Enter)
         {
-            // A dialog's AcceptButton consumes Enter before the editor's KeyDown
-            // ever fires; commit here so the accept handler reads the typed text
-            // rather than the last committed value.
+            // AcceptButton consumes Enter before the editor's KeyDown; commit so the accept handler reads the typed text.
             bool hadPendingEdit = HasPendingEditorText;
             CommitEditorText();
 
-            // The Enter that lands a typed number stops here. Letting it through as
-            // well would fire the dialog's default button in the same keystroke —
-            // in the Virtual DSP auto-setup that means running the whole crossover
-            // proposal and closing the window while the user was still filling in a
-            // field. A second Enter, with nothing pending, reaches the accept button
-            // as usual, so the keyboard route to OK survives.
+            // The Enter that commits stops here, or it would also fire the default button; a second Enter reaches it.
             if (hadPendingEdit)
             {
                 return true;
@@ -771,19 +705,13 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        // DeviceDpi is only final once the handle exists in its monitor's context.
-        // A control created at runtime (e.g. an added Virtual DSP channel) lays its
-        // editor out at the default 96 DPI in the constructor, so without this the
-        // text stays offset inside a higher-DPI field. Designer-placed instances are
-        // masked by the form's startup scale pass; runtime-added ones are not.
+        // DeviceDpi is final only once the handle exists; runtime-added controls would keep a 96-DPI editor layout.
         LayoutEditor();
     }
 
     protected override void OnDpiChangedAfterParent(EventArgs e)
     {
         base.OnDpiChangedAfterParent(e);
-        // Moving the window to a monitor at another scale re-fires this; the inner
-        // editor must be re-laid-out for the new DeviceDpi.
         LayoutEditor();
     }
 
@@ -832,9 +760,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         }
     }
 
-    // True while the editor holds text that is not the committed value's own rendering:
-    // a half-typed number, an edited one, or something unparseable. Comparing against
-    // FormatValue is what UpdateEditorText writes, so an untouched field reads false.
+    // Compared against FormatValue (what UpdateEditorText writes), so an untouched field reads false.
     private bool HasPendingEditorText =>
         !suppressEditorSync &&
         editor != null &&
@@ -860,8 +786,6 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             suppressEditorSync = false;
         }
 
-        // When the value is self-painted (inline-label mode, editor hidden), the
-        // editor's own repaint does not cover it, so refresh the control.
         if (HasInlineLabel && !editor.Visible)
         {
             Invalidate();
@@ -874,9 +798,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         return currentValue.ToString(format, CultureInfo.CurrentCulture);
     }
 
-    // Snaps back to the default. Shares the read-only guard with the step paths so
-    // the reset button honours the lock too — otherwise ReadOnly blocks typing and
-    // spinning but a reset click still rewrites the value.
+    // Shares the read-only guard so ReadOnly also blocks reset.
     private void ResetToDefault()
     {
         if (readOnly || !defaultValue.HasValue)
@@ -887,17 +809,8 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         Value = defaultValue.Value;
     }
 
-    // The ladder a logarithmic step walks: rungs at anchor × 2 ^ (n / 96), rounded to
-    // what the field displays. Anchoring the ladder — rather than measuring a fresh
-    // step off the current value every time — is what makes the two directions exact
-    // opposites, so a step and a step straight back always land on the value they
-    // left. A measured step cannot promise that: the ratio rounds one way going out
-    // and another coming back, which sent 347 Hz down to 345 and back up to 348.
-    // The ladder is rebuilt wherever the value came from something other than a step —
-    // typed, loaded with a session, fitted by Auto Tune — and a value that is not the
-    // one the last step left behind is exactly what says so. A step the range clamped
-    // counts as a step: the ladder keeps its anchor and the position it climbed to, so
-    // the way back off the limit returns to the value that ran into it.
+    // Rungs at anchor x 2^(n/96): anchoring keeps both directions exact opposites (a measured step went 347 -> 345 -> 348).
+    // Rebuilt when the value came from anything but a step; a clamped step keeps its anchor and position.
     private decimal NextRung(int direction, out int position)
     {
         if (value != logarithmicRung || logarithmicAnchor <= 0)
@@ -909,13 +822,10 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         position = logarithmicPosition;
         if (value <= 0)
         {
-            // A logarithmic ladder says nothing about zero or below.
             return value + (direction * SmallestDisplayableStep);
         }
 
-        // Rungs that round onto the value we are already on are stepped over: below
-        // about 69 Hz a 96th of an octave is under half a Hz, and a spin button that
-        // moves nothing reads as a broken control.
+        // Rungs rounding onto the current value are skipped (below ~69 Hz a 96th octave is under 0.5 Hz).
         decimal rung;
         do
         {
@@ -931,15 +841,9 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         (double)logarithmicAnchor *
         Math.Pow(2, position / (double)LogarithmicStepsPerOctave)));
 
-    // The smallest change the field can show: 1, 0.1, 0.01 ... for its decimal places
-    // (the decimal constructor's scale argument is exactly that power of ten).
     private decimal SmallestDisplayableStep => new decimal(1, 0, 0, false, (byte)decimalPlaces);
 
-    // Commit first: stepping must apply to what the user typed, not overwrite
-    // uncommitted editor text with lastCommitted ± the step — and in logarithmic mode
-    // that committed value is also what the ladder is rebuilt on. A read-only field
-    // ignores every step path alike (spin buttons, wheel, arrow keys, reset) — the
-    // single choke point that makes ReadOnly a true lock, not just a typing block.
+    // Commit first so the step applies to typed text. The single read-only choke point for all step paths.
     private void Step(int direction)
     {
         if (readOnly)
@@ -957,9 +861,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         decimal previous = value;
         Value = NextRung(direction, out int position);
 
-        // The climb is recorded only when the value actually moved, so a wheel held
-        // against a limit does not wind the position up past the rung that first
-        // reached it — which is the one a step back has to come off.
+        // Record the climb only when the value moved, so a wheel held at a limit does not wind past the rung that reached it.
         if (value != previous)
         {
             logarithmicPosition = position;
@@ -983,8 +885,6 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         int verticalPadding = ScaleLogical(LogicalVerticalPadding);
         int buttonColumnWidth = GetButtonColumnWidth();
         int resetColumnWidth = GetResetColumnWidth();
-        // The unit suffix (if any) takes the rightmost slice of the text region;
-        // the editor keeps the rest so the number never overlaps the unit.
         int textAreaWidth = Math.Max(
             8,
             Width - buttonColumnWidth - resetColumnWidth - horizontalPadding
@@ -1108,10 +1008,6 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         ValueChanged?.Invoke(this, e);
     }
 
-    /// <summary>
-    /// Assigns a tooltip to the control and its inner text editor so it shows
-    /// regardless of whether the cursor is over the number or the spin buttons.
-    /// </summary>
     public void ApplyToolTip(WrappingToolTip toolTip, string text)
     {
         ArgumentNullException.ThrowIfNull(toolTip);
@@ -1127,8 +1023,6 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     public void EndInit()
     {
         initializing = false;
-        // Reconcile the batched assignments now that every property has landed:
-        // designer property order can no longer clamp Value against a default bound.
         if (maximum < minimum)
         {
             maximum = minimum;

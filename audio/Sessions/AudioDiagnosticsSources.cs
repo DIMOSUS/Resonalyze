@@ -1,10 +1,6 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Low-level capture counters a session can fold into an
-/// <see cref="AudioSessionDiagnostics"/> snapshot. Only backends that actually
-/// track them (WASAPI) implement it; MME/ASIO produce no diagnostics.
-/// </summary>
+/// <summary>Only WASAPI implements it; MME/ASIO produce no diagnostics.</summary>
 internal interface ICaptureDiagnosticsSource
 {
     string EndpointId { get; }
@@ -14,7 +10,6 @@ internal interface ICaptureDiagnosticsSource
     long TimestampErrors { get; }
 }
 
-/// <summary>Low-level render counters for an <see cref="AudioSessionDiagnostics"/> snapshot.</summary>
 internal interface IRenderDiagnosticsSource
 {
     string EndpointId { get; }

@@ -51,8 +51,7 @@ public partial class Form1
     {
         MeasurementSettingsFile.SweepMeasurementSettings preservedMeasurementSettings =
             measurementSettings.Measurement;
-        // The calibrations themselves survive the capture inside CaptureFrom: the
-        // measurement they are rebuilt from knows nothing about them.
+        // Calibrations survive inside CaptureFrom; the measurement knows nothing about them.
         measurementSettings.CaptureFrom(
             expSweepMeasurement,
             frequencyResponseOptions,
@@ -86,10 +85,7 @@ public partial class Form1
 
     private void FlushMeasurementSettings()
     {
-        // The EQ Wizard turns band edits into a settings change only once the bank
-        // goes quiet, so it is asked to land anything still in flight BEFORE the
-        // saver runs. Without this, closing the window within that pause writes the
-        // state from before the last edit and the tune silently rolls back.
+        // The wizard debounces band edits; land them before saving or closing within the pause rolls the tune back.
         eqWizardPanel.CommitPendingBankEdit();
         measurementSettingsSaver.Flush();
     }
@@ -117,8 +113,7 @@ public partial class Form1
                 object? keyBefore = viewResetKey?.Invoke();
                 apply(dialog);
                 SaveMeasurementSettings();
-                // When a setting changes the axis scale itself (e.g. linear <-> logarithmic),
-                // the old zoom is meaningless, so drop it and let the view refit.
+                // A scale change (linear/log) makes the old zoom meaningless: refit.
                 if (viewResetKey != null && !Equals(keyBefore, viewResetKey()))
                 {
                     plotViewports.Forget(CurrentMode);
@@ -156,18 +151,12 @@ public partial class Form1
         dialog.SetOptions(liveSpectrumOptions);
         LiveSpectrumRestartSnapshot after = LiveSpectrumRestartSnapshot.Capture(liveSpectrumOptions);
         SaveMeasurementSettings();
-        // The analysis mode is part of this snapshot, and it decides who owns Save.
         RefreshSaveAvailability();
 
         if (before != after)
         {
             await ApplyMeasurementConfigurationToControllersAsync();
-            // The snapshot names the ACQUISITION parameters. A running analyzer was
-            // just restarted onto a fresh accumulation; a stopped one still holds
-            // the previous setup's curve, which must not be redrawn under the new
-            // parameters — the display transform reads the options live, so e.g.
-            // the slope compensation would re-tilt a stopped pink RTA as if the
-            // excitation had been white.
+            // A stopped analyzer's curve must not be redrawn under new acquisition parameters (e.g. slope compensation re-tilting pink as white).
             if (!liveSpectrumController.InProgress)
             {
                 liveSpectrumController.DiscardCapturedData();
@@ -271,9 +260,7 @@ public partial class Form1
     }
 
     private sealed record LiveSpectrumRestartSnapshot(
-        // The analysis mode switches both the playback role of the signal and the
-        // accumulation path (transfer vs. mic-only), so changing it must restart a
-        // running capture — it must never flip mid-run under the accumulators.
+        // Changes signal role and accumulation path, so a running capture restarts rather than flipping mid-run.
         LiveAnalysisMode AnalysisMode,
         NoiseColor NoiseColor,
         WindowType WindowType,

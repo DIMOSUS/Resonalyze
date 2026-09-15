@@ -1,12 +1,6 @@
 namespace Resonalyze;
 
-/// <summary>
-/// Debounces a save action: <see cref="Schedule"/> (re)arms the delay so the
-/// write happens once the UI has been quiet, <see cref="Flush"/> writes a
-/// pending save immediately (close paths, panel-closed hooks). Replaces the
-/// timer + pending-flag pair that lived as raw fields on <c>Form1</c>.
-/// UI-thread only — built on the WinForms timer.
-/// </summary>
+/// <summary>UI-thread only (WinForms timer). <see cref="Flush"/> writes a pending save now, for close paths.</summary>
 internal sealed class DebouncedSaver : IDisposable
 {
     private readonly System.Windows.Forms.Timer timer;

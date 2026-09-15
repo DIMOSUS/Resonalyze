@@ -13,8 +13,6 @@ public sealed class MinimumPhaseTests
     [InlineData(0.9)]
     public void Reconstructs_PhaseOfMinimumPhaseFilter_FromMagnitudeAlone(double zero)
     {
-        // H(z) = 1 - zero * z^-1 with |zero| < 1 is minimum phase, so the phase
-        // recovered from its magnitude must match the filter's true phase.
         Complex[] spectrum = TransferFunction(impulse: [1.0, -zero]);
         double[] magnitude = spectrum.Select(value => value.Magnitude).ToArray();
 
@@ -31,8 +29,6 @@ public sealed class MinimumPhaseTests
     [Fact]
     public void PureDelay_HasFlatMagnitude_AndZeroMinimumPhase()
     {
-        // A pure delay is all-pass: its phase is entirely excess, so the
-        // minimum-phase component derived from the (flat) magnitude is ~0.
         var impulse = new double[Length];
         impulse[37] = 1.0;
         Complex[] spectrum = TransferFunction(impulse);
@@ -63,9 +59,6 @@ public sealed class MinimumPhaseTests
     [Fact]
     public void NonMinimumPhaseFilter_DiffersFromMeasuredPhase()
     {
-        // H(z) = 1 - 1.5 z^-1 has a zero outside the unit circle, so it is NOT
-        // minimum phase: the recovered minimum phase must differ from the measured
-        // phase by a non-trivial (all-pass) excess component.
         Complex[] spectrum = TransferFunction(impulse: [1.0, -1.5]);
         double[] magnitude = spectrum.Select(value => value.Magnitude).ToArray();
 
@@ -92,10 +85,7 @@ public sealed class MinimumPhaseTests
     [InlineData(1e+12)]
     public void FromMagnitude_IsInvariantToOverallGain(double gain)
     {
-        // Minimum phase is determined by the SHAPE of log|H|: an overall gain
-        // only moves the zeroth cepstral coefficient. With an absolute floor a
-        // quiet measurement's spectrum sank into the clamp and its phase
-        // changed with its level — the floor must be relative to the peak.
+        // Minimum phase depends on log|H| shape; an absolute floor made a quiet capture's phase level-dependent.
         double[] magnitude = new double[Length];
         for (int i = 0; i < Length; i++)
         {
@@ -116,8 +106,7 @@ public sealed class MinimumPhaseTests
     [Fact]
     public void FromMagnitude_NonFiniteBinsDoNotPoisonTheCepstrum()
     {
-        // A NaN magnitude used to slip through Math.Max into the log and turn
-        // the whole cepstrum — and every phase bin — into NaN.
+        // A NaN magnitude once slipped through Math.Max and poisoned the whole cepstrum.
         double[] magnitude = new double[Length];
         Array.Fill(magnitude, 1.0);
         magnitude[100] = double.NaN;
@@ -129,9 +118,7 @@ public sealed class MinimumPhaseTests
         Assert.All(phase, value => Assert.True(double.IsFinite(value)));
     }
 
-    // FromSpectrum is a reserve API with no caller in the app yet, so these two
-    // are its only consumer — without them nothing would notice the overload
-    // drifting away from the FromMagnitude it delegates to.
+    // FromSpectrum is a reserve API: these are its only consumers.
     [Fact]
     public void FromSpectrum_MatchesFromMagnitudeOfTheSameSpectrum()
     {
@@ -151,8 +138,6 @@ public sealed class MinimumPhaseTests
     [Fact]
     public void FromSpectrum_IgnoresTheSpectrumsOwnPhase()
     {
-        // The whole point of the overload: it reads magnitude only, so rotating
-        // every bin must not move the result.
         Complex[] spectrum = TransferFunction(impulse: [1.0, -0.6]);
         Complex rotation = Complex.FromPolarCoordinates(1.0, 0.7);
         Complex[] rotated = spectrum.Select(value => value * rotation).ToArray();
@@ -162,10 +147,7 @@ public sealed class MinimumPhaseTests
 
         for (int bin = 0; bin < original.Length; bin++)
         {
-            // Not bit-exact: |z * r| differs from |z| in the last bits even for
-            // |r| = 1, and the log/FFT/IFFT round trip carries that through
-            // (~5e-13 observed). A genuine phase dependency would show up orders
-            // of magnitude above this.
+            // |z * r| differs from |z| in the last bits (~5e-13 observed).
             Assert.Equal(original[bin], afterRotation[bin], 10);
         }
     }

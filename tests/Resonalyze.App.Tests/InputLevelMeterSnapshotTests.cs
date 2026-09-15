@@ -10,8 +10,6 @@ public sealed class InputLevelMeterSnapshotTests
 
         InputLevelMeterEntry merged = superseded.Merge(newest);
 
-        // The -2 dBFS window never reached the UI on its own; losing it is what
-        // makes a peak meter under-read a transient.
         Assert.Equal(-2, merged.PeakDbFs);
         Assert.Equal(-26, merged.RmsDbFs);
     }
@@ -33,8 +31,6 @@ public sealed class InputLevelMeterSnapshotTests
     {
         var loud = new InputLevelMeterEntry(true, -1, -9, true, false);
 
-        // A channel that has gone away, then one that has just appeared: in
-        // neither direction does the older reading describe the newer channel.
         Assert.Equal(
             InputLevelMeterEntry.Unavailable,
             loud.Merge(InputLevelMeterEntry.Unavailable));
@@ -65,7 +61,6 @@ public sealed class InputLevelMeterSnapshotTests
         var second = new InputLevelMeterEntry(true, -40, -44, false, false);
         var third = new InputLevelMeterEntry(true, -38, -42, false, false);
 
-        // How the dispatcher folds: each superseded value into the next.
         InputLevelMeterEntry merged = first.Merge(second).Merge(third);
 
         Assert.Equal(-3, merged.PeakDbFs);

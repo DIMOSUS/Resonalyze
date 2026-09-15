@@ -3,14 +3,7 @@ using System.Text;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The cut-only gain balance: eligibility (octave rule over the crossover
-/// band), 1/f-weighted band levels, the requested L-R level difference
-/// (LEFT minus RIGHT) with its clamp, and the joint cut-only solve (board
-/// levelling + L/R tilt as one system, shifted so the quietest participant
-/// lands at 0 dB of cut). Synthetic spectra are scaled delta impulses (flat
-/// by construction), so every expected level is plain arithmetic.
-/// </summary>
+/// <summary>Cut-only gain balance: octave eligibility, 1/f-weighted levels, L-R difference (LEFT minus RIGHT), joint solve.</summary>
 public sealed class GainBalanceEngineTests
 {
     private const int SampleRate = 48_000;
@@ -48,25 +41,19 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void LevelDifferenceDb_PassesTheRequestThroughAndClamps()
     {
-        // The tilt is the tuner's own figure now: inside the range it is
-        // taken verbatim, with no derivation from the scene offset.
         Assert.Equal(0.0, GainBalanceEngine.LevelDifferenceDb(0), 9);
         Assert.Equal(2.0, GainBalanceEngine.LevelDifferenceDb(2.0), 9);
         Assert.Equal(-1.5, GainBalanceEngine.LevelDifferenceDb(-1.5), 9);
-        // Past the range a "level difference" is one side switched off.
+        // Past the range a 'level difference' is one side switched off.
         Assert.Equal(6.0, GainBalanceEngine.LevelDifferenceDb(40.0), 9);
         Assert.Equal(-6.0, GainBalanceEngine.LevelDifferenceDb(-40.0), 9);
-        // A non-finite request must not poison every target with NaN.
         Assert.Equal(0.0, GainBalanceEngine.LevelDifferenceDb(double.NaN), 9);
     }
 
     [Fact]
     public void Compute_ReadsTheDifferenceAsLeftMinusRight()
     {
-        // The one sign the whole feature hangs on: the request is L-R, so the
-        // typical left-hand-drive figure (-1 dB) must land on the LEFT board
-        // as the cut — reading it as R-L would attenuate the far side and
-        // push the image the wrong way.
+        // The request is L-R: -1 dB must cut the LEFT board, or the image moves the wrong way.
         var leftMid = Input("mid L", 1.0);
         GainBalanceInput rightMid = Input(
             "mid R", 1.0, rightSide: true, leftPeer: leftMid.Channel);
@@ -77,8 +64,7 @@ public sealed class GainBalanceEngineTests
 
         Assert.Equal(-1.0, results[0].ProposedGainDb, 1);
         Assert.Equal(0.0, results[1].ProposedGainDb, 1);
-        // The log is written in the current culture (unlike the report, which
-        // is invariant), so the expectation is formatted the same way.
+        // The log uses the current culture (the report is invariant).
         Assert.Contains(
             $"L-R level difference {-1.0:+0.00;-0.00} dB (positive: left side louder)",
             log.ToString());
@@ -87,16 +73,13 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void SkipReason_OctaveRuleAndGates()
     {
-        // 80-3000 Hz: 3.3 of 5.2 octaves above 300 — eligible.
         Assert.Null(GainBalanceEngine.SkipReason(80, 3_000, true, false));
-        // 60-500 Hz: 0.74 of 3.06 octaves above 300 (24 %) — a LINEAR-Hz
-        // fraction would read 45 % and wrongly qualify it.
+        // 0.74 of 3.06 octaves above 300 (24 %); a linear-Hz fraction would read 45 %.
         Assert.NotNull(GainBalanceEngine.SkipReason(60, 500, true, false));
-        // Entirely below the floor.
         Assert.NotNull(GainBalanceEngine.SkipReason(40, 250, true, false));
         // No crossover: the 20-20000 fallback band would qualify anything.
         Assert.NotNull(GainBalanceEngine.SkipReason(20, 20_000, false, false));
-        // A shared mono channel's gain moves both boards at once.
+        // A shared mono channel's gain moves both boards.
         Assert.NotNull(GainBalanceEngine.SkipReason(300, 3_000, true, true));
     }
 
@@ -113,9 +96,7 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void WeightedBandLevelDb_WeighsPerOctaveNotPerHz()
     {
-        // Octave 100-200 Hz at power 1, octave 200-400 Hz at power 0.01: the
-        // 1/f weight gives each octave an equal vote -> mean (1+0.01)/2. An
-        // unweighted per-Hz mean would give the upper octave twice the bins.
+        // 1/f weight gives each octave an equal vote; a per-Hz mean would double the upper octave.
         var power = new double[512];
         for (int bin = 100; bin < 200; bin++)
         {
@@ -139,7 +120,6 @@ public sealed class GainBalanceEngineTests
             GainBalanceEngine.RobustSpreadDb(
                 [3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0]),
             9);
-        // One narrow surviving artifact must not dominate the figure.
         Assert.Equal(
             0.0,
             GainBalanceEngine.RobustSpreadDb([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0]),
@@ -152,9 +132,7 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void RobustSpreadDb_TooFewSamplesIsNotStability()
     {
-        // A handful of identical points means the band was too narrow to
-        // measure, not that the measurement was perfectly stable — NaN maps
-        // to Low confidence downstream.
+        // Identical points mean a band too narrow to measure: NaN maps to Low confidence.
         Assert.True(double.IsNaN(
             GainBalanceEngine.RobustSpreadDb([3.0, 3.0, 3.0, 3.0])));
         Assert.Equal(
@@ -190,7 +168,6 @@ public sealed class GainBalanceEngineTests
         Assert.InRange(results[0].ProposedGainDb, -12.2, -11.9);
         Assert.InRange(results[1].ProposedGainDb, -6.2, -5.9);
         Assert.Equal(0.0, results[2].ProposedGainDb, 1);
-        // Delta impulses are flat: the level is well-defined in-band.
         Assert.All(results, result =>
             Assert.Equal(AlignmentConfidence.High, result.Confidence));
     }
@@ -206,8 +183,6 @@ public sealed class GainBalanceEngineTests
         IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
             [leftMid, rightMid], levelDifferenceDb: -2.0, log);
 
-        // L-R = -2 dB asks for the left side 2 dB BELOW the right; cut-only,
-        // so the LEFT board takes the -2 dB and the right stays at 0.
         Assert.Equal(-2.0, results[0].ProposedGainDb, 1);
         Assert.Equal(0.0, results[1].ProposedGainDb, 1);
     }
@@ -230,9 +205,7 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void Compute_QuietRightForcesTheLeftDown()
     {
-        // The right mid is physically 3 dB quieter while the tuner wants it
-        // 2 dB LOUDER than the left: sequential "level left, then match right"
-        // would need a +boost. The joint solve cuts the left instead.
+        // Sequential levelling would need a boost; the joint solve cuts the left instead.
         var leftMid = Input("mid L", 1.0);
         GainBalanceInput rightMid = Input(
             "mid R", Math.Pow(10, -3.0 / 20), rightSide: true,
@@ -249,9 +222,7 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void Compute_ProposalIsAbsoluteNotIncremental()
     {
-        // Channel B's response already carries a -6 dB gain; the balance must
-        // subtract it back out and propose absolute gains, or repeated runs
-        // would keep stacking cuts.
+        // Existing chain gain must be subtracted, or repeated runs stack cuts.
         var log = new StringBuilder();
         IReadOnlyList<GainBalanceResult> results = GainBalanceEngine.Compute(
             [
@@ -268,11 +239,7 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void Compute_HalfEligiblePairIsKeptTogether()
     {
-        // The right mid's band (60-500 Hz per its own crossover) fails the
-        // octave rule while the left qualifies: adjusting the left alone
-        // would break the promised L/R relation for the pair — cut-only
-        // forbids the boost that could restore it — so BOTH sides are kept,
-        // each naming the twin's reason.
+        // One twin fails the octave rule: both are kept, since cut-only cannot restore the pair relation.
         var leftMid = Input("mid L", 1.0);
         GainBalanceInput rightMid = Input(
             "mid R", 1.0, bandLowHz: 60, bandHighHz: 500,
@@ -286,7 +253,6 @@ public sealed class GainBalanceEngineTests
         Assert.False(results[0].Adjusted);
         Assert.Contains("right side ineligible", results[0].SkipReason);
         Assert.False(results[1].Adjusted);
-        // The unpaired tweeter still levels normally (alone -> no cut).
         Assert.True(results[2].Adjusted);
         Assert.Equal(0.0, results[2].ProposedGainDb, 1);
     }
@@ -294,10 +260,7 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void Compute_NoSharedBandReadsLowGainConfidence()
     {
-        // Both sides qualify individually but their crossover bands do not
-        // overlap: the L-R relation the right gain equalizes was never
-        // measured, so its confidence must read Low instead of silently
-        // grading the channel's own in-band flatness.
+        // Non-overlapping crossover bands: the L-R relation was never measured, so Low confidence.
         var leftMid = Input("mid L", 1.0, bandLowHz: 2_000, bandHighHz: 20_000);
         GainBalanceInput rightMid = Input(
             "mid R", 1.0, bandLowHz: 300, bandHighHz: 600,
@@ -316,11 +279,7 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void Compute_DeadChannelCannotDragTheBoardDown()
     {
-        // A noise-only/broken capture still reads a FINITE level (-80 dB
-        // here) and, being the quietest eligible channel, would become the
-        // cut-only target for the whole board - proposing ~-80 dB gains that
-        // the settings model (|GainDb| <= 60) would refuse to save. The
-        // credibility gate must skip it instead.
+        // A dead capture reads a finite -80 dB and would become the cut target (beyond the |GainDb| <= 60 model).
         var mid = Input("mid", 1.0);
         var dead = Input("dead", 1e-4); // -80 dB, flat -> "stable"
         var log = new StringBuilder();
@@ -332,8 +291,6 @@ public sealed class GainBalanceEngineTests
         Assert.Contains("below the loudest", results[1].SkipReason);
         Assert.True(results[0].Adjusted);
         Assert.Equal(0.0, results[0].ProposedGainDb, 1);
-        // The independent invariant guard: whatever happens upstream, a
-        // proposal never leaves the settings model's range.
         Assert.All(results, result =>
             Assert.True(result.ProposedGainDb >= -GainBalanceEngine.MaxProposedCutDb));
     }
@@ -341,11 +298,7 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void Compute_ClampsProposalToSupportedGainRange()
     {
-        // A 70 dB level split: the credibility gate skips the quiet capture
-        // outright (first line of defense), and independently no proposal
-        // may ever leave the chain gain range — the ONE shared constant the
-        // project validator enforces, so an applied proposal can never
-        // produce a project that refuses to save.
+        // No proposal may leave the chain gain range the project validator enforces.
         var loud = Input("loud", 1.0);
         var quiet = Input("quiet", Math.Pow(10, -70.0 / 20));
         var log = new StringBuilder();
@@ -365,9 +318,7 @@ public sealed class GainBalanceEngineTests
     [Fact]
     public void Compute_DeadRightSideSkipsItsPairToo()
     {
-        // The gate and the pair rule compose: a dead right capture is gated,
-        // and its healthy left twin must not be levelled alone - the pair's
-        // L/R relation could not follow.
+        // Gate and pair rule compose: a gated right capture keeps its left twin unlevelled.
         var leftMid = Input("mid L", 1.0);
         GainBalanceInput rightMid = Input(
             "mid R", 1e-4, rightSide: true, leftPeer: leftMid.Channel);
@@ -404,7 +355,6 @@ public sealed class GainBalanceEngineTests
         Assert.Null(results[1].Confidence);
         Assert.False(results[2].Adjusted);
         Assert.Equal(1.5, results[2].ProposedGainDb, 9);
-        // The eligible channel still levels normally (alone -> no cut).
         Assert.True(results[0].Adjusted);
         Assert.Equal(0.0, results[0].ProposedGainDb, 1);
     }

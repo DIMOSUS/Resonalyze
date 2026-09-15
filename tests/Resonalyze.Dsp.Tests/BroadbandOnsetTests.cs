@@ -20,10 +20,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_DeltaOnsetSitsAtTheDeltaWithTinySpread()
     {
-        // A delta's Hilbert envelope carries a short ~1/t skirt, so the low
-        // thresholds cross a couple of samples before the peak — the crossings
-        // must still hug the delta within a few samples, with a spread far
-        // below any crossover period the lock would gate on.
+        // A delta's ~1/t Hilbert skirt crosses low thresholds a couple of samples early.
         Complex[] impulseResponse = Silence(4096);
         const int DeltaIndex = 1_000;
         impulseResponse[DeltaIndex] = Complex.One;
@@ -41,9 +38,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_FindsAFrontParkedBeyondTheSearchWindowByChainLatency()
     {
-        // Field case (3RC): a DSP/amplifier chain buffers the playback for
-        // ~160 ms, beyond the 80 ms peak-search window — the onset must land
-        // on the real front there, not on the buffer-seam residue at zero.
+        // 3RC field case: ~160 ms buffering, beyond the 80 ms peak-search window.
         Complex[] impulseResponse = Silence(131_072);
         const int DeltaIndex = 7_680; // 160 ms at 48 kHz
         impulseResponse[DeltaIndex] = Complex.One;
@@ -60,9 +55,6 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_CrossingsAreMonotonicInTheThreshold()
     {
-        // A slow Hann-windowed tone burst: the envelope rises over many samples,
-        // so the crossings must order early <= onset <= late and all sit before
-        // the envelope peak at the burst's center.
         Complex[] impulseResponse = Silence(8192);
         const int Start = 2_000;
         const int Length = 2_048;
@@ -87,12 +79,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_StrongerLateReflectionDoesNotUsurpTheFront()
     {
-        // A credible direct front (well within the first-arrival search depth)
-        // followed by a five-times-stronger reflection 20 ms later. Thresholds
-        // measured against the crop's GLOBAL maximum would put the 25 % and
-        // 50 % crossings on the reflection's front — tens of ms late, while
-        // the spread between them stayed deceptively tight. All three
-        // crossings must sit on the direct front instead.
+        // Thresholds against the crop's global maximum would land on a 5x reflection 20 ms later.
         Complex[] impulseResponse = Silence(8_192);
         const int DirectIndex = 480; // 10 ms
         impulseResponse[DirectIndex] = new Complex(0.2, 0.0);
@@ -111,13 +98,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_ReflectionsWithDifferentInterChannelDelayCannotSteer()
     {
-        // The field trap the onset lock must not fall into: two channels whose
-        // direct fronts are 2 ms apart while their strong reflections are only
-        // 0.1 ms apart. Global-maximum thresholds would latch onto the
-        // reflections and report a stable-looking 0.1 ms difference — four
-        // periods wrong at a 2 kHz junction, with every recovery path shut by
-        // the lock. Anchored to the credible first arrivals, all three
-        // threshold differences must read the true 2 ms.
+        // Fronts 2 ms apart, reflections 0.1 ms apart: global-maximum thresholds would read 0.1 ms, four periods wrong at 2 kHz.
         Complex[] BuildChannel(int directIndex, int reflectionIndex)
         {
             Complex[] impulseResponse = Silence(8_192);
@@ -141,9 +122,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_NoiseGradesBelowTheLockFloor()
     {
-        // A noise-only record still yields three finite crossings whose spread
-        // can look stable — only the envelope SNR exposes it. The grade must
-        // fall below the engine's lock floor so the onset lock stands down.
+        // Noise still yields stable-looking crossings; only the envelope SNR exposes it.
         var random = new Random(20_260_717);
         Complex[] impulseResponse = Silence(65_536);
         for (int i = 0; i < impulseResponse.Length; i++)
@@ -164,13 +143,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_ZeroPaddedTailDoesNotInflateTheSnr()
     {
-        // ApplyChain rounds every processed IR up to a power-of-two FFT
-        // length, so the record the engine analyzes carries a synthetic
-        // silent tail. The envelope noise floor is quantile-based, and half a
-        // record of manufactured silence used to collapse it: the same noise
-        // that grades ~6 dB raw graded ~60 dB padded — waving a noise-only
-        // record through every SNR gate in the engine. The padded grade must
-        // match the raw one and stay below the lock floor.
+        // ApplyChain's power-of-two silent tail collapsed the quantile floor (~6 dB noise graded ~60 dB).
         var random = new Random(20_260_717);
         Complex[] raw = Silence(65_536);
         for (int i = 0; i < raw.Length; i++)
@@ -200,13 +173,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_ShortRecordPaddedPastItsMidpointIsStillCaught()
     {
-        // The review catch on the padding trim's first cut: a SHORT input
-        // through ApplyChain gains the 8192-sample minimum tail and rounds
-        // up, so its content can end well BEFORE the record's midpoint (4096
-        // noise samples become a 16384 record). A midpoint-based padding
-        // signature waves that record through untrimmed. The signature is the
-        // content region's DENSITY instead: measured noise is dense right up
-        // to where the padding begins, however short the record.
+        // A short input ends before the padded midpoint; padding is detected by content density, not the midpoint.
         var random = new Random(20_260_719);
         Complex[] raw = Silence(4_096);
         for (int i = 0; i < raw.Length; i++)
@@ -236,12 +203,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_PaddingIsCaughtRegardlessOfTheLastSampleValue()
     {
-        // The review catch on the trim's midpoint-based first cut: whether it
-        // fired hinged on the value of the SINGLE last noise sample (one
-        // quiet sample pushed the detected content end below the midpoint
-        // and the whole padded record came back, ~60 dB again). Zero the
-        // last sample explicitly: the grade must still match the raw
-        // record's.
+        // A midpoint-based trim hinged on the single last sample; zero it explicitly.
         var random = new Random(20_260_720);
         Complex[] raw = Silence(65_536);
         for (int i = 0; i < raw.Length; i++)
@@ -270,14 +232,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_ApplyChainMetadataPinsTheAnalysisRange()
     {
-        // The engine's own path for a short import: a 4096-sample noise
-        // record through a REAL scale-only ApplyChain grows to 16384 (the
-        // 8192-sample minimum tail plus power-of-two rounding), content
-        // ending far before the record's midpoint. The ApplyChain
-        // validSampleCount metadata pins the analysis to the measured range
-        // no matter what any amplitude heuristic makes of the record — the
-        // read must equal an explicit crop to the metadata, and a noise-only
-        // record must stay below the lock floor.
+        // validSampleCount metadata must read exactly like an explicit crop.
         var random = new Random(20_260_721);
         var raw = new Complex[4_096];
         for (int i = 0; i < raw.Length; i++)
@@ -311,13 +266,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_DelayPrefixDoesNotInflateTheSnr()
     {
-        // The review catch on the end-only metadata: the chain DELAY shifts
-        // the content right and manufactures a silent PREFIX inside
-        // [0..end) — 25 ms of zeros ahead of a short noise record lifted its
-        // grade from ~6 to ~26 dB, past the 20 dB onset-lock floor. The
-        // range metadata must exclude the prefix too, and the reported
-        // positions must stay in full-record coordinates: the onset of the
-        // delayed record reads the delay later, not at zero.
+        // A chain delay's silent prefix lifted noise from ~6 to ~26 dB (past the 20 dB lock floor); positions stay in full-record coordinates.
         var random = new Random(20_260_724);
         var raw = new Complex[4_096];
         for (int i = 0; i < raw.Length; i++)
@@ -354,12 +303,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_NegativeDelayShrinksTheRangeEnd()
     {
-        // The review catch on the signed-delay arithmetic: ApplyChain
-        // supports a NEGATIVE delay (the content shifts left), but a range
-        // computed from max(0, delay) kept reporting [0, inputLength) — the
-        // vacated 1200-sample tail inside the range was manufactured silence
-        // and lifted a short noise record from ~6.6 to ~35.5 dB. The end must
-        // follow the signed delay.
+        // Negative delay: the range end must follow the signed delay (the vacated tail lifted noise to ~35.5 dB).
         var random = new Random(20_260_725);
         var raw = new Complex[4_096];
         for (int i = 0; i < raw.Length; i++)
@@ -396,11 +340,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_LongRingingChainMetadataStillBoundsTheAnalysis()
     {
-        // A 20 Hz / Q 10 PEQ boost rings for seconds, so ApplyChain's tail
-        // grows far past the minimum and the manufactured region is the
-        // filter kernel's decay, not zeros — no amplitude heuristic can tell
-        // it from measurement. The metadata still bounds the analysis at the
-        // measured range: the read equals an explicit crop to it.
+        // A 20 Hz / Q 10 ring fills the tail with kernel decay no heuristic can tell from measurement.
         var random = new Random(20_260_722);
         var raw = new Complex[65_536];
         for (int i = 0; i < raw.Length; i++)
@@ -431,11 +371,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_SubCredibleDirectFollowsTheDominantArrival()
     {
-        // A direct front below the first-arrival search depth (25 dB under the
-        // dominant peak) is invisible to every arrival detector in the tool;
-        // the onset then deliberately times the dominant arrival — consistent
-        // with the stage-1 seeds and the Time Alignment display — rather than
-        // guessing at energy the analysis chain does not trust.
+        // A front below the 25 dB search depth is untrusted: the onset times the dominant arrival, consistent with stage 1.
         Complex[] impulseResponse = Silence(8_192);
         impulseResponse[480] = new Complex(0.03, 0.0);  // -30 dB direct, 10 ms
         impulseResponse[1_440] = Complex.One;           // dominant, 30 ms
@@ -451,9 +387,7 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_FrontAtTheCropStartClampsToZero()
     {
-        // A front already above the thresholds at sample 0 (a crop boundary
-        // cutting into the rise) reads 0.0 — never a negative time, which
-        // would silently skew the onset anchor and the spread gate.
+        // Already above thresholds at sample 0: reads 0.0, never negative.
         Complex[] impulseResponse = Silence(4_096);
         impulseResponse[0] = Complex.One;
 
@@ -469,8 +403,6 @@ public sealed class BroadbandOnsetTests
     [Fact]
     public void EstimateBroadbandOnset_DelayShiftsTheOnsetOneToOne()
     {
-        // The onset difference between an IR and its delayed copy is the delay —
-        // the invariant the auto-delay onset anchor rests on.
         Complex[] original = Silence(8192);
         const int Start = 1_500;
         for (int i = 0; i < 512; i++)

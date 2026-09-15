@@ -3,12 +3,7 @@ using System.Text;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The direct-sound cut behind the correlation view's "PHAT direct" curve and
-/// the alignment engine's direct-coherence witness
-/// (<see cref="VirtualCrossoverAnalysis.CutDirectSound"/>), and the witness's
-/// bearing on a junction search.
-/// </summary>
+/// <summary>The direct-sound cut (<see cref="VirtualCrossoverAnalysis.CutDirectSound"/>) behind 'PHAT direct' and the direct-coherence witness.</summary>
 public sealed class DirectCoherenceTests
 {
     private const int SampleRate = 48_000;
@@ -32,10 +27,7 @@ public sealed class DirectCoherenceTests
     [Fact]
     public void CutDirectSound_KeepsTheFrontAndDropsTheReflection()
     {
-        // A direct front with a strong reflection 4 crossover periods behind
-        // it (2.67 ms at 1.5 kHz): the cut must keep the front at full weight
-        // and remove the reflection entirely — that reflection owning the
-        // whitened extremum is the very failure the cut exists to prevent.
+        // A reflection owning the whitened extremum is the failure the cut prevents.
         Complex[] ir = Impulse();
         Complex[] reflection = Impulse(4.0 * 1000.0 / 1_500, 0.9);
         for (int i = 0; i < ir.Length; i++)
@@ -50,7 +42,6 @@ public sealed class DirectCoherenceTests
             4.0 / 1_500 * SampleRate);
         Assert.Equal(1.0, cut[BasePosition].Magnitude, 2);
         Assert.Equal(0.0, cut[reflectionAt].Magnitude, 6);
-        // One period behind the front is still inside the two-period plateau.
         int onePeriod = BasePosition + (int)Math.Round(
             1.0 / 1_500 * SampleRate);
         Assert.True(
@@ -63,13 +54,7 @@ public sealed class DirectCoherenceTests
     [Fact]
     public void CutDirectSound_HonorsTheValidRange()
     {
-        // An in-band artifact ahead of the record's valid content — the shape
-        // a chain's group-delay padding or a capture glitch leaves. Without
-        // the range the front detector marks the artifact and the cut windows
-        // the wrong event; with the range the artifact is outside the
-        // analysis and the cut lands on the real front. The engine's
-        // snapshots always carry the range — this pins that the cut actually
-        // takes it.
+        // An in-band artifact before the valid range: the cut must honour the range and land on the real front.
         Complex[] ir = Impulse(amplitude: 1.0);              // real front
         Complex[] artifact = Impulse(-10.0, amplitude: 0.6); // 10 ms earlier
         for (int i = 0; i < ir.Length; i++)
@@ -85,14 +70,10 @@ public sealed class DirectCoherenceTests
         Complex[] guarded = VirtualCrossoverAnalysis.CutDirectSound(
             ir, SampleRate, 750, 3_000, 1_500, validRange);
 
-        // Blind, the window opens on the artifact and the real front sits
-        // 10 ms behind it — far outside a two-period cut at 1.5 kHz.
         Assert.True(
             blind[artifactAt].Magnitude > 0.5,
             "without the range the artifact should anchor the cut");
         Assert.Equal(0.0, blind[BasePosition].Magnitude, 6);
-        // Guarded, the artifact region is invisible to the detector and the
-        // cut holds the real front at full weight.
         Assert.Equal(0.0, guarded[artifactAt].Magnitude, 6);
         Assert.Equal(1.0, guarded[BasePosition].Magnitude, 2);
     }
@@ -100,16 +81,8 @@ public sealed class DirectCoherenceTests
     [Fact]
     public void Compute_WeighsTheDirectCoherenceOnAPolarityTie()
     {
-        // The archived C/D geometry: split corners (LP 1500, HP 1700, both
-        // 48 dB/oct Butterworth) leave the pair half an octave of usable
-        // overlap, where the summation score reads a lobe and its polarity
-        // partner as a near-tie. The witness must be ON at such a junction —
-        // its verdict in the log — and the settled lobe must never LOSE the
-        // direct-coherence comparison by the witness's own acting margin:
-        // whichever way the tie fell, the direct wavefronts agreed to within
-        // it. (What the witness is worth on junctions where the full record
-        // and the direct sound disagree is the session battery's business —
-        // rooms do that, chains alone do not.)
+        // Split corners (LP 1500 / HP 1700, BW48) leave a lobe/polarity-partner near-tie: the witness must run,
+        // and the settled lobe must never lose the direct-coherence comparison by the witness's acting margin.
         var midChain = new DspChannelChain(Crossover: new CrossoverSpec(
             CrossoverKind.LowPass,
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_500, 48)));
@@ -157,9 +130,6 @@ public sealed class DirectCoherenceTests
 
         Assert.Contains("direct coherence", log.ToString());
 
-        // Recompute the witness's own figures for the SETTLED state through
-        // the public APIs: the applied lobe against its polarity partner half
-        // a period away, both read on the direct cuts.
         IReadOnlyList<AlignmentSnapshot> final = Reprocess(alignment);
         List<SignalPoint> curve = VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
             VirtualCrossoverAnalysis.CutDirectSound(

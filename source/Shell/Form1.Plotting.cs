@@ -20,8 +20,6 @@ public partial class Form1
 
         if (descriptor.Mode == Mode.LiveSpectrum)
         {
-            // While running, the live timer owns the plot. When idle, restore the
-            // last curve, peak hold and overlays instead of an empty plot.
             if (!liveSpectrumController.InProgress)
             {
                 liveSpectrumController.RestoreLastCurve();
@@ -72,9 +70,7 @@ public partial class Form1
 
     private void CaptureActiveOverlaySlotsForCurrentMode()
     {
-        // Modes without a main plot (e.g. EQ Wizard) share the Frequency overlay
-        // slots but never draw them, so their "active" state is empty. Capturing it
-        // would wipe the real Frequency selection, so skip those modes.
+        // Modes without a main plot share Frequency slots but never draw them; capturing their empty set would wipe the selection.
         if (!GetActiveModeDescriptor().HasPlotView ||
             !OverlayCollection.SupportsMode(CurrentMode))
         {
@@ -88,8 +84,7 @@ public partial class Form1
 
     private void RestoreActiveOverlaySlotsForCurrentMode()
     {
-        // Restoring into a mode with no main plot would call Overlay.Show() with a
-        // null model, which unchecks the slots and loses the saved selection.
+        // Show() with a null model unchecks the slots and loses the saved selection.
         if (!GetActiveModeDescriptor().HasPlotView ||
             !OverlayCollection.SupportsMode(CurrentMode))
         {
@@ -103,11 +98,7 @@ public partial class Form1
         }
     }
 
-    // Saves a curve produced by the Virtual DSP tool as a Captured overlay
-    // in the first free Frequency Response slot; returns the slot, or null when
-    // all twelve are occupied. The file is picked up by Prepare() on the next
-    // switch to a frequency-based mode, and the slot joins the active set so it
-    // arrives already checked.
+    // Returns the slot, or null when all twelve are occupied. Prepare() loads it on the next frequency-mode switch, already checked.
     internal int? SaveVirtualCrossoverOverlay(string title, OverlayPoint[] points)
     {
         for (int slot = 1; slot <= OverlayFile.MaximumSlotCount; slot++)
@@ -119,7 +110,6 @@ public partial class Form1
             }
             catch (Exception)
             {
-                // An unreadable slot file still owns its slot.
                 occupied = true;
             }
             if (occupied)
@@ -145,8 +135,6 @@ public partial class Form1
         return null;
     }
 
-    // The bulk overlay buttons act only when the current mode actually has
-    // populated overlay slots to show or hide.
     private void RefreshOverlayButtons()
     {
         bool hasOverlays = OverlaysAvailableForCurrentMode() &&
@@ -209,8 +197,6 @@ public partial class Form1
         virtualCrossoverPanel.Visible = descriptor.ShowsVirtualCrossoverPanel;
         firConstructorPanel.Visible = descriptor.ShowsFirConstructorPanel;
         virtualDspMetricLabel.Visible = descriptor.ShowsVirtualCrossoverPanel;
-        // The warning box only claims its corner when the panel has something to
-        // warn about; its text survives the mode switch that hid it.
         virtualDspWarningLabel.Visible = descriptor.ShowsVirtualCrossoverPanel &&
             virtualDspWarningLabel.Text.Length > 0;
         if (descriptor.ShowsVirtualCrossoverPanel)
@@ -222,10 +208,7 @@ public partial class Form1
         UpdatePlotLabelsPanel();
     }
 
-    // Hiding the buttons is not enough on its own: Record Settings and History dock
-    // as separate windows beside the shell, so one left open before the switch would
-    // outlive the block it belongs to and keep offering measurement settings with no
-    // way to close it.
+    // Record Settings and History dock as separate windows, so they must be closed, not just their buttons hidden.
     private void SetCaptureControlsVisible(bool visible)
     {
         inputLevelMeterPanel.Visible = visible;
@@ -241,8 +224,7 @@ public partial class Form1
 
     private void UpdateRecordButtonForCurrentMode()
     {
-        // Before the tab guard: the analyzer's lifecycle is also when a capture
-        // appears or is discarded, and Save has to follow it whichever tab is open.
+        // Before the tab guard: Save follows capture appearance whichever tab is open.
         RefreshSaveAvailability();
         if (modeController.ActiveTab != ModeTab.LiveSpectrum)
         {
@@ -250,14 +232,8 @@ public partial class Form1
         }
 
         buttonRecord.Text = liveSpectrumController.InProgress ? "Stop" : "Start";
-        // The same moments change what the plot is corrected through: a run that
-        // starts freezes a calibration onto its accumulation, and one that is
-        // discarded hands the answer back to the rig.
         RefreshLiveCalibrationReadout();
-        // The controller calls this on every start/stop/completion — exactly when a
-        // live curve appears or settles, i.e. when an uncalibrated dB SPL choice
-        // becomes (or stops being) a real conflict. Follow it on the open panel, so
-        // the amber state is not frozen at whatever was true when the panel opened.
+        // Start/stop/completion is when an uncalibrated dB SPL choice becomes or stops being a conflict; refresh the amber state.
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
             panel => panel.RefreshAvailability(
                 plotModelFactory.LiveSplOffsetDb.HasValue,

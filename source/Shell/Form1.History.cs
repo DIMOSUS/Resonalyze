@@ -5,19 +5,11 @@ namespace Resonalyze;
 
 public partial class Form1
 {
-    // Monotonic token for EVERY request that makes some measurement the current one
-    // — a history entry activated from its window, and the Virtual DSP "Open in
-    // analyzers" jump by either of its routes. One counter on purpose: each of those
-    // reads asynchronously and then installs, so "the newest wins" only holds if they
-    // all bump and all check the SAME number. Two counters made it hold in one
-    // direction and not the other.
+    // One token for every request that makes a measurement current (history activation, VDSP Open in analyzers):
+    // "newest wins" only holds if all bump and check the same counter.
     private long measurementActivationRevision;
 
-    // Serializes the restore itself: the restore mutates the current IR, the
-    // controllers and the mode across several awaits, so two interleaved
-    // restores could half-apply each other even with the revision token —
-    // the gate makes each restore atomic and the token then guarantees the
-    // newest one runs (or re-runs) last.
+    // Makes each multi-await restore atomic; the revision token then decides which one runs last.
     private readonly SemaphoreSlim historyRestoreGate = new(1, 1);
 
     private void buttonHistory_Click(object sender, EventArgs e)
@@ -65,54 +57,28 @@ public partial class Form1
     private async void HandleHistoryEntryActivated(Guid entryId) =>
         await ActivateHistoryEntryAsync(entryId, ++measurementActivationRevision);
 
-    /// <summary>How an attempt to activate a history entry ended.</summary>
     private enum HistoryActivation
     {
-        /// <summary>The entry's measurement is now the current one.</summary>
         Landed,
 
-        /// <summary>
-        /// Nothing landed and nothing else is coming: the entry could not be read (its
-        /// backing file is gone), a sweep is running, or the load threw. A caller with
-        /// another way to the same measurement may take it.
-        /// </summary>
+        /// <summary>Nothing landed (file gone, sweep running, load threw); a caller may fall back.</summary>
         Unavailable,
 
-        /// <summary>
-        /// A NEWER activation is already replacing this one. Nothing landed here, but
-        /// the caller must not substitute anything either — its own fallback would
-        /// race the newer request and could overwrite it.
-        /// </summary>
+        /// <summary>A newer activation is replacing this one; the caller must not fall back.</summary>
         Superseded
     }
 
-    // The activation itself, as an awaitable step reporting how it ended: the Virtual
-    // DSP "Open in analyzers" jump runs it and then lands on a specific tab (which has
-    // to sequence AFTER the restore, since the snapshot selects its own saved mode) —
-    // and falls back to the channel's file only on Unavailable.
-    /// <param name="revision">
-    /// The activation token for THIS request, taken by the caller. A parameter rather
-    /// than something taken here, because one user action must own exactly one
-    /// revision: the Virtual DSP jump may run this and then fall back to the
-    /// channel's file, and if this method minted a second number the jump's own
-    /// check against the counter would be stale by construction — every fallback
-    /// dropped, which is precisely the case the fallback exists for.
-    /// </param>
+    /// <param name="revision">Taken by the caller: one user action owns one revision, so a VDSP fallback after this still passes its check.</param>
     private async Task<HistoryActivation> ActivateHistoryEntryAsync(
         Guid entryId, long revision)
     {
-        // Restoring a snapshot while a sweep is running would call Init on an
-        // active measurement and fail; ignore the activation instead.
+        // Restoring during a sweep would Init an active measurement.
         if (expSweepMeasurement.InProgress)
         {
             return HistoryActivation.Unavailable;
         }
 
-        // Two rapid activations race: a slow file-backed entry can finish
-        // loading AFTER a fast cached one and silently overwrite it, leaving
-        // the UI on the earlier selection. The newest activation wins; stale
-        // loads are dropped at every await boundary (the same revision guard
-        // the async plot rebuild uses).
+        // Stale loads are dropped at every await boundary, so a slow entry cannot overwrite a newer one.
         try
         {
             MeasurementHistorySnapshot? snapshot =
@@ -126,16 +92,12 @@ public partial class Form1
                 return HistoryActivation.Unavailable;
             }
 
-            // Before leaving the current entry, write the live working state back
-            // into it so that returning later restores the latest mode/settings/
-            // overlays rather than the state captured at save time.
+            // Write working state back into the entry being left, so returning restores the latest state.
             if (sessionTracker.CurrentEntryId != entryId)
             {
                 sessionTracker.PersistCurrentSessionState();
             }
 
-            // File-backed entries keep their file name in the plot titles (the same
-            // way a freshly saved or loaded IR does); in-memory entries have none.
             string? sourceFilePath = measurementHistoryService.FindById(entryId)
                 ?.SourceFilePath;
             await historyRestoreGate.WaitAsync();
@@ -149,8 +111,6 @@ public partial class Form1
                 await RestoreHistorySnapshotAsync(snapshot, sourceFilePath);
                 if (revision != measurementActivationRevision)
                 {
-                    // The measurement DID land, but a newer activation is already
-                    // replacing it; this caller must not act on it either way.
                     return HistoryActivation.Superseded;
                 }
 
@@ -285,11 +245,7 @@ public partial class Form1
             snapshot.MeasuredHighFrequencyHz,
             snapshot.MeasuredAtUtc);
         expSweepMeasurement.RestoreLevelSnapshot(snapshot.MeterSnapshot);
-        // Restore the anchor with the levels, exactly as opening the file would
-        // (Form1.FileOperations): both halves of K travel with the entry, so a
-        // restored measurement keeps the dB SPL axis it was measured on. The stored
-        // anchor was matched against its own input, so its capture identity stands
-        // in for the result's.
+        // Both halves of K travel with the entry, as when opening the file.
         AdoptRestoredResult(
             snapshot.SplCalibration,
             snapshot.MicrophoneCalibration,
@@ -305,17 +261,12 @@ public partial class Form1
         SetImpulseResponseSourceFile(sourceFilePath);
         sessionTracker.SetImpulseResponseAvailable(true);
         UpdatePeakInfo();
-        // The restored entry brings its own anchor, so whether dB SPL is fully
-        // available just changed — keep an open panel's warning in step, as loading
-        // a file does.
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
 
         if (snapshot.Session != null)
         {
-            // Switching mode re-prepares overlays from their own on-disk files and
-            // leaves them hidden, so restoring just re-shows the previously-active
-            // slots. Audio device and routing settings are intentionally untouched.
+            // Mode switch re-prepares overlays hidden, so only the active slots are re-shown. Audio settings untouched.
             await SelectModeAsync(NormalizeSessionMode(snapshot.Session.ActiveMode));
             overlayCollection.RestoreActiveSlots(
                 CurrentMode,
@@ -345,15 +296,10 @@ public partial class Form1
         }
     }
 
-    // Starts a fresh session: mode settings return to defaults and the current
-    // measurement and overlays are cleared. Audio device and routing settings are
-    // preserved. The active history entry is saved first; the history list and the
-    // overlays' own on-disk files are left intact.
+    // Resets mode settings, measurement and overlays; keeps audio settings, history and overlay files. Saves the active entry first.
     private async Task StartNewSessionAsync()
     {
-        // Emptying the session is a decision about which measurement is current too:
-        // without this, a load or activation still reading would land afterwards and
-        // quietly un-empty it.
+        // Emptying the session supersedes any in-flight load or activation.
         measurementActivationRevision++;
         sessionTracker.PersistCurrentSessionState();
 
@@ -373,8 +319,6 @@ public partial class Form1
         ApplyMeasurementConfigurationToControllers();
         SaveMeasurementSettings();
 
-        // Re-preparing the default mode reloads overlays (left hidden) and draws an
-        // empty plot because there is no current measurement.
         await SelectModeAsync(ModeTab.Frequency);
 
         dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>

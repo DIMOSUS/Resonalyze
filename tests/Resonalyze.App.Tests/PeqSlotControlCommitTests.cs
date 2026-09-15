@@ -4,12 +4,7 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A strip's fields commit typed text when they lose focus or take Enter, which is
-/// enough while the application is running. It is not enough while it is being torn
-/// down: an OS shutdown persists the settings with the caret still in the box, and
-/// the value read there would be the one from before the number was typed.
-/// </summary>
+/// <summary>An OS shutdown persists settings with the caret still in a field, so typed text must commit on teardown.</summary>
 public sealed class PeqSlotControlCommitTests
 {
     [Fact]
@@ -20,7 +15,6 @@ public sealed class PeqSlotControlCommitTests
         Editor(slot.QInput).Text = Local(2.5m);
         Editor(slot.GainInput).Text = Local(-4.5m);
 
-        // Nothing has left the fields, so nothing has committed yet.
         Assert.NotEqual(315m, slot.FrequencyInput.Value);
 
         slot.CommitPendingText();
@@ -57,8 +51,6 @@ public sealed class PeqSlotControlCommitTests
         Assert.Equal(-3m, slot.GainInput.Value);
     }
 
-    // The editor is the control's own inner TextBox; the tests reach it the same way
-    // DarkNumericUpDownEnterKeyTests does, since typing is what they simulate.
     private static TextBox Editor(DarkNumericUpDown control) =>
         (TextBox)typeof(DarkNumericUpDown)
             .GetField("editor", BindingFlags.Instance | BindingFlags.NonPublic)!

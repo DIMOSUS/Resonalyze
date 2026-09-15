@@ -2,18 +2,8 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Owns the microphone-calibration state: resolves a calibration id to a curve —
-/// the configured 0° file (including the legacy <c>calibration.txt</c>
-/// fallback), one of the user's additional files, or a curve estimated from one
-/// of those for an angle of incidence — caches what it builds, and reports each
-/// unusable entry at most once per session through the callback.
-/// <see cref="Get"/> runs on <c>Task.Run</c> plot-build workers as well as the UI
-/// thread, so all mutable state is guarded here and the problem callback must
-/// marshal to the UI itself. The definition list is snapshotted rather than read
-/// live: the settings list it comes from is edited on the UI thread while those
-/// workers are running.
-/// </summary>
+/// <summary>Resolves calibration ids to curves (0 deg file, additional files, angle estimates), caches them, reports each unusable entry once.
+/// <see cref="Get"/> runs on plot-build workers too: state is locked, definitions snapshotted, and the callback must marshal to UI.</summary>
 internal sealed class MicrophoneCalibrationService
 {
     private readonly object sync = new();
@@ -42,12 +32,7 @@ internal sealed class MicrophoneCalibrationService
         definitions = Snapshot();
     }
 
-    /// <summary>
-    /// Every selectable calibration in order — the 0° slot first, then the
-    /// additional entries — with the name to show and whether it currently
-    /// resolves. Drives the selectors, which keep an unavailable entry
-    /// selectable so a temporarily missing file does not erase the choice.
-    /// </summary>
+    /// <summary>Unavailable entries stay selectable so a temporarily missing file does not erase the choice.</summary>
     public IReadOnlyList<MicrophoneCalibrationEntry> GetEntries()
     {
         MicrophoneCalibrationDefinition[] current = definitions;
@@ -90,9 +75,6 @@ internal sealed class MicrophoneCalibrationService
         MicrophoneCalibrationDefinition? definition = Find(current, calibrationId);
         if (definition == null)
         {
-            // A view can outlive the entry it pointed at (a deleted entry, a
-            // project from another machine). Say so once instead of silently
-            // dropping the correction.
             ReportOnce(
                 $"calibration:{calibrationId}",
                 $"Microphone calibration '{calibrationId}' is no longer configured.");
@@ -104,12 +86,7 @@ internal sealed class MicrophoneCalibrationService
             : GetFile(definition.Path);
     }
 
-    /// <summary>
-    /// Drops the cached files and re-reads the configured entries, so the next
-    /// <see cref="Get"/> reflects the edited list (called whenever a calibration
-    /// is selected, edited or cleared). The problem reports deliberately
-    /// survive: each unusable entry warns once per session, not once per edit.
-    /// </summary>
+    /// <summary>Problem reports survive invalidation: one warning per entry per session.</summary>
     public void InvalidateCache()
     {
         lock (sync)
@@ -136,12 +113,7 @@ internal sealed class MicrophoneCalibrationService
             ? HasUsableData(ResolveBasePath(definition, current))
             : HasUsableData(definition.Path);
 
-    // Availability means the entry yields a real correction, so an existing but
-    // unparsable file counts as unavailable: it resolves to a calibration whose
-    // every correction is 0 dB, which a selector marked "ready" would hide.
-    // Loaded through the same cache as the analysis path, and deliberately
-    // WITHOUT reporting: merely listing the entries must not raise the warning
-    // that belongs to actually correcting a measurement with them.
+    // An unparsable file resolves to all-0 dB, so it counts as unavailable. No reporting: listing must not raise the correction warning.
     private bool HasUsableData(string? path) =>
         Exists(path) && GetLoaded(path!, report: false).HasData;
 
@@ -173,15 +145,12 @@ internal sealed class MicrophoneCalibrationService
         }
 
         CalibrationFile baseCalibration = GetLoaded(basePath);
-        // On axis the estimate is the identity, so the source curve is returned
-        // as it is rather than run through a model that would add zero.
         if (definition.AngleDegrees <= 0.0)
         {
             return baseCalibration;
         }
 
-        // Keyed by the recipe, not by the entry id: an edited angle or diameter
-        // must not read the previous curve back out of the cache.
+        // Keyed by recipe, so an edited angle or diameter does not hit the old curve.
         string cacheKey = FormattableString.Invariant(
             $"angle:{definition.AngleDegrees:R}:{definition.FrontDiameterMm:R}:{definition.Grid}:{definition.Reference}:{basePath}");
         lock (sync)
@@ -197,8 +166,7 @@ internal sealed class MicrophoneCalibrationService
         CalibrationFile angled = CalibrationFile.CreateAngled(
             baseCalibration,
             estimate.DeltaDb);
-        // Two concurrent plot builds can both reach this point; the first insert
-        // wins so every caller sees the same instance.
+        // First insert wins so concurrent builds share one instance.
         lock (sync)
         {
             if (cache.TryGetValue(cacheKey, out CalibrationFile? raced))
@@ -239,10 +207,7 @@ internal sealed class MicrophoneCalibrationService
             }
         }
 
-        // Reported on the LOAD RESULT rather than on the cache miss: an entry
-        // listed before it is used warms the cache, and hanging the warning on
-        // the miss would let that silence it. ReportOnce still keeps it to one
-        // warning per path per session.
+        // Reported on the load result, not the cache miss: listing warms the cache and would silence it.
         if (report && !calibrationFile.HasData)
         {
             ReportOnce(path, calibrationFile.LoadError);
@@ -251,8 +216,6 @@ internal sealed class MicrophoneCalibrationService
         return calibrationFile;
     }
 
-    // A configured-but-deleted file resolves to null, which would otherwise
-    // silently disable the correction for every plot.
     private void WarnIfConfiguredMissing(string? configured)
     {
         if (string.IsNullOrWhiteSpace(configured) || File.Exists(configured))
@@ -294,8 +257,6 @@ internal sealed class MicrophoneCalibrationService
         }
         catch (ArgumentException)
         {
-            // A hand-edited settings file can hold a path no file system accepts;
-            // the entry then simply has no file name to report.
             return null;
         }
     }

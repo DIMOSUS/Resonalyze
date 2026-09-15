@@ -8,22 +8,9 @@ using Xunit.Abstractions;
 namespace Resonalyze.App.Tests;
 
 /// <summary>
-/// What a clean set of spatial averages reads as, measured on the archived cabins —
-/// the figure <c>VirtualCrossoverPanel.HybridSpreadWarningDb</c> is set from.
+/// Measures the raw-pair datum on archived cabins to calibrate <c>VirtualCrossoverPanel.HybridSpreadWarningDb</c>.
+/// Reports rather than asserts: the number is evidence for a constant.
 /// </summary>
-/// <remarks>
-/// The datum is read on the RAW pair: each channel's capture with no chain against
-/// its own bypass response. That is deliberately not where the panel used to read it
-/// (the processed curves), because the chain does not cancel there — the impulse
-/// response is filtered and then gated while the capture is filtered analytically,
-/// and the band the median is taken over moves with the crossover. This measurement
-/// exists to say what the new datum reads on a set already known to be good, so the
-/// warning threshold is calibrated rather than guessed.
-/// <para>
-/// Reports rather than asserts a bound: the number is evidence for a constant, and a
-/// test that pinned it would fail on the next cabin for being a different car.
-/// </para>
-/// </remarks>
 public sealed class HybridOffsetDatumMeasurement(ITestOutputHelper output)
 {
     [SessionBatteryFact]
@@ -44,8 +31,7 @@ public sealed class HybridOffsetDatumMeasurement(ITestOutputHelper output)
             }
             catch
             {
-                // Not a session: the cabins keep their measurements beside them, and
-                // those are .json too.
+                // Cabins keep .json measurements beside their sessions.
                 continue;
             }
 
@@ -70,10 +56,7 @@ public sealed class HybridOffsetDatumMeasurement(ITestOutputHelper output)
             : report.ToString());
     }
 
-    // One side's per-channel datum, skipping the channels that cannot produce the raw
-    // pair. Everything is read UNCALIBRATED: the same correction on both curves
-    // cancels in their difference, so leaving it off keeps the figure independent of
-    // how calibration is resolved.
+    // Uncalibrated: the same correction on both curves cancels in their difference.
     private static List<double> MeasureSide(
         VirtualCrossoverProjectFile project,
         bool rightSide,
@@ -146,8 +129,6 @@ public sealed class HybridOffsetDatumMeasurement(ITestOutputHelper output)
         return offsets;
     }
 
-    // The panel's raw-curve rule: the steady-state window anchored on the response's
-    // own START, not its peak.
     private static List<SignalPoint> GatedRawCurve(
         Complex[] impulseResponse, int peakIndex, int sampleRate)
     {
@@ -171,8 +152,7 @@ public sealed class HybridOffsetDatumMeasurement(ITestOutputHelper output)
         return display.Points.ToList();
     }
 
-    // The panel's own band rule, restated here so the measurement cannot drift from
-    // it silently: the median difference inside 20 dB of the impulse response's peak.
+    // Restated panel rule: median difference within 20 dB of the IR peak.
     private static double? MedianDifference(
         IReadOnlyList<SignalPoint> capture, IReadOnlyList<SignalPoint> reference)
     {

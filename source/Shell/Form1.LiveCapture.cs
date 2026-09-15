@@ -1,21 +1,12 @@
 namespace Resonalyze;
 
-// Save and Load in MMM act on the mode's OWN measurement — the spatial average the
-// analyzer has been integrating — not on the impulse response the rest of the app
-// carries. The two are different measurements of different things, and a moving-mic
-// pass has nowhere else to be stored.
-//
-// The routing is deliberately narrow: MMM only, not the whole Live Spectrum mode. A
-// document describes a band-power (dB SPL) capture, which is what a spatial average
-// is defined on; a relative RTA or a transfer function would need fields this format
-// does not have, and inventing them for a case nobody asked for is how a format ends
-// up unable to say what it means.
+// MMM Save/Load act on the mode's own spatial average, not the app's impulse response. MMM only: the document
+// describes a band-power capture; relative RTA or transfer would need fields the format lacks.
 public partial class Form1
 {
     private const string LiveCaptureFilter =
         "Resonalyze moving-mic capture (*.json)|*.json|All files (*.*)|*.*";
 
-    // Shared by both Load buttons, so either can open either kind of measurement.
     internal const string MeasurementFileFilter =
         "Measurements (*.json;*.wav;*.txt)|*.json;*.wav;*.txt|" +
         "Resonalyze impulse response (*.json)|*.json|" +
@@ -31,35 +22,14 @@ public partial class Form1
         CurrentMode == Mode.LiveSpectrum &&
         plotModelFactory.EffectiveLiveAnalysisMode.IsSpatialAverageCapture();
 
-    /// <summary>
-    /// Enables Save for whichever measurement currently owns the button.
-    /// </summary>
-    /// <remarks>
-    /// Routing the CLICK was not enough. The button's availability was owned solely by
-    /// the impulse-response lifecycle, so on a fresh session — the normal way into a
-    /// moving-mic pass — Save stayed frozen and the routing could never fire. One
-    /// place decides it now, and both owners are asked; anything that changes either
-    /// answer (a mode switch, an analyzer start or stop, an analysis-mode apply) calls
-    /// here.
-    /// </remarks>
+    /// <summary>One place decides Save availability, asking both owners; call on anything that changes either answer.</summary>
     private void RefreshSaveAvailability() =>
         commandController.SetSaveAvailable(
             LiveCaptureOwnsSaveLoad
                 ? liveSpectrumController.HasCaptureToSave
                 : expSweepMeasurement.HasImpulseResponse);
 
-    /// <summary>
-    /// Opens <paramref name="path"/> as a stored capture when that is what it is,
-    /// switching the application to the mode it belongs to first. Returns false when
-    /// the file is not a capture, leaving it to the impulse-response loader.
-    /// </summary>
-    /// <remarks>
-    /// The shared Load button used to refuse a capture with "Unsupported file format",
-    /// which is true and useless: the file says exactly what it is and which analysis
-    /// mode produced it, so the application can simply go there. The analysis mode
-    /// follows the document rather than being left as it was — otherwise Save and Load
-    /// would still belong to the impulse response while a capture sits on the plot.
-    /// </remarks>
+    /// <summary>Opens a stored capture in its own mode; false when not a capture (IR loader takes it).</summary>
     private async Task<bool> TryOpenLiveCaptureAsync(string path)
     {
         if (!LiveCaptureDocument.TryLoad(path, out LiveCaptureDocument document))
@@ -73,16 +43,13 @@ public partial class Form1
             liveSpectrumOptions.AnalysisMode = document.Recipe.AnalysisMode;
             SaveMeasurementSettings();
             await ApplyMeasurementConfigurationToControllersAsync();
-            // The acquisition parameters just changed, so the previous setup's curve
-            // must go — and it must go BEFORE the capture is shown, since discarding
-            // clears the loaded one too.
+            // Discard before showing: discarding clears the loaded capture too.
             liveSpectrumController.DiscardCapturedData();
             dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
                 panel => panel.ForceAnalysisMode(document.Recipe.AnalysisMode));
         }
 
         liveSpectrumController.ShowLoadedCapture(document);
-        // The plot now holds someone else's capture, corrected by whatever they used.
         RefreshLiveCalibrationReadout();
         UpdateLastImpulseResponseDirectory(path);
         RefreshSaveAvailability();
@@ -91,9 +58,7 @@ public partial class Form1
 
     private async Task SaveLiveCaptureAsync()
     {
-        // A capture is a finished measurement, so the analyzer stops first — and stops
-        // the way the record button does, harvesting the final accumulation. Aborting
-        // instead would leave every frame since the last redraw out of the file.
+        // Stop like the record button (harvesting the final accumulation); aborting would lose frames since the last redraw.
         await liveSpectrumController.StopAndHoldAsync();
 
         LiveCaptureDocument? document = liveSpectrumController.BuildCaptureDocument();
@@ -124,9 +89,7 @@ public partial class Form1
             return;
         }
 
-        // The file name is the capture's identity for the rest of the workflow — it
-        // is what a channel attachment will show — so it becomes the title rather
-        // than leaving one more thing to type.
+        // The file name is the capture's identity (shown by channel attachments).
         document.Title = Path.GetFileNameWithoutExtension(dialog.FileName);
         commandController.FreezeSaveLoad();
         try
@@ -145,8 +108,7 @@ public partial class Form1
         }
         finally
         {
-            // Ask who owns the button rather than enabling it outright: a blanket
-            // enable leaves Save clickable in a mode that has nothing to save.
+            // A blanket enable would leave Save clickable in a mode with nothing to save.
             RefreshSaveAvailability();
             commandController.SetLoadAvailable(true);
         }
@@ -156,9 +118,6 @@ public partial class Form1
     {
         await StopLiveCaptureAsync();
 
-        // The same choice the main Load button offers. Which measurement a file holds
-        // is the file's business, not the button's: refusing an impulse response here
-        // told the user the format was wrong when only the mode was.
         using var dialog = new OpenFileDialog
         {
             CheckFileExists = true,
@@ -173,9 +132,6 @@ public partial class Form1
             return;
         }
 
-        // Whichever it is: a capture stays here, an impulse response moves the
-        // application to Frequency Response — the mirror of a capture bringing it
-        // here.
         await OpenMeasurementFileAsync(dialog.FileName);
     }
 }

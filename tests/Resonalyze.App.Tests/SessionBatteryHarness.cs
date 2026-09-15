@@ -9,13 +9,7 @@ using Xunit.Abstractions;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A <see cref="FactAttribute"/> that reports the battery as SKIPPED, with a
-/// reason, unless a folder of archived Virtual DSP sessions is named in the
-/// environment. The measurements are field records that do not live in the
-/// repository (and must not): CI has no folder to point at, so the runner is
-/// skipped there and runs only on a machine that carries the cabins.
-/// </summary>
+/// <summary>Skipped unless a folder of archived field sessions (not in the repository) is named in the environment.</summary>
 public sealed class SessionBatteryFactAttribute : FactAttribute
 {
     public const string RootVariable = "RESONALYZE_SESSION_BATTERY";
@@ -33,89 +27,30 @@ public sealed class SessionBatteryFactAttribute : FactAttribute
 }
 
 /// <summary>
-/// The Auto delay battery: every archived cabin's session is loaded exactly as
-/// the tool loads it, the Auto delay proposal is computed on the session's own
-/// chains, and BOTH the proposal and the session's SAVED settings are judged by
-/// the panel's own metric (<see cref="VirtualCrossoverMetrics.BuildCurves"/> +
-/// <see cref="VirtualCrossoverMetrics.BuildEntries"/>: the per-junction average
-/// summation loss and its dip, read through the session's own gate and
-/// smoothing).
-/// <para>
-/// It exists because the engine's alignment rules cannot be judged by
-/// |optimum − PHAT| on a low junction: that figure is noisy, and it answers a
-/// question about one probe rather than about the read-out the tuner actually
-/// looks at. The saved settings are the owner's own tuning, so a rule change
-/// that moves the proposal TOWARD them on the metric is an improvement in the
-/// only currency the panel reports.
-/// </para>
-/// <para>
-/// Output goes to the test output and to a text file (see
-/// <see cref="OutputVariable"/>), one fixed-format ROW line per junction, so
-/// two builds can be diffed line by line.
-/// </para>
-/// <para>
-/// This is a RUNNER, not a pinned expectation: it asserts only that every named
-/// session was found, loaded and judged. What its numbers mean is a reading, and
-/// the reading belongs in the branch's notes — not in an assert that would
-/// freeze one build's arithmetic into the suite.
-/// </para>
+/// Auto delay battery: loads archived sessions as the tool does and judges both the proposal and the saved tune
+/// by the panel's own summation-loss metric. A runner, not a pinned expectation: it asserts only that sessions
+/// were found, loaded and judged; ROW lines are for diffing two builds.
 /// </summary>
 public sealed class SessionBatteryHarness(ITestOutputHelper output)
 {
-    /// <summary>
-    /// Where the report is written; defaults to a file in the temporary folder.
-    /// The archive folder is the owner's measurement data — the battery reads
-    /// it and writes nothing into it.
-    /// </summary>
     public const string OutputVariable = "RESONALYZE_SESSION_BATTERY_OUT";
 
-    /// <summary>
-    /// A semicolon-separated list of session files to run instead of the
-    /// default set, each either absolute or relative to the root.
-    /// </summary>
+    /// <summary>Semicolon-separated session files, absolute or relative to the root.</summary>
     public const string SessionsVariable = "RESONALYZE_SESSION_BATTERY_SESSIONS";
 
-    /// <summary>
-    /// Set to judge every session through the gate dialog's AUTO placement
-    /// (each set of settings windowed at its own earliest front) instead of
-    /// through the offset the session pinned.
-    /// <para>
-    /// A pinned gate is one ABSOLUTE window, so it does not follow a proposal
-    /// that moves a channel: on the archived v5 cabin the pin opens the window
-    /// at 10.06 ms and the saved tuning puts the mid and tweeter fronts at
-    /// 18.4/18.1 ms — inside the plateau — while the proposal brings them to
-    /// 12.6/12.4 ms, inside the window's own fade-in. Their level in the sum is
-    /// then set by the window, and the metric compares a windowing artifact.
-    /// The pinned reading is what the panel shows before the gate is re-placed,
-    /// so it stays the default; this switch is how the SAME comparison is read
-    /// with the window off the scales.
-    /// </para>
-    /// </summary>
+    /// <summary>Judge through AUTO gate placement: a pinned absolute gate can put a proposal's moved fronts into its fade-in.</summary>
     public const string AutoGateVariable = "RESONALYZE_SESSION_BATTERY_AUTOGATE";
 
-    // The archived cabins, in the order the branch's notes list them. Each entry
-    // is a path under the root; the session file's own folder is what its
-    // measurements are resolved against (VirtualCrossoverSourceLocator), so a
-    // session whose stored absolute paths have gone stale still loads.
-    // The reference car is v5_exp — the owner deleted the older v5 session of
-    // the same car (2026-08-20) and distrusts v2's tuning, so a verdict that
-    // rests on either of those alone is not a verdict.
+    // Reference car is v5_exp; the older v5 session was deleted and v2's tuning is distrusted.
     private static readonly string[] DefaultSessions =
     [
         @"3RC\virtual-dsp-session.json",
         @"Passat\virtual-dsp-session.json",
-        // The same car re-measured and re-tuned by the owner (2026-08-20).
-        // Its A/B junction is the conviction dead zone's field case: the
-        // sub's band arrival latches 1.7 allowances late and only the comb
-        // arbitration lands the pair on the owner's inverted earlier lobe.
         @"Passat v2\virtual-dsp-session-sq-v10-7-opt.json",
         @"v2\virtual-dsp-session.json",
         @"v2\head_90_grad\virtual-dsp-session.json",
         @"v3\virtual-dsp-session.json",
         @"v4\virtual-dsp-session.json",
-        // manual-2 supersedes manual: the owner's 2026-08-20 re-tune, made
-        // after auditioning the engine's proposal (it adopts the proposal's
-        // bass/mid lobe and polarity structure and re-tunes around them).
         @"v5_exp\virtual-dsp-session-manual-2.json"
     ];
 
@@ -130,18 +65,11 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     public void JudgeAutoDelayAgainstSavedSettings()
     {
         string root = RootDirectory!;
-        // One locale for the report whatever the machine runs in: the tables
-        // are compared between builds line by line, and a decimal comma on one
-        // machine against a point on another is a diff on every row.
+        // Invariant culture so reports diff cleanly between machines.
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
         var report = new StringBuilder();
         var summary = new List<JunctionComparison>();
-        // Two of the archived session files describe the SAME cabin (the v2
-        // folder holds no measurements of its own: its session points at the
-        // head_90_grad records, so the two files are the same session saved
-        // twice). Judging both would count that cabin twice in the summary, so
-        // a session whose resolved measurements and saved settings are already
-        // in the battery is named and skipped.
+        // v2 and head_90_grad are the same cabin saved twice; duplicates are named and skipped.
         var seen = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (string session in ResolveSessions(root))
         {
@@ -170,12 +98,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
             Path.IsPathFullyQualified(name) ? name : Path.Combine(root, name));
     }
 
-    // One cabin: load, propose, judge. Every number printed here is read off the
-    // same code paths the panel runs — the chains through
-    // VirtualCrossoverChannelSettings.ToChain, the proposal through
-    // AutoAlignmentEngine, the metric through VirtualCrossoverMetrics — so a
-    // disagreement with the tool on screen is a defect in one of them, not in
-    // the harness's own arithmetic.
     private List<JunctionComparison> RunSession(
         string sessionPath,
         StringBuilder report,
@@ -228,9 +150,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         Dictionary<IAlignmentChannel, AlignmentOverride> proposal =
             ComputeProposal(participants, log);
 
-        // The judged sets differ ONLY in delay and polarity: gains, filters and
-        // PEQ stay the session's own, on both sides of the comparison, because
-        // the proposal moves nothing else.
         List<ProcessedChannel> saved = Process(participants, _ => null);
         List<ProcessedChannel> proposed = Process(
             participants,
@@ -246,12 +165,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 $"{(over.InvertPolarity ? "INV" : "   ")}");
         }
 
-        // Where each set's fronts land against the window they are judged
-        // through. A PINNED gate is one absolute window for both sets, so a
-        // proposal that moves a channel far enough can put its own front into
-        // the window's left fade — and then the metric is reading the window,
-        // not the alignment. Printed so that bias is visible instead of
-        // silently deciding a comparison.
         double leftEdgeMs = !AutoGate && gate.OffsetMs is { } pinned
             ? pinned - project.PhaseGateLeftMs
             : double.NaN;
@@ -264,12 +177,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 : $"   (window opens {leftEdgeMs:0.00} ms, plateau to " +
                   $"{gate.OffsetMs!.Value + project.PhaseGatePlateauMs:0.00} ms)"));
 
-        // The direct-sound whitened correlation of each junction, for the
-        // saved tune and the proposal — the read the correlation view's
-        // "PHAT direct" curve draws and the engine's direct-coherence witness
-        // weighs. Per junction: the extremum nearest zero lag (the lobe the
-        // setting sits on) and the curve's global extremum. A signed r:
-        // negative means the coherent alignment is the INVERTED one.
+        // Signed r: negative means the coherent alignment is the inverted one.
         void DirectPhat(string label, List<ProcessedChannel> set)
         {
             foreach (AdjacentPair pair in ProcessedChannels.GetAdjacentPairs(
@@ -288,7 +196,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     .Where(point => Math.Abs(point.X) <= 500.0 / pair.CrossoverHz)
                     .DefaultIfEmpty(best)
                     .MaxBy(point => Math.Abs(point.Y));
-                // The runner already pinned the invariant culture.
                 report.AppendLine(
                     $"    direct-PHAT {label,-8} " +
                     $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
@@ -308,9 +215,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
             "proposed avg/dip      Δavg    Δdip");
         foreach (VirtualCrossoverMetric.Entry savedEntry in savedEntries)
         {
-            // Matched by junction label: the two sets carry the same channels in
-            // the same band order (only their delays differ), so the labels line
-            // up one to one.
             VirtualCrossoverMetric.Entry? match = proposedEntries
                 .Cast<VirtualCrossoverMetric.Entry?>()
                 .FirstOrDefault(entry => entry!.Value.Junction == savedEntry.Junction);
@@ -367,11 +271,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     private static string Format(double? value, string format = "0.00") =>
         value?.ToString(format, CultureInfo.InvariantCulture) ?? "-";
 
-    // The panel's single-side Auto delay, verbatim: order along the spectrum by
-    // band center, one shared direct-sound crop, crosstalk heads cleaned, then
-    // the engine's cascade over the adjacent junctions. The session's own
-    // delays and polarities are deliberately NOT fed in — the run ignores them,
-    // exactly as the tool's own run does.
+    // Mirrors the panel's single-side Auto delay; saved delays and polarities are deliberately not fed in.
     private static Dictionary<IAlignmentChannel, AlignmentOverride> ComputeProposal(
         List<VirtualCrossoverChannel> participants,
         StringBuilder log)
@@ -416,10 +316,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         return alignment;
     }
 
-    // The panel's head gate for the playback-crosstalk click (an electrical copy
-    // of the playback ahead of any acoustic arrival, present in every record of
-    // the v3 session): without it the battery would judge a search the tool
-    // never runs.
     private static List<AlignmentReprocessInput> CleanCrosstalkHeads(
         List<AlignmentReprocessInput> inputs,
         StringBuilder log) =>
@@ -443,10 +339,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
             };
         }).ToList();
 
-    // The panel's redraw, reduced to what the metric reads: each channel's
-    // source run through its chain (the session's, or the session's with the
-    // proposal's delay and polarity on top) by the same snapshot the tool
-    // processes through, so the head crop and the FFT are the tool's.
     internal static List<ProcessedChannel> Process(
         List<VirtualCrossoverChannel> participants,
         Func<VirtualCrossoverChannel, AlignmentOverride?> overrideFor)
@@ -484,22 +376,13 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         return processed;
     }
 
-    // The judge itself: the panel's metric, gated and smoothed the way THIS
-    // session is (the pinned offset when it has one, its own Tukey shoulders,
-    // its own smoothing code) — never a default invented here. Calibration is
-    // null: it belongs to the machine that measured, not to the session, and
-    // it applies identically to both sides of the comparison anyway.
+    // Calibration is null: it belongs to the measuring machine and applies equally to both sides.
     internal static List<VirtualCrossoverMetric.Entry> Judge(
         VirtualCrossoverProjectFile project,
         List<ProcessedChannel> processed)
     {
         var template = new PhaseAnalysisSettings(
-            // The magnitude reads the FIXED steady-state window, whatever the
-            // session's gate says — the panel's own rule (see the magnitudeGate
-            // rebuild in VirtualCrossoverPanel.RequestRedraw): the session gate
-            // times junctions and shapes the phase/impulse views, while the
-            // magnitude — and therefore this judge — reads the response the ear
-            // hears. Only the session's OFFSET (its pin) still places the window.
+            // Magnitude reads the FIXED steady-state window regardless of the session gate, as the panel does; only the pin places it.
             PhaseWindowMode.Fixed,
             project.PhaseFdwCycles,
             PhaseDetrendMode.Off,
@@ -527,10 +410,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     DataHelper.GetGatedPrimarySpectrumPair(
                         new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate)
                         {
-                            // Passed through rather than ignored: the harness has to
-                            // read what the panel reads, and a channel measured
-                            // through a protective high-pass, or with a band sweep,
-                            // stops where those stop it.
                             LowestMeasuredFrequencyHz = measuredBand.LowEdgeHz,
                             HighestMeasuredFrequencyHz = measuredBand.HighEdgeHz
                         },
@@ -544,10 +423,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         return metrics.BuildEntries(processed, loss);
     }
 
-    // The session's channels, resolved the way the tool resolves an imported
-    // session: the stored path first, then the same measurement beside the
-    // session file (VirtualCrossoverSourceLocator), which is what makes an
-    // archived cabin load on a machine that never measured it.
     internal static List<VirtualCrossoverChannel> LoadChannels(
         VirtualCrossoverProjectFile project,
         out string fingerprint)
@@ -587,10 +462,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         return channels;
     }
 
-    // The battery's bottom line: how the proposal stands against the owner's own
-    // tuning across every junction of every cabin. Junction rows and the
-    // per-session totals are counted apart — a total is not an independent
-    // junction, it is the same bands read together.
     private static void WriteSummary(
         StringBuilder report, List<JunctionComparison> comparisons)
     {
@@ -621,8 +492,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         }
     }
 
-    // One judged junction, both readings side by side. Positive deltas mean the
-    // proposal loses LESS than the saved settings do.
+    // Positive deltas mean the proposal loses LESS than the saved settings.
     private sealed record JunctionComparison(
         string Session,
         string Junction,
@@ -640,9 +510,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
             ? ProposedDipDb.Value - SavedDipDb.Value
             : null;
 
-        // The line two builds are diffed on: fixed field order, invariant
-        // formatting, six decimals — enough that a change of rule shows and a
-        // rounding wobble does not.
         public string Row() => string.Join('\t',
             "ROW",
             Session,

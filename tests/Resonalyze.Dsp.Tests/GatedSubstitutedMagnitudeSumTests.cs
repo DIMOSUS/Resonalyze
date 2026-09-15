@@ -2,27 +2,13 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The sum behind the Virtual DSP hybrid view: each channel's gated spectrum
-/// rescaled to a level that came from a different measurement, summed as phasors.
-/// </summary>
-/// <remarks>
-/// It exists because the cheap alternative — adding the substituted magnitudes and
-/// laying the channels' own summation loss on top — is valid only while the two
-/// families of measurement agree about the RELATIVE levels of the channels. A loss
-/// is a property of the levels it was measured at, and borrowing it across a
-/// disagreement draws cancellation the summed channels cannot produce.
-/// </remarks>
+/// <summary>Hybrid-view sum: each gated spectrum rescaled to a level from another measurement, summed as phasors.</summary>
+/// <remarks>Borrowing a summation loss across measurements that disagree on relative levels draws impossible cancellation.</remarks>
 public sealed class GatedSubstitutedMagnitudeSumTests
 {
     private const int Rate = 48_000;
     private const int Anchor = 4_000;
 
-    /// <summary>
-    /// Fed each channel's OWN level, the substitution gives back that channel's own
-    /// contribution, so the result is the honest complex sum. Unlike an
-    /// amplitude-sum identity this runs through the gate, the FFT and the phase.
-    /// </summary>
     [Fact]
     public void FedTheChannelsOwnLevels_ItReproducesTheirComplexSum()
     {
@@ -38,10 +24,7 @@ public sealed class GatedSubstitutedMagnitudeSumTests
 
         Assert.Equal(honest.Count, substituted.Count);
 
-        // Judged in LINEAR amplitude against the peak, never in decibels: inside a
-        // cancellation notch both curves are numerically almost nothing, and the
-        // ratio of two nothings is a large number of decibels about no disagreement
-        // at all.
+        // Linear amplitude against the peak: inside a notch a dB ratio of two near-zeros is meaningless.
         double peak = 0;
         for (int i = 0; i < honest.Count; i++)
         {
@@ -68,17 +51,10 @@ public sealed class GatedSubstitutedMagnitudeSumTests
         }
 
         Assert.True(compared > 300, $"compared only {compared} points");
-        // Not exact, and the residue is the input's own resolution: the substituted
-        // levels arrive on the 1024-point display grid, so each bin is handed its
-        // neighbourhood's level rather than its own. A spatial average — which is
-        // what these levels always are in practice — carries nothing finer.
+        // Residue from the 1024-point display grid the levels arrive on.
         Assert.True(worst < 0.02, $"worst disagreement {worst:P2} of the peak");
     }
 
-    /// <summary>
-    /// One channel alone, fed its own level: no summation involved, so this isolates
-    /// the substitution itself from anything the addition of phasors does.
-    /// </summary>
     [Fact]
     public void OneChannelFedItsOwnLevel_ComesBackAsItself()
     {
@@ -106,10 +82,7 @@ public sealed class GatedSubstitutedMagnitudeSumTests
         Assert.True(worst < 0.5, $"worst disagreement {worst:0.00} dB");
     }
 
-    /// <summary>
-    /// A gain common to every channel factors straight out, which is what lets the
-    /// set's single offset be applied to the finished curve rather than per channel.
-    /// </summary>
+    /// <summary>A common gain factors out, so the set's offset can apply to the finished curve.</summary>
     [Fact]
     public void ACommonGain_MovesTheSumByExactlyThatMuch()
     {
@@ -131,7 +104,6 @@ public sealed class GatedSubstitutedMagnitudeSumTests
 
         for (int i = 0; i < plain.Count; i++)
         {
-            // Above the numerical floor, where a common gain has a level to move.
             if (double.IsFinite(plain[i].Y) && plain[i].Y > -100)
             {
                 Assert.Equal(plain[i].Y + 6, lifted[i].Y, 4);
@@ -139,11 +111,7 @@ public sealed class GatedSubstitutedMagnitudeSumTests
         }
     }
 
-    /// <summary>
-    /// A channel told it has no level contributes nothing — whether that is a hole
-    /// or a silence is the caller's to decide, since only it knows what the channel
-    /// was doing there.
-    /// </summary>
+    /// <summary>Whether no level is a hole or silence is the caller's to decide.</summary>
     [Fact]
     public void AChannelWithNoLevel_ContributesNothing()
     {
@@ -169,30 +137,13 @@ public sealed class GatedSubstitutedMagnitudeSumTests
         }
     }
 
-    /// <summary>
-    /// The known limitation, characterized rather than guarded: the substitution
-    /// trusts the phase completely, so where a channel's own gated spectrum has a deep
-    /// null its phase is noise — and the level substituted over it is not.
-    /// </summary>
-    /// <remarks>
-    /// This is deliberately NOT asserted into a hole. The mode exists to serve the EQ,
-    /// and the per-channel curves it equalizes are mathematically clean; the Sum is an
-    /// approximate view, and breaking it wherever one channel's point response happens
-    /// to null would cost more than the error it avoids. Measured on the owner's car,
-    /// the pathology does not arise at all: of the four points where the drawn sum
-    /// dips more than 10 dB under its loudest channel, NONE has a contributing channel
-    /// whose phase came from a bin 30 dB under its own envelope — a channel deep in a
-    /// point null is not usually a top contributor there either. So this test bounds
-    /// the arithmetic and records the scale rather than demanding a behaviour.
-    /// </remarks>
+    /// <summary>Known limitation, characterized not guarded: in a deep null the phase is noise but the substituted level is not.</summary>
+    /// <remarks>Not asserted into a hole: on the owner's car no deep sum dip had a contributor phase from a bin 30 dB under its envelope.</remarks>
     [Fact]
     public void APhaseTakenFromADeepNull_StaysInsideTheInterferenceWindow()
     {
         Complex[] plain = Ir(0, 1.0, 40);
 
-        // A channel that cancels itself at a comb of frequencies: its own gated
-        // magnitude nulls there, so the phasor normalised out of those bins is
-        // whatever numerical noise survives.
         var nulled = new Complex[32_768];
         nulled[Anchor] = 1.0;
         nulled[Anchor + 24] = -1.0;
@@ -200,8 +151,6 @@ public sealed class GatedSubstitutedMagnitudeSumTests
         PhaseAnalysisSettings gate = Gate();
         List<SignalPoint> plainLevel = Own(plain, gate);
 
-        // The capture disagrees with the point measurement completely: it says this
-        // channel plays at the other one's level everywhere, nulls included.
         List<SignalPoint> strongLevel = plainLevel
             .Select(point => new SignalPoint(point.X, point.Y))
             .ToList();
@@ -225,10 +174,7 @@ public sealed class GatedSubstitutedMagnitudeSumTests
             worstBelow = Math.Min(worstBelow, relative);
         }
 
-        // Two equal contributions can reach +6.02 dB together and cancel to nothing.
-        // The phase decides where inside that window each point lands, and where it
-        // came from a null it decides arbitrarily — but it cannot leave the window,
-        // and a result outside it would mean the substitution itself is broken.
+        // Two equal contributions stay within [cancel, +6.02 dB] whatever the phase.
         Assert.True(
             worstAbove <= 6.03,
             $"sum reached {worstAbove:0.00} dB over one channel, above the +6.02 dB ceiling");
@@ -250,17 +196,8 @@ public sealed class GatedSubstitutedMagnitudeSumTests
         Unwrap: false,
         SmoothingInverseOctaves: 0.0);
 
-    // Two smoothly decaying bursts of the SAME polarity and different decay rates,
-    // placed deep enough in the record that the steady-state window's 5 ms lead-in
-    // fits ahead of them. That is not a detail: with the burst near the start the
-    // window opens before the record does, the extraction comes back mostly empty,
-    // and every curve in the test — the honest one included — turns into a floor
-    // with occasional numerical spikes.
-    //
-    // Same polarity is deliberate too: an opposed pair of near-equal channels makes
-    // the sum a difference of two similar things, and the test would then measure how
-    // ill-conditioned that subtraction is rather than how faithful the substitution
-    // is. They still sit 17 samples apart, so the phase has real work to do.
+    // Deep enough for the 5 ms lead-in (near the start the extraction comes back empty).
+    // Same polarity: an opposed pair would measure ill-conditioned subtraction, not substitution.
     private static Complex[] Ir(int offset, double gain, double decaySamples)
     {
         var ir = new Complex[32_768];

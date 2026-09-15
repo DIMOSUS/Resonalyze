@@ -3,34 +3,15 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Linear convolution of a long signal with a fixed kernel, by overlap-add FFT.
-/// <para>
-/// The direct sum is not an option at this scale: a five-minute track at 48 kHz is
-/// ~14 million samples and an auralization kernel runs to tens of thousands of
-/// taps, which is ~10¹² multiply-adds. Overlap-add transforms the kernel once and
-/// then costs two transforms per block, bringing the same result to seconds.
-/// </para>
-/// <para>
-/// Blocks are formed so that each one's circular convolution IS its linear
-/// convolution — the hop leaves exactly <c>kernel.Length − 1</c> samples of room
-/// for the tail, which then adds into the following block. Nothing wraps.
-/// </para>
-/// </summary>
+/// <summary>Linear convolution by overlap-add FFT (the direct sum would be ~10¹² multiply-adds for a track).
+/// Each block leaves <c>kernel.Length − 1</c> samples of room, so its circular convolution is linear: nothing wraps.</summary>
 public static class FastConvolution
 {
-    // The transform runs over this many times the kernel length. Larger blocks
-    // amortize the per-block transform better but waste more of it on the
-    // zero-padded tail; four is the usual sweet spot and keeps the working
-    // buffers small enough to stay in cache-friendly territory.
     private const int BlockLengthFactor = 4;
 
     private const int MinimumFftLength = 1024;
 
-    /// <summary>
-    /// Convolves <paramref name="signal"/> with <paramref name="kernel"/>,
-    /// returning <c>signal.Length + kernel.Length − 1</c> samples.
-    /// </summary>
+    /// <summary>Returns <c>signal.Length + kernel.Length − 1</c> samples.</summary>
     /// <param name="progress">Receives 0..1 completion after each block.</param>
     public static float[] Convolve(
         float[] signal,
@@ -82,9 +63,6 @@ public static class FastConvolution
             }
             Fourier.Inverse(block, FourierOptions.Matlab);
 
-            // The block spans count + kernel.Length − 1 output samples, which is
-            // exactly what the padding left room for, so this never reads the
-            // wrapped region and never writes past the output.
             int span = Math.Min(fftLength, output.Length - start);
             for (int i = 0; i < span; i++)
             {
@@ -97,12 +75,7 @@ public static class FastConvolution
         return output;
     }
 
-    /// <summary>
-    /// Linear convolution of two kernels, in double precision, by one transform
-    /// pair. For combining filter kernels (a trimmed room response with a
-    /// calibration FIR) — both fit a single FFT comfortably, and the result
-    /// stays in the double domain the analysis side works in.
-    /// </summary>
+    /// <summary>Double-precision convolution of two kernels in one transform pair.</summary>
     public static double[] Convolve(double[] first, double[] second)
     {
         ArgumentNullException.ThrowIfNull(first);

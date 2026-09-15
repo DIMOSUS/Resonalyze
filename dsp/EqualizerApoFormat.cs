@@ -1,6 +1,5 @@
 ﻿namespace Resonalyze.Dsp;
 
-/// <summary>Equalizer APO config text (also produced by many REW/AutoEQ exports).</summary>
 public sealed class EqualizerApoFormat : IEqProfileFormat
 {
     public string Name => "Equalizer APO";
@@ -8,8 +7,6 @@ public sealed class EqualizerApoFormat : IEqProfileFormat
     public bool CanImport => true;
     public bool CanExport => true;
 
-    // APO's AP filter is second-order only; there is no first-order all-pass to
-    // write one as.
     public bool SupportsAllPass(PeqBandType type) =>
         type == PeqBandType.AllPassSecondOrder;
 

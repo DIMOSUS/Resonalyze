@@ -2,10 +2,7 @@ using NAudio.Wave;
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Describes callback-scoped capture data without allocating an event-arguments object.
-/// Consumers must copy data that needs to outlive the callback.
-/// </summary>
+/// <summary>Callback-scoped: consumers must copy data that outlives the callback.</summary>
 internal readonly record struct AudioCapturePacket(
     ReadOnlyMemory<byte> Buffer,
     int BytesRecorded,

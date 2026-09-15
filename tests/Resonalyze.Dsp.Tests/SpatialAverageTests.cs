@@ -27,8 +27,6 @@ public sealed class SpatialAverageTests
         return best;
     }
 
-    // A driver's passband: flat inside, falling away outside, so a curve has a
-    // working band the trim can find and a floor it must ignore.
     private static double[] Driver(double lowHz, double highHz, double levelDb, double floorDb)
     {
         return Curve(f =>
@@ -51,8 +49,7 @@ public sealed class SpatialAverageTests
         Assert.Equal(SpatialAverage.GridStartHz, Grid[0], 9);
         Assert.Equal(SpatialAverage.GridStopHz, Grid[^1], 9);
 
-        // Evenly spaced in log frequency, which is what lets a consumer derive
-        // the octaves per step from the grid itself and re-smooth on it.
+        // Evenly spaced in log frequency, so consumers derive octaves per step from the grid.
         double step = Math.Log2(Grid[1] / Grid[0]);
         for (int i = 1; i < Grid.Count; i++)
         {
@@ -63,9 +60,7 @@ public sealed class SpatialAverageTests
     [Fact]
     public void Grid_MatchesTheFrequencyResponseCurveGrid()
     {
-        // The array curves are drawn beside frequency responses and handed to
-        // the same consumers, so the two grids have to be the same one — not
-        // merely similar. A resample between them would be a silent smoothing.
+        // Identical to the response grid: a resample between them would be a silent smoothing.
         IReadOnlyList<double> responseGrid =
             EqualizationCurve.LogFrequencyGrid(20, 20_000, 1_024);
 
@@ -79,8 +74,7 @@ public sealed class SpatialAverageTests
     [Fact]
     public void FromTransferMagnitude_ReadsAFlatResponseAtItsOwnLevel()
     {
-        // A flat |H| of 0.5 is -6.02 dB whatever the transform length: the band
-        // MEAN must not grow with how many bins the band happens to span.
+        // The band mean must not grow with the number of bins spanned.
         double[] coarse = SpatialAverage.FromTransferMagnitude(
             Enumerable.Repeat(0.5, 4_097).ToArray(), 48_000.0 / 8_192);
         double[] fine = SpatialAverage.FromTransferMagnitude(
@@ -94,8 +88,6 @@ public sealed class SpatialAverageTests
     [Fact]
     public void FromTransferMagnitude_AveragesTheBandRatherThanSamplingIt()
     {
-        // Alternating bins 6 dB apart: a band spanning many of them must report
-        // their mean power, not whichever bin the grid point landed on.
         double binWidth = 48_000.0 / 131_072;
         double[] magnitude = Enumerable
             .Range(0, 65_537)
@@ -104,7 +96,6 @@ public sealed class SpatialAverageTests
 
         double[] levels = SpatialAverage.FromTransferMagnitude(magnitude, binWidth);
 
-        // Mean power of 1 and 0.25 is 0.625 => -2.04 dB.
         int band = NearestBand(10_000);
         Assert.Equal(10.0 * Math.Log10(0.625), levels[band], 2);
     }
@@ -112,10 +103,7 @@ public sealed class SpatialAverageTests
     [Fact]
     public void FromTransferMagnitude_BandsTheSweepNeverReachedAreGaps()
     {
-        // The excitation gate zeroes the bins below the sweep start. Those bands
-        // must read as "not measured", never as a very low level: a curve that
-        // dives to -200 dB below 30 Hz looks like a measurement of a rolled-off
-        // system, and an equalizer would try to fill it.
+        // Gated bins below the sweep start are 'not measured', not a very low level an equalizer would try to fill.
         double binWidth = 48_000.0 / 65_536;
         var magnitude = new double[32_769];
         for (int bin = 0; bin < magnitude.Length; bin++)
@@ -133,8 +121,6 @@ public sealed class SpatialAverageTests
     [Fact]
     public void FromTransferMagnitude_ABandStraddlingTheSweepEdgeReadsItsMeasuredBinsOnly()
     {
-        // Half the band excited, half not: the level is that of the excited half,
-        // not half of it. The unexcited bins are absent, not zero-valued.
         double binWidth = 1.0;
         var magnitude = new double[24_001];
         for (int bin = 0; bin < magnitude.Length; bin++)
@@ -163,10 +149,7 @@ public sealed class SpatialAverageTests
     [Fact]
     public void RmsAverage_IsPowerMean_NotDecibelMean()
     {
-        // 0 dB and 20 dB: the power mean is 10·log10((1 + 100)/2) = 17.04 dB,
-        // while averaging the decibels would answer 10. The difference is the
-        // whole point — a position sitting in a null must not drag the average
-        // down as hard as a hot position pushes it up.
+        // Power mean 17.04 dB vs 10 dB averaged: a null must not drag the average as hard as a hot position lifts it.
         double[] average = SpatialAverage.RmsAverageDb([Flat(0.0), Flat(20.0)]);
 
         Assert.Equal(10.0 * Math.Log10(101.0 / 2.0), average[0], 9);
@@ -183,8 +166,6 @@ public sealed class SpatialAverageTests
 
         double[] average = SpatialAverage.RmsAverageDb([complete, holed]);
 
-        // The hole is filled by the microphone that could measure there — not
-        // spread to its neighbours, and not turned into a gap of its own.
         Assert.Equal(60.0, average[hole], 9);
         Assert.Equal(60.0, average[hole - 1], 9);
     }
@@ -242,10 +223,7 @@ public sealed class SpatialAverageTests
     [Fact]
     public void Trim_IsMeasuredInTheWorkingBand_NotOverTheNoiseFloor()
     {
-        // A tweeter: the array agrees over its two working octaves, but the eight
-        // octaves below hold each microphone's own noise floor, 12 dB apart. A
-        // trim measured over the whole grid would answer with that floor
-        // difference; the working band is where the sensitivity actually shows.
+        // Below the working band each mic's own noise floor differs; the trim must use the working band only.
         double[] anchor = Driver(2_000, 16_000, 90, 30);
         double[] other = Curve(f => f >= 2_000 && f <= 16_000
             ? anchor[NearestBand(f)] - 2.0
@@ -259,9 +237,7 @@ public sealed class SpatialAverageTests
     [Fact]
     public void Trim_SurvivesAPositionSittingInANotch()
     {
-        // One microphone is 3 dB down overall and additionally 25 dB into an
-        // interference notch over a sixth of an octave. The median asks where the
-        // two curves agree, so the notch does not move the placement.
+        // The median ignores an interference notch in one mic.
         double[] anchor = Driver(80, 4_000, 90, 40);
         double[] other = anchor.Select(db => db - 3.0).ToArray();
         int centre = NearestBand(1_000);
@@ -297,8 +273,6 @@ public sealed class SpatialAverageTests
         Assert.Equal(-4.0, Assert.NotNull(result.TrimsDb[1]), 9);
         Assert.Equal(6.0, Assert.NotNull(result.TrimsDb[2]), 9);
 
-        // Placed, the three are the same curve, so the average is it and the
-        // spread is zero: the sensitivity difference has left the measurement.
         int band = NearestBand(1_000);
         Assert.Equal(anchor[band], result.AverageDb[band], 9);
         Assert.Equal(0.0, result.SpreadDb[band], 9);
@@ -307,9 +281,7 @@ public sealed class SpatialAverageTests
     [Fact]
     public void Average_AnchorKeepsItsOwnLevel()
     {
-        // Two loud microphones and a quiet anchor: the average must stay on the
-        // anchor's level, not drift to the set's mean. This is what keeps the
-        // array tethered to the impulse response it was measured beside.
+        // The average stays on the anchor's level, tethered to the impulse response measured beside it.
         double[] anchor = Driver(80, 4_000, 70, 20);
         double[] loud = anchor.Select(db => db + 12.0).ToArray();
 
@@ -331,8 +303,6 @@ public sealed class SpatialAverageTests
         Assert.Null(result.TrimsDb[1]);
         Assert.Null(result.TrimmedCurvesDb[1]);
 
-        // With the dead microphone out, one remains: the average is the anchor
-        // and the spread is unknown rather than zero.
         int band = NearestBand(1_000);
         Assert.Equal(anchor[band], result.AverageDb[band], 9);
         Assert.True(double.IsNaN(result.SpreadDb[band]));
@@ -341,9 +311,6 @@ public sealed class SpatialAverageTests
     [Fact]
     public void Average_SpreadReportsWhereThePositionsDisagree()
     {
-        // The array agrees in the bass and parts company at 4 kHz, which is what
-        // a head-sized array does: a 30 cm spacing is a fraction of a wavelength
-        // at 100 Hz and several wavelengths at 4 kHz.
         double[] anchor = Flat(80.0);
         double[] other = Flat(80.0);
         int low = NearestBand(100);
@@ -359,9 +326,7 @@ public sealed class SpatialAverageTests
     [Fact]
     public void Average_LinearFilterFactorsOutOfTheAverage()
     {
-        // The property the whole hybrid rests on: a filter that does not depend
-        // on position can be applied before or after the spatial average, and the
-        // answer is the same. Positions differing by 15 dB, then a 9 dB cut.
+        // A position-independent filter commutes with the spatial average: the hybrid rests on this.
         double[] first = Driver(80, 4_000, 90, 40);
         double[] second = first.Select((db, i) => db + 15.0 * Math.Sin(i * 0.31)).ToArray();
         double[] chainDb = Curve(f => -9.0 * Math.Min(1.0, Math.Log2(Math.Max(f, 20.0) / 20.0) / 5.0));

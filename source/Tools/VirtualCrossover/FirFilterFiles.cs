@@ -4,51 +4,21 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// The FIR kernel's files, at the session's edge: IMPORT reads a kernel out of the
-/// files the filter designers write — a mono (or multichannel, first channel taken)
-/// WAV, or a text file with one coefficient per line under whatever name the tool
-/// gave it, <c>.fir</c> or <c>.txt</c> — and EXPORT writes the kernel a session
-/// carries back out, for the hardware or another tool. The kernel itself lives in
-/// the session (see <see cref="VirtualCrossoverChannelSettings.Fir"/>); a file is
-/// where it comes from and where it goes, not where it is.
-/// </summary>
-/// <remarks>
-/// The WAV is decoded by <see cref="AudioFileCodec"/>, which is where the app's
-/// codecs live (NAudio never reaches the DSP library); the text formats are the
-/// library's own <see cref="FirFilterTextFile"/>. Either way the taps are handed on
-/// AS THEY ARE, with the rate a WAV states kept only for the block's warning: the
-/// processor convolves at its own rate, so a kernel designed for another one is a
-/// different filter there — see <see cref="FirFilter"/>. The export writes the taps
-/// at the PROCESSOR's rate for the same reason: that is the rate they mean here.
-/// </remarks>
+/// <summary>FIR kernel import (WAV, .fir, .txt) and export; taps pass as-is, a WAV's rate is kept only for the warning.</summary>
 internal static class FirFilterFiles
 {
-    /// <summary>The file dialog filter for the kernels the import accepts.</summary>
     public const string ImportFileDialogFilter =
         "FIR filters (*.wav;*.fir;*.txt)|*.wav;*.fir;*.txt|All files (*.*)|*.*";
 
-    /// <summary>
-    /// The export's filter: WAV first, because it is what most processors' tools
-    /// load, then the two text spellings.
-    /// </summary>
     public const string ExportFileDialogFilter =
         "FIR filter WAV, 32-bit float (*.wav)|*.wav|" +
         "FIR filter text, one coefficient per line (*.txt)|*.txt|" +
         "FIR filter text, one coefficient per line (*.fir)|*.fir";
 
-    // The longest WAV decoded before the tap ceiling is checked: the ceiling at the
-    // lowest selectable rate is under three seconds, and a "kernel" running to
-    // minutes is program material picked by mistake — refused by the decoder's own
-    // duration guard rather than loaded into memory first.
+    // Program material picked by mistake is refused by the decoder's duration guard before loading (tap ceiling < 3 s).
     private static readonly TimeSpan MaximumWavDuration = TimeSpan.FromSeconds(10);
 
-    /// <summary>
-    /// Reads the kernel at <paramref name="path"/>. Throws — an
-    /// <see cref="InvalidDataException"/> for a file that is not a kernel, the
-    /// decoder's or the file system's exception otherwise — so the caller can show
-    /// the reason; nothing here guesses.
-    /// </summary>
+    /// <summary>Throws <see cref="InvalidDataException"/> for a non-kernel file, or the decoder's/file system's exception.</summary>
     public static FirFilter Load(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -79,14 +49,7 @@ internal static class FirFilterFiles
         return new FirFilter(taps, content.SampleRate);
     }
 
-    /// <summary>
-    /// Writes <paramref name="fir"/> to <paramref name="path"/>: a mono 32-bit float
-    /// WAV under <c>.wav</c> (float, not 24-bit PCM — a kernel with gain has taps past
-    /// ±1, and integer PCM would clip them into another filter), one coefficient per
-    /// line under any other name, with a header the import reads back (the rate line
-    /// becomes the kernel's declared rate). <paramref name="sampleRateHz"/> is the
-    /// rate the taps are stated at — the processor's.
-    /// </summary>
+    /// <summary>32-bit float WAV under <c>.wav</c> (integer PCM would clip taps past ±1), text otherwise; <paramref name="sampleRateHz"/> is the processor's.</summary>
     public static void Save(
         string path,
         FirFilter fir,
@@ -120,8 +83,7 @@ internal static class FirFilterFiles
         text.Append("\r\n");
         if (!string.IsNullOrWhiteSpace(designDescription))
         {
-            // A designed kernel says what it was designed as — the only record of it
-            // once the file has left the session. A comment line, so the import skips it.
+            // A comment line (the import skips it): the design's only record once the file leaves the session.
             text.Append("* ").Append(designDescription).Append("\r\n");
         }
         text.Append("* Sample rate: ").Append(sampleRateHz.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
@@ -129,7 +91,7 @@ internal static class FirFilterFiles
             .Append(" taps, one coefficient per line, first tap first\r\n");
         foreach (double tap in fir.Taps)
         {
-            // "R" round-trips a double exactly; the import reads it back to the bit.
+            // "R" round-trips a double exactly.
             text.Append(tap.ToString("R", CultureInfo.InvariantCulture)).Append("\r\n");
         }
 

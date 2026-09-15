@@ -3,27 +3,11 @@ using System.Windows.Forms;
 namespace Resonalyze.App.Tests;
 
 /// <summary>
-/// A label that clips its text with an ellipsis must be at least as tall as one
-/// line of its own font.
+/// <see cref="Label.AutoEllipsis"/> uses LineLimit: a box shorter than one line draws nothing at all
+/// (15 px boxes around a 16 px Segoe UI 9pt line went blank).
 /// </summary>
-/// <remarks>
-/// <see cref="Label.AutoEllipsis"/> on a fixed-size label asks GDI+ for
-/// <c>StringFormatFlags.LineLimit</c>: draw only the lines that fit ENTIRELY
-/// inside the layout rectangle. A box one pixel shorter than the line height
-/// therefore does not clip the descenders — it draws NOTHING, silently, and the
-/// control still reports its Text, its ForeColor and Visible = true. Nothing
-/// short of looking at the pixels tells you.
-/// <para>
-/// That is how the Virtual DSP block's PEQ read-out and the Audition dialog's two
-/// file names went blank: 15-pixel boxes around a Segoe UI 9pt line that measures
-/// 16. Height and font scale together with the display, so a box that clears the
-/// line at 96 DPI clears it everywhere — which is exactly what this asserts.
-/// </para>
-/// </remarks>
 public sealed class EllipsisLabelHeightTests
 {
-    // The controls that carry such a label and can be built without a session,
-    // an audio device or the whole shell.
     public static TheoryData<string> Hosts() =>
         new()
         {

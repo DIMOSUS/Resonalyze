@@ -2,15 +2,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A measurement's own microphone array handed to the EQ Wizard.
-/// </summary>
-/// <remarks>
-/// The point of the array reaching the one tool that can do harm with the
-/// difference: an equalizer fitted to a single position is fitted to the dips of
-/// that position's few centimetres, and the average over the listening volume is
-/// the shape a tune belongs on.
-/// </remarks>
 public sealed class EqWizardArraySourceTests
 {
     private const int SampleRate = 48_000;
@@ -86,7 +77,6 @@ public sealed class EqWizardArraySourceTests
     private static double[] Flat(double levelDb) =>
         Enumerable.Repeat(levelDb, Grid.Count).ToArray();
 
-    // One band where the positions part by `spreadDb`, the rest in agreement.
     private static (double[] First, double[] Second, int Band) Disagreeing(double spreadDb)
     {
         int band = Grid.Count / 2;
@@ -109,8 +99,6 @@ public sealed class EqWizardArraySourceTests
 
         Assert.NotNull(source);
         Assert.Equal(EqWizardSourceKind.SpatialAverage, source!.Kind);
-        // Not "Array of 2 microphones": the button has to say WHICH measurement is
-        // being equalized, and how it was taken belongs in the tooltip.
         Assert.Equal("cabin sweep", source.DisplayName);
         Assert.Equal("description", source.Description);
         Assert.Equal(SampleRate, source.SampleRateHz);
@@ -134,10 +122,7 @@ public sealed class EqWizardArraySourceTests
         EqWizardCurveSource source =
             EqWizardSourceResolver.TryCreateFromArray(FileWith(first, second), "m", "d")!;
 
-        // 12 dB is the ordinary state of a car's listening volume — the owner's
-        // seven-position sets sit at a median of 11 to 12 dB across the whole band on
-        // both a midrange and a tweeter. A gate that refused this would refuse most of
-        // every measurement.
+        // Owner's seven-position sets sit at a median 11-12 dB spread; a gate refusing 12 dB refuses most measurements.
         Assert.NotNull(source.Coherence);
         Assert.Equal(1.0, source.Coherence![band].Y);
     }
@@ -150,9 +135,7 @@ public sealed class EqWizardArraySourceTests
         EqWizardCurveSource source =
             EqWizardSourceResolver.TryCreateFromArray(FileWith(first, second), "m", "d")!;
 
-        // The average here is carried by whichever position happened to be loudest.
-        // Filling the dip the other measured helps one seat centimetre and spends the
-        // headroom of every other.
+        // The average follows the loudest position; filling the other's dip spends every seat's headroom.
         Assert.Equal(0.0, source.Coherence![band].Y);
         Assert.Equal(1.0, source.Coherence[0].Y);
         Assert.Equal(Grid[band], source.Coherence[band].X, 6);
@@ -161,22 +144,14 @@ public sealed class EqWizardArraySourceTests
     [Fact]
     public void ALoneMicrophoneIsNotOfferedAsASpatialAverage()
     {
-        // A "spatial average" of one position is the point measurement the wizard
-        // already has, under a name that claims a listening volume was covered. It
-        // arises for real — every further microphone failing to record leaves the
-        // measurement one behind — and nothing downstream could tell: its spread is
-        // NaN at every band, so the agreement gate has nothing to gate on.
+        // One position is a point measurement under a volume's name, and its NaN spread leaves the gate nothing to gate on.
         Assert.Null(EqWizardSourceResolver.TryCreateFromArray(FileWith(Flat(70.0)), "m", "d"));
     }
 
     [Fact]
     public void ABandOnlyOneMicrophoneMeasuredRefusesABoost()
     {
-        // The same hole one band wide, which survives the rule above: the array has
-        // two positions, and at this band only one of them has a level. There is no
-        // second opinion here, and a boost fitted to a dip only one microphone saw is
-        // fitted to that microphone. The gate must not read the missing opinion as
-        // permission — which is what a non-finite confidence means to the mask.
+        // One band with only one position's level: a non-finite confidence must not read as permission.
         double[] first = Flat(70.0);
         double[] second = Flat(70.0);
         second[5] = double.NaN;
@@ -193,10 +168,7 @@ public sealed class EqWizardArraySourceTests
     [Fact]
     public void AMixedArrayOffersOnlyTheCalibrationsItCanApplyExactly()
     {
-        // Own reproduces the aggregate and Off undoes it, both exactly, because it was
-        // MEASURED as the difference between the corrected average and the raw one.
-        // One microphone's file in its place is the answer that cannot be right and
-        // looks identical to the two that are.
+        // Own and Off are exact because the correction is measured (corrected minus raw average).
         var mixed = new[] { Calibration(-2.0), Calibration(3.0) };
         var matched = new[] { Calibration(-2.0), Calibration(-2.0) };
 
@@ -215,9 +187,6 @@ public sealed class EqWizardArraySourceTests
     [Fact]
     public void AnUnmeasuredBandStaysUnmeasured()
     {
-        // What a protective high-pass leaves behind: the array microphones carry NaN
-        // where the filter took the signal past recovering, and that has to reach the
-        // fitter as "do not equalize here" rather than as a level.
         double[] first = Flat(70.0);
         double[] second = Flat(70.0);
         first[0] = double.NaN;

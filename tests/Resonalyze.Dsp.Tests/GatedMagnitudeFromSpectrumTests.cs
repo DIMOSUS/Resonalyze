@@ -2,13 +2,7 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The magnitude read from a spectrum somebody else gated must be the magnitude
-/// the gated pair reads from the same gate: one resample, one calibration path,
-/// one measured-band mask. The Virtual DSP direct-sound loss depends on it —
-/// it reads the junction phase block's spectra and divides them by curves built
-/// this way.
-/// </summary>
+/// <summary>Magnitude from an externally gated spectrum must equal the gated pair's (the Virtual DSP direct-sound loss divides by it).</summary>
 public sealed class GatedMagnitudeFromSpectrumTests
 {
     private const int SampleRate = 48_000;
@@ -70,7 +64,6 @@ public sealed class GatedMagnitudeFromSpectrumTests
             Assert.Equal(unsmoothed.Points[i].Y, fromSpectrum.Points[i].Y, 1e-9);
         }
 
-        // The band mask took part: outside 200–8000 Hz the curve is broken.
         Assert.True(masked > 0);
     }
 

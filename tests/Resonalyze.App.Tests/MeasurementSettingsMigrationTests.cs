@@ -3,10 +3,6 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-// The separate-loopback-device capability was removed; a settings file
-// written by an older version must not be misread as a shared-device
-// configuration (its channel offsets could be equal, or the microphone
-// device mono). The migration resets the loopback selection instead.
 public sealed class MeasurementSettingsMigrationTests
 {
     [Fact]
@@ -91,12 +87,7 @@ public sealed class MeasurementSettingsMigrationTests
     [Fact]
     public void MeasurementTime_SurvivesASaveAndIsNotRestamped()
     {
-        // SavedAtUtc is re-stamped by every save; the measurement's own time is not.
-        // It matters because a spatial average is shown WITH this date, and nothing
-        // records where an array's microphones stood — when they stood there is the
-        // only evidence a user has that two channels came from one sitting. Open
-        // Monday's measurement and Friday's on Saturday, save each once, and a save
-        // stamp says both came from Saturday.
+        // The measurement time, not the save stamp, is the only evidence two array channels came from one sitting.
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         var measured = new DateTimeOffset(2026, 3, 4, 9, 30, 0, TimeSpan.Zero);
         measurement.RestoreImpulseResponse(
@@ -262,14 +253,8 @@ public sealed class MeasurementSettingsMigrationTests
         Assert.Equal(7, measurement.WaveLoopbackInputChannelOffset);
     }
 
-    // A pre-Auto file (v <= 9) has no PhaseGateAutoFit/GroupDelayGateAutoFit
-    // fields. These tests deserialize REAL JSON without the fields — the
-    // failure mode they guard is exactly a property initializer surviving
-    // deserialization (System.Text.Json never assigns a missing property),
-    // which a hand-built object with an explicit null cannot catch. A
-    // deliberately fitted/typed gate offset must stay manual (Auto would
-    // silently re-snap and persist over it); an untouched default offset
-    // gets the new Auto.
+    // Real JSON without the fields: System.Text.Json never assigns a missing property, so initializers survive.
+    // A custom gate offset stays manual; an untouched default gets Auto.
     [Fact]
     public void PreAutoFileWithACustomGateOffsetStaysManual()
     {
@@ -302,8 +287,6 @@ public sealed class MeasurementSettingsMigrationTests
     [Fact]
     public void StoredAutoFitChoiceIsAppliedAsIs()
     {
-        // An explicitly released Auto with the default offset must not be
-        // re-enabled by the missing-field heuristic.
         MeasurementSettingsFile.FrequencyResponseSettings settings =
             DeserializeFrequencyResponse(
                 """
@@ -318,9 +301,6 @@ public sealed class MeasurementSettingsMigrationTests
         Assert.True(options.GroupDelayGateAutoFit);
     }
 
-    // A pre-FDW-magnitude file has no MagnitudeWindowMode/MagnitudeFdwCycles
-    // fields; its magnitude must keep reading through the fixed window. Real
-    // JSON again, for the same missing-property reason as the gate tests above.
     [Fact]
     public void PreFdwMagnitudeFileStaysFixed()
     {
@@ -366,11 +346,6 @@ public sealed class MeasurementSettingsMigrationTests
             PhaseAnalysisSettings.DefaultFdwCycles, options.MagnitudeFdwCycles);
     }
 
-    // A pre-excess-GD file has no ShowMinimumPhaseGroupDelay /
-    // ShowExcessGroupDelay fields; the new curves default ON (real JSON for
-    // the same missing-property reason as the gate tests above). A stored
-    // false must survive the roundtrip, or the checkboxes would re-arm on
-    // every restart.
     [Fact]
     public void GroupDelayCurveFlags_DefaultOnForOldFilesAndRoundTripWhenOff()
     {
@@ -398,11 +373,7 @@ public sealed class MeasurementSettingsMigrationTests
         Assert.False(restored.ShowExcessGroupDelay);
     }
 
-    // A file written before the Group Delay window existed (schema 12 and
-    // older) keeps reading through the Fixed gate its owner has been looking
-    // at: the version tells it apart, not a missing field, because the field's
-    // own default has to be FDW for the first run below. Through the real
-    // load path, since that is where the migration lives.
+    // Told apart by schema version, not a missing field, because the field's default must be FDW for a first run.
     [Fact]
     public void PreWindowGroupDelayFileStaysFixed()
     {
@@ -427,10 +398,7 @@ public sealed class MeasurementSettingsMigrationTests
         }
     }
 
-    // No file at all is a first run, and the first run's settings object is
-    // what the app applies — so the default has to survive ApplyTo, not just
-    // sit on a fresh FrequencyResponseOptions nobody reads. (The first cut of
-    // this feature started every fresh install on Fixed exactly this way.)
+    // The first-run default must survive ApplyTo, not just sit on a fresh options object.
     [Fact]
     public void FirstRunStartsTheGroupDelayOnFdw()
     {
@@ -481,8 +449,6 @@ public sealed class MeasurementSettingsMigrationTests
         System.Text.Json.JsonSerializer
             .Deserialize<MeasurementSettingsFile.FrequencyResponseSettings>(json)!;
 
-    // The migration runs inside LoadOrDefault (which reads the real settings
-    // path beside the executable), so the unit exercises it directly.
     private static void Migrate(MeasurementSettingsFile settings) =>
         settings.MigrateLegacyDualDeviceLoopback();
 }

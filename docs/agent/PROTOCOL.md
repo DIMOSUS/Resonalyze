@@ -500,7 +500,7 @@ open door: an `extensions` object, whose content is ignored).
 | `extensions` | no | Ignored. |
 
 Limits: 1 MiB of clipboard text, 64 operations, 32 advice lines / sources /
-facts per source, 2000 characters per string, JSON depth 8. A string that is
+facts per source, 2000 characters per string, JSON depth 12. A string that is
 present must stay within them; the two prose fields may be absent.
 
 ### 2.2 Operations

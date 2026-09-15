@@ -7,7 +7,6 @@ public sealed class EqWizardPlotFitTests
     [Fact]
     public void EqGainAxisRange_FollowsTheBudgetWhenTheCurveFitsInsideIt()
     {
-        // A flat/small curve: the axis reads as the ±6 dB budget, snapped out one step.
         (double min, double max) = EqWizardPlotFit.EqGainAxisRange(-6, 6, -1, 2);
 
         Assert.Equal(-12, min);
@@ -17,10 +16,7 @@ public sealed class EqWizardPlotFitTests
     [Fact]
     public void EqGainAxisRange_ExpandsToContainASummedCurveTallerThanTheBudget()
     {
-        // Several overlapping +6 dB bands sum to ~+17 dB, and a stack of cuts reaches
-        // ~-16 dB — both well past the single-band ±6 dB budget. The axis must grow to
-        // contain them (rounded out to the 6 dB step with a step of headroom) rather than
-        // clip the drawn curve, which the old budget-only range did.
+        // Overlapping bands sum past the single-band ±6 dB budget; the axis grows instead of clipping.
         (double min, double max) = EqWizardPlotFit.EqGainAxisRange(-6, 6, -16.2, 17.3);
 
         Assert.True(min <= -16.2, $"Axis floor {min} clips the -16.2 dB trough.");
@@ -32,9 +28,7 @@ public sealed class EqWizardPlotFitTests
     [Fact]
     public void ForCurve_BringsAnAbsoluteSplCurveInsideTheAxis()
     {
-        // A moving-microphone room average sits near 80 dB SPL — completely outside the
-        // impulse-response bounds, and those are ABSOLUTE, so without fitting the curve
-        // could not even be panned into view.
+        // ~80 dB SPL is outside the absolute IR bounds, so without fitting it could not be panned into view.
         SignalPoint[] points =
         [
             new SignalPoint(20, 78.4),
@@ -55,11 +49,7 @@ public sealed class EqWizardPlotFitTests
         });
     }
 
-    // An impulse-response source is loopback-referenced, so its whole curve
-    // rises by whatever the reference is attenuated by — and attenuating the
-    // reference is the readme's fix for an overdriven loopback input. The pan
-    // ceiling has to clear that, and it is the same one the Frequency Response
-    // and Live Spectrum plots use, so the three cannot drift apart.
+    // Padding the loopback lifts an IR curve; the pan ceiling is shared with the FR and Live Spectrum plots.
     [Fact]
     public void ImpulseResponseRange_ClearsAPaddedLoopback()
     {

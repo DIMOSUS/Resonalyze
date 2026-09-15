@@ -2,18 +2,11 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The conversion is only worth anything if it is exact, so these tests do not check
-/// the scale factor against a hand-copied constant — they build the Zölzer section
-/// independently and compare its magnitude response against the library's RBJ one.
-/// </summary>
+/// <summary>Builds the Zölzer section independently and compares against the library's RBJ response, not a copied constant.</summary>
 public class PeqQConventionTests
 {
     private const double SampleRateHz = 48_000;
 
-    // A converted band must reproduce the ORIGINAL response on the target device, not
-    // merely something close: the whole point is that a user can type these numbers in
-    // and measure the curve Resonalyze drew.
     [Theory]
     [InlineData(2_000, 5.8, -15.0)]
     [InlineData(10_000, 5.8, -15.0)]
@@ -40,15 +33,13 @@ public class PeqQConventionTests
         }
     }
 
-    // Without the conversion the device is materially wrong, so the test above cannot be
-    // passing by accident (e.g. if ToConvention silently returned its input).
+    // Guards the test above from passing if ToConvention returned its input.
     [Fact]
     public void Symmetric_WithoutConversion_IsMuchWiderThanRbj()
     {
         var band = new PeqBand(2_000, 5.8, -15.0);
 
-        // 4500 Hz sits between the skirts of the two bands of the field case that
-        // exposed this: RBJ leaves it essentially untouched, Zölzer does not.
+        // 4500 Hz lies between the skirts of the field case's two bands.
         double rbj = DigitalEqualizationResponse.MagnitudeDbAt(band, 4_500, SampleRateHz);
         double symmetric = ZoelzerMagnitudeDb(band, 4_500, SampleRateHz);
 
@@ -56,11 +47,7 @@ public class PeqQConventionTests
         Assert.True(Math.Abs(symmetric) > 0.8, $"Symmetric skirt was {symmetric:F2} dB");
     }
 
-    // REW publishes the bandwidth between the half-gain points for each convention as
-    // BW = m * f0 / Q. Reproducing its worked figures for f0 = 1 kHz, Q 4, ±12 dB pins
-    // our scale factors against an outside authority rather than against our own algebra,
-    // and it is the case that separates Classic from Symmetric: only Classic is
-    // asymmetric, coming out wide on a boost and narrow on a cut.
+    // REW's published BW = m * f0 / Q figures (f0 1 kHz, Q 4, ±12 dB): only Classic is asymmetric.
     [Theory]
     [InlineData(PeqQConvention.Rbj, 12.0, 250.0)]
     [InlineData(PeqQConvention.Rbj, -12.0, 250.0)]
@@ -73,20 +60,13 @@ public class PeqQConventionTests
         double gainDb,
         double expectedBandwidthHz)
     {
-        // What the device realizes when Q 4 is dialled into it.
         PeqBand realized = PeqQConventions.ToRbj(
             new PeqBand(1_000, 4.0, gainDb), convention);
 
         Assert.Equal(expectedBandwidthHz, HalfGainBandwidthHz(realized), 1);
     }
 
-    // Generalises the rows above off the hardcoded figures: for every convention, the
-    // band a device realizes from a dialled-in Q must have the half-gain bandwidth that
-    // convention DEFINES. The multiplier here is written the way REW writes it — the
-    // square root of the LINEAR gain — rather than as the exponent PeqQConventions uses,
-    // so the test checks the reading of the definition and not just its arithmetic. This
-    // is what covers Classic at the realized-response level, where Symmetric has an
-    // independent section to compare against and Classic has none.
+    // The multiplier is written REW's way (sqrt of linear gain), checking the definition rather than our exponent.
     [Fact]
     public void ToRbj_RealizesTheBandwidthEachConventionDefines()
     {
@@ -107,18 +87,13 @@ public class PeqQConventionTests
                     Assert.Equal(
                         expected,
                         actual,
-                        // Loosen with the width itself: a 4 kHz-wide band cannot be
-                        // pinned to the same absolute hertz as a 60 Hz one.
                         Math.Max(0.05, expected * 1e-3));
                 }
             }
         }
     }
 
-    // REW states each convention's half-gain bandwidth as a multiple of Fc/Q:
-    //   RBJ Q        centre frequency/Q
-    //   Classic Q    sqrt(gain)*centre frequency/Q          — the signed linear gain
-    //   Symmetric Q  sqrt(absgain)*centre frequency/Q       — "always >= 1"
+    // REW half-gain bandwidths: RBJ Fc/Q; Classic sqrt(gain)*Fc/Q (signed linear gain); Symmetric sqrt(absgain)*Fc/Q.
     private static double RewBandwidthMultiplier(PeqQConvention convention, double gainDb) =>
         convention switch
         {
@@ -127,8 +102,7 @@ public class PeqQConventionTests
             _ => 1.0
         };
 
-    // The two proportional conventions agree on boosts and disagree on cuts, so a build
-    // that treated Classic as an alias of Symmetric would still pass the boost rows above.
+    // Classic and Symmetric agree on boosts, so an alias would pass the boost rows.
     [Fact]
     public void Classic_DiffersFromSymmetric_OnCutsOnly()
     {
@@ -170,8 +144,7 @@ public class PeqQConventionTests
         Assert.Equal(band, PeqQConventions.ToConvention(band, PeqQConvention.Rbj));
     }
 
-    // A half-filled PEQ slot has no gain, so it has no bandwidth to restate; scaling its
-    // placeholder Q would make an empty slot look edited on the sheet.
+    // Scaling a transparent slot's placeholder Q would make it look edited.
     [Theory]
     [InlineData(0.0, 5.8, -15.0)]
     [InlineData(2_000, 0.0, -15.0)]
@@ -187,9 +160,7 @@ public class PeqQConventionTests
         Assert.Equal(band, PeqQConventions.ToConvention(band, PeqQConvention.Classic));
     }
 
-    // Boost and cut of the same depth scale identically — the factor is 10^(|G|/40), and
-    // an implementation that dropped the absolute value would turn Symmetric into
-    // Classic, narrowing every cut instead of widening it.
+    // Factor 10^(|G|/40): dropping the absolute value turns Symmetric into Classic.
     [Fact]
     public void ToConvention_Symmetric_ScalesBoostAndCutTheSameWay()
     {
@@ -203,9 +174,6 @@ public class PeqQConventionTests
         Assert.True(cutQ > cut.Q);
     }
 
-    // The three descriptions a chooser shows are what a user decides on, so a switch
-    // that quietly fell through to the RBJ default would mislabel a whole sheet. Each
-    // convention must describe ITSELF, in every one of the three texts.
     [Fact]
     public void EveryConventionIsDescribedDistinctly()
     {
@@ -227,9 +195,7 @@ public class PeqQConventionTests
         }
     }
 
-    // The width factors quoted in the blurb are the ones a user checks their own DSP
-    // against, so they are pinned to the conversion itself rather than trusted: a
-    // change to Scale that left the prose behind would print a lie.
+    // The quoted width factors are pinned to the conversion so the prose cannot drift.
     [Theory]
     [InlineData(PeqQConvention.Symmetric, 3.0)]
     [InlineData(PeqQConvention.Symmetric, 12.0)]
@@ -248,13 +214,9 @@ public class PeqQConventionTests
             PeqQConventions.DescribeBandwidth(convention));
     }
 
-    // Distance between the points at half the band's gain, the quantity every one of
-    // these conventions defines Q through. Bisection on each skirt rather than a scan,
-    // so the resolution does not limit what the bandwidth assertions can pin down.
     private static double HalfGainBandwidthHz(PeqBand band)
     {
-        // Well above audio, to keep the bilinear warp from moving the skirts: the
-        // conventions are analog definitions and REW's figures carry no warp.
+        // Well above audio: the conventions are analog definitions, free of bilinear warp.
         const double WideRateHz = 768_000;
         double half = band.GainDb / 2.0;
 
@@ -269,8 +231,6 @@ public class PeqQConventionTests
             Edge(band.FrequencyHz, band.FrequencyHz / 8, Reached);
     }
 
-    // Bisects between a frequency known to be inside the half-gain region and one known
-    // to be outside it, in log space so both skirts converge alike.
     private static double Edge(double inside, double outside, Func<double, bool> reached)
     {
         for (int i = 0; i < 200; i++)
@@ -289,15 +249,12 @@ public class PeqQConventionTests
         return Math.Sqrt(inside * outside);
     }
 
-    // Frequencies spanning three octaves either side of the band, plus the centre and
-    // points just inside the skirts where the two conventions differ most.
     private static IEnumerable<double> Probes(double centreHz)
     {
         foreach (double ratio in new[]
                  { 0.125, 0.25, 0.5, 0.71, 0.9, 1.0, 1.1, 1.41, 2.0, 4.0 })
         {
             double probe = centreHz * ratio;
-            // Above Nyquist there is no response to compare.
             if (probe > 0 && probe < SampleRateHz / 2.2)
             {
                 yield return probe;
@@ -305,12 +262,6 @@ public class PeqQConventionTests
         }
     }
 
-    /// <summary>
-    /// Zölzer/DAFX peak filter, written out independently of anything in the library so
-    /// the comparison is a real cross-check rather than the same code twice. Boost and
-    /// cut are separate branches: the gain V0 = 10^(G/20) rides on the numerator for a
-    /// boost and on the denominator for a cut.
-    /// </summary>
     private static double ZoelzerMagnitudeDb(PeqBand band, double frequencyHz, double sampleRateHz)
     {
         double v0 = Math.Pow(10.0, band.GainDb / 20.0);

@@ -2,14 +2,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The calibration cache, the once-per-session problem reporting and the path
-/// fallbacks moved off Form1 into <see cref="MicrophoneCalibrationService"/>;
-/// these pin the behavior the shell relies on: legacy calibration.txt lookup,
-/// resolution of the additional entries (files and angular estimates), and
-/// warnings that never repeat within a session even across a cache
-/// invalidation.
-/// </summary>
 public sealed class MicrophoneCalibrationServiceTests : IDisposable
 {
     private const string ValidCalibration = "20 2.5\n1000 2.5\n20000 2.5\n";
@@ -204,9 +196,7 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
     [Fact]
     public void GetEntries_MarksAnUnparsableFileUnavailable()
     {
-        // Availability is about yielding a correction, not about the file being
-        // on disk: an unparsable one corrects by 0 dB everywhere, which a
-        // selector marked "ready" would hide.
+        // An unparsable file corrects by 0 dB everywhere, so it is not available.
         zeroDegreePath = WriteFile("broken.txt", "not a calibration\n");
         definitions.Add(new MicrophoneCalibrationDefinition
         {
@@ -219,8 +209,7 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
         MicrophoneCalibrationService service = CreateService();
 
         Assert.All(service.GetEntries(), entry => Assert.False(entry.Available));
-        // Listing entries reads the files, but the warning belongs to correcting
-        // a measurement with one, so it must not have been raised yet.
+        // The warning belongs to correcting a measurement, not to listing entries.
         Assert.Empty(reportedProblems);
         Assert.False(service.Get(MicrophoneCalibrationIds.ZeroDegrees)!.HasData);
         Assert.Single(reportedProblems);
@@ -255,8 +244,6 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
     [Fact]
     public void GetEntries_NamesTheFileOfEachFileBackedEntry()
     {
-        // A Virtual DSP session that carries a curve also says which file it was, so
-        // the entries report theirs — by name only, the folder means nothing elsewhere.
         zeroDegreePath = WriteFile("ECM8000_0deg.txt", ValidCalibration);
         definitions.Add(new MicrophoneCalibrationDefinition
         {

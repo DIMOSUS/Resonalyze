@@ -3,10 +3,7 @@ using OxyPlot.WindowsForms;
 
 namespace Resonalyze.App.Tests;
 
-// Pressing a mouse button over a plot makes OxyPlot hit-test its series before any
-// binding gets a look in (ControllerBase.HandleMouseDown asks the model first), so
-// a series that throws while answering "what is under the cursor" takes the whole
-// app down on a click.
+// OxyPlot hit-tests series on mouse down before any binding, so a throwing series crashes the app on a click.
 public sealed class WaterfallHitTestTests
 {
     [Fact]
@@ -19,8 +16,6 @@ public sealed class WaterfallHitTestTests
         model.Series.Add(series);
         ((IPlotModel)model).Update(false);
 
-        // The waterfall draws a projected surface: the cursor is not over a data
-        // point of a curve, so there is nothing to report.
         Assert.Null(series.GetNearestPoint(new ScreenPoint(200, 150), interpolate: false));
         Assert.Null(series.GetNearestPoint(new ScreenPoint(200, 150), interpolate: true));
     }

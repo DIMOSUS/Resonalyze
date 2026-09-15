@@ -13,18 +13,11 @@ internal enum IrPreviewSource
 {
     SweepDeconvolution,
     Primary,
-    // The transfer IR referenced at its estimated START — where the plain
-    // magnitude extraction actually opens its window (DataHelper's
-    // MagnitudeAnchorIndex). Primary above stays peak-referenced for the
-    // views whose own analysis anchors there (waterfall, burst decay).
+    // Referenced at the estimated start, where magnitude extraction opens its window (DataHelper MagnitudeAnchorIndex).
     PrimaryAtStart,
     TransferFromStart
 }
 
-// One impulse response drawn on a gated preview: the samples on the absolute
-// timeline plus the color/title it is drawn with. The stroke defaults to the
-// preview's own; the Virtual DSP step view thickens its Sum the way the other
-// views do, and dashes the opposite side's.
 internal sealed record IrPreviewTrace(
     Complex[] Samples,
     string Title,
@@ -34,10 +27,7 @@ internal sealed record IrPreviewTrace(
 
 internal static class ImpulseWindowPreview
 {
-    // Gated preview for an arbitrary set of impulse responses on one shared
-    // absolute timeline (the Virtual DSP phase gate): every trace is
-    // normalized independently so each arrival is visible, and the Tukey gate is
-    // drawn where it actually sits.
+    // Every trace normalized independently so each arrival is visible.
     public static void UpdateGatedMulti(
         OxyPlot.WindowsForms.PlotView plotView,
         IReadOnlyList<IrPreviewTrace> traces,
@@ -61,21 +51,9 @@ internal static class ImpulseWindowPreview
         plotView.InvalidatePlot(true);
     }
 
-    // The shared body of the gated multi-trace view: each trace normalized to
-    // its own in-window peak, the Tukey gate outline, and a vertical mark at
-    // the gate offset. Used by the gate dialog's preview and the Virtual DSP
-    // impulse view alike, so the window, the gate and the traces cannot drift
-    // apart; the two differ only by the envelopes below, which the Virtual DSP
-    // view alone asks for and which move its peak to the envelope's. Everything
-    // added carries seriesTag so a host redrawing an existing model can find
-    // and remove it. Returns the display window bounds (ms), or null when
-    // there is nothing to draw.
-    //
-    // With envelopes each trace also gets its ± analytic envelope (see
-    // AddEnvelopeGuides), and its peak is then the ENVELOPE's in-window peak
-    // rather than the samples': the envelope rides above the samples it was
-    // built from, so on the sample peak's scale it would run off the ±1 axis
-    // wherever a band-limited arrival peaks between its carrier's crests.
+    // Shared by the gate dialog and the Virtual DSP impulse view so window, gate and traces cannot drift.
+    // With envelopes, the peak is the envelope's in-window peak, else the envelope runs off ±1 between carrier crests.
+    // Series carry seriesTag for removal. Returns the window (ms), or null when nothing to draw.
     public static (double StartMs, double EndMs)? AddGatedTraceSeries(
         PlotModel model,
         IReadOnlyList<IrPreviewTrace> traces,
@@ -129,18 +107,8 @@ internal static class ImpulseWindowPreview
         return display.BoundsMs(sampleRate);
     }
 
-    // The step view's body, the Virtual DSP's pair to the gated traces above:
-    // each trace's STEP response — the running sum of its samples from the
-    // record's start — shown over the same window, with the same gate outline.
-    // Unlike the impulse traces, every step is drawn on ONE common scale, the
-    // largest excursion among them inside the window: the curves keep their
-    // relative transient amplitudes, and a Sum among them is what the others
-    // add up to. Per-trace normalization would draw every driver as if it
-    // carried the whole band. The gate only frames the view: the sum runs from
-    // the record whatever the gate is (VirtualCrossoverAnalysis.StepResponse),
-    // and a Tukey taper applied to the samples would read as a decay of the
-    // step — so the same sample reads the same under every gate, up to the
-    // window's scale.
+    // Steps share ONE scale (largest in-window excursion) so relative amplitudes and the Sum stay meaningful.
+    // The sum runs from the record start whatever the gate (VirtualCrossoverAnalysis.StepResponse); no Tukey taper.
     public static (double StartMs, double EndMs)? AddStepTraceSeries(
         PlotModel model,
         IReadOnlyList<IrPreviewTrace> traces,
@@ -191,10 +159,7 @@ internal static class ImpulseWindowPreview
         return display.BoundsMs(sampleRate);
     }
 
-    // The sample window a gated multi-trace view draws — the gate plus a
-    // context on either side — and the Tukey outline drawn inside it. One
-    // resolution for the impulse traces and the step traces, so the two views
-    // frame the same milliseconds and a toggle between them keeps the zoom.
+    // One resolution for impulse and step views so toggling keeps the zoom.
     private readonly record struct GatedDisplay(
         int Start,
         int End,
@@ -255,16 +220,9 @@ internal static class ImpulseWindowPreview
             TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
         };
 
-    // The envelope guides: thin and translucent in the trace's own colour, so
-    // they read as belonging to it without competing with it. Fainter than the
-    // correlation view's guides: here they sit under every channel's trace at
-    // once.
     private const byte EnvelopeGuideAlpha = 30;
     private const double EnvelopeGuideThickness = 0.8;
 
-    // A trace's analytic envelope, ± around zero, on the trace's own scale so
-    // the pair wraps it. Drawn before the trace, which stays on top. Named in
-    // the tracker, kept out of the legend.
     private static void AddEnvelopeGuides(
         PlotModel model,
         IrPreviewTrace trace,
@@ -295,19 +253,9 @@ internal static class ImpulseWindowPreview
         }
     }
 
-    // The envelope is read over the WHOLE record rather than the displayed
-    // window: the window's right edge cuts through the room's decay, and a
-    // transform over a cut record wobbles at the cut — on the milliseconds the
-    // view is about. A processed record ends in the padding ApplyChain adds past
-    // its content (silence or the filters' decay), so the whole record's wrap
-    // point falls where there is nothing left to cut; it is also a power of two
-    // long, which the transform wants. Memoized per sample array: the Virtual
-    // DSP redraws this view on every chain edit, and its processing cache hands
-    // every unchanged channel back the same array, so only the edited channel
-    // pays — and it pays off the UI thread: the panel warms the envelopes of
-    // the traces it is about to draw before the frame (see RedrawMainPlotAsync),
-    // and the draw reads them from here. Safe from any thread; two threads
-    // racing on one array compute it twice and keep one.
+    // Envelope over the whole record, not the window: a transform over a cut record wobbles at the cut.
+    // Memoized per sample array (unchanged channels reuse arrays); warmed off the UI thread by RedrawMainPlotAsync.
+    // Thread-safe; a race computes twice and keeps one.
     private static readonly ConditionalWeakTable<Complex[], double[]> envelopeCache = new();
 
     internal static double[] EnvelopeOf(Complex[] samples) =>
@@ -322,8 +270,6 @@ internal static class ImpulseWindowPreview
             return SignalEnvelope.Envelope(real);
         });
 
-    // The Tukey gate drawn where it sits, and a vertical mark at the gate
-    // offset (the end of the left shoulder).
     private static void AddGateOutline(
         PlotModel model,
         GatedDisplay display,
@@ -378,9 +324,6 @@ internal static class ImpulseWindowPreview
         plotView.InvalidatePlot(true);
     }
 
-    // Preview for the gated phase / group-delay modes: the IR is shown on its own
-    // (absolute) timeline, the Tukey gate is drawn where it actually sits, and a blue
-    // dotted vertical line marks the gate offset (the end of the left shoulder).
     public static void UpdateGated(
         OxyPlot.WindowsForms.PlotView plotView,
         ExpSweepMeasurement measurement,
@@ -494,9 +437,7 @@ internal static class ImpulseWindowPreview
         return model;
     }
 
-    // Overlays the Compare transfer IR on the same absolute timeline (index = index),
-    // dashed / dimmed / in a distinct hue. Normalised independently so both peaks show.
-    // Only drawn when the sample rate matches, so the shared ms axis stays meaningful.
+    // Only when sample rates match, so the shared ms axis stays meaningful.
     private static void AddCompareImpulse(
         PlotModel model,
         CompareAnalysisSource? compare,

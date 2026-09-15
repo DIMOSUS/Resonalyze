@@ -1,20 +1,11 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// The shared sample-accumulation core of the audio recorders: multi-channel
-/// append, fixed-length sequence extraction and a full snapshot, with explicit
-/// capacity control. Designed for use inside audio callbacks: appends are plain
-/// array copies, capacity can be pre-allocated up front (a sweep's length is
-/// known before recording starts), and in sequence mode the consumed prefix is
-/// dropped so a live session's memory stays bounded instead of growing — and
-/// periodically re-allocating — without limit.
-/// </summary>
+/// <summary>Callback-safe multi-channel accumulation; sequence mode drops the consumed prefix so live memory stays bounded.</summary>
 internal sealed class CaptureAccumulator
 {
     private readonly float[][] buffers;
     private int capacity;
     private int bufferedCount;
-    // Absolute sample index of buffers[channel][0]; stays 0 until trimming starts.
     private int retainedStart;
     private int sequenceStart;
 
@@ -38,13 +29,8 @@ internal sealed class CaptureAccumulator
     public int ChannelCount { get; }
     public int SequenceLength { get; }
 
-    /// <summary>Total samples appended per channel since construction.</summary>
     public int ReadSamples { get; private set; }
 
-    /// <summary>
-    /// Appends <paramref name="count"/> samples per channel from
-    /// <paramref name="block"/> (channel-major).
-    /// </summary>
     public void Append(float[][] block, int count)
     {
         ArgumentNullException.ThrowIfNull(block);
@@ -69,12 +55,7 @@ internal sealed class CaptureAccumulator
         ReadSamples += count;
     }
 
-    /// <summary>
-    /// Extracts every complete sequence that became available, then drops the
-    /// consumed prefix (sequence mode retains only the unconsumed tail, so
-    /// <see cref="Snapshot"/> is meaningful only without sequences). Returns null
-    /// when sequences are not configured or none is ready.
-    /// </summary>
+    /// <summary>Returns null when sequences are not configured or none is ready. Sequence mode trims, so <see cref="Snapshot"/> is meaningful only without sequences.</summary>
     public List<float[][]>? ExtractReadySequences()
     {
         if (SequenceLength <= 0)
@@ -106,7 +87,6 @@ internal sealed class CaptureAccumulator
         return ready;
     }
 
-    /// <summary>A copy of the retained samples per channel.</summary>
     public float[][] Snapshot()
     {
         var snapshot = new float[ChannelCount][];

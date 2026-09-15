@@ -3,14 +3,7 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The measuring rate and the DSP's processing rate are independent. A user with a
-/// 48 kHz sound card and a 96 kHz processor must get the filters that processor
-/// builds, not the ones the measurement rate would imply — the bilinear transform
-/// warps every corner by the rate it was designed at, and the two answers part company
-/// well inside the audible band (an LR4 low-pass at 8 kHz: 1.5 dB at 10 kHz, 4.1 dB at
-/// 12 kHz, 10.3 dB at 15 kHz).
-/// </summary>
+/// <summary>Measuring and processing rates are independent: bilinear warping differs by rate (LR4 LP 8 kHz: 1.5 dB at 10 kHz, 10.3 dB at 15 kHz).</summary>
 public sealed class ProcessorSampleRateTests
 {
     private const int MeasurementRate = 48_000;
@@ -31,8 +24,6 @@ public sealed class ProcessorSampleRateTests
                 Impulse(), chain, MeasurementRate, ProcessorRate),
             probeHz);
 
-        // What the same measurement would have produced before the rates were told
-        // apart, i.e. filters designed at the sound card's rate.
         double atRecordRate = MagnitudeDb(
             VirtualCrossoverAnalysis.ApplyChain(
                 Impulse(), chain, MeasurementRate, MeasurementRate),
@@ -42,8 +33,6 @@ public sealed class ProcessorSampleRateTests
                 .Response(LowPassSpec(8_000), probeHz, ProcessorRate)
                 .Magnitude);
 
-        // The realized response follows the PROCESSOR's analytic filter to a fraction
-        // of a dB, and is a whole dB or more away from the record-rate one.
         Assert.Equal(reference, atProcessorRate, 1);
         Assert.True(
             Math.Abs(atProcessorRate - atRecordRate) > 1.0,
@@ -55,12 +44,7 @@ public sealed class ProcessorSampleRateTests
     [Fact]
     public void ALowRateRecordCarriesAHighRateChainExactly()
     {
-        // The equivalence the feature rests on: a 48 kHz record through a 96 kHz chain
-        // is the SAME answer as upsampling that record, filtering at 96 kHz, and
-        // reading the result back — because a chain is LTI and invents no frequency
-        // its input lacks. Here the "upsampled" record is built directly at 96 kHz
-        // (a band-limited arrival that both rates represent exactly), so the
-        // comparison isolates the filtering rather than a resampler.
+        // A chain is LTI, so 48 kHz through a 96 kHz chain equals upsample-filter-read; built at 96 kHz to isolate filtering from a resampler.
         DspChannelChain chain = LowPass(3_000);
 
         Complex[] slow = VirtualCrossoverAnalysis.ApplyChain(
@@ -74,10 +58,7 @@ public sealed class ProcessorSampleRateTests
             ProcessorRate,
             ProcessorRate);
 
-        // Compared as SHAPES, referenced to a frequency the crossover passes: the two
-        // records hold the same pulse over the same time, so the 96 kHz one carries
-        // twice the samples and its spectrum twice the amplitude — a scale, not a
-        // difference in what the filter did.
+        // Compared as shapes: the 96 kHz record's spectrum carries twice the amplitude, a scale only.
         double slowReference = MagnitudeDb(slow, 100.0, MeasurementRate);
         double fastReference = MagnitudeDb(fast, 100.0, ProcessorRate);
         foreach (double probeHz in new[] { 1_000.0, 2_800.0, 3_000.0, 6_000.0, 9_000.0 })
@@ -91,8 +72,6 @@ public sealed class ProcessorSampleRateTests
     [Fact]
     public void TheDelayIsATime_NotACountOfProcessorSamples()
     {
-        // The delay travels as milliseconds through both rates: the phase ramp runs on
-        // the RECORD's grid while the filters run on the processor's.
         Complex[] shifted = VirtualCrossoverAnalysis.ApplyChain(
             Impulse(), new DspChannelChain(DelayMs: 2.0), MeasurementRate, ProcessorRate);
 
@@ -103,8 +82,7 @@ public sealed class ProcessorSampleRateTests
     [Fact]
     public void TheFilterTailIsSizedInTime_NotInProcessorSamples()
     {
-        // A 96 kHz biquad decays over the same number of MILLISECONDS whichever record
-        // holds it, so the padding a 48 kHz record needs is half the processor's count.
+        // A biquad decays over the same milliseconds, so padding is half the processor's sample count.
         var chain = new DspChannelChain(
             Peq: new EqualizationCurve([new PeqBand(20, 10, 9)]));
         PreparedDspResponse prepared = PreparedDspResponse.Create(chain, ProcessorRate);
@@ -118,29 +96,20 @@ public sealed class ProcessorSampleRateTests
     [Fact]
     public void ARecordAboveTheProcessorNyquistKeepsNothingTheDeviceCannotEmit()
     {
-        // A 192 kHz measurement of a system driven by a 96 kHz processor: above
-        // 48 kHz the device reconstructs nothing, and the periodic continuation of H
-        // would otherwise filter that band with a mirrored response no device
-        // produces — leaving the same setup measured at 96 and at 192 kHz simulating
-        // differently.
+        // Above the processor's Nyquist the device reconstructs nothing; without the gate 96 and 192 kHz captures simulate differently.
         const int fastRecord = 192_000;
         Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(
             Impulse(), LowPass(3_000), fastRecord, ProcessorRate);
 
         Assert.True(MagnitudeDb(processed, 50_000, fastRecord) < -120.0);
         Assert.True(MagnitudeDb(processed, 90_000, fastRecord) < -120.0);
-        // The band the processor DOES emit is untouched by the gate.
         Assert.True(MagnitudeDb(processed, 1_000, fastRecord) > -1.0);
     }
 
     [Fact]
     public void AScaleOnlyChainIsBandLimitedToo_WhenTheRecordOutrunsTheProcessor()
     {
-        // A gain-only or bypassed channel must lose the same ultrasonic band a
-        // filtered one does: the record went through the same processor, and a sum
-        // whose members are band-limited differently is timed and added on two
-        // different bandwidths. The FFT-free fast path is therefore only taken when
-        // the record has nothing above the processor's Nyquist to lose.
+        // A gain-only channel must lose the same ultrasonic band, or a sum mixes two bandwidths.
         const int fastRecord = 192_000;
         Complex[] bypassed = VirtualCrossoverAnalysis.ApplyChain(
             Impulse(), DspChannelChain.Identity, fastRecord, ProcessorRate);
@@ -153,8 +122,6 @@ public sealed class ProcessorSampleRateTests
             Assert.True(MagnitudeDb(response, 1_000, fastRecord) > -1.0);
         }
 
-        // At or below the processing rate there is nothing to cut, so the scalar path
-        // stays: the response is the input times the gain, sample for sample.
         Complex[] cheap = VirtualCrossoverAnalysis.ApplyChain(
             Impulse(), new DspChannelChain(GainDb: 6), MeasurementRate, ProcessorRate);
         Assert.Equal(
@@ -177,8 +144,6 @@ public sealed class ProcessorSampleRateTests
         return impulse;
     }
 
-    // A raised-cosine pulse whose content dies well below either Nyquist, so the two
-    // rates hold the same signal rather than two different band limits.
     private static Complex[] BandLimitedArrival(int sampleRate, int length)
     {
         var record = new Complex[length];

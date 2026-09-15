@@ -2,11 +2,7 @@ using Resonalyze.Audio;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A fully in-memory <see cref="IAudioSessionFactory"/> for exercising the
-/// measurement layer without NAudio or hardware. Sessions are recorded so tests
-/// can assert reuse, disposal and error propagation.
-/// </summary>
+/// <summary>In-memory <see cref="IAudioSessionFactory"/>; sessions are recorded so tests can assert reuse, disposal and errors.</summary>
 internal sealed class FakeAudioSessionFactory : IAudioSessionFactory
 {
     private readonly Func<AudioSessionRequest, AudioPlaybackSignal, IAudioDuplexSession>? duplexFactory;

@@ -2,12 +2,7 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-// The difference between a driver that says "not that rate", a driver that says
-// nothing, and a configuration for which no rate exists. Some ASIO drivers refuse a
-// second open moments after the first — closing and reopening the settings window is
-// exactly that — and answer the rate query with an empty list. Read as an answer, that
-// silently replaced a configured 96 kHz with 44.1 and the next Apply persisted it.
-// Read as silence everywhere, it manufactures support nobody reported.
+// Some ASIO drivers refuse a quick second open and answer the rate query with an empty list: that is silence, not an answer.
 public sealed class SampleRateOptionsTests
 {
     [Fact]
@@ -17,7 +12,6 @@ public sealed class SampleRateOptionsTests
             [], 96_000, hasExistingList: true, probeFailed: true);
 
         Assert.True(resolution.ProbeFailed);
-        // Null, not empty: nothing to rebuild, as opposed to nothing to offer.
         Assert.Null(resolution.Rates);
         Assert.Equal(96_000, resolution.Selected);
         Assert.Null(resolution.FellBackFrom);
@@ -32,12 +26,9 @@ public sealed class SampleRateOptionsTests
         Assert.NotNull(resolution.Rates);
         Assert.Equal([96_000], resolution.Rates);
         Assert.Equal(96_000, resolution.Selected);
-        // The rate stands alone because nothing answered, not because anything offered
-        // it — so the status line must not call it supported.
         Assert.True(resolution.ProbeFailed);
         Assert.Null(resolution.FellBackFrom);
 
-        // With no configured rate either, the constant is all that is left.
         SampleRateResolution nothing = SampleRateOptions.Resolve(
             [], 0, hasExistingList: false, probeFailed: true);
         Assert.NotNull(nothing.Rates);
@@ -45,10 +36,7 @@ public sealed class SampleRateOptionsTests
         Assert.Equal(SampleRateOptions.FallbackSampleRate, nothing.Selected);
     }
 
-    // The regression from this round. An empty list is a REAL answer everywhere except
-    // ASIO: WASAPI Shared endpoints whose mix rates differ produce it, and so does an
-    // Exclusive or Wave pair with no rate in common. Offering the configured rate there
-    // manufactures support nobody reported, and Apply would go on to accept it.
+    // Outside ASIO an empty list is a real answer (mismatched WASAPI mix rates, no common Exclusive/Wave rate).
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -57,11 +45,9 @@ public sealed class SampleRateOptionsTests
         SampleRateResolution resolution = SampleRateOptions.Resolve(
             [], 48_000, hasExistingList, probeFailed: false);
 
-        // Empty, not null: there IS an answer, and it is that nothing works here.
         Assert.NotNull(resolution.Rates);
         Assert.Empty(resolution.Rates);
         Assert.False(resolution.ProbeFailed);
-        // Nothing was taken away from the user; there was never anything to take.
         Assert.Null(resolution.FellBackFrom);
     }
 
@@ -81,9 +67,6 @@ public sealed class SampleRateOptionsTests
     [Fact]
     public void ADriverThatDoesNotOfferItSaysSo()
     {
-        // A real fallback: the driver answered, and what it offers does not include the
-        // configured rate. The rate changes and the caller is told which one was lost,
-        // so the panel can show it rather than swap the number quietly.
         SampleRateResolution resolution = SampleRateOptions.Resolve(
             [44_100, 48_000], 96_000, hasExistingList: true, probeFailed: false);
 
@@ -92,18 +75,11 @@ public sealed class SampleRateOptionsTests
         Assert.Equal(44_100, resolution.Selected);
     }
 
-    // Which probes can fall silent at all. This is the scoping the review asked for:
-    // the keep-the-list behaviour must not be reachable from a backend whose empty
-    // answer is a real one.
     [Theory]
-    // ASIO with a named driver that reported nothing — silence, the #92 case.
     [InlineData(true, "Focusrite USB ASIO", 0, true)]
-    // The same driver, answering. Not a failure however few rates it names.
     [InlineData(true, "Focusrite USB ASIO", 1, false)]
-    // ASIO with no driver selected: nothing was asked, so nothing is preserved.
     [InlineData(true, "", 0, false)]
     [InlineData(true, null, 0, false)]
-    // Every non-ASIO backend, whose empty list is an answer and must rebuild.
     [InlineData(false, null, 0, false)]
     [InlineData(false, "Focusrite USB ASIO", 0, false)]
     public void OnlyANamedAsioDriverCanFallSilent(
@@ -117,10 +93,7 @@ public sealed class SampleRateOptionsTests
             SampleRateOptions.IsProbeFailure(isAsio, driverName, reportedRateCount));
     }
 
-    // The other end of the same rule, and the round-three finding. An empty list left
-    // the combo empty, where the panel answers with its own 44.1 kHz fallback — so
-    // Apply has to refuse it, or the fallback becomes the saved configuration for an
-    // endpoint pair that just said it cannot open it.
+    // An empty combo makes the panel fall back to 44.1 kHz, so Apply must refuse it.
     [Fact]
     public void AnEmptyListIsRefusedOnTheWayToConfiguration()
     {
@@ -130,9 +103,7 @@ public sealed class SampleRateOptionsTests
                 SampleRateOptions.FallbackSampleRate,
                 "The WASAPI Exclusive endpoints"));
 
-        // The way out is not another rate — there is none — so the message has to point
-        // at what can actually change. Not the bit depth: that control is disabled, and
-        // the message named it for as long as nobody tried to follow the advice.
+        // Not the bit depth: that control is disabled.
         Assert.Contains("no sample rate in common", error.Message);
         Assert.Contains("The WASAPI Exclusive endpoints", error.Message);
         Assert.Contains("playback channel", error.Message);
@@ -153,11 +124,7 @@ public sealed class SampleRateOptionsTests
         Assert.Contains("Wave devices", error.Message);
     }
 
-    // The crash this round: WASAPI Exclusive with Mono playback asks both endpoints for
-    // a one-channel format, which endpoints that only take their native stereo format
-    // refuse at every rate. The empty list that answers is correct — and selecting entry
-    // 0 of it threw out of the rebuild, so the settings window went on ignoring every
-    // selection until it was closed and reopened.
+    // Exclusive + Mono: stereo-only endpoints refuse every rate, and selecting entry 0 of the empty list threw.
     [Fact]
     public void AnEmptyListHasNothingToSelect()
     {
@@ -169,7 +136,6 @@ public sealed class SampleRateOptionsTests
     {
         Assert.Equal(0, SampleRateOptions.FindRateIndex([44_100, 48_000, 96_000], 44_100));
         Assert.Equal(2, SampleRateOptions.FindRateIndex([44_100, 48_000, 96_000], 96_000));
-        // Defensive: Resolve only ever names a rate the list holds.
         Assert.Equal(0, SampleRateOptions.FindRateIndex([44_100, 48_000], 192_000));
     }
 

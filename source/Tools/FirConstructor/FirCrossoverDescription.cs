@@ -3,14 +3,10 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// How a FIR crossover design is put into words — one short label for a button, one
-/// sentence for a tooltip or a tuning sheet. One place, so the Virtual DSP block, the
-/// constructor and the sheet cannot describe the same kernel three ways.
-/// </summary>
+/// <summary>Single wording source so the Virtual DSP block, constructor and sheet describe a kernel the same way.</summary>
 internal static class FirCrossoverDescription
 {
-    /// <summary>The design as a button can hold it: "LP 2 kHz", "BP 80 Hz–3 kHz".</summary>
+    /// <summary>E.g. "LP 2 kHz", "BP 80 Hz–3 kHz".</summary>
     public static string Short(FirCrossoverDesign design)
     {
         ArgumentNullException.ThrowIfNull(design);
@@ -24,10 +20,6 @@ internal static class FirCrossoverDescription
         };
     }
 
-    /// <summary>
-    /// The whole design in one line: kind and corners, the shape the magnitude takes,
-    /// the window, and the length at the rate it was designed for.
-    /// </summary>
     public static string Long(FirCrossoverDesign design)
     {
         ArgumentNullException.ThrowIfNull(design);
@@ -45,7 +37,6 @@ internal static class FirCrossoverDescription
             $"{design.TapCount} taps at {Rate(design.SampleRateHz)}";
     }
 
-    /// <summary>The window as a reader names it, with β for Kaiser.</summary>
     public static string Window(FirCrossoverDesign design) =>
         design.Window switch
         {

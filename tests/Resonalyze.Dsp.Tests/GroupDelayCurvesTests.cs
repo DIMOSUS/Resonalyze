@@ -10,9 +10,6 @@ public sealed class GroupDelayCurvesTests
     [Fact]
     public void PureDelay_MinimumIsFlatZeroAndExcessCarriesTheDelay()
     {
-        // A delayed delta has a flat magnitude, so the whole measured delay is
-        // all-pass: the minimum-phase curve must sit at 0 and the excess must
-        // read the full arrival time.
         const int delaySamples = 24;
         var response = new Complex[TransformLength];
         response[delaySamples] = Complex.One;
@@ -59,11 +56,7 @@ public sealed class GroupDelayCurvesTests
     [Fact]
     public void MinimumPhaseSystem_HasNearZeroExcess()
     {
-        // h[n] = 0.9ⁿ is a one-pole system, minimum-phase by construction (the
-        // pole sits inside the unit circle; the truncation zeros sit at radius
-        // 0.9 too). Its measured group delay is fully explained by the
-        // magnitude, so the excess must read ≈ 0 across the band — this is the
-        // curve pair agreeing about a system an EQ could actually correct.
+        // 0.9ⁿ is minimum-phase (pole and truncation zeros at radius 0.9): excess ≈ 0.
         var response = new Complex[TransformLength];
         for (int i = 0; i < 1_000; i++)
         {
@@ -85,8 +78,6 @@ public sealed class GroupDelayCurvesTests
 
         List<int> band = AnalysisBandIndices(curves.Measured, 100, 18_000);
         Assert.NotEmpty(band);
-        // The system's own delay reaches ~0.19 ms at the low end; the excess
-        // must be an order of magnitude under that everywhere.
         Assert.All(band, i => Assert.InRange(
             curves.Excess!.Points[i].Y, -0.01, 0.01));
     }
@@ -94,9 +85,7 @@ public sealed class GroupDelayCurvesTests
     [Fact]
     public void AllPass_DispersionLandsInExcessNotMinimum()
     {
-        // A second-order all-pass at 1 kHz (Q = 2): |H| = 1 everywhere, so the
-        // minimum-phase curve must stay flat ≈ 0 while the group-delay pile-up
-        // at the corner (τ ≈ 4Q/ω₀ ≈ 1.27 ms) lands entirely in the excess.
+        // All-pass: τ ≈ 4Q/ω₀ ≈ 1.27 ms at the corner lands entirely in the excess.
         IReadOnlyList<BiquadCoefficients> sections = AllPassFilter.BuildSections(
             new AllPassSpec(AllPassType.SecondOrder, 1_000.0, Q: 2.0),
             SampleRate);
@@ -143,12 +132,7 @@ public sealed class GroupDelayCurvesTests
     [Fact]
     public void BulkDelayedMinimumPhaseSystem_SplitsDelayFromDispersion()
     {
-        // The app's typical geometry: a propagation delay in front of a
-        // minimum-phase driver response, the auto gate offset landing on the
-        // arrival, and a non-zero left Tukey shoulder (so extractionStart ≠ 0).
-        // The split must be clean: the minimum curve reads the one-pole's own
-        // dispersion with NO bulk delay in it, and the excess reads the full
-        // 5 ms bulk delay, flat across the band.
+        // Typical geometry (bulk delay, gate on arrival, left shoulder): minimum reads the dispersion, excess the flat 5 ms.
         const int delaySamples = 240; // 5 ms at 48 kHz.
         var response = new Complex[TransformLength];
         for (int i = 0; i < 600; i++)
@@ -177,8 +161,6 @@ public sealed class GroupDelayCurvesTests
             bulkDelayMilliseconds - 0.02,
             bulkDelayMilliseconds + 0.02));
 
-        // The dispersion stays in the minimum curve: the one-pole's group delay
-        // reaches ~0.19 ms toward DC and near-zero at the top of the band.
         double minimumLow = InterpolateY(curves.Minimum!, 100.0);
         double minimumHigh = InterpolateY(curves.Minimum!, 10_000.0);
         Assert.True(
@@ -190,12 +172,7 @@ public sealed class GroupDelayCurvesTests
     [Fact]
     public void WrapGate_LeftShoulderBeforeIrStart_KeepsTheSplit()
     {
-        // A peak near the IR start with a left shoulder longer than the offset:
-        // extractionStart goes negative and the gate reads the cyclic tail (the
-        // same wrap path GroupDelay_WrapsWhenLeftShoulderPrecedesIrStart pins for
-        // the measured curve). The time re-reference must not leak into the
-        // minimum curve: measured and excess read the true absolute arrival,
-        // minimum stays at zero.
+        // Negative extractionStart wraps; the re-reference must not leak into the minimum curve.
         const int peakSample = 5;
         var response = new Complex[TransformLength];
         response[peakSample] = Complex.One;
@@ -231,10 +208,7 @@ public sealed class GroupDelayCurvesTests
     [Fact]
     public void ValidityGate_BlanksTheSameBinsInEveryCurve()
     {
-        // A differencer's low end falls below the −60 dB global backstop, so
-        // some bins gate to NaN. The three curves must agree bin-exactly: a
-        // reader overlaying them must never see an excess value whose measured
-        // or minimum operand was blanked.
+        // All three curves blank the same bins.
         var response = new Complex[TransformLength];
         response[0] = Complex.One;
         response[1] = -Complex.One;
@@ -291,8 +265,6 @@ public sealed class GroupDelayCurvesTests
             rightMs: 0,
             smoothingInverseOctaves: 96);
 
-        // The default set carries no minimum-phase work at all — the wrapper
-        // must not silently pay for curves nobody asked for.
         Assert.Null(set.Minimum);
         Assert.Null(set.Excess);
         Assert.Equal(wrapper.Points, set.Measured.Points);
@@ -315,8 +287,6 @@ public sealed class GroupDelayCurvesTests
         return indices;
     }
 
-    // Reads the curve at the frequency nearest to the target (the grids are
-    // dense — 32768-point FFT — so nearest is as good as interpolation here).
     private static double InterpolateY(AnalysisCurve curve, double frequencyHz)
     {
         SignalPoint nearest = curve.Points
@@ -325,8 +295,7 @@ public sealed class GroupDelayCurvesTests
         return nearest.Y;
     }
 
-    // y[n] = b0·x[n] + b1·x[n−1] + b2·x[n−2] + a1·y[n−1] + a2·y[n−2] — the
-    // additive-feedback convention BiquadCoefficients documents.
+    // Additive-feedback convention: y[n] = b0·x[n] + b1·x[n−1] + b2·x[n−2] + a1·y[n−1] + a2·y[n−2].
     private static double[] FilterAdditiveFeedback(
         BiquadCoefficients biquad,
         double[] input)

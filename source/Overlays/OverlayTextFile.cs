@@ -4,35 +4,22 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// What a text curve represents, as declared in an exported file's header. A plain
-/// response can be equalized; a deviation or correction curve is a difference and must
-/// not be mistaken for one.
-/// </summary>
+/// <summary>Declared role: a deviation or correction is a difference and must not be equalized as a response.</summary>
 public enum OverlayCurveRole
 {
-    /// <summary>A measured or captured response (the swept magnitude, an RTA, …).</summary>
     Response,
 
-    /// <summary>measurement − target.</summary>
     Deviation,
 
-    /// <summary>target − measurement (the EQ gain needed to reach the target).</summary>
+    /// <summary>target − measurement (the EQ gain needed).</summary>
     EqCorrection,
 
-    /// <summary>A goal curve (an overlay target), not a measurement.</summary>
     Target,
 
-    /// <summary>A curve computed from other slots (an overlay operation).</summary>
     Calculated
 }
 
-/// <summary>
-/// The header a Resonalyze-exported curve carries, so a consumer knows what the numbers
-/// mean instead of guessing. Every field is optional: a file written by another tool has
-/// no header at all, and one written by a later version may carry keys this build does
-/// not know. Nulls therefore mean "not stated", never "invalid".
-/// </summary>
+/// <summary>All fields optional: null means "not stated" (foreign or newer files), never invalid.</summary>
 public sealed record OverlayTextMetadata(
     OverlayCurveRole? Role = null,
     AnalysisCurveKind? CurveKind = null,
@@ -47,24 +34,12 @@ public sealed record OverlayTextMetadata(
         SampleRateHz == null && string.IsNullOrEmpty(Title);
 }
 
-/// <summary>The points of a text curve together with whatever header it declared.</summary>
 public sealed record OverlayTextCurve(
     OverlayPoint[] Points,
     OverlayTextMetadata Metadata);
 
-/// <summary>
-/// Reads and writes overlay curves as plain text, one "X Y" pair per line
-/// (for example "123.4 -5.5"). Import is deliberately lenient: values may be
-/// separated by spaces, tabs, commas or semicolons, extra columns are ignored,
-/// and any line that is not a valid number pair (comments, headers, blanks) is
-/// silently skipped.
-/// </summary>
-/// <remarks>
-/// Exports additionally carry a <c>#</c>-prefixed header describing the curve (role,
-/// kind, magnitude scale, sample rate, title). It rides on the existing leniency: a
-/// comment line was already skipped by the pair parser, so new files load in older
-/// builds and headerless files from other tools (REW and friends) load here.
-/// </remarks>
+/// <summary>"X Y" per line; lenient import skips any non-pair line.</summary>
+/// <remarks>The <c>#</c> export header rides on that leniency: older builds and other tools' files still load.</remarks>
 public static class OverlayTextFile
 {
     private const string FormatMarker = "resonalyze-curve";
@@ -72,16 +47,7 @@ public static class OverlayTextFile
 
     private static readonly char[] Separators = [' ', '\t', ',', ';'];
 
-    /// <summary>
-    /// The header for a curve exported from an overlay slot. The role is authoritative
-    /// from the slot's current <paramref name="kind"/>, never a stored tag that a type
-    /// change could leave stale: a target exports as <see cref="OverlayCurveRole.Target"/>,
-    /// a calculated (operation) slot as <see cref="OverlayCurveRole.Calculated"/>, a
-    /// captured slot as <see cref="OverlayCurveRole.Response"/> — so a consumer that
-    /// equalizes curves cannot mistake a derived shape for a measured response. The curve
-    /// kind is emitted ONLY for a genuine captured response; a target or calculated slot's
-    /// stored kind is not a response identity and must not travel as one.
-    /// </summary>
+    /// <summary>Role comes from the slot's current <paramref name="kind"/>, never a stale tag; curve kind only for captured responses.</summary>
     public static OverlayTextMetadata BuildCurveMetadata(
         OverlayKind kind,
         AnalysisCurveKind? capturedCurveKind,
@@ -115,8 +81,7 @@ public static class OverlayTextFile
             points.Select(point => string.Create(
                 CultureInfo.InvariantCulture,
                 $"{point.X:R} {point.Y:R}")));
-        // Temp file + move so an interrupted export cannot truncate an existing
-        // file the user picked (mirrors OverlayFile.Save).
+        // Temp file + move so an interrupted export cannot truncate the user's file.
         string tempPath = path + ".tmp";
         File.WriteAllLines(tempPath, lines);
         File.Move(tempPath, path, overwrite: true);
@@ -124,11 +89,6 @@ public static class OverlayTextFile
 
     public static OverlayPoint[] Import(string path) => ImportCurve(path).Points;
 
-    /// <summary>
-    /// Imports the points together with the declared header. Callers that care what the
-    /// curve IS (rather than only its samples) use this; the header is
-    /// <see cref="OverlayTextMetadata.Empty"/> for a file that declares nothing.
-    /// </summary>
     public static OverlayTextCurve ImportCurve(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
@@ -161,7 +121,6 @@ public static class OverlayTextFile
                 !double.IsFinite(x) ||
                 double.IsInfinity(y))
             {
-                // Not a valid "X Y" pair (comment, header, blank, garbage) → skip.
                 continue;
             }
 
@@ -205,7 +164,7 @@ public static class OverlayTextFile
         }
         if (!string.IsNullOrWhiteSpace(metadata.Title))
         {
-            // A newline in a title would forge extra header lines on the next import.
+            // A newline in a title would forge header lines on the next import.
             yield return $"# title: {Sanitize(metadata.Title)}";
         }
     }
@@ -221,8 +180,7 @@ public static class OverlayTextFile
         return builder.ToString().Trim();
     }
 
-    // Accumulates recognized header keys; anything unknown (a key from a later
-    // version, a hand-written note) is ignored rather than failing the import.
+    // Unknown keys (newer versions, notes) are ignored.
     private sealed class HeaderBuilder
     {
         private OverlayCurveRole? role;

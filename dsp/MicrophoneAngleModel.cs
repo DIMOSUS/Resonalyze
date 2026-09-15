@@ -1,47 +1,26 @@
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Which reference the angular estimate is built from: the GRAS geometry model
-/// (diameter-scaled measurement families) or a microphone whose own 90° angular
-/// difference has been measured.
-/// </summary>
 public enum MicrophoneAngleReference
 {
     GrasGeometry,
     SonarworksXref20
 }
 
-/// <summary>
-/// The microphone an angular calibration is estimated for.
-/// <paramref name="FrontDiameterMm"/> is the OUTER diameter of the front around
-/// the capsule — the scale that sets the diffraction, not the diameter of the
-/// diaphragm or of the handle. Diameter and grid are ignored when
-/// <paramref name="Reference"/> names a specific microphone, which carries its
-/// own measured behaviour.
-/// </summary>
+/// <summary><paramref name="FrontDiameterMm"/> is the OUTER front diameter around the capsule (sets diffraction).
+/// Diameter and grid are ignored when <paramref name="Reference"/> names a measured microphone.</summary>
 public sealed record MicrophoneAngleRequest(
     double AngleDegrees,
     double FrontDiameterMm,
     MicrophoneProtectionGrid Grid = MicrophoneProtectionGrid.Unknown,
     MicrophoneAngleReference Reference = MicrophoneAngleReference.GrasGeometry);
 
-/// <summary>
-/// The estimated angular difference at one frequency: the central estimate and
-/// the spread of the reference variants it was taken from. The spread is the
-/// honest uncertainty of a geometric estimate — half-inch GRAS constructions
-/// differ by more than 2 dB at 20 kHz — not a confidence interval.
-/// </summary>
+/// <summary>Spread = how much the reference variants differ (half-inch GRAS differ by 2+ dB at 20 kHz), not a confidence interval.</summary>
 public readonly record struct MicrophoneAngleBounds(
     double CenterDb,
     double LowerDb,
     double UpperDb);
 
-/// <summary>
-/// An angular correction curve estimated for one microphone and one angle:
-/// evaluate it at any frequency with <see cref="Deltas"/>. Everything it
-/// returns is an ESTIMATE derived from reference microphones of comparable
-/// geometry — never a measurement of the microphone in hand.
-/// </summary>
+/// <summary>An ESTIMATE from reference microphones of comparable geometry, never a measurement of this microphone.</summary>
 public sealed class MicrophoneAngleEstimate
 {
     private readonly Func<double, MicrophoneAngleBounds> evaluate;
@@ -60,20 +39,9 @@ public sealed class MicrophoneAngleEstimate
 
     public double AngleDegrees { get; }
 
-    /// <summary>Labels of the reference curves the estimate was taken from.</summary>
     public IReadOnlyList<string> References { get; }
 
-    /// <summary>
-    /// The highest frequency at which nothing is being held yet: where the FIRST
-    /// of the reference sizes behind this estimate runs out of table after
-    /// diameter scaling. Above it that size holds its last value — the other may
-    /// still be modelling — instead of extrapolating a diffraction curve it has
-    /// no data for, and the set of references never changes mid-curve. Swapping
-    /// one reference for another at some frequency would step the correction (a
-    /// 1" microphone read from a quarter-inch reference jumps by ~9 dB) and
-    /// leave <see cref="References"/> naming curves the top of the band never
-    /// used.
-    /// </summary>
+    /// <summary>Where the first reference runs out of table; above it references hold their last value rather than swap mid-curve (a swap steps ~9 dB).</summary>
     public double HighestSupportedFrequencyHz { get; }
 
     public MicrophoneAngleBounds Deltas(double frequencyHz) =>
@@ -82,42 +50,16 @@ public sealed class MicrophoneAngleEstimate
     public double DeltaDb(double frequencyHz) => evaluate(frequencyHz).CenterDb;
 }
 
-/// <summary>
-/// Estimates the calibration of an axisymmetric, nominally omnidirectional
-/// end-address measurement microphone at an off-axis angle, from its own 0°
-/// calibration plus the geometry of its front.
-/// <para>
-/// The model reads the GRAS free-field correction families as measured
-/// diffraction of known geometries, takes only the CHANGE with angle
-/// (<c>G(theta) - G(0)</c>, so the table's 250 Hz normalization cancels), scales
-/// the frequency axis of each reference by the diameter ratio (diffraction
-/// follows <c>ka = pi*d*f/c</c>), interpolates the angle in <c>1 - cos(theta)</c>
-/// through the tabulated 0/30/60/90 nodes, and reports the median of the
-/// matching references as the estimate with their spread as the uncertainty.
-/// </para>
-/// <para>
-/// It does NOT apply to cardioid, shotgun, side-address or boundary microphones,
-/// to a microphone wearing a windscreen, or to any front that is not
-/// axisymmetric — and it says nothing about phase.
-/// </para>
-/// </summary>
+/// <summary>Off-axis calibration of an axisymmetric omni end-address microphone from GRAS diffraction families: G(θ)−G(0),
+/// frequency scaled by diameter (ka), angle interpolated in 1−cos θ, median ± spread. Not for cardioid, side-address, windscreens; no phase.</summary>
 public static class MicrophoneAngleModel
 {
-    /// <summary>
-    /// The 90° difference measured on two Sonarworks XREF 20 units (12.7 mm
-    /// front), fitted to 0.05 dB RMS over 20 Hz - 20 kHz. Kept as a named model
-    /// because a generic 12.7 mm estimate misses it by up to 2.2 dB at 20 kHz:
-    /// physical size alone does not fix directivity.
-    /// </summary>
+    /// <summary>Measured on two XREF 20 units; a generic 12.7 mm estimate misses it by up to 2.2 dB at 20 kHz.</summary>
     public const double SonarworksXref20DiameterMm = 12.7;
 
-    /// <summary>The top of the band the Sonarworks difference was fitted over.</summary>
     public const double SonarworksXref20HighestFittedHz = 20_000.0;
 
-    // u = 1 - cos(theta) at the tabulated angles 0, 30, 60 and 90 degrees. The
-    // substitution is what makes the interpolation behave: it approaches zero
-    // quadratically at small angles, the way diffraction does, where linear
-    // interpolation in degrees overshoots.
+    // u = 1 − cos θ approaches zero quadratically like diffraction; linear degrees overshoot.
     private static readonly double[] AngleNodes =
         [0.0, 1.0 - 0.86602540378443865, 0.5, 1.0];
 
@@ -159,11 +101,7 @@ public static class MicrophoneAngleModel
             .Select(curve => new Candidate(curve, request.FrontDiameterMm / curve.DiameterMm))
             .ToList();
 
-        // The two reference sizes the target diameter falls between (one when it
-        // sits on or outside a tabulated size). Each size is aggregated on its
-        // own and the two are then blended by log-diameter, so a target sitting
-        // a hair above a tabulated size reads almost exactly like that size
-        // instead of suddenly averaging in a family twice its diameter.
+        // Each size aggregated separately then blended by log-diameter, so a hair above a size reads like that size.
         double[] diameters = matching
             .Select(candidate => candidate.Curve.DiameterMm)
             .Distinct()
@@ -187,11 +125,7 @@ public static class MicrophoneAngleModel
             ? 0.0
             : (Math.Log(request.FrontDiameterMm) - Math.Log(below)) /
               (Math.Log(above) - Math.Log(below));
-        // Every reference holds at its own range (see Candidate.GetDeltas), so
-        // this limit only REPORTS where the first of them stops modelling — a
-        // shared cut-off would travel with the blend, letting a neighbouring
-        // family weighted at a ten-thousandth truncate the dominant one and step
-        // the answer by 12 dB across a hundredth of a millimetre.
+        // Only reports the limit: a shared cut-off would let a negligibly weighted family truncate the dominant one.
         double reportedLimit = lower
             .Concat(upper)
             .Min(candidate => candidate.HighestTargetFrequencyHz);
@@ -213,21 +147,12 @@ public static class MicrophoneAngleModel
         MicrophoneAngleRequest request,
         double u)
     {
-        // Only the 90° difference is measured for this microphone, so the angle
-        // is taken from the compact (1 - cos theta)^0.85 shape rather than from a
-        // table (the exponent is an empirical fit to the GRAS angular data, not a
-        // GRAS formula). The half-inch GRAS variants supply the SPREAD of that
-        // shape, so the band collapses to the fit at 90°, where the difference is
-        // measured rather than modelled.
+        // Only 90° is measured: angle shape (1 − cos θ)^0.85 is an empirical fit; half-inch GRAS variants give the spread (zero at 90°).
         double analyticFactor = Math.Pow(u, 0.85);
         List<Candidate> halfInch = GrasFreeFieldCorrections.Curves
             .Where(curve => curve.DiameterMm == SonarworksXref20DiameterMm)
             .Select(curve => new Candidate(curve, 1.0))
             .ToList();
-        // Reported at the FIRST thing that runs out — the fit's own band or the
-        // half-inch references that shape the spread. Both hold from there of
-        // their own accord: the fit clamps itself, the references hold in
-        // Candidate.GetDeltas.
         double highestSupported = Math.Min(
             SonarworksXref20HighestFittedHz,
             halfInch.Min(candidate => candidate.HighestTargetFrequencyHz));
@@ -256,30 +181,18 @@ public static class MicrophoneAngleModel
             });
     }
 
-    /// <summary>
-    /// The measured 90°-minus-0° difference of the Sonarworks XREF 20, in dB.
-    /// The fit was taken over 20 Hz - 20 kHz and HOLDS above that: it is a
-    /// power law with no turnover, so continuing it would reach -13 dB at
-    /// 48 kHz and -18 dB at 96 kHz on nothing but arithmetic — and those
-    /// frequencies are reached, since the audition FIR samples the correction
-    /// up to Nyquist.
-    /// </summary>
+    /// <summary>Measured 90°−0° difference of the XREF 20 in dB; held above 20 kHz (the power law would reach −18 dB at 96 kHz).</summary>
     public static double SonarworksXref20Delta90Db(double frequencyHz)
     {
         double octavesAboveKnee = Math.Log2(
             Math.Min(frequencyHz, SonarworksXref20HighestFittedHz) / 4394.0);
-        // Below the knee the two measured units showed no angular change at all,
-        // and the fit is only defined above it. Return a positive zero so the
-        // value reads as "no correction" everywhere it is printed.
+        // Positive zero below the knee (no angular change measured).
         return octavesAboveKnee <= 0.0
             ? 0.0
             : -2.82 * Math.Pow(octavesAboveKnee, 1.248);
     }
 
-    // One tabulated size, read at a frequency the caller has already bounded to
-    // what every candidate covers: the median of its constructions with their
-    // spread. Same size means comparable geometry, so the spread reads as "how
-    // much do microphones this size differ", not "how much do sizes differ".
+    // Same size: spread reads as construction variance, not size variance.
     private static MicrophoneAngleBounds Aggregate(
         List<Candidate> candidates,
         double frequencyHz,
@@ -299,9 +212,7 @@ public static class MicrophoneAngleModel
         return new MicrophoneAngleBounds(median, deltas[0], deltas[^1]);
     }
 
-    // Between the two tabulated sizes the target falls between, by log-diameter:
-    // ka scales with the diameter, so the geometric mean of two sizes is the
-    // midpoint of the behaviour, not the arithmetic one.
+    // Log-diameter: ka scales with d, so the geometric mean is the behavioural midpoint.
     private static MicrophoneAngleBounds Interpolate(
         MicrophoneAngleBounds below,
         MicrophoneAngleBounds above,
@@ -344,23 +255,12 @@ public static class MicrophoneAngleModel
 
         public GrasReferenceCurve Curve { get; }
 
-        /// <summary>
-        /// Target frequency to reference frequency: <c>f_r = f * d_t / d_r</c>,
-        /// the substitution that keeps <c>ka</c> equal between the two housings.
-        /// </summary>
+        /// <summary><c>f_r = f * d_t / d_r</c> keeps <c>ka</c> equal.</summary>
         public double FrequencyScale { get; }
 
         public double HighestTargetFrequencyHz => Curve.MaxFrequencyHz / FrequencyScale;
 
-        /// <summary>
-        /// The angular differences this reference states for a target frequency,
-        /// HOLDING its last tabulated value above its own range. Holding here,
-        /// rather than at the caller, is what keeps the estimate continuous: the
-        /// caller would have to clamp to <see cref="HighestTargetFrequencyHz"/>,
-        /// and scaling that back through the diameter ratio can land a single
-        /// ulp past the table's end — which used to drop the reference and step
-        /// the answer by the whole correction.
-        /// </summary>
+        /// <summary>Holds the last tabulated value above range here, not at the caller: clamping via the diameter ratio can land one ulp past the end.</summary>
         public GrasAngleDeltas GetDeltas(double frequencyHz)
         {
             Curve.TryGetAngleDeltas(

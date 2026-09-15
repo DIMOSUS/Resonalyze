@@ -2,12 +2,6 @@ using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The current-measurement identity (history entry id + loaded-IR flag) moved
-/// off Form1 into <see cref="MeasurementSessionTracker"/>; these pin the
-/// transitions the shell relies on: load/save wiring into the history
-/// service, the persist guard, and the delete-keeps-the-loaded-IR rule.
-/// </summary>
 public sealed class MeasurementSessionTrackerTests : IDisposable
 {
     private readonly string directory;

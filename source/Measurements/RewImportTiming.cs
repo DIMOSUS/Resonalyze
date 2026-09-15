@@ -1,54 +1,16 @@
 namespace Resonalyze;
 
-/// <summary>
-/// Where an imported REW export's t = 0 lands, and what its arrival may be called.
-/// </summary>
-/// <param name="Reference">
-/// What the arrival is worth once the offset question is answered.
-/// </param>
-/// <param name="ReferenceIndex">
-/// The index in REW's buffer that becomes sample 0 of the transfer response.
-/// </param>
-/// <param name="ArrivalSamples">The arrival this plan implies, in samples.</param>
-/// <param name="OffsetSeconds">The offset taken back out; zero when none was stated.</param>
+/// <summary>Where a REW export's t = 0 lands. <c>ReferenceIndex</c> is REW's buffer index that becomes sample 0.</summary>
 internal sealed record RewImportTimingPlan(
     TimingReference Reference,
     double ReferenceIndex,
     double ArrivalSamples,
     double OffsetSeconds);
 
-/// <summary>
-/// Decides what a REW text import may claim about time, from the one thing the format
-/// cannot state and only the person who measured it knows: the timing offset REW was
-/// running with.
-/// </summary>
-/// <remarks>
-/// The design this replaces asked the wrong question. It tried to prove the offset was
-/// zero from the file, and the file cannot say: the header of a measurement taken with
-/// an offset is word for word the header of one taken without, and the offset is folded
-/// into the start time. The only visible consequence — an arrival that precedes the
-/// reference — appears exclusively when the offset is LARGER than the arrival, so it
-/// catches the loud cases and is blind to every quiet one.
-///
-/// So the offset is asked for instead, and the answer decides the reference: a value
-/// (zero included) is a user assertion, and the import is compensated and stamped
-/// <see cref="TimingReference.SynchronizedLoopback"/> on the strength of it; "I do not
-/// know" is not a failure but a different measurement — the shape is real, its position
-/// is not, which is exactly <see cref="TimingReference.RecordedSweep"/>.
-///
-/// Lives beside the enum rather than in the import method for the reason
-/// <c>SampleRateOptions.Resolve</c> does: it is decided without a window and can
-/// therefore be tested without one.
-/// </remarks>
+/// <summary>The user-stated REW timing offset decides the timing reference. See docs/tech/sweep-measurement.md#rew-import-timing.</summary>
 internal static class RewImportTiming
 {
-    /// <summary>
-    /// Builds the plan, or explains in <paramref name="problem"/> why the stated offset
-    /// cannot be true of this file.
-    /// </summary>
-    /// <param name="statedOffsetSeconds">
-    /// The offset REW was measuring with, as the user states it, or null for "unknown".
-    /// </param>
+    /// <summary>Null <paramref name="statedOffsetSeconds"/> means unknown; false explains why the stated offset cannot fit the file.</summary>
     public static bool TryResolve(
         double? statedOffsetSeconds,
         double timeZeroIndex,
@@ -63,10 +25,7 @@ internal static class RewImportTiming
 
         if (statedOffsetSeconds is not { } offsetSeconds)
         {
-            // Nothing is claimed, so nothing needs checking: the export is taken on its
-            // own terms and the arrival is not offered to anything that compares
-            // measurements. An arrival that precedes the reference is not refused here
-            // either — under RecordedSweep it is not a lie, only a number nobody may use.
+            // RecordedSweep claims nothing, so nothing is checked.
             plan = new RewImportTimingPlan(
                 TimingReference.RecordedSweep,
                 timeZeroIndex,
@@ -92,10 +51,7 @@ internal static class RewImportTiming
         double arrivalSamples = peakIndex - referenceIndex;
         if (arrivalSamples <= 0)
         {
-            // The claim and the file disagree, and the file is not the one that can be
-            // wrong about this: sound does not reach the microphone before it reaches
-            // the loopback. Reporting the offset that WOULD make the arrival physical
-            // turns a refusal into the next thing to try.
+            // Sound cannot reach the mic before the loopback: report the offset that would make the arrival physical.
             double neededMs = (peakIndex - timeZeroIndex) / (double)sampleRate * -1000.0;
             problem = FormattableString.Invariant(
                 $"with a {offsetSeconds * 1000.0:0.####} ms offset taken out the arrival would be {arrivalSamples / (double)sampleRate * 1000.0:0.####} ms, which a loopback-referenced sweep cannot produce — the microphone cannot hear the sweep before the reference does. This header needs an offset above {neededMs:0.####} ms to place the arrival after t = 0");

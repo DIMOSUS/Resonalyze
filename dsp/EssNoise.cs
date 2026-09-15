@@ -7,16 +7,8 @@ namespace Resonalyze.Dsp;
 
 public readonly record struct NoiseInterval(int Start, int End);
 
-/// <summary>
-/// The broadband noise floor of a deconvolved ESS measurement, estimated from
-/// time regions that hold neither the linear response nor a harmonic packet.
-/// <see cref="Magnitude"/> is a per-bin noise level at the fixed analysis
-/// resolution (<see cref="EquivalentNoiseBandwidthHz"/> = sampleRate / window),
-/// in the same raw-magnitude convention as the harmonic packets, so it can be
-/// shown against |H1| as a noise-floor trace. Like any swept-measurement noise
-/// floor (REW included), the level scales with the analysis resolution and the
-/// drive level — it is a diagnostic trace, not a bandwidth-invariant number.
-/// </summary>
+/// <summary>Per-bin noise level at resolution sampleRate / window, raw-magnitude convention like the harmonic packets.
+/// Scales with resolution and drive level: a diagnostic trace, not a bandwidth-invariant number.</summary>
 public sealed record NoiseEstimate(
     double[] BinFrequenciesHz,
     double[] Magnitude,
@@ -24,18 +16,8 @@ public sealed record NoiseEstimate(
     IReadOnlyList<NoiseInterval> SourceRanges,
     double Confidence);
 
-/// <summary>
-/// Estimates the noise floor of a deconvolved exponential-sweep impulse response.
-/// The harmonic packets sit before the linear peak and the linear response decays
-/// after it, so the clean noise-only region is the tail AFTER the linear packet
-/// (and its reverb) has died away — never the pre-harmonic region, which still
-/// carries the higher-order harmonics. Several equal windows are taken there and
-/// their per-bin POWERS are combined by a bias-corrected median (the median of an
-/// exponential is ln2 × its mean, so median/ln2 recovers the true power without the
-/// magnitude-median underestimate). The result is left at the noise window's own
-/// resolution — a fixed sampleRate/window bandwidth, independent of the linear
-/// packet window and therefore of the sweep geometry.
-/// </summary>
+/// <summary>Noise read from the tail AFTER the linear packet and its reverb (the pre-peak region holds harmonics),
+/// as a bias-corrected median of per-bin powers over equal windows.</summary>
 public static class EssNoise
 {
     public static NoiseEstimate EstimateNoise(
@@ -50,8 +32,6 @@ public static class EssNoise
         HarmonicWindowDefinition linearWindow = decomposition.Linear.Window;
         int linearLength = Math.Max(1, decomposition.Linear.Spectrum.SourceWindowLength);
 
-        // Start past the linear packet plus a guard for its reverb tail, so a slow
-        // room decay does not masquerade as noise.
         int guard = Math.Max(linearLength, linearLength / 2 + 1);
         int regionStart = Math.Min(
             Math.Max(0, linearWindow.EndSample) + guard,
@@ -82,10 +62,6 @@ public static class EssNoise
                 0.0);
         }
 
-        // Per-bin POWER across the noise windows (rectangular, so |X|^2 for white
-        // noise is exponential with mean sigma^2 * windowLength). The level is left
-        // at this window's own resolution — no compensation to the linear packet, so
-        // it does not depend on the sweep geometry.
         _ = linearLength;
         var perBin = new double[usableBins][];
         for (int bin = 0; bin < usableBins; bin++)
@@ -113,9 +89,7 @@ public static class EssNoise
             }
         }
 
-        // Bias-corrected median of the periodogram: median(exponential) = ln2 * mean,
-        // so median/ln2 recovers the mean power (a plain magnitude median would read
-        // ~1.6 dB low). Amplitude is its square root.
+        // median(exponential) = ln2 · mean; a plain magnitude median reads ~1.6 dB low.
         double[] magnitude = new double[usableBins];
         for (int bin = 0; bin < usableBins; bin++)
         {

@@ -26,24 +26,14 @@ internal sealed partial class MeasurementSettingsFile
     public TimeAlignmentSettings TimeAlignment { get; set; } = new();
     public EqWizardSettings EqWizard { get; set; } = new();
 
-    // How the DSP the user is tuning reads the Q of a peaking band. A property of the
-    // hardware rather than of any one mode, so it lives at the top level and every
-    // tuning sheet — EQ Wizard and Virtual DSP alike — prints its Q column for it.
-    // Defaults to RBJ, which is what the fitting and the previews realize, so an
-    // existing settings file keeps behaving exactly as before.
+    // A hardware property, so top-level; every tuning sheet prints Q in it. RBJ is what fitting and previews realize.
     public PeqQConvention TargetDspQConvention { get; set; } = PeqQConvention.Rbj;
 
     public string? LastImpulseResponseDirectory { get; set; }
 
-    // Where REW's API is listening, for the impulse-response export. Null until the
-    // user changes it, which is the ordinary case: REW's default address is a
-    // constant on the client, so an absent setting means "wherever REW normally is"
-    // rather than "not configured".
+    // Null = REW's default address (a client constant), not "unconfigured".
     public string? RewApiBaseUrl { get; set; }
 
-    // True when loading reset a loopback configuration that pointed at the
-    // removed separate-loopback-device capability; the shell shows a one-time
-    // notice telling the user to pick a loopback channel again.
     [JsonIgnore]
     public bool LegacyDualDeviceLoopbackReset { get; private set; }
 
@@ -54,8 +44,7 @@ internal sealed partial class MeasurementSettingsFile
     private string pathOnDisk = ApplicationDataPaths.Current.SettingsFile;
 
     [JsonIgnore]
-    // A load failure is safe to recover from only after the original file has
-    // been moved aside. Keep automatic UI saves from overwriting it meanwhile.
+    // Recover only after the original file is moved aside; block automatic UI saves meanwhile.
     private bool preserveExistingFileBeforeSave;
 
     public static MeasurementSettingsFile LoadOrDefault(string? pathOnDisk = null)
@@ -92,12 +81,7 @@ internal sealed partial class MeasurementSettingsFile
                     PhaseAnalysisSettings.DefaultFdwCycles;
             }
 
-            // Version 10 persists the EQ Wizard's filter bank; 7..9 files carry
-            // only its filter count and rebuild a default spread from it.
-            //
-            // Version 9 added the SPL calibration; 7 and 8 files simply carry none.
-            // A structurally broken anchor drops to null rather than failing the
-            // whole settings load — the measurement configuration is the value here.
+            // v10 persists the EQ Wizard bank (7..9 carry only a count). v9 added the SPL anchor; a broken anchor drops to null.
             try
             {
                 settings.Measurement.SplCalibration?.Validate();
@@ -107,25 +91,18 @@ internal sealed partial class MeasurementSettingsFile
                 settings.Measurement.SplCalibration = null;
             }
 
-            // Version 11 replaced the two fixed microphone-calibration slots
-            // with a named list; the selections it rewrites are only readable
-            // while the file still carries the legacy fields.
+            // v11: named calibration list; legacy fields are only readable before this migration.
             if (settings.SchemaVersion < 11)
             {
                 settings.MigrateLegacyMicrophoneCalibrations();
             }
 
-            // Version 12 moved the measurement microphone's calibration out of the
-            // Frequency Response view and into the rig.
             if (settings.SchemaVersion < 12)
             {
                 settings.MigrateMicrophoneCalibrationHome();
             }
 
-            // Version 13 gave the Group Delay mode its window selector. A file
-            // from before it was written under the Fixed gate, and its owner
-            // keeps seeing that curve; a fresh install (no file, no migration)
-            // starts on FDW through the schema's own default.
+            // v13: Group Delay window selector. Older files keep the Fixed gate; fresh installs start on FDW.
             if (settings.SchemaVersion < 13)
             {
                 settings.GroupDelay.GroupDelayWindowMode =
@@ -155,15 +132,8 @@ internal sealed partial class MeasurementSettingsFile
         }
     }
 
-    // A settings object with no file behind it is a FIRST RUN, and the measurement
-    // views used to start corrected: the selection was a bare on/off flag that
-    // defaulted to true, and then a mode that defaulted to 0°. Without this a fresh
-    // installation would leave every view uncalibrated after the user configures
-    // their 0° file, until they also picked it in each mode's selector.
-    // A LOADED file is never touched here: an absent id there is a deliberate Off,
-    // and that difference is the whole reason this lives in the load path rather
-    // than in the property initializers. The EQ Wizard is excluded because it
-    // always defaulted to no correction.
+    // No file = first run: default views to the 0° calibration. A loaded file's absent id is a deliberate Off,
+    // which is why this lives in the load path. EQ Wizard always defaulted to no correction.
     private MeasurementSettingsFile WithFirstRunCalibrationDefaults()
     {
         Measurement.MicrophoneCalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
@@ -201,14 +171,8 @@ internal sealed partial class MeasurementSettingsFile
         return backupPath;
     }
 
-    // The separate-loopback-device capability was removed: microphone and
-    // loopback are always channels of ONE input device now. A file written by
-    // an older version with the loopback on a DIFFERENT device carries channel
-    // offsets that are meaningless on the shared device (the channels may
-    // legitimately be equal, and the microphone device may be mono), so the
-    // loopback selection is reset to "unset" — the existing loopback-required
-    // flow then walks the user through picking a channel — instead of being
-    // silently misread as a shared-device configuration.
+    // Mic and loopback are now channels of one device; offsets from a separate loopback device are meaningless,
+    // so reset the loopback to unset and let the loopback-required flow ask again.
     internal void MigrateLegacyDualDeviceLoopback()
     {
         if (Measurement.WaveLoopbackDeviceNumber is int legacyDevice &&
@@ -221,13 +185,8 @@ internal sealed partial class MeasurementSettingsFile
         Measurement.WaveLoopbackDeviceNumber = null;
     }
 
-    // The 90° calibration used to be a second fixed slot, optionally backed by a
-    // file and otherwise approximated from the 0° one. The slot is gone: a
-    // CONFIGURED file becomes a named entry of the calibration list, keeping
-    // every view that selected it working, while the approximation is not
-    // recreated — an estimate now needs the microphone's geometry, which a
-    // legacy file does not carry, so those views fall back to no correction
-    // rather than to a curve nobody chose.
+    // A configured 90° file becomes a named entry; the 0°-derived approximation is not recreated (needs geometry),
+    // so those views fall back to no correction.
     internal void MigrateLegacyMicrophoneCalibrations()
     {
         string? legacyPath = Measurement.MicrophoneCalibration90DegreesPath;
@@ -286,19 +245,7 @@ internal sealed partial class MeasurementSettingsFile
         LiveSpectrum.UseCalibration = null;
     }
 
-    /// <summary>
-    /// Moves the measurement microphone's calibration from the Frequency Response
-    /// view to the measurement's own settings, and takes the duplicates with it.
-    /// </summary>
-    /// <remarks>
-    /// The FR selection is the honest source: it is the one a run used to freeze into
-    /// its file, so carrying it over keeps every future sweep stamped exactly as the
-    /// last one was. Phase and Group Delay had selections of their own, and a
-    /// magnitude correction cannot differ by which tab is open — they follow the
-    /// Frequency Response view now, so their stored ids go. Live Spectrum's went with
-    /// them: a live capture is taken on the same rig, through the same capsule, as the
-    /// sweeps beside it.
-    /// </remarks>
+    /// <summary>Moves the mic calibration from the FR view into the measurement settings; other views' ids are dropped.</summary>
     private void MigrateMicrophoneCalibrationHome()
     {
         Measurement.MicrophoneCalibrationId = FrequencyResponse.CalibrationId;
@@ -323,9 +270,7 @@ internal sealed partial class MeasurementSettingsFile
                 : resolved;
     }
 
-    // Runs for every file, not just a migrated one: the list is hand-editable
-    // JSON, and a definition with a duplicate id, no id, or an angle outside the
-    // model's range would otherwise reach the estimator.
+    // Every file: the list is hand-editable, and bad ids or angles would reach the estimator.
     private void NormalizeMicrophoneCalibrations()
     {
         List<MicrophoneCalibrationDefinition> definitions =
@@ -334,8 +279,7 @@ internal sealed partial class MeasurementSettingsFile
         {
             MicrophoneCalibrationIds.ZeroDegrees
         };
-        // Forward, so a duplicated id keeps its FIRST entry: that is the one the
-        // stored selections were written against, and the one the list showed.
+        // Forward: a duplicate id keeps its first entry, the one stored selections refer to.
         for (int index = 0; index < definitions.Count; index++)
         {
             MicrophoneCalibrationDefinition definition = definitions[index];
@@ -347,9 +291,7 @@ internal sealed partial class MeasurementSettingsFile
             }
         }
 
-        // An estimate may only be derived from a file-backed entry (or from the
-        // 0° slot, which BaseId leaves null); anything else — a missing entry, or
-        // a chain of estimates — falls back to the 0° calibration.
+        // Estimates derive only from file-backed entries or the 0° slot; anything else falls back to 0°.
         var fileBacked = new HashSet<string>(
             definitions
                 .Where(definition => definition.Kind == MicrophoneCalibrationKind.File)
@@ -378,7 +320,6 @@ internal sealed partial class MeasurementSettingsFile
         }
 
         SchemaVersion = CurrentSchemaVersion;
-        // Temp file + move keeps the settings intact if the write is interrupted.
         string directory = Path.GetDirectoryName(pathOnDisk)
             ?? throw new InvalidOperationException("Settings directory cannot be resolved.");
         Directory.CreateDirectory(directory);
@@ -422,8 +363,7 @@ internal sealed partial class MeasurementSettingsFile
         Waterfall.ApplyTo(waterfall, WaterfallMode.Fourier);
         BurstDecay.ApplyTo(burstDecay, WaterfallMode.BurstDecay);
         LiveSpectrum.ApplyTo(liveSpectrum);
-        // A live capture is taken on the rig, so it is corrected by the rig's own
-        // microphone calibration rather than by a selection of its own.
+        // A live capture is corrected by the rig's microphone calibration.
         liveSpectrum.CalibrationId = Measurement.MicrophoneCalibrationId;
         TimeAlignment.ApplyTo(timeAlignment, measurement.SampleRate);
     }
@@ -449,18 +389,13 @@ internal sealed partial class MeasurementSettingsFile
         FrequencyResponse = FrequencyResponseSettings.Capture(frequencyResponse, frequencyResponseVisibility);
         PhaseResponse = FrequencyResponseSettings.Capture(phaseResponse, phaseResponseVisibility);
         GroupDelay = FrequencyResponseSettings.Capture(groupDelay, groupDelayVisibility);
-        // Not stored for these two: phase and group delay read timing rather than
-        // level and apply no correction at all, so an id there was state nothing
-        // could act on — and it drifted, sitting on 0° while the Frequency Response
-        // view moved to another curve and stamped the files with it.
+        // Phase and group delay apply no correction; a stored id only drifted.
         PhaseResponse.CalibrationId = null;
         GroupDelay.CalibrationId = null;
         ImpulseResponse = ImpulseResponseSettings.Capture(impulseResponse);
         Waterfall = WaterfallSettings.Capture(waterfall);
         BurstDecay = WaterfallSettings.Capture(burstDecay);
         LiveSpectrum = LiveSpectrumSettings.Capture(liveSpectrum);
-        // Same: the rig's calibration is the live capture's, and it is stored once,
-        // in the measurement's own settings.
         LiveSpectrum.CalibrationId = null;
         TimeAlignment = TimeAlignmentSettings.Capture(timeAlignment);
     }}

@@ -2,13 +2,6 @@ using Resonalyze.History;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Renders a history entry's metadata as tooltip text. This is presentation, so
-/// it lives on the UI side rather than on
-/// <see cref="MeasurementHistorySnapshotMetadata"/> — the metadata record is a
-/// persisted schema and has no business formatting strings or reaching for
-/// <see cref="ToolTipTextWrapper"/>.
-/// </summary>
 internal static class MeasurementHistoryToolTip
 {
     public static string Build(MeasurementHistorySnapshotMetadata metadata, DateTimeOffset timestamp)
@@ -59,8 +52,7 @@ internal static class MeasurementHistoryToolTip
                 $"RMS {metadata.MeterSnapshot.Loopback.RmsDbFs:0.0} dBFS");
         }
 
-        // These land on ToolStrip items and grid cells, which do not go through the
-        // app's wrapping tooltip, so the wrap happens here instead.
+        // ToolStrip items and grid cells bypass the app's wrapping tooltip, so wrap here.
         return ToolTipTextWrapper.Wrap(string.Join(Environment.NewLine, lines));
     }
 }

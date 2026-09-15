@@ -4,12 +4,7 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Enter inside one of these fields used to reach the host dialog's AcceptButton in the
-/// same keystroke: in the Virtual DSP auto-setup that ran the whole crossover proposal
-/// and closed the window while a value was still being typed. The control now keeps the
-/// Enter that lands an edit and passes on the one that has nothing to commit.
-/// </summary>
+/// <summary>Enter that lands an edit is kept, so it does not also fire the dialog's AcceptButton.</summary>
 public sealed class DarkNumericUpDownEnterKeyTests
 {
     [Fact]
@@ -76,8 +71,6 @@ public sealed class DarkNumericUpDownEnterKeyTests
     private static string FormatLocal(decimal value) =>
         value.ToString("F1", CultureInfo.CurrentCulture);
 
-    // ProcessCmdKey is where a dialog key is offered to the control before the form's
-    // default button sees it; true means the control kept the key.
     private static bool PressEnter(DarkNumericUpDown control)
     {
         MethodInfo method = typeof(DarkNumericUpDown).GetMethod(
@@ -86,7 +79,7 @@ public sealed class DarkNumericUpDownEnterKeyTests
             ?? throw new InvalidOperationException("ProcessCmdKey is missing.");
         var message = new Message
         {
-            Msg = 0x0100, // WM_KEYDOWN
+            Msg = 0x0100,
             WParam = (IntPtr)Keys.Enter
         };
         object[] arguments = [message, Keys.Enter];

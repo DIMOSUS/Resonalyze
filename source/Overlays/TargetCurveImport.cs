@@ -1,20 +1,11 @@
 namespace Resonalyze;
 
-/// <summary>
-/// Loading a target shape from a file — a house curve — for the two places that
-/// share one target: the EQ Wizard and Virtual DSP. Both ask through here so a
-/// curve imported from either button is the same curve, refused for the same
-/// reasons and named the same way.
-/// </summary>
+/// <summary>Shared by EQ Wizard and Virtual DSP so both import, refuse and name curves identically.</summary>
 internal static class TargetCurveImport
 {
     private const string DialogTitle = "Import target curve";
 
-    /// <summary>
-    /// Asks for a file and returns the target shape it holds, or <c>null</c> when
-    /// the user cancelled or the file cannot be a target — in which case the
-    /// reason has already been shown.
-    /// </summary>
+    /// <summary>Null on cancel or refusal; the reason has already been shown.</summary>
     public static ImportedTargetCurve? Prompt(IWin32Window? owner)
     {
         using var dialog = new OpenFileDialog
@@ -39,10 +30,7 @@ internal static class TargetCurveImport
             return null;
         }
 
-        // A deviation or an EQ correction is a difference between two curves, not a
-        // goal: equalizing toward one would chase the error rather than remove it.
-        // Every other role is a legitimate target — a curve exported from a target
-        // slot, and equally a measured response somebody wants to voice toward.
+        // A deviation or correction is a difference, not a goal; equalizing toward it chases the error.
         if (file.Metadata.Role is OverlayCurveRole.Deviation or OverlayCurveRole.EqCorrection)
         {
             string role = file.Metadata.Role == OverlayCurveRole.EqCorrection

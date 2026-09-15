@@ -4,14 +4,7 @@ using Resonalyze.Options;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Manual gate settings for the Virtual DSP magnitude, phase and impulse
-/// views, mirroring the Phase mode gate: offset + left/plateau/right Tukey
-/// shoulders in milliseconds, with a live preview of every channel's processed
-/// impulse response and the window shape, so reflections can be gated out
-/// visually. Nothing is committed until Save; the caller reads the properties
-/// afterward.
-/// </summary>
+/// <summary>Manual Tukey gate for the Virtual DSP views with a live IR preview; nothing is committed until Save.</summary>
 internal sealed partial class VirtualCrossoverGateDialog : Form
 {
     private readonly WrappingToolTip toolTip = new()
@@ -27,15 +20,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
     private double fitOffsetMs;
     private bool initialized;
 
-    /// <summary>
-    /// Live preview: fired with the candidate gate values (offset, left,
-    /// plateau, right, τ — all ms; plus whether the offset is unpinned) on
-    /// every control change, so the host can redraw the gated plots
-    /// immediately. The Auto flag must travel with the preview: an unpinned
-    /// gate places each curve's window on its own arrival, and the preview has
-    /// to show exactly what Save will produce. Nothing is committed until
-    /// Save; the caller reverts to its stored values on Cancel.
-    /// </summary>
+    /// <summary>Live preview on every change (ms values plus the Auto flag, since an unpinned gate follows each curve's own arrival).</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -61,9 +46,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
                 numericGateOffset.Value = numericGateOffset.ClampValue(fitOffsetMs);
             }
 
-            // The snap above only fires ValueChanged when the value actually
-            // moves; the Auto flag itself changes the gating (per-curve vs
-            // pinned), so the preview must always hear about it.
+            // ValueChanged fires only when the snap moves the value, but Auto itself changes the gating.
             OnGateChanged();
         };
         buttonTauSlope.Click += (_, _) => ApplyEstimatedTau(useSlope: true);
@@ -71,17 +54,13 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         buttonSave.Click += (_, _) => CommitGateEditors();
         CancelButton = buttonCancel;
         InitializeToolTips();
-        // The designer file owns Dispose; the manually created tooltip is not in
-        // its components container, so release it here.
+        // The tooltip is not in the designer's components container.
         Disposed += (_, _) => toolTip.Dispose();
     }
 
     public double GateOffsetMs => (double)numericGateOffset.Value;
 
-    /// <summary>
-    /// Auto pressed: the offset is not pinned — the caller stores null and the
-    /// gate keeps following the earliest estimated channel IR start.
-    /// </summary>
+    /// <summary>Offset unpinned: the caller stores null and the gate follows the earliest channel IR start.</summary>
     public bool AutoOffset => checkAutoOffset.Checked;
     public double LeftMs => (double)numericLeft.Value;
     public double PlateauMs => (double)numericPlateau.Value;
@@ -97,12 +76,6 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         Enum.IsDefined((PhaseDetrendMode)comboDetrendMode.SelectedIndex)
             ? (PhaseDetrendMode)comboDetrendMode.SelectedIndex
             : PhaseDetrendMode.Auto;
-    /// <summary>
-    /// Seeds the dialog: the processed channel IRs to preview (absolute
-    /// timeline), the current gate values, the offset Auto snaps to (the
-    /// earliest estimated channel IR start) and whether the offset is
-    /// currently unpinned (Auto pressed).
-    /// </summary>
     public void Init(
         IReadOnlyList<IrPreviewTrace> previewTraces,
         int previewSampleRate,
@@ -122,9 +95,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         fitOffsetMs = fitToMs;
 
         numericGateOffset.Value = numericGateOffset.ClampValue(gateOffsetMs);
-        // After the offset: a false -> true transition re-snaps the value to
-        // fitOffsetMs (already seeded) and disables the field; false -> false
-        // never fires CheckedChanged, so sync the enabled state explicitly.
+        // false -> false never fires CheckedChanged, so the enabled state is synced explicitly.
         checkAutoOffset.Checked = autoOffset;
         numericGateOffset.Enabled = !autoOffset;
         numericLeft.Value = numericLeft.ClampValue(leftMs);
@@ -140,9 +111,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         OnGateChanged();
     }
 
-    // Estimates τ with the current gate from the earliest-arriving trace (the
-    // one that defines the shared phase reference). Slope flattens the average
-    // excess-phase trend; peak references the dominant arrival.
+    // From the earliest trace (the shared phase reference). Slope flattens the excess-phase trend; peak references the dominant arrival.
     private void ApplyEstimatedTau(bool useSlope)
     {
         IrPreviewTrace? earliest = traces

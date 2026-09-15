@@ -5,12 +5,6 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The dialog hands its result back by writing into the definition it was given.
-/// That makes the OK button's wiring the whole contract: a handler that never
-/// ran would discard the edit silently, with the manager list showing the values
-/// the entry had before.
-/// </summary>
 public sealed class AngleCalibrationDialogTests
 {
     [Fact]
@@ -76,9 +70,7 @@ public sealed class AngleCalibrationDialogTests
         Assert.False(Control<DarkComboBox>(dialog, "comboBoxGrid").Enabled);
     }
 
-    // Button.PerformClick refuses on a form that was never shown (the button
-    // cannot be selected), which would make these tests pass on a dialog whose
-    // OK does nothing. This raises the click the way the framework does.
+    // PerformClick refuses on a never-shown form, so the click is raised as the framework does.
     private static void Click(Form dialog, string name) =>
         typeof(Control)
             .GetMethod("InvokeOnClick", BindingFlags.Instance | BindingFlags.NonPublic)!

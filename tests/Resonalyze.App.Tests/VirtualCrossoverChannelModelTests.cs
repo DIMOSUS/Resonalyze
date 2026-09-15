@@ -2,26 +2,14 @@ using System.Numerics;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Characterization tests for the UI-free Virtual DSP runtime model
-/// (<see cref="VirtualCrossoverChannel"/>, <see cref="VirtualCrossoverChannelState"/>,
-/// <see cref="VirtualCrossoverSideAlignmentChannel"/>): the physical/effective
-/// side routing, the Mono⇄Stereo transitions, per-side settings/state selection
-/// and the source-load revision guard — all without touching WinForms.
-/// </summary>
 public sealed class VirtualCrossoverChannelModelTests
 {
     private static Complex[] Ir(double marker) => [new Complex(marker, 0), Complex.Zero];
 
-    // ---------------------------------------------------------------- lifecycle
-
     [Fact]
     public void Invalidate_MakesInFlightSourceLoadsStaleAndClearsBothPhysicalSlots()
     {
-        // Reproduces the guard behind the removed-channel fix: a channel removed
-        // (or dropped by importing a smaller project) while a source load is in
-        // flight must invalidate that load, so it cannot write back to a detached
-        // channel. Both physical slots are cleared and their revisions bumped.
+        // A channel removed while a source load is in flight must invalidate it, so it cannot write to a detached channel.
         var channel = new VirtualCrossoverChannel("A");
         channel.PhysicalSideState(false).TransferImpulseResponse = Ir(1);
         channel.PhysicalSideState(true).TransferImpulseResponse = Ir(2);
@@ -35,8 +23,6 @@ public sealed class VirtualCrossoverChannelModelTests
         Assert.Null(channel.PhysicalSideState(false).TransferImpulseResponse);
         Assert.Null(channel.PhysicalSideState(true).TransferImpulseResponse);
     }
-
-    // ---------------------------------------------------------------- state
 
     [Fact]
     public void State_TransferImpulseResponse_TracksProcessingSource()
@@ -71,8 +57,6 @@ public sealed class VirtualCrossoverChannelModelTests
         Assert.Equal(0, state.SampleRate);
         Assert.Null(state.TransferCoherence);
         Assert.Null(state.ArrivalCache);
-        // A revision captured before Clear is now stale — a load in flight when
-        // the slot was wiped may no longer write back.
         Assert.NotEqual(captured, state.SourceRevision);
     }
 
@@ -84,13 +68,9 @@ public sealed class VirtualCrossoverChannelModelTests
         int first = state.BeginSourceLoad();
         int second = state.BeginSourceLoad();
 
-        // The later pick wins regardless of completion order: only its revision
-        // still matches, so a stale first load is refused at write-back.
         Assert.NotEqual(first, state.SourceRevision);
         Assert.Equal(second, state.SourceRevision);
     }
-
-    // -------------------------------------------------------- side routing
 
     [Fact]
     public void StereoChannel_EffectiveAndPhysicalSlots_Coincide()
@@ -106,26 +86,19 @@ public sealed class VirtualCrossoverChannelModelTests
     public void MonoChannel_RoutesEffectiveRightToLeftButKeepsPhysicalRight()
     {
         var channel = new VirtualCrossoverChannel("A");
-        // Load a measurement into the real right slot while stereo.
         channel.PhysicalSideState(true).TransferImpulseResponse = Ir(2);
 
-        // Stereo: the effective right slot IS the physical right slot.
         Assert.NotNull(channel.SideState(true).TransferImpulseResponse);
 
         channel.Pair.Mono = true;
-        // Mono: the effective right routes to the (empty) left slot, so the
-        // right measurement is unreachable — nothing stale can surface.
+        // Mono routes right to the empty left slot; the physical right slot retains its measurement across the toggle.
         Assert.Same(channel.SideState(false), channel.SideState(true));
         Assert.Null(channel.SideState(true).TransferImpulseResponse);
-        // …yet the physical right slot still holds it, retained across the toggle.
         Assert.NotNull(channel.PhysicalSideState(true).TransferImpulseResponse);
 
         channel.Pair.Mono = false;
-        // Back to stereo: the right measurement is revealed again.
         Assert.NotNull(channel.SideState(true).TransferImpulseResponse);
     }
-
-    // ---------------------------------------------------- settings selection
 
     [Fact]
     public void SideSettings_FollowMonoAndActiveSide()
@@ -141,7 +114,6 @@ public sealed class VirtualCrossoverChannelModelTests
         channel.ActiveRight = true;
         Assert.Equal(2, channel.Settings.GainDb);
 
-        // A mono pair always answers with its single (left) settings, on either side.
         channel.Pair.Mono = true;
         Assert.Equal(1, channel.Settings.GainDb);
         Assert.Same(channel.Pair.Left, channel.SideSettings(true));
@@ -160,12 +132,9 @@ public sealed class VirtualCrossoverChannelModelTests
         channel.ActiveRight = true;
         Assert.Equal(48_000, channel.SampleRate);
 
-        // Mono routes the active side to the left slot too.
         channel.Pair.Mono = true;
         Assert.Equal(44_100, channel.SampleRate);
     }
-
-    // ------------------------------------------------- side alignment view
 
     [Fact]
     public void SideAlignmentChannel_NamesAndSampleRate_FollowRouting()
@@ -185,7 +154,6 @@ public sealed class VirtualCrossoverChannelModelTests
 
         channel.Pair.Mono = true;
         Assert.Equal("A (mono)", left.Name);
-        // A mono pair's right alignment view routes its state to the left slot.
         Assert.Same(channel.SideState(false), right.State);
     }
 }

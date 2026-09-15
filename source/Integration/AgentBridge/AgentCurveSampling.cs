@@ -2,42 +2,19 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Integration.AgentBridge;
 
-/// <summary>A delay-search lobe: one local best of the junction's score sweep.</summary>
-/// <param name="ScoreDb">The penalized summation loss at the lobe, dB, 0 being perfect.</param>
+/// <param name="ScoreDb">Penalized summation loss at the lobe, dB; 0 is perfect.</param>
 internal sealed record AgentLobe(double DelayMs, bool Invert, double ScoreDb);
 
-/// <summary>
-/// How densely a package — or a series probe — samples its curves: the two
-/// frequency grids in points per octave and the row caps of the two lag
-/// series. The package descends <see cref="Ladder"/> until it fits its size
-/// target, so a large installation is THINNED rather than stripped of whole
-/// series; a series probe reads at whatever density the reply asks for, up to
-/// <see cref="MaxPointsPerOctave"/> and <see cref="MaxRows"/>, with no size
-/// target at all.
-/// </summary>
-/// <remarks>
-/// Every figure in a package — sum loss, dips, phase read-outs, the target
-/// datum — is computed off the full-resolution curves before any sampling, so
-/// thinning changes what the rows show, never what the numbers say. What a
-/// thinned row set loses is the exact depth of a narrow feature; the guide
-/// tells a reader to judge depth on the figures and to ask for a series probe
-/// when the rows themselves matter.
-/// </remarks>
+/// <summary>Curve densities. Packages descend <see cref="Ladder"/> to fit; figures are computed before sampling, so thinning never changes the numbers. See docs/tech/agent-bridge.md#package-size.</summary>
 internal sealed record AgentSampling(
     int BroadbandPointsPerOctave,
     int JunctionPointsPerOctave,
     int SweepRows,
     int CorrelationRows)
 {
-    /// <summary>The protocol's nominal densities — what every package is first tried at.</summary>
     public static readonly AgentSampling Nominal = new(12, 24, 48, 48);
 
-    /// <summary>
-    /// Nominal first, then each step thinner. The junction grid and the lag
-    /// series go first (they are read for shape around one corner), the
-    /// broadband grid follows; the last step still resolves a third of an octave
-    /// and a dozen lags, which is where a curve stops being a curve.
-    /// </summary>
+    /// <summary>Junction grid and lag series thin first, then broadband; the last step still resolves 1/3 octave and a dozen lags.</summary>
     public static readonly IReadOnlyList<AgentSampling> Ladder =
     [
         Nominal,
@@ -47,19 +24,12 @@ internal sealed record AgentSampling(
         new(4, 6, 12, 12)
     ];
 
-    /// <summary>The densest grid a series probe may ask for.</summary>
     public const int MaxPointsPerOctave = 48;
 
-    /// <summary>The most rows of a lag series a series probe may ask for.</summary>
     public const int MaxRows = 192;
 }
 
-/// <summary>
-/// The protocol's sampling: fixed grids in points per octave, log-frequency
-/// interpolation off the analysis curves, and the thinning that keeps a series
-/// readable. None of it depends on a plot's width or zoom — a package copied at
-/// two window sizes is the same package.
-/// </summary>
+/// <summary>Fixed grids independent of plot width or zoom: a package copied at two window sizes is the same package.</summary>
 internal static class AgentCurveSampling
 {
     public const int BroadbandPointsPerOctave = 12;
@@ -67,10 +37,6 @@ internal static class AgentCurveSampling
     public const double BroadbandLowHz = 20;
     public const double BroadbandHighHz = 20_000;
 
-    /// <summary>
-    /// Log-spaced frequencies from <paramref name="lowHz"/> to <paramref name="highHz"/>,
-    /// both included, at the given density. Empty when the span is not a span.
-    /// </summary>
     public static List<double> LogGrid(double lowHz, double highHz, int pointsPerOctave)
     {
         var grid = new List<double>();
@@ -93,11 +59,7 @@ internal static class AgentCurveSampling
         return grid;
     }
 
-    /// <summary>
-    /// The dense grid around a junction: an octave to each side of the crossover
-    /// at <see cref="JunctionPointsPerOctave"/>, clipped to the given span, with
-    /// the crossover frequency itself always a point.
-    /// </summary>
+    /// <summary>An octave each side of the crossover, clipped to the span; the crossover itself is always a point.</summary>
     public static List<double> JunctionGrid(
         double crossoverHz, double lowHz, double highHz, int pointsPerOctave = JunctionPointsPerOctave)
     {
@@ -114,12 +76,7 @@ internal static class AgentCurveSampling
         return grid;
     }
 
-    /// <summary>
-    /// The curve's value at a frequency, interpolated linearly in log-frequency
-    /// between its two neighbours; null outside the curve, and null where either
-    /// neighbour is not a number — a hole in a measured band is reported as a hole,
-    /// never bridged.
-    /// </summary>
+    /// <summary>Log-frequency linear interpolation; null outside the curve or next to a NaN (holes are never bridged).</summary>
     public static double? Sample(IReadOnlyList<SignalPoint> curve, double frequencyHz)
     {
         ArgumentNullException.ThrowIfNull(curve);
@@ -130,7 +87,6 @@ internal static class AgentCurveSampling
             return null;
         }
 
-        // First point at or beyond the frequency.
         int low = 0;
         int high = count - 1;
         while (low < high)
@@ -166,7 +122,6 @@ internal static class AgentCurveSampling
         return lower.Y + (upper.Y - lower.Y) * t;
     }
 
-    /// <summary>At most <paramref name="maxCount"/> items, evenly spaced, first and last kept.</summary>
     public static List<T> Thin<T>(IReadOnlyList<T> items, int maxCount)
     {
         ArgumentNullException.ThrowIfNull(items);
@@ -186,12 +141,7 @@ internal static class AgentCurveSampling
         return thinned;
     }
 
-    /// <summary>
-    /// The lobes of a junction's score sweep: every local maximum of either
-    /// polarity's curve, best first, at most <paramref name="max"/>. The sweep is
-    /// the search's own surface, so these are the candidates an Auto delay run
-    /// would weigh — read off the drawn curve rather than re-searched.
-    /// </summary>
+    /// <summary>Local maxima of either polarity's score sweep, best first: the candidates an Auto delay run would weigh.</summary>
     public static List<AgentLobe> Lobes(
         IReadOnlyList<SignalPoint> normal,
         IReadOnlyList<SignalPoint> inverted,
@@ -216,8 +166,7 @@ internal static class AgentCurveSampling
                 }
                 bool risesBefore = index == 0 || !(sweep[index - 1].Y >= value);
                 bool fallsAfter = index == sweep.Count - 1 || !(sweep[index + 1].Y > value);
-                // Endpoints are not lobes: a sweep climbing into its edge says the
-                // lobe sits outside the window, not at it.
+                // Endpoints are not lobes: a sweep climbing into its edge has its lobe outside the window.
                 if (index > 0 && index < sweep.Count - 1 && risesBefore && fallsAfter)
                 {
                     lobes.Add(new AgentLobe(sweep[index].X, invert, value));
@@ -226,7 +175,6 @@ internal static class AgentCurveSampling
         }
     }
 
-    /// <summary>The curve's highest (or lowest) finite point, as (x, y); null on an empty curve.</summary>
     public static (double X, double Y)? Extremum(IReadOnlyList<SignalPoint> curve, bool maximum)
     {
         ArgumentNullException.ThrowIfNull(curve);
@@ -247,11 +195,10 @@ internal static class AgentCurveSampling
         return best;
     }
 
-    /// <summary>Rounded to a fixed number of decimals; null where the value is not a number.</summary>
     public static double? Round(double? value, int decimals) =>
         value is { } number && double.IsFinite(number) ? Math.Round(number, decimals) : null;
 
-    /// <summary>A frequency to four significant digits — 1234.5 Hz reads as 1235, 20.03 as 20.03.</summary>
+    /// <summary>Four significant digits: 1234.5 Hz reads as 1235, 20.03 as 20.03.</summary>
     public static double Frequency(double hz)
     {
         if (!(hz > 0) || !double.IsFinite(hz))

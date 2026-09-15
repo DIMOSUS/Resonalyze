@@ -3,12 +3,7 @@ using Resonalyze.Audio;
 
 namespace Resonalyze;
 
-/// <summary>
-/// The digital identity of a capture input — backend, format and channel routing.
-/// A measurement carries one (a snapshot of the input it ran on, or the input a
-/// loaded file was measured on) so its SPL anchor is validated against the input
-/// that actually produced the result, not the app's current configuration.
-/// </summary>
+/// <summary>Digital identity of a capture input; SPL anchors validate against the input that produced the result.</summary>
 public readonly record struct MeasurementInputIdentity(
     AudioBackend Backend,
     int SampleRate,
@@ -18,51 +13,22 @@ public readonly record struct MeasurementInputIdentity(
     string? WasapiCaptureEndpointId,
     string? AsioDriverName);
 
-/// <summary>
-/// A sound-pressure-level calibration anchor: the fixed relationship between the
-/// microphone's digital level and absolute SPL, established by holding an acoustic
-/// calibrator (a known 94/104/114 dB tone at 1 kHz) over the capsule and reading
-/// the level it produces.
-/// <para>
-/// It stores the raw ingredients, not a pre-baked "shift the response by N dB"
-/// number. The displayed frequency response is a loopback-referenced transfer
-/// function (microphone ÷ loopback), so placing it on an SPL axis needs this
-/// microphone-side anchor <em>and</em> each measurement's own loopback level; the
-/// per-measurement combination is done where the curve is drawn, from these
-/// fields plus the impulse response's stored loopback levels.
-/// </para>
-/// <para>
-/// The anchor is valid only while the capture gain chain is unchanged. The digital
-/// half of that chain is recorded here so a mismatched input can be detected; the
-/// analog preamp gain cannot be seen from software, so the standing rule is to
-/// leave the input gain untouched between calibration and measurement.
-/// </para>
-/// </summary>
+/// <summary>SPL anchor from an acoustic calibrator. See docs/tech/sweep-measurement.md#spl-calibration.</summary>
 public sealed class SplCalibration
 {
-    /// <summary>The reference levels a standard IEC 60942 calibrator emits, in dB SPL.</summary>
     public static readonly double[] StandardReferenceLevelsDb = [94.0, 104.0, 114.0];
 
-    /// <summary>The calibrator's stated output level at the reference frequency, in dB SPL.</summary>
     public double ReferenceLevelDbSpl { get; set; }
 
-    /// <summary>
-    /// The microphone level actually captured at the reference frequency, in dBFS.
-    /// The measured half of the anchor.
-    /// </summary>
     public double MeasuredLevelDbFs { get; set; }
 
-    /// <summary>The calibrator's nominal tone frequency, in Hz (1 kHz for IEC 60942).</summary>
     public double ReferenceFrequencyHz { get; set; } = 1_000.0;
 
-    /// <summary>The frequency the dominant peak was actually found at, in Hz (provenance).</summary>
     public double MeasuredFrequencyHz { get; set; }
 
-    /// <summary>When the calibration was captured.</summary>
     public DateTimeOffset CapturedAtUtc { get; set; }
 
-    // --- Capture identity: the digital half of the gain chain the anchor is
-    // pinned to, so a later measurement on a different input can be flagged. ---
+    // Digital half of the gain chain the anchor is pinned to.
 
     public AudioBackend Backend { get; set; }
     public int SampleRate { get; set; }
@@ -78,19 +44,11 @@ public sealed class SplCalibration
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? AsioDriverName { get; set; }
 
-    /// <summary>
-    /// The microphone-side offset that turns a captured dBFS level into dB SPL:
-    /// <c>SPL = dBFS + OffsetDb</c>. Derived, so it never disagrees with the stored
-    /// reference and measured levels.
-    /// </summary>
+    /// <summary><c>SPL = dBFS + OffsetDb</c>.</summary>
     [JsonIgnore]
     public double OffsetDb => ReferenceLevelDbSpl - MeasuredLevelDbFs;
 
-    /// <summary>
-    /// Whether this anchor was captured on the same digital input as the supplied
-    /// configuration. The analog preamp gain is invisible to software and is not
-    /// part of this check — the anchor can still be wrong if that knob moved.
-    /// </summary>
+    /// <summary>Digital input match only; the analog preamp gain is invisible to software.</summary>
     public bool MatchesInput(
         AudioBackend backend,
         int sampleRate,
@@ -118,7 +76,6 @@ public sealed class SplCalibration
         };
     }
 
-    /// <summary>Same check against an <see cref="MeasurementInputIdentity"/>.</summary>
     public bool MatchesInput(MeasurementInputIdentity identity) =>
         MatchesInput(
             identity.Backend,
@@ -129,11 +86,7 @@ public sealed class SplCalibration
             identity.WasapiCaptureEndpointId,
             identity.AsioDriverName);
 
-    /// <summary>
-    /// The input this calibration was captured on, as an identity. For a loaded
-    /// measurement (whose anchor was validated when its file was first saved) this
-    /// stands in for the result's own input identity.
-    /// </summary>
+    /// <summary>Stands in for a loaded measurement's own input identity (validated when first saved).</summary>
     public MeasurementInputIdentity CaptureIdentity => new(
         Backend,
         SampleRate,
@@ -143,11 +96,7 @@ public sealed class SplCalibration
         WasapiCaptureEndpointId,
         AsioDriverName);
 
-    /// <summary>
-    /// Throws when the anchor is structurally invalid (used when loading a
-    /// persisted file). This is a sanity check on the stored numbers, not the
-    /// pass/fail policy of a live calibration.
-    /// </summary>
+    /// <summary>Structural sanity check on stored numbers, not live pass/fail policy.</summary>
     public void Validate()
     {
         if (!double.IsFinite(ReferenceLevelDbSpl) || ReferenceLevelDbSpl is < 0.0 or > 200.0)

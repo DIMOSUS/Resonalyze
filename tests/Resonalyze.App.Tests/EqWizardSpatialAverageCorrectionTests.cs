@@ -6,27 +6,14 @@ using Resonalyze.Dsp;
 namespace Resonalyze.App.Tests;
 
 /// <summary>
-/// What the wizard draws as <b>Source + EQ</b> for a spatial average, and why it is
-/// not the source plus the bank's ideal magnitude.
+/// Display smoothing (peak-weighted cubic mean) does not commute with the bank: the two orders parted by up to 3.1 dB
+/// on a field MMM tune, so the bank goes inside the chain as the Virtual DSP plot does.
 /// </summary>
-/// <remarks>
-/// The display smoothing is the hybrid builder's LAST step, and it does not commute
-/// with the bank: adding an unsmoothed filter to an already-smoothed curve reads
-/// differently from smoothing the corrected curve, and the psychoacoustic width — a
-/// peak-weighted cubic mean rather than a linear one — widens the gap. Measured on a
-/// field MMM tune (13 bands, psychoacoustic) the two orders parted by up to 3.1 dB,
-/// so the wizard promised a result the Virtual DSP plot would not draw when the bank
-/// went back. The bank therefore goes INSIDE the chain, exactly as the gated preview
-/// substitutes it for an impulse-response source and as the Virtual DSP plot
-/// substitutes the channel's own PEQ.
-/// </remarks>
 public sealed class EqWizardSpatialAverageCorrectionTests
 {
     private const int SampleRate = 48_000;
 
-    // The shape that exposes the ordering: a narrow boost between deeper cuts, which a
-    // peak-weighted mean pulls down and an ideal magnitude does not. Taken from the
-    // field project that surfaced this.
+    // A narrow boost between deeper cuts (from the field project): a peak-weighted mean pulls it down.
     private static readonly EqualizationCurve Bank = new(
         [
             new PeqBand(269, 1.8, -9.5),
@@ -58,8 +45,7 @@ public sealed class EqWizardSpatialAverageCorrectionTests
     [Fact]
     public void AddingTheBankAfterTheSmoothingWouldReadDifferently()
     {
-        // The guard on the test above: without it that equality could hold merely
-        // because the two orders agree on this data, and it would pin nothing.
+        // Guards that the previous equality is not merely the two orders agreeing on this data.
         using var panel = new EqWizardPanel();
         ApplySource(panel, Handoff());
         SetSmoothing(panel, SpectrumSmoothing.PsychoacousticCode);
@@ -83,8 +69,6 @@ public sealed class EqWizardSpatialAverageCorrectionTests
     [Fact]
     public void AnEmptyBankLeavesTheSourceExactlyWhereItIs()
     {
-        // Bypass, and the state before the first band is added: Source + EQ has to lie
-        // on Source, which it only does while both come out of the same builder.
         using var panel = new EqWizardPanel();
         ApplySource(panel, Handoff());
         SetSmoothing(panel, SpectrumSmoothing.PsychoacousticCode);
@@ -103,9 +87,7 @@ public sealed class EqWizardSpatialAverageCorrectionTests
     [Fact]
     public void TheGapUnderAProtectiveHighPassStaysAGapOnBothCurves()
     {
-        // The curves are read against each other BY INDEX — the target, the error fill
-        // and the fit statistics all pair them up — so the corrected one has to keep
-        // exactly the points the bare one keeps.
+        // Target, error fill and fit statistics pair curves by index, so the points must match.
         using var panel = new EqWizardPanel();
         LiveCaptureDocument capture = Capture();
         for (int i = 0; i < capture.CurveDb.Length; i++)
@@ -131,8 +113,6 @@ public sealed class EqWizardSpatialAverageCorrectionTests
         }
     }
 
-    // What the Virtual DSP plot builds for the same capture: the whole chain with the
-    // bank in it, and the display smoothing over the finished curve.
     private static IReadOnlyList<double> HybridWith(
         EqWizardCurveSource source,
         EqualizationCurve bank)
@@ -156,8 +136,6 @@ public sealed class EqWizardSpatialAverageCorrectionTests
             Kind = EqWizardSourceKind.VirtualDspChannel,
             DisplayName = "Ch C · L (DSP, MMM)",
             Description = "Spatial average through the channel's chain.",
-            // The chain the wizard opens on: the channel's, with the bank it is
-            // editing left out of it.
             PreviewChain = new DspChannelChain(
                 GainDb: -3,
                 Crossover: new CrossoverSpec(
@@ -176,8 +154,7 @@ public sealed class EqWizardSpatialAverageCorrectionTests
         var curve = new double[1_024];
         for (int i = 0; i < curve.Length; i++)
         {
-            // A cabin's shape rather than a smooth one: the ordering only shows where
-            // the curve has structure for the smoothing to work on.
+            // Structure for the smoothing to work on; a smooth curve hides the ordering.
             curve[i] = -40 + 3 * Math.Sin(i / 40.0) + 1.5 * Math.Sin(i / 7.0);
         }
 

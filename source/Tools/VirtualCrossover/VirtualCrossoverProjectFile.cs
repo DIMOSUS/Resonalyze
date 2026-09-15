@@ -4,17 +4,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// What the Virtual DSP lower plot shows: one curve per channel's DSP chain
-/// (magnitude / phase / group delay), or one adjacent channel pair's junction
-/// view — the lag-domain correlation (<see cref="Correlation"/>) or the
-/// per-band arrival-coherence ladder (<see cref="Coherence"/>). Neither
-/// junction mode ever reaches the stored project field — each persists as an
-/// additive flag (see
-/// <see cref="VirtualCrossoverProjectFile.SetDspPlotMode"/>) so older builds
-/// open such a session on the magnitude view instead of rejecting an unknown
-/// enum value.
-/// </summary>
+/// <summary>Lower-plot mode. Junction modes persist as additive flags, never in the enum field (see <see cref="VirtualCrossoverProjectFile.SetDspPlotMode"/>).</summary>
 public enum DspPlotMode
 {
     Magnitude,
@@ -24,33 +14,13 @@ public enum DspPlotMode
     Coherence
 }
 
-/// <summary>
-/// WHERE the phase gate sits for one side: the offset the Tukey window's left shoulder
-/// ends at, and the τ the traces are detrended against.
-/// <para>
-/// Only placement lives here, because only placement is physical: the left and right
-/// drivers sit at different distances from the microphone, so their arrivals — and the
-/// reflections the gate exists to cut — do not land at the same time. Everything that
-/// decides HOW the phase is read stays on the project: the window's left/plateau/right
-/// LENGTHS (they set the frequency resolution), the window mode, the detrend mode and the
-/// FDW cycle count. Two sides read through different-length windows would not be
-/// comparable, and comparing them is what the view is for.
-/// </para>
-/// </summary>
+/// <summary>Per-side phase gate placement; window lengths and analysis modes stay project-wide so the sides stay comparable.</summary>
 public sealed class VirtualCrossoverPhaseGateSettings
 {
-    /// <summary>
-    /// Null (the gate dialog's Auto) follows this side's earliest estimated
-    /// channel IR start automatically, so the gate tracks source and delay
-    /// changes until the user pins it in the gate dialog.
-    /// </summary>
+    /// <summary>Null = Auto: follows this side's earliest estimated channel IR start.</summary>
     public double? OffsetMs { get; set; }
 
-    /// <summary>
-    /// The linear-phase reference (ms, absolute from the IR start) removed from every
-    /// channel and the sum alike, so the traces stay readable while their relative phase
-    /// is preserved. Null follows this side's earliest processed arrival.
-    /// </summary>
+    /// <summary>Linear-phase reference (ms from the IR start) removed from every trace; null follows the earliest processed arrival.</summary>
     public double? DetrendMs { get; set; }
 
     public void Validate()
@@ -68,19 +38,7 @@ public sealed class VirtualCrossoverPhaseGateSettings
     }
 }
 
-/// <summary>
-/// The EQ target as a session stores it. A flat mirror of the shape and the
-/// styling, deliberately not a reference to a preset: presets are a starting
-/// point whose numbers can change between versions, while a session has to open
-/// aiming at exactly the curve it was tuned against.
-/// </summary>
-/// <remarks>
-/// A bad field here does not fail the load: <see cref="ToCurve"/> normalizes it
-/// away instead, because moving a whole tuning session aside over a decoration
-/// would be the worse answer. Normalizing is not optional though — a target is
-/// not only drawn, it also fills the settings dialog, and this file allows
-/// named floating-point literals (see EqTargetCurve.Normalized).
-/// </remarks>
+/// <summary>The EQ target stored by value, not as a preset reference. See docs/tech/virtual-dsp-session-file.md#eq-target.</summary>
 public sealed class VirtualCrossoverTargetSettings
 {
     public TargetPreset Preset { get; set; } = TargetPreset.Flat;
@@ -94,9 +52,6 @@ public sealed class VirtualCrossoverTargetSettings
     public double PresenceGainDb { get; set; }
     public double PresenceFrequencyHz { get; set; } = 3_000;
     public double PresenceWidthOctaves { get; set; } = 1.0;
-    // An imported target shape, stored by value for the same reason the rest of
-    // this class is flat: a session has to open aiming at exactly the curve it was
-    // tuned against, and a path to the file it came from is not that promise.
     public string? ImportedName { get; set; }
     public double[]? ImportedCurve { get; set; }
     public double ToleranceDb { get; set; } = 3;
@@ -106,9 +61,7 @@ public sealed class VirtualCrossoverTargetSettings
     public OverlayLineStyle LineStyle { get; set; } = OverlayLineStyle.Dash;
     public int SmoothingInverseOctaves { get; set; }
 
-    // Normalized on the way out, never on the way in: what the app produces is
-    // already sound, and the file is the only place a NaN or an undefined enum
-    // can enter from.
+    // Normalized on the way out only: the file is the only place a NaN or an undefined enum can enter.
     internal EqTargetCurve ToCurve() => new EqTargetCurve(
         Preset,
         new TargetCurveSpec(
@@ -123,9 +76,6 @@ public sealed class VirtualCrossoverTargetSettings
             PresenceFrequencyHz,
             PresenceWidthOctaves)
         {
-            // Read back through the importer, which drops what it cannot use: a
-            // curve too damaged to be a shape leaves the parametric terms in
-            // charge rather than failing the session.
             Imported = ImportedTargetCurve.FromStorage(ImportedName, ImportedCurve)
         },
         ToleranceDb,
@@ -163,22 +113,10 @@ public sealed class VirtualCrossoverTargetSettings
     }
 }
 
-/// <summary>
-/// One channel of the virtual crossover: which measurement feeds it and the DSP
-/// chain applied before the virtual sum. The source is re-resolved on load — by
-/// history entry first, then by file path, and finally beside the imported session
-/// file itself (see <see cref="VirtualCrossoverSourceLocator"/>) — so a renamed
-/// history label or a moved file degrades gracefully instead of failing the whole
-/// project.
-/// </summary>
+/// <summary>One channel side. The source is re-resolved on load (see <see cref="VirtualCrossoverSourceLocator"/>).</summary>
 public sealed class VirtualCrossoverChannelSettings
 {
-    // Schema v6 payload, kept only so an older file deserializes for migration:
-    // Mute, Bypass and the two curve toggles describe the BLOCK rather than one
-    // side's measurement, so v7 moved them onto the pair (see
-    // VirtualCrossoverChannelPairSettings and the migration that folds these up).
-    // Nullable purely to tell "absent" from a real value; nothing but Migrate
-    // reads them, and it clears them once the pair carries the answer.
+    // Schema v6 payload, read only by Migrate (moved onto the pair in v7).
     [JsonPropertyName("enabled")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? LegacyEnabled { get; set; }
@@ -195,44 +133,13 @@ public sealed class VirtualCrossoverChannelSettings
     public string DisplayName { get; set; } = string.Empty;
     public string? SourceFilePath { get; set; }
 
-    /// <summary>
-    /// The same measurement as <see cref="SourceFilePath"/>, expressed relative to
-    /// the folder of the session file this project came from (see
-    /// <see cref="VirtualCrossoverSourceLocator.Relativize"/>). Absolute paths are
-    /// written on the machine that measured, so they are the first thing a session
-    /// loses when it travels; the relative one survives as long as the measurements
-    /// travel with it in the same arrangement.
-    /// <para>
-    /// In memory this holds what the loaded session carried, and it stays put: what
-    /// each WRITE puts on the wire — the export's own folder, nothing for the
-    /// autosave — is decided per write and does not touch the value here. Null when
-    /// there is no source, when the measurement sits on another volume, or when the
-    /// project was never loaded from a session file. Additive: files written before
-    /// it existed simply have no such property.
-    /// </para>
-    /// </summary>
+    /// <summary>Source path relative to the imported session's folder; each write decides its own value. See docs/tech/virtual-dsp-session-file.md#source-paths.</summary>
     public string? SourceRelativePath { get; set; }
 
-    /// <summary>
-    /// The moving-microphone capture attached to this side, by path — the same
-    /// discipline as <see cref="SourceFilePath"/>, and for the same reason.
-    /// </summary>
-    /// <remarks>
-    /// A reference rather than the capture itself. The payload is a raw bin spectrum
-    /// (about 900 kB per channel, most of it the spectrum), and a session carries up
-    /// to sixteen sides and is rewritten on every knob turn — embedding would put
-    /// megabytes through the debounced autosave to save re-finding a file the session
-    /// already knows how to re-find for its measurements. Absent from files written
-    /// before the hybrid view existed, which therefore open with no average attached.
-    /// </remarks>
+    /// <summary>Moving-mic capture by path; not embedded (~900 kB per side through the debounced autosave).</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SpatialAveragePath { get; set; }
 
-    /// <summary>
-    /// The same capture expressed relative to the exporting session's folder, so an
-    /// exported session finds it again beside the measurements. Written per export,
-    /// exactly like <see cref="SourceRelativePath"/>.
-    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? SpatialAverageRelativePath { get; set; }
 
@@ -248,16 +155,8 @@ public sealed class VirtualCrossoverChannelSettings
     public CrossoverEdge HighPassEdge { get; set; } =
         new(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
 
-    // Schema v7 payload, kept only so an older file deserializes for migration:
-    // the per-channel all-pass stage became a band of the PEQ bank in v8 (see the
-    // v7→v8 step in Migrate, which appends it to PeqBands and clears these).
-    // Nullable purely to tell "absent" from a real value; nothing but Migrate
-    // reads them.
-    // A STRING rather than the enum, so a hand-edited or truncated value cannot take
-    // the file down: the enum converter throws on a name it does not know, and that
-    // throw happens during deserialization — before Migrate, which is where this
-    // field's tolerance is supposed to live. Parsed there instead, where an
-    // unreadable type simply means "no all-pass".
+    // Schema v7 payload, read only by Migrate (the all-pass became a PEQ band in v8).
+    // A string, not the enum: an unknown name would throw during deserialization, before Migrate can tolerate it.
     [JsonPropertyName("allPassType")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LegacyAllPassType { get; set; }
@@ -268,37 +167,17 @@ public sealed class VirtualCrossoverChannelSettings
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public double? LegacyAllPassQ { get; set; }
 
-    /// <summary>
-    /// The channel phase control of the processor being designed for (degrees), 0
-    /// when it is not used — see <see cref="PhaseRotationControl"/>. The reference
-    /// this angle is stated at is NOT stored: it is the channel's own configured
-    /// crossover, so it follows the edges above rather than being a second copy of
-    /// them that could disagree. Absent from files written before schema v10, which
-    /// therefore open with no rotation.
-    /// </summary>
+    /// <summary>Channel phase control angle (degrees), 0 = unused. Its reference is the channel's own crossover, not stored.</summary>
     public double PhaseRotationDegrees { get; set; }
 
     public double PeqPreampDb { get; set; }
     public List<PeqBand> PeqBands { get; set; } = new();
-    /// <summary>The PEQ file the bands came from; display only.</summary>
     public string? PeqSourceName { get; set; }
 
-    /// <summary>
-    /// The FIR kernel this side convolves with (schema v11), or null for none. Stored
-    /// IN the session — the taps themselves, through <see cref="FirWire"/> — the way
-    /// the PEQ bands are, not as a path: a kernel is part of the tune, and the tune
-    /// has to travel whole. The file it came from is only an import (see
-    /// <see cref="FirSourceName"/>), and a file is where it goes on export.
-    /// </summary>
+    /// <summary>FIR kernel taps stored in the session (schema v11), not by path; files are import/export only.</summary>
     [JsonIgnore]
     public FirFilter? Fir { get; set; }
 
-    /// <summary>
-    /// <see cref="Fir"/> as the file carries it (see <see cref="FirKernelWire"/>). Absent
-    /// from the file when there is no kernel, so a project without FIR serializes as
-    /// it did before the stage existed. The serializer's property; code reads
-    /// <see cref="Fir"/>.
-    /// </summary>
     [JsonPropertyName("fir")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public FirKernelWire? FirWire
@@ -307,67 +186,25 @@ public sealed class VirtualCrossoverChannelSettings
         set => Fir = value?.ToFilter();
     }
 
-    /// <summary>
-    /// The file the kernel was imported from, by name; display only, like
-    /// <see cref="PeqSourceName"/>. Null for none, and meaningless without
-    /// <see cref="Fir"/>.
-    /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? FirSourceName { get; set; }
 
-    /// <summary>
-    /// The linear-phase crossover <see cref="Fir"/> was designed from in the FIR
-    /// Constructor, or null for a kernel that was imported (or has no design to show).
-    /// Kept beside the taps so the kernel opens again as the crossover it is, and so
-    /// the corners it cuts at can stand in for an IIR crossover this side does not
-    /// have (see <see cref="EffectiveCrossover"/>). Never meaningful alone: an import
-    /// or a Clear replaces the kernel and takes the design with it.
-    /// </summary>
+    /// <summary>Constructor design of <see cref="Fir"/>, null for imported kernels; replaced together with the kernel.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public FirCrossoverDesign? FirDesign { get; set; }
 
-    /// <summary>True when this side carries a FIR kernel.</summary>
     [JsonIgnore]
     public bool HasFir => Fir != null;
 
-    /// <summary>
-    /// The rate the project's processor runs this side's FIR stage at, as the Virtual
-    /// DSP panel last resolved it, or null before it has. Not stored: the rate follows
-    /// the processor dialog and, for a profile that follows the measurements, the
-    /// measurements themselves, so it is context the panel stamps (see
-    /// <see cref="EffectiveCrossover"/>), not part of the tune.
-    /// </summary>
+    /// <summary>Rate the panel last resolved for this side's FIR stage; context, not part of the tune.</summary>
     [JsonIgnore]
     public int? FirRunSampleRateHz { get; set; }
 
-    /// <summary>True when this side's kernel is a crossover designed in the constructor.</summary>
     [JsonIgnore]
     public bool HasFirCrossover => Fir != null && FirDesign != null;
 
-    /// <summary>
-    /// The crossover the side's CORNERS are read from by everything that asks where a
-    /// channel is cut — the junction list, the Auto Tune window, the phase control's
-    /// reference: the IIR crossover when it is on, and the FIR crossover's corners
-    /// when it is not. Never the chain itself: <see cref="ToChain"/> builds the IIR
-    /// stage from <see cref="CrossoverKind"/> alone, and the kernel is already the FIR
-    /// stage, so a FIR crossover read here is not filtered twice.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// A FIR crossover's corners are where the kernel CUTS, not where it was designed
-    /// to: taps designed at one rate and run at another scale every frequency by the
-    /// ratio of the two, so a 48 kHz design on a 96 kHz processor cuts an octave
-    /// higher until it is rebuilt (the block's FIR button is red meanwhile). The
-    /// corners are scaled by <see cref="FirRunSampleRateHz"/> over the design's rate;
-    /// before the panel has stamped a rate they are the design's own. Only the corner
-    /// frequencies are meaningful in the result — the spec is read, never built.
-    /// </para>
-    /// <para>
-    /// The edges of the returned spec are the IIR edges when the IIR crossover is off
-    /// and there is no FIR crossover either — the kind is Off then, and nothing reads
-    /// them; they are returned only so a caller never has to handle a null.
-    /// </para>
-    /// </remarks>
+    /// <summary>Corners that junctions, Auto Tune and the phase control read: the IIR crossover when on, else the FIR design's corners scaled by run/design rate. Never used to build the chain.</summary>
+    /// <remarks>See docs/tech/virtual-dsp-session-file.md#effective-crossover.</remarks>
     [JsonIgnore]
     public CrossoverSpec EffectiveCrossover
     {
@@ -389,17 +226,12 @@ public sealed class VirtualCrossoverChannelSettings
         }
     }
 
-    /// <summary>
-    /// The corner the side is high-passed at, IIR first and the FIR crossover second
-    /// (see <see cref="EffectiveCrossover"/>), or null when neither cuts it there.
-    /// </summary>
     [JsonIgnore]
     public double? EffectiveHighPassHz =>
         EffectiveCrossover is { Kind: CrossoverKind.HighPass or CrossoverKind.BandPass, HighPassEdge: { } edge }
             ? edge.FrequencyHz
             : null;
 
-    /// <summary>The low-pass counterpart of <see cref="EffectiveHighPassHz"/>.</summary>
     [JsonIgnore]
     public double? EffectiveLowPassHz =>
         EffectiveCrossover is { Kind: CrossoverKind.LowPass or CrossoverKind.BandPass, LowPassEdge: { } edge }
@@ -409,16 +241,7 @@ public sealed class VirtualCrossoverChannelSettings
     public bool HasSource =>
         HistoryEntryId.HasValue || !string.IsNullOrWhiteSpace(SourceFilePath);
 
-    /// <summary>
-    /// The DSP chain these settings describe.
-    /// </summary>
-    /// <param name="zone">
-    /// Which part of the installation the BLOCK is, which the side alone cannot know.
-    /// It is read for one thing only — the phase control states its angle at the
-    /// low-pass on a subwoofer channel and at the high-pass everywhere else — but it
-    /// is a required argument rather than a defaulted one so that a call site building
-    /// a chain for a subwoofer cannot silently get the other rule.
-    /// </param>
+    /// <param name="zone">Required, not defaulted: the phase control references the low-pass on subwoofers and the high-pass elsewhere.</param>
     public DspChannelChain ToChain(VirtualCrossoverZone zone)
     {
         CrossoverSpec crossover = CrossoverKind switch
@@ -441,17 +264,7 @@ public sealed class VirtualCrossoverChannelSettings
             Fir);
     }
 
-    /// <summary>
-    /// The channel phase control as the DSP reads it: the angle, the crossover corner
-    /// it is stated at, and WHICH of the channel's two corners that is.
-    /// </summary>
-    /// <remarks>
-    /// The last of the three is not decoration: a chain carries only the corners its
-    /// kind engages, so nothing downstream could tell a reference sitting on a
-    /// disengaged low-pass from one sitting on the high-pass beside it — and the
-    /// junction search, which moves one corner at a time, has to know which of them
-    /// the angle follows.
-    /// </remarks>
+    /// <summary>Phase control angle, reference corner, and which corner it is (the junction search moves one corner at a time).</summary>
     public PhaseRotationSpec PhaseRotation(VirtualCrossoverZone zone)
     {
         bool referenceIsLowPass = zone == VirtualCrossoverZone.Sub;
@@ -461,18 +274,7 @@ public sealed class VirtualCrossoverChannelSettings
             referenceIsLowPass);
     }
 
-    /// <summary>
-    /// The frequency the phase control states its angle at: the low-pass corner on a
-    /// subwoofer channel, the high-pass corner on every other one.
-    /// </summary>
-    /// <remarks>
-    /// The edge AS CONFIGURED, whatever <see cref="CrossoverKind"/> currently engages
-    /// — measured behaviour, not a simplification: on the bench a bypassed low-pass
-    /// and one set to slope = OFF both went on supplying the reference, and reading
-    /// the active crossover instead put the corner in the wrong place on every
-    /// channel whose filter was switched off. Both edges are kept and validated
-    /// exactly so this stays a real number when the filter is not in use.
-    /// </remarks>
+    /// <summary>Low-pass corner on subwoofers, high-pass otherwise, as CONFIGURED even when that filter is disengaged (bench-measured behaviour).</summary>
     public double PhaseReferenceHz(VirtualCrossoverZone zone) =>
         PhaseRotation(zone).ReferenceHz;
 
@@ -493,9 +295,7 @@ public sealed class VirtualCrossoverChannelSettings
         }
         ValidateEdge(LowPassEdge);
         ValidateEdge(HighPassEdge);
-        // Range only, not the 5.625° grid the hardware steps on: the editors snap,
-        // and a hand-written angle between two positions is still a filter this
-        // library can build and draw honestly.
+        // Range only, not the hardware's 5.625° grid: editors snap, and a hand-written angle still builds.
         if (!double.IsFinite(PhaseRotationDegrees) ||
             PhaseRotationDegrees is < 0 or > PhaseRotationControl.MaximumDegrees)
         {
@@ -521,11 +321,7 @@ public sealed class VirtualCrossoverChannelSettings
         }
         if (FirDesign is { } design)
         {
-            // A design is the description of a kernel, so one without its kernel — or
-            // beside a kernel of another length — describes nothing in this file.
-            // Refused rather than dropped: the file was written by something other than
-            // this program, and the block would otherwise name a crossover it does not
-            // run.
+            // A design without its kernel (or of another length) describes nothing; refused, not dropped.
             if (Fir is not { } kernel || kernel.Length != design.TapCount)
             {
                 throw new InvalidDataException(
@@ -535,18 +331,13 @@ public sealed class VirtualCrossoverChannelSettings
             {
                 throw new InvalidDataException($"The FIR crossover design is invalid: {problem}");
             }
-            // The corners against the session's own range; the slopes against the
-            // constructor's list, which runs steeper than a hardware crossover's — the
-            // IIR edge check would refuse every kernel designed past 48 dB/oct.
+            // Slopes checked against the constructor's list: the IIR edge check would refuse kernels past 48 dB/oct.
             ValidateDesignEdge(design.LowPassEdge, design.Method);
             ValidateDesignEdge(design.HighPassEdge, design.Method);
         }
     }
 
-    // The same contract as FirCrossoverDesign.Problem: a family and slope are part of
-    // a design only where its method reads them. A windowed sinc carries whatever the
-    // boxes held and is built without them, so the session may not refuse a design the
-    // constructor built.
+    // Same contract as FirCrossoverDesign.Problem: family and slope are validated only where the method reads them.
     private static void ValidateDesignEdge(CrossoverEdge edge, FirCrossoverMethod method)
     {
         if (!Enum.IsDefined(edge.Family) ||
@@ -561,8 +352,7 @@ public sealed class VirtualCrossoverChannelSettings
         }
     }
 
-    // Both edges are validated even when the kind ignores them: they are still
-    // shown (greyed out) in the UI and must round-trip as sane values.
+    // Both edges validated even when unused: they are shown greyed out and must round-trip.
     private static void ValidateEdge(CrossoverEdge edge)
     {
         if (!Enum.IsDefined(edge.Family))
@@ -577,9 +367,7 @@ public sealed class VirtualCrossoverChannelSettings
         {
             throw new InvalidDataException("The crossover slope is invalid.");
         }
-        // Ripple only drives the Chebyshev family; outside (0, max] its pole math is
-        // undefined (NaN), so it is validated only there, against the same cap the UI
-        // and the DSP use.
+        // Ripple matters only for Chebyshev; outside (0, max] its pole math is NaN.
         if (edge.Family == CrossoverFilterFamily.Chebyshev &&
             (!double.IsFinite(edge.RippleDb) || edge.RippleDb <= 0 ||
              edge.RippleDb > CrossoverFilter.MaximumChebyshevRippleDb))
@@ -589,71 +377,32 @@ public sealed class VirtualCrossoverChannelSettings
     }
 }
 
-/// <summary>
-/// One speaker of the car as the Virtual DSP tool models it since schema v2: a
-/// left/right PAIR of measurement + DSP chain sets under one channel letter.
-/// A mono pair (the shared subwoofer) has one physical driver serving both
-/// sides: only <see cref="Left"/> is meaningful and it participates in both
-/// side views and both sides' calculations.
-/// </summary>
+/// <summary>One speaker as an L/R pair; a mono pair uses only <see cref="Left"/> for both sides.</summary>
 public sealed class VirtualCrossoverChannelPairSettings
 {
     public bool Mono { get; set; }
 
-    /// <summary>
-    /// Which part of the installation this block is — see
-    /// <see cref="VirtualCrossoverZone"/>. Shared by both sides: a driver pair
-    /// sits in one place in the car. Absent from files before schema v9, whose
-    /// migration guesses it from the block's mono flag and filter.
-    /// </summary>
+    /// <summary>Installation zone; guessed by migration for files before v9.</summary>
     public VirtualCrossoverZone Zone { get; set; } = VirtualCrossoverZone.Front;
 
-    /// <summary>
-    /// View state: the block is folded to its header in the tool. Both sides share
-    /// it — the fold belongs to the block on screen, not to a measurement — and it
-    /// changes nothing the chain computes. Absent from older files, which therefore
-    /// open expanded.
-    /// </summary>
     public bool Collapsed { get; set; }
 
-    /// <summary>
-    /// Whether the channel takes part at all — Mute in the tool. Shared by both
-    /// sides, like everything below: these four switches describe the BLOCK, not a
-    /// measurement. A driver pair is one part of the system, and muting the left
-    /// tweeter while the right one still plays describes no setup worth predicting;
-    /// per side they also made a side switch quietly change what the plot drew.
-    /// Moved here in schema v7 (see the migration).
-    /// </summary>
+    /// <summary>Mute. Block-level, like Bypass and the curve toggles (per side until v7).</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>
-    /// When set (and the channel is enabled), the channel contributes its raw
-    /// measured signal with the whole DSP chain bypassed — no gain, delay,
-    /// polarity, crossover or PEQ — for an A/B against the processed result.
-    /// </summary>
+    /// <summary>Contribute the raw measurement with the whole DSP chain bypassed.</summary>
     public bool Bypass { get; set; }
 
-    // Curve visibility on the acoustic plot, per channel block.
     public bool ShowRawCurve { get; set; }
     public bool ShowProcessedCurve { get; set; } = true;
 
     public VirtualCrossoverChannelSettings Left { get; set; } = new();
     public VirtualCrossoverChannelSettings Right { get; set; } = new();
 
-    /// <summary>
-    /// The DSP chain one side of this block describes. Reads the block's
-    /// <see cref="Zone"/>, which is what tells the phase control which crossover
-    /// states its angle (see
-    /// <see cref="VirtualCrossoverChannelSettings.PhaseReferenceHz"/>) — so a caller
-    /// holding the pair should build a chain through here rather than reaching for
-    /// the side and answering that question itself.
-    /// </summary>
+    /// <summary>Builds a side's chain with the block's <see cref="Zone"/>; prefer this over the side's own ToChain.</summary>
     public DspChannelChain ToChain(bool rightSide) => SideFor(rightSide).ToChain(Zone);
 
-    /// <summary>
-    /// The settings the given side view edits and computes with: a mono pair
-    /// always answers with its single (left) set.
-    /// </summary>
+    /// <summary>A mono pair always answers with its left set.</summary>
     public VirtualCrossoverChannelSettings SideFor(bool rightSide) =>
         Mono || !rightSide ? Left : Right;
 
@@ -669,24 +418,12 @@ public sealed class VirtualCrossoverChannelPairSettings
     }
 }
 
-/// <summary>
-/// The microphone calibration a session was tuned with, carried INSIDE the
-/// session as the curve itself rather than as a reference to the machine's
-/// calibration list. A calibration describes the microphone the measurements
-/// were taken with, so it belongs with the measurements: a session that travels
-/// with its data must arrive with the correction its author saw, on a machine
-/// that has never heard of that file. A few dozen (Hz, dB) points cost nothing
-/// next to the impulse responses the session already points at.
-/// </summary>
+/// <summary>Mic calibration carried inside the session as the curve itself. See docs/tech/virtual-dsp-session-file.md#calibration.</summary>
 public sealed class VirtualCrossoverCalibrationSettings
 {
-    /// <summary>The name the author's calibration list showed for it.</summary>
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>
-    /// The file the curve came from, by name only — the folder means nothing on
-    /// another machine. Null for a curve that was estimated rather than read.
-    /// </summary>
+    /// <summary>Source file name only; null for an estimated curve.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? FileName { get; set; }
 
@@ -718,9 +455,7 @@ public sealed class VirtualCrossoverCalibrationSettings
     {
         Name = Name?.Trim() ?? string.Empty;
         FileName = string.IsNullOrWhiteSpace(FileName) ? null : FileName.Trim();
-        // Two DISTINCT frequencies: the reader merges duplicates into one knot,
-        // and a one-knot curve is no curve — it would load as "available", apply
-        // nothing, and fail this very check on the next save.
+        // Two DISTINCT frequencies: duplicates merge, and a one-knot curve would load but apply nothing.
         if (Points.Any(point =>
                 point is not { Length: 2 } ||
                 !double.IsFinite(point[0]) || point[0] <= 0 ||
@@ -732,32 +467,13 @@ public sealed class VirtualCrossoverCalibrationSettings
     }
 }
 
-/// <summary>
-/// Persists the Virtual DSP tool state (channel pairs, their DSP chains and
-/// the plot view flags) so a tuning session survives an application restart.
-/// The pair count is user-resizable in the tool, from two up to
-/// <see cref="MaximumChannelCount"/>.
-/// </summary>
-/// <summary>
-/// Which family of spatial average a project reads.
-/// </summary>
-/// <remarks>
-/// A property of the PROJECT and not of a channel. The hybrid levels a whole set
-/// with one scalar, and the two families are tethered differently — a
-/// moving-microphone pass by one analyzer session at one input gain, an array by
-/// the loopback its measurement already carries. A set holding both would need a
-/// per-channel offset, and the per-channel offsets are the spread detector: using
-/// them to draw would leave a set that cannot disagree with itself.
-/// </remarks>
+/// <summary>Which spatial-average family a project reads; project-wide because the hybrid levels a set with one scalar.</summary>
 public enum VirtualCrossoverSpatialAverageMode
 {
-    /// <summary>Draw no spatial average, whatever the channels carry.</summary>
     Off,
 
-    /// <summary>The moving-microphone captures attached to the channels.</summary>
     MovingMic,
 
-    /// <summary>The microphone arrays the measurements brought with them.</summary>
     MicArray
 }
 
@@ -765,25 +481,15 @@ public sealed class VirtualCrossoverProjectFile
 {
     public const string CurrentFormat = "resonalyze-virtual-crossover";
 
-    // Bump on an incompatible schema change and add a per-version migration
-    // step in Migrate below. Files from a NEWER version (a downgraded app)
-    // are never migrated: LoadOrDefault backs them up and starts fresh,
-    // LoadFrom rejects them with an explicit error.
+    // Bump on an incompatible change and add a Migrate step. Newer files are never migrated: LoadOrDefault backs up, LoadFrom rejects.
     public const int CurrentVersion = 11;
 
-    // Raised from 8 for complex installs: a front three-way plus a rear pair, a
-    // centre and two subwoofers already fills seven blocks, and splitting the
-    // rear or the centre into two ways used to hit the ceiling. The channel
-    // letters (A, B, C…) and the plot palette both go up to this count.
+    // Channel letters and the plot palette go up to this count.
     public const int MaximumChannelCount = 12;
     private const string FileName = "virtual-crossover.json";
     private const string ResetBackupFileName = "virtual-crossover.before-reset.json";
 
-    /// <summary>
-    /// The widest scene offset (ms) the stereo Auto delay accepts: beyond a
-    /// couple of milliseconds an inter-side lead is no longer an image shift
-    /// but an audible echo, so a larger magnitude is a typo.
-    /// </summary>
+    /// <summary>Beyond a couple of ms an inter-side lead is an echo, not an image shift, so larger is a typo.</summary>
     public const double MaximumSceneOffsetMs = 5;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -800,28 +506,13 @@ public sealed class VirtualCrossoverProjectFile
     public int Version { get; set; } = CurrentVersion;
     public DateTimeOffset SavedAtUtc { get; set; }
 
-    /// <summary>
-    /// Which spatial average this project reads, or null when the user has not
-    /// said — which is every project written before the array existed.
-    /// </summary>
-    /// <remarks>
-    /// Null resolves at load time rather than being written on save, and that is
-    /// the point: a project whose measurements carry arrays should read them
-    /// without the user having to find a menu, and one that predates arrays keeps
-    /// reading its attached captures. Once the user picks from the menu the choice
-    /// is stored and stops being guessed. Optional and additive, so the schema
-    /// version does not move.
-    /// </remarks>
+    /// <summary>Null = not yet settled (pre-array files); the panel guesses while null and stores the guess once a capture exists.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public VirtualCrossoverSpatialAverageMode? SpatialAverageMode { get; set; }
 
-    // Schema v1 payload, kept only so old files deserialize for migration:
-    // Migrate moves these into Pairs (as the left side) and empties the list.
-    // v2 files serialize it as an empty array.
+    // Schema v1 payload for migration only; v2+ writes an empty array.
     public List<VirtualCrossoverChannelSettings> Channels { get; set; } = new();
 
-    // One entry per channel block in the tool (A, B, C), each an L/R pair; a
-    // side without a source simply does not participate in that side's sum.
     public List<VirtualCrossoverChannelPairSettings> Pairs { get; set; } =
     [
         new VirtualCrossoverChannelPairSettings(),
@@ -829,74 +520,25 @@ public sealed class VirtualCrossoverProjectFile
         new VirtualCrossoverChannelPairSettings()
     ];
 
-    // ---------------------------------------------------------- DSP processor
-
-    // The processor this project is designed for, by catalog id (see
-    // DspProcessorCatalog). Additive: a file from before the selector, or one naming a
-    // device this build does not know, opens as Custom and keeps the numbers below —
-    // exactly the simulation that file described.
+    // Catalog id; an absent or unknown id opens as Custom with the numbers below.
     public string? DspProcessorModelId { get; set; }
 
-    // The rate the processor runs its filters at, and the ONLY rate the simulated
-    // biquads are designed for — deliberately independent of the rate the channels
-    // were measured at, so a 48 kHz sound card can carry a 96 kHz processor. Null
-    // means "follow the measurements", the Custom default; a named model ignores it
-    // and answers from the catalog.
+    // The only rate the simulated biquads are designed at, independent of the measurement rate.
+    // Null follows the measurements; a named model answers from the catalog.
     public int? DspProcessorSampleRateHz { get; set; }
 
-    // How the processor READS the Q of a peaking band. It does not change the
-    // simulation — every band here is an RBJ biquad — only how the numbers are
-    // stated where they leave for the device (the tuning sheets).
+    // Only how Q is stated on tuning sheets; every simulated band is an RBJ biquad.
     public PeqQConvention DspProcessorQConvention { get; set; } = PeqQConvention.Rbj;
 
-    /// <summary>
-    /// Whether the blocks show a phase control, or null while the user has not said
-    /// — in which case the catalog answers for the model (see
-    /// <see cref="ResolveDspPhaseControl"/>).
-    /// </summary>
-    /// <remarks>
-    /// Null resolves at read time rather than on save, the same way
-    /// <see cref="SpatialAverageMode"/> does, so an existing project naming a device
-    /// that HAS the control finds it without hunting through a dialog. The dialog
-    /// stores an explicit answer the first time it is confirmed.
-    /// <para>
-    /// It is not a view switch. Saying the device has no such control says the
-    /// rotations are not part of the tune, and
-    /// <see cref="ClearUnavailablePhaseRotations"/> makes that true rather than
-    /// leaving an invisible all-pass in every curve and a "Phase 90°" line on a
-    /// tuning sheet for a device with no such knob. The angles are cleared where the
-    /// user can see it happen — the dialog says how many — and never quietly on the
-    /// way past.
-    /// </para>
-    /// </remarks>
+    /// <summary>Null = the catalog answers (see <see cref="ResolveDspPhaseControl"/>). Not a view switch: false clears rotations via <see cref="ClearUnavailablePhaseRotations"/>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? DspProcessorPhaseControl { get; set; }
 
-    /// <summary>
-    /// Whether the blocks offer a FIR filter, or null while the user has not said —
-    /// in which case the catalog answers for the model (see
-    /// <see cref="ResolveDspFirFilters"/>). The same shape as
-    /// <see cref="DspProcessorPhaseControl"/>, for the same reasons, including that
-    /// it is not a view switch: a device without a FIR stage cannot run the kernel,
-    /// so <see cref="ClearUnavailableFirFilters"/> takes the kernels out of the tune
-    /// where the user can see it happen.
-    /// </summary>
+    /// <summary>FIR counterpart of <see cref="DspProcessorPhaseControl"/>; false removes kernels via <see cref="ClearUnavailableFirFilters"/>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? DspProcessorFirFilters { get; set; }
 
-    /// <summary>
-    /// What the user tells an AI assistant about the installation that no
-    /// measurement can say: the car and the seat, which driver sits where, the
-    /// amplifiers and the processor, and what the tune is for. Edited in the DSP
-    /// processor dialog and sent with every Copy for AI package, so it is written
-    /// once and travels with the session rather than being retyped per chat.
-    /// </summary>
-    /// <remarks>
-    /// Optional and additive, so the schema version does not move — the same rule
-    /// as <see cref="SpatialAverageMode"/>. Empty is stored as absent: a session
-    /// that never had notes serializes byte for byte as it did before the field
-    /// existed, and an older build reads and resaves it without noticing.
-    /// </remarks>
+    /// <summary>Installation notes sent with every Copy for AI package. Empty is stored as absent so old files round-trip byte for byte.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? AiNotes
     {
@@ -906,25 +548,13 @@ public sealed class VirtualCrossoverProjectFile
 
     private string? aiNotes;
 
-    /// <summary>
-    /// True while this project states no rate of its own and takes the measurements'
-    /// instead. That is what a file written before the selector says, and what the DSP
-    /// processor dialog's "Follow measurements" entry writes — deliberately distinct
-    /// from a STATED rate that happens to equal the measurements today, which keeps
-    /// its number when the measurements are replaced at another rate. A named model
-    /// never follows: it brings its own.
-    /// </summary>
+    /// <summary>No stated rate: takes the measurements'. Distinct from a stated rate that equals it today.</summary>
     [JsonIgnore]
     public bool DspProcessorRateFollowsMeasurements =>
         DspProcessorSampleRateHz == null &&
         DspProcessorCatalog.Preset(DspProcessorModelId) == null;
 
-    /// <summary>
-    /// The processor this project is designed for, resolved against the rate its
-    /// measurements were taken at: a named model answers from the catalog (so a
-    /// corrected preset corrects every project naming it), a Custom one answers with
-    /// its stored rate, and one that follows answers with the measurements'.
-    /// </summary>
+    /// <summary>A named model answers from the catalog, Custom with its stored rate, a following profile with the measurements'.</summary>
     public DspProcessorProfile ResolveDspProcessor(int measurementSampleRateHz)
     {
         if (measurementSampleRateHz <= 0)
@@ -938,19 +568,7 @@ public sealed class VirtualCrossoverProjectFile
                 DspProcessorQConvention);
     }
 
-    /// <summary>
-    /// Zeroes every channel phase rotation when the processor this project names has
-    /// no such control, and answers how many it cleared. Nothing to do — and nothing
-    /// returned — for a project whose device HAS one.
-    /// </summary>
-    /// <remarks>
-    /// The invariant behind it: a non-zero angle in this file means a device that can
-    /// dial one. Without it a rotation dialled in on a HELIX and then re-pointed at
-    /// another processor would go on bending every curve while the block that shows
-    /// it is gone, and the tuning sheet would go on telling the user to set a knob
-    /// their device does not have. Run on load and whenever the processor changes,
-    /// which is every path that can make the answer false.
-    /// </remarks>
+    /// <summary>Zeroes rotations when the processor has no phase control; returns the count. Invariant: a non-zero angle means a device that can dial one.</summary>
     public int ClearUnavailablePhaseRotations()
     {
         if (ResolveDspPhaseControl())
@@ -974,38 +592,17 @@ public sealed class VirtualCrossoverProjectFile
         return cleared;
     }
 
-    /// <summary>
-    /// Whether this project shows the channel phase control: the user's own answer
-    /// where they have given one, and otherwise the catalog's for the named model —
-    /// so a HELIX project offers it and a Custom one does not until asked.
-    /// </summary>
     public bool ResolveDspPhaseControl() =>
         DspProcessorPhaseControl ??
         DspProcessorCatalog.Preset(DspProcessorModelId)?.PhaseControl ??
         false;
 
-    /// <summary>
-    /// Whether this project offers a FIR filter per channel: the user's own answer
-    /// where they have given one, otherwise the catalog's for the named model, and
-    /// off for a Custom profile until asked.
-    /// </summary>
     public bool ResolveDspFirFilters() =>
         DspProcessorFirFilters ??
         DspProcessorCatalog.Preset(DspProcessorModelId)?.FirFilters ??
         false;
 
-    /// <summary>
-    /// Detaches every channel FIR kernel when the processor this project names has
-    /// no FIR stage, and answers how many it detached. Nothing to do — and nothing
-    /// returned — for a project whose device HAS one.
-    /// </summary>
-    /// <remarks>
-    /// The same invariant as <see cref="ClearUnavailablePhaseRotations"/>: a kernel in
-    /// this file means a device that can convolve with it. Left in place it would go
-    /// on shaping every curve with no button on screen to explain it, and the tuning
-    /// sheet would name a file the device cannot take. Run on load and whenever the
-    /// processor changes.
-    /// </remarks>
+    /// <summary>Detaches FIR kernels when the processor has no FIR stage; returns the count.</summary>
     public int ClearUnavailableFirFilters()
     {
         if (ResolveDspFirFilters())
@@ -1031,12 +628,7 @@ public sealed class VirtualCrossoverProjectFile
         return cleared;
     }
 
-    /// <summary>
-    /// Records a processor choice. <paramref name="followsMeasurements"/> stores the
-    /// INTENT rather than the number, which is the one thing the profile itself cannot
-    /// carry — its rate is always resolved (see
-    /// <see cref="DspProcessorRateFollowsMeasurements"/>).
-    /// </summary>
+    /// <summary><paramref name="followsMeasurements"/> stores the intent, which the resolved profile cannot carry.</summary>
     public void SetDspProcessor(DspProcessorProfile profile, bool followsMeasurements)
     {
         ArgumentNullException.ThrowIfNull(profile);
@@ -1047,51 +639,24 @@ public sealed class VirtualCrossoverProjectFile
             : profile.SampleRateHz;
     }
 
-    // The stereo Auto delay scene offset (ms) ON THE WIRE: the magnitude
-    // with the steering layout in its SIGN (negative = right-hand drive) —
-    // deliberately the exact pre-flag format. A build from before
-    // StereoRightHandDrive existed reads an RHD session correctly and even
-    // RESAVES it without silently flipping it to LHD: the unknown flag would
-    // not survive such a resave, the sign does. In-app code reads the
-    // magnitude via StereoSceneOffsetMagnitudeMs and the layout via the
-    // flag, and writes both through SetStereoScene so they never disagree.
+    // Magnitude with the layout in its SIGN (negative = RHD), so pre-flag builds read and resave RHD correctly.
+    // Read via StereoSceneOffsetMagnitudeMs, write via SetStereoScene. See docs/tech/virtual-dsp-session-file.md#stereo-scene.
     public double StereoSceneOffsetMs { get; set; } = 0.25;
 
-    // The steering position the stereo Auto delay aligns for: false = LHD
-    // (the left side is the timing reference and the right side leads by the
-    // scene offset), true = RHD (mirrored — the right side is the reference
-    // and lags the left by the offset). Kept explicit despite the sign
-    // above carrying the same fact, so a zero offset still remembers the
-    // layout; Migrate re-aligns the pair when a legacy or foreign file has
-    // only one of them. Additive: older files lack it and open as LHD
-    // unless a negative offset says otherwise.
+    // false = LHD (left is the reference), true = RHD. Explicit so a zero offset keeps its layout; Migrate re-aligns sign and flag.
     public bool StereoRightHandDrive { get; set; }
 
-    // RHD with a ZERO offset still needs its layout on the wire — the sign
-    // IS the layout for pre-flag builds, IEEE -0.0 neither compares below
-    // zero nor survives a decimal round-trip, and the explicit flag does not
-    // survive an old build's resave. So a zero RHD magnitude serializes as
-    // this tiny negative marker instead: a tenth of the UI's 0.01 ms grid
-    // and a twentieth of a sample at 48 kHz, i.e. exactly zero to every
-    // consumer (old builds apply it as an inaudible scene offset and
-    // preserve it on resave), and the magnitude accessor reads it back as
-    // zero. The UI cannot produce a genuine 0.001 ms offset, so the marker
-    // is unambiguous.
+    // Zero RHD offset on the wire: -0.0 does not survive, so this sub-grid marker (1/10 of the UI step) stands in and reads as zero.
     private const double RhdZeroOffsetMarkerMs = 0.001;
 
-    /// <summary>The scene offset as the UI edits it: a layout-neutral,
-    /// non-negative magnitude (the sign on the wire belongs to the layout —
-    /// see <see cref="StereoSceneOffsetMs"/> and the zero-marker note).</summary>
+    /// <summary>Layout-neutral non-negative magnitude, as the UI edits it.</summary>
     [JsonIgnore]
     public double StereoSceneOffsetMagnitudeMs =>
         Math.Abs(StereoSceneOffsetMs) <= RhdZeroOffsetMarkerMs
             ? 0
             : Math.Abs(StereoSceneOffsetMs);
 
-    /// <summary>
-    /// The one writer of the stereo scene: keeps the wire sign and the
-    /// layout flag consistent (see <see cref="StereoSceneOffsetMs"/>).
-    /// </summary>
+    /// <summary>The only writer: keeps the wire sign and the layout flag consistent.</summary>
     public void SetStereoScene(double offsetMagnitudeMs, bool rightHandDrive)
     {
         StereoRightHandDrive = rightHandDrive;
@@ -1100,59 +665,20 @@ public sealed class VirtualCrossoverProjectFile
             : Math.Abs(offsetMagnitudeMs);
     }
 
-    // The intentional level difference (dB) the Auto delay gain balance aims
-    // for, stored as LEFT minus RIGHT: the default asks for the left side
-    // 1 dB BELOW the right, the same image direction as the scene offset
-    // traded as level instead of time. The tuner's own figure, not a value
-    // derived from the offset. The UI edits it as a layout-neutral,
-    // non-negative NEAR-SIDE CUT; the sign written here follows
-    // StereoRightHandDrive (LHD: negative, RHD: positive), so older builds
-    // read the same file unchanged. Additive: older files lack it and open
-    // on this default.
+    // LEFT minus RIGHT; the UI edits a non-negative near-side cut and the sign here follows StereoRightHandDrive.
     public double StereoLevelDifferenceDb { get; set; } = -1.0;
 
-    // Which side the tool currently displays and edits (view state).
     public bool ActiveSideRight { get; set; }
 
-    // Acoustic-plot view state shared by all channels.
-    //
-    // The Sum is answered PER VIEW. On the magnitude plot the sum is the point
-    // of the whole tool; on the phase plot it is one more trace across an
-    // already dense picture, and the same session usually wants it there and not
-    // here. The impulse view draws no sum at all, so it has no flag. This one
-    // stays the magnitude answer, so a file written by this build still opens
-    // the way it looks here in a build that knows the single flag only; the
-    // phase answer is additive and inherits it when the file predates it (see
-    // ShowSumCurveOnPhase).
+    // Sum visibility is per view; this is the magnitude answer, the only flag older builds know (see ShowSumCurveOnPhase).
     public bool ShowSumCurve { get; set; } = true;
     public bool? ShowSumCurvePhase { get; set; }
-    // The loss curve's older on/off flag, off by default as it always was. Kept
-    // written by the selector below (on for everything but Disable) so a build that
-    // knows only the flag still draws, or hides, the curve a newer file asks for.
+    // Legacy flag, still written by the selector so builds that know only the flag agree.
     public bool ShowLossCurve { get; set; }
 
-    /// <summary>
-    /// The window the Sum loss is measured through (see <see cref="SumLossWindow"/>).
-    /// Additive: a file written before the selector existed carries none, and
-    /// <see cref="SumLossWindowMode"/> answers for it from the flag above.
-    /// </summary>
     public SumLossWindow? LossWindow { get; set; }
 
-    /// <summary>
-    /// The selector's effective answer: the stored window; for a file without one,
-    /// <see cref="SumLossWindow.Full"/> when the older flag is on and the default,
-    /// <see cref="SumLossWindow.Direct"/>, otherwise. Setting it writes
-    /// <see cref="LossWindow"/> and keeps <see cref="ShowLossCurve"/> in step.
-    /// </summary>
-    /// <remarks>
-    /// The two legacy answers are not symmetric, and deliberately so. The flag's
-    /// own default was off, so "false" on an old file cannot be told from a toggle
-    /// never touched — it gets the new default, as a fresh project does. "True"
-    /// could only have been set by hand, and the curve it turned on was always the
-    /// steady-state one; opening that file on the direct read would swap the
-    /// meaning of a number the user chose to watch, and the two families are not
-    /// comparable. So it keeps Full, until the selector is moved.
-    /// </remarks>
+    /// <summary>The stored window; for a legacy file, Full when the old flag is on (it could only be set by hand), Direct otherwise.</summary>
     [JsonIgnore]
     public SumLossWindow SumLossWindowMode
     {
@@ -1164,44 +690,18 @@ public sealed class VirtualCrossoverProjectFile
         }
     }
 
-    /// <summary>
-    /// Which part of the installation the main plot describes — see
-    /// <see cref="VirtualCrossoverGroupView"/>. Additive: a file written before
-    /// the views existed carries none and opens on
-    /// <see cref="VirtualCrossoverGroupView.FrontAndSub"/>, which draws exactly
-    /// what such a file always drew (its blocks all migrate into Front and Sub).
-    /// </summary>
+    /// <summary>Files predating group views open on FrontAndSub, which is what they always drew.</summary>
     public VirtualCrossoverGroupView GroupView { get; set; } =
         VirtualCrossoverGroupView.FrontAndSub;
 
-    /// <summary>
-    /// How far behind the front stage Auto delay places the rear fill, in ms.
-    /// Part of the tune rather than a dialog default: a car tuned for its front
-    /// seats and one tuned for its second row want different answers, and the
-    /// next run should start from the one this car settled on.
-    /// </summary>
+    /// <summary>Rear fill delay behind the front stage (ms); part of the tune, not a dialog default.</summary>
     public double RearFillOffsetMs { get; set; } =
         VirtualCrossoverAutoDelayDialog.DefaultRearFillOffsetMs;
 
-    /// <summary>
-    /// Whether the magnitude view draws the hybrid — each channel from its spatial
-    /// average — rather than the impulse responses alone.
-    /// </summary>
-    /// <remarks>
-    /// Stored with the captures it needs, because the two are one decision: a session
-    /// that brings its averages back and then opens on the point measurements would
-    /// make the user re-tick the toggle every time. The tick is dropped on load when
-    /// the set no longer has an average on every channel that plays, so a session
-    /// whose captures went missing simply opens honest. Additive: files written
-    /// before the hybrid view existed carry none and open honest too.
-    /// </remarks>
+    /// <summary>Draw the hybrid (spatial-average) magnitude. Intent: kept on load, drawn only while every playing channel has an average.</summary>
     public bool ShowHybridCurves { get; set; }
 
-    /// <summary>
-    /// Whether the Sum is drawn on the PHASE view. A file written before the two
-    /// views answered separately carries no such flag and inherits the magnitude
-    /// answer, which is exactly what it used to draw.
-    /// </summary>
+    /// <summary>Older files inherit the magnitude answer.</summary>
     [JsonIgnore]
     public bool ShowSumCurveOnPhase
     {
@@ -1209,29 +709,14 @@ public sealed class VirtualCrossoverProjectFile
         set => ShowSumCurvePhase = value;
     }
     public bool ShowPhaseView { get; set; }
-    // The main plot's impulse view (the gated IR preview promoted to the main
-    // plot). Additive: older files lack it, and when set it wins over
-    // ShowPhaseView. Kept as a second flag so files written by this version
-    // still open in older builds (which fall back to magnitude/phase).
+    // Wins over ShowPhaseView; a separate flag so older builds fall back to magnitude/phase.
     public bool ShowImpulseView { get; set; }
-    // The main plot's group-delay view: each channel's measured group delay
-    // and the Sum's through the phase gate. Additive in the same way: it wins
-    // over ShowPhaseView and loses to ShowImpulseView, and the panel writes
-    // ShowPhaseView beside it so a build without this flag opens the project
-    // on the nearest view it has, the phase.
+    // Wins over ShowPhaseView, loses to ShowImpulseView; ShowPhaseView is written beside it as older builds' fallback.
     public bool ShowGroupDelayView { get; set; }
-    // The main plot's step view: each processed channel's step response and
-    // the Sum's on the impulse view's timeline, on one common scale. Additive
-    // in the same way: it wins over every older flag, and the panel writes
-    // ShowImpulseView beside it so a build without this flag opens the project
-    // on the nearest view it has, the impulse.
+    // Wins over every older flag; ShowImpulseView is written beside it as older builds' fallback.
     public bool ShowStepView { get; set; }
 
-    /// <summary>
-    /// Whether the Sum is drawn on the GROUP-DELAY view. Its own answer, like the
-    /// phase view's; a file written before the view existed carries none and
-    /// inherits the phase answer, the nearest view's.
-    /// </summary>
+    /// <summary>Older files inherit the phase answer.</summary>
     public bool? ShowSumCurveGroupDelay { get; set; }
 
     [JsonIgnore]
@@ -1241,11 +726,7 @@ public sealed class VirtualCrossoverProjectFile
         set => ShowSumCurveGroupDelay = value;
     }
 
-    /// <summary>
-    /// Whether the Sum is drawn on the STEP view. Its own answer, like the
-    /// others'; a file written before the view existed carries none and inherits
-    /// the magnitude answer — the impulse view, its nearest, draws no Sum.
-    /// </summary>
+    /// <summary>Older files inherit the magnitude answer (the impulse view draws no Sum).</summary>
     public bool? ShowSumCurveStep { get; set; }
 
     [JsonIgnore]
@@ -1255,35 +736,16 @@ public sealed class VirtualCrossoverProjectFile
         set => ShowSumCurveStep = value;
     }
 
-    // The EQ target curve drawn over the acoustic plot: whether it is shown, the
-    // level (dB) it hangs at, and the target itself. Additive: older files lack
-    // all three and open with the curve hidden, on the app's current target.
     public bool ShowTargetCurve { get; set; }
     public double TargetLevelDb { get; set; }
 
-    /// <summary>
-    /// The EQ target this session was tuned against — the whole custom shape,
-    /// not a preset name, so a session that travels aims at the curve its owner
-    /// drew rather than at whatever the receiving machine happened to have set.
-    /// Loading a session applies it as the app's target (the EQ Wizard owns and
-    /// persists that one definition); null in a file written before the target
-    /// was stored, and then the current target is kept and written on the next
-    /// save.
-    /// </summary>
+    /// <summary>The whole target shape this session was tuned against, applied as the app's target on load; null in older files.</summary>
     public VirtualCrossoverTargetSettings? Target { get; set; }
     public int SmoothingInverseOctaves { get; set; } = 12;
 
-    // The psychoacoustic magnitude smoothing mode (see SpectrumSmoothing in
-    // dsp). Stored as a separate additive flag while SmoothingInverseOctaves
-    // keeps the plain base width, so an older build opens such a session as
-    // plain 1/6-octave smoothing instead of rejecting the file.
+    // Separate additive flag so older builds open the session as plain smoothing instead of rejecting it.
     public bool PsychoacousticSmoothing { get; set; }
 
-    /// <summary>
-    /// The in-memory smoothing code of this project (see
-    /// <see cref="OverlayFile.SmoothingCode"/> for the pattern): the
-    /// psychoacoustic code when the flag is set, the stored width otherwise.
-    /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public int SmoothingCode =>
         PsychoacousticSmoothing
@@ -1298,34 +760,18 @@ public sealed class VirtualCrossoverProjectFile
             Resonalyze.Dsp.SpectrumSmoothing.EquivalentInverseOctaves(code);
     }
 
-    // Which curve the per-channel DSP chain plot shows. Additive: older files lack
-    // it and default to Magnitude. Never stores Correlation — see the flag below.
+    // Never stores Correlation or Coherence: those are additive flags so older builds don't fail on an unknown enum.
     public DspPlotMode DspPlotMode { get; set; } = DspPlotMode.Magnitude;
 
-    // The junction-correlation view of the lower plot, stored as a separate
-    // additive flag (same pattern as PsychoacousticSmoothing): the legacy enum
-    // field keeps a value every build knows, so an older build opens the
-    // session on the magnitude view instead of failing on an unknown enum
-    // string. No file version bump.
     public bool DspPlotCorrelationView { get; set; }
 
-    // The junction-coherence ladder of the lower plot — the second junction
-    // mode, additive for the same reason. Correlation wins if a hand-edited
-    // file sets both (see EffectiveDspPlotMode).
+    // Correlation wins if both flags are set.
     public bool DspPlotCoherenceView { get; set; }
 
-    // Which adjacent channel pair the junction views (correlation and
-    // coherence — they share the selector) analyze, as an index into the
-    // by-band-ordered pair list (0 = the lowest junction). Additive.
+    // Index into the band-ordered junction list (0 = lowest).
     public int CorrelationPairIndex { get; set; }
 
-    /// <summary>
-    /// The in-memory lower-plot mode: <see cref="DspPlotMode.Correlation"/> or
-    /// <see cref="DspPlotMode.Coherence"/> when the matching flag is set, the
-    /// stored enum value otherwise. Write through
-    /// <see cref="SetDspPlotMode"/> so the multi-field representation cannot
-    /// half-apply.
-    /// </summary>
+    /// <summary>Write through <see cref="SetDspPlotMode"/> so the multi-field representation cannot half-apply.</summary>
     [JsonIgnore]
     public DspPlotMode EffectiveDspPlotMode =>
         DspPlotCorrelationView ? DspPlotMode.Correlation
@@ -1341,61 +787,28 @@ public sealed class VirtualCrossoverProjectFile
             : mode;
     }
 
-    // The microphone calibration applied to the magnitude curves. The
-    // measurement is loopback-referenced, so calibration is optional and off by
-    // default. Two fields state it: Calibration is the CURVE the session is tuned
-    // with and is what another machine reads; CalibrationId is the entry of THIS
-    // machine's calibration list the selection maps to — a local name for the
-    // same curve, null when the session is tuned with a curve it carries itself
-    // and no configured entry matches. An id alone (no curve) is how sessions
-    // were written before the curve travelled, and it is read as a hint, never
-    // as an identity: the "90deg" id is minted on every machine that migrated a
-    // legacy 90° slot, so two machines' ids agreeing says nothing about their
-    // files. See VirtualCrossoverCalibrationSelection.
+    // Calibration is the curve another machine reads; CalibrationId maps it to this machine's list and is only a hint.
+    // See docs/tech/virtual-dsp-session-file.md#calibration.
     public string? CalibrationId { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public VirtualCrossoverCalibrationSettings? Calibration { get; set; }
 
-    // Schema v5 payload, kept only so an older file deserializes for migration:
-    // the selection used to be one of three fixed modes.
+    // Schema v5 payload for migration only.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public LegacyMicrophoneCalibrationMode? CalibrationMode { get; set; }
 
-    /// <summary>
-    /// The phase gate's placement, per SIDE. The two sides' drivers sit at different
-    /// distances, so their arrivals — and the reflections the gate exists to cut — do not
-    /// land at the same time; one shared gate meant that fitting it on one side threw the
-    /// other's traces off.
-    /// </summary>
     public VirtualCrossoverPhaseGateSettings PhaseGateLeft { get; set; } = new();
     public VirtualCrossoverPhaseGateSettings PhaseGateRight { get; set; } = new();
 
-    // Schema v4 payload, kept only so an older file deserializes for migration: WHERE the
-    // gate sits went per-side in v5. Migrate copies these onto BOTH sides, so a migrated
-    // project draws exactly as it did; nothing else reads them. Nullable purely to tell
-    // "absent" from a real value — v4's own offset/detrend were already nullable, and null
-    // there meant "follow the earliest arrival", which migrates to the same thing.
+    // Schema v4 payload (one shared gate); Migrate copies it onto both sides.
     [JsonPropertyName("phaseGateOffsetMs")]
     public double? LegacyPhaseGateOffsetMs { get; set; }
     [JsonPropertyName("phaseDetrendMs")]
     public double? LegacyPhaseDetrendMs { get; set; }
 
-    // The Tukey window's LENGTHS stay project-wide, alongside the analysis modes below:
-    // they set the frequency resolution the phase is read at, and two sides read through
-    // different-length windows cannot be compared against each other — which is the whole
-    // reason the view exists. Only the gate's PLACEMENT (offset, and the τ it references)
-    // is per-side, since only that follows the drivers' differing distances.
-    // These kept v4's names on the wire, so an older file deserializes straight into them.
-    //
-    // Deliberately longer than Phase Response mode's junction-length default: by the
-    // 1/T criterion the read-out states, a 6 ms gate holds one period only down to
-    // ≈ 170 Hz, which leaves the phase view short exactly where the sub-to-midbass
-    // junctions this tool exists to align live. 41 ms holds one down to ≈ 24 Hz — the
-    // window's nominal reach rather than a promise about the phase read through it —
-    // and FDW below keeps the mid and high end direct-sound-oriented anyway, so the
-    // long window is spent on the bass, where the wavelengths are longer than the
-    // cabin's early reflection path.
+    // Lengths stay project-wide (they set resolution; sides must compare). 41 ms total reaches one period at ~24 Hz.
+    // See docs/tech/virtual-dsp-session-file.md#phase-gate.
     public const double DefaultPhaseGateLeftMs = 1.0;
     public const double DefaultPhaseGatePlateauMs = 30.0;
     public const double DefaultPhaseGateRightMs = 10.0;
@@ -1404,15 +817,7 @@ public sealed class VirtualCrossoverProjectFile
     public double PhaseGatePlateauMs { get; set; } = DefaultPhaseGatePlateauMs;
     public double PhaseGateRightMs { get; set; } = DefaultPhaseGateRightMs;
 
-    // These three decide HOW the phase is analysed rather than where it is looked at,
-    // so the two sides must be analysed alike.
-    //
-    // FDW by default, at the gentlest of its three cycle counts: with a gate this
-    // long a fixed window would carry the whole late reflection tail into the mid
-    // and high junctions, where the direct arrival is what the channels are timed
-    // on. 8 cycles keeps the most late detail of the three — the suppression is
-    // there to make the junctions readable, not to reduce every channel to its
-    // first cycle.
+    // Analysis modes are shared by both sides; FDW-8 is the gentlest cycle count. See docs/tech/virtual-dsp-session-file.md#phase-gate.
     public const int DefaultPhaseFdwCycles = 8;
 
     public PhaseWindowMode PhaseWindowMode { get; set; } =
@@ -1420,7 +825,6 @@ public sealed class VirtualCrossoverProjectFile
     public int PhaseFdwCycles { get; set; } = DefaultPhaseFdwCycles;
     public PhaseDetrendMode PhaseDetrendMode { get; set; } = PhaseDetrendMode.Auto;
 
-    /// <summary>The gate of one side; the tool always draws and edits the ACTIVE side's.</summary>
     public VirtualCrossoverPhaseGateSettings PhaseGateFor(bool rightSide) =>
         rightSide ? PhaseGateRight : PhaseGateLeft;
 
@@ -1429,46 +833,12 @@ public sealed class VirtualCrossoverProjectFile
             rootDirectory ?? ApplicationDataPaths.Current.ToolsDirectory,
             FileName);
 
-    /// <summary>
-    /// Where <see cref="BackupBeforeReset"/> puts the copy it takes.
-    /// </summary>
     public static string ResetBackupPath(string? rootDirectory = null) =>
         Path.Combine(
             rootDirectory ?? ApplicationDataPaths.Current.ToolsDirectory,
             ResetBackupFileName);
 
-    /// <summary>
-    /// Writes THIS project aside before the panel replaces it wholesale, so a
-    /// Reset is not the end of the tune it discards: the file is an ordinary
-    /// session and comes back through <b>Load session…</b>.
-    /// </summary>
-    /// <returns>
-    /// The copy's path, or null with the reason it could not be written.
-    /// </returns>
-    /// <remarks>
-    /// The project in MEMORY, not the autosave on disk. The panel does not save on
-    /// edit, it schedules one behind a debounce, so the file lags the screen by up
-    /// to a couple of seconds — and by everything, on a session that has never
-    /// been written. Copying the file promised the user the session in front of
-    /// them and delivered the one before their last edits; worse, it reported a
-    /// missing file as "nothing to lose" while a whole tune stood in memory.
-    /// Serializing the object answers for exactly what the caller is about to
-    /// discard, and a failure to write it is reported rather than swallowed the
-    /// way the debounced autosave has to swallow one.
-    /// <para>
-    /// One copy is kept and overwritten — the answer to "undo that reset" is
-    /// always the reset just performed, and a growing pile of dated files would be
-    /// a second archive beside the user's own exported sessions.
-    /// </para>
-    /// <para>
-    /// Its own name, not the <c>.backup</c> suffix
-    /// <see cref="BackupUnusableFile"/> uses: that one holds a file the tool could
-    /// not read, this one a tune it read perfectly well, and clobbering the first
-    /// with the second would throw away the only copy of an unreadable project
-    /// while the user was still deciding what to do about it. The <c>.json</c>
-    /// extension is deliberate too — it is what the Load session dialog offers.
-    /// </para>
-    /// </remarks>
+    /// <summary>Serializes the in-memory project aside before a Reset; returns the path or the error. See docs/tech/virtual-dsp-session-file.md#autosave-reset-backup-and-load-fallback.</summary>
     public (string? Path, string? Error) SaveResetBackup(string? rootDirectory = null)
     {
         string backupPath = ResetBackupPath(rootDirectory);
@@ -1486,11 +856,7 @@ public sealed class VirtualCrossoverProjectFile
     public void Save(string? rootDirectory = null) =>
         SaveAutosaveTo(GetPath(rootDirectory));
 
-    // The autosave's own write, shared with the reset backup beside it. NOT the
-    // public SaveTo below: that one is the EXPORT, and it states each source's path
-    // relative to the file's own folder. Both of these live in the application data
-    // folder, where no measurement sits, so a relative path written there would be
-    // the confident wrong answer WriteWithExportRelativePaths exists to refuse.
+    // The autosave's write, not the export: it lives in app data, so it writes no relative paths.
     private void SaveAutosaveTo(string path)
     {
         Validate();
@@ -1504,8 +870,6 @@ public sealed class VirtualCrossoverProjectFile
         string temporaryPath = path + ".tmp";
         try
         {
-            // The autosave has no folder of its own for a relative path to be
-            // relative TO, so it writes none (see WriteWithExportRelativePaths).
             WriteWithExportRelativePaths(null, () =>
             {
                 using FileStream stream = new(
@@ -1528,12 +892,7 @@ public sealed class VirtualCrossoverProjectFile
         }
     }
 
-    /// <summary>
-    /// Exports the session to a user-chosen file (same format as the internal
-    /// project file), so a tuning setup can be shared or archived. Each source also
-    /// gets a path relative to THIS file's folder, which is what lets the export
-    /// find its measurements again on another machine.
-    /// </summary>
+    /// <summary>Export: the project format plus source paths relative to this file's folder.</summary>
     public void SaveTo(string path)
     {
         Validate();
@@ -1545,22 +904,8 @@ public sealed class VirtualCrossoverProjectFile
                 stream => JsonSerializer.Serialize(stream, this, SerializerOptions)));
     }
 
-    // A relative path means nothing without the folder it was computed against, so
-    // each write states its own: an export writes paths relative to ITS folder, and
-    // the internal autosave writes none — it lives in the application data folder,
-    // no measurement sits beside it, and a value left over from some earlier export
-    // would be a confident wrong answer if that file were hand-carried to another
-    // machine and imported.
-    //
-    // Strictly a property of the WRITE, never of the project: the values are swapped
-    // in around the serialization and put back afterwards. The live ones belong to
-    // the session this project was IMPORTED from and are still in use — the tool
-    // reads them to find measurements whose absolute paths are dead, including
-    // during the relink prompt, which an autosave can fire behind (a modal dialog
-    // keeps pumping the message loop, so the debounced save runs while the user
-    // reads the question). Clearing them for real there would delete the very hint
-    // the relink is about to need, and would also leave a re-export unable to
-    // restate the arrangement it was imported with.
+    // Relative paths belong to the write: swapped in around serialization and restored, because the live values are
+    // still needed by the relink prompt (an autosave can fire behind its modal dialog).
     private void WriteWithExportRelativePaths(string? exportDirectory, Action write)
     {
         List<(VirtualCrossoverChannelSettings Side, string? Source, string? Average)>
@@ -1575,8 +920,6 @@ public sealed class VirtualCrossoverProjectFile
                     ? null
                     : VirtualCrossoverSourceLocator.Relativize(
                         side.SourceFilePath, exportDirectory);
-                // The capture travels with the measurements and is found the same
-                // way, so it is restated against the same folder.
                 side.SpatialAverageRelativePath = exportDirectory == null
                     ? null
                     : VirtualCrossoverSourceLocator.Relativize(
@@ -1599,11 +942,7 @@ public sealed class VirtualCrossoverProjectFile
         }
     }
 
-    /// <summary>
-    /// Imports a session from a user-chosen file. Unlike <see cref="LoadOrDefault"/>
-    /// this throws on a broken or incompatible file — an explicit import deserves
-    /// an explicit error instead of silently starting fresh.
-    /// </summary>
+    /// <summary>Imports a session; unlike <see cref="LoadOrDefault"/> it throws on a broken or incompatible file.</summary>
     public static VirtualCrossoverProjectFile LoadFrom(string path)
     {
         using FileStream stream = new(
@@ -1624,14 +963,7 @@ public sealed class VirtualCrossoverProjectFile
         return file;
     }
 
-    /// <summary>
-    /// The folder the session file was imported from, kept so a channel whose
-    /// stored absolute path no longer exists can be looked for beside the session
-    /// itself (see <see cref="VirtualCrossoverSourceLocator"/>). Null for the
-    /// internal autosave, which lives in the application data folder: measurements
-    /// never sit there, so searching it could only produce a false match. Not
-    /// serialized — it describes where the file came from, not what it contains.
-    /// </summary>
+    /// <summary>Folder of the imported session file, searched for moved measurements; null for the autosave.</summary>
     [JsonIgnore]
     public string? ProjectDirectory { get; private set; }
 
@@ -1644,22 +976,15 @@ public sealed class VirtualCrossoverProjectFile
         catch (Exception exception) when (
             exception is ArgumentException or PathTooLongException or NotSupportedException)
         {
-            // The file just opened, so this practically cannot fail; if it does,
-            // the session still loads and simply gets no folder to search.
             return null;
         }
     }
 
-    // Per-version upgrade steps, applied before validation. Newer-than-current
-    // versions are deliberately NOT touched: validation rejects them and the
-    // callers handle that (backup + fresh, or an explicit import error).
+    // Newer-than-current versions are not touched: validation rejects them. See docs/tech/virtual-dsp-session-file.md#schema-versions-and-migrations.
     private static void Migrate(VirtualCrossoverProjectFile file)
     {
         if (file.Version == 1)
         {
-            // v1 stored single-sided channels; they become the LEFT side of a
-            // pair (the historical measurements were the user's only side) and
-            // the right side starts empty.
             file.Pairs = file.Channels
                 .Select(channel => new VirtualCrossoverChannelPairSettings
                 {
@@ -1672,7 +997,6 @@ public sealed class VirtualCrossoverProjectFile
         }
         if (file.Version == 2)
         {
-            // v2 only had a fixed gate and a numeric common detrend.
             file.PhaseWindowMode = PhaseWindowMode.Fixed;
             file.PhaseFdwCycles = PhaseAnalysisSettings.DefaultFdwCycles;
             file.PhaseDetrendMode = PhaseDetrendMode.Manual;
@@ -1684,12 +1008,6 @@ public sealed class VirtualCrossoverProjectFile
         }
         if (file.Version == 4)
         {
-            // v4 pinned the gate's PLACEMENT once for the whole project, so fitting it on
-            // one side threw the other's traces off — the sides' arrivals differ. Both
-            // sides inherit the old shared value, leaving a migrated project drawing
-            // exactly as before; they diverge only once the user moves one of them. The
-            // window's lengths did not move: they kept their names on the project and
-            // deserialize straight into it.
             foreach (VirtualCrossoverPhaseGateSettings gate in
                 new[] { file.PhaseGateLeft, file.PhaseGateRight })
             {
@@ -1703,11 +1021,7 @@ public sealed class VirtualCrossoverProjectFile
         }
         if (file.Version == 5)
         {
-            // v5 picked the calibration from three fixed modes; it is now an id
-            // into the user's calibration list. 90° maps to the entry the
-            // settings migration creates from the old second slot — the session
-            // says WHICH calibration it was tuned with, and this machine either
-            // has that entry or is told it does not.
+            // 90° maps to the entry the settings migration created from the old second slot.
             file.CalibrationId = MeasurementSettingsFile.ResolveCalibrationId(
                 file.CalibrationId,
                 file.CalibrationMode,
@@ -1717,15 +1031,7 @@ public sealed class VirtualCrossoverProjectFile
         }
         if (file.Version == 6)
         {
-            // v6 kept Mute, Bypass and the two curve toggles per SIDE, so switching
-            // sides could silently change what the block contributed and what the plot
-            // drew. They belong to the block, and v7 moves them onto the pair.
-            // The pair inherits the sides that actually carry a measurement — the single
-            // left slot of a mono pair, the one loaded side of a half-loaded pair — so
-            // every project that could not disagree opens exactly as it looked. Where two
-            // loaded sides DID disagree the louder answer wins: muted, bypassed and
-            // "curve shown" each survive, because a mute lost in a migration is the one
-            // outcome the tuner has no way to see coming.
+            // Loaded sides win; where two disagree, muted/bypassed/shown survive (a lost mute is invisible to the tuner).
             foreach (VirtualCrossoverChannelPairSettings pair in file.Pairs)
             {
                 VirtualCrossoverChannelSettings[] both = [pair.Left, pair.Right];
@@ -1755,15 +1061,7 @@ public sealed class VirtualCrossoverProjectFile
         }
         if (file.Version == 7)
         {
-            // v7 kept one all-pass per channel side as its own stage; v8 carries it
-            // as a band of the PEQ bank, where the hardware's own EQ slot table
-            // holds it (AP1/AP2). The band realizes bit for bit the same biquad the
-            // stage ran (pinned by AllPassBandTests), so a migrated project sounds
-            // exactly as it did. Defensive on the legacy numbers — Migrate runs
-            // before Validate, so a hand-edited stage must degrade to "no all-pass"
-            // rather than abort the whole session; and a bank already holding the
-            // full 32 bands has no slot to take the stage, so it is dropped there
-            // too rather than invalidating the file.
+            // The band is bit-identical to the old stage; bad legacy numbers degrade to no all-pass (Migrate runs before Validate).
             foreach (VirtualCrossoverChannelPairSettings pair in file.Pairs)
             {
                 foreach (VirtualCrossoverChannelSettings side in
@@ -1781,13 +1079,7 @@ public sealed class VirtualCrossoverProjectFile
                         double.IsFinite(frequencyHz) && frequencyHz > 0 &&
                         double.IsFinite(q) && q > 0)
                     {
-                        // A v7 side could hold a FULL bank and an all-pass stage
-                        // beside it, which v8 has no room for. Something is lost
-                        // either way, so lose the one that can be put back: a bell
-                        // is a magnitude correction Auto Tune can propose again,
-                        // while an all-pass sits on a junction that was aligned by
-                        // ear. The user is told rather than left to find out — see
-                        // MigrationNoticeText.
+                        // Full bank: drop the last gain-bearing band (Auto Tune can re-propose it), keep the ear-aligned all-pass; reported in MigrationNoticeText.
                         if (side.PeqBands.Count >= EqualizationCurve.MaxBandCount)
                         {
                             int last = side.PeqBands.FindLastIndex(
@@ -1821,19 +1113,7 @@ public sealed class VirtualCrossoverProjectFile
         }
         if (file.Version == 8)
         {
-            // v9 gives every block a ZONE (front / rear / centre / sub), because a
-            // complex install is not one chain along the spectrum — see
-            // VirtualCrossoverZone. A v8 file records no such thing, so the zone is
-            // GUESSED from what it does record: the mono flag and the block's
-            // filter.
-            //
-            // This step adds a field and changes nothing else. Delays, polarity,
-            // gains, crossovers, PEQ banks, gates and view state all survive
-            // untouched, which is what makes a wrong guess cheap: the project opens
-            // exactly as it was tuned and the user re-points one combo box. That is
-            // also why a guess is preferred to leaving everything at the Front
-            // default — a shared subwoofer landing in the front stage would be
-            // wrong for every install, while this is right for most.
+            // Zone guessed from the mono flag and filter; nothing else changes, so a wrong guess costs one combo box.
             foreach (VirtualCrossoverChannelPairSettings pair in file.Pairs)
             {
                 pair.Zone = VirtualCrossoverZones.GuessForLegacyPair(
@@ -1844,31 +1124,16 @@ public sealed class VirtualCrossoverProjectFile
         }
         if (file.Version == 9)
         {
-            // v10 adds the channel phase control (PhaseRotationDegrees on each side,
-            // and the project-wide switch that shows it). Purely additive: an absent
-            // angle is no rotation and an absent switch is off, so a v9 project opens
-            // as the simulation it was saved as. The version is still bumped, because
-            // the reverse direction is not harmless — an older build would open a
-            // rotated tune and quietly draw it without the filter, and refusing the
-            // file is how it says so.
+            // Additive, but bumped so older builds refuse a rotated tune instead of drawing it without the filter.
             file.Version = 10;
         }
         if (file.Version == 10)
         {
-            // v11 adds the channel FIR stage (the kernel's taps per side, stored in
-            // the file, and the project-wide switch that offers it). Additive like
-            // v10, and bumped for the same reason: an older build would open a
-            // convolved tune and draw it without the kernel.
+            // Bumped for the same reason as v10, for FIR kernels.
             file.Version = 11;
         }
 
-        // The scene offset's wire SIGN and the layout flag state one fact
-        // (see the properties): re-align them here for files that carry only
-        // one — a pre-flag file (sign only, possibly resaved by an older
-        // build that dropped the flag) or a hand-edited one. The sign is the
-        // wider channel (every build honors it), so it wins over a missing
-        // flag; a set flag over a positive offset wins the other way, so a
-        // zero-or-positive RHD file keeps its layout.
+        // Re-align the wire sign and layout flag for files carrying only one; a negative sign wins over a missing flag.
         if (file.StereoSceneOffsetMs < 0)
         {
             file.StereoRightHandDrive = true;
@@ -1879,37 +1144,19 @@ public sealed class VirtualCrossoverProjectFile
         }
     }
 
-    /// <summary>
-    /// When <see cref="LoadOrDefault"/> could not use an existing file and moved
-    /// it aside, this holds the path of the <c>.backup</c> it created so the tool
-    /// can tell the user their previous session was preserved. Null on a clean
-    /// load (or when the aside-move itself failed). Not serialized.
-    /// </summary>
+    /// <summary>Path of the <c>.backup</c> <see cref="LoadOrDefault"/> moved an unusable file to; null otherwise.</summary>
     [JsonIgnore]
     public string? BackupNoticePath { get; private set; }
 
-    // How many channel sides had a full 32-band bank when their v7 all-pass stage
-    // was migrated into it, and so gave up their last gain-bearing band to make
-    // room. Not persisted: it describes THIS load, and the host tells the user
-    // once (see MigrationNoticeText).
+    // Sides whose full 32-band bank lost a gain-bearing band to a migrated all-pass on THIS load.
     private int migratedFullBanks;
 
-    // How many channel sides carried a phase rotation this project's processor has no
-    // control for. Only a hand-edited or hand-assembled file can be in that state —
-    // every path the app writes keeps the two agreeing — but silently dropping a
-    // filter is exactly what the notice below exists to prevent.
+    // Only a hand-edited file reaches this state, but a silently dropped filter must be reported.
     private int clearedPhaseRotations;
 
-    // How many channel sides named a FIR kernel this project's processor has no
-    // stage for — the FIR counterpart of clearedPhaseRotations, and reachable the
-    // same way (a hand-edited file).
     private int clearedFirFilters;
 
-    /// <summary>
-    /// What this load had to change beyond restating it, or null when nothing was
-    /// lost. A migration that silently drops a filter is how a tune quietly stops
-    /// being the tune that was saved.
-    /// </summary>
+    /// <summary>What this load had to drop, or null when nothing was lost.</summary>
     [JsonIgnore]
     public string? MigrationNoticeText => string.Join(
         Environment.NewLine + Environment.NewLine,
@@ -1954,14 +1201,7 @@ public sealed class VirtualCrossoverProjectFile
                 "all-pass sits on a junction that was aligned by ear. Check those " +
                 "channels before saving over the session.";
 
-    /// <summary>
-    /// Loads the saved project, falling back to a fresh default when the file
-    /// is missing, unreadable or from an unknown version — the tool state is a
-    /// convenience, so it must never block startup. A file that exists but
-    /// cannot be used is renamed to <c>.backup</c> first: the next scheduled
-    /// save overwrites the project path, and a downgrade or a bug must not
-    /// cost the user their tuning session.
-    /// </summary>
+    /// <summary>Loads the autosave, falling back to a fresh default; an unusable file is moved to <c>.backup</c> first so the next save cannot overwrite it.</summary>
     public static VirtualCrossoverProjectFile LoadOrDefault(string? rootDirectory = null)
     {
         string path = GetPath(rootDirectory);

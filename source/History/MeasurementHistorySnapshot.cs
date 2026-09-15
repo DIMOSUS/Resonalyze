@@ -4,78 +4,38 @@ namespace Resonalyze.History;
 
 internal sealed class MeasurementHistorySnapshot
 {
-    /// <summary>
-    /// The measurement's array microphones, when it was recorded with one.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately NOT persisted. History keeps a snapshot per entry and an array
-    /// is a thousand levels per microphone; the curves live in the measurement file
-    /// they were written to, and this carries them only as far as a tool that reads
-    /// a file in this session — which is what the Virtual DSP source path does. An
-    /// entry restored from the history file therefore has no array, and the hybrid
-    /// falls back to that channel's honest impulse response, saying so.
-    /// </remarks>
+    /// <summary>Not persisted (a thousand levels per mic); a restored history entry has no array and the hybrid says so.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public IReadOnlyList<ArrayMicrophoneCurve> ArrayMicrophones { get; init; } = [];
 
-    /// <summary>
-    /// The protective high-pass the measurement was corrected for, carried beside
-    /// the array because a set of arrays is judged on it: two channels compensated
-    /// for different filters are not one set. Not persisted, for the same reason
-    /// the array is not — it exists to accompany it.
-    /// </summary>
+    /// <summary>Accompanies the array: channels compensated for different filters are not one set. Not persisted.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public ProtectiveHighPassConfiguration? ProtectiveHighPass { get; init; }
 
-    /// <summary>
-    /// The microphone calibration frozen onto the measurement this snapshot holds.
-    /// </summary>
-    /// <remarks>
-    /// Carried for the same reason the file carries it: an impulse response is
-    /// stored raw, so without the curve a recipient draws a different response from
-    /// the author's and nothing says why. Saving an entry to disk goes through
-    /// <see cref="ToImpulseResponseFile"/>, and a file written that way has to be the
-    /// same file <c>ImpulseResponseFile.Capture</c> would have written.
-    /// </remarks>
+    /// <summary>IRs are stored raw, so the calibration must travel for a recipient to draw the same response.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; init; }
 
     public int SampleRate { get; init; }
     public int Bits { get; init; }
-    // Legacy: only set when restoring a pre-band file; the band is stored
-    // explicitly below. Use ResolveSweepBand() rather than reading these.
+    // Legacy, pre-band files only; use ResolveSweepBand().
     public int Octaves { get; init; }
     public double LowFrequencyHz { get; init; }
     public double HighFrequencyHz { get; init; }
-    // The band actually swept, as opposed to the requested one above. Harmonic
-    // geometry reads this; see ImpulseResponseFile.ResolveAchievedSweepBand.
     public double AchievedLowFrequencyHz { get; init; }
     public double AchievedHighFrequencyHz { get; init; }
-    // What the measurement may be READ over: the band the sweep excited at full
-    // amplitude, narrower than the achieved one by the guard bands the fades live in.
+    // Full-amplitude band: narrower than achieved by the fade guard bands.
     public double MeasuredLowFrequencyHz { get; init; }
     public double MeasuredHighFrequencyHz { get; init; }
 
-    /// <summary>
-    /// When the measurement was taken, as far as anything knows: the file's own stamp
-    /// for one that was loaded, and the moment of capture for one that was just run.
-    /// </summary>
-    /// <remarks>
-    /// It travels because a spatial average built from this measurement is shown WITH
-    /// its date — nothing records where an array's microphones stood, so when they
-    /// stood there is the only evidence a user has that two channels came from one
-    /// sitting. Stamping the moment the file was opened instead would answer that
-    /// question with today's date every time, which is worse than not answering it.
-    /// </remarks>
+    /// <summary>File stamp when loaded, capture time when run: the only evidence that array channels came from one sitting.</summary>
     public DateTimeOffset MeasuredAtUtc { get; init; } = DateTimeOffset.UtcNow;
     public double SweepDurationSeconds { get; init; }
 
-    /// <summary>The band that was requested.</summary>
     public (double LowHz, double HighHz) ResolveSweepBand() =>
         ImpulseResponseFile.ResolveSweepBand(
             LowFrequencyHz, HighFrequencyHz, Octaves, SampleRate);
 
-    /// <summary>The band the sweep actually swept.</summary>
     public (double LowHz, double HighHz) ResolveAchievedSweepBand() =>
         ImpulseResponseFile.ResolveAchievedSweepBand(
             AchievedLowFrequencyHz,
@@ -98,28 +58,15 @@ internal sealed class MeasurementHistorySnapshot
     public Complex[]? TransferImpulseResponse { get; init; }
     public double[]? TransferCoherence { get; init; }
     public required InputLevelMeterSnapshot MeterSnapshot { get; init; }
-    /// <summary>
-    /// The SPL anchor frozen onto the result this snapshot holds, validated against
-    /// its own input when it was captured (see <c>ImpulseResponseFile.Capture</c>).
-    /// Together with <see cref="MeterSnapshot"/>'s loopback level it is the whole
-    /// recipe for dB SPL, so restoring the entry — or comparing against it — keeps
-    /// the absolute axis the original measurement had. Null when there was none.
-    /// </summary>
     public SplCalibration? SplCalibration { get; init; }
     public required MeasurementHistoryPreview Preview { get; init; }
 
-    /// <summary>
-    /// The offset K that turns this snapshot's loopback-referenced magnitude (dBr)
-    /// into dB SPL: <c>K = loopbackPeakDbFs + calibrationOffsetDb</c>. Null without
-    /// an anchor or a captured loopback level. The anchor was matched against its
-    /// own input when stored, so it is trusted here as a loaded file's is.
-    /// </summary>
+    /// <summary>K = loopbackPeakDbFs + calibrationOffsetDb, turning dBr into dB SPL; null without anchor or loopback level.</summary>
     public double? SplOffsetDb =>
         SplCalibration is { } calibration && MeterSnapshot.Loopback is { Available: true } loopback
             ? loopback.PeakDbFs + calibration.OffsetDb
             : null;
-    // Settable so the live working state (mode + per-mode settings + active
-    // overlays) can be written back into a cached snapshot when navigating away.
+    // Settable so live working state can be written back when navigating away.
     public MeasurementSessionSnapshot? Session { get; set; }
 
     public ImpulseResponseFile ToImpulseResponseFile()
@@ -162,10 +109,7 @@ internal sealed class MeasurementHistorySnapshot
             LoopbackLevels = ImpulseResponseFile.CreateLevelSnapshotFileEntry(
                 MeterSnapshot.Loopback),
             PreviewFrequencyResponse = ImpulseResponseFile.CreatePreviewFileEntry(Preview),
-            // The array and the filter it was corrected for, or a measurement opened
-            // from history is a different measurement from the same file opened off
-            // disk: the EQ Wizard would offer only the point response, and the band
-            // it stops at would be read from a filter nobody recorded.
+            // Without these, a history-opened measurement would differ from the same file opened off disk.
             ArrayMicrophones = ImpulseResponseFile.ArrayMicrophonesFileEntry.From(
                 ArrayMicrophones),
             ProtectiveHighPass = ProtectiveHighPass is { } filter

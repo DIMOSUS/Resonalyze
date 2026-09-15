@@ -2,29 +2,17 @@ using Resonalyze.Ui;
 
 namespace Resonalyze.Ui.Dialogs;
 
-/// <summary>What the user answered about the export's timing offset.</summary>
 internal enum RewTimingOffsetChoice
 {
-    /// <summary>The import was abandoned.</summary>
     Cancel,
 
-    /// <summary>An offset was stated — zero counts, and is the common answer.</summary>
     Stated,
 
-    /// <summary>Nobody knows, so the position of this measurement is not claimed.</summary>
+    /// <summary>Imports the shape without claiming the measurement's position.</summary>
     Unknown
 }
 
-/// <summary>
-/// Asks for the one fact REW's text export cannot carry: the timing offset the
-/// measurement was taken with.
-/// </summary>
-/// <remarks>
-/// Deliberately not a yes/no about a zero offset. The value is asked for because the
-/// answer decides what the measurement may be compared with, and "I do not know" is
-/// offered as an equal button rather than as a cancel: it is a valid outcome that
-/// imports the shape without claiming its position, not a failure to answer.
-/// </remarks>
+/// <summary>Asks the timing offset REW's text export cannot carry; "I do not know" is a valid outcome, not a cancel.</summary>
 internal sealed class RewTimingOffsetDialog : Form
 {
     private readonly DarkNumericUpDown offsetInput = new();
@@ -34,7 +22,6 @@ internal sealed class RewTimingOffsetDialog : Form
         InitializeDialog(impliedArrivalMs);
     }
 
-    /// <summary>The stated offset in seconds, meaningful only for <see cref="RewTimingOffsetChoice.Stated"/>.</summary>
     public double OffsetSeconds => (double)offsetInput.Value / 1000.0;
 
     public new RewTimingOffsetChoice ShowDialog(IWin32Window? owner)

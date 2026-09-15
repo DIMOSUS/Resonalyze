@@ -86,13 +86,11 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
         UpdateIrPreview();
     }
 
-    // The cycle count only means something under FDW.
     private void UpdateWindowControlState() =>
         comboFdwCycles.Enabled = comboWindowMode.SelectedIndex == 1;
 
     internal bool FdwCyclesEnabled => comboFdwCycles.Enabled;
 
-    // Points each field's "R" reset button at the built-in defaults.
     private void ConfigureResetDefaults()
     {
         var defaults = new FrequencyResponseOptions();

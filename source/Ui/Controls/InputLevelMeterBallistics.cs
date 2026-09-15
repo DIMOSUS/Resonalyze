@@ -1,10 +1,6 @@
 namespace Resonalyze;
 
-/// <summary>
-/// What one meter row draws. There is a single peak here — the held one —
-/// because with an instant attack a separately smoothed "current" peak could
-/// only ever read lower than the hold it is derived from.
-/// </summary>
+/// <summary>Single (held) peak: with instant attack a smoothed current peak could only read lower than the hold.</summary>
 internal readonly record struct InputLevelMeterState(
     bool Available,
     double DisplayedRmsDbFs,
@@ -40,29 +36,14 @@ internal readonly record struct InputLevelMeterState(
         target.RmsDbFs,
         nowMs);
 
-    /// <summary>
-    /// Whether the held peak is the kind of hot the user has to act on. A
-    /// reference channel sitting at full scale is the expected condition, not a
-    /// fault, so it alarms on nothing but the microphone's own clipping.
-    /// </summary>
+    /// <summary>A reference channel at full scale is expected, so only the microphone's clipping alarms.</summary>
     public bool IsAlarming =>
         HoldClipped ||
         (HoldPeakDbFs >= InputLevelMeterBallistics.WarningDecibels && !HoldFullScaleReference);
 }
 
-/// <summary>
-/// The two entries one row's animation reads: the newest snapshot as the
-/// current level, and that level folded with the peaks and full-scale flags no
-/// frame has latched yet.
-/// </summary>
-/// <remarks>
-/// The two have to stay apart. Several dispatcher drains can land between two
-/// animation frames — they arrive as posted callbacks, which outrank the
-/// low-priority WM_TIMER the animation runs on — so a frame must see the
-/// loudest window among them, not just the last. But the hold's decay floor
-/// wants the current level: on a frame with no snapshot behind it, flooring on
-/// a consumed fold would let the hold sag and re-latch on the next one.
-/// </remarks>
+/// <summary>Current level plus a fold of peaks not yet latched: several drains can land between frames (posted callbacks outrank WM_TIMER),
+/// while the hold's decay floor needs the current level, or it would sag and re-latch.</summary>
 internal readonly record struct InputLevelMeterTarget(
     InputLevelMeterEntry Level,
     InputLevelMeterEntry Pending)
@@ -71,46 +52,25 @@ internal readonly record struct InputLevelMeterTarget(
         InputLevelMeterEntry.Unavailable,
         InputLevelMeterEntry.Unavailable);
 
-    /// <summary>Takes a newly arrived snapshot, folding it into the pending events.</summary>
     public InputLevelMeterTarget Fold(InputLevelMeterEntry entry) =>
         new(entry, Pending.Merge(entry));
 
-    /// <summary>
-    /// Drops what a frame has latched. A peak left in the fold would latch
-    /// again on some later frame, once the hold had decayed past it, and report
-    /// an event that is seconds old.
-    /// </summary>
+    /// <summary>A peak left in the fold would re-latch seconds later once the hold decayed past it.</summary>
     public InputLevelMeterTarget Consume() => new(Level, Level);
 }
 
-/// <summary>
-/// The meter's ballistics: how one row's displayed state advances from the
-/// levels the audio layer publishes. Peak and RMS are treated as different
-/// kinds of quantity — the peak is an event to latch and then let decay, the
-/// RMS a level to ease towards — which is the whole reason this reads the way
-/// it does.
-/// </summary>
+/// <summary>Meter ballistics: the peak is an event to latch and decay, RMS a level to ease towards.</summary>
 internal static class InputLevelMeterBallistics
 {
-    /// <summary>Bottom of the meter's scale, and where an idle row rests.</summary>
     public const double MinimumDecibels = -60;
     public const double MaximumDecibels = 0;
-    /// <summary>At or above this, a held peak is worth alarming about.</summary>
     public const double WarningDecibels = -3;
     public const long PeakHoldDurationMs = 1050;
     public const long TextUpdateIntervalMs = 500;
     public const double PeakHoldFallDbPerSecond = 24;
-    // The hold's fall is a display rate, not a physical one, so it alone is
-    // rate-limited: after a stalled message pump, settling seconds of decay in
-    // a single frame would teleport the marker across the track. Everything
-    // else advances on true elapsed time — RMS is a level, and the level the
-    // input is at now is the honest thing to show once the pump recovers.
+    // Only the hold fall is rate-limited (a stalled pump would teleport the marker); RMS advances on true elapsed time.
     public const double MaximumHoldFallSeconds = 0.25;
-    // RMS ballistics as time constants rather than per-tick fractions: a fixed
-    // fraction makes the meter's speed depend on how often the timer actually
-    // fires, and WM_TIMER coalesces whenever the UI thread is busy — which it
-    // is during a measurement. These match the factors this replaced at a
-    // nominal 33 ms tick (0.42 attack, 0.12 release).
+    // Time constants, not per-tick fractions: WM_TIMER coalesces when the UI is busy. Equal to 0.42/0.12 at a 33 ms tick.
     private const double RmsAttackSeconds = 0.060;
     private const double RmsReleaseSeconds = 0.260;
 
@@ -122,7 +82,6 @@ internal static class InputLevelMeterBallistics
     {
         if (!target.Available)
         {
-            // Keep the existing unavailable state so idle frames compare equal.
             return state.Available ? InputLevelMeterState.CreateUnavailable() : state;
         }
 
@@ -133,21 +92,13 @@ internal static class InputLevelMeterBallistics
 
         double displayedRms = SmoothRms(state.DisplayedRmsDbFs, target.RmsDbFs, dt);
 
-        // The peak latches instantly. target.PeakDbFs is already the true
-        // maximum of one 30 Hz meter window, so easing towards it would report a
-        // transient tens of dB below the sample that caused it — a single loud
-        // window would never be shown at all.
+        // Instant latch: PeakDbFs is already the window's true maximum; easing would under-report transients by tens of dB.
         double holdPeak = state.HoldPeakDbFs;
         long holdTimestamp = state.HoldTimestampMs;
-        // The full-scale flags describe the peak being held, not the newest
-        // window: re-reading them every frame turns a reference channel red the
-        // moment it steps off full scale, while its own peak is still on screen.
+        // Flags follow the held peak, not the newest window.
         bool holdClipped = state.HoldClipped || target.Clipped;
         bool holdFullScale = state.HoldFullScaleReference || target.FullScaleReference;
-        // Strictly greater: at equality — digital silence pinned to the dB
-        // floor, or a loopback pinned to full scale — re-stamping the hold would
-        // make every frame "change" the state and defeat the caller's idle
-        // repaint skip.
+        // Strictly greater, so a pinned floor or full-scale loopback does not re-stamp every frame and defeat the idle repaint skip.
         if (target.PeakDbFs > holdPeak)
         {
             holdPeak = target.PeakDbFs;
@@ -162,8 +113,6 @@ internal static class InputLevelMeterBallistics
 
         if (holdPeak < WarningDecibels)
         {
-            // The peak that earned the flags has decayed out of the warning
-            // zone; they expire with it.
             holdClipped = false;
             holdFullScale = false;
         }
@@ -171,10 +120,7 @@ internal static class InputLevelMeterBallistics
         double textPeak = state.TextPeakDbFs;
         double textRms = state.TextRmsDbFs;
         long textTimestamp = state.LastTextUpdateMs;
-        // The readout quotes the hold, not the live window: the hold outlives
-        // the text interval by design (1050 > 500 ms), so every latched peak is
-        // still standing when the next update samples it. Re-stamping only on a
-        // real change keeps a settled meter comparing equal.
+        // Quotes the hold, which outlives the text interval (1050 > 500 ms), so every latched peak gets sampled.
         if (nowMs - textTimestamp >= TextUpdateIntervalMs &&
             (holdPeak != textPeak || displayedRms != textRms))
         {

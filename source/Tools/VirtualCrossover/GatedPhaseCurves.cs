@@ -4,15 +4,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// One phase curve ready to draw: the trace itself, plus the ±180° wrap verticals
-/// the caller draws as a thinner dashed twin under it.
-/// </summary>
-/// <remarks>
-/// The two are separate because a wrap is not a phase transition: drawn at full
-/// stroke it reads as one, and drawn not at all the curve looks like it jumps for
-/// no reason.
-/// </remarks>
+/// <summary>A phase curve plus its ±180° wrap verticals, drawn as a thinner dashed twin: a wrap is not a phase transition.</summary>
 internal sealed record GatedPhaseCurve(
     string Title,
     OxyColor Color,
@@ -20,27 +12,11 @@ internal sealed record GatedPhaseCurve(
     List<SignalPoint> Points,
     List<SignalPoint> WrapSegments);
 
-/// <summary>
-/// Reads a gated phase curve out of an analysis spectrum. Shared by the Virtual DSP
-/// phase view and the EQ Wizard's, so a curve drawn in one is the same curve in the
-/// other — including where it breaks at a wrap.
-/// </summary>
+/// <summary>Shared by the Virtual DSP and EQ Wizard phase views so a curve is identical in both.</summary>
 internal static class GatedPhaseCurves
 {
-    /// <summary>
-    /// The gated phase of one channel, in degrees, referenced to an absolute τ.
-    /// </summary>
-    /// <param name="impulseResponse">
-    /// The channel's PROCESSED response — its chain already applied. Gate offsets are
-    /// absolute times from sample 0, so the view is built on that origin rather than
-    /// on any peak.
-    /// </param>
-    /// <param name="gate">
-    /// The window: mode, FDW cycles and durations. Its offset and detrend are
-    /// overwritten here from <paramref name="gateOffsetMs"/> and
-    /// <paramref name="detrendMs"/>, which the caller resolved for the whole channel
-    /// set (see <see cref="PhaseGatePlacement"/>).
-    /// </param>
+    /// <param name="impulseResponse">PROCESSED response; gate offsets are absolute times from sample 0.</param>
+    /// <param name="gate">Offset and detrend are overwritten from <paramref name="gateOffsetMs"/> and <paramref name="detrendMs"/>, resolved over the channel set by <see cref="PhaseGatePlacement"/>.</param>
     public static GatedPhaseCurve Read(
         Complex[] impulseResponse,
         int sampleRate,
@@ -74,11 +50,7 @@ internal static class GatedPhaseCurves
             thickness);
     }
 
-    /// <summary>
-    /// The same read from an already-gated spectrum — for callers that build the
-    /// spectra themselves because something else needs them too (the Virtual DSP
-    /// Sum is the vector sum of exactly these).
-    /// </summary>
+    /// <summary>From an already-gated spectrum (the Virtual DSP Sum is the vector sum of these).</summary>
     public static GatedPhaseCurve Read(
         Complex[] spectrum,
         int extractionStart,
@@ -94,11 +66,6 @@ internal static class GatedPhaseCurves
         return new GatedPhaseCurve(title, color, thickness, points, wrapSegments);
     }
 
-    // Wrapped phase jumps from +180° to −180° between adjacent bins. The main curve
-    // breaks at the wrap (NaN) so the jump does not read as a real phase transition
-    // drawn at full stroke; the jump itself goes into WrapSegments — NaN-separated
-    // two-point verticals the caller draws as a thinner dashed twin, keeping the
-    // wrap visible.
     private static (List<SignalPoint> Points, List<SignalPoint> WrapSegments)
         SplitWrapSegments(List<SignalPoint> phase)
     {
@@ -118,8 +85,7 @@ internal static class GatedPhaseCurves
                 Math.Abs(current.Y - before.Y) > 180.0)
             {
                 points.Add(new SignalPoint(point.X, double.NaN));
-                // Strictly vertical, halfway between the two bins (geometric mean =
-                // the visual midpoint on the log-frequency axis).
+                // Geometric mean = visual midpoint on the log-frequency axis.
                 double wrapHz = Math.Sqrt(before.X * current.X);
                 wrapSegments.Add(new SignalPoint(wrapHz, before.Y));
                 wrapSegments.Add(new SignalPoint(wrapHz, current.Y));

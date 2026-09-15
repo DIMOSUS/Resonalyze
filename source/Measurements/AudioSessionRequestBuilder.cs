@@ -1,11 +1,6 @@
 ﻿namespace Resonalyze;
 
-/// <summary>
-/// Builds a backend-neutral <see cref="AudioSessionRequest"/> from the
-/// application's persisted audio configuration. The one place that maps the
-/// microphone/loopback channel roles onto the backend-relative routing (ASIO
-/// uses absolute driver channels; Wave/WASAPI use their own channel indices).
-/// </summary>
+/// <summary>Maps mic/loopback roles to backend routing (ASIO absolute driver channels; Wave/WASAPI own indices).</summary>
 internal static class AudioSessionRequestBuilder
 {
     public static AudioSessionRequest Build(

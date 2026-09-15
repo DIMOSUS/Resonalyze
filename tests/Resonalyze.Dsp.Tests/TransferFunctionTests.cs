@@ -8,11 +8,7 @@ public sealed class TransferFunctionTests
     [Fact]
     public void MeasureSingleFrameCompactness_MatchesJudgingEachTargetOnItsOwn()
     {
-        // The whole justification for the batched call is that it changes the cost and
-        // not the answer: one loopback transformed once instead of once per
-        // microphone, which is a third of the arithmetic for eight of them. The gate
-        // and the regularization are functions of the reference alone, so the results
-        // must be identical to the bit — not merely close.
+        // Gate and regularization depend on the reference alone, so the batched call must be bit-identical.
         var random = new Random(20260828);
         int length = 4096;
         var reference = new double[length];
@@ -21,8 +17,6 @@ public sealed class TransferFunctionTests
             reference[i] = random.NextDouble() - 0.5;
         }
 
-        // Three microphones of one run: a delayed and scaled copy, a quieter one at a
-        // different delay, and a channel carrying something unrelated.
         var targets = new List<IReadOnlyList<double>>();
         foreach ((int delay, double scale) in new[] { (37, 0.7), (91, 0.25) })
         {
@@ -71,8 +65,7 @@ public sealed class TransferFunctionTests
             reference[i] = Math.Sin(i * 0.11);
         }
 
-        // A usable target beside the unusable ones: silence is not "usable but
-        // shapeless", it is a response that cannot be measured either.
+        // Silence is not 'usable but shapeless': it cannot be measured either.
         var usable = new double[512];
         for (int i = 7; i < usable.Length; i++)
         {
@@ -96,8 +89,7 @@ public sealed class TransferFunctionTests
     public void ComputePhaseTransformFromResponse_RecoversDelayFromTheIrAlone(
         double trueDelay)
     {
-        // A transfer IR's spectrum already carries the cross-phase, so whitening it
-        // recovers the same delay a two-channel GCC-PHAT would.
+        // A transfer IR's spectrum already carries the cross-phase, so whitening it matches two-channel GCC-PHAT.
         double[] impulseResponse = BandLimitedPulse(4096, trueDelay);
         int coarse = (int)Math.Round(trueDelay);
 
@@ -123,8 +115,7 @@ public sealed class TransferFunctionTests
             .ComputePhaseTransformFromResponse(impulseResponse)
             .RefineAround(coarse, searchRadiusSamples: 4);
 
-        // The envelope path is polarity-blind; the whitened refinement must be too,
-        // finding the delay in the negative trough rather than a positive side lobe.
+        // The whitened refinement must be polarity-blind like the envelope path.
         Assert.True(result.Refined);
         Assert.True(result.PeakCorrelation > 0.5);
         Assert.InRange(result.LagSamples, trueDelay - 0.02, trueDelay + 0.02);
@@ -133,9 +124,6 @@ public sealed class TransferFunctionTests
     [Fact]
     public void ComputePhaseTransformFromResponse_PadsAnOddLengthToAPowerOfTwo()
     {
-        // A non-power-of-two IR takes the padded radix-2 path; the correlation
-        // stays index-aligned with the impulse response, so the peak still lands
-        // on the pulse position.
         const double trueDelay = 41.3;
         double[] impulseResponse = BandLimitedPulse(4096, trueDelay)
             .Take(4095)
@@ -154,8 +142,7 @@ public sealed class TransferFunctionTests
     {
         double[] impulseResponse = BandLimitedPulse(4096, 40.0);
 
-        // Anchor just past the true delay so the peak sits one sample outside the
-        // window: the in-window maximum lands on the edge and is not trusted.
+        // Peak one sample outside the window: the edge maximum is not trusted.
         PhaseTransformDelay result = TransferFunction
             .ComputePhaseTransformFromResponse(impulseResponse)
             .RefineAround(coarseLagSamples: 44, searchRadiusSamples: 3);
@@ -168,8 +155,6 @@ public sealed class TransferFunctionTests
     {
         double[] impulseResponse = BandLimitedPulse(4096, 40.0);
 
-        // Far from any arrival the whitened correlation is just noise, so the peak
-        // height stays low — the signal the caller uses to keep its coarse estimate.
         PhaseTransformDelay result = TransferFunction
             .ComputePhaseTransformFromResponse(impulseResponse)
             .RefineAround(coarseLagSamples: 400, searchRadiusSamples: 3);
@@ -177,8 +162,6 @@ public sealed class TransferFunctionTests
         Assert.True(result.PeakCorrelation < 0.2);
     }
 
-    // A band-limited pulse at a fractional position, built from a flat-magnitude
-    // linear-phase spectrum — a stand-in transfer IR whose delay is known exactly.
     private static double[] BandLimitedPulse(int length, double delaySamples)
     {
         var spectrum = new Complex[length];
@@ -277,8 +260,6 @@ public sealed class TransferFunctionTests
         Assert.NotNull(result.Coherence);
         Assert.Equal(delay, result.PeakIndex);
         Assert.Equal(1.0, result.ImpulseResponse[delay], precision: 9);
-        // Identical frames are perfectly coherent: every interior bin must read ~1,
-        // not merely "somewhere in [0, 1]".
         for (int bin = 1; bin < result.Coherence!.Length - 1; bin++)
         {
             Assert.InRange(result.Coherence[bin], 0.999, 1.0 + 1e-9);
@@ -288,11 +269,7 @@ public sealed class TransferFunctionTests
     [Fact]
     public void ComputeAveragedRelativeIr_IncoherentFramesDropCoherenceBelowOne()
     {
-        // Reference is an impulse (flat spectrum); each target is the same delayed
-        // impulse plus an uncorrelated spike whose sign alternates across frames. The
-        // spikes sum to zero, so the averaged H1 still recovers the clean delay, but
-        // their power inflates the target auto-spectrum and pushes coherence well
-        // below one at every bin. A vacuous "in [0,1]" check would miss this.
+        // Alternating-sign spikes cancel in H1 but inflate the target auto-spectrum, so coherence must drop well below one.
         const int delay = 9;
         double[] reference = CreateImpulse(128);
         double[] target = Delay(reference, delay);
@@ -316,7 +293,6 @@ public sealed class TransferFunctionTests
         }
         Assert.True(maxCoherence < 0.95, $"Expected coherence below 1 everywhere, peak was {maxCoherence:0.###}.");
 
-        // The zero-mean spikes cancel in the average, so the delay is still clean.
         Assert.Equal(delay, result.PeakIndex);
         Assert.Equal(1.0, result.ImpulseResponse[delay], precision: 9);
     }
@@ -324,13 +300,7 @@ public sealed class TransferFunctionTests
     [Fact]
     public void ComputeAveragedRelativeIr_GatesOutBinsAtTheReferenceNoiseFloor()
     {
-        // The power-floor safety net: where the reference truly carries
-        // nothing but its (tiny, electrical) noise, Gxy/Gxx is a noise ratio
-        // of order target/reference — orders of magnitude above the in-band
-        // response — and with the absolute epsilon it rang back through the
-        // IFFT as broadband time-domain garbage. Those bins must read zero:
-        // the recovered IR is then a clean band-limited pulse at the true
-        // delay instead of noise swamping it.
+        // Where the reference is only electrical noise Gxy/Gxx is a noise ratio that rang back as broadband garbage; those bins must read zero.
         const int delay = 25;
         double[] sweep = MiniSweep(4096, octaves: 5);
         double[] reference = AddNoise(sweep, 1e-6, seed: 1);
@@ -349,18 +319,8 @@ public sealed class TransferFunctionTests
     [Fact]
     public void ComputeAveragedRelativeIr_ExcitationEdgeCutsRumbleTheFloorGateCannot()
     {
-        // The field failure mode on real capture lengths: the sweep's own
-        // leakage skirts hold the reference power at only -40..-20 dB re max
-        // all the way below the sweep start, so no data-driven floor gate can
-        // mark that region — while the microphone picks up strong infrasonic
-        // rumble there (vibration, wind) that the loopback never sees.
-        // Gxy/Gxx then reads rumble-over-skirt, far above the honest in-band
-        // response. Model the skirt as a reference tone below the sweep start
-        // — well above the floor gate yet far below the passband — and the
-        // rumble as a 40 dB louder target tone at the same frequency: only
-        // the explicit excitation edge can cut it. Both tones are Hann-shaped
-        // so their own leakage stays as compact relative to the edge as real
-        // capture-length rumble is.
+        // Sweep leakage skirts keep reference power at -40..-20 dB below the sweep start, beyond any floor gate, while the mic
+        // picks up rumble there: only the explicit excitation edge can cut it. Hann-shaped tones keep leakage compact.
         const int delay = 25;
         const int octaves = 3; // sweep spans Nyquist/8..Nyquist
         double[] sweep = MiniSweep(4096, octaves);
@@ -368,7 +328,6 @@ public sealed class TransferFunctionTests
         double[] target = AddNoise(Delay(sweep, delay), 1e-5, seed: 6);
         for (int i = 0; i < reference.Length; i++)
         {
-            // Nyquist/64 — below the sweep start and below the edge's ramp.
             double phase = 2.0 * Math.PI * i / 128.0;
             double window = 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / reference.Length);
             reference[i] += 0.0005 * window * Math.Sin(phase);
@@ -380,14 +339,10 @@ public sealed class TransferFunctionTests
         TransferEstimateResult masked = TransferFunction.ComputeAveragedRelativeIr(
             frames, excitationLowNyquistFraction: Math.Pow(2.0, -octaves));
 
-        // The rumble tone spreads as a sinusoid across the whole IR while the
-        // pulse's own band-edge ringing decays away from it, so far-field RMS
-        // separates the two. Without the edge the rumble-over-skirt garbage
-        // dominates it (~0.09 here)...
+        // Far-field RMS separates spread rumble from the pulse's decaying edge ringing.
         Assert.True(
             RmsOutsideWindow(unmasked.ImpulseResponse, delay, 256) > 0.03,
             "Test setup lost its teeth: the floor gate alone already cut the rumble.");
-        // ...with it the pulse comes back clean, in place and full-size.
         Assert.Equal(delay, masked.PeakIndex);
         Assert.InRange(masked.ImpulseResponse[delay], 0.8, 1.05);
         Assert.True(
@@ -398,11 +353,7 @@ public sealed class TransferFunctionTests
     [Fact]
     public void ComputeAveragedRelativeIr_HighExcitationEdgeCutsAboveBandPollution()
     {
-        // A sweep that ends below Nyquist leaves the bins above its top edge
-        // unexcited, holding only its leakage skirt there — the mirror of the low
-        // edge. A strong target-only tone in that skirt (0.85*Nyquist, above a sweep
-        // that ends at 0.5*Nyquist) rings back through the IR; only the explicit high
-        // edge can cut it, because the skirt keeps the reference power off the floor.
+        // Mirror of the low edge: a target-only tone above the sweep's top is cut only by the explicit high edge.
         const int delay = 25;
         double[] sweep = MiniSweepBand(4096, lowFraction: 0.125, highFraction: 0.5);
         double[] reference = AddNoise(sweep, 1e-6, seed: 5);
@@ -435,15 +386,9 @@ public sealed class TransferFunctionTests
     [Fact]
     public void ComputeAveragedRelativeIr_BandGateZeroesTheRampBelowTheAchievedEdge()
     {
-        // Field failure on band-limited sweeps: the legacy edge shape ramps up
-        // over [edge/2, edge] — entirely BELOW the achieved sweep start, where
-        // the reference holds only its leakage skirt. A strong target-only tone
-        // there (cabin noise) is half-passed and towers over the passband. The
-        // band gate places the ramp inside the excited fade region instead and
-        // zeroes everything below the achieved edge.
+        // The legacy ramp [edge/2, edge] lies entirely below the achieved sweep start and half-passes cabin noise.
         const int delay = 25;
-        // Sweep excites [0.25, 0.5]·Nyquist; tone at 0.18·Nyquist sits inside
-        // the legacy ramp [0.125, 0.25] but below the achieved edge.
+        // Tone at 0.18·Nyquist: inside the legacy ramp [0.125, 0.25], below the achieved edge.
         double[] sweep = MiniSweepBand(4096, lowFraction: 0.25, highFraction: 0.5);
         double[] reference = AddNoise(sweep, 1e-6, seed: 5);
         double[] target = AddNoise(Delay(sweep, delay), 1e-5, seed: 6);
@@ -481,15 +426,7 @@ public sealed class TransferFunctionTests
     [Fact]
     public void ComputeAveragedRelativeIr_MaskedBinsDoNotScaleTheGateThresholds()
     {
-        // The peak scan anchoring gateHigh and λ must not include bins the
-        // excitation edge later zeroes or attenuates. A loud
-        // sub-edge reference component (hum below — or in the ramp of — a
-        // narrow sweep's start) then scaled the power gate from an artifact
-        // excluded from the estimate, fading the genuinely excited bins. The
-        // hums here are deliberately absurd — 60+ dB over the sweep bins,
-        // enough to zero the whole passband through the old scan — so the pin
-        // is decisive: with the scan restricted to bins at FULL edge weight
-        // the pulse must come back intact.
+        // The peak scan anchoring gateHigh and λ must use only full-edge-weight bins; absurd sub-edge hums make the pin decisive.
         const int delay = 25;
         const int octaves = 3; // sweep spans Nyquist/8..Nyquist
         double[] sweep = MiniSweep(4096, octaves);
@@ -498,10 +435,8 @@ public sealed class TransferFunctionTests
         for (int i = 0; i < reference.Length; i++)
         {
             double window = 0.5 - 0.5 * Math.Cos(2.0 * Math.PI * i / reference.Length);
-            // Nyquist/64 — below the excitation edge's ramp.
             reference[i] += 1000.0 * window * Math.Sin(2.0 * Math.PI * i / 128.0);
-            // Nyquist * 3/32 — inside the edge's ramp (Nyquist/16..Nyquist/8),
-            // where the bin is attenuated but not zeroed.
+            // Nyquist * 3/32: inside the edge's ramp, attenuated but not zeroed.
             reference[i] += 1000.0 * window * Math.Sin(2.0 * Math.PI * 3.0 * i / 64.0);
         }
 
@@ -516,22 +451,13 @@ public sealed class TransferFunctionTests
     [Fact]
     public void ComputeAveragedRelativeIr_CoherenceIsUntrustedWhereTheEstimateIsMasked()
     {
-        // Coherence must not be returned unmasked. Below
-        // the sweep start the sweep's own leakage — and any stationary rumble
-        // — is deterministic across runs, so raw γ² reads ~1 exactly where
-        // the estimate zeroes the bins as unexcited, and the consumers that
-        // treat coherence as a reliability gate (phase unwrap, PHAT
-        // weighting, the plotted curve) kept trusting them. Three identical
-        // frames make raw γ² exactly 1 everywhere; the returned coherence
-        // must still read the masked region as untrusted and keep full
-        // in-band trust.
+        // Raw γ² reads ~1 where deterministic leakage/rumble sits in unexcited bins; returned coherence must be masked there.
         const int octaves = 3; // sweep spans Nyquist/8..Nyquist
         double[] sweep = MiniSweep(4096, octaves);
         double[] reference = AddNoise(sweep, 1e-6, seed: 9);
         double[] target = AddNoise(Delay(sweep, 25), 1e-6, seed: 10);
         for (int i = 0; i < target.Length; i++)
         {
-            // Deterministic rumble at Nyquist/64, below the edge's ramp.
             target[i] += 0.05 * Math.Sin(2.0 * Math.PI * i / 128.0);
         }
         var frame = new TransferFunctionFrame(reference, target);
@@ -540,8 +466,7 @@ public sealed class TransferFunctionTests
             [frame, frame, frame],
             excitationLowNyquistFraction: Math.Pow(2.0, -octaves));
 
-        // Coherence covers 0..Nyquist in fftLength / 2 + 1 = 4097 bins; the
-        // rumble sits at bin 64, the edge's ramp spans bins 256..512.
+        // 4097 bins: rumble at bin 64, the edge's ramp spans bins 256..512.
         Assert.NotNull(result.Coherence);
         Assert.Equal(4097, result.Coherence!.Length);
         Assert.Equal(0.0, result.Coherence[64]);
@@ -556,10 +481,7 @@ public sealed class TransferFunctionTests
     [Fact]
     public void ComputeAveragedRelativeIr_EstimateDoesNotDependOnTheAverageCount()
     {
-        // The cross- and auto-spectra are accumulated without normalization, so
-        // an absolute epsilon regularized four accumulated runs four times more
-        // weakly than one. The relative regularization scales with the sums:
-        // repeating the identical frame must reproduce the identical estimate.
+        // Spectra accumulate unnormalized, so regularization must be relative: repeating a frame reproduces the estimate.
         double[] sweep = MiniSweep(2048, octaves: 4);
         double[] reference = AddNoise(sweep, 1e-6, seed: 3);
         double[] target = AddNoise(Delay(sweep, 40), 1e-4, seed: 4);
@@ -576,11 +498,7 @@ public sealed class TransferFunctionTests
         }
     }
 
-    // The app's exponential sweep in miniature: <paramref name="octaves"/>
-    // octaves ending exactly at Nyquist, amplitude faded in linearly over the
-    // first octave — so the spectrum has the same shape the excitation gates
-    // see in a real loopback capture, leakage skirts below the start
-    // frequency included.
+    // <summary>Miniature app sweep: <paramref name="octaves"/> octaves ending at Nyquist with a first-octave fade-in, leakage skirts included.</summary>
     private static double[] MiniSweep(int length, int octaves)
     {
         double frequencyRatio = Math.Pow(2.0, octaves);
@@ -598,10 +516,6 @@ public sealed class TransferFunctionTests
         return sweep;
     }
 
-    // An exponential sweep from lowFraction*Nyquist to highFraction*Nyquist, with
-    // the same first-octave fade as MiniSweep, so the bins outside [low, high] carry
-    // only leakage skirts — the shape the excitation edges see on a band-limited
-    // capture that does not reach Nyquist.
     private static double[] MiniSweepBand(int length, double lowFraction, double highFraction)
     {
         double logRatio = Math.Log(highFraction / lowFraction);
@@ -652,7 +566,6 @@ public sealed class TransferFunctionTests
         var noisy = new double[signal.Length];
         for (int i = 0; i < signal.Length; i++)
         {
-            // Deterministic pseudo-noise, decorrelated across seeds.
             noisy[i] = signal[i] + amplitude
                 * Math.Sin(i * (12.9898 + seed * 3.7) + seed * 78.233)
                 * Math.Sin(i * 0.7301 + seed);
@@ -664,8 +577,7 @@ public sealed class TransferFunctionTests
     [Fact]
     public void RefineAround_DegenerateCorrelationReportsNoRefinementWithoutNaN()
     {
-        // An all-zero IR whitens to an empty band (weightSum 0, normalizer 0), so the
-        // refinement must bail out cleanly rather than divide by zero.
+        // An all-zero IR whitens to an empty band; refinement must bail out, not divide by zero.
         PhaseTransformCorrelation correlation =
             TransferFunction.ComputePhaseTransformFromResponse(new double[128]);
 
@@ -684,8 +596,6 @@ public sealed class TransferFunctionTests
         return impulse;
     }
 
-    // The other half of that premise: the whitened correlation off a spectrum
-    // the caller already holds is the one it would have got from the signal.
     [Fact]
     public void ComputePhaseTransformFromSpectrum_MatchesTheResponseOverload()
     {

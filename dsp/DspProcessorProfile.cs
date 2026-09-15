@@ -2,49 +2,8 @@ using System.Text;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// One device in the catalog: how it is named on screen and the properties a
-/// simulation reads off it. <see cref="Id"/> is DERIVED from the two name parts, so
-/// adding a processor is one line in <see cref="DspProcessorCatalog"/> and nothing
-/// else.
-/// </summary>
-/// <remarks>
-/// <para>
-/// This is where a device's facts are written down, and the place to GROW when more
-/// of them are needed — a delay step and maximum, a PEQ band count per channel, the
-/// crossover families and slopes the device offers, gain and Q limits. Add a property
-/// here with a default, fill it in for the devices that differ, and the untouched
-/// lines keep compiling.
-/// </para>
-/// <para>
-/// The id is what project and settings files store, so RENAMING an entry renames its
-/// id: files naming the old one fall back to a Custom profile carrying the numbers
-/// they were saved with — the same simulation, having lost only the model's name.
-/// Correcting a device's rate or convention is safe; renaming it is the one edit that
-/// costs something.
-/// </para>
-/// </remarks>
-/// <param name="MaxDelayMs">
-/// The device's per-channel delay ceiling from its maker's manual, or null where it
-/// has not been looked up yet. Null does NOT mean unlimited: an unknown ceiling reads
-/// as <see cref="AutoAlignmentEngine.DefaultMaxDelayMs"/>, the engine's long-standing
-/// feasibility gate, so an unfilled line keeps exactly the behavior it always had.
-/// The catalog is filled from the manuals gradually; a wrong entry here turns a
-/// dialable tune into a refusal (or the reverse), so a line states a number only
-/// when the manual does.
-/// </param>
-/// <param name="PhaseControl">
-/// Whether the device offers a per-channel PHASE control — an all-pass whose corner
-/// it derives from that channel's crossover, see <see cref="PhaseRotationControl"/>.
-/// False is the safe default: it is not a filter a device can be assumed to have,
-/// and a line claims it only where the maker's tool is known to show one.
-/// </param>
-/// <param name="FirFilters">
-/// Whether the device convolves each channel with a user-loaded FIR kernel — see
-/// <see cref="FirFilter"/>. Off until a maker's tool is known to take one; like the
-/// phase control it is a proposal the project's own answer outranks, so a device
-/// the catalog does not credit with FIR can still be simulated with one.
-/// </param>
+/// <summary>One catalog device. <see cref="Id"/> derives from the names, so renaming an entry orphans stored files.
+/// See docs/tech/dsp-processor-catalog.md.</summary>
 public sealed record DspProcessorPreset(
     string Manufacturer,
     string ModelName,
@@ -57,7 +16,6 @@ public sealed record DspProcessorPreset(
     /// <summary>Stable file identity, e.g. <c>helix-dsp-ultra-s</c>.</summary>
     public string Id { get; } = MakeId(Manufacturer, ModelName);
 
-    /// <summary>Manufacturer and model as one line, the way the selector lists it.</summary>
     public string DisplayName => Manufacturer.Length == 0
         ? ModelName
         : $"{Manufacturer} {ModelName}";
@@ -66,7 +24,6 @@ public sealed record DspProcessorPreset(
 
     public override string ToString() => DisplayName;
 
-    // Lower-case, alphanumerics kept, every other run collapsed to a single dash.
     private static string MakeId(string manufacturer, string modelName)
     {
         var builder = new StringBuilder(manufacturer.Length + modelName.Length + 1);
@@ -86,89 +43,36 @@ public sealed record DspProcessorPreset(
     }
 }
 
-/// <summary>
-/// What a simulation has to know about the processor being designed for.
-/// <para>
-/// <see cref="SampleRateHz"/> is the rate the DEVICE runs its filters at, which is
-/// independent of the rate the measurements were taken at: the bilinear transform
-/// warps every corner by the rate it was designed at, so filters built at the
-/// measurement's rate are not the ones the device realizes (an LR4 low-pass at 8 kHz
-/// designed at 48 kHz sits 1.5 dB below the 96 kHz one at 10 kHz, 4.1 dB at 12 kHz).
-/// Keeping the two apart is what lets a 48 kHz sound card simulate a 96 kHz processor
-/// exactly — see <see cref="PreparedDspResponse"/>.
-/// </para>
-/// <para>
-/// <see cref="QConvention"/> does NOT change the simulation. Every band in this
-/// library is realized as an RBJ biquad; the convention states how the target device
-/// READS a Q number, so it applies where numbers leave for that device (the tuning
-/// sheets) and nowhere else.
-/// </para>
-/// </summary>
-/// <param name="ModelId">
-/// The catalog entry this profile names, or null/empty for a hand-configured one.
-/// An id this build does not know behaves as Custom, keeping the stored numbers.
-/// </param>
+/// <summary>Processor facts for simulation; <see cref="SampleRateHz"/> is the device's filter rate, not the measurement's.
+/// <see cref="QConvention"/> affects exported numbers only, not the simulation.</summary>
 public sealed record DspProcessorProfile(
     string? ModelId,
     int SampleRateHz,
     PeqQConvention QConvention)
 {
-    /// <summary>
-    /// A hand-configured processor: the user owns both properties, and no preset
-    /// overrides them.
-    /// </summary>
     public static DspProcessorProfile Custom(
         int sampleRateHz,
         PeqQConvention qConvention) =>
         new(null, sampleRateHz, qConvention);
 
-    /// <summary>
-    /// True while the properties are the user's own to edit. A named model owns them
-    /// instead, and the editors lock them to the preset.
-    /// </summary>
     public bool IsCustom => DspProcessorCatalog.Preset(ModelId) == null;
 
     public string DisplayName =>
         DspProcessorCatalog.Preset(ModelId)?.DisplayName ?? "Custom";
 
-    /// <summary>
-    /// The per-channel delay ceiling an automatic proposal must fit for this
-    /// processor. A catalog entry that states its own figure answers with it; a
-    /// Custom profile — and every entry whose manual has not been read yet —
-    /// answers with the engine's <see cref="AutoAlignmentEngine.DefaultMaxDelayMs"/>,
-    /// so an unknown device keeps the behavior every device had before the
-    /// catalog learned this fact.
-    /// </summary>
+    /// <summary>Catalog figure, else <see cref="AutoAlignmentEngine.DefaultMaxDelayMs"/>.</summary>
     public double MaxDelayMs =>
         DspProcessorCatalog.Preset(ModelId)?.MaxDelayMs
             ?? AutoAlignmentEngine.DefaultMaxDelayMs;
 }
 
-/// <summary>
-/// The known processors — the single place a device's facts are written down. Adding
-/// one is a single line in <see cref="Presets"/>.
-/// </summary>
 public static class DspProcessorCatalog
 {
-    // Ordered as the selector lists them: by manufacturer, flagships first. The Q
-    // convention is a property of the MODEL rather than of the maker (see
-    // PeqQConvention) — JL Audio's TwK reads Classic while its own VXi does not — so
-    // every line states its own.
-    //
-    // The numbers are the owner's table, read off the makers' published processing
-    // rates; only AMP Panacea's convention is confirmed by measurement here. The
-    // catalog tests pin what this file SAYS, which is not the same as pinning that a
-    // device really behaves so — a correction to a line is a data fix, and it reaches
-    // every project naming that model (see Resolve).
+    // Selector order. Q convention is per model; only Panacea's is measured. See docs/tech/dsp-processor-catalog.md#properties.
     private static readonly DspProcessorPreset[] PresetList =
     [
-        // AMP Panacea is a Cirrus Logic CS47048C; its Symmetric Q is confirmed by measurement.
         new("AMP", "Panacea v1/v2", 96_000, PeqQConvention.Symmetric),
 
-        // Every HELIX runs the DSP PC-Tool, whose channel Phase control is documented
-        // for the family and measured on a DSP ULTRA S (see PhaseRotationControl). The
-        // tool shows it on subwoofer and mid/high channels only; that gating is the
-        // device's, and this flag is only about the family offering the control at all.
         new("HELIX", "NEXT DSP ULTRA XT", 96_000, PeqQConvention.Rbj, PhaseControl: true),
         new("HELIX", "DSP ULTRA S", 96_000, PeqQConvention.Rbj, PhaseControl: true),
         new("HELIX", "DSP ULTRA", 96_000, PeqQConvention.Rbj, PhaseControl: true),
@@ -218,43 +122,25 @@ public static class DspProcessorCatalog
         new("ARC Audio", "ARC 1000.6 + IPS8.8", 96_000, PeqQConvention.Rbj)
     ];
 
-    // Ids are derived from the names, so two entries that differ only in punctuation
-    // would collide and one would become unreachable. Fail loudly at first use — a
-    // catalog test trips this the moment such a line is added.
+    // Throws on id collision (names differing only in punctuation).
     private static readonly Dictionary<string, DspProcessorPreset> PresetsById =
         PresetList.ToDictionary(preset => preset.Id, StringComparer.Ordinal);
 
-    /// <summary>Every known device, in selector order. "Custom" is not one of them.</summary>
     public static IReadOnlyList<DspProcessorPreset> Presets => PresetList;
 
-    /// <summary>
-    /// The rates a processor may be set to by hand. A device outside this list is
-    /// still expressible — a project stores the NUMBER, and a Custom profile accepts
-    /// any positive rate; the list is only what the selector offers.
-    /// </summary>
     public static IReadOnlyList<int> SelectableSampleRatesHz { get; } =
         [44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
 
-    /// <summary>The Q conventions a Custom profile may be set to.</summary>
     public static IReadOnlyList<PeqQConvention> SelectableQConventions { get; } =
         [PeqQConvention.Rbj, PeqQConvention.Symmetric, PeqQConvention.Classic];
 
-    /// <summary>
-    /// The catalog entry with this id, or null for a Custom profile (no id) and for
-    /// an id this build does not know — a file from a newer catalog, which keeps the
-    /// numbers it was saved with rather than losing them to an unknown name.
-    /// </summary>
+    /// <summary>Null for Custom and for ids unknown to this build (which keep their stored numbers).</summary>
     public static DspProcessorPreset? Preset(string? modelId) =>
         string.IsNullOrEmpty(modelId)
             ? null
             : PresetsById.GetValueOrDefault(modelId);
 
-    /// <summary>
-    /// The profile a stored one really means: a named model always answers with its
-    /// preset, so a device whose properties are corrected in a later build corrects
-    /// every project that named it rather than keeping the numbers a stale file
-    /// happened to be saved with. Anything else is returned unchanged.
-    /// </summary>
+    /// <summary>A named model always answers with its current preset, so catalog corrections reach old projects.</summary>
     public static DspProcessorProfile Resolve(DspProcessorProfile profile)
     {
         ArgumentNullException.ThrowIfNull(profile);

@@ -6,18 +6,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Options;
 
-/// <summary>
-/// Edits one angular calibration: which curve it is derived from, the angle, and
-/// the geometry the estimate is built on. The preview draws what the model
-/// produces — the angular correction and the spread of the reference
-/// microphones it was taken from — so the user sees the uncertainty of the
-/// estimate before accepting it.
-/// <para>
-/// The edited definition IS the one handed in: accepting the dialog writes the
-/// controls back into it, and cancelling leaves it untouched. There is no second
-/// result to read.
-/// </para>
-/// </summary>
+/// <summary>Edits the handed-in definition in place on OK; preview shows the estimate and reference spread.</summary>
 internal sealed partial class AngleCalibrationDialog : Form
 {
     private const double PreviewMinimumHz = 20.0;
@@ -143,8 +132,7 @@ internal sealed partial class AngleCalibrationDialog : Form
         }
 
         MicrophoneAngleRequest request = BuildRequest();
-        // The named microphone carries its own measured behaviour, so its size
-        // and grid are not inputs; showing them editable would suggest otherwise.
+        // A named microphone carries measured behaviour, so size and grid are not inputs.
         bool geometric = request.Reference == MicrophoneAngleReference.GrasGeometry;
         numericDiameter.Enabled = geometric;
         comboBoxGrid.Enabled = geometric;
@@ -247,19 +235,12 @@ internal sealed partial class AngleCalibrationDialog : Form
         string references = estimate.References.Count == 0
             ? "no reference"
             : string.Join(" · ", estimate.References);
-        // Where a reference runs out it holds its last value rather than handing
-        // the band to another size, so say where that starts instead of letting
-        // a flat top read as a measured result. The frequency is where the FIRST
-        // of them stops modelling; a second size of comparable geometry may keep
-        // going past it, which is why this says "references hold" rather than
-        // claiming the whole curve is frozen.
+        // References hold their last value past their range; say where the first one stops rather than implying a measured flat top.
         string held = estimate.HighestSupportedFrequencyHz < PreviewMaximumHz
             ? $" Modelled to {FrequencyText.Format(estimate.HighestSupportedFrequencyHz)}; " +
               "references hold above that."
             : string.Empty;
-        // With one reference of comparable geometry there is nothing to disagree,
-        // and printing a 0.00 dB spread would read as a confidence the estimate
-        // has not earned.
+        // A single comparable reference has nothing to disagree with; 0.00 dB would overstate confidence.
         string spread = widestSpreadDb >= 0.005
             ? $", references disagreeing by up to {widestSpreadDb:0.00} dB " +
               $"around {FrequencyText.Format(widestSpreadHz)}"

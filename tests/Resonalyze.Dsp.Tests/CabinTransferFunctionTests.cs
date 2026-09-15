@@ -2,14 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The cabin curves are anchored to published or owner measurements, not
-/// invented: the averaged-sedan table (Autozvuk 2000/08), a measured hatchback
-/// (+23.5 dB at 20 Hz), a compact sedan with the enclosure coupled into the
-/// cabin (+27 dB at 20 Hz) and the owner-measured BMW F30 with the ski hatch
-/// open. The tests hold the presets to those anchors and hold the shape to the
-/// model: rising toward low frequencies below the corner, nothing above it.
-/// </summary>
+/// <summary>Cabin presets held to their published/measured anchors; the shape rises below the corner and is flat above.</summary>
 public sealed class CabinTransferFunctionTests
 {
     private const int Rate = 48_000;
@@ -47,8 +40,6 @@ public sealed class CabinTransferFunctionTests
     {
         CabinTransferFunction cabin = CabinTransferFunction.FromBodyStyle(bodyStyle);
 
-        // An octave above the corner the knee has decayed to a fraction of a
-        // dB, and midband/treble carry nothing at all.
         Assert.InRange(cabin.Evaluate(flatFromHz), 0.0, 0.6);
         Assert.InRange(cabin.Evaluate(1_000.0), 0.0, 0.01);
         Assert.InRange(cabin.Evaluate(16_000.0), 0.0, 0.01);
@@ -67,9 +58,7 @@ public sealed class CabinTransferFunctionTests
     [Fact]
     public void Evaluate_ReachesTheNominalSlopeBelowTheKnee()
     {
-        // The hatchback preset is the theoretical fully-sealed cabin:
-        // 12 dB/oct. Two octaves under the corner the softplus knee is spent,
-        // so one more octave down must add almost exactly that.
+        // Hatchback is the fully sealed 12 dB/oct cabin: two octaves under the corner the knee is spent.
         CabinTransferFunction cabin =
             CabinTransferFunction.FromBodyStyle(CabinBodyStyle.Hatchback);
 
@@ -83,9 +72,7 @@ public sealed class CabinTransferFunctionTests
         CabinTransferFunction cabin =
             CabinTransferFunction.FromBodyStyle(CabinBodyStyle.BmwF30SkiHatch);
 
-        // The 20 Hz anchor is +34 dB; below it the steep near-corner segment is
-        // NOT extrapolated — every infrasonic frequency holds that same value
-        // rather than climbing to the tens of dB the segment slope would reach.
+        // Below the 20 Hz anchor (+34 dB) the steep segment is not extrapolated.
         double atFirstAnchor = cabin.Evaluate(20.0);
         Assert.Equal(atFirstAnchor, cabin.Evaluate(10.0), 6);
         Assert.Equal(atFirstAnchor, cabin.Evaluate(1.0), 6);
@@ -94,9 +81,7 @@ public sealed class CabinTransferFunctionTests
     [Fact]
     public void Evaluate_CapsTheInfrasonicSubtraction()
     {
-        // The compact-sedan slope (13.5 dB/oct) would pass 40 dB well into the
-        // infrasonic; the cap holds it there so the correction FIR never carves
-        // a near-total notch — but a MEASURED anchor is never clipped by it.
+        // The 40 dB cap keeps the correction FIR from a near-total notch; measured anchors are never clipped.
         CabinTransferFunction cabin =
             CabinTransferFunction.FromBodyStyle(CabinBodyStyle.CompactSedan);
 
@@ -107,10 +92,7 @@ public sealed class CabinTransferFunctionTests
     [Fact]
     public void Design_SubtractsTheCabinRiseWhenUsedAsACorrection()
     {
-        // The audition feeds Evaluate straight into the calibration FIR
-        // designer, whose kernel gain is the NEGATED correction: the cabin's
-        // +24 dB at 20 Hz must come out as −24 dB of attenuation, and the
-        // midband must stay untouched.
+        // The calibration FIR designer negates the correction: +24 dB cabin at 20 Hz becomes −24 dB.
         CabinTransferFunction cabin =
             CabinTransferFunction.FromBodyStyle(CabinBodyStyle.Hatchback);
         double[] kernel = CalibrationFirFilter.Design(cabin.Evaluate, Rate);
@@ -121,7 +103,6 @@ public sealed class CabinTransferFunctionTests
         Assert.InRange(MagnitudeDbAt(kernel, 10_000.0), -0.3, 0.3);
     }
 
-    // The filter's frequency response probed directly: |Σ h[n]·e^(−j2πfn/fs)|.
     private static double MagnitudeDbAt(double[] kernel, double frequencyHz)
     {
         double real = 0;

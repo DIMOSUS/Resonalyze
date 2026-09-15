@@ -8,21 +8,14 @@ using Resonalyze.Options;
 namespace Resonalyze;
 
 /// <summary>
-/// The Virtual DSP tool: up to twelve measured transfer IRs (as left/right pairs)
-/// are run through per-channel DSP chains (gain, delay, polarity, crossover, PEQ)
-/// and summed as complex responses, predicting the combined output before
-/// touching the hardware. The acoustic plot shows the raw/processed channels,
-/// their complex sum and the sum loss; the DSP plot shows each chain's own
-/// magnitude, phase or group delay. The whole state persists as a project file
-/// across restarts.
+/// Virtual DSP: measured transfer IRs run through per-channel DSP chains and summed as complex
+/// responses, predicting the combined output. See docs/tech/virtual-dsp-panel.md.
 /// </summary>
 public partial class VirtualCrossoverPanel : UserControl
 {
     private const int SaveDebounceMilliseconds = 2_000;
 
-    // The channel-list bounds. The minimum matches the summed-response metric's
-    // need for at least two channels; the maximum matches the project format's
-    // capacity. The default is the count shown before the list became resizable.
+    // Min 2: the sum metric needs two channels; max = the project format's capacity.
     private const int MinChannelCount = 2;
     private const int MaxChannelCount = VirtualCrossoverProjectFile.MaximumChannelCount;
     private const int DefaultChannelCount = 3;
@@ -36,22 +29,19 @@ public partial class VirtualCrossoverPanel : UserControl
     private static readonly OxyColor LossColor = VirtualCrossoverAcousticPlot.LossAxisColor;
     private static readonly OxyColor[] ChannelColors =
     [
-        OxyColor.FromRgb(86, 156, 255),   // A: blue
-        OxyColor.FromRgb(255, 150, 64),   // B: orange
-        OxyColor.FromRgb(96, 210, 120),   // C: green
-        OxyColor.FromRgb(200, 130, 255),  // D: purple
-        OxyColor.FromRgb(80, 210, 220),   // E: cyan
-        OxyColor.FromRgb(240, 100, 140),  // F: pink
-        OxyColor.FromRgb(210, 200, 90),   // G: yellow
-        OxyColor.FromRgb(140, 200, 90),   // H: lime
-        // I–L came with the 12-block ceiling. Each had to stay apart from all
-        // eight above AND carry on the dark plot ground, which rules out the
-        // obvious remaining hues: a saturated red reads as a warning, and
-        // anything darker than these disappears against the background.
-        OxyColor.FromRgb(230, 120, 90),   // I: terracotta
-        OxyColor.FromRgb(150, 175, 215),  // J: slate blue
-        OxyColor.FromRgb(215, 180, 140),  // K: sand
-        OxyColor.FromRgb(90, 180, 175)    // L: teal
+        OxyColor.FromRgb(86, 156, 255),
+        OxyColor.FromRgb(255, 150, 64),
+        OxyColor.FromRgb(96, 210, 120),
+        OxyColor.FromRgb(200, 130, 255),
+        OxyColor.FromRgb(80, 210, 220),
+        OxyColor.FromRgb(240, 100, 140),
+        OxyColor.FromRgb(210, 200, 90),
+        OxyColor.FromRgb(140, 200, 90),
+        // I–L must stay distinct from A–H on the dark ground; a saturated red would read as a warning.
+        OxyColor.FromRgb(230, 120, 90),
+        OxyColor.FromRgb(150, 175, 215),
+        OxyColor.FromRgb(215, 180, 140),
+        OxyColor.FromRgb(90, 180, 175)
     ];
 
     private readonly System.Windows.Forms.Timer saveTimer = new()
@@ -59,27 +49,15 @@ public partial class VirtualCrossoverPanel : UserControl
         Interval = SaveDebounceMilliseconds
     };
 
-    // The magnitude view reads through the SAME gate as the phase and impulse
-    // views (the gate dialog's offset, shoulders and Fixed/FDW mode), so the
-    // three views describe one time window. One immutable record, refreshed on
-    // the UI thread by RequestRedraw and read by reference from the PLINQ
-    // magnitude builds on worker threads — a single atomic reference, never
-    // the live controls, the project or the gate-preview tuple. The template's
-    // offset is a placeholder; each build stamps its own (see
-    // BuildMagnitudeCurve). The initial value only bridges construction: every
-    // curve is built after the first unsuppressed redraw refreshed it.
-    // Internal (with the resolver) so the per-side pin choice is pinned by a
-    // unit test without constructing the panel.
+    // Magnitude reads through the same gate as the phase/impulse views. Swapped atomically on the UI thread
+    // by RequestRedraw, read by PLINQ workers. See docs/tech/virtual-dsp-panel.md#gate-snapshot.
     internal sealed record MagnitudeGateSnapshot(
         PhaseAnalysisSettings Template,
         double? PinnedOffsetMs,
         double? OppositePinnedOffsetMs,
         int SmoothingInverseOctaves)
     {
-        // The one place the pinned-vs-anchor choice lives. The two sides'
-        // arrivals sit at different times and the project stores their pinned
-        // offsets separately — the active side's pin must never window the
-        // OPPOSITE side's sum (its own pin, or its own anchor when unpinned).
+        // Each side has its own pin: the active side's pin must never window the opposite side's sum.
         internal double ResolveGateOffsetMs(
             bool oppositeSide,
             int anchorPeakIndex,
@@ -105,22 +83,14 @@ public partial class VirtualCrossoverPanel : UserControl
         SmoothingInverseOctaves: 12);
 
     private readonly List<VirtualCrossoverChannel> channels = new();
-    // The Lock beside the side radios; reads at every ScheduleSave, see the class.
     private readonly VirtualCrossoverSideLock sideLock = new();
 
-    // The EQ Wizard's own export machinery, reused whole so a channel's bank leaves
-    // through exactly the formats, shelf/preamp rules and warnings the wizard uses.
     private readonly EqWizardImportExportCoordinator peqExport = new();
 
-    // Which loaded project the blocks currently describe; bumped by every bind.
-    // Read only by the EQ Wizard handoff, whose return address has to outlive a
-    // trip to another mode and must not survive a project replacing this one.
+    // Bumped by every bind; lets an EQ Wizard handoff refuse to return into a replaced project.
     private long projectGeneration;
 
-    // The model-to-control binding. VirtualCrossoverChannel is UI-free, so the
-    // panel owns the mapping to each block's control; only the binding methods
-    // (ApplySettingsToControl, UpdateSourceButton, tooltips…) look it up, and
-    // the algorithmic paths read the model directly.
+    // VirtualCrossoverChannel is UI-free; only the binding methods look up controls.
     private readonly Dictionary<VirtualCrossoverChannel, VirtualCrossoverChannelControl>
         channelControls = new();
     private readonly VirtualCrossoverProcessingCoordinator processingCoordinator = new();
@@ -135,89 +105,52 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private VirtualCrossoverProjectFile project = new();
 
-    // The folder the user pointed at to relink an imported session's missing
-    // measurements: an extra search root for every source this session resolves
-    // afterwards (a mono toggle re-resolves a side long after the import). Belongs
-    // to the imported session, so binding a project clears it.
+    // Extra search root from relinking an imported session's missing measurements; cleared on bind.
     private string? relinkDirectory;
 
-    // Candidate gate values while the gate dialog is open, so the gated plots
-    // track the dialog live; null once it closes (Save committed them to the
-    // project, Cancel reverts by simply dropping them). AutoOffset mirrors the
-    // dialog's Auto button: the preview must gate per-curve exactly as Save
-    // will, while OffsetMs still shows where the dialog's window sits (the
-    // impulse overlays draw it).
+    // Gate dialog candidates while it is open (live preview); null once closed. AutoOffset gates per curve
+    // as Save will, while OffsetMs is where the dialog's window is drawn.
     private (double OffsetMs, bool AutoOffset, double LeftMs, double PlateauMs,
         double RightMs, PhaseWindowMode WindowMode, int FdwCycles,
         PhaseDetrendMode DetrendMode, double DetrendMs)? gatePreview;
-    // The Q convention the last tuning sheet WRITTEN this session was stated in; null
-    // until one is, when the shared setting pre-selects the dialog instead. Session
-    // state on purpose: the answer describes the sheet being printed, not the panel
-    // or the project (see AskSheetQConvention).
+    // Describes the sheet being printed, not the project, so it is session state.
     private PeqQConvention? sheetQConvention;
-    // The verdict on the window the side on screen is gated at, from the last
-    // redraw (null before the first one, or with no processed channels). The
-    // Auto commands read this instead of judging the placement themselves:
-    // both are disabled until the redraw that fills it has settled, which is
-    // the same condition that puts their curves on screen — see
-    // RefreshAutoActionsEnabled.
+    // The Auto commands read this and stay disabled until the redraw that fills it settles.
     private GatePlacementVerdict? gatePlacement;
     private VirtualCrossoverAcousticPlot acousticPlot = null!;
     private VirtualCrossoverDspChainPlot dspChainPlot = null!;
     private bool initialized;
 
-    // The stored project's load, so anything that would replace it can wait for it
-    // to finish instead of racing it (see ImportSessionFileAsync). Completed until
-    // the panel is first shown, and never faulted: the load handles its own errors.
+    // Awaited by anything that replaces the project; never faulted.
     private Task storedProjectLoad = Task.CompletedTask;
     private bool suppressProjectEvents;
 
-    // Single-flight coalescing for the interactive redraw. While a redraw's heavy
-    // work (the ApplyChain FFTs) runs on a background task the UI stays live; a
-    // change that arrives mid-flight only flags a rerun, so exactly one redraw is
-    // in flight at a time and it always ends on the latest settings.
+    // Single-flight redraw; see docs/tech/virtual-dsp-panel.md#redraw-scheduling.
     private Task? redrawTask;
     private bool redrawPending;
     private bool savePending;
-    // Save runs on a debounce; the failure notice is shown once per session and
-    // re-armed by the next successful save.
     private bool reportedSaveFailure;
     private bool loadingProject;
     private int pendingSourceLoads;
 
-    // The shared EQ target, null until the host wires it (and in the designer).
     private EqTargetCurve? targetCurve;
     private ContextMenuStrip? targetMenu;
 
-    // The colour the Target toggle wears while it is live: its curve's own, the
-    // way the Sum and Sum loss toggles wear theirs. Seeded from the designer and
-    // following the shared target from then on, so muting the toggle for a view
-    // that cannot show it has a colour to come back to.
+    // Kept so a toggle muted for a view has its live colour to return to.
     private Color targetToggleColor;
 
-    // The colour the Hybrid toggle wears while it is live and TICKED. Captured from
-    // the designer once, for the reason UpdateTargetToggleLook states: the toggle is
-    // recoloured to say a capture is going unused, and the shared muting helper would
-    // memorize that reminder as the colour to come back to.
+    // Captured once: the toggle is recoloured as a reminder, which the muting helper would memorize.
     private Color hybridToggleColor;
 
     public VirtualCrossoverPanel()
     {
         InitializeComponent();
-        // While the controls still stand where the designer put them: the layout
-        // pass stretches the plots by deltas on this (see the Layout partial).
+        // While controls stand where the designer put them: the layout pass stretches plots by deltas on this.
         CaptureLayoutBaseline();
-        // The scrolling channel list (and the panel itself when the window is
-        // narrow) use native scrollbars; theme them dark so they match the app
-        // instead of showing the default light bar.
         Ui.DarkScrollBars.Apply(channelListPanel);
         Ui.DarkScrollBars.Apply(this);
-        // The channel blocks are created dynamically into the scrolling list so
-        // the tool can host more channels than fit the window. Start with the
-        // default count; the loaded project resizes the list to its own count.
         SetChannelCount(DefaultChannelCount);
 
-        // Same idea for the shared curves: the toggles wear their plot colors.
         checkBoxShowSum.ForeColor = Color.FromArgb(SumColor.R, SumColor.G, SumColor.B);
         labelSumLoss.ForeColor = Color.FromArgb(LossColor.R, LossColor.G, LossColor.B);
         targetToggleColor = checkBoxShowTarget.ForeColor;
@@ -256,14 +189,11 @@ public partial class VirtualCrossoverPanel : UserControl
         buttonCopyLeftToRight.Click += (_, _) => CopySideSettings(fromRight: false);
         buttonCopyRightToLeft.Click += (_, _) => CopySideSettings(fromRight: true);
         checkBoxSideLock.CheckedChanged += (_, _) => OnSideLockChanged();
-        // The designer ticks the box before this handler exists, so the lock it
-        // stands for is engaged here by hand; the pairs come under it as the
-        // project binds (BindProjectAsync hands them to Remember).
+        // The designer ticks the box before this handler exists, so engage the lock by hand.
         OnSideLockChanged();
 
         saveTimer.Tick += (_, _) => FlushProject();
-        // The designer file owns Dispose; the unsaved project state and the
-        // helper components are released through the Disposed event instead.
+        // The designer file owns Dispose.
         Disposed += (_, _) =>
         {
             FlushProject();
@@ -273,115 +203,58 @@ public partial class VirtualCrossoverPanel : UserControl
         };
     }
 
-    /// <summary>The measurement history used by the source pickers. Wired by the host form.</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal MeasurementHistoryService? HistoryService { get; set; }
 
-    /// <summary>
-    /// Microphone calibration applied to the magnitude curves, resolved from the
-    /// panel's own <see cref="comboBoxCalibration"/> selection. Null when
-    /// calibration is off or unavailable.
-    /// </summary>
     private CalibrationFile? Calibration { get; set; }
 
-    /// <summary>
-    /// True while the selector is on "Own (as measured)": each curve is drawn
-    /// through the calibration ITS measurement recorded, and
-    /// <see cref="Calibration"/> describes nothing.
-    /// </summary>
+    /// <summary>"Own (as measured)": each curve uses its measurement's calibration; <see cref="Calibration"/> is null.</summary>
     private bool ownCalibrationSelected;
 
-    /// <summary>
-    /// The calibration one channel's curves are drawn through.
-    /// </summary>
-    /// <remarks>
-    /// Null under Own for a measurement whose file names no calibration — which is
-    /// the honest answer rather than a fallback to the panel's: the file says it was
-    /// read through none, and substituting a curve it never passed would be the panel
-    /// deciding what a measurement means.
-    /// </remarks>
+    /// <summary>Under Own, null for a measurement naming no calibration: never substitute the panel's.</summary>
     private CalibrationFile? CalibrationFor(ProcessedChannel channel) =>
         ownCalibrationSelected ? channel.MicrophoneCalibration : Calibration;
 
     private CalibrationFile? CalibrationFor(VirtualCrossoverChannelState state) =>
         ownCalibrationSelected ? state.MicrophoneCalibrationCurve : Calibration;
 
-    /// <summary>
-    /// How a stored spatial average on this side should be read.
-    /// </summary>
-    /// <remarks>
-    /// Under Own it is the CAPTURE's own correction, deliberately not this side's
-    /// measurement file. A moving-microphone pass attached to a channel is a separate
-    /// measurement taken through its own calibration, and an array is several capsules
-    /// each through theirs; reading either through the impulse response beside it
-    /// would be wrong by the whole difference between the two files. The state is not
-    /// consulted at all — the capture knows.
-    /// </remarks>
+    /// <summary>Under Own, the capture's own correction (a moving-mic pass or array has its own), not this side's file.</summary>
     private SpatialAverageCalibration SpatialAverageCalibrationFor(
         VirtualCrossoverChannelState state) =>
         ownCalibrationSelected
             ? SpatialAverageCalibration.Own
             : SpatialAverageCalibration.Specific(Calibration);
 
-    // Resolves a calibration by id; supplied by the host form, which owns the
-    // configured calibrations. Null until the host wires it.
     private Func<string?, CalibrationFile?>? calibrationResolver;
     private IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries = [];
 
-    // Adds a curve to the host's calibration list and returns the new entry's id;
-    // supplied by the host form. Null until wired (the offer is then not made).
     private Func<VirtualCrossoverSessionCalibration, string?>? calibrationAdder;
 
-    // The curve the bound project carries that no configured entry matches,
-    // offered in the selector as its own item (see
-    // VirtualCrossoverCalibrationSelection). Set when a project binds, dropped
-    // once a configured entry with the same curve appears.
+    // A curve the bound project carries that no configured entry matches; offered as its own item.
     private VirtualCrossoverSessionCalibration? sessionCalibration;
 
-    // What the last bind has to say about its calibration, shown once the import
-    // finishes (after the relink prompt, which is about the measurements).
     private VirtualCrossoverCalibrationNotice pendingCalibrationNotice;
 
-    /// <summary>
-    /// Saves the given curve as a Captured Frequency Response overlay and returns
-    /// the slot it landed in (null when all slots are taken). Wired by the host form.
-    /// </summary>
+    /// <summary>Saves the curve as a Captured FR overlay; returns the slot, null when all are taken.</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Func<string, OverlayPoint[], int?>? OverlayCaptureRequested { get; set; }
 
-    /// <summary>
-    /// Pushes the sum-loss read-out to the host: a compact per-junction column for
-    /// display and the full banded breakdown for a tooltip. Wired by the host form,
-    /// which shows it in the right-side panel where overlays sit in analysis modes.
-    /// </summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Action<string, string>? MetricChanged { get; set; }
 
-    /// <summary>
-    /// Pushes the one warning line to the host: the text to show, the whole
-    /// explanation for its tooltip, and the colour to draw the text in. An empty
-    /// text means there is nothing to warn about and the host hides the line.
-    /// Wired by the host form, which shows it above the sum-loss read-out: a
-    /// warning belongs beside the numbers it invalidates, and the panel's own
-    /// area is plot and controls edge to edge.
-    /// </summary>
+    /// <summary>Warning line for the host: text, tooltip, colour; empty text hides it.</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Action<string, string, Color>? WarningChanged { get; set; }
 
-    /// <summary>
-    /// The EQ target curve this tool can draw over its predicted sum. Pushed by
-    /// the host, which holds the one definition shared with the EQ Wizard. A
-    /// value equal to the current one is ignored, so the host may push it on
-    /// every settings change without costing a redraw.
-    /// </summary>
+    /// <summary>Shared EQ target pushed by the host; an equal value is ignored (no redraw).</summary>
     internal void SetTargetCurve(EqTargetCurve value)
     {
         ArgumentNullException.ThrowIfNull(value);
@@ -400,53 +273,31 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    /// <summary>
-    /// Raised when this tool's own Target dialog edited the shared curve. The
-    /// host writes it back to the EQ Wizard, which owns and persists it — that
-    /// write-back is what makes the two panels show one target rather than two
-    /// that drifted apart.
-    /// </summary>
+    /// <summary>Raised when this tool's Target dialog edited the shared curve; the host writes it back to the EQ Wizard.</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Action<EqTargetCurve>? TargetCurveChanged { get; set; }
 
-    /// <summary>
-    /// Raised when the user picks "Edit in EQ Wizard" on a channel's PEQ menu. The
-    /// host hands the request to the wizard and switches the mode; the result comes
-    /// back through <see cref="TryApplyPeqFromWizard"/>.
-    /// </summary>
+    /// <summary>The result returns through <see cref="TryApplyPeqFromWizard"/>.</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Action<VirtualDspEqHandoffRequest>? EditPeqInWizardRequested { get; set; }
 
-    /// <summary>
-    /// Raised when the user opens a channel side's FIR stage in the FIR Constructor.
-    /// The host installs the request there and switches the mode; the designed kernel
-    /// comes back through <see cref="TryApplyFirFromConstructor"/>.
-    /// </summary>
+    /// <summary>The kernel returns through <see cref="TryApplyFirFromConstructor"/>.</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Action<FirConstructorHandoffRequest>? EditFirInConstructorRequested { get; set; }
 
-    /// <summary>
-    /// Raised when the user picks "Open in analyzers" on a channel's source menu:
-    /// the host loads this side's measurement into the analysis modes and lands on
-    /// Frequency Response. The arguments mirror the persisted source reference in
-    /// the priority the panel itself resolves it — the history entry when it still
-    /// exists, else the located file path; at least one is non-null.
-    /// </summary>
+    /// <summary>History entry id when it still exists, else the file path; at least one is non-null.</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Action<Guid?, string?>? OpenSourceInAnalyzersRequested { get; set; }
 
-    /// <summary>
-    /// Called by the host whenever the tool tab becomes active. The first call
-    /// loads the saved project and re-resolves its sources.
-    /// </summary>
+    /// <summary>Called whenever the tab becomes active; the first call loads the saved project.</summary>
     internal void OnPanelShown()
     {
         if (initialized)
@@ -458,11 +309,7 @@ public partial class VirtualCrossoverPanel : UserControl
         storedProjectLoad = LoadProjectSafelyAsync();
     }
 
-    // ---------------------------------------------------------------- project
-
-    // Guarded rather than fire-and-forget: an exception in the async load would
-    // otherwise vanish into an unobserved task, and the task is kept so an import
-    // arriving on the panel's heels can wait for it.
+    // Kept as a task so an import arriving right after can await it.
     private async Task LoadProjectSafelyAsync()
     {
         try
@@ -474,9 +321,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         catch (Exception exception)
         {
-            // The tool still opens on defaults, but the user's stored crossover
-            // is not what they are looking at — saying nothing invites them to
-            // re-tune on top of a silently discarded project.
+            // Silently opening on defaults would invite re-tuning over a discarded project.
             System.Diagnostics.Debug.WriteLine(
                 $"Virtual DSP project load failed: {exception}");
             if (!IsDisposed && IsHandleCreated)
@@ -489,11 +334,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Tell the user, once, when their unreadable session file was moved aside so
-    // they know a .backup exists to recover from.
-    // A migration that had to drop a filter says so. Loading is not the moment to
-    // ask a question — there is nothing to choose between — but it IS the moment to
-    // say what changed, before the next save makes it the file.
+    // A migration that dropped a filter is announced at load, before the next save makes it the file.
     private void NotifyIfMigrationCostAFilter(string? notice)
     {
         if (notice == null || IsDisposed)
@@ -528,13 +369,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private const string LoadingHint = "Loading the previous session…";
 
-    // Locks the panel while a project applies. Re-resolving every channel's
-    // source reads and reprocesses the stored transfer IRs, which takes several
-    // seconds; until this the panel sat enabled showing the "no sources" hint,
-    // so the last session looked lost right up until it snapped into place. The
-    // whole control tree is disabled (a load rebuilds the channel blocks, so
-    // covering not-yet-created controls means disabling the parent), the plot
-    // shows a loading note, and the cursor turns to a wait cursor.
+    // Re-resolving sources takes seconds. The whole tree is disabled because a load rebuilds the blocks.
     private void SetProjectLoading(bool loading)
     {
         if (IsDisposed)
@@ -552,10 +387,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Binds a project (the internal autosave or an imported session) to the UI:
-    // controls, view flags, and freshly re-resolved sources. `imported` says which
-    // of the two it is: a session from a file may have been written on another
-    // machine, whose calibration ids mean nothing here.
+    // imported: a session file may carry calibration ids from another machine.
     private async Task ApplyProjectAsync(VirtualCrossoverProjectFile newProject, bool imported)
     {
         SetProjectLoading(true);
@@ -565,11 +397,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         finally
         {
-            // Clear the loading state BEFORE the redraw so the final frame shows
-            // the real plot/metric, not the loading note — the bind's own
-            // interim redraws (e.g. the calibration combo refresh, which runs
-            // before the sources resolve) are what kept resetting the note back
-            // to the "no sources" hint.
+            // Before the redraw, so the final frame is the real plot, not the loading note.
             SetProjectLoading(false);
             RedrawAll();
         }
@@ -577,43 +405,28 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private async Task BindProjectAsync(VirtualCrossoverProjectFile newProject, bool imported)
     {
-        // Read before the project is swapped: a legacy session naming a calibration
-        // this machine lacks keeps the selection the panel had.
+        // Read before the swap: a legacy session naming an unknown calibration keeps the panel's selection.
         string? previousCalibrationId =
             MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration);
         VirtualCrossoverSessionCalibration? previousSession = sessionCalibration;
         project = newProject;
         relinkDirectory = null;
         // The previous import's undo would restore into settings nobody displays.
-        // (A package copied from the previous project needs no forgetting: the
-        // review's session fingerprint tells the two projects apart — and finds
-        // the same project loaded again to be the same.)
         agentUndo = null;
-        // A new project on the same blocks. The channel OBJECTS are reused when the
-        // count matches (see the rebind below), so nothing about a channel reference
-        // says which session it now describes — this counter does, and an EQ Wizard
-        // handoff taken from the old one is refused by it rather than landing on a
-        // channel the user never opened.
+        // Channel objects are reused across binds; this tells an EQ Wizard handoff which project it came from.
         projectGeneration++;
-        // Match the block list to the project's channel count (validated into the
-        // supported range on load), so an imported 2- or 6-channel session shows
-        // exactly its channels.
         SetChannelCount(project.Pairs.Count);
 
         suppressProjectEvents = true;
         try
         {
             comboBoxSumLoss.SelectedItem = project.SumLossWindowMode;
-            // The captures it needs are attached later, as the sources resolve, so
-            // this is the INTENT only, and it stays ticked either way: HybridRequested
-            // needs the coverage as well, so a session whose captures went missing
-            // opens honest and draws the hybrid again the moment they are re-attached.
+            // Intent only: captures attach as sources resolve, and HybridRequested also needs coverage.
             checkBoxHybrid.Checked = project.ShowHybridCurves;
             checkBoxShowTarget.Checked = project.ShowTargetCurve;
             numericTargetLevel.Value =
                 numericTargetLevel.ClampValue(project.TargetLevelDb);
-            // Step over impulse over group delay over phase: each newer flag is
-            // written beside the older one it falls back to in a build without it.
+            // Each newer view flag is written beside the older one it falls back to.
             radioViewStep.Checked = project.ShowStepView;
             radioViewImpulse.Checked =
                 !project.ShowStepView && project.ShowImpulseView;
@@ -626,8 +439,7 @@ public partial class VirtualCrossoverPanel : UserControl
             radioViewMagnitude.Checked =
                 !project.ShowStepView && !project.ShowImpulseView &&
                 !project.ShowGroupDelayView && !project.ShowPhaseView;
-            // After the radios: the Sum is remembered per view, so which answer
-            // applies is decided by the view this project opens on.
+            // After the radios: the Sum toggle is remembered per view.
             ApplySumToggleForView();
             ApplyProjectTarget();
             radioSideRight.Checked = project.ActiveSideRight;
@@ -638,11 +450,6 @@ public partial class VirtualCrossoverPanel : UserControl
                     ? project.SmoothingCode
                     : 12;
             comboBoxGroupView.SelectedItem = project.GroupView;
-            // A project can open ON a grouped view, and its selector event is
-            // suppressed while these are applied — so the controls that view
-            // mutes (the hybrid, the Sum and loss toggles, the phase and impulse
-            // radios) are refreshed explicitly. Without this a session saved in
-            // the Groups view reopened with every one of them bright and inert.
             if (VirtualCrossoverGroupViews.DrawsGroupSums(project.GroupView))
             {
                 radioViewMagnitude.Checked = true;
@@ -660,8 +467,7 @@ public partial class VirtualCrossoverPanel : UserControl
             comboBoxCorrelationPair.Enabled = JunctionPlotModeSelected() &&
                 comboBoxCorrelationPair.Items.Count > 0;
 
-            // Before the blocks are filled in: it re-pins their height, and doing it
-            // per block afterwards would reflow the list once per channel.
+            // Before filling blocks: it re-pins their height once instead of per block.
             RefreshProcessorRowAvailability();
             for (int i = 0; i < channels.Count; i++)
             {
@@ -675,16 +481,10 @@ public partial class VirtualCrossoverPanel : UserControl
             suppressProjectEvents = false;
         }
 
-        // The blocks now hold the loaded pair objects; the lock, if it is on, starts
-        // over from them — otherwise the first edit after a load would meet an unknown
-        // pair and be recorded as its starting state instead of carried across.
+        // Restart the lock from the loaded pairs, or the first edit is recorded as a starting state.
         sideLock.Remember(channels.Select(channel => channel.Pair));
 
-        // Outside the suppressed block, because everything above was applied with
-        // the selectors' own events silenced: the controls a view mutes (the
-        // hybrid, the Sum and loss toggles, the phase and impulse radios) are
-        // refreshed once here from the state that landed. A session saved in the
-        // Groups view used to reopen with every one of them bright and inert.
+        // Selector events were silenced above; refresh the view-muted controls from the landed state.
         UpdateViewDependentControls();
 
         BindCalibrationSelection(imported, previousCalibrationId, previousSession);
@@ -701,11 +501,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 ResolveSourceAsync(channel, rightSide, showErrors: false),
             UpdateSourceButton);
 
-        // After the sources, because an array arrives with one: a project that has
-        // never chosen a method chooses here, once, from everything it actually has.
-        // The channel buttons were drawn while each source landed, which is BEFORE
-        // this — so they have to be told, or a button reads one method while the menu
-        // and the curves read the other.
+        // After sources (an array brings one): settle the averaging method once and redraw the buttons drawn earlier.
         if (SettleSpatialAverageMode())
         {
             foreach (VirtualCrossoverChannel channel in channels)
@@ -718,30 +514,12 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         UpdateSideRadioTexts();
-        // Again, now that the sources have landed: a project that states no rate of
-        // its own takes the measurements', and the phase read-out solves its corner
-        // at THAT rate. Nothing the simulation computes was ever wrong — the chain is
-        // realized against the live rate — but the block would have gone on naming a
-        // corner solved at the fallback.
+        // Again after sources: a project with no rate takes the measurements', and the phase read-out solves at it.
         RefreshProcessorRowAvailability();
-        // The final redraw is issued by ApplyProjectAsync after the loading
-        // state clears, so it draws the real plot instead of the loading note.
     }
 
-    // The restore ORDER is the cross-rate import contract: BOTH physical
-    // slots of EVERY channel are wiped before the first source resolves.
-    // Per slot, because through the effective accessor a mono pair's real
-    // right slot is unreachable, and a stale measurement from the previous
-    // project would otherwise resurface the moment the pair stops being
-    // mono. Across ALL channels up front, because the rate guard in
-    // TryAssignSource scans every still-resolved side: cleared one channel
-    // at a time, an imported session at a different sample rate would lose
-    // that vote against the previous project's channels — each source
-    // silently refused against the not-yet-replaced rest, leaving only the
-    // last channel resolved (field bug). Then both sides of each channel
-    // resolve up front (the stereo Auto delay needs them together); a mono
-    // pair resolves its single slot once. Static and delegate-fed so the
-    // order itself is unit-testable.
+    // Wipe BOTH slots of EVERY channel before any source resolves: TryAssignSource's rate guard votes over
+    // the resolved sides. See docs/tech/virtual-dsp-panel.md#project-restore-order.
     internal static async Task RestoreProjectSourcesAsync<TChannel>(
         IReadOnlyList<TChannel> channels,
         Func<TChannel, bool> isMono,
@@ -772,9 +550,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void ScheduleSave()
     {
-        // Every change passes through here, so this is where the side lock reads:
-        // what moved on the shown side since the previous save goes onto the hidden
-        // one now, ahead of the redraw that follows every call and the save itself.
+        // Every change passes through here, so the side lock reads here, ahead of the redraw and the save.
         sideLock.Follow(channels.Select(channel => channel.Pair), project.ActiveSideRight);
         savePending = true;
         saveTimer.Stop();
@@ -797,12 +573,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         catch (Exception exception)
         {
-            // Still must not break the tool (a read-only install directory used
-            // to be the motivating case) — but it cannot stay silent either.
-            // This runs on a debounce, so every crossover edit was quietly
-            // failing to persist and the user only found out on the next launch,
-            // when the whole tuning session was gone. Reported once per session
-            // so the message does not fire on every keystroke.
+            // Reported once per session: a debounced save failing silently lost whole tuning sessions.
             System.Diagnostics.Debug.WriteLine(
                 $"Virtual DSP project save failed: {exception}");
             if (!reportedSaveFailure && !IsDisposed && IsHandleCreated)
@@ -816,14 +587,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // ------------------------------------------------------------ calibration
-
-    /// <summary>
-    /// Wires the microphone calibration source. The host owns the configured
-    /// calibrations, so it supplies both a resolver and the list of entries; the
-    /// panel offers them in its own selector. Called again whenever the
-    /// configured calibrations change, refreshing the selector.
-    /// </summary>
+    /// <summary>Called again whenever the configured calibrations change.</summary>
     internal void ConfigureCalibration(
         Func<string?, CalibrationFile?> resolver,
         IReadOnlyList<MicrophoneCalibrationEntry> entries,
@@ -835,12 +599,8 @@ public partial class VirtualCrossoverPanel : UserControl
         ReconcileCalibrationSelection();
     }
 
-    // The selector after the configured list changed: the selection stays where
-    // it was, marked if its entry is gone or unusable, and a session-carried curve
-    // hands over to a configured entry the moment one holds the same curve — the
-    // user just added it (or already had it, and the list arrived after the
-    // project). The project's stored form follows, so an autosave written after
-    // the list changed says the same thing the selector shows.
+    // Selection stays (marked if gone); a session curve hands over to a configured entry holding the same
+    // curve. The project's stored form follows.
     private void ReconcileCalibrationSelection()
     {
         string? selectedId = comboBoxCalibration.Items.Count > 0
@@ -863,19 +623,14 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         ApplyCalibrationSelection(selectedId);
-        // A handover (or a re-read of an edited file) changed what the session
-        // says; the autosave must not wait for an unrelated edit to learn it. Only
-        // once the project is the loaded one: before that this is the placeholder,
-        // and saving it would overwrite the real autosave before it was read.
+        // Only once initialized: before that the project is a placeholder and would overwrite the real autosave.
         if (PersistCalibrationSelection() && initialized)
         {
             ScheduleSave();
         }
     }
 
-    // The selector for a project that was just bound: the curve the project
-    // carries decides, the id it names is a hint, and a legacy id that resolves
-    // to nothing keeps what the panel had (see VirtualCrossoverCalibrationSelection).
+    // The project's curve decides, its id is a hint; an unresolved legacy id keeps the panel's choice.
     private void BindCalibrationSelection(
         bool imported,
         string? previousSelectedId,
@@ -894,17 +649,10 @@ public partial class VirtualCrossoverPanel : UserControl
         sessionCalibration = decision.Session;
         pendingCalibrationNotice = decision.Notice;
         ApplyCalibrationSelection(decision.SelectedId);
-        // The bound project's own statement is re-derived from the selection:
-        // a kept previous choice or an entry matched by curve is what the
-        // session now says, and the next autosave must agree with the selector.
         PersistCalibrationSelection();
     }
 
-    // Rebuilds the selector's items — the configured calibrations plus the
-    // session's own curve, when it offers one — selects the given item, then
-    // resolves the calibration the curves use and redraws. A selection that is
-    // no longer configured keeps its entry, marked, so the stored preference is
-    // not overwritten by the rebuild.
+    // An entry no longer configured stays, marked, so the stored preference survives the rebuild.
     private void ApplyCalibrationSelection(string? selectedId)
     {
         suppressProjectEvents = true;
@@ -927,9 +675,6 @@ public partial class VirtualCrossoverPanel : UserControl
     private IReadOnlyList<MicrophoneCalibrationEntry> CalibrationEntriesWithSession() =>
         VirtualCrossoverCalibrationSelection.EntriesWith(calibrationEntries, sessionCalibration);
 
-    // Resolves the selector's selection to a curve: the session's own curve, one of
-    // the configured entries, or nothing for Off (and for an absent resolver),
-    // matching the loopback-referenced default.
     private CalibrationFile? ResolveSelectedCalibration(string? calibrationId) =>
         VirtualCrossoverCalibrationSelection.IsSession(calibrationId)
             ? sessionCalibration?.Curve
@@ -940,17 +685,11 @@ public partial class VirtualCrossoverPanel : UserControl
         string? selected =
             MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration);
         ownCalibrationSelected = VirtualCrossoverCalibrationSelection.IsOwn(selected);
-        // Deliberately left null under Own rather than pointed at one of the
-        // measurements: a single field cannot hold a per-channel answer, and a caller
-        // that read it would silently get whichever channel happened to be first.
+        // Null under Own: one field cannot hold a per-channel answer.
         Calibration = ownCalibrationSelected ? null : ResolveSelectedCalibration(selected);
     }
 
-    // Writes the selector's selection into the project in its persisted form: the
-    // curve the session is tuned with, plus the id of the configured entry it came
-    // from (none for the session's own curve). Resolved through the SAME path the
-    // curves use, so what the file carries is what the plot shows. True when the
-    // stored form changed.
+    // Resolved through the same path as the curves, so the file carries what the plot shows. True when changed.
     private bool PersistCalibrationSelection()
     {
         (string? id, VirtualCrossoverCalibrationSettings? calibration) =
@@ -991,10 +730,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // The calibration the EQ Wizard pins for a handoff: the curve itself, not an
-    // id, because the session's own curve has no id the wizard's list could
-    // resolve — and the identity the handoff promises is with the curve the plot
-    // draws, whatever it is called.
+    // The curve itself, not an id: the session's own curve has no id the wizard could resolve.
     private string? SelectedCalibrationName() =>
         MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration) is { } id
             ? CalibrationEntriesWithSession()
@@ -1003,35 +739,24 @@ public partial class VirtualCrossoverPanel : UserControl
                 ?.Name
             : null;
 
-    /// <summary>
-    /// What ONE channel is rendered through, named for the tools the panel hands over
-    /// to. Under "Own (as measured)" that is the file's own calibration, and the name
-    /// has to follow the curve — the wizard's selector shows this while disabled, and
-    /// a label naming the selector rather than the curve would say "Own" over a
-    /// correction the user cannot see.
-    /// </summary>
+    /// <summary>Under Own the name follows the file's own curve: the wizard's disabled selector shows it.</summary>
     private string? CalibrationNameFor(VirtualCrossoverChannelState state) =>
         ownCalibrationSelected
             ? state.MicrophoneCalibration?.Name
             : SelectedCalibrationName();
-
-    // ----------------------------------------------------------------- wiring
 
     private void WirePanelEvents()
     {
         checkBoxShowSum.CheckedChanged += (_, _) => OnViewChanged();
         checkBoxHybrid.CheckedChanged += (_, _) =>
         {
-            // The toggle's own colour carries the reminder that a capture is going
-            // unused, so it has to follow the tick and not only the coverage.
+            // Its colour carries the unused-capture reminder, so it follows the tick, not only coverage.
             RefreshHybridAvailability();
             OnViewChanged();
         };
         checkBoxShowTarget.CheckedChanged += (_, _) => OnViewChanged();
         numericTargetLevel.ValueChanged += (_, _) => OnViewChanged();
-        // Three-radio group: each fires on both the check and the uncheck, so
-        // act only on the one that became checked to run the switch exactly
-        // once per mode change.
+        // Radios fire on check and uncheck; act only on the checked one.
         radioViewMagnitude.CheckedChanged += (_, _) =>
         {
             if (radioViewMagnitude.Checked) OnViewModeChanged();
@@ -1056,32 +781,19 @@ public partial class VirtualCrossoverPanel : UserControl
         comboBoxSumLoss.SelectedIndexChanged += (_, _) => OnViewChanged();
         comboBoxGroupView.SelectedIndexChanged += (_, _) =>
         {
-            // Groups is a MAGNITUDE view: it draws one summed line per zone, and
-            // there is no group phase or group impulse to offer. Rather than let
-            // the phase view quietly fall back to per-driver curves under a
-            // selector that promises group sums, picking Groups moves the view
-            // radio — visibly, so nothing is drawn that the selector denies.
+            // Groups is magnitude-only (no group phase/impulse): move the view radio visibly instead of falling back.
             if (VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView) &&
                 !radioViewMagnitude.Checked)
             {
                 radioViewMagnitude.Checked = true;
             }
 
-            // The hybrid's availability depends on the view, so it has to be
-            // re-judged here as it is on a magnitude/phase switch.
             UpdateViewDependentControls();
             OnViewChanged();
         };
         comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
-        // The DSP-mode radios span TWO containers (the chain trio on
-        // dspModePanel, Correlation on its own panel beside the pair
-        // selector), and WinForms only auto-excludes radios within one
-        // container — so the exclusivity across the panels is wired by hand.
-        // Each handler still acts only on the radio that became CHECKED (a
-        // check-and-uncheck pair fires both), and it clears the other
-        // container FIRST, so OnDspPlotModeChanged never reads a transient
-        // two-checked state. Clearing fires the cleared radios' handlers with
-        // Checked == false, which the guards ignore.
+        // DSP-mode radios span two containers, so exclusivity is wired by hand. Clear the other container FIRST
+        // so OnDspPlotModeChanged never sees two checked; the cleared radios' handlers ignore Checked == false.
         radioDspMagnitude.CheckedChanged += (_, _) =>
         {
             if (radioDspMagnitude.Checked) OnChainDspModeChecked();
@@ -1100,9 +812,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 OnDspPlotModeChanged();
             }
         };
-        // Coherence shares the correlation radio's container, so WinForms
-        // already excludes the two junction modes against each other; only
-        // the chain trio needs clearing by hand.
+        // Coherence shares Correlation's container; only the chain trio needs clearing.
         radioDspCoherence.CheckedChanged += (_, _) =>
         {
             if (radioDspCoherence.Checked)
@@ -1119,15 +829,10 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             if (radioDspGroupDelay.Checked) OnChainDspModeChecked();
         };
-        // Two-radio group: listening to one of them reacts exactly once per
-        // side switch.
         radioSideRight.CheckedChanged += (_, _) => OnActiveSideChanged();
     }
 
-    // Flips the whole tool to the other side of every pair: the channel
-    // controls rebind to that side's settings, and the plots, metric and delay
-    // read-outs recompute from its measurements. Each side keeps its own
-    // processed-IR cache, so switching back and forth is cheap.
+    // Each side keeps its own processed-IR cache, so switching is cheap.
     private void OnActiveSideChanged()
     {
         if (suppressProjectEvents)
@@ -1156,11 +861,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // The "L→R" / "R→L" commands: copy one side's chain onto the other for the
-    // channels AND the chain parts the user picks in the dialog (see
-    // VirtualCrossoverCopySideDialog for what is ticked by default and why).
-    // The source is never copied — each side has its own measurement — and mono
-    // pairs, having one settings set, are not offered.
+    // The source is never copied (each side has its own measurement); mono pairs are not offered.
     private void CopySideSettings(bool fromRight)
     {
         List<VirtualCrossoverChannel> candidates = channels
@@ -1208,12 +909,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // The Lock beside those two: engaging copies nothing — the sides are remembered
-    // as they stand and only what moves from here on is carried across, at every
-    // ScheduleSave (see VirtualCrossoverSideLock for the rules). On by default — a
-    // car tune is symmetric far more often than not — and not stored with the
-    // session: unticking it is the exception, for the one side being worked alone,
-    // and the next opening starts symmetric again.
+    // Engaging copies nothing; see docs/tech/virtual-dsp-panel.md#side-lock. On by default, not stored.
     private void OnSideLockChanged()
     {
         if (checkBoxSideLock.Checked)
@@ -1226,13 +922,8 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // The parts of one side's chain the dialog ticked, written onto the other side;
-    // everything else is left as the target had it. The default ticks are the
-    // crossover and the PEQ — the magnitude shape, which describes the driver —
-    // while gain, delay, polarity and the all-pass are opt-in, because each aligns a
-    // driver against its own side's level and geometry, and a left tweeter's arrival
-    // is not a right tweeter's. The source measurement is never among them.
-    // PeqBand is an immutable record, so a fresh list is a deep enough copy.
+    // Defaults tick crossover and PEQ (driver shape); gain, delay, polarity and all-pass are opt-in because
+    // they align against one side's geometry. See docs/tech/virtual-dsp-panel.md#copying-between-sides.
     private static void CopyChainSettings(
         VirtualCrossoverChannelSettings from,
         VirtualCrossoverChannelSettings to,
@@ -1260,16 +951,13 @@ public partial class VirtualCrossoverPanel : UserControl
             to.LowPassEdge = from.LowPassEdge;
         }
 
-        // Its own tick rather than part of the crossover, even though it reads the
-        // crossover: the angle is a timing decision like the delay, and the two sides
-        // rarely want the same one. Copied as the NUMBER — the reference travels with
-        // the target side's own crossover, which is what the device would do.
+        // A timing decision like the delay, so its own tick; copied as the number, the reference follows the target's crossover.
         if (scope.Phase)
         {
             to.PhaseRotationDegrees = from.PhaseRotationDegrees;
         }
 
-        // The kernel by reference: it is immutable, so both sides can share it.
+        // Immutable kernel, shared by reference.
         if (scope.Fir)
         {
             to.Fir = from.Fir;
@@ -1277,24 +965,15 @@ public partial class VirtualCrossoverPanel : UserControl
             to.FirDesign = from.FirDesign;
         }
 
-        // The all-pass filters live inside the PEQ bank as bands, but they answer a
-        // different question than the EQ (they align this side rather than voice the
-        // pair), so the two scopes split ONE list by band type: Peq moves the
-        // gain-bearing bands, AllPass the phase-only ones, and whichever kind is not
-        // being copied survives on the target side.
+        // All-pass filters live in the PEQ bank; Peq and AllPass split that one list by band type.
         if (scope.Peq || scope.AllPass)
         {
             List<PeqBand> tonal = (scope.Peq ? from : to)
                 .PeqBands.Where(band => !band.Type.IsAllPass()).ToList();
             List<PeqBand> allPass = (scope.AllPass ? from : to)
                 .PeqBands.Where(band => band.Type.IsAllPass()).ToList();
-            // Over the slot budget something has to give, and it is always the kind
-            // being COPIED. An unticked scope promised the target's own bands would
-            // be left alone, and deleting them to make room for filters from the
-            // other side breaks that promise silently — on a bank the user cannot
-            // see all of at once. With both kinds copied the all-pass stays: it sits
-            // on a junction this side was aligned on, and is the harder thing to
-            // have to dial in again.
+            // Over the slot budget the COPIED kind gives way (an unticked scope promised the target's bands stay);
+            // with both copied the all-pass stays.
             int overflow =
                 tonal.Count + allPass.Count - EqualizationCurve.MaxBandCount;
             if (overflow > 0)
@@ -1319,8 +998,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // The side radios double as source indicators (● has at least one source,
-    // ○ none), so switching to an empty side is never a surprise blank plot.
+    // ● has at least one source, ○ none.
     private void UpdateSideRadioTexts()
     {
         bool leftAny = channels.Any(channel =>
@@ -1332,16 +1010,9 @@ public partial class VirtualCrossoverPanel : UserControl
         radioSideRight.Text = rightAny ? "R ●" : "R ○";
     }
 
-    // ----------------------------------------------------------- channel list
-
-    // A channel block is created per runtime and added to the scrolling list, so
-    // the block count is a plain runtime decision (persisted in the project) with
-    // no fixed designer controls. Colour and name follow the block's index.
     private VirtualCrossoverChannel CreateChannel(int index)
     {
-        // The block keeps its own designer-defined size, which the control scales
-        // for the current DPI (AutoScaleMode.Dpi); overriding it here with raw
-        // pixels would clip its scaled content on high-DPI displays.
+        // Keep the designer size (DPI-scaled); raw pixels would clip on high DPI.
         var control = new VirtualCrossoverChannelControl
         {
             BackColor = Color.FromArgb(46, 51, 62),
@@ -1349,28 +1020,21 @@ public partial class VirtualCrossoverPanel : UserControl
             ForeColor = Color.White,
             Margin = new Padding(0, 0, 0, 6),
             ChannelName = ChannelNameFor(index),
-            // Set before the block joins the list: the phase row changes its height,
-            // and a block measured at one height and re-pinned at another makes the
-            // whole list jump.
+            // Before joining the list: the rows change its height and a re-pin makes the list jump.
             PhaseControlShown = project.ResolveDspPhaseControl(),
             FirControlShown = project.ResolveDspFirFilters(),
             ProcessorSampleRateHz = ProcessorSampleRateHz
         };
 
-        // The block header and curve checkboxes carry the channel's plot colour,
-        // so a curve is traceable to its block at a glance.
         OxyColor color = ChannelColors[index];
         control.SetAccentColor(Color.FromArgb(color.R, color.G, color.B));
 
-        // Register the block's per-field tooltips at creation, not once in the
-        // constructor: blocks added later (a loaded project with more channels, the
-        // Add-channel button) are created here too and would otherwise show none.
+        // Per block, not in the constructor: blocks added later need tooltips too.
         control.ApplyTooltips(toolTip);
 
         var channel = new VirtualCrossoverChannel(ChannelNameFor(index))
         {
-            // Read on demand rather than copied in: the user can change the
-            // processor at any time, and a copied rate is the one that goes stale.
+            // Read on demand: the processor can change at any time.
             ProcessorSampleRateProvider = () => ProcessorSampleRateHz
         };
         channelControls[channel] = control;
@@ -1385,10 +1049,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return channel;
     }
 
-    // Moves one block a place up or down the list. The channel OBJECT moves, so
-    // its resolved measurements — tens of megabytes of impulse response — come
-    // along untouched; what is rewritten is everything derived from the position:
-    // the letter, the accent colour, and the order of the project's pairs.
+    // The channel object moves with its resolved IRs; only position-derived letter, colour and pair order are rewritten.
     private void MoveChannel(VirtualCrossoverChannel channel, int delta)
     {
         int at = channels.IndexOf(channel);
@@ -1405,19 +1066,9 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    /// <summary>
-    /// Rewrites everything the block list's ORDER decides. <paramref name="order"/>
-    /// is a permutation of the current positions — <c>order[newIndex]</c> is where
-    /// that block sits now.
-    /// </summary>
-    /// <remarks>
-    /// The project's pair list is permuted BY THE SAME INDICES rather than rebuilt
-    /// from the channels' own pairs, because the two are only bound to each other
-    /// once a project has been applied: a panel that has just been constructed
-    /// holds three default pairs on one side and three unrelated ones on the
-    /// other, and rebuilding there would quietly throw the project's away. The
-    /// pair list is the whole of the persisted order — the file stores no letter.
-    /// </remarks>
+    /// <summary><c>order[newIndex]</c> is the block's current position.</summary>
+    /// <remarks>The project's pairs are permuted by the same indices, not rebuilt from the channels: they are bound
+    /// only once a project is applied. The pair list is the whole persisted order.</remarks>
     private void ApplyChannelOrder(IReadOnlyList<int> order)
     {
         List<VirtualCrossoverChannel> reordered =
@@ -1448,23 +1099,14 @@ public partial class VirtualCrossoverPanel : UserControl
         UpdateChannelButtons();
     }
 
-    // The control bound to a runtime channel. Only the WinForms binding methods
-    // look it up; the algorithmic paths read the model directly.
     private VirtualCrossoverChannelControl ControlFor(VirtualCrossoverChannel channel) =>
         channelControls[channel];
 
-    // The project runs at ONE sample rate — a measurement that disagrees is rejected on
-    // load — so the first resolved side answers for the whole project. Both physical
-    // sides are read because the side currently on screen may be the empty one. A project
-    // with no source yet has no rate of its own, and the blocks keep their default.
+    // One rate per project (disagreeing measurements are rejected), so the first resolved side answers.
+    // Both physical sides are read: the shown side may be empty.
     private double ProjectSampleRateHz => MeasuredSampleRateHz ?? DefaultSampleRateHz;
 
-    /// <summary>
-    /// The rate the project's measurements were actually taken at, or null while it
-    /// has none. Kept apart from <see cref="ProjectSampleRateHz"/>, which substitutes
-    /// a default: anything TELLING the user what the project is measured at has to be
-    /// able to say "nothing yet" instead of naming a rate no measurement has.
-    /// </summary>
+    /// <summary>Null while the project has no measurement, so a read-out can say "nothing yet".</summary>
     private int? MeasuredSampleRateHz
     {
         get
@@ -1488,50 +1130,25 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    /// <summary>
-    /// The rate the panel assumes until the project resolves its first source and
-    /// can report a real one — for the PEQ export and anything else that needs a
-    /// rate before a measurement exists.
-    /// </summary>
     private const double DefaultSampleRateHz = 48_000;
 
-    /// <summary>
-    /// The processor the project is designed for. A named model always answers from
-    /// the catalog, so a corrected preset corrects every project naming it; a Custom
-    /// profile without a stored rate follows the measurements, which is what a project
-    /// did before the processor became selectable.
-    /// </summary>
+    /// <summary>A named model answers from the catalog; Custom without a stored rate follows the measurements.</summary>
     private DspProcessorProfile ProcessorProfile =>
         project.ResolveDspProcessor((int)Math.Round(ProjectSampleRateHz));
 
-    /// <summary>
-    /// The rate every simulated filter in this project is designed at — NOT the rate
-    /// the channels were measured at (see <see cref="PreparedDspResponse"/>). Read
-    /// wherever a chain is realized, so switching the processor takes effect
-    /// everywhere at once.
-    /// </summary>
+    /// <summary>The rate simulated filters are designed at, NOT the measurement rate (see <see cref="PreparedDspResponse"/>).</summary>
     private int ProcessorSampleRateHz => ProcessorProfile.SampleRateHz;
 
-    /// <summary>
-    /// The per-channel delay ceiling of the processor being designed for: a catalog
-    /// entry that states its manual's figure answers with it, everything else with
-    /// the engine's long-standing default. Read wherever an automatic proposal
-    /// judges whether it can be dialed in; the MANUAL delay fields deliberately
-    /// keep their wider range, since the Virtual DSP may model any hardware.
-    /// </summary>
+    /// <summary>Ceiling for automatic delay proposals; manual delay fields keep a wider range on purpose.</summary>
     private double ProcessorMaxDelayMs => ProcessorProfile.MaxDelayMs;
 
     private bool ProcessorRateFollowsMeasurements =>
         project.DspProcessorRateFollowsMeasurements;
 
-    // Names the device the project is designed for. Its processing rate is what every
-    // simulated filter is built at, so a change re-runs the whole tool: the coordinator
-    // keys its cache on that rate, and RedrawAll re-processes every channel through it.
+    // The processing rate keys the coordinator cache, so a change re-runs every channel.
     private void OpenDspProcessorDialog()
     {
-        // The dialog is told what the project REALLY has, zero included: it reports the
-        // band the simulation can speak for, and a project with no measurement must not
-        // be shown a rate it does not hold.
+        // The dialog gets the real measured rate, zero included, never a default.
         using var dialog = new DspProcessorDialog(
             ProcessorProfile,
             ProcessorRateFollowsMeasurements,
@@ -1546,9 +1163,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The notes change nothing the simulation computes, so they are saved on
-        // their own: edited notes with the processor left alone is a save, never a
-        // re-run of every channel.
+        // Notes alone are a save, never a re-run.
         string? notes = dialog.Notes;
         bool notesChanged = !string.Equals(notes, project.AiNotes, StringComparison.Ordinal);
         if (notesChanged)
@@ -1558,15 +1173,9 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         DspProcessorProfile profile = dialog.Profile;
-        // The INTENT is compared, not only the numbers: "follow the measurements" and
-        // "48 kHz" describe the same simulation while the measurements are at 48 kHz,
-        // and they part company the moment those measurements are replaced — so
-        // switching between them has to be stored, not read as a no-op.
+        // Compare intent, not numbers: "follow measurements" equals 48 kHz only until they are replaced.
         bool follows = dialog.FollowsMeasurements;
-        // Confirming the dialog settles the phase question: what the box showed —
-        // the user's own tick, or the answer the catalog proposed — becomes the
-        // project's stored answer, so a later change of model cannot take a control
-        // away from a tune that is using it.
+        // Confirming stores the shown phase answer, so a later model change cannot remove a control in use.
         bool phaseControl = dialog.PhaseControl;
         bool phaseControlChanged = project.DspProcessorPhaseControl != phaseControl;
         bool firFilters = dialog.FirFilters;
@@ -1580,11 +1189,7 @@ public partial class VirtualCrossoverPanel : UserControl
         project.DspProcessorPhaseControl = phaseControl;
         project.DspProcessorFirFilters = firFilters;
         project.SetDspProcessor(profile, follows);
-        // A device with no phase control means the rotations are not part of the
-        // tune, not that they are merely off screen: left in place they would go on
-        // bending every curve with no field on screen to explain them, and the tuning
-        // sheet would go on naming a knob this device does not have. The kernels of a
-        // device with no FIR stage go the same way.
+        // A device without phase control (or FIR) drops them: left in place they would bend curves with no field on screen.
         int clearedRotations = project.ClearUnavailablePhaseRotations();
         int clearedFirFilters = project.ClearUnavailableFirFilters();
         if (clearedRotations > 0 || clearedFirFilters > 0)
@@ -1634,12 +1239,10 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Channel names run A, B, C… by index; shared with the tuning sheets.
     private static string ChannelNameFor(int index) =>
         VirtualCrossoverSheet.ChannelName(index);
 
-    // Grows or shrinks the block list to the requested count (clamped to the
-    // valid range) without touching the project — the callers own persistence.
+    // Does not touch the project; callers own persistence.
     private void SetChannelCount(int count)
     {
         count = Math.Clamp(count, MinChannelCount, MaxChannelCount);
@@ -1647,10 +1250,7 @@ public partial class VirtualCrossoverPanel : UserControl
         while (channels.Count > count)
         {
             VirtualCrossoverChannel removed = channels[^1];
-            // Invalidate its slots BEFORE detaching the control: any source load
-            // still reading a file for this channel captured a revision that
-            // Clear() now supersedes, so it refuses to write back or touch the
-            // control we are about to dispose (a KeyNotFoundException otherwise).
+            // Invalidate BEFORE detaching: a pending source load then refuses to write back into the disposed control.
             removed.Invalidate();
             channels.RemoveAt(channels.Count - 1);
             VirtualCrossoverChannelControl control = ControlFor(removed);
@@ -1673,17 +1273,12 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         buttonAddChannel.Enabled = channels.Count < MaxChannelCount;
         buttonRemoveChannel.Enabled = channels.Count > MinChannelCount;
-        // The move arrows are positional: the top block cannot rise and the
-        // bottom one cannot fall. Updated here rather than at each move, so a
-        // list that grew, shrank or arrived with a project is right too.
         for (int i = 0; i < channels.Count; i++)
         {
             ControlFor(channels[i]).SetMoveAvailability(i > 0, i < channels.Count - 1);
         }
     }
 
-    // Appends a channel pair: a fresh block and a matching empty project entry,
-    // so the new channel simply has no sources until the user picks them.
     private void AddChannel()
     {
         if (channels.Count >= MaxChannelCount)
@@ -1694,7 +1289,6 @@ public partial class VirtualCrossoverPanel : UserControl
         var pair = new VirtualCrossoverChannelPairSettings();
         project.Pairs.Add(pair);
         SetChannelCount(channels.Count + 1);
-        // Bind the new block to its pair the same way ApplyProjectAsync does.
         VirtualCrossoverChannel added = channels[^1];
         added.Pair = pair;
         added.ActiveRight = project.ActiveSideRight;
@@ -1704,8 +1298,6 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // Drops the last channel pair and its project entry. Its resolved
-    // measurements go with the disposed block; the remaining pairs are untouched.
     private void RemoveChannel()
     {
         if (channels.Count <= MinChannelCount)
@@ -1724,36 +1316,11 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    /// <summary>
-    /// Puts the panel back to what it shows on a machine that has never used it:
-    /// the default three empty blocks, every chain, zone and curve toggle at its
-    /// default, and the shared settings — target level, smoothing, gate, view,
-    /// scene offset — with them.
-    /// </summary>
-    /// <remarks>
-    /// One project object carries all of that, so the reset is the ordinary bind of
-    /// a fresh one — the very path the tool takes on first run. Doing it any other
-    /// way would mean a second definition of "default", and the two would drift.
-    /// <para>
-    /// Two things deliberately survive it, because neither belongs to the tune: the
-    /// microphone calibration selected in the panel (a property of the rig, and the
-    /// bind keeps it exactly as a session naming none would) and the shared EQ
-    /// target CURVE, which the EQ Wizard owns and other tools read. The target
-    /// LEVEL is the project's own and does reset.
-    /// </para>
-    /// <para>
-    /// Asked before it runs, and the question spells the loss out. The autosave is
-    /// copied aside first (see
-    /// <see cref="VirtualCrossoverProjectFile.BackupBeforeReset"/>), so the answer
-    /// to a misclick is Load session… on that copy — but the copy is the tool's own
-    /// one-deep safety net, not an archive: the NEXT reset overwrites it, which is
-    /// why the question still points at Save session… for a tune worth keeping.
-    /// </para>
-    /// </remarks>
+    /// <summary>Resets to first-run defaults by binding a fresh project (one definition of "default").</summary>
+    /// <remarks>The selected calibration and the shared target curve survive; see docs/tech/virtual-dsp-panel.md#reset.</remarks>
     private async Task ResetChannelsAsync()
     {
-        // The load has to have finished, or the reset binds a project the pending
-        // one is about to replace — the same wait the session import takes.
+        // Wait for the load, or the reset binds a project the pending one replaces.
         await storedProjectLoad;
         if (IsDisposed)
         {
@@ -1786,12 +1353,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The project in MEMORY, which is what the user is looking at. The autosave
-        // behind it is up to a debounce out of date and on a never-saved session
-        // does not exist at all, so copying the FILE would promise the session on
-        // screen and hand back the one before the last edits — and call a missing
-        // file "nothing to lose" with a whole tune standing in memory. Taken AFTER
-        // the question, because a cancelled reset must not write anything.
+        // Back up the project in memory (the autosave lags a debounce), and only after the question.
         (_, string? backupError) = project.SaveResetBackup();
         if (backupError != null && MessageBox.Show(
                 FindForm(),
@@ -1808,14 +1370,11 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         await ApplyProjectAsync(new VirtualCrossoverProjectFile(), imported: false);
-        // The bind alone leaves the reset in memory; the autosave is what makes it
-        // the state the tool opens on, exactly as an imported session does.
+        // The autosave makes the reset the state the tool opens on.
         ScheduleSave();
     }
 
-    // Folding a block only changes how much of it the list shows: the flow layout
-    // reflows the blocks below it on its own, and no curve, sum or metric depends on
-    // it — so this persists the state and stops there, no recompute, no redraw.
+    // Layout only: persist, no recompute or redraw.
     private void OnChannelCollapsedChanged(VirtualCrossoverChannel channel)
     {
         if (suppressProjectEvents)
@@ -1834,18 +1393,10 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The zone belongs to the PAIR and no side routing depends on it, so it
-        // is stored BEFORE the mono branch below. That branch can re-apply the
-        // pair's settings to the control, which would otherwise paint the old
-        // zone back over the selection the user just made — and the two arrive
-        // together every time, because picking Center forces Mono on.
+        // Zone belongs to the pair: store before the mono branch, which may repaint the old zone (Center forces Mono).
         channel.Pair.Zone = ControlFor(channel).SelectedZone;
 
-        // Flipping Mono while the RIGHT side is shown swaps which settings
-        // object the control edits (a mono pair always answers with the left
-        // side), so the values just read from the control belong to the OLD
-        // binding and must not be written through the new one — rebind the
-        // control instead.
+        // A mono pair answers with the left side, so values read under the old binding must not be written through the new one.
         bool wasMono = channel.Pair.Mono;
         bool monoNow = ControlFor(channel).MonoCheckBox.Checked;
         if (wasMono != monoNow && channel.ActiveRight)
@@ -1870,17 +1421,12 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             if (monoNow)
             {
-                // The right slot becomes unreachable behind the mono routing;
-                // dropping its runtime now means nothing stale can hide there.
-                // The right SETTINGS survive, so unchecking restores the side
-                // through a normal re-resolve below.
+                // Drop the unreachable right runtime; the right settings survive for unchecking.
                 channel.PhysicalSideState(true).Clear();
             }
             else
             {
-                // Back to stereo: the right side re-resolves from its persisted
-                // source reference through the usual compatibility validation
-                // instead of resurfacing whatever cache the slot last held.
+                // Re-resolve through validation rather than resurfacing the slot's old cache.
                 ReresolveRightSide(channel);
             }
 
@@ -1891,16 +1437,14 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // Fire-and-forget with a guard, like LoadProjectSafely: called from a
-    // synchronous settings-changed handler.
+    // Guarded async void: called from a synchronous handler.
     private async void ReresolveRightSide(VirtualCrossoverChannel channel)
     {
         try
         {
             channel.PhysicalSideState(true).Clear();
             await ResolveSourceAsync(channel, rightSide: true, showErrors: false);
-            // The channel may have been removed (or the panel disposed) while the
-            // re-resolve read from disk; ControlFor would then miss the entry.
+            // The channel or panel may be gone after the disk read.
             if (IsDisposed || !channelControls.ContainsKey(channel))
             {
                 return;
@@ -1921,44 +1465,22 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         acousticPlot.ConfigureForView(CurrentAcousticView());
         UpdateViewDependentControls();
-        // Before the write-back below: the toggle has to be carrying the new
-        // view's answer, or OnViewChanged would copy the old view's into it.
+        // Before the write-back, or OnViewChanged copies the old view's answer into the toggle.
         ApplySumToggleForView();
         OnViewChanged();
     }
 
-    // Each curve toggle is muted on the views that cannot draw that curve: the
-    // Sum exists on the magnitude, phase, group-delay and step plots but not
-    // among the impulse traces, the sum loss and the target are magnitude-only (a target is a dB
-    // shape — the same rule OverlayTargets.SupportsMode applies to overlay
-    // targets). Fractional-octave smoothing shapes the frequency-domain curves,
-    // so it is dead in the impulse and step views. The Target... button stays live
-    // everywhere: it switches to the view its dialog can preview on rather than
-    // sitting there greyed.
+    // Mutes toggles on views that cannot draw the curve; see docs/tech/virtual-dsp-panel.md#view-dependent-controls.
     private void UpdateViewDependentControls()
     {
         comboBoxSmoothing.Enabled = !radioViewImpulse.Checked && !radioViewStep.Checked;
-        // These two wear a fixed plot colour, so the shared helper — which
-        // memorizes the colour it mutes — is safe for them.
         Ui.UiStyle.SetTextEnabledLook(
             checkBoxShowSum, !radioViewImpulse.Checked, interactive: true);
-        // The loss selector picks the window of the read-out column as well as of
-        // the curve, so unlike the old curve toggle it stays live in the phase and
-        // impulse views, where the column is still quoted. No loss is quoted where
-        // the view spans more than one group, and there it is a switch with
-        // nothing behind it.
-        // The intent, not the control's Enabled read back: while a session loads
-        // the whole panel is disabled, a child's Enabled reads false through its
-        // parent, and a label muted on that reading stays muted after the panel
-        // comes back — nothing calls this again for it.
+        // Uses intent, not Enabled: during a load Enabled reads false through the parent and the label would stay muted.
         bool lossQuoted =
             VirtualCrossoverGroupViews.LossChainZone(SelectedGroupView) != null;
         comboBoxSumLoss.Enabled = lossQuoted;
         Ui.UiStyle.SetTextEnabledLook(labelSumLoss, lossQuoted);
-        // Groups always draws its per-zone sums — they ARE its curves — so the Sum
-        // toggle has nothing to turn off there either. And the view has no phase,
-        // group-delay or impulse form, so those radios are muted while it is
-        // selected rather than silently falling back to per-driver curves.
         bool groupSums = VirtualCrossoverGroupViews.DrawsGroupSums(SelectedGroupView);
         if (groupSums)
         {
@@ -1969,22 +1491,13 @@ public partial class VirtualCrossoverPanel : UserControl
         Ui.UiStyle.SetTextEnabledLook(radioViewImpulse, !groupSums, interactive: true);
         Ui.UiStyle.SetTextEnabledLook(radioViewGroupDelay, !groupSums, interactive: true);
         Ui.UiStyle.SetTextEnabledLook(radioViewStep, !groupSums, interactive: true);
-        // Magnitude-only for the same reason the loss is, and it also carries the
-        // coverage answer, so it owns its own refresh.
         RefreshHybridAvailability();
         UpdateTargetToggleLook();
-        // DarkNumericUpDown paints its own disabled state in the palette's muted
-        // text, so this one can simply be disabled.
         numericTargetLevel.Enabled = radioViewMagnitude.Checked;
     }
 
-    // A CheckBox WinForms has disabled paints its text in a system grey that
-    // reads as near-black on this theme, so the toggle is muted the way
-    // UiStyle.SetTextEnabledLook mutes one — kept enabled, coloured by hand,
-    // with AutoCheck and TabStop carrying the disabling. Not through that helper
-    // itself: it memorizes the colour it muted, and this toggle is recoloured
-    // whenever the shared target is, so what came back could be a stale target's
-    // colour.
+    // Disabled CheckBox text is near-black on this theme, so mute by hand; not via SetTextEnabledLook, which
+    // memorizes a colour that follows the shared target.
     private void UpdateTargetToggleLook()
     {
         bool magnitude = radioViewMagnitude.Checked;
@@ -1994,9 +1507,7 @@ public partial class VirtualCrossoverPanel : UserControl
         checkBoxShowTarget.TabStop = magnitude;
     }
 
-    // The Sum toggle carries one answer per view (see VirtualCrossoverProjectFile).
-    // The impulse view has no sum trace, so it writes nothing and shows the
-    // magnitude answer while its toggle is muted.
+    // One answer per view; the impulse view has no sum, writes nothing and shows the magnitude answer.
     private void ApplySumToggleForView()
     {
         bool suppressed = suppressProjectEvents;
@@ -2045,9 +1556,7 @@ public partial class VirtualCrossoverPanel : UserControl
         project.ShowHybridCurves = checkBoxHybrid.Checked;
         project.ShowTargetCurve = checkBoxShowTarget.Checked;
         project.TargetLevelDb = (double)numericTargetLevel.Value;
-        // The phase flag is written beside the group-delay one, the impulse flag
-        // beside the step one: a build that knows only the older flag opens the
-        // project on the nearest view it has.
+        // Newer view flags are written beside older ones so an older build opens the nearest view.
         project.ShowPhaseView = radioViewPhase.Checked || radioViewGroupDelay.Checked;
         project.ShowImpulseView = radioViewImpulse.Checked || radioViewStep.Checked;
         project.ShowGroupDelayView = radioViewGroupDelay.Checked;
@@ -2060,8 +1569,6 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // ------------------------------------------------------- settings mapping
-
     private void ApplySettingsToControl(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
@@ -2072,8 +1579,7 @@ public partial class VirtualCrossoverPanel : UserControl
             control.DelayInput.Value = control.DelayInput.ClampValue(settings.DelayMs);
             control.InvertCheckBox.Checked = settings.InvertPolarity;
             control.CrossoverKindComboBox.SelectedItem = settings.CrossoverKind;
-            // Family first: selecting it repopulates the slope list the slope
-            // selection then lands in.
+            // Family first: it repopulates the slope list.
             control.HighPassFamilyComboBox.SelectedItem = settings.HighPassEdge.Family;
             control.HighPassFrequencyInput.Value = control.HighPassFrequencyInput
                 .ClampValue(settings.HighPassEdge.FrequencyHz);
@@ -2088,8 +1594,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 .ClampValue(settings.LowPassEdge.RippleDb);
             control.PhaseInput.Value = control.PhaseInput
                 .ClampValue(settings.PhaseRotationDegrees);
-            // The block-wide settings come off the PAIR, so the block keeps
-            // showing the same answer whichever side is on screen.
+            // Block-wide settings come off the pair, so they read the same on either side.
             control.ShowRawCheckBox.Checked = channel.Pair.ShowRawCurve;
             control.ShowProcessedCheckBox.Checked = channel.Pair.ShowProcessedCurve;
             control.BypassCheckBox.Checked = channel.Pair.Bypass;
@@ -2104,23 +1609,13 @@ public partial class VirtualCrossoverPanel : UserControl
         UpdateFirReadout(channel);
     }
 
-    // Shows or hides the processor-dependent rows (phase, FIR) on every block, and
-    // hands each the rate its all-pass corner is solved at and its kernel is timed
-    // at. All three answers come from the processor and the project, so this runs
-    // wherever either can have moved — including the redraw, which is what catches a
-    // project whose rate FOLLOWS measurements that were replaced. Nothing happens
-    // when nothing changed: the loop below is three comparisons per block, and only
-    // a real difference reaches the flow list, which would otherwise be asked for a
-    // layout pass on every knob turn.
+    // Also runs on redraw (catches a rate that follows replaced measurements); only a real change reaches the layout.
     private void RefreshProcessorRowAvailability()
     {
         bool phaseShown = project.ResolveDspPhaseControl();
         bool firShown = project.ResolveDspFirFilters();
         int rate = ProcessorSampleRateHz;
-        // Every side learns the rate its FIR stage runs at, both physical sides of every
-        // pair: a FIR crossover's corners are read through it (see
-        // VirtualCrossoverChannelSettings.EffectiveCrossover). Before the early return,
-        // so a pair added or loaded since the last change is stamped too.
+        // Before the early return, so newly added or loaded pairs get the FIR rate too (EffectiveCrossover reads it).
         foreach (VirtualCrossoverChannel channel in channels)
         {
             channel.Pair.Left.FirRunSampleRateHz = rate;
@@ -2166,8 +1661,6 @@ public partial class VirtualCrossoverPanel : UserControl
         channel.Pair.Mono = control.MonoCheckBox.Checked;
     }
 
-    // ---------------------------------------------------------------- sources
-
     private void ShowSourceMenu(VirtualCrossoverChannel channel)
     {
         var menu = new ContextMenuStrip();
@@ -2182,10 +1675,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         menu.Items.Add(new ToolStripSeparator());
 
-        // The jump out of the tune: this side's measurement, inspected with the full
-        // analysis toolset. Enabled only when the reference actually resolves — a
-        // stored path that no longer exists (and no surviving history entry) would
-        // otherwise offer a jump to nowhere.
+        // Enabled only when the reference still resolves.
         ToolStripMenuItem openItem = new("Open in analyzers");
         openItem.ToolTipText =
             "Load this side's measurement into the analysis modes\r\n" +
@@ -2196,8 +1686,7 @@ public partial class VirtualCrossoverPanel : UserControl
             OpenSourceInAnalyzersRequested != null && (entryId != null || filePath != null);
         openItem.Click += (_, _) =>
         {
-            // Re-resolved at click time: the file can vanish (or the history entry
-            // be deleted) while the menu is open.
+            // Re-resolved at click time: the file can vanish while the menu is open.
             (Guid? id, string? path) = ResolveAnalyzerReference(channel.Settings);
             if (id != null || path != null)
             {
@@ -2216,10 +1705,7 @@ public partial class VirtualCrossoverPanel : UserControl
         DropDownMenu.ShowUnder(ControlFor(channel).SourceButton, menu);
     }
 
-    // The source reference in openable form, resolved the same way the silent
-    // restore resolves it (LoadSnapshotFromReferenceAsync): the history entry
-    // first — it survives file moves — else the file path located through the
-    // session-folder search. (null, null) when nothing resolves.
+    // History entry first (survives file moves), else the located file path; (null, null) when nothing resolves.
     private (Guid? HistoryEntryId, string? FilePath) ResolveAnalyzerReference(
         VirtualCrossoverChannelSettings settings)
     {
@@ -2259,13 +1745,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private async Task ChooseSourceFileAsync(VirtualCrossoverChannel channel)
     {
-        // The CONCRETE slot and settings are captured NOW: the user can flip
-        // the L/R selector, toggle Mono (which reroutes SideState) — or
-        // import a whole different session — while the file loads below, and
-        // the measurement must land in the slot whose Source button was
-        // clicked, or nowhere at all. The revision (taken when the load
-        // starts) guards the landing: any Clear() of the slot or a newer
-        // pick into it refuses this one.
+        // Capture the concrete slot, settings and revision NOW: side, Mono or a session import can change during the load.
+        // See docs/tech/virtual-dsp-panel.md#source-loading.
         bool rightSide = channel.ActiveRight;
         VirtualCrossoverChannelState targetState = channel.SideState(rightSide);
         VirtualCrossoverChannelSettings targetSettings = channel.SideSettings(rightSide);
@@ -2318,9 +1799,6 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private async Task SelectHistoryEntryAsync(VirtualCrossoverChannel channel, Guid entryId)
     {
-        // Same slot/settings/revision capture as ChooseSourceFileAsync: the
-        // snapshot load is asynchronous and the L/R selector, the Mono
-        // checkbox and session import all stay live meanwhile.
         bool rightSide = channel.ActiveRight;
         VirtualCrossoverChannelState targetState = channel.SideState(rightSide);
         VirtualCrossoverChannelSettings targetSettings = channel.SideSettings(rightSide);
@@ -2360,28 +1838,14 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Whether a source assignment may prompt the user to resolve a sample-rate
-    // conflict (an interactive pick) or must decline silently (a background
-    // restore cannot ask).
     private enum SourceConflictPolicy
     {
         Prompt,
         RejectSilently
     }
 
-    // The shared source-assignment core for the interactive pickers and the
-    // silent restore alike: the revision guard, the loopback-transfer-IR
-    // requirement, the sample-rate conflict handling and the runtime-state
-    // write. The policy is the only difference — an interactive pick may prompt
-    // to clear mismatched sides (and reports a missing transfer IR), while a
-    // silent reload cannot ask, so it just leaves the side unresolved. Returns
-    // true when the measurement landed; the caller owns the persisted source
-    // reference and the UI refresh, which differ between the two paths.
-    //
-    // targetState is the caller's PRE-AWAIT capture — never re-derived here,
-    // where a mid-load Mono toggle would reroute it — and the revision refuses a
-    // landing the slot has moved past (cleared by a project import or mono
-    // toggle, or superseded by a newer pick).
+    // Shared by interactive pickers and silent restore; only the conflict policy differs.
+    // targetState is the caller's pre-await capture; the revision refuses a landing the slot has moved past.
     private bool TryAssignSource(
         VirtualCrossoverChannelState targetState,
         int sourceRevision,
@@ -2409,10 +1873,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return false;
         }
 
-        // A project is locked to one sample rate: mixed rates are refused outright
-        // rather than partially supported, because the analysis reads a single
-        // shared rate. The compatibility decision scans EVERY resolved side of
-        // every pair — the virtual sums of both sides read that one rate.
+        // One sample rate per project: mixed rates are refused, checked against every resolved side.
         List<(VirtualCrossoverChannel Channel, bool RightSide, VirtualCrossoverChannelState State)> others =
             ResolvedSidesExcept(targetState).ToList();
         VirtualCrossoverSourceRules.Decision decision = VirtualCrossoverSourceRules.Evaluate(
@@ -2421,9 +1882,6 @@ public partial class VirtualCrossoverPanel : UserControl
             otherResolvedSampleRates: others.Select(item => item.State.SampleRate));
         if (decision == VirtualCrossoverSourceRules.Decision.RejectSampleRateMismatch)
         {
-            // A silent reload cannot prompt, so an incompatible source stays
-            // unresolved (the button shows the warning glyph); an interactive pick
-            // explains why it was refused and how to switch the project's rate.
             if (policy == SourceConflictPolicy.Prompt)
             {
                 int projectSampleRate = others[0].State.SampleRate;
@@ -2442,17 +1900,13 @@ public partial class VirtualCrossoverPanel : UserControl
         return true;
     }
 
-    // The persisted source reference and UI refresh that follow an interactive
-    // pick landing in a slot. A silent restore skips both: the reference is
-    // already stored and BindProjectAsync refreshes once at the end.
+    // A silent restore skips this: the reference is stored and the bind refreshes at the end.
     private void OnSourceAssigned(
         VirtualCrossoverChannel channel,
         VirtualCrossoverChannelSettings settings,
         VirtualCrossoverSourceReference reference)
     {
         reference.ApplyTo(settings);
-        // A measurement can bring an array with it, and for a project that has never
-        // chosen a method this is the moment it does.
         SettleSpatialAverageMode();
         UpdateSourceButton(channel);
         UpdateSideRadioTexts();
@@ -2460,8 +1914,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // Every resolved (channel, side) except the given side state; mono pairs
-    // expose only their single left-side slot.
+    // Mono pairs expose only their left slot.
     private IEnumerable<(VirtualCrossoverChannel Channel, bool RightSide, VirtualCrossoverChannelState State)>
         ResolvedSidesExcept(VirtualCrossoverChannelState? except)
     {
@@ -2502,41 +1955,27 @@ public partial class VirtualCrossoverPanel : UserControl
         settings.DisplayName = string.Empty;
         settings.SourceFilePath = null;
         settings.HistoryEntryId = null;
-        // The spatial average goes with it. A slot with no measurement describes no
-        // driver, so the capture of that driver has nothing left to refine — and
-        // Clear() has already dropped the loaded document, so leaving the reference
-        // behind would only make the button warn about a file that is perfectly fine.
+        // Without a measurement the spatial average refines nothing; a kept reference would only warn.
         settings.SpatialAveragePath = null;
         settings.SpatialAverageRelativePath = null;
         UpdateSourceButton(channel);
         UpdateSideRadioTexts();
     }
 
-    // Re-resolves one side's persisted source reference: the history entry
-    // first (it survives file moves), then the file path, then that file beside
-    // an imported session. A source that no longer exists degrades to an
-    // unresolved side instead of failing the project load.
+    // History entry, then file path, then beside an imported session; a missing source leaves the side unresolved.
     private async Task ResolveSourceAsync(
         VirtualCrossoverChannel channel, bool rightSide, bool showErrors)
     {
         VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
         VirtualCrossoverChannelState state = channel.SideState(rightSide);
-        // The side's OTHER persisted reference, resolved on the same pass and ahead
-        // of the measurement's early exit: a channel can carry a spatial average
-        // while its source is still missing, and that attachment has to come back
-        // either way. Synchronous — a capture is under a megabyte of curve, not an
-        // impulse response.
+        // Before the measurement's early exit: an average can come back while the source is still missing.
         ResolveSpatialAverage(settings, state);
         if (!settings.HasSource)
         {
             return;
         }
 
-        // The same in-flight guard as the interactive pickers: rapid mono
-        // off→on→off leaves several of these resolves airborne at once, and
-        // only the latest one — or none, if the slot was cleared after it
-        // started — may land. Snapshot loading below is the await that lets
-        // the UI act meanwhile.
+        // Rapid mono toggles leave several resolves airborne; only the latest (uncleared) one may land.
         int revision = state.BeginSourceLoad();
         pendingSourceLoads++;
         RefreshAutoActionsEnabled();
@@ -2544,24 +1983,13 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             (MeasurementHistorySnapshot? snapshot, string? relocatedPath) =
                 await LoadSnapshotFromReferenceAsync(settings);
-            // The same assignment core as the interactive pickers (the file
-            // behind a stored path may have been replaced since the project was
-            // saved), but under RejectSilently: an incompatible source — no
-            // transfer IR, or a rate that clashes with the other sides — stays
-            // unresolved (the button shows the warning glyph) instead of
-            // prompting, because a silent reload cannot ask.
             if (snapshot != null &&
                 TryAssignSource(
                     state, revision, snapshot, SourceConflictPolicy.RejectSilently) &&
                 relocatedPath != null)
             {
-                // Only a measurement that LANDED may repoint the channel, the same
-                // rule the interactive pickers follow (see OnSourceAssigned). A file
-                // found under the search folders can still be refused — no transfer
-                // IR, or the wrong sample rate — and pinning it anyway would bury the
-                // reference the search itself needs: the stored path always wins once
-                // it exists, so the next relink would reopen the refused file instead
-                // of looking in the folder the user just pointed at.
+                // Pin the relocated path only if the measurement landed: a stored path always wins, so pinning a refused file
+                // would stop the next relink from searching the user's folder.
                 settings.SourceFilePath = relocatedPath;
             }
         }
@@ -2576,15 +2004,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Loads the measurement behind a persisted source reference: the history
-    // entry first (it survives file moves), then the file path — and, when that
-    // path no longer exists, the same file beside the session file the project
-    // was imported from. A null snapshot means nothing resolved and the side stays
-    // unresolved instead of failing the load. RelocatedPath is where the file was
-    // actually read from when that differs from the stored path — the caller pins
-    // it only if the measurement is accepted, because this project becomes the
-    // internal autosave right after the import and that copy has no session file
-    // beside it to search from a second time.
+    // RelocatedPath is pinned by the caller only on acceptance: the autosave has no session file beside it to search again.
     private async Task<(MeasurementHistorySnapshot? Snapshot, string? RelocatedPath)>
         LoadSnapshotFromReferenceAsync(VirtualCrossoverChannelSettings settings)
     {
@@ -2611,10 +2031,6 @@ public partial class VirtualCrossoverPanel : UserControl
         return (null, null);
     }
 
-    // The stored path, then the folder the session was imported from, then the
-    // folder the user pointed at when relinking. The first call already answers
-    // for a path that still exists, so the second only ever runs when nothing
-    // resolves without the user's help.
     private string? LocateSource(VirtualCrossoverChannelSettings settings) =>
         VirtualCrossoverSourceLocator.Locate(
             settings.SourceFilePath,
@@ -2628,9 +2044,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private void UpdateSourceButton(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelControl control = ControlFor(channel);
-        // The spatial-average status rides along: every path that refreshes a
-        // channel's source — a pick, a side flip, a project load — is also a path
-        // that can change whether this channel has an average behind it.
+        // Every path refreshing a source can change whether the channel has an average.
         RefreshSpatialAverageStatus(channel);
         RefreshHybridAvailability();
         string? name = channel.Settings.DisplayName;
@@ -2638,8 +2052,7 @@ public partial class VirtualCrossoverPanel : UserControl
         control.SourceButton.Text = string.IsNullOrWhiteSpace(name)
             ? "Source..."
             : resolved ? name : $"⚠ {name}";
-        // The as-measured driver polarity, read from the raw transfer IR (the
-        // Invert switch is a separate, virtual stage on top of it).
+        // As measured, from the raw transfer IR; Invert is a separate virtual stage.
         control.SetMeasuredPolarity(
             channel.TransferImpulseResponse is { } ir
                 ? VirtualCrossoverAnalysis.EstimatePolarity(ir)
@@ -2653,11 +2066,7 @@ public partial class VirtualCrossoverPanel : UserControl
                   "Requires a loopback transfer IR.");
     }
 
-    // -------------------------------------------------------------------- PEQ
-
-    // The PEQ button's action menu. Rebuilt on every click: the enabled states
-    // follow channel state (a measurement for the wizard entries, a loaded PEQ for
-    // Clear) that changes while the panel is open.
+    // Rebuilt per click: enabled states follow channel state.
     private void ShowPeqMenu(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings peqSettings = channel.Settings;
@@ -2680,14 +2089,9 @@ public partial class VirtualCrossoverPanel : UserControl
         menu.Items.Add(saveItem);
         menu.Items.Add(new ToolStripSeparator());
 
-        // Both wizard entries need a measurement to show a curve; the choice is what
-        // the curve travels through — the DSP chain without its PEQ, or nothing.
         bool hasMeasurement =
             channel.SideState(channel.ActiveRight).TransferImpulseResponse != null;
-        // Said HERE, before the trip: a bypassed block draws its raw response on
-        // this plot, so the wizard's curve will not be the one on screen. It is
-        // still the right curve to tune a PEQ against — the chain the bank will
-        // live in — and the item names the exception rather than hiding it.
+        // A bypassed block draws raw here, so say before the trip that the wizard's curve differs.
         bool bypassed = channel.Pair.Bypass;
         var editItem = new ToolStripMenuItem(
             bypassed
@@ -2732,10 +2136,7 @@ public partial class VirtualCrossoverPanel : UserControl
         DropDownMenu.ShowUnder(ControlFor(channel).PeqMenuButton, menu);
     }
 
-    // Builds the handoff for the active side and hands it to the host. The gate
-    // pieces mirror what the magnitude view draws with: the shared template, the
-    // active side's pin, and the last redraw's window anchor so an unpinned gate
-    // opens exactly where the plot's did.
+    // The gate mirrors the magnitude view: shared template, active pin, last redraw's anchor.
     private void RequestPeqHandoff(VirtualCrossoverChannel channel, bool withChain)
     {
         if (EditPeqInWizardRequested is not { } requested)
@@ -2751,24 +2152,16 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // The handoff as the PEQ menu builds it, for the wizard or for an import
-    // that tunes without one: the ACTIVE side, the gate snapshot, the shared
-    // anchor of the current render, the target level the panel shows. Null when
-    // the channel side has no measurement to hand over.
+    // Null when the side has no measurement.
     private VirtualDspEqHandoffRequest? BuildPeqHandoffRequest(
         VirtualCrossoverChannel channel,
         bool withChain,
         (LiveCaptureDocument? Capture, double OffsetDb) spatialAverage,
-        // An import may ask for another target level; it is built INTO the
-        // request, and written to the panel only once the fit has landed.
+        // Written to the panel only once the fit has landed.
         double? targetLevelDb = null)
     {
         MagnitudeGateSnapshot snapshot = magnitudeGate;
-        // Only a render that still describes the CURRENT settings may place the
-        // window: a delay or crossover edit invalidates the coordinator and queues a
-        // new pass, and until it lands this capture belongs to the previous chain —
-        // pairing a new chain with an old anchor. Stale means no anchor, and the
-        // builder falls back to reading the channel's own front.
+        // Only a render describing the CURRENT settings may place the window; stale -> the builder reads the channel's front.
         int? renderAnchor =
             lastProcessedRender is { Channels.Count: >= 2 } render &&
             processingCoordinator.IsCurrent(render.Revision)
@@ -2790,55 +2183,27 @@ public partial class VirtualCrossoverPanel : UserControl
                 (double)numericTargetLevel.Minimum,
                 (double)numericTargetLevel.Maximum,
                 snapshot.SmoothingInverseOctaves,
-                // The channel's own under "Own (as measured)": the wizard pins what the
-                // panel RENDERED with, and a tune fitted under one correction and summed
-                // back under another would break the handoff's identity.
+                // The wizard pins what the panel rendered with, including per-channel Own calibration.
                 CalibrationFor(channel.SideState(channel.ActiveRight)),
                 CalibrationNameFor(channel.SideState(channel.ActiveRight)),
-                // The MODE too: a capture read as it was measured and one read
-                // through a named file are two different curves, and the wizard has
-                // to reproduce the one the plot drew.
                 SpatialAverageCalibrationFor(channel.SideState(channel.ActiveRight)),
                 projectGeneration,
                 spatialAverage.Capture,
                 spatialAverage.OffsetDb,
-                // Exactly the condition the plot drew this channel under: the set is
-                // being read as arrays, and this one had none to read.
                 HybridRequested &&
                     SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray &&
                     spatialAverage.Capture == null);
         }
         catch (InvalidOperationException)
         {
-            // The measurement vanished between opening the menu and choosing — a
-            // silent no-op, like a deleted history entry in the source picker.
             return null;
         }
 
         return request;
     }
 
-    /// <summary>
-    /// Freezes what the wizard's phase view needs: the OTHER drivers as this panel has
-    /// them processed right now, and the window and τ the whole set is read under.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Frozen as processed impulse responses, not as drawn curves. The wizard has a
-    /// gate of its own, and a curve gated at this panel's window could not be re-read
-    /// at another — the two sides would stop being comparable exactly when the user
-    /// went looking. The responses are already computed for the plot, so this costs
-    /// nothing but the reference.
-    /// </para>
-    /// <para>
-    /// Resolved over the set the wizard will DRAW — the edited channel plus the shown
-    /// drivers it CROSSES WITH (see
-    /// <see cref="ProcessedChannels.PhaseNeighbourhood"/>) — so a hidden driver cannot
-    /// move the windows of the visible ones. Null when the render is stale or the
-    /// channel is not in it: a placement paired with the previous chain would put the
-    /// curves somewhere the plot never had them.
-    /// </para>
-    /// </remarks>
+    /// <summary>Other drivers as processed IRs (not drawn curves, so the wizard can re-gate), plus window and τ.</summary>
+    /// <remarks>Resolved over the set the wizard draws (<see cref="ProcessedChannels.PhaseNeighbourhood"/>); null when the render is stale.</remarks>
     private EqWizardPhaseContext? CapturePhaseContext(VirtualCrossoverChannel channel)
     {
         if (lastProcessedRender is not { } render ||
@@ -2855,9 +2220,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        // Off the snapshot, not the live channel: a session imported over a loaded one
-        // rebinds channels while renders are in flight, and the rate read there comes
-        // back zero against a real response.
+        // Off the snapshot: a concurrent import rebinds channels and the live rate reads zero.
         int sampleRate = drawn[0].SampleRate;
         double referenceOffsetMs = gatePreview?.OffsetMs
             ?? ResolveGateOffsetMs(drawn, sampleRate);
@@ -2865,30 +2228,17 @@ public partial class VirtualCrossoverPanel : UserControl
         List<double> offsets = ResolvePhaseGateOffsets(drawn, referenceOffsetMs, sampleRate);
 
         return new EqWizardPhaseContext(
-            // The gate as the USER has it, detrend mode included. The curves are always
-            // rendered as Manual against the τ resolved beside it — one τ for the whole
-            // set is what keeps their relative phase honest — but the mode is the
-            // user's choice and has to arrive intact, or the wizard's gate dialog
-            // offers them a setting they never made.
+            // Curves render as Manual against one τ for the whole set, but the user's detrend mode must arrive intact.
             CreateVirtualPhaseSettings(
                 referenceOffsetMs,
                 gatePreview?.DetrendMode ?? project.PhaseDetrendMode,
                 detrendMs),
             offsets[index],
             detrendMs,
-            // Pinned here means pinned there: an absolute window the user placed by
-            // hand must not turn back into Auto on the way over.
             PinnedGateOffsetMs is not null,
-            // The responses the placements were resolved FROM travel too, so the
-            // wizard can resolve them again — with the same arithmetic, over the same
-            // set — when its own gate dialog changes a window length. Without them a
-            // shortened window there would keep placements this panel would have
-            // refused, and the two views would read the junction differently.
+            // The source responses travel too, so the wizard re-resolves placements the same way when its window changes.
             PlacementChannel.From(drawn[index]),
             sampleRate,
-            // This channel's plot colour travels with it: the wizard draws the same
-            // driver, and reading it as a different colour there is how a tuner loses
-            // track of which curve is which between two views of one system.
             drawn[index].Color,
             drawn
                 .Select((item, position) => (item, position))
@@ -2901,12 +2251,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 .ToList());
     }
 
-    /// <summary>
-    /// Lands a bank edited in the EQ Wizard back on the side it was taken from.
-    /// False — and nothing written — when that channel is no longer here (removed,
-    /// or replaced wholesale by a project import); the host tells the user and
-    /// leaves the wizard open so the tune is not lost.
-    /// </summary>
+    /// <summary>False, writing nothing, when the channel is gone (removed or replaced by an import).</summary>
     internal bool TryApplyPeqFromWizard(
         VirtualDspEqReturnToken token,
         EqualizationCurve curve,
@@ -2918,30 +2263,20 @@ public partial class VirtualCrossoverPanel : UserControl
                 token,
                 curve,
                 projectGeneration,
-                // The correction THIS channel side would be rendered through now. Under
-                // "Own (as measured)" the panel holds no single one, and comparing the
-                // token against a null would refuse every return.
+                // Per side: under Own the panel holds no single calibration, and null would refuse every return.
                 CalibrationFor(token.Channel.SideState(token.RightSide)),
-                // And how a capture on it would be read, which the curve above cannot
-                // say: the two are what decide the magnitude together.
                 SpatialAverageCalibrationFor(token.Channel.SideState(token.RightSide)),
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
                 (double)numericTargetLevel.Value,
-                // What the panel would hand over NOW, by the same DECISION the handoff
-                // recorded — so the two cannot disagree about whether this is a hybrid
-                // session, and no in-flight redraw can turn a valid return into a
-                // refusal.
+                // Same decision the handoff recorded, so an in-flight redraw cannot turn a valid return into a refusal.
                 HybridHandoffCapture(token.Channel, token.RightSide),
                 ProcessorSampleRateHz))
         {
             return false;
         }
 
-        // The level travels back with the bank: it is where the tune was fitted to
-        // hang, and the guard above has already established that this panel's own
-        // answer is still the one the wizard started from — so writing it cannot
-        // overwrite a decision made here meanwhile.
+        // The guard above proved the level is still the wizard's starting point, so writing it overwrites nothing.
         if (!((double)numericTargetLevel.Value).Equals(targetLevelDb))
         {
             numericTargetLevel.Value = numericTargetLevel.ClampValue(targetLevelDb);
@@ -2953,10 +2288,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return true;
     }
 
-    // Writes one channel's bank out through the SAME coordinator, formats and
-    // warnings the EQ Wizard exports with — the tune can now be built entirely in
-    // these two panels, so this is the door to the hardware and it must not be a
-    // second, subtly different exporter.
+    // Same coordinator and formats as the EQ Wizard: this is the door to the hardware, not a second exporter.
     private void SavePeq(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
@@ -2984,8 +2316,6 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The band the sheet states it was tuned over: this channel's own passband
-        // when it has a crossover, the full range when it does not.
         (double minHz, double maxHz) =
             VirtualDspEqHandoff.PassbandFor(settings) ?? (20.0, 20_000.0);
         EqWizardFileResult result = peqExport.Export(
@@ -2993,14 +2323,12 @@ public partial class VirtualCrossoverPanel : UserControl
                 dialog.FileName,
                 target,
                 curve,
-                // The device realizes these numbers, so they are stated for ITS rate
-                // and its Q convention — not for the rate the channel was measured at.
+                // Stated for the device's rate and Q convention, not the measurement rate.
                 ProcessorSampleRateHz,
                 $"Channel {channel.Name} ({side})",
                 minHz,
                 maxHz,
-                // No fit statistics: these bands were not necessarily fitted here,
-                // and a sheet is better with the figure absent than invented.
+                // Bands were not necessarily fitted here; no invented statistics.
                 Stats: null,
                 ProcessorProfile.QConvention));
         if (!result.Success)
@@ -3009,7 +2337,6 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Nothing to say means nothing to ask — the same rule the wizard's export follows.
     private bool ConfirmPeqExportLoss(string? warning) =>
         warning == null ||
         MessageBox.Show(
@@ -3033,15 +2360,12 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // No trailing entry, so the index always resolves to a format.
         IEqProfileFormat chosen =
             EqFormatFileDialogs.ResolveFormat(formats, dialog.FilterIndex)!;
         EqualizationCurve curve;
         try
         {
-            // An unrecognised file must not reach the channel: the assignment
-            // below replaces its bands and preamp outright, so a wrong pick in
-            // the file dialog would silently clear the channel's PEQ.
+            // An unrecognised file would silently clear the channel's PEQ below.
             if (!chosen.TryImport(File.ReadAllText(dialog.FileName), out curve))
             {
                 ShowError(
@@ -3077,13 +2401,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // -------------------------------------------------------------------- FIR
-
-    // The FIR button's action menu: design a crossover kernel in the FIR Constructor,
-    // import a kernel file (either replacing the kernel the side carries), export the
-    // kernel to a file, or clear it. Rebuilt on every click, like the PEQ menu, so
-    // Export and Clear follow the channel's state. The kernel lives in the session;
-    // the constructor and the files are its ways in and out.
+    // Rebuilt per click like the PEQ menu. The kernel lives in the session; constructor and files are its ways in and out.
     private void ShowFirMenu(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
@@ -3138,9 +2456,7 @@ public partial class VirtualCrossoverPanel : UserControl
         FirFilter kernel;
         try
         {
-            // A file that is not a kernel must not reach the channel: the assignment
-            // below replaces the kernel outright, so a wrong pick would silently
-            // drop the one that was there.
+            // Not a kernel: the assignment below would silently drop the existing one.
             kernel = FirFilterFiles.Load(dialog.FileName);
         }
         catch (Exception exception)
@@ -3152,8 +2468,7 @@ public partial class VirtualCrossoverPanel : UserControl
         VirtualCrossoverChannelSettings settings = channel.Settings;
         settings.Fir = kernel;
         settings.FirSourceName = Path.GetFileName(dialog.FileName);
-        // A file is taps and nothing more: whatever crossover the side's previous
-        // kernel was designed as, this one is not it.
+        // A file is taps only, not a designed crossover.
         settings.FirDesign = null;
         UpdateFirReadout(channel);
         ScheduleSave();
@@ -3188,8 +2503,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         try
         {
-            // At the processor's rate: that is the rate the taps mean in this
-            // session, whatever the file they were imported from said.
+            // Taps mean the processor's rate in this session.
             FirFilterFiles.Save(
                 dialog.FileName,
                 kernel,
@@ -3214,15 +2528,12 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // The block's FIR row reads the ACTIVE side's kernel, the file it came from and
-    // the crossover it was designed as.
     private void UpdateFirReadout(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
         ControlFor(channel).SetFir(settings.Fir, settings.FirSourceName, settings.FirDesign);
     }
 
-    // Sends the ACTIVE side's FIR stage to the constructor.
     private void RequestFirHandoff(VirtualCrossoverChannel channel)
     {
         if (EditFirInConstructorRequested is not { } requested)
@@ -3234,12 +2545,7 @@ public partial class VirtualCrossoverPanel : UserControl
             channel, channel.ActiveRight, projectGeneration, ProcessorSampleRateHz));
     }
 
-    /// <summary>
-    /// Lands a kernel designed in the FIR Constructor on the side it was taken from.
-    /// False — and nothing written — when that side is no longer the one the session
-    /// opened on (see <see cref="FirConstructorReturnToken"/>); the host says so and
-    /// leaves the constructor open, so the design is not lost.
-    /// </summary>
+    /// <summary>False, writing nothing, when the side is no longer the one the session opened on.</summary>
     internal bool TryApplyFirFromConstructor(
         FirConstructorReturnToken token,
         FirFilter kernel,
@@ -3271,19 +2577,13 @@ public partial class VirtualCrossoverPanel : UserControl
             ? "No PEQ"
             : $"{settings.PeqSourceName ?? "PEQ"}: {settings.PeqBands.Count} bands, " +
               $"preamp {settings.PeqPreampDb:0.0} dB";
-        // The preamp also lands in the block's gain row, which reads out the level the
-        // two stages come to together; the block keeps that readout in step with its
-        // own gain field, so the preamp is all it needs from here.
+        // The block keeps its gain readout in step with the preamp itself.
         VirtualCrossoverChannelControl control = ControlFor(channel);
         control.PeqPreampDb = settings.PeqPreampDb;
         Label peqInfoLabel = control.PeqInfoLabel;
         peqInfoLabel.Text = text;
-        // The label is narrow and clips the file name; the full text lives in the
-        // tooltip. Nothing worth hovering when there is no PEQ.
         toolTip.SetToolTip(peqInfoLabel, noPeq ? string.Empty : text);
     }
-
-    // ------------------------------------------------------------------ plots
 
     private AcousticView CurrentAcousticView() =>
         radioViewImpulse.Checked ? AcousticView.Impulse
@@ -3299,18 +2599,14 @@ public partial class VirtualCrossoverPanel : UserControl
         : radioDspCoherence.Checked ? DspPlotMode.Coherence
         : DspPlotMode.Magnitude;
 
-    // The two junction modes share everything around the plot itself — the
-    // pair selector, the async rebuild loop, the processed-pair inputs — so
-    // every gate that used to ask "is this the correlation view" asks this.
+    // Both junction modes share the pair selector, rebuild loop and inputs.
     private bool JunctionPlotModeSelected() =>
         radioDspCorrelation.Checked || radioDspCoherence.Checked;
 
     private static bool IsJunctionMode(DspPlotMode mode) =>
         mode is DspPlotMode.Correlation or DspPlotMode.Coherence;
 
-    // One of the chain-view radios (magnitude / phase / group delay) became
-    // checked: retract the cross-container junction radios before acting —
-    // their own container cannot do it (see the wiring comment).
+    // Retract the junction radios in the other container first (see the wiring).
     private void OnChainDspModeChecked()
     {
         radioDspCorrelation.Checked = false;
@@ -3345,11 +2641,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawDspPlot();
     }
 
-    /// <summary>
-    /// Which part of the installation the plot, the sum and the read-out are
-    /// about. Read from the control rather than the project so a redraw mid-edit
-    /// draws what the user just picked, exactly as the view radios do.
-    /// </summary>
+    /// <summary>Read from the control, not the project, so a mid-edit redraw draws the new pick.</summary>
     private VirtualCrossoverGroupView SelectedGroupView =>
         comboBoxGroupView.SelectedItem is VirtualCrossoverGroupView view
             ? view
@@ -3576,11 +2868,7 @@ public partial class VirtualCrossoverPanel : UserControl
             "Render a music file through the tune into a stereo WAV: the\r\n" +
             "left sum on channel 1, the right on channel 2.\r\n" +
             "Listen through HEADPHONES only.");
-        // The per-channel block tooltips are applied in CreateChannel, so every
-        // block — including ones added after construction — carries them.
     }
-
-    // ---------------------------------------------------------------- redraw
 
     private void RedrawAll()
     {
@@ -3590,43 +2878,23 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // Cheap and idempotent (see the method): here so a rate that moved with the
-        // measurements reaches the blocks' phase read-outs without every source path
-        // having to remember them.
+        // Cheap and idempotent: lets a rate that moved with the measurements reach the blocks.
         RefreshProcessorRowAvailability();
         RequestRedraw();
     }
 
-    // Starts the redraw loop, or — if one is already running — marks its current
-    // pass stale so it repeats once more with the latest settings. Called only on
-    // the UI thread, so the flag and the task handle need no synchronization.
+    // UI thread only, so the flag and task handle need no synchronization.
     private void RequestRedraw()
     {
-        // Every redraw path funnels through here on the UI thread, so this is
-        // the one place the magnitude-gate snapshot can be refreshed without
-        // the worker-thread builds ever touching live state.
+        // The one UI-thread place to refresh the snapshot the worker builds read.
         magnitudeGate = new MagnitudeGateSnapshot(
             CreateVirtualPhaseSettings(
                 gateOffsetMs: 0.0,
                 PhaseDetrendMode.Off,
                 manualDetrendMilliseconds: 0.0) with
             {
-                // The magnitude reads the FIXED steady-state window, not the
-                // dialog's gate. Two reasons, one per parameter. Mode: FDW cannot
-                // hold the summed response — its high-frequency windows are
-                // shorter than the channels' arrival spread, so no single window
-                // keeps every channel's treble inside the one summed IR, and the
-                // drawn Sum and the loss read-out collapse. (The Sum loss
-                // selector's FDW-8 is the construction that does hold — one window
-                // per channel, the SPECTRA summed, see BuildDirectLossCurve — and
-                // it never touches these curves.) Length: tonal balance
-                // is a steady-state question — a short junction gate cannot even
-                // contain a bass EQ band's own ringing, so under it a Q 5 cut at
-                // 100 Hz draws at a fraction of its real depth. The dialog's
-                // durations, window mode and FDW cycles therefore shape the
-                // PHASE and IMPULSE views only; its OFFSET (the pin, or the
-                // shared front anchor when unpinned) still says where this
-                // window opens.
+                // The magnitude uses the FIXED steady-state window; only the offset comes from the gate.
+                // See docs/tech/virtual-dsp-panel.md#magnitude-window.
                 WindowMode = PhaseWindowMode.Fixed,
                 LeftMs = FrequencyResponseOptions.SteadyStateLeftMs,
                 PlateauMs = FrequencyResponseOptions.SteadyStatePlateauMs,
@@ -3636,9 +2904,7 @@ public partial class VirtualCrossoverPanel : UserControl
             project.PhaseGateFor(!project.ActiveSideRight).OffsetMs,
             comboBoxSmoothing.SelectedItem is int smoothing ? smoothing : 12);
 
-        // Every settings/source/view change invalidates the captured render
-        // snapshot, not only side switches. A running FFT may finish, but the
-        // coordinator will neither cache nor publish its stale result.
+        // A running FFT may finish, but the coordinator will neither cache nor publish it.
         processingCoordinator.Invalidate();
         if (redrawTask is { IsCompleted: false })
         {
@@ -3650,11 +2916,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RefreshAutoActionsEnabled();
     }
 
-    // Auto crossover and Auto delay run on the PROCESSED channel set. While a
-    // source is still loading or the redraw/processing pass is mid-flight, the
-    // curves those searches read are not on screen yet — pressing either then
-    // aligns against stale or absent data — so both are disabled until the panel
-    // settles. (During a project load the whole tree is already disabled.)
+    // Auto crossover/delay read the processed set, so they wait until the panel settles.
     private void RefreshAutoActionsEnabled()
     {
         if (IsDisposed)
@@ -3667,17 +2929,13 @@ public partial class VirtualCrossoverPanel : UserControl
             || redrawTask is { IsCompleted: false };
         buttonAutoSetup.Enabled = !busy;
         buttonAutoDelay.Enabled = !busy;
-        // The package is gathered at one revision like the audition; and an
-        // import writes settings, which a load in progress would overwrite.
+        // Gathered at one revision; an import would be overwritten by a load in progress.
         buttonAi.Enabled = !busy && !agentBusy;
-        // The audition sums both sides through the coordinator at one revision;
-        // starting it mid-redraw would race the invalidation and render nothing.
+        // Starting mid-redraw would race the invalidation and render nothing.
         buttonAudition.Enabled = !busy;
     }
 
-    // The redraw loop coalesces edits into one trailing pass. Snapshot revision,
-    // cancellation and processed-response cache ownership live in the coordinator;
-    // this method only applies a current result to OxyPlot.
+    // Revision, cancellation and cache ownership live in the coordinator; this only applies results to OxyPlot.
     private async Task RunRedrawLoopAsync()
     {
         do
@@ -3693,8 +2951,7 @@ public partial class VirtualCrossoverPanel : UserControl
             }
             catch (Exception exception)
             {
-                // A redraw is best-effort: keep the last good frame and let the
-                // next change try again rather than tearing down the tool.
+                // Best-effort: keep the last good frame.
                 System.Diagnostics.Debug.WriteLine(
                     $"Virtual DSP redraw failed: {exception}");
             }
@@ -3709,16 +2966,10 @@ public partial class VirtualCrossoverPanel : UserControl
         long Revision,
         List<ProcessedChannel> Channels);
 
-    // Captures the active channel set on the UI thread. SourceSnapshot owns a
-    // write-once copy made when the measurement was loaded, and ChannelSnapshot
-    // deep-copies the PEQ values, so the coordinator never reads controls or
-    // mutable project settings after this method awaits.
+    // The coordinator never reads controls or mutable settings after this awaits (snapshots are copies).
     private async Task<ProcessedRender?> ProcessChannelsAsync()
     {
-        // Tracy zones are thread-bound and strictly LIFO, so no zone may span
-        // an await: only the synchronous snapshot section is zoned here, and
-        // the heavy per-channel DSP is zoned inside the coordinator's worker
-        // threads where it actually runs.
+        // Tracy zones are thread-bound LIFO: no zone may span an await.
         long revision = processingCoordinator.CurrentRevision;
         var snapshots = new List<VirtualCrossoverChannelSnapshot>();
         var bindings = new Dictionary<
@@ -3790,10 +3041,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private async Task RedrawMainPlotAsync()
     {
-        // The heavy ApplyChain FFTs run off the UI thread; the existing curves stay
-        // on screen until the new data is ready, so there is no clear-then-fill
-        // flicker during the compute. No Tracy zone spans the awaits (zones are
-        // per-thread LIFO); the synchronous frame build at the end carries one.
+        // Old curves stay on screen until new data is ready (no flicker).
         ProcessedRender? render = await ProcessChannelsAsync();
         if (render == null || mainPlotView.IsDisposed)
         {
@@ -3806,92 +3054,36 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The junction views of the lower plot read the same processed snapshot
-        // the acoustic plot draws; the redraw loop calls RedrawDspPlot right
-        // after this method, so the capture is fresh. The WHOLE set is kept
-        // here — CurrentCorrelationPairs narrows it to the view's summing chain
-        // itself, and the opposite-side and cross-group read-outs below need
-        // channels this view does not draw.
+        // The whole set is kept: the junction views and opposite-side read-outs need channels this view does not draw.
         lastProcessedRender = render;
 
-        // From here down the frame is about the view's part of the installation,
-        // not the whole of it. Filtering once, here, is what keeps the curves, the
-        // sum, the loss and the read-out describing the same thing: four places
-        // deciding separately is how a plot ends up summing a channel it does not
-        // draw.
+        // Filter by group view once, so curves, sum, loss and read-out describe the same channels.
         VirtualCrossoverGroupView groupView = SelectedGroupView;
         List<ProcessedChannel> shown = ChannelsShownBy(processed, groupView);
         List<ProcessedChannel> summedChannels = ChannelsSummedBy(shown, groupView);
         if (shown.Count == 0)
         {
-            // The view is empty rather than broken — a rear view of a front-only
-            // car. Say so instead of drawing the whole system as if nothing had
-            // been asked for. With NO channel resolved at all, though, the zone
-            // advice would be a lie in the other direction: nothing is filed
-            // wrongly, there is simply nothing loaded yet, which is the state a
-            // fresh project and the Reset button both leave behind.
+            // With nothing resolved at all the zone hint would mislead, so show the no-sources hint.
             acousticPlot.Draw(new AcousticRender(
                 processed.Count == 0 ? NoSourcesHint : EmptyViewHint(groupView),
                 [],
                 null));
             MetricChanged?.Invoke(string.Empty, string.Empty);
-            // And the warning with it: a gate or calibration complaint left
-            // standing beside an empty plot is about channels the user can no
-            // longer see, which reads as a fault in the view they just opened.
+            // A warning about channels no longer visible would read as a fault in this view.
             HideWarning();
             return;
         }
 
-        // A view spanning more than one listening group withholds the loss
-        // entirely — curve and figure alike. Front against rear combs however
-        // well either is tuned (no filter hands one band from one to the other),
-        // so the number would report damage nothing can repair. Those views owe
-        // the reader the cross-group arrival and level instead, which
-        // UpdateMetric appends.
-        //
-        // The same silence falls where the chain holds no junction at all, which
-        // a single-group view can still manage: Rear + Sub on the reference car
-        // is subwoofers up to 110 Hz and a rear fill from 290, with nothing
-        // crossing between them. GetAdjacentPairs already declines to invent that
-        // pair, but the loss curve and its total are computed over the window
-        // regardless — and a total summation loss for a chain with no handover
-        // is a figure about a crossover that is not in the car, which is the
-        // thing this view was supposed to stop printing.
-        //
-        // Resolved HERE rather than beside the loss curve it silences, because
-        // the junction phase block below is withheld under the same condition,
-        // for the same reason: both describe JUNCTIONS, and across groups those
-        // pairs do not exist.
+        // No loss (curve or figure) across groups or where the chain has no junction.
+        // See docs/tech/virtual-dsp-panel.md#sum-loss-and-group-views.
         bool quotesJunctions =
             VirtualCrossoverGroupViews.LossChainZone(groupView) != null &&
             ProcessedChannels.HasJunction(summedChannels);
 
-        // The junction phase read-out. Informative only: it renders alongside
-        // the sum loss and feeds nothing back into the alignment engine.
-        //
-        // Off the UI thread, unlike the sum-loss entries beside it, because it
-        // reads through the phase GATE: an 8-cycle frequency-dependent window is
-        // one transform per distinct window length per channel, which on the
-        // archived cabins measures 50–100 ms for four channels the first time a
-        // set of responses is seen (2 ms afterwards — DataHelper memoizes each
-        // gated spectrum per impulse array, and the phase view's own curves warm
-        // the very same entries). A delay drag makes every frame the first time,
-        // so that cost cannot sit in the frame. The gate is read from the panel's
-        // state HERE, on the UI thread; only plain numbers cross over.
-        // The SUMMING channels, like the loss beside it: those are the ones
-        // whose junctions it reports, and the windows are placed over exactly
-        // them. In a grouped view that is not quite the drawn set — a centre is
-        // drawn beside the front stage and sums with neither — so a spectator
-        // failing the leading-edge guard can send the CURVES to one shared
-        // window while these figures keep their per-curve placements. That is
-        // the right way round: a channel taking part in none of the junctions
-        // being reported has no claim on the windows they are read through.
+        // Off the UI thread: the FDW gate is 50–100 ms per new response set. Reads the SUMMING channels.
+        // See docs/tech/virtual-dsp-panel.md#junction-phase-read-out.
         List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
-        // The direct-sound loss (the Sum loss selector on FDW-8) is the block's own
-        // spectra added up, so it is built in the same task from the same build —
-        // one set of windows serves both, and it stays off the UI thread for the
-        // same reason the block does. The selector and the smoothing are read
-        // HERE, on the UI thread, like the gate beside them.
+        // Direct loss (FDW-8) sums the same block's spectra, so built in the same task from the same windows.
         List<SignalPoint>? directLoss = null;
         SumLossWindow lossWindow = SelectedSumLossWindow;
         int lossSmoothing = magnitudeGate.SmoothingInverseOctaves;
@@ -3904,9 +3096,7 @@ public partial class VirtualCrossoverPanel : UserControl
             double gateRightMs = gatePreview?.RightMs ?? project.PhaseGateRightMs;
             (phaseEntries, directLoss) = await Task.Run(() =>
             {
-                // The zone lives INSIDE the task, where it begins and ends on
-                // one thread: Tracy's zones are per-thread LIFO, so one spanning
-                // the await would close on whichever thread resumed it.
+                // Zone inside the task: Tracy zones are per-thread LIFO.
                 using var _ = AppProfiler.Zone("VirtualDSP.BuildPhaseEntries");
                 IReadOnlyList<ProcessedChannel>? orderedSet = null;
                 IReadOnlyList<Complex[]>? spectra = null;
@@ -3928,65 +3118,33 @@ public partial class VirtualCrossoverPanel : UserControl
             });
         }
 
-        // The stereo Δ block and the opposite-side sum read BOTH sides'
-        // processed responses; their caches make an unchanged configuration
-        // free. Same staleness rule as above.
-        // The Δ block follows the Show selector like everything else in the
-        // frame: a front view listing the rear pair's L/R skew is the read-out
-        // describing a set the plot does not draw, which is the whole class of
-        // mismatch this selector exists to close. It is narrowed by a FILTER and
-        // never by handing over a shortened list — a block's position in that
-        // list is its identity in the coordinator's cache.
+        // Narrowed by the Show filter, never a shortened list: a block's list position is its cache identity.
         List<VirtualCrossoverMetric.StereoDelta> stereoDeltas =
             await metrics.ComputeStereoDeltasAsync(
                 channels,
                 revision,
                 includePair: pair =>
                     VirtualCrossoverGroupViews.IsShown(groupView, pair.Zone),
-                // While the hybrid mode is on, the block's Level Δ rows read
-                // the sides' spatial averages — the levels that mode declares
-                // authoritative — whatever this frame's view draws; see
-                // HybridStereoLevelReader for why it is not HybridRequested.
                 hybridLevelDeltaDb: HybridStereoLevelReader());
-        // What the cross-group views quote instead of a summation loss. Reads the
-        // responses this frame already processed, so it adds no render — only the
-        // arrival FFTs, on the coordinator's auxiliary path. Its ΔdB rows follow
-        // the hybrid mode exactly as the stereo block's level rows do.
+        // Quoted by cross-group views instead of a loss; adds only arrival FFTs.
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas =
             await metrics.ComputeGroupDeltasAsync(
                 shown, groupView, revision,
                 hybridGroupLevelDeltaDb: HybridGroupLevelReader());
-        // The side sum comes from metrics (shared coordinator cache); the CURVE
-        // is built here so it windows through the OPPOSITE side's gate
-        // placement — the active side's pin must not gate the other side.
-        // Only the summed RESPONSE here; which curve it becomes is decided below,
-        // once the active side's hybrid (and therefore its offset) exists. The two
-        // sides must be drawn by the same method or the comparison stops being about
-        // the tunes.
-        // The step view draws it too, as the sum's step: the two tunes' fronts
-        // compare on one clock without flipping the L/R selector.
+        // The curve windows through the OPPOSITE side's gate placement; both sides must be drawn by the same method.
         VirtualCrossoverSideSum? oppositeSide = null;
         if (checkBoxShowSum.Checked &&
             (radioViewMagnitude.Checked || radioViewStep.Checked))
         {
             oppositeSide = await metrics.ComputeSideSumAsync(
                 channels, !project.ActiveSideRight, revision, minimumChannels: 2,
-                // The other side's sum is a comparison of the two TUNES, so it has
-                // to be the same part of the system this side is showing.
                 includePair: pair =>
                     VirtualCrossoverGroupViews.ParticipatesInTotalSum(
                         groupView, pair.Zone));
         }
 
-        // The impulse view wraps every drawn trace in its envelope, a Hilbert
-        // transform over the whole processed record — 2^17 samples a channel on
-        // an ordinary sweep capture, and many times that where a late arrival
-        // kept the source uncropped (VirtualCrossoverSourceSnapshot) or a
-        // high-Q or FIR tail stretched ApplyChain's padding.
-        // Off the UI thread for the reason the phase entries above are: a chain
-        // edit hands the edited channel a new array, so every frame of a drag is
-        // the first time for it. The envelopes are memoized per array, and the
-        // frame below reads the ones warmed here.
+        // Envelopes (Hilbert over the whole record, 2^17+ samples) are warmed off the UI thread: a drag hands
+        // each frame a new array. Memoized per array.
         if (radioViewImpulse.Checked)
         {
             Complex[][] drawnResponses =
@@ -4005,12 +3163,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The processed magnitudes and the complex sum feed both the drawn
-        // curves and the sum-loss metric, so they are built once here. This is
-        // the synchronous UI-thread part of the frame (curve building — the
-        // phase view's gated FFTs included — metric update, OxyPlot draw), so
-        // it takes the redraw zone. The steps carry a zone each: this stretch
-        // dominates the frame, and the split says which one to answer for.
+        // The synchronous UI-thread part of the frame; each step carries its own zone.
         using var _ = AppProfiler.Zone("VirtualDSP.RedrawMainPlot");
         List<AnalysisCurve>? magnitudes;
         AnalysisCurve? sumCurve;
@@ -4021,26 +3174,18 @@ public partial class VirtualCrossoverPanel : UserControl
                 shown, magnitudeGate.SmoothingInverseOctaves, summedChannels);
         }
 
-        // Decided before the awaits above, because the junction phase block is
-        // computed there under the same condition; the loss CURVE is what is
-        // withheld here.
+        // Decided before the awaits, where the junction phase block uses it.
         if (!quotesJunctions)
         {
             lossCurve = null;
         }
 
-        // Which loss this frame quotes: the selector's window for the curve AND
-        // the column, which must print one number; and under Disable no curve at
-        // all, while the column keeps the full read — what the old curve toggle
-        // did when unticked.
+        // Disable draws no curve but the column keeps the full read.
         bool lossDirect = lossWindow == SumLossWindow.Direct;
         List<SignalPoint>? shownLoss = lossDirect ? directLoss : lossCurve;
         List<SignalPoint>? drawnLoss = lossWindow == SumLossWindow.Off ? null : shownLoss;
 
-        // Before the warnings and the render alike: both read it. The warning is
-        // about how well the captures agree with each other, which is a property of
-        // the set the render is about to draw, not something to discover while
-        // walking the curves.
+        // Before warnings and render: both read it.
         HybridMagnitudes? hybrid = null;
         if (HybridRequested && magnitudes != null && radioViewMagnitude.Checked)
         {
@@ -4059,11 +3204,7 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        // The other side, drawn by whichever method this side is drawn by. With the
-        // hybrid on it needs the opposite side's own captures, and when that side is
-        // short of one there is no honest fallback — an impulse-response sum beside a
-        // hybrid one reads as an L/R difference that is really a method difference —
-        // so the curve is dropped instead.
+        // No hybrid capture on the other side -> drop the curve: a mixed-method sum reads as a false L/R difference.
         AnalysisCurve? oppositeSum = null;
         if (oppositeSide != null)
         {
@@ -4077,11 +3218,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         using (AppProfiler.Zone("VirtualDSP.UpdateMetric"))
         {
-            // The junction read-outs go with the channels that SUM, not the ones
-            // drawn: the loss curve was divided out of exactly those, and pairing
-            // a drawn-but-unsummed centre with its neighbouring front driver
-            // would invent a crossover between them and label a front-only figure
-            // with it.
+            // Junction read-outs use the SUMMED channels: a drawn-only centre would invent a crossover.
             UpdateMetric(
                 summedChannels, shownLoss, phaseEntries, stereoDeltas, hybrid,
                 groupDeltas, lossDirect);
@@ -4092,9 +3229,7 @@ public partial class VirtualCrossoverPanel : UserControl
             UpdateWarnings(processed, hybrid);
         }
 
-        // Split from the draw on purpose: building the curves (the phase view's
-        // gated FFTs) and handing them to OxyPlot are different suspects, and as
-        // one expression they were indistinguishable.
+        // Split from the draw so the profiler separates curve building from OxyPlot.
         AcousticRender acousticRender;
         using (AppProfiler.Zone("VirtualDSP.BuildAcousticRender"))
         {
@@ -4109,37 +3244,25 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Assembles the ready-to-draw frame for the active view. While a session
-    // loads, interim redraws (the calibration combo refresh, etc.) run before the
-    // sources resolve, so processed is empty then; keep the loading note instead
-    // of flashing the "no sources" hint.
-    // ------------------------------------------------------------ grouped views
-
-    // The channels this view puts on the plot. A muted or sourceless block never
-    // reached here, so the only question left is the zone.
     private static List<ProcessedChannel> ChannelsShownBy(
         IReadOnlyList<ProcessedChannel> processed,
         VirtualCrossoverGroupView view) =>
         [.. processed.Where(item =>
             VirtualCrossoverGroupViews.IsShown(view, item.Channel.Pair.Zone))];
 
-    // Of those, the ones whose responses are added together. Drawn and summed
-    // differ wherever a centre is on screen: it is there to be compared, not
-    // added (see VirtualCrossoverGroupViews.ParticipatesInTotalSum).
+    // Drawn and summed differ where a centre is shown: compared, not added.
     private static List<ProcessedChannel> ChannelsSummedBy(
         IReadOnlyList<ProcessedChannel> shown,
         VirtualCrossoverGroupView view) =>
         [.. shown.Where(item =>
             VirtualCrossoverGroupViews.ParticipatesInTotalSum(view, item.Channel.Pair.Zone))];
 
-    // Why a view is empty, in the words of what the user would have to change.
-    // "No sources" would be a lie here: the project is full, this corner of it
-    // is not.
     private static string EmptyViewHint(VirtualCrossoverGroupView view) =>
         $"No channels in {VirtualCrossoverGroupViews.DisplayName(view)}." +
         Environment.NewLine +
         "Set a block's Zone to bring it into this view.";
 
+    // While a session loads, processed is empty; keep the loading note instead of the no-sources hint.
     private AcousticRender BuildAcousticRender(
         List<ProcessedChannel> processed,
         IReadOnlyList<ProcessedChannel> summed,
@@ -4161,10 +3284,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         if (radioViewPhase.Checked)
         {
-            // Drawn set for the traces, summed subset for the Sum — or the phase
-            // view would answer a different question from the magnitude view
-            // under the same selector, with a centre inside one Sum and not the
-            // other.
+            // Drawn set for traces, summed subset for the Sum, matching the magnitude view.
             return new AcousticRender(hint, BuildPhaseCurves(processed, summed), null);
         }
         if (radioViewGroupDelay.Checked)
@@ -4195,24 +3315,8 @@ public partial class VirtualCrossoverPanel : UserControl
             null);
     }
 
-    // The Groups view: one summed line per zone and nothing else. A dozen driver
-    // traces would bury the only thing this view is for — how the groups sit
-    // against each other — and the relation is between their SUMS, since that is
-    // what each group puts into the cabin.
-    //
-    // Every line is gated on ONE anchor, taken across all the shown channels
-    // rather than per group: the whole point is to read the groups' relative
-    // timing off the plot, and per-group anchors would each hide their own group's
-    // delay by construction. The gate offset comes from that shared anchor for the
-    // same reason — one window for every line, or the comparison is between
-    // windows rather than between groups.
-    //
-    // With the hybrid on, a group's line is built the way the Sum is built in every
-    // other view (BuildHybridSumCurve), over that group's members: their captures
-    // through their chains, held together by the phase their impulse responses
-    // measure. A group whose members cannot produce one falls back to its measured
-    // sum on its own — the alternative, dropping the line, would hide a whole group
-    // from the view that exists to compare them.
+    // One summed line per zone, all gated on ONE anchor across the shown channels.
+    // See docs/tech/virtual-dsp-panel.md#groups-view.
     private List<AcousticCurve> BuildGroupSumCurves(
         List<ProcessedChannel> shown,
         IReadOnlyList<AnalysisCurve>? magnitudes,
@@ -4223,9 +3327,7 @@ public partial class VirtualCrossoverPanel : UserControl
         MagnitudeGateSnapshot snapshot = magnitudeGate;
         double gateOffsetMs = snapshot.ResolveGateOffsetMs(
             oppositeSide: false, anchor, shown[0].SampleRate);
-        // Every list the slice indexes, not just the magnitudes: BuildHybridSumCurve
-        // guards its own length and returns null, but the slice runs BEFORE it and
-        // would throw out of a redraw instead.
+        // Check every list the slice indexes: the slice runs before BuildHybridSumCurve's own guard.
         bool drawHybrid = hybrid != null && magnitudes != null &&
             magnitudes.Count >= shown.Count &&
             hybrid.Channels.Count >= shown.Count &&
@@ -4234,9 +3336,7 @@ public partial class VirtualCrossoverPanel : UserControl
         var curves = new List<AcousticCurve>();
         foreach (VirtualCrossoverZone zone in VirtualCrossoverZones.All)
         {
-            // By POSITION, because the hybrid curves and the reference magnitudes
-            // are both indexed against the shown set and a packed member list would
-            // silently pair a zone's channels with another zone's captures.
+            // By position: hybrid curves and magnitudes are indexed against the shown set.
             List<int> positions =
             [
                 .. Enumerable.Range(0, shown.Count)
@@ -4268,8 +3368,6 @@ public partial class VirtualCrossoverPanel : UserControl
                 LineStyle.Solid));
         }
 
-        // The target belongs here as much as anywhere: judging a rear fill's level
-        // against the house curve is half of what this view is for.
         if (BuildTargetCurve() is { } target)
         {
             curves.Insert(0, target);
@@ -4278,18 +3376,8 @@ public partial class VirtualCrossoverPanel : UserControl
         return curves;
     }
 
-    /// <summary>
-    /// One group's slice of the set's hybrid, for a sum over that group alone.
-    /// </summary>
-    /// <remarks>
-    /// The per-channel lists are positional against the shown set, so they are
-    /// narrowed with it; the set OFFSET and its datums are not — they describe the
-    /// set the captures came from, which a subset does not change, and it is that
-    /// one offset that keeps every group's line on the same axis. Pure and
-    /// internal so the pairing can be pinned without a panel: a slice that shifted
-    /// by one would draw a zone's sum from another zone's captures, and the curve
-    /// would look entirely plausible.
-    /// </remarks>
+    /// <summary>One group's slice of the set's hybrid.</summary>
+    /// <remarks>Per-channel lists are narrowed positionally; the set offset and datums are not, keeping all lines on one axis.</remarks>
     internal static HybridMagnitudes HybridSubset(
         HybridMagnitudes hybrid,
         IReadOnlyList<int> positions) =>
@@ -4305,8 +3393,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 : [.. positions.Select(index => hybrid.PointMeasuredChannels[index])]
         };
 
-    // Semantic rather than positional: in this view a line IS a zone, so the
-    // colour has to say which one whatever else the project contains.
+    // Semantic: in this view a line IS a zone.
     private static OxyColor GroupColor(VirtualCrossoverZone zone) => zone switch
     {
         VirtualCrossoverZone.Rear => OxyColor.FromRgb(255, 150, 64),
@@ -4315,11 +3402,7 @@ public partial class VirtualCrossoverPanel : UserControl
         _ => OxyColor.FromRgb(86, 156, 255)
     };
 
-    // The target travels with the session. It is handed to the HOST rather than
-    // kept here, because the app aims at one target: the EQ Wizard owns and
-    // persists it, and this panel gets it straight back through SetTargetCurve.
-    // A session written before targets were stored carries none — then the
-    // current target stays, and this session starts carrying it.
+    // Handed to the host (the EQ Wizard owns the one target). A session without a stored target starts carrying the current one.
     private void ApplyProjectTarget()
     {
         if (project.Target is { } stored)
@@ -4334,18 +3417,12 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // The frequency grid the target shape is drawn on. A target is parametric
-    // over frequency, not a measurement, so it spans the audio band on its own
-    // grid instead of borrowing whatever the loaded channels happen to cover.
+    // A target is parametric, so it spans the audio band on its own grid.
     private const double TargetGridLowHz = 20;
     private const double TargetGridHighHz = 20_000;
     private const int TargetGridPoints = 512;
 
-    // The EQ target as an acoustic curve: the shared shape (relative dB) hung at
-    // the level this session set. The level is asked for rather than fitted to
-    // the sum because Virtual DSP curves are transfer-function dB with no
-    // absolute reference — there is no level here that a fit could be honest
-    // about, so the one the user reads the sum at is the one that counts.
+    // Hung at the user's level, not fitted: transfer-function dB has no absolute reference to fit.
     private AcousticCurve? BuildTargetCurve()
     {
         if (!checkBoxShowTarget.Checked || targetCurve is not { } target)
@@ -4372,9 +3449,7 @@ public partial class VirtualCrossoverPanel : UserControl
             OverlayLineStyles.ToOxy(target.LineStyle));
     }
 
-    // The same two-entry menu the EQ Wizard's Target button drops, over the same
-    // shared target: the shape is either parametric or a curve imported from a
-    // file. Rebuilt per click, because what it ticks is the target itself.
+    // Same menu as the EQ Wizard's Target button; rebuilt per click.
     private void ShowTargetMenu()
     {
         if (targetCurve is not { } current)
@@ -4404,10 +3479,6 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // An imported shape is a target edit like any other made here: it shows on
-        // this plot, so the plot is put where a dB shape means something, and it
-        // reaches the session and the wizard by the same two calls a saved dialog
-        // uses.
         radioViewMagnitude.Checked = true;
         checkBoxShowTarget.Checked = true;
         var edited = before with
@@ -4419,10 +3490,7 @@ public partial class VirtualCrossoverPanel : UserControl
         TargetCurveChanged?.Invoke(edited);
     }
 
-    // The same isolated target dialog the EQ Wizard opens (no source picker, no
-    // overlay side effects), previewing on THIS plot. Cancel puts back what was
-    // there; Save hands the curve to the host, and that hand-off is what carries
-    // the edit to the wizard.
+    // The EQ Wizard's isolated target dialog previewing on this plot; Save hands the curve to the host.
     private void OpenTargetSettings()
     {
         if (targetCurve is not { } before)
@@ -4430,16 +3498,10 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // Settings for an invisible curve are settings for nothing, so opening
-        // the dialog puts the target on screen: the Magnitude view, the only one
-        // a dB shape means anything on, with the curve shown. Both stay that way
-        // afterwards — the view radios and the checkbox are right there.
+        // Put the target on screen: magnitude is the only view where a dB shape means anything.
         radioViewMagnitude.Checked = true;
         checkBoxShowTarget.Checked = true;
-        // Opened as the EQ Wizard's dialog, not as this tool's: the mode is what
-        // decides which smoothing vocabulary the dialog offers, and one target
-        // edited from two places must not come back different depending on which
-        // button opened it.
+        // Opened as the EQ Wizard's dialog so the smoothing vocabulary matches from either button.
         using var dialog = new OverlayTargetSettingsDialog(
             Mode.EqWizard,
             "EQ target",
@@ -4473,14 +3535,11 @@ public partial class VirtualCrossoverPanel : UserControl
             dialog.LineStyle,
             dialog.SmoothingInverseOctaves);
         ApplyTargetLocally(edited);
-        // Save is where the session learns about it — see ApplyTargetLocally.
         StoreTargetInProject(edited);
         TargetCurveChanged?.Invoke(edited);
     }
 
-    // The dialog's live preview. It reports every field except the preset (which
-    // it names only on Save), so the current preset rides through untouched —
-    // nothing drawn here reads it, and nothing stores it either.
+    // The preview carries no preset, so the current one rides through untouched.
     private void ApplyTargetPreview(OverlayTargetPreview preview)
     {
         if (targetCurve is not { } current)
@@ -4500,13 +3559,7 @@ public partial class VirtualCrossoverPanel : UserControl
         });
     }
 
-    // Memory and plot only, deliberately NOT the session: this runs on every
-    // twitch of the dialog's live preview, and the autosave timer keeps ticking
-    // inside a modal dialog's message loop — a couple of seconds spent dragging
-    // a shelf would write an uncommitted preview to disk, to be found by the
-    // next launch if the app never got to Cancel. The preview does not even
-    // carry a preset, so what landed there would be the old preset's name over
-    // the new shape. Save stores; Cancel has nothing to undo.
+    // Memory and plot only: the autosave ticks inside the modal loop and would write an uncommitted preview.
     private void ApplyTargetLocally(EqTargetCurve value)
     {
         targetCurve = value;
@@ -4515,11 +3568,7 @@ public partial class VirtualCrossoverPanel : UserControl
         RedrawAll();
     }
 
-    // The session stores the target it was tuned against, shape and all. Nothing
-    // is written before the project has loaded: the host pushes the app's target
-    // in while the form is built, long before this tool is first opened, and
-    // storing it then would schedule a save of the default project over the real
-    // one on disk.
+    // Nothing before the project loads: the host pushes a target at startup, which would save a default project over the real one.
     private void StoreTargetInProject(EqTargetCurve value)
     {
         if (!initialized)
@@ -4540,12 +3589,10 @@ public partial class VirtualCrossoverPanel : UserControl
         HybridMagnitudes? hybrid,
         bool lossDirect = false)
     {
-        // The processed curves arrive prebuilt from BuildCurves, but a shown RAW
-        // curve is spectrum-built right here, one channel after another.
+        // A shown RAW curve is built here per channel; processed ones arrive prebuilt.
         using var _ = AppProfiler.Zone("VirtualDSP.BuildMagnitudeCurves");
         var curves = new List<AcousticCurve>();
-        // First, so the measured curves and the sum read on top of the reference
-        // rather than under it.
+        // First, so the curves draw on top of it.
         if (BuildTargetCurve() is { } target)
         {
             curves.Add(target);
@@ -4572,9 +3619,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
             if (item.Channel.Pair.ShowProcessedCurve)
             {
-                // Non-null wherever this loop runs: the builder withholds the
-                // metric below two channels and the per-channel magnitudes only for
-                // an empty set, which has no iteration to reach here.
+                // Non-null here: magnitudes are withheld only for an empty set.
                 AnalysisCurve curve = magnitudes![i];
                 IReadOnlyList<SignalPoint> points = hybrid != null
                     ? ShiftedBy(hybrid.Channels[i], hybrid.OffsetDb)
@@ -4591,11 +3636,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (checkBoxShowSum.Checked)
         {
-            // In the hybrid view the channels drawn above are the ones that have to
-            // add up, so the sum comes from them. Their spatial averages hold no
-            // phase, so the cancellation comes from the impulse responses' own loss
-            // curve (see BuildHybridSumCurve); with no loss curve there is nothing to
-            // put the dips back and the honest sum stays.
+            // Hybrid: averages hold no phase, so cancellation comes from the IR loss curve (BuildHybridSumCurve).
             IReadOnlyList<SignalPoint> sumPoints =
                 (hybrid != null ? BuildActiveHybridSumCurve(processed, magnitudes, hybrid) : null)
                 ?? sumCurve.Points;
@@ -4603,8 +3644,6 @@ public partial class VirtualCrossoverPanel : UserControl
                 "Sum", sumPoints, SumColor, 2.4, LineStyle.Solid));
             if (oppositeSumCurve != null)
             {
-                // The other side's sum, dashed and translucent: the two tunes
-                // compare at a glance without flipping the L/R selector.
                 curves.Add(new AcousticCurve(
                     $"Sum {(project.ActiveSideRight ? "L" : "R")}",
                     oppositeSumCurve.Points,
@@ -4616,17 +3655,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (lossCurve != null)
         {
-            // The signed dB gap between the complex sum and the phase-blind
-            // magnitude sum of the processed channels (<= 0 by the triangle
-            // inequality), built once in BuildCurves out of the UNSMOOTHED
-            // magnitudes and smoothed as a ratio afterwards — the very list the
-            // read-out averages, so the drawn curve and the measured loss cannot
-            // drift apart. A gap, not a level: it goes on the plot's own
-            // right-hand loss axis, not on the dB scale of the curves it
-            // describes. Null under the selector's Disable, and under FDW-8 it
-            // is the direct-sound loss (BuildDirectLossCurve) — read through the
-            // junction phase block's windows, not out of the drawn curves, and
-            // named so on the plot.
+            // Complex sum vs phase-blind magnitude sum (<= 0), from UNSMOOTHED magnitudes, smoothed as a ratio; the same list
+            // the read-out averages. On the loss axis. Null under Disable; under FDW-8 the direct-sound loss.
             curves.Add(new AcousticCurve(
                 lossDirect ? "Sum loss (direct)" : "Sum loss",
                 lossCurve, LossColor, 1.8, LineStyle.Dash, OnLossAxis: true));
@@ -4634,8 +3664,6 @@ public partial class VirtualCrossoverPanel : UserControl
 
         return curves;
     }
-
-    // ------------------------------------------------- metric and auto delay
 
     private void UpdateMetric(
         List<ProcessedChannel> processed,
@@ -4647,25 +3675,14 @@ public partial class VirtualCrossoverPanel : UserControl
         bool lossDirect = false)
     {
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas = crossGroup ?? [];
-        // The read-out lives in the host's right-side panel (where overlays sit in
-        // analysis modes), as a compact per-junction column with the full banded
-        // breakdown on hover. The stereo Δ block (final L−R envelope arrival
-        // difference per pair) appends below the sum-loss column.
-        // Zoned apart from the formatting and the host callback below it: the
-        // per-junction banded analysis is the part with real work in it.
+        // Zoned apart from formatting: the per-junction banded analysis is the real work.
         List<VirtualCrossoverMetric.Entry> entries;
         using (AppProfiler.Zone("VirtualDSP.BuildEntries"))
         {
             entries = metrics.BuildEntries(processed, lossCurve);
         }
 
-        // The junction phase block arrives ready, built off the UI thread by the
-        // caller (see RedrawMainPlotAsync), which also decides whether this view
-        // quotes junctions at all: across listening groups the adjacent pairs it
-        // would read do not exist — on the reference installation that pairing
-        // declares a front midrange handing over to a rear fill at its own
-        // low-pass corner, which no filter does — so it is empty there, for the
-        // same reason the loss is withheld.
+        // Built off the UI thread by the caller, which also decides whether junctions are quoted.
         string compact = VirtualCrossoverMetric.FormatCompact(entries, lossDirect);
         string detail = entries.Count > 0
             ? VirtualCrossoverMetric.FormatDetail(entries, lossDirect)
@@ -4677,9 +3694,7 @@ public partial class VirtualCrossoverPanel : UserControl
             detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
                 VirtualCrossoverMetric.FormatPhaseDetail(phaseEntries);
         }
-        // Directly under the sum-loss column, because in a cross-group view it is
-        // what STANDS IN for it: the loss is withheld there, and these two numbers
-        // are what a tuner sets between groups instead.
+        // Under the loss column: in a cross-group view it stands in for the withheld loss.
         if (groupDeltas.Count > 0)
         {
             compact += (compact.Length > 0 ? "\r\n\r\n" : string.Empty) +
@@ -4696,12 +3711,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         if (hybrid != null)
         {
-            // The set offset, shown rather than judged. It was a rescue mechanism
-            // for a moving-microphone set — a family with no level of its own, which
-            // it lifted onto the impulse responses' axis by tens of decibels. An
-            // array is referenced to the same loopback those responses are, so the
-            // number is small and it is a HEALTH reading: a large one says the array
-            // read a different input, a different calibration, or another driver.
+            // A health reading: an array shares the IRs' loopback, so a large offset means a different input, calibration or driver.
             compact += "\r\n\r\n" +
                 $"Spatial average {hybrid.OffsetDb:+0.0;-0.0} dB";
             detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
@@ -4713,11 +3723,7 @@ public partial class VirtualCrossoverPanel : UserControl
         MetricChanged?.Invoke(compact, detail);
     }
 
-    // One warning line for the host to show, and only one: the gate placement
-    // comes first because it decides whether the curves describe the channels
-    // at all — a window that opens after the drivers arrive turns every one of
-    // them into its own reverberant tail, and the crossover spread below is
-    // read off the applied delays, which stay true meanwhile.
+    // Only one warning line; the gate placement comes first (a late window turns every driver into its tail).
     private void UpdateWarnings(
         List<ProcessedChannel> processed, HybridMagnitudes? hybrid)
     {
@@ -4731,10 +3737,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // Ahead of the crossover warning: that one says a tuning choice is extreme,
-        // while this one says the curve it would be judged on cannot be trusted at
-        // all. Only while the hybrid is actually drawn — a warning about a set the
-        // plot is not showing has nothing for the user to look at.
+        // Only while the hybrid is drawn.
         if (hybrid != null && hybrid.SpreadDb > HybridSpreadWarningDb)
         {
             ShowWarning(
@@ -4745,10 +3748,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // A set whose channels were averaged over different arrays still hangs
-        // together — the levels are held by the loopback either way — so this warns
-        // rather than refuses. What differs is what "the average" MEANS per channel,
-        // and that is worth knowing before a tune is fitted to it.
+        // Warn, not refuse: the loopback holds levels, but "the average" means something different per channel.
         if (hybrid != null && DescribeArrayCompositionMismatch() is { } mismatch)
         {
             ShowWarning(
@@ -4758,8 +3758,6 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // Before the sum note below, because it is about a selection the user just
-        // made and part of the plot is not obeying.
         if (DescribeUnappliedCalibration(processed) is { } unapplied)
         {
             ShowWarning(
@@ -4769,9 +3767,6 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // Louder than the array note below it: the plot is reading more than one
-        // microphone, and a difference between two channels then holds the difference
-        // between their capsules too.
         if (DescribeOwnCalibrationMismatch(processed) is { } corrections)
         {
             ShowWarning(
@@ -4781,9 +3776,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // Quieter than the two above — nothing is wrong — but it must be said: the
-        // hybrid exists to keep a point measurement's dips away from an equalizer,
-        // and these channels are drawn from exactly that.
+        // Info: the hybrid exists to keep point-measurement dips away from an EQ.
         if (hybrid is { PointMeasuredCount: > 0 } fallbacks)
         {
             ShowWarning(
@@ -4799,26 +3792,8 @@ public partial class VirtualCrossoverPanel : UserControl
         UpdateCrossoverWarning(processed);
     }
 
-    /// <summary>
-    /// How far the per-channel offsets of a spatial-average set may disagree before
-    /// the hybrid view is flagged, in dB.
-    /// </summary>
-    /// <remarks>
-    /// Calibrated on a known-good seven-capture set (HybridOffsetDatumMeasurement,
-    /// which reports it on demand from the archived cabins): 1.4 dB on one side and
-    /// 0.6 on the other — the residue of the two families of measurement differing in
-    /// SHAPE, which they are supposed to. What it must catch is the failures that
-    /// enter PER CAPTURE and are several times larger: a changed input gain, a frame
-    /// length or window that moves the noise-slope compensation (a curve, not a
-    /// constant), a capture from an unrelated session.
-    /// <para>
-    /// It was 5 dB while the datum was read on the PROCESSED curves, where the same
-    /// set read 2.4 and 2.7 — most of which was the chain failing to cancel rather
-    /// than the captures disagreeing. Reading it on the raw pair removed that, and
-    /// the threshold follows the evidence down: it keeps the same margin over a clean
-    /// set that 5 dB kept over 2.7.
-    /// </para>
-    /// </remarks>
+    /// <summary>Allowed disagreement (dB) of a spatial-average set's per-channel offsets before flagging; per mode.</summary>
+    /// <remarks>See docs/tech/virtual-dsp-panel.md#hybrid-spread-thresholds.</remarks>
     private double HybridSpreadWarningDb =>
         SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
             ? ArraySpreadWarningDb
@@ -4826,18 +3801,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private const double MovingMicSpreadWarningDb = 3.0;
 
-    /// <summary>
-    /// The same detector, on a family that agrees far more closely.
-    /// </summary>
-    /// <remarks>
-    /// A moving-microphone set is levelled by nothing but one analyzer session at
-    /// one input gain, so 3 dB is the margin a clean set needs. An array is
-    /// levelled by the same loopback the impulse responses are — the two families
-    /// are one measurement — and a real seven-position set measured on two drivers
-    /// read 0.33 dB apart. The threshold keeps a comparable margin over that
-    /// evidence rather than inheriting one calibrated on a looser family, where it
-    /// would let a genuinely broken array through.
-    /// </remarks>
+    /// <summary>Arrays share the IRs' loopback: a real set read 0.33 dB apart, so the margin is tighter.</summary>
     private const double ArraySpreadWarningDb = 1.5;
 
     private static string FormatPointMeasuredDetail(
@@ -4861,28 +3825,8 @@ public partial class VirtualCrossoverPanel : UserControl
             "mode the two measurements agree, so a subwoofer loses little by it.";
     }
 
-    /// <summary>
-    /// Whether this project's arrays were built the same way, and how they differ
-    /// when they were not. Null when they agree, or when the project is not reading
-    /// arrays.
-    /// </summary>
-    /// <remarks>
-    /// Two things make an array a different question: how many positions it sampled,
-    /// and which calibration was read through. Neither breaks the LEVEL — that is
-    /// the loopback's job and it is done per measurement — so neither is a refusal.
-    /// </remarks>
-    /// <summary>
-    /// What to say when a named calibration cannot be applied to some of the captures
-    /// on the plot. Null when it reaches all of them, and null when none was named.
-    /// </summary>
-    /// <remarks>
-    /// A capture whose positions carried DIFFERENT calibration files declares an
-    /// aggregate correction belonging to no single microphone, so there is nothing a
-    /// named curve could be swapped for; the hybrid keeps the capture's own and says
-    /// nothing on its own. That silence is the problem this covers — the user chose a
-    /// microphone and part of the plot is not reading through it. Choosing is what
-    /// makes it worth saying: nobody needs telling about a state they did not ask for.
-    /// </remarks>
+    /// <summary>Null when a named calibration reaches every capture on the plot, or none was named.</summary>
+    /// <remarks>A capture with mixed per-position calibrations keeps its own aggregate correction; the user chose a microphone that part of the plot is not reading through.</remarks>
     private string? DescribeUnappliedCalibration(IReadOnlyList<ProcessedChannel> processed)
     {
         if (ownCalibrationSelected || Calibration == null)
@@ -4921,21 +3865,8 @@ public partial class VirtualCrossoverPanel : UserControl
             "the way each measurement was taken, and the note goes away.";
     }
 
-    /// <summary>
-    /// What to say when "Own (as measured)" is selected and the channels do not agree
-    /// about the microphone they were measured through. Null when they do, and null
-    /// under every other selection, where one curve corrects everything by definition.
-    /// </summary>
-    /// <remarks>
-    /// A statement about the DATA, not a defect any more. The sum used to be drawn
-    /// through no correction here, because one subtraction cannot undo two
-    /// microphones — and the gap that left between it and the channels read as
-    /// summation loss and fed the loss read-outs. Each channel now carries its own
-    /// correction INTO the sum (see <see cref="BuildMeasuredSumCurve"/>), which is
-    /// what the physics asks for: the pressure is HᵢCᵢ and the total is Σ HᵢCᵢ. What
-    /// remains is worth saying once — the plot is reading more than one microphone —
-    /// without telling the user to fix something that is no longer broken.
-    /// </remarks>
+    /// <summary>Under Own, null when all channels share a microphone. Each channel carries its correction into the sum
+    /// (<see cref="BuildMeasuredSumCurve"/>), so this is information, not a defect.</summary>
     private string? DescribeOwnCalibrationMismatch(IReadOnlyList<ProcessedChannel> processed)
     {
         if (!ownCalibrationSelected || processed.Count < 2)
@@ -4982,26 +3913,15 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        // Every array in the PROJECT: both sides, muted channels included. What a set
-        // is MADE OF is a property of the measurements, and a mute or the side button
-        // says which curves to draw — a composition warning that came and went with
-        // those buttons would be describing the buttons.
-        //
-        // Both sides, because the cross-side case is the one that matters most and is
-        // invisible from either side alone: a left averaged over seven positions and a
-        // right over five are each internally consistent, and the dashed opposite sum
-        // then compares two different listening volumes as though the difference were
-        // the car. Nothing else catches it — an array set is levelled by the loopback
-        // each measurement already carries, so LiveCaptureDocument's array set rule has
-        // (rightly) nothing to object to. This objection is not about levelling.
+        // Every array in the project, both sides and muted included: composition is a property of the measurements.
+        // Cross-side (7 vs 5 positions) is the case nothing else catches.
         var arrays = new List<(string Name, LiveCaptureDocument Document, bool Drawn)>();
         foreach (VirtualCrossoverChannel channel in channels)
         {
             AddSide(rightSide: false);
             if (!channel.Pair.Mono)
             {
-                // A mono pair answers both sides from one slot; listing it twice would
-                // report a difference between a measurement and itself.
+                // A mono pair would be compared with itself.
                 AddSide(rightSide: true);
             }
 
@@ -5067,19 +3987,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return lines.ToString();
     }
 
-    /// <summary>
-    /// Whether two arrays were corrected the same way — including when neither can
-    /// name a single curve for it.
-    /// </summary>
-    /// <remarks>
-    /// An array whose positions carried DIFFERENT calibration files declares no
-    /// calibration at all: there is no one curve a reader could undo, which is what
-    /// <c>CalibrationIsAggregate</c> says instead. Comparing only the named curve
-    /// therefore made two such arrays agree with each other and with an array that
-    /// was never calibrated — three different corrections, all reading null, all
-    /// declared identical. What an aggregate CAN be compared on is the correction it
-    /// actually declares, band for band.
-    /// </remarks>
+    /// <summary>Aggregates (mixed per-position calibrations) name no curve, so they are compared band by band.</summary>
     private static bool SameArrayCorrection(
         LiveCaptureDocument first,
         LiveCaptureDocument second)
@@ -5106,9 +4014,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         for (int band = 0; band < a.Length; band++)
         {
-            // A hundredth of a decibel: two aggregates that agree that closely are one
-            // correction written twice, and anything a user could act on is orders
-            // above it.
+            // 0.01 dB: closer is one correction written twice.
             if (Math.Abs(a[band] - b[band]) > 0.01)
             {
                 return false;
@@ -5144,10 +4050,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 : "Every capture in one set is taken with one analyzer recipe at one " +
                     "input gain, so each channel should sit the same distance from " +
                     "its impulse response. These do not:\r\n\r\n");
-        // The whole SET, muted channels included, because that is what the spread
-        // above was measured over — a list of only the drawn ones could say "these do
-        // not agree" above channels that all do, with the outlier hidden behind a
-        // mute button.
+        // The whole set, muted included: the spread was measured over it, and a mute must not hide the outlier.
         if (hybrid.SetDatumsDb.Count > 0)
         {
             var drawn = processed.Select(item => item.Channel).ToHashSet();
@@ -5164,9 +4067,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         else
         {
-            // Positional: ChannelOffsetsDb[i] belongs to processed[i], null included.
-            // It was packed once, and a single channel with nothing to compare then
-            // shifted every figure below it onto the wrong driver's name.
+            // Positional, nulls included: packing once shifted figures onto the wrong driver's name.
             for (int i = 0; i < hybrid.ChannelOffsetsDb.Count && i < processed.Count; i++)
             {
                 VirtualCrossoverChannel channel = processed[i].Channel;
@@ -5196,34 +4097,19 @@ public partial class VirtualCrossoverPanel : UserControl
     private void ShowWarning(string text, string detail, Color color) =>
         WarningChanged?.Invoke(text, detail, color);
 
-    // The colour rides along with the empty text so the host needs one handler
-    // and no separate "clear" call; with nothing to say, it is never painted.
     private void HideWarning() =>
         WarningChanged?.Invoke(string.Empty, string.Empty, CrossoverWarningColor);
 
-    // Amber for the gate: it says the view cannot be read yet, not that the
-    // tuning is wrong. The crossover spread keeps the red it always had.
+    // Amber: the view cannot be read yet, not a tuning error.
     private static readonly Color GateWarningColor = Color.FromArgb(230, 184, 0);
 
-    // A statement of fact rather than a warning — nothing is wrong with a channel
-    // drawn from its point measurement — so it takes a neutral hue instead of the
-    // amber the two real warnings share.
     private static readonly Color InfoWarningColor = Color.FromArgb(150, 170, 200);
     private static readonly Color CrossoverWarningColor = Color.FromArgb(235, 110, 95);
 
-    // The spread of alignment delays, above which the setup is flagged. A driver
-    // whose crossover has pathological group delay (a narrow or steep low-
-    // frequency band-pass) arrives so late that Auto delay must push every other
-    // driver out by this much to match it — a spread this large is the symptom.
+    // A steep/narrow LF band-pass arrives so late that Auto delay pushes every driver out by this much.
     private const double CrossoverGroupDelayWarningMs = 15.0;
 
-    // Warns, live, when the alignment delays span more than the threshold: the
-    // latest driver (the one the others are delayed to catch up to) lags by that
-    // much. This reads the applied delays directly, so it exactly mirrors what
-    // Auto delay produced — no group-delay proxy that measures the wrong point
-    // (a narrow low-frequency band-pass peaks late in its own band, and only its
-    // arrival across the whole overlap, i.e. the alignment delay, tells the
-    // truth). Bypassed channels carry the raw signal and are excluded.
+    // Reads the applied delays, not a GD proxy (a narrow LF band-pass peaks late in its own band). Bypassed excluded.
     private void UpdateCrossoverWarning(List<ProcessedChannel> processed)
     {
         if (CrossoverSpreadWarning([.. processed.Select(item => item.Channel)])
@@ -5239,18 +4125,11 @@ public partial class VirtualCrossoverPanel : UserControl
             "them out by that much to match it.\r\n\r\n" +
             "This is usually excessive crossover group delay — a narrow or steep low-frequency " +
             "band-pass. Reduce its slope or widen its band to bring the alignment delays down." +
-            // Said only where it applies, so a front-only car reads the same
-            // two paragraphs it always did — and where it does apply, it
-            // answers the question the figure raises: the rear block standing
-            // 15 ms out in the delay table is not part of this number. It
-            // names the groups the project actually has, since a car with a
-            // centre and no rear should not be told about a rear fill.
+            // Names the groups the spread left out, only those the project has.
             ExcludedGroupsNote(placed),
             CrossoverWarningColor);
     }
 
-    // The sentence naming the groups the spread left out, empty when it left
-    // out none.
     internal static string ExcludedGroupsNote(IReadOnlyList<VirtualCrossoverZone> placed)
     {
         bool rear = placed.Contains(VirtualCrossoverZone.Rear);
@@ -5271,25 +4150,11 @@ public partial class VirtualCrossoverPanel : UserControl
         };
     }
 
-    // The channel the spread names, how wide it is, and the zones of the groups
-    // the spread had to leave out - or null when there is nothing to say. Pure
-    // so the rule can be read off a set of channels without a processing run
-    // behind it.
     internal static (string Name, double SpreadMs, IReadOnlyList<VirtualCrossoverZone> Placed)?
         CrossoverSpreadWarning(IReadOnlyList<VirtualCrossoverChannel> channels)
     {
-        // Only the front chain. The spread is read as "Auto delay had to push
-        // everyone out to catch this driver up", and that sentence is true of
-        // the chain alone: it is the one stage whose junctions are SEARCHED,
-        // so its members do drag each other. The later stages are PLACED
-        // against a chain already settled and drag nothing — a rear fill
-        // deliberately sits the Rear fill offset behind, which at the default
-        // 15 ms is the warning threshold itself, and a centre carries whatever
-        // its own path costs. Reading either into the spread makes Auto delay's
-        // own output trip the warning, on the very installation the staged run
-        // was built for. The split is the run's own, so a rear-only project —
-        // walked as its own chain, since there is nothing to place it against —
-        // keeps the warning it always had.
+        // Front chain only: later stages are PLACED and drag nothing (a 15 ms rear fill would trip the warning itself).
+        // See docs/tech/virtual-dsp-panel.md#staged-auto-delay.
         (List<VirtualCrossoverChannel> active, List<VirtualCrossoverChannel> placed) =
             SplitAlignmentStages([.. channels.Where(channel => !channel.Pair.Bypass)]);
         if (active.Count < 2)
@@ -5297,8 +4162,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        // The latest driver holds the smallest delay (everyone else is delayed
-        // toward it); the spread is how far ahead the earliest driver sits.
+        // The latest driver holds the smallest delay.
         VirtualCrossoverChannel latest = active.MinBy(channel => channel.Settings.DelayMs)!;
         double earliestDelay = active.Max(channel => channel.Settings.DelayMs);
         double spread = earliestDelay - latest.Settings.DelayMs;
@@ -5307,12 +4171,8 @@ public partial class VirtualCrossoverPanel : UserControl
             : null;
     }
 
-    // The two alignment stages, their tuning constants and the selection
-    // tie-breaks live in AutoAlignmentEngine / AlignmentSelection
-    // (Resonalyze.Dsp), where they are unit-tested. Previous Auto/manual delay
-    // and polarity settings are ignored: the command recomputes an absolute
-    // proposal from the current sources, crossover filters, gains and PEQ
-    // every time.
+    // Stages and tie-breaks live in AutoAlignmentEngine / AlignmentSelection. Previous delays and polarities are
+    // ignored: each run is an absolute proposal.
     private async void AutoAlignDelay()
     {
         (AutoDelayLaunch? launch, _) = PrepareAutoDelay(interactive: true);
@@ -5322,11 +4182,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         using var dialog = new VirtualCrossoverAutoDelayDialog();
-        // The dialog edits both tuning figures as layout-neutral magnitudes;
-        // the project stores each with the layout in its sign (the scene
-        // offset's wire format, the gain engine's L-R convention), so older
-        // builds read the same file — hence the magnitudes here and the
-        // layout-signed write-back in CommitAutoDelayResult.
+        // The dialog edits layout-neutral magnitudes; the project stores them layout-signed (see CommitAutoDelayResult).
         dialog.Init(
             launch.Stereo,
             project.StereoSceneOffsetMagnitudeMs,
@@ -5346,35 +4202,20 @@ public partial class VirtualCrossoverPanel : UserControl
         await ApplyConfirmedAutoDelayAsync(result);
     }
 
-    /// <summary>
-    /// An Auto delay run made ready but not started: which kind it is, the
-    /// compute delegate (run inputs -> proposal) over the participants the
-    /// checks admitted, and the two things the dialog shows beside the inputs.
-    /// The button hands it to the dialog; an AI import runs it straight away.
-    /// </summary>
+    /// <summary>A prepared Auto delay run; the button hands it to the dialog, an AI import runs it directly.</summary>
     private sealed record AutoDelayLaunch(
         bool Stereo,
         Func<AutoDelayRunRequest, Task<AutoDelayRunResult>> Runner,
         string? PolarityWarning,
         bool HasRearFill);
 
-    // Every check the button makes before its dialog opens, answered as a
-    // launch or a refusal. Interactive, the refusals speak on screen as they
-    // always did and the broad-window question is asked; headless (an AI
-    // import), nothing is shown and that question is a refusal too — the
-    // import's summary quotes the phrase, and the user sets the crossovers
-    // first, which is the answer the question was steering them to anyway.
+    // Headless (AI import) shows nothing and treats the broad-window question as a refusal.
     private (AutoDelayLaunch? Launch, string? Refusal) PrepareAutoDelay(bool interactive)
     {
-        // Stereo whenever the data allows it: some non-mono pair has BOTH
-        // sides resolved (the highest such pair becomes the L/R bridge) and
-        // the left side can hold its own walk. Otherwise the classic
-        // single-side run on whatever side is displayed.
+        // Stereo when some non-mono pair has both sides resolved (the highest becomes the L/R bridge).
         (List<VirtualCrossoverSideAlignmentChannel> leftSide, List<VirtualCrossoverSideAlignmentChannel> rightSide) =
             CollectStereoSides();
-        // The bridge ties the two sides together, so it has to be a FRONT-CHAIN
-        // pair: tied at a rear pair the whole scene would be anchored to the
-        // fill instead of to the stage it is supposed to sit behind.
+        // The bridge must be a front-chain pair, or the scene anchors to the rear fill.
         VirtualCrossoverSideAlignmentChannel? bridgeRight = rightSide
             .Where(item => item.RightSide &&
                 InFrontChain(item) &&
@@ -5390,18 +4231,10 @@ public partial class VirtualCrossoverPanel : UserControl
         return PrepareSingleSideAutoDelay(interactive);
     }
 
-    // The single-side Auto delay run: participant validation up front, then
-    // the launch. From the button the proposal (delays, polarities and
-    // optionally gains) is computed by the dialog's Run and written only on
-    // its Apply — Discard leaves every channel setting as it was — and the
-    // dialog's modality is what keeps the channel configuration stable under
-    // the background compute; an import disables the panel for the same span.
+    // The dialog's modality keeps channel settings stable during the background compute; an import disables the panel.
     private (AutoDelayLaunch? Launch, string? Refusal) PrepareSingleSideAutoDelay(bool interactive)
     {
-        // Cheap participant snapshot: enabled channels with a resolved
-        // measurement. No DSP runs here — the shared crop and every ApplyChain
-        // happen later, off the UI thread, inside ComputeAutoAlignment's
-        // AlignmentReprocessor.
+        // No DSP here: crop and ApplyChain run later in ComputeAutoAlignment's AlignmentReprocessor.
         List<VirtualCrossoverChannel> participants = channels
             .Where(channel =>
                 channel.Pair.Enabled && channel.TransferImpulseResponse != null)
@@ -5416,12 +4249,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return (null, "fewer than two enabled channels have a measurement");
         }
 
-        // A bypassed channel processes through the identity chain, so the
-        // engine's delay/polarity overrides would not move it — yet it would
-        // still take part in the junction walk (even as the settled neighbor
-        // or the reference) and receive a delay that bypass silently ignores
-        // now and applies later, once bypass is switched off. Refuse the run
-        // instead of computing an alignment that is wrong on both counts.
+        // Refuse bypassed channels: overrides would not move them, yet they would join the walk and get a delay applied later.
         List<VirtualCrossoverChannel> bypassed = participants
             .Where(channel => channel.Pair.Bypass)
             .ToList();
@@ -5447,9 +4275,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return (null, "the phase gate is misplaced");
         }
 
-        // Without crossovers the search falls back to a broad midband window and
-        // the result will shift once the filters are configured — the alignment
-        // only matters (and is only well-defined) in the overlap region.
+        // Without crossovers the search uses a broad midband window and the result shifts once filters are set.
         bool anyCrossover = participants.Any(
             channel => channel.Settings.EffectiveCrossover.Kind != CrossoverKind.Off);
         if (!anyCrossover && !interactive)
@@ -5490,12 +4316,7 @@ public partial class VirtualCrossoverPanel : UserControl
             null);
     }
 
-    // Compute errors surface inside the dialog; here the confirmed proposal
-    // is COMMITTED first and the outcome metric is appended afterwards as a
-    // separate best-effort stage (also guarding the async-void caller from
-    // an unhandled exception after the await). A metric failure after the
-    // settings are already written must not read as a failed Apply — the
-    // user would naturally re-apply and only add confusion.
+    // Commit first, then the outcome metric best-effort: a metric failure must not read as a failed Apply.
     private async Task ApplyConfirmedAutoDelayAsync(AutoDelayRunResult result)
     {
         try
@@ -5532,28 +4353,13 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Computes the single-side proposal on a background thread: the alignment
-    // cascade, then (when asked) the cut-only gain balance from the run's
-    // final snapshots. Board levelling only — a single side has no L/R
-    // relation, so neither the scene offset nor the level difference plays a
-    // part here.
-    // ------------------------------------------------- staged alignment (stereo)
-
-    // The stereo split, per side. A mono block appears once (as its left
-    // instance) and belongs to whichever stage its zone names, so a centre is
-    // found here exactly once however many sides are walked.
+    // A mono block appears once (as its left instance), so a centre is found exactly once.
     private static bool InFrontChain(VirtualCrossoverSideAlignmentChannel side) =>
         VirtualCrossoverAlignmentStages.StageOf(side.Runtime.Pair.Zone) ==
             VirtualCrossoverAlignmentStage.FrontChain;
 
-    // Stages 2 and 3 of a stereo run. The rear fill is placed PER SIDE — its
-    // left and right are different drivers at different distances, and each is
-    // timed against its own side's front stage, so the rear inherits the front's
-    // L/R relation rather than being forced to one delay. The centre has no side
-    // and is placed between both.
-    // Returns the channels that CARRY the rear-fill offset — the placed members
-    // of the rear stage — so the normalization pass can work out how much fill
-    // would fit when the finished figure does not.
+    // Rear fill placed PER SIDE against its own side's front stage; the centre between both.
+    // Returns the channels carrying the rear-fill offset, for the normalization pass.
     private IReadOnlyCollection<IAlignmentChannel> PlaceLaterStagesStereo(
         IReadOnlyList<VirtualCrossoverSideAlignmentChannel> chainReference,
         IReadOnlyList<VirtualCrossoverSideAlignmentChannel> chainFar,
@@ -5589,27 +4395,15 @@ public partial class VirtualCrossoverPanel : UserControl
             return (low, high);
         }
 
-        // Rebound by the inner walks below, so a group placed after another has
-        // settled reads the responses as they now stand.
+        // Rebound by the inner walks so later groups read settled responses.
         Complex[] referenceSum = SumOf(chainReference);
         Complex[] farSum = SumOf(chainFar);
-        // Each side's OWN band. The two sides can carry different crossover
-        // corners - the tool has always allowed it, and the stereo bridge
-        // already intersects them rather than assuming they match - so timing a
-        // far-side group inside the reference side's band would measure it over
-        // frequencies it may not play.
+        // Each side's own band: the two sides may carry different crossover corners.
         (double referenceLow, double referenceHigh) = BandOf(chainReference);
         (double farLow, double farHigh) = BandOf(chainFar);
         int sampleRate = chainReference[0].SampleRate;
 
-        // The rear fill, one side at a time against the front stage of the SAME
-        // side: that is the comparison a listener in that seat makes, and it
-        // leaves the rear's own L/R relation following the front's.
-        // Grouped by CABIN SIDE, because a rear fill can be a two-way of its own:
-        // its drivers cross each other, and that junction is the engine's
-        // business. Placed one driver at a time they each landed near their own
-        // right answer while their MUTUAL alignment — quite possibly tuned by
-        // hand — was overwritten by two unrelated numbers.
+        // Grouped by cabin side so a two-way rear settles its own junction first.
         foreach (IGrouping<bool, VirtualCrossoverSideAlignmentChannel> sideGroup in
             later
                 .Where(item =>
@@ -5618,10 +4412,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 .GroupBy(item => item.RightSide))
         {
             List<VirtualCrossoverSideAlignmentChannel> members = [.. sideGroup];
-            // The sums arrive in the engine's ROLES, not in cabin sides: on a
-            // right-hand-drive run the reference IS the right side. Reading the
-            // cabin side here would have timed every rear driver against the
-            // front stage of the opposite side.
+            // Sums arrive in engine ROLES: on right-hand drive the reference is the right side.
             bool far = IsFarSide(sideGroup.Key, rightHandDrive);
             Dictionary<IAlignmentChannel, AlignmentOverride> inner = SettleWithinGroup(
                 [.. members.Cast<IAlignmentChannel>()],
@@ -5638,9 +4429,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
             string name = string.Join("+", members.Select(item => item.Name));
             (double sideLow, double sideHigh) = BandOf(members);
-            // ONE front driver, not the side's front stage summed: the sum's
-            // band-limited arrival belongs to whatever plays earliest inside the
-            // read band, which for a rear fill is a tweeter it barely overlaps.
+            // One front driver, not the summed stage: the sum's arrival belongs to the earliest player (a tweeter).
             (VirtualCrossoverSideAlignmentChannel Channel, double LowHz, double HighHz)? pick =
                 VirtualCrossoverGroupPlacement.ChooseReference(
                     far ? chainFar : chainReference,
@@ -5719,19 +4508,14 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        // The centre: one driver with no side, so it is read against BOTH front
-        // sums and placed at the midpoint. The two readings are each other's
-        // witness - they should differ by the scene offset, because that is how
-        // far apart the sides themselves are - so a disagreement is reported
-        // rather than averaged away.
+        // The centre is read against one reference per side (ChooseCentreReferences: peer drivers, else each side's own
+        // content) and placed at the midpoint; the readings should differ by the scene offset, so a disagreement is reported, not averaged.
         List<VirtualCrossoverSideAlignmentChannel> centreMembers = [.. later.Where(item =>
             VirtualCrossoverAlignmentStages.StageOf(item.Runtime.Pair.Zone) ==
                 VirtualCrossoverAlignmentStage.Center)];
         if (centreMembers.Count > 0)
         {
-            // A two-way centre is two mono blocks that cross each other, so it
-            // gets the same treatment as a two-way rear: its own junction first,
-            // then one placement for the pair.
+            // A two-way centre settles its own junction first, then is placed as one.
             Dictionary<IAlignmentChannel, AlignmentOverride> inner = SettleWithinGroup(
                 [.. centreMembers.Cast<IAlignmentChannel>()],
                 member => ((VirtualCrossoverSideAlignmentChannel)member).Settings,
@@ -5747,20 +4531,9 @@ public partial class VirtualCrossoverPanel : UserControl
 
             string centreName =
                 string.Join("+", centreMembers.Select(item => item.Name));
-            // The centre is read against BOTH sides and the two readings are
-            // averaged and compared, so they have to be taken over the SAME band:
-            // the intersection of what both references play, narrowed to what
-            // the centre plays.
+            // Both readings over the SAME band: intersection of both references, narrowed to the centre.
             (double centreLow, double centreHigh) = BandOf(centreMembers);
-            // ONE front driver per side where the two sides offer the same
-            // block, each side's own content otherwise, and no plan at all when
-            // they share everything they play here - see
-            // VirtualCrossoverGroupPlacement.ChooseCentreReferences. This is the
-            // owner's own recipe for a centre by hand: mute the rest of the front
-            // and match the centre to the driver that holds the voice band. The
-            // choice lives in that helper rather than here because this method
-            // cannot be unit-tested and the choice is the part that has to be
-            // right.
+            // See VirtualCrossoverGroupPlacement.ChooseCentreReferences (testable; mirrors matching the centre to the voice-band driver).
             CentreReferenceChoice<VirtualCrossoverSideAlignmentChannel> choice =
                 VirtualCrossoverGroupPlacement.ChooseCentreReferences(
                     chainReference,
@@ -5771,12 +4544,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     centreHigh);
             if (choice.Plan is not { } plan)
             {
-                // No plan is a refusal, and there is nothing wider to reach for:
-                // the summed stages are what the choice REJECTED. A midpoint
-                // between two readings that share no content is not a midpoint,
-                // and it must not be presented as a placement between two sides.
-                // The reason comes from the chooser, which is the only thing that
-                // knows which of them applies.
+                // No plan is a refusal: a midpoint between readings that share no content is not a placement.
                 log.AppendLine(
                     $"  centre {centreName}: not placed - {choice.Refusal}. " +
                     "Its current delay stands.");
@@ -5867,32 +4635,17 @@ public partial class VirtualCrossoverPanel : UserControl
         return fillCarriers;
     }
 
-    /// <summary>
-    /// Whether a cabin side is the engine's FAR side under this layout. The
-    /// driver's side is the reference — left on left-hand drive, right on right —
-    /// so the far one is simply the other.
-    /// </summary>
+    /// <summary>The driver's side is the reference, so the far side is the other.</summary>
     internal static bool IsFarSide(bool rightSide, bool rightHandDrive) =>
         rightSide != rightHandDrive;
 
-    // How far the centre's two side readings may disagree beyond the scene
-    // offset before the placement stops being corroborated. Wide enough for the
-    // difference between an envelope arrival and a phase extremum on two
-    // different paths, narrow enough that a whole lobe cannot hide inside it.
+    // Allowed disagreement beyond the scene offset: envelope vs phase-extremum on two paths, narrower than a lobe.
     private const double CentreWitnessToleranceMs = 0.35;
 
-    // ------------------------------------------------------ staged alignment
-
-    // Beyond this much intended offset a polarity flip stops describing anything
-    // audible: the two groups are no longer summing in a way an ear resolves, so
-    // the sign of a correlation between them is a fact about the measurement
-    // rather than about what the listener hears.
+    // Beyond this offset the groups no longer sum audibly, so polarity describes the measurement, not the listener.
     private const double HaasPolarityIrrelevantMs = 5.0;
 
-    // The front chain and the groups placed against it afterwards. A project with
-    // no rear fill and no centre - every project written before zones existed -
-    // comes back with everything in the chain and nothing after it, and then takes
-    // the unstaged path, which is the engine call it always took.
+    // A project without rear fill or centre gets everything in the chain and takes the unstaged path.
     internal static (List<VirtualCrossoverChannel> Chain, List<VirtualCrossoverChannel> Later)
         SplitAlignmentStages(IReadOnlyList<VirtualCrossoverChannel> participants)
     {
@@ -5900,15 +4653,12 @@ public partial class VirtualCrossoverPanel : UserControl
             VirtualCrossoverAlignmentStages.StageOf(channel.Pair.Zone) ==
                 VirtualCrossoverAlignmentStage.FrontChain)];
         List<VirtualCrossoverChannel> later = [.. participants.Except(chain)];
-        // Nothing to be placed AGAINST. A rear-only project is a legitimate thing
-        // to align - it is simply its own chain, so it is walked as one rather
-        // than left waiting for a front stage that does not exist.
+        // A rear-only project is its own chain.
         return chain.Count == 0 || later.Count == 0
             ? ([.. participants], [])
             : (chain, later);
     }
 
-    // The union of a group's members' playing bands.
     private static (double LowHz, double HighHz) GroupBandOf(
         IEnumerable<VirtualCrossoverChannel> members)
     {
@@ -5925,24 +4675,8 @@ public partial class VirtualCrossoverPanel : UserControl
         return (low, high);
     }
 
-    // A later group that is itself a chain — a two-way rear, a two-way centre —
-    // has junctions of its own, and they are the engine's business. Walked here
-    // FIRST, so the group arrives at its placement already internally settled and
-    // the placement then moves it as one.
-    //
-    // Without this the two drivers of such a group were each placed against the
-    // front stage independently. Each landed near its own right answer and their
-    // MUTUAL alignment — the junction between them, quite possibly tuned by hand —
-    // was overwritten by two unrelated numbers. That is worse than not tuning
-    // them: an untouched junction is at least still the one the user set.
-    //
-    // Returns the delay each member ended on relative to the group's own
-    // earliest, which the caller adds its group offset to.
-    /// <returns>
-    /// The engine's own SPARSE map: the member it chose as the group's reference
-    /// has no entry. Compose it with <see cref="ApplyInnerSettlement"/> rather
-    /// than by indexing.
-    /// </returns>
+    /// <summary>Walks a later group's own junctions first, so it is placed as one settled body.</summary>
+    /// <returns>The engine's SPARSE map (its reference has no entry); compose via <see cref="ApplyInnerSettlement"/>.</returns>
     internal static Dictionary<IAlignmentChannel, AlignmentOverride> SettleWithinGroup(
         IReadOnlyList<IAlignmentChannel> members,
         Func<IAlignmentChannel, VirtualCrossoverChannelSettings> settingsOf,
@@ -5985,18 +4719,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return inner;
     }
 
-    /// <summary>
-    /// Copies a group's internally settled delays onto the run's override map.
-    /// </summary>
-    /// <remarks>
-    /// One line, and it earns a name because of what it must NOT be: an indexer
-    /// lookup. The engine's map is sparse by contract — its reference channel
-    /// gets no entry at all, since absence means "nothing proposed" — so the
-    /// obvious <c>inner[member]</c> throws the moment a later group is a two-way
-    /// and the walk inside it picks one of the two as its reference. That is the
-    /// same convention the normalization pass respects, one function away, and
-    /// writing it out three times is how the two came to disagree.
-    /// </remarks>
+    /// <summary>Never index <c>inner[member]</c>: the engine's map is sparse and omits its reference channel.</summary>
     internal static void ApplyInnerSettlement(
         IEnumerable<IAlignmentChannel> members,
         IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> inner,
@@ -6008,10 +4731,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // What the REPORT is told about a placement. The diagnostic log gets the
-    // whole story, but the dialog shows the report, and a placement the run does
-    // not trust has to arrive there marked - otherwise a doubtful centre reads as
-    // an ordinary proposal and gets applied on the strength of looking like one.
+    // A placement the run does not trust must arrive in the report marked.
     private static AlignmentDecision PlacementDecision(
         double coefficient,
         bool corroborated,
@@ -6026,18 +4746,11 @@ public partial class VirtualCrossoverPanel : UserControl
         return new AlignmentDecision(AlignmentDecisionKind.Search, confidence, detail);
     }
 
-    // Above this the groups share a feature clean enough to time against with
-    // confidence. Two groups playing one band from different places never
-    // correlate like a crossover, so the bar is well below a junction's.
+    // Groups playing one band from different places never correlate like a crossover, so the bar is below a junction's.
     private const double StrongPlacementCoefficient = 0.6;
 
-    // Stages 2 and 3, on the responses the front-chain walk has already settled.
-    // Each later group gets ONE delay for all its members: the placement is a
-    // property of where the group sits in the car, and it is applied to the group
-    // as a rigid body so nothing inside it is re-tuned by this pass.
-    // Returns the channels that CARRY the rear-fill offset — the placed members
-    // of the rear stage — so the normalization pass can work out how much fill
-    // would fit when the finished figure does not.
+    // Each later group gets ONE delay for all members (rigid body).
+    // Returns the channels carrying the rear-fill offset, for the normalization pass.
     private IReadOnlyCollection<IAlignmentChannel> PlaceLaterStages(
         IReadOnlyList<VirtualCrossoverChannel> chain,
         IReadOnlyList<VirtualCrossoverChannel> later,
@@ -6054,9 +4767,7 @@ public partial class VirtualCrossoverPanel : UserControl
         Complex[] SumOf(IEnumerable<VirtualCrossoverChannel> group) =>
             VirtualCrossoverAnalysis.SumImpulseResponses(
                 [.. group.Select(channel => byChannel[channel].ImpulseResponse)]);
-        // Captured by the local functions above, so the inner walks below rebind
-        // it rather than shadowing it: a group placed after another group settled
-        // must read the responses as they now stand.
+        // Rebound (not shadowed) by the inner walks: later groups read settled responses.
 
 
         Complex[] reference = SumOf(chain);
@@ -6073,8 +4784,6 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
-            // The group's own junctions first, so what gets placed is a settled
-            // group rather than a set of drivers about to be scattered.
             Dictionary<IAlignmentChannel, AlignmentOverride> inner = SettleWithinGroup(
                 [.. members.Cast<IAlignmentChannel>()],
                 member => ((VirtualCrossoverChannel)member).Settings,
@@ -6089,8 +4798,7 @@ public partial class VirtualCrossoverPanel : UserControl
             }
 
             (double groupLow, double groupHigh) = GroupBandOf(members);
-            // ONE front driver, not the chain summed - see
-            // VirtualCrossoverGroupPlacement.ChooseReference.
+            // One front driver, not the chain summed (see ChooseReference).
             (VirtualCrossoverChannel Channel, double LowHz, double HighHz)? pick =
                 VirtualCrossoverGroupPlacement.ChooseReference(
                     chain,
@@ -6107,9 +4815,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 against, SumOf(members), sampleRate, lowHz, highHz);
             if (placement == null)
             {
-                // Its CURRENT delay stands, written explicitly rather than left
-                // absent: an absent override means zero to the reprocessor, which
-                // would silently move a group this run could not measure.
+                // Written explicitly: an absent override means zero to the reprocessor.
                 log.AppendLine(
                     $"  {stage}: not placed - the band it shares with {againstName} " +
                     $"({lowHz:0}-{highHz:0} Hz) holds no reliable arrival. " +
@@ -6128,9 +4834,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
-            // A rear fill is WANTED behind the front stage: the precedence effect
-            // keeps the image on the dash while the rear adds room. A centre
-            // belongs with the front stage, so it takes no offset.
+            // A rear fill is wanted behind the front (precedence effect); a centre takes no offset.
             double offsetMs = stage == VirtualCrossoverAlignmentStage.Rear
                 ? rearFillOffsetMs
                 : 0.0;
@@ -6159,9 +4863,6 @@ public partial class VirtualCrossoverPanel : UserControl
                     : string.Empty));
             foreach (VirtualCrossoverChannel member in members)
             {
-                // The group offset is added to what the inner walk left the
-                // member on, so the group moves as one and its own junctions
-                // survive the move.
                 double innerMs = inner.TryGetValue(member, out AlignmentOverride own)
                     ? own.DelayMs
                     : 0.0;
@@ -6181,27 +4882,8 @@ public partial class VirtualCrossoverPanel : UserControl
         return fillCarriers;
     }
 
-    // Every channel slid together until the earliest sits at zero. The stages
-    // compute their offsets against a settled front stage without regard for what
-    // a processor can dial - a rear fill pushed back past the front asks the front
-    // to go negative - so nothing is dialable until this pass, and after it every
-    // relation is preserved with the whole set made dialable.
-    //
-    // It takes the SCOPE rather than working off the map's keys, because the map
-    // is sparse by design: the engine documents absence as "nothing proposed"
-    // and deliberately leaves its reference channel out (see
-    // AutoAlignmentEngine.NormalizeAndVerifyFeasibility). Shifting only the keys
-    // would leave that reference standing at zero while its own siblings moved
-    // around it - a rigid-body shift that is not rigid, and the one relation in
-    // the whole run that must not change. So every participant is read here, an
-    // absent one as zero, and every participant is written back.
-    //
-    // The ceiling verdict after the shift is unconditional — a rear fill can push
-    // the LATEST channel past the processor's range without any channel having
-    // gone negative, so it cannot ride on whether a shift happened. And because
-    // the fill is the one number in the whole proposal that is preference rather
-    // than physics, a refusal works out the largest fill that WOULD fit and says
-    // so, instead of leaving the user to bisect it by rerunning.
+    // Slides every participant (absent = zero; the map omits the engine's reference) until the earliest is at zero.
+    // See docs/tech/virtual-dsp-panel.md#delay-normalization.
     internal static void NormalizeStagedDelays(
         IReadOnlyList<IAlignmentChannel> scope,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
@@ -6215,9 +4897,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The raw placements, kept from before the shift: the fill scan below
-        // judges each trial span with min(0, minimum) folded in, which a uniform
-        // shift already applied to the map would double-count.
+        // Raw placements before the shift: the fill scan folds min(0, minimum) in itself.
         Dictionary<IAlignmentChannel, double> raw = scope.Distinct().ToDictionary(
             channel => channel,
             channel => alignment.GetValueOrDefault(channel).DelayMs);
@@ -6258,14 +4938,7 @@ public partial class VirtualCrossoverPanel : UserControl
         throw new InvalidOperationException(message);
     }
 
-    // The largest rear fill the processor's delay range can hold, on the DSP's
-    // own 0.01 ms grid. Found by walking DOWN from the requested fill rather
-    // than solved in closed form, because the dialable span is not monotone in
-    // the fill: a rear group whose co-arrival placement came out negative first
-    // CLOSES the span as the fill grows (the fill lifts it toward zero) and only
-    // then widens it. Null when no fill was in play, or when even a fill of zero
-    // leaves the spread past the ceiling — then the fill is not the story and
-    // the refusal must not pretend lowering it would help.
+    // Walks down on the 0.01 ms grid: the dialable span is not monotone in the fill. Null when no fill is in play or a zero fill does not fit either.
     private static double? LargestFittingRearFill(
         IReadOnlyDictionary<IAlignmentChannel, double> raw,
         IReadOnlyCollection<IAlignmentChannel>? carriers,
@@ -6319,10 +4992,7 @@ public partial class VirtualCrossoverPanel : UserControl
         AutoDelaySumLossForecast? sumLoss = null;
         await Task.Run(() =>
         {
-            // Stage 1: the front chain, walked by the engine exactly as it
-            // always was. An unstaged project has every participant in that
-            // chain, so this IS the old call for it — not a staged run with one
-            // stage — and its result cannot drift from what the battery pinned.
+            // An unstaged project puts every participant in the chain, so this is the plain unstaged engine call.
             (List<VirtualCrossoverChannel> chain, List<VirtualCrossoverChannel> later) =
                 SplitAlignmentStages(participants);
             AlignmentReprocessor reprocessor = ComputeAutoAlignment(
@@ -6333,8 +5003,6 @@ public partial class VirtualCrossoverPanel : UserControl
                 walkSet: later.Count > 0 ? chain : null);
             if (later.Count > 0)
             {
-                // Stages 2 and 3, then the shift that makes the lot dialable —
-                // judged against the processor's own delay ceiling.
                 IReadOnlyCollection<IAlignmentChannel> fillCarriers =
                     PlaceLaterStages(
                         chain, later, reprocessor, alignment, decisions,
@@ -6344,9 +5012,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     ProcessorMaxDelayMs, request.RearFillOffsetMs, fillCarriers);
             }
 
-            // The "before" snapshots carry the CURRENT delays and polarities —
-            // the alignment itself deliberately ignores them, so they exist
-            // only for the report's before/after sum-loss forecast.
+            // "Before" snapshots exist only for the report's before/after forecast.
             IReadOnlyList<AlignmentSnapshot> beforeSnapshots =
                 reprocessor.Reprocess(participants.ToDictionary(
                     channel => (IAlignmentChannel)channel,
@@ -6382,18 +5048,12 @@ public partial class VirtualCrossoverPanel : UserControl
             alignment, decisions, gains);
         string report = VirtualCrossoverAutoDelayReport.Format(
             outcomes, stereo: false, request, sumLoss);
-        // The diagnostic trace is written already at the proposal stage, so a
-        // discarded (or failed-looking) run can still be shared and analyzed;
-        // Apply rewrites it with the results and the outcome metric appended.
+        // Written at the proposal stage so a discarded run can still be shared.
         WriteAlignmentLog(log.ToString());
         return new AutoDelayRunResult(outcomes, Stereo: false, request, report, log);
     }
 
-    // Bridges the run's channels to the dsp GainBalanceEngine: bands from the
-    // crossover corners, levels from the run's FINAL snapshots (the current
-    // gain is baked into the chain and subtracted back out by the engine, so
-    // the proposal is absolute, not incremental). Runs on the background
-    // thread, reusing the reprocessor's per-channel FFT cache.
+    // Levels from the FINAL snapshots; the engine subtracts the baked-in gain, so the proposal is absolute.
     private static IReadOnlyList<GainBalanceResult> ComputeGainBalance(
         IEnumerable<(IAlignmentChannel Channel, VirtualCrossoverChannelSettings Settings,
             bool Mono, bool RightSide, IAlignmentChannel? LeftPeer)> channels,
@@ -6437,11 +5097,7 @@ public partial class VirtualCrossoverPanel : UserControl
         gains?.Where(result => result.Adjusted)
             .ToDictionary(result => result.Channel);
 
-    // The report's headline figure for one side: the same averaged summation
-    // loss the metric read-out shows, predicted from the run's snapshots for
-    // the CURRENT settings and for the proposal. Proposed gain changes enter
-    // as spectrum scales — the reprocessor's chains still carry the current
-    // gains. Null when the side cannot form a sum (fewer than two channels).
+    // Proposed gains enter as spectrum scales (the reprocessor's chains carry current gains). Null below two channels.
     private static AutoDelaySumLossForecast? ForecastSumLoss(
         IReadOnlyList<(IAlignmentChannel Channel, VirtualCrossoverChannelSettings Settings)> sideChannels,
         IReadOnlyDictionary<IAlignmentChannel, Complex[]> beforeIrs,
@@ -6474,9 +5130,6 @@ public partial class VirtualCrossoverPanel : UserControl
             : null;
     }
 
-    // Assembles the report rows: the current settings as "before", the engine
-    // override (and gain proposal, when present) as "after", with the
-    // decisions' confidence attached. Pure shaping — nothing is written.
     private static List<AutoDelayChannelOutcome> BuildOutcomes(
         IEnumerable<(IAlignmentChannel Channel, VirtualCrossoverChannel Runtime,
             VirtualCrossoverChannelSettings Settings, string Name)> channels,
@@ -6515,18 +5168,10 @@ public partial class VirtualCrossoverPanel : UserControl
         return outcomes;
     }
 
-    // Writes the CONFIRMED proposal into the channels and their controls,
-    // persists and redraws — the transactional part of Apply, synchronous so
-    // it either fully lands or fails before anything is half-written.
-    // Reached only through the dialog's Apply — Discard never gets here, so
-    // the channels keep their previous settings. The diagnostic log is
-    // rewritten with the results immediately: a later metric failure must
-    // not lose them.
+    // Synchronous, so Apply fully lands or fails before anything is half-written; the log is rewritten at once.
     private void CommitAutoDelayResult(AutoDelayRunResult result)
     {
-        // The rear fill offset is part of the tune the run just committed, so it
-        // is stored with it: the next run on this car should start from the
-        // answer this car settled on rather than from the dialog's default.
+        // Stored so the next run on this car starts from the fill it settled on.
         project.RearFillOffsetMs = result.Request.RearFillOffsetMs;
         foreach (AutoDelayChannelOutcome outcome in result.Outcomes)
         {
@@ -6554,36 +5199,22 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (result.Stereo)
         {
-            // The inputs the proposal was computed with become the persisted
-            // values only now, so a discarded experiment does not overwrite
-            // them. Both figures are stored with the layout in their signs
-            // (the scene offset via SetStereoScene, the tilt via the L-R
-            // convention LevelDifferenceDb restates), keeping the file
-            // readable — and safely resavable — by older builds.
+            // Persisted only on Apply, layout-signed so older builds read and resave the file.
             project.SetStereoScene(
                 result.Request.SceneOffsetMs, result.Request.RightHandDrive);
             project.StereoLevelDifferenceDb = result.Request.LevelDifferenceDb;
         }
 
-        // The run decided polarity per side, and "keep the hidden side's" is a
-        // decision the side lock cannot see in a difference — so the lock is told to
-        // take the result as it stands rather than carry the shown side's flip over.
+        // "Keep the hidden side's polarity" is invisible to the lock as a difference, so re-remember the result.
         sideLock.Remember(channels.Select(channel => channel.Pair));
         ScheduleSave();
         RedrawAll();
         WriteAlignmentLog(result.Log.ToString());
     }
 
-    // The best-effort epilogue of Apply: recompute the metric from the
-    // just-applied settings and close the diagnostic log with it.
     private async Task AppendOutcomeMetricAsync(AutoDelayRunResult result)
     {
-        // RedrawAll pushes the read-out asynchronously (the ApplyChain FFTs run off
-        // the UI thread), so recompute the metric synchronously from the just-
-        // applied settings so the log ends with this run's true outcome. The
-        // side label is captured BEFORE the await: the panel is live again
-        // after the modal closed, and a side switch mid-computation would
-        // otherwise caption the snapshot with the other side's name.
+        // RedrawAll pushes the read-out asynchronously, so recompute here; capture the side before the await.
         bool metricSideRight = project.ActiveSideRight;
         ProcessedRender? render = await ProcessChannelsAsync();
         List<ProcessedChannel> outcomeChannels = render?.Channels ?? [];
@@ -6596,12 +5227,8 @@ public partial class VirtualCrossoverPanel : UserControl
         WriteAlignmentLog(result.Log.ToString());
     }
 
-    // The measured records may carry a playback-crosstalk click at one fixed
-    // early sample (an electrical copy of the playback, ahead of any acoustic
-    // arrival — seen in every record of the same session on the field data).
-    // Field-measured effect on the search: sub-sample GCC-PHAT bias on most
-    // configs and a wrong solution branch on gentle slopes. Head-gate every
-    // record the detector convicts before the search and name it in the log.
+    // Records may carry a playback-crosstalk click at a fixed early sample (biases GCC-PHAT, wrong branch on gentle
+    // slopes): head-gate convicted records and log them.
     private static List<AlignmentReprocessInput> CleanCrosstalkHeads(
         List<AlignmentReprocessInput> inputs,
         System.Text.StringBuilder log) =>
@@ -6627,21 +5254,9 @@ public partial class VirtualCrossoverPanel : UserControl
             };
         }).ToList();
 
-    // Bridges the panel's channel model to the dsp AutoAlignmentEngine (where
-    // the FFT-heavy alignment stages live, unit-tested): snapshots + junctions
-    // in, an override map (plus the per-channel decisions for the report) out.
-    // Runs on a background thread; the AlignmentReprocessor owns the run-scoped
-    // FFT cache, so between consecutive junction searches only the one or two
-    // channels that changed their overrides are re-FFT'd, and the shared
-    // UI-thread coordinator cache is never touched. Returned so the gain stage
-    // can reuse the same cache for the final snapshots.
-    /// <param name="walkSet">
-    /// The channels the engine's chain WALK covers, when that is narrower than
-    /// the participants. The reprocessor is still built over all of them — the
-    /// later stages place their groups against snapshots it renders — but only
-    /// these form junctions. Null walks everything, which is every project
-    /// without a rear fill or a centre.
-    /// </param>
+    // Bridges to AutoAlignmentEngine on a background thread; the reprocessor's run-scoped FFT cache re-FFTs only changed
+    // channels and is returned for the gain stage.
+    /// <param name="walkSet">Channels forming junctions when narrower than the participants (later stages still render from all); null walks all.</param>
     private AlignmentReprocessor ComputeAutoAlignment(
         List<VirtualCrossoverChannel> participants,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
@@ -6649,17 +5264,12 @@ public partial class VirtualCrossoverPanel : UserControl
         System.Text.StringBuilder log,
         IReadOnlyList<VirtualCrossoverChannel>? walkSet = null)
     {
-        // Order along the spectrum by band center; adjacent drivers form the
-        // junctions the search walks (the same ordering and pair bands the metric
-        // read-out reads, straight from VirtualCrossoverJunctions).
+        // Adjacent drivers by band centre form the junctions (same as VirtualCrossoverJunctions).
         List<VirtualCrossoverChannel> ordered = participants
             .OrderBy(channel => VirtualCrossoverJunctions.BandCenterHz(channel.Settings))
             .ToList();
 
-        // Same shared direct-sound crop + parallel cache-miss processing as the
-        // stereo run: identical final delays at a fraction of the FFT cost,
-        // because every search stage reads only the gated direct sound. The crop
-        // and every ApplyChain first run HERE, on the background thread.
+        // Shared direct-sound crop: identical delays at a fraction of the FFT cost.
         var reprocessor = new AlignmentReprocessor(
             CleanCrosstalkHeads(
                 ordered.Select(channel => new AlignmentReprocessInput(
@@ -6675,10 +5285,7 @@ public partial class VirtualCrossoverPanel : UserControl
         var snapshots = ordered
             .Select((channel, i) => (channel, snapshot: initial[i]))
             .ToDictionary(item => item.channel, item => item.snapshot);
-        // The walk covers the front chain when the project is staged; every
-        // participant otherwise. Its members keep the band ordering they had
-        // among the whole set, so a narrowed walk is the same walk with members
-        // removed rather than a differently ordered one.
+        // A narrowed walk keeps the whole set's band order.
         List<VirtualCrossoverChannel> walked = walkSet == null
             ? ordered
             : [.. ordered.Where(walkSet.Contains)];
@@ -6705,10 +5312,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return reprocessor;
     }
 
-    // The per-side participants of a stereo Auto delay run: every enabled
-    // channel side with a resolved measurement. A mono pair contributes ONE
-    // instance (its left side), shared by both lists — the engine tunes it in
-    // the left pass and treats it as fixed on the right.
+    // A mono pair contributes ONE instance (left), tuned in the left pass and fixed on the right.
     private (List<VirtualCrossoverSideAlignmentChannel> Left, List<VirtualCrossoverSideAlignmentChannel> Right)
         CollectStereoSides()
     {
@@ -6738,11 +5342,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return (left, right);
     }
 
-    // The stereo Auto delay: the driver's side first (left on LHD, right on
-    // RHD), then the L/R bridge at the top pair honoring the scene offset,
-    // then the far side's descent — the cascade itself lives in
-    // AutoAlignmentEngine.ComputeStereo (dsp, unit-tested on synthetic
-    // systems and real car measurements), fed a mirrored plan for RHD.
+    // Driver's side first, then the L/R bridge at the top pair, then the far side (AutoAlignmentEngine.ComputeStereo).
     private (AutoDelayLaunch? Launch, string? Refusal) PrepareStereoAutoDelay(
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
         List<VirtualCrossoverSideAlignmentChannel> rightSide,
@@ -6753,10 +5353,7 @@ public partial class VirtualCrossoverPanel : UserControl
             .Distinct()
             .ToList();
 
-        // Same reasoning as the single-side run: a bypassed channel processes
-        // through the identity chain, so the computed delay would silently not
-        // apply — refuse instead of proposing a wrong alignment. Bypass belongs
-        // to the block, so it takes both of its sides out at once.
+        // Bypass belongs to the block, so both sides are refused.
         List<VirtualCrossoverSideAlignmentChannel> bypassed = union
             .Where(item => item.Runtime.Pair.Bypass)
             .ToList();
@@ -6777,9 +5374,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 string.Join(", ", bypassed.Select(item => item.Name)));
         }
 
-        // The verdict describes the side on screen; the detail text says so and
-        // asks for the other one to be checked after switching, because only
-        // the shown side's channels have been processed to judge it against.
+        // The verdict covers only the side on screen.
         if (interactive ? RefuseOnMisplacedGate("Auto delay") : GateIsMisplaced)
         {
             return (null, "the phase gate is misplaced");
@@ -6814,11 +5409,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         VirtualCrossoverSideAlignmentChannel bridgeLeft = leftSide.First(
             item => item.Runtime == bridgeRight.Runtime && !item.RightSide);
-        // The two sides carry independent crossover settings, so the bridge
-        // band is the INTERSECTION of their playing bands: measured in one
-        // side's exclusive range, the arrival would time signal the other
-        // side does not even reproduce. No usable overlap → refuse with the
-        // reason instead of bridging on noise.
+        // Bridge band = INTERSECTION of both sides' playing bands; no overlap -> refuse.
         (double leftBandLowHz, double leftBandHighHz) =
             VirtualCrossoverJunctions.GetChannelBand(bridgeLeft.Settings);
         (double rightBandLowHz, double rightBandHighHz) =
@@ -6853,13 +5444,7 @@ public partial class VirtualCrossoverPanel : UserControl
             null);
     }
 
-    // A launch-time red heads-up for the Auto delay dialog when a driver's LEFT
-    // and RIGHT measured polarities disagree — one side's impulse response
-    // reads inverted relative to the other, typically a swapped speaker wire.
-    // Read from the raw transfer IRs (the same figure the channel's "IR:"
-    // badge shows), so it reflects the MEASUREMENT, not the virtual Invert
-    // switch: the alignment can mask the fault by inverting one side, but the
-    // physical wiring stays wrong. Null when every measured pair agrees.
+    // From the raw transfer IRs (the "IR:" badge), not the Invert switch: alignment can mask a swapped wire.
     private static string? DescribeLeftRightPolarityMismatch(
         IEnumerable<VirtualCrossoverSideAlignmentChannel> leftSide,
         IReadOnlyCollection<VirtualCrossoverSideAlignmentChannel> rightSide)
@@ -6890,8 +5475,6 @@ public partial class VirtualCrossoverPanel : UserControl
         return FormatPolarityMismatchWarning(names);
     }
 
-    // The dialog status line for a set of drivers whose L/R measured polarities
-    // disagree; null (no warning) when the set is empty.
     internal static string? FormatPolarityMismatchWarning(
         IReadOnlyList<string> mismatchedDrivers) =>
         mismatchedDrivers.Count == 0
@@ -6899,10 +5482,7 @@ public partial class VirtualCrossoverPanel : UserControl
             : $"⚠ L/R polarity mismatch on {string.Join(", ", mismatchedDrivers)} — " +
               "one side measured inverted (check wiring).";
 
-    // Computes the stereo proposal on a background thread: the alignment
-    // cascade, then (when asked) the cut-only gain balance from the run's
-    // final snapshots — right channels judged against their left peers, tilted
-    // by the L-R level difference the tuner entered.
+    // Right channels' gains are judged against their left peers, tilted by the entered L-R level difference.
     private async Task<AutoDelayRunResult> RunStereoProposalAsync(
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
         List<VirtualCrossoverSideAlignmentChannel> rightSide,
@@ -6937,9 +5517,7 @@ public partial class VirtualCrossoverPanel : UserControl
         AutoDelaySumLossForecast? rightSumLoss = null;
         await Task.Run(() =>
         {
-            // Stage 1: the front chain on both sides. The reprocessor still
-            // covers the whole union — the later stages place their groups
-            // against snapshots it renders — but only the chain is walked.
+            // The reprocessor covers the union (later stages render from it); only the chain is walked.
             List<VirtualCrossoverSideAlignmentChannel> chainLeft =
                 [.. leftSide.Where(InFrontChain)];
             List<VirtualCrossoverSideAlignmentChannel> chainRight =
@@ -6952,9 +5530,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 request.RightHandDrive, engineAlignment, decisions, log);
             if (later.Count > 0)
             {
-                // Stages 2 and 3 read the sides in the engine's own ROLES, so a
-                // right-hand-drive run places its groups against the same
-                // reference the walk settled rather than against the mirror.
+                // Engine roles, so RHD places groups against the reference the walk settled.
                 IReadOnlyCollection<IAlignmentChannel> fillCarriers =
                     PlaceLaterStagesStereo(
                         request.RightHandDrive ? chainRight : chainLeft,
@@ -6972,9 +5548,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     ProcessorMaxDelayMs, request.RearFillOffsetMs, fillCarriers);
             }
 
-            // The "before" snapshots carry the CURRENT delays and polarities —
-            // the alignment itself deliberately ignores them, so they exist
-            // only for the report's before/after sum-loss forecast.
+            // "Before" snapshots exist only for the report's before/after forecast.
             IReadOnlyList<AlignmentSnapshot> beforeSnapshots =
                 reprocessor.Reprocess(union.ToDictionary(
                     side => (IAlignmentChannel)side,
@@ -6982,8 +5556,6 @@ public partial class VirtualCrossoverPanel : UserControl
                         side.Settings.DelayMs, side.Settings.InvertPolarity)));
             if (request.AdjustGains)
             {
-                // request.LevelDifferenceDb: the near-side cut restated in
-                // the gain engine's signed L-R convention per the layout.
                 gains = ComputeGainBalance(
                     union.Select(side => (
                         (IAlignmentChannel)side,
@@ -7017,8 +5589,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 beforeIrs, afterIrs, adjustedGains, rightMinHz, rightMaxHz);
         });
 
-        // The report groups the two sides of each block together (A L, A R,
-        // B L …) instead of the union's all-left-then-all-right walk order.
+        // Report grouped per block (A L, A R, B L...).
         List<AutoDelayChannelOutcome> outcomes = BuildOutcomes(
             union
                 .OrderBy(side => channels.IndexOf(side.Runtime))
@@ -7031,15 +5602,10 @@ public partial class VirtualCrossoverPanel : UserControl
             engineAlignment, decisions, gains);
         string report = VirtualCrossoverAutoDelayReport.Format(
             outcomes, stereo: true, request, leftSumLoss, rightSumLoss);
-        // Written already at the proposal stage, so a discarded run can still
-        // be shared and analyzed; Apply rewrites it with the outcome metric.
         WriteAlignmentLog(log.ToString());
         return new AutoDelayRunResult(outcomes, Stereo: true, request, report, log);
     }
 
-    // Bridges the pair/side model to the stereo engine on a background thread,
-    // sharing the same AlignmentReprocessor (run-scoped FFT cache) as the
-    // single-side run.
     internal AlignmentReprocessor ComputeStereoAlignment(
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
         List<VirtualCrossoverSideAlignmentChannel> rightSide,
@@ -7054,11 +5620,7 @@ public partial class VirtualCrossoverPanel : UserControl
         Dictionary<IAlignmentChannel, AlignmentDecision> decisions,
         System.Text.StringBuilder log)
     {
-        // The whole search runs on a shared direct-sound crop of the measured
-        // IRs: the engine only reads the gated direct sound and band-limited
-        // arrivals, so the final delays are identical to a full-length run
-        // (validated on real measurements) while every FFT in the cascade
-        // shrinks from the capture length to the crop.
+        // Crop to the direct sound: final delays identical to a full-length run (validated), FFTs much shorter.
         var reprocessor = new AlignmentReprocessor(
             CleanCrosstalkHeads(
                 union.Select(side => new AlignmentReprocessInput(
@@ -7095,17 +5657,8 @@ public partial class VirtualCrossoverPanel : UserControl
             return pairs;
         }
 
-        // The engine's plan is written in reference/far ROLES: plan-left is
-        // the driver's side the cascade settles first, plan-right the far
-        // side fitted to it, and a positive scene offset makes the far side
-        // lead. LHD maps the cabin sides onto the roles directly. RHD hands
-        // the plan MIRRORED — the right side anchors, the left one is fitted
-        // — so the same non-negative offset makes the left side lead (the
-        // right lags by it), the dash-center image for a right-seated driver.
-        // The L/R pair links (the shared playing band of each stereo pair)
-        // aim the descent's gentle prior at the cross-side-consistent delay —
-        // the same Δ the metric panel verifies afterwards; their first member
-        // is the settled reference-side channel, mirrored alike.
+        // The plan is in reference/far ROLES; RHD hands it mirrored, so a positive offset makes the left side lead.
+        // Pair links aim the descent's prior at the cross-side-consistent delay.
         var pairLinks = new List<StereoPairLink>();
         foreach (VirtualCrossoverSideAlignmentChannel right in rightSide.Where(side => side.RightSide))
         {
@@ -7122,9 +5675,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 VirtualCrossoverJunctions.GetChannelBand(right.Settings);
             double lowHz = Math.Max(leftLow, rightLow);
             double highHz = Math.Min(leftHigh, rightHigh);
-            // The link's band must satisfy the arrival analysis' own
-            // admission rule — the band is no longer silently widened for a
-            // too-narrow intersection, so such a link could never measure.
+            // Must satisfy the arrival analysis' admission rule, or the link could never measure.
             if (highHz >= lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
             {
                 pairLinks.Add(rightHandDrive
@@ -7143,16 +5694,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 Pairs(referenceByBand),
                 farByBand,
                 Pairs(farByBand),
-                // The engine's mono channels are the ones ITS walk tunes - the
-                // front chain's shared subwoofers, read off the walked left
-                // side. NOT off the union: a staged run keeps a mono centre
-                // (or a mono rear) in the union for the reprocessor while the
-                // walks are narrowed to the chain, and handing those to the
-                // engine trips its own "every mono channel must be part of the
-                // left walk" guard - the refusal the reference car produced.
-                // The guard is right; they belong to stages 2-3. An unstaged
-                // run's left side holds exactly the union's monos, so this
-                // reads the same set it always did there.
+                // Monos from the walked left side, NOT the union: a staged union keeps a mono centre/rear that trips the engine's
+                // "mono must be in the left walk" guard.
                 leftSide.Where(side => side.Runtime.Pair.Mono)
                     .Cast<IAlignmentChannel>()
                     .ToList(),
@@ -7170,9 +5713,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return reprocessor;
     }
 
-    // A diagnostic trace of the last Auto delay run (pair bands, arrivals,
-    // deltas, fine results), for sharing when an alignment looks wrong. Best
-    // effort: a failed write must never break the alignment itself.
+    // Best effort: a failed write must never break the alignment.
     private static void WriteAlignmentLog(string text)
     {
         try
@@ -7182,20 +5723,11 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         catch
         {
-            // Diagnostics only.
         }
     }
 
-    // The gate-driven magnitude shared by the processed channels, the sums and
-    // the metrics — always through the FIXED gate (see the snapshot refresh:
-    // FDW is phase-only, it cannot hold a multi-arrival sum). A pinned (or
-    // pinned-previewed) offset is one absolute window for every curve;
-    // unpinned (Auto), the window anchors at the sample the CALLER passes — the
-    // shared earliest FRONT for channels and sums (one window is what keeps
-    // the drawn Sum the exact vector sum of the drawn channels and the
-    // sum-loss under its 0 dB ceiling; see VirtualCrossoverMetrics.BuildCurves)
-    // and the raw curve's own front. Runs on PLINQ worker threads: reads only
-    // the immutable snapshot RequestRedraw refreshed.
+    // Always the FIXED gate. Pinned: one absolute window; Auto: anchored at the caller's sample (shared earliest front
+    // keeps Sum = vector sum of channels, loss <= 0 dB). PLINQ workers read only the immutable snapshot.
     private GatedMagnitude BuildMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
@@ -7216,9 +5748,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
 
 
-    // The opposite side's sum window: its OWN pinned offset (or its own
-    // earliest-arrival anchor when unpinned) — never the active side's pin,
-    // whose placement belongs to different arrival times.
+    // Its own pin or anchor, never the active side's.
     private AnalysisCurve BuildOppositeMagnitudeCurve(VirtualCrossoverSideSum side)
     {
         MagnitudeGateSnapshot snapshot = magnitudeGate;
@@ -7230,27 +5760,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 oppositeSide: true, side.AnchorIndex, side.SampleRate)).Display;
     }
 
-    /// <summary>
-    /// The opposite side's sum drawn the way the active side's hybrid is: its own
-    /// channels from their own spatial averages, summed as amplitudes, with the
-    /// summation loss ITS impulse responses measure on top. Null when that side is
-    /// short of a capture.
-    /// </summary>
-    /// <remarks>
-    /// Everything is that side's own — its channels, its captures, its loss, its gate
-    /// placement — except the OFFSET, which is the active side's. Giving each side its
-    /// own would erase exactly the L/R level difference the captures measured and this
-    /// curve exists to show. What that costs is only an absolute shift when the side
-    /// selector flips; the gap between the two curves, which is what is being read, is
-    /// the same either way.
-    /// <para>
-    /// Borrowing an offset only holds if both sides' captures are ONE set, which
-    /// <see cref="CanDrawOppositeHybridSum"/> checks — per-side checks cannot. Two
-    /// relative capture runs, one per side, are each internally consistent and say
-    /// nothing about how their levels compare, so a gain that moved between them
-    /// would be drawn here as an L/R imbalance the car does not have. Not one side.
-    /// </para>
-    /// </remarks>
+    /// <summary>Opposite side's hybrid sum from its own captures and loss, but with the ACTIVE side's offset.</summary>
+    /// <remarks>See docs/tech/virtual-dsp-panel.md#opposite-side-hybrid-sum.</remarks>
     private AnalysisCurve? BuildOppositeHybridSumCurve(
         VirtualCrossoverSideSum side, double offsetDb, MagnitudeGateSnapshot? snapshot = null)
     {
@@ -7260,10 +5771,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return null;
         }
 
-        // One anchor and one offset for this side's channels AND its sum — the same
-        // rule the active side's curves are built under, and for the same reason:
-        // per-channel windows would stop the drawn sum being the sum of the drawn
-        // channels, and the loss could poke above its 0 dB ceiling.
+        // One anchor and offset for channels AND sum, as on the active side.
         snapshot ??= magnitudeGate;
         double gateOffsetMs = snapshot.ResolveGateOffsetMs(
             oppositeSide: true, side.AnchorIndex, side.SampleRate);
@@ -7295,13 +5803,10 @@ public partial class VirtualCrossoverPanel : UserControl
         List<IReadOnlyList<SignalPoint>> operands = channelMagnitudes
             .Select(curve => (IReadOnlyList<SignalPoint>)curve.Unsmoothed.Points)
             .ToList();
-        // Raw, and smoothed only at the end of the reconstruction — see
-        // BuildHybridSumCurve for why the order is not free here.
+        // Raw, smoothed only at the end (see BuildHybridSumCurve).
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
             sum.Unsmoothed.Points, operands);
-        // Its own offset is computed on the way and then replaced: it is a fair
-        // figure for this side alone, and using it would level the two sides
-        // separately.
+        // Its own offset is replaced: using it would level the sides separately.
         List<SignalPoint>? points = BuildHybridSumCurve(
             hybrid with { OffsetDb = offsetDb },
             side.Channels,
@@ -7313,21 +5818,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return points == null ? null : new AnalysisCurve("Sum opposite", points);
     }
 
-    // A RAW channel curve lives in its own time: its arrival predates the
-    // processed gate by the channel's delay, so even a pinned processed-view
-    // offset would clip it into the left fade. Same gate durations and window
-    // mode, anchored on the raw response's own START — the same rule as the
-    // processed curves. Its own PEAK was the anchor once, and with the short
-    // junction gate that was harmless; the steady-state window made it a
-    // defect: a woofer's peak trails its onset by more than the 2 ms fade-in
-    // (5.4 ms on the archived Passat woofer), so a peak-anchored window opened
-    // after the response had begun and read the record minus its direct
-    // arrival — octave bands off by 10+ dB against the same IR read from the
-    // front.
-    // The active side's hybrid sum. The anchor and the gate are recomputed rather
-    // than threaded through: both are pure functions of the processed set and the
-    // gate snapshot, which is what BuildCurves used to build the measured Sum, so
-    // the two windows cannot part.
+    // Anchor and gate recomputed as pure functions of the processed set and snapshot, so they match the measured Sum.
     private List<SignalPoint>? BuildActiveHybridSumCurve(
         List<ProcessedChannel> processed,
         List<AnalysisCurve> magnitudes,
@@ -7351,6 +5842,7 @@ public partial class VirtualCrossoverPanel : UserControl
             magnitudes.Select(curve => (IReadOnlyList<SignalPoint>)curve.Points).ToList());
     }
 
+    // Raw curves anchor on their own START; see docs/tech/virtual-dsp-panel.md#raw-curve-anchor.
     private AnalysisCurve BuildRawMagnitudeCurve(
         Complex[] impulseResponse,
         int peakIndex,
@@ -7371,26 +5863,9 @@ public partial class VirtualCrossoverPanel : UserControl
             calibration).Display;
     }
 
-    // Both widths of one gated build: the smoothed curve the plot draws and the
-    // unsmoothed one the summation loss divides (see GatedMagnitude). One gate,
-    // one FFT, two resamples — the second resample is the cheap half.
-    /// <summary>
-    /// The gated magnitude of the SUM of these channels, with each contributing only
-    /// where it measured anything.
-    /// </summary>
-    /// <remarks>
-    /// Not the same as gating their summed impulse response, though the arithmetic
-    /// says it is: one shared window makes the transform linear, so the two totals
-    /// agree bin for bin — including on the energy the window smears out of a
-    /// channel's own band into a range that channel never measured. Measured on two
-    /// brick-walled bands an octave apart, that phantom reached 1.4 dB at 900 Hz and
-    /// 2.5 dB at 990 Hz above the only channel that measured there, and nothing on the
-    /// plot could show it: the channel whose leakage it is has its own curve broken
-    /// exactly there, so the summation loss divided a total carrying it by operands
-    /// that did not.
-    /// </remarks>
-    // The metric's own entry point: the active side's placement, resolved here so
-    // the drawn Sum and the metric's cannot be built under different windows.
+    /// <summary>Gated magnitude of the channels' SUM, each contributing only where it measured.
+    /// See docs/tech/virtual-dsp-panel.md#measured-sum.</summary>
+    // Resolves the active side's placement so the drawn Sum and the metric share one window.
     private GatedMagnitude BuildMeasuredSumCurve(
         IReadOnlyList<ProcessedChannel> channels,
         int anchorIndex)
@@ -7406,16 +5881,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 channels.Count > 0 ? channels[0].SampleRate : 0));
     }
 
-    /// <remarks>
-    /// Each channel brings its OWN correction, which is what the channel curves are
-    /// drawn through. Under one microphone they are one curve and the sum applies it
-    /// once at the end, exactly as before; under "Own (as measured)" with channels
-    /// measured through different microphones they are not, and the correction has to
-    /// go inside the sum — the pressure is HᵢCᵢ and the total is Σ HᵢCᵢ. One
-    /// correction outside the sum cannot undo two microphones, and leaving it out
-    /// drew a raw total beside corrected channels: a gap that reads as summation loss,
-    /// feeds the average and minimum loss read-outs, and is not loss at all.
-    /// </remarks>
+    /// <remarks>Each channel's own correction goes INSIDE the sum (Σ HᵢCᵢ): one outside cannot undo two microphones.</remarks>
     private GatedMagnitude BuildMeasuredSumCurve(
         MagnitudeGateSnapshot snapshot,
         IReadOnlyList<ProcessedChannel> channels,
@@ -7442,9 +5908,6 @@ public partial class VirtualCrossoverPanel : UserControl
         (AnalysisCurve display, AnalysisCurve unsmoothed) =
             DataHelper.GetGatedMeasuredMagnitudeSumPair(
                 views, gate, calibrations, snapshot.SmoothingInverseOctaves);
-        // Where NO channel measured the total came out zero rather than as a level,
-        // and a hole between two channels' bands is not something their outer edges
-        // can express in the first place.
         return new GatedMagnitude(display, unsmoothed).MeasuredBySomeChannel(channels);
     }
 
@@ -7479,45 +5942,24 @@ public partial class VirtualCrossoverPanel : UserControl
         IReadOnlyList<ProcessedChannel>? summed = null)
     {
         summed ??= processed;
-        // The gate's own path: every shown channel is gated and FFT'd here, one
-        // after another, plus one more for the sum.
         using var _ = AppProfiler.Zone("VirtualDSP.BuildPhaseCurves");
-        // One shared absolute τ reference (the earliest arrival) keeps the
-        // curves' relative phase intact — that relative alignment through the
-        // crossover region is exactly what this view is for. The WINDOWS may
-        // still follow each channel's own arrival: BuildMeasuredPhase
-        // re-references every extraction to the common absolute τ, which is
-        // exact as long as no window cuts into its own channel — the condition
-        // ResolvePhaseGateOffsets enforces before it hands out per-curve
-        // placements.
+        // One shared absolute τ keeps relative phase; windows may follow each channel's arrival because BuildMeasuredPhase
+        // re-references to τ (exact while no window cuts its own channel, enforced by ResolvePhaseGateOffsets).
         int sampleRate = processed[0].SampleRate;
         double referenceOffsetMs = gatePreview?.OffsetMs
             ?? ResolveGateOffsetMs(processed, sampleRate);
         double detrendMs = ResolveCommonDetrendMs(
             processed, referenceOffsetMs, sampleRate);
 
-        // The gated spectra are built ONCE per redraw and feed both the shown
-        // channels' curves and the Sum — building them twice was possible
-        // before: the per-impulse cache serializes lookup and insert but not
-        // the bank computation itself, so a channel job and the Sum job racing
-        // on a cold cache could each run the same FFTs. The Sum needs every
-        // SUMMING channel (hidden or not, matching the magnitude Sum); with the
-        // Sum off, hidden channels' banks are skipped entirely.
-        //
-        // Summing and drawn differ in the grouped views, and the two Sums have to
-        // agree: a centre is drawn beside the front stage and enters neither, or
-        // the same selector would describe one system on the magnitude view and
-        // another on this one.
+        // Spectra built ONCE per redraw for curves and Sum (the cache does not serialize bank computation).
+        // The Sum uses every SUMMING channel, hidden or not, matching the magnitude Sum.
         bool includeSum = summed.Count >= 2 && checkBoxShowSum.Checked;
         List<ProcessedChannel> gatedChannels = processed
             .Where(item => (includeSum && summed.Contains(item)) ||
                 item.Channel.Pair.ShowProcessedCurve)
             .ToList();
 
-        // Read the gate and project state ONCE, here on the UI thread; the
-        // workers below must not reach back into gatePreview or project. The
-        // placements are resolved over the gated set only, so hiding a curve
-        // cannot move the window of the ones still drawn.
+        // Read gate and project state once on the UI thread; placements over the gated set only.
         List<double> offsets = ResolvePhaseGateOffsets(
             gatedChannels, referenceOffsetMs, sampleRate);
         double referenceSamples = detrendMs * sampleRate / 1_000.0;
@@ -7553,14 +5995,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (includeSum)
         {
-            // The Sum is the vector sum of the individually gated channel
-            // SPECTRA, not a gate over the summed IR: under Auto the windows
-            // follow each channel's own arrival, and no single window over one
-            // summed IR could hold every channel's treble at once (FDW's
-            // high-frequency windows are shorter than the arrival spread).
-            // Summing the spectra keeps superposition exact by construction,
-            // and with one shared window reduces to the gated summed IR by
-            // linearity.
+            // Vector sum of individually gated SPECTRA, not a gate over the summed IR (FDW HF windows < arrival spread).
             List<(ProcessedChannel Item, Complex[] Spectrum, int ExtractionStart)>
                 summedParts = [.. gated.Where(part => summed.Contains(part.Item))];
             if (summedParts.Count >= 2)
@@ -7574,8 +6009,6 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        // One phase read per curve over the spectra built above — every curve
-        // against the same absolute τ, across cores, order stable.
         return jobs
             .AsParallel()
             .AsOrdered()
@@ -7590,11 +6023,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     job.Color,
                     job.Thickness);
                 var curves = new List<AcousticCurve>(2);
-                // The ±360° wrap verticals: the channel's color faded and
-                // thinned well below the curve, dashed, drawn first (i.e.
-                // under the solid curve) — visible as wraps without competing
-                // with the phase traces. The empty title keeps them out of
-                // the plot-labels panel.
+                // Wrap verticals: faded, dashed, drawn under the curve; empty title keeps them out of plot labels.
                 if (curve.WrapSegments.Count > 0)
                 {
                     curves.Add(new AcousticCurve(
@@ -7615,21 +6044,8 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
     }
 
-    // The group-delay view: each drawn channel's group delay (the processed
-    // response: crossover, PEQ, gain, delay and polarity applied, as on the
-    // phase view) and the Sum's, through the SAME window the phase view reads — the project's gate
-    // and window mode (Fixed or FDW with its cycles), placed as the phase
-    // curves are placed (pinned, or per curve on each channel's own arrival),
-    // and previewed by the open Gate… dialog the same way. So the two views
-    // are one window, and this one is the pair to the drawn phase. Absolute:
-    // ms from the record's start, the impulse view's clock, with no detrend —
-    // the phase view's common τ would only move every curve by one amount.
-    // Under FDW the curve reads the arrival of the energy inside the window
-    // at each frequency: the direct sound at mid and high frequencies, which
-    // is what cut the seat-to-seat scatter of this curve by three to five
-    // times on the reference car (see SumLossWindow). The plain group delay
-    // and the Sum only, no minimum/excess split: the view is about relative
-    // arrival, and the excess stays the AI probe's.
+    // Same window and placement as the phase view; absolute ms, no detrend. Plain GD and the Sum only.
+    // See docs/tech/virtual-dsp-panel.md#group-delay-view.
     private List<AcousticCurve> BuildGroupDelayCurves(
         List<ProcessedChannel> processed,
         IReadOnlyList<ProcessedChannel>? summed = null)
@@ -7640,10 +6056,6 @@ public partial class VirtualCrossoverPanel : UserControl
         double referenceOffsetMs = gatePreview?.OffsetMs
             ?? ResolveGateOffsetMs(processed, sampleRate);
 
-        // The same set the phase view gates: every drawn channel, plus every
-        // summing one while the Sum is on (hidden or not, so the Sum answers
-        // the magnitude view's question), the placements resolved over that
-        // set only, so hiding a curve cannot move the windows of the rest.
         bool includeSum = summed.Count >= 2 && checkBoxShowSum.Checked;
         List<ProcessedChannel> gatedChannels = processed
             .Where(item => (includeSum && summed.Contains(item)) ||
@@ -7654,17 +6066,10 @@ public partial class VirtualCrossoverPanel : UserControl
             return [];
         }
 
-        // Read the gate and project state ONCE, here on the UI thread; the
-        // workers below must not reach back into gatePreview or project. The
-        // smoothing is the plot's own selector; its psychoacoustic width is a
-        // hearing model for levels, not for time, and reads as the Group Delay
-        // mode's own default here — 1/12 octave, what the AI diagnostic reads
-        // at — not as the psychoacoustic base width, which is for levels too.
+        // Psychoacoustic smoothing is a level model: it reads as 1/12 octave here (what the AI diagnostic reads).
         List<double> offsets = ResolvePhaseGateOffsets(
             gatedChannels, referenceOffsetMs, sampleRate);
-        // The CODE, not the stored width: the project persists the psychoacoustic
-        // choice as its base width plus a flag (so an older build still opens the
-        // file), and only SmoothingCode puts the two back together.
+        // The code, not the stored width: the project stores psychoacoustic as base width plus a flag.
         double smoothingInverseOctaves =
             SpectrumSmoothing.IsPsychoacoustic(project.SmoothingCode)
                 ? FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves
@@ -7674,9 +6079,6 @@ public partial class VirtualCrossoverPanel : UserControl
                 offsets[index], PhaseDetrendMode.Off, manualDetrendMilliseconds: 0.0)))
             .ToList();
 
-        // The operand pairs are built once per redraw — the bank and its
-        // time-weighted twin per channel — and feed both the drawn curves and
-        // the Sum, as the phase view's spectra do.
         List<(ProcessedChannel Item, PhaseAnalysisSettings Settings,
             GroupDelaySpectra Spectra, int ExtractionStart)> gated = inputs
             .AsParallel()
@@ -7706,13 +6108,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         if (includeSum)
         {
-            // The Sum is the sum of the individually gated operand pairs, not a
-            // gate over the summed IR, for the phase view's reason: under Auto
-            // the windows follow each channel's own arrival, and no single
-            // window could hold every channel's treble at once. Both members
-            // are re-referenced to one extraction start, the time weight
-            // carried across, so the Sum's group delay is the group delay of
-            // the summed channels through those windows.
+            // Sum of individually gated operand pairs re-referenced to one extraction start (as in the phase view).
             List<(ProcessedChannel Item, PhaseAnalysisSettings Settings,
                 GroupDelaySpectra Spectra, int ExtractionStart)> summedParts =
                 [.. gated.Where(part => summed.Contains(part.Item))];
@@ -7724,18 +6120,14 @@ public partial class VirtualCrossoverPanel : UserControl
                     [.. summedParts.Select(part => (part.Spectra, part.ExtractionStart))],
                     targetExtractionStart,
                     sampleRate);
-                // Masked where NO channel measured, like the magnitude Sum: a
-                // hole between two channels' bands is not something the outer
-                // edges can express.
+                // Masked where no channel measured, like the magnitude Sum.
                 jobs.Add(("Sum", SumColor, 2.4, combined, targetExtractionStart,
                     summedParts[0].Settings, MeasuredBand.Everything,
                     [.. summedParts.Select(part => part.Item)]));
             }
         }
 
-        // One group-delay read per curve over the pairs built above, across
-        // cores, order stable. The validity gate is the Group Delay mode's:
-        // a crossover's stop band blanks the curve there, which is the point.
+        // The Group Delay mode's validity gate blanks a crossover's stop band on purpose.
         return jobs
             .AsParallel()
             .AsOrdered()
@@ -7760,17 +6152,11 @@ public partial class VirtualCrossoverPanel : UserControl
             .ToList();
     }
 
-    // The impulse view is the gate dialog's IR preview promoted to the main
-    // plot: every processed channel IR (crossover/PEQ/gain/delay/polarity
-    // applied) on the shared absolute timeline, each wrapped in its envelope
-    // and normalized to that envelope's in-window peak, with the phase-gate
-    // Tukey window drawn where it sits. Well-aligned drivers visibly start
-    // together.
+    // The gate dialog's IR preview promoted to the main plot; each trace normalized to its envelope's in-window peak.
     private AcousticImpulseRender? BuildImpulseRender(List<ProcessedChannel> processed)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildImpulseRender");
-        // Only the shown traces set the gate offset and the ms-axis window, so
-        // an auto gate never centers on a channel whose curve is hidden.
+        // Only shown traces set the gate offset and axis window.
         List<ProcessedChannel> shown = processed
             .Where(item => item.Channel.Pair.ShowProcessedCurve)
             .ToList();
@@ -7799,22 +6185,8 @@ public partial class VirtualCrossoverPanel : UserControl
             gatePreview?.RightMs ?? project.PhaseGateRightMs);
     }
 
-    // The step view: the impulse view's traces as step responses, on the same
-    // timeline and around the same gate, plus the Sum's. The presenter
-    // integrates and scales (ImpulseWindowPreview.AddStepTraceSeries); this
-    // decides WHICH responses go in. The shown channels set the gate offset and
-    // the window, as on the impulse view. The Sum is the sample-wise sum of the
-    // SUMMING channels' impulse responses, hidden or not — the same set the
-    // magnitude Sum adds, so this view's Sum describes the same system under the
-    // same selector — and the step of that sum is the sum of the steps by
-    // linearity, which is what lets the eye read the drivers' contributions off
-    // the total. Drawn on one common scale so the curves keep their sizes
-    // relative to each other and to the Sum: every processed response is in the
-    // one calibrated level the magnitude Sum adds them in. The opposite side's
-    // Sum rides along as on the magnitude view — thin, dashed, translucent — so
-    // the two tunes' fronts compare on the one absolute clock; it needs the
-    // shown side's sample rate, or its samples would land on the wrong
-    // milliseconds.
+    // Sum = sample-wise sum of the SUMMING channels' IRs (hidden too), so its step is the sum of steps.
+    // One common scale; the opposite Sum needs the shown side's rate. See docs/tech/virtual-dsp-panel.md#step-view.
     private AcousticImpulseRender? BuildStepRender(
         List<ProcessedChannel> processed,
         IReadOnlyList<ProcessedChannel> summed,
@@ -7868,30 +6240,16 @@ public partial class VirtualCrossoverPanel : UserControl
             Step: true);
     }
 
-    // The gate of the side on screen. The view draws one side at a time and the two
-    // sides' drivers arrive at different times, so each keeps its own placement:
-    // fitting the gate on one no longer throws the other off.
+    // Each side keeps its own placement: its drivers arrive at different times.
     private VirtualCrossoverPhaseGateSettings ActiveGate =>
         project.PhaseGateFor(project.ActiveSideRight);
 
-    // The one pinned absolute gate offset, or null when the gate is unpinned
-    // (Auto) — in the dialog preview and in the committed state alike. Null
-    // means automatic placement, which differs by view: the magnitude anchors
-    // ONE shared window at the earliest processed PEAK (keeping the drawn Sum
-    // the exact vector sum of the drawn channels), while the PHASE curves each
-    // follow their own estimated arrival START so FDW's short high-frequency
-    // windows land on the right channel's first cycles — see
-    // ResolvePhaseGateOffsets for the condition that keeps those curves
-    // comparable, and what happens when it does not hold.
+    // Null = Auto: magnitude anchors one shared window, phase curves follow each arrival START (see ResolvePhaseGateOffsets).
     private double? PinnedGateOffsetMs => gatePreview is { } preview
         ? preview.AutoOffset ? null : preview.OffsetMs
         : ActiveGate.OffsetMs;
 
-    // The placement arithmetic itself lives in PhaseGatePlacement, which the EQ
-    // Wizard's phase view resolves with too: both must read the same windows and
-    // the same τ from the same channels, or a tune made in one would not hold in
-    // the other. What stays here is the panel's own state — which of the dialog's
-    // live values and the project's committed ones is in force.
+    // Placement arithmetic lives in PhaseGatePlacement, shared with the EQ Wizard so both read the same windows and τ.
     private List<double> ResolvePhaseGateOffsets(
         IReadOnlyList<ProcessedChannel> gatedChannels,
         double sharedOffsetMs,
@@ -7911,40 +6269,20 @@ public partial class VirtualCrossoverPanel : UserControl
         PhaseGatePlacement.ResolveSharedOffsetMs(
             PlacementChannel.From(processed), sampleRate, ActiveGate.OffsetMs);
 
-    /// <summary>Which way the window fails a channel.</summary>
     internal enum GateCutKind
     {
-        /// <summary>
-        /// It opens after the channel's front, so the curve is built from
-        /// whatever came after the response.
-        /// </summary>
         OpensAfterArrival,
 
-        /// <summary>
-        /// It is over before the channel arrives, so the curve holds none of
-        /// the channel at all.
-        /// </summary>
         ClosesBeforeArrival
     }
 
-    /// <summary>
-    /// One channel the gate placement fails: its label, where its response
-    /// starts (ms), which way the window misses it and what the window throws
-    /// away ahead of its plateau
-    /// (<see cref="DataHelper.GateLeadingEdgeLossDb"/>, dB — meaningful for
-    /// <see cref="GateCutKind.OpensAfterArrival"/> only).
-    /// </summary>
+    /// <summary>LeadingEdgeLossDb (<see cref="DataHelper.GateLeadingEdgeLossDb"/>) is meaningful for <see cref="GateCutKind.OpensAfterArrival"/> only.</summary>
     internal readonly record struct GateCutChannel(
         string Name,
         double StartMs,
         GateCutKind Kind,
         double LeadingEdgeLossDb);
 
-    /// <summary>
-    /// The window the side on screen is actually gated at, judged against the
-    /// channels it windows: where its plateau starts and ends, whether the
-    /// placement is pinned or Auto, and the channels it fails.
-    /// </summary>
     internal sealed record GatePlacementVerdict(
         double OffsetMs,
         double PlateauMs,
@@ -7959,32 +6297,14 @@ public partial class VirtualCrossoverPanel : UserControl
 
         public double PlateauEndMs => OffsetMs + PlateauMs;
 
-        /// <summary>
-        /// Where the Tukey window reaches zero: the plateau plus the fade-out
-        /// behind it. Content between <see cref="PlateauEndMs"/> and here is
-        /// attenuated, not absent.
-        /// </summary>
+        /// <summary>Content between <see cref="PlateauEndMs"/> and here is attenuated, not absent.</summary>
         public double WindowEndMs => PlateauEndMs + RightMs;
 
         public bool Any(GateCutKind kind) => Cut.Any(item => item.Kind == kind);
     }
 
-    /// <summary>
-    /// Judges the magnitude view's window against every processed channel: the
-    /// gate is an ABSOLUTE time, so a placement that belonged to one set of
-    /// measurements windows the reverberant tail of the next set instead of
-    /// their response — and nothing about a channel's curve says so, because a
-    /// tail has a magnitude too. The magnitude placement is the one judged
-    /// (mirroring <see cref="VirtualCrossoverMetrics.BuildCurves"/>'s shared
-    /// anchor): it is what the drawn curves, the Sum and the sum-loss read-out
-    /// are built from, and both shared placements now open at the same sample
-    /// — the earliest estimated START of the processed channels — so judging
-    /// this one answers for the phase view's shared placement as well. (It
-    /// used to anchor on the earliest PEAK, which is never the earlier of the
-    /// two and so also answered for it; the rules were unified when the
-    /// junction gate moved to fronts.) The phase view's per-curve placements
-    /// keep their own guard in <see cref="ResolvePhaseGateOffsets"/>.
-    /// </summary>
+    /// <summary>Judges the magnitude view's window (an ABSOLUTE time) against every processed channel.
+    /// See docs/tech/virtual-dsp-panel.md#gate-placement-verdict.</summary>
     private GatePlacementVerdict? JudgeGatePlacement(
         IReadOnlyList<ProcessedChannel> processed)
     {
@@ -8035,44 +6355,8 @@ public partial class VirtualCrossoverPanel : UserControl
             cut);
     }
 
-    /// <summary>
-    /// How the window in use fails a channel, or null when it holds it.
-    /// A window has two ways to miss: it can open after the channel's front,
-    /// or be over before the channel arrives at all.
-    /// <para>
-    /// The two are judged differently BECAUSE the leading-edge figure only
-    /// answers the first. It is a ratio of what the window discards ahead of
-    /// its plateau to what it keeps, and a channel that lands past the window
-    /// has nothing ahead of that plateau either — so it reads not as bad but
-    /// as EXCELLENT. Measured: a tweeter delayed 20 ms out of a 4 ms plateau
-    /// reads -282 dB there, the best figure of any channel in that session,
-    /// with its curve holding none of the channel. (The +∞ that
-    /// <see cref="DataHelper.GateLeadingEdgeLossDb"/> reserves for "the window
-    /// kept nothing" needs a bit-for-bit silent window, which a measured record
-    /// does not give.) So the far side is decided on the window's geometry
-    /// instead: the channel's front has to be inside the window — the plateau
-    /// AND the fade-out behind it, because the fade starts at unity and a
-    /// front just past the plateau is attenuated, not missing. How far into a
-    /// fade a front may land before the curve stops describing the channel is
-    /// a continuum this deliberately does not judge: nothing measured says
-    /// where in it to draw a line, and the end of the window is the one place
-    /// the answer is not a matter of degree.
-    /// </para>
-    /// <para>
-    /// The near side is the placement question: over the ceiling, and worse by
-    /// <see cref="GateMisplacementMarginDb"/> than the same gate on the
-    /// channel's own arrival. That comparison is what keeps a short gate from
-    /// reading as a misplacement — the project default cannot hold one period
-    /// of a 55 Hz subwoofer wherever it is placed, and the field session read
-    /// -19.4 dB at the channel's own arrival and -19.4 dB at the shared one —
-    /// because a gate the user cannot fix by moving is not something to stop
-    /// them with. <see cref="PhaseGatePlacement.AllowsPerCurveGate"/> makes the same
-    /// comparison with no margin at all, which is right THERE: its penalty for
-    /// reading a hair's difference as significant is one curve falling back to
-    /// the shared window. Here the penalty is an amber note and two refused
-    /// commands, so the difference has to be one the user can act on.
-    /// </para>
-    /// </summary>
+    /// <summary>Null when the window holds the channel. Far side judged by geometry (front inside plateau + fade),
+    /// near side by leading-edge loss vs the channel's own arrival. See docs/tech/virtual-dsp-panel.md#gate-placement-verdict.</summary>
     internal static GateCutKind? JudgeGateCut(
         double startMs,
         double gateOffsetMs,
@@ -8093,21 +6377,9 @@ public partial class VirtualCrossoverPanel : UserControl
                 : null;
     }
 
-    /// <summary>
-    /// How much worse than the channel's own arrival a placement has to read
-    /// before it counts as misplaced: 3 dB, the window discarding twice the
-    /// energy that moving it would. Nothing separates a short gate from a
-    /// misplaced one by a hair — the field misplacements are 44 to 70 dB apart
-    /// on this comparison and the short-gate case is 0.0 dB apart, so the
-    /// margin only has to be clear of arithmetic noise between two nearby
-    /// offsets.
-    /// </summary>
+    /// <summary>3 dB: field misplacements are 44–70 dB apart on this comparison, short gates 0.0 dB.</summary>
     private const double GateMisplacementMarginDb = 3.0;
 
-    // The plot's one-line form of the verdict; the detail below carries the
-    // per-channel figures and what to do about them. The two ways a window
-    // misses produce different curves — the tail of the response, or none of
-    // it — so the line says which one the reader is looking at.
     internal static string FormatGateCutWarning(GatePlacementVerdict verdict)
     {
         string names = string.Join(", ", verdict.Cut.Select(item => item.Name));
@@ -8138,9 +6410,7 @@ public partial class VirtualCrossoverPanel : UserControl
             $"{(one ? "that curve is" : "those curves are")} not the response.";
     }
 
-    // The tooltip, and the body of the refusal the automatic commands show:
-    // the same explanation either way, so the plot and the dialogs cannot
-    // describe the same placement differently.
+    // Shared by the tooltip and the refusals so they cannot describe a placement differently.
     internal static string FormatGateCutDetail(GatePlacementVerdict verdict)
     {
         bool opensLate = verdict.Any(GateCutKind.OpensAfterArrival);
@@ -8149,8 +6419,6 @@ public partial class VirtualCrossoverPanel : UserControl
         var text = new System.Text.StringBuilder();
         text.Append($"The gate's plateau runs from {verdict.OffsetMs:0.00} to ")
             .Append($"{verdict.PlateauEndMs:0.00} ms")
-            // The fade-out only matters to the reader when a channel fell off
-            // the far end: that is the edge it was measured against.
             .Append(closesEarly
                 ? $", with its fade-out over at {verdict.WindowEndMs:0.00} ms, "
                 : ", ")
@@ -8215,19 +6483,10 @@ public partial class VirtualCrossoverPanel : UserControl
         return text.ToString();
     }
 
-    // A window that holds none of the channel at all reads as infinite loss;
-    // printing "∞ dB" beats a number nobody can place.
     private static string FormatLeadingEdgeLossDb(double lossDb) =>
         double.IsFinite(lossDb) ? $"{lossDb:+0.0;-0.0} dB" : "∞ (the window holds none of it)";
 
-    // Refuses an automatic command while the side on screen is gated on a
-    // window that opens after its own channels arrive. Neither search reads the
-    // gate itself, but both are judged on what it produces — the curves, the
-    // sum-loss read-out and (for Auto delay) the outcome metric written into
-    // the alignment log — so a run started here can only be verified against a
-    // view of the reverberant tail.
-    // The verdict a refusal is built on, readable without showing anything —
-    // an AI import quotes the phrase in its summary instead of a dialog.
+    // Both automatic commands are verified on the gated view, so a misplaced gate refuses them.
     private bool GateIsMisplaced => gatePlacement is { CutsChannels: true };
 
     private bool RefuseOnMisplacedGate(string command)
@@ -8243,9 +6502,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return true;
     }
 
-    // The τ detrend follows the same pattern: unconfigured projects reference
-    // the earliest arrival. One τ serves every curve, so their relative phase —
-    // the whole point of this view — survives the detrend.
+    // One τ for every curve keeps relative phase through the detrend.
     private double ResolveDetrendMs(int referenceSample, int sampleRate) =>
         ActiveGate.DetrendMs ?? referenceSample * 1_000.0 / sampleRate;
 
@@ -8278,9 +6535,6 @@ public partial class VirtualCrossoverPanel : UserControl
             Unwrap: false,
             SmoothingInverseOctaves: 0.0);
 
-    // Opens the manual phase-gate dialog: the gate offset and Tukey shoulders
-    // with a live preview of every processed channel IR, so reflections can be
-    // cut out of the phase view visually.
     private async Task OpenPhaseGateDialogAsync()
     {
         ProcessedRender? render = await ProcessChannelsAsync();
@@ -8321,9 +6575,7 @@ public partial class VirtualCrossoverPanel : UserControl
             project.PhaseDetrendMode,
             fitOffsetMs,
             autoOffset: ActiveGate.OffsetMs == null);
-        // The callback is wired after Init so seeding the controls does not
-        // trigger a redundant redraw; from here every dialog change repaints the
-        // phase plot immediately.
+        // Wired after Init so seeding the controls does not redraw.
         dialog.PreviewChanged = (offsetMs, autoOffset, leftMs, plateauMs, rightMs,
             windowMode, fdwCycles, detrendMode, detrendMs) =>
         {
@@ -8336,12 +6588,9 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             if (dialog.ShowDialog(FindForm()) == DialogResult.OK)
             {
-                // Only the PLACEMENT lands on the side being viewed. The window's
-                // lengths and the analysis modes are project-wide, so both sides keep
-                // reading the phase at the same resolution and by the same method.
+                // Only the placement is per side; lengths and modes are project-wide.
                 VirtualCrossoverPhaseGateSettings gate = ActiveGate;
-                // Auto pressed = unpinned: store null so this side's gate
-                // keeps following the earliest estimated channel IR start.
+                // Auto = null: keeps following the earliest channel IR start.
                 gate.OffsetMs = dialog.AutoOffset ? null : dialog.GateOffsetMs;
                 gate.DetrendMs = dialog.DetrendMs;
                 project.PhaseGateLeftMs = dialog.LeftMs;
@@ -8355,68 +6604,30 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         finally
         {
-            // Save committed the candidate values, Cancel discards them; either
-            // way the plot re-renders from the project state.
             gatePreview = null;
             RequestRedraw();
         }
     }
 
-    // The last applied processed snapshot: the correlation view's data source.
     private ProcessedRender? lastProcessedRender;
 
-    // What the last hybrid render resolved for the whole capture set, and which
-    // processing revision it belonged to. Kept because the offset belongs to the SET:
-    // a handoff carries one channel, which on its own could not re-derive the figure
-    // the other channels voted on.
+    // The offset belongs to the capture SET; one handed-over channel could not re-derive it.
     private (long Revision, double OffsetDb)? lastHybrid;
 
-    /// <summary>
-    /// Which spatial average this panel would hand the EQ Wizard for one side, or
-    /// null when the hybrid is not what it is drawing.
-    /// </summary>
-    /// <remarks>
-    /// The DECISION, deliberately separated from the offset below and deliberately
-    /// cheap: it reads two pieces of live state and nothing a redraw can make stale.
-    /// Both directions of the trip ask this — the handoff, and the return guard that
-    /// checks the curve did not change underneath the tune — so they cannot disagree
-    /// about whether a session is a hybrid one. An earlier version answered it through
-    /// the offset resolution below, which fails while a redraw is in flight: a target
-    /// edit made in the wizard invalidates the panel, and a Return clicked before that
-    /// redraw landed was refused as though the user had turned the hybrid off.
-    /// </remarks>
+    /// <summary>The spatial average handed to the EQ Wizard, or null when the hybrid is not drawn.</summary>
+    /// <remarks>Cheap and redraw-independent so the handoff and the return guard cannot disagree mid-redraw.</remarks>
     private LiveCaptureDocument? HybridHandoffCapture(
         VirtualCrossoverChannel channel, bool rightSide) =>
         HybridRequested
             ? channel.SideState(rightSide).SpatialAverageFor(SpatialAverageMode)
             : null;
 
-    /// <summary>
-    /// That capture together with the offset that puts it on the impulse responses'
-    /// axis, for the handoff itself. Null capture when there is none to hand over, or
-    /// when no offset can be resolved for it.
-    /// </summary>
-    /// <remarks>
-    /// The offset is normally the last magnitude render's, but the phase and impulse
-    /// views never build one and the toggle stays ticked across a view switch, so it
-    /// is resolved here when no current render carries it. Handing the capture over at
-    /// whatever height a previous set left behind would put the curve tens of dB from
-    /// where the Target Level says it hangs.
-    /// <para>
-    /// Failing to resolve one falls back to the impulse response, and the token
-    /// records that. The return guard, reading the DECISION rather than this, will
-    /// then refuse such a bank if the panel is meanwhile drawing a hybrid — which is
-    /// right: the tune was fitted against the impulse response and the plot is showing
-    /// something else.
-    /// </para>
-    /// </remarks>
+    /// <summary>The capture plus its offset onto the IR axis; resolved here when no current magnitude render carries it.</summary>
     private (LiveCaptureDocument? Capture, double OffsetDb) HandoffSpatialAverage(
         VirtualCrossoverChannel channel, bool rightSide)
     {
         if (HybridHandoffCapture(channel, rightSide) is not { } capture)
         {
-            // The panel is drawing impulse responses, so that is what the handoff
-            // promises — even though the captures are attached and could be read.
             return (null, 0.0);
         }
 
@@ -8440,25 +6651,16 @@ public partial class VirtualCrossoverPanel : UserControl
                 rightSide,
                 magnitudeGate.SmoothingInverseOctaves) is not { } hybrid)
         {
-            // No channels at all, or a set short of a capture: no offset can be
-            // resolved, and the honest response is the only one that can be handed
-            // over at a height the Target Level still describes.
             return (null, 0.0);
         }
 
         return (capture, hybrid.OffsetDb);
     }
 
-    // Single-flight for the correlation rebuilds, mirroring the main redraw
-    // loop: at most ONE sweep computes at a time, and a request that arrives
-    // mid-compute only marks the loop to run once more with the then-latest
-    // state — a stamp alone would merely hide stale results while the stacked
-    // tasks kept burning a full sweep of inverse FFTs each.
+    // Single-flight like the main redraw: stacked tasks would each burn a full sweep of inverse FFTs.
     private Task? correlationRebuildTask;
     private bool correlationRebuildPending;
 
-    // Guards the combo repopulation from feeding its own SelectedIndexChanged
-    // back into the project as a user edit.
     private bool suppressCorrelationPairEvents;
 
     private void RedrawDspPlot()
@@ -8480,11 +6682,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 continue;
             }
 
-            // The chain is drawn without its delay term: the filters' own shape is
-            // the readable part, while a bulk delay would wrap the phase into an
-            // unreadable sawtooth and swamp the filter group delay (its effect is
-            // visible on the acoustic plot). A bypassed channel draws its flat
-            // identity chain.
+            // Drawn without the delay term: a bulk delay wraps phase into a sawtooth and swamps the filter GD.
             DspChannelChain chain = channel.Pair.Bypass
                 ? DspChannelChain.Identity
                 : channel.Settings.ToChain(channel.Pair.Zone) with { DelayMs = 0 };
@@ -8495,15 +6693,7 @@ public partial class VirtualCrossoverPanel : UserControl
         dspChainPlot.Draw(CurrentDspPlotMode(), curves);
     }
 
-    // The adjacent pairs of the correlation view, derived from the LAST
-    // processed snapshot so the combo lists exactly what the plot can analyze
-    // (enabled channels with sources, active side, ordered by band) — narrowed
-    // to the view's SUMMING chain, the same set the loss curve and the
-    // per-junction read-out describe.
-    //
-    // Band order alone is not a chain — see ProcessedChannels.JunctionsInView for
-    // what a rear fill and a centre do to one, and why a view spanning groups
-    // lists nothing.
+    // From the last processed snapshot, narrowed to the view's summing chain (ProcessedChannels.JunctionsInView).
     private List<AdjacentPair> CurrentCorrelationPairs() =>
         lastProcessedRender is { } render
             ? ProcessedChannels.JunctionsInView(render.Channels, SelectedGroupView)
@@ -8554,8 +6744,6 @@ public partial class VirtualCrossoverPanel : UserControl
             JunctionPlotModeSelected() && labels.Count > 0;
     }
 
-    // Runs on the UI thread. Starts the rebuild loop, or — when one is
-    // already computing — marks it to repeat once more with the latest state.
     private void RequestCorrelationRedraw()
     {
         if (correlationRebuildTask is { IsCompleted: false })
@@ -8580,11 +6768,7 @@ public partial class VirtualCrossoverPanel : UserControl
         correlationRebuildTask = null;
     }
 
-    // One iteration of the junction rebuild loop, for BOTH junction modes:
-    // same pair, same processed inputs, one data build off the UI thread —
-    // only WHAT is computed and which model is drawn differ by mode. The
-    // result is dropped when the user left for the other junction mode
-    // mid-compute (the pending flag restarts the loop with the new mode).
+    // Shared by both junction modes; a result is dropped if the user switched mode mid-compute.
     private async Task RedrawCorrelationPlotAsync()
     {
         DspPlotMode mode = CurrentDspPlotMode();
@@ -8623,7 +6807,6 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         catch (Exception exception)
         {
-            // Best-effort like every redraw: keep the last frame.
             System.Diagnostics.Debug.WriteLine(
                 $"Junction view rebuild failed: {exception}");
         }
@@ -8633,8 +6816,6 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // A request that arrived mid-compute means this result is already
-        // stale: skip the draw, the loop is about to recompute anyway.
         if (correlationRebuildPending)
         {
             return;
@@ -8650,22 +6831,8 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // The off-thread compute of one junction's correlation view. Both
-    // channels enter PROCESSED (delays, polarity, filters applied), so lag 0
-    // is the current alignment and every reading is a correction to the
-    // UPPER channel. The gate follows the alignment engine's own basis — the
-    // pair's earliest front, in the pair's band (see the gate remarks in
-    // VirtualCrossoverAnalysis) — and the sweep probes it by rotating the
-    // windowed cut, the same bins and rotation the search's SumLossEvaluator
-    // reads, so the drawn score IS the surface Auto delay searches (see the
-    // plateau remarks on JunctionLossSweep for what re-gating each probe
-    // through the stationary window drew instead). The crop still spans the
-    // whole side, because a shared offset is what keeps the channels'
-    // relative timing intact; it no longer decides anything the score reads,
-    // the anchor being derived from the pair's own content rather than from
-    // an index into the crop.
-    // Internal so the correlation-view harness can render the exact product
-    // curves without constructing the panel.
+    // Both channels PROCESSED, so lag 0 is the current alignment; the score is the surface Auto delay searches.
+    // See docs/tech/virtual-dsp-panel.md#junction-views. Internal for the correlation-view harness.
     internal static JunctionCorrelationView BuildCorrelationView(
         AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
     {
@@ -8674,35 +6841,17 @@ public partial class VirtualCrossoverPanel : UserControl
         (Complex[] lower, Complex[] upper,
             ValidSampleRange lowerRange, ValidSampleRange upperRange) =
             CropJunctionPair(pair, scope, sampleRate);
-        // No gate anchor is passed: the sweep windows each channel at its own
-        // band-limited front, exactly as every junction measurement of an
-        // Auto delay run does (see BuildAlignmentBins), so the drawn score
-        // stays the search's surface. The read-out beside this plot keeps its
-        // own, shared placement (one window for the drawn channels, their Sum
-        // and the loss curve, which is what makes the Sum the sum of what is
-        // drawn) — the two answer different questions and always did: the
-        // read-out measures the WHOLE sum inside the pair band, this
-        // measures the pair.
+        // No anchor: each channel windowed at its own band-limited front, as Auto delay measures junctions.
 
-        // The window spans 1.5 crossover periods to each side (floored at the
-        // fixed diagnostic span), so the neighboring comb lobes both ways are
-        // in view even at an 80 Hz junction.
+        // 1.5 crossover periods each side (floor 3 ms) keeps neighbouring comb lobes in view at 80 Hz.
         double windowMs = Math.Max(3.0, 1.5 * 1000.0 / pair.CrossoverHz);
         double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
 
-        // The score comb repeats per crossover period, so the step must
-        // resolve THAT scale — a fixed points-per-window count aliased at
-        // high junctions (at a 20 kHz-class split, window/60 equals a whole
-        // period and the comb could sample flat). A tenth of a period keeps
-        // the lobes drawn; the window/300 floor bounds the sweep at ~600
-        // points per polarity for pathological corner setups.
+        // The comb repeats per period: a tenth of a period avoids aliasing at high junctions; window/300 bounds the sweep.
         double stepMs = Math.Max(
             Math.Min(windowMs / 60.0, 100.0 / pair.CrossoverHz),
             Math.Max(0.005, windowMs / 300.0));
 
-        // The view's four reads are independent computations over the same
-        // immutable pair, so they run side by side; each block's meaning is
-        // stated at its own site below.
         List<SignalPoint> whitened = null!;
         List<SignalPoint> whitenedDirect = null!;
         List<SignalPoint> scoreNormal = null!;
@@ -8710,20 +6859,11 @@ public partial class VirtualCrossoverPanel : UserControl
         double lowerArrivalMs = 0;
         double upperArrivalMs = 0;
         Parallel.Invoke(
-            // The whitened full-record comb: deliberately UNTRIMMED — the
-            // whole capture, reflections included, is this curve's subject
-            // (the honest read at bass junctions, where "direct sound" is not
-            // a measurable notion).
+            // UNTRIMMED: reflections are this curve's subject (honest at bass junctions).
             () => whitened = VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
                 lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
                 windowMs, centerLagMs: 0, phaseTransform: true),
-            // The whitened curve again, on the DIRECT sound alone — the same
-            // cut the engine's direct-coherence witness reads, so this curve
-            // shows the very figure the search weighed; where the full-record
-            // twin follows whatever the cabin's reflections correlate best,
-            // this one answers where the DRIVERS align. The pair cut is
-            // trimmed to the windows' span (relative lags preserved — see
-            // CutDirectSoundPair), sized for the ±windowMs read.
+            // Direct sound only: the cut the engine's direct-coherence witness reads.
             () =>
             {
                 (Complex[] directLower, Complex[] directUpper) =
@@ -8736,11 +6876,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     pair.CrossoverHz, passOctaves,
                     windowMs, centerLagMs: 0, phaseTransform: true);
             },
-            // Both polarities of the summation score from ONE set of bins,
-            // with the search's own settings — per-channel windows (null
-            // anchor) and the search-side level match, whose absence
-            // re-shapes the lobes whenever the two channels sit at different
-            // gains — or the drawn surface is not the searched one.
+            // The search's own settings (null anchor, level match), or the drawn surface is not the searched one.
             () =>
             {
                 (List<VirtualCrossoverAnalysis.JunctionSweepPoint> normal,
@@ -8784,11 +6920,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     (point.DipDb - point.LossDb)))
             .ToList();
 
-    // The off-thread compute of one junction's coherence view: the same
-    // cropped PROCESSED pair as the correlation view, handed to the dsp
-    // ladder (see VirtualCrossoverAnalysis.ArrivalCoherenceLadder for what a
-    // band reading means and why the edges are gated). Internal for the same
-    // harness reason as BuildCorrelationView.
+    // See VirtualCrossoverAnalysis.ArrivalCoherenceLadder. Internal for the harness.
     internal static JunctionCoherenceView BuildCoherenceView(
         AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
     {
@@ -8809,15 +6941,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 lowerRange, upperRange));
     }
 
-    // The junction views' shared preparation: one shared direct-sound crop
-    // across the whole processed side (a shared offset is what keeps the
-    // channels' relative timing intact; it decides nothing the analyses
-    // read, their anchors being derived from the pair's own content), and
-    // the channels' valid ranges shifted into the crop's frame — the front
-    // detections behind the direct cuts and the score sweep take them, so
-    // the drawn surfaces read the same fronts the search reads. On a clean
-    // capture the heuristic fallback agrees anyway, but a delayed or
-    // glitch-headed record is exactly where the two paths must not part.
+    // Valid ranges are shifted into the crop frame so front detections match the search's (matters on glitch-headed records).
     private static (Complex[] Lower, Complex[] Upper,
         ValidSampleRange LowerRange, ValidSampleRange UpperRange)
         CropJunctionPair(
@@ -8846,11 +6970,6 @@ public partial class VirtualCrossoverPanel : UserControl
             Shifted(pair.Lower, lower), Shifted(pair.Upper, upper));
     }
 
-    // ------------------------------------------------------- capture / export
-
-    // Saves the current complex sum as a Captured overlay in Frequency Response,
-    // closing the loop: virtual alignment -> comparison against real measurements
-    // and target curves -> EQ Wizard.
     private async Task CaptureSumToOverlayAsync()
     {
         ProcessedRender? render = await ProcessChannelsAsync();
@@ -8901,8 +7020,6 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Writes the DSP settings of every participating channel as a tuning sheet:
-    // a printable PDF or a plain-text file.
     private async Task ExportTuningSheetAsync()
     {
         PeqQConvention? qConvention = AskSheetQConvention();
@@ -8924,7 +7041,6 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The sheet subtitle takes the compact single-line summary.
         ProcessedRender? render = await ProcessChannelsAsync();
         if (render == null)
         {
@@ -8935,9 +7051,7 @@ public partial class VirtualCrossoverPanel : UserControl
             metrics.BuildCurves(metricChannels, magnitudeGate.SmoothingInverseOctaves);
         string metricLine = VirtualCrossoverMetric.FormatLabel(
             metrics.BuildEntries(metricChannels, metricLoss));
-        // The chain graph on the sheet is the FILTERS, so it is drawn at the rate the
-        // device realizes them at — the same rate the panel's own DSP plot uses, and
-        // not the rate the channels happen to have been measured at.
+        // The chain graph shows the filters, so it uses the processor's rate, not the measurement rate.
         int sampleRate = ProcessorSampleRateHz;
         try
         {
@@ -8954,10 +7068,7 @@ public partial class VirtualCrossoverPanel : UserControl
                         project, metricLine, qConvention.Value));
             }
 
-            // Only a sheet that reached the disk becomes "the previous export": an
-            // answer given to a dialog the user then backed out of — at the file
-            // picker, at an empty render or on a write failure — is not a choice
-            // they made about any sheet, so it must not pre-select the next one.
+            // Remember the answer only once a sheet reached the disk.
             sheetQConvention = qConvention;
         }
         catch (Exception exception)
@@ -8966,13 +7077,8 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // The convention the sheet's Q column is stated in is a property of the processor
-    // being tuned, and the project now names that processor: a known model states its
-    // own convention, so the export takes it and asks nothing. A Custom profile has
-    // only what the user typed into the DSP processor dialog, so the export still asks
-    // — pre-selected with the session's last EXPORTED answer, or that profile's
-    // convention until one is written. The answer is only returned here; the caller
-    // records it once the sheet exists. Null when the user cancels.
+    // A known model states its Q convention; a Custom profile asks, pre-selected with the last exported answer.
+    // Null when cancelled.
     private PeqQConvention? AskSheetQConvention()
     {
         DspProcessorProfile profile = ProcessorProfile;
@@ -8988,20 +7094,8 @@ public partial class VirtualCrossoverPanel : UserControl
             : null;
     }
 
-    // ----------------------------------------------------------------- wizard
-
-    /// <summary>
-    /// The crossover wizard: detects each channel's usable band and driver type
-    /// from the raw magnitude, lets the user confirm the types, and writes the
-    /// analytic proposal (LR24 splits, cut-only gains) into the channels. Delay
-    /// and polarity stay untouched — that is Auto delay's job, done against the
-    /// complex sum afterward.
-    /// </summary>
-    /// <returns>
-    /// Null when the proposal was written; otherwise why it was not, in a phrase
-    /// an import's summary can quote. The button ignores it: every refusal has
-    /// already said its piece on screen.
-    /// </returns>
+    /// <summary>Writes the analytic crossover proposal (LR24, cut-only gains); delay and polarity are Auto delay's job.</summary>
+    /// <returns>Null when written; otherwise a refusal phrase an import's summary can quote.</returns>
     private string? OpenAutoSetupWizard()
     {
         var participating = channels
@@ -9014,17 +7108,12 @@ public partial class VirtualCrossoverPanel : UserControl
             return "fewer than two enabled channels have a measurement";
         }
 
-        // The band read below is gate-independent (it windows each raw response
-        // on its own front), but the proposal it writes is checked on the plot
-        // and in the sum-loss read-out, both of which the gate builds — so a
-        // misplaced window still has to be dealt with before the wizard runs.
+        // The band read is gate-independent, but the result is checked on gated views, so refuse a misplaced gate.
         if (RefuseOnMisplacedGate("Auto crossover"))
         {
             return "the phase gate is misplaced";
         }
 
-        // Band/type detection reads the raw (unprocessed) responses with a fixed
-        // 1/3-octave smoothing, independent of the display smoothing.
         var wizardOptions = new FrequencyResponseOptions { SmoothingInverseOctaves = 3 };
         var dialogChannels = new List<AutoSetupWizardChannel>();
         try
@@ -9037,9 +7126,7 @@ public partial class VirtualCrossoverPanel : UserControl
                         channel.TransferPeakIndex,
                         channel.SampleRate)
                     {
-                        // Or the band read would run down the analysis window's
-                        // leakage and put a driver's low corner an octave under
-                        // where its signal actually stopped.
+                        // Or the band read runs down the window's leakage an octave below the real low corner.
                         LowestMeasuredFrequencyHz = channel
                             .SideState(project.ActiveSideRight).MeasuredBand.LowEdgeHz,
                         HighestMeasuredFrequencyHz = channel
@@ -9047,21 +7134,14 @@ public partial class VirtualCrossoverPanel : UserControl
                     },
                     wizardOptions,
                     CalibrationFor(channel.SideState(project.ActiveSideRight)));
-                // When the source carried per-bin coherence, resample it onto the
-                // magnitude curve's log grid so the band read discounts the
-                // frequencies the measurement did not trust.
+                // Discount frequencies the measurement's coherence did not trust.
                 IReadOnlyList<double>? coherence =
                     channel.TransferCoherence is { Length: > 1 } linear
                         ? CoherencePerPoint(linear, curve.Points, channel.SampleRate)
                         : null;
-                // The distortion curve (computed at source resolve) bounds each
-                // driver by its distortion-clean band; null when the source had no
-                // sweep deconvolution.
                 IReadOnlyList<SignalPoint>? distortion = channel.DistortionCurve;
                 OxyColor accent = ChannelColors[channels.IndexOf(channel)];
-                // The corners already on the channel: with two similar drivers
-                // they are what says which plays lower, so the wizard orders its
-                // chain by the band each one is left contributing.
+                // With two similar drivers, existing corners decide which plays lower.
                 VirtualCrossoverChannelSettings settings =
                     channel.SideSettings(project.ActiveSideRight);
                 dialogChannels.Add(new AutoSetupWizardChannel(
@@ -9072,8 +7152,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     coherence,
                     distortion,
                     CrossoverAutoSetup.EstimateBand(curve.Points, coherence, distortion),
-                    // A FIR crossover's corners where the IIR one is off: the
-                    // kernel cuts the band just the same.
+                    // FIR corners stand in where the IIR crossover is off.
                     settings.EffectiveHighPassHz,
                     settings.EffectiveLowPassHz,
                     channel.TransferImpulseResponse));
@@ -9101,10 +7180,7 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             VirtualCrossoverChannel channel = participating[i];
             CrossoverProposal proposal = proposals[i];
-            // A crossover is one electrical filter, so both sides of a stereo
-            // pair get the SAME frequencies, families and slopes (and the same
-            // wizard gain) — only delay and the scene-offset trim differ per
-            // side. A mono pair has just its one side.
+            // A crossover is one electrical filter: both sides get the same frequencies, families, slopes and gain.
             foreach (bool rightSide in new[] { false, true })
             {
                 if (channel.Pair.Mono && rightSide)
@@ -9123,13 +7199,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     settings.LowPassEdge = lowPass;
                 }
                 settings.GainDb = proposal.GainDb;
-                // The phase control states its angle AT the crossover, so a run that
-                // moves the crossover leaves the same number meaning a different
-                // filter. A hand edit keeps it — that is the hardware's own rule and
-                // the user is watching the readout move — but a wizard that rewrites
-                // every channel at once is not something to leave a stale all-pass
-                // under, so it starts from no rotation, and says so where it took one
-                // away.
+                // The phase angle is stated AT the crossover, so a wizard rewrite resets rotations (and says so).
                 if (settings.PhaseRotationDegrees != 0)
                 {
                     settings.PhaseRotationDegrees = 0;
@@ -9149,10 +7219,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 sorted.Select(channel => channels.IndexOf(channel)).ToList());
         }
 
-        // The wizard wrote both sides itself, and a proposal can carry one edge
-        // only: the side lock takes the result as it stands rather than reading a
-        // hidden side that already held that edge as untouched and carrying the
-        // shown side's other edge over its own.
+        // The wizard wrote both sides; the lock must not carry the shown side's other edge over.
         sideLock.Remember(channels.Select(channel => channel.Pair));
         ScheduleSave();
         RedrawAll();
@@ -9175,12 +7242,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return null;
     }
 
-    /// <summary>
-    /// Puts <paramref name="reordered"/> back into the list, using only the
-    /// positions its members already occupied. Everything else — a disabled block,
-    /// one with no source — keeps the slot it had, because the wizard never
-    /// looked at it and has nothing to say about where it belongs.
-    /// </summary>
+    /// <summary>Only the reordered members' slots are reused; blocks the wizard did not look at keep theirs.</summary>
     internal static IReadOnlyList<T> ReorderIntoSlots<T>(
         IReadOnlyList<T> all,
         IReadOnlyList<T> reordered)
@@ -9197,10 +7259,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return result;
     }
 
-    // Averages a measurement's per-bin coherence (γ², a linear FFT grid over
-    // [0, Nyquist], bin k → k · rate / (2·(len−1))) over each magnitude point's
-    // 1/3-octave band, so the result lines up 1:1 with the wizard's magnitude
-    // curve (which is itself 1/3-octave smoothed) for EstimateBand to consume.
+    // γ² on a linear grid (bin k -> k·rate/(2·(len−1))) averaged per 1/3-octave point to match the wizard's magnitude curve.
     private static IReadOnlyList<double> CoherencePerPoint(
         double[] coherence,
         IReadOnlyList<SignalPoint> points,
@@ -9231,11 +7290,6 @@ public partial class VirtualCrossoverPanel : UserControl
         return values;
     }
 
-    // ---------------------------------------------------------------- session
-
-    // Exports the whole tool state (channels, chains, gate, view flags) to a
-    // user-chosen file, so a tuning session can be shared or archived instead of
-    // living only in the internal autosave.
     private void ExportSession()
     {
         using var dialog = new SaveFileDialog
@@ -9261,9 +7315,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Imports a session file, replacing the current state; the sources are
-    // re-resolved from their stored history entries / file paths, and the result
-    // immediately becomes the new internal autosave.
+    // The import immediately becomes the new internal autosave.
     private async Task ImportSessionAsync()
     {
         using var dialog = new OpenFileDialog
@@ -9280,17 +7332,8 @@ public partial class VirtualCrossoverPanel : UserControl
         await ImportSessionFileAsync(dialog.FileName);
     }
 
-    /// <summary>
-    /// Imports the session at <paramref name="path"/>, exactly as the panel's own
-    /// Load does. Reports its own failures.
-    /// </summary>
-    /// <remarks>
-    /// The entry point for a session file dropped on the window, which arrives here
-    /// through a tab switch that has only just told the panel to open. That switch
-    /// starts the stored project loading, and a load still in flight would land on
-    /// top of the import and quietly restore the session the user was replacing —
-    /// so this waits for it rather than racing it.
-    /// </remarks>
+    /// <summary>Imports the session at <paramref name="path"/> like Load; reports its own failures.</summary>
+    /// <remarks>Waits for the stored project load a tab switch just started, which would otherwise restore the replaced session.</remarks>
     internal async Task ImportSessionFileAsync(string path)
     {
         await storedProjectLoad;
@@ -9313,12 +7356,7 @@ public partial class VirtualCrossoverPanel : UserControl
         ShowCalibrationNotice();
     }
 
-    // Offers to relink the sources an imported session could not find. The stored
-    // paths were written on the machine that measured, so a session that arrives
-    // without its original tree — a different drive letter, a renamed folder, the
-    // measurements filed apart from the session — leaves every such channel
-    // unresolved. One folder answers for all of them: the same locator runs against
-    // it, and it stays this session's extra search root.
+    // Stored paths come from the measuring machine; one folder answers for all missing sources and stays a search root.
     private async Task RelinkMissingSourcesAsync()
     {
         List<(VirtualCrossoverChannel Channel, bool RightSide)> missing =
@@ -9370,13 +7408,10 @@ public partial class VirtualCrossoverPanel : UserControl
         }
         finally
         {
-            // Same order as a project load: leave the loading state before the
-            // redraw, so the final frame is the real plot.
             SetProjectLoading(false);
             RedrawAll();
         }
 
-        // The relinked paths belong in the autosave, not just on screen.
         ScheduleSave();
 
         List<(VirtualCrossoverChannel Channel, bool RightSide)> remaining =
@@ -9395,10 +7430,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Every side that names a source FILE but has no measurement behind it — the
-    // ones a folder can answer for. A side with no stored reference is simply
-    // empty, not missing, and one referring only to a history entry of the machine
-    // that measured is not something pointing at a folder could fix.
+    // Only sides naming a FILE: a history-only reference from another machine is not fixable by a folder.
     private IEnumerable<(VirtualCrossoverChannel Channel, bool RightSide)>
         MissingSourceSides()
     {
@@ -9432,14 +7464,8 @@ public partial class VirtualCrossoverPanel : UserControl
             : $"{missing.Count} measurements were not found: {sides}.";
     }
 
-    // One sentence, once, about the calibration an imported session arrived with.
-    // A calibration describes the microphone the MEASUREMENTS were taken with, so
-    // a session travelling with its data brings the right correction along and
-    // the selector starts on it; the user is told, and offered to keep it in their
-    // own list. A session written before the curve travelled can only name an
-    // entry, and an id is local to the machine that minted it — so a match by id
-    // alone is reported as exactly that, and a miss keeps the selection the panel
-    // already had rather than replacing a working choice with nothing.
+    // A session carrying its curve starts on it and offers to keep it; an id-only match is reported as such,
+    // and a miss keeps the panel's selection.
     private void ShowCalibrationNotice()
     {
         VirtualCrossoverCalibrationNotice notice = pendingCalibrationNotice;
@@ -9487,11 +7513,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // The session's own curve is selected and its curves match the author's; the
-    // one thing left to decide is whether it should live in this machine's list
-    // too — which is right when these are the author's measurements (the
-    // calibration is of the microphone that took them), and wrong for a
-    // measurement taken here with a different microphone.
+    // Keeping it is right for the author's measurements, wrong for ones taken here with another microphone.
     private void OfferSessionCalibration(VirtualCrossoverSessionCalibration session)
     {
         if (calibrationAdder == null)
@@ -9529,9 +7551,7 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // The host refreshed the consumers on adding, which hands the selection
-        // over to the new entry (ReconcileCalibrationSelection); this is only for a
-        // host that did not.
+        // Only for a host that did not refresh consumers on adding.
         if (!string.Equals(
                 MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration),
                 addedId,

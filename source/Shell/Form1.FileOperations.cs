@@ -36,8 +36,6 @@ public partial class Form1
 
     private async void buttonSave_Click(object sender, EventArgs e)
     {
-        // In MMM the buttons belong to that mode's own measurement, not to the
-        // impulse response (see Form1.LiveCapture).
         if (LiveCaptureOwnsSaveLoad)
         {
             await SaveLiveCaptureAsync();
@@ -121,25 +119,11 @@ public partial class Form1
         }
     }
 
-    /// <summary>
-    /// Opens a measurement file: a stored capture goes to the mode it was taken in,
-    /// anything else to the impulse-response side.
-    /// </summary>
-    /// <remarks>
-    /// A stored capture knows which mode it belongs to, so opening one takes the
-    /// application there rather than refusing it for not being an impulse response.
-    /// A file that CLAIMS to be a capture and then fails to parse is reported as the
-    /// broken capture it is, not handed on to the impulse-response loader to be
-    /// misdiagnosed as a bad format.
-    /// <para>
-    /// Shared by both Load buttons and by a file dropped on the window, so all three
-    /// open the same file in the same way.
-    /// </para>
-    /// </remarks>
+    /// <summary>A stored capture goes to its own mode, anything else to the impulse-response side. Shared by both Load buttons and file drop.</summary>
+    /// <remarks>A file claiming to be a capture that fails to parse is reported as a broken capture, not misdiagnosed by the IR loader.</remarks>
     private async Task OpenMeasurementFileAsync(string path)
     {
-        // Idempotent, and needed by only one of the three callers: the buttons stop
-        // the analyzer before they open their dialog, a drop has stopped nothing.
+        // Needed only by the drop path; the buttons already stopped the analyzer.
         await StopLiveCaptureAsync();
 
         try
@@ -163,23 +147,9 @@ public partial class Form1
         await LoadImpulseResponseLikeAsync(path);
     }
 
-    /// <summary>
-    /// Loads whatever is NOT a capture: a Resonalyze impulse response, a recorded
-    /// sweep or a REW export, dispatched by extension.
-    /// </summary>
-    /// <remarks>
-    /// Shared by both Load buttons. The file decides which measurement it is, so
-    /// both have to be able to open both kinds; without this the moving-mic button
-    /// refused an impulse response and the main one refused a capture, each telling
-    /// the user the file was the wrong format when it was only the wrong button.
-    /// </remarks>
     private async Task LoadImpulseResponseLikeAsync(string path)
     {
-        // An impulse response has nowhere to be shown in the live analyzer, nor in a
-        // tool that reads sources of its own, so go where it belongs first — the
-        // mirror of a capture taking the application to Live Spectrum. The Load
-        // button is hidden in the tools; a file dropped on the window is not, so the
-        // question is asked of the mode rather than of Live Spectrum by name.
+        // An IR has nowhere to show in the live analyzer or source-reading tools; ask the mode, since a drop can arrive in any mode.
         if (!GetActiveModeDescriptor().ShowsLoadedMeasurement)
         {
             await SelectModeAsync(ModeTab.Frequency);
@@ -227,15 +197,7 @@ public partial class Form1
         }
     }
 
-    // A plain Load is a request to make a measurement current like any other, so it
-    // takes the shared revision and checks it between reading and installing. The
-    // Load button being disabled meanwhile is not the same guard: it stops a second
-    // Load, not a mode switch to Virtual DSP and an Open in analyzers, which would
-    // otherwise land first and then be overwritten by this file arriving late.
-    //
-    // (The WAV import needs none of this: it holds an ExpSweepMeasurement claim for
-    // its whole decode, and every other path refuses to start while the measurement
-    // is busy — mutual exclusion rather than a race resolved afterwards.)
+    // Takes the shared revision and checks it between read and install: a disabled Load button does not stop a VDSP Open in analyzers landing first.
     private async Task LoadImpulseResponseFileAsync(string path)
     {
         long revision = ++measurementActivationRevision;
@@ -256,9 +218,7 @@ public partial class Form1
             panel => panel.SelectCalibration(calibrationId, entries));
     }
 
-    // The install half, split from the read so a caller that must not land a stale
-    // result can check its own guard between the two — reading a large file takes
-    // long enough for a newer request to overtake it.
+    // Split from the read so callers can check their guard in between.
     private void ApplyImpulseResponseFile(ImpulseResponseFile file, string path)
     {
         (double restoredLowHz, double restoredHighHz) = file.ResolveSweepBand();
@@ -297,21 +257,12 @@ public partial class Form1
                 : null);
         ApplyLoadedImpulseResponseState(path);
         sessionTracker.MarkLoadedFile(path, file);
-        // A loaded file carries its own SPL calibration and loopback level, so
-        // an open Frequency Response panel can now show dB SPL as fully
-        // available (not just view-only) for it.
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
     }
 
-    // The Virtual DSP "Open in analyzers" jump: brings one channel side's
-    // measurement into the analysis modes and lands on Frequency Response (every
-    // analyzer tab reads the same loaded measurement, so one landing tab serves
-    // them all). A history-backed source goes through the standard entry
-    // activation — the full restore the History window runs, saved working state
-    // included — and the tab switch queues after it, because the restore selects
-    // the entry's own saved mode on the way. A file-backed source switches first
-    // and then loads exactly as the Load button would, ceremony and all.
+    // VDSP Open in analyzers: history-backed sources use full entry activation (the tab switch queues after its mode restore);
+    // file-backed sources switch first, then load like the Load button.
     private async Task OpenVirtualDspSourceInAnalyzersAsync(
         Guid? historyEntryId, string? filePath)
     {
@@ -322,11 +273,7 @@ public partial class Form1
 
         long revision = ++measurementActivationRevision;
 
-        // The entry is TRIED, not trusted: it can still be listed while the file
-        // behind it is gone, in which case the restore lands nothing — and Virtual
-        // DSP may well have relocated that measurement and handed a working path
-        // alongside. Falling through on Unavailable is what keeps the jump from
-        // leaving the previous measurement on screen and calling it done.
+        // The entry is tried, not trusted: its file may be gone while VDSP handed a relocated path; fall through on Unavailable.
         if (historyEntryId is { } entryId &&
             measurementHistoryService.FindById(entryId) != null)
         {
@@ -336,11 +283,7 @@ public partial class Form1
                     await SelectModeAsync(ModeTab.Frequency);
                     return;
 
-                // A newer activation — another channel's jump, or the History
-                // window's own — is already landing. Falling back to this
-                // channel's file would race it and could overwrite the newer
-                // measurement with this older one; the newest request wins,
-                // exactly as it does inside the activation itself.
+                // A newer activation is landing; falling back to the file would overwrite it.
                 case HistoryActivation.Superseded:
                     return;
             }
@@ -358,9 +301,7 @@ public partial class Form1
         commandController.SetLoadAvailable(false);
         try
         {
-            // Read, then check, then install: a jump started later may already have
-            // landed its measurement while this file was still being read, and
-            // installing this one now would put the older channel back on screen.
+            // Read, check, install: a later jump may have landed meanwhile.
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(filePath);
             if (revision != measurementActivationRevision)
             {
@@ -385,36 +326,19 @@ public partial class Form1
         }
     }
 
-    // A measurement made in REW, brought over on the time base it was measured on.
-    //
-    // REW's text export is the only one of its routes that states the time of sample 0,
-    // so a sweep it measured against a loopback can be placed on the same absolute base
-    // a measurement taken here sits on — which is the whole point: two programs' results
-    // are comparable only if their zeros mean the same thing. The reader does the
-    // reading and the re-referencing; what is decided here is what the format cannot
-    // say, and every one of those decisions is reported rather than assumed silently.
-    //
-    // Absent by nature, not by omission: a REW sweep export carries no coherence, no
-    // level snapshot and no SPL anchor, and the microphone calibration REW applies to
-    // its own curves is not in the impulse response — an imported IR is uncalibrated.
+    // REW's text export is the only REW route stating sample 0's time, so a loopback-referenced sweep lands on our absolute base.
+    // Undecidable facts are reported, not assumed. No coherence, level snapshot or SPL anchor; the IR is uncalibrated.
     private async Task ImportRewImpulseResponseAsync(string path)
     {
         RewImpulseResponseTextFile file;
         RewImportTimingPlan plan;
-        // Claimed BEFORE the read: parsing a few hundred thousand samples and
-        // running the fractional shift takes long enough for the record button to
-        // start a sweep in between, and this import would then arrive on top of it.
-        // Released once the result is published and before the redraw below — a busy
-        // measurement draws no curves, and the notice that follows is modal, so a
-        // claim held to the end of the method would outlast the dialog on screen.
+        // Claimed before the read so a sweep cannot start meanwhile; released before the redraw (busy draws nothing) and the modal notice.
         using (expSweepMeasurement.Claim())
         {
             string text = await File.ReadAllTextAsync(path);
             file = await Task.Run(
                 () => RewImpulseResponseTextFile.Parse(text));
-            // The sweep this result would be filed under is generated at the configured
-            // rate; a file at another rate is not describing the same signal, and the
-            // state applied afterwards would report a rate the measurement does not have.
+            // The sweep is generated at the configured rate; another rate describes a different signal.
             int configuredSampleRate =
                 measurementSettings.Measurement.BuildConfiguration().Signal.SampleRate;
             if (file.SampleRate != configuredSampleRate)
@@ -427,8 +351,7 @@ public partial class Form1
 
             if (!file.IsLoopbackReferenced)
             {
-                // The shape is real; the position is its own. Placing it here would give it
-                // an arrival time that means nothing and would be summed with real ones.
+                // Without a loopback reference the arrival time is meaningless and would be summed with real ones.
                 throw new InvalidOperationException(
                     "This export was not measured against a loopback timing reference" +
                     (string.IsNullOrWhiteSpace(file.Excitation)
@@ -439,10 +362,7 @@ public partial class Form1
                     "Measure it in REW with a loopback as the timing reference to import it.");
             }
 
-            // The one fact the format cannot carry, asked for rather than guessed at.
-            // The question is put while the claim is still held: nothing has been
-            // published yet, so there is nothing on screen waiting to be redrawn, and
-            // the claim is exactly what stops a sweep starting while the dialog is up.
+            // Asked while the claim is held, so no sweep starts during the dialog.
             if (!TryPlanRewImportTiming(file, out plan))
             {
                 return;
@@ -451,12 +371,10 @@ public partial class Form1
             double[] samples = file.Samples;
             double[] referenced = await Task.Run(
                 () => file.ToLoopbackReferencedImpulseResponse(plan.OffsetSeconds));
-            // The band REW swept. A header without it is not worth refusing the file over,
-            // but the fallback is a guess and says so in the notes below.
+            // Missing band is tolerated; the fallback is reported in the notes.
             double lowHz = file.LowFrequencyHz ?? DefaultImportedLowFrequencyHz;
             double highHz = file.HighFrequencyHz ?? (file.SampleRate / 2.0);
-            // The sweep, not the impulse response: REW keeps the IR shorter than the sweep
-            // that produced it, and the harmonic geometry is keyed to the sweep's length.
+            // REW keeps the IR shorter than the sweep, and harmonic geometry is keyed to the sweep length.
             double sweepSeconds =
                 (file.SweepLengthSamples ?? samples.Length) / (double)file.SampleRate;
             expSweepMeasurement.RestoreImpulseResponse(
@@ -465,8 +383,6 @@ public partial class Form1
                 file.SampleRate,
                 ImportedBitDepth,
                 sweepSeconds,
-                // REW does not say which output it played through, and guessing a side
-                // would put a channel name on a measurement that never carried one.
                 PlaybackChannel.Mono,
                 ToComplex(samples),
                 PeakIndexOf(samples),
@@ -481,9 +397,7 @@ public partial class Form1
                 timingReference: plan.Reference);
         }
 
-        // Like a recorded sweep and unlike a loaded file: nothing on disk holds this
-        // impulse response in this program's terms, so it enters the session as a
-        // measurement rather than as a file that could be saved back over its source.
+        // Enters as a measurement, not a file that could be saved back over its source.
         ApplyLoadedImpulseResponseState(path);
         sessionTracker.MarkMeasurementCompleted(expSweepMeasurement);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
@@ -491,9 +405,7 @@ public partial class Form1
         NotifyRewImportDecisions(file, plan);
     }
 
-    // Puts the timing-offset question and turns the answer into a plan, or explains why
-    // the answer cannot be true of this file. False means the user cancelled — which is
-    // not an error and gets no notice.
+    // False means cancelled: not an error, no notice.
     private bool TryPlanRewImportTiming(
         RewImpulseResponseTextFile file,
         out RewImportTimingPlan plan)
@@ -527,9 +439,7 @@ public partial class Form1
         return true;
     }
 
-    // What REW's export could not say, and what was assumed in its place. Always worth
-    // showing: an imported measurement looks exactly like a measured one on screen, and
-    // these are the ways in which it is not.
+    // An imported measurement looks like a measured one; these notes say how it differs.
     private void NotifyRewImportDecisions(
         RewImpulseResponseTextFile file,
         RewImportTimingPlan plan)
@@ -571,9 +481,6 @@ public partial class Form1
             MessageBoxIcon.Information);
     }
 
-    // What the import was told about time, and what that makes the arrival worth. Said
-    // in the notice because an imported measurement looks like a measured one on screen
-    // and this is the difference between a delay and a number that resembles one.
     private static string DescribeImportedTiming(
         RewImpulseResponseTextFile file,
         RewImportTimingPlan plan)
@@ -593,9 +500,7 @@ public partial class Form1
             $"{statedAs}, so this measurement is on the session's time base with an arrival of {arrivalMs:0.###} ms. The export itself cannot confirm that: REW folds the offset into the start time and records it nowhere else, so the arrival is true on your word rather than on the file's.");
     }
 
-    // REW's export states no bit depth: it is a text file of fractions of full scale,
-    // and by the time it is written the capture depth has left no trace. The value is
-    // carried only as the configuration's description of the sweep.
+    // REW's export states no bit depth; this only describes the sweep configuration.
     private const int ImportedBitDepth = 24;
 
     private const double DefaultImportedLowFrequencyHz = 20.0;
@@ -625,34 +530,19 @@ public partial class Form1
         return peak;
     }
 
-    // A sweep recorded elsewhere — a phone, a handheld recorder, a DAW — analyzed
-    // against the sweep the CURRENT settings describe, which is the same signal
-    // the measurement options export as a WAV file. The outcome is a measurement
-    // rather than a loaded file: nothing on disk holds this impulse response, so
-    // it enters the history the way a finished sweep does.
+    // Analyzed against the sweep the current settings describe; enters history like a finished sweep.
     private async Task ImportRecordedSweepAsync(string path)
     {
         AudioFileContent recording;
-        // Claimed BEFORE the decode, which on a long recording is seconds of its
-        // own: the record button gates on the measurement being busy, and without
-        // the claim a run started during the decode would finish and then be
-        // replaced by the import landing on top of it. Released before the redraw
-        // below — a busy measurement draws no curves.
+        // Claimed before a decode that can take seconds; released before the redraw.
         using (expSweepMeasurement.Claim())
         {
             recording = await Task.Run(() => RecordedSweepFile.Load(path));
-            // The current settings decide the excitation, exactly as they would for
-            // the next sweep. They are handed over rather than applied first: a
-            // rejected recording must leave the measurement on screen alone.
+            // Handed over rather than applied first, so a rejected recording leaves the screen alone.
             SweepMeasurementConfiguration configuration =
                 measurementSettings.Measurement.BuildConfiguration();
-            // Which channel holds the measurement is a question about the sweep,
-            // not about loudness — but matching only answers it when ONE channel
-            // holds the sweep. A recorder that also wrote the played signal to a
-            // reference track put a copy of the excitation in the file, and a copy
-            // matches better than any acoustic take: it would win, measure flat,
-            // and pass every credibility check on the way. Nothing in the numbers
-            // says which track the microphone was on, so that choice is asked for.
+            // Sweep matching picks the channel only when one channel holds it: a reference track copy of the excitation would win
+            // and pass every check, so when another channel matches comparably (IsAmbiguous) the user is asked.
             double[] qualities = recording.ChannelCount > 1
                 ? await Task.Run(() =>
                     RecordedSweepChannels.Rank(configuration, recording.Channels))
@@ -679,17 +569,13 @@ public partial class Form1
 
         ApplyLoadedImpulseResponseState(path);
         sessionTracker.MarkMeasurementCompleted(expSweepMeasurement);
-        // An import carries no SPL anchor — the recording chain's gain is unknown
-        // — so an open panel has to re-evaluate dB SPL availability downward.
+        // An import has no SPL anchor; re-evaluate availability downward.
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
         NotifyImportDecisions(recording);
     }
 
-    // The decisions the import made on the user's behalf: which channel it
-    // measured, and whether it had to stretch the reference to match the
-    // recording. Silent when there was nothing to decide — a mono file that
-    // needed no correction says nothing at all.
+    // Silent when nothing was decided (mono, no stretch).
     private void NotifyImportDecisions(AudioFileContent recording)
     {
         if (closingInProgress)

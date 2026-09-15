@@ -6,22 +6,12 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The FIR stage outside the DSP library: how a session carries a kernel INSIDE
-/// itself and drops it for a device without the stage, how the render cache tells
-/// kernels apart, how the files are imported and exported, what the sheet prints,
-/// and the channel block's FIR row.
-/// </summary>
 public sealed class VirtualCrossoverFirTests
 {
-    // ----------------------------------------------------------- project file
-
     [Fact]
     public void SaveToAndLoadFrom_CarryTheKernelItself_ToTheBit()
     {
-        // The kernel is the tune's, like the PEQ bands: the session file holds the
-        // taps, not a path, so it travels whole and nothing has to be found again.
-        // Float64 in the file — a designed number comes back exactly.
+        // The session holds the taps (float64), not a path.
         string root = CreateTemporaryDirectory();
         string path = Path.Combine(root, "session.json");
         try
@@ -41,12 +31,10 @@ public sealed class VirtualCrossoverFirTests
             Assert.Equal(taps, left.Taps.ToArray());
             Assert.Equal(48_000, left.DeclaredSampleRateHz);
             Assert.Equal("left mid.wav", loaded.Pairs[0].Left.FirSourceName);
-            // A kernel without a declared rate and without a name is still a kernel.
             Assert.Equal(new[] { 0.0, 1.0 }, loaded.Pairs[2].Right.Fir!.Taps.ToArray());
             Assert.Null(loaded.Pairs[2].Right.Fir!.DeclaredSampleRateHz);
             Assert.Null(loaded.Pairs[2].Right.FirSourceName);
             Assert.True(loaded.DspProcessorFirFilters);
-            // Additive: a side without a kernel carries none.
             Assert.Null(loaded.Pairs[1].Left.Fir);
             Assert.False(loaded.Pairs[1].Left.HasFir);
         }
@@ -79,8 +67,6 @@ public sealed class VirtualCrossoverFirTests
     [Fact]
     public void TheKernelInTheFile_IsAnObjectOfDeclaredRateAndBase64Taps()
     {
-        // The wire shape, pinned: a hand-edited or foreign writer has to know it,
-        // and a garbled block is refused rather than read as some other kernel.
         var settings = new VirtualCrossoverChannelSettings
         {
             Fir = new FirFilter([0.5, -0.25], 96_000)
@@ -91,7 +77,7 @@ public sealed class VirtualCrossoverFirTests
         JsonNode fir = node["fir"]!;
 
         Assert.Equal(96_000, (int)fir["sampleRateHz"]!);
-        // Two float64 little-endian: 0.5 = 00 00 00 00 00 00 E0 3F, −0.25 = ... D0 BF.
+        // Two float64 LE: 0.5 = 00 00 00 00 00 00 E0 3F, -0.25 = ... D0 BF.
         byte[] bytes = Convert.FromBase64String((string)fir["taps"]!);
         Assert.Equal(16, bytes.Length);
         Assert.Equal(0.5, BitConverter.ToDouble(bytes, 0));
@@ -103,7 +89,6 @@ public sealed class VirtualCrossoverFirTests
             """{"fir":{"sampleRateHz":48000}}""", options));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<VirtualCrossoverChannelSettings>(
             """{"fir":{"taps":""}}""", options));
-        // A rate no file could have declared is damage, not "none".
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<VirtualCrossoverChannelSettings>(
             """{"fir":{"sampleRateHz":0,"taps":"AAAAAAAA4D8="}}""", options));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<VirtualCrossoverChannelSettings>(
@@ -113,9 +98,7 @@ public sealed class VirtualCrossoverFirTests
     [Fact]
     public void TheWireForm_IsBuiltOncePerKernel_AndReusedByEverySave()
     {
-        // The autosave serializes the session on every knob turn; a megabyte of
-        // base64 per side must not be rebuilt each time. The kernel is immutable, so
-        // one wire form per instance is exact.
+        // The autosave serializes on every knob turn; the immutable kernel caches one wire form per instance.
         var kernel = new FirFilter([0.5, -0.25], 96_000);
         var settings = new VirtualCrossoverChannelSettings { Fir = kernel };
 
@@ -124,17 +107,13 @@ public sealed class VirtualCrossoverFirTests
 
         Assert.Same(first, second);
         Assert.Same(first, FirKernelWire.From(kernel));
-        // Another instance with the same taps is another wire form — nothing keys on
-        // content here, only on the kernel that is actually loaded.
         Assert.NotSame(first, FirKernelWire.From(new FirFilter([0.5, -0.25], 96_000)));
     }
 
     [Fact]
     public void LoadFrom_AProcessorWithoutAFirStage_RemovesTheKernels_AndSaysSo()
     {
-        // The invariant: a kernel in the file means a device that convolves. A hand-
-        // edited session carrying one without the switch loses it where the user can
-        // see, not quietly on the way past.
+        // Invariant: a kernel in the file means a device that convolves.
         string root = CreateTemporaryDirectory();
         string path = Path.Combine(root, "session.json");
         try
@@ -152,7 +131,6 @@ public sealed class VirtualCrossoverFirTests
             Assert.Null(loaded.Pairs[2].Right.Fir);
             Assert.Contains("2 channel sides carried a FIR filter", loaded.MigrationNoticeText);
 
-            // With the switch on, the same file keeps them and says nothing.
             original.DspProcessorFirFilters = true;
             original.SaveTo(path);
             VirtualCrossoverProjectFile kept = VirtualCrossoverProjectFile.LoadFrom(path);
@@ -220,14 +198,10 @@ public sealed class VirtualCrossoverFirTests
         Assert.Null(project.Pairs[0].Left.FirSourceName);
     }
 
-    // -------------------------------------------------------------- the cache
-
     [Fact]
     public void ChainCacheKey_TellsKernelsApartByInstance()
     {
-        // The kernel's equality is reference equality (see FirFilter): the same loaded
-        // instance is the same render, a re-imported file is a new one — and a chain
-        // without a kernel is not a chain with one.
+        // FirFilter equality is by reference: a re-imported file is a new render.
         var kernel = new FirFilter([0.0, 1.0]);
         var sameTaps = new FirFilter([0.0, 1.0]);
         var key = new DspChannelChainCacheKey(new DspChannelChain(Fir: kernel));
@@ -239,8 +213,6 @@ public sealed class VirtualCrossoverFirTests
         Assert.NotEqual(key, new DspChannelChainCacheKey(new DspChannelChain(Fir: sameTaps)));
         Assert.NotEqual(key, new DspChannelChainCacheKey(DspChannelChain.Identity));
     }
-
-    // -------------------------------------------------------------- the files
 
     [Fact]
     public void Load_ReadsAWavsFirstChannel_AndKeepsItsRateAsTheDeclaredOne()
@@ -257,7 +229,6 @@ public sealed class VirtualCrossoverFirTests
 
             Assert.Equal(4, fir.Length);
             Assert.Equal(96_000, fir.DeclaredSampleRateHz);
-            // 24-bit PCM: exact to well under a millionth.
             for (int index = 0; index < left.Length; index++)
             {
                 Assert.Equal(left[index], fir.Taps[index], 5);
@@ -293,9 +264,7 @@ public sealed class VirtualCrossoverFirTests
     [Fact]
     public void Save_WritesAFloatWav_ThatImportsBackWithTheProcessorsRate_GainAndAll()
     {
-        // Float, not 24-bit PCM: a kernel with gain has taps past ±1, and integer
-        // PCM would clip them into another filter. The rate written is the one the
-        // taps mean here — the processor's — whatever the import file declared.
+        // Float, not PCM: taps past +-1 would clip; the rate written is the processor's.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -348,8 +317,6 @@ public sealed class VirtualCrossoverFirTests
         }
     }
 
-    // -------------------------------------------------------------- the sheet
-
     [Fact]
     public void FormatText_PrintsTheKernel_OnlyWhereOneIsCarried()
     {
@@ -366,8 +333,6 @@ public sealed class VirtualCrossoverFirTests
 
         project.Pairs[1].Left.Fir = new FirFilter(new double[4_096]);
         project.Pairs[1].Left.FirSourceName = "left mid.wav";
-        // A kernel that arrived without a name (a hand-edited session) is still
-        // printed: it is in the tune.
         project.Pairs[1].Right.Fir = new FirFilter(new double[2_048]);
 
         string sheet = VirtualCrossoverSheet.FormatText(project, null);
@@ -375,8 +340,6 @@ public sealed class VirtualCrossoverFirTests
         Assert.Contains("FIR        left mid.wav (4096 taps)", sheet);
         Assert.Contains("FIR        FIR (2048 taps)", sheet);
     }
-
-    // -------------------------------------------------------------- the block
 
     [Fact]
     public void WithoutTheStage_TheFirRowIsHidden_AndShowingItAddsOneRow()
@@ -406,8 +369,6 @@ public sealed class VirtualCrossoverFirTests
     [Fact]
     public void TheFirRow_TakesThePhaseRowsPlaceWhenThatRowIsHidden()
     {
-        // A block with FIR and no phase control must not carry an empty row between
-        // the PEQ and the FIR; with both, the FIR row sits under the phase row.
         using var control = new VirtualCrossoverChannelControl { FirControlShown = true };
 
         Assert.Equal(control.PhaseInput.Top, control.FirButton.Top);
@@ -477,27 +438,23 @@ public sealed class VirtualCrossoverFirTests
         Assert.Equal("Add…", control.FirButton.Text);
         Assert.Equal("off", control.FirInfoLabel.Text);
 
-        // 4096 taps peaking at tap 2048: 21.3 ms at 96 kHz.
+        // 4096 taps peaking at 2048: 21.3 ms at 96 kHz.
         var taps = new double[4_096];
         taps[2_048] = 1.0;
         control.SetFir(new FirFilter(taps, 96_000), "left mid.wav");
 
-        // The button carries the action, like the PEQ row's; the label names the file.
         Assert.Equal("Edit…", control.FirButton.Text);
         Assert.StartsWith("left mid.wav: ", control.FirInfoLabel.Text);
         Assert.Contains("4096 taps", control.FirInfoLabel.Text);
         Assert.Contains("21", control.FirInfoLabel.Text);
         Assert.NotEqual(Resonalyze.Ui.UiPalette.WarningAmber, control.FirInfoLabel.ForeColor);
 
-        // The file stated a rate the processor does not run at: the taps are used as
-        // they are, and the readout says so in amber.
         control.SetFir(new FirFilter(taps, 48_000), "left mid.wav");
 
         Assert.Contains("48 kHz", control.FirInfoLabel.Text);
         Assert.Contains("96 kHz", control.FirInfoLabel.Text);
         Assert.Equal(Resonalyze.Ui.UiPalette.WarningAmber, control.FirInfoLabel.ForeColor);
 
-        // A kernel without a source name is still shown as a kernel.
         control.SetFir(new FirFilter(taps), null);
 
         Assert.Equal("Edit…", control.FirButton.Text);
@@ -535,8 +492,6 @@ public sealed class VirtualCrossoverFirTests
         Assert.Equal(1, fir);
         Assert.Equal(0, settings);
     }
-
-    // ---------------------------------------------------------------- helpers
 
     private static string CreateTemporaryDirectory()
     {

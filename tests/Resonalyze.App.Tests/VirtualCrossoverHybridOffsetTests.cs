@@ -3,26 +3,13 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The one offset that puts a whole spatial-average set on the impulse responses'
-/// axis. Its hard part is not the statistic but WHERE it is read: a channel spends
-/// most of the drawn range in its stopband, where the impulse response shows what
-/// the room and the noise floor left of a filtered driver while the hybrid shows
-/// the filter's own analytic slope. Read across the whole range, a real four-way
-/// set came out with its channels 73 dB apart, ordered by band.
-/// </summary>
+/// <summary>Read in each channel's own band: across the stopband a real four-way set came out 73 dB apart.</summary>
 public sealed class VirtualCrossoverHybridOffsetTests
 {
-    /// <summary>
-    /// The stopband, where nothing real is being compared, must not reach the
-    /// answer — not even when it holds most of the points.
-    /// </summary>
     [Fact]
     public void TheOffset_IsReadInTheChannelsOwnBandAndNotItsStopband()
     {
-        // A woofer: 60 points of passband, then 940 of rolloff. The measured curve
-        // floors on the room and the noise; the hybrid keeps falling with the
-        // filter, so in the stopband the two part by more than 100 dB.
+        // Measured floors on room/noise, hybrid follows the filter: >100 dB apart in the stopband.
         var reference = new List<SignalPoint>();
         var hybrid = new List<SignalPoint>();
         for (int i = 0; i < 1_000; i++)
@@ -40,12 +27,7 @@ public sealed class VirtualCrossoverHybridOffsetTests
         Assert.Equal(7, offset, 6);
     }
 
-    /// <summary>
-    /// One offset for the SET, never one per channel: the captures were taken in a
-    /// single analyzer session at a fixed gain, so their relative levels are honest
-    /// measurements and normalizing each channel separately would throw that away.
-    /// A channel that disagrees is left disagreeing — visibly.
-    /// </summary>
+    /// <summary>One offset for the set: captures from one session at fixed gain have honest relative levels.</summary>
     [Fact]
     public void TheSetsOffset_IsTheMedianAcrossChannelsAndDoesNotLevelThemSeparately()
     {
@@ -56,15 +38,9 @@ public sealed class VirtualCrossoverHybridOffsetTests
             hybrids.Cast<IReadOnlyList<SignalPoint>>().ToList(),
             [reference, reference, reference]);
 
-        // The outlier moved nothing: the median is the middle channel's own figure,
-        // so the odd one out still draws 25 dB away from where it claims to be.
         Assert.Equal(5, offset, 6);
     }
 
-    /// <summary>
-    /// A channel whose curves never overlap contributes nothing rather than voting
-    /// with a fabricated number.
-    /// </summary>
     [Fact]
     public void AChannelWithNothingToCompare_IsSkipped()
     {
@@ -75,41 +51,24 @@ public sealed class VirtualCrossoverHybridOffsetTests
             [missing, Flat(-9)], [reference, reference]);
 
         Assert.Equal(9, offset, 6);
-        // Not counted as an offset of zero, which would read as a set disagreeing
-        // by 9 dB when only one of its channels has anything to say.
         Assert.Equal([9.0], perChannel);
     }
 
-    /// <summary>
-    /// The set's own verdict on itself: how far its channels disagree about where
-    /// the captures sit. A capture taken at a different input gain, or with a
-    /// different frame length (which moves the noise-slope compensation), lands
-    /// here — the detector does not care which, only that one offset can no longer
-    /// serve the set.
-    /// </summary>
     [Fact]
     public void TheSpread_IsTheDisagreementBetweenChannelsAndNotTheirDistanceFromTheIrs()
     {
         List<SignalPoint> reference = Flat(0);
 
-        // Ninety dB away from the impulse responses, but in perfect agreement:
-        // nothing is wrong with this set.
         (List<double> agreeing, _) = Resolve(
             [Flat(-90), Flat(-90), Flat(-90)], [reference, reference, reference]);
         Assert.Equal(0.0, Spread(agreeing), 6);
 
-        // One capture eight dB out: the same distance, now disagreed upon.
         (List<double> mixed, _) = Resolve(
             [Flat(-90), Flat(-90), Flat(-82)], [reference, reference, reference]);
         Assert.Equal(8.0, Spread(mixed), 6);
     }
 
-    /// <summary>
-    /// The offsets come back IN CHANNEL ORDER, with a hole where a channel had
-    /// nothing to compare. Packed, they silently shifted every figure below that
-    /// channel onto the next driver's name in the spread read-out — a diagnostic
-    /// blaming the wrong capture is worse than no diagnostic.
-    /// </summary>
+    /// <summary>Offsets stay in channel order with holes; packed, the spread read-out blamed the wrong driver.</summary>
     [Fact]
     public void AChannelWithNothingToCompare_LeavesAHoleInPlaceAndDoesNotShiftTheRest()
     {
@@ -163,10 +122,6 @@ public sealed class VirtualCrossoverHybridOffsetTests
                     .ToList()
             ]);
         (double?[] positional, double setOffset) = ((double?[], double))result!;
-        // The dense view these tests read: the offsets that could be resolved, in
-        // order. The positional form — with a null where a channel had nothing to
-        // compare — is what the spread read-out needs, and ResolvePositional returns
-        // it untouched.
         return (
             positional.Where(offset => offset.HasValue)
                 .Select(offset => offset!.Value)

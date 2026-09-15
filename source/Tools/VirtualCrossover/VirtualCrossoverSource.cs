@@ -4,15 +4,7 @@ using Resonalyze.History;
 
 namespace Resonalyze;
 
-/// <summary>
-/// A measurement prepared for the Virtual DSP tool: the validated loopback
-/// transfer IR plus the derived data every side needs. Built once from a
-/// measurement snapshot — a picked file, a history entry, or a persisted
-/// reference on restore — then written into a channel side's runtime state.
-/// One <see cref="FromSnapshot"/>/<see cref="ApplyTo"/> pair for all three
-/// paths, so the file, history and restore flows share the conversion instead of
-/// each hand-rolling a copy of it.
-/// </summary>
+/// <summary>A measurement prepared for Virtual DSP; the one conversion shared by file, history and restore flows.</summary>
 internal sealed class ResolvedVirtualDspSource
 {
     public required Complex[] TransferImpulseResponse { get; init; }
@@ -21,46 +13,17 @@ internal sealed class ResolvedVirtualDspSource
     public double[]? TransferCoherence { get; init; }
     public IReadOnlyList<SignalPoint>? DistortionCurve { get; init; }
 
-    /// <summary>
-    /// The spatial average this measurement carries in itself, when it was recorded
-    /// with a microphone array; null otherwise.
-    /// </summary>
-    /// <remarks>
-    /// Kept apart from the attached moving-microphone capture rather than folded
-    /// into one slot: they are two sources of the same quantity, tethered
-    /// differently, and which of them a project uses is the project's choice. A
-    /// channel that has both keeps both, and switching the method does not have to
-    /// re-read anything.
-    /// </remarks>
+    /// <summary>The array average this measurement carries; kept apart from the attached moving-mic capture (the project chooses).</summary>
     public LiveCaptureDocument? ArrayCapture { get; init; }
 
-    /// <summary>
-    /// The spread between <see cref="ArrayCapture"/>'s microphones, band by band.
-    /// </summary>
     public double[]? ArraySpreadDb { get; init; }
 
-    /// <summary>
-    /// What this measurement actually measured, from the protective high-pass
-    /// divided back out of it and the band its sweep swept.
-    /// </summary>
     public MeasuredBand MeasuredBand { get; init; } = MeasuredBand.Everything;
 
-    /// <summary>
-    /// The microphone calibration this measurement was read through, as its file
-    /// recorded it. Null when the file names none — every measurement written before
-    /// the format carried one, which is why the panel's own selection is still the
-    /// answer for those.
-    /// </summary>
+    /// <summary>Calibration recorded by the file; null for older measurements, which use the panel's selection.</summary>
     public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; init; }
 
-    /// <summary>
-    /// Prepares a source from a measurement snapshot, or returns null when the
-    /// snapshot has no loopback transfer IR — the virtual sum only has physical
-    /// meaning for loopback-referenced responses — or when it was imported from a
-    /// recorded sweep, which is the same objection in a different form: summing
-    /// two drivers is summing their arrivals, and an imported measurement's
-    /// arrival is set by when its recorder was started.
-    /// </summary>
+    /// <summary>Null without a loopback transfer IR, or for an imported sweep: its arrival is set by when the recorder started.</summary>
     public static ResolvedVirtualDspSource? FromSnapshot(MeasurementHistorySnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -95,7 +58,6 @@ internal sealed class ResolvedVirtualDspSource
         };
     }
 
-    /// <summary>Writes the prepared measurement data into a channel side's slot.</summary>
     public void ApplyTo(VirtualCrossoverChannelState state)
     {
         ArgumentNullException.ThrowIfNull(state);
@@ -110,11 +72,7 @@ internal sealed class ResolvedVirtualDspSource
         state.MicrophoneCalibration = MicrophoneCalibration;
     }
 
-    // Computes the channel's harmonic distortion (THD, dB vs the fundamental) from
-    // a source's sweep deconvolution, for the crossover wizard's distortion-clean
-    // band read. Returns null when the source carried no sweep deconvolution (only a
-    // loopback transfer) or the sweep metadata is missing — the wizard then falls
-    // back to the class-based sensible range.
+    // THD (dB vs fundamental) for the crossover wizard; null without sweep deconvolution (wizard uses class-based range).
     private static IReadOnlyList<SignalPoint>? ComputeDistortionCurve(
         MeasurementHistorySnapshot snapshot)
     {
@@ -122,9 +80,6 @@ internal sealed class ResolvedVirtualDspSource
             snapshot.SampleRate <= 0 ||
             !double.IsFinite(snapshot.SweepDurationSeconds) ||
             snapshot.SweepDurationSeconds <= 0 ||
-            // No sweep band recorded (neither explicit band nor legacy octaves):
-            // the wizard falls back to the class-based range rather than a
-            // fabricated one.
             (snapshot.AchievedHighFrequencyHz <= 0 &&
                 snapshot.HighFrequencyHz <= 0 &&
                 snapshot.Octaves <= 0))
@@ -132,9 +87,7 @@ internal sealed class ResolvedVirtualDspSource
             return null;
         }
 
-        // The ACHIEVED edges: harmonic packets sit at ln(harmonic)/ln(ratio) of
-        // the sweep, so the requested band would place them wrong by the width of
-        // the guard bands.
+        // ACHIEVED edges: harmonic packets sit at ln(h)/ln(ratio) of the sweep, so the requested band misplaces them.
         (double lowHz, double highHz) = snapshot.ResolveAchievedSweepBand();
         if (!(lowHz > 0) || !(highHz > lowHz))
         {
@@ -181,11 +134,7 @@ internal sealed class ResolvedVirtualDspSource
     }
 }
 
-/// <summary>
-/// The persisted reference to a channel side's source: the display name plus the
-/// history entry and/or file path it re-resolves from. Written as a unit after an
-/// interactive pick lands (the silent restore keeps the existing reference).
-/// </summary>
+/// <summary>Persisted reference to a side's source; written after an interactive pick (silent restore keeps the old one).</summary>
 internal sealed record VirtualCrossoverSourceReference(
     string DisplayName,
     string? SourceFilePath,

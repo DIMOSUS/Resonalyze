@@ -6,10 +6,6 @@ using OxyPlot.WindowsForms;
 
 namespace Resonalyze.App.Tests;
 
-// REW's zoom box, which is a ruler first and a selection second: what it frames, what
-// it says the framed area measures — including over a scale that cannot be zoomed —
-// what it does to the axes when it is finally clicked, and what it answers to a box
-// too small to zoom to.
 public sealed class PlotZoomRectangleReadoutTests
 {
     private const int PlotWidth = 800;
@@ -23,7 +19,6 @@ public sealed class PlotZoomRectangleReadoutTests
         PlotModel model = RenderedModel();
         PlotZoomBox box = Frame(model, 100, 2_000, -40, -20);
 
-        // 100 Hz to 2 kHz is 1900 Hz of width; -40 to -20 dBr is 20 dB of height.
         Assert.Equal("1.90 kHz \u00D7 20.0 dB", box.Describe(Culture));
     }
 
@@ -43,8 +38,6 @@ public sealed class PlotZoomRectangleReadoutTests
         YAxis(model).IsZoomEnabled = false;
         PlotZoomBox box = Frame(model, 100, 2_000, -40, -20);
 
-        // A locked scale is no less readable for being locked, and reading it is what
-        // the box is mostly for.
         Assert.Equal("1.90 kHz \u00D7 20.0 dB", box.Describe(Culture));
     }
 
@@ -61,8 +54,6 @@ public sealed class PlotZoomRectangleReadoutTests
             new ScreenPoint(200, 400));
         OxyRect screen = box.Screen(model.PlotArea);
 
-        // Dragged right to left, so the box is normalized — and it is a rectangle, not
-        // a full-height band: the height is what was dragged, because it is measured.
         Assert.Equal(200, screen.Left, 6);
         Assert.Equal(100, screen.Width, 6);
         Assert.Equal(200, screen.Top, 6);
@@ -73,8 +64,6 @@ public sealed class PlotZoomRectangleReadoutTests
     public void Frame_SpansThePlotAreaWhereThereIsNoAxisToMeasureAgainst()
     {
         PlotModel model = RenderedModel();
-        // The waterfall's placeholder axis: present, but not a scale anybody reads a
-        // difference off.
         YAxis(model).IsAxisVisible = false;
 
         PlotZoomBox box = PlotZoomBox.Frame(
@@ -97,8 +86,7 @@ public sealed class PlotZoomRectangleReadoutTests
         PlotZoomBox box = Frame(model, 100, 2_000, -40, -20);
         OxyRect before = box.Screen(model.PlotArea);
 
-        // The box waits for a click, and the wheel can turn in the meantime. Held in
-        // pixels it would then frame a different piece of the curve.
+        // The box is held in data units: the wheel can zoom while it waits for a click.
         XAxis(model).Zoom(50, 5_000);
         Render(model);
         OxyRect after = box.Screen(model.PlotArea);
@@ -137,8 +125,6 @@ public sealed class PlotZoomRectangleReadoutTests
         box.Zoom();
         Render(model);
 
-        // The frequency axis goes where the box says; the locked scale it measured
-        // stays exactly where it was.
         Assert.Equal(100, XAxis(model).ActualMinimum, 6);
         Assert.Equal(bottom, YAxis(model).ActualMinimum, 6);
         Assert.Equal(top, YAxis(model).ActualMaximum, 6);
@@ -177,7 +163,6 @@ public sealed class PlotZoomRectangleReadoutTests
     }
 
     [Theory]
-    // Wide and tall enough to zoom to.
     [InlineData(60, 40, null)]
     [InlineData(6, 40, "That box is too narrow to zoom in to")]
     [InlineData(60, 4, "That box is too short to zoom in to")]
@@ -202,8 +187,6 @@ public sealed class PlotZoomRectangleReadoutTests
         YAxis(model).IsZoomEnabled = false;
         PlotZoomBox box = Dragged(model, width: 60, height: 2);
 
-        // Two pixels of a locked scale is a fine thing to measure and nothing the
-        // zoom would touch, so there is nothing to refuse.
         Assert.Null(PlotZoomRectangleReadout.RefusalFor(box, box.Screen(model.PlotArea)));
     }
 
@@ -214,9 +197,6 @@ public sealed class PlotZoomRectangleReadoutTests
         PlotZoomBox box = Dragged(model, width: 6, height: 40);
         Assert.NotNull(PlotZoomRectangleReadout.RefusalFor(box, box.Screen(model.PlotArea)));
 
-        // The wheel turned while the box waited, and the sliver it framed is now wide
-        // enough to zoom to. The box travels with the data, so it is the box on screen
-        // NOW that the click is answered against.
         XAxis(model).Zoom(
             box.HorizontalFrom - ((box.HorizontalTo - box.HorizontalFrom) * 2),
             box.HorizontalTo + ((box.HorizontalTo - box.HorizontalFrom) * 2));
@@ -257,8 +237,6 @@ public sealed class PlotZoomRectangleReadoutTests
         YAxis(model).IsZoomEnabled = false;
         PlotZoomBox box = Frame(model, 100, 2_000, -40, -20);
 
-        // Still measured, still labelled — but not offering a click that would do
-        // nothing.
         Assert.Equal("1.90 kHz \u00D7 20.0 dB", box.Describe(Culture));
         Assert.Equal(string.Empty, PlotZoomRectangleReadout.HintFor(box, pending: true));
     }
@@ -280,17 +258,11 @@ public sealed class PlotZoomRectangleReadoutTests
     [InlineData("dB", "12.4 dB")]
     [InlineData("ms", "12.4 ms")]
     [InlineData("samples", "12.4 samples")]
-    // The unit in parentheses is what these axes are measured in; the words before it
-    // name the curve on them.
     [InlineData("Sum loss (dB)", "12.4 dB")]
     [InlineData("delay added to the upper channel (ms)", "12.4 ms")]
-    // A title that LEADS with the unit and then qualifies it.
     [InlineData("ms from peak", "12.4 ms")]
     [InlineData("dB re Main peak", "12.4 dB")]
-    // A title that NAMES the quantity rather than stating a unit: the number stands
-    // on its own rather than being followed by the axis's own name. Short names are
-    // the trap here -- "step" and "r" are dimensionless quantities, not units, and
-    // "0.420 step" states one that does not exist.
+    // Short names like "step" and "r" are dimensionless quantities, not units.
     [InlineData("Coherence \u03B3\u00B2", "12.4")]
     [InlineData("step", "12.4")]
     [InlineData("r", "12.4")]
@@ -322,7 +294,6 @@ public sealed class PlotZoomRectangleReadoutTests
     [Fact]
     public void FormatSpan_ReadsAnUntitledPhaseAxisInDegrees()
     {
-        // The phase axis carries no title at all: the key is what says degrees.
         var phase = new LinearAxis
         {
             Key = PlotModelFactory.PhaseAxisKey,
@@ -339,7 +310,6 @@ public sealed class PlotZoomRectangleReadoutTests
         var box = new OxyRect(200, 200, 100, 100);
         var text = new OxySize(80, 16);
 
-        // The drag ended at the bottom right: the label follows that corner outwards.
         OxyRect downRight = PlotZoomRectangleReadout.PlaceLabel(
             plotArea,
             box,
@@ -348,7 +318,6 @@ public sealed class PlotZoomRectangleReadoutTests
         Assert.True(downRight.Left > box.Right);
         Assert.True(downRight.Top > box.Bottom);
 
-        // And at the top left: the other way, so the box is never covered.
         OxyRect upLeft = PlotZoomRectangleReadout.PlaceLabel(
             plotArea,
             box,
@@ -382,8 +351,6 @@ public sealed class PlotZoomRectangleReadoutTests
         }
     }
 
-    // The box a drag around a range of the data would frame, which is how a test says
-    // "the user dragged from here to there" in units it can assert on.
     private static PlotZoomBox Frame(
         PlotModel model,
         double fromHz,
@@ -400,7 +367,6 @@ public sealed class PlotZoomRectangleReadoutTests
             new ScreenPoint(x.Transform(toHz), y.Transform(toDb)));
     }
 
-    // A drag of a given size in pixels, from a point well inside the plot area.
     private static PlotZoomBox Dragged(PlotModel model, double width, double height)
     {
         var start = new ScreenPoint(model.PlotArea.Left + 40, model.PlotArea.Top + 40);
@@ -430,9 +396,7 @@ public sealed class PlotZoomRectangleReadoutTests
         return model;
     }
 
-    // PlotArea and the axis transforms are computed while rendering, and the box reads
-    // both; exporting to a throwaway PNG is the cheapest way to get a laid-out model
-    // in a test.
+    // PlotArea and axis transforms are computed while rendering; a throwaway PNG export lays the model out.
     private static void Render(PlotModel model)
     {
         var exporter = new PngExporter { Width = PlotWidth, Height = PlotHeight };

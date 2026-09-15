@@ -2,10 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace Resonalyze;
 
-// Custom window chrome placed on the form in the designer. The control itself is
-// the title bar surface; its tabs, version label and window buttons are built in
-// Initialize because they depend on the owning form, the DPI scale and the mode
-// tab actions, none of which are available to the designer's parameterless ctor.
+// Tabs, version label and window buttons are built in Initialize: they need the form, DPI and tab actions.
 internal sealed class ChromeTitleBar : Panel
 {
     public const int BarHeight = 40;
@@ -25,14 +22,9 @@ internal sealed class ChromeTitleBar : Panel
     private const int HtBottomLeft = 16;
     private const int HtBottomRight = 17;
 
-    // Windows" "Show animations in Windows" switch - the platform reduced-motion
-    // setting (SPI_GETCLIENTAREAANIMATION).
+    // Windows "Show animations" (reduced-motion) setting.
     private const int SpiGetClientAreaAnimation = 0x1042;
 
-    // The update notice breathes instead of sitting still: a slow fade between the
-    // version label ordinary grey and the accent blue catches the eye on a title
-    // bar nobody is looking at, without a blink flashing. The period is long
-    // enough to read as breathing rather than as a warning light.
     private const int UpdatePulsePeriodMs = 1_800;
     private const int UpdatePulseIntervalMs = 40;
 
@@ -66,11 +58,7 @@ internal sealed class ChromeTitleBar : Panel
 
     public int ScaledResizeGripSize => Scale(ResizeGripSize);
 
-    // The title bar panel covers the whole top strip of the borderless form, so
-    // WM_NCHITTEST for the top resize grip never reaches the form — without
-    // this the window cannot be resized from its top edge at all. Returning
-    // HTTRANSPARENT hands the hit test to the form, whose WndProc maps the
-    // strip to HTTOP/HTTOPLEFT/HTTOPRIGHT.
+    // The bar covers the top resize strip; HTTRANSPARENT hands the hit test to the form, which maps it to HTTOP*.
     protected override void WndProc(ref Message m)
     {
         if (m.Msg == WmNcHitTest &&
@@ -92,8 +80,6 @@ internal sealed class ChromeTitleBar : Panel
         base.WndProc(ref m);
     }
 
-    // Wires the title bar to its owning form. Called once after the designer has
-    // added the control to the form.
     public void Initialize(
         Form owningForm,
         Action updateMaximizedBoundsAction,
@@ -385,8 +371,6 @@ internal sealed class ChromeTitleBar : Panel
             return;
         }
 
-        // The tab actions are fixed at wire-up time, so the menu is identical on
-        // every open — build it once and just re-show it.
         toolsMenu ??= BuildToolsMenu(tabActions);
         DropDownMenu.ShowUnder(toolsDropDownButton, toolsMenu);
     }
@@ -481,10 +465,10 @@ internal sealed class ChromeTitleBar : Panel
             Text = text,
         };
         UiStyle.ApplySurfaceButton(button, BackColor, UiPalette.TitleBarTextBright);
-        button.FlatAppearance.MouseOverBackColor = text == "✕" // X
+        button.FlatAppearance.MouseOverBackColor = text == "✕"
             ? UiPalette.AccentBlueWarning
             : UiPalette.AccentBlueMuted;
-        button.FlatAppearance.MouseDownBackColor = text == "✕" // X
+        button.FlatAppearance.MouseDownBackColor = text == "✕"
             ? UiPalette.AccentBlueMutedAlt
             : UiPalette.AccentFill;
         button.Click += clickHandler;
@@ -538,10 +522,7 @@ internal sealed class ChromeTitleBar : Panel
 
     private void ToggleMaximized()
     {
-        // Dragging the caption lets Windows Aero-snap the borderless form into a
-        // REAL WindowState.Maximized without isCustomMaximized ever being set;
-        // treating that state as "not maximized" here would capture the
-        // maximized bounds into restoreBounds and lose the original size.
+        // Aero-snap yields a real Maximized state without isCustomMaximized; treating it as normal would overwrite restoreBounds.
         if (isCustomMaximized || form.WindowState == FormWindowState.Maximized)
         {
             RestoreWindowBounds();
@@ -569,7 +550,6 @@ internal sealed class ChromeTitleBar : Panel
     {
         if (form.WindowState == FormWindowState.Maximized)
         {
-            // Snap-maximized: let Windows restore the pre-snap bounds it kept.
             form.WindowState = FormWindowState.Normal;
             isCustomMaximized = false;
             return;
@@ -643,9 +623,7 @@ internal sealed class ChromeTitleBar : Panel
         UpdateTabBarLayout(tabBar);
     }
 
-    // Runs until the user follows the link - once they have opened the release
-    // page the notice has done its job and settles on the plain accent colour.
-    // Skipped entirely when Windows is set to show no animations.
+    // Pulses until the user opens the link; skipped when Windows animations are off.
     private void StartUpdatePulse()
     {
         if (updatePulseTimer != null || !AnimationsEnabled())
@@ -658,15 +636,10 @@ internal sealed class ChromeTitleBar : Panel
             Interval = UpdatePulseIntervalMs
         };
         updatePulseTimer.Tick += UpdatePulseTick;
-        // Nobody reads a title bar that sits behind another window, and this repaints
-        // 25 times a second: the pulse follows the window's focus and parks on the
-        // plain accent colour meanwhile, so the notice is still highlighted there.
+        // Parks while the window is inactive (25 repaints/s behind another window).
         form.Activated += ResumeUpdatePulse;
         form.Deactivate += SuspendUpdatePulse;
-        // The check that brings this notice runs asynchronously at startup, so it can
-        // land while the user is already in another application — and the Deactivate
-        // that would have parked the pulse fired long before there was one. Start
-        // suspended in that case and let the next Activated pick it up.
+        // The async update check can land while another app is active, after Deactivate already fired: start suspended.
         if (Form.ActiveForm == form)
         {
             updatePulseTimer.Start();
@@ -697,8 +670,7 @@ internal sealed class ChromeTitleBar : Panel
     {
         updatePulseElapsedMs =
             (updatePulseElapsedMs + UpdatePulseIntervalMs) % UpdatePulsePeriodMs;
-        // A raised cosine, so the fade eases in and out instead of turning around
-        // at a corner the eye reads as a flicker.
+        // Raised cosine: no visible turnaround corner.
         double amount = 0.5 - 0.5 * Math.Cos(
             2 * Math.PI * updatePulseElapsedMs / UpdatePulsePeriodMs);
         SetUpdateLinkColor(Blend(
@@ -716,8 +688,6 @@ internal sealed class ChromeTitleBar : Panel
         SetUpdateLinkColor(UiPalette.AccentBlueSoft);
     }
 
-    // Releases the timer and the form subscriptions without touching the label, so
-    // it is also safe from Dispose.
     private void DetachUpdatePulse()
     {
         if (updatePulseTimer == null)
@@ -732,8 +702,7 @@ internal sealed class ChromeTitleBar : Panel
         updatePulseTimer = null;
     }
 
-    // ActiveLinkColor stays put: it paints while the link is held down, and a
-    // pressed link that keeps fading reads as a rendering glitch.
+    // ActiveLinkColor stays: a pressed link that keeps fading reads as a glitch.
     private void SetUpdateLinkColor(Color color)
     {
         versionLabel.LinkColor = color;
@@ -746,8 +715,6 @@ internal sealed class ChromeTitleBar : Panel
             (int)(foreground.G * amount + background.G * (1 - amount)),
             (int)(foreground.B * amount + background.B * (1 - amount)));
 
-    // Assume animations are welcome when the query fails: a missing answer is no
-    // reason to drop a notice the user asked the app to show.
     private static bool AnimationsEnabled()
     {
         bool enabled = true;
@@ -805,10 +772,7 @@ internal sealed class ChromeTitleBar : Panel
         return Math.Max(form.DeviceDpi / 96.0f, graphics.DpiX / 96.0f);
     }
 
-    // The active tab keeps its fill under the pointer instead of lifting: its label
-    // is TitleBarTextSoft, and a blue light enough to read as a hover puts that
-    // label under 4.5:1 (see UiPalette.AccentFill). An inactive tab still lifts —
-    // it is the one a click would actually take you to.
+    // The active tab does not lift: a lighter blue puts its label under 4.5:1 (see UiPalette.AccentFill).
     private static void SetModeTabStyle(Button button, bool active)
     {
         button.BackColor = active

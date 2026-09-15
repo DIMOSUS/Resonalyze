@@ -3,21 +3,13 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The review of the two operations that write IIR crossover edges — setCrossover on
-/// one channel, tuneJunction on both sides of two blocks — onto a side already cut by
-/// a linear-phase FIR crossover. Both are allowed, as the panel allows the same chain,
-/// and both have to SAY that the side ends up filtered twice: the assistant only sees
-/// the kernel, and the reader should not learn it from a red button afterwards.
-/// </summary>
+/// <summary>IIR edges written onto a FIR-cut side are allowed but must warn of double filtering.</summary>
 public sealed class AgentFirCrossoverReviewTests
 {
     private const string Package = "11111111-1111-1111-1111-111111111111";
 
     private static readonly CrossoverEdge Lr24At2000 = new(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24);
 
-    // B mid (IIR BP 80–2000) into C tweeter, which is cut by a FIR high-pass at 2 kHz
-    // and has its IIR crossover off — on both sides unless told otherwise.
     private static AgentSessionSnapshot Session(bool firOnC = true)
     {
         VirtualCrossoverChannelSettings B() => new()
@@ -70,7 +62,6 @@ public sealed class AgentFirCrossoverReviewTests
 
         Assert.True(verdict.Applicable);
         Assert.Contains("already cut by a linear-phase FIR crossover", verdict.Message);
-        // Both sides of the block: the tune writes the edges on both.
         Assert.Contains("C left (HP 2 kHz)", verdict.Message);
         Assert.Contains("C right (HP 2 kHz)", verdict.Message);
     }

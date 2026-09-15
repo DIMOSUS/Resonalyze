@@ -2,12 +2,6 @@
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Locating the excitation inside a recording that is mostly something else — the
-/// shape of every file made by starting a recorder, walking to the seat, playing
-/// the sweep and walking back. The sweep is found by matching it, so these build
-/// recordings out of the real excitation rather than a stand-in tone.
-/// </summary>
 public sealed class RecordedSweepWindowTests : IDisposable
 {
     private const int SampleRate = 48_000;
@@ -22,7 +16,7 @@ public sealed class RecordedSweepWindowTests : IDisposable
 
     private int SweepSamples => sweep.SweepSamples;
 
-    // The window is the sweep plus 0.5 s of lead-in and 2 s of tail.
+    // Sweep plus 0.5 s lead-in and 2 s tail.
     private int Bound => SweepSamples + (int)(2.5 * SampleRate);
 
     private float[] Recording(
@@ -49,9 +43,6 @@ public sealed class RecordedSweepWindowTests : IDisposable
     private IReadOnlyList<RecordedSweepSpan> Locate(float[] samples) =>
         RecordedSweepWindow.LocateCandidates(samples, Sweep, SampleRate);
 
-    // A pre-roll followed by a sweep the file cuts short: the span is the whole
-    // (short) recording, but what is left of the excitation inside it is what
-    // decides whether the take is usable.
     [Fact]
     public void AShortRecordingStillReportsWhereTheExcitationBegins()
     {
@@ -67,18 +58,10 @@ public sealed class RecordedSweepWindowTests : IDisposable
         Assert.True(span.ExcitationLength < SweepSamples);
     }
 
-    // A short take can hold a complete sweep and the louder beginning of a second
-    // attempt that the file then cut off. Answering with only the strongest match
-    // would refuse the file over the one that was cut short, so every match is
-    // offered and the caller can fall through to the complete one — each on a
-    // span that holds its own attempt and not the other, which would otherwise
-    // read as an enormous reflection of it.
+    // Every match is offered so the caller can fall through to the complete take; each span excludes the other attempt.
     [Fact]
     public void AShortRecordingOffersEveryTakeItHolds()
     {
-        // The second attempt starts a quarter of a second after the first ends and
-        // keeps most of the sweep — enough of it to be a candidate at all — and it
-        // is the louder of the two.
         int second = SweepSamples + SampleRate / 4;
         float[] samples = Recording(0, 2 * SampleRate, sweepGain: 0.2f, noise: 0.0005f);
         for (int i = 0; i < samples.Length - second; i++)
@@ -90,13 +73,10 @@ public sealed class RecordedSweepWindowTests : IDisposable
 
         Assert.Contains(spans, span => span.ExcitationStart == 0);
         Assert.Contains(spans, span => span.ExcitationStart == second);
-        // The complete one is the usable candidate, and its span stops where the
-        // second attempt begins.
         RecordedSweepSpan complete = spans.First(span => span.ExcitationStart == 0);
         Assert.True(complete.ExcitationLength >= SweepSamples);
         Assert.Equal(0, complete.Start);
         Assert.Equal(second, complete.Start + complete.Length);
-        // And the cut-short one starts after the first attempt has finished.
         RecordedSweepSpan truncated = spans.First(span => span.ExcitationStart == second);
         Assert.True(truncated.ExcitationLength < SweepSamples);
         Assert.Equal(SweepSamples, truncated.Start);
@@ -113,8 +93,6 @@ public sealed class RecordedSweepWindowTests : IDisposable
         Assert.Equal(samples.Length, span.Length);
     }
 
-    // The case that motivated the window: a minute of silence, a sweep, another
-    // minute of silence. Without it every FFT is sized by the two minutes.
     [Fact]
     public void LongSilenceAroundTheSweepIsCutAway()
     {
@@ -123,16 +101,12 @@ public sealed class RecordedSweepWindowTests : IDisposable
 
         RecordedSweepSpan span = Locate(samples)[0];
 
-        // Matched to the sample, so the lead-in is exactly what was asked for.
         Assert.Equal(lead - SampleRate / 2, span.Start);
         Assert.Equal(lead, span.ExcitationStart);
         Assert.Equal(Bound, span.Length);
     }
 
-    // What the level detector could never do: find a sweep that is QUIETER than
-    // the noise it was recorded in. Matching concentrates the whole excitation
-    // into one peak, which is worth about 46 dB over two seconds — so a take a
-    // listener would call empty still resolves to the sample.
+    // Matched filtering concentrates a 2 s sweep into one peak worth about 46 dB.
     [Theory]
     [InlineData(0.3f)]
     [InlineData(0.03f)]
@@ -148,7 +122,6 @@ public sealed class RecordedSweepWindowTests : IDisposable
         Assert.Equal(Bound, span.Length);
     }
 
-    // A door slam, a knock on the recorder: loud, and nothing like the sweep.
     [Fact]
     public void AnIsolatedClickIsNotMistakenForTheSweep()
     {
@@ -160,10 +133,6 @@ public sealed class RecordedSweepWindowTests : IDisposable
         Assert.Equal(lead, Locate(samples)[0].ExcitationStart);
     }
 
-    // Speech or handling noise before the sweep is loud and sustained, and here it
-    // is far louder than the sweep — the case a threshold hung off the loudest
-    // thing in the file cannot survive at all. Matching does not care how loud the
-    // interference is, only that it is not this sweep.
     [Theory]
     [InlineData(10.0)]
     [InlineData(30.0)]
@@ -182,10 +151,7 @@ public sealed class RecordedSweepWindowTests : IDisposable
         Assert.Equal(lead, Locate(samples)[0].ExcitationStart);
     }
 
-    // The system under test barely reproduces one end of the band — a car whose
-    // bass is crossed out drops its first octaves by 30 dB, which a level rule
-    // read as the sweep starting a second late. The match is made against the
-    // whole waveform, so the quiet end costs coherence, not position.
+    // A bass crossed out 30 dB read as a late start under a level rule; matching costs coherence, not position.
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -203,8 +169,6 @@ public sealed class RecordedSweepWindowTests : IDisposable
         RecordedSweepSpan span = Locate(samples)[0];
 
         Assert.Equal(lead, span.ExcitationStart);
-        // And no widening to cover which end went quiet: the span is the ordinary
-        // bound, where the level detector had to grow it by a quarter.
         Assert.Equal(Bound, span.Length);
     }
 

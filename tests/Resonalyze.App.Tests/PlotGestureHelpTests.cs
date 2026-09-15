@@ -1,8 +1,5 @@
 namespace Resonalyze.App.Tests;
 
-// The card F1 puts on screen. It is prose rather than behaviour, so what is worth
-// pinning is that it stays a complete, non-repeating list: a gesture nobody can find
-// here is a gesture nobody is told about anywhere in the window.
 public sealed class PlotGestureHelpTests
 {
     [Fact]
@@ -37,11 +34,8 @@ public sealed class PlotGestureHelpTests
     }
 
     [Theory]
-    // The card has to explain the key that opened it, or a reader has no way to get
-    // back to it.
     [InlineData("F1")]
-    // The gestures with no other signpost in the window: nothing on screen says the
-    // wheel zooms, that a box can be drawn, or that a zoom can be walked back.
+    // Nothing else on screen signposts these gestures.
     [InlineData("Wheel")]
     [InlineData("Ctrl + right-button drag")]
     [InlineData("Click inside the box")]

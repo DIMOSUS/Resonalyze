@@ -43,9 +43,7 @@ public sealed class VirtualCrossoverAutoDelayDialogTests
         using var dialog = new VirtualCrossoverAutoDelayDialog();
         AssertNothingCoversTheActionButtons(dialog);
 
-        // The smallest window the dialog can be. Asked for one pixel it clamps
-        // to MinimumSize, which is the form's OUTER size - so the client area
-        // that leaves is a number the test must not repeat, only observe.
+        // MinimumSize is the OUTER size, so the resulting client area is observed, not repeated.
         dialog.Size = dialog.Size with { Height = 1 };
         Assert.Equal(dialog.MinimumSize.Height, dialog.Height);
         AssertNothingCoversTheActionButtons(dialog);
@@ -64,12 +62,7 @@ public sealed class VirtualCrossoverAutoDelayDialogTests
                 button.Top >= 0 && button.Bottom <= dialog.ClientSize.Height,
                 $"{name} is outside the client area: {button.Bounds} in {dialog.ClientSize}.");
 
-            // Controls.Add appends, so a LOWER index paints in front: any
-            // earlier sibling overlapping the button hides it, however
-            // correct the button's own coordinates are. That is what the
-            // rear fill row did to Apply - the report box moved down with
-            // the row, the buttons did not, and a dialog that reported a
-            // proposal had no way to accept it.
+            // A LOWER child index paints in front: the rear fill row once hid Apply despite correct coordinates.
             int index = dialog.Controls.GetChildIndex(button);
             foreach (Control sibling in dialog.Controls)
             {

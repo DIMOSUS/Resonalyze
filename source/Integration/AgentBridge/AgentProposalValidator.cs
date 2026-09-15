@@ -10,12 +10,7 @@ internal enum AgentVerdictStatus
     Rejected
 }
 
-/// <summary>
-/// One row of the review: what the operation would do to which channel, stated
-/// in the words the panel uses, and whether it may be applied. A rejected row
-/// keeps its current/proposed text so the user can see what was asked and why it
-/// was refused; it can never be ticked.
-/// </summary>
+/// <summary>One review row. A rejected row keeps its current/proposed text so the user sees what was refused; it can never be ticked.</summary>
 internal sealed record AgentOperationVerdict(
     string Id,
     string ChannelLabel,
@@ -28,11 +23,7 @@ internal sealed record AgentOperationVerdict(
     AgentOperation? Operation,
     AgentChannelSnapshot? Channel)
 {
-    /// <summary>
-    /// Whether the review offers the row ticked. An applicable row is, unless the
-    /// session can no longer vouch for the package it was written against: then
-    /// it is offered unticked, for the user to tick knowingly.
-    /// </summary>
+    /// <summary>Offered unticked when the session can no longer vouch for the package the reply answers.</summary>
     public bool Ticked { get; init; } = true;
 
     public bool Applicable =>
@@ -40,7 +31,6 @@ internal sealed record AgentOperationVerdict(
         (Operation is not AgentChannelOperation || Channel != null);
 }
 
-/// <summary>A reply judged against a session: the rows, plus reply-level warnings.</summary>
 internal sealed record AgentProposalReview(
     AgentProposal Proposal,
     IReadOnlyList<AgentOperationVerdict> Verdicts,
@@ -49,21 +39,10 @@ internal sealed record AgentProposalReview(
     public bool HasApplicable => Verdicts.Any(verdict => verdict.Applicable);
 }
 
-/// <summary>
-/// Decides, operation by operation, whether a proposal may be applied to the
-/// session in front of it. Admissibility only — a valid proposal can still be a
-/// worse tune, which is why the review never calls anything "verified". Every
-/// trial edit is made on a copy of the channel's settings and judged by the same
-/// <see cref="VirtualCrossoverChannelSettings.Validate"/> the session loader
-/// runs, so the bridge cannot let in a value the file format would refuse.
-/// </summary>
+/// <summary>Admissibility only: a valid proposal can still be a worse tune. Trial edits run on copies through the loader's <see cref="VirtualCrossoverChannelSettings.Validate"/>. See docs/tech/agent-bridge.md#review-rules.</summary>
 internal static class AgentProposalValidator
 {
-    // The channel block's own gain and delay fields — the range a human can dial,
-    // narrower than what the FILE accepts (±60 dB, 1000 ms), because the block
-    // would clamp a wider value on the first touch and the tune would silently
-    // move. Mirrors VirtualCrossoverChannelControl's numericGain/numericDelay,
-    // and AgentProposalValidatorTests pins the two together.
+    // The channel block's dialable range, narrower than the file's (±60 dB, 1000 ms): the block would clamp a wider value on first touch. Pinned to the controls by AgentProposalValidatorTests.
     public const double MinimumGainDb = -60;
     public const double MaximumGainDb = 20;
     public const double GainStepDb = 0.1;
@@ -71,10 +50,7 @@ internal static class AgentProposalValidator
     public const double MaximumDelayMs = 100;
     public const double DelayStepMs = 0.01;
 
-    // The Auto delay dialog's own fields, and the panel's Target Level field,
-    // restated here for the same reason and pinned to their controls by the same
-    // test: an engine request outside them would be clamped on the first touch,
-    // and the run would not be the one that was reviewed.
+    // Auto delay dialog and Target Level fields, pinned the same way: a clamped input would not be the reviewed run.
     public const double MinimumSceneOffsetMs = 0;
     public const double MaximumSceneOffsetMs = 5;
     public const double SceneOffsetStepMs = 0.01;
@@ -88,11 +64,9 @@ internal static class AgentProposalValidator
     public const double MaximumTargetLevelDb = 60;
     public const double TargetLevelStepDb = 1;
 
-    /// <summary>The two curves an auto-tune request may name as its source.</summary>
     public const string PointSource = "point";
     public const string SpatialAverageSource = "spatialAverage";
 
-    /// <summary>How the review's Channel column names a row about the whole project.</summary>
     public const string AllChannels = "all";
 
     public const string DeviceLimitsUnknown =
@@ -101,19 +75,10 @@ internal static class AgentProposalValidator
     // Below this a net rise is bilinear warping and rounding, not a boost.
     private const double HeadroomToleranceDb = 0.05;
 
-    /// <summary>
-    /// The widest bell the review lets pass without comment inside a junction
-    /// zone — an octave to each side of one of the channel's own active corners,
-    /// the same span the panel's junction band covers. A narrower bell turns the
-    /// channel's phase by tens of degrees right where the pair's sum is built on
-    /// it, and the dip it aims at is, that close to a crossover, more often the
-    /// pair's interference than the driver's own.
-    /// </summary>
+    /// <summary>Highest bell Q passed silently within an octave of one of the channel's active corners; narrower bells turn the phase where the pair sums. See docs/tech/agent-bridge.md#junction-zone-q.</summary>
     public const double JunctionQLimit = 2;
 
-    // The corner whose junction zone a too-narrow bell sits in, or null. Only
-    // bells: shelves are wide by nature, and an all-pass at a junction is there
-    // for the phase on purpose.
+    // Bells only: shelves are wide by nature, and an all-pass at a junction is there for the phase.
     private static double? JunctionCornerNear(VirtualCrossoverChannelSettings settings, PeqBand band)
     {
         if (band.Type != PeqBandType.Peaking || band.Q <= JunctionQLimit)
@@ -121,8 +86,7 @@ internal static class AgentProposalValidator
             return null;
         }
 
-        // A FIR crossover's corners count where the IIR crossover is off: the bell
-        // fights the kernel's slope just as it would a biquad's.
+        // FIR crossover corners count where the IIR crossover is off.
         foreach (double cornerHz in new[]
         {
             settings.EffectiveHighPassHz ?? double.NaN,
@@ -151,10 +115,7 @@ internal static class AgentProposalValidator
             warnings.Add(stale);
         }
 
-        // The prose is wanted and not required, so its absence is reported
-        // rather than refused: the user reads the summary and the reasons to
-        // decide, and a reply that left them out is exactly the reply they
-        // should be told about before they tick anything.
+        // Missing prose is reported, not refused.
         if (proposal.Summary == null)
         {
             warnings.Add("The reply gave no summary of what it is proposing.");
@@ -181,8 +142,7 @@ internal static class AgentProposalValidator
             verdicts.Add(Judge(operation, session));
         }
 
-        // Two applicable operations on one channel's same parameter cannot both be
-        // meant; neither is picked over the other.
+        // Two applicable edits of one parameter cannot both be meant; neither wins.
         foreach (IGrouping<(string, string), AgentOperationVerdict> group in verdicts
             .Where(verdict => verdict.Applicable && verdict.Operation is AgentSettingsOperation)
             .GroupBy(verdict => (verdict.Channel!.Id, verdict.Parameter))
@@ -209,32 +169,14 @@ internal static class AgentProposalValidator
         RejectJunctionTunesUnderTheWizard(verdicts);
         RejectOverwrittenSettings(verdicts, session);
 
-        // Some warnings are about the channel as it would END UP, not about one
-        // operation: a bell that lands in a junction zone because the crossover
-        // moved, or a bank proposed against a crossover another row moves. Every
-        // channel's applicable rows are applied together to a copy and judged
-        // there; the notes go on the rows that shape that state. LAST, after every
-        // refusal above: a row this pass reads is a row that is going to be
-        // applied, and a note read off one that has just been refused would
-        // describe a state nothing will produce.
+        // Notes about the channel's final state; last, so they never read rows that were just refused.
         AddFinalStateNotes(verdicts);
-        // After every note: the stale mark is the last word on a row, and a note
-        // added after it would read as if it were part of the same sentence.
+        // The stale mark is the last word on a row.
         MarkSettingsRowsOnAStaleSession(verdicts, stale);
         return new AgentProposalReview(proposal, verdicts, warnings);
     }
 
-    // Whether the session can vouch for the package the reply answers, and if
-    // not, why: the reply names none while asking for an engine, no package was
-    // copied since the session opened (or the reply's came from elsewhere), it
-    // is another package than the one last copied, or the session changed since
-    // that copy — its fingerprint (AgentSessionFingerprint) no longer matches,
-    // whichever way it changed. A reply of settings rows alone that names no
-    // package is taken at its word: each row carries its own expected current
-    // value. Under any of the four the settings rows stay, judged on those
-    // values but offered unticked (MarkSettingsRowsOnAStaleSession), and the
-    // engine requests are refused, since an engine reads the session as it is
-    // now, which the assistant has not seen.
+    // Why the session cannot vouch for the reply's package, or null. See docs/tech/agent-bridge.md#stale-session.
     private static string? StaleSessionReason(AgentProposal proposal, AgentSessionSnapshot session)
     {
         const string Decide =
@@ -281,9 +223,7 @@ internal static class AgentProposalValidator
         for (int index = 0; index < verdicts.Count; index++)
         {
             AgentOperationVerdict verdict = verdicts[index];
-            // A probe stays: it writes nothing, and what it reads is the session
-            // as it is now — which is exactly what a reader of a stale package
-            // needs. Its result says whether the session still matches.
+            // A probe stays: it writes nothing and reads the session as it is now.
             if (verdict.Applicable &&
                 verdict.Operation is not AgentSettingsOperation and not ProbeOperation)
             {
@@ -297,11 +237,7 @@ internal static class AgentProposalValidator
         }
     }
 
-    // A settings row from a package the session cannot vouch for is judged on
-    // its expected current value as always, and that value can still match after
-    // the MEASUREMENT the row was reasoned from has been replaced. The row stays
-    // — the user may know the change does not bear on it — but is offered
-    // unticked and marked, rather than ticked by default among rows that are.
+    // An expected value can still match after the measurement it was reasoned from was replaced: kept, but unticked and marked.
     private static void MarkSettingsRowsOnAStaleSession(
         List<AgentOperationVerdict> verdicts, string? staleReason)
     {
@@ -330,12 +266,7 @@ internal static class AgentProposalValidator
         }
     }
 
-    // The panel runs each engine once per import, and a second request for the
-    // same one carries a second set of inputs. The first is kept rather than the
-    // set silently deciding which won — the reply listed them in an order.
-    // Probes are exempt: a probe writes nothing, so a second one on the same
-    // junction is another QUESTION about it, not a second run of the same
-    // engine. What bounds them is the variant budget below.
+    // Each engine runs once per scope (channel, junction or project) per import: the first request is kept. Probes are exempt (bounded by the variant budget).
     private static void RejectRepeatedEngineRequests(List<AgentOperationVerdict> verdicts)
     {
         var first = new Dictionary<(string Op, string? ChannelId), string>();
@@ -364,16 +295,7 @@ internal static class AgentProposalValidator
         }
     }
 
-    /// <summary>
-    /// One import reads at most <see cref="AgentProtocol.MaxProbeVariantsPerImport"/>
-    /// variants, however the reply splits them between probes. The bound is the
-    /// user's: the readings run while they wait, with no progress bar and
-    /// nothing to cancel, and the answer is a text they have to paste — about
-    /// 65 ms and 0.8 KB per variant on a reference session, so the budget is a
-    /// second or two and a text the size of a package. A reply that wants more
-    /// than this searched is asking for the junction tune, which searches a
-    /// window properly and reports the few candidates that matter.
-    /// </summary>
+    /// <summary>Caps variants per import at <see cref="AgentProtocol.MaxProbeVariantsPerImport"/> (about 65 ms and 0.8 KB each). See docs/tech/agent-bridge.md#probe-budgets.</summary>
     private static void RejectProbesOverTheVariantBudget(List<AgentOperationVerdict> verdicts)
     {
         int spent = 0;
@@ -406,15 +328,7 @@ internal static class AgentProposalValidator
         }
     }
 
-    /// <summary>
-    /// One series probe per import (<see cref="AgentProtocol.MaxSeriesProbesPerImport"/>).
-    /// The variant budget above cannot see it — it names no variants — and the
-    /// once-per-import rule exempts probes on purpose, so without a rule of its
-    /// own a reply could re-gather the whole package at the densest grid once
-    /// per operation slot, each a full gather and each added to one clipboard
-    /// text. One already reads every series, channel and junction it names, so
-    /// the first is kept and the rest are refused.
-    /// </summary>
+    /// <summary>One series probe per import (<see cref="AgentProtocol.MaxSeriesProbesPerImport"/>): each is a full gather that the variant budget cannot see.</summary>
     private static void RejectSeriesProbesBeyondOne(List<AgentOperationVerdict> verdicts)
     {
         int seen = 0;
@@ -445,10 +359,7 @@ internal static class AgentProposalValidator
         }
     }
 
-    // The target level is one datum for the whole project, and an Auto-tune that
-    // states one moves it. Two requests stating different levels would fit one
-    // bank at a level the project no longer holds by the time the other has run,
-    // so only the first stated level stands and the rest are refused naming it.
+    // The target level is one project datum: only the first stated level stands.
     private static void RejectDisagreeingTargetLevels(List<AgentOperationVerdict> verdicts)
     {
         (string Id, double LevelDb)? first = null;
@@ -477,10 +388,7 @@ internal static class AgentProposalValidator
         }
     }
 
-    // The crossover wizard rewrites every junction of the chain, so a junction
-    // tune beside it would tune a crossover the wizard is about to replace (the
-    // wizard runs first). The wizard keeps its row, as the engine that reaches
-    // further; the junction tune is refused naming it.
+    // The wizard rewrites every junction and runs first, so a junction tune beside it is refused.
     private static void RejectJunctionTunesUnderTheWizard(List<AgentOperationVerdict> verdicts)
     {
         AgentOperationVerdict? wizard = verdicts.FirstOrDefault(verdict =>
@@ -505,11 +413,7 @@ internal static class AgentProposalValidator
         }
     }
 
-    // An engine and a hand-written value the engine is going to write over cannot
-    // both be meant. The engine keeps its row — it is the one that computes the
-    // number — and the hand-written row is refused, naming what would have erased
-    // it. Only an engine this build can RUN erases anything: a request refused as
-    // unavailable leaves the hand-written rows to do the work instead.
+    // An engine and a hand-written value it overwrites cannot both be meant: the engine wins. Only a runnable engine erases anything.
     private static void RejectOverwrittenSettings(
         List<AgentOperationVerdict> verdicts, AgentSessionSnapshot session)
     {
@@ -534,13 +438,7 @@ internal static class AgentProposalValidator
         }
     }
 
-    /// <summary>
-    /// Whether running <paramref name="engine"/> would write over what
-    /// <paramref name="written"/> asks for. Read off what the panel's own buttons
-    /// do: Auto delay writes delay and polarity, and gains when the balance is
-    /// asked for; the crossover wizard writes both corners and the cut-only gain
-    /// of every channel it proposes for; Auto-tune replaces one channel's bank.
-    /// </summary>
+    /// <summary>Whether running <paramref name="engine"/> overwrites <paramref name="written"/>, per what the panel's buttons write.</summary>
     public static bool Overwrites(
         AgentOperation engine, AgentSettingsOperation written, AgentSessionSnapshot session) =>
         engine switch
@@ -549,9 +447,6 @@ internal static class AgentProposalValidator
                 written is SetDelayOperation or SetPolarityOperation ||
                 (written is SetGainOperation && (delay.AdjustGains ?? session.AutoDelay.AdjustGains)),
             RunAutoCrossoverOperation => written is SetCrossoverOperation or SetGainOperation,
-            // The tune writes one crossover to both sides of the two blocks it
-            // names, so a hand-written crossover on either block, either side,
-            // is what it erases.
             TuneJunctionOperation junction =>
                 written is SetCrossoverOperation &&
                 AgentJunctionIds.TryParse(junction.JunctionId, out _, out string lower, out string upper) &&
@@ -564,10 +459,7 @@ internal static class AgentProposalValidator
             _ => false
         };
 
-    // What an engine request is scoped to, for the once-per-import rule: a
-    // channel for the per-channel engines, a junction for the junction tune and
-    // for a probe (which also counts per reading, since one junction can be
-    // asked two different questions), nothing for the whole-project ones.
+    // Scope for the once-per-import rule: channel, junction, or none for whole-project engines. Probes never reach the rule.
     private static string? ScopeOf(AgentOperation operation) => operation switch
     {
         AgentChannelOperation channel => channel.ChannelId,
@@ -596,13 +488,7 @@ internal static class AgentProposalValidator
         }
     }
 
-    /// <summary>
-    /// The warnings that are about a channel as it would END UP after the given
-    /// rows — today the junction-zone check — per channel. The review runs it over
-    /// every applicable row; the commit runs it again over the rows the user
-    /// actually ticked, because unticking one can leave a state the review never
-    /// showed (a crossover moved without the bank that would have gone with it).
-    /// </summary>
+    /// <summary>Per-channel warnings about the state after the given rows. The commit reruns it on the ticked rows: unticking can leave a state the review never showed.</summary>
     public static List<(AgentChannelSnapshot Channel, List<string> Notes)> FinalStateNotes(
         IEnumerable<AgentOperationVerdict> rows)
     {
@@ -636,8 +522,6 @@ internal static class AgentProposalValidator
         return result;
     }
 
-    // Every bell of the bank that is too narrow for the junction zone it sits
-    // in, judged on the crossover the SAME settings hold.
     private static List<string> JunctionQNotes(VirtualCrossoverChannelSettings settings)
     {
         var notes = new List<string>();
@@ -659,12 +543,7 @@ internal static class AgentProposalValidator
         return notes;
     }
 
-    /// <summary>
-    /// The whole-set check a commit runs on the rows the user ticked: every ticked
-    /// operation applied to a copy of its channel, and the copy validated as a
-    /// whole. Null when the set is admissible; otherwise the first problem, which
-    /// refuses the whole commit — never a partial one.
-    /// </summary>
+    /// <summary>Commit-time check of the ticked set applied to copies. Null when admissible; otherwise the first problem refuses the whole commit.</summary>
     public static string? CheckSelection(IEnumerable<AgentOperationVerdict> selected)
     {
         ArgumentNullException.ThrowIfNull(selected);
@@ -746,13 +625,10 @@ internal static class AgentProposalValidator
         new(operation.Id, LabelFor(operation, channel), operation.Parameter, current, proposed,
             AgentVerdictStatus.Rejected, message, operation.Reason, operation, channel);
 
-    // A row that is not about one channel says which channels it is about rather
-    // than leaving the column blank: the engines address the whole project.
     private static string LabelFor(AgentOperation operation, AgentChannelSnapshot? channel) =>
         channel?.Label ?? operation switch
         {
             AgentChannelOperation => string.Empty,
-            // The two blocks, both sides: one crossover is written to both.
             TuneJunctionOperation junction =>
                 AgentJunctionIds.TryParse(junction.JunctionId, out _, out string lower, out string upper)
                     ? $"{lower}/{upper}"
@@ -764,13 +640,7 @@ internal static class AgentProposalValidator
             _ => AllChannels
         };
 
-    /// <summary>
-    /// An engine request judged on its INPUTS. There is no current value to
-    /// compare against: what the engine writes is what the run decides, and the
-    /// engine's own dialog is still the gate it goes through. What the review can
-    /// state is where the run would start from, what it was asked for, and what
-    /// it will write over — which is what the row carries.
-    /// </summary>
+    /// <summary>An engine request judged on its inputs: no current value to compare; the row states the start, the ask and what it overwrites.</summary>
     private static AgentOperationVerdict JudgeEngineRequest(
         AgentOperation operation, AgentChannelSnapshot? channel, AgentSessionSnapshot session)
     {
@@ -798,11 +668,7 @@ internal static class AgentProposalValidator
             status, message, operation.Reason, operation, channel);
     }
 
-    // The setCrossover note's twin for the junction tune, which writes IIR edges onto
-    // BOTH sides of the two blocks: a side already cut by a linear-phase FIR crossover
-    // on the edge the tune writes would be filtered twice afterwards. Allowed, as the
-    // single-channel edit is, but said — the red FIR button the panel shows next is
-    // easier to read with the reason already in the review.
+    // The junction tune writes IIR edges on both sides of both blocks; a side already cut by a FIR crossover would be filtered twice. Allowed, but said.
     private static string? FirCutJunctionNote(TuneJunctionOperation junction, AgentSessionSnapshot session)
     {
         if (ResolveJunction(session, junction.JunctionId, out AgentChannelSnapshot? lower, out AgentChannelSnapshot? upper) != null)
@@ -810,7 +676,6 @@ internal static class AgentProposalValidator
             return null;
         }
 
-        // Both physical sides of each block: the tune writes the pair of edges on both.
         var cut = session.Channels
             .Where(channel =>
                 (channel.Block == lower!.Block || channel.Block == upper!.Block) &&
@@ -825,9 +690,7 @@ internal static class AgentProposalValidator
               (cut.Count == 1 ? "it" : "them") + " twice.";
     }
 
-    // What the engine will write over, in the row's own words. A warning rather
-    // than plain OK wherever the run reaches past the channels the reply names:
-    // the reader is ticking a box that hands several channels to a search.
+    // A warning wherever the run reaches past the channels the reply names.
     private static (AgentVerdictStatus Status, string Message) EngineNote(
         AgentOperation operation, AgentSessionSnapshot session) => operation switch
     {
@@ -844,7 +707,6 @@ internal static class AgentProposalValidator
             "Auto-tune replaces this channel's whole PEQ bank (all-pass bands kept). It runs " +
             "without the EQ Wizard, on the curve the wizard would have opened on, and skips " +
             "itself when the target level sits too far from that curve."),
-        // The one row that is not a warning: a probe writes nothing at all.
         ProbeOperation probe => (AgentVerdictStatus.Valid,
             "Reads only — nothing in the tune is changed, and there is nothing to undo. " +
             "The reading is computed on the tune as it stands" +
@@ -861,9 +723,7 @@ internal static class AgentProposalValidator
         _ => (AgentVerdictStatus.Valid, "OK")
     };
 
-    // Every input is held to the field a user would type it into, and an input
-    // the reply leaves out is not judged at all — it is the panel's own answer,
-    // which is admissible by construction.
+    // Stated inputs are held to their dialog fields; omitted ones are the panel's own answer.
     private static string? CheckEngineRequest(
         AgentOperation operation, AgentChannelSnapshot? channel, AgentSessionSnapshot session)
     {
@@ -894,13 +754,7 @@ internal static class AgentProposalValidator
         }
     }
 
-    /// <summary>
-    /// The two channels a junction id names on the session, or why it names
-    /// none: the id must be the package's own shape, both blocks must be on
-    /// that side with a measurement, in the sum and not bypassed, in one group,
-    /// and neighbours along the spectrum that actually hand over to each other —
-    /// the same adjacency the panel's junction read-outs use.
-    /// </summary>
+    /// <summary>The two channels a junction id names, or why none: both measured, summed, not bypassed, one group, and spectral neighbours that hand over (the panel's junction adjacency).</summary>
     public static string? ResolveJunction(
         AgentSessionSnapshot session, string junctionId,
         out AgentChannelSnapshot? lower, out AgentChannelSnapshot? upper)
@@ -941,9 +795,7 @@ internal static class AgentProposalValidator
                 "crossover hands over between them.";
         }
 
-        // Neighbours along the spectrum among the side's summed channels of that
-        // group, and a real handover: both play inside the octave-each-way band
-        // around the pair's corner.
+        // A real handover: both play inside the octave-each-way band around the pair's corner.
         VirtualCrossoverAlignmentStage stage = VirtualCrossoverAlignmentStages.StageOf(lowerFound.Zone);
         List<AgentChannelSnapshot> byBand = session.Channels
             .Where(channel => channel.PlaysOn(side) && channel.HasMeasurement &&
@@ -974,15 +826,7 @@ internal static class AgentProposalValidator
         return null;
     }
 
-    /// <summary>
-    /// The OTHER junctions a set of changed channels takes part in: a channel
-    /// hands over twice — once below and once above — so a variant that gives a
-    /// midrange a new crossover, bank or gain moves a junction the probe was
-    /// never asked about. The probe report names them so the assistant is told
-    /// rather than trusted to remember.
-    /// </summary>
-    /// <param name="junctionId">The junction being probed, left out of the answer.</param>
-    /// <param name="changedChannelIds">Channel ids, as the package writes them.</param>
+    /// <summary>The other junctions the changed channels take part in (a channel hands over twice), excluding <paramref name="junctionId"/>.</summary>
     public static IReadOnlyList<string> NeighbourJunctionIds(
         AgentSessionSnapshot session, string junctionId, IReadOnlyCollection<string> changedChannelIds)
     {
@@ -993,9 +837,7 @@ internal static class AgentProposalValidator
             return found;
         }
 
-        // Every adjacency of every side and group, held to the same rule the
-        // probe itself is: a candidate is named only if ResolveJunction accepts
-        // it, so the report never points at a junction a probe would refuse.
+        // Only candidates ResolveJunction accepts, so the report never names an unprobeable junction.
         foreach (AgentChannelSide side in new[] { AgentChannelSide.Left, AgentChannelSide.Right })
         {
             IEnumerable<IGrouping<VirtualCrossoverAlignmentStage, AgentChannelSnapshot>> groups = session.Channels
@@ -1037,18 +879,12 @@ internal static class AgentProposalValidator
         return channelHigh > lowHz && channelLow < highHz;
     }
 
-    /// <summary>
-    /// The corner window a junction tune searches when the reply states none:
-    /// half an octave each way, snapped to the wizard's lattice.
-    /// </summary>
+    /// <summary>Default corner window: half an octave each way, snapped to the wizard's lattice.</summary>
     public static (double MinHz, double MaxHz) DefaultJunctionWindow(double currentHz) =>
         (Math.Max(EqAutoTuneHeadless.WindowMinHz, CrossoverAutoSetup.RoundToLattice(currentHz / Math.Sqrt(2))),
             Math.Min(EqAutoTuneHeadless.WindowMaxHz, CrossoverAutoSetup.RoundToLattice(currentHz * Math.Sqrt(2))));
 
-    // A series probe asks for the package's own rows again, so it is held to
-    // what the package could have printed: known series names, channels the
-    // session has, a junction it can resolve when one is named, and a density
-    // inside the published ceilings.
+    // Held to what the package could have printed: known series, channels, resolvable junction, density ceilings.
     private static string? CheckSeriesProbe(ProbeOperation probe, AgentSessionSnapshot session)
     {
         IReadOnlyList<string> series = probe.Series ?? [];
@@ -1097,11 +933,7 @@ internal static class AgentProposalValidator
             : "No channel in this session has a measurement to read.";
     }
 
-    // A probe is held to what it can be computed from, and to nothing else: it
-    // writes nothing, so there is no value to protect — only a question that
-    // must be answerable. The settings a variant states are held to the very
-    // limits a settings operation is, since a variant that reads well is meant
-    // to become one.
+    // A probe protects no value, only answerability; variant settings get settings-operation limits, since a good variant is meant to become one.
     private static string? CheckProbe(ProbeOperation probe, AgentSessionSnapshot session)
     {
         if (!AgentProtocol.Reads(probe.Probe))
@@ -1188,13 +1020,7 @@ internal static class AgentProposalValidator
         return null;
     }
 
-    /// <summary>
-    /// Applies one probe variant's change INTO <paramref name="copy"/> — which
-    /// must already be a copy of the channel's settings — holding every stated
-    /// value to the same limit a settings operation is held to: the probe reads
-    /// what a proposal could write, and nothing else. Returns the first problem,
-    /// or null with the copy carrying the variant.
-    /// </summary>
+    /// <summary>Applies a probe variant's change into <paramref name="copy"/> (already a copy) under settings-operation limits. Returns the first problem, or null.</summary>
     public static string? ApplyProbeChange(
         AgentProbeChange change,
         AgentSessionSnapshot session,
@@ -1217,9 +1043,7 @@ internal static class AgentProposalValidator
         return null;
     }
 
-    // A change as the settings operations that would write it. The expected
-    // values are the copy's own — a probe writes nothing, so there is no tune to
-    // have moved under it, and the expected-value guard has nothing to guard.
+    // Expected values are the copy's own: nothing can move under a probe.
     private static IEnumerable<AgentSettingsOperation> ProbeOperationsOf(
         AgentProbeChange change, VirtualCrossoverChannelSettings copy)
     {
@@ -1316,8 +1140,7 @@ internal static class AgentProposalValidator
         return null;
     }
 
-    // The families the junction's facing edges use today, the low-pass first;
-    // Linkwitz-Riley where neither edge exists yet.
+    // Low-pass first; Linkwitz-Riley where neither edge exists yet.
     public static IReadOnlyList<CrossoverFilterFamily> CurrentFamilies(
         VirtualCrossoverChannelSettings lower, VirtualCrossoverChannelSettings upper)
     {
@@ -1347,8 +1170,7 @@ internal static class AgentProposalValidator
         {
             return $"{channel.Label} has no measurement to fit a bank against.";
         }
-        // The handoff a fit is built on is the side on screen's — its gate pin,
-        // its render anchor, its hybrid datum — as the PEQ menu builds it.
+        // A fit is built on the shown side's handoff (gate pin, render anchor, hybrid datum), as the PEQ menu builds it.
         if (channel.Side != AgentChannelSide.Mono &&
             (channel.Side == AgentChannelSide.Right) != session.ActiveSideRight)
         {
@@ -1376,10 +1198,7 @@ internal static class AgentProposalValidator
             return problem;
         }
 
-        // The window the run will use, with the wizard's own answer for an edge
-        // the reply leaves out (the channel's passband, else the field's end) —
-        // judged as a whole, since a stated lower edge above the passband's
-        // upper is as inverted as two stated edges the wrong way round.
+        // Judged as a whole with the wizard's defaults filled in: a stated lower edge above the passband's upper is inverted too.
         (double MinHz, double MaxHz)? passband = VirtualDspEqHandoff.PassbandFor(channel.Settings);
         double minHz = tune.MinHz ?? passband?.MinHz ?? EqAutoTuneHeadless.WindowMinHz;
         double maxHz = tune.MaxHz ?? passband?.MaxHz ?? EqAutoTuneHeadless.WindowMaxHz;
@@ -1413,7 +1232,6 @@ internal static class AgentProposalValidator
         return session.SpatialAverageMode == mode && session.HybridTicked ? "No change." : null;
     }
 
-    // An optional engine input against the field a user would type it into.
     private static string? Bounded(
         double? value, double minimum, double maximum, double step,
         string name, string unit, int decimals)
@@ -1433,8 +1251,7 @@ internal static class AgentProposalValidator
             : $"{name} must be a multiple of {Fixed(step, decimals)} {unit}.";
     }
 
-    // The From/To fields' own range, 20 Hz to 20 kHz, and the processor's Nyquist
-    // where that is lower: what the review admits is what the run uses.
+    // The From/To fields' range, capped at the processor's Nyquist.
     private static string? Edge(double? value, double nyquistHz, string name, string window = "auto-tune") =>
         value is not { } frequency ||
         (double.IsFinite(frequency) &&
@@ -1448,7 +1265,6 @@ internal static class AgentProposalValidator
                     ? $", below the processor's Nyquist of {Hz(nyquistHz)}."
                     : ".");
 
-    // Where the engine would start from, in the words its own dialog uses.
     private static string DescribeEngineStart(
         AgentOperation operation, AgentChannelSnapshot? channel, AgentSessionSnapshot session) =>
         operation switch
@@ -1462,8 +1278,6 @@ internal static class AgentProposalValidator
             RunAutoCrossoverOperation => "the corners, slopes and gains as they stand",
             AutoTunePeqOperation => channel == null ? string.Empty : BankText(channel.Settings),
             TuneJunctionOperation junction => JunctionStartText(junction.JunctionId, session),
-            // A probe changes nothing, so there is no "before" to set against an
-            // "after": the column says what it will read, once.
             ProbeOperation probe => probe.JunctionId is { } id
                 ? JunctionStartText(id, session)
                 : "every measured channel",
@@ -1472,8 +1286,6 @@ internal static class AgentProposalValidator
             _ => string.Empty
         };
 
-    // The junction's two facing edges as they stand — what a tune may replace,
-    // and what a probe reads beside its variants.
     private static string JunctionStartText(string junctionId, AgentSessionSnapshot session)
     {
         if (ResolveJunction(session, junctionId, out AgentChannelSnapshot? lower, out AgentChannelSnapshot? upper) != null)
@@ -1507,8 +1319,6 @@ internal static class AgentProposalValidator
         _ => string.Empty
     };
 
-    // What the probe will read, in one phrase — the row's Proposed column, which
-    // for a probe is a question rather than a value.
     private static string ProbeText(ProbeOperation probe) => probe.Probe switch
     {
         AgentProtocol.JunctionProbe =>
@@ -1527,8 +1337,6 @@ internal static class AgentProposalValidator
         _ => $"read '{probe.Probe}'"
     };
 
-    // What the variants actually touch, so the row says what is being asked
-    // about rather than only how many questions there are.
     private static string ProbeVariantText(ProbeOperation probe)
     {
         var parts = new List<string>();
@@ -1557,7 +1365,7 @@ internal static class AgentProposalValidator
     private static string Count(int count, string noun) =>
         $"{count} {noun}{(count == 1 ? string.Empty : "s")}";
 
-    // Only what the reply states; an input it leaves out is the tuner's own.
+    // Only what the reply states; omitted inputs are the tuner's own.
     private static string TuneJunctionText(TuneJunctionOperation junction)
     {
         var parts = new List<string>();
@@ -1585,8 +1393,7 @@ internal static class AgentProposalValidator
             : "tune the junction: " + string.Join(", ", parts);
     }
 
-    // The near-side cut only where the gain balance is on: with it off the field
-    // is an input to nothing, and printing it would read as a change.
+    // Near-side cut only with gain balance on: otherwise it is an input to nothing.
     private static string AutoDelayText(
         double sceneOffsetMs, bool rightHandDrive, bool adjustGains,
         double nearSideCutDb, double rearFillOffsetMs) =>
@@ -1595,8 +1402,7 @@ internal static class AgentProposalValidator
         (adjustGains ? $", near-side cut {Db(nearSideCutDb)}" : string.Empty) +
         $", rear fill {Ms(rearFillOffsetMs)}";
 
-    // Only what the reply actually states: an input it leaves out is the wizard's
-    // own answer, and printing that would read as a choice the reply made.
+    // Only what the reply states: printing defaults would read as the reply's choice.
     private static string AutoTuneText(AutoTunePeqOperation tune)
     {
         var parts = new List<string>();
@@ -1632,9 +1438,7 @@ internal static class AgentProposalValidator
     private static string SpatialAverageText(string mode, bool hybrid) =>
         $"{mode}, hybrid {(hybrid ? "on" : "off")}";
 
-    // Exact comparison: the package prints every value in round-trip form, so an
-    // assistant that copied it hands back the same double. A tolerance here would
-    // be a tolerance for a reply that was reasoned about a different value.
+    // Exact: the package prints round-trip values, so a tolerance would admit a reply reasoned about a different value.
     private static string? CheckExpected(
         AgentSettingsOperation operation, VirtualCrossoverChannelSettings settings)
     {
@@ -1660,8 +1464,6 @@ internal static class AgentProposalValidator
         }
     }
 
-    // Applies the operation to the copy and says what is wrong with the value, if
-    // anything; notes collect the warnings that do not refuse it.
     private static string? CheckValue(
         AgentSettingsOperation operation,
         AgentSessionSnapshot session,
@@ -1711,9 +1513,7 @@ internal static class AgentProposalValidator
                 {
                     return $"A crossover corner must sit below the processor's Nyquist of {Hz(nyquistHz)}.";
                 }
-                // Allowed — two crossovers on one side are a legitimate chain — but said:
-                // the side is already cut by the kernel, and the red FIR button the panel
-                // will show is easier to understand with the reason in the review.
+                // Allowed (two crossovers are a legitimate chain) but said, to explain the red FIR button.
                 if (kind != CrossoverKind.Off && copy.HasFirCrossover)
                 {
                     notes.Add(
@@ -1732,11 +1532,7 @@ internal static class AgentProposalValidator
                 {
                     return $"Every PEQ band must sit below the processor's Nyquist of {Hz(nyquistHz)}.";
                 }
-                // Headroom is judged on the NET response, never on a band's sign: a
-                // boost inside a wider cut, or under a negative preamp, asks the
-                // device for nothing; a net rise above unity is where a full-scale
-                // signal clips. A warning, not a refusal — the user may know the
-                // source never reaches full scale.
+                // Headroom on the NET response, not band signs: a net rise above unity is where full scale clips. A warning only.
                 (double peakDb, double peakHz) = AgentPeqHeadroom.Peak(
                     peq.Proposed.PreampDb, bands, session.ProcessorSampleRateHz);
                 if (peakDb > HeadroomToleranceDb)
@@ -1797,9 +1593,7 @@ internal static class AgentProposalValidator
         $"{settings.PeqBands.Count} band{(settings.PeqBands.Count == 1 ? "" : "s")}, " +
         $"preamp {Db(settings.PeqPreampDb)}";
 
-    // A crossover in a table cell: the tuning sheet's full wording does not fit
-    // one, so the family is abbreviated the way the channel block's own combo
-    // does and the edge is named by its role.
+    // Abbreviated like the channel block's combo to fit a table cell.
     private static string Crossover(VirtualCrossoverChannelSettings settings) =>
         settings.CrossoverKind switch
         {
@@ -1824,7 +1618,7 @@ internal static class AgentProposalValidator
         return $"{family}{edge.SlopeDbPerOctave} {Hz(edge.FrequencyHz)}{ripple}";
     }
 
-    // "+ 0" folds a negative zero, which would otherwise print as "-0.0".
+    // "+ 0" folds negative zero, which would print as "-0.0".
     private static string Db(double value) =>
         (value + 0).ToString("0.0", CultureInfo.InvariantCulture) + " dB";
 
@@ -1841,17 +1635,10 @@ internal static class AgentProposalValidator
     private static string Polarity(bool inverted) => inverted ? "Inverted" : "Normal";
 }
 
-/// <summary>
-/// The one place an operation touches channel settings: the same code path judges
-/// a copy in the review and writes the live object at commit, so what was
-/// reviewed is what is applied.
-/// </summary>
+/// <summary>The one place an operation touches channel settings: the review judges a copy and the commit writes the live object through the same path.</summary>
 internal static class AgentOperations
 {
-    /// <summary>
-    /// A copy holding the editable chain only — no source, history or path — for
-    /// the review to try edits on and validate.
-    /// </summary>
+    /// <summary>A copy of the editable chain only (no source, history or path).</summary>
     public static VirtualCrossoverChannelSettings CloneEditable(VirtualCrossoverChannelSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -1865,27 +1652,19 @@ internal static class AgentOperations
             CrossoverKind = settings.CrossoverKind,
             LowPassEdge = settings.LowPassEdge,
             HighPassEdge = settings.HighPassEdge,
-            // No operation writes it, but the copy is what a probe's variant chains
-            // are built from: dropping it would evaluate the junction without a
-            // filter the tune is actually running.
+            // Probe variant chains are built from the copy: every running filter must be carried, including FIR kernel, design and run rate.
             PhaseRotationDegrees = settings.PhaseRotationDegrees,
             PeqPreampDb = settings.PeqPreampDb,
             PeqBands = new List<PeqBand>(settings.PeqBands),
             PeqSourceName = settings.PeqSourceName,
-            // The kernel likewise: a variant chain built without it would judge the
-            // junction without a filter the tune is running.
             Fir = settings.Fir,
             FirSourceName = settings.FirSourceName,
-            // And its design, which is where a variant's junction reads the corners of
-            // a side cut by a FIR crossover alone (see EffectiveCrossover).
             FirDesign = settings.FirDesign,
-            // And the rate that kernel runs at, which moves those corners when it is not
-            // the design's.
             FirRunSampleRateHz = settings.FirRunSampleRateHz
         };
     }
 
-    /// <summary>Writes the operation into the settings; the review has already passed it.</summary>
+    /// <summary>Writes the operation; the review has already passed it.</summary>
     /// <exception cref="InvalidDataException">The operation's value cannot be mapped.</exception>
     public static void Apply(AgentSettingsOperation operation, VirtualCrossoverChannelSettings target)
     {
@@ -1926,12 +1705,7 @@ internal static class AgentOperations
         }
     }
 
-    /// <summary>
-    /// The crossover a reply states, resolved against the channel's stored edges:
-    /// an edge the reply omits keeps the stored one (the kind may not use it, but
-    /// it round-trips like the project's own), and a ripple it omits keeps the
-    /// stored ripple. The edges the kind USES must be stated.
-    /// </summary>
+    /// <summary>Resolves a reply's crossover against stored edges: omitted edges and ripple keep the stored ones; edges the kind uses must be stated.</summary>
     public static bool TryMapCrossover(
         AgentCrossover crossover,
         VirtualCrossoverChannelSettings current,
@@ -2003,11 +1777,7 @@ internal static class AgentOperations
         return true;
     }
 
-    /// <summary>
-    /// Whether the crossover the reply believes is current IS current: same kind,
-    /// and the edges that kind uses equal in family, corner and slope (and ripple
-    /// where the reply states one). Edges the kind ignores are not compared.
-    /// </summary>
+    /// <summary>Whether the reply's expected crossover is current: same kind, used edges equal in family, corner, slope (and ripple if stated).</summary>
     public static bool MatchesCrossover(
         AgentCrossover expected, VirtualCrossoverChannelSettings settings, out string? mismatch)
     {
@@ -2091,8 +1861,7 @@ internal static class AgentOperations
         return true;
     }
 
-    // The enum names exactly as the package prints them: no case games, and no
-    // numeric strings, which Enum.TryParse would otherwise accept.
+    // Exact package names: Enum.TryParse would also accept other casing and numeric strings.
     public static bool TryParseName<TEnum>(string? name, out TEnum value) where TEnum : struct, Enum
     {
         value = default;

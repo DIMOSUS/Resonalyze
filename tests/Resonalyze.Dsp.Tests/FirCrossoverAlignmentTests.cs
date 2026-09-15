@@ -3,27 +3,9 @@ using System.Text;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// Auto delay across junctions built from linear-phase FIR crossovers. A symmetric
-/// kernel rings BEFORE its peak as much as after it, and it delays its channel by half
-/// its length, which Auto delay has to absorb like any other delay in the chain.
-/// </summary>
-/// <remarks>
-/// <para>
-/// The drivers are ideal and co-located, so the truth is known: the delay a channel
-/// needs is the difference between the kernels' latencies plus whatever physical
-/// offset the fixture inserts. Two matched linear-phase branches add nothing else — no
-/// phase turn at the corner — so nothing can honestly pull the answer off it.
-/// </para>
-/// <para>
-/// The impulse's PLACEMENT in the record is a parameter on purpose. The band-limited
-/// arrival detector read a long kernel's pre-ringing differently depending only on
-/// where the content sat (see AutoAlignmentEngine.LinearPhaseKernelOf), so the defect
-/// these tests pin showed at 480 samples for some cases and at 2880 for others. Every
-/// low-corner long-kernel case below landed 9 to 46 ms off before the engine learned
-/// to read such a kernel as its exact delay.
-/// </para>
-/// </remarks>
+/// <summary>Auto delay across linear-phase FIR crossovers: a symmetric kernel pre-rings and delays its channel by half its length.</summary>
+/// <remarks>Ideal co-located drivers, so the truth is the latency difference plus the fixture's offset. Placement is a
+/// parameter: the arrival read of long kernels depended on it (see AutoAlignmentEngine.LinearPhaseKernelOf).</remarks>
 public sealed class FirCrossoverAlignmentTests
 {
     private const int SampleRate = 48_000;
@@ -39,21 +21,18 @@ public sealed class FirCrossoverAlignmentTests
     }
 
     [Theory]
-    // Mid/tweeter corners: matched, a physical lead, a longer woofer kernel (the
-    // tweeter waits the 128-sample latency difference), and the constructor's longest.
     [InlineData(2_000.0, 255, 255, 0.0, 480)]
     [InlineData(2_000.0, 255, 255, 1.0, 480)]
     [InlineData(2_000.0, 511, 255, 0.0, 480)]
     [InlineData(2_000.0, 16_383, 16_383, 1.0, 480)]
     [InlineData(300.0, 8_191, 8_191, 1.5, 480)]
-    // Low corners with long kernels — every one of these landed 9 to 46 ms off.
+    // Low corners with long kernels: these once landed 9 to 46 ms off.
     [InlineData(150.0, 4_095, 4_095, 1.5, 480)]
     [InlineData(150.0, 2_047, 2_047, -1.5, 2_880)]
     [InlineData(80.0, 4_095, 4_095, 1.5, 480)]
     [InlineData(80.0, 8_191, 8_191, -1.5, 480)]
     [InlineData(80.0, 4_095, 4_095, 0.0, 2_880)]
     [InlineData(40.0, 4_095, 4_095, 0.0, 2_880)]
-    // And the short kernel that always held.
     [InlineData(80.0, 1_023, 1_023, -1.5, 480)]
     public void AutoDelay_MeetsLinearPhaseBranches_WhereTheirLatenciesSayItShould(
         double cornerHz, int lowerTaps, int upperTaps, double upperEarlyMs, int basePosition)
@@ -79,8 +58,6 @@ public sealed class FirCrossoverAlignmentTests
         var log = new StringBuilder();
         AutoAlignmentEngine.Compute([lower, upper], [junction], Reprocess, alignment, log);
 
-        // What the upper channel must wait, relative to the lower one: its physical
-        // lead plus the latency the lower kernel has over it.
         double expectedMs =
             upperEarlyMs + (lowerDesign.LatencySamples - upperDesign.LatencySamples) * 1_000.0 / SampleRate;
         double relativeMs =
@@ -103,18 +80,13 @@ public sealed class FirCrossoverAlignmentTests
     public void TheStereoCascade_TimesAFullLinearPhaseSystem_AsItTimesTheSameSystemUnfiltered(
         int taps, int basePosition)
     {
-        // A shared sub and woofer, mid and tweeter per side, every channel cut by a
-        // matched linear-phase crossover of one length: the kernels add the same
-        // latency everywhere and sum flat at every corner, so the proposal has to be
-        // the one the same impulses get with no filter at all. Before the fix the sub
-        // was proposed 11 to 48 ms off it.
+        // Matched kernels everywhere sum flat, so the proposal must equal the unfiltered one.
         Dictionary<string, double> unfiltered = RunStereo(taps: 0, basePosition);
         Dictionary<string, double> filtered = RunStereo(taps, basePosition);
 
         foreach ((string name, double delayMs) in filtered)
         {
-            // Relative to the sub: the cascade's final rebase to a zero minimum may
-            // pick another channel, which moves every delay together.
+            // Relative to the sub: the final zero-minimum rebase moves every delay together.
             double relative = delayMs - filtered["sub"];
             double reference = unfiltered[name] - unfiltered["sub"];
             Assert.True(
@@ -130,10 +102,7 @@ public sealed class FirCrossoverAlignmentTests
     public void AMeasurementAtAnotherRate_StillMeetsTheBranchesWhereTheirLatenciesSay(
         double cornerHz, int taps, double upperEarlyMs, int basePosition)
     {
-        // Measured at 44.1 kHz, run by a 48 kHz processor: the kernel's delay is counted
-        // at the PROCESSOR's rate while every record the engine reads is on the
-        // measurement's grid, so a mix-up between the two would land the answer off
-        // by the kernel's latency times 48/44.1 − 1 (3.9 ms at 4095 taps).
+        // Kernel delay counts at the processor rate; a mix-up would miss by latency × (48/44.1 − 1) (3.9 ms at 4095 taps).
         const int Measurement = 44_100;
         const int Processor = 48_000;
         FirCrossoverDesign lowDesign = Design(CrossoverKind.LowPass, cornerHz, cornerHz, taps) with { SampleRateHz = Processor };
@@ -166,12 +135,7 @@ public sealed class FirCrossoverAlignmentTests
     public void AnImportedSymmetricCorrection_OverAnIirCrossover_AddsExactlyItsDelay(
         double cornerHz, int taps)
     {
-        // Not a crossover from the constructor: a zero-phase room correction with a
-        // 5 dB bump over the octave above the corner, imported beside an ordinary IIR
-        // Linkwitz-Riley split. The special path takes ANY symmetric kernel, so this is
-        // the case that proves the kernel is only a delay to the arrival read and not
-        // a shape the fit should have followed: with the correction on the upper
-        // channel, the proposal moves by exactly its latency and nothing else.
+        // Any symmetric kernel (here a zero-phase bump) is only a delay to the arrival read, not a shape to follow.
         var edge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, cornerHz, 24);
         var lowChain = new DspChannelChain(Crossover: new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: edge));
         var highChain = new DspChannelChain(Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: edge));
@@ -203,16 +167,7 @@ public sealed class FirCrossoverAlignmentTests
     public void ASymmetricCorrectionOverADispersiveDriver_IsTimedTheSameWhereverTheDriverSitsInTheRecord(
         int taps, double lagMs, bool attenuateLow)
     {
-        // The review's worry, as a fixture: the arrival read drops the kernel and with
-        // it the kernel's spectral weighting, and a DISPERSIVE driver — its 80 Hz half
-        // at 0 ms, its 160 Hz half 4 ms away — arrives at a different time in each half,
-        // so a zero-phase tilt across a 120 Hz junction could in principle pull the
-        // honest answer. It does not: the seed only places the window, and the answer
-        // comes from the sum of the real processed responses, weighting and all. The
-        // read before the fix agreed with this one to 0.01 ms in 47 of 48 such cases
-        // and missed by 12.5 ms in the 48th — at 1023 taps, attenuating the low half,
-        // with the driver 60 ms into the record — which is the placement dependence the
-        // fix removed and what this test pins.
+        // Dispersive driver behind a zero-phase tilt: the seed only places the window; the answer comes from the processed sum.
         const double Corner = 120;
         double near = DispersiveJunctionRelativeMs(480, taps, lagMs, attenuateLow);
         double far = DispersiveJunctionRelativeMs(2_880, taps, lagMs, attenuateLow);
@@ -221,18 +176,12 @@ public sealed class FirCrossoverAlignmentTests
             Math.Abs(near - far) <= Tolerance(Corner),
             $"{near:0.000} ms with the driver 10 ms into the record, {far:0.000} ms at 60 ms");
 
-        // And the weighting moves the answer by no more than a fraction of a period: the
-        // same kernel tilted the other way lands beside it.
         double flipped = DispersiveJunctionRelativeMs(480, taps, lagMs, !attenuateLow);
         Assert.True(
             Math.Abs(near - flipped) <= 1_000.0 / Corner / 24,
             $"{near:0.000} ms with the tilt one way, {flipped:0.000} ms the other");
     }
 
-    // A two-way-like upper driver (its content below 115 Hz at the base, above it lagMs
-    // later) behind an IIR LR24 high-pass at 120 Hz, carrying an imported symmetric tilt
-    // correction with no design; the lower channel is an ideal impulse behind the
-    // matching low-pass. Answers the proposal's upper-minus-lower delay.
     private static double DispersiveJunctionRelativeMs(
         int basePosition, int taps, double lagMs, bool attenuateLow)
     {
@@ -257,8 +206,7 @@ public sealed class FirCrossoverAlignmentTests
             driver[i] = lowHalf[i] + highHalf[i];
         }
 
-        // 90 % of a Butterworth-12 tilt at 120 Hz plus 10 % straight through: a correction
-        // that leaves one side of the junction some 20 dB below the other.
+        // 90 % Butterworth-12 tilt plus 10 % through: one side ~20 dB below the other.
         var tiltEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, Corner, 12);
         FirFilter tilt = new FirCrossoverDesign(
             attenuateLow ? CrossoverKind.HighPass : CrossoverKind.LowPass, tiltEdge, tiltEdge,
@@ -284,9 +232,6 @@ public sealed class FirCrossoverAlignmentTests
         return RelativeDelayMs(lower, upper, Corner);
     }
 
-    // A zero-phase peaking correction: a unit impulse plus a windowed band-pass over
-    // [corner, 2·corner] at 0.8, so the band sits about 5 dB up with the window's
-    // ripple at its edges — uneven, as a measured correction is.
     private static FirFilter BumpCorrection(double cornerHz, int taps)
     {
         FirFilter band = Design(CrossoverKind.BandPass, 2 * cornerHz, cornerHz, taps) with
@@ -306,8 +251,6 @@ public sealed class FirCrossoverAlignmentTests
         return new FirFilter(kernel, SampleRate);
     }
 
-    // Runs Compute on one junction and answers how much later the upper channel is
-    // proposed than the lower.
     private static double RelativeDelayMs(AlignmentSnapshot lower, AlignmentSnapshot upper, double cornerHz)
     {
         var junction = new AlignmentJunction(lower, upper, cornerHz, cornerHz / 2, cornerHz * 2);
@@ -329,25 +272,19 @@ public sealed class FirCrossoverAlignmentTests
         Assert.True(designed.IsSymmetric);
         Assert.Equal(511, designed.LinearPhaseDelaySamples);
 
-        // Even lengths are symmetric too, half a sample off the grid.
         var even = new FirFilter([0.25, 0.5, 0.5, 0.25]);
         Assert.True(even.IsSymmetric);
         Assert.Equal(1.5, even.LinearPhaseDelaySamples);
 
-        // A minimum-phase-like kernel, an antisymmetric one and silence are not.
         Assert.False(new FirFilter([1.0, 0.5, 0.25]).IsSymmetric);
         Assert.False(new FirFilter([1.0, 0.0, -1.0]).IsSymmetric);
         Assert.False(new FirFilter([0.0, 0.0, 0.0]).IsSymmetric);
 
-        // Rounding is not asymmetry, a real difference is.
         Assert.True(new FirFilter([0.3, 1.0, 0.3 + 1e-13]).IsSymmetric);
         Assert.False(new FirFilter([0.3, 1.0, 0.3 + 1e-6]).IsSymmetric);
     }
 
-    // A tenth and a half of a millisecond at the mid corners, a 48th of a period
-    // below: the stage-2 search resolves a 40 Hz junction to a few tenths of a
-    // millisecond with or without a FIR stage (0.43 ms measured on these branches),
-    // and that is its resolution, not the pre-ringing this file is about.
+    // Stage-2 resolution: a few tenths of a ms at 40 Hz (0.43 ms measured), not pre-ringing.
     private static double Tolerance(double cornerHz) => Math.Max(0.15, 1_000.0 / cornerHz / 48);
 
     private static int RecordLength(int basePosition, int taps) =>

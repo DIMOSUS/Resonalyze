@@ -2,12 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Builds the file-dialog Filter string for a list of EQ profile formats and
-/// resolves the dialog's 1-based <c>FilterIndex</c> back to the format, so
-/// the string and the lookup can never disagree about ordering or the
-/// off-by-one.
-/// </summary>
+/// <summary>Builds the dialog Filter string and resolves its 1-based FilterIndex, so the two cannot disagree.</summary>
 internal static class EqFormatFileDialogs
 {
     internal static string BuildFilter(
@@ -21,14 +16,7 @@ internal static class EqFormatFileDialogs
         return trailingFilter == null ? filter : $"{filter}|{trailingFilter}";
     }
 
-    /// <summary>
-    /// The format the dialog's <paramref name="filterIndex"/> selects, or
-    /// null when the index points past the format list — i.e. at a trailing
-    /// non-format entry appended via
-    /// <see cref="BuildFilter(IReadOnlyList{IEqProfileFormat}, string?)"/>.
-    /// An index below the list (defensive; dialogs start at 1) resolves to
-    /// the first format.
-    /// </summary>
+    /// <summary>Null for an index past the formats (a trailing non-format entry); below 1 resolves to the first.</summary>
     internal static IEqProfileFormat? ResolveFormat(
         IReadOnlyList<IEqProfileFormat> formats,
         int filterIndex)

@@ -67,9 +67,7 @@ public sealed class CalibrationFileTests
     [Fact]
     public void QueryBelowCalibratedRange_HoldsFirstPointInsteadOfExtrapolating()
     {
-        // A steep first segment on a file starting at 100 Hz: unclamped linear
-        // extrapolation down to 20 Hz would run ~80 segment widths out and drive
-        // the amplitude negative (a -160 dB correction spike).
+        // Unclamped linear extrapolation to 20 Hz would drive the amplitude negative (a -160 dB spike).
         string path = WriteCalibrationFile(
             "100 0.0\n" +
             "101 1.0\n" +
@@ -92,19 +90,14 @@ public sealed class CalibrationFileTests
 
         double correction = calibration.GetDecibelCorrection(20_000);
 
-        // The final 1000->5000 Hz segment has a real +2 dB slope; above the range the
-        // correction must HOLD the last point (3.0 dB), not extrapolate the slope
-        // upward. The previous 1.0-3.5 window passed even for a wrong hold value.
+        // Above the range the correction holds the last point, not the slope.
         Assert.Equal(3.0, correction, precision: 6);
     }
 
     [Fact]
     public void ManyPointCurve_BinarySearchLandsOnTheCorrectSegment()
     {
-        // A 200-point curve forces the interior binary-search descent (right = mid-1,
-        // left = mid+1) that the 3-point files never reach — those resolve on the
-        // first probe. A step at 1500 Hz makes each flat plateau an exact known value,
-        // so a wrong search comparison would read the other plateau.
+        // 200 points force the interior binary-search descent that 3-point files never reach.
         var text = new StringBuilder();
         foreach (double frequency in EqualizationCurve.LogFrequencyGrid(20, 20_000, 200))
         {
@@ -124,11 +117,7 @@ public sealed class CalibrationFileTests
     [Fact]
     public void Correction_ReproducesTheFilePointsExactly()
     {
-        // A single 12 dB spike on an otherwise flat curve: the correction must
-        // read back EXACTLY 12 dB at the calibrated point. The old
-        // Lanczos-smoothed lookup silently half-octave-averaged the spike to
-        // ~5.6 dB (and overshot near steps even at zero smoothing) — a
-        // calibration must reproduce its own points.
+        // A calibration must reproduce its own points (the Lanczos lookup averaged a 12 dB spike to ~5.6).
         IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(20, 20_000, 200);
         double spikeHz = grid.OrderBy(f => Math.Abs(f - 1_000)).First();
         var text = new StringBuilder();
@@ -149,8 +138,6 @@ public sealed class CalibrationFileTests
     [Fact]
     public void Correction_InterpolatesLinearlyInLogFrequencyAndDecibels()
     {
-        // Two points an octave apart: the geometric midpoint frequency must
-        // read the arithmetic midpoint of the dB values.
         CalibrationFile calibration = CalibrationFile.Parse("1000 0\n2000 6\n");
 
         Assert.Equal(
@@ -162,8 +149,7 @@ public sealed class CalibrationFileTests
     [Fact]
     public void Correction_DuplicateFrequenciesAreMergedNotNaN()
     {
-        // Duplicate frequencies used to make an interpolation segment
-        // zero-width and push NaN into the correction.
+        // Duplicate frequencies once made a zero-width segment and NaN.
         CalibrationFile calibration = CalibrationFile.Parse("1000 0\n1000 6\n2000 6\n");
 
         double correction = calibration.GetDecibelCorrection(1_500);
@@ -286,9 +272,7 @@ public sealed class CalibrationFileTests
     [Fact]
     public void FileLoad_HandlesCrlfFile()
     {
-        // Exercises the actual File.ReadAllText + line split on Windows endings —
-        // the one line the parser refactor changed (ReadAllLines -> ReadAllText)
-        // that the text-only Parse tests do not cover through disk.
+        // Exercises File.ReadAllText with CRLF through disk.
         string crlfPath = WriteCalibrationFile("20 2.5\r\n1000 2.5\r\n20000 2.5\r\n");
 
         var calibration = new CalibrationFile(crlfPath);
@@ -330,13 +314,10 @@ public sealed class CalibrationFileTests
         Assert.Throws<ArgumentNullException>(() => CalibrationFile.Parse(null!));
     }
 
-    // ------------------------------------------------------ points and identity
-
     [Fact]
     public void Points_StateTheFileInOrder_AndFromPointsReadsThemBack()
     {
-        // What a Virtual DSP session stores is the curve itself; it has to come
-        // back correcting exactly as the file did, duplicates merged and all.
+        // A session stores the curve itself; it must correct exactly as the file did.
         var parsed = CalibrationFile.Parse("1000 6\n20 -1.25\n1000 0\n20000 3.5\n");
 
         IReadOnlyList<CalibrationPoint> points = parsed.Points;
@@ -378,10 +359,7 @@ public sealed class CalibrationFileTests
     [Fact]
     public void Points_OfAnAngledEstimate_ReproduceTheEstimate()
     {
-        // An estimate is a function, not a table. Its points are a sampling dense
-        // enough that a file written from them reads back as the same correction —
-        // which is what lets a session carry an angle entry, and what lets a machine
-        // recognize its own angle entry in an arriving session.
+        // An estimate's points are dense enough that a file written from them reads back the same correction.
         CalibrationFile zero = CalibrationFile.Parse("20 0\n2000 1\n20000 -2\n");
         CalibrationFile angled = CalibrationFile.CreateAngled(
             zero, frequency => -3.0 * Math.Pow(Math.Log10(frequency / 20.0) / 3.0, 2));
@@ -407,17 +385,12 @@ public sealed class CalibrationFileTests
     [Fact]
     public void Points_OfAnAngledEstimate_KeepMovingOutsideTheBaseFile()
     {
-        // Outside the base file the base holds its edge value while the angular
-        // difference keeps changing — and the audition FIR reads the correction up
-        // to Nyquist. A table cut at the file's edges would clamp the whole
-        // correction there; the carried curve has to reproduce the estimate over
-        // the whole range it is read at, not just over the file.
+        // The audition FIR reads to Nyquist, so the carried curve must cover beyond the base file's edges.
         CalibrationFile narrowBase = CalibrationFile.Parse("100 0\n1000 1\n10000 -2\n");
         static double Delta(double frequency) => -6.0 * Math.Log10(frequency / 100.0);
         CalibrationFile angled = CalibrationFile.CreateAngled(narrowBase, Delta);
         CalibrationFile sampled = CalibrationFile.FromPoints(angled.Points);
 
-        // The model's own values, for the record: held base + moving delta.
         Assert.Equal(-2.0 + Delta(20_000.0), angled.GetDecibelCorrection(20_000.0), precision: 9);
         Assert.Equal(0.0 + Delta(20.0), angled.GetDecibelCorrection(20.0), precision: 9);
 
@@ -444,7 +417,6 @@ public sealed class CalibrationFileTests
         Assert.True(CalibrationFile.SameCurve(a, sameText));
         Assert.True(CalibrationFile.SameCurve(a, CalibrationFile.FromPoints(a.Points)));
         Assert.False(CalibrationFile.SameCurve(a, differentLevel));
-        // Collinear, yet not the same file: a curve is its points.
         Assert.False(CalibrationFile.SameCurve(a, extraPoint));
         Assert.True(CalibrationFile.SameCurve(null, null));
         Assert.False(CalibrationFile.SameCurve(a, null));

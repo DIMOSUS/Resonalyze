@@ -1,12 +1,6 @@
 ﻿namespace Resonalyze.Audio;
 
-/// <summary>
-/// Finite play-and-capture over a single ASIO driver session. The driver is
-/// opened once and kept running across averaging runs (re-initializing it per
-/// run costs seconds on slow drivers); each run resets the capture accumulator
-/// and rewinds the excitation. Capture is paused between runs so the gap between
-/// them does not grow the buffer while the meter stays live.
-/// </summary>
+/// <summary>The driver stays open across averaging runs; each run resets the accumulator and rewinds the excitation. See docs/tech/audio-layer.md#averaged-runs-keep-the-device-open.</summary>
 internal sealed class AsioDuplexSession : IAudioDuplexSession
 {
     private readonly AsioFullDuplexSession session;
@@ -57,16 +51,11 @@ internal sealed class AsioDuplexSession : IAudioDuplexSession
         }
         else
         {
-            // The stream ran out (the driver is playing silence); a fresh
-            // accumulator starts this run's capture and the rewind replays the
-            // excitation from its first sample.
             session.ResetCapture(expectedTotalSamples);
             stream.Position = 0;
         }
 
-        // The driver is already running. AcceptedSamples includes blocks queued
-        // before/while the stream was rewound; using processed ReadSamples here
-        // could omit that lead-in and finish one ASIO packet too early.
+        // AcceptedSamples includes blocks queued around the rewind; ReadSamples could finish one ASIO packet early.
         int requiredSamples = session.AcceptedSamples + signalSampleCount + captureTailSamples;
         await session.WaitForSamplesAsync(requiredSamples, cancellationToken)
             .ConfigureAwait(false);

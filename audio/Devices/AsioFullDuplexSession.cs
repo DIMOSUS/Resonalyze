@@ -24,9 +24,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private int captureGeneration;
     private TaskCompletionSource<bool>? firstBufferReady;
     private TaskCompletionSource<bool>? playbackStopped;
-    // Remembered so a sample waiter registered after the driver stopped (e.g. a
-    // later averaged run) faults immediately instead of hanging. Cleared only by
-    // a real StartAsync, never by ResetCapture between runs.
+    // A waiter registered after the driver stopped faults at once. Cleared by StartAsync, never by ResetCapture.
     private Exception? terminalException;
     private bool disposed;
 
@@ -89,8 +87,6 @@ internal sealed class AsioFullDuplexSession : IDisposable
         levelAccumulator = new AudioLevelAccumulator(ChannelCount, sampleRate);
         lock (sync)
         {
-            // A real (re)start clears any remembered terminal failure; ResetCapture
-            // between averaged runs deliberately does not.
             terminalException = null;
         }
 
@@ -137,22 +133,13 @@ internal sealed class AsioFullDuplexSession : IDisposable
         }
         catch
         {
-            // A driver that fails validation or playback startup (or never
-            // produces the first callback before cancellation) must be detached
-            // here; otherwise it keeps running with live callbacks until the
-            // owner's teardown gets around to disposing the session.
+            // A driver failing startup must be detached here, or its callbacks run until owner teardown.
             StopAndDisposeDriver();
             throw;
         }
     }
 
-    /// <summary>
-    /// Starts a fresh capture on the running driver. An averaged sweep reuses
-    /// the open ASIO session across runs — the driver keeps playing whatever
-    /// the provider produces (silence after the sweep ends) and only the
-    /// accumulator restarts, instead of paying a full driver re-initialization
-    /// (seconds on slow drivers) for every run.
-    /// </summary>
+    /// <summary>Restarts only the accumulator on the running driver: averaged runs skip driver re-init (seconds on slow drivers).</summary>
     public void ResetCapture(int expectedTotalSamples)
     {
         ThrowIfDisposed();
@@ -173,9 +160,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
             {
                 return Task.CompletedTask;
             }
-            // The samples are not all here and a stopped driver will deliver
-            // neither more of them nor a fresh stop event: fault immediately
-            // rather than register a waiter that only an Abort could complete.
+            // A stopped driver delivers no more samples and no stop event: fault instead of registering a waiter.
             if (terminalException != null)
             {
                 return Task.FromException(terminalException);
@@ -214,19 +199,10 @@ internal sealed class AsioFullDuplexSession : IDisposable
         }
     }
 
-    /// <summary>
-    /// Finishes blocks accepted before the callback source stopped. This is an
-    /// explicit operation because ordinary streaming teardown intentionally drops
-    /// pending work instead of publishing late frames.
-    /// </summary>
+    /// <summary>Finishes blocks accepted before the callback stopped; normal teardown drops them on purpose.</summary>
     internal void DrainCapture() => capturePump.Drain();
 
-    /// <summary>
-    /// Atomically ends the current accumulation epoch and returns its samples.
-    /// The old accumulator is detached under the session lock; the potentially
-    /// large allocation/copy then runs without blocking the capture worker from
-    /// returning queue slots or continuing level metering.
-    /// </summary>
+    /// <summary>Atomically ends the accumulation epoch; the large copy runs outside the lock so the worker keeps metering.</summary>
     public float[][] CompleteCaptureSnapshot()
     {
         CaptureAccumulator? completed;
@@ -272,9 +248,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    // NAudio fills playback only after this callback returns. Keep it to bounded
-    // copies into the pump's reusable slots; all conversion and publication is
-    // performed by the dedicated capture worker.
+    // NAudio fills playback only after this returns: bounded copies only, the worker does the rest.
     private void ReceiveAudio(object? sender, AsioAudioAvailableEventArgs args)
     {
         if (args.InputBuffers.Length < driverRecordChannelCount)
@@ -327,8 +301,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
             sumSquares[channel] = sum;
         }
 
-        // A paused capture (accumulator == null) skips accumulation but keeps
-        // metering, so the input meter stays live between averaging runs.
+        // A paused capture (null accumulator) keeps metering between averaging runs.
         List<float[][]>? readySequences = null;
         beforeCaptureCommit?.Invoke();
         lock (sync)
@@ -413,36 +386,24 @@ internal sealed class AsioFullDuplexSession : IDisposable
             playbackStopped?.TrySetResult(true);
         }
 
-        // No more samples are coming, so fault the waiters: one blocked on a
-        // sample count the stopped driver will never deliver would otherwise
-        // hang until a manual Abort.
+        // Fault waiters, or one blocked on samples that never come hangs until Abort.
         Exception failure = args.Exception ??
             new InvalidOperationException(
                 "ASIO playback stopped before the requested samples arrived.");
         lock (sync)
         {
-            // Remember the failure so a waiter registered by a later run faults
-            // at once instead of hanging.
             terminalException ??= failure;
             sampleWaiters.FaultAll(failure);
         }
     }
 
-    /// <summary>
-    /// Completes when the driver stops — successfully on a normal stop, with
-    /// the driver's exception on a failure. A live consumer that otherwise
-    /// waits only on its own cancellation must also await this, or an
-    /// unplugged device leaves it frozen with no error and no completion.
-    /// </summary>
+    /// <summary>Completes when the driver stops (faulted on failure). Live consumers must await it, or an unplugged device freezes them.</summary>
     public Task StoppedAsync() =>
         playbackStopped?.Task ?? Task.CompletedTask;
 
     private void ResetBuffers()
     {
-        // Allocate before taking the session lock: an averaged run may reserve
-        // LOH-sized channel buffers while the driver is still delivering packets.
-        // During this preparation the completed epoch is paused/null, so the
-        // worker can continue metering and returning queue slots.
+        // Allocate (possibly LOH) before the lock; the epoch is paused meanwhile so the worker keeps running.
         var freshAccumulator = new CaptureAccumulator(
             ChannelCount,
             Sequence,

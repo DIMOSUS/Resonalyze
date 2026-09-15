@@ -1,10 +1,6 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Exports the user shares (tuning sheets, PEQ profiles, Virtual DSP projects)
-/// used to be written with <c>File.Create</c>, which truncates the destination
-/// on open — so a failure mid-write replaced a good file with a broken one.
-/// </summary>
+/// <summary>File.Create truncates on open, so a failed write would replace a good export with a broken one.</summary>
 public sealed class AtomicFileTests : IDisposable
 {
     private readonly string directory = Path.Combine(

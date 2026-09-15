@@ -27,7 +27,6 @@ public sealed class TuningSheetPdfTests
             Assert.True(File.Exists(path));
             byte[] bytes = File.ReadAllBytes(path);
             Assert.True(bytes.Length > 0);
-            // Every PDF starts with the "%PDF" signature.
             Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
         }
         finally
@@ -39,12 +38,7 @@ public sealed class TuningSheetPdfTests
         }
     }
 
-    /// <summary>
-    /// The PDF exporters used to hand the destination path straight to
-    /// PdfDocument.Save, which truncates on open — so overwriting an existing
-    /// sheet destroyed it before the new one was complete. Both exporters share
-    /// PdfSheet.Save, so this covers the Virtual DSP sheet too.
-    /// </summary>
+    /// <summary>PdfDocument.Save truncates on open; both exporters share PdfSheet.Save, which must not.</summary>
     [Fact]
     public void Export_OverAnExistingFile_NeverLeavesItTruncated()
     {
@@ -58,8 +52,6 @@ public sealed class TuningSheetPdfTests
 
             TuningSheetPdf.Export(path, "Second", curve, 20, 20_000, 48_000, null);
 
-            // A real PDF, not a zero-length or half-written stub, and no
-            // temporary file left beside it.
             byte[] bytes = File.ReadAllBytes(path);
             Assert.True(bytes.Length > 0);
             Assert.Equal("%PDF"u8.ToArray(), bytes.Take(4).ToArray());

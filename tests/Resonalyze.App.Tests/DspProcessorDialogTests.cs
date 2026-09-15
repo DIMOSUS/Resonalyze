@@ -4,12 +4,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The DSP processor dialog decides the rate every simulated filter is built at, so
-/// what it REMEMBERS while the user browses the model list is not cosmetic: coming
-/// back to Custom with the wrong answer restored changes the simulation without
-/// anyone touching the rate again.
-/// </summary>
 public sealed class DspProcessorDialogTests
 {
     private const int MeasurementRate = 48_000;
@@ -19,8 +13,6 @@ public sealed class DspProcessorDialogTests
     {
         StaTest.Run(() =>
         {
-            // Opened on "follow", the user states 96 kHz, looks at a device, and comes
-            // back to Custom: their 96 kHz has to still be there.
             using Form dialog = Open(followsMeasurements: true);
             SelectRate(dialog, 96_000);
             SelectModel(dialog, DspProcessorCatalog.Preset("helix-next-v-eight-dsp-ultimate")!);
@@ -36,8 +28,6 @@ public sealed class DspProcessorDialogTests
     {
         StaTest.Run(() =>
         {
-            // And the other way round: opened on a stated rate, the user switches to
-            // "follow", looks at a device, and comes back — still following.
             using Form dialog = Open(followsMeasurements: false);
             SelectFollow(dialog);
             SelectModel(dialog, DspProcessorCatalog.Preset("amp-panacea-v1-v2")!);
@@ -67,9 +57,6 @@ public sealed class DspProcessorDialogTests
     {
         StaTest.Run(() =>
         {
-            // A project set up before its measurements: the entry says only "Follow
-            // measurements", with no rate to name, and the profile still answers with
-            // something the simulation can run at.
             using Form dialog = Open(followsMeasurements: true, measurementRateHz: 0);
 
             Assert.True(Follows(dialog));
@@ -82,9 +69,7 @@ public sealed class DspProcessorDialogTests
     {
         StaTest.Run(() =>
         {
-            // The project stores "no notes" as null, so the dialog has to answer the
-            // same for a field the user cleared or filled with whitespace — otherwise
-            // every OK would count as an edit and schedule a save.
+            // Null means no notes; blank must match, or every OK counts as an edit and schedules a save.
             using Form dialog = Open(followsMeasurements: true);
             Assert.Null(Notes(dialog));
 
@@ -104,9 +89,7 @@ public sealed class DspProcessorDialogTests
     {
         StaTest.Run(() =>
         {
-            // The limit is enforced by the field itself, so OK never has to refuse;
-            // and the field is the tallest thing on the form, so it is the one that
-            // would push the buttons off the bottom if the designer numbers slipped.
+            // The field is the tallest control, so it would push the buttons off if designer numbers slipped.
             using Form dialog = Open(followsMeasurements: true);
             TextBox notes = NotesBox(dialog);
             Assert.True(notes.Multiline);
@@ -136,10 +119,7 @@ public sealed class DspProcessorDialogTests
     {
         StaTest.Run(() =>
         {
-            // The stored "yes" belongs to the device it was given for. Carried over
-            // to a model not known to have the control it would keep the project's
-            // phase rotations alive on hardware that cannot dial one — the project
-            // only clears them when this answer says the control is gone.
+            // A stored phase-control yes belongs to its device; carried over it would keep rotations on hardware without the control.
             using Form dialog = Open(followsMeasurements: false, phaseControl: true);
             Assert.True(PhaseControl(dialog));
 
@@ -147,7 +127,6 @@ public sealed class DspProcessorDialogTests
 
             Assert.False(PhaseControl(dialog));
 
-            // And back the other way: a device that HAS one offers it again.
             SelectModel(dialog, DspProcessorCatalog.Preset("helix-dsp-ultra-s")!);
 
             Assert.True(PhaseControl(dialog));
@@ -159,9 +138,6 @@ public sealed class DspProcessorDialogTests
     {
         StaTest.Run(() =>
         {
-            // Nothing renamed the device, so nothing re-opens the question: a user
-            // who turned the row off keeps it off, and one who turned it on for a
-            // Custom profile the catalog does not carry keeps it on.
             using Form dialog = Open(followsMeasurements: false, phaseControl: true);
             SelectRate(dialog, 96_000);
 
@@ -194,11 +170,7 @@ public sealed class DspProcessorDialogTests
     {
         StaTest.Run(() =>
         {
-            // No catalog line claims a FIR stage yet, so a project that has never
-            // been asked opens with the tick off. Once given, the tick is the user's
-            // across every model: the catalog's "false" means "not known to take a
-            // kernel", not "cannot", and an untick detaches every loaded kernel — not
-            // something a look at another device may do on no information.
+            // The catalog's FIR false means "not known", and an untick detaches every kernel, so browsing models keeps the user's tick.
             using Form dialog = Open(followsMeasurements: false, firFilters: null);
             Assert.False(FirFilters(dialog));
 
@@ -232,7 +204,6 @@ public sealed class DspProcessorDialogTests
             SelectModel(dialog, DspProcessorCatalog.Preset("helix-dsp-ultra-s")!);
             Assert.False(FirFilters(dialog));
 
-            // And a stored "no" opens as no.
             using Form off = Open(followsMeasurements: false, firFilters: false);
             Assert.False(FirFilters(off));
         });
@@ -289,7 +260,6 @@ public sealed class DspProcessorDialogTests
     private static void SelectRate(Form dialog, int rateHz) =>
         Select(dialog, "comboBoxSampleRate", item => item is int rate && rate == rateHz);
 
-    // The rate list's first entry is the "follow" marker; every other one is an int.
     private static void SelectFollow(Form dialog) =>
         Select(dialog, "comboBoxSampleRate", item => item is not int);
 

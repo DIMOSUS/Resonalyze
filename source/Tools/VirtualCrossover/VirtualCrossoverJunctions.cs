@@ -2,20 +2,9 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Pure junction/band arithmetic of the Virtual DSP tool: which band a channel
-/// plays in and where two adjacent channels hand over. Kept free of UI state so
-/// the rules are unit-testable.
-/// </summary>
 internal static class VirtualCrossoverJunctions
 {
-    /// <summary>
-    /// The band a channel actually plays in: its crossover corners when set, the
-    /// full range otherwise. Used to order the channels along the spectrum. The
-    /// corners are the IIR crossover's, or a FIR crossover's where the IIR one is off
-    /// (see <see cref="VirtualCrossoverChannelSettings.EffectiveCrossover"/>) — every
-    /// reading in this class goes through that one rule.
-    /// </summary>
+    /// <summary>Crossover corners via <see cref="VirtualCrossoverChannelSettings.EffectiveCrossover"/> (IIR, or FIR when IIR is off), full range otherwise.</summary>
     public static (double LowHz, double HighHz) GetChannelBand(
         VirtualCrossoverChannelSettings settings)
     {
@@ -24,11 +13,7 @@ internal static class VirtualCrossoverJunctions
         return highHz > lowHz ? (lowHz, highHz) : (20, 20_000);
     }
 
-    /// <summary>
-    /// The crossover frequency between two adjacent channels: the lower one's
-    /// low-pass corner when set, the upper one's high-pass corner otherwise, and
-    /// the geometric mean of their band centers as the filterless fallback.
-    /// </summary>
+    /// <summary>Lower low-pass, else upper high-pass, else geometric mean of band centres.</summary>
     public static double GetPairCrossoverHz(
         VirtualCrossoverChannelSettings lower,
         VirtualCrossoverChannelSettings upper)
@@ -48,28 +33,16 @@ internal static class VirtualCrossoverJunctions
             Math.Sqrt(lowerLow * lowerHigh) * Math.Sqrt(upperLow * upperHigh));
     }
 
-    /// <summary>
-    /// Geometric-mean centre of a channel's playing band, used to order the
-    /// channels along the spectrum.
-    /// </summary>
     public static double BandCenterHz(VirtualCrossoverChannelSettings settings)
     {
         (double lowHz, double highHz) = GetChannelBand(settings);
         return Math.Sqrt(lowHz * highHz);
     }
 
-    /// <summary>
-    /// An octave to each side of a handover frequency, clamped to the audio band:
-    /// the overlap region where two adjacent drivers genuinely sum.
-    /// </summary>
+    /// <summary>One octave each side of the handover: where adjacent drivers genuinely sum.</summary>
     public static (double LowHz, double HighHz) OverlapBand(double centerHz) =>
         (Math.Max(20, centerHz / 2), Math.Min(20_000, centerHz * 2));
 
-    /// <summary>
-    /// The frequency window worth plotting for a set of channels: an octave below
-    /// the lowest crossover corner to an octave above the highest, clamped to the
-    /// audio band, or a sensible default when no channel is filtered.
-    /// </summary>
     public static (double MinHz, double MaxHz) GetCrossoverWindow(
         IEnumerable<VirtualCrossoverChannelSettings> channels)
     {

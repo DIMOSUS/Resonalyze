@@ -2,10 +2,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-// A capture document exists so a stored spatial average can be RE-RENDERED — at
-// another smoothing, under another calibration — rather than only redrawn. That
-// promise is worth exactly as much as the fidelity of the bins it stores and the
-// completeness of the recipe beside them, so both are pinned here.
 public sealed class LiveCaptureDocumentTests
 {
     private const int SampleRate = 48_000;
@@ -29,8 +25,7 @@ public sealed class LiveCaptureDocumentTests
             for (int i = 0; i < expected.Count; i++)
             {
                 Assert.Equal(expected[i].X, actual[i].X, 6);
-                // The bins go to disk in dB; only that quantization separates the two
-                // renders, and it sits three orders below any measurement uncertainty.
+                // Bins are stored in dB; only that quantization separates the renders.
                 Assert.Equal(expected[i].Y, actual[i].Y, 3);
             }
         }
@@ -43,9 +38,6 @@ public sealed class LiveCaptureDocumentTests
     [Fact]
     public void StoredBinsStopAtTheCeilingWithoutMovingTheCurve()
     {
-        // At 48 kHz nothing is above the ceiling, so the whole half-spectrum is kept;
-        // the point is that the trim never reaches into the band the curve is read
-        // over. Checked here at the rate the owner captures at.
         double[] amplitude = BuildPinkishSpectrum();
         LiveCaptureDocument document = BuildDocument(amplitude, Resample(amplitude));
 
@@ -70,8 +62,7 @@ public sealed class LiveCaptureDocumentTests
     [Fact]
     public void ARecipeWithoutSlopeCompensationIsNotTheSameSet()
     {
-        // The one difference that reads as a smooth, plausible bass tilt rather than
-        // as an obviously broken curve, so it must never pass a set check.
+        // A recipe difference reads as a plausible bass tilt, so it must never pass a set check.
         LiveCaptureRecipe compensated = BuildRecipe();
         LiveCaptureRecipe raw = BuildRecipe();
         raw.SlopeCompensation = false;
@@ -82,10 +73,7 @@ public sealed class LiveCaptureDocumentTests
     [Fact]
     public void ChannelsFilteredDifferentlyAreStillOneSet()
     {
-        // The protective high-pass belongs to the channel's own hardware path: a
-        // tweeter has one and a subwoofer does not, and each capture has its own
-        // divided back out. Rejecting a set for that difference threw out a correct
-        // seven-channel measurement of a real car.
+        // The protective high-pass is per channel hardware (tweeter yes, sub no), so it must not reject a set.
         LiveCaptureRecipe tweeter = BuildRecipe();
         tweeter.ProtectiveHighPassKind = ProtectiveHighPassKind.Butterworth;
         tweeter.ProtectiveHighPassFrequencyHz = 1000.0;
@@ -104,8 +92,6 @@ public sealed class LiveCaptureDocumentTests
         LiveCaptureDocument document = BuildDocument(amplitude, Resample(amplitude));
         document.CalibrationCorrectionDb = new double[LiveCaptureDocument.CurvePointCount - 1];
 
-        // Silently accepting it would offset every point of the correction against the
-        // curve it belongs to — a wrong answer that still looks like a measurement.
         Assert.Throws<InvalidDataException>(() => document.Validate());
     }
 
@@ -132,10 +118,7 @@ public sealed class LiveCaptureDocumentTests
     [Fact]
     public void TryLoadClaimsOnlyFilesThatSayTheyAreCaptures()
     {
-        // The shared Load button asks this to decide whether a file belongs to the
-        // live analyzer or to the impulse-response loader, so a foreign JSON must be
-        // declined rather than claimed and then failed on a confusing complaint about
-        // its recipe. A capture, conversely, must be claimed from any mode.
+        // The shared Load button asks this, so foreign JSON is declined and a capture is claimed from any mode.
         string foreign = Path.Combine(Path.GetTempPath(), $"foreign-{Guid.NewGuid():N}.json");
         string capture = Path.Combine(Path.GetTempPath(), $"capture-{Guid.NewGuid():N}.json");
         try
@@ -158,9 +141,7 @@ public sealed class LiveCaptureDocumentTests
     [Fact]
     public void ACaptureThatFailsValidationThrowsRatherThanBeingDisowned()
     {
-        // Claiming is decided by the FORMAT alone: a file that says it is a capture
-        // and is broken is a real error, and passing it on as "not ours" would have
-        // the impulse-response loader misreport it as an unsupported format.
+        // Claimed by format alone: a broken capture passed on would be misreported by the IR loader.
         string path = Path.Combine(Path.GetTempPath(), $"broken-{Guid.NewGuid():N}.json");
         try
         {
@@ -178,11 +159,6 @@ public sealed class LiveCaptureDocumentTests
     [Fact]
     public void ADamagedCaptureThrowsRatherThanBeingDisowned()
     {
-        // The file says what it is in its head and then breaks off — a save
-        // interrupted, a truncated copy. That is a capture that cannot be read, and
-        // reporting it as one is the whole point of claiming by format: handed on as
-        // "not ours" it reaches the impulse-response loader, which tells the user
-        // their capture is an impulse response of an unsupported format.
         string path = Path.Combine(Path.GetTempPath(), $"damaged-{Guid.NewGuid():N}.json");
         try
         {
@@ -201,9 +177,7 @@ public sealed class LiveCaptureDocumentTests
     [Fact]
     public void ASnapshotCarriesTheFrameCountItsSpectraAverage()
     {
-        // The count and the bins must come from one read: a capture that pairs this
-        // snapshot's spectra with a count fetched later claims integration it does
-        // not hold, and the count is what a stored spatial average is judged by.
+        // Count and bins from one read, or the capture claims integration it does not hold.
         var snapshot = new LiveSpectrumSnapshot([1.0], null, [1.0], FrameCount: 130);
         Assert.Equal(130, snapshot.FrameCount);
     }
@@ -221,8 +195,6 @@ public sealed class LiveCaptureDocumentTests
             smoothingOctaves: 0,
             psychoacoustic: false);
 
-    // Roughly 1/√f with a resonance on top, so the round trip is exercised over a real
-    // dynamic range instead of a flat line.
     private static double[] BuildPinkishSpectrum()
     {
         double binWidth = (double)SampleRate / SequenceLength;
@@ -237,13 +209,7 @@ public sealed class LiveCaptureDocumentTests
         return amplitude;
     }
 
-    /// <summary>
-    /// Full coverage is not a coherent set. Seven captures taken at two frame
-    /// lengths leave every channel attached while putting curves compensated by
-    /// different amounts on one axis, under a single offset that fits none of them —
-    /// and the spread warning is a heuristic that need not notice, since it reads a
-    /// median over the working band and two recipes can differ mostly in the bass.
-    /// </summary>
+    /// <summary>Two frame lengths give curves compensated differently; the spread warning (a median) need not notice.</summary>
     [Fact]
     public void ASetTakenOnTwoRecipesIsRefusedAndSaysWhich()
     {
@@ -262,8 +228,6 @@ public sealed class LiveCaptureDocumentTests
     [Fact]
     public void CapturesFromOneSessionNeedNoAnchor()
     {
-        // One analyzer session is one input gain, unchanged, so the levels are
-        // comparable by construction and an absolute reference adds nothing.
         var session = Guid.NewGuid();
         LiveCaptureDocument first = BuildJudgeableCapture(session);
         LiveCaptureDocument second = BuildJudgeableCapture(session);
@@ -271,12 +235,7 @@ public sealed class LiveCaptureDocumentTests
         Assert.True(LiveCaptureDocument.JudgeSet([first, second]).Coherent);
     }
 
-    /// <summary>
-    /// Across sessions only an absolute anchor vouches for the levels — but WITH one
-    /// the set is legitimate, which is the case that matters: re-initializing the
-    /// analyzer (editing the protective high-pass, say) mints a new session id
-    /// between two perfectly good runs.
-    /// </summary>
+    /// <summary>Re-initializing the analyzer mints a new session id between good runs, so anchored cross-session sets are legitimate.</summary>
     [Fact]
     public void CapturesFromTwoSessionsNeedAnAnchorOnEveryOne()
     {
@@ -307,8 +266,7 @@ public sealed class LiveCaptureDocumentTests
         double[] amplitude,
         List<SignalPoint> curve)
     {
-        // The production storage rule, not a copy of it — a copy had already lost
-        // the half-spectrum clamp, so the round-trip test was pinning the wrong thing.
+        // The production storage rule, not a copy (a copy had lost the half-spectrum clamp).
         double[] spectrumDb = LiveCaptureDocument.StoreSpectrumBins(
             amplitude, SequenceLength, SampleRate);
 

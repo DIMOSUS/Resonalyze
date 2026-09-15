@@ -2,35 +2,11 @@ using System.Runtime.InteropServices;
 
 namespace Resonalyze.Ui;
 
-/// <summary>
-/// Lets a whole window accept files dragged onto it from Explorer.
-/// </summary>
-/// <remarks>
-/// WinForms drag events do not bubble. Only the control under the pointer is asked,
-/// and one that never registered itself as a drop target refuses the drag outright —
-/// so a window made of panels, plots, labels and buttons has to register every one of
-/// them, which is what this does: the whole tree at the moment it is attached, plus
-/// each control added later (mode settings are docked in on demand, filter strips are
-/// built as they are added).
-/// <para>
-/// It never touches a drag it does not recognize. Controls that carry drop targets of
-/// their own — the EQ wizard's bank reorders its filter strips by dragging — keep
-/// working, because a payload that is not a file drop leaves the effect exactly as the
-/// other handler left it.
-/// </para>
-/// <para>
-/// The control the pointer is over is handed to the window with the files, because
-/// where a file is dropped can be part of what the user means by it: the same
-/// impulse response dropped on the Compare button is the reference, not the
-/// measurement. That is the window's decision, not this class's — this only says
-/// which control took the drop.
-/// </para>
-/// </remarks>
+/// <summary>Window-wide file drop. WinForms drag events do not bubble, so every control in the tree (and each added later) is registered.</summary>
+/// <remarks>Unrecognized drags are left untouched (the EQ wizard reorders strips by drag). The control under the pointer is passed on:
+/// where a file lands can matter (IR on Compare = reference).</remarks>
 internal sealed class FileDropTarget
 {
-    // Every control that has been wired, so a control re-added to its parent (or
-    // reached twice through two parents on the way down) does not collect a second
-    // copy of the handlers.
     private readonly HashSet<Control> registered = [];
     private readonly Control root;
     private readonly Func<Control, IReadOnlyList<string>, bool> accepts;
@@ -46,18 +22,7 @@ internal sealed class FileDropTarget
         this.dropped = dropped;
     }
 
-    /// <summary>
-    /// Makes <paramref name="root"/> and everything inside it accept dropped files.
-    /// </summary>
-    /// <param name="accepts">
-    /// Whether this set of files can be opened right now, over the control it is
-    /// hovering. Asked on every drag move, so it must be cheap, and asked again on
-    /// the drop.
-    /// </param>
-    /// <param name="dropped">
-    /// Opens the files, given the control they were dropped on. Called on the UI
-    /// thread.
-    /// </param>
+    /// <param name="accepts">Asked on every drag move, so it must be cheap.</param>
     internal static void Attach(
         Control root,
         Func<Control, IReadOnlyList<string>, bool> accepts,
@@ -69,17 +34,12 @@ internal sealed class FileDropTarget
         new FileDropTarget(root, accepts, dropped).Register(root);
     }
 
-    /// <summary>The files a drag carries, empty when it carries something else.</summary>
     internal static IReadOnlyList<string> FilesOf(IDataObject? data) =>
         CarriesFiles(data) && data!.GetData(DataFormats.FileDrop) is string[] files
             ? files
             : [];
 
-    /// <summary>
-    /// Whether a drag carries files at all — what another control's own drag handler
-    /// asks before refusing a drag, so that refusing its own kind does not also refuse
-    /// the window's.
-    /// </summary>
+    /// <summary>For other controls' drag handlers, so refusing their own kind does not refuse the window's.</summary>
     internal static bool CarriesFiles(IDataObject? data) =>
         data != null && data.GetDataPresent(DataFormats.FileDrop);
 
@@ -123,8 +83,6 @@ internal sealed class FileDropTarget
         IReadOnlyList<string> files = FilesOf(e.Data);
         if (files.Count == 0)
         {
-            // Somebody else's drag — a filter strip being moved within its bank.
-            // Leaving the effect alone is what keeps this from cancelling it.
             return;
         }
 
@@ -146,20 +104,12 @@ internal sealed class FileDropTarget
         dropped(over, files);
     }
 
-    // The control raising the event is the one under the pointer: drag events are
-    // delivered to it alone, which is the very reason every control had to register.
     private Control Over(object? sender) => sender as Control ?? root;
 
     private bool CanAccept(Control over, IReadOnlyList<string> files) =>
         IsTakingInput() && accepts(over, files);
 
-    /// <summary>
-    /// Whether the window is taking input at all. A modal dialog — the application's
-    /// own, or a common one such as Open File — disables its owner at the window level
-    /// while it is up, and the managed <see cref="Control.Enabled"/> flag does not say
-    /// so. Without this a file dropped on the window behind a dialog would be opened
-    /// underneath it, replacing the very measurement the dialog is asking about.
-    /// </summary>
+    /// <summary>A modal dialog disables its owner at window level without changing <see cref="Control.Enabled"/>.</summary>
     private bool IsTakingInput() =>
         root.IsHandleCreated && IsWindowEnabled(root.Handle);
 

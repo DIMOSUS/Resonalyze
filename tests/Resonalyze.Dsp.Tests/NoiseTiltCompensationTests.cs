@@ -17,8 +17,6 @@ public sealed class NoiseTiltCompensationTests
     [Fact]
     public void BinCompensation_MirrorsThePowerLawAroundThePivot()
     {
-        // Pink falls 3.01 dB/octave on the per-bin display, so the compensation
-        // rises by exactly that per octave, zero at the pivot.
         Assert.Equal(
             0.0, NoiseTiltCompensation.BinCompensationDb(Pink, 1000.0, SampleRate), 12);
         Assert.Equal(
@@ -29,7 +27,6 @@ public sealed class NoiseTiltCompensationTests
             PinkSlope,
             NoiseTiltCompensation.BinCompensationDb(Pink, 500.0, SampleRate),
             precision: 9);
-        // White is flat on the per-bin display: identity.
         Assert.Equal(
             0.0, NoiseTiltCompensation.BinCompensationDb(White, 20.0, SampleRate), 12);
         Assert.Equal(
@@ -42,12 +39,9 @@ public sealed class NoiseTiltCompensationTests
         double[] compensation = BandCompensation(Pink);
         List<SignalPoint> grid = DisplayGrid();
 
-        // Same resampler, same parameters: the compensation must line up with the
-        // displayed band curve index for index.
         Assert.Equal(grid.Count, compensation.Length);
 
-        // Exactly zero at the grid point nearest the pivot, so switching the
-        // compensation on rotates the curve instead of shifting its level.
+        // Zero at the pivot: switching compensation on rotates the curve, not its level.
         int pivot = NearestIndex(grid, NoiseTiltCompensation.PivotFrequency);
         Assert.Equal(0.0, compensation[pivot], precision: 12);
     }
@@ -55,10 +49,7 @@ public sealed class NoiseTiltCompensationTests
     [Fact]
     public void BandCompensation_IsFlatForPinkWhereBandsAreConstantRelative()
     {
-        // In the constant-relative-bandwidth region the band-power display renders
-        // pink flat on its own — the compensation there must be (near) zero, not the
-        // per-bin +3 dB/octave line. This is the assertion that distinguishes the
-        // band-law compensation from naively reusing the per-bin straight line.
+        // In the constant-relative-bandwidth region band power renders pink flat: compensation ~0, not the per-bin line.
         double[] compensation = BandCompensation(Pink);
         List<SignalPoint> grid = DisplayGrid();
 
@@ -72,9 +63,7 @@ public sealed class NoiseTiltCompensationTests
     [Fact]
     public void BandCompensation_UndoesTheBandLawTiltForWhite()
     {
-        // A flat white PSD tilts +3.01 dB/octave on the band-power display (band
-        // power grows with bandwidth), so its compensation must FALL by that per
-        // octave in the constant-relative region — even though the PSD slope is zero.
+        // White tilts +3.01 dB/oct on band power, so its compensation falls though the PSD slope is zero.
         double[] compensation = BandCompensation(White);
         List<SignalPoint> grid = DisplayGrid();
 
@@ -89,10 +78,7 @@ public sealed class NoiseTiltCompensationTests
     [Fact]
     public void BandCompensation_FollowsTheResolutionCornerAtLowFrequencies()
     {
-        // Below the corner where the window main lobe is wider than the reference
-        // band, the integrator switches to constant ABSOLUTE bandwidth and pink
-        // renders rising toward LF again (+6 dB per two octaves) — the compensation
-        // must mirror that, falling toward LF instead of staying flat.
+        // Below the main-lobe corner the integrator is constant-absolute-bandwidth and pink rises toward LF again.
         double[] compensation = BandCompensation(Pink);
         List<SignalPoint> grid = DisplayGrid();
 
@@ -107,10 +93,7 @@ public sealed class NoiseTiltCompensationTests
     [Fact]
     public void LeakyIntegratorModel_MatchesTheSynthesisRecurrence()
     {
-        // The brown model must be the very filter the synthesis runs — value' =
-        // leak·value + (1−leak)·white — not an idealised −6 dB/octave line, which
-        // the filter only follows above its corner. Drive the recurrence with a
-        // unit impulse and compare the DFT of the response against the model.
+        // The brown model is the synthesis filter (leak·value + (1−leak)·white), not an ideal −6 dB/oct line.
         const double CornerHz = 76.0;
         double leak = 1.0 - 2.0 * Math.PI * CornerHz / SampleRate;
         int n = 1 << 17;
@@ -137,10 +120,7 @@ public sealed class NoiseTiltCompensationTests
     [Fact]
     public void KellettPinkModel_MatchesTheSynthesisRecurrence()
     {
-        // Same contract for random pink: the model is the exact Kellett bank the
-        // synthesis runs (from the shared coefficient table), which flattens below
-        // its lowest pole — at 192 kHz that corner sits near 35 Hz, well inside the
-        // display range, so an idealised 1/√f model would over-compensate the bass.
+        // Pink uses the synthesis Kellett bank, which flattens below its lowest pole (~35 Hz at 192 kHz).
         foreach (int sampleRate in new[] { SampleRate, 192_000 })
         {
             int n = 1 << 17;
@@ -177,19 +157,12 @@ public sealed class NoiseTiltCompensationTests
     [Fact]
     public void BrownCompensation_FlattensBelowTheFilterCorner()
     {
-        // The point of modelling the synthesis: below the leaky integrator's 76 Hz
-        // corner the excitation is (nearly) flat, so the compensation must flatten
-        // with it. The idealised −6 dB/octave slope would keep falling — another
-        // 11.6 dB between 76 and 20 Hz — and print that as an artificial bass
-        // roll-off onto a correct measurement.
+        // Below the 76 Hz leaky-integrator corner the excitation flattens; an ideal slope would print a fake 11.6 dB bass roll-off.
         var brown = NoiseSpectralModel.LeakyIntegrator(76.0);
         double at20 = NoiseTiltCompensation.BinCompensationDb(brown, 20.0, SampleRate);
         double at76 = NoiseTiltCompensation.BinCompensationDb(brown, 76.0, SampleRate);
 
-        // Still a real brown compensation above the corner...
         Assert.True(at76 < -15.0, $"expected a deep brown compensation at 76 Hz, got {at76:0.0}");
-        // ...but only the corner's own curvature below it, nowhere near the ideal
-        // slope's further 11.6 dB.
         Assert.True(
             at20 - at76 > -4.0,
             $"compensation must flatten below the corner: {at20:0.0} at 20 Hz vs {at76:0.0} at 76 Hz");
@@ -209,8 +182,6 @@ public sealed class NoiseTiltCompensationTests
             smoothingOctaves: 1.0 / 6.0,
             psychoacoustic: false);
 
-    // The very grid the display's band resampler produces for the same parameters,
-    // rendered from an arbitrary spectrum — only the frequencies matter here.
     private static List<SignalPoint> DisplayGrid()
     {
         var flat = new double[(FftLength / 2) + 1];

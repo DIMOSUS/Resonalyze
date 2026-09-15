@@ -69,8 +69,7 @@ public sealed class CoalescingDispatcherTests
             },
             applied.Add);
 
-        // A failed post (handle not created yet / already destroyed) must not
-        // leave the dispatcher stuck with a "queued" flag no drain will reset.
+        // A failed post must not leave a queued flag no drain resets.
         dispatcher.Offer(1);
         Assert.Equal(1, postAttempts);
 
@@ -99,8 +98,6 @@ public sealed class CoalescingDispatcherTests
                 applied.Add(value);
                 if (value == 1)
                 {
-                    // A producer racing with the drain: the new value needs its
-                    // own dispatch because this drain already took a snapshot.
                     dispatcher.Offer(2);
                 }
             });
@@ -132,7 +129,6 @@ public sealed class CoalescingDispatcherTests
         dispatcher.Offer(3);
         posted[0]();
 
-        // Still one dispatch, but nothing the dropped offers carried is lost.
         Assert.Single(posted);
         Assert.Equal(new[] { 6 }, applied);
     }
@@ -156,8 +152,7 @@ public sealed class CoalescingDispatcherTests
         dispatcher.Offer(2);
         posted[1]();
 
-        // The drained value stays in the field; folding it into the next offer
-        // would report a level twice.
+        // Folding the drained value into the next offer would report a level twice.
         Assert.Equal(new[] { 1, 2 }, applied);
     }
 
@@ -180,7 +175,6 @@ public sealed class CoalescingDispatcherTests
             drain();
         }
 
-        // Far fewer dispatches than offers, and every drain applied something.
         Assert.True(applied.Count <= 10_000);
         Assert.True(applied.Count >= 1);
     }

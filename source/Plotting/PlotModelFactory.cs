@@ -49,8 +49,6 @@ internal sealed class PlotModelFactory
         this.noiseMeasurement = noiseMeasurement;
         this.getCalibration = getCalibration;
         measurementContext = new MeasurementPlotContext(expSweepMeasurement);
-        // Unpacked into fields so the 1600 lines below keep reading one name per
-        // setting; the record is the constructor's shape, not the class's.
         frequencyResponseOptions = options.FrequencyResponse;
         phaseResponseOptions = options.PhaseResponse;
         groupDelayOptions = options.GroupDelay;
@@ -70,42 +68,25 @@ internal sealed class PlotModelFactory
 
     public string? ImpulseResponseFileName => measurementContext.ImpulseResponseFileName;
 
-    // The Compare measurement (from the Compare picker) whose Phase / Group Delay is
-    // overlaid with the SAME analysis settings as the main measurement.
+    // Compare overlay uses the SAME analysis settings as the main measurement.
     public void SetCompareSourceProvider(Func<CompareAnalysisSource?> provider) =>
         getCompareSource = provider;
 
-    /// <summary>
-    /// The scale the Frequency Response plot renders in — simply the selected one.
-    /// Without a valid SPL anchor the plot does NOT fall back to dBr: it keeps the
-    /// dB SPL axis in a view-only state (overlays shown, measurement curves omitted,
-    /// see <see cref="CreateFrequencyResponse"/>), so overlays gate on the selection
-    /// and follow the axis exactly.
-    /// </summary>
+    /// <summary>Without a valid SPL anchor the plot stays on a view-only dB SPL axis rather than falling back to dBr.</summary>
     public MagnitudeScale EffectiveFrequencyResponseScale =>
         frequencyResponseOptions.MagnitudeScale;
 
-    /// <summary>
-    /// The offset that turns the reference-free live RTA magnitude (raw microphone
-    /// dBFS) into dB SPL: <c>SPL = mic + calibration.OffsetDb</c>. Unlike the swept
-    /// frequency response there is NO loopback term — the RTA is already the plain
-    /// microphone spectrum, not a loopback-referenced transfer. Null when SPL cannot
-    /// be shown: no configured SPL calibration, or one captured on a different digital
-    /// input than the live analyzer is running on.
-    /// </summary>
+    /// <summary>Offset turning raw mic dBFS into dB SPL for the live RTA (no loopback term). Null without a calibration captured on the live input.</summary>
     public double? LiveSplOffsetDb
     {
         get
         {
-            // Live analysis is always "now", so it reads the configured calibration
-            // (the one set for the next run), not a frozen measurement snapshot.
             if (expSweepMeasurement.SplCalibration is not { } calibration)
             {
                 return null;
             }
 
-            // Validate against the live input, not the app's saved sweep input, so a
-            // calibration from a different device does not scale the live RTA.
+            // Validate against the live input, not the saved sweep input.
             if (!calibration.MatchesInput(noiseMeasurement.CurrentInputIdentity()))
             {
                 return null;
@@ -115,45 +96,21 @@ internal sealed class PlotModelFactory
         }
     }
 
-    /// <summary>
-    /// The analysis mode the live plot actually renders: the selected one, forced to
-    /// RTA when no loopback reference is configured — a transfer function cannot
-    /// exist then, and the options panel colours the Transfer choice amber to say
-    /// why. The single source both the plot and the controller read, so the two can
-    /// never disagree about which curves the mode has.
-    /// </summary>
+    /// <summary>Selected mode, forced to RTA without a loopback reference. Single source for plot and controller.</summary>
     public LiveAnalysisMode EffectiveLiveAnalysisMode =>
         noiseMeasurement.IsMicOnly &&
         liveSpectrumOptions.AnalysisMode == LiveAnalysisMode.TransferFunction
             ? LiveAnalysisMode.Rta
             : liveSpectrumOptions.AnalysisMode;
 
-    /// <summary>
-    /// The scale the Live Spectrum plot renders in. In RTA mode it is simply the
-    /// selected one, like the Frequency Response scale: without a matching SPL
-    /// calibration the plot does not fall back to the native dB view but keeps the
-    /// dB SPL axis in a view-only state — overlays captured in dB SPL show, live
-    /// curves are not drawn (see LiveSpectrumController) — and the record button
-    /// drops the display back to relative before an actual run starts. A transfer
-    /// function is a dimensionless ratio with no scalar SPL under noise excitation,
-    /// so in Transfer mode the selection is overridden to relative.
-    /// </summary>
+    /// <summary>RTA: the selection (view-only SPL without calibration). Transfer: always relative (dimensionless ratio).</summary>
     public MagnitudeScale EffectiveLiveSpectrumScale
     {
         get
         {
             LiveAnalysisMode mode = EffectiveLiveAnalysisMode;
-            // A spatial-average capture shows an ABSOLUTE axis only when there is an
-            // anchor to put it on. Without one the band levels are still exactly what
-            // such an average needs — a whole set is levelled against the impulse
-            // responses by one common offset later — but they are relative, and
-            // calling them dB SPL puts them below that axis's hard floor of −20, where
-            // the curve is drawn correctly and cannot be seen.
-            //
-            // By the TRAIT, like LiveUsesBandPower beside it: a mode tested by identity
-            // here would be integrated as band power and then pinned to a relative axis
-            // for good, and its captures would record a relative scale while carrying a
-            // live SPL anchor.
+            // Spatial average is absolute only with an anchor: relative band levels on the SPL axis fall below its -20 floor.
+            // Tested by trait, not identity, so band power and axis scale stay consistent.
             if (mode.IsSpatialAverageCapture())
             {
                 return LiveSplOffsetDb.HasValue
@@ -161,41 +118,18 @@ internal sealed class PlotModelFactory
                     : MagnitudeScale.Relative;
             }
 
-            // Unchanged for the plain reference-free trace: a selected dB SPL without
-            // an anchor stays view-only here, showing SPL overlays and suppressing live
-            // curves rather than quietly redrawing them on a relative axis. A transfer
-            // function is a dimensionless ratio and has no absolute axis at all.
             return mode.IsReferenceFree()
                 ? liveSpectrumOptions.MagnitudeScale
                 : MagnitudeScale.Relative;
         }
     }
 
-    /// <summary>
-    /// Whether the reference-free trace is integrated as POWER PER DISPLAY BAND
-    /// rather than read per FFT bin. MMM always is; the RTA is when dB SPL is
-    /// selected.
-    /// </summary>
-    /// <remarks>
-    /// This is the rendering PIPELINE, deliberately separate from the axis above. A
-    /// spatial average is defined on band levels — that is what makes it
-    /// FFT-size-independent, and what keeps its slope compensation small and confined
-    /// to the bass instead of spanning 30 dB — and none of that needs an absolute
-    /// reference. The two were one switch, which is how an unanchored MMM capture
-    /// ended up computed correctly and rendered off the bottom of the plot.
-    /// </remarks>
+    /// <summary>Rendering pipeline (band power vs per-bin), deliberately separate from the axis scale: a spatial average needs band levels but no absolute reference.</summary>
     public bool LiveUsesBandPower =>
         EffectiveLiveAnalysisMode.IsSpatialAverageCapture() ||
         EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
 
-    /// <summary>
-    /// The spectral model of the excitation the live RTA display compensates, or
-    /// null when the compensation is off, the mode is not RTA (the transfer function
-    /// divides the excitation out), or the signal is Silent (unknown excitation
-    /// spectrum). A flat model (white) is a real value — the band-power display
-    /// still needs compensating. The peak-hold display key includes this, so
-    /// toggling it drops the envelope.
-    /// </summary>
+    /// <summary>Excitation model the RTA display compensates; null when off (MMM forces it on), not reference-free, or Silent. Flat is a real value. Part of the peak-hold key.</summary>
     public NoiseSpectralModel? LiveTiltModel =>
         EffectiveLiveAnalysisMode.IsReferenceFree() &&
         (liveSpectrumOptions.CompensateNoiseTilt ||
@@ -203,22 +137,7 @@ internal sealed class PlotModelFactory
             ? NoiseColorTilt.SpectralModel(liveSpectrumOptions.EffectiveNoiseColor)
             : null;
 
-    // The dB offset applied to the live RTA / peak-hold curves when the plot is in
-    // SPL mode; zero in the native (relative) view. The transfer function is never
-    // shifted — it is a dimensionless ratio, not an absolute level.
-    /// <summary>
-    /// The display smoothing the live curves are drawn with. MMM pins it Off.
-    /// </summary>
-    /// <remarks>
-    /// Not because smoothing would corrupt anything — it is level-preserving and
-    /// applied after the band levels — but because the dB SPL path already
-    /// integrates a FIXED 1/12-octave band per display point
-    /// (<see cref="DataHelper.LogarithmicPowerBandResample"/>), deliberately
-    /// decoupled from this setting. That band is what makes an unsmoothed spatial
-    /// average read clean; smoothing on top would only blur a curve that is already
-    /// an average, and it would put a knob into a capture recipe that must not
-    /// differ across a set. What is drawn is then what the capture records.
-    /// </remarks>
+    /// <summary>MMM pins smoothing Off: the SPL path already integrates a fixed 1/12-octave band, and a capture recipe must not vary across a set.</summary>
     public int EffectiveLiveSmoothingCode =>
         EffectiveLiveAnalysisMode.IsSpatialAverageCapture()
             ? 0
@@ -232,29 +151,11 @@ internal sealed class PlotModelFactory
     private CalibrationFile? GetCalibration(FrequencyResponseOptions options) =>
         getCalibration(options.CalibrationId);
 
-    /// <summary>
-    /// The microphone calibration a live capture is drawn and saved through: the one
-    /// frozen on the accumulation when its run began, never the rig's current choice.
-    /// </summary>
-    /// <remarks>
-    /// These bins are rendered again on every redraw and once more when the capture is
-    /// saved. Read from the live options, a rig setting changed between the walk and
-    /// the Save recomputed the walk through a microphone it never passed through, and
-    /// the file then named that microphone as the one it was taken with. The rig's
-    /// choice belongs to the NEXT run, exactly as the protective high-pass beside it
-    /// does.
-    /// </remarks>
+    /// <summary>Calibration frozen when the run began, not the rig's current choice: a changed setting must not re-render or mislabel the saved walk.</summary>
     private CalibrationFile? LiveCaptureCalibration =>
         noiseMeasurement.CaptureMicrophoneCalibration;
 
-    /// <summary>
-    /// The RAW (unsmoothed) samples of a captured analysis curve plus the mode's
-    /// current display-smoothing code, for the overlay layer: it stores the raw
-    /// reference and re-applies its own adjustable smoothing (Off = raw). Only the
-    /// primary magnitude curve of a frequency-response plot (Main or Compare) has a
-    /// raw form recomputed here; every other kind/mode returns null and the overlay
-    /// falls back to capturing the drawn curve as-is.
-    /// </summary>
+    /// <summary>Raw samples plus smoothing code for the overlay layer; only the primary FR magnitude has a raw form, others return null (drawn-curve fallback).</summary>
     public RawCurveCapture? BuildRawCurve(CurveTag tag)
     {
         if (tag.Kind != AnalysisCurveKind.Primary || tag.Mode != Mode.FrequencyResponse)
@@ -262,9 +163,7 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        // SPL rendering applies an absolute offset the stored relative spectrum does
-        // not carry, so a captured overlay there keeps the drawn-curve fallback — but
-        // still learns the rate it was measured at.
+        // SPL adds an absolute offset the stored spectrum lacks, so keep the drawn-curve fallback (but record the rate).
         if (EffectiveFrequencyResponseScale != MagnitudeScale.Relative)
         {
             return DescribeWithoutRawForm(
@@ -288,25 +187,16 @@ internal sealed class PlotModelFactory
                 RawCurveRenderer.CaptureCalibrationCorrection(
                     frequencyResponseOptions.UseCalibration ? calibration : null),
                 (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves),
-                // Compare is only offered at the main measurement's rate (see
-                // TryCreateCompareMeasurement), so one rate covers both sources.
+                // Compare is only offered at the main measurement's rate.
                 expSweepMeasurement.SampleRate > 0 ? expSweepMeasurement.SampleRate : null,
                 PointsCalibration: null,
-                // Each source's OWN band: the compared measurement was swept and
-                // filtered on its own terms, which need not be this one's.
                 Band: tag.Source == CurveSource.Compare
                     ? getCompareSource?.Invoke()?.Band ?? default
                     : measurementContext.MeasuredBand)
             : null;
     }
 
-    /// <summary>
-    /// An impulse trace in the framing-independent form an overlay stores (see
-    /// <see cref="ImpulseOverlayCapture"/>): absolute sample indices and raw linear
-    /// values, produced by re-running the trace under a canonical framing rather than
-    /// by unpicking what was drawn. Null when the tag is not an impulse trace or there
-    /// is no transfer IR behind it.
-    /// </summary>
+    /// <summary>Impulse trace re-rendered under a canonical framing (absolute sample indices, raw linear values). Null when not an impulse trace.</summary>
     public ImpulseOverlayCapture? BuildImpulseCapture(CurveTag tag)
     {
         if (tag.Mode != Mode.ImpulseResponse ||
@@ -323,21 +213,14 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        // Everything that CANNOT be re-framed later stays as the view has it — the band
-        // and the envelope smoothing are part of the values. Everything that can is
-        // neutralized, so the stored numbers are the record's own.
+        // Band and envelope smoothing are part of the values; everything re-frameable is neutralized.
         var canonical = new ImpulseResponseOptions
         {
             ShowImpulse = tag.Kind == AnalysisCurveKind.Primary,
             ShowEnvelope = tag.Kind == AnalysisCurveKind.ImpulseEnvelope,
             ShowStep = tag.Kind == AnalysisCurveKind.ImpulseStep,
             EnvelopeSmoothingMs = impulseResponseOptions.EnvelopeSmoothingMs,
-            // Normalized against the record's own peak here so the ratio can be undone
-            // below into the RAW running integral. Storing a step already normalized
-            // would freeze two live decisions into the snapshot: the "against IR peak"
-            // toggle, and — for a Compare capture — the fact that the drawn Compare step
-            // is normalized against MAIN's peak while this canonical render knows only
-            // its own record.
+            // Normalize to the record's own peak so the raw integral can be recovered below; a normalized snapshot would freeze the toggle and Compare's main-peak normalization.
             NormalizeStepToImpulsePeak = true,
             BandFilterOctaves = impulseResponseOptions.BandFilterOctaves,
             BandCenterHz = impulseResponseOptions.BandCenterHz,
@@ -360,9 +243,6 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        // The step comes back as a ratio of the record's peak; multiplying it back out
-        // leaves the running integral itself, which the renderer normalizes with the
-        // view's own choice at the time it is drawn.
         IReadOnlyList<SignalPoint> samples = tag.Kind == AnalysisCurveKind.ImpulseStep
             ? curve.Points
                 .Select(point => new SignalPoint(point.X, point.Y * set.PeakReference))
@@ -376,13 +256,6 @@ internal sealed class PlotModelFactory
             source.SampleRate);
     }
 
-    /// <summary>
-    /// The RAW (unsmoothed) samples of the live RTA trace plus the mode's current
-    /// smoothing code, so a captured overlay stores the reference and re-applies its own
-    /// smoothing. Only the relative RTA has such a form (see
-    /// <see cref="LiveRtaRawCapture"/>); the SPL one is described without it. Null when
-    /// there is no RTA data to capture.
-    /// </summary>
     public RawCurveCapture? BuildRawRtaCurve(IReadOnlyList<double>? inputMagnitude)
     {
         if (inputMagnitude is not { Count: > 1 })
@@ -393,8 +266,7 @@ internal sealed class PlotModelFactory
         int smoothingCode = EffectiveLiveSmoothingCode;
         if (LiveUsesBandPower)
         {
-            // No raw form, but the band trace applies its correction additively per band,
-            // so handing the calibration over lets a consumer swap it exactly later.
+            // The band trace applies calibration additively per band, so a consumer can swap it exactly later.
             return DescribeWithoutRawForm(
                 smoothingCode,
                 noiseMeasurement.SampleRate,
@@ -422,34 +294,15 @@ internal sealed class PlotModelFactory
             noiseMeasurement.SampleRate > 0 ? noiseMeasurement.SampleRate : null);
     }
 
-    /// <summary>
-    /// Snapshots the current reference-free capture as a whole document: the
-    /// accumulated bins, the recipe that renders them, the corrections applied and
-    /// the curve as drawn. Null when there is nothing to store, or when the display
-    /// is not on the band-power (dB SPL) path a spatial average is defined on.
-    /// </summary>
-    /// <remarks>
-    /// Built here rather than in the controller because everything the recipe must
-    /// record is a property of THIS pipeline — the window figures the band integrator
-    /// divides by, the grid its clamps produce, the compensation curve it renders.
-    /// A recipe assembled from the options object instead would describe what was
-    /// asked for, not what was drawn, and the two part company in exactly the modes
-    /// that pin their settings.
-    /// </remarks>
-    /// <param name="frameCount">
-    /// The frames <paramref name="inputMagnitude"/> is the average of, taken from the
-    /// same snapshot. Not read back off the analyzer here: between the snapshot and
-    /// this call another frame can land, and the recipe would then claim integration
-    /// the stored bins do not contain.
-    /// </param>
+    /// <summary>Snapshot of the reference-free capture as a document; null unless on the band-power path.</summary>
+    /// <remarks>Built here so the recipe describes what this pipeline drew, not what the options asked for.</remarks>
+    /// <param name="frameCount">Taken from the same snapshot as the bins; the analyzer may have advanced since.</param>
     public LiveCaptureDocument? BuildLiveCaptureDocument(
         double[]? inputMagnitude,
         int frameCount,
         string title)
     {
-        // The filter this accumulation was taken through, from the accumulation — the
-        // same field the render divides out, so the curve and the recipe beside it
-        // cannot end up describing different filters.
+        // From the accumulation, the same field the render divides out.
         ProtectiveHighPassConfiguration protectiveHighPass =
             noiseMeasurement.CaptureProtectiveHighPass;
         int sampleRate = noiseMeasurement.SampleRate;
@@ -487,11 +340,7 @@ internal sealed class PlotModelFactory
             TiltCompensationDb = applied.TiltDb,
             CalibrationCorrectionDb = applied.CalibrationDb,
             ProtectiveHighPassCorrectionDb = applied.ProtectiveHighPassDb,
-            // The CURVE travels, under the name its author was shown when the capture
-            // was taken — frozen beside it, because an id is generated for every entry
-            // past the 0° slot and whoever opens this file would be reading a GUID.
-            // The points are what the consumer needs; the name is a hint, exactly as
-            // in a Virtual DSP session.
+            // Name frozen beside the curve: ids past the 0 deg slot are GUIDs. The name is only a hint.
             Calibration = calibration != null
                 ? VirtualCrossoverCalibrationSettings.From(
                     calibration,
@@ -512,13 +361,9 @@ internal sealed class PlotModelFactory
                 AveragedFrameCount = frames,
                 IntegratedSeconds = (double)frames * hop / sampleRate,
                 NoiseColor = liveSpectrumOptions.EffectiveNoiseColor,
-                // What the curve actually received, not what was asked for: the
-                // render skips a misaligned compensation, and a recipe that claimed
-                // one anyway would send a reader looking for an array that is empty.
+                // What the curve received: the render skips a misaligned compensation.
                 SlopeCompensation = applied.TiltDb.Length > 0,
-                // Absolute only when an anchor lifted it; the offset beside this says
-                // by how much, and null there means the levels are relative but
-                // internally consistent across the set.
+                // Null offset: relative levels, consistent across the set.
                 MagnitudeScale = EffectiveLiveSpectrumScale,
                 SplAnchorOffsetDb = LiveSplOffsetDb,
                 SmoothingCode = EffectiveLiveSmoothingCode,
@@ -529,10 +374,7 @@ internal sealed class PlotModelFactory
         };
     }
 
-    // A capture with no re-smoothable samples: the overlay stores the drawn curve, but the
-    // rate, the smoothing baked into it and the calibration behind it travel with it, so a
-    // consumer outside the measurement is not left guessing — and can still undo the
-    // correction, which these modes apply additively per frequency.
+    // Drawn curve plus rate, baked smoothing and calibration, so a consumer can undo the additive correction.
     private static RawCurveCapture DescribeWithoutRawForm(
         int smoothingCode,
         int sampleRate,
@@ -548,43 +390,27 @@ internal sealed class PlotModelFactory
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Frequency Response"));
 
-        // dB SPL follows the SELECTION. Converting the curves additionally needs a
-        // valid calibration and loopback level for this measurement; without them the
-        // axis still goes SPL but view-only — the measurement's own dBr shapes would
-        // be lies on an absolute axis and are omitted, while what carries its own
-        // absolute reference stays visible: overlays captured in dB SPL (gated by
-        // EffectiveFrequencyResponseScale) and a Compare with an anchor. Starting
-        // a run in that state drops the display back to dBr/dBc (Form1), so a fresh
-        // measurement is never born hidden.
+        // dB SPL follows the selection; without calibration and loopback level the axis is view-only: own dBr curves omitted,
+        // SPL overlays and an anchored Compare stay. Starting a run drops the display back to dBr (Form1).
         bool splRequested =
             frequencyResponseOptions.MagnitudeScale == MagnitudeScale.SoundPressureLevel;
         double? splOffset = splRequested ? measurementContext.SplOffsetDb : null;
         bool renderSpl = splOffset.HasValue;
         bool splViewOnly = splRequested && !renderSpl;
 
-        // Magnitude is derived from the loopback transfer IR, which is required.
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse)
         {
             IReadOnlyList<AnalysisCurve> curves = Array.Empty<AnalysisCurve>();
             if (splViewOnly)
             {
-                // This measurement cannot supply SPL (no calibration, no loopback
-                // level, or a calibration from another input): say why its curves are
-                // absent. The Compare curve below is judged on its own anchor, so a
-                // calibrated comparison stays visible next to the notice, exactly as
-                // an SPL-captured overlay does.
+                // The Compare curve is judged on its own anchor and may stay visible.
                 AddSplViewOnlyAnnotation(model);
             }
             else
             {
                 SpectrumCurves requested = frequencyResponseVisibility.ToSpectrumCurves();
-                // On the absolute axis every fundamental-relative curve (HDn / THD /
-                // noise) is lifted by the primary's own level, so the primary has to be
-                // COMPUTED even when the user hid it — without the reference those
-                // curves would stay in dBc and drop far below the SPL window, so
-                // unchecking the primary made them vanish. It is computed as the
-                // anchor, then removed before drawing: hidden still means hidden.
+                // HDn/THD/noise are lifted by the primary's level on the SPL axis, so compute the primary even when hidden, then remove it.
                 bool anchorsHiddenPrimary = renderSpl &&
                     (requested & SpectrumCurves.Primary) == 0 &&
                     (requested & SpectrumCurves.Distortion) != 0;
@@ -636,13 +462,7 @@ internal sealed class PlotModelFactory
         }
 
         PlotModelStyle.AddFrequencyAxis(model);
-        // In SPL mode the whole plot is absolute dB SPL, which needs a different
-        // default window and clamps (curves sit near 40–110 dB, far above the dBr
-        // ceiling). The axis follows the SELECTION — a view-only SPL plot keeps the
-        // SPL axis for whatever can still be drawn on it (overlays, a calibrated
-        // Compare). Otherwise the primary is the loopback-referenced
-        // transfer magnitude (dBr) and the harmonic / THD / noise curves are ratios
-        // to the fundamental (dBc); the axis names both.
+        // SPL needs its own default window and clamps (curves near 40-110 dB). Otherwise primary is dBr, distortion curves dBc.
         if (splRequested)
         {
             PlotModelStyle.AddDecibelAxis(
@@ -657,39 +477,21 @@ internal sealed class PlotModelFactory
         {
             PlotModelStyle.AddDecibelAxis(model, "dBr/dBc");
         }
-        // A response measured through a padded loopback sits above 0 dBr; open
-        // the view on it instead of on an empty frame.
+        // A padded loopback puts the response above 0 dBr; open the view on it.
         PlotModelStyle.FitDecibelViewToPrimaryCurves(model);
 
         return model;
     }
 
-    // In SPL mode every trace is an absolute level; the tracker reads dB SPL.
     private const string SplTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00} dB SPL";
 
-    // The tracker unit for a frequency-response curve: the primary is the transfer
-    // magnitude relative to the loopback reference (dBr), every distortion curve
-    // (HDn / THD / noise floor) is a ratio to the fundamental (dBc). The parenthetical
-    // spells the reference out so the two are not read on the same footing.
+    // Primary is dBr (loopback reference); distortion curves are dBc (fundamental).
     private static string DistortionTrackerFormat(AnalysisCurveKind kind) =>
         kind == AnalysisCurveKind.Primary
             ? "{0}\n{2:0.0} Hz\n{4:0.00} dBr (vs reference)"
             : "{0}\n{2:0.0} Hz\n{4:0.00} dBc (vs fundamental)";
 
-    /// <summary>
-    /// Overlays the Compare magnitude on the Frequency Response plot (primary only;
-    /// harmonics stay Main-only to keep the plot readable), computed with the
-    /// identical options/calibration.
-    /// <para>
-    /// On the absolute axis the Compare curve is converted with <em>its own</em> K:
-    /// the two measurements carry their own loopback levels, so borrowing the main
-    /// measurement's offset would misplace it (they agree only when both were
-    /// captured in one session). A Compare without an anchor has no absolute
-    /// reference at all — it is omitted rather than drawn as dBr on a dB SPL scale,
-    /// and the plot says which measurement is missing instead of leaving the curve
-    /// silently absent.
-    /// </para>
-    /// </summary>
+    /// <summary>Compare magnitude on the FR plot (primary only). On the SPL axis it uses its own loopback level; without an anchor it is omitted with a notice.</summary>
     private void AddCompareFrequencyResponse(
         PlotModel model,
         bool splRequested,
@@ -729,8 +531,7 @@ internal sealed class PlotModelFactory
         }
     }
 
-    // Sits a line below the main measurement's view-only notice when both are
-    // shown, so the two explanations do not overprint each other.
+    // A line below the main view-only notice so the two do not overprint.
     private static OverlayTextAnnotation CreateCompareWithoutSplAnnotation(
         string compareName,
         bool splViewOnly)
@@ -750,7 +551,6 @@ internal sealed class PlotModelFactory
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Phase Response"));
 
-        // Phase analysis is only meaningful with a transfer IR (loopback timing).
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse)
         {
@@ -758,11 +558,7 @@ internal sealed class PlotModelFactory
             IImpulseMeasurement primaryMeasurement =
                 measurementContext.CreatePrimaryMeasurement();
             var compare = TryCreateCompareMeasurement();
-            // Auto gate: re-snap the offset to the current measurement's IR
-            // start before reading the settings, so a fresh measurement is
-            // gated correctly even while the options dialog is closed. The
-            // options object is updated (not just a local copy) so the dialog
-            // and the persisted settings show the value the plot used.
+            // Auto gate: re-snap to the current IR start in the shared options, so dialog and settings show what the plot used.
             if (phaseResponseOptions.PhaseGateAutoFit &&
                 measurementContext.ResolveAutoGateOffsetMs() is { } phaseStartMs)
             {
@@ -772,9 +568,7 @@ internal sealed class PlotModelFactory
                 phaseResponseOptions.CreatePhaseAnalysisSettings();
             if (phaseSettings.DetrendMode == PhaseDetrendMode.Auto && compare != null)
             {
-                // A comparison is meaningful only with one common time reference.
-                // Resolve Auto from Main once, then reuse it as Manual for Main,
-                // Compare and both excess curves so their relative delay survives.
+                // One common time reference: resolve Auto from Main once, reuse as Manual for all curves so relative delay survives.
                 double commonDetrend = DataHelper.ResolvePhaseDetrendMilliseconds(
                     primaryMeasurement,
                     phaseSettings);
@@ -792,8 +586,7 @@ internal sealed class PlotModelFactory
                     phaseSettings,
                     expSweepMeasurement.TransferCoherence);
 
-                // Measured phase can be either representation; tag it so overlay
-                // math knows whether a difference must use the wrapped formula.
+                // Tag representation so overlay math knows whether a difference must use the wrapped formula.
                 AddLineSeries(
                     model,
                     curve,
@@ -809,7 +602,6 @@ internal sealed class PlotModelFactory
                     primaryMeasurement,
                     phaseSettings);
 
-                // Minimum phase is continuous (unwrapped) by construction.
                 AddLineSeries(
                     model,
                     minimumPhaseCurve,
@@ -826,8 +618,6 @@ internal sealed class PlotModelFactory
                     phaseSettings,
                     expSweepMeasurement.TransferCoherence);
 
-                // Excess phase stays continuous (unwrapped) regardless of the detrend
-                // choice; a residual slope is still an unwrapped representation.
                 AddLineSeries(
                     model,
                     excessPhaseCurve,
@@ -837,22 +627,8 @@ internal sealed class PlotModelFactory
                     phaseUnwrapped: true);
             }
 
-            // Overlay the Compare measurement with the identical gate LENGTH,
-            // window mode, detrend and smoothing so the two responses read on
-            // the same terms. The gate's PLACEMENT is per-curve under Auto:
-            // the two records' fronts sit at different times, and one shared
-            // offset would cut the earlier record's direct arrival into the
-            // left shoulder. The extraction re-references every spectrum to
-            // absolute time and both curves share the one τ resolved above,
-            // so their relative phase/delay survives the differing windows.
-            // Per curve, because they do not all make the same claim. Measured
-            // phase IS a time statement — the shared detrend above exists
-            // precisely to preserve the relative delay — and the excess is what
-            // is left after removing the minimum-phase part of it, so both need
-            // the two records on one clock. Minimum phase is reconstructed from
-            // the magnitude alone (Bode), which is why the detrend cannot move
-            // it either: it says nothing about when anything arrived and stays
-            // comparable against an imported recording.
+            // Compare shares gate length, window, detrend and smoothing; gate placement is per-curve under Auto (fronts differ).
+            // Measured and excess phase need both records on one clock; minimum phase is magnitude-only (Bode) and always comparable.
             if (compare is { } compareData)
             {
                 bool sharesTimeReference = CompareSharesATimeReference();
@@ -977,19 +753,14 @@ internal sealed class PlotModelFactory
             groupDelayVisibility.ShowGroupDelay ||
             groupDelayVisibility.ShowMinimumPhaseGroupDelay ||
             groupDelayVisibility.ShowExcessGroupDelay;
-        // The minimum-phase reconstruction is computed only when a curve
-        // built on it is actually shown.
         bool includeMinimumPhase =
             groupDelayVisibility.ShowMinimumPhaseGroupDelay ||
             groupDelayVisibility.ShowExcessGroupDelay;
-        // Group delay is only meaningful with a transfer IR (loopback timing).
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse &&
             (showAnyGroupDelayCurve || groupDelayVisibility.ShowCoherence))
         {
             const string groupDelayTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.000} ms";
-            // Auto gate: same contract as the phase plot — re-snap the offset
-            // to the current measurement's IR start in the shared options.
             if (groupDelayOptions.GroupDelayGateAutoFit &&
                 measurementContext.ResolveAutoGateOffsetMs() is { } gdStartMs)
             {
@@ -997,10 +768,7 @@ internal sealed class PlotModelFactory
             }
             if (showAnyGroupDelayCurve)
             {
-                // The gate is positioned by its Gate offset (left-shoulder-end) within the
-                // transfer IR; the group delay reads absolute, referenced to the IR start.
-                // Under FDW the gate is the window's outer limit: the cycles are
-                // counted after the left shoulder, as the Phase mode counts them.
+                // Group delay reads absolute from the IR start; under FDW the gate is the outer limit, cycles counted after the left shoulder.
                 IImpulseMeasurement measurement = measurementContext.CreatePrimaryMeasurement();
                 PhaseAnalysisSettings windowSettings =
                     groupDelayOptions.CreateGroupDelayAnalysisSettings();
@@ -1019,21 +787,8 @@ internal sealed class PlotModelFactory
                         Mode.GroupDelay,
                         GroupDelayAxisKey);
                 }
-                // The Y auto-fit never reads the minimum/excess POINT VALUES. Near
-                // the sweep-band edges the magnitude rolls off steeply, the cepstral
-                // reconstruction legitimately turns that slope into tens of ms of
-                // minimum-phase group delay (~1/f at the low edge), and the excess
-                // mirrors it with the opposite sign — the validity gate keeps those
-                // bins because the rolloff tracks its own local envelope down to the
-                // −60 dB backstop. Folding them in would flatten a useful 2–5 ms
-                // measured curve onto a ±30 ms scale; off-scale points simply clip.
-                //
-                // The measured extremes still drive the fit when only the excess is
-                // shown: in band the excess tracks the measured absolute level
-                // (their difference is the minimum curve, ≈ 0 away from the
-                // rolloffs), so the measured range is the spike-free proxy for
-                // where the excess lives. The minimum curve lives around zero
-                // instead — showing it extends the fitted range to include zero.
+                // Y fit ignores minimum/excess values: near band edges the cepstral reconstruction yields tens of ms that would flatten a 2-5 ms curve.
+                // Measured range is the spike-free proxy for excess; showing minimum extends the range to zero.
                 if (groupDelayVisibility.ShowGroupDelay ||
                     groupDelayVisibility.ShowExcessGroupDelay)
                 {
@@ -1066,16 +821,7 @@ internal sealed class PlotModelFactory
                         GroupDelayAxisKey);
                 }
 
-                // Overlay the Compare measurement with the identical gate
-                // length, window mode, cycles and smoothing. Under Auto the gate PLACEMENT is
-                // per-curve (each record's own IR start): group delay reads
-                // absolute from the IR start, so differently placed windows
-                // stay directly comparable while both direct arrivals survive.
-                // Which of them may be drawn is per-curve: the measured and the
-                // excess read absolute from the IR start, so they only mean
-                // something when both records sit on one clock, while the
-                // minimum-phase curve comes from the gated magnitude and
-                // carries no bulk delay by construction.
+                // Measured and excess read absolute from the IR start, so they need a shared clock; minimum phase carries no bulk delay.
                 bool sharesTimeReference = CompareSharesATimeReference();
                 if ((sharesTimeReference ||
                         groupDelayVisibility.ShowMinimumPhaseGroupDelay) &&
@@ -1093,13 +839,7 @@ internal sealed class PlotModelFactory
                         groupDelayOptions.SmoothingInverseOctaves,
                         GroupDelayMagnitudeGateDb,
                         includeMinimumPhase);
-                    // Draw the Compare curves as overlays but keep the Y-axis auto-fit
-                    // driven by the main measured curve only. The Compare group delay
-                    // shares the gate LENGTH and smoothing (its placement is per-curve
-                    // under Auto, resolved above), so as the gate settings move its
-                    // extremes swing widely; folding them into the range makes the
-                    // scale jump on every edit. Off-scale Compare points are simply
-                    // clipped, like any overlay.
+                    // Y fit driven by Main only, so Compare extremes do not make the scale jump on every gate edit.
                     if (groupDelayVisibility.ShowGroupDelay && sharesTimeReference)
                     {
                         AddCompareLineSeries(
@@ -1194,12 +934,7 @@ internal sealed class PlotModelFactory
         return model;
     }
 
-    /// <summary>
-    /// The framing the impulse view is drawn in, so a stored overlay can be re-drawn
-    /// under the framing on screen NOW instead of the one it happened to be captured
-    /// in. Refreshed by every <see cref="CreateImpulseResponse"/> — overlays are added
-    /// to a model after it is built, so what they read is this build's.
-    /// </summary>
+    /// <summary>Framing of this build, so stored overlays redraw under the framing on screen now.</summary>
     public ImpulseOverlayFrame ImpulseFrame { get; private set; }
 
     public PlotModel CreateImpulseResponse(bool includeCurves)
@@ -1207,9 +942,7 @@ internal sealed class PlotModelFactory
         ImpulseResponseOptions opt = impulseResponseOptions;
         ImpulseFrame = new ImpulseOverlayFrame(
             opt, 0.0, null, expSweepMeasurement.SampleRate);
-        // A band-limited view is NOT the record, and the title says so — the same reason
-        // the Live Spectrum names an active tilt compensation instead of letting a
-        // reshaped curve pass for the plain measurement.
+        // A band-limited view is not the record; the title says so.
         string band = ImpulseBandLabel(opt, expSweepMeasurement.SampleRate);
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Impulse Response" + band));
@@ -1221,18 +954,8 @@ internal sealed class PlotModelFactory
         if (measurementContext.CanIncludeCurves(includeCurves) &&
             measurementContext.HasTransferImpulseResponse)
         {
-            // The transfer IR is drawn whole, on the record's own timeline: the onset, the
-            // peak and the decay are one curve and two records can be read against one
-            // clock. Where the axis puts its zero and what the levels are normalized
-            // against are decided ONCE, from Main, and handed to both sets — resolving
-            // either per curve would subtract exactly the difference being compared.
-            //
-            // Resolved WHATEVER is switched on, because an overlay is framed by these two
-            // figures too and it can be the only thing on the plot: with the traces hidden
-            // the frame used to fall back to the record start and to the snapshot's own
-            // peak, so the overlay ignored the chosen time zero and its level difference
-            // against the current record disappeared. Visibility decides what is drawn,
-            // not what the view MEANS.
+            // Time zero and level normalization are resolved once from Main for both sets (per-curve would cancel the compared difference),
+            // and regardless of visibility, since an overlay may be the only thing on the plot.
             IImpulseMeasurement main = measurementContext.CreatePrimaryMeasurement();
             double origin = ResolveImpulseOriginSamples(main);
             defaultSpan = ResolveImpulseDefaultSpan(main, opt, origin);
@@ -1263,7 +986,6 @@ internal sealed class PlotModelFactory
                         stepCurves);
                 }
 
-                // The markers annotate the live traces, so they follow them off the plot.
                 AddImpulseMarkers(model, main, mainSet, origin);
             }
         }
@@ -1281,9 +1003,7 @@ internal sealed class PlotModelFactory
             MajorGridlineStyle = LineStyle.Solid,
             Title = opt.TimeUnit == ImpulseTimeUnit.Milliseconds ? "ms" : "samples",
         };
-        // The step never shares the level axis (see RenderStepTrace), so when it is the
-        // only trace it TAKES that axis rather than leaving an empty one labelled in
-        // units nothing on screen is drawn in.
+        // The step never shares the level axis, so when alone it takes that axis.
         bool stepOnLeft = ImpulseStepIsAlone(opt);
         var valueAxis = new LinearAxis
         {
@@ -1291,29 +1011,16 @@ internal sealed class PlotModelFactory
             Position = AxisPosition.Left,
             Title = stepOnLeft ? "step" : ImpulseValueUnit(opt.AmplitudeScale),
         };
-        // Time is bounded by the record — the traces are built whole, so zooming out
-        // reaches the end of the tail and panning cannot leave the data — and OPENS on
-        // the Length setting's worth of tail past the peak, the framing this mode has
-        // always had. Compare is included so it stays on-screen.
+        // Bounded by the record; opens on Length of tail past the peak. Compare included so it stays on screen.
         ApplyCurveRange(
             timeAxis, point => point.X, drawn.Concat(stepCurves).ToArray());
         ApplyDefaultImpulseSpan(timeAxis, opt, defaultSpan);
-        // LEVEL is not framed at all — the axis scales itself. Overlays are attached to
-        // the model AFTER it is built, and in OxyPlot an explicit Minimum/Maximum wins
-        // over the data range, so a snapshot from a louder record — which legitimately
-        // re-frames above 100 % or 0 dB against the current one — would open partly off
-        // screen and pinned absolute bounds would put it out of reach entirely. Left to
-        // itself the axis takes in whatever is drawn on it, live or attached later, which
-        // is what makes the shared normalization readable.
+        // Level is not framed: overlays attach after build and explicit bounds would put a louder snapshot off screen.
         ApplyDecibelFloor(valueAxis, opt, stepOnLeft, drawn);
         PlotModelStyle.AddAxis(model, timeAxis);
         PlotModelStyle.AddAxis(model, valueAxis);
 
-        // The counterpart axis is always in the model, visible only when something is
-        // drawn against it. An overlay carries the axis key it was captured with, and a
-        // series whose key names no axis cannot bind — so a saved step slot with the step
-        // trace switched off, or a saved impulse slot beside a step-only view, would fail
-        // the redraw rather than simply not fitting.
+        // Counterpart axis always exists: an overlay binding by axis key would otherwise fail the redraw.
         var counterpartAxis = new LinearAxis
         {
             Key = stepOnLeft ? ImpulseAxisKey : ImpulseStepAxisKey,
@@ -1328,12 +1035,7 @@ internal sealed class PlotModelFactory
     private static bool ImpulseStepIsAlone(ImpulseResponseOptions opt) =>
         opt.ShowStep && !opt.ShowImpulse && !opt.ShowEnvelope;
 
-    /// <summary>
-    /// The slice of the record the view opens on, in axis units: the start of the
-    /// record to the peak plus the Length setting's tail. A deconvolved record can run
-    /// for seconds, nearly all of it silence and noise floor, so opening on the whole
-    /// thing would show the response as one vertical line.
-    /// </summary>
+    /// <summary>Opening span: record start to peak plus Length. A deconvolved record runs for seconds of noise.</summary>
     private static (double Start, double End)? ResolveImpulseDefaultSpan(
         IImpulseMeasurement measurement,
         ImpulseResponseOptions opt,
@@ -1363,13 +1065,10 @@ internal sealed class PlotModelFactory
             return;
         }
 
-        // Never past the data: the absolute bounds were fitted to the record above, and
-        // a visible range outside them is a view of nothing.
         axis.Minimum = Math.Max(axis.AbsoluteMinimum, bounds.Start);
         axis.Maximum = Math.Min(axis.AbsoluteMaximum, bounds.End);
     }
 
-    // " — 250 Hz 1/3 octave", or empty when the whole record is drawn.
     private static string ImpulseBandLabel(ImpulseResponseOptions opt, int sampleRate)
     {
         if (!opt.HasBandFilter(sampleRate))
@@ -1386,17 +1085,10 @@ internal sealed class PlotModelFactory
         return $" — {centre} {width}";
     }
 
-    // How much of the dB scale the view opens on. The impulse in dB dives to the
-    // silence floor at every zero crossing — on a deconvolved record that is −160 dB —
-    // so fitting the visible window to the data spends four fifths of the plot on
-    // arithmetic nobody is reading. The window opens 100 dB under the loudest point,
-    // which clears any real noise floor, while the ABSOLUTE range still covers the
-    // whole curve so the floor stays reachable by zooming out.
+    // Opens 100 dB under the loudest point; zero crossings dive to -160 dB. Absolute range still covers the floor.
     private const double ImpulseDecibelWindow = 100.0;
 
-    // Only the FLOOR is pinned, and only in dB: the top is left to the data so a louder
-    // overlay still lifts it. Without the floor the axis would fit the silence the
-    // impulse dives to at every zero crossing and spend four fifths of the plot on it.
+    // Only the dB floor is pinned; the top follows data so a louder overlay lifts it.
     private static void ApplyDecibelFloor(
         LinearAxis axis,
         ImpulseResponseOptions opt,
@@ -1439,11 +1131,7 @@ internal sealed class PlotModelFactory
             _ => string.Empty
         };
 
-    /// <summary>
-    /// Where the impulse view's zero sits, in samples from the record start. The
-    /// first-arrival origin reads the SAME shared estimate the Auto gate offsets use,
-    /// so the view and the gates cannot disagree about where the response begins.
-    /// </summary>
+    /// <summary>View zero in samples from record start; first-arrival uses the same estimate as the Auto gate offsets.</summary>
     private double ResolveImpulseOriginSamples(IImpulseMeasurement measurement) =>
         impulseResponseOptions.TimeOrigin switch
         {
@@ -1481,7 +1169,6 @@ internal sealed class PlotModelFactory
                 SampleRate = sampleRate,
                 TimeUnit = impulseResponseOptions.TimeUnit,
                 TimeIsRelative = relative,
-                // The step is a normalized ratio, never the level the other traces carry.
                 ValueUnit = isStep ? string.Empty : unit,
                 Color = OxyPlotAdapter.GetCurveColor(curve.Kind),
                 Title = compareName == null ? curve.Name : $"{curve.Name} · {compareName}",
@@ -1505,10 +1192,7 @@ internal sealed class PlotModelFactory
         }
     }
 
-    // The two times the rest of the app reads off this record, marked where the view
-    // put them: the first arrival (the estimate every Auto gate offset is anchored on)
-    // and the strongest peak. They are what makes the mode legible as an instrument —
-    // the reader sees the same two instants the engine acts on.
+    // Marks the first arrival (anchor of every Auto gate offset) and the strongest peak: the instants the engine acts on.
     private void AddImpulseMarkers(
         PlotModel model,
         IImpulseMeasurement measurement,
@@ -1521,11 +1205,7 @@ internal sealed class PlotModelFactory
                 ? (sample - origin) * 1000.0 / measurement.SampleRate
                 : sample - origin;
 
-        // The two captions are stacked by where they sit ALONG their lines, not by
-        // opposite text anchors: on a well-aimed record the arrival and the peak are a
-        // fraction of a millisecond apart on an axis spanning hundreds, so their labels
-        // start at very nearly the same pixel. Anchoring one from below hung it over the
-        // top edge of the plot area, which clipped it in half.
+        // Captions stacked along their lines, not by opposite anchors: arrival and peak are often the same pixel, and a bottom anchor clipped at the top edge.
         string valueAxisKey = ImpulseStepIsAlone(impulseResponseOptions)
             ? ImpulseStepAxisKey
             : ImpulseAxisKey;
@@ -1541,10 +1221,7 @@ internal sealed class PlotModelFactory
                 valueAxisKey);
         }
 
-        // With a band selected the peak belongs to that band, not to the record, and the
-        // caption has to say which — the whole point of the pair of markers is how far
-        // apart the record's arrival and this band's peak are, which the caption states
-        // as a number rather than leaving it to be measured off the axis by eye.
+        // With a band selected the caption names the band peak and states its offset from the arrival.
         string peakName = impulseResponseOptions.HasBandFilter(measurement.SampleRate)
             ? "band peak"
             : "peak";
@@ -1565,29 +1242,8 @@ internal sealed class PlotModelFactory
             valueAxisKey);
     }
 
-    /// <summary>
-    /// How long after the record's arrival the selected band peaks, in milliseconds —
-    /// the figure the band filter exists to produce, since a driver's low band does not
-    /// arrive when its broadband front does. Null when there is no band, no arrival
-    /// estimate, or — the case field data forced — when the record does not carry this
-    /// driver's energy at that centre at all.
-    /// <para>
-    /// That last guard is not a nicety. At 63 Hz a tweeter's record still has a "band
-    /// peak": across the archived cabins it landed 1.3, 5.4, 10.9 and 23.6 SECONDS after
-    /// the arrival, because what peaked was leakage and the maximum of leakage sits
-    /// wherever the noise happens to be loudest. Neither the band's level below the
-    /// broadband peak nor its own signal-to-noise separated those from the honest
-    /// readings; asking whether the centre lies inside the record's dominant band —
-    /// where the driver's energy actually is — separated every one of them. It errs
-    /// toward silence: some plausible midrange readings are refused too, which is the
-    /// right direction for a number presented as a measurement.
-    /// </para>
-    /// <para>
-    /// Deliberately NOT converted to a distance, unlike the tracker's reading of a
-    /// reflection: this delay is the driver's own build-up and group delay, not a path
-    /// through air, and stating it in centimetres would invite it to be read as one.
-    /// </para>
-    /// </summary>
+    /// <summary>Band peak delay after the record's arrival, ms. Null without band or arrival, or when the centre lies outside the record's dominant band:
+    /// a tweeter's leakage "peak" at 63 Hz landed 1.3-23.6 s late; level and SNR did not separate those. Not a distance: it is build-up and GD, not air path.</summary>
     private double? ResolveBandArrivalOffset(
         IImpulseMeasurement measurement,
         ImpulseCurveSet set)
@@ -1603,9 +1259,7 @@ internal sealed class PlotModelFactory
         return set.PeakSample * 1000.0 / measurement.SampleRate - startMs;
     }
 
-    // Where each caption sits along its own line, as a fraction from the bottom of the
-    // plot area: the arrival at the very top, the peak one line under it. Both hang
-    // DOWNWARDS from their anchor so neither can be cut off by the top edge.
+    // Fractions from the plot bottom; both captions hang downwards so the top edge cannot cut them.
     private const double ArrivalLabelPosition = 1.0;
     private const double PeakLabelPosition = 0.955;
 
@@ -1636,9 +1290,7 @@ internal sealed class PlotModelFactory
         });
     }
 
-    // Fixes an axis to the curve's own min/max for the selected coordinate (both the visible
-    // Minimum/Maximum and the AbsoluteMinimum/Maximum that bound zoom and pan). A flat range is
-    // given a small margin so the axis stays valid.
+    // Sets both visible and absolute bounds to the curve's range; a flat range gets a margin.
     private static void ApplyCurveRange(
         LinearAxis axis,
         Func<SignalPoint, double> selector,
@@ -1725,34 +1377,18 @@ internal sealed class PlotModelFactory
         return model;
     }
 
-    // The reference-free RTA is the only trace when the effective analysis mode is
-    // RTA — selected, or forced by a missing loopback reference.
     private bool LiveRtaOnly => EffectiveLiveAnalysisMode.IsReferenceFree();
 
-    /// <param name="scaleOverride">
-    /// The axis to build instead of the live one. Passed when the plot is showing a
-    /// STORED capture: its levels are absolute or relative according to the anchor
-    /// that existed when it was taken, and building the current session's axis around
-    /// them either hides the curve under the SPL floor of −20 or presents absolute
-    /// levels on a relative axis. Null follows the live state, as every other caller
-    /// wants.
-    /// </param>
+    /// <param name="scaleOverride">Axis for a STORED capture, whose levels follow the anchor at capture time. Null follows the live state.</param>
     public PlotModel CreateLiveSpectrum(MagnitudeScale? scaleOverride = null)
     {
-        // In RTA mode the whole plot is the reference-free microphone spectrum — in
-        // dB SPL when that scale is selected, in the native scale otherwise. The
-        // transfer function and its coherence exist only in Transfer mode, so the
-        // title, axis and (absent) coherence axis follow the mode. An active tilt
-        // compensation is named in the title: the level is reshaped by the
-        // excitation's own spectrum and must not be read as the plain measurement.
+        // An active tilt compensation is named in the title: the level is reshaped by the excitation spectrum.
         bool renderSpl =
             (scaleOverride ?? EffectiveLiveSpectrumScale) == MagnitudeScale.SoundPressureLevel;
         bool rtaOnly = LiveRtaOnly;
         bool mmm = EffectiveLiveAnalysisMode.IsSpatialAverageCapture();
         string tiltSuffix = LiveTiltModel != null ? " (noise-compensated)" : "";
-        // MMM says so, and says which reference it is on. An unanchored capture is a
-        // perfectly good spatial average — the set is levelled against the impulse
-        // responses later — but the title must not let it pass for absolute.
+        // An unanchored MMM capture is a valid spatial average but must not pass for absolute.
         PlotModel model = PlotModelStyle.CreateTitledModel(
             mmm
                 ? (renderSpl
@@ -1787,8 +1423,6 @@ internal sealed class PlotModelFactory
         return model;
     }
 
-    // The live magnitude tracker unit: absolute dB SPL when the RTA is shown on the
-    // SPL axis, otherwise the native relative dB.
     private string LiveMagnitudeTracker() =>
         EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel
             ? "{0}\n{2:0.0} Hz\n{4:0.00} dB SPL"
@@ -1806,23 +1440,11 @@ internal sealed class PlotModelFactory
         return series;
     }
 
-    // The ~30 fps live redraw refills the existing series in place; reusing the
-    // series object (and its point list's capacity) avoids re-allocating plot
-    // objects on every tick.
+    // Refill in place at ~30 fps to avoid re-allocating plot objects.
     public void UpdateNoiseSeries(LineSeries series, double[] magnitude) =>
         FillPoints(series, ResampleLiveSpectrumMagnitude(magnitude));
 
-    /// <summary>
-    /// A stored capture drawn as it was captured — the curve straight out of the
-    /// document, on the grid the document records.
-    /// </summary>
-    /// <remarks>
-    /// Deliberately NOT re-rendered from the stored bins here. Re-rendering is what
-    /// the bins are for, but it belongs where a rendering choice is actually being
-    /// made (another smoothing, another calibration); loading a capture to look at it
-    /// should show what was captured, and a curve that quietly differed from the one
-    /// its author saw would be the wrong thing to hand back.
-    /// </remarks>
+    /// <summary>A stored capture drawn as captured, not re-rendered from its bins: viewing must show what the author saw.</summary>
     public LineSeries BuildLoadedCaptureSeries(LiveCaptureDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -1832,16 +1454,13 @@ internal sealed class PlotModelFactory
             Title = string.IsNullOrWhiteSpace(document.Title)
                 ? "Loaded capture"
                 : document.Title,
-            // The document's own unit, not the session's: a capture taken without an
-            // anchor carries relative levels however this machine is calibrated.
+            // The document's unit: an unanchored capture is relative regardless of this machine's calibration.
             TrackerFormatString =
                 document.Recipe.MagnitudeScale == MagnitudeScale.SoundPressureLevel
                     ? "{0}\n{2:0.0} Hz\n{4:0.00} dB SPL"
                     : "{0}\n{2:0.0} Hz\n{4:0.00} dB"
         };
 
-        // The document's own grid, from the document: the shape of that grid is its
-        // business, and a second copy of the rule here would drift the day it changes.
         FillPoints(series, document.ToCurvePoints());
         return series;
     }
@@ -1857,20 +1476,14 @@ internal sealed class PlotModelFactory
         return series;
     }
 
-    // The RTA is the raw microphone spectrum, so it is the one live curve with an
-    // honest absolute level: in SPL mode it is lifted by the microphone SPL offset,
-    // AND integrated as power per band so the absolute level is FFT-size-independent.
+    // The RTA is the one live curve with an honest absolute level: in SPL it is band-power integrated (FFT-size independent) and offset.
     public void UpdateInputMagnitudeSeries(LineSeries series, double[] inputMagnitude)
     {
         series.TrackerFormatString = LiveMagnitudeTracker();
         FillPoints(series, ResampleLiveRta(inputMagnitude));
     }
 
-    // The current main trace as displayed points: the RTA (power-integrated in SPL)
-    // when the RTA is the shown curve, the transfer function otherwise. The peak-hold
-    // envelope is accumulated over THESE points, not the raw bins — in SPL the display
-    // sums bin powers per band, so a per-bin peak then summed would add maxima from
-    // different frames and overstate the band's true peak power.
+    // Peak-hold accumulates over display points: per-bin maxima summed per band would overstate peak band power.
     public List<SignalPoint> BuildMainDisplayPoints(double[] magnitude, bool rtaOnly) =>
         rtaOnly
             ? ResampleLiveRta(magnitude)
@@ -1889,48 +1502,23 @@ internal sealed class PlotModelFactory
         return series;
     }
 
-    // The envelope is already in display points (band levels in SPL, amplitude dB
-    // otherwise); just draw it with the matching tracker unit.
     public void UpdatePeakHoldSeries(LineSeries series, List<SignalPoint> peakHoldPoints)
     {
         series.TrackerFormatString = LiveMagnitudeTracker();
         FillPoints(series, peakHoldPoints);
     }
 
-    // The RTA trace. In SPL mode it is a true, FFT-size-independent band level: bin
-    // power is integrated per display band, the microphone calibration is applied per
-    // band, and the SPL offset lifts it to dB SPL. In the native (relative) view it
-    // stays the amplitude-averaged spectrum in dB. Either way an active tilt
-    // compensation subtracts the excitation's own rendered shape — per bin on the
-    // native path, per display band on the SPL path, whose band law tilts differently
-    // (see NoiseTiltCompensation).
-    /// <summary>
-    /// What the band render baked into the curve, recorded for a capture that has to
-    /// be able to undo it exactly.
-    /// </summary>
-    /// <remarks>
-    /// Reported by the render rather than recomputed beside it. Two independent
-    /// derivations of "what was applied" can disagree with what actually was — the
-    /// compensation is skipped on a length mismatch, and a separate copy of that
-    /// guard would have stored an applied array the curve never received while the
-    /// recipe still claimed compensation.
-    /// </remarks>
+    // SPL: band-integrated power with per-band calibration and offset; native: amplitude-averaged dB.
+    // Tilt compensation applies per bin (native) or per band (SPL), whose band laws differ (see NoiseTiltCompensation).
+    /// <summary>What the band render baked in, reported by the render itself (compensation may be skipped on length mismatch).</summary>
     private sealed class LiveRtaApplied
     {
         public double[] TiltDb { get; set; } = [];
 
-        /// <summary>
-        /// The protective high-pass divided back out, per drawn point, in dB — NaN
-        /// where the filter took the signal below what can be recovered. Empty when
-        /// no such filter was configured.
-        /// </summary>
+        /// <summary>Protective high-pass divided out, dB per point; NaN where unrecoverable.</summary>
         public double[] ProtectiveHighPassDb { get; set; } = [];
 
-        /// <summary>
-        /// The microphone correction per drawn point, in the sign convention of
-        /// <see cref="CalibrationFile.GetDecibelCorrection"/> — the render SUBTRACTS
-        /// it. Empty when no calibration was in force.
-        /// </summary>
+        /// <summary>Mic correction per point, sign convention of <see cref="CalibrationFile.GetDecibelCorrection"/>; the render subtracts it.</summary>
         public double[] CalibrationDb { get; set; } = [];
     }
 
@@ -1965,9 +1553,6 @@ internal sealed class PlotModelFactory
             applied != null && calibration != null ? new double[bands.Count] : null;
         for (int i = 0; i < bands.Count; i++)
         {
-            // The microphone correction is a per-frequency dB gain (same sign
-            // convention as LogarithmicResample); it applies identically to a power
-            // level, so subtract it at the band centre, then lift to dB SPL.
             double correction = calibration?.GetDecibelCorrection(bands[i].X) ?? 0.0;
             if (recordedCorrection != null)
             {
@@ -1982,17 +1567,8 @@ internal sealed class PlotModelFactory
             applied.CalibrationDb = recordedCorrection;
         }
 
-        // The protective high-pass sits in the user's own DSP, ahead of the
-        // loudspeaker, so a reference-free capture CARRIES it — a swept impulse
-        // response has it divided back out, and without the same division here the
-        // two measurements of one tweeter would sit a whole filter slope apart. Only
-        // for a spatial-average capture: that is the curve compared against the
-        // impulse responses, and the plain RTA keeps showing what the microphone
-        // actually hears.
-        // From the ACCUMULATION, not from a live setting or from the sweep
-        // measurement's own copy: this must be the filter that was in force while the
-        // microphone was walked, and the recipe saved beside the curve reads the very
-        // same field so the two can never describe different filters.
+        // The protective HP sits ahead of the speaker, so an MMM capture carries it; divide it out to match swept IRs (plain RTA keeps it).
+        // Read from the accumulation: the filter in force during the walk, same field as the saved recipe.
         ProtectiveHighPassConfiguration captureFilter =
             noiseMeasurement.CaptureProtectiveHighPass;
         if (EffectiveLiveAnalysisMode.IsSpatialAverageCapture() && captureFilter.Enabled)
@@ -2015,9 +1591,7 @@ internal sealed class PlotModelFactory
 
         if (tiltModel is { } bandModel)
         {
-            // Rendered by the same resampler with the same parameters, so the grids
-            // align index-for-index; a length mismatch would mean the parameters
-            // diverged and the compensation would be misaligned — skip it then.
+            // Same resampler and parameters, so grids align by index; a length mismatch means divergence, so skip.
             double[] compensation = LiveTiltBandCompensation(
                 bandModel, amplitudeSpectrum.Length, smoothingOctaves, psychoacoustic);
             if (compensation.Length == bands.Count)
@@ -2037,9 +1611,7 @@ internal sealed class PlotModelFactory
         return bands;
     }
 
-    // The band compensation is one full render of the analytic noise spectrum through
-    // the band resampler — far too heavy for every ~30 fps tick — and depends only on
-    // these parameters, so the last result is memoized until one of them changes.
+    // One full render of the analytic noise spectrum per call, too heavy per tick; memoized on its parameters.
     private double[]? liveTiltBandCompensation;
     private (NoiseSpectralModel Model, int BinCount, int FftLength, int SampleRate,
         double EnbwBins, double MainLobeBins, double SmoothingOctaves, bool Psycho)
@@ -2091,9 +1663,7 @@ internal sealed class PlotModelFactory
         List<SignalPoint> bins = DataHelper.MagnitudeBinsToDecibels(
             magnitude, noiseMeasurement.SequenceLength, noiseMeasurement.SampleRate, offsetDb);
 
-        // Tilt compensation, per bin BEFORE the display resample — the same spot the
-        // raw-curve capture bakes it in (LiveRtaRawCapture), so re-smoothing a
-        // captured raw curve reproduces this trace exactly.
+        // Per bin before resample, where LiveRtaRawCapture bakes it, so re-smoothing a raw capture reproduces this trace.
         if (tiltCompensationModel is { } model)
         {
             for (int i = 0; i < bins.Count; i++)
@@ -2146,7 +1716,7 @@ internal sealed class PlotModelFactory
             YAxisKey = CoherenceAxisKey,
             StrokeThickness = 1,
             LineStyle = LineStyle.Dash,
-            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} \u03B3\u00B2" // γ²
+            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} \u03B3\u00B2"
         };
         FillPoints(series, ResampleCoherence(
             coherence,
@@ -2156,12 +1726,7 @@ internal sealed class PlotModelFactory
         return series;
     }
 
-    /// <summary>
-    /// Builds the transfer-function curve split into a trusted segment (drawn
-    /// normally) and a low-coherence segment (dimmed and dashed) so the user can
-    /// see which frequencies are not reliable. Segments share their boundary
-    /// points so the two lines join seamlessly.
-    /// </summary>
+    /// <summary>Trusted and low-coherence (dimmed, dashed) segments sharing boundary points.</summary>
     public (LineSeries Trusted, LineSeries Untrusted) BuildNoiseSeriesSegmented(
         double[] magnitude,
         double[] coherence,
@@ -2201,11 +1766,7 @@ internal sealed class PlotModelFactory
         int count = magnitudePoints.Count;
         double threshold = thresholdPercent / 100.0;
 
-        // The two resamplers use different grids (fixed 20-20 kHz vs bin-width
-        // and Nyquist bounded, with empty bands skipped), so coherence must be
-        // matched to each magnitude point by frequency, not by index. Missing
-        // coverage counts as trusted, so a degenerate coherence set cannot
-        // blank the whole live trace.
+        // Different grids, so match coherence by frequency, not index. Missing coverage counts as trusted.
         var trustedFlags = new bool[count];
         int cursor = 0;
         for (int i = 0; i < count; i++)
@@ -2237,8 +1798,7 @@ internal sealed class PlotModelFactory
         }
     }
 
-    // Nearest coherence sample for a frequency; both point lists are sorted by
-    // X, so a forward-moving cursor keeps the whole pairing pass linear.
+    // Both lists sorted by X; a forward cursor keeps pairing linear.
     private static double NearestCoherence(
         List<SignalPoint> coherencePoints,
         double frequency,
@@ -2334,9 +1894,7 @@ internal sealed class PlotModelFactory
         List<SignalPoint> points,
         double smoothingInverseOctaves)
     {
-        // Coherence is a 0..1 confidence trace, not a magnitude: the
-        // psychoacoustic code decodes to its plain base width here — the
-        // cubic magnitude mean is not meaningful for this confidence value.
+        // Coherence is a 0..1 confidence: decode psychoacoustic code to its plain width (cubic mean is meaningless here).
         double smoothingOctaves =
             SpectrumSmoothing.SmoothingOctaves(smoothingInverseOctaves);
         if (smoothingOctaves <= 0 || points.Count < 3)
@@ -2400,18 +1958,7 @@ internal sealed class PlotModelFactory
             options.SmoothingInverseOctaves));
     }
 
-    /// <summary>
-    /// The measurement's spatial average, the positions behind it and the spread
-    /// between them.
-    /// </summary>
-    /// <remarks>
-    /// These curves do not follow the time window. They are steady-state — no gate
-    /// at all — because that is what a spatial average is and what the consumers of
-    /// one need, so moving the gate leaves them where they are while the measured
-    /// magnitude beside them moves. That is honest rather than awkward: the two are
-    /// different measurements of the same driver, and the array's whole point is
-    /// that it is not the one the gate belongs to.
-    /// </remarks>
+    /// <summary>Array spatial average, positions and spread. Steady-state, ungated by design, so they do not follow the time window.</summary>
     private void AddArrayMicrophones(PlotModel model, double? splOffsetDb)
     {
         CurveVisibilityOptions visibility = frequencyResponseVisibility;
@@ -2427,10 +1974,7 @@ internal sealed class PlotModelFactory
             frequencyResponseOptions.UseCalibration,
             frequencyResponseOptions.SmoothingInverseOctaves);
 
-        // The array is a transfer magnitude like the measurement's own, so the same
-        // offset puts it on the absolute axis. Without one the level curves are
-        // omitted exactly as the measured magnitude is — a relative shape drawn on
-        // an absolute axis is a lie about how loud the car was.
+        // Without an SPL offset the level curves are omitted, as the measured magnitude is.
         if (splOffsetDb is { } offset)
         {
             display = display with
@@ -2452,8 +1996,6 @@ internal sealed class PlotModelFactory
                     ArrayTrackerFormat,
                     Mode.FrequencyResponse,
                     DecibelAxisKey);
-                // Thin and behind: they are what the average is made of, not
-                // curves competing with it for the eye.
                 series.StrokeThickness = 1;
             }
         }
@@ -2480,9 +2022,7 @@ internal sealed class PlotModelFactory
         }
     }
 
-    // A range, not a level: its own axis, because on the magnitude axis it would
-    // either sit on top of the curves (relative) or fall off the bottom (SPL), and
-    // both would invite reading it as a response.
+    // A range, not a level: on the magnitude axis it would invite reading as a response.
     private static void AddArraySpreadAxis(PlotModel model)
     {
         if (model.Axes.Any(axis => axis.Key == ArraySpreadAxisKey))
@@ -2523,7 +2063,7 @@ internal sealed class PlotModelFactory
             Maximum = 1,
             MajorGridlineStyle = LineStyle.None,
             MinorGridlineStyle = LineStyle.None,
-            Title = "Coherence \u03B3\u00B2", // Y2
+            Title = "Coherence \u03B3\u00B2",
             IsPanEnabled = false,
             IsZoomEnabled = false
         });
@@ -2549,8 +2089,6 @@ internal sealed class PlotModelFactory
         return series;
     }
 
-    // Same hue as its main counterpart, but dashed and dimmed so the Compare curve
-    // reads as "the other measurement" without a second colour to decode.
     private static LineSeries AddCompareLineSeries(
         PlotModel model,
         AnalysisCurve curve,
@@ -2589,25 +2127,13 @@ internal sealed class PlotModelFactory
         }
     }
 
-    /// <summary>
-    /// Whether the Main and Compare measurements can be read against ONE clock.
-    /// A magnitude does not care, but every curve that carries time — measured
-    /// phase, group delay, the impulse overlay, the vector sum — is a statement
-    /// about when one response arrived relative to the other. That statement only
-    /// exists when both were referenced to their own captured loopback: an
-    /// imported recording's origin is its own arrival by convention (see
-    /// <c>ExpSweepMeasurement.ImportedArrivalSeconds</c>), so putting it beside
-    /// another measurement would draw a relative delay nobody measured.
-    /// </summary>
+    /// <summary>Whether Main and Compare share one clock (both loopback-synchronized). Imported recordings are referenced to their own arrival,
+    /// so time-carrying curves (phase, GD, impulse, vector sum) would show an unmeasured delay.</summary>
     private bool CompareSharesATimeReference() =>
         expSweepMeasurement.TimingReference == TimingReference.SynchronizedLoopback &&
         getCompareSource?.Invoke() is { TimingReference: TimingReference.SynchronizedLoopback };
 
-    // Builds a view over the Compare transfer IR so the gated magnitude / phase /
-    // group-delay math runs on it identically to the main curve (which is also
-    // built from the transfer IR — loopback is mandatory for every measurement).
-    // Requires a matching sample rate, otherwise the gate (in ms) and the
-    // frequency axis would not align with the main measurement.
+    // Compare view over its transfer IR; requires a matching sample rate so the ms gate and frequency axis align.
     private (IImpulseMeasurement Measurement,
         string DisplayName,
         double[]? Coherence,
@@ -2637,20 +2163,8 @@ internal sealed class PlotModelFactory
             compare.SplOffsetDb);
     }
 
-    // The complex (vector) sum of the Main and Compare transfer responses, i.e.
-    // FFT(h1 + h2). Both transfer IRs share the loopback time reference (sample 0),
-    // so a sample-wise sum of the impulse responses is exactly the response the
-    // microphone would capture if both sources played together — including their
-    // relative delay, polarity, and phase. This is what predicts the summed output
-    // of two drivers through a crossover; adding the two dB magnitudes cannot.
-    // Requires a transfer IR on both sides at the same sample rate; the curve runs
-    // through the same FR pipeline (window, calibration, smoothing) as the plot.
-    //
-    // compareDelayMs and invertComparePolarity mirror the per-channel delay and
-    // polarity switch a DSP would apply to the Compare source, so the predicted sum
-    // can be tuned before touching the hardware. options overrides the plot's own
-    // FR options for callers that need a different width (the sum-loss curve builds
-    // its operands unsmoothed).
+    // FFT(h1 + h2): both IRs share the loopback reference, so the sample-wise sum is what the mic would capture together.
+    // Delay and polarity mirror a DSP's Compare channel settings; options overrides the plot's (sum loss wants unsmoothed operands).
     internal AnalysisCurve? TryBuildComplexSumCurve(
         double compareDelayMs = 0,
         bool invertComparePolarity = false,
@@ -2661,10 +2175,6 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        // The sum is a sum of ARRIVALS — it is only the response two sources would
-        // produce together because both impulse responses sit on one time
-        // reference. An imported recording does not: adding it would predict an
-        // interference pattern from a delay nobody measured.
         if (!CompareSharesATimeReference() ||
             getCompareSource?.Invoke() is not { } compare ||
             compare.TransferImpulseResponse is not { Length: > 0 } compareIr ||
@@ -2673,10 +2183,7 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        // The shift is applied with linear interpolation, so fractional-sample
-        // delays (a 0.01 ms step is ~0.44 samples at 44.1 kHz) move the result
-        // smoothly; first-order interpolation costs a slight HF droop near
-        // half-sample offsets, negligible in the crossover regions this predicts.
+        // Linear interpolation for fractional delays; slight HF droop near half-sample offsets is negligible at crossovers.
         double delaySamples =
             compareDelayMs / 1_000.0 * expSweepMeasurement.SampleRate;
         int wholeDelay = (int)Math.Floor(delaySamples);
@@ -2696,18 +2203,8 @@ internal sealed class PlotModelFactory
             sum[i] = value + sign * shifted;
         }
 
-        // The window anchors at the earlier of the two records' OWN estimated
-        // starts (the compare's shifted by the applied delay), so the later
-        // impulse still falls inside the window plateau — the same rule the
-        // Virtual DSP tool applies to its shared window
-        // (ProcessedChannels.SharedStartAnchorIndex). The anchor is passed
-        // EXPLICITLY: estimated on the summed record itself, the start would be
-        // the front of the sum's dominant band, which a later, louder driver can
-        // own — a window opening there cuts the earlier driver out of the sum
-        // while the individual curves keep it. Each record's estimate is read on
-        // its original array (memoized), falling back to that record's peak, and
-        // the summed envelope peak enters nowhere: it could sit between the
-        // arrivals or vanish entirely under cancellation.
+        // Window anchored explicitly at the earlier record's own start (as ProcessedChannels.SharedStartAnchorIndex): estimated on the sum,
+        // the start could belong to a later, louder driver and cut the earlier one out. The sum's envelope peak is never used.
         int mainStart = Math.Clamp(
             TransferIrStartCache.ResolveStartIndex(
                 mainIr,
@@ -2724,9 +2221,7 @@ internal sealed class PlotModelFactory
             length - 1);
         int anchorIndex = Math.Min(mainStart, compareStart);
 
-        // The view's PeakIndex stays a PEAK — the earlier record's, the right
-        // fallback if the explicit anchor ever went away — rather than smuggling
-        // the anchor through a field that means something else.
+        // PeakIndex stays a real peak (the earlier record's), not the anchor in disguise.
         int peakIndex = Math.Min(
             Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, length - 1),
             Math.Clamp(
@@ -2740,12 +2235,7 @@ internal sealed class PlotModelFactory
             curveOptions,
             GetCalibration(curveOptions),
             anchorIndex);
-        // A sum plays wherever EITHER response measured, and nowhere else. The view
-        // above carries no band of its own — it is a record neither measurement made
-        // — so the break has to be applied here, from the two that did: below both
-        // sweeps every contributor is zero at once, and a windowed spectrum of that
-        // draws the analysis window as a rolloff. Exactly the curve this whole idea
-        // exists to keep off the plot, in the one place that was still drawing it.
+        // The sum's view has no band, so break it where neither sweep measured; otherwise the window draws a fake rolloff.
         return curve with
         {
             Points = MeasuredBand.MaskUnmeasured(
@@ -2757,27 +2247,14 @@ internal sealed class PlotModelFactory
     private static Complex SampleAt(Complex[] source, int index) =>
         (uint)index < (uint)source.Length ? source[index] : Complex.Zero;
 
-    // The signed dB gap of the complex sum |H1 + H2| relative to the phase-blind
-    // amplitude-magnitude sum (|H1| + |H2|). By the triangle inequality it is always <= 0:
-    // it shows how many dB the real (phase-aware) sum falls short of the naive addition,
-    // i.e. the summation loss caused by phase misalignment (0 only where the two sources
-    // are perfectly in phase, dropping toward deep cancellation). The magnitude sum ignores
-    // delay/polarity, so as those are tuned only the complex sum moves and the gap closes
-    // toward 0 as the sources come into phase.
-    // smoothingInverseOctaves is the width the finished gap is smoothed at. It
-    // defaults to the plot's own, which is what the Compare curve wants; an
-    // overlay slot passes ITS width instead, so the slot owns its smoothing
-    // outright rather than inheriting the plot's and adding a second pass.
+    // |H1+H2| relative to |H1|+|H2| in dB, always <= 0: summation loss from phase misalignment.
+    // smoothingInverseOctaves defaults to the plot's; an overlay slot passes its own to avoid a second smoothing pass.
     internal AnalysisCurve? TryBuildComplexSumLossCurve(
         double compareDelayMs = 0,
         bool invertComparePolarity = false,
         double? smoothingInverseOctaves = null)
     {
-        // All three curves are built UNSMOOTHED and the display smoothing applies to
-        // the finished gap: a fractional-octave window straddling a steep skirt lifts
-        // the rolling-off source's level several dB while the flat sum barely moves,
-        // so smoothing the operands first draws summation loss that is not there (see
-        // VirtualCrossoverAnalysis.SumLossCurve).
+        // Operands unsmoothed, gap smoothed: smoothing across a steep skirt fakes loss (see VirtualCrossoverAnalysis.SumLossCurve).
         FrequencyResponseOptions rawOptions = frequencyResponseOptions.WithSmoothing(0);
         if (TryBuildComplexSumCurve(compareDelayMs, invertComparePolarity, rawOptions)
             is not { } complexCurve)
@@ -2792,9 +2269,7 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        // Individual magnitudes of the two transfer responses, each windowed at its own
-        // start but log-resampled onto the same fixed frequency grid as the complex sum, so
-        // all three curves align index-by-index.
+        // Each windowed at its own start, resampled onto the sum's grid so all three align by index.
         AnalysisCurve mainMagnitude = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(
                 mainIr,
@@ -2824,12 +2299,7 @@ internal sealed class PlotModelFactory
         var points = new List<SignalPoint>(count);
         for (int i = 0; i < count; i++)
         {
-            // Skipped, not added: a response that measured nothing here contributes
-            // nothing, and adding its NaN would break a loss reading that is perfectly
-            // good wherever the other one plays alone — the same rule
-            // VirtualCrossoverAnalysis.SumLossCurve follows for a whole set. Where
-            // NEITHER measured anything the sum stays zero and the point is a break,
-            // which is the honest answer to "how much did these two lose".
+            // A NaN contributor is skipped, as in VirtualCrossoverAnalysis.SumLossCurve; where neither measured the point is a break.
             double magnitudeSum = 0.0;
             bool measured = false;
             foreach (SignalPoint operand in
@@ -2862,14 +2332,7 @@ internal sealed class PlotModelFactory
                 : points);
     }
 
-    // A harmonic order the user asked for can be missing from the plot: its packet
-    // overlapped a neighbour and was dropped (so it is also left out of THD), the
-    // harmonic sits below the measurement noise floor, or the measurement carries
-    // no sweep to derive harmonics from. Silently dropping the curve leaves the
-    // ticked checkbox unexplained, so a short note at the top names the missing
-    // curves and — where the DSP said why — the reason. A below-noise order is the
-    // mark of a clean capture, so it gets a neutral gray note, never the amber
-    // warning that used to scold users for their quietest measurements.
+    // Names requested harmonics missing from the plot (overlap, below noise, no sweep). Below-noise is a clean capture: gray note, not amber.
     private void AddHiddenHarmonicAnnotation(
         PlotModel model, IReadOnlyList<AnalysisCurve> curves)
     {
@@ -2912,8 +2375,6 @@ internal sealed class PlotModelFactory
         int nextLine = 0;
         if (problem.Count > 0)
         {
-            // The advice clause goes to its own line so the widest line stays
-            // readable in a narrow window instead of running past the plot edge.
             IReadOnlyList<string> warnings = measurementContext.DistortionWarnings;
             string reason = warnings.Count > 0
                 ? string.Join("\n", warnings.Select(w => w.Replace("; ", ";\n")))
@@ -2948,8 +2409,6 @@ internal sealed class PlotModelFactory
         }
     }
 
-    // Phase and group delay need loopback timing; without a transfer IR the plot would
-    // otherwise be silently empty, so explain why.
     private static void AddRequiresTransferIrAnnotation(PlotModel model)
     {
         model.Annotations.Add(new OverlayTextAnnotation
@@ -2969,11 +2428,7 @@ internal sealed class PlotModelFactory
             "No SPL calibration for this measurement — showing dB SPL overlays only"));
     }
 
-    /// <summary>
-    /// The "showing dB SPL overlays only" notice, shared by the Frequency Response
-    /// model above and the live controller (which manages its instance itself: a live
-    /// model persists across ticks, so the notice must be addable and removable).
-    /// </summary>
+    /// <summary>Shared with the live controller, which adds/removes its own instance across ticks.</summary>
     internal static OverlayTextAnnotation CreateSplViewOnlyAnnotation(string text) => new()
     {
         Text = text,

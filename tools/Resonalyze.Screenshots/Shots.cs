@@ -2,23 +2,8 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.Screenshots;
 
-/// <summary>
-/// The catalogue: every screenshot the documentation uses that this tool can take.
-/// </summary>
-/// <remarks>
-/// Shots are grouped into SCENES because each scene opens the application once and
-/// arranges it a particular way; asking for a single shot starts only the scene that
-/// owns it. Names are the file the shot writes, relative to <c>assets/images</c>.
-///
-/// Not here, and not automatable:
-/// <list type="bullet">
-/// <item><c>noise</c> — Live Spectrum needs a LIVE signal through real hardware.</item>
-/// <item><c>compare</c> — a composed before/after crop of two different tunes.</item>
-/// <item>The manual's figures taken from the forum article: the microphone photo,
-/// the MMM captures, the hybrid pair and the open PEQ menu (a context menu is a
-/// separate window that neither capture path reaches).</item>
-/// </list>
-/// </remarks>
+/// <summary>Catalogue of automatable doc screenshots, grouped into scenes (one app launch each); names are paths under <c>assets/images</c>.</summary>
+/// <remarks>Not automatable: <c>noise</c> (live signal), <c>compare</c> (composed crop), forum-article figures and context menus.</remarks>
 internal static class Shots
 {
     public static IReadOnlyList<Scene> All { get; } =
@@ -26,10 +11,7 @@ internal static class Shots
         new("modes", ShotSession.AssetWindowSize,
             ["fr", "phase", "gd", "impulse", "waterfall", "burst", "time-alignment"],
             Modes),
-        // Left out of a no-argument sweep: Record Settings draws the LIVE audio
-        // configuration, so on a machine without the interface attached it shoots a
-        // panel full of defaults and a "loopback is REQUIRED" warning — a worse
-        // figure than the one already committed. Ask for it by name, rig plugged in.
+        // On request only: Record Settings draws the live audio config and shoots defaults without the rig attached.
         new("record", ShotSession.AssetWindowSize, ["measurement-options"],
             RecordSettings, OnRequest: true),
         new("overlays", ShotSession.AssetWindowSize,
@@ -37,17 +19,10 @@ internal static class Shots
         new("virtual-dsp", ShotSession.AssetWindowSize, ["visual_dsp"], VirtualDspAsset),
         new("eq-wizard", ShotSession.AssetWindowSize,
             ["eq_wizard", "eq_wizard_phase"], EqWizardAssets),
-        // Standalone, from nothing but its own controls: the constructor draws a
-        // kernel, not a measurement, so the figure needs no file from the config.
         new("fir-constructor", ShotSession.AssetWindowSize, ["fir_constructor"], FirConstructorAsset),
-        // Skipped in a sweep rather than failed without a measurement recorded
-        // through an array: the figures need one and not every rig has one, and a
-        // config that cannot take them must not report the sweep as broken. Asked for
-        // by name it fails instead — see Program.
+        // Skipped in a sweep without an array measurement; fails when asked for by name (see Program).
         new("array", ShotSession.ManualWindowSize, ["manual/array-curves"],
             ArrayCurves, Unavailable: NeedsArrayMeasurement),
-        // Its own scene because it needs one thing more: the DIALOG states what the
-        // device offers, and no measurement file records that.
         new("array-dialog", ShotSession.ManualWindowSize, ["manual/array-microphones"],
             ArrayDialogFigure,
             Unavailable: config => NeedsArrayMeasurement(config)
@@ -55,13 +30,7 @@ internal static class Shots
                     ? "no \"arrayRig\" in the config — the inputs, the loopback and the " +
                       "backend to draw the dialog for, which no measurement records"
                     : null)),
-        // Its own scene, and not a screen capture: the review is a dialog, so it is
-        // drawn straight off the form and the run does not need the display to
-        // itself. The reply it is shown for is a real one — ai-proposal.json beside
-        // this tool — with only its packageId rewritten, because the id is minted
-        // when the package is copied and a reply carrying any other one is a
-        // different figure: the amber warning about a package the session cannot
-        // vouch for.
+        // Drawn off the form from the real ai-proposal.json; packageId is rewritten because any other id shows the untrusted-package warning.
         new("agent", ShotSession.AssetWindowSize, ["ai_assistant"], AgentReview),
         new("manual", ShotSession.ManualWindowSize,
             ["manual/virtual-dsp", "manual/channel-card", "manual/eq-wizard-handoff",
@@ -71,10 +40,6 @@ internal static class Shots
             Manual)
     ];
 
-    // ---------------------------------------------------------------- the modes
-
-    // The mode settings panel is where every per-mode control lives, so it is opened
-    // for each shot and the capture comes off the screen — see ShotSession.
     private static void Modes(ShotSession session, Func<string, bool> wanted)
     {
         session.LoadMeasurement(session.Config.Measurement);
@@ -92,7 +57,6 @@ internal static class Shots
             }
 
             session.SelectTab(tab);
-            // A waterfall or a burst decay computes a whole surface before it draws.
             session.Pump(tab is "Waterfall" or "Burst" ? 12_000 : 5_000);
             session.OpenModeSettings();
             PoseCurves(session, tab);
@@ -100,8 +64,6 @@ internal static class Shots
         }
     }
 
-    // A shot of a curve nobody enabled teaches nothing: these are the curves the
-    // committed figures show, and the reason each mode exists.
     private static void PoseCurves(ShotSession session, string tab)
     {
         Form? dialog = session.ModeSettingsDialog;
@@ -142,10 +104,7 @@ internal static class Shots
         session.Capture(dialog, "measurement-options");
     }
 
-    // -------------------------------------------------------------- the overlays
-
-    // Opened through the real Overlay methods rather than by constructing the
-    // dialogs: ConfigureOperation takes 23 arguments the collection already knows.
+    // Through the real Overlay methods: ConfigureOperation takes 23 arguments the collection already knows.
     private static void Overlays(ShotSession session, Func<string, bool> wanted)
     {
         session.LoadMeasurement(session.Config.Measurement);
@@ -153,7 +112,6 @@ internal static class Shots
         object[] slots = ((System.Collections.IEnumerable)Reflect.Field(collection, "overlays"))
             .Cast<object>().ToArray();
 
-        // A slot each, so no dialog opens on another's leftovers.
         if (wanted("regular_overlay"))
         {
             session.CaptureModal("regular_overlay",
@@ -172,8 +130,6 @@ internal static class Shots
                 () => Reflect.Invoke(slots[3], "ConfigureTarget"), 2_000);
         }
     }
-
-    // ------------------------------------------------------------- Virtual DSP
 
     private static void VirtualDspAsset(ShotSession session, Func<string, bool> wanted)
     {
@@ -201,8 +157,6 @@ internal static class Shots
         }
     }
 
-    // A band-pass for a midrange — the kind whose two slopes and latency the figure is
-    // there to show — at the processor rate most car units run.
     private static void FirConstructorAsset(ShotSession session, Func<string, bool> wanted)
     {
         session.SelectTab("ToolsFirConstructor");
@@ -215,16 +169,12 @@ internal static class Shots
         session.CaptureScreen("fir_constructor");
     }
 
-    // -------------------------------------------------------- the microphone array
-
-    /// <summary>What both array figures need before either can be taken.</summary>
     private static string? NeedsArrayMeasurement(ShotConfig config) =>
         string.IsNullOrWhiteSpace(config.ArrayMeasurement)
             ? "no \"arrayMeasurement\" in the config — a measurement recorded with a " +
               "microphone array"
             : null;
 
-    /// <summary>The array as the Frequency Response settings draw it.</summary>
     private static void ArrayCurves(ShotSession session, Func<string, bool> wanted)
     {
         _ = wanted;
@@ -235,11 +185,7 @@ internal static class Shots
         Form settings = session.ModeSettingsDialog
             ?? throw new InvalidOperationException(
                 "manual/array-curves: the Frequency Response settings did not open.");
-        // The measurement carries its own curve selection, and the figure is about ONE
-        // comparison: the point response against the positions, their average and their
-        // spread. Distortion, noise floor and coherence are switched off rather than
-        // left to whatever the file was last read with — six more traces over the same
-        // decade is what buries the four that are the point.
+        // Distortion, noise floor and coherence off: extra traces bury the point/average/spread comparison.
         foreach ((string box, bool on) in new[]
         {
             ("checkBoxShowPrimary", true),
@@ -261,17 +207,8 @@ internal static class Shots
         session.CaptureScreen("manual/array-curves");
     }
 
-    /// <summary>
-    /// The dialog that configured the set, built rather than reached through Record
-    /// Settings — which offers only inputs the ATTACHED interface has, so without the
-    /// rig plugged in that route shoots a dialog with nothing in it.
-    /// </summary>
-    /// <remarks>
-    /// The rows are read back out of the measurement rather than invented, so this
-    /// figure shows the positions whose curves the other shot draws and the two cannot
-    /// drift apart. What the file does NOT record — the device's inputs, the loopback,
-    /// the backend — comes from the config instead of from guesswork.
-    /// </remarks>
+    /// <summary>Built directly: Record Settings lists only inputs of the attached interface.</summary>
+    /// <remarks>Rows come from the measurement; device facts the file lacks come from the config.</remarks>
     private static void ArrayDialogFigure(ShotSession session, Func<string, bool> wanted)
     {
         _ = wanted;
@@ -298,11 +235,7 @@ internal static class Shots
         List<ImpulseResponseFile.ArrayMicrophoneFileEntry> further =
             [.. positions.Where(position => !position.IsMeasurementMicrophone)];
 
-        // The dialog names calibrations by id out of Record Settings' own list, and the
-        // file kept only the curve's name — enough to show the row as it was configured.
-        // The config may name them instead, one per row: an array is individually
-        // calibrated, and a set recorded by one microphone moved between sittings stores
-        // one name for every position, which illustrates the column badly.
+        // Config may name calibrations per row: a set moved between sittings stores one name for every position.
         string?[] names = rig.Calibrations is { } authored
             ? authored.Length == further.Count
                 ? [.. authored]
@@ -325,13 +258,7 @@ internal static class Shots
                 Note = position.Note
             })];
 
-        // The device facts the measurement does not record: how many inputs it offers,
-        // which one the loopback takes, and the backend whose words the status line is
-        // stated in. They come from the config because they are an authored decision —
-        // the tool filling them in by itself is how the figure ended up stating a free
-        // input count nobody had checked. The rows below still come from the
-        // measurement, so what the dialog LISTS remains the set the curves are drawn
-        // from; only the device it is listed on is declared.
+        // Device facts are authored in the config, not guessed; the listed rows still come from the measurement.
         int loopback = rig.LoopbackInput - 1;
         foreach (ImpulseResponseFile.ArrayMicrophoneFileEntry position in positions)
         {
@@ -353,8 +280,6 @@ internal static class Shots
             loopback,
             Options.ArrayInputSources.Describe(rig.Backend, rig.Inputs));
     }
-
-    // ------------------------------------------------------------- the manual
 
     private static void Manual(ShotSession session, Func<string, bool> wanted)
     {
@@ -378,16 +303,11 @@ internal static class Shots
             AnnotateChannelCard(session.Config.Resolve("manual/channel-card"));
         }
 
-        // The wizard first, and every modal after it: a modal loop of its own is the
-        // one thing that has ever disturbed the wizard's async Auto Tune here.
+        // Wizard first: a modal loop of its own is what has disturbed its async Auto Tune.
         if (wanted("manual/eq-wizard-handoff") || wanted("manual/eq-wizard-tuned"))
         {
             EqWizardPanel wizard = HandOff(session, "C");
-            // Cleared, so the first still shows what the guide describes: the chain's
-            // curve against the target with nothing fitted yet. The bank is emptied
-            // directly rather than by pressing Reset filters, which asks first — and a
-            // MessageBox is not in Application.OpenForms, so nothing here can answer
-            // it and the run would hang on the click forever.
+            // Bank emptied directly: Reset filters asks via MessageBox, which is not in OpenForms and would hang the run.
             Reflect.Invoke(wizard, "ApplyEqualizationCurve",
                 new Dsp.EqualizationCurve([], 0));
             session.Pump(4_000);
@@ -408,11 +328,7 @@ internal static class Shots
             session.Pump(3_000);
         }
 
-        // Built directly rather than by pressing Export. Export only shows this
-        // chooser while the project names NO model; a session naming a catalog
-        // processor skips it and opens a native SaveFileDialog instead, which is not
-        // a Form in Application.OpenForms and which nothing here could close — the
-        // run would hang on the click. The figure is of the dialog either way.
+        // Built directly: with a catalog model Export opens a native SaveFileDialog nothing here can close.
         if (wanted("manual/tuning-sheet-q"))
         {
             session.CaptureDialog(
@@ -421,12 +337,7 @@ internal static class Shots
 
         if (wanted("manual/dsp-processor"))
         {
-            // Built directly, like the model figure below it, and for a reason the
-            // live dialog cannot serve: the manual captions this one "as a new
-            // project opens it" — Custom, following its measurements — while the
-            // session behind these figures names a catalog model. Posed off the
-            // panel, the two figures would show the same preset and the pair would
-            // illustrate nothing.
+            // Built directly: the manual captions it as a new project (Custom), while the session names a catalog model.
             session.CaptureDialog(
                 DspProcessorDialog(
                     Dsp.DspProcessorProfile.Custom(96_000, Dsp.PeqQConvention.Rbj),
@@ -437,8 +348,7 @@ internal static class Shots
 
         if (wanted("manual/dsp-processor-model"))
         {
-            // Built directly with a catalog model: posing the live dialog's model
-            // combo would race its own change handler.
+            // Posing the live dialog's model combo would race its own change handler.
             session.CaptureDialog(
                 DspProcessorDialog(
                     Dsp.DspProcessorCatalog.Preset("amp-panacea-v1-v2")!.ToProfile(),
@@ -449,10 +359,7 @@ internal static class Shots
 
         if (wanted("manual/eq-target"))
         {
-            // The button drops a menu (parametric shape / import from file), so the
-            // figure asks for the dialog itself rather than posing the menu — the
-            // shot is of the parametric editor, and a posted drop-down is not a
-            // modal to wait on.
+            // Opens the dialog directly; a posted drop-down menu is not a modal to wait on.
             session.CaptureModal("manual/eq-target",
                 () => Reflect.Invoke(panel, "OpenTargetSettings"), 2_000);
         }
@@ -465,9 +372,7 @@ internal static class Shots
 
         if (wanted("manual/auto-delay"))
         {
-            // The empty dialog says nothing; the figure needs the proposal, so Run is
-            // pressed inside the dialog's own loop. The regions are measured while the
-            // dialog is still on screen and drawn once the file exists.
+            // Run is pressed inside the dialog's loop; regions are measured while it is on screen.
             AutoDelayFigure.Layout? layout = null;
             session.CaptureModal(
                 "manual/auto-delay",
@@ -487,19 +392,13 @@ internal static class Shots
         }
     }
 
-    // ------------------------------------------------------------------ helpers
-
-    // ------------------------------------------------------------- the AI bridge
-
     private static void AgentReview(ShotSession session, Func<string, bool> wanted)
     {
         _ = wanted;
         OpenSession(session);
         var panel = Reflect.Field<VirtualCrossoverPanel>(session.Shell, "virtualCrossoverPanel");
 
-        // Copy for AI first, through the menu item's own path: it is what mints the
-        // package id and remembers the session it was minted for, and the review
-        // reads both. Faked, the figure would show a warning row instead of a tune.
+        // Copy for AI through its real path: it mints the package id the review checks.
         session.Await((Task)Reflect.Invoke(panel, "CopyForAiAsync")!);
         session.Pump(3_000);
         var packageId = Reflect.Field<string>(panel, "lastAgentPackageId");
@@ -514,10 +413,7 @@ internal static class Shots
 
         AgentProposalReview review = AgentProposalValidator.Review(
             parsed.Proposal!, panel.BuildAgentSessionSnapshot());
-        // A figure of a reply this session argues with teaches the argument. Both
-        // ways it can happen are refused here rather than photographed: a warning
-        // over the reply as a whole, and a row the session will not offer — which
-        // is what a config whose session has no C-D junction produces.
+        // Refuse to photograph a reply the session argues with (warnings, or a row it will not offer).
         if (review.Warnings.Count > 0)
         {
             throw new InvalidOperationException(
@@ -545,7 +441,6 @@ internal static class Shots
         session.Pump(10_000);
     }
 
-    /// <summary>Hands a channel to the EQ Wizard through the chain, as the menu does.</summary>
     private static EqWizardPanel HandOff(ShotSession session, string channelName)
     {
         var panel = Reflect.Field<VirtualCrossoverPanel>(session.Shell, "virtualCrossoverPanel");
@@ -586,8 +481,7 @@ internal static class Shots
         bool? phaseControl = null,
         bool? firFilters = null)
     {
-        // Reflection hides a constructor change from the build: the argument list
-        // below has to follow DspProcessorDialog's constructor by hand.
+        // Reflection hides constructor changes from the build: keep these arguments in sync with DspProcessorDialog by hand.
         Type type = typeof(VirtualCrossoverPanel).Assembly
             .GetType("Resonalyze.DspProcessorDialog")
             ?? throw new InvalidOperationException("No Resonalyze.DspProcessorDialog type.");
@@ -601,13 +495,7 @@ internal static class Shots
             culture: null)!;
     }
 
-    // ------------------------------------------------------------- annotations
-    //
-    // These coordinates are read off the rendered figure, so they belong to a window
-    // size and a panel layout. When a panel moves, the boxes move with it and the
-    // numbers here have to be re-read — there is no way around that short of asking
-    // the controls where they are, which would tie the figures to control names as
-    // brittle as the coordinates.
+    // Coordinates are read off the rendered figure: re-read them when the window size or panel layout changes.
 
     private static void AnnotateVirtualDsp(string path)
     {
@@ -617,17 +505,12 @@ internal static class Shots
               .Region(Box(368, 580, 1472, 638), "3", new Point(1436, 609))
               .Region(Box(368, 642, 502, 1014), "4", new Point(435, 800))
               .Region(Box(506, 642, 1472, 1014), "5", new Point(1440, 675))
-              // The read-out starts high in the column now that Virtual DSP's free
-              // right-hand space is all its own — the box followed it up from 384.
               .Region(Box(1490, 145, 1716, 1014), "6", new Point(1516, 988))
               .Save(path);
     }
 
     private static void AnnotateChannelCard(string path)
     {
-        // A narrow gutter keeps every number off the controls. The smaller badges
-        // are deliberate: six 19-26 px rows have to remain individually readable
-        // on a card only 204 px tall, while the legend itself stays in Markdown.
         using Annotate figure = Annotate.Open(path);
         figure.Gutter(40, onLeft: true, sample: new Point(318, 100))
               .Region(Box(3, 3, 319, 30), "1", new Point(20, 16),
@@ -651,15 +534,8 @@ internal static class Shots
         figure.Gutter(52, onLeft: true, sample: new Point(100, 600))
               .Region(Box(14, 62, 204, 93), "1", new Point(26, 77), leader: true)
               .Region(Box(14, 120, 204, 270), "2", new Point(26, 195), leader: true)
-              // The two DSP-handoff buttons, 25 px lower than they were: the panel
-              // gained an EQ-curve checkbox under Bypass/Phase and the column below
-              // it moved down by one row. These boxes are figure pixels and the shot
-              // is captured 1:1 (window chrome puts the panel's y=0 at 46), so the
-              // designer's 25 is 25 here too.
+              // Figure pixels, captured 1:1 (panel y=0 at 46).
               .Region(Box(14, 475, 204, 535), "3", new Point(26, 505), leader: true)
-              // The auto-tune box, 25 px taller at the top: it gained a Max Q row and
-              // grows UPWARD, its bottom edge (and the Auto Tune button in region 5)
-              // staying where they were.
               .Region(Box(14, 807, 206, 982), "4", new Point(26, 894), leader: true)
               .Region(Box(18, 985, 202, 1014), "5", new Point(26, 999), leader: true)
               .Detail(Box(18, 883, 200, 935))
@@ -671,7 +547,6 @@ internal static class Shots
         new(left, top, right - left, bottom - top);
 }
 
-/// <summary>One arrangement of the application, producing a set of shots.</summary>
 internal sealed record Scene(
     string Name,
     Size WindowSize,

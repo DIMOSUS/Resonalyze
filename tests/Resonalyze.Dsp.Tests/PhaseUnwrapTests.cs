@@ -2,23 +2,13 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The unwrap in BuildMeasuredPhase is anchored to reliable bins (relative
-/// magnitude, optionally squared coherence): a noisy null or a low-coherence
-/// band contributes its phase to the output but can no longer shift the whole
-/// tail by 2π. The corrupted spectra here are crafted so the classic
-/// nearest-to-previous-bin unwrap provably mis-accumulates (+2π into the
-/// tail): the first garbage bin sits just past −π from its neighbor and the
-/// second one steps back in-range, so nothing ever compensates.
-/// </summary>
+/// <summary>The unwrap is anchored to reliable bins; spectra are crafted so a nearest-to-previous unwrap provably adds +2π to the tail.</summary>
 public sealed class PhaseUnwrapTests
 {
     private const int SampleRate = 48_000;
     private const int TransformLength = 4096;
     private const int DelaySamples = 24;
-    // Bin 512 of 4096 at 48 kHz = 6 kHz, where the true wrapped phase of the
-    // 24-sample delay is exactly 0 (512·24/4096 = 3 full turns) — the garbage
-    // phases below are chosen relative to that.
+    // 6 kHz, where the 24-sample delay's wrapped phase is exactly 0 (3 full turns).
     private const int CorruptedBin = 512;
     private const double GarbagePhase1 = -3.12;
     private const double GarbagePhase2 = -1.5;
@@ -26,8 +16,6 @@ public sealed class PhaseUnwrapTests
     [Fact]
     public void Unwrap_BridgesANoisyNull_WithoutShiftingTheTail()
     {
-        // A deep null (−80 dB) with garbage phase: the magnitude gate alone
-        // must keep the tail on the true delay line.
         SyntheticMeasurement measurement = CreateDelayedImpulseWithCorruptedBins(
             corruptedMagnitude: 1e-4);
 
@@ -39,11 +27,7 @@ public sealed class PhaseUnwrapTests
     [Fact]
     public void Unwrap_UsesCoherence_WhenTheGarbageBinsHaveFullMagnitude()
     {
-        // Full-magnitude garbage (e.g. a masked band in a noisy room): the
-        // magnitude gate cannot see it, so only the coherence floor keeps the
-        // bins from anchoring the unwrap. The coherence array deliberately
-        // uses a coarser grid than the phase FFT (1025 bins = fftLength 2048)
-        // to exercise the frequency-based interpolation.
+        // Full-magnitude garbage: only the coherence floor excludes it. Coherence on a coarser grid (1025 bins) exercises interpolation.
         SyntheticMeasurement measurement = CreateDelayedImpulseWithCorruptedBins(
             corruptedMagnitude: 1.0);
         double[] coherence = new double[1025];
@@ -66,11 +50,7 @@ public sealed class PhaseUnwrapTests
     [Fact]
     public void Unwrap_DoesNotAnchorOnAGarbageBinBelowTheFloor()
     {
-        // A garbage null just below the 100 Hz unwrap floor (bin 8 = 93.75 Hz)
-        // must stay display-only: if it seeded the anchor, the first reliable
-        // bin above the floor would branch against its phase (3.33 rad away
-        // from the true value here) and carry a spurious +2π into everything
-        // that follows.
+        // A garbage null just below the 100 Hz floor must not seed the anchor.
         var spectrum = new Complex[TransformLength];
         for (int k = 0; k < TransformLength; k++)
         {
@@ -117,11 +97,7 @@ public sealed class PhaseUnwrapTests
     [Fact]
     public void Unwrap_UnwrapsBelowOneHundredHertzToo()
     {
-        // A 20 ms delay accumulates −720° already by 100 Hz. The old unwrap
-        // floor returned WRAPPED phase for every bin below 100 Hz (±180°
-        // wiggles that contradicted GetExcessPhase's "always unwrapped"
-        // contract and stepped at the boundary); the unwrap must start at the
-        // first reliable bin instead and keep the whole curve on the delay line.
+        // A 20 ms delay is already −720° at 100 Hz: unwrap from the first reliable bin, not a wrapped-below-100 Hz floor.
         const int LongDelaySamples = 960;
         var spectrum = new Complex[TransformLength];
         for (int k = 0; k < TransformLength; k++)
@@ -154,11 +130,7 @@ public sealed class PhaseUnwrapTests
     [Fact]
     public void Unwrap_BlanksAGapTooLongToBridge()
     {
-        // The band from 1 to 8 kHz is dead (−80 dB): the turn count inside it
-        // is genuinely unknowable (an all-pass or a crossover transition could
-        // hide whole turns), so the bridged points must read NaN and a fresh
-        // segment must start after the gap — not one confident continuous line
-        // through guessed branches.
+        // A dead band's turn count is unknowable: the bridge reads NaN and a fresh segment starts after it.
         var spectrum = new Complex[TransformLength];
         for (int k = 0; k < TransformLength; k++)
         {
@@ -178,19 +150,16 @@ public sealed class PhaseUnwrapTests
 
         List<SignalPoint> phase = GetUnwrappedPhase(measurement, coherence: null);
 
-        // The head stays on the absolute delay line.
         foreach (SignalPoint point in phase.Where(item => item.X is >= 100 and <= 950))
         {
             double expected = -Math.Tau * point.X * DelaySamples / SampleRate;
             Assert.InRange(point.Y, expected - 1.0, expected + 1.0);
         }
-        // Deep inside the gap the guessed bridge is blanked.
         List<SignalPoint> gap = phase
             .Where(point => point.X is >= 2_000 and <= 7_000)
             .ToList();
         Assert.NotEmpty(gap);
         Assert.All(gap, point => Assert.True(double.IsNaN(point.Y)));
-        // After the gap a fresh finite segment continues.
         List<SignalPoint> tail = phase
             .Where(point => point.X is >= 9_000 and <= 18_000)
             .ToList();
@@ -201,12 +170,7 @@ public sealed class PhaseUnwrapTests
     [Fact]
     public void Unwrap_AQuietBandStaysAnchoredNextToATallResonance()
     {
-        // The whole audible band sits 34 dB below a low-frequency resonance
-        // (a subwoofer's cabin peak): against the old GLOBAL −30 dB gate that
-        // disqualified every bin above the resonance from anchoring, and the
-        // slope-frozen bridge lost turns of this 20 ms delay. The gate reads a
-        // local octave-smoothed envelope now, so a quiet but locally consistent
-        // band anchors normally and the tail stays on the absolute delay line.
+        // A band 34 dB under an LF resonance: the gate reads a local octave-smoothed envelope, not a global −30 dB.
         const int LongDelaySamples = 960;
         var spectrum = new Complex[TransformLength];
         for (int k = 0; k < TransformLength; k++)
@@ -253,9 +217,7 @@ public sealed class PhaseUnwrapTests
             coherence);
     }
 
-    // The delayed impulse in the frequency domain (H_k = e^{-i·2πk·d/n}) with
-    // two corrupted bins: garbage phases at the given magnitude, mirrored so
-    // the time-domain signal stays real.
+    // H_k = e^{-i·2πk·d/n} with two corrupted bins, mirrored so the time signal stays real.
     private static SyntheticMeasurement CreateDelayedImpulseWithCorruptedBins(
         double corruptedMagnitude)
     {
@@ -285,8 +247,6 @@ public sealed class PhaseUnwrapTests
         spectrum[spectrum.Length - bin] = Complex.Conjugate(spectrum[bin]);
     }
 
-    // Beyond the corrupted band the unwrapped phase must sit on the analytic
-    // delay line −2πf·d/sr; a 2π tail shift would miss by ~6.28 rad.
     private static void AssertTailOnDelayLine(List<SignalPoint> phase)
     {
         List<SignalPoint> tail = phase
@@ -299,7 +259,6 @@ public sealed class PhaseUnwrapTests
             Assert.InRange(point.Y, expected - 1.0, expected + 1.0);
         }
 
-        // And the clean stretch before the corruption stays correct too.
         List<SignalPoint> head = phase
             .Where(point => point.X >= 1_000 && point.X <= 5_500)
             .ToList();

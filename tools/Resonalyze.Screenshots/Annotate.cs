@@ -4,21 +4,8 @@ using System.Drawing.Text;
 
 namespace Resonalyze.Screenshots;
 
-/// <summary>
-/// Draws the numbered regions and callouts the manual's dense figures carry.
-/// </summary>
-/// <remarks>
-/// The rules the existing figures follow, and the reasons for them:
-/// <list type="bullet">
-/// <item>A numbered badge goes in an EMPTY corner of its region. A badge over a
-/// control's label hides the very thing the figure points at.</item>
-/// <item>Where a panel is dense edge to edge, the canvas grows a plain gutter and the
-/// badges stand there, joined to their region by a short leader.</item>
-/// <item>The legend lives in the Markdown, not in the image: long labels baked into a
-/// PNG cannot be edited, translated, or read at another size.</item>
-/// <item>A thin cyan box with NO badge marks a detail the prose singles out.</item>
-/// </list>
-/// </remarks>
+/// <summary>Figure annotation. Badges go in empty corners (or a gutter with a leader), never over labels; the legend lives in Markdown;
+/// an unnumbered thin cyan box marks a detail the prose singles out.</summary>
 internal sealed class Annotate : IDisposable
 {
     private static readonly Color Amber = Color.FromArgb(255, 176, 46);
@@ -35,11 +22,7 @@ internal sealed class Annotate : IDisposable
         graphics = Prepare(canvas);
     }
 
-    /// <summary>
-    /// Opens a figure for annotation, detached from its file. <c>new Bitmap(path)</c>
-    /// keeps the file open for the bitmap's lifetime, so saving back over the shot
-    /// that was just taken fails with GDI+'s generic error; the copy releases it.
-    /// </summary>
+    /// <summary><c>new Bitmap(path)</c> keeps the file open, so saving over it fails; the copy releases it.</summary>
     public static Annotate Open(string path)
     {
         using var file = new FileStream(path, FileMode.Open, FileAccess.Read);
@@ -55,11 +38,7 @@ internal sealed class Annotate : IDisposable
         return created;
     }
 
-    /// <summary>
-    /// Widens the canvas so badges have somewhere to stand that is not on top of the
-    /// panel, filled with the colour sampled at <paramref name="sample"/> — a point
-    /// the caller knows is empty background.
-    /// </summary>
+    /// <summary>Filled with the colour at <paramref name="sample"/>, a point known to be empty background.</summary>
     public Annotate Gutter(int width, bool onLeft, Point sample)
     {
         Color fill = canvas.GetPixel(sample.X, sample.Y);
@@ -78,7 +57,6 @@ internal sealed class Annotate : IDisposable
         return this;
     }
 
-    /// <summary>A numbered region, with an optional leader to a badge outside it.</summary>
     public Annotate Region(
         Rectangle box,
         string number,
@@ -103,14 +81,12 @@ internal sealed class Annotate : IDisposable
         return this;
     }
 
-    /// <summary>A called-out detail inside a region: thin, cyan, unnumbered.</summary>
     public Annotate Detail(Rectangle box)
     {
         DrawRounded(Shift(box), Cyan, 2, 6);
         return this;
     }
 
-    /// <summary>A label joined to a ringed point.</summary>
     public Annotate Callout(Point anchor, Point tip, string text, int fontSize = 23)
     {
         Point a = Shift(anchor);
@@ -121,8 +97,6 @@ internal sealed class Annotate : IDisposable
 
         using Font font = new("Segoe UI", fontSize, FontStyle.Bold, GraphicsUnit.Pixel);
         SizeF size = graphics.MeasureString(text, font);
-        // Clamped inside the frame, so a label near an edge is nudged in rather than
-        // cropped.
         float x = Math.Clamp(a.X - size.Width / 2, 12, canvas.Width - size.Width - 12);
         float y = Math.Clamp(a.Y - size.Height - 16, 12, canvas.Height - size.Height - 12);
         using var background = new SolidBrush(Ink);
@@ -132,7 +106,6 @@ internal sealed class Annotate : IDisposable
         return this;
     }
 
-    /// <summary>An elbow connector with a head, routed through empty space.</summary>
     public Annotate Arrow(params Point[] points)
     {
         ArgumentNullException.ThrowIfNull(points);

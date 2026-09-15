@@ -1,89 +1,20 @@
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Chooses the alignment candidate to apply from a near-optimal list (best
-/// first, as produced by
-/// <see cref="VirtualCrossoverAnalysis.FindAlignmentCandidates"/>), applying
-/// physically motivated tie-breaks between candidates the score alone cannot
-/// separate.
-/// </summary>
+/// <summary>Physical tie-breaks between alignment candidates the score cannot separate. See docs/tech/auto-alignment.md#candidate-selection.</summary>
 public static class AlignmentSelection
 {
-    /// <summary>
-    /// An inverted winner must beat the best non-inverted candidate by this
-    /// margin (dB): room reflections routinely hand a (flip + half-period
-    /// shift) impostor a few tenths of a dB inside the pair band (the r mid/
-    /// tweeter cabin junction hands one +0.32 dB), while a genuinely flipped
-    /// driver wins by the full arrival-prior penalty of its non-inverted
-    /// impostors — several dB, not fractions. Same envelope-first principle
-    /// as the wide-window promotion margin: a half-period flip hop must be
-    /// plainly better, not marginally. That "several dB" premise only holds
-    /// near the arrival: a WIDE-SEED search dilutes the prior (sigma scales
-    /// with the window), so the margin is additionally fenced by
-    /// <see cref="DefaultInvertPreferenceReachMs"/>.
-    /// </summary>
+    /// <summary>An inverted winner must beat the best non-inverted candidate by this (flip + half-period impostors win by tenths of a dB).</summary>
     public const double DefaultInvertPreferenceMarginDb = 0.5;
 
-    /// <summary>
-    /// How much farther from the arrival estimate (ms) a non-inverted rescue
-    /// may sit than the inverted winner it replaces. The invert margin's
-    /// rationale assumes the rescue IS the arrival-proximal candidate being
-    /// narrowly outscored by a flip impostor; when the best non-inverted
-    /// alternative instead lies a distant lobe away, swapping trades
-    /// milliseconds of envelope alignment for polarity cosmetics. The field
-    /// failure that pinned this: an 80 Hz sub/midbass junction where the
-    /// inverted winner sat 0.79 ms from the arrival and the margin (0.03 dB!)
-    /// handed the result to a non-inverted lobe 4.98 ms out — the sub started
-    /// 5 ms behind the midbass. The reach is absolute, not period-scaled,
-    /// because the audible cost (transient smear) is absolute: legitimate flip
-    /// rescues at mid/tweeter junctions sit within a fraction of a ms, while a
-    /// low junction's half-period hop costs several.
-    /// </summary>
+    /// <summary>Max extra distance (ms) from the arrival a non-inverted rescue may sit; absolute because transient smear is absolute.</summary>
     public const double DefaultInvertPreferenceReachMs = 0.75;
 
-    /// <summary>
-    /// Among candidates within this score margin (dB), the one closest to the
-    /// arrival-based estimate wins — the physically minimal correction. The
-    /// tie-break is polarity-AGNOSTIC on the first pass: fractions of a dB
-    /// never choose a lobe, and the flip partner a third of a period out is a
-    /// lobe like any other. The field case that made it so: an 80 Hz
-    /// sub/woofer junction (arrival latched 10 ms early) offered a
-    /// non-inverted lobe 3.5 ms from the prior at −2.57 dB and the true
-    /// inverted lobe 0.54 ms from it at −2.61 dB — a 0.04 dB "preference"
-    /// that cost 3 ms of bass attack.
-    /// </summary>
+    /// <summary>Within this margin the arrival-closest candidate wins, regardless of polarity.</summary>
     public const double DefaultDelayTieMarginDb = 0.1;
 
     /// <summary>
-    /// Selects from <paramref name="candidates"/> (must be non-empty, best
-    /// first): first breaks near-ties of the score by closeness to
-    /// <paramref name="baseDeltaMs"/> REGARDLESS of polarity (the envelope
-    /// outranks fractions of a dB, and a flip partner is a lobe like any
-    /// other); then prefers a RELATIVELY non-inverted candidate over a
-    /// relatively inverted winner within the invert margin — but only one
-    /// that does not sit more than
-    /// <paramref name="invertPreferenceReachMs"/> farther from
-    /// <paramref name="baseDeltaMs"/> than the winner it replaces — and
-    /// finally re-breaks near-ties within the chosen polarity.
-    /// "Relatively" is against <paramref name="neighborInverted"/>, the
-    /// settled neighbor's polarity flag: polarity purity is a property of
-    /// the PAIR, not of one flag. With an inverted neighbor the pure choice
-    /// is the equally-inverted candidate; an absolute-flag preference there
-    /// "rescues" a mixed pair and pays for the cosmetics with a quarter period
-    /// of delay, dragging the tweeter off the onset line its inverted twin
-    /// sits on.
-    /// <para>
-    /// <paramref name="expectedRelativeInversion"/> STANDS THE PREFERENCE DOWN
-    /// where the crossover settings say a flipped pair is the designed state: a
-    /// matched odd-order Linkwitz-Riley split (LR12, LR36) or a Butterworth 12
-    /// or 36 puts the two filters 180° apart at the corner, so an inverted
-    /// junction is the crossover working rather than a wiring fault, and the
-    /// premise this margin rests on — "a real flip wins by several dB, an
-    /// impostor by fractions" — does not hold. The preference is withdrawn, not
-    /// reversed: the summation score then decides on its own. Reversing it would
-    /// defend the opposite lobe just as blindly, which measured 0.4 dB worse on
-    /// a real cabin's matched 180 Hz Butterworth 36 junction.
-    /// </para>
+    /// Delay tie-break, then the relative non-inverted preference (within reach), then a re-break within the chosen polarity.
+    /// Polarity is relative to <paramref name="neighborInverted"/>; <paramref name="expectedRelativeInversion"/> withdraws the preference.
     /// </summary>
     public static AlignmentCandidate Select(
         IReadOnlyList<AlignmentCandidate> candidates,
@@ -129,13 +60,7 @@ public static class AlignmentSelection
             .First();
     }
 
-    /// <summary>
-    /// The non-inverted candidate the invert preference would have adopted
-    /// under the score margin alone, when the reach gate blocked every
-    /// eligible rescue — null when no rescue was in margin, or when one within
-    /// reach exists (so <see cref="Select"/> swapped instead of declining).
-    /// Purely diagnostic: lets the caller log WHY an inverted winner stood.
-    /// </summary>
+    /// <summary>Diagnostic: the rescue the reach gate declined, or null.</summary>
     public static AlignmentCandidate? DeclinedInvertRescue(
         IReadOnlyList<AlignmentCandidate> candidates,
         double baseDeltaMs,
@@ -172,23 +97,7 @@ public static class AlignmentSelection
             : inMargin.OrderByDescending(item => item.ScoreDb).First();
     }
 
-    /// <summary>
-    /// The sub-precedence preference for a junction with the shared mono
-    /// sub: when <paramref name="chosen"/> leaves the sub TRAILING the rest
-    /// of the stack (its lead, signed by <paramref name="leadSign"/> and
-    /// measured from the envelope anchor, is below
-    /// −<paramref name="slackMs"/>), the nearest candidate on the LEADING
-    /// side whose prior-free score (via <paramref name="acousticScore"/>)
-    /// sits within <paramref name="marginDb"/> of the chosen's — and no
-    /// farther than <paramref name="reachMs"/> past the anchor, a sub
-    /// leading by whole periods being detached the other way — replaces it.
-    /// The psychoacoustics behind the asymmetry: the first wavefront binds
-    /// the bass to the localizable midbass transient (precedence effect), so
-    /// a slightly leading sub reads as "bass up front" while a trailing one
-    /// reads as sluggish, detached bass. Returns <paramref name="chosen"/>
-    /// unchanged when it already leads (or sits within the slack) or no
-    /// eligible leading candidate exists.
-    /// </summary>
+    /// <summary>A pick trailing by more than <paramref name="slackMs"/> yields to the anchor-nearest candidate that does not, within <paramref name="marginDb"/> and a lead of <paramref name="reachMs"/>.</summary>
     public static AlignmentCandidate PreferSubLeading(
         IEnumerable<AlignmentCandidate> pool,
         AlignmentCandidate chosen,
@@ -220,24 +129,7 @@ public static class AlignmentSelection
             .First();
     }
 
-    /// <summary>
-    /// The envelope-first lobe gate for a WIDE-SEED fine window. An untrusted
-    /// coarse seed widens the fine window toward a half period, so the window
-    /// itself spans foreign comb lobes — territory that, under a trusted seed,
-    /// only the wide-window PROMOTION could reach, and only by clearing a flat
-    /// prior-free margin. Inside one window the sole defenses are the quadratic
-    /// arrival prior and the score tie-break, and both are overrun by fractions
-    /// of a dB: the field failure that pinned this was an 80 Hz sub/midbass
-    /// junction where a lobe 4.4 ms off the arrival beat the arrival-adjacent
-    /// candidate by 0.13 dB — 0.03 dB past the tie margin — and started the
-    /// midbass 4 ms early. So the same standard the promotion applies between
-    /// windows applies within one: a <paramref name="chosen"/> farther than
-    /// <paramref name="nearReachMs"/> from <paramref name="anchorMs"/> stands
-    /// only when its prior-free acoustic score beats the best candidate within
-    /// that reach (picked by the usual <see cref="Select"/> rules) by more than
-    /// <paramref name="lobeHopMarginDb"/>. With no candidate inside the reach
-    /// there is nothing to defend and <paramref name="chosen"/> stands.
-    /// </summary>
+    /// <summary>A wide-seed pick farther than <paramref name="nearReachMs"/> from the anchor must beat the best near candidate by <paramref name="lobeHopMarginDb"/>.</summary>
     public static AlignmentCandidate GateWideSeedLobe(
         IReadOnlyList<AlignmentCandidate> candidates,
         AlignmentCandidate chosen,
@@ -272,24 +164,7 @@ public static class AlignmentSelection
             : nearBest;
     }
 
-    /// <summary>
-    /// After the wide-window promotion gate has decided that a promotion happens,
-    /// chooses WHICH comb lobe to promote to. Inside a comb basin the
-    /// promotion-worthy lobes differ by fractions of a dB, and the deepest-summing
-    /// one is not necessarily the physically correct cycle — the arrival is (the
-    /// same envelope-first principle as <see cref="Select"/>'s delay tie-break,
-    /// one comb over). So among the candidates that share
-    /// <paramref name="gateWinner"/>'s polarity and each INDEPENDENTLY clear the
-    /// gate — acoustic score (via <paramref name="acousticScore"/>, a prior-free
-    /// figure comparable across search windows) beats <paramref name="fineScoreDb"/>
-    /// by more than <paramref name="marginDb"/>, and delay within
-    /// <paramref name="reachMs"/> of <paramref name="arrivalPickMs"/> — this
-    /// returns the one nearest <paramref name="anchorMs"/>.
-    /// <paramref name="gateWinner"/> itself always satisfies those predicates, so
-    /// the result is never empty and never lands on a junction the gate would
-    /// have declined; it only ever pulls the pick to a closer-to-arrival lobe of
-    /// equal promotion standing.
-    /// </summary>
+    /// <summary>Arrival-nearest lobe among same-polarity candidates that each clear the promotion gate; <paramref name="gateWinner"/> always qualifies.</summary>
     public static AlignmentCandidate SelectPromotionLobe(
         IReadOnlyList<AlignmentCandidate> wideCandidates,
         AlignmentCandidate gateWinner,

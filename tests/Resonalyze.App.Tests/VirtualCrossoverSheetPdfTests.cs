@@ -24,13 +24,10 @@ public sealed class VirtualCrossoverSheetPdfTests
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
         Table pairTable = PairTables(sheet.Document).Single();
 
-        // A pair table is three columns (label + left + right) with a spelled-out
-        // header row: a bare "L"/"R" is easy to misread on a printed sheet.
         Assert.Equal(3, pairTable.Columns.Count);
         Assert.Equal("Left", CellText(pairTable.Rows[0].Cells[1]));
         Assert.Equal("Right", CellText(pairTable.Rows[0].Cells[2]));
 
-        // Both sides' values sit side by side in one row each.
         Assert.Equal("L woof", RowValue(pairTable, "Source", left: true));
         Assert.Equal("R woof", RowValue(pairTable, "Source", left: false));
         Assert.Contains("-1.5 dB", RowValue(pairTable, "Gain", left: true));
@@ -41,9 +38,7 @@ public sealed class VirtualCrossoverSheetPdfTests
         Assert.Equal("Inverted", RowValue(pairTable, "Polarity", left: false));
     }
 
-    // Polarity is the one setting that is silent when typed in wrong, so it is colour-coded
-    // per side: red for an inverted channel, green for one left alone. The two sides of a
-    // pair are coloured separately — a flipped right side must not tint the left.
+    // Polarity is silent when entered wrong, so it is colour-coded per side.
     [Fact]
     public void Build_ColorsThePolarityValue_RedWhenInvertedAndGreenWhenNormal()
     {
@@ -53,7 +48,6 @@ public sealed class VirtualCrossoverSheetPdfTests
         project.Pairs[1].Right.SourceFilePath = "r.json";
         project.Pairs[1].Right.DisplayName = "R";
         project.Pairs[1].Right.InvertPolarity = true;
-        // A single-channel section carries the same colours.
         project.Pairs[0].Mono = true;
         project.Pairs[0].Left.SourceFilePath = "sub.json";
         project.Pairs[0].Left.DisplayName = "Sub";
@@ -71,12 +65,9 @@ public sealed class VirtualCrossoverSheetPdfTests
         Assert.Equal(
             PdfSheet.InvertedPolarityColor, RowColor(monoTable, "Polarity", column: 1));
 
-        // Only polarity is tinted; every other value keeps the document's text colour.
         Assert.Equal(Color.Empty, RowColor(pairTable, "Delay", column: 1));
     }
 
-    // The two crossover edges are two separate entries in the DSP, so they get a row each
-    // rather than one "Crossover" row that printed a band-pass as "A + B".
     [Fact]
     public void Build_PrintsTheHighAndLowPassAsSeparateRows()
     {
@@ -88,8 +79,7 @@ public sealed class VirtualCrossoverSheetPdfTests
             new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 300, 12);
         project.Pairs[1].Left.LowPassEdge =
             new CrossoverEdge(CrossoverFilterFamily.Butterworth, 3_000, 18);
-        // A high-pass-only side prints "Off" for the edge it does not use: an empty cell
-        // reads as "not printed", where "Off" is itself a setting to dial in.
+        // "Off" is itself a setting to dial; an empty cell would read as not printed.
         project.Pairs[1].Right.SourceFilePath = "r.json";
         project.Pairs[1].Right.DisplayName = "R twt";
         project.Pairs[1].Right.CrossoverKind = CrossoverKind.HighPass;
@@ -99,7 +89,6 @@ public sealed class VirtualCrossoverSheetPdfTests
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
         Table pairTable = PairTables(sheet.Document).Single();
 
-        // The row label names the edge, so the value no longer repeats it.
         Assert.Equal(
             "Linkwitz-Riley 12 dB/oct @ 300 Hz", RowValue(pairTable, "High-pass", left: true));
         Assert.Equal(
@@ -118,13 +107,11 @@ public sealed class VirtualCrossoverSheetPdfTests
         project.Pairs[0].Mono = true;
         project.Pairs[0].Left.SourceFilePath = "sub.json";
         project.Pairs[0].Left.DisplayName = "Sub";
-        // A stereo pair with only the left side loaded is NOT a pair table.
         project.Pairs[1].Left.SourceFilePath = "half.json";
         project.Pairs[1].Left.DisplayName = "Half";
 
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
 
-        // No three-column pair table — every section is a single-channel table.
         Assert.Empty(PairTables(sheet.Document));
     }
 
@@ -138,8 +125,6 @@ public sealed class VirtualCrossoverSheetPdfTests
         project.Pairs[1].Left.PeqSourceName = "L_MID_eq.txt";
         project.Pairs[1].Left.PeqBands.Add(new PeqBand(1000, 2.0, -3.0));
         project.Pairs[1].Left.PeqBands.Add(new PeqBand(250, 4.0, -2.0));
-        // An all-pass is a dialled-in filter like any other: it counts in the summary
-        // and prints in its own card table below, never as a bell with no gain.
         project.Pairs[1].Left.PeqBands.Add(
             new PeqBand(250, 0.7, 0, PeqBandType.AllPassSecondOrder));
         project.Pairs[1].Right.SourceFilePath = "r.json";
@@ -148,15 +133,12 @@ public sealed class VirtualCrossoverSheetPdfTests
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
         Table pairTable = PairTables(sheet.Document).Single();
 
-        // The summary names the profile, its filter count and its preamp, so a channel
-        // can be checked against the DSP without counting cards.
         string peq = RowValue(pairTable, "PEQ", left: true);
         Assert.Contains("L_MID_eq.txt", peq);
         Assert.Contains("3 filters", peq);
         Assert.Contains("-5", peq);
         Assert.Contains("Channel B Left — PEQ — all-pass filters", AllText(sheet.Document));
 
-        // The cards below are captioned with the channel AND the spelled-out side.
         string document = AllText(sheet.Document);
         Assert.Contains("Channel B Left — PEQ", document);
         Assert.DoesNotContain("PEQ B L", document);
@@ -165,9 +147,7 @@ public sealed class VirtualCrossoverSheetPdfTests
     [Fact]
     public void Build_PrintsTheGainWithThePeqPreampFoldedIn()
     {
-        // Many DSPs have no separate preamp for their equalizer, so the tune has to be
-        // entered as one gain. Both numbers are printed: the gain as dialled, and the sum
-        // such a DSP wants. The right side has no preamp, so its sum is just its gain.
+        // Many DSPs have no EQ preamp, so the gain+preamp sum is printed too.
         var project = new VirtualCrossoverProjectFile();
         project.Pairs[1].Left.SourceFilePath = "l.json";
         project.Pairs[1].Left.DisplayName = "L twt";
@@ -189,7 +169,6 @@ public sealed class VirtualCrossoverSheetPdfTests
     [Fact]
     public void Build_WithoutAPeqPreamp_OmitsTheCombinedGainRow()
     {
-        // With no preamp the row would just repeat the gain.
         var project = new VirtualCrossoverProjectFile();
         project.Pairs[1].Left.SourceFilePath = "l.json";
         project.Pairs[1].Left.DisplayName = "L";
@@ -204,8 +183,7 @@ public sealed class VirtualCrossoverSheetPdfTests
     [Fact]
     public void Build_ValueTables_RunToTheSameWidthAsTheFilterCards()
     {
-        // The tables used to stop 3 cm short of the card grid below them, leaving the
-        // sheet looking ragged with room to spare. A4 less the 1.5 cm margins is 18 cm.
+        // A4 less the 1.5 cm margins is 18 cm.
         var project = new VirtualCrossoverProjectFile();
         project.Pairs[0].Mono = true;
         project.Pairs[0].Left.SourceFilePath = "sub.json";
@@ -238,7 +216,6 @@ public sealed class VirtualCrossoverSheetPdfTests
         return total;
     }
 
-    // The label-plus-value tables: one value column (single channel) or two (a pair).
     private static IEnumerable<Table> ValueTables(Document document)
     {
         DocumentElements elements = document.LastSection.Elements;
@@ -254,11 +231,7 @@ public sealed class VirtualCrossoverSheetPdfTests
     [Fact]
     public void Build_PeqCaption_IsARepeatingHeadingRowOfEveryBlock()
     {
-        // A full bank is 32 filters, so it runs to four blocks and can break across pages.
-        // A caption in a paragraph above the table would name only the first page and
-        // leave the rest looking like the previous channel's filters. Only a heading row
-        // is repeated by MigraDoc on every page a table spans, so the caption must live
-        // INSIDE each block as one.
+        // MigraDoc repeats only heading rows across pages, so each block's caption must be a heading row inside it.
         var project = new VirtualCrossoverProjectFile();
         project.Pairs[0].Mono = true;
         project.Pairs[0].Left.SourceFilePath = "sub.json";
@@ -279,20 +252,15 @@ public sealed class VirtualCrossoverSheetPdfTests
             Assert.Contains("Channel A (mono) — PEQ", CellText(caption.Cells[0]));
             Assert.True(
                 caption.HeadingFormat, "The caption row does not repeat across pages.");
-            // Spans the whole block, and cannot be left stranded above its own filters.
             Assert.Equal(block.Columns.Count - 1, caption.Cells[0].MergeRight);
             Assert.True(caption.KeepWith >= 1);
-            // Caption, the numbers, then gain / F / Q.
             Assert.Equal(5, block.Rows.Count);
         }
 
-        // A continuation is marked as one, so a block landing alone on a page is not read
-        // as a second, separate bank for the same channel.
         Assert.DoesNotContain("(cont.)", CellText(blocks[0].Rows[0].Cells[0]));
         Assert.Contains("(cont.)", CellText(blocks[1].Rows[0].Cells[0]));
     }
 
-    // The bank reads down its columns: filter numbers across the top, then gain, F and Q.
     [Fact]
     public void Build_FilterTable_IsFourRowsWithOneColumnPerFilter()
     {
@@ -306,7 +274,6 @@ public sealed class VirtualCrossoverSheetPdfTests
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
         Table block = CardTables(sheet.Document).Single();
 
-        // Caption, numbers, gain, F, Q — and no row per filter.
         Assert.Equal(5, block.Rows.Count);
         Assert.Equal("PK", CellText(block.Rows[1].Cells[0]));
         Assert.Equal("1", CellText(block.Rows[1].Cells[1]));
@@ -324,13 +291,10 @@ public sealed class VirtualCrossoverSheetPdfTests
         Assert.Equal("3.0", CellText(block.Rows[4].Cells[1]));
         Assert.Equal("6.0", CellText(block.Rows[4].Cells[2]));
 
-        // The slots past the bank stay blank rather than shrinking the block: every block
-        // declares the full column set so a continuation lines up under the first.
+        // Every block declares the full column set so continuations line up.
         Assert.Equal(string.Empty, CellText(block.Rows[3].Cells[3]));
     }
 
-    // The PEQ table is the wide one — a label column plus a column per filter slot; the
-    // value tables are two or three columns.
     private static IEnumerable<Table> CardTables(Document document)
     {
         DocumentElements elements = document.LastSection.Elements;
@@ -347,8 +311,6 @@ public sealed class VirtualCrossoverSheetPdfTests
     [Fact]
     public void Build_SingleChannelSection_CaptionsItsPeqCards()
     {
-        // The one-sided layout used to drop the filter cards straight after the table
-        // with no caption, so a page of cards did not say whose they were.
         var project = new VirtualCrossoverProjectFile();
         project.Pairs[0].Mono = true;
         project.Pairs[0].Left.SourceFilePath = "sub.json";
@@ -360,9 +322,7 @@ public sealed class VirtualCrossoverSheetPdfTests
         Assert.Contains("Channel A (mono) — PEQ", AllText(sheet.Document));
     }
 
-    // The filter card is what gets typed into the DSP, so its Q must be the target's.
-    // 45 Hz Q 3.0 -4 dB restates to 3.0 * 10^(4/40) = 3.775 under Symmetric and to
-    // 3.0 * 10^(-4/40) = 2.384 under Classic — a cut moves them opposite ways.
+    // 45 Hz Q 3.0 -4 dB: Symmetric 3.0*10^(4/40) = 3.777, Classic 3.0*10^(-4/40) = 2.383.
     [Theory]
     [InlineData(PeqQConvention.Rbj, "Q · RBJ", "3.0")]
     [InlineData(PeqQConvention.Symmetric, "Q · Symmetric", "3.78")]
@@ -382,18 +342,14 @@ public sealed class VirtualCrossoverSheetPdfTests
             project, null, 48_000, convention);
         Table block = CardTables(sheet.Document).Single();
 
-        // The Q row names its own convention: a bank runs to several blocks and pages,
-        // and the subtitle carrying it is only on the first.
+        // The convention subtitle is only on the first page, so the Q row names it.
         Assert.Equal(expectedLabel, CellText(block.Rows[4].Cells[0]));
         Assert.Equal(expectedQ, CellText(block.Rows[4].Cells[1]));
 
-        // Only Q moves — frequency and gain mean the same thing on every device.
         Assert.Equal("45", CellText(block.Rows[3].Cells[1]));
         Assert.Equal("-4.0", CellText(block.Rows[2].Cells[1]));
     }
 
-    // Every caption and cell in the sheet, flattened, so a test can assert that a piece
-    // of wording appears (or no longer appears) anywhere in the document.
     private static string AllText(Document document)
     {
         var builder = new StringBuilder();
@@ -429,10 +385,6 @@ public sealed class VirtualCrossoverSheetPdfTests
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(
             VirtualCrossoverSheetTests.GroupedProject(), null, 48_000);
 
-        // The walk of the document in order: every group heading (the only
-        // group-heading-sized paragraphs on the sheet) and every graph image. Each zone's
-        // name must be followed by its graph — Sub first, the order a tune is
-        // typed into a DSP — regardless of whether the banner image loaded.
         List<string> walk = HeadingsAndImages(sheet.Document);
         int start = walk.IndexOf("Sub");
         Assert.True(start >= 0, "the Sub group heading is missing");
@@ -444,9 +396,6 @@ public sealed class VirtualCrossoverSheetPdfTests
     [Fact]
     public void Build_GroupedProject_StartsEveryGroupAfterTheFirstOnItsOwnPage()
     {
-        // The sheet is read standing at the DSP one group at a time, so each
-        // group opens a page of its own — except the first, which stays on the
-        // title page rather than leaving it holding nothing but the banner.
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(
             VirtualCrossoverSheetTests.GroupedProject(), null, 48_000);
 
@@ -457,7 +406,6 @@ public sealed class VirtualCrossoverSheetPdfTests
             Assert.True(heading.Format.PageBreakBefore));
     }
 
-    // The group headings in reading order — the only group-heading-sized paragraphs on the sheet.
     private static List<Paragraph> GroupHeadings(Document document)
     {
         var headings = new List<Paragraph>();
@@ -486,8 +434,6 @@ public sealed class VirtualCrossoverSheetPdfTests
         using PdfSheet sheet = VirtualCrossoverSheetPdf.Build(project, null, 48_000);
 
         List<string> walk = HeadingsAndImages(sheet.Document);
-        // No group headings, and one combined graph (any image before it is
-        // the product banner, which renders only when its asset is present).
         Assert.DoesNotContain("Sub", walk);
         Assert.DoesNotContain("Front", walk);
         Assert.InRange(walk.Count(item => item == "image"), 1, 2);
@@ -500,9 +446,6 @@ public sealed class VirtualCrossoverSheetPdfTests
     [Fact]
     public void GroupCurves_SumsPerSide_AndPutsTheSubContextOnTheFrontGraph()
     {
-        // Two stereo front pairs: each side has two chains to sum, so the
-        // group gets a solid left sum and a dashed right sum — and, being the
-        // front group, the subwoofer group's sum rides along in a pale tone.
         (int, string, bool, VirtualCrossoverChannelSettings, VirtualCrossoverZone)[] front =
         [
             (0, VirtualCrossoverSheet.LeftSuffix, false, Loaded("mid L"), VirtualCrossoverZone.Front),
@@ -529,9 +472,6 @@ public sealed class VirtualCrossoverSheetPdfTests
         Assert.Equal(OxyPlot.LineStyle.Solid, sumLeft.Style);
         Assert.Equal(OxyPlot.LineStyle.Dash, sumRight.Style);
 
-        // The lone mono sub still shows on the front graph — it is context for
-        // the bass handover, not a member — visibly paler than the group's own
-        // sum so it cannot compete with the channels the graph is about.
         VirtualCrossoverSheetPdf.ChainCurve subContext =
             Assert.Single(curves, curve => curve.Title == "Sub sum");
         Assert.Single(subContext.Chains);
@@ -542,8 +482,7 @@ public sealed class VirtualCrossoverSheetPdfTests
     [Fact]
     public void GroupCurves_DrawsNoSum_ForTheCentreOrForASumOfOne()
     {
-        // The centre's signal is derived from L and R, so no sum involving it
-        // is honest — even a two-way centre's graph shows chains only.
+        // The centre is derived from L and R, so no sum involving it is honest.
         (int, string, bool, VirtualCrossoverChannelSettings, VirtualCrossoverZone)[] centre =
         [
             (2, VirtualCrossoverSheet.MonoSuffix, false, Loaded("centre lo"), VirtualCrossoverZone.Center),
@@ -554,8 +493,6 @@ public sealed class VirtualCrossoverSheetPdfTests
                 VirtualCrossoverZone.Center, centre, []),
             curve => curve.Title.Contains("Sum"));
 
-        // And a rear of one stereo pair has one chain per side: its "sum"
-        // would retrace the channel, so none is drawn.
         (int, string, bool, VirtualCrossoverChannelSettings, VirtualCrossoverZone)[] rear =
         [
             (1, VirtualCrossoverSheet.LeftSuffix, false, Loaded("rear L"), VirtualCrossoverZone.Rear),
@@ -570,11 +507,7 @@ public sealed class VirtualCrossoverSheetPdfTests
     [Fact]
     public void GroupCurves_AGroupOfMonoMembers_GetsOneSumRatherThanTwoCopies()
     {
-        // Two mono subs dividing the bottom: both feed both sides identically,
-        // so the left and right "sums" would be the same line twice. One of
-        // them is inverted — a design fact the sum's chains must carry: the
-        // first cut of this graph quietly un-inverted every chain, and two
-        // subs knitting THROUGH an inversion summed as if they fought it.
+        // One sub is inverted: the sum's chains must keep polarity, or subs knitting through the inversion sum as if fighting.
         VirtualCrossoverChannelSettings rearSub = Loaded("rear sub");
         rearSub.InvertPolarity = true;
         rearSub.DelayMs = 5.73;
@@ -592,17 +525,14 @@ public sealed class VirtualCrossoverSheetPdfTests
             Assert.Single(curves, curve => curve.Title == "Sum");
         Assert.Equal(2, sum.Chains.Count);
         Assert.Single(sum.Chains, chain => chain.InvertPolarity);
-        // The delay, by contrast, IS stripped: it mirrors the cabin's path
-        // differences, which this graph deliberately does not model.
+        // Delay is stripped: the graph does not model cabin path differences.
         Assert.All(sum.Chains, chain => Assert.Equal(0, chain.DelayMs));
     }
 
     [Fact]
     public void BuildChainsModel_ASumCurve_IsTheComplexSumOfItsChains()
     {
-        // Two identical flat chains sum to double the pressure: +6.02 dB, not
-        // the +3 dB a power sum would claim. Pinned numerically so the sum
-        // stays a COMPLEX sum of the chain responses.
+        // Complex sum: two equal chains are +6.02 dB, not a power sum's +3.
         var chain = new VirtualCrossoverChannelSettings()
             .ToChain(VirtualCrossoverZone.Front) with { DelayMs = 0 };
         var curve = new VirtualCrossoverSheetPdf.ChainCurve(
@@ -619,11 +549,7 @@ public sealed class VirtualCrossoverSheetPdfTests
     [Fact]
     public void BuildChainsModel_ASumCurve_HonorsAnInvertedChain()
     {
-        // Polarity is a design term like any filter phase — an LR2 crossover
-        // knits flat only through its deliberate inversion — so the sum must
-        // carry it. A flat chain plus an inverted one at -6 dB is 1 - 0.5:
-        // -6.02 dB, where a sum that quietly un-inverted the chain would
-        // report 1 + 0.5 = +3.52 dB.
+        // 1 - 0.5 = -6.02 dB; a sum that dropped the inversion would read +3.52 dB.
         var flat = new VirtualCrossoverChannelSettings()
             .ToChain(VirtualCrossoverZone.Front) with { DelayMs = 0 };
         var inverted = new VirtualCrossoverChannelSettings
@@ -642,9 +568,6 @@ public sealed class VirtualCrossoverSheetPdfTests
         Assert.All(series.Points, point => Assert.Equal(-6.0206, point.Y, 3));
     }
 
-    // The document in reading order, reduced to what the grouped layout is
-    // about: each group heading (the only group-heading-sized paragraphs on the sheet) as its
-    // text, and each image as "image".
     private static List<string> HeadingsAndImages(Document document)
     {
         var walk = new List<string>();
@@ -693,7 +616,6 @@ public sealed class VirtualCrossoverSheetPdfTests
         }
     }
 
-    // The bold value cell (L or R) of the row whose label matches.
     private static string RowValue(Table table, string label, bool left)
     {
         for (int r = 0; r < table.Rows.Count; r++)
@@ -707,8 +629,7 @@ public sealed class VirtualCrossoverSheetPdfTests
         throw new InvalidOperationException($"No row labelled '{label}'.");
     }
 
-    // The font colour of the value cell in the given column of the row whose label matches.
-    // An untinted value leaves the colour unset, which MigraDoc reports as Color.Empty.
+    // An untinted value reports Color.Empty.
     private static Color RowColor(Table table, string label, int column)
     {
         for (int r = 0; r < table.Rows.Count; r++)
@@ -780,8 +701,6 @@ public sealed class VirtualCrossoverSheetPdfTests
         project.Pairs[1].Right.SourceFilePath = "top r.json";
         project.Pairs[1].Right.DisplayName = "Top R";
         project.Pairs[1].Right.CrossoverKind = CrossoverKind.HighPass;
-        // A stereo pair with ONE loaded side falls back to the single-channel
-        // layout instead of an L/R table with an empty column.
         project.Pairs[2].Right.SourceFilePath = "half.json";
         project.Pairs[2].Right.DisplayName = "Half";
 
@@ -792,7 +711,6 @@ public sealed class VirtualCrossoverSheetPdfTests
 
             byte[] bytes = File.ReadAllBytes(path);
             Assert.True(bytes.Length > 0);
-            // Every PDF starts with the "%PDF" signature.
             Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
         }
         finally

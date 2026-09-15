@@ -1,11 +1,5 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Which zones each main-plot view draws, sums and reports on. These rules
-/// decide what four separate things describe — the curves, the sum, the loss
-/// trace and the read-out — so they are pinned once here rather than trusted
-/// at each of those places.
-/// </summary>
 public sealed class VirtualCrossoverGroupViewTests
 {
     [Theory]
@@ -29,10 +23,7 @@ public sealed class VirtualCrossoverGroupViewTests
     [Fact]
     public void TheCentreIsDrawnEverywhereItAppearsAndSummedNowhere()
     {
-        // The reason is not cosmetic: a centre plays a signal synthesised from L
-        // and R, so how much of the programme reaches it is a property of the
-        // track. Adding its path to the front's would state a division of signal
-        // that no measurement knows.
+        // A centre plays a signal synthesised from L and R, so adding its path would state an unknown signal division.
         foreach (VirtualCrossoverGroupView view in VirtualCrossoverGroupViews.All)
         {
             Assert.False(VirtualCrossoverGroupViews.ParticipatesInTotalSum(
@@ -48,17 +39,13 @@ public sealed class VirtualCrossoverGroupViewTests
     [Fact]
     public void OnlySingleChainViewsQuoteASummationLoss()
     {
-        // Front against rear combs however well either is tuned — no filter hands
-        // one band from one to the other — so a loss figure there would report
-        // damage that nothing can repair on a system that is correct.
+        // Front vs rear combs however well tuned, so a loss there would report unrepairable damage.
         Assert.Equal(
             VirtualCrossoverZone.Front,
             VirtualCrossoverGroupViews.LossChainZone(VirtualCrossoverGroupView.FrontAndSub));
         Assert.Equal(
             VirtualCrossoverZone.Rear,
             VirtualCrossoverGroupViews.LossChainZone(VirtualCrossoverGroupView.RearAndSub));
-        // The centre sits beside the front stage without entering its sum, so the
-        // loss still describes the front chain alone.
         Assert.Equal(
             VirtualCrossoverZone.Front,
             VirtualCrossoverGroupViews.LossChainZone(VirtualCrossoverGroupView.FrontAndCenter));
@@ -71,9 +58,6 @@ public sealed class VirtualCrossoverGroupViewTests
     [Fact]
     public void AViewWithoutALossFigureCompensatesWithACrossGroupComparison()
     {
-        // The rule that keeps a view from being silent: whenever the loss is
-        // withheld, the read-out owes the reader the numbers a tuner does set
-        // between groups — the arrival difference and the level difference.
         foreach (VirtualCrossoverGroupView view in VirtualCrossoverGroupViews.All)
         {
             bool quotesLoss = VirtualCrossoverGroupViews.LossChainZone(view) != null;
@@ -103,17 +87,7 @@ public sealed class VirtualCrossoverGroupViewTests
     [Fact]
     public void AViewThatQuotesALossMustNotDrawAnUnsummedChannelIntoIt()
     {
-        // Front + Center is the awkward one and the reason this rule is written
-        // down: it DOES quote a loss (of the front chain), and it also draws a
-        // channel that is not in the sum. The junction read-outs therefore have
-        // to be built from the summed subset, not from what is on screen —
-        // otherwise the centre is paired with its neighbouring front driver as
-        // if a crossover existed between them, and a front-only loss figure gets
-        // labelled with that invented junction.
-        //
-        // Stated here as an invariant over the views rather than as a fact about
-        // one call site: any view where the two sets differ is a view whose
-        // junction metrics must follow the sum.
+        // Front + Center quotes a front-only loss but draws the centre: junction rows must come from the summed subset.
         foreach (VirtualCrossoverGroupView view in VirtualCrossoverGroupViews.All)
         {
             bool drawsSomethingUnsummed = VirtualCrossoverZones.All.Any(zone =>
@@ -125,8 +99,6 @@ public sealed class VirtualCrossoverGroupViewTests
                 continue;
             }
 
-            // The only view in that corner today. If another joins it, this test
-            // is the reminder that its junction rows need the same care.
             Assert.Equal(VirtualCrossoverGroupView.FrontAndCenter, view);
             Assert.Equal(
                 VirtualCrossoverZone.Front,
@@ -139,9 +111,7 @@ public sealed class VirtualCrossoverGroupViewTests
     [Fact]
     public void TheDefaultViewIsWhatEverySingleStageProjectAlreadyWas()
     {
-        // Front + Sub must stay first and must be the enum's zero: a project
-        // saved before views existed opens on it, and that is the behaviour the
-        // tool has always had.
+        // Front + Sub must be the enum's zero: pre-view projects open on it.
         Assert.Equal(VirtualCrossoverGroupView.FrontAndSub, default);
         Assert.Equal(VirtualCrossoverGroupView.FrontAndSub, VirtualCrossoverGroupViews.All[0]);
     }

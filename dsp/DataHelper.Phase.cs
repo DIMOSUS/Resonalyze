@@ -24,9 +24,7 @@ namespace Resonalyze.Dsp
                 window);
             Fourier.Forward(spectrum, FourierOptions.Matlab);
 
-            // The extraction starts `offset` samples past the peak; a reference of 0
-            // makes BuildMeasuredPhase compensate exactly that offset, so the phase
-            // reads as if referenced to the peak.
+            // Extraction starts `offset` past the peak; reference 0 compensates it, so phase reads peak-referenced.
             return BuildMeasuredPhase(
                 spectrum,
                 extractionStart: offset,
@@ -36,26 +34,18 @@ namespace Resonalyze.Dsp
                 coherence);
         }
 
-        // Fixed analysis length for the gated phase / group-delay FFTs. The gate
-        // (left + plateau + right) is specified in time and zero-padded to this length,
-        // so the frequency grid is constant regardless of the gate and identical across
-        // measurements.
+        // Gate is zero-padded to this length: one frequency grid across gates and measurements.
         public const int GatedFftLength = 32768;
 
         private static int MillisecondsToSamples(double milliseconds, int sampleRate) =>
             (int)Math.Round(Math.Max(0.0, milliseconds) * sampleRate / 1000.0);
 
-        // One gate placement resolved to samples: where the extraction starts
-        // (a left shoulder before the offset), where the plateau begins (the
-        // offset itself) and the Tukey shape over the gate's own length.
         private readonly record struct GatePlacement(
             int ExtractionStart,
             int PlateauStart,
             double[] Window);
 
-        // The gate's sample geometry. Everything that needs to know where the
-        // window sits goes through here, so a caller judging a placement can
-        // never be looking at a different window than the one that gets used.
+        // Single source of gate geometry, so a placement judge sees the window that gets used. See docs/tech/phase-and-group-delay.md#gate-geometry.
         private static GatePlacement ResolveGatePlacement(
             double gateOffsetMs,
             double leftMs,
@@ -68,45 +58,19 @@ namespace Resonalyze.Dsp
             int plateau = MillisecondsToSamples(plateauMs, sampleRate);
             int right = MillisecondsToSamples(rightMs, sampleRate);
 
-            // Keep the fades coherent if the clamp had to trim the gate — sharing the
-            // loss between plateau and fade-out rather than emptying the plateau
-            // first. See FrequencyResponseOptions.TrimGateToFft, which the
-            // non-gated spectrum path calls for the same window.
+            // Share the trim between plateau and fade-out (as FrequencyResponseOptions.TrimGateToFft).
             (int gate, left, right) =
                 FrequencyResponseOptions.TrimGateToFft(left, plateau, right);
 
             double leftNorm = (double)left / gate * 2.0;
             double rightNorm = (double)right / gate * 2.0;
-            // Left shoulder ends at the gate offset, so extraction starts a shoulder
-            // earlier; the time correction downstream keeps readings absolute.
             return new GatePlacement(
                 gateOffset - left,
                 gateOffset,
                 Windowing.TukeyWindow(gate, leftNorm, rightNorm));
         }
 
-        /// <summary>
-        /// How much of a response's own energy a gate placement throws away
-        /// AHEAD of its plateau, against the energy it keeps (dB, so −∞ means
-        /// nothing was lost, 0 dB means as much was discarded as kept, and +∞
-        /// means the window holds none of the channel at all).
-        /// <para>
-        /// This is the test for whether a window may be placed per curve. Two
-        /// curves gated at different absolute positions stay comparable only
-        /// while each window opens before its own channel's response does: a
-        /// window is not a time shift, and re-referencing the extraction to a
-        /// common τ rotates a spectrum but cannot put back a leading edge the
-        /// window removed. The figure deliberately looks only AHEAD of the
-        /// plateau — truncating the decay tail behind it is what a gate is
-        /// for, and every placement does it.
-        /// </para>
-        /// <para>
-        /// Measured on the nominal gate, not on FDW's per-band windows: those
-        /// are shorter by construction and always truncate, so they answer a
-        /// different question. What this one asks is whether the PLACEMENT is
-        /// sane for the channel.
-        /// </para>
-        /// </summary>
+        /// <summary>Energy discarded ahead of the plateau vs kept, in dB (−∞ nothing lost, +∞ window misses the channel). See docs/tech/phase-and-group-delay.md#leading-edge-loss-guard.</summary>
         public static double GateLeadingEdgeLossDb(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -126,11 +90,7 @@ namespace Resonalyze.Dsp
             double[] window = placement.Window;
             int length = impulseResponse.Length;
 
-            // The extraction's own addressing (ExtractWindow with wrap): a gate
-            // whose shoulder reaches before the record reads the circular
-            // buffer's tail, which is where a transfer IR's negative-time
-            // content lives. Judging that stretch as empty would pass a
-            // placement whose window is full of content the guard never saw.
+            // Wrapped addressing like the extraction: a shoulder before the record reads the circular tail.
             double Energy(int position)
             {
                 int index = position % length;
@@ -144,9 +104,6 @@ namespace Resonalyze.Dsp
                 kept += window[i] * window[i] * Energy(placement.ExtractionStart + i);
             }
 
-            // Everything ahead of the plateau, weighted by what the window
-            // takes away from it: all of it before the gate opens, the
-            // fade-in's own shape once inside.
             double lost = 0;
             for (int position = Math.Min(0, placement.ExtractionStart);
                 position < placement.PlateauStart;
@@ -164,16 +121,7 @@ namespace Resonalyze.Dsp
                 return 10.0 * Math.Log10(Math.Max(double.Epsilon, lost) / kept);
             }
 
-            // The window kept nothing of the channel — it sits entirely before
-            // the response or entirely after it. That is the worst a placement
-            // can do, and it must read that way round: as a ratio it IS
-            // infinite loss, and reporting the other infinity would make a
-            // window that misses the channel altogether look like the safest
-            // placement on offer, so a caller comparing two placements would
-            // take it over one that actually holds the channel. Note the
-            // leading-edge sum cannot answer this on its own: a window sitting
-            // entirely BEFORE the response has nothing ahead of its plateau
-            // either. Silence is the one case with no response to misplace.
+            // Window holds none of the channel: +∞ (worst), never −∞, or it would look like the safest placement.
             foreach (Complex sample in impulseResponse)
             {
                 if (sample.Real != 0.0)
@@ -185,10 +133,7 @@ namespace Resonalyze.Dsp
             return double.NegativeInfinity;
         }
 
-        // Builds a zero-padded, gated windowed impulse (time domain). The Tukey gate
-        // spans left + plateau + right samples; the end of its left shoulder (the
-        // fade-in/plateau boundary) is placed at gateOffsetMs from the IR start. Wrap
-        // handles a gate that runs into negative indices. Shared by phase and GD.
+        // Zero-padded Tukey-gated impulse; left shoulder ends at gateOffsetMs, wrap handles negative indices.
         private static Complex[] ExtractGatedWindowedImpulse(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -208,14 +153,7 @@ namespace Resonalyze.Dsp
             return ExtractWindow(measurement, extractionStart, GatedFftLength, window, wrap);
         }
 
-        // Gated windowed spectrum for phase analysis (the impulse FFT'd in place).
-        // wrap: true, matching GetGroupDelay exactly: the dialog advertises ONE
-        // gate for both, and phase must stay the mathematical integral of the
-        // group delay. A gate whose left shoulder runs before the IR start
-        // (offset < left fade) reads the cyclic tail — the transfer IR is
-        // circular by construction, so its negative-time content lives there.
-        // Zero-padding instead would silently feed phase and GD two different
-        // signals.
+        // wrap: true like GetGroupDelay: one gate for both keeps phase the integral of GD. See docs/tech/phase-and-group-delay.md#gate-geometry.
         private static Complex[] BuildPhaseSpectrum(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -252,9 +190,7 @@ namespace Resonalyze.Dsp
             int FdwCycles,
             int FftLength);
 
-        // TimeWeighted is null until a group-delay reader asks for it: the
-        // phase views only ever need the spectrum, and the twin doubles the
-        // FFT work and the memory held per gate.
+        // TimeWeighted stays null until a group-delay reader asks: it doubles FFT work and memory.
         private sealed record CachedPhaseSpectrum(
             Complex[] Spectrum,
             Complex[]? TimeWeighted,
@@ -267,11 +203,7 @@ namespace Resonalyze.Dsp
             Complex[]? TimeWeighted,
             int ExtractionStart);
 
-        // The FDW bank's window geometry in samples, resolved ONCE per
-        // (settings, rate) so the bank that builds the spectra and the
-        // smoothing floor that reads them cannot disagree about how long the
-        // window is at any frequency. Fixed mode is the degenerate bank whose
-        // every window is the full gate.
+        // Resolved once per (settings, rate) so the bank and the smoothing floor agree on window length.
         private readonly record struct FdwGateGeometry(
             int Left,
             int Right,
@@ -286,10 +218,7 @@ namespace Resonalyze.Dsp
                 int plateau = MillisecondsToSamples(settings.PlateauMs, sampleRate);
                 int right = MillisecondsToSamples(settings.RightMs, sampleRate);
                 int fixedGate = Math.Clamp(left + plateau + right, 1, GatedFftLength);
-                // The left shoulder is the immutable temporal anchor. The 0.8 ms
-                // floor therefore applies to analysis time after that shoulder;
-                // otherwise a long configured fade could consume the whole shortest
-                // window and zero the direct arrival at its endpoint.
+                // The 0.8 ms floor counts after the left shoulder, so a long fade cannot zero the direct arrival.
                 int minimumGate = Math.Clamp(
                     left + (int)Math.Round(FdwMinimumDurationSeconds * sampleRate),
                     1,
@@ -303,12 +232,7 @@ namespace Resonalyze.Dsp
                     sampleRate);
             }
 
-            // cycles/frequency is the analysis time AFTER the left-shoulder
-            // anchor — the same convention as the minimum-gate floor above
-            // and the duration the docs promise. Counting the shoulder
-            // inside the cycles would silently shorten the post-arrival
-            // window by the configured fade, making FDW more aggressive
-            // than advertised whenever the fade is long.
+            // Cycles count analysis time after the left shoulder, like the floor.
             public int EffectiveGate(double frequencyHz) => Cycles == 0 || frequencyHz <= 0.0
                 ? FixedGate
                 : Math.Clamp(
@@ -316,33 +240,17 @@ namespace Resonalyze.Dsp
                     MinimumGate,
                     FixedGate);
 
-            // The narrowest half-width the group-delay smoothing may take at a
-            // frequency: half the spectral resolution of the window applied
-            // there. The one place the floor is written — the curve builder
-            // and the test surface both read it from here.
             public double MinimumHalfWidthHz(double frequencyHz) =>
                 GroupDelayResolutionHalfWidthFactor * SampleRate / EffectiveGate(frequencyHz);
         }
 
-        /// <summary>
-        /// The length in samples of the window the analysis actually applies
-        /// at <paramref name="frequencyHz"/> under <paramref name="settings"/>:
-        /// the full gate in Fixed mode, and under FDW the left shoulder plus
-        /// <c>cycles / frequency</c>, held between the 0.8 ms floor and the
-        /// full gate. One function serves both the bank that builds the
-        /// spectra and the group-delay smoothing floor that reads them.
-        /// </summary>
+        /// <summary>Window length in samples at a frequency: the full gate (Fixed) or left shoulder + cycles/f clamped to [0.8 ms, gate] (FDW).</summary>
         internal static int FdwEffectiveGateSamples(
             double frequencyHz,
             PhaseAnalysisSettings settings,
             int sampleRate) =>
             FdwGateGeometry.Resolve(settings, sampleRate).EffectiveGate(frequencyHz);
 
-        /// <summary>
-        /// The bank's centre frequencies and the window length each one was
-        /// analysed through — after the merge of neighbouring centres whose
-        /// windows round to the same length, exactly as the bank builds it.
-        /// </summary>
         internal static IReadOnlyList<(double CenterFrequencyHz, int EffectiveGateSamples)>
             DescribeFdwBank(PhaseAnalysisSettings settings, int sampleRate)
         {
@@ -356,12 +264,7 @@ namespace Resonalyze.Dsp
             return bank;
         }
 
-        // The bank's plan: (centre, window) pairs, three centres per octave
-        // from the first FFT bin to Nyquist, neighbours with one window length
-        // merged into the LAST centre that length is valid for (so the
-        // interpolation below starts at that boundary and never shortens the
-        // low-frequency window early), and a shortest-window entry at Nyquist
-        // when the walk stopped short of it.
+        // Equal-length neighbours merge into the LAST valid centre so interpolation never shortens the LF window early. See docs/tech/phase-and-group-delay.md#fdw-bank.
         private static IEnumerable<(double CenterFrequencyHz, int EffectiveGateSamples)>
             FdwBankPlan(FdwGateGeometry geometry, int sampleRate)
         {
@@ -369,7 +272,6 @@ namespace Resonalyze.Dsp
             double nyquist = sampleRate / 2.0;
             if (geometry.Cycles == 0)
             {
-                // Fixed is the one-entry bank: the full gate up to Nyquist.
                 yield return (nyquist, geometry.FixedGate);
                 yield break;
             }
@@ -382,10 +284,6 @@ namespace Resonalyze.Dsp
                 int effectiveGate = geometry.EffectiveGate(center);
                 if (effectiveGate == pendingGate)
                 {
-                    // The spectrum is unchanged, but this gate remains valid up
-                    // to the current center. Keep that upper boundary so the
-                    // following interpolation does not start at the first FFT
-                    // bin and prematurely shorten the low-frequency window.
                     pendingCenter = center;
                     continue;
                 }
@@ -420,14 +318,7 @@ namespace Resonalyze.Dsp
             BuildAnalysisSpectra(measurement, settings, timeWeighted: false, out extractionStart)
                 .Spectrum;
 
-        // The cached gated analysis of one measurement under one gate. With
-        // timeWeighted the entry also carries FFT(t·w·h); a phase reader that
-        // finds an entry built for a group-delay reader simply takes its
-        // spectrum, and a group-delay reader that finds a phase-only entry
-        // rebuilds the pair (the spectrum comes out bit-identical: same
-        // extraction, same transform) and replaces it, so a redraw that
-        // toggles between the two views transforms each gate at most twice
-        // over the life of the impulse.
+        // A group-delay reader replaces a phase-only cache entry with the pair (spectrum bit-identical).
         private static (Complex[] Spectrum, Complex[]? TimeWeighted) BuildAnalysisSpectra(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
@@ -481,10 +372,7 @@ namespace Resonalyze.Dsp
             return (spectrum, weighted);
         }
 
-        // The Fixed gate's analysis: one Tukey window, its FFT and — for a
-        // group-delay reader — the FFT of the same windowed impulse weighted
-        // by its time from the extraction start, the two operands of
-        // τ = Re[T·conj(H)] / |H|².
+        // Operands of τ = Re[T·conj(H)] / |H|². See docs/tech/phase-and-group-delay.md#group-delay-identity.
         private static (Complex[] Spectrum, Complex[]? TimeWeighted) BuildFixedSpectra(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -509,8 +397,6 @@ namespace Resonalyze.Dsp
             return (windowedImpulse, weighted);
         }
 
-        // FFT(t·x) for a windowed impulse x still in the time domain, t the
-        // time from the buffer start. The input is left untouched.
         private static Complex[] TimeWeightSpectrum(Complex[] windowedImpulse, int sampleRate)
         {
             int n = windowedImpulse.Length;
@@ -525,14 +411,7 @@ namespace Resonalyze.Dsp
             return weighted;
         }
 
-        // The frequency-dependent window's analysis: a bank of Tukey windows
-        // whose length follows cycles/frequency, each transformed (twice, with
-        // the time-weighted twin, for a group-delay reader), re-referenced to
-        // one extraction start and stitched by complex-linear interpolation
-        // over log frequency — the SAME blend for both members of the pair,
-        // bin for bin, so the stitched pair is exactly the analysis of the
-        // impulse through the interpolated window and the group-delay
-        // identity still holds on it.
+        // Same complex-linear log-f blend for H and T, so the GD identity holds on the stitched pair. See docs/tech/phase-and-group-delay.md#fdw-bank.
         private static (Complex[] Spectrum, Complex[]? TimeWeighted) BuildFdwSpectra(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
@@ -622,16 +501,7 @@ namespace Resonalyze.Dsp
             return (combined, combinedWeighted);
         }
 
-        // Moves a spectrum's time origin from its own extraction start to a
-        // reference start, in place. For the time-weighted twin the weight
-        // itself moves first: a sample at buffer index n of an extraction
-        // starting at s carries the time (s + n − s_ref) / fs in the reference
-        // frame, so T gains ((s − s_ref) / fs) · H BEFORE the rotation, which
-        // then re-addresses both members the way it re-addresses H alone.
-        // Today's bank happens to extract every window at one start (the
-        // minimum window still exceeds the left shoulder), which makes this a
-        // no-op there; the general form is kept so the identity does not rest
-        // on that coincidence, and SumGatedSpectraPairs relies on it outright.
+        // The twin's time weight shifts by ((s − s_ref) / fs) · H before the rotation. A no-op in today's bank; SumGatedSpectraPairs needs the general form.
         private static void ReReferenceSpectra(
             Complex[] spectrum,
             Complex[]? timeWeighted,
@@ -697,73 +567,22 @@ namespace Resonalyze.Dsp
             }
         }
 
-        // Complex LINEAR interpolation between two bank spectra. The FFT is
-        // linear, so lerping the spectra IS analyzing the IR through the lerped
-        // time window w = (1−t)·w_lower + t·w_upper — and, critically, it is the
-        // only blend that preserves superposition, FDW(ΣIR) = Σ FDW(IR), the
-        // invariant Virtual DSP's channels-vs-Sum phase view rests on. The
-        // earlier log-magnitude / shortest-arc-phase blend was nonlinear: two
-        // channels whose spectra rotate differently between neighboring windows
-        // interpolated to a different phase than their vector sum did (tens of
-        // degrees from the order of operations alone), so the drawn Sum did not
-        // have to match the drawn channels. Where the two windows genuinely
-        // disagree in phase the lerp can pass near zero — that is a real null
-        // of the interpolated window, and the reliability gate masks it,
-        // instead of an arc gliding over it with a fabricated magnitude.
+        // Complex-linear only: the one blend preserving FDW(ΣIR) = Σ FDW(IR). See docs/tech/phase-and-group-delay.md#superposition.
         private static Complex InterpolateSpectrum(Complex lower, Complex upper, double t) =>
             lower + (upper - lower) * t;
 
-        // Reliability gates for the phase output: bins this far below the LOCAL
-        // magnitude envelope — or with squared coherence below the floor, when
-        // coherence is available — are treated as carrying no trustworthy phase.
-        // Unwrapped, they still contribute their phase but never anchor the
-        // unwrap, so one noisy or masked bin cannot shift the whole tail by 2π.
-        // Wrapped, they are blanked (NaN) outright: a wrapped display has no
-        // bridging to hide behind, and drawing the phase of a null, a filter
-        // stop-band or an incoherent band paints ±180° noise that reads as
-        // signal. The magnitude gate reads against an octave-smoothed
-        // local envelope rather than the global curve maximum: one tall resonance
-        // (a subwoofer's cabin peak) must not disqualify a quieter but perfectly
-        // repeatable band tens of dB below it. An absolute backstop against the
-        // global maximum still rejects true silence — inside a wide dead band the
-        // local envelope IS the noise floor and would otherwise pass itself.
-        // γ² = 0.5 is the point where less than half the measured energy is
-        // coherent with the reference and branch choices become unsafe.
+        // Local-envelope magnitude gate, global backstop, γ² floor. See docs/tech/phase-and-group-delay.md#reliability-gates.
         private const double UnwrapMagnitudeGateDb = -30.0;
         private const double UnwrapAbsoluteFloorDb = -60.0;
         private const double UnwrapEnvelopeOctaves = 1.0;
         private const double UnwrapCoherenceFloor = 0.5;
 
-        // How far the unwrap may bridge an unreliable stretch before conceding the
-        // branch is unknowable. Inside a gap the turn count is genuinely lost —
-        // an all-pass section or a crossover transition can add whole turns that
-        // no slope extrapolation can see — so past these limits the bridged points
-        // are blanked (NaN) and a fresh wrapped segment starts, instead of drawing
-        // one confident continuous line through guessed branches. Both limits must
-        // be exceeded: a gap narrow in hertz carries few delay turns (turns =
-        // τ·Δf) and bridges safely however many octaves it spans near DC, and a
-        // gap narrow in octaves is a local feature the running slope handles.
+        // A gap exceeding BOTH limits is blanked and restarts wrapped. See docs/tech/phase-and-group-delay.md#anchored-unwrap.
         private const int UnwrapMaxBridgeBins = 64;
         private const double UnwrapMaxBridgeOctaves = 1.0 / 3.0;
-        // Blend factor for the running dφ/df estimate used to predict the next
-        // bin's phase; the smoothing keeps a single jittery-but-reliable bin from
-        // steering the branch choice for the bins that follow.
         private const double UnwrapSlopeBlend = 0.25;
 
-        // Measured phase (radians) referenced to an absolute sample, for bins
-        // 1..n/2-1. The reference is shared across measurements (common origin), so
-        // setting it equal across two captures preserves their relative phase; setting
-        // it to a measurement's own arrival flattens that curve.
-        //
-        // Unwrapping is anchored to reliable bins: each bin takes the 2π branch
-        // closest to the phase predicted from the last reliable anchor and a running
-        // slope estimate. Unreliable bins (nulls, noise-floor, low coherence) get a
-        // branch too, but never become anchors, so the unwrap bridges them instead
-        // of accumulating their phase noise into the tail. A gap that runs past the
-        // bridge limits is conceded instead of guessed: its points are blanked and
-        // a fresh wrapped segment starts at the next reliable bin. With every bin
-        // reliable and a zero slope this reduces to the classic nearest-to-previous
-        // choice.
+        // Phase (rad) referenced to an absolute sample, bins 1..n/2-1, unwrap anchored on reliable bins only. See docs/tech/phase-and-group-delay.md#anchored-unwrap.
         private static List<SignalPoint> BuildMeasuredPhase(
             Complex[] spectrum,
             int extractionStart,
@@ -776,8 +595,6 @@ namespace Resonalyze.Dsp
             double referenceShift = referenceSamples - extractionStart;
             var data = new List<SignalPoint>(n / 2);
 
-            // The reliability gate serves both output modes (see the constants
-            // above), so its envelope is always computed.
             double maxMagnitude = 0.0;
             var magnitude = new double[n / 2];
             for (int i = 1; i < n / 2; i++)
@@ -807,7 +624,6 @@ namespace Resonalyze.Dsp
             {
                 double f = i * sampleRate / (double)n;
 
-                // Re-reference the segment phase to the absolute reference sample.
                 double referenced = spectrum[i].Phase + Math.Tau * i * referenceShift / n;
                 double wrapped = Math.Atan2(Math.Sin(referenced), Math.Cos(referenced));
 
@@ -818,18 +634,13 @@ namespace Resonalyze.Dsp
 
                 if (!unwrap)
                 {
-                    // Wrapped output blanks unreliable bins instead of drawing
-                    // their ±180° noise as if it were a curve.
                     data.Add(new SignalPoint(f, reliable ? wrapped : double.NaN));
                     continue;
                 }
 
                 if (!hasAnchor)
                 {
-                    // Before the first reliable bin the output stays wrapped; a
-                    // bin seeds the anchor only when it passes the reliability
-                    // gate, so a garbage bin near the bottom of the band cannot
-                    // offset the first unwrapped branch by 2π.
+                    // Only a reliable bin seeds the first anchor, so a garbage bin cannot offset the branch by 2π.
                     data.Add(new SignalPoint(f, wrapped));
                     if (reliable)
                     {
@@ -843,9 +654,6 @@ namespace Resonalyze.Dsp
 
                 if (reliable && IsBridgeTooLong(unreliableRun, lastReliableFrequency, f))
                 {
-                    // The turn count inside the gap is unknowable — blank the
-                    // guessed bridge and restart a fresh wrapped segment here,
-                    // claiming no branch relation across the gap.
                     for (int back = 1; back <= unreliableRun; back++)
                     {
                         data[^back] = new SignalPoint(data[^back].X, double.NaN);
@@ -888,8 +696,6 @@ namespace Resonalyze.Dsp
                 data.Add(new SignalPoint(f, unwrappedPhase));
             }
 
-            // A gap still open at Nyquist gets the same honesty: if it already
-            // exceeded the bridge limits, its guessed points are blanked too.
             if (unwrap && data.Count > 0 &&
                 IsBridgeTooLong(unreliableRun, lastReliableFrequency, data[^1].X))
             {
@@ -902,8 +708,6 @@ namespace Resonalyze.Dsp
             return data;
         }
 
-        // Both limits must be exceeded before a bridge is declared unknowable —
-        // see the constants above for why each alone is not enough.
         private static bool IsBridgeTooLong(
             int unreliableRun,
             double lastReliableFrequency,
@@ -913,11 +717,7 @@ namespace Resonalyze.Dsp
             frequency >= lastReliableFrequency *
                 Math.Pow(2.0, UnwrapMaxBridgeOctaves);
 
-        // Squared coherence at a frequency, linearly interpolated from an array
-        // covering 0..Nyquist in uniform bins (length fftLength/2 + 1 — the layout
-        // produced by TransferFunction.ComputeAveragedRelativeIr), so the coherence
-        // grid does not need to match the phase FFT grid. Degenerate inputs count
-        // as trusted, mirroring how the plots treat missing coherence coverage.
+        // Interpolated from a uniform 0..Nyquist grid (TransferFunction.ComputeAveragedRelativeIr); degenerate input counts as trusted.
         private static double CoherenceAt(
             IReadOnlyList<double> coherence,
             double frequency,
@@ -944,14 +744,7 @@ namespace Resonalyze.Dsp
                 (coherence[index + 1] - coherence[index]) * fraction;
         }
 
-        /// <summary>
-        /// Wrapped or unwrapped gated phase (radians) using the same gate
-        /// construction as <see cref="GetPhase"/>, referenced to an absolute
-        /// sample position (fractional samples allowed, so a τ reference is
-        /// not limited to whole samples). For callers that render their own
-        /// phase view (the Virtual DSP tool) without drifting from the Phase
-        /// mode's gating.
-        /// </summary>
+        /// <summary>Gated phase with the gate construction of <see cref="GetPhase"/>, referenced to a fractional absolute sample.</summary>
         public static List<SignalPoint> GetGatedPhaseData(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -978,16 +771,7 @@ namespace Resonalyze.Dsp
                 coherence);
         }
 
-        /// <summary>
-        /// The gated complex analysis spectrum behind the phase views — the
-        /// Fixed-gate FFT or the FDW-combined bank, per
-        /// <paramref name="settings"/> — with the extraction start needed to
-        /// re-reference it to an absolute sample. This is the quantity the
-        /// FDW linearity contract is stated on (FDW of a sum of IRs equals
-        /// the sum of the FDW spectra), so callers can verify or build on
-        /// superposition directly. Returns a copy: the underlying array is a
-        /// shared cache entry.
-        /// </summary>
+        /// <summary>A copy of the cached gated analysis spectrum (Fixed or FDW), the quantity FDW superposition is stated on.</summary>
         public static Complex[] GetPhaseAnalysisSpectrum(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
@@ -998,17 +782,7 @@ namespace Resonalyze.Dsp
             return (Complex[])spectrum.Clone();
         }
 
-        /// <summary>
-        /// The gated analysis spectrum of <see cref="GetPhaseAnalysisSpectrum"/>
-        /// together with its time-weighted twin, under the same window
-        /// (Fixed or FDW) and in one time reference — the operands a
-        /// group-delay reader needs, for callers that add channels before
-        /// reading one (the Virtual DSP Sum, through
-        /// <see cref="SumGatedSpectraPairs"/>). Copies, like
-        /// <see cref="GetPhaseAnalysisSpectrum"/>: the analysis is cached per
-        /// impulse and gate, and the cache must never be handed out to be
-        /// written into.
-        /// </summary>
+        /// <summary>Spectrum and time-weighted twin in one time reference; copies, since the analysis is cached.</summary>
         public static GroupDelaySpectra GetGroupDelayAnalysisSpectra(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
@@ -1041,13 +815,6 @@ namespace Resonalyze.Dsp
                 coherence);
         }
 
-        /// <summary>
-        /// The same phase construction over an ALREADY BUILT gated analysis
-        /// spectrum (<see cref="GetPhaseAnalysisSpectrum"/> or
-        /// <see cref="SumGatedSpectra"/>), referenced to an absolute sample
-        /// position — for callers that combine spectra before reading phase
-        /// (the Virtual DSP Sum).
-        /// </summary>
         public static List<SignalPoint> GetGatedPhaseData(
             Complex[] spectrum,
             int extractionStart,
@@ -1063,22 +830,7 @@ namespace Resonalyze.Dsp
                 unwrap,
                 coherence);
 
-        /// <summary>
-        /// The complex sum of gated analysis spectra whose extractions started
-        /// at different absolute positions: each is re-referenced to
-        /// <paramref name="targetExtractionStart"/> (a pure per-bin phase
-        /// rotation; the integer shifts keep the conjugate symmetry of a real
-        /// signal's spectrum) and accumulated, so the result reads exactly like
-        /// one spectrum extracted there. This is how a multi-channel Sum stays
-        /// the vector sum of individually gated channels when their windows do
-        /// not share a position (the Virtual DSP Auto gate, where each channel
-        /// is gated on its own arrival). Note what the re-reference is: it
-        /// moves a spectrum's time ORIGIN and nothing else, so it cannot make
-        /// spectra comparable whose windows kept different stretches of their
-        /// signals — that condition is the caller's to enforce (see
-        /// <see cref="GateLeadingEdgeLossDb"/>). The inputs are not modified
-        /// and must share one FFT length.
-        /// </summary>
+        /// <summary>Complex sum of gated spectra re-referenced to one extraction start. This moves only the time origin: windows that kept different stretches stay incomparable (see <see cref="GateLeadingEdgeLossDb"/>).</summary>
         public static Complex[] SumGatedSpectra(
             IReadOnlyList<(Complex[] Spectrum, int ExtractionStart)> spectra,
             int targetExtractionStart)
@@ -1111,8 +863,6 @@ namespace Resonalyze.Dsp
                     continue;
                 }
 
-                // The same re-reference ApplyTimeReference performs, applied on
-                // the fly so the caller's arrays stay untouched.
                 for (int bin = 0; bin < length; bin++)
                 {
                     combined[bin] += spectrum[bin] * Complex.FromPolarCoordinates(
@@ -1124,18 +874,7 @@ namespace Resonalyze.Dsp
             return combined;
         }
 
-        /// <summary>
-        /// <see cref="SumGatedSpectra"/> for group-delay operands: every
-        /// part's spectrum AND time-weighted twin are re-referenced to
-        /// <paramref name="targetExtractionStart"/> and accumulated. The twin
-        /// is not just rotated — its time weight is counted from the part's
-        /// own extraction start, so the offset between that start and the
-        /// target is added to it first (as <c>((s − s_ref) / fs) · H</c>);
-        /// only then does the same rotation re-address both. Both operators
-        /// are linear, so the group delay read off the sum is the group delay
-        /// of the summed channels as one signal would read through the same
-        /// windows. The inputs are not modified and must share one FFT length.
-        /// </summary>
+        /// <summary><see cref="SumGatedSpectra"/> for group-delay pairs; each twin's time weight shifts by its start offset before the rotation.</summary>
         public static GroupDelaySpectra SumGatedSpectraPairs(
             IReadOnlyList<(GroupDelaySpectra Spectra, int ExtractionStart)> parts,
             int targetExtractionStart,
@@ -1160,10 +899,6 @@ namespace Resonalyze.Dsp
                         "All spectra must share one FFT length.", nameof(parts));
                 }
 
-                // The same move ReReferenceSpectra makes in place — the time
-                // weight first, then the rotation of both — applied on the fly
-                // so the caller's arrays stay untouched and nothing is cloned
-                // per channel per redraw.
                 double shift = targetExtractionStart - extractionStart;
                 double weightShift = (extractionStart - targetExtractionStart) / (double)sampleRate;
                 for (int bin = 0; bin < length; bin++)
@@ -1198,12 +933,7 @@ namespace Resonalyze.Dsp
                 settings);
         }
 
-        /// <summary>
-        /// Resolves the one Auto reference that a multi-curve view must reuse for
-        /// every channel and sum. The reference measurement is intentionally the
-        /// only signal accepted, making per-channel auto-flattening a caller-visible
-        /// policy error rather than an accidental loop implementation.
-        /// </summary>
+        /// <summary>One Auto reference for every channel and sum; accepting only the reference measurement makes per-channel flattening impossible by accident.</summary>
         public static double ResolveCommonPhaseDetrendMilliseconds(
             IImpulseMeasurement referenceMeasurement,
             PhaseAnalysisSettings settings) =>
@@ -1269,12 +999,7 @@ namespace Resonalyze.Dsp
         }
 
 
-        /// <summary>
-        /// Computes the minimum-phase response derived from the windowed magnitude
-        /// spectrum. Unlike <see cref="GetPhase"/> this contains no excess (delay or
-        /// reflection) component, so it shows the phase that remains after a perfect
-        /// minimum-phase equalization of the magnitude.
-        /// </summary>
+        /// <summary>Minimum phase from the windowed magnitude: no delay or reflection component.</summary>
         public static AnalysisCurve GetMinimumPhase(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -1298,8 +1023,7 @@ namespace Resonalyze.Dsp
                 magnitude[i] = spectrum[i].Magnitude;
             }
 
-            // The minimum phase depends only on the magnitude (Bode relation); it is
-            // the magnitude-derived reference and is not affected by the τ detrend.
+            // Magnitude-derived (Bode), so the τ detrend does not apply.
             double[] minimumPhase = MinimumPhase.FromMagnitude(magnitude);
 
             List<SignalPoint> data = new(n / 2);
@@ -1344,12 +1068,7 @@ namespace Resonalyze.Dsp
                 AnalysisCurveKind.MinimumPhase);
         }
 
-        /// <summary>
-        /// Computes the excess phase: measured phase minus minimum phase. This is the
-        /// all-pass component (pure delay plus reflections) that a minimum-phase
-        /// equalizer cannot correct. The measured part is always taken unwrapped so
-        /// the difference is continuous.
-        /// </summary>
+        /// <summary>Measured minus minimum phase: the all-pass part a minimum-phase EQ cannot correct.</summary>
         public static AnalysisCurve GetExcessPhase(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -1371,9 +1090,6 @@ namespace Resonalyze.Dsp
             double referenceSamples =
                 detrendMilliseconds * measurement.SampleRate / 1000.0;
 
-            // Measured phase (always unwrapped so the difference is continuous) and the
-            // minimum phase share the same grid; the τ detrend rides on the measured
-            // part, so the excess inherits it.
             List<SignalPoint> measured = BuildMeasuredPhase(
                 spectrum,
                 extractionStart,
@@ -1390,8 +1106,7 @@ namespace Resonalyze.Dsp
             }
             double[] minimumPhase = MinimumPhase.FromMagnitude(magnitude);
 
-            // BuildMeasuredPhase and the minimum-phase array both start at bin 1, so the
-            // measured point at index j corresponds to bin j + 1.
+            // Both start at bin 1: measured index j is bin j + 1.
             List<SignalPoint> data = new(measured.Count);
             for (int j = 0; j < measured.Count; j++)
             {
@@ -1436,13 +1151,7 @@ namespace Resonalyze.Dsp
                 AnalysisCurveKind.ExcessPhase);
         }
 
-        /// <summary>
-        /// Estimates the τ (in milliseconds) that flattens the excess phase, using the
-        /// same window as the displayed curves. Returns both the energy-weighted
-        /// average (slope) and the dominant-arrival (peak) estimates. The values are
-        /// absolute (referenced to IR sample 0), so the same value can be entered on a
-        /// second measurement to compare their relative phase.
-        /// </summary>
+        /// <summary>τ (ms, absolute from IR sample 0) that flattens the excess phase: energy-weighted slope and dominant-peak estimates.</summary>
         public static (double SlopeMilliseconds, double PeakMilliseconds) EstimatePhaseDetrend(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -1481,17 +1190,10 @@ namespace Resonalyze.Dsp
                 (extractionStart + result.PeakDelaySamples) * toMilliseconds);
         }
 
-        // Minimal energy-weighted smoothing applied even when display smoothing is
-        // off: wide enough to bridge single-bin interference nulls (whose group
-        // delay legitimately diverges but carries almost no energy), narrow enough
-        // to leave the visible curve unchanged elsewhere.
+        // Used when display smoothing is off: bridges single-bin interference nulls without changing the visible curve.
         private const double GroupDelayStabilizationOctaves = 1.0 / 48.0;
 
-        // The smoothing window never narrows below the gate's own spectral
-        // resolution (1/T for a gate of duration T): features narrower than that
-        // cannot be resolved by the gate in the first place, and it is exactly
-        // the scale of the interference nulls of the longest in-gate reflection,
-        // whose group-delay spikes the energy weighting is meant to absorb.
+        // Smoothing never narrows below the window's resolution (1/T). See docs/tech/phase-and-group-delay.md#group-delay-smoothing.
         private const double GroupDelayResolutionHalfWidthFactor = 0.5;
 
         public static AnalysisCurve GetGroupDelay(
@@ -1512,19 +1214,7 @@ namespace Resonalyze.Dsp
                 magnitudeGateDb,
                 includeMinimumPhase: false).Measured;
 
-        /// <summary>
-        /// The Group Delay mode's curve family over ONE Fixed gate extraction:
-        /// the measured group delay and, when requested, the minimum-phase group
-        /// delay (from the gated magnitude via the Bode relation) plus the
-        /// excess (measured − minimum). All curves run through the same
-        /// energy-weighted τ evaluation and smoothing and share one validity
-        /// gate, so the subtraction is bin-exact. The measured and excess
-        /// curves are absolute (referenced to the IR start); the minimum-phase
-        /// curve carries no bulk delay by construction, so the excess reads as
-        /// the frequency-dependent arrival time of the all-pass part. The
-        /// Fixed-window form of the <see cref="PhaseAnalysisSettings"/>
-        /// overload, kept for the callers that never window per frequency.
-        /// </summary>
+        /// <summary>Group-delay curves (measured, minimum, excess) over one Fixed gate; shared smoothing and validity gate keep the subtraction bin-exact.</summary>
         public static GroupDelayCurveSet GetGroupDelayCurves(
             IImpulseMeasurement measurement,
             double gateOffsetMs,
@@ -1551,22 +1241,7 @@ namespace Resonalyze.Dsp
                 magnitudeGateDb,
                 includeMinimumPhase);
 
-        /// <summary>
-        /// The Group Delay mode's curve family through the window
-        /// <paramref name="settings"/> describes — the Fixed Tukey gate, or the
-        /// frequency-dependent bank the Phase mode analyses through. Under FDW
-        /// the group delay at a frequency is the energy-weighted arrival time
-        /// INSIDE the window applied at that frequency (the left shoulder plus
-        /// <c>cycles</c> periods after the gate offset): the direct sound's
-        /// arrival at mid and high frequencies, the full gate's reading where
-        /// the window is clamped to it at low frequencies. It is the same
-        /// identity τ = Re[T·conj(H)] / |H|² the Fixed curve uses, evaluated on
-        /// the stitched bank — NOT the derivative of the FDW phase curve, whose
-        /// slope also carries the window's own change with frequency. Only the
-        /// window fields of <paramref name="settings"/> are read (gate offset,
-        /// shoulders, mode, cycles); detrend, unwrap and its own smoothing
-        /// field belong to the phase display and are ignored here.
-        /// </summary>
+        /// <summary>Group-delay curves through the Fixed or FDW window. Under FDW: the identity on the stitched bank, not the derivative of FDW phase; only window fields of <paramref name="settings"/> are read. See docs/tech/phase-and-group-delay.md#fdw-group-delay.</summary>
         public static GroupDelayCurveSet GetGroupDelayCurves(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
@@ -1589,16 +1264,7 @@ namespace Resonalyze.Dsp
                 highestMeasuredFrequencyHz: double.PositiveInfinity);
         }
 
-        /// <summary>
-        /// The same curve family over an ALREADY BUILT operand pair
-        /// (<see cref="GetGroupDelayAnalysisSpectra"/> or
-        /// <see cref="SumGatedSpectraPairs"/>) whose time reference is
-        /// <paramref name="extractionStart"/>. <paramref name="settings"/>
-        /// supplies only the window geometry the smoothing floor is derived
-        /// from (the gate's own resolution at each frequency); it must be the
-        /// geometry the pair was analysed through, offset aside. Bins outside
-        /// the measured band are blanked, as the Virtual DSP magnitudes are.
-        /// </summary>
+        /// <summary>Curves over a prebuilt pair; <paramref name="settings"/> must carry the window geometry the pair was analysed through (its offset is ignored: <paramref name="extractionStart"/> sets the time reference).</summary>
         public static GroupDelayCurveSet GetGroupDelayCurves(
             GroupDelaySpectra spectra,
             int extractionStart,
@@ -1631,15 +1297,7 @@ namespace Resonalyze.Dsp
                 highestMeasuredFrequencyHz);
         }
 
-        /// <summary>
-        /// The narrowest half-width the group-delay smoothing may take at
-        /// <paramref name="frequencyHz"/>: half the spectral resolution of the
-        /// window the analysis applies there (<see cref="FdwEffectiveGateSamples"/>).
-        /// Constant under Fixed; under FDW it follows the shrinking window, so
-        /// at 8 cycles and no clamp it is <c>f / 16</c> — about a twelfth of an
-        /// octave either side, which is why display smoothing finer than that
-        /// changes nothing above the transition frequency.
-        /// </summary>
+        /// <summary>Smoothing floor: half the resolution of the window applied at the frequency (f/16 at 8 cycles under FDW).</summary>
         internal static double GroupDelayMinimumHalfWidthHz(
             double frequencyHz,
             PhaseAnalysisSettings settings,
@@ -1663,11 +1321,7 @@ namespace Resonalyze.Dsp
             int halfLength = n / 2;
             double binWidthHz = sampleRate / (double)n;
 
-            // Per-bin numerator and denominator of τg = Re[T·conj(H)] / |H|². Smoothing
-            // them separately and dividing the averages makes the result energy-weighted:
-            // near-null bins (where the per-bin ratio legitimately spikes to ±tens of ms)
-            // enter with weight |H|² ≈ 0, so the curve follows the delay of the dominant
-            // energy instead of the singularity.
+            // Smooth numerator and |H|² separately: energy-weighted, near-null spikes get weight ≈ 0.
             double[] numerator = new double[halfLength];
             double[] energy = new double[halfLength];
             for (int i = 1; i < halfLength; i++)
@@ -1678,12 +1332,7 @@ namespace Resonalyze.Dsp
                 energy[i] = h.Real * h.Real + h.Imaginary * h.Imaginary;
             }
 
-            // The minimum-phase reconstruction preserves |H| exactly, so the measured
-            // energy array doubles as this curve's denominator and one validity gate
-            // covers every curve. Under FDW the magnitude it reads is the
-            // windowed one — the direct sound's at mid and high frequencies —
-            // so "minimum" there is what THAT magnitude dictates, not the
-            // steady-state response's.
+            // Minimum phase preserves |H|: one denominator and validity gate for all curves. Under FDW it follows the windowed magnitude.
             double[]? minimumNumerator = includeMinimumPhase
                 ? ComputeMinimumPhaseGroupDelayNumerator(spectrum, invSampleRate)
                 : null;
@@ -1694,18 +1343,12 @@ namespace Resonalyze.Dsp
                 ? decodedOctaves
                 : GroupDelayStabilizationOctaves;
 
-            // The floor under the smoothing is the window's own resolution —
-            // one figure across the band for the Fixed gate, and under FDW a
-            // function of frequency that follows the window the bank applied
-            // there, from the one geometry the bank itself was built from.
             FdwGateGeometry geometry = FdwGateGeometry.Resolve(settings, sampleRate);
             double[] smoothedNumerator;
             double[] smoothedEnergy;
             double[]? smoothedMinimumNumerator;
             if (settings.WindowMode == PhaseWindowMode.Fixed)
             {
-                // The full gate at every frequency: one scalar, and the scalar
-                // smoothing path the Fixed curve has always taken.
                 double minHalfWidthHz = geometry.MinimumHalfWidthHz(frequencyHz: 0.0);
                 smoothedNumerator =
                     SmoothBinsHann(numerator, smoothingOctaves, binWidthHz, minHalfWidthHz);
@@ -1743,13 +1386,7 @@ namespace Resonalyze.Dsp
                     includeMinimumPhase ? new List<SignalPoint>() : null);
             }
 
-            // The validity gate reads against a LOCAL octave-smoothed energy
-            // envelope, like the unwrap's reliability gate: one tall resonance
-            // must not blank a quieter but perfectly measured band 30+ dB below
-            // it. The −60 dB global backstop (the same figure as the unwrap's)
-            // still rejects true silence, where the local envelope IS the noise
-            // floor and would otherwise pass itself. Energies compare as |H|²,
-            // so the dB thresholds divide by 10.
+            // Local-envelope gate with the −60 dB global backstop, as in the unwrap; energies are |H|², so dB/10.
             double[] localEnvelope = SmoothBinsHann(
                 smoothedEnergy, 1.0, binWidthHz, minHalfWidthHz: 0.0);
             double globalGate = maxEnergy * Math.Pow(10.0, -60.0 / 10.0);
@@ -1762,18 +1399,13 @@ namespace Resonalyze.Dsp
             List<SignalPoint>? excessData =
                 smoothedMinimumNumerator == null ? null : new(halfLength);
 
-            // The gate buffer starts at extractionStart; adding it back makes the group
-            // delay absolute (referenced to the IR start), so a peak well into the IR
-            // reads its true arrival time.
+            // Absolute group delay, referenced to the IR start.
             double absoluteStartTime = extractionStart * invSampleRate;
 
             for (int i = 1; i < halfLength; i++)
             {
                 double f = i * binWidthHz;
 
-                // Regions with no coherent energy anywhere in the smoothing window
-                // (outside the sweep band, true silence, deep local notches) stay
-                // gated out — as does everything outside the measured band.
                 double minEnergy = Math.Max(
                     Math.Max(localEnvelope[i] * localGateRatio, globalGate),
                     absoluteGate);
@@ -1824,13 +1456,7 @@ namespace Resonalyze.Dsp
                         excess,
                         AnalysisCurveKind.ExcessGroupDelay));
 
-        // Per-bin τ numerator Re[T·conj(H_min)] of the minimum-phase counterpart:
-        // reconstruct |H|·e^{jφ_min} from the measured magnitude, return to the
-        // time domain and time-weight it — the same construction the measured
-        // curve uses, so both divide by the same |H|² and inherit identical
-        // smoothing semantics. h_min is real by construction (log|H| is even, so
-        // φ_min is odd and the spectrum stays conjugate-symmetric); the finite
-        // FFT's imaginary residue is dropped rather than folded into the τ.
+        // Built like the measured numerator so both share |H|². h_min is real; the FFT's imaginary residue is dropped.
         private static double[] ComputeMinimumPhaseGroupDelayNumerator(
             Complex[] spectrum,
             double invSampleRate)
@@ -1865,38 +1491,18 @@ namespace Resonalyze.Dsp
             return numerator;
         }
 
-        // The SEED grid: how many anchors span one kernel width before refinement. Not
-        // the guarantee — SmoothingRelativeTolerance is.
+        // Seed grid only; SmoothingRelativeTolerance is the guarantee.
         private const double SmoothingAnchorsPerKernel = 16.0;
 
-        // A span between two anchors is interpolated when the chord's error at its
-        // midpoint is within this, relative to the local value. ~0.04 dB: far under the
-        // 30 dB margin the reliability gates compare against, and under anything the
-        // group-delay ratio resolves.
+        // Allowed chord error at a span midpoint, relative (~0.04 dB).
         private const double SmoothingRelativeTolerance = 0.005;
 
-        // …floored at this fraction of the array's peak. Below it every caller has
-        // already thrown the bin away — both gates carry a -60 dB global backstop, the
-        // unwrap's on amplitude and the group delay's on energy (hence the tighter figure
-        // here, since energy compares as |H|²) — so chasing precision into the noise
-        // floor would only buy subdivision nobody reads.
+        // Tolerance floor as a fraction of the peak: callers already drop bins below −60 dB.
         private const double SmoothingScaleFloor = 1e-6;
 
-        // Refinement stops here: a span this short is at the bin grid's own resolution,
-        // and the exact evaluation is what further splitting would converge to anyway.
         private const int SmoothingMinimumSpan = 2;
 
-        // Hann-weighted fractional-octave moving average over the linear FFT bin
-        // grid (bin 0 excluded). A strictly non-negative kernel, unlike the Lanczos
-        // used for display smoothing: the group-delay division needs the smoothed
-        // energy to stay positive, and a signed kernel could cancel it near sharp
-        // spectral transitions and reintroduce the very spikes being removed.
-        //
-        // Display smoothing for the phase-domain curves (phase, minimum/excess
-        // phase): the stored code decodes through SpectrumSmoothing, so the
-        // psychoacoustic magnitude mode falls back to its plain base width here
-        // — cubic magnitude averaging is not meaningful for a signed phase
-        // trace. Off (0) passes the data through untouched.
+        // Psychoacoustic mode falls back to its base width: cubic averaging is meaningless for signed phase.
         private static List<SignalPoint> SmoothPhaseCurve(
             List<SignalPoint> data, double smoothingInverseOctaves)
         {
@@ -1904,23 +1510,7 @@ namespace Resonalyze.Dsp
             return octaves > 0 ? SmoothLinear(data, octaves) : data;
         }
 
-        // Evaluated on LOG-spaced anchors and interpolated between them, with every span
-        // checked against the exact curve at its midpoint and split until it agrees.
-        //
-        // Evaluating at every linear bin asks for orders of magnitude more resolution
-        // than a fractional-octave average carries, and the cost is quadratic: the kernel
-        // widens in proportion to frequency, so the naive form ran ~1.1e8 iterations (each
-        // with a cosine) over a 32k FFT — half a second per curve, on the UI thread.
-        //
-        // The seeded grid alone is NOT enough, though: "smoothed" does not mean "linear".
-        // Across a sweep's band edge or a steep stopband the average falls exponentially,
-        // and a chord drawn over that reads high — 10 dB high at the edge of the band,
-        // worst exactly where the value is small and the dB error therefore largest. The
-        // midpoint probe is what turns the bound from a hope into an assertion, and it
-        // costs nothing on the smooth stretches that make up most of a response.
-        // Internal rather than private so the tests can hold it against an exact
-        // reference: its contract is an error bound, and nothing observable through the
-        // public surface pins that.
+        // Non-negative Hann kernel on log anchors with midpoint-checked chords. See docs/tech/phase-and-group-delay.md#anchored-hann-smoothing.
         internal static double[] SmoothBinsHann(
             double[] source,
             double smoothingOctaves,
@@ -1932,12 +1522,7 @@ namespace Resonalyze.Dsp
                 source, smoothingOctaves, binWidthHz, _ => halfWidthFloor, floored: true);
         }
 
-        // The same average with a floor that varies along the band —
-        // minHalfWidthHzAt maps a bin's frequency to the narrowest half-width
-        // allowed there. The FDW group delay reads through a window whose
-        // resolution changes with frequency, so its floor must too; a floor
-        // that varies smoothly keeps the smoothed curve smooth, which the
-        // anchored walk below relies on.
+        // Floor varying along the band (FDW resolution follows frequency).
         private static double[] SmoothBinsHann(
             double[] source,
             double smoothingOctaves,
@@ -1973,9 +1558,7 @@ namespace Resonalyze.Dsp
 
             double toleranceFloor = peak * SmoothingScaleFloor;
 
-            // Never advance by less than one bin: at the low end a log step is
-            // sub-bin, and the walk then degenerates to the exact per-bin evaluation
-            // on its own — which is also where the kernel is narrowest and cheapest.
+            // At least one bin per step; the low end degenerates to exact per-bin evaluation.
             double anchorStep = Math.Pow(2.0, smoothingOctaves / SmoothingAnchorsPerKernel);
             var anchors = new List<int>();
             for (double position = 1.0; position < count;)
@@ -2014,10 +1597,7 @@ namespace Resonalyze.Dsp
             return result;
         }
 
-        // Fills [low, high) by the chord between the ends when that tracks the exact curve
-        // at the midpoint, and splits on the midpoint when it does not. The probe is the
-        // whole point: it is where a chord over a convex stretch is furthest from it, so
-        // accepting it bounds the error across the span.
+        // A chord is accepted only when it matches the exact midpoint value; otherwise split.
         private static void FillSpan(
             double[] source,
             double[] result,
@@ -2068,9 +1648,6 @@ namespace Resonalyze.Dsp
                 binWidthHz, frequencyRatio, halfWidthFloor, toleranceFloor);
         }
 
-        // The exact Hann-weighted average centred on one bin — the kernel the anchors
-        // sample. Kept whole so the anchored walk above and any future direct caller
-        // cannot drift apart.
         private static double HannAverageAt(
             double[] source,
             int index,

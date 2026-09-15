@@ -4,19 +4,10 @@ using System.Text.Json.Serialization;
 
 namespace Resonalyze.Integration.AgentBridge;
 
-/// <summary>
-/// Turns the text of an assistant's reply into an <see cref="AgentProposal"/>, or
-/// into one plain sentence saying why it could not. Everything on the clipboard is
-/// untrusted: the reply is searched for exactly one marked block, the block is read
-/// with a serializer that forgives nothing (no comments, no trailing commas, no
-/// named floating-point literals, no unknown properties, no case games), and each
-/// operation object is understood on its own so one bad object costs one row of
-/// the review rather than the whole reply.
-/// </summary>
+/// <summary>Parses an untrusted reply into an <see cref="AgentProposal"/> or one sentence why not. Each operation is mapped on its own, so one bad object costs one review row. See docs/tech/agent-bridge.md#reply-parsing.</summary>
 internal static class AgentProposalParser
 {
-    // Deliberately NOT the options the session loader uses: those tolerate a
-    // hand-edited file, and tolerance is the one thing a reply must not get.
+    // Deliberately NOT the session loader's options: those tolerate hand edits, and a reply must get no tolerance.
     private static readonly JsonSerializerOptions Strict = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -76,7 +67,7 @@ internal static class AgentProposalParser
                 $"The proposal uses protocol version {wire.ProtocolVersion}; this build " +
                 $"reads version {AgentProtocol.Version}.");
         }
-        // `required` only requires the member to be PRESENT; a JSON null passes it.
+        // `required` only requires PRESENCE; a JSON null passes it.
         if (wire.Operations == null)
         {
             return AgentProposalParseResult.Fail("The proposal's operations list is null.");
@@ -154,15 +145,7 @@ internal static class AgentProposalParser
             rejected));
     }
 
-    // Exactly one begin and one end, in that order, with something between them.
-    // Two blocks are not "take the last one": an assistant that wrote two was
-    // asked for one, and guessing which it meant is how the wrong tune gets applied.
-    // The proposal is the one JSON object in the reply whose "kind" names it. A
-    // chat pastes the object inside a Markdown fence and puts anything around it;
-    // the earlier envelope of BEGIN/END markers is still read when a reply
-    // carries it, since assistants keep copying what they saw work — but a chat
-    // that set the markers OUTSIDE the block it offers to copy is why the object
-    // now identifies itself.
+    // Exactly one proposal object (identified by its "kind"): two are refused, not guessed between. Legacy BEGIN/END markers are still read.
     private static bool TryExtractBlock(string text, out string json, out string? problem)
     {
         json = string.Empty;
@@ -223,7 +206,6 @@ internal static class AgentProposalParser
         return true;
     }
 
-    // A fenced block is what most chat UIs copy; the fence is not part of the JSON.
     private static string Unfenced(string text)
     {
         string json = text.Trim();
@@ -241,27 +223,18 @@ internal static class AgentProposalParser
         return json;
     }
 
-    // Every top-level JSON object in the text that names the proposal kind. A
-    // brace scanner that knows JSON strings (so a brace inside a reason does not
-    // end an object) walks each candidate from its opening brace; an object
-    // that never closes, or does not name the kind, is prose and skipped, and
-    // the walk resumes after the candidate so nested objects are not counted
-    // twice.
+    // Top-level objects naming the proposal kind; the scanner knows JSON strings, skips unclosed or unnamed candidates, and resumes after each so nested objects are not counted twice.
     private static List<string> ProposalObjects(string text)
     {
         var found = new List<string>();
         string kindMarker = "\"" + AgentProtocol.ProposalKind + "\"";
-        // No object opened after the last mention of the kind can contain it.
         int lastMarker = text.LastIndexOf(kindMarker, StringComparison.Ordinal);
         if (lastMarker < 0)
         {
             return found;
         }
 
-        // Each brace that never closes is walked to the end of the text, and a
-        // paste full of them (a minified script, say) would be quadratic. The
-        // walk gets a budget generous for any reply and small for such a paste;
-        // past it the reply reads as holding whatever was found by then.
+        // Unclosed braces each walk to the end, quadratic on a minified paste: past this budget the reply holds whatever was found.
         long budget = 8L * text.Length + (1L << 20);
         int index = 0;
         while (index <= lastMarker && (index = text.IndexOf('{', index)) >= 0 && index <= lastMarker)
@@ -387,16 +360,7 @@ internal static class AgentProposalParser
         }
     }
 
-    // Blank is missing. A reply that writes "reason": "" has said as much as one
-    // that left the field out, and the review can only mark what it can tell
-    // apart — so the two arrive as the same thing, exactly as a blank summary
-    // does. (An operation the PARSER refused carries an empty reason on its
-    // verdict, set by the validator, and keeps its blank: its problem is the
-    // explanation.)
-    // A blank that is too long is still too long: only what the limits already
-    // allow is collapsed, so CheckStrings still sees an over-limit string and
-    // refuses it. (The summary is length-checked on the wire value above, before
-    // it ever reaches here.)
+    // Blank is missing, as for the summary. Only within-limit blanks collapse, so CheckStrings still refuses an over-limit one.
     private static string? Prose(string? value) =>
         string.IsNullOrWhiteSpace(value) && WithinLength(value) ? null : value;
 
@@ -501,8 +465,7 @@ internal static class AgentProposalParser
     private static AgentCrossover Map(CrossoverSpecWire wire) =>
         new(wire.Kind, Map(wire.HighPass), Map(wire.LowPass));
 
-    // A JSON null in a required object: `required` does not catch it, so the
-    // mapper does, with the same exception the strict reader would have thrown.
+    // `required` does not catch a JSON null; throw the strict reader's exception.
     private static T NotNull<T>(T? value, string member) where T : class =>
         value ?? throw new JsonException($"'{member}' is null.");
 
@@ -545,10 +508,7 @@ internal static class AgentProposalParser
             wire.Id, Prose(wire.Reason), wire.JunctionId, wire.MinHz, wire.MaxHz,
             wire.Families, wire.Slopes, wire.IndependentSlopes);
 
-    // Every nested element goes through NotNull: `"variants": [null]` and
-    // `"changes": [null]` are valid JSON that `required` does not catch, and
-    // dereferencing one would leave the parser with a NullReferenceException —
-    // which nothing above catches — instead of one rejected operation.
+    // `"variants": [null]` would otherwise escape as an uncaught NullReferenceException instead of one rejected operation.
     private static AgentOperation? Map(ProbeWire? wire) => wire == null
         ? null
         : new ProbeOperation(
@@ -618,8 +578,7 @@ internal static class AgentProposalParser
         return count;
     }
 
-    // Error text is shown in a message box, and a serializer message quotes the
-    // offending token — which may be a whole paragraph of the reply.
+    // Serializer messages can quote a whole paragraph into the message box.
     private static string Shorten(string? text)
     {
         const int limit = 160;
@@ -632,20 +591,13 @@ internal static class AgentProposalParser
         return text.Length <= limit ? text : text[..limit] + "…";
     }
 
-    // The wire shapes: what the JSON is allowed to contain, no more. `required`
-    // makes a missing member a JsonException; the strict options make an extra
-    // one a JsonException too. `extensions` is the one open door, for a future
-    // additive field, and its content is ignored.
+    // Wire shapes: `required` rejects missing members, strict options reject extra ones; `extensions` is the one ignored open door.
     private sealed class ProposalWire
     {
         public required string Kind { get; init; }
         public required int ProtocolVersion { get; init; }
         public string? PackageId { get; init; }
-        // Wanted, not required. An assistant that leaves the prose out has still
-        // said what it wants done in the operations, and refusing the whole
-        // reply over a missing sentence costs the user a round trip through the
-        // chat to get back a sentence they were about to read anyway. The
-        // review says the reply gave none.
+        // Wanted, not required: refusing a reply over missing prose costs a chat round trip; the review says none was given.
         public string? Summary { get; init; }
         public List<string>? Advice { get; init; }
         public List<SourceWire>? Sources { get; init; }
@@ -664,14 +616,11 @@ internal static class AgentProposalParser
     {
         public required string Op { get; init; }
         public required string Id { get; init; }
-        /// <summary>Wanted, not required — see <c>ProposalWire.Summary</c>.</summary>
         public string? Reason { get; init; }
         public JsonElement? Extensions { get; init; }
     }
 
-    // Everything but the three requests aimed at the whole project: a channel id
-    // is required, and a reply that leaves it out is refused rather than aimed
-    // at a guess.
+    // A channel id is required, never guessed.
     private abstract class ChannelOperationWire : OperationWire
     {
         public required string ChannelId { get; init; }
@@ -736,9 +685,7 @@ internal static class AgentProposalParser
         public required double GainDb { get; init; }
     }
 
-    // The engine requests. An optional input that is absent means "what the panel
-    // would open with", so a `null` and a missing member read the same; what is
-    // `required` here is what the request cannot be understood without.
+    // An absent optional input means the panel's default, so null and missing read the same.
     private sealed class AutoDelayWire : OperationWire
     {
         public double? SceneOffsetMs { get; init; }
@@ -752,8 +699,6 @@ internal static class AgentProposalParser
     {
     }
 
-    // The junction is what the request cannot be understood without; every
-    // choice about the search is the tuner's own where the reply leaves it out.
     private sealed class TuneJunctionWire : OperationWire
     {
         public required string JunctionId { get; init; }
@@ -764,15 +709,11 @@ internal static class AgentProposalParser
         public bool? IndependentSlopes { get; init; }
     }
 
-    // A probe carries what its own kind needs and nothing else; the review holds
-    // each kind to its fields, so a missing one is a reason rather than a
-    // silently different reading.
     private sealed class ProbeWire : OperationWire
     {
         public required string Probe { get; init; }
         public string? JunctionId { get; init; }
         public List<ProbeVariantWire>? Variants { get; init; }
-        // The series probe's own fields: what to read, for whom, how densely.
         public List<string>? Series { get; init; }
         public List<string>? ChannelIds { get; init; }
         public int? PointsPerOctave { get; init; }
@@ -785,8 +726,7 @@ internal static class AgentProposalParser
         public required List<ProbeChangeWire> Changes { get; init; }
     }
 
-    // The same five parameters a settings operation writes, all optional: what
-    // a variant leaves out, the channel keeps.
+    // Optional: what a variant leaves out, the channel keeps.
     private sealed class ProbeChangeWire
     {
         public required string ChannelId { get; init; }
@@ -814,7 +754,6 @@ internal static class AgentProposalParser
     }
 }
 
-/// <summary>Either a proposal or one sentence saying why there is none.</summary>
 internal sealed record AgentProposalParseResult(AgentProposal? Proposal, string? Error)
 {
     public bool Succeeded => Proposal != null;

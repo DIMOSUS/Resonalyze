@@ -3,21 +3,12 @@ using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
-// Device resolution for the persisted audio settings. This is not mapping: it
-// enumerates real hardware (WindowsAudioEndpointService, AsioDeviceCatalog,
-// AudioDeviceCatalog) to decide whether a stored device/endpoint/driver still
-// exists and what to fall back to when it does not. Kept apart from the schema
-// because it touches the machine, not the file.
+// Resolves stored devices against real hardware; kept apart from the schema because it touches the machine.
 
 namespace Resonalyze;
 
-/// <summary>
-/// The microphone calibration as files written before schema 11 stored it: two
-/// fixed slots and off. Deserialization target for the migration, and nothing
-/// else — the live selection is an id.
-/// </summary>
-// Public only because the Virtual DSP project file — a public type — deserializes
-// it; nothing outside this assembly consumes it.
+/// <summary>Pre-schema-11 calibration selection; migration target only.</summary>
+// Public only because the public Virtual DSP project file deserializes it.
 public enum LegacyMicrophoneCalibrationMode
 {
     Off,
@@ -73,10 +64,7 @@ internal sealed partial class MeasurementSettingsFile
         }
     }
 
-    /// <summary>
-    /// How many input channels a WASAPI capture endpoint exposes, or zero when it
-    /// cannot be asked right now.
-    /// </summary>
+    /// <summary>Zero when the endpoint cannot be asked right now.</summary>
     private static int WasapiCaptureChannelCount(string? captureEndpointId)
     {
         if (string.IsNullOrWhiteSpace(captureEndpointId))
@@ -183,14 +171,7 @@ internal sealed partial class MeasurementSettingsFile
             ? NormalizeAsioChannelOffset(asioDriverName, sampleRate, offset.Value, input: true)
             : null;
 
-    /// <summary>
-    /// The calibration id a persisted view restores to. A stored id wins; a file
-    /// written before the calibration list existed carries one of the three
-    /// fixed modes instead, or — older still — only an on/off flag. 90° maps to
-    /// the entry the migration creates from the old second slot, whether the
-    /// file being read is the settings file (already migrated) or a history
-    /// snapshot restored later.
-    /// </summary>
+    /// <summary>A stored id wins; older files carry a fixed mode or an on/off flag. 90° maps to the migrated entry.</summary>
     internal static string? ResolveCalibrationId(
         string? calibrationId,
         LegacyMicrophoneCalibrationMode? legacyMode,
@@ -218,9 +199,7 @@ internal sealed partial class MeasurementSettingsFile
             : null;
     }
 
-    // Mirrors the UI invariant (see TukeyWindowControlHelper): each fade is in
-    // [0, window] and their sum must not exceed the window length. Clamping each
-    // to window/2 instead would corrupt valid asymmetric windows (e.g. 256 + 16).
+    // UI invariant (TukeyWindowControlHelper): fades sum to at most the window; clamping each to window/2 breaks 256 + 16.
     private static (int Left, int Right) ClampTukeyWindows(
         int left,
         int right,

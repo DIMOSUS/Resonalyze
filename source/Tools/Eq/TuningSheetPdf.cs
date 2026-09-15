@@ -11,10 +11,7 @@ using Color = MigraDoc.DocumentObjectModel.Color;
 
 namespace Resonalyze;
 
-// Renders an EqualizationCurve as a phone-friendly "tuning sheet" PDF (MigraDoc /
-// PDFsharp): the product banner, a big title, the date and fit range, a small EQ
-// preview graph, the tuning statistics, the preamp and one card per PEQ band.
-// The shared layout (scaffold, images, filter cards) lives in PdfSheet.
+// Phone-friendly tuning sheet PDF; shared layout lives in PdfSheet.
 internal static class TuningSheetPdf
 {
     private static readonly Color GoodColor = Color.FromRgb(60, 150, 70);
@@ -98,7 +95,6 @@ internal static class TuningSheetPdf
         valueParagraph.Format.Font.Color = valueColor;
     }
 
-    // A compact white EQ graph (combined bands + preamp) with the fit range shaded.
     private static byte[] RenderEqGraph(
         EqualizationCurve curve,
         double fitMinHz,

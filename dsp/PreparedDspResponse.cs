@@ -2,21 +2,8 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Prepared frequency response of a <see cref="DspChannelChain"/>.
-/// Filter coefficients and scalar gain are built once, then reused for plot
-/// drawing and FFT-bin processing.
-/// <para>
-/// The rate passed here is the PROCESSOR's — the rate the hardware being
-/// simulated runs its biquads at — and it is the only rate the coefficients
-/// know. It is deliberately NOT the measurement's: the bilinear transform
-/// warps every corner by the rate it was designed at, so a chain built at the
-/// measurement rate is a different filter from the one the device realizes
-/// (an LR4 low-pass at 8 kHz designed at 48 kHz sits 1.5 dB below the 96 kHz
-/// one at 10 kHz and 4.1 dB at 12 kHz). <see cref="ApplyToSpectrum"/> takes
-/// the record's own rate separately.
-/// </para>
-/// </summary>
+/// <summary>Chain response built once at the PROCESSOR's rate (bilinear warping differs per rate); the record rate is passed separately.
+/// See docs/tech/dsp-chain-response.md.</summary>
 public sealed class PreparedDspResponse
 {
     private const int PhaseRefreshInterval = 4096;
@@ -26,8 +13,6 @@ public sealed class PreparedDspResponse
     private readonly double delayProcessorSamples;
     private readonly int processorRate;
     private readonly BiquadCoefficients[] sections;
-    // The chain's FIR stage, at the processor's rate like the sections; null when
-    // the chain has none.
     private readonly FirFilter? fir;
 
     private PreparedDspResponse(
@@ -46,10 +31,7 @@ public sealed class PreparedDspResponse
         this.fir = fir;
     }
 
-    /// <summary>
-    /// Builds the cascade at <paramref name="sampleRate"/> — the PROCESSOR's
-    /// processing rate, not the measurement's (see the type remarks).
-    /// </summary>
+    /// <summary><paramref name="sampleRate"/> is the processor's rate, not the measurement's.</summary>
     public static PreparedDspResponse Create(DspChannelChain chain, int sampleRate)
     {
         ArgumentNullException.ThrowIfNull(chain);
@@ -95,46 +77,15 @@ public sealed class PreparedDspResponse
             chain.Fir);
     }
 
-    /// <summary>
-    /// True when this chain is a scalar — no filters, no delay — so a caller can
-    /// multiply the record and skip the FFT entirely.
-    /// </summary>
     public bool IsTimeDomainScaleOnly =>
         delayMs == 0 && sections.Length == 0 && fir == null;
 
-    /// <summary>
-    /// <see cref="IsTimeDomainScaleOnly"/>, and the record holds nothing the processor
-    /// would have to cut. A record sampled ABOVE the processing rate always needs the
-    /// spectrum path even for a scalar chain: the band past the processor's Nyquist
-    /// has to go (see <see cref="ApplyToSpectrum"/>), or a bypassed channel would keep
-    /// ultrasonics that every filtered channel beside it loses — and the two would then
-    /// sum, and be timed, against different bandwidths.
-    /// </summary>
+    /// <summary>A record above the processor rate always needs the spectrum path to cut the band past the processor's Nyquist.</summary>
     public bool CanScaleInTimeDomain(int signalSampleRate) =>
         IsTimeDomainScaleOnly && signalSampleRate <= processorRate;
 
-    /// <summary>
-    /// Zero-padding (samples) needed for this chain's ringing to decay by
-    /// <paramref name="targetDecayDb"/> before a circular FFT would wrap the
-    /// tail into the early response. Follows the slowest pole of the biquad
-    /// cascade: a 20 Hz / Q 10 peaking filter rings for ~13.8·Q/(π·f) × ln10/…
-    /// hundreds of milliseconds — far past any fixed pad sized for crossovers.
-    /// Clamped to [<paramref name="minSamples"/>, <paramref name="maxSamples"/>];
-    /// a numerically unstable section (pole radius ≥ 1) gets the maximum.
-    /// <para>
-    /// The pole radius is a per-sample decay at the PROCESSOR's rate, so the
-    /// count it yields is converted to <paramref name="signalSampleRate"/>
-    /// before it is clamped: the ringing lasts a fixed number of milliseconds,
-    /// and it is the record's own samples that have to hold it.
-    /// </para>
-    /// <para>
-    /// A FIR stage adds N − 1 record samples for an N-tap kernel on top, OUTSIDE the
-    /// clamp: that is exactly how much longer the convolution is, there is no decay
-    /// to wait for, and a cap here would wrap the kernel's tail into the record's
-    /// head. The kernel is bounded at load instead (see
-    /// <see cref="FirFilter.MaximumTaps"/>).
-    /// </para>
-    /// </summary>
+    /// <summary>Zero-padding for the slowest biquad pole to decay by <paramref name="targetDecayDb"/>, in record samples, clamped;
+    /// plus the FIR tail (<see cref="FirTailSamples"/>) outside the clamp. See docs/tech/dsp-chain-response.md#tail-padding.</summary>
     public int RequiredTailSamples(
         double targetDecayDb,
         int minSamples,
@@ -149,17 +100,11 @@ public sealed class PreparedDspResponse
         double maxRadius = 0.0;
         foreach (BiquadCoefficients section in sections)
         {
-            // BiquadCoefficients uses the ADDITIVE feedback convention
-            // (y[n] = … + A1·y[n−1] + A2·y[n−2], denominator
-            // 1 − A1·z⁻¹ − A2·z⁻²), so the poles are the roots of
-            // z² − A1·z − A2 = 0 — NOT the textbook 1 + a1·z⁻¹ + a2·z⁻² form,
-            // whose formulas mis-read every ordinary stable section here as
-            // unstable and pinned the padding at the maximum.
+            // Additive feedback convention: poles are roots of z² − A1·z − A2 (not the textbook sign).
             double discriminant = section.A1 * section.A1 + 4.0 * section.A2;
             double radius;
             if (discriminant < 0.0)
             {
-                // Complex conjugate poles: |p|² = the roots' product = −A2.
                 radius = Math.Sqrt(Math.Max(0.0, -section.A2));
             }
             else
@@ -189,11 +134,7 @@ public sealed class PreparedDspResponse
         return (int)Math.Clamp(Math.Ceiling(required), minSamples, maxSamples) + firTail;
     }
 
-    // The room a linear convolution needs past the input's end, in the RECORD's
-    // samples: N − 1 for an N-tap kernel (a one-tap kernel is a gain and needs none).
-    // Zero without a FIR stage. Not rounded up by a sample for safety: the caller
-    // rounds the whole length to a power of two, and one sample past a boundary
-    // doubles the render.
+    // N − 1 processor-rate samples, rounded up to record samples; no safety sample (the caller rounds to a power of two).
     private int FirTailSamples(int signalSampleRate) =>
         fir == null
             ? 0
@@ -227,25 +168,7 @@ public sealed class PreparedDspResponse
         return fir == null ? response : response * fir.Response(z1);
     }
 
-    /// <summary>
-    /// Group delay τ_g = -dφ/dω of the whole chain at <paramref name="frequencyHz"/>, in
-    /// milliseconds, summed in closed form from the biquad cascade (see
-    /// <see cref="BiquadResponse.GroupDelaySamples"/>). The bulk delay adds itself; the
-    /// scalar gain — including the constant π a polarity flip contributes — has no
-    /// frequency dependence and so adds nothing.
-    /// <para>
-    /// Closed form rather than a secant of the complex response reading -Im(H'/H):
-    /// that never wraps, but it approximates H rather than φ and so flattens exactly
-    /// the sharp peaks worth seeing — a Q-20 all-pass near Nyquist reads 1.4 ms
-    /// against a true 127 ms. It would also be free to disagree with the readouts
-    /// that share the helper.
-    /// </para>
-    /// <para>
-    /// The FIR stage adds its own closed form (<see cref="FirFilter.GroupDelaySamples"/>),
-    /// which is NaN at a kernel's true null — the honest answer there, and one the
-    /// plot draws as a gap rather than a spike.
-    /// </para>
-    /// </summary>
+    /// <summary>Closed-form group delay in ms (biquads + FIR + bulk delay); FIR returns NaN at a kernel null.</summary>
     public double GroupDelayMs(double frequencyHz)
     {
         double samples = 0;
@@ -264,36 +187,8 @@ public sealed class PreparedDspResponse
         return (samples / processorRate * 1_000.0) + delayMs;
     }
 
-    /// <summary>
-    /// Multiplies <paramref name="spectrum"/> — the FFT of a record sampled at
-    /// <paramref name="signalSampleRate"/> — by this chain's response, bin by bin
-    /// (conjugate-mirrored, so a real input stays real).
-    /// <para>
-    /// The two rates are independent. Bin <c>i</c> sits at
-    /// <c>i·signalSampleRate/N</c> Hz, which is
-    /// <c>ω = 2π·i·signalSampleRate/(N·processorRate)</c> on the PROCESSOR's unit
-    /// circle — so a 48 kHz measurement reads a 96 kHz chain across the lower half
-    /// of that circle, which is exactly the band a 48 kHz record can carry. This is
-    /// not an approximation: a chain is LTI and invents no frequency its input
-    /// lacks, so what it does to a band-limited record is fully described by H over
-    /// that band. The user's measuring rate and the device's processing rate are
-    /// therefore free to differ, and the simulated filters stay the ones the device
-    /// realizes.
-    /// </para>
-    /// <para>
-    /// Bins past the processor's own Nyquist — a record sampled ABOVE the
-    /// processing rate — are zeroed rather than left to the periodic continuation
-    /// of H, which would filter them with a mirrored response no device produces.
-    /// The processor reconstructs nothing up there, and zeroing is also what makes
-    /// the same setup measured at 96 and at 192 kHz simulate alike.
-    /// </para>
-    /// <para>
-    /// A FIR stage is read the same way, as a response on the processor's circle
-    /// (see <see cref="FirSpectrumBins"/>): the kernel's DFT on the grid that puts
-    /// its bins exactly under the record's, or the kernel evaluated bin by bin where
-    /// no such grid exists.
-    /// </para>
-    /// </summary>
+    /// <summary>Multiplies the record's spectrum by the chain's response on the processor's unit circle; bins above the processor Nyquist are zeroed.
+    /// See docs/tech/dsp-chain-response.md#processor-rate-vs-record-rate.</summary>
     public void ApplyToSpectrum(Complex[] spectrum, int signalSampleRate)
     {
         ArgumentNullException.ThrowIfNull(spectrum);
@@ -304,12 +199,7 @@ public sealed class PreparedDspResponse
 
         int length = spectrum.Length;
         int half = length / 2;
-        // ω per bin on the processor's circle, in units of the record's own bin
-        // spacing: 1 when the rates agree, ½ for a 48 kHz record through a 96 kHz
-        // processor, 2 the other way round.
         double rateRatio = (double)signalSampleRate / processorRate;
-        // The delay is a time, not a sample count, so it is expressed in the
-        // RECORD's samples — that is the grid the phase ramp runs on.
         double delaySamples = delayMs * signalSampleRate / 1_000.0;
 
         if (sections.Length == 0 && fir == null)
@@ -350,49 +240,18 @@ public sealed class PreparedDspResponse
 
             z1 = UnitPhasor(-Math.PI * rateRatio);
             delay = DelayPhasor(half, length, delaySamples);
-            // The record's Nyquist bin has no conjugate partner; a real scale keeps
-            // a real impulse real (the discarded imaginary part is a half-sample
-            // artifact). Below the processor's Nyquist the chain's response there is
-            // genuinely complex, so this drops a fraction of one bin — the record's
-            // top edge, 24 kHz for a 48 kHz measurement.
+            // Nyquist bin has no conjugate partner: keep it real.
             spectrum[half] *= (Response(z1, delay) * (firBins?[half] ?? Complex.One)).Real;
         }
 
         SilenceAboveProcessorNyquist(spectrum, rateRatio);
     }
 
-    /// <summary>
-    /// The FIR stage's response at every record bin 0…length/2, on the processor's
-    /// unit circle: bin <c>i</c> sits at ω = 2π·i·rateRatio/length.
-    /// <para>
-    /// FAST PATH: when <c>length / rateRatio</c> is a whole number M — the rates agree
-    /// (M = length), a 48 kHz record through a 96 kHz processor (M = 2·length), or
-    /// the reverse (M = length/2) — the kernel's M-point DFT has its bin <c>i</c> at
-    /// exactly that ω, so one FFT of the zero-padded kernel answers every bin. Exact,
-    /// not interpolated: a DFT bin IS the kernel's response at its own frequency.
-    /// </para>
-    /// <para>
-    /// Otherwise (44.1 kHz against 48 kHz, say) no DFT grid lands on the record's
-    /// bins, and the kernel is read at each of them by the chirp-z transform
-    /// (<see cref="FirFilter.ChirpSpectrum"/>): three FFTs, whatever the kernel's
-    /// length, against the tap-times-bin count of evaluating it point by point —
-    /// which for the longest kernel over the longest render was seventeen billion
-    /// multiplies. Bins past the processor's Nyquist are left zero on both paths;
-    /// the caller silences them regardless.
-    /// </para>
-    /// <para>
-    /// CACHED on the kernel: the bins depend on the kernel, the record length and the
-    /// rate pair alone — not on the gain, delay or biquads beside it — and every knob
-    /// turn on the channel re-renders it through the same bins, so the transform is
-    /// paid once per kernel and rate pair, not once per edit. A kernel that is
-    /// unloaded takes its bins with it; the table is weakly keyed.
-    /// </para>
-    /// </summary>
+    /// <summary>FIR response at every record bin: exact DFT when length/rateRatio is whole, else chirp-z; cached per kernel.
+    /// See docs/tech/dsp-chain-response.md#fir-bins.</summary>
     private static Complex[] FirSpectrumBins(FirFilter fir, int length, double rateRatio)
     {
         FirBinsCache cache = FirBinsCaches.GetOrCreateValue(fir);
-        // One lock per kernel: two channels rendering the same kernel in parallel
-        // wait for one computation rather than each running their own.
         lock (cache)
         {
             if (cache.Find(length, rateRatio) is { } cached)
@@ -409,10 +268,7 @@ public sealed class PreparedDspResponse
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<FirFilter, FirBinsCache>
         FirBinsCaches = new();
 
-    // A kernel's last few bin sets, one per (record length, rate pair) it was
-    // rendered at. A few rather than one because the same kernel can sit on two
-    // channels whose records differ in length; the cap keeps a kernel from hoarding
-    // every length it was ever tried at.
+    // A few entries: one kernel can sit on channels with different record lengths.
     private sealed class FirBinsCache
     {
         private const int Capacity = 4;
@@ -446,7 +302,6 @@ public sealed class PreparedDspResponse
     {
         int half = length / 2;
         var bins = new Complex[half + 1];
-        // Bins the processor reconstructs at all: at or below its own Nyquist.
         int lastBin = Math.Min(half, (int)Math.Floor(half / rateRatio));
 
         double grid = length / rateRatio;
@@ -468,9 +323,6 @@ public sealed class PreparedDspResponse
         return bins;
     }
 
-    // Everything the processor cannot reconstruct. Only a record sampled above the
-    // processing rate has such bins (rateRatio > 1); at or below it the loop does
-    // not run.
     private static void SilenceAboveProcessorNyquist(
         Complex[] spectrum,
         double rateRatio)

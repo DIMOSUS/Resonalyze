@@ -6,85 +6,41 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze;
 
-/// <summary>
-/// The panel's side of the Agent Bridge: the snapshot the proposal validator
-/// judges a reply against, and the gathering of everything a package is built
-/// from. The gathering runs the SAME computations the screen runs — the
-/// coordinator's processed responses, the metric block's curves and read-outs,
-/// the lower plot's junction views — so a number in the package is a number on
-/// screen. The panel does no formatting here; the builder does no reading.
-/// </summary>
+/// <summary>Panel side of the Agent Bridge: the review snapshot and package gathering, which reuses the screen's own computations so package numbers match the screen. See docs/tech/agent-bridge.md#package-gathering.</summary>
 public partial class VirtualCrossoverPanel
 {
-    // The id of the package this session most recently copied and the session
-    // fingerprint it was copied at (ComputeAgentFingerprint); a reply naming
-    // another package, or this one after the session has changed, gets a warning
-    // in the review and its engine requests refused. Not persisted — a reopened
-    // session cannot vouch for what an earlier one copied, and the expected
-    // current values are the guard that matters for the settings rows.
+    // Id and fingerprint of the last copied package; a reply naming another package or a changed session is warned and its engine requests refused. Not persisted.
     private string? lastAgentPackageId;
     private string? lastAgentPackageFingerprint;
 
-    // One bridge operation at a time: a second Copy while the first gathers
-    // would race the coordinator, and an import while a copy gathers would move
-    // the settings the package is being read from.
+    // One bridge operation at a time: a concurrent Copy or import would race the coordinator or move the settings being read.
     private bool agentBusy;
 
     private ContextMenuStrip? agentMenu;
 
-    // The smoothing the package's hybrid curves and sums travel at: the width of
-    // the package's own 12-point-per-octave grid, the nearest a grid can come to
-    // the Off the manual reads the hybrid view at (see CaptureAgentPackageInputsAsync).
+    // The package grid is 12 points/octave: the nearest a grid gets to the hybrid view's Off smoothing.
     private const int AgentHybridSmoothingInverseOctaves = 12;
 
-    /// <summary>
-    /// The EQ Wizard's Auto Tune settings at the moment an import fits a bank
-    /// without it — wired by the host so the import produces the bank the
-    /// wizard's button would; the wizard's opening values when nothing is wired.
-    /// </summary>
+    /// <summary>EQ Wizard Auto Tune settings an import fits a bank with; the wizard's opening values when unwired.</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Func<EqAutoTunePolicy>? AutoTunePolicyProvider { get; set; }
 
-    /// <summary>
-    /// Records the package this session just copied and the session it was copied
-    /// from, for the review's staleness check.
-    /// </summary>
     internal void RememberAgentPackage(string packageId, string fingerprint)
     {
         lastAgentPackageId = packageId;
         lastAgentPackageFingerprint = fingerprint;
     }
 
-    /// <summary>
-    /// The session as one hash (<see cref="AgentSessionFingerprint"/>): everything a
-    /// package vouches for that an expected current value does not already guard.
-    /// The blocks in order (their letters are the channel ids), what each side is
-    /// measured and averaged with, every chain — an import undone puts the chains
-    /// back under a package that was copied without them — and the project figures
-    /// the diagnostics were computed under, the side on screen and the view among
-    /// them, since the engines read those. Not the zoom or the smoothing selector:
-    /// they change what is shown, not what was measured, and the package has its
-    /// own smoothing anyway.
-    /// </summary>
-    /// <remarks>
-    /// Taken at Copy and again at every review, so no path that changes the session
-    /// has to remember to forget the package: a source picked by hand, a capture
-    /// attached, a gate moved, a project loaded all change the hash and the review
-    /// reads the difference. The same session loaded again hashes the same, and a
-    /// package copied from it stays good — which forgetting could never say.
-    /// </remarks>
+    /// <summary>The session as one hash for the review's staleness check. See docs/tech/agent-bridge.md#session-fingerprint.</summary>
     internal string ComputeAgentFingerprint()
     {
         var lines = new List<string>
         {
             $"processor;{ProcessorProfile.ModelId};{ProcessorSampleRateHz}",
             $"average;{SpatialAverageMode};{checkBoxHybrid.Checked}",
-            // The side on screen and the view are what the package was computed
-            // for, and what the engines read: Auto crossover proposes from the
-            // shown side's measurements, a single-sided Auto delay aligns it, and
-            // whether Auto-tune's default source is the hybrid follows the view.
+            // Engines read the shown side and the view (Auto crossover, single-sided Auto delay, Auto-tune's source).
             $"view;{project.ActiveSideRight};{SelectedGroupView}",
             $"phase;{project.PhaseWindowMode};{project.PhaseFdwCycles};{project.PhaseDetrendMode};" +
                 $"{Number(project.PhaseGateLeftMs)};{Number(project.PhaseGatePlateauMs)};" +
@@ -93,12 +49,9 @@ public partial class VirtualCrossoverPanel
                 $"{Number(project.PhaseGateRight.OffsetMs)};{Number(project.PhaseGateRight.DetrendMs)}",
             $"stereo;{Number(project.StereoSceneOffsetMagnitudeMs)};{project.StereoRightHandDrive};" +
                 $"{Number(project.StereoLevelDifferenceDb)};{Number(project.RearFillOffsetMs)}",
-            // The selected correction by id AND by its points: a curve re-read or
-            // edited under the same id (ReconcileCalibrationSelection) is another
-            // correction on every measurement the package reads.
+            // By id AND points: a curve re-read under the same id is a different correction.
             $"calibration;{project.CalibrationId};{ownCalibrationSelected};{Curve(Calibration)}",
             $"target;{Number((double)numericTargetLevel.Value)};{TargetShape(project.Target)}",
-            // The assistant reasons from the notes as much as from the curves.
             $"notes;{project.AiNotes}"
         };
         foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
@@ -109,31 +62,20 @@ public partial class VirtualCrossoverPanel
             lines.Add(string.Join(';',
                 block, AgentChannelIds.SideName(side), channel.Pair.Zone,
                 channel.Pair.Enabled, channel.Pair.Bypass,
-                // The measurement: its reference, and the CONTENT actually loaded
-                // behind it — a file re-measured and saved over its own name is a
-                // different impulse response with the same reference, length and
-                // rate — with what the package reads off it: the peak, the measured
-                // band, the coherence, the calibration it was read through.
+                // Content digest, not just the reference: a file re-measured over its own name keeps reference, length and rate.
                 settings.HistoryEntryId, settings.SourceFilePath, settings.DisplayName,
                 Digest(state.TransferImpulseResponse), state.SampleRate, state.TransferPeakIndex,
                 Number(state.MeasuredBand.LowestHz), Number(state.MeasuredBand.HighestHz),
                 Digest(state.TransferCoherence),
-                // The correction this side's curves are actually read through —
-                // its own under "Own (as measured)", the selected one otherwise —
-                // by its points.
                 Curve(CalibrationFor(state)),
-                // The captures by session: a pass re-recorded over the same file is
-                // a new capture session with a new id.
+                // A re-recorded pass is a new capture session id.
                 settings.SpatialAveragePath, Capture(state.SpatialAverage), Capture(state.ArrayCapture),
                 Number(settings.GainDb), Number(settings.DelayMs), settings.InvertPolarity,
                 settings.CrossoverKind, Edge(settings.HighPassEdge), Edge(settings.LowPassEdge),
                 Number(settings.PhaseRotationDegrees),
                 AgentPeqHash.Compute(settings.PeqPreampDb, settings.PeqBands),
-                // The FIR kernel by its content: the taps are the tune's, and the name
-                // they were imported under is only a label.
+                // Kernel by content; the imported name is only a label.
                 Digest(settings.Fir?.Taps.ToArray()),
-                // And the crossover it was designed as: the package describes it, and a
-                // side with no IIR crossover is cut where the design says.
                 FirDesign(settings.FirDesign)));
         }
 
@@ -179,9 +121,7 @@ public partial class VirtualCrossoverPanel
                     Number(target.ToleranceDb), target.ImportedName, Digest(target.ImportedCurve));
     }
 
-    // The same two-state toggle the Target button's menu uses: a click while the
-    // menu is open closes it; the menu is rebuilt per click so its enabled states
-    // are current.
+    // Same two-state toggle as the Target menu; rebuilt per click so enabled states are current.
     private void ShowAgentMenu()
     {
         if (agentMenu is { Visible: true })
@@ -243,20 +183,12 @@ public partial class VirtualCrossoverPanel
         DropDownMenu.ShowUnder(buttonAi, agentMenu);
     }
 
-    // What the last import moved, for Undo, and the project generation it was
-    // written into: a session loaded since has different settings objects, and
-    // the entries would restore into ones nobody displays.
+    // The last import's undo and the project generation it wrote into: after a session load the entries would restore into settings nobody displays.
     private AgentImportUndo? agentUndo;
     private long agentUndoGeneration;
 
-    /// <summary>
-    /// Everything one import can move, as it stood before it ran. Every channel's
-    /// chain is taken, not only the ones a row names: an engine writes channels no
-    /// row mentions, and the crossover wizard can reorder the blocks as well.
-    /// </summary>
-    // The stereo scene, the level tilt and the rear-fill offset are what an Auto
-    // delay run commits beside the channels (CommitAutoDelayResult), so an undo
-    // of an import that ran one has to carry them too.
+    /// <summary>Pre-import state. Every channel's chain is taken: engines write channels no row names, and the crossover wizard can reorder blocks.</summary>
+    // Scene, tilt and rear-fill offset are committed by Auto delay (CommitAutoDelayResult), so undo carries them.
     private sealed record AgentImportUndo(
         IReadOnlyList<AgentUndoEntry> Channels,
         VirtualCrossoverSpatialAverageMode? SpatialAverageMode,
@@ -266,20 +198,9 @@ public partial class VirtualCrossoverPanel
         bool RightHandDrive,
         double StereoLevelDifferenceDb,
         double RearFillOffsetMs,
-        // The datum an Auto-tune request may move, as the wizard's return does.
         double TargetLevelDb);
 
-    /// <summary>
-    /// Import AI proposal: clipboard → strict parse → review against the live
-    /// settings → the dialog → a second review of the ticked rows against the
-    /// settings as they are at commit → one write of the settings rows, then the
-    /// engine requests in their fixed order, then one summary. Undo is armed
-    /// before anything is written, so a failure part-way through still leaves the
-    /// whole import undoable.
-    /// </summary>
-    // async void as the button handlers are: the engines that run without their
-    // dialogs await their compute, and the try/finally below is what keeps the
-    // busy flag honest across those awaits.
+    /// <summary>Import AI proposal. See docs/tech/agent-bridge.md#import-flow.</summary>
     private async void ImportAiProposal()
     {
         if (agentBusy)
@@ -328,9 +249,7 @@ public partial class VirtualCrossoverPanel
                 ShowError("Nothing was applied.", problem);
                 return;
             }
-            // The review judged every row together; the ticked subset can leave a
-            // state it never showed. Say so and let the user decide — a warning,
-            // not a refusal, as in the review itself.
+            // The ticked subset can leave a state the review never showed: warn, do not refuse.
             if (unseenWarnings.Count > 0 &&
                 MessageBox.Show(
                     FindForm(),
@@ -344,20 +263,13 @@ public partial class VirtualCrossoverPanel
                 return;
             }
 
-            // Everything from here can take tens of seconds — a probe of ten
-            // variants, a junction tune, a delay search, a bank fit — so it runs
-            // under a window that says which step is going, rather than behind a
-            // wait cursor that says only "busy".
             bool ran = await AgentProgressDialog.RunAsync(
                 FindForm(),
                 "Import AI proposal",
                 "Reading the reply…",
                 async progress =>
                 {
-                    // The probes go FIRST, before anything is written: a probe
-                    // answers a question about the tune as it stands, and reading
-                    // it after this import's own rows had landed would answer a
-                    // different one.
+                    // Probes run before any write: they answer about the tune as it stands.
                     await RunAgentProbesAsync(toApply, summary, progress);
 
                     return await CommitAgentImportAsync(
@@ -377,8 +289,7 @@ public partial class VirtualCrossoverPanel
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            // What the summary already holds DID happen; saying "not imported"
-            // over it would send the reader looking for changes that are there.
+            // Summary entries did happen; do not claim 'not imported' over them.
             ShowError(
                 summary.Count == 0
                     ? "The AI proposal was not imported."
@@ -397,40 +308,23 @@ public partial class VirtualCrossoverPanel
         }
     }
 
-    /// <summary>
-    /// The engine requests of one import, in the fixed order an import runs them,
-    /// whatever order the reply listed: the spatial average first (it decides
-    /// which curves the rest read), then Auto crossover, then Auto delay, then
-    /// Auto-tune, which is last because it fits the bank to everything the others
-    /// left behind. The settings rows are already written by the time this runs.
-    /// Each engine keeps its own confirmation: cancelling one skips that
-    /// operation and the import carries on with the next.
-    /// </summary>
-    /// <returns>Whether any of them changed the project.</returns>
+    /// <summary>Runs engine requests in a fixed order regardless of reply order; cancelling one skips only it. Returns whether any changed the project. See docs/tech/agent-bridge.md#engine-order.</summary>
     private async Task<bool> RunAgentEngineRequests(
         IReadOnlyList<AgentOperationVerdict> toApply,
         List<string> summary,
         AgentProgressDialog? progress = null)
     {
         bool ran = false;
-        // One target level for every fit of this import, decided before the first
-        // runs: the level the reply states (the review made the stated ones
-        // agree), else the project's as it stands now. Read per operation, a row
-        // that states none would fit at the old datum and the next row move it.
+        // One target level for every fit of this import: the stated one (the review made them agree), else the project's.
         double importTargetLevelDb = ImportTargetLevelDb(toApply, (double)numericTargetLevel.Value);
         EqAutoTunePolicy policy = AutoTunePolicyProvider?.Invoke() ?? EqAutoTunePolicy.Default;
-        // The verdicts, not the operations alone: a channel operation's target is
-        // the verdict's channel snapshot, held by its settings object, which is
-        // what still names the channel after the crossover wizard has reordered
-        // the blocks and re-lettered them.
+        // Iterate verdicts: the snapshot's settings object still names the channel after the crossover wizard re-letters blocks.
         foreach (AgentOperationVerdict verdict in toApply
             .Where(verdict => verdict.Applicable)
             .Where(verdict => verdict.Operation is not AgentSettingsOperation)
             .OrderBy(verdict => AgentEngineOrder(verdict.Operation!)))
         {
             AgentOperation operation = verdict.Operation!;
-            // Named before it starts: a step that takes ten seconds must not be
-            // the one the user is watching a blank line for.
             if (operation is not ProbeOperation)
             {
                 progress?.Report(AgentStepText(operation, verdict));
@@ -458,8 +352,7 @@ public partial class VirtualCrossoverPanel
                     ran |= await RunAgentTuneJunctionAsync(junction, summary);
                     break;
 
-                // Read before any of this ran, and wrote nothing; the import's
-                // own loop has nothing left to do with it.
+                // Probes already ran before any write.
                 case ProbeOperation:
                     break;
 
@@ -472,8 +365,7 @@ public partial class VirtualCrossoverPanel
                         tune, verdict.Channel!, importTargetLevelDb, policy, summary);
                     break;
 
-                // Every operation the protocol names is executed above; one this
-                // build does not run never reaches here, the review refuses it.
+                // Unreachable: the review refuses operations this build does not run.
                 default:
                     summary.Add(
                         $"{operation.Parameter}: skipped " +
@@ -485,8 +377,6 @@ public partial class VirtualCrossoverPanel
         return ran;
     }
 
-    // What the progress window calls the step, in the words the summary will
-    // use for it afterwards.
     private static string AgentStepText(AgentOperation operation, AgentOperationVerdict verdict) =>
         operation switch
         {
@@ -503,22 +393,16 @@ public partial class VirtualCrossoverPanel
     {
         UseSpatialAverageOperation => 0,
         RunAutoCrossoverOperation => 1,
-        // After the wizard (the review refuses the pair together anyway) and
-        // before Auto delay, which realigns whatever the crossover became.
+        // After the wizard, before Auto delay, which realigns whatever the crossover became.
         TuneJunctionOperation => 2,
         RunAutoDelayOperation => 3,
         _ => 4
     };
 
-    // The mode and the tick together: either one alone leaves the point
-    // measurement in charge, which is the thing the operation exists to fix. The
-    // panel's own project events are suppressed around the pair so the import
-    // saves and redraws once, at the end, rather than after each step.
-    /// <returns>Whether the mode named by the request is one the panel has.</returns>
+    // Mode and tick together: either alone leaves the point measurement in charge. Project events are suppressed so the import saves and redraws once.
     private bool ApplyAgentSpatialAverage(UseSpatialAverageOperation operation)
     {
-        // The review has already refused an unknown mode, so this is a guard, not
-        // a path — but the summary is written from the answer, so it must be one.
+        // Guard only: the review already refused unknown modes.
         if (!AgentOperations.TryParseName(
             operation.Mode, out VirtualCrossoverSpatialAverageMode mode))
         {
@@ -538,17 +422,12 @@ public partial class VirtualCrossoverPanel
             suppressProjectEvents = suppressed;
         }
 
-        // SetSpatialAverageMode returns early when the mode is already the one
-        // asked for, and the tick alone still changes what can be drawn.
+        // SetSpatialAverageMode returns early on an unchanged mode; the tick alone still changes what can be drawn.
         RefreshHybridAvailability();
         return true;
     }
 
-    // The Auto delay inputs as the dialog would open with them: the project's
-    // figures as layout-neutral magnitudes (the layout toggle owns every sign),
-    // and the gain balance unticked — the project stores the tilt it would
-    // apply, never the opt-in. Printed in the package's "Current" column and
-    // filled in for every input a request leaves out, so the two agree.
+    // The dialog's opening inputs (also the package's Current column): layout-neutral magnitudes, since the layout toggle owns signs; gain balance unticked, since the project stores the tilt, not the opt-in.
     private AgentAutoDelaySettings AgentAutoDelayDefaults() =>
         new(
             project.StereoSceneOffsetMagnitudeMs,
@@ -557,10 +436,7 @@ public partial class VirtualCrossoverPanel
             Math.Abs(project.StereoLevelDifferenceDb),
             project.RearFillOffsetMs);
 
-    /// <summary>
-    /// The run inputs a request asks for: what it states, and the dialog's own
-    /// answer for what it leaves out. UI-free so the rule can be pinned.
-    /// </summary>
+    /// <summary>Request inputs: stated values, dialog defaults for the rest. UI-free so the rule can be pinned.</summary>
     internal static AutoDelayRunRequest BuildAutoDelayRequest(
         RunAutoDelayOperation operation, AgentAutoDelaySettings defaults) =>
         new(
@@ -570,13 +446,8 @@ public partial class VirtualCrossoverPanel
             operation.NearSideCutDb ?? defaults.NearSideCutDb,
             operation.RearFillOffsetMs ?? defaults.RearFillOffsetMs);
 
-    // Auto delay without its dialog: the button's own checks (headless, so a
-    // refusal is a phrase for the summary rather than a box), the same compute
-    // delegate the dialog's Run would call, and the same commit its Apply would
-    // make — report, log and outcome metric included. The review was the gate.
-    // The panel is disabled for the compute's span: the dialog's modality is
-    // what kept the channel configuration still under the button's run, and an
-    // edit landing mid-search would be aligned against a chain that is gone.
+    // Auto delay without its dialog: the button's checks (headless), the dialog's compute and its Apply commit.
+    // The panel is disabled during compute: the dialog's modality is what kept the chain still.
     private async Task<bool> RunAgentAutoDelayAsync(
         RunAutoDelayOperation operation, List<string> summary)
     {
@@ -618,8 +489,7 @@ public partial class VirtualCrossoverPanel
         {
             summary.Add(launch.PolarityWarning);
         }
-        // The summary is a message box, which does not scroll: the report's head
-        // (the table is what the dialog showed first) and where the rest went.
+        // A message box does not scroll: show the report's head and where the rest went.
         string[] lines = result.ReportText.Split(
             ["\r\n", "\n"], StringSplitOptions.None);
         summary.Add(lines.Length <= AutoDelayReportLinesInSummary
@@ -632,26 +502,7 @@ public partial class VirtualCrossoverPanel
 
     private const int AutoDelayReportLinesInSummary = 16;
 
-    // The junction tune without a dialog. The review resolved the junction on a
-    // session snapshot; the same two blocks are read off the live channels here,
-    // every side the pair is measured on goes to the tuner with its raw
-    // responses and its current chains, and the one crossover the tuner settles
-    // on is written to both sides of both blocks — as the wizard writes, and as
-    /// <summary>
-    /// The writing half of an import: everything from the undo snapshot to the
-    /// last engine. It judges the ticked rows ONCE MORE first, against the
-    /// session as it is at this moment.
-    /// <para>
-    /// That second look is not ceremony. The rows were prepared before the
-    /// probes ran, the probes take seconds, and the window over them
-    /// deliberately takes nothing away from the panel — so the tune can have
-    /// moved under them, and writing values judged against the state before
-    /// would be exactly the overwrite the commit-time check exists to stop. The
-    /// probes themselves stand: they only read, and their answer describes what
-    /// they read.
-    /// </para>
-    /// </summary>
-    /// <returns>Whether an engine changed the project.</returns>
+    /// <summary>Writes an import. Re-judges the ticked rows against the live session first: the probes take seconds and the panel stays editable under them. Returns whether an engine changed the project.</summary>
     private async Task<bool> CommitAgentImportAsync(
         AgentProposal proposal,
         IReadOnlySet<string> selected,
@@ -669,10 +520,7 @@ public partial class VirtualCrossoverPanel
             return false;
         }
 
-        // Armed BEFORE the first write, not after the last one: an engine can
-        // throw with the settings rows already in the tune, and an import the
-        // user cannot undo is the worst thing this menu could leave behind.
-        // The previous import's undo is put back only if nothing moved at all.
+        // Armed before the first write: an engine can throw after the rows landed. The previous undo returns only if nothing moved.
         AgentImportUndo undo = CaptureAgentUndo();
         AgentImportUndo? previousUndo = agentUndo;
         long previousUndoGeneration = agentUndoGeneration;
@@ -686,11 +534,7 @@ public partial class VirtualCrossoverPanel
             int rows = toApply.Count(verdict => verdict.Operation is AgentSettingsOperation);
             summary.Add(
                 $"Applied {rows} of {proposedRows} proposed change{(proposedRows == 1 ? "" : "s")}.");
-            // The rows name their sides, and the dialog showed exactly those: the
-            // side lock takes them as written rather than carrying a row for the
-            // shown side onto the hidden one behind the dialog's back. HERE, before
-            // the engines — a junction tune saves on its own inside them, and that
-            // save would read the rows as a hand edit first.
+            // The rows name their sides: the side lock takes them as written. Before the engines, whose junction-tune save would read the rows as a hand edit.
             sideLock.Remember(channels.Select(channel => channel.Pair));
         }
 
@@ -704,12 +548,7 @@ public partial class VirtualCrossoverPanel
         return engines;
     }
 
-    /// <summary>
-    /// The two blocks of a junction as the tuner and the probes read them: every
-    /// side that carries both measurements, with each side's own chain — or the
-    /// one side asked for, where a reading belongs to a single physical channel.
-    /// A mono block is routed to both sides, as the panel sums it.
-    /// </summary>
+    /// <summary>A junction's two blocks as the tuner reads them: every side carrying both measurements with its own chain, or the one side asked for. A mono block is routed to both sides.</summary>
     private static (List<JunctionTuneSide> Sides, string? Refusal) BuildJunctionTuneSides(
         VirtualCrossoverChannel lower, VirtualCrossoverChannel upper, bool? rightSideOnly)
     {
@@ -751,15 +590,7 @@ public partial class VirtualCrossoverPanel
             : (sides, null);
     }
 
-    /// <summary>
-    /// The probes of one import: readings the reply asked for, computed on the
-    /// tune as it stands and written NOWHERE. Every probe of the import goes
-    /// into ONE document — the clipboard holds one text, and the user pastes
-    /// once — and the summary says it is there and asks for it to be pasted
-    /// back. A probe that cannot be computed says so in its own entry rather
-    /// than taking the others down with it.
-    /// </summary>
-    /// <returns>Whether a document reached the clipboard.</returns>
+    /// <summary>Runs an import's probes on the tune as it stands, writing nothing; all probes go into one clipboard document, and a failing probe reports in its own entry. Returns whether a document reached the clipboard.</summary>
     private async Task<bool> RunAgentProbesAsync(
         IReadOnlyList<AgentOperationVerdict> toApply,
         List<string> summary,
@@ -775,16 +606,8 @@ public partial class VirtualCrossoverPanel
             return false;
         }
 
-        // The readings of one document are meant to describe one session. Each
-        // is taken off snapshots of its own, so none of them can be torn — but
-        // the user is free to edit between two of them, and a document
-        // assembled from two states would let a reader compare figures that
-        // never coexisted. It is not refused (nothing was written, and each
-        // reading is still true of what it read); it is declared.
-        //
-        // Compared at EVERY reading's boundary, not once around the batch: a
-        // tune changed and changed back would pass a first-to-last comparison
-        // while the reading in between saw the other state.
+        // Readings of one document should describe one session: an edit between readings is declared, not refused.
+        // Compared at every reading's boundary: a change-and-revert would pass a first-to-last check. See docs/tech/agent-bridge.md#probes.
         string state = ComputeAgentFingerprint();
         bool steady = true;
         var reports = new List<AgentProbeReport>(probes.Count);
@@ -798,10 +621,7 @@ public partial class VirtualCrossoverPanel
                 progress?.Report(
                     $"Probe {index} of {probes.Count} ({probe.Probe}" +
                     $"{(probe.JunctionId is { } id ? " " + id : string.Empty)}): reading…");
-                // One reading that cannot be taken is one entry saying so: a
-                // probe reads several things the user ticked together, and a
-                // throw from any of them must not take the others — or the
-                // import around them — down.
+                // One failing reading must not take the other probes or the import down.
                 try
                 {
                     reports.Add(await BuildAgentProbeReportAsync(probe));
@@ -817,9 +637,6 @@ public partial class VirtualCrossoverPanel
                     return false;
                 }
 
-                // This reading was taken off the state at the top of the loop;
-                // an edit that lands and is undone entirely within it changed
-                // nothing this document holds, and one that outlives it did.
                 string after = ComputeAgentFingerprint();
                 steady &= string.Equals(state, after, StringComparison.Ordinal);
                 state = after;
@@ -833,16 +650,12 @@ public partial class VirtualCrossoverPanel
             }
         }
 
-        // The package the reading belongs beside, while this is still the
-        // session it was copied from — the same rule the diagnostic follows.
+        // Same rule as the diagnostic: link to the package only while this is the session it was copied from.
         bool matches = lastAgentPackageFingerprint != null &&
             lastAgentPackageFingerprint == state;
         AgentProbeBuildResult result = AgentProbeBuilder.Build(
             reports, matches ? lastAgentPackageId : null, matches, steady, DateTimeOffset.UtcNow);
-        // "No size target" for a series probe means it is not thinned to fit a
-        // chat; it does not mean the clipboard grows without bound on an
-        // untrusted reply's say-so. Over the ceiling nothing is copied, and the
-        // summary says what to ask for instead.
+        // Series probes are not thinned for chat, but an untrusted reply must not grow the clipboard unboundedly.
         if (result.JsonBytes > AgentProtocol.MaxProbeDocumentBytes)
         {
             summary.Add(
@@ -876,9 +689,7 @@ public partial class VirtualCrossoverPanel
         return true;
     }
 
-    // One probe's answer. Every reading is taken off snapshots — the responses,
-    // the chains, the gate — so the compute runs off the UI thread and the tune
-    // is never touched.
+    // Readings come off snapshots, so the compute runs off the UI thread and the tune is never touched.
     private async Task<AgentProbeReport> BuildAgentProbeReportAsync(ProbeOperation probe)
     {
         if (probe.Probe == AgentProtocol.ExcessGroupDelayProbe)
@@ -895,9 +706,7 @@ public partial class VirtualCrossoverPanel
 
         if (probe.Probe == AgentProtocol.SeriesProbe)
         {
-            // The package's own gather at the reply's density and under no size
-            // target: the same inputs Copy for AI reads, so every row lays beside
-            // the package's by channel and junction id.
+            // The package's own gather at the reply's density, so rows line up with the package by channel and junction id.
             AgentPackageInputs? inputs = await CaptureAgentPackageInputsAsync();
             return inputs == null
                 ? Unavailable("the session changed while the reading was taken")
@@ -925,10 +734,7 @@ public partial class VirtualCrossoverPanel
             return Unavailable("the blocks changed while the import ran");
         }
 
-        // A probe reads the side its junction id names: a variant's changes are
-        // that side's channels' settings, and a reading of the other side would
-        // answer a question nobody asked. (A crossover is one filter for both
-        // sides, so a reply weighing one asks for both junctions.)
+        // A probe reads the side its junction id names: variant changes are that side's settings.
         AgentChannelSide namedSide = AgentJunctionIds.TryParse(
             probe.JunctionId, out AgentChannelSide side, out _, out _)
             ? side
@@ -980,14 +786,7 @@ public partial class VirtualCrossoverPanel
             return Unavailable(exception.Message.TrimEnd('.'));
         }
 
-        // A channel hands over twice, and this reading covers one of those
-        // handovers. Each entry names the OTHER junctions ITS OWN changes
-        // reach: two variants of one probe may touch opposite ends of the
-        // junction, and a list pooled over the probe would send the assistant
-        // to a junction the winning variant never touched — and cannot even be
-        // probed with, since a variant states only the named junction's two
-        // channels. The entries are the variants in order, the baseline first,
-        // exactly as BuildAgentProbeVariants assembled them.
+        // Per-entry affected junctions, not pooled over the probe: pooled lists would point at junctions the winning variant never touched. Entries follow BuildAgentProbeVariants order, baseline first.
         AgentSessionSnapshot session = BuildAgentSessionSnapshot();
         IReadOnlyList<AgentProbeVariant> asked = probe.Variants ?? [];
         return new AgentProbeReport(
@@ -1010,9 +809,7 @@ public partial class VirtualCrossoverPanel
             null);
     }
 
-    // The FIRST entry is the tune as it stands, because the panel builds it
-    // first — read off the position, never off the label, which is the reply's
-    // own text and may say anything, "current" included.
+    // The baseline is identified by position, never by label: the reply's own labels may say "current" too.
     private static AgentProbeEntry AgentProbeEntryOf(
         JunctionProbeEntry entry, int index, IReadOnlyList<string>? affected) =>
         new(
@@ -1059,18 +856,10 @@ public partial class VirtualCrossoverPanel
         new(edge.Family.ToString(), AgentCurveSampling.Frequency(edge.FrequencyHz),
             edge.SlopeDbPerOctave, edge.RippleDb);
 
-    /// <summary>
-    /// How a probe's own baseline entry — the tune as it stands — is labelled.
-    /// A reply's variant may carry the same word; what marks the baseline in
-    /// the document is its POSITION, not this text.
-    /// </summary>
+    /// <summary>Label of a probe's baseline entry; the baseline is marked by position, not by this text.</summary>
     internal const string AgentProbeCurrentLabel = "current";
 
-    // The settings a junction probe reads the junction under, the tune's own
-    // first. A variant's changes go onto COPIES of the two channels' settings —
-    // held to the same limits a settings operation is, through the validator's
-    // own path — and the chains come off those copies exactly as the panel
-    // builds its own. Nothing here touches a live setting.
+    // Variant changes go onto copies of the two channels' settings, validated through the validator's path; no live setting is touched.
     private static (List<JunctionProbeVariant> Variants, string? Problem) BuildAgentProbeVariants(
         ProbeOperation probe,
         IReadOnlyList<JunctionTuneSide> sides,
@@ -1104,8 +893,7 @@ public partial class VirtualCrossoverPanel
                 }
             }
 
-            // One side, and the snapshot's settings ARE that side's, so the
-            // copies' chains are the whole variant — nothing to merge.
+            // One side, and the snapshot's settings are that side's: nothing to merge.
             var chains = new JunctionProbeChains(
                 lowerCopy.ToChain(lower.Zone),
                 upperCopy.ToChain(upper.Zone));
@@ -1118,9 +906,7 @@ public partial class VirtualCrossoverPanel
         return (variants, null);
     }
 
-    // Every measured channel's excess group delay as a diagnostic series — the
-    // menu item's own reading, computed the same way, for a probe that asked
-    // for it by name.
+    // The excess-group-delay menu item's reading, for a probe that asks for it by name.
     private async Task<IReadOnlyList<AgentDiagnosticSeries>> BuildAgentExcessGroupDelaySeriesAsync()
     {
         var measured = new List<(string Id, Complex[] Response, int PeakIndex, int SampleRate, MeasuredBand Band)>();
@@ -1158,9 +944,7 @@ public partial class VirtualCrossoverPanel
         });
     }
 
-    // Undo AI import puts back. The compute runs off the UI thread under a
-    // wait cursor, fingerprinted on both sides so an edit landing under it
-    // drops the result instead of being written over.
+    // Junction tune without a dialog: the tuner's one crossover is written to both sides of both blocks, as the wizard writes and Undo AI import restores.
     private async Task<bool> RunAgentTuneJunctionAsync(
         TuneJunctionOperation operation, List<string> summary)
     {
@@ -1217,18 +1001,11 @@ public partial class VirtualCrossoverPanel
             operation.Slopes,
             operation.MinHz ?? defaultMinHz,
             operation.MaxHz ?? defaultMaxHz,
-            // One slope for both edges unless the reply frees them: a junction is
-            // one crossover, and the free search costs slopes² per corner.
+            // One slope for both edges unless the reply frees them: the free search costs slopes² per corner.
             operation.IndependentSlopes ?? false,
             ProcessorSampleRateHz);
 
-        // The compute runs off the UI thread under a wait cursor, and the
-        // session is fingerprinted on both sides of it rather than the panel
-        // disabled around it: disabling and re-enabling a panel this size
-        // repaints every plot twice, which on a session with spatial averages
-        // costs seconds more than the tune itself. An edit that lands under the
-        // compute moves the fingerprint, and the result is then dropped rather
-        // than written against chains the tuner never saw.
+        // Fingerprinted around the compute instead of disabling the panel: disable/enable repaints every plot twice, costing seconds with spatial averages. A moved fingerprint drops the result.
         string fingerprintBefore = ComputeAgentFingerprint();
         JunctionTuneResult result;
         UseWaitCursor = true;
@@ -1299,10 +1076,7 @@ public partial class VirtualCrossoverPanel
         }
         ApplySettingsToControl(lower);
         ApplySettingsToControl(upper);
-        // One edge, written onto both sides: the side lock takes the result as it
-        // stands. Read as a difference, a hidden side that already held the new
-        // edge would look untouched, and the shown side's whole crossover — its
-        // OTHER edge included — would be carried over the hidden side's own.
+        // Remember the result as it stands: read as a difference, a hidden side already holding the new edge would look untouched and get the shown side's whole crossover.
         sideLock.Remember(channels.Select(channel => channel.Pair));
         ScheduleSave();
         RedrawAll();
@@ -1312,11 +1086,7 @@ public partial class VirtualCrossoverPanel
         return true;
     }
 
-    // The readings per side on the junction's own octave-each-side band — the
-    // package's band, so they compare with what the assistant read: the current
-    // crossover's, and the applied one's where the tune changed something —
-    // loss, dip and ripple of the sum at the current delays, and what the best
-    // delay of the upper channel would leave.
+    // Readings on the package's octave-each-side junction band, so they compare with what the assistant read.
     private static void AppendJunctionReadings(List<string> summary, JunctionTuneResult result, bool best)
     {
         foreach (JunctionTuneReading current in result.Current.Sides)
@@ -1353,7 +1123,6 @@ public partial class VirtualCrossoverPanel
         $"{lowerBlock} {(candidate.LowerLowPass is { } low ? "LP " + AgentEdgeText(low) : "no low-pass")} + " +
         $"{upperBlock} {(candidate.UpperHighPass is { } high ? "HP " + AgentEdgeText(high) : "no high-pass")}";
 
-    // The abbreviation the channel block's own family combo uses.
     private static string AgentEdgeText(CrossoverEdge edge)
     {
         string family = edge.Family switch
@@ -1369,17 +1138,7 @@ public partial class VirtualCrossoverPanel
     private static string Hz(double value) =>
         value.ToString("0.###", CultureInfo.InvariantCulture) + " Hz";
 
-    // Auto-tune without the wizard: the same handoff the PEQ menu would build
-    // for the channel, the same curves and options the wizard would fit
-    // (EqAutoTuneHeadless, pinned against the wizard's own render), and the
-    // same landing the wizard's Return takes — every guard included, so a
-    // channel that moved while the fit ran is refused rather than written.
-    // The review was the gate; the target-level check the wizard would have
-    // asked about is a refusal here, with the phrase in the summary.
-    /// <summary>
-    /// The target level every Auto-tune of one import fits to: the first level a
-    /// ticked request states, else the project's own. UI-free so it can be pinned.
-    /// </summary>
+    /// <summary>The target level every Auto-tune of one import fits to: the first stated level, else the project's. UI-free so it can be pinned.</summary>
     internal static double ImportTargetLevelDb(
         IReadOnlyList<AgentOperationVerdict> toApply, double currentTargetLevelDb) =>
         toApply
@@ -1398,9 +1157,7 @@ public partial class VirtualCrossoverPanel
         List<string> summary)
     {
         string label = $"Auto-tune {operation.ChannelId}";
-        // By the settings object the review judged, not by the id: the crossover
-        // wizard, run earlier in the same import, may have reordered the blocks,
-        // and the letter the reply used then names another channel.
+        // By the settings object, not the id: the crossover wizard earlier in this import may have re-lettered the blocks.
         (VirtualCrossoverChannel Channel, bool RightSide)? slot = AgentChannelSlots()
             .Where(item => ReferenceEquals(item.Channel.SideSettings(item.RightSide), target.Settings))
             .Select(item => ((VirtualCrossoverChannel, bool)?)(item.Channel, item.RightSide))
@@ -1412,8 +1169,7 @@ public partial class VirtualCrossoverPanel
         }
 
         (VirtualCrossoverChannel channel, bool rightSide) = found;
-        // The review refused the other side already; this guards a snapshot the
-        // side selector moved under.
+        // Guards a snapshot the side selector moved under; the review refused the other side already.
         if (!channel.Pair.Mono && rightSide != channel.ActiveRight)
         {
             summary.Add(
@@ -1422,8 +1178,6 @@ public partial class VirtualCrossoverPanel
             return false;
         }
 
-        // What the wizard would open on: the average while the hybrid view draws
-        // it, the point measurement otherwise — unless the reply chose.
         (LiveCaptureDocument? Capture, double OffsetDb) average =
             HandoffSpatialAverage(channel, channel.ActiveRight);
         if (operation.Source == AgentProposalValidator.PointSource)
@@ -1439,10 +1193,7 @@ public partial class VirtualCrossoverPanel
             return false;
         }
 
-        // A stated target level is built into the request (the token carries it)
-        // and reaches the panel only once the fit has landed — a run that skips
-        // itself must leave nothing behind, since the import's undo is dropped
-        // when nothing ran.
+        // A stated target level travels in the request and reaches the panel only once the fit lands: a skipped run must leave nothing, since undo is dropped when nothing ran.
         VirtualDspEqHandoffRequest? request = BuildPeqHandoffRequest(
             channel, withChain: true, average, targetLevelDb);
         if (request == null)
@@ -1454,9 +1205,7 @@ public partial class VirtualCrossoverPanel
         VirtualCrossoverTargetSettings targetSettings =
             project.Target ?? new VirtualCrossoverTargetSettings();
         TargetCurveSpec spec = (targetCurve ?? targetSettings.ToCurve()).Normalized().Spec;
-        // The wizard's own refusal: kept all-pass bands that fill Max Filters
-        // leave the fit nothing to place, and a bank over the limit is not one
-        // the button would ever hand back.
+        // The wizard's own refusal: kept all-pass bands filling Max Filters leave the fit no room.
         int room = EqAutoTuneHeadless.RoomUnderMaxFilters(request, policy);
         if (room <= 0)
         {
@@ -1471,15 +1220,13 @@ public partial class VirtualCrossoverPanel
             request, spec, policy, operation.MinHz, operation.MaxHz,
             operation.AllowShelves, operation.CutsOnly);
         bool cutsOnly = inputs.CutsOnly;
-        // The wizard beeps at a source it cannot draw; the tuner must not be
-        // handed one.
+        // The wizard beeps at a source it cannot draw; the tuner must not get one.
         if (inputs.Source.Count < 2)
         {
             summary.Add($"{label}: skipped (the measurement gives no usable curve).");
             return false;
         }
-        // The review held the window to the wizard's fields; a snapshot the
-        // crossover moved under can still leave a stated edge past the other.
+        // A snapshot the crossover moved under can still leave a stated edge past the other.
         if (!EqAutoTuneHeadless.IsUsableWindow(inputs.MinHz, inputs.MaxHz))
         {
             summary.Add(
@@ -1510,8 +1257,6 @@ public partial class VirtualCrossoverPanel
             (fitted, after) = await Task.Run(() =>
             {
                 EqualizationCurve curve = EqAutoTuneHeadless.Fit(inputs);
-                // The corrected curve as the wizard's Source + EQ draws it: the
-                // bank in the chain, through the window or over the average.
                 IReadOnlyList<SignalPoint> corrected = EqAutoTuneHeadless.SourceCurve(
                     request.Source, request.SmoothingInverseOctaves, curve);
                 return (curve, EqAutoTuneHeadless.RmsErrorDb(
@@ -1531,12 +1276,7 @@ public partial class VirtualCrossoverPanel
             return false;
         }
 
-        // Landed the way the wizard's Return lands, against the capture the
-        // request was built with — the reply may have asked for the point
-        // measurement under a hybrid view, and the token says which it was.
-        // The datum the fit was built against becomes the project's now, as the
-        // wizard's Return moves it on the way back; the token carries the same
-        // value, which is what the landing checks.
+        // Landed as the wizard's Return lands, against the capture the request was built with (the token says which). The fit's datum becomes the project's, as Return moves it.
         decimal previousTargetLevel = numericTargetLevel.Value;
         if (!((double)numericTargetLevel.Value).Equals(request.TargetLevelDb))
         {
@@ -1558,7 +1298,6 @@ public partial class VirtualCrossoverPanel
                 average.Capture,
                 ProcessorSampleRateHz))
         {
-            // Nothing landed, so nothing of the request stays — the datum included.
             numericTargetLevel.Value = previousTargetLevel;
             summary.Add($"{label}: skipped (the channel changed while the fit ran).");
             return false;
@@ -1579,7 +1318,6 @@ public partial class VirtualCrossoverPanel
         static string Rms(double? value) => value is { } rms ? $"{rms:0.0} dB" : "n/a";
     }
 
-    // Everything the import could move, before it moves any of it.
     private AgentImportUndo CaptureAgentUndo() =>
         new(
             AgentChannelSlots()
@@ -1626,10 +1364,7 @@ public partial class VirtualCrossoverPanel
             project.StereoLevelDifferenceDb = undo.StereoLevelDifferenceDb;
             project.RearFillOffsetMs = undo.RearFillOffsetMs;
             numericTargetLevel.Value = numericTargetLevel.ClampValue(undo.TargetLevelDb);
-            // The field's ValueChanged writes the project through OnViewChanged,
-            // which is what the suppression above silences — so the project's
-            // datum, the one the package and the saved session read, is written
-            // here by hand, as the Hybrid tick's is.
+            // ValueChanged's project write is suppressed above, so the datum the package and session read is written by hand.
             project.TargetLevelDb = (double)numericTargetLevel.Value;
         }
         finally
@@ -1643,19 +1378,13 @@ public partial class VirtualCrossoverPanel
         }
 
         RefreshHybridAvailability();
-        // The restored state is the record, on every side: the side lock takes it as
-        // it stands. Read as a difference it could put a side the import never
-        // touched somewhere it never was (L=A, R=B; the import wrote L=B and the
-        // lock had nothing to carry; the undo restores L=A alone, and a difference
-        // would then carry A onto R).
+        // Remember the restored state as it stands: a difference could carry a side where it never was (L=A,R=B; import wrote L=B; undo restores L=A and would carry A onto R).
         sideLock.Remember(channels.Select(channel => channel.Pair));
         ScheduleSave();
         RedrawAll();
     }
 
-    // The Auto crossover wizard can reorder the blocks, and the block letters a
-    // reply used are that order. Restored by identity rather than by index: the
-    // list holds the same objects, in another arrangement.
+    // Auto crossover can reorder blocks; restored by identity, since the list holds the same objects.
     private void RestoreAgentChannelOrder(IReadOnlyList<VirtualCrossoverChannel> order)
     {
         if (order.Count != channels.Count || order.SequenceEqual(channels))
@@ -1670,9 +1399,7 @@ public partial class VirtualCrossoverPanel
         }
     }
 
-    // The blocks whose settings an import (or its undo) wrote, refreshed the way
-    // every other programmatic write refreshes them — the control shows the
-    // active side, so a write to the other side shows when the side flips.
+    // The control shows the active side, so a write to the other side shows when the side flips.
     private void RefreshChannelsAfterAgentWrite(IReadOnlyList<AgentUndoEntry> entries)
     {
         foreach (AgentUndoEntry entry in entries)
@@ -1689,17 +1416,7 @@ public partial class VirtualCrossoverPanel
         }
     }
 
-    /// <summary>
-    /// Copy for AI: gathers the package at one revision (once more if the session
-    /// moved underneath), builds it off the UI thread, and only then puts the whole
-    /// text on the clipboard in one write — a failure anywhere copies nothing, so
-    /// the clipboard never holds a partial or an older package.
-    /// </summary>
-    // A diagnostic the assistant asked for by name: every measured channel's
-    // excess group delay, as the analyzer shows it for one impulse response, in
-    // a text of its own beside the package — which is already the size a chat
-    // takes. Named after the last package copied, so the reader lays the two
-    // side by side by channel id.
+    // Excess group delay per measured channel, as a separate text beside the package (which already fills a chat), named after the last package so the two line up by channel id.
     private async Task CopyExcessGroupDelayForAiAsync()
     {
         if (agentBusy)
@@ -1711,10 +1428,7 @@ public partial class VirtualCrossoverPanel
         RefreshAutoActionsEnabled();
         try
         {
-            // Snapshot on the UI thread — the responses, their anchors and bands,
-            // the gate shape — and compute off it: a gated FFT with a
-            // minimum-phase reconstruction per channel is not a UI-thread job on
-            // a large installation.
+            // Snapshot on the UI thread; the gated FFT and minimum-phase reconstruction per channel run off it.
             var measured = new List<(string Id, Complex[] Response, int PeakIndex, int SampleRate, MeasuredBand Band)>();
             foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
                 in AgentChannelSlots())
@@ -1734,16 +1448,11 @@ public partial class VirtualCrossoverPanel
             }
 
             PhaseAnalysisSettings gate = AgentGroupDelayWindow();
-            // The package the curves belong beside — while this is still the
-            // session it was copied from. Changed, the id would tie the curves to
-            // channel ids and gates that no longer mean what they meant there.
+            // Tie to the package only while this is the session it was copied from.
             string? packageId = lastAgentPackageFingerprint == ComputeAgentFingerprint()
                 ? lastAgentPackageId
                 : null;
             DateTimeOffset now = DateTimeOffset.UtcNow;
-            // A gated FFT and a minimum-phase reconstruction per channel: on a
-            // large installation that is seconds, and the window names the
-            // channel each one is on.
             (AgentDiagnosticBuildResult result, int count) = await AgentProgressDialog.RunAsync(
                 FindForm(),
                 "Copy diagnostics for AI",
@@ -1797,6 +1506,7 @@ public partial class VirtualCrossoverPanel
         }
     }
 
+    /// <summary>Copy for AI: gathers at one revision (retrying once), builds off the UI thread, then writes the whole text to the clipboard at once, so a failure copies nothing.</summary>
     private async Task CopyForAiAsync()
     {
         if (agentBusy)
@@ -1808,8 +1518,6 @@ public partial class VirtualCrossoverPanel
         RefreshAutoActionsEnabled();
         try
         {
-            // Two seconds or so on a large session, and the window is the only
-            // thing telling the user the click did anything.
             (AgentPackageInputs Inputs, string Fingerprint)? gathered =
                 await AgentProgressDialog.RunAsync(
                     FindForm(),
@@ -1882,12 +1590,7 @@ public partial class VirtualCrossoverPanel
         }
     }
 
-    // The inputs and the fingerprint of ONE session state. The capture vouches
-    // that the coordinator's revision held while it gathered, but the fingerprint
-    // reads things the revision does not cover — the target level, the Hybrid
-    // tick, a gate pin — so it is taken on both sides of the gather and the pair
-    // is kept only when the two agree. Null otherwise; the caller retries once,
-    // as it does for the capture's own refusal.
+    // The fingerprint covers what the coordinator revision does not (target level, Hybrid tick, gate pin), so it is taken on both sides of the gather; null when they differ, and the caller retries once.
     private async Task<(AgentPackageInputs Inputs, string Fingerprint)?> GatherAgentPackageAsync()
     {
         string before = ComputeAgentFingerprint();
@@ -1900,11 +1603,7 @@ public partial class VirtualCrossoverPanel
         return (inputs, before);
     }
 
-    /// <summary>
-    /// The channels as the bridge names them, with their live settings and what
-    /// each side carries, plus the project figures an engine request is judged
-    /// and described against.
-    /// </summary>
+    /// <summary>The channels as the bridge names them, with live settings, plus the project figures engine requests are judged against.</summary>
     internal AgentSessionSnapshot BuildAgentSessionSnapshot() =>
         new(
             AgentChannelSlots()
@@ -1928,9 +1627,7 @@ public partial class VirtualCrossoverPanel
             lastAgentPackageFingerprint,
             ComputeAgentFingerprint());
 
-    // Every physical channel in block order: a stereo block yields its left and
-    // right slots, a mono block its single one (routed to the left slot, as the
-    // panel routes it everywhere).
+    // A mono block yields one slot, routed to the left as everywhere in the panel.
     private IEnumerable<(string Block, AgentChannelSide Side, VirtualCrossoverChannel Channel, bool RightSide)>
         AgentChannelSlots()
     {
@@ -1950,31 +1647,16 @@ public partial class VirtualCrossoverPanel
         }
     }
 
-    /// <summary>
-    /// Everything a package is built from, read off the current session: both
-    /// sides processed through the coordinator (its cache makes the on-screen
-    /// side free), the metric block's curves and read-outs per side, the junction
-    /// views per adjacent pair, and the stereo and group deltas. Null when the
-    /// session changed underneath the gathering — the caller retries once.
-    /// </summary>
+    /// <summary>Everything a package is built from, read off the current session. Null when the session changed underneath; the caller retries once. See docs/tech/agent-bridge.md#package-gathering.</summary>
     internal async Task<AgentPackageInputs?> CaptureAgentPackageInputsAsync()
     {
         long revision = processingCoordinator.CurrentRevision;
         VirtualCrossoverGroupView groupView = SelectedGroupView;
         bool activeRight = project.ActiveSideRight;
-        // One smoothing for every package, whatever the display shows: the Sum
-        // loss and the curves a reader compares across sessions and across users
-        // must not move with a combo box, and a dip's depth at 1/48 octave is not
-        // the same reading as at 1/6. The panel's own psychoacoustic setting is
-        // the one the manual reads a tune at, so it is the one the package uses.
+        // One smoothing for every package, independent of the display. See docs/tech/agent-bridge.md#package-smoothing.
         int smoothing = SpectrumSmoothing.PsychoacousticCode;
         MagnitudeGateSnapshot packageGate = magnitudeGate with { SmoothingInverseOctaves = smoothing };
-        // Except the hybrid curves and their sum, which the manual reads with the
-        // smoothing OFF: the average has already averaged the position-dependent
-        // wiggles down, and a fractional-octave window straddling a crossover's
-        // skirt pulls the level up toward the passband, right where the acoustic
-        // slopes are judged. Off cannot travel on a 12-point-per-octave grid, so
-        // they go at the grid's own width, 1/12 octave — one step, no more.
+        // Hybrid curves and their sum go at 1/12 octave, the grid's width (the manual reads them unsmoothed).
         MagnitudeGateSnapshot hybridGate =
             magnitudeGate with { SmoothingInverseOctaves = AgentHybridSmoothingInverseOctaves };
 
@@ -2000,9 +1682,7 @@ public partial class VirtualCrossoverPanel
                 continue;
             }
 
-            // The frame's own filtering: what the view draws, and of that, what it
-            // sums (see RedrawMainPlotAsync). Channels outside the view still get
-            // their own curves below, built as a set of their own.
+            // The frame's own filtering (see RedrawMainPlotAsync); channels outside the view get their own curves below.
             List<ProcessedChannel> all = sideSum.Channels.ToList();
             List<ProcessedChannel> shown = ChannelsShownBy(all, groupView);
             List<ProcessedChannel> summed = ChannelsSummedBy(shown, groupView);
@@ -2012,14 +1692,7 @@ public partial class VirtualCrossoverPanel
                 activeShown = shown;
             }
 
-            // A metric block of the package's own, for BOTH sides: the panel's
-            // `metrics` builds its channel and sum curves through the live gate
-            // snapshot — the display's smoothing — and BuildCurves' smoothing
-            // argument reaches only the loss curve. These delegates window through
-            // the package gate instead, so processedDb, sumDb and the loss all
-            // carry the package's smoothing. The opposite side windows through ITS
-            // gate placement, never the active side's pin — the same rule the
-            // on-screen opposite sum follows.
+            // The panel's `metrics` smooths at the display's width; these delegates window through the package gate, the opposite side through its own gate placement. See docs/tech/agent-bridge.md#package-smoothing.
             bool oppositeSide = rightSide != activeRight;
             VirtualCrossoverMetrics MetricsThrough(MagnitudeGateSnapshot gate) =>
                 new(
@@ -2046,11 +1719,7 @@ public partial class VirtualCrossoverPanel
             List<AnalysisCurve>? magnitudes = null;
             AnalysisCurve? sumCurve = null;
             List<SignalPoint>? loss = null;
-            // The hybrid set's references at the hybrid's own width: a channel the
-            // array mode falls back to its point measurement for enters the hybrid
-            // sum through these, and one smoothed psychoacoustically first would be
-            // smoothed twice, at two widths, in a sum that claims one. Built only
-            // when the hybrid is asked for — it is a second gated pass.
+            // At the hybrid's width so a point-measurement fallback is not smoothed twice; built only when the hybrid is asked for (a second gated pass).
             List<AnalysisCurve>? hybridReferences = null;
             if (shown.Count > 0)
             {
@@ -2069,23 +1738,11 @@ public partial class VirtualCrossoverPanel
             {
                 loss = null;
             }
-            // The rows go with the channels that SUM, exactly as the screen's
-            // UpdateMetric does: the loss was divided out of `summed`, and a
-            // drawn-but-unsummed centre — high-passed with no upper corner, so its
-            // band centre lands between the midrange's and the tweeter's — would,
-            // ordered with the front, invent junctions the sum never had and lose
-            // the real one (see ProcessedChannels.LossChainZone remarks and
-            // VirtualCrossoverMetricsTests.BuildEntries_ReadsJunctionsOffTheSummingSet).
+            // Rows from the SUMMING channels, as UpdateMetric does: a drawn-but-unsummed centre would invent junctions (see VirtualCrossoverMetricsTests.BuildEntries_ReadsJunctionsOffTheSummingSet).
             List<VirtualCrossoverMetric.Entry> entries = sideMetrics.BuildEntries(summed, loss);
-            // The junction phase block reads through the phase gate, placed over
-            // the SUMMING channels with THIS side's pin — the same call the frame
-            // makes for the active side (see RedrawMainPlotAsync), off the UI
-            // thread, with only numbers crossing over.
+            // Phase gate over the summing channels with this side's pin, as RedrawMainPlotAsync does for the active side.
             List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
-            // The direct-sound loss travels beside the full one whatever the panel's
-            // Sum loss selector shows — two families of numbers, labelled apart (see
-            // PROTOCOL §1.8) — read off the very spectra the junction phase block is
-            // built from, in the same task, exactly as RedrawMainPlotAsync does.
+            // The direct-sound loss travels whatever the Sum loss selector shows (PROTOCOL §1.8), off the junction phase spectra.
             List<SignalPoint>? directLoss = null;
             List<VirtualCrossoverMetric.Entry> directEntries = [];
             if (quotesJunctions)
@@ -2119,11 +1776,7 @@ public partial class VirtualCrossoverPanel
             HybridMagnitudes? hybrid = hybridReferences != null
                 ? BuildHybridMagnitudes(shown, hybridReferences, rightSide, AgentHybridSmoothingInverseOctaves)
                 : null;
-            // The sum the hybrid view draws beside the measured one: the same two
-            // constructions the plot uses (see RedrawMainPlotAsync), the active
-            // side's from the shown set, the opposite side's under its own gate
-            // placement — and null, as on screen, when the sides cannot be held
-            // to one offset.
+            // The hybrid view's sum (see RedrawMainPlotAsync); null, as on screen, when the sides cannot share one offset.
             IReadOnlyList<SignalPoint>? hybridSum = hybrid == null || hybridReferences == null
                 ? null
                 : rightSide == activeRight
@@ -2132,11 +1785,7 @@ public partial class VirtualCrossoverPanel
 
             for (int index = 0; index < shown.Count; index++)
             {
-                // The hybrid curves are stored on the captures' own level axis and
-                // drawn shifted by the set's datum onto the impulse responses' axis
-                // (see BuildMagnitudeCurves); the package carries what is drawn, so
-                // every column of a channel compares with every other. The pre-DSP
-                // twin is the same capture through no chain, on the same axis.
+                // Hybrid curves are carried shifted by the set's datum onto the impulse responses' axis, as drawn (see BuildMagnitudeCurves).
                 IReadOnlyList<SignalPoint>? hybridProcessed = null;
                 IReadOnlyList<SignalPoint>? hybridPreDsp = null;
                 if (hybrid != null && hybridReferences != null && !hybrid.PointMeasuredChannels[index])
@@ -2260,11 +1909,9 @@ public partial class VirtualCrossoverPanel
                 source = new AgentSourceInputs(
                     state.SampleRate,
                     state.MeasuredBand,
-                    // The family the hybrid curves are built from — the selected
-                    // mode's capture — not whichever capture the side happens to hold.
+                    // The selected mode's family, not whichever capture the side holds.
                     state.SpatialAverageFor(SpatialAverageMode) != null ? SpatialAverageMode.ToString() : null,
-                    // And every family it holds, read or not: the difference between
-                    // "has no average" and "has one the view is not using".
+                    // Every family held: distinguishes "no average" from "one the view is not using".
                     AgentSpatialAverageCaptures(state),
                     raw,
                     processed ? found.Processed : null,
@@ -2281,9 +1928,7 @@ public partial class VirtualCrossoverPanel
                 settings.DisplayName,
                 channel.Pair.Enabled,
                 channel.Pair.Bypass,
-                // A copy: the builder runs off the UI thread after this method
-                // returns, and the live object may be edited meanwhile — the
-                // package must describe one revision, the one the curves are from.
+                // A copy: the builder runs off the UI thread and the live object may be edited meanwhile.
                 AgentOperations.CloneEditable(settings),
                 ProcessorSampleRateHz,
                 source));
@@ -2303,8 +1948,7 @@ public partial class VirtualCrossoverPanel
         var analysis = new AgentAnalysisInputs(
             groupView,
             activeRight,
-            // The package's own smoothing, not the display's (see the capture's
-            // note): psychoacoustic, 1/6 octave at its narrowest.
+            // The package's smoothing, not the display's.
             SpectrumSmoothing.PsychoacousticBaseInverseOctaves,
             true,
             project.SpatialAverageMode,
@@ -2349,10 +1993,7 @@ public partial class VirtualCrossoverPanel
             groups);
     }
 
-    // The window the excess group delay is read through: the project's phase
-    // gate AND its window mode with the cycles — what the protocol promises
-    // and what the group-delay view draws — with the offset left for the
-    // channel's own arrival. Read on the UI thread, once per diagnostic.
+    // The project's phase gate, window mode and cycles, with the offset left for the channel's own arrival.
     private PhaseAnalysisSettings AgentGroupDelayWindow() => new(
         project.PhaseWindowMode,
         project.PhaseFdwCycles,
@@ -2365,17 +2006,7 @@ public partial class VirtualCrossoverPanel
         Unwrap: false,
         SmoothingInverseOctaves: 0.0);
 
-    // The excess group delay of one measured channel, read through the phase
-    // gate and window, placed at the channel's OWN arrival (the handoff's rule
-    // for a measurement read without the chain), at the group-delay view's
-    // default smoothing. The minimum-phase part — what the magnitude dictates
-    // and a minimum-phase PEQ straightens along with it — is taken out; what
-    // remains is arrivals and reflections, the question a junction that will
-    // not sum asks — plus what the gate itself cannot resolve at a band edge.
-    // Under FDW both parts are read against the windowed magnitude, so the
-    // reflections the window drops leave the excess too.
-    // Pure: gated FFTs, a minimum-phase reconstruction and the difference, so
-    // it runs off the UI thread on a snapshot of the channel and the window.
+    // Excess group delay at the channel's own arrival: minimum-phase part removed, leaving arrivals and reflections. Pure, runs off the UI thread. See docs/tech/agent-bridge.md#excess-group-delay-diagnostic.
     private static IReadOnlyList<SignalPoint>? BuildExcessGroupDelayCurve(
         Complex[] impulseResponse, int peakIndex, int sampleRate, MeasuredBand band,
         PhaseAnalysisSettings window)
@@ -2390,9 +2021,7 @@ public partial class VirtualCrossoverPanel
             extractionStart,
             sampleRate,
             window,
-            // The group-delay view's own default (1/12 octave), not the magnitude
-            // curves' psychoacoustic setting: a group delay is a phase slope, and
-            // a psychoacoustic width is a hearing model for levels, not for time.
+            // Group-delay default (1/12 octave), not psychoacoustic: that is a hearing model for levels, not time.
             FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves,
             includeMinimumPhase: true,
             lowestMeasuredFrequencyHz: band.LowEdgeHz,
@@ -2400,8 +2029,7 @@ public partial class VirtualCrossoverPanel
         return curves.Excess?.Points;
     }
 
-    // Every capture family the side holds, in the mode enum's own names so the
-    // package's per-channel list and its analysis.spatialAverage.mode agree.
+    // Mode enum names, so the per-channel list and analysis.spatialAverage.mode agree.
     private static IReadOnlyList<string> AgentSpatialAverageCaptures(VirtualCrossoverChannelState state)
     {
         var captures = new List<string>(2);
@@ -2418,10 +2046,7 @@ public partial class VirtualCrossoverPanel
         return captures;
     }
 
-    // The channel's spatial average through NO chain, on the impulse responses'
-    // level axis: the same capture, calibration and grid the hybrid view draws
-    // the channel with, the chain replaced by identity, the set's datum applied.
-    // Null when the channel has no capture of the selected family.
+    // The spatial average through no chain, on the impulse responses' level axis; null without a capture of the selected family.
     private IReadOnlyList<SignalPoint>? BuildHybridPreDspCurve(
         VirtualCrossoverChannel channel,
         bool rightSide,
@@ -2445,9 +2070,7 @@ public partial class VirtualCrossoverPanel
         return curve == null ? null : ShiftedBy(curve, offsetDb);
     }
 
-    // Both junction views of one pair, off the UI thread; a view that fails is
-    // reported as missing rather than failing the package — the same best-effort
-    // rule the lower plot's redraw follows.
+    // A failing view is reported missing rather than failing the package, as the lower plot's redraw does.
     private static (JunctionCorrelationView?, JunctionCoherenceView?) BuildJunctionViews(
         AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
     {

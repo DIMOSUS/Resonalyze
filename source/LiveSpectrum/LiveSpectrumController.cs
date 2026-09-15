@@ -11,9 +11,7 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly NoiseMeasurement measurement;
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 33 };
     private readonly OxyPlot.WindowsForms.PlotView plotView;
-    // Model swaps go through the viewport memory, not straight at the view: a
-    // start, a stop or a settings change rebuilds the live model, and the zoom the
-    // user set while watching the analyzer has to survive that.
+    // Through viewport memory so the user's zoom survives model rebuilds.
     private readonly PlotViewportMemory plotViewports;
     private readonly PlotModelFactory plotModelFactory;
     private readonly OverlayCollection overlayCollection;
@@ -23,20 +21,11 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly Action updateRecordButton;
     private readonly Action updatePlotLabels;
     private readonly LiveSpectrumOptions liveSpectrumOptions;
-    // Turns the selected calibration id into the curve itself, so a run can freeze
-    // what it is taken through rather than a name that may point elsewhere later.
+    // Resolves the id to the curve so a run freezes the calibration itself.
     private readonly Func<string?, CapturedMicrophoneCalibration> resolveCalibration;
-    // Same guard the sweep path has (Form1.ShowMeasurementError): no modal
-    // error dialog while the owner is tearing down.
     private readonly Func<bool> suppressErrorDialogs;
-    // The live transfer-function curve and the reference-free RTA carry a CurveTag
-    // (like every analysis curve) so overlays can bind to them by key and capture
-    // their raw form; the remaining live-spectrum helper series stay string-tagged
-    // for internal bookkeeping only.
     private static readonly CurveTag LiveSpectrumTag =
         new(Mode.LiveSpectrum, AnalysisCurveKind.Primary, CurveSource.Main);
-    // The RTA is a curve in its own right, not a helper: it is the only trace in the
-    // RTA-only views and the source a moving-microphone tune is built from.
     internal static readonly CurveTag LiveSpectrumInputMagnitudeTag =
         new(Mode.LiveSpectrum, AnalysisCurveKind.InputSpectrum, CurveSource.Main);
     private const string LiveSpectrumLowCoherenceTag = "live-spectrum:low-coherence";
@@ -48,34 +37,22 @@ internal sealed class LiveSpectrumController : IDisposable
     private const long PeakHoldSuppressionMs = 1000;
     private bool disposed;
     private bool redrawInProgress;
-    // The peak-hold envelope is held over the DISPLAYED band curve (freq, dB), not the
-    // raw FFT bins, so the SPL band power it shows is the peak of a real band level.
+    // Held over the displayed band curve, not raw bins. See docs/tech/live-spectrum.md#peak-hold.
     private List<SignalPoint>? peakHoldPoints;
     private long peakHoldResumeTick;
     private LiveSpectrumSnapshot? lastSnapshot;
-    // The accumulation's frame count as of the last drawn tick, so a tick that has no
-    // new frame behind it can skip the clone-and-re-render entirely.
+    // Lets a tick with no new frame skip clone-and-render.
     private int lastDrawnFrameCount = -1;
-    // A stored capture put on the plot in place of the live trace. It is STATE, not a
-    // one-off draw: every rebuild of the model — a tab switch, a display option, a
-    // calibration change — goes through RebuildModel, and a loaded capture that were
-    // only painted once would be replaced by the surviving accumulation the instant
-    // any of those happened, which is exactly what Load appeared to do.
+    // A loaded capture is state: every RebuildModel must redraw it, or the accumulation replaces it.
     private LiveCaptureDocument? loadedCapture;
-    // The filter the NEXT run will be taken through; see ApplyProtectiveHighPass.
     private ProtectiveHighPassConfiguration configuredProtectiveHighPass =
         ProtectiveHighPassConfiguration.Off;
-    // The capture read-out, kept between ticks like the series below and for the
-    // same reason. It is pooled PER MODEL, not globally: an OxyPlot element belongs
-    // to one model at a time, and a rebuild makes a new one.
+    // Pooled per model: an OxyPlot element belongs to one model at a time.
     private OverlayTextAnnotation? captureProgressAnnotation;
     private PlotModel? captureProgressOwner;
     private string? captureProgressState;
     private int captureProgressFrames = -1;
-    // The ~30 fps redraw reuses these series and refills their points in place;
-    // recreating the plot objects (and their point lists) every tick was pure
-    // allocation churn. They are removed from and re-added to the model each
-    // tick, which keeps today's z-order against overlays.
+    // Reused across ~30 fps ticks to avoid allocation churn; remove/re-add each tick keeps z-order against overlays.
     private LineSeries? peakHoldSeries;
     private LineSeries? mainSeries;
     private LineSeries? trustedSeries;
@@ -121,33 +98,12 @@ internal sealed class LiveSpectrumController : IDisposable
     public bool InProgress => measurement.InProgress;
     public bool TimerEnabled => timer.Enabled;
 
-    /// <summary>
-    /// Whether the configured input carries a loopback reference channel — the
-    /// prerequisite of the Transfer Function mode. The options panel colours its
-    /// Transfer choice amber by this when the selection cannot take effect.
-    /// </summary>
     public bool HasConfiguredLoopback => measurement.HasConfiguredLoopback;
 
-    /// <summary>
-    /// Whether the live plot currently has a curve to show — a running capture or a
-    /// kept last snapshot — i.e. whether a view-only SPL scale would actually hide
-    /// something. The options panel colours its dB SPL choice amber by this, so the
-    /// warning marks a real conflict and not a freshly started application.
-    /// </summary>
+    /// <summary>Whether a view-only SPL scale would hide a curve (drives the amber SPL warning).</summary>
     public bool HasDisplayableCurve => measurement.InProgress || lastSnapshot != null;
 
-    /// <summary>
-    /// What the curve currently on the plot was corrected through, or null when the
-    /// plot holds no capture of its own and the rig's setting is the honest answer.
-    /// </summary>
-    /// <remarks>
-    /// Three sources, in the order they take the screen: a LOADED capture carries its
-    /// correction inside it and answers by name, because that name belongs to whoever
-    /// took it and need not exist in this machine's list at all; a running or held
-    /// accumulation answers with the id frozen on it when its run began; and an empty
-    /// plot has nothing to answer for. Without this the read-out showed the rig — the
-    /// microphone the NEXT run will use — beside a curve taken with another one.
-    /// </remarks>
+    /// <summary>Calibration of the curve on the plot: a loaded capture's own, else the id frozen on the accumulation; null for an empty plot.</summary>
     public string? DisplayedCalibrationName =>
         loadedCapture is { } document
             ? document.Calibration?.Name ?? string.Empty
@@ -155,21 +111,11 @@ internal sealed class LiveSpectrumController : IDisposable
                 ? measurement.CaptureMicrophoneCalibrationName
                 : null;
 
-    /// <summary>
-    /// Whether a held accumulation could be written as a capture document. A loaded
-    /// capture does not count: it is already a file, and re-saving it as if it were a
-    /// fresh measurement would restamp it with this session's recipe.
-    /// </summary>
+    /// <summary>Whether a held accumulation can be saved; a loaded capture is excluded (re-saving would restamp its recipe).</summary>
     public bool HasCaptureToSave =>
         loadedCapture == null && lastSnapshot?.InputMagnitude is { Length: > 1 };
 
-    /// <summary>
-    /// The accumulated capture as a whole document, or null when there is nothing to
-    /// store. Built from the held snapshot — bins and frame count together, as they
-    /// were read under one lock — so the recipe describes the spectrum beside it.
-    /// Call <see cref="StopAndHoldAsync"/> first; that is what takes the final
-    /// accumulation.
-    /// </summary>
+    /// <summary>The held snapshot as a capture document, or null. Call <see cref="StopAndHoldAsync"/> first.</summary>
     public LiveCaptureDocument? BuildCaptureDocument() =>
         lastSnapshot is { } snapshot
             ? plotModelFactory.BuildLiveCaptureDocument(
@@ -178,12 +124,7 @@ internal sealed class LiveSpectrumController : IDisposable
                 title: string.Empty)
             : null;
 
-    /// <summary>
-    /// Stops a running analyzer the way the record button does — harvesting the final
-    /// accumulation into the held snapshot — and does nothing when it is already
-    /// stopped. <see cref="AbortAsync"/> is the wrong call for a capture: it stops the
-    /// analyzer without taking that last reading, leaving the newest frames unsaved.
-    /// </summary>
+    /// <summary>Stops and harvests the final accumulation; <see cref="AbortAsync"/> would drop the newest frames.</summary>
     public async Task StopAndHoldAsync()
     {
         if (measurement.InProgress)
@@ -195,11 +136,7 @@ internal sealed class LiveSpectrumController : IDisposable
         timer.Stop();
     }
 
-    /// <summary>
-    /// Replaces the plot with a stored capture. The live state goes with it: a loaded
-    /// capture is a different measurement, and leaving the running accumulation's
-    /// series or peak-hold envelope behind would blend two of them on one axis.
-    /// </summary>
+    /// <summary>Replaces the plot and live state with a stored capture.</summary>
     public void ShowLoadedCapture(LiveCaptureDocument document)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -216,9 +153,7 @@ internal sealed class LiveSpectrumController : IDisposable
         RebuildModel();
     }
 
-    // The stored capture on its OWN axis. Everything else about the live plot follows
-    // the current options; the scale cannot, because the levels in the file mean what
-    // the anchor at capture time made them mean.
+    // The loaded capture keeps its own scale: its levels mean what its capture-time anchor made them.
     private void ShowLoadedCaptureModel(LiveCaptureDocument document)
     {
         PlotModel model = plotModelFactory.CreateLiveSpectrum(
@@ -236,58 +171,24 @@ internal sealed class LiveSpectrumController : IDisposable
         updatePlotLabels();
     }
 
-    /// <summary>
-    /// The raw form of the RTA trace as last drawn, for an overlay capturing it. The
-    /// controller owns this because the RTA data lives in the drawn snapshot, not in the
-    /// plot factory; the factory turns the samples into the scale-appropriate raw curve.
-    /// Null when no RTA has been drawn (never started, or the trace is switched off).
-    /// </summary>
     public RawCurveCapture? BuildRawRtaCapture() =>
         plotModelFactory.BuildRawRtaCurve(lastSnapshot?.InputMagnitude);
 
-    // Whether the plot is in the absolute dB SPL (RTA) view. This follows the
-    // SELECTION: without a matching calibration the view still shows the SPL axis,
-    // but view-only (see SplViewOnly) — live curves are suppressed rather than the
-    // scale silently falling back to relative.
+    // Follows the selection: without a matching calibration the SPL axis is view-only (SplViewOnly).
     private bool RenderingSpl =>
         plotModelFactory.EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
 
-    // dB SPL selected with no matching calibration: the axis and the SPL overlays
-    // show, but live curves have no absolute level to be lifted to and are not
-    // drawn. The record button resets the scale to relative before an actual run,
-    // so this covers idle redraws of a stale snapshot (a scale switch after a stop)
-    // and the moment a running analyzer loses its calibration.
-    // MMM cannot reach this state: without an anchor it reports a RELATIVE scale and
-    // keeps drawing its band levels, because what a spatial average needs is the
-    // band-power rendering, not an absolute reference — see
-    // PlotModelFactory.LiveUsesBandPower.
+    // SPL selected without calibration: axis shows, live curves suppressed. MMM never gets here (reports relative; see PlotModelFactory.LiveUsesBandPower).
     private bool SplViewOnly =>
         RenderingSpl && plotModelFactory.LiveSplOffsetDb == null;
 
-    // The plot shows only the reference-free RTA (no transfer function or coherence)
-    // when the effective analysis mode is RTA — selected, or forced by a missing
-    // loopback reference. SPL no longer forces this: the scale is only effective in
-    // RTA mode to begin with (see PlotModelFactory.EffectiveLiveSpectrumScale).
     private bool RtaOnly =>
         plotModelFactory.EffectiveLiveAnalysisMode.IsReferenceFree();
 
-    // The reference-free RTA is normally optional, but it IS the only curve in the
-    // RTA-only views, so it is always computed there even if its checkbox is off.
     private bool NeedsInputMagnitude =>
         liveSpectrumOptions.ShowInputMagnitude || RtaOnly;
 
-    // The display transform behind the peak-hold envelope at the last drawn frame.
-    // peakHoldPoints holds FINISHED display values, so any change to how a level maps
-    // to the display — the scale, the RTA-only shaping, the smoothing band width or the
-    // SPL offset (e.g. a re-calibration to a new offset) — makes the old envelope
-    // incompatible; it must be dropped, not max-ed against the new values.
-    //
-    // The microphone calibration is NOT here, and neither is the protective high-pass:
-    // both are frozen on the accumulation when its run begins, and both are written
-    // immediately after SuspendPeakHold, so neither can change while an envelope
-    // exists. Keying on the RIG's calibration instead — which is what this did while
-    // the live options still owned that choice — dropped a perfectly valid envelope
-    // whenever the next run's microphone was chosen mid-hold.
+    // Display transform behind the peak-hold envelope; any change must drop the envelope. See docs/tech/live-spectrum.md#peak-hold.
     private readonly record struct PeakHoldDisplayKey(
         MagnitudeScale Scale,
         bool RtaOnly,
@@ -300,20 +201,12 @@ internal sealed class LiveSpectrumController : IDisposable
     private PeakHoldDisplayKey CurrentPeakHoldKey() => new(
         RenderingSpl ? MagnitudeScale.SoundPressureLevel : MagnitudeScale.Relative,
         RtaOnly,
-        // The EFFECTIVE code: MMM pins the smoothing Off, so keying on the stored
-        // option would call two different display transforms the same and max a
-        // 1/6-octave envelope against unsmoothed band levels.
+        // Effective code: MMM pins smoothing Off.
         plotModelFactory.EffectiveLiveSmoothingCode,
-        // The offset only shapes the display in SPL; in relative it is irrelevant.
         RenderingSpl ? plotModelFactory.LiveSplOffsetDb : null,
-        // Null (off) and a flat model (white noise, band-law-only compensation)
-        // are different display transforms; the nullable keeps them distinct.
+        // Null (off) and a flat model are different transforms.
         plotModelFactory.LiveTiltModel);
 
-    /// <summary>
-    /// Clears the running average and peak-hold envelope without interrupting
-    /// capture. Useful for the Infinite averaging preset.
-    /// </summary>
     public void ResetAverage()
     {
         measurement.ResetAccumulation();
@@ -324,12 +217,7 @@ internal sealed class LiveSpectrumController : IDisposable
     public void ApplyDisplayOptions()
     {
         measurement.RefreshLiveAveraging();
-        // An Infinite average never forgets, so applying display options restarts it —
-        // the RTA behaviour this has always had. A spatial-average capture is exempt
-        // in BOTH directions: there the accumulation is the measurement itself, and a
-        // display checkbox must not be able to throw away minutes of walking the
-        // microphone. Keyed on the mode, not on the stored speed, which in MMM is only
-        // the user's remembered RTA preference and would decide this at random.
+        // Infinite average restarts on option changes, except spatial-average captures (the accumulation is the measurement). Keyed on mode, not stored speed.
         if (!liveSpectrumOptions.AnalysisMode.IsSpatialAverageCapture() &&
             liveSpectrumOptions.EffectiveAveragingSpeed == AveragingSpeed.Infinite)
         {
@@ -342,21 +230,16 @@ internal sealed class LiveSpectrumController : IDisposable
             peakHoldPoints = null;
         }
 
-        // Any change to the display transform (scale, smoothing, mic correction, SPL
-        // offset) makes the held display points incompatible; drop the envelope.
         if (CurrentPeakHoldKey() != renderedPeakHoldKey)
         {
             SuspendPeakHold();
         }
 
-        // Rebuild the model even while running: display options such as the coherence
-        // curve add or remove the coherence axis, and a running TimerTick would otherwise
-        // attach the coherence series to a model that has no matching axis.
+        // Rebuild even while running: coherence display adds/removes an axis.
         RebuildModel();
     }
 
-    // Pauses peak-hold tracking briefly so the noisy first frames captured while
-    // the average ramps up from zero are not latched into the envelope.
+    // Keeps ramp-up frames out of the envelope.
     private void SuspendPeakHold()
     {
         peakHoldPoints = null;
@@ -380,18 +263,7 @@ internal sealed class LiveSpectrumController : IDisposable
         }
     }
 
-    /// <summary>
-    /// The protective high-pass the next run will be taken through, kept current from
-    /// the measurement settings.
-    /// </summary>
-    /// <remarks>
-    /// Its own entry point because the settings path that carries it does NOT always
-    /// reach <see cref="ConfigureFrom"/>: an edit that leaves the audio session alone
-    /// stops short of reconfiguring the analyzer, deliberately, since reconfiguring
-    /// restarts a running one. A filter change must still arrive — it decides what a
-    /// capture divides back out — and arriving here costs nothing and interrupts
-    /// nothing.
-    /// </remarks>
+    /// <summary>Updates the next run's protective high-pass without reconfiguring (and so restarting) the analyzer.</summary>
     public void ApplyProtectiveHighPass(
         MeasurementSettingsFile.SweepMeasurementSettings measurementSettings)
     {
@@ -447,15 +319,6 @@ internal sealed class LiveSpectrumController : IDisposable
         updatePlotLabels();
     }
 
-    /// <summary>
-    /// Rebuilds the plot from the last displayed snapshot when the user returns
-    /// to the Live Spectrum mode without restarting, so the curve, peak hold and
-    /// overlays that were on screen reappear instead of an empty plot.
-    /// </summary>
-    /// <summary>
-    /// Discards the remembered curve and peak-hold envelope so they are not
-    /// restored after the plot is cleared.
-    /// </summary>
     public void ForgetLastCurve()
     {
         lastSnapshot = null;
@@ -473,48 +336,23 @@ internal sealed class LiveSpectrumController : IDisposable
         RebuildModel();
     }
 
-    /// <summary>
-    /// Discards the accumulated spectra and the remembered curve. The host calls
-    /// this when an acquisition parameter (analysis mode, signal colour, window,
-    /// FFT length, overlap) changes while the analyzer is STOPPED: the kept curve
-    /// is a record of the previous setup, and the display transform reads the
-    /// options live — redrawing old data under the new parameters would silently
-    /// re-interpret it (the slope compensation, for one, would re-tilt a stopped
-    /// pink RTA as if the excitation had been white). A running analyzer needs no
-    /// call — its restart already begins a fresh accumulation.
-    /// </summary>
+    /// <summary>Discards accumulation and kept curve after a stopped-analyzer acquisition change, so old data is not re-interpreted under new parameters.</summary>
     public void DiscardCapturedData()
     {
         measurement.ResetAccumulation();
         lastDrawnFrameCount = -1;
-        // The loaded capture goes too: it was taken under the previous acquisition
-        // parameters, and its recipe no longer describes what this analyzer would do.
         loadedCapture = null;
         ForgetLastCurve();
-        // The plot just changed hands — there is nothing on it now, so what it is
-        // corrected through is the rig's answer again, and Save has nothing to write.
         updateRecordButton();
     }
 
-    /// <summary>
-    /// Drops display state that is incompatible with any calibration change.
-    /// This must run even while another mode owns the visible plot.
-    /// </summary>
+    /// <summary>Drops display state incompatible with a calibration change; runs even while another mode owns the plot.</summary>
     public void InvalidateCalibration()
     {
         SuspendPeakHold();
     }
 
-    /// <summary>
-    /// Reacts to any calibration change — an SPL anchor added/cleared, its offset
-    /// re-measured, or a different microphone-correction file bound to the same mode.
-    /// This runs in EVERY app mode, not only while Live Spectrum is visible, because
-    /// the change makes the peak-hold envelope incompatible wherever the analyzer
-    /// sits; the plot itself is rebuilt only when Live Spectrum is the visible mode.
-    /// The capture is never touched: the signal follows the ANALYSIS MODE, not the
-    /// calibration — a Silent RTA that loses SPL simply keeps running on the
-    /// relative axis. Safe whether running or idle.
-    /// </summary>
+    /// <summary>Reacts to any calibration change in every app mode; the capture keeps running (signal follows the analysis mode).</summary>
     public void RefreshCalibration()
     {
         InvalidateCalibration();
@@ -525,12 +363,7 @@ internal sealed class LiveSpectrumController : IDisposable
         }
     }
 
-    // Forces the runtime signal to one the selected analysis mode actually offers, so
-    // the stored NoiseColor never diverges from what the panel and the playback show.
-    // Silent (an ambient RTA with no excitation) is the one mode-exclusive signal: a
-    // transfer function has nothing to correlate against without an excitation, so
-    // entering Transfer mode falls it back to periodic pink (the transfer reference).
-    // Every real excitation is valid in both modes and is never touched.
+    // Silent is RTA-only (Transfer needs an excitation), so Transfer falls back to periodic pink. Other signals are valid in both modes.
     internal static bool NormalizeSignalType(LiveSpectrumOptions options)
     {
         if (options.AnalysisMode == LiveAnalysisMode.TransferFunction &&
@@ -554,13 +387,8 @@ internal sealed class LiveSpectrumController : IDisposable
         return changed;
     }
 
-    // Recreates the plot model (and therefore its axes) from the current options, redraws
-    // the last snapshot, and restores overlays. Safe to call while running: the next
-    // TimerTick simply renders onto the fresh model.
     private void RebuildModel()
     {
-        // A loaded capture owns the plot until a run replaces it, so every path that
-        // rebuilds the model redraws IT rather than the accumulation it stands in for.
         if (loadedCapture is { } document)
         {
             ShowLoadedCaptureModel(document);
@@ -568,10 +396,7 @@ internal sealed class LiveSpectrumController : IDisposable
         }
 
         PlotModel model = plotModelFactory.CreateLiveSpectrum();
-        // Prefer a freshly computed snapshot so a scale switch picks up curves the
-        // stored one may lack (e.g. the RTA when SPL is turned on): the accumulators
-        // survive a stop, so this still works when the analyzer is paused. Fall back
-        // to the last drawn snapshot when no accumulation is available.
+        // Prefer a fresh snapshot (accumulators survive a stop) so a scale switch gets curves the stored one lacks.
         LiveSpectrumSnapshot? snapshot =
             measurement.GetAccumulatedSpectrumSnapshot(NeedsInputMagnitude) ?? lastSnapshot;
         if (snapshot != null)
@@ -611,25 +436,15 @@ internal sealed class LiveSpectrumController : IDisposable
 
         NormalizeSilentSignal();
 
-        // With no loopback the analyzer runs as a single-channel RTA (mic auto-power)
-        // instead of a dual-channel transfer function; both are valid, so starting is
-        // no longer gated on a configured loopback.
         SuspendPeakHold();
         lastSnapshot = null;
         lastDrawnFrameCount = -1;
-        // A new run is what replaces a loaded capture; until then it stays on screen.
         loadedCapture = null;
         plotViewports.Show(plotModelFactory.CreateLiveSpectrum(), getCurrentMode());
         overlayCollection.Show(getCurrentMode());
-        // Frozen for the life of this accumulation, immediately before it begins: what
-        // the curve divides out and what the saved recipe records are then the same
-        // filter, and a setting edited mid-pass cannot re-tilt a walk already underway.
+        // Frozen for this accumulation so the divided-out filter and the saved recipe agree.
         measurement.SetCaptureProtectiveHighPass(configuredProtectiveHighPass);
-        // The microphone is frozen at the same moment and for the same reason. The
-        // CURVE is taken, not the id: the bins are rendered again on every redraw and
-        // once more on Save, so a rig calibration changed between the walk and the Save
-        // would otherwise recompute the walk — and the file would name a microphone it
-        // was never taken through.
+        // Calibration curve frozen too: bins are re-rendered on every redraw and on Save.
         measurement.SetCaptureMicrophoneCalibration(
             resolveCalibration(liveSpectrumOptions.CalibrationId));
         _ = measurement.RunAsync();
@@ -653,8 +468,6 @@ internal sealed class LiveSpectrumController : IDisposable
             PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
         }
 
-        // The held capture keeps its read-out: what Save is about to store is the
-        // accumulation this count describes, so it must stay on screen after the stop.
         UpdateCaptureProgressAnnotation(model);
         plotViewports.Show(model, getCurrentMode());
         updateOverlayAvailability();
@@ -665,9 +478,6 @@ internal sealed class LiveSpectrumController : IDisposable
 
     private void TimerTick(object? sender, EventArgs e)
     {
-        // Guard against re-entrancy if a redraw takes longer than the timer
-        // interval. The measurement runs on background threads and is never
-        // gated by this UI work, so a busy CPU only thins the display rate.
         if (redrawInProgress)
         {
             return;
@@ -682,16 +492,7 @@ internal sealed class LiveSpectrumController : IDisposable
                 return;
             }
 
-            // Redraw only what has actually changed. A snapshot clones the
-            // accumulators under the data lock and rebuilds the whole display curve
-            // from them, which is worth doing once per analysis FRAME — not thirty
-            // times a second regardless. With the long frames a spatial average needs
-            // (683 ms at 32768 and 48 kHz) a frame lands once in some forty ticks, so
-            // the other thirty-nine would clone a quarter of a megabyte and re-render
-            // it to an identical curve, contending with the audio thread for the lock
-            // each time. The notices still follow every tick: an overload is a
-            // shortage of frames, so gating it on new frames would silence it exactly
-            // when it matters.
+            // Re-render only on a new analysis frame (a 683 ms frame spans ~20 ticks of 33 ms); notices still update every tick. See docs/tech/live-spectrum.md#redraw-loop.
             int frames = measurement.AveragedFrameCount;
             if (frames == lastDrawnFrameCount && lastSnapshot != null)
             {
@@ -713,12 +514,8 @@ internal sealed class LiveSpectrumController : IDisposable
             lastSnapshot = snapshot;
             RemoveLiveSpectrumSeries(model);
             AddLiveSpectrumSeries(model, snapshot);
-            // A live transfer through a padded loopback sits above 0 dB;
-            // raise the default view to it (expand-only — a user zoom keeps
-            // its own view state) so the trace is not drawn above the frame.
+            // A padded loopback puts the transfer above 0 dB; expand-only ceiling raise.
             PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
-            // Keep target overlays that track the current measurement in sync with
-            // the freshly drawn live trace.
             overlayCollection.RefreshCurrentMeasurementTargets();
             UpdateOverloadAnnotation(model);
             UpdateCaptureProgressAnnotation(model);
@@ -731,9 +528,7 @@ internal sealed class LiveSpectrumController : IDisposable
         }
     }
 
-    // The loudest displayed point across the live series this controller owns.
-    // Deliberately NOT a scan of the whole model: overlay series live in the
-    // same model and must not steer the measurement view.
+    // Live series only: overlays must not steer the view.
     private double LiveDisplayMaxDb()
     {
         double maxDb = double.NegativeInfinity;
@@ -759,24 +554,14 @@ internal sealed class LiveSpectrumController : IDisposable
 
     private void AddLiveSpectrumSeries(PlotModel model, LiveSpectrumSnapshot snapshot)
     {
-        // A reused series must never sit in two models at once: detach the set
-        // from the previous model when the plot model has been rebuilt.
+        // A reused series must never sit in two models at once.
         if (attachedModel != null && !ReferenceEquals(attachedModel, model))
         {
             RemoveLiveSpectrumSeries(attachedModel);
         }
         attachedModel = model;
 
-        // A view-only SPL plot draws no live curves: at raw (un-lifted) dBFS on the
-        // absolute axis they would read as absurd sound-pressure levels. Say WHY the
-        // curve is absent instead of leaving a silently empty plot. The notice is
-        // managed here rather than at model creation so it appears only when a curve
-        // really was suppressed (never on a plot that has nothing to show anyway).
-        // Like the overload annotation, the instance is created per model and tracked
-        // by Tag: an OxyPlot element belongs to ONE PlotModel, so a cached instance
-        // would throw the moment a rebuilt model tried to adopt it while the
-        // discarded model still held it. Remove-then-add keeps a live tick from
-        // stacking duplicates and takes the notice down when view-only ends.
+        // View-only SPL: explain the missing curve. Created per model (OxyPlot element ownership); remove-then-add.
         RemoveSplViewOnlyAnnotation(model);
         if (SplViewOnly)
         {
@@ -787,11 +572,6 @@ internal sealed class LiveSpectrumController : IDisposable
             return;
         }
 
-        // The plot is the reference-free microphone (RTA) spectrum whenever the
-        // effective analysis mode is RTA — selected, or forced by a capture with no
-        // loopback at all (there is no transfer function to draw). In the RTA-only
-        // views the transfer function and coherence are hidden, the RTA is forced
-        // on, and the peak hold envelops it instead of the transfer curve.
         bool rtaOnly = RtaOnly;
         renderedPeakHoldKey = CurrentPeakHoldKey();
 
@@ -800,9 +580,7 @@ internal sealed class LiveSpectrumController : IDisposable
             double[]? peakSource = rtaOnly ? snapshot.InputMagnitude : snapshot.Magnitude;
             if (peakSource is { Length: > 0 })
             {
-                // Envelope the DISPLAYED band curve, not the raw bins: in SPL the
-                // display sums bin powers per band, so per-bin peaks summed later
-                // would add maxima from different frames and overstate the band.
+                // Envelope the displayed band curve: per-bin peaks from different frames would overstate the band.
                 List<SignalPoint> current =
                     plotModelFactory.BuildMainDisplayPoints(peakSource, rtaOnly);
                 UpdatePeakHold(current);
@@ -839,9 +617,7 @@ internal sealed class LiveSpectrumController : IDisposable
                             snapshot.Magnitude,
                             snapshot.Coherence,
                             liveSpectrumOptions.CoherenceThresholdPercent);
-                    // Keep the trusted (above-threshold) curve as the canonical primary
-                    // trace so the current-measurement target source uses it, not the
-                    // low-coherence segment.
+                    // The trusted segment stays primary so the current-measurement target uses it.
                     untrustedSeries.Tag = LiveSpectrumLowCoherenceTag;
                     trustedSeries.Tag = LiveSpectrumTag;
                 }
@@ -872,10 +648,6 @@ internal sealed class LiveSpectrumController : IDisposable
             }
         }
 
-        // Reference-free RTA magnitude of the microphone input, overlaid on the
-        // same dB axis. It is independent of coherence and the reference channel,
-        // so it is never split or dimmed by the coherence threshold. In the RTA-only
-        // views it is the only trace, forced on (and lifted to dB SPL by the factory).
         if (snapshot.InputMagnitude != null &&
             (liveSpectrumOptions.ShowInputMagnitude || rtaOnly))
         {
@@ -893,8 +665,6 @@ internal sealed class LiveSpectrumController : IDisposable
             model.Series.Add(inputMagnitudeSeries);
         }
 
-        // Coherence describes the transfer-function estimate, which the RTA-only
-        // views do not show, so it is drawn only alongside the transfer function.
         if (!rtaOnly && snapshot.Coherence != null && liveSpectrumOptions.ShowCoherence)
         {
             if (coherenceSeries == null)
@@ -910,9 +680,7 @@ internal sealed class LiveSpectrumController : IDisposable
         }
     }
 
-    // Holds the per-band maximum of the displayed curve over time. The grid frequency
-    // per index is stable across ticks, so a per-index max of the dB level is the peak
-    // of the band level actually shown (a band level is monotone in its power).
+    // Per-index max of displayed dB equals the band-level peak (grid stable, level monotone in power).
     private void UpdatePeakHold(List<SignalPoint> current)
     {
         if (Environment.TickCount64 < peakHoldResumeTick)
@@ -961,9 +729,6 @@ internal sealed class LiveSpectrumController : IDisposable
     private static void RemoveOverloadAnnotation(PlotModel? model) =>
         RemoveTaggedAnnotations(model, OverloadAnnotationTag);
 
-    // Remove-then-add is how every one of these notices is kept in sync with a live
-    // tick: it stops duplicates stacking up and takes the notice down again the
-    // moment its condition ends.
     private static void RemoveTaggedAnnotations(PlotModel? model, string tag)
     {
         if (model == null)
@@ -981,12 +746,7 @@ internal sealed class LiveSpectrumController : IDisposable
         }
     }
 
-    /// <summary>
-    /// How much has been integrated, shown while MMM is the mode. A spatial average
-    /// has no other progress: the curve stops visibly moving long before the average
-    /// is actually settled, so without a count the only guide to "long enough" is the
-    /// operator's patience.
-    /// </summary>
+    /// <summary>MMM integration progress: the curve settles visually long before the average does.</summary>
     private void UpdateCaptureProgressAnnotation(PlotModel? model)
     {
         RemoveTaggedAnnotations(model, CaptureProgressAnnotationTag);
@@ -996,9 +756,6 @@ internal sealed class LiveSpectrumController : IDisposable
             return;
         }
 
-        // A loaded capture reports what its own recipe records, not what this
-        // analyzer happens to hold: the two are different measurements, and the file
-        // is the one on screen.
         int frames;
         double seconds;
         string state;
@@ -1010,8 +767,6 @@ internal sealed class LiveSpectrumController : IDisposable
         }
         else
         {
-            // While running, the live counter; once held, the count that belongs to
-            // the snapshot Save will store, so the read-out and the file agree.
             bool running = measurement.InProgress;
             frames = running ? measurement.AveragedFrameCount : lastSnapshot?.FrameCount ?? 0;
             int sampleRate = measurement.SampleRate;
@@ -1029,19 +784,7 @@ internal sealed class LiveSpectrumController : IDisposable
             return;
         }
 
-        // Kept between ticks, and its text rebuilt only when the reading changes:
-        // this runs on the ~30 fps tick while the count it reports advances once a
-        // frame — once a second at the frame lengths a spatial average uses — so a
-        // fresh annotation and a fresh string each time is the allocation churn the
-        // series above are pooled to avoid.
-        //
-        // A NEW one per model, though. OxyPlot refuses an element that still belongs
-        // to another model, and every rebuild — a tab switch, a display option, a
-        // loaded capture — builds a new one; carrying a single instance across them
-        // threw on the add, which left the plot empty and surfaced later as an
-        // unrelated-looking "element already belongs to a PlotModel" on the next
-        // load. The reused series avoid this by detaching from the previous model
-        // (see attachedModel); an annotation is cheap enough to simply not share.
+        // Text rebuilt only on change; a new instance per model (OxyPlot throws on an element owned by another model).
         if (captureProgressAnnotation == null ||
             !ReferenceEquals(captureProgressOwner, model))
         {
@@ -1099,9 +842,7 @@ internal sealed class LiveSpectrumController : IDisposable
                 updateOverlayAvailability();
                 updateRecordButton();
                 updatePlotLabels();
-                // A user stop cancels the capture and reports success; reaching
-                // here with an error means the device or driver failed mid-run,
-                // which must not reset the UI silently.
+                // A user stop reports success; an error here is a device failure and must not reset the UI silently.
                 if (!success &&
                     measurement.LastError is Exception error &&
                     !owner.IsDisposed &&
@@ -1118,8 +859,6 @@ internal sealed class LiveSpectrumController : IDisposable
         }
         catch (InvalidOperationException)
         {
-            // The handle was destroyed between the guard and the call while the
-            // form closes; Dispose stops the timer.
         }
     }
 }

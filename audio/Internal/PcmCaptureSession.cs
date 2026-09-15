@@ -19,10 +19,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
     private long discontinuityCount;
     private long silentPacketCount;
     private long timestampErrorCount;
-    // A terminal device failure is remembered so a sample waiter registered
-    // AFTER the stop (e.g. the sweep waiter, created only once playback ends)
-    // faults immediately instead of hanging forever. Cleared only by a real
-    // StartAsync, never by Reset between averaged runs.
+    // A waiter registered after the stop (the sweep waiter comes only after playback) faults at once. Cleared by StartAsync, not Reset.
     private Exception? terminalException;
     private bool paused;
     private int captureGeneration;
@@ -72,7 +69,6 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         Reset();
         lock (sync)
         {
-            // A real (re)start clears any remembered terminal failure.
             terminalException = null;
         }
         firstBufferReady = SampleWaiterRegistry.NewSignal();
@@ -114,9 +110,7 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
             {
                 return Task.CompletedTask;
             }
-            // The samples are not all here and a stopped device will deliver
-            // neither more of them nor a fresh stop event: fault immediately
-            // rather than register a waiter that only an Abort could complete.
+            // A stopped device delivers no more samples and no stop event: fault instead of registering a waiter.
             if (terminalException != null)
             {
                 return Task.FromException(terminalException);
@@ -158,23 +152,13 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
             int newGeneration = ++captureGeneration;
             accumulator = freshAccumulator;
             sampleWaiters.CancelAll();
-            // Resetting for the next run resumes accumulation after a pause.
             paused = false;
-            // The epoch and target accumulator change under the same lock used by
-            // ProcessCaptureBlock's final check+append. Reset also drains queued
-            // old packets; an already in-flight packet keeps its old generation.
+            // Same lock as ProcessCaptureBlock's final check+append; an in-flight packet keeps its old generation.
             capturePump.Reset(newGeneration);
         }
     }
 
-    /// <summary>
-    /// Stops appending captured samples while the device keeps running (and keeps
-    /// raising level meters) — used between averaged sweep runs, where the gap the
-    /// caller spends deconvolving and judging the run just captured would otherwise
-    /// grow the capture buffer without bound. Stopping the device between runs is
-    /// not an option — WASAPI cannot be restarted — so packets are dropped instead.
-    /// <see cref="Reset"/> resumes.
-    /// </summary>
+    /// <summary>Drops captured samples between averaged runs while meters stay live; WASAPI cannot be restarted. <see cref="Reset"/> resumes. See docs/tech/audio-layer.md#averaged-runs-keep-the-device-open.</summary>
     public void Pause()
     {
         lock (sync)
@@ -226,9 +210,6 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
                 return;
             }
 
-            // While paused (between averaged runs) the device keeps running so the
-            // level meter stays live, but samples are dropped instead of appended —
-            // otherwise the gap between runs grows the buffer without bound.
             if (!paused && accumulator is { } activeAccumulator)
             {
                 activeAccumulator.Append(decodeScratch, decodedFrames);
@@ -292,8 +273,6 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         firstBufferReady?.TrySetException(exception);
         lock (sync)
         {
-            // Remember the failure so a waiter registered after this point (the
-            // sweep waiter is created only once playback ends) faults at once.
             terminalException ??= exception;
             sampleWaiters.FaultAll(exception);
         }

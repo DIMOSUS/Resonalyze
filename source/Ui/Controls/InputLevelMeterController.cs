@@ -6,11 +6,7 @@ internal sealed class InputLevelMeterController : IDisposable
     private readonly InputLevelMeterPanel panel;
     private readonly ExpSweepMeasurement sweepMeasurement;
     private readonly NoiseMeasurement noiseMeasurement;
-    // Levels arrive on audio worker threads, already throttled to 30 Hz by
-    // AudioLevelAccumulator; a busy message pump still falls behind that, so
-    // coalesce to a single queued UI update. Fold rather than drop: each
-    // snapshot is the peak of its own window, and the loudest one is usually
-    // the one the pump was too busy to take.
+    // Coalesced to one queued UI update; folded rather than dropped, since the skipped window is often the loudest.
     private readonly CoalescingDispatcher<InputLevelMeterSnapshot> dispatcher;
     private bool disposed;
 
@@ -46,7 +42,6 @@ internal sealed class InputLevelMeterController : IDisposable
         }
         catch (InvalidOperationException)
         {
-            // The handle was destroyed between the guard and the call.
         }
     }
 

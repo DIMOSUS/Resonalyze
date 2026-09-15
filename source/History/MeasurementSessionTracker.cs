@@ -1,13 +1,6 @@
 namespace Resonalyze.History;
 
-/// <summary>
-/// Owns the "current measurement" identity: which history entry the loaded
-/// impulse response belongs to, and whether an impulse response is loaded at
-/// all. Every transition that pairs those flags with a history-service call
-/// (finished sweep, loaded/saved file, restored or deleted entry, fresh
-/// session) goes through here, so the invariants live in one place rather than
-/// as raw fields on <c>Form1</c>. UI-thread only.
-/// </summary>
+/// <summary>Owns which history entry the loaded IR belongs to; every transition goes through here. UI-thread only.</summary>
 internal sealed class MeasurementSessionTracker
 {
     private readonly MeasurementHistoryService history;
@@ -25,7 +18,6 @@ internal sealed class MeasurementSessionTracker
 
     public bool HasImpulseResponse { get; private set; }
 
-    /// <summary>A sweep starts or a fresh session begins: nothing current.</summary>
     public void Reset()
     {
         CurrentEntryId = null;
@@ -37,29 +29,19 @@ internal sealed class MeasurementSessionTracker
         HasImpulseResponse = available;
     }
 
-    /// <summary>
-    /// A finished sweep becomes a new in-memory history entry and the
-    /// current one.
-    /// </summary>
     public void MarkMeasurementCompleted(ExpSweepMeasurement measurement)
     {
         HasImpulseResponse = true;
         CurrentEntryId = history.AddMeasurement(measurement, captureSession());
     }
 
-    /// <summary>A file was loaded: its file-backed entry becomes current.</summary>
     public void MarkLoadedFile(string filePath, ImpulseResponseFile file)
     {
         HasImpulseResponse = true;
         CurrentEntryId = history.AddOrUpdateLoadedFile(filePath, file, captureSession());
     }
 
-    /// <summary>
-    /// The current measurement was saved to a file: the current entry is
-    /// marked saved, or a file-backed entry is created and becomes current
-    /// when nothing was current (an unsaved measurement loaded before the
-    /// history service existed, or a deleted entry).
-    /// </summary>
+    /// <summary>Creates a file-backed entry when nothing was current (e.g. the entry was deleted).</summary>
     public void MarkSavedFile(string filePath, ImpulseResponseFile file)
     {
         if (CurrentEntryId.HasValue)
@@ -79,17 +61,13 @@ internal sealed class MeasurementSessionTracker
         }
     }
 
-    /// <summary>A history entry was restored into the app and becomes current.</summary>
     public void MarkRestored(Guid entryId)
     {
         HasImpulseResponse = true;
         CurrentEntryId = entryId;
     }
 
-    /// <summary>
-    /// An entry was deleted: the current pointer is dropped but the loaded
-    /// impulse response stays usable.
-    /// </summary>
+    /// <summary>The loaded impulse response stays usable.</summary>
     public void ForgetEntry(Guid entryId)
     {
         if (CurrentEntryId == entryId)
@@ -98,11 +76,6 @@ internal sealed class MeasurementSessionTracker
         }
     }
 
-    /// <summary>
-    /// Writes the live working state (mode + per-mode settings + active
-    /// overlays) back into the current entry. Safe to call when nothing is
-    /// selected or no measurement is loaded.
-    /// </summary>
     public void PersistCurrentSessionState()
     {
         if (!CurrentEntryId.HasValue || !HasImpulseResponse)

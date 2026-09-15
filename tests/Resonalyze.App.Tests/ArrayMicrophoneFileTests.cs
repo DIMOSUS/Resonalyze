@@ -4,11 +4,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// What a measurement file carries about its array, and about the calibration
-/// the microphone was read through. Both are additive sections: an older build
-/// must still open a file this one writes, so the format version does NOT move.
-/// </summary>
 public sealed class ArrayMicrophoneFileTests
 {
     private const int SampleRate = 44_100;
@@ -89,11 +84,8 @@ public sealed class ArrayMicrophoneFileTests
             Assert.Equal(1, first.AcceptedRunCount);
             Assert.Equal(SpatialAverage.GridBandCount, first.LevelsDb.Length);
 
-            // An uncalibrated microphone is a legitimate entry, not a defect: a
-            // position still says something true without a calibration file.
             Assert.Null(reloaded.ArrayMicrophones.Microphones[2].Calibration);
 
-            // The curves survive to the decibel.
             for (int band = 0; band < first.LevelsDb.Length; band++)
             {
                 Assert.Equal(
@@ -121,8 +113,7 @@ public sealed class ArrayMicrophoneFileTests
 
         ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
 
-        // Two machines mint their own calibration ids, so an id alone identifies
-        // nothing on the recipient's side. The points are what decide.
+        // Calibration ids are minted per machine; the points decide.
         Assert.NotNull(file.MicrophoneCalibration);
         Assert.Equal("ECM8000 0°", file.MicrophoneCalibration!.Name);
         Assert.Equal(3, file.MicrophoneCalibration.Points.Count);
@@ -164,11 +155,7 @@ public sealed class ArrayMicrophoneFileTests
 
         ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
 
-        // Both sections are additive and optional. Bumping the version would make
-        // every file this build writes unreadable to an older one, over metadata
-        // that older one would have ignored. (Version 8 was minted later by the
-        // base64 float32 sample representation — a change to existing fields, so
-        // it DID have to bump — not by these sections.)
+        // Additive optional sections do not bump the version (8 came from base64 float32 samples).
         Assert.Equal(8, file.Version);
         Assert.Equal(8, ImpulseResponseFile.CurrentVersion);
     }
@@ -176,8 +163,6 @@ public sealed class ArrayMicrophoneFileTests
     [Fact]
     public async Task AFileWrittenWithoutAnArrayStillLoads()
     {
-        // The compatibility direction that matters in practice: yesterday's file
-        // opened by today's build.
         using ExpSweepMeasurement measurement = CreateMeasurement();
         measurement.RestoreImpulseResponse(
             20, 20_000, SampleRate, 24, 1.0, PlaybackChannel.Mono,

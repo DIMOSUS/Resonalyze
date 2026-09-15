@@ -2,15 +2,9 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// A snapshot of the EQ Wizard filter bank: the bands in slot order plus the
-/// preamp. The order is part of the state, not a display detail — an exported
-/// profile numbers its filters by it — so the same bands in a different order
-/// are a different state, and re-ordering is undoable like any other edit.
-/// </summary>
+/// <summary>Bank snapshot; slot order is part of the state (exports number filters by it), so reordering is undoable.</summary>
 internal sealed class PeqBankState : IEquatable<PeqBankState>
 {
-    /// <summary>An empty bank with a neutral preamp: what "Reset filters" leaves.</summary>
     public static readonly PeqBankState Empty = new(Array.Empty<PeqBand>(), 0);
 
     private readonly PeqBand[] bands;

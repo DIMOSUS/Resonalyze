@@ -2,24 +2,11 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze;
 
-/// <summary>
-/// The review of an assistant's reply: every proposed change against the value
-/// the channel holds now, with a tick per admissible row. Nothing here changes
-/// the session — the dialog answers which rows were ticked, and the panel
-/// applies them after a second look at the live settings. A rejected row is
-/// listed with its reason and cannot be ticked; a warning is a word in the Status
-/// column, never only a colour.
-/// </summary>
+/// <summary>Review of a reply; changes nothing, only answers which rows were ticked. A warning is a word in Status, never only a colour.</summary>
 internal sealed partial class AgentProposalDialog : Form
 {
     private static readonly Color RejectedText = Color.FromArgb(140, 146, 158);
 
-    /// <summary>
-    /// What stands where the reply's own prose would have been. The fields are
-    /// wanted and not required — a reply that leaves them out is still read —
-    /// so the review has to say the words are missing rather than show a blank
-    /// that reads like there was nothing to say.
-    /// </summary>
     private const string NoSummaryText = "(the reply gave no summary)";
     private const string NoReasonText = "(no reason given)";
     private static readonly Color WarningText = Color.FromArgb(230, 184, 0);
@@ -40,10 +27,7 @@ internal sealed partial class AgentProposalDialog : Form
 
         foreach (AgentOperationVerdict verdict in review.Verdicts)
         {
-            // A row the assistant explained shows its sentence; one it did not
-            // is marked, so the blank cannot be read as "no reason to give". A
-            // row the parser refused carries an empty reason and is left blank:
-            // its message IS the explanation.
+            // An unexplained row is marked so the blank does not read as "no reason"; a parser-refused row stays blank (its message explains).
             string reasonText = verdict.Reason ?? NoReasonText;
             int index = gridView.Rows.Add(
                 verdict.Applicable && verdict.Ticked,
@@ -68,16 +52,12 @@ internal sealed partial class AgentProposalDialog : Form
             }
             row.Cells[ColumnStatus.Index].ToolTipText = verdict.Message;
             row.Cells[ColumnReason.Index].ToolTipText = reasonText;
-            // These two columns are fixed-width and an engine request states its
-            // whole set of inputs in them, well past what the cell can show. The
-            // detail box below repeats them for the selected row; the tooltip is
-            // for reading down the table without moving the selection.
+            // Engine inputs overflow these fixed-width cells: the detail box repeats them, the tooltip serves reading down the table.
             row.Cells[ColumnCurrent.Index].ToolTipText = verdict.Current;
             row.Cells[ColumnProposed.Index].ToolTipText = verdict.Proposed;
         }
 
-        // A click on the box is a click on the box: commit it so CellValueChanged
-        // fires now rather than when the row loses focus.
+        // Commit the tick now so CellValueChanged fires before the row loses focus.
         gridView.CellContentClick += (_, args) =>
         {
             if (args.RowIndex >= 0 && args.ColumnIndex == ColumnApply.Index)
@@ -97,7 +77,6 @@ internal sealed partial class AgentProposalDialog : Form
         UpdateApplyEnabled();
     }
 
-    /// <summary>The applicable rows the user left ticked, in the order shown.</summary>
     public IReadOnlyList<AgentOperationVerdict> Selected =>
         gridView.Rows
             .Cast<DataGridViewRow>()
@@ -129,9 +108,6 @@ internal sealed partial class AgentProposalDialog : Form
 
     private void UpdateApplyEnabled() => buttonApply.Enabled = Selected.Count > 0;
 
-    // The box under the table: the selected row's full status and reason (the
-    // cells clip long text), and the assistant's advice — the changes it did not
-    // put into an operation, which the reader acts on by hand.
     private void ShowDetail()
     {
         var lines = new List<string>();

@@ -41,11 +41,7 @@ public partial class Form1
 
         if (e.CloseReason == CloseReason.WindowsShutDown)
         {
-            // Cancelling the close during OS shutdown makes Windows report the app
-            // as blocking shutdown, and the process may be killed before the async
-            // teardown finishes. Persist user data synchronously and let the close
-            // proceed; device teardown is left to the OS (the flag also keeps the
-            // Dispose that follows the close from blocking on it).
+            // Cancelling during OS shutdown reports the app as blocking; persist synchronously and leave device teardown to the OS.
             closingPrepared = true;
             shutdownFastClose = true;
             startupAudioWarmup.Cancel();
@@ -58,8 +54,7 @@ public partial class Form1
         e.Cancel = true;
         if (closingInProgress)
         {
-            // A second close request while the aborts are still awaited would
-            // re-run the whole teardown; the first pass finishes the close.
+            // A second close during the awaited aborts would re-run teardown.
             return;
         }
 
@@ -90,10 +85,7 @@ public partial class Form1
         resourcesDisposed = true;
         if (shutdownFastClose)
         {
-            // OS shutdown: ExpSweepMeasurement.Dispose (and the controllers) wait
-            // synchronously on in-flight work, which would stall shutdown on the
-            // very teardown the fast-close path avoids. Cancelling is enough —
-            // the process is about to exit and the OS reclaims devices and timers.
+            // OS shutdown: Dispose waits on in-flight work and would stall; cancelling is enough.
             startupAudioWarmup.Cancel();
             return;
         }

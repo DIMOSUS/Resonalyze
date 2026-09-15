@@ -4,13 +4,7 @@ using Resonalyze.Ui;
 
 namespace Resonalyze;
 
-/// <summary>
-/// One channel block of the Virtual DSP tool: the source picker and the
-/// DSP chain controls (gain, delay, polarity, crossover edges, PEQ) plus the
-/// per-channel curve visibility. The control owns only self-contained behavior
-/// (slope lists per family, greying out unused edges, the delay-to-distance
-/// readout); source resolution and curve rendering stay with the host panel.
-/// </summary>
+/// <summary>One channel block of the Virtual DSP tool; source resolution and curve rendering stay with the host panel.</summary>
 public partial class VirtualCrossoverChannelControl : UserControl
 {
     private string channelName = "A";
@@ -22,17 +16,12 @@ public partial class VirtualCrossoverChannelControl : UserControl
     private bool phaseControlShown;
     private bool firControlShown;
     private int processorSampleRateHz = 48_000;
-    // What the FIR row shows, pushed by the host (SetFir): the kernel and the name of
-    // the file it was imported from, both null when the side carries none.
     private string? firSourceName;
     private FirFilter? firKernel;
     private FirCrossoverDesign? firDesign;
 
     public VirtualCrossoverChannelControl()
     {
-        // The block is one of the app's cards, and the flow list stacks a dozen of
-        // them: it paints its own rounded surface and outline in place of the
-        // framework's square border. ResizeRedraw because collapsing resizes it.
         SetStyle(
             ControlStyles.AllPaintingInWmPaint |
             ControlStyles.OptimizedDoubleBuffer |
@@ -41,22 +30,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
             true);
 
         InitializeComponent();
-        // The designer pins the block to one size (MinimumSize == MaximumSize) so the
-        // flow list cannot stretch it; collapsing — and hiding a row — moves that pin,
-        // and every height it moves to is measured off the live rows (see
-        // ApplyCollapsedState). The designer's height is the TALL one, with the phase
-        // AND the FIR rows: each is a real child at a real position, and a block
-        // without one of the controls simply ends at the last row it does show.
-        // The gap the block leaves under its lowest row, measured once while every
-        // child is still where the designer put it and none is hidden. Measured
-        // rather than stated because the rows are scaled for the current DPI, and
-        // captured here rather than on demand because a hidden optional row would make
-        // the same measurement read zero. Read in designer units — ScaleControl scales
-        // it with the rest of the block.
+        // Designer height is the tall one (phase + FIR rows); the block ends at its lowest shown row plus this margin.
+        // Measured once here in designer units: a hidden optional row would make it read zero later.
         bottomMargin = Math.Max(
             0, MaximumSize.Height - Controls.Cast<Control>().Max(child => child.Bottom));
-        // The ripple cap is the DSP's single source of truth (above it the Chebyshev
-        // pole math is undefined); the designer value is only a default.
         numericHighPassRipple.Maximum = (decimal)CrossoverFilter.MaximumChebyshevRippleDb;
         numericLowPassRipple.Maximum = (decimal)CrossoverFilter.MaximumChebyshevRippleDb;
         PopulateCrossoverCombos();
@@ -65,18 +42,11 @@ public partial class VirtualCrossoverChannelControl : UserControl
         UpdateCrossoverAvailability();
         UpdateDelayDistance();
         UpdateTotalGain();
-        // Both optional rows off until the project says otherwise, and applied here
-        // rather than left to the host: the block is measured and stacked by the flow
-        // list the moment it is added, and a block that arrives two rows too tall
-        // makes the whole list jump.
+        // Applied here, not by the host: the flow list measures the block as soon as it is added.
         ApplyOptionalRows();
     }
 
-    /// <summary>
-    /// The preamp of the PEQ loaded into this channel (dB), pushed by the host — the
-    /// bands themselves stay with the project, but their broadband offset is part of
-    /// the level the user has to dial in, so the block folds it into the gain readout.
-    /// </summary>
+    /// <summary>PEQ preamp (dB) pushed by the host, folded into the gain readout.</summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public double PeqPreampDb
@@ -94,49 +64,23 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
     }
 
-    /// <summary>Raised on any change that affects the channel's DSP chain or curves.</summary>
     public event EventHandler? SettingsChanged;
 
-    /// <summary>Raised when the user clicks the source button; the host shows the picker menu.</summary>
     public event EventHandler? SourceClicked;
 
-    /// <summary>Raised when the channel's spatial-average button is pressed.</summary>
     public event EventHandler? SpatialAverageClicked;
 
-    /// <summary>
-    /// Raised when the user clicks the PEQ button; the host shows the action menu
-    /// (load, edit in the EQ Wizard, clear) — the choices' availability depends on
-    /// channel state only the host holds.
-    /// </summary>
     public event EventHandler? PeqMenuClicked;
 
-    /// <summary>
-    /// Raised when the user clicks the FIR button; the host shows the action menu
-    /// (load a kernel file, clear) — the file dialog and the project belong to it.
-    /// </summary>
     public event EventHandler? FirClicked;
 
-    /// <summary>
-    /// Raised when the user folds or unfolds the block. Separate from
-    /// <see cref="SettingsChanged"/> on purpose: the fold changes nothing the DSP
-    /// chain computes, so the host persists it without recomputing the curves.
-    /// </summary>
+    /// <summary>Separate from <see cref="SettingsChanged"/>: the fold is persisted without recomputing curves.</summary>
     public event EventHandler? CollapsedChanged;
 
-    /// <summary>
-    /// Raised when the user asks to move this block one place up or down the
-    /// list. The host owns the order — it is the one that knows the block's
-    /// neighbours, re-letters everything and rewrites the project.
-    /// </summary>
     public event EventHandler? MoveUpClicked;
 
-    /// <inheritdoc cref="MoveUpClicked"/>
     public event EventHandler? MoveDownClicked;
 
-    /// <summary>
-    /// Greys the move buttons the block has nowhere to go with — the topmost
-    /// block cannot rise and the bottom one cannot fall.
-    /// </summary>
     public void SetMoveAvailability(bool canMoveUp, bool canMoveDown)
     {
         buttonMoveUp.Enabled = canMoveUp;
@@ -156,30 +100,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
     internal Button SourceButton => buttonSource;
 
-    /// <summary>
-    /// Shows whether this channel has a spatial average attached, in the button's own
-    /// text — the presence of that curve decides whether the hybrid view can be shown
-    /// at all, so it has to be readable without opening anything.
-    /// </summary>
-    /// <param name="resolved">
-    /// False for a capture the session still refers to but could not read — the same
-    /// distinction the Source button draws. Losing the file must not look like never
-    /// having attached one: the hybrid toggle goes away either way, and only the
-    /// warning says which of the two happened.
-    /// </param>
-    /// <param name="mode">
-    /// Which family the project reads. It names the BUTTON, not just the tooltip:
-    /// a user looking for a missing curve reads the button first, and one that says
-    /// MMM while the project is reading arrays sends them to attach a file they do
-    /// not need.
-    /// </param>
-    /// <param name="measuredAtUtc">
-    /// When the capture was taken. Shown because nothing in the file records WHERE
-    /// its microphones stood, and the app cannot derive it: a rig lifted and set down
-    /// somewhere else between two channels leaves every stored property identical.
-    /// The date is the one fact that lets a user notice they are looking at two
-    /// sittings, so it belongs where they judge the set rather than in the file only.
-    /// </param>
+    /// <summary>Shows the attached spatial average in the button text, since it gates the hybrid view.</summary>
+    /// <param name="resolved">False for a capture the session refers to but could not read.</param>
     internal void SetSpatialAverage(
         string? title,
         double? integratedSeconds,
@@ -234,8 +156,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
                 "The session still refers to it, but the file could not be read." +
                 newLine + newLine +
                 "Click to attach it again, or to detach it.";
-        // The tooltip host arrives later (ApplyTooltips) and the status can change at
-        // any time, so each side records what it knows and applies whatever is ready.
         tooltipHost?.SetToolTip(buttonSpatialAverage, spatialAverageTooltip);
     }
     internal DarkNumericUpDown GainInput => numericGain;
@@ -283,13 +203,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     public CrossoverEdge LowPassEdge => ReadEdge(
         numericLowPassHz, comboBoxLowPassFamily, comboBoxLowPassSlope, numericLowPassRipple);
 
-    /// <summary>
-    /// Whether this block shows the processor's channel phase control. Off leaves the
-    /// block a row shorter and the row itself out of the tab order; it does NOT clear
-    /// an angle already dialled in, which stays in the project and stays simulated —
-    /// hiding a control the project no longer offers is not the same as deciding the
-    /// filter is gone.
-    /// </summary>
+    /// <summary>Hiding the row does not clear an angle already dialled in; it stays in the project and simulated.</summary>
     [DefaultValue(false)]
     public bool PhaseControlShown
     {
@@ -306,11 +220,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
     }
 
-    /// <summary>
-    /// Whether this block shows the processor's FIR filter row. Off leaves the block a
-    /// row shorter and the row out of the tab order; like <see cref="PhaseControlShown"/>
-    /// it does NOT detach a kernel already loaded — the project decides that.
-    /// </summary>
+    /// <summary>Hiding the row does not detach a loaded kernel.</summary>
     [DefaultValue(false)]
     public bool FirControlShown
     {
@@ -327,12 +237,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
     }
 
-    /// <summary>
-    /// The rate the processor runs its filters at, pushed by the host. Read only to
-    /// say where the phase control's all-pass lands — the corner is solved in the
-    /// digital domain, so the same angle is a different frequency at another rate —
-    /// and how long the FIR kernel is in time, which is the same question.
-    /// </summary>
+    /// <summary>Processor rate: the all-pass corner and the FIR length in time depend on it.</summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public int ProcessorSampleRateHz
@@ -351,13 +256,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
     }
 
-    /// <summary>
-    /// What the FIR row shows: the kernel this side carries (null for none), the name
-    /// of the file it was imported from (null when unknown) and the crossover design
-    /// it was built from in the FIR Constructor (null for an imported kernel). The
-    /// row's readout — taps, peak time, the warnings — is derived here, so the host
-    /// pushes the facts and nothing else.
-    /// </summary>
     internal void SetFir(FirFilter? kernel, string? sourceName, FirCrossoverDesign? design = null)
     {
         firKernel = kernel;
@@ -366,13 +264,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         UpdateFirReadout();
     }
 
-    /// <summary>
-    /// Why the FIR button is red, or null when it is not: a FIR crossover designed at
-    /// another rate than the processor runs (it waits for a rebuild), or one running
-    /// beside an IIR crossover on the same side. An imported kernel is never a
-    /// crossover here, so it never turns the button red — a correction kernel beside
-    /// an IIR crossover is an ordinary chain.
-    /// </summary>
+    /// <summary>Why the FIR button is red (FIR crossover at a stale rate, or beside an IIR crossover), or null.</summary>
     internal string? FirConflict
     {
         get
@@ -401,21 +293,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
     }
 
-    /// <summary>
-    /// The frequency the phase control states its angle at, as this block currently
-    /// stands: the low-pass corner on a subwoofer block, the high-pass corner
-    /// otherwise, and the CONFIGURED one either way (see
-    /// <see cref="VirtualCrossoverChannelSettings.PhaseReferenceHz"/>).
-    /// </summary>
     private double PhaseReferenceHz => SelectedZone == VirtualCrossoverZone.Sub
         ? (double)numericLowPassHz.Value
         : (double)numericHighPassHz.Value;
 
-    /// <summary>
-    /// Ties the channel block to its plot curves: the header and the Processed
-    /// checkbox take the channel's full curve color, Raw a dimmed blend of it —
-    /// matching the translucent raw trace on the plot.
-    /// </summary>
     public void SetAccentColor(Color color)
     {
         labelChannel.ForeColor = color;
@@ -429,11 +310,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
             (int)(foreground.G * amount + background.G * (1 - amount)),
             (int)(foreground.B * amount + background.B * (1 - amount)));
 
-    /// <summary>
-    /// A muted channel is excluded from the sum, the loss, the metric and the
-    /// plots entirely — the quick "what changes without this driver" check. The
-    /// state lives in the project's Enabled flag; the button only flips the glyph.
-    /// </summary>
     [DefaultValue(false)]
     public bool Muted
     {
@@ -448,12 +324,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
     }
 
-    /// <summary>
-    /// Folded, the block shows only its header rows — source, gain, delay, polarity —
-    /// and everything from the crossover row down is cut off. A tall project is then
-    /// scannable without scrolling past the chains the user is not tuning right now.
-    /// The state is per block and persists with the project.
-    /// </summary>
     [DefaultValue(false)]
     public bool Collapsed
     {
@@ -470,35 +340,23 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
     }
 
-    // The fold line: the top of the crossover row, the first row of the filter chain.
-    // Read off the live control rather than hard-coded — the rows are scaled for the
-    // current DPI (AutoScaleMode.Dpi) and a pixel literal would cut the wrong one.
+    // Read off live controls, not pixel literals: rows are DPI-scaled.
     private int FoldLine => comboBoxCrossoverKind.Top;
 
-    // One row's pitch, measured off two live rows (scaled for the current DPI like
-    // everything else here).
     private int RowPitch => numericPhase.Top - buttonPeqMenu.Top;
 
-    // True for the three controls of the phase row, which a block without the
-    // control hides outright rather than clipping: a clipped field is still in the
-    // tab order, and still counts towards the height the fold is measured against.
+    // Hidden rather than clipped: a clipped field stays in the tab order and counts towards the fold height.
     private bool IsPhaseRow(Control child) =>
         ReferenceEquals(child, labelPhase) ||
         ReferenceEquals(child, numericPhase) ||
         ReferenceEquals(child, labelPhaseInfo);
 
-    // The FIR row's three controls, hidden the same way when the processor has no
-    // FIR stage.
     private bool IsFirRow(Control child) =>
         ReferenceEquals(child, labelFir) ||
         ReferenceEquals(child, buttonFir) ||
         ReferenceEquals(child, labelFirInfo);
 
-    // The FIR row sits under the phase row in the designer, and moves UP into the
-    // phase row's place when that row is hidden — otherwise a block with FIR and no
-    // phase control would carry an empty row. Every position is a live, DPI-scaled
-    // one: the phase row's controls never move, so they are the anchor, and the
-    // designer's offset between the two rows is one row pitch.
+    // The FIR row moves up into the phase row's place when that row is hidden.
     private void PlaceFirRow()
     {
         int offset = phaseControlShown ? RowPitch : 0;
@@ -510,9 +368,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
     private void ApplyCollapsedState(bool raiseChanged = true)
     {
         buttonCollapse.Text = collapsed ? "+" : "−";
-        // The rows below the fold are hidden, not merely clipped: hidden, they also
-        // leave the tab order, so a folded block cannot take focus into a field the
-        // user cannot see.
         int keptBottom = 0;
         SuspendLayout();
         PlaceFirRow();
@@ -529,27 +384,15 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
 
         ResumeLayout(false);
-        // The block paints its own border INSIDE its client area, so a height
-        // measured to the last kept row draws that border ON that row. Folded or
-        // not, the block ends one margin — the one the designer left under its
-        // lowest row — below the lowest control it still shows: the fold button, the
-        // PEQ row, or whichever of the phase and FIR rows the processor grants it.
-        // MEASURED off the live children rather than subtracted from the designer's
-        // height per hidden row, because the rows scale and round on their own at
-        // another DPI, and the lowest control of a row is its label, whose height
-        // is the font's rather than the designer's.
+        // The border is painted inside the client area, so end one designer margin below the lowest shown control,
+        // measured off live children (rows scale and round independently at other DPIs).
         int height = keptBottom + bottomMargin;
-        // The whole move runs inside one suspended parent layout: each size assignment
-        // below asks the flow list to reflow, and a list laid out against a half-moved
-        // pin stacks the next block over this one.
+        // One suspended parent layout: a list reflowed against a half-moved pin stacks the next block over this one.
         Control? parent = Parent;
         parent?.SuspendLayout();
         try
         {
-            // MinimumSize == MaximumSize pins the block, so the bound in the way has to
-            // move first — the other one would clamp the assignment. Never through zero:
-            // a zero MaximumSize height reads as "no height" to the flow list, which then
-            // places the next block on top of this one.
+            // Move the bound in the way first (Min == Max pins the block). Never through zero: the flow list reads it as no height.
             if (height < MinimumSize.Height)
             {
                 MinimumSize = new Size(MinimumSize.Width, height);
@@ -574,11 +417,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
     }
 
-    // The block carries its sizes as designer units; the base scales the bounds and
-    // the size pin, but not the margin we parked outside them. Container autoscaling
-    // reaches a control through several paths, not all of which touch its height, so
-    // the parked value follows only the calls that actually scale one — otherwise a
-    // folded block would unfold to a height nothing else was scaled to.
+    // The base does not scale the parked margin; follow only calls that actually scale height.
     protected override void ScaleControl(SizeF factor, BoundsSpecified specified)
     {
         base.ScaleControl(factor, specified);
@@ -599,13 +438,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         base.OnPaint(e);
     }
 
-    /// <summary>
-    /// Shows the acoustic polarity read from the channel's measured IR — the
-    /// as-measured wiring of the driver, independent of the Invert switch. Green
-    /// "Normal" for a positive-going arrival, red "Inverted" for a negative-going
-    /// one, muted "Unknown" when no source is set or the IR is too symmetric to
-    /// call.
-    /// </summary>
+    /// <summary>Acoustic polarity read from the measured IR, independent of the Invert switch.</summary>
     public void SetMeasuredPolarity(PolarityEstimate polarity)
     {
         (labelMeasuredPolarity.Text, labelMeasuredPolarity.ForeColor) = polarity switch
@@ -616,16 +449,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
         };
     }
 
-    /// <summary>
-    /// Registers the per-field help text with the host's shared tooltip. The
-    /// block owns the descriptions of its own sub-controls, so the host no longer
-    /// reaches through into each input to set them.
-    /// </summary>
     private WrappingToolTip? tooltipHost;
     private string spatialAverageTooltip = string.Empty;
     private double delayDistanceMm;
 
-    // Exact by definition, not a measurement.
     private const double MillimetersPerInch = 25.4;
 
     public void ApplyTooltips(WrappingToolTip toolTip)
@@ -637,8 +464,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
 
         ArgumentNullException.ThrowIfNull(toolTip);
-        // The numeric fields register on their inner editor too (via ApplyToolTip) so
-        // the tip still shows while the value is being edited, not only when idle.
+        // Also registered on the inner editor so the tip shows while editing.
         numericGain.ApplyToolTip(
             toolTip,
             "Channel gain (dB).\r\n" +
@@ -659,7 +485,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "notch at the crossover frequency marks perfect alignment.");
         numericDelay.ApplyToolTip(toolTip, DelayTooltipText(delayDistanceMm));
         numericPhase.ApplyToolTip(toolTip, PhaseTooltipText());
-        // The FIR row's tips depend on what is loaded, so the readout writes them.
         UpdateFirReadout();
         toolTip.SetToolTip(
             labelPhaseInfo,
@@ -719,8 +544,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "Low-pass — only below the LP corner; Band-pass — both.\r\n" +
             "Only the edges the role uses stay editable.");
 
-        // The family, slope and ripple descriptions are identical for the high- and
-        // low-pass edges, so both rows share one text each.
         const string familyTip =
             "Filter alignment for this edge:\r\n" +
             "Linkwitz-Riley — -6 dB at the corner, two edges sum flat\r\n" +
@@ -780,10 +603,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "own measurement.");
     }
 
-    /// <summary>
-    /// Applies stored values to the controls without firing SettingsChanged for
-    /// every field; the host redraws once afterward.
-    /// </summary>
+    /// <summary>Applies stored values without firing SettingsChanged per field; the host redraws once afterward.</summary>
     public void RunBatchUpdate(Action update)
     {
         suppressChangeEvents = true;
@@ -873,8 +693,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         PopulateSlopes(familyComboBox, slopeComboBox);
     }
 
-    // Each family offers its own slope list (LR only exists in 12/24/36/48); the
-    // current slope is kept when the other family supports it too.
+    // LR exists only in 12/24/36/48; the current slope is kept when the new family supports it.
     private static void PopulateSlopes(DarkComboBox familyComboBox, DarkComboBox slopeComboBox)
     {
         CrossoverFilterFamily family =
@@ -928,25 +747,13 @@ public partial class VirtualCrossoverChannelControl : UserControl
         comboBoxZone.SelectedIndexChanged += (_, _) =>
         {
             UpdateZoneAvailability();
-            // The zone decides WHICH crossover the phase control reads.
             UpdatePhaseReadout();
             RaiseSettingsChanged();
         };
         numericPhase.ValueChanged += (_, _) =>
         {
-            // The control has 64 positions and no others, so an angle the USER types
-            // lands on the nearest one. Re-entrant by design: the assignment raises
-            // this handler again with a value that is already on the grid.
-            //
-            // Only the user's, though. A value the host is loading passes through
-            // untouched, because the alternative is worse both ways: snapping it
-            // without telling the project would leave the field showing one angle
-            // while the simulation ran another until some unrelated edit wrote the
-            // snapped one back, and snapping it INTO the project would silently
-            // rewrite a session the file format deliberately accepts (the DSP builds
-            // any angle; it is the device that has 64 positions). Shown as it stands,
-            // it is the session's own number, and one press of an arrow puts it on
-            // the grid.
+            // The device has 64 positions, so a user-typed angle snaps (re-entrant: the snapped value is already on the grid).
+            // Host-loaded values pass through unsnapped: the file format accepts any angle, and silently rewriting it would desync field and project.
             if (suppressChangeEvents)
             {
                 UpdatePhaseReadout();
@@ -966,7 +773,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
         comboBoxCrossoverKind.SelectedIndexChanged += (_, _) =>
         {
             UpdateCrossoverAvailability();
-            // A FIR crossover beside an IIR one turns the FIR button red.
             UpdateFirReadout();
             RaiseSettingsChanged();
         };
@@ -987,15 +793,12 @@ public partial class VirtualCrossoverChannelControl : UserControl
     {
         frequencyInput.ValueChanged += (_, _) =>
         {
-            // A crossover corner IS the phase control's reference, so moving it moves
-            // the all-pass the same angle now builds.
             UpdatePhaseReadout();
             RaiseSettingsChanged();
         };
         familyComboBox.SelectedIndexChanged += (_, _) =>
         {
             PopulateSlopes(familyComboBox, slopeComboBox);
-            // The ripple field is editable only for Chebyshev, so it follows the family.
             UpdateCrossoverAvailability();
             RaiseSettingsChanged();
         };
@@ -1011,13 +814,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
     }
 
-    // A centre channel plays a signal derived from L and R, so it has no side:
-    // Mono is forced on and locked rather than left as a switch the user could
-    // set to a state the zone contradicts. Every other zone leaves it free — a
-    // subwoofer is usually mono and legitimately stereo, and so is a rear pair.
-    // Locking never SILENTLY changes the project: the checkbox is set through
-    // the normal path, so the panel reads and stores the new value like any
-    // other edit.
+    // A centre channel is derived from L and R, so Mono is forced on and locked; set through the normal path so the project stores it.
     private void UpdateZoneAvailability()
     {
         bool forced = VirtualCrossoverZones.RequiresMono(SelectedZone);
@@ -1030,8 +827,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         UiStyle.SetTextEnabledLook(checkBoxMono, !forced, interactive: true);
     }
 
-    // Only the edges the crossover kind uses stay interactive; the rest are
-    // greyed out (not hidden) so the layout never shifts.
+    // Greyed out, not hidden, so the layout never shifts.
     private void UpdateCrossoverAvailability()
     {
         CrossoverKind kind = SelectedCrossoverKind;
@@ -1052,9 +848,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
         UpdateRippleAvailability(numericLowPassRipple, comboBoxLowPassFamily, lowPass);
     }
 
-    // The passband ripple only means anything for a Chebyshev edge, so it is greyed
-    // out (disabled) for any other family or an inactive edge, and editable only for
-    // an active Chebyshev edge.
     private static void UpdateRippleAvailability(
         DarkNumericUpDown rippleInput,
         DarkComboBox familyComboBox,
@@ -1064,10 +857,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         rippleInput.Enabled = edgeActive && chebyshev;
     }
 
-    // The one level to dial in: many DSPs have no separate preamp for their equalizer,
-    // so the PEQ's preamp has to be folded into the channel gain when the tune is typed
-    // in — the same sum the tuning sheets print. Blank without a preamp, where it would
-    // only repeat the Gain field it sits next to.
+    // Many DSPs have no separate EQ preamp, so the PEQ preamp is folded into the channel gain (same sum as the tuning sheets).
     private void UpdateTotalGain()
     {
         if (peqPreampDb == 0)
@@ -1080,32 +870,17 @@ public partial class VirtualCrossoverChannelControl : UserControl
         labelTotalGain.Text = $"All {totalDb:+0.0;-0.0;0.0}";
     }
 
-    // The ruler-check readout: the delay expressed as a distance in air. It lives
-    // in the Delay field's tooltip rather than on a label of its own — a block
-    // now has to carry a zone selector too, and of the two the distance is the
-    // one that is READ occasionally (against a tape measure) rather than set.
-    // Shows or hides the phase and FIR rows and re-pins the block's height around
-    // them. Runs through the collapse path because that is the one place the pin is
-    // moved, and moving it anywhere else races the flow list's reflow.
+    // Runs through the collapse path: moving the size pin anywhere else races the flow list's reflow.
     private void ApplyOptionalRows()
     {
-        // Through the fold's own path, because that is the one place the size pin is
-        // moved and a pin moved anywhere else races the flow list's reflow — but
-        // WITHOUT its event: the block is not folding, and a host that took this for
-        // one would write a fold state nobody asked for.
+        // Without the fold event: the host would persist a fold state nobody asked for.
         ApplyCollapsedState(raiseChanged: false);
         UpdatePhaseReadout();
         UpdateFirReadout();
     }
 
-    // The FIR row's two texts, laid out like the PEQ row above it: the button is the
-    // same width with a fixed action on it, and the label beside it names the kernel —
-    // the crossover it was designed as, or the file it came from — and says what it is — its length in taps and in time at the processor's
-    // rate, read at the kernel's peak — roughly a linear-phase kernel's bulk delay,
-    // and no delay at all for a minimum-phase one; the tip says which it is. Amber
-    // where the file is named but not found, and where the file states a rate the
-    // processor does not run at: the taps are used as they are (see FirFilter), so
-    // that kernel is a different filter from the one its designer drew.
+    // Latency read at the kernel peak (bulk delay for linear phase). Amber for a missing file or a file rate the processor does not run:
+    // the taps are used as-is (see FirFilter), so that kernel is a different filter.
     private void UpdateFirReadout()
     {
         string buttonText;
@@ -1121,9 +896,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
         else
         {
-            // The kernel is in the session; the name is where it came from, and a
-            // kernel that arrived without one (a hand-edited file) is still a kernel.
-            // A designed kernel has no file: its crossover is its name.
             buttonText = "Edit…";
             string name = firDesign is { } named
                 ? FirCrossoverDescription.Short(named)
@@ -1152,11 +924,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
                     : string.Empty);
             if (firDesign is { } design)
             {
-                // A designed kernel reads as its crossover and its latency — the latency
-                // it has HERE: the taps run at the processor's rate, so a design made at
-                // another one delays the channel by the same half-length in samples,
-                // which is a different time. Its rate mismatch is the red conflict below,
-                // not the amber file warning.
+                // Latency at the processor's rate: a design made at another rate delays by the same samples, a different time.
                 double runLatencyMs = design.LatencySamples * 1_000.0 / processorSampleRateHz;
                 info = $"{firKernel.Length} taps · {runLatencyMs:0.0} ms";
                 infoColor = UiPalette.TextSecondary;
@@ -1168,7 +936,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
             }
             else
             {
-                // The label clips a long file name; its tooltip starts with the name whole.
                 infoTip = name + ": " + infoTip;
             }
 
@@ -1199,10 +966,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
         "the session, and run AT THE PROCESSOR'S RATE." + "\r\n" +
         "Click to design, import, export or clear it.";
 
-    // What the angle actually builds, beside the field: the all-pass corner the
-    // device would place for it. Worth the space because the angle alone does not
-    // say what filter it is — the same number is a different filter on a channel
-    // crossed elsewhere, and moving the crossover moves this readout under it.
     private void UpdatePhaseReadout()
     {
         double degrees = (double)numericPhase.Value;
@@ -1283,20 +1046,13 @@ public partial class VirtualCrossoverChannelControl : UserControl
     {
         double millimeters = (double)numericDelay.Value * Acoustics.SpeedOfSoundAt20CMetersPerSecond;
         delayDistanceMm = millimeters;
-        // The host installs the tooltip after construction (ApplyTooltips) and the
-        // value changes constantly afterwards, so whichever comes second has to
-        // apply the text: this path writes it when the host is already here, and
-        // ApplyTooltips writes the current distance when it is not.
+        // Tooltip host arrives after construction; whichever comes second applies the text.
         if (tooltipHost is { } host)
         {
             numericDelay.ApplyToolTip(host, DelayTooltipText(millimeters));
         }
     }
 
-    // Both units, always, on one line. The reader is checking the number against a
-    // tape measure, and which tape they own is not something the app can know —
-    // switching units on a setting would leave the other half of the world doing
-    // arithmetic at the exact moment they wanted a figure to compare.
     private static string DelayTooltipText(double millimeters) =>
         "Channel delay (ms) — the value you would dial into\r\n" +
         "this DSP channel.\r\n" +

@@ -42,8 +42,6 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
             await ImpulseResponseFile.LoadAsync(pathB),
             new MeasurementSessionSnapshot());
 
-        // Each snapshot holds the complete IR; only the most recent file-backed
-        // entry may keep one — the file itself remains the source of truth.
         Assert.Null(service.FindById(idA)!.Snapshot);
         Assert.NotNull(service.FindById(idB)!.Snapshot);
 
@@ -76,10 +74,6 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
         Assert.NotEmpty(snapshot.SweepDeconvolutionImpulseResponse);
     }
 
-    // Both halves of K used to be split up by the history: the loopback level rode
-    // along in the meter snapshot while the anchor was dropped, so a restored entry
-    // — or a Compare picked from history — could not be shown in dB SPL, and saving
-    // the entry back to disk wrote a file with no calibration at all.
     [Fact]
     public void Snapshot_CarriesTheSplAnchorFromTheFileAndBackToIt()
     {
@@ -121,8 +115,6 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
         }
 
         Assert.Equal(MeasurementHistoryService.MaxHistoryEntries, service.Entries.Count);
-        // The three that fell off are the three opened first, and the newest is
-        // still at the top: the cap cuts the tail, it does not reorder the list.
         Assert.Null(service.FindById(added[0]));
         Assert.Null(service.FindById(added[1]));
         Assert.Null(service.FindById(added[2]));
@@ -151,9 +143,7 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
         }
 
         Assert.Equal(MeasurementHistoryService.MaxHistoryEntries, service.Entries.Count);
-        // The unsaved row is older than every filler and would have gone first on a
-        // plain tail cut. It is the measurement itself — the saved row it displaced
-        // is a pointer to a file still on disk.
+        // The unsaved row is the measurement itself; the displaced saved row only points at a file.
         Assert.NotNull(service.FindById(unsaved));
         Assert.Null(service.FindById(oldestSaved));
     }
@@ -167,8 +157,7 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
         var service = new MeasurementHistoryService(new MeasurementHistoryPersistence(storePath));
 
         Assert.Equal(MeasurementHistoryService.MaxHistoryEntries, service.Entries.Count);
-        // Rewritten on load, not at the next mutation: a session that only reads
-        // the history never saves it, and the cut would not survive the launch.
+        // Rewritten on load: a read-only session never saves.
         Assert.Equal(
             MeasurementHistoryService.MaxHistoryEntries,
             new MeasurementHistoryPersistence(storePath).Load().Count);
@@ -179,14 +168,9 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
     {
         string storePath = Path.Combine(directory, "measurement-history.json");
         new MeasurementHistoryPersistence(storePath).Save(OverDepthEntries());
-        // The trim's write fails on this exactly as it would against a store held
-        // by another instance or marked read-only by the user's backup tool.
         File.SetAttributes(storePath, FileAttributes.ReadOnly);
         try
         {
-            // The list is cut in memory whatever the disk does; the launch is not
-            // the place to report that the cut could not be persisted, and the next
-            // launch tries again.
             var service = new MeasurementHistoryService(
                 new MeasurementHistoryPersistence(storePath));
 

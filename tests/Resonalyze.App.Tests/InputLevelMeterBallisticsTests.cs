@@ -1,9 +1,5 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The input meter's ballistics. The peak is an event — latched whole, held,
-/// then decayed — and most of what is pinned here is some way of losing one.
-/// </summary>
 public sealed class InputLevelMeterBallisticsTests
 {
     private const double Tick = 0.033;
@@ -24,8 +20,7 @@ public sealed class InputLevelMeterBallisticsTests
 
         state = InputLevelMeterBallistics.Advance(state, Entry(-6, -30), now + TickMs, Tick);
 
-        // Smoothing the way up would show about -37 dBFS here, and would need
-        // some 300 ms to arrive.
+        // Smoothing the way up would show about -37 dBFS and take some 300 ms.
         Assert.Equal(-6, state.HoldPeakDbFs);
     }
 
@@ -39,7 +34,6 @@ public sealed class InputLevelMeterBallisticsTests
         state = InputLevelMeterBallistics.Advance(state, Entry(-1, -44), now, Tick);
         Assert.Equal(-1, state.HoldPeakDbFs);
 
-        // The window it lived in is long gone; the marker still reports it.
         for (int i = 0; i < 20; i++)
         {
             now += TickMs;
@@ -57,7 +51,6 @@ public sealed class InputLevelMeterBallisticsTests
         state = InputLevelMeterBallistics.Advance(state, Entry(-6, -30), now, Tick);
         long peakAt = now;
 
-        // Every frame this loop runs falls inside the plateau.
         while (now + TickMs - peakAt <= InputLevelMeterBallistics.PeakHoldDurationMs)
         {
             now += TickMs;
@@ -95,9 +88,7 @@ public sealed class InputLevelMeterBallisticsTests
     }
 
     [Theory]
-    // A settled meter, digital silence pinned to the dB floor, and a loopback
-    // pinned to full scale: each holds a peak exactly equal to the incoming
-    // one, which a non-strict hold comparison would re-stamp every frame.
+    // A peak equal to the held one would be re-stamped every frame by a non-strict comparison.
     [InlineData(-20, -26, false)]
     [InlineData(-160, -160, false)]
     [InlineData(0, -8, true)]
@@ -115,7 +106,6 @@ public sealed class InputLevelMeterBallisticsTests
             state = InputLevelMeterBallistics.Advance(state, target, now, Tick);
         }
 
-        // Equality is what lets the panel skip repainting an idle meter.
         InputLevelMeterState next = InputLevelMeterBallistics.Advance(state, target, now + TickMs, Tick);
 
         Assert.Equal(state, next);
@@ -127,15 +117,12 @@ public sealed class InputLevelMeterBallisticsTests
         long now = 1000;
         InputLevelMeterState state = InputLevelMeterState.CreateActive(Entry(-3, -20), now);
 
-        // Two seconds of stalled message pump, then one frame.
         state = InputLevelMeterBallistics.Advance(state, Entry(-45, -50), now + 2000, 2.0);
 
         double maximumFall =
             InputLevelMeterBallistics.PeakHoldFallDbPerSecond *
             InputLevelMeterBallistics.MaximumHoldFallSeconds;
         Assert.Equal(-3 - maximumFall, state.HoldPeakDbFs, 3);
-        // The level, unlike the hold, is not a display rate: it lands on what
-        // the input is actually doing now.
         Assert.Equal(-50, state.DisplayedRmsDbFs, 1);
     }
 
@@ -147,7 +134,6 @@ public sealed class InputLevelMeterBallisticsTests
         now += TickMs;
         state = InputLevelMeterBallistics.Advance(state, Entry(-2, -44), now, Tick);
 
-        // The hold outlives the text interval, so the next update cannot miss it.
         long lastUpdate = state.LastTextUpdateMs;
         while (state.LastTextUpdateMs == lastUpdate)
         {
@@ -183,8 +169,7 @@ public sealed class InputLevelMeterBallisticsTests
         state = InputLevelMeterBallistics.Advance(
             state, Entry(0, -8, fullScaleReference: true), now, Tick);
 
-        // The reference has stepped off full scale, but its peak is still up:
-        // re-reading the flag from this window would turn that peak red.
+        // Re-reading the clip flag from this window would turn the held peak red.
         now += TickMs;
         state = InputLevelMeterBallistics.Advance(state, Entry(-32, -38), now, Tick);
         Assert.True(state.HoldFullScaleReference);
@@ -217,13 +202,11 @@ public sealed class InputLevelMeterBallisticsTests
         InputLevelMeterTarget target = InputLevelMeterTarget.Unavailable
             .Fold(Entry(-40, -46));
 
-        // Posted callbacks outrank WM_TIMER, so both of these can be applied
-        // before the animation gets a frame.
+        // Posted callbacks outrank WM_TIMER, so both folds can land before a frame.
         target = target.Fold(Entry(-2, -44));
         target = target.Fold(Entry(-38, -45));
 
         Assert.Equal(-2, target.Pending.PeakDbFs);
-        // The level, which floors the hold's decay, is the newest one.
         Assert.Equal(-38, target.Level.PeakDbFs);
     }
 
@@ -236,9 +219,7 @@ public sealed class InputLevelMeterBallisticsTests
             .Fold(Entry(-38, -45))
             .Consume();
 
-        // Left in the fold, that -2 dBFS would latch again once the hold had
-        // decayed past it and report an event seconds old. What remains is the
-        // newest window, which is a level, not an event.
+        // Left in the fold, the -2 dBFS would re-latch after the hold decayed and report a seconds-old event.
         Assert.Equal(-38, target.Pending.PeakDbFs);
         Assert.Equal(target.Level, target.Pending);
     }
@@ -251,8 +232,7 @@ public sealed class InputLevelMeterBallisticsTests
             .Consume()
             .Consume();
 
-        // Consuming must not erase the level: it is what stops the hold sagging
-        // below the signal on a frame that received nothing.
+        // The level stops the hold sagging below the signal on an empty frame.
         Assert.Equal(-20, target.Pending.PeakDbFs);
     }
 }

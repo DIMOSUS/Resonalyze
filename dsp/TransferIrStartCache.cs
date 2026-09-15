@@ -4,18 +4,8 @@ using System.Runtime.CompilerServices;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// The shared "where does this transfer IR honestly start" answer behind every
-/// Auto gate-offset control (Phase, Group Delay), the plot builds that consume
-/// it and the plain magnitude extraction
-/// (<see cref="DataHelper.GetOversampledPrimarySpectrum"/>):
-/// <see cref="TransferIrDiagnostics.EstimateIrStart(Complex[], int, ValidSampleRange)"/>,
-/// memoized per IR array so the dialogs, the plot factory and the spectrum
-/// path read one figure computed once per measurement instead of re-running
-/// the band-limited analysis on every control change or redraw. Falls back to
-/// the transfer peak — the Fit figure — when the estimator refuses the
-/// record, so Auto is never worse than Fit.
-/// </summary>
+/// <summary>Memoized per IR array: <see cref="TransferIrDiagnostics.EstimateIrStart(Complex[], int, ValidSampleRange)"/> shared by every Auto gate
+/// and the spectrum path. Falls back to the transfer peak, so Auto is never worse than Fit.</summary>
 public static class TransferIrStartCache
 {
     private sealed record CachedStart(
@@ -23,10 +13,6 @@ public static class TransferIrStartCache
 
     private static readonly ConditionalWeakTable<Complex[], CachedStart> cache = new();
 
-    /// <summary>
-    /// The same estimate for any analysis-layer measurement view (the Compare
-    /// overlay); null without an impulse response.
-    /// </summary>
     public static double? ResolveStartMs(IImpulseMeasurement measurement)
     {
         if (measurement.ImpulseResponse is not { Length: > 0 } impulseResponse ||
@@ -39,11 +25,6 @@ public static class TransferIrStartCache
             impulseResponse, measurement.SampleRate, measurement.PeakIndex);
     }
 
-    /// <summary>
-    /// The estimated IR start (ms from the record start) for an IR held
-    /// directly as an array; <paramref name="fallbackPeakIndex"/> answers when
-    /// the estimator refuses the record.
-    /// </summary>
     public static double ResolveStartMs(
         Complex[] impulseResponse,
         int sampleRate,
@@ -66,13 +47,7 @@ public static class TransferIrStartCache
         return startMs;
     }
 
-    /// <summary>
-    /// <see cref="ResolveStartMs(Complex[], int, int, ValidSampleRange)"/> as a
-    /// sample index into the record — the ONE ms-to-index conversion every
-    /// window that anchors on the response start shares, so the Virtual DSP
-    /// plot, the handoffs and the plain spectrum extraction cannot round the
-    /// same figure to different samples.
-    /// </summary>
+    /// <summary>The one ms-to-index conversion, so all start-anchored windows round to the same sample.</summary>
     public static int ResolveStartIndex(
         Complex[] impulseResponse,
         int sampleRate,

@@ -8,8 +8,6 @@ public sealed class GatedPhaseDataTests
 
     private static Complex[] StructuredImpulse()
     {
-        // An arrival plus a decaying inverted echo and a late reflection, so
-        // the phase carries real structure across the band.
         var ir = new Complex[8_192];
         ir[480] = Complex.One;
         ir[600] = new Complex(-0.4, 0);
@@ -23,10 +21,7 @@ public sealed class GatedPhaseDataTests
     [Fact]
     public void GetGatedPhaseData_MatchesTheManualWindowConstruction()
     {
-        // The Virtual DSP tool used to build the gate by hand around
-        // GetPhaseData, with a whole-sample reference plus a per-point
-        // fractional-τ correction. GetGatedPhaseData replaced that path; this
-        // pins the equivalence so the shared construction cannot drift.
+        // Pins GetGatedPhaseData against the former manual gate construction (whole-sample reference + fractional-τ correction).
         Complex[] ir = StructuredImpulse();
         const double gateOffsetMs = 10.0;
         const double leftMs = 2.0;
@@ -40,7 +35,6 @@ public sealed class GatedPhaseDataTests
             referenceSamples: detrendMs / 1_000.0 * SampleRate,
             unwrap: false);
 
-        // The former manual construction, replicated verbatim.
         int length = DataHelper.GatedFftLength;
         int gateOffset = (int)Math.Round(gateOffsetMs / 1_000.0 * SampleRate);
         int left = MillisecondsToSamples(leftMs);
@@ -69,8 +63,7 @@ public sealed class GatedPhaseDataTests
             double corrected =
                 expected[i].Y + Math.Tau * expected[i].X * residualSeconds;
             corrected = Math.Atan2(Math.Sin(corrected), Math.Cos(corrected));
-            // Compare as angles: both sides wrap to (-π, π], and values a hair
-            // from the boundary may land on opposite sides.
+            // Values near ±π may wrap to opposite sides.
             double delta = Math.IEEERemainder(corrected - actual[i].Y, Math.Tau);
             Assert.True(
                 Math.Abs(delta) < 1e-9,
@@ -81,8 +74,6 @@ public sealed class GatedPhaseDataTests
     [Fact]
     public void GetGatedPhaseData_WholeSampleReferenceFlattensAPureDelay()
     {
-        // A pure delay referenced to its own arrival must read (near) zero
-        // phase across the band.
         var ir = new Complex[8_192];
         ir[960] = Complex.One; // 20 ms
         var view = new SyntheticMeasurement(ir, SampleRate, 0);

@@ -2,11 +2,6 @@ using NAudio.Wave;
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// The shared continuous play-and-capture session for the PCM backends. A
-/// looping excitation plays while fixed-length capture frames and input levels
-/// are raised, until cancellation (normal stop) or a device failure (thrown).
-/// </summary>
 internal sealed class PcmStreamingSession : IAudioStreamingSession
 {
     private readonly IAudioCaptureDevice capture;

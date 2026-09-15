@@ -6,26 +6,12 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp
 {
-    /// <summary>
-    /// Identifies which microphone calibration a view corrects with. The
-    /// measurement layer only ever passes the id around; what it resolves to —
-    /// the one 0° file, another file, or a curve estimated for an angle — is the
-    /// application's bookkeeping. Null or empty means no correction.
-    /// </summary>
+    /// <summary>Calibration ids passed around by the measurement layer; the app resolves them. Null or empty = no correction.</summary>
     public static class MicrophoneCalibrationIds
     {
-        /// <summary>
-        /// The microphone's own 0° calibration: the one slot every other entry
-        /// is derived from or compared against.
-        /// </summary>
         public const string ZeroDegrees = "0deg";
 
-        /// <summary>
-        /// The calibration the MEASUREMENT was recorded through, whatever that was:
-        /// the curve frozen into it when its run began. It is what an analysis view
-        /// starts on, so a response is read through the microphone that took it
-        /// rather than through whichever curve the view happened to be left on.
-        /// </summary>
+        /// <summary>The curve frozen into the measurement when its run began.</summary>
         public const string Own = "own";
 
         public static bool IsOwn(string? calibrationId) =>
@@ -34,16 +20,10 @@ namespace Resonalyze.Dsp
         public static bool IsOff(string? calibrationId) =>
             string.IsNullOrEmpty(calibrationId);
 
-        /// <summary>Empty selections collapse to null so persisted state has one spelling of "off".</summary>
         public static string? Normalize(string? calibrationId) =>
             string.IsNullOrWhiteSpace(calibrationId) ? null : calibrationId.Trim();
     }
 
-    /// <summary>
-    /// The vertical scale of a frequency-response plot: the native
-    /// loopback-referenced dB (the default), or absolute dB SPL derived from the
-    /// microphone SPL calibration.
-    /// </summary>
     public enum MagnitudeScale
     {
         Relative,
@@ -56,24 +36,12 @@ namespace Resonalyze.Dsp
         public int LeftTukeyWindow { get; set; } = 256;
         public int RightTukeyWindow { get; set; } = 256;
 
-        // Windowing mode for the primary magnitude curve. Fixed applies the one
-        // Tukey window above; FrequencyDependent (REW-style FDW) keeps that
-        // window as the outer gate but shortens the analysis window past the
-        // peak to MagnitudeFdwCycles periods of each frequency, so late cabin
-        // reflections drop out of the treble while the bass keeps the full
-        // window. Defaults to Fixed — the steady-state curve is the canonical
-        // magnitude reading (and what in-car SPL targets are stated against);
-        // FDW is the opt-in quasi-anechoic view. Phase below deliberately
-        // defaults the other way: an ungated in-car phase trace is unreadable.
+        // Fixed by default: steady state is the canonical magnitude (in-car SPL targets); phase defaults the other way.
         public PhaseWindowMode MagnitudeWindowMode { get; set; } = PhaseWindowMode.Fixed;
         public int MagnitudeFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
         public double SmoothingInverseOctaves { get; set; } = 6;
         public int Offset { get; set; }
         public bool Unwrap { get; set; } = true;
-        /// <summary>
-        /// Which microphone calibration corrects this view, by id (see
-        /// <see cref="MicrophoneCalibrationIds"/>); null means uncalibrated.
-        /// </summary>
         public string? CalibrationId { get; set; } = MicrophoneCalibrationIds.ZeroDegrees;
 
         public bool UseCalibration
@@ -82,18 +50,10 @@ namespace Resonalyze.Dsp
             set => CalibrationId = value ? MicrophoneCalibrationIds.ZeroDegrees : null;
         }
 
-        // Whether the magnitude plot reads in native loopback-referenced dB or in
-        // absolute dB SPL. Presentation only: the curves are computed the same way,
-        // then shifted to SPL at draw time when a valid calibration is available.
+        // Presentation only: curves are shifted to SPL at draw time.
         public MagnitudeScale MagnitudeScale { get; set; } = MagnitudeScale.Relative;
 
-        // Phase-mode windowing (milliseconds): the Tukey gate is left + plateau + right
-        // with the peak at the fade-in/plateau boundary. PhaseDetrendMs is the τ used
-        // to detrend the excess phase (absolute reference). Phase mode uses these
-        // instead of Window/LeftTukeyWindow/RightTukeyWindow/Offset.
-        // Single source of truth for the phase-mode defaults. Tune these to taste;
-        // they drive the first-run values, the settings-file fallback and the "R"
-        // reset buttons.
+        // Phase gate defaults (ms); drive first run, settings fallback and the "R" reset buttons.
         public const double DefaultPhaseGateOffsetMs = 0.0;
         public const double DefaultPhaseLeftMs = 0.5;
         public const double DefaultPhasePlateauMs = 4.0;
@@ -101,41 +61,11 @@ namespace Resonalyze.Dsp
         public const double DefaultPhaseDetrendMs = 0.0;
         public const double DefaultPhaseSmoothingInverseOctaves = 12.0;
 
-        // The steady-state magnitude window (milliseconds): ONE definition for every
-        // magnitude curve the Virtual DSP tool and the EQ Wizard draw, long enough
-        // that what is shown is the response the ear hears — tonal balance with the
-        // cabin, and an EQ band's full depth even at high Q in the bass (a Q 10 bell
-        // at 60 Hz rings for ~100 ms; a short gate reads a fraction of its gain).
-        // Deliberately NOT taken from the user's gate: that gate exists to time
-        // junctions and shapes the phase and impulse views, where cutting before the
-        // first reflection is the point. Magnitude and phase answer different
-        // questions and read different windows.
-        //
-        // In milliseconds, not samples, so the analysed TIME does not shrink with the
-        // sample rate — but the carve is clamped to GatedFftLength samples
-        // (ResolveGatePlacement trims the fades coherently), so the effective length
-        // is min(682 ms, 32768 samples): the full 682 ms up to 48 kHz, 341 ms at
-        // 96 kHz, 171 ms at 192 kHz — still resolving ~6 Hz, and dozens of times the
-        // junction gate it replaces.
+        // One steady-state magnitude window for VDSP and EQ Wizard, deliberately not the user's gate. See docs/tech/phase-and-group-delay.md#steady-state-magnitude-window.
         public const double SteadyStateLeftMs = 2.0;
         public const double SteadyStatePlateauMs = 500.0;
         public const double SteadyStateRightMs = 180.0;
 
-        /// <summary>
-        /// The steady-state window as sample counts, for both the plain (non-gated)
-        /// spectrum path and the gated carve — one definition, so the two realize the
-        /// same window.
-        /// </summary>
-        /// <remarks>
-        /// When the requested duration outruns <see cref="DataHelper.GatedFftLength"/>
-        /// (it does above 48 kHz), what is left is SHARED between the plateau and the
-        /// fade-out rather than taken from the plateau first. Taking it from the
-        /// plateau is what a naive clamp does, and at 192 kHz it removed the plateau
-        /// entirely — a window that fades in and immediately fades out, weighting the
-        /// same measurement quite differently than at 48 kHz. The left fade keeps its
-        /// absolute length: at ~2 ms its job is to avoid a hard edge on the arrival,
-        /// which does not scale with how much tail there is room for.
-        /// </remarks>
         public static (int Window, int LeftTukey, int RightTukey)
             SteadyStateWindowSamples(int sampleRate)
         {
@@ -146,24 +76,7 @@ namespace Resonalyze.Dsp
                 (int)Math.Round(SteadyStateRightMs / 1_000.0 * sampleRate));
         }
 
-        /// <summary>
-        /// Fits a requested Tukey geometry into the gated analysis FFT: the total is
-        /// capped at <see cref="DataHelper.GatedFftLength"/> and, when it had to be,
-        /// the loss is SHARED between the plateau and the fade-out in proportion.
-        /// Returns the realized (window, left fade, right fade); the plateau is what
-        /// is left between them.
-        /// </summary>
-        /// <remarks>
-        /// The one place this rule lives, because both paths to a windowed spectrum
-        /// need it and they must not drift: the gated carve
-        /// (<c>ResolveGatePlacement</c>) and the plain oversampled window
-        /// (<see cref="SteadyStateWindowSamples"/>). Trimming the fade alone — the
-        /// obvious reading of "keep the fades coherent" — spends the whole shortfall
-        /// on the plateau, and at 192 kHz that left no plateau at all: a window that
-        /// faded in and immediately out, weighting a measurement quite differently
-        /// than the same window does at 48 kHz. Only a gate longer than the FFT is
-        /// affected; every phase gate is far shorter and comes back untouched.
-        /// </remarks>
+        /// <summary>Caps a Tukey geometry at <see cref="DataHelper.GatedFftLength"/>, sharing the loss between plateau and fade-out. See docs/tech/phase-and-group-delay.md#steady-state-magnitude-window.</summary>
         public static (int Window, int LeftTukey, int RightTukey) TrimGateToFft(
             int left, int plateau, int right)
         {
@@ -173,10 +86,7 @@ namespace Resonalyze.Dsp
             int window = Math.Clamp(
                 left + plateau + right, 1, DataHelper.GatedFftLength);
 
-            // The left fade keeps its absolute length: at ~2 ms its job is to avoid a
-            // hard edge on the arrival, which does not scale with how much tail there
-            // is room for. (Clamped so a pathological request cannot consume the
-            // whole window and leave the fades nowhere to live.)
+            // Left fade keeps its absolute length (anti-edge on the arrival); clamped so it cannot eat the window.
             left = Math.Min(left, window - 1);
             int remaining = window - left;
             int wanted = plateau + right;
@@ -188,10 +98,7 @@ namespace Resonalyze.Dsp
             return (window, left, Math.Clamp(right, 0, remaining));
         }
 
-        // Auto keeps the gate offset snapped to the estimated IR start
-        // (TransferIrDiagnostics.EstimateIrStart) whenever the measurement
-        // changes; off leaves the offset to the user. Default on: a first-run
-        // user should see a correctly gated phase without touching anything.
+        // Auto snaps the gate offset to TransferIrDiagnostics.EstimateIrStart on every measurement change.
         public bool PhaseGateAutoFit { get; set; } = true;
 
         public double PhaseGateOffsetMs { get; set; } = DefaultPhaseGateOffsetMs;
@@ -204,13 +111,6 @@ namespace Resonalyze.Dsp
         public int PhaseFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
         public PhaseDetrendMode PhaseDetrendMode { get; set; } = PhaseDetrendMode.Auto;
 
-        /// <summary>
-        /// A copy of these options reading a different display smoothing — for a
-        /// caller that needs one curve at two widths (the Compare view's summation
-        /// loss, which must divide UNSMOOTHED curves and smooth the result; see
-        /// <see cref="VirtualCrossoverAnalysis.SumLossCurve"/>) without mutating the
-        /// shared, UI-owned instance.
-        /// </summary>
         public FrequencyResponseOptions WithSmoothing(double smoothingInverseOctaves)
         {
             var copy = (FrequencyResponseOptions)MemberwiseClone();
@@ -230,16 +130,12 @@ namespace Resonalyze.Dsp
             Unwrap,
             SmoothingInverseOctaves);
 
-        // Single source of truth for the group-delay gate defaults (ms). Group delay is
-        // usually viewed a bit lower than the phase crossover region, so the gate is
-        // slightly wider than the phase default.
         public const double DefaultGroupDelayGateOffsetMs = 0.0;
         public const double DefaultGroupDelayLeftMs = 0.5;
         public const double DefaultGroupDelayPlateauMs = 10.0;
         public const double DefaultGroupDelayRightMs = 3.0;
         public const double DefaultGroupDelaySmoothingInverseOctaves = 12.0;
 
-        // The Group Delay twin of PhaseGateAutoFit.
         public bool GroupDelayGateAutoFit { get; set; } = true;
 
         public double GroupDelayGateOffsetMs { get; set; } = DefaultGroupDelayGateOffsetMs;
@@ -247,21 +143,11 @@ namespace Resonalyze.Dsp
         public double GroupDelayPlateauMs { get; set; } = DefaultGroupDelayPlateauMs;
         public double GroupDelayRightMs { get; set; } = DefaultGroupDelayRightMs;
 
-        // The Group Delay mode's window, the same choice the Phase mode
-        // offers and with the same defaults, so a fresh install reads both
-        // tabs through one window — the pair that makes them comparable. A
-        // settings file written before these fields existed opens on Fixed
-        // (see MeasurementSettingsFile), the curve its owner has been seeing.
+        // Settings files predating this field open on Fixed (see MeasurementSettingsFile).
         public PhaseWindowMode GroupDelayWindowMode { get; set; } =
             PhaseWindowMode.FrequencyDependent;
         public int GroupDelayFdwCycles { get; set; } = PhaseAnalysisSettings.DefaultFdwCycles;
 
-        /// <summary>
-        /// The Group Delay mode's window as the analysis reads it: its own
-        /// gate and window mode; the phase-only fields (detrend, unwrap, the
-        /// phase display smoothing) at their neutral values, since the
-        /// group-delay analysis ignores them.
-        /// </summary>
         public PhaseAnalysisSettings CreateGroupDelayAnalysisSettings() => new(
             GroupDelayWindowMode,
             GroupDelayFdwCycles,
@@ -274,8 +160,7 @@ namespace Resonalyze.Dsp
             Unwrap: false,
             SmoothingInverseOctaves: 0.0);
 
-        // The lowest frequency the gated window can resolve (~one period inside the
-        // gate). Driven purely by the gate duration, not the sample rate or FFT size.
+        // ~One period inside the gate; depends only on gate duration.
         public static double GateMinReliableFrequencyHz(
             double leftMs,
             double plateauMs,
@@ -287,23 +172,13 @@ namespace Resonalyze.Dsp
 
     }
 
-    /// <summary>
-    /// The unit the impulse view's time axis is drawn in. A pure display choice:
-    /// the samples are the record, the axis is only how it is read.
-    /// </summary>
     public enum ImpulseTimeUnit
     {
         Samples,
         Milliseconds
     }
 
-    /// <summary>
-    /// Where the impulse view puts time zero. VIEW-ONLY: unlike REW's t=0 buttons
-    /// this never rewrites the measurement — Time Alignment, the Virtual DSP gate
-    /// pin and every saved offset are statements about the record's own absolute
-    /// timeline, and a tool that silently moved that origin would invalidate all
-    /// of them. Only the axis moves.
-    /// </summary>
+    /// <summary>View-only: never rewrites the record, since alignment, gate pins and saved offsets use its absolute timeline.</summary>
     public enum ImpulseTimeOrigin
     {
         RecordStart,
@@ -311,33 +186,20 @@ namespace Resonalyze.Dsp
         Peak
     }
 
-    /// <summary>
-    /// The vertical scale of the impulse view.
-    /// </summary>
     public enum ImpulseAmplitudeScale
     {
-        /// <summary>Raw sample values, absolute and comparable between records.</summary>
         Linear,
 
-        /// <summary>Percent of the reference peak (peak = 100 %).</summary>
         PercentOfPeak,
 
-        /// <summary>Decibels relative to the reference peak (peak = 0 dB).</summary>
         Decibels
     }
 
     public sealed class ImpulseResponseOptions
     {
-        /// <summary>
-        /// How much of the tail past the peak the impulse view OPENS on, in samples.
-        /// The traces themselves are always built over the whole record — this frames
-        /// the default view, and every gesture and the graph-limits dialog can leave
-        /// it.
-        /// </summary>
+        /// <summary>Initial view framing past the peak, in samples; traces always span the whole record.</summary>
         public int Length { get; set; } = 4096;
 
-        // Curve visibility. Impulse Response and Autocorrelation modes share this
-        // options type but read their own flag.
         public bool ShowImpulse { get; set; } = true;
         public bool ShowEnvelope { get; set; }
         public bool ShowStep { get; set; }
@@ -348,48 +210,18 @@ namespace Resonalyze.Dsp
         public ImpulseAmplitudeScale AmplitudeScale { get; set; } =
             ImpulseAmplitudeScale.Linear;
 
-        /// <summary>
-        /// Duration of the centred moving average applied to the envelope (ETC);
-        /// zero leaves it unsmoothed.
-        /// </summary>
         public double EnvelopeSmoothingMs { get; set; }
 
-        /// <summary>
-        /// Flips the displayed polarity of the impulse and step traces. View-only —
-        /// the record is not modified, and the envelope (a magnitude) is unaffected.
-        /// </summary>
         public bool Invert { get; set; }
 
-        /// <summary>
-        /// Normalizes the step response against the impulse peak rather than against
-        /// the step's own peak, so a step keeps its size relative to the impulse
-        /// instead of always filling the axis.
-        /// </summary>
         public bool NormalizeStepToImpulsePeak { get; set; } = true;
 
-        /// <summary>
-        /// Width of the zero-phase band the traces are read through, in octaves
-        /// (1 = full octave, 1/3 = third octave); zero draws the broadband record.
-        /// The band answers "when does this band arrive" — a question a full-range
-        /// impulse cannot, because every band's arrival is buried in one waveform.
-        /// </summary>
+        /// <summary>Zero-phase band width in octaves; zero draws the broadband record.</summary>
         public double BandFilterOctaves { get; set; }
 
-        /// <summary>
-        /// Centre of that band, in hertz. Ignored while
-        /// <see cref="BandFilterOctaves"/> is zero.
-        /// </summary>
         public double BandCenterHz { get; set; } = 1000.0;
 
-        /// <summary>
-        /// Whether a band filter is selected and can actually be REALIZED at this rate.
-        /// The centre being under Nyquist is not enough: the band is symmetric around it
-        /// in octaves, so a one-octave band at 16 kHz asks for a passband reaching
-        /// 22.6 kHz, which a 44.1 kHz record cannot carry. The mask would simply stop at
-        /// the end of the spectrum and the view would draw a lopsided band under the name
-        /// of a symmetric one. The fade skirt beyond the passband is allowed to clip —
-        /// that costs roll-off steepness, not the band's identity.
-        /// </summary>
+        /// <summary>The whole octave-symmetric passband must fit under Nyquist (1 oct at 16 kHz needs 22.6 kHz); only the fade skirt may clip.</summary>
         public bool HasBandFilter(int sampleRate)
         {
             if (BandFilterOctaves <= 0.0 || BandCenterHz <= 0.0 || sampleRate <= 0)
@@ -403,28 +235,12 @@ namespace Resonalyze.Dsp
         }
     }
 
-    /// <summary>
-    /// The view-only framing the impulse traces are rendered into: where the axis
-    /// zero sits (in samples from the record start, fractional so a sub-sample
-    /// arrival estimate lands where it actually is) and the peak every level is
-    /// normalized against. A null <c>ReferencePeak</c> makes the set use its own
-    /// peak; passing the main set's peak is what lets a Compare curve be read
-    /// against the same reference.
-    /// </summary>
+    /// <summary>View-only framing: fractional axis-zero sample and the normalization peak (null = the set's own; pass the main set's for Compare).</summary>
     public readonly record struct ImpulseRenderFrame(
         double OriginSamples = 0.0,
         double? ReferencePeak = null);
 
-    /// <summary>
-    /// The impulse view's traces, each null when its curve was not requested, plus
-    /// the framing figures a second (Compare) set needs to be drawn against the
-    /// same reference: the peak amplitude the levels were normalized against and
-    /// the sample it sits at, in the record's own absolute coordinates.
-    /// <c>SnrDb</c> is how far that peak stands above the record's noise floor,
-    /// and is present only when the envelope was computed — the figure is read
-    /// off that envelope, and computing one just to report it would cost a
-    /// transform per redraw for a line of text.
-    /// </summary>
+    /// <summary><c>SnrDb</c> is present only when the envelope was computed: it is read off the envelope.</summary>
     public sealed record ImpulseCurveSet(
         AnalysisCurve? Impulse,
         AnalysisCurve? Envelope,
@@ -433,9 +249,6 @@ namespace Resonalyze.Dsp
         int PeakSample,
         double? SnrDb);
 
-    /// <summary>
-    /// Converts measured impulse responses into frequency-domain and time-domain plot data.
-    /// </summary>
     public static partial class DataHelper
     {
         private const double MinimumAmplitude = 1e-8;
@@ -450,14 +263,7 @@ namespace Resonalyze.Dsp
             return Math.Pow(10.0, decibels / 20.0);
         }
 
-        /// <summary>
-        /// Converts the magnitude bins of a real FFT to ascending (Hz, dB) points, skipping
-        /// the DC bin (no place on a logarithmic axis) and stopping below Nyquist.
-        /// <paramref name="offsetDb"/> shifts every level (e.g. a reference offset). The
-        /// result is the UNSMOOTHED spectrum: callers resample it for display or store it as
-        /// a raw reference. A non-positive <paramref name="fftLength"/> or
-        /// <paramref name="sampleRate"/> yields an empty list.
-        /// </summary>
+        /// <summary>Unsmoothed (Hz, dB) points without DC and Nyquist; non-positive length or rate yields empty.</summary>
         public static List<SignalPoint> MagnitudeBinsToDecibels(
             IReadOnlyList<double> magnitude,
             int fftLength,

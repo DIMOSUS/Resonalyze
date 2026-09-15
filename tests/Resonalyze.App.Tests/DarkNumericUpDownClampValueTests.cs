@@ -1,13 +1,5 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// <c>ClampValue</c> is the single conversion from a stored double to a value
-/// assignable to a control, after five separate helpers were collapsed into it.
-/// Two of those five rounded and three did not, and one reached
-/// <c>(decimal)Math.Round(value, ...)</c> with no finiteness guard — which
-/// throws <see cref="OverflowException"/> on NaN or infinity. These pin the
-/// behaviour every call site now inherits.
-/// </summary>
 public sealed class DarkNumericUpDownClampValueTests
 {
     private static DarkNumericUpDown Control(
@@ -30,10 +22,7 @@ public sealed class DarkNumericUpDownClampValueTests
     {
         using DarkNumericUpDown control = Control();
 
-        // Deliberately NOT the maximum for +infinity: the guard replaces any
-        // non-finite value with zero first, and zero then clamps up to the
-        // minimum. Surprising, but it is what every call site now gets, so it
-        // is pinned rather than assumed.
+        // Non-finite values become zero before clamping, so +infinity lands on the minimum.
         Assert.Equal(2m, control.ClampValue(value));
     }
 
@@ -57,8 +46,7 @@ public sealed class DarkNumericUpDownClampValueTests
     {
         using DarkNumericUpDown control = Control();
 
-        // The pre-clamp happens in double precisely so the decimal cast cannot
-        // overflow — double.MaxValue does not fit in a decimal.
+        // Pre-clamped in double: double.MaxValue does not fit in a decimal.
         Assert.Equal(expected, control.ClampValue(value));
     }
 
@@ -85,9 +73,7 @@ public sealed class DarkNumericUpDownClampValueTests
     }
 
     [Theory]
-    // Exact binary fractions, so the double -> decimal cast is not itself the
-    // thing under test. Math.Round(decimal, int) is MidpointRounding.ToEven:
-    // 0.125 -> 0.12 (2 is even), 0.375 -> 0.38 (8 is even).
+    // Math.Round(decimal, int) is ToEven: 0.125 -> 0.12, 0.375 -> 0.38.
     [InlineData(0.125, 0.12)]
     [InlineData(0.375, 0.38)]
     [InlineData(1.625, 1.62)]
@@ -104,9 +90,6 @@ public sealed class DarkNumericUpDownClampValueTests
     {
         using DarkNumericUpDown control = Control(minimum: 0, maximum: 10, decimalPlaces: 3);
 
-        // The gate offset and tau fields are 3 decimal places; a stored value
-        // finer than that used to survive in Value while the control displayed
-        // the rounded one, so reading the field back disagreed with the screen.
         Assert.Equal(1.235m, control.ClampValue(1.2345678));
     }
 

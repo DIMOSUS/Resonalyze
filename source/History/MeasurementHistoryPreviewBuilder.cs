@@ -31,10 +31,7 @@ internal static class MeasurementHistoryPreviewBuilder
         int? transferPeakIndex,
         MeasuredBand band = default)
     {
-        // Only the transfer branch takes the band. The sweep deconvolution still
-        // CARRIES the protective high-pass and is normalized by the excitation
-        // rather than gated against a loopback, so its edges are signal the
-        // loudspeaker really produced.
+        // Only the transfer branch takes the band: sweep deconvolution carries the protective high-pass, so its edges are real output.
         IImpulseMeasurement measurement = measurementMode == SweepMeasurementMode.LoopbackTransfer &&
             transferImpulseResponse is { Length: > 0 } transfer &&
             transferPeakIndex.HasValue

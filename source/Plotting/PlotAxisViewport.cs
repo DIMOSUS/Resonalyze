@@ -3,19 +3,8 @@ using OxyPlot.Axes;
 
 namespace Resonalyze;
 
-/// <summary>
-/// A snapshot of one axis's visible range. It carries a user's zoom across a model
-/// rebuild (the plot models are rebuilt from scratch on every settings change,
-/// measurement and overlay toggle, so the axis objects that were zoomed are gone by
-/// the time the new model is shown) and backs the zoom undo stack.
-///
-/// Axes are matched by <see cref="Key"/> whenever the axis has one, because the
-/// models name their axes ("frequency", "decibel", "phase", ...) and two different
-/// modes both put a left-hand <see cref="LinearAxis"/> in the same place: matching
-/// those by position alone would restore a phase range onto a group-delay axis.
-/// Position plus type is the fallback for the unnamed axes (the EQ wizard's dB axis,
-/// the Virtual DSP value axis).
-/// </summary>
+/// <summary>One axis's visible range, for carrying zoom across model rebuilds and for undo. Matched by <see cref="Key"/>, else position + type.
+/// See docs/tech/plot-interaction.md#axis-snapshots.</summary>
 internal sealed record PlotAxisViewport(
     string? Key,
     AxisPosition Position,
@@ -23,13 +12,9 @@ internal sealed record PlotAxisViewport(
     double Minimum,
     double Maximum)
 {
-    // Two ranges count as the same when they agree to this fraction of the span.
-    // The comparison is between a range computed when a model was built and the
-    // same range read back later, so the tolerance only has to absorb arithmetic,
-    // not a user's gesture — the smallest wheel step moves an axis by percents.
+    // Absorbs arithmetic between build-time and read-back ranges only; the smallest wheel step moves percents.
     private const double RangeTolerance = 1e-6;
 
-    /// <summary>Every axis's visible range, whoever decided it.</summary>
     public static IReadOnlyList<PlotAxisViewport> Capture(PlotModel? model)
     {
         if (model == null)
@@ -37,11 +22,7 @@ internal sealed record PlotAxisViewport(
             return Array.Empty<PlotAxisViewport>();
         }
 
-        // ActualMinimum/ActualMaximum only refresh on render, so a capture taken
-        // before the previous paint settled (common with Compare, whose model is
-        // slower to build) would read the nominal range and drop the user's zoom.
-        // Update the model in place first so the actual range reflects the live
-        // pan/zoom synchronously, independent of paint timing.
+        // Actual ranges refresh only on render; update first so a capture before paint settles does not drop the zoom.
         ((IPlotModel)model).Update(false);
 
         var viewports = new List<PlotAxisViewport>(model.Axes.Count);
@@ -53,23 +34,8 @@ internal sealed record PlotAxisViewport(
         return viewports;
     }
 
-    /// <summary>
-    /// Only the ranges a USER has forced on the axes — the ones the model did not
-    /// choose for itself.
-    ///
-    /// OxyPlot keeps exactly that distinction in <c>Axis.ViewMinimum</c> /
-    /// <c>ViewMaximum</c>, which are <c>protected</c>, so it is read the only way the
-    /// public API allows: reset the axes (which is what drops an override), let the
-    /// model recompute the range it wants, and put back the ones that turn out to
-    /// differ. What the plot shows is left exactly as it was found.
-    ///
-    /// Asking the axes rather than remembering what they looked like when the model
-    /// was shown is what makes the answer independent of WHEN it is asked. Overlays
-    /// join a plot after it is drawn — a mode switch restores its slots after the
-    /// draw, Show All and the slot check boxes act later still — and on an
-    /// auto-scaled axis they widen the range through the DATA, not through an
-    /// override, so no arrival order can make that read as a zoom.
-    /// </summary>
+    /// <summary>Only ranges a user forced: reset, recompute, restore those that differ (OxyPlot's ViewMinimum is protected).
+    /// Independent of when overlays arrive. See docs/tech/plot-interaction.md#axis-override-capture.</summary>
     public static IReadOnlyList<PlotAxisViewport> CaptureOverrides(PlotModel? model)
     {
         if (model == null)
@@ -141,7 +107,6 @@ internal sealed record PlotAxisViewport(
         }
     }
 
-    /// <summary>True when both snapshots describe the same axis of the same plot.</summary>
     public bool SameAxis(PlotAxisViewport other)
     {
         ArgumentNullException.ThrowIfNull(other);
@@ -150,7 +115,6 @@ internal sealed record PlotAxisViewport(
             : Position == other.Position && AxisType == other.AxisType;
     }
 
-    /// <summary>True when both snapshots show the same range, within arithmetic noise.</summary>
     public bool SameRange(PlotAxisViewport other)
     {
         ArgumentNullException.ThrowIfNull(other);

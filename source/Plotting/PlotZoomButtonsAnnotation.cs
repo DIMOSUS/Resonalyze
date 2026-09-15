@@ -3,37 +3,20 @@ using OxyPlot.Annotations;
 
 namespace Resonalyze;
 
-/// <summary>One of the four on-graph zoom buttons: which axis it moves, and which way.</summary>
 internal readonly record struct PlotZoomButton(ScreenPoint Center, bool Horizontal, bool ZoomIn);
 
-/// <summary>
-/// REW's on-graph zoom buttons: a plus/minus pair against each axis that appears
-/// while the pointer is over the graph and zooms that axis by about two. They are
-/// the discoverable half of the zoom gestures — a user who never reads a shortcut
-/// list still finds them — so they exist for the same reason REW has them, not
-/// because the wheel is not enough.
-///
-/// The layout is static: it reads the model's plot area and its axes, so the
-/// controller can hit-test the buttons without a render pass of its own.
-/// </summary>
+/// <summary>REW's on-graph plus/minus pair per movable axis, shown while the pointer is over the graph. Static layout so the controller
+/// hit-tests without a render pass.</summary>
 internal static class PlotZoomButtons
 {
     public const double Radius = 9;
 
-    // Distance from the pair's midpoint to each button's centre, and from the plot
-    // area's edge to the pair. Kept clear of the axis labels but inside the frame,
-    // so the buttons read as belonging to the axis they move.
     private const double Spacing = 12;
     private const double Inset = 20;
 
-    // Below this the plot is a thumbnail (the history window's previews, a collapsed
-    // panel) and the buttons would cover the curve they are meant to help read.
+    // Thumbnails (history previews, collapsed panels): buttons would cover the curve.
     private const double MinimumPlotSize = 160;
 
-    /// <summary>
-    /// The buttons a model actually offers: a pair per axis the user may move. A
-    /// mode that pins its scale gets none rather than buttons that do nothing.
-    /// </summary>
     public static IReadOnlyList<PlotZoomButton> Layout(PlotModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -89,11 +72,6 @@ internal static class PlotZoomButtons
     }
 }
 
-/// <summary>
-/// Draws <see cref="PlotZoomButtons"/> over the plot. The controller owns the
-/// pointer: the buttons are only drawn while it is inside the plot area, and the
-/// one under it is drawn brighter.
-/// </summary>
 internal sealed class PlotZoomButtonsAnnotation : Annotation
 {
     private static readonly OxyColor Fill = OxyColor.FromAColor(70, OxyColors.Black);
@@ -106,7 +84,6 @@ internal sealed class PlotZoomButtonsAnnotation : Annotation
         Layer = AnnotationLayer.AboveSeries;
     }
 
-    /// <summary>Where the pointer is, or null when it is not over the plot area.</summary>
     public ScreenPoint? Pointer { get; set; }
 
     public override void Render(IRenderContext rc)
@@ -136,8 +113,7 @@ internal sealed class PlotZoomButtonsAnnotation : Annotation
             1,
             EdgeRenderingMode.PreferGeometricAccuracy);
 
-        // The glyph: a minus bar, plus a vertical stroke for zoom in. Drawn rather
-        // than typeset so it stays crisp and centred at any DPI.
+        // Drawn rather than typeset so the glyph stays crisp and centred at any DPI.
         const double arm = PlotZoomButtons.Radius - 4;
         rc.DrawLine(
             [

@@ -185,7 +185,6 @@ namespace Resonalyze.Options
                     impulse,
                     CreateCurrentPhaseAnalysisSettings(PhaseDetrendMode.Auto));
 
-        // Points each field's "R" reset button at the built-in default values.
         private void ConfigureResetDefaults()
         {
             var defaults = new FrequencyResponseOptions();
@@ -198,12 +197,9 @@ namespace Resonalyze.Options
                     FrequencyResponseOptions.DefaultPhaseSmoothingInverseOctaves);
         }
 
-        // Estimates τ from the current gate and writes it into the τ field. Slope flattens
-        // the average excess-phase trend; peak references the dominant arrival.
+        // Slope flattens the average excess-phase trend; peak references the dominant arrival.
         private void ApplyEstimatedTau(bool useSlope)
         {
-            // Phase analysis (and therefore τ) only works with a transfer IR, so
-            // gate the auto-estimate on the same condition as Fit and the plot.
             if (Measurement is not { } measurement ||
                 measurement.TransferImpulseResponse is not { Length: > 0 } ||
                 measurement.InProgress)
@@ -227,8 +223,7 @@ namespace Resonalyze.Options
             }
         }
 
-        // Auto detrend resolves tau from the gate, so the read-only tau display
-        // has to be recomputed whenever the gate moves.
+        // Auto detrend resolves tau from the gate, so recompute the tau display when the gate moves.
         protected override void OnGatePreviewRendering()
         {
             if (comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Auto)

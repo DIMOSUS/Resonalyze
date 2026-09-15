@@ -82,42 +82,19 @@ namespace Resonalyze
         private double resampledMaxFrequency = double.NaN;
         private int resampledWidth = -1;
 
-        /// <summary>
-        /// Gets or sets the color axis.
-        /// </summary>
-        /// <value>The color axis.</value>
-        /// <remarks>The Maximum value of the ColorAxis defines the maximum number of iterations.</remarks>
         public LinearColorAxis? ColorAxis { get; protected set; }
 
-        /// <summary>
-        /// Gets or sets the color axis key.
-        /// </summary>
-        /// <value>The color axis key.</value>
         public string? ColorAxisKey { get; set; }
 
         public OxyColor BackgroundColor { get; set; }
 
         public WaterfallGenerateOptions GenerateOptions { get; set; }
 
-        /// <summary>
-        /// No point: a waterfall is a projected surface rather than a curve, so the
-        /// cursor is never over a measured point. Its X is a per-slice projection of
-        /// frequency and its Y is the hidden -1..1 axis that projection is drawn
-        /// against, so a readout of either would describe the drawing rather than
-        /// the measurement.
-        ///
-        /// This answer has to be safe on a plain click, not only while tracking:
-        /// <c>ControllerBase.HandleMouseDown</c> lets the model hit-test its series
-        /// before any binding is consulted, so throwing in here took the app down on
-        /// any mouse press over the plot.
-        /// </summary>
+        /// <summary>Always null: a projected surface has no measured point under the cursor. Must not throw:
+        /// <c>ControllerBase.HandleMouseDown</c> hit-tests series on every press.</summary>
         public override TrackerHitResult? GetNearestPoint(ScreenPoint point, bool interpolate) =>
             null;
 
-        /// <summary>
-        /// Renders the series on the specified render context.
-        /// </summary>
-        /// <param name="rc">The rendering context.</param>
         public override void Render(IRenderContext rc)
         {
             if (
@@ -193,7 +170,6 @@ namespace Resonalyze
 
                     List<ScreenPoint> points = new List<ScreenPoint> { };
                     List<OxyColor> colors = new List<OxyColor> { };
-                    //
                     for (int ip = 0; ip < slice.Data.Count; ip++)
                     {
                         double xPos = corner.X + ip;
@@ -270,8 +246,7 @@ namespace Resonalyze
                     ScreenPoint cornerUp = Lerp(p4, p5, frequencyPosition);
                     ScreenPoint cornerDown = Lerp(p0, p6, frequencyPosition);
 
-                    // A slice with no usable data resamples to an empty list;
-                    // indexing it by pixel column would throw inside Render.
+                    // An empty resampled slice would throw when indexed by pixel column.
                     if (ResampleSlices[slice].Data.Count < width)
                     {
                         continue;
@@ -299,8 +274,7 @@ namespace Resonalyze
                     {
                         var p0_ = upPoints[k];
                         var p1_ = downPoints[k];
-                        // Points past the measured window resample to NaN (no
-                        // fabricated decay); a NaN screen coordinate overflows GDI+.
+                        // NaN past the measured window overflows GDI+.
                         if (double.IsNaN(p0_.Y))
                         {
                             continue;
@@ -315,8 +289,6 @@ namespace Resonalyze
                         var p0_ = upPoints[k];
                         var p1_ = upPoints[k + 1];
 
-                        // Skip any segment touching the NaN "no data" tail rather
-                        // than bridging the gap with a fabricated line.
                         if (double.IsNaN(p0_.Y) || double.IsNaN(p1_.Y))
                         {
                             continue;
@@ -422,8 +394,7 @@ namespace Resonalyze
             if (GenerateOptions.WaterfallMode == WaterfallMode.BurstDecay)
             {
                 int offset = measurement.PeakIndex - GenerateOptions.LeftTukeyWindow + GenerateOptions.Offset;
-                // Burst decay integrates per-frequency energy envelopes; the
-                // psychoacoustic code decodes to its plain base width here.
+                // The psychoacoustic code decodes to its plain base width for burst decay envelopes.
                 double decodedOctaves = SpectrumSmoothing.SmoothingOctaves(
                     GenerateOptions.SmoothingInverseOctaves);
                 double smoothingOctaves = decodedOctaves > 0
@@ -456,9 +427,7 @@ namespace Resonalyze
 
         public void Resample(double minFrequency, double maxFrequency, int width)
         {
-            // Render calls this on every plot invalidation (pan, resize, label
-            // refresh); re-smoothing all slices is only needed when the view
-            // window or the underlying data actually changed.
+            // Render runs on every invalidation; re-smooth only when window or data changed.
             if (resampledRevision == rawSlicesRevision &&
                 resampledMinFrequency == minFrequency &&
                 resampledMaxFrequency == maxFrequency &&
@@ -483,8 +452,6 @@ namespace Resonalyze
 
                 Parallel.For(0, RawSlices.Count, i =>
                 {
-                    // Waterfall slices are magnitude spectra, so the
-                    // psychoacoustic mode applies its dip floor per slice.
                     List<SignalPoint> resampled = DataHelper.LogarithmicResample(
                         OxyPlotAdapter.ToSignalPoints(RawSlices[i].Data),
                         minFrequency,
@@ -514,11 +481,8 @@ namespace Resonalyze
                         RawSlices[slice].Frequency,
                         OxyPlotAdapter.ToSignalPoints(RawSlices[slice].Data));
 
-                    // Only GenerateOptions.Window samples of the raw envelope are
-                    // measured data (the rest is FFT zero-padding), and the IR
-                    // peak sits a left fade after the gate start — pass both so
-                    // the periods axis is peak-anchored and points past the
-                    // measured record read NaN instead of a fabricated decay.
+                    // Only Window samples are measured (rest is zero-padding) and the peak sits a left fade after gate start:
+                    // periods axis peak-anchored, NaN past the record.
                     List<SignalPoint> resampled = WaterfallAnalysis.ResampleBurstDecaySlice(
                         rawSlice.Data,
                         rawSlice.Frequency,
@@ -538,9 +502,6 @@ namespace Resonalyze
             }
         }
 
-        /// <summary>
-        /// Ensures that the axes of the series is defined.
-        /// </summary>
         protected override void EnsureAxes()
         {
             base.EnsureAxes();

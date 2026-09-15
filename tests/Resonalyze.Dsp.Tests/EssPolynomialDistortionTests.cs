@@ -4,21 +4,14 @@ using Xunit;
 
 namespace Resonalyze.Dsp.Tests;
 
-// The mandatory end-to-end test: a real exponential sine sweep is driven through a
-// known memoryless nonlinearity y = x + a2 x^2 + a3 x^3, deconvolved with the
-// production inverse filter, and run through the production harmonic decomposition.
-// It pins that HD2/HD3 land in the right packets, are drawn against the excitation
-// frequency, stop at Nyquist/order, and match the levels the trig expansion of the
-// polynomial predicts — the check the old one-window THD could never pass.
+// End to end: a real ESS through y = x + a2 x^2 + a3 x^3, production deconvolution and harmonic decomposition.
 public sealed class EssPolynomialDistortionTests
 {
     private const int SampleRate = 48_000;
     private const int Octaves = 10;
     private const double DurationSeconds = 3.0;
 
-    // sin^2 = 1/2 - 1/2 cos2φ and sin^3 = 3/4 sinφ - 1/4 sin3φ, so for
-    // y = x + a2 x^2 + a3 x^3 with x = sinφ the steady-state amplitudes are:
-    //   fundamental g1 = 1 + 3 a3 / 4,   H2 = a2 / 2,   H3 = a3 / 4.
+    // For x = sinφ: fundamental g1 = 1 + 3 a3 / 4, H2 = a2 / 2, H3 = a3 / 4.
     private const double A2 = 0.05;
     private const double A3 = 0.02;
     private static double G1 => 1.0 + 3.0 * A3 / 4.0;
@@ -27,8 +20,7 @@ public sealed class EssPolynomialDistortionTests
 
     private sealed record Sweep(float[] Signal, float[] Inverse, int SampleCount);
 
-    // Reproduces ExponentialSineSweep's generation (kept in the app project) so the
-    // DSP test can exercise the real deconvolution against a genuine sweep.
+    // Mirrors ExponentialSineSweep (app project, not referenceable).
     private static Sweep GenerateSweep()
     {
         double frequencyRatio = Math.Pow(2.0, Octaves);
@@ -106,9 +98,6 @@ public sealed class EssPolynomialDistortionTests
     {
         DistortionSpectrum spectrum = RunPolynomial();
 
-        // Memoryless distortion is flat with frequency; check a clean mid band well
-        // away from the sweep edges. Tolerances allow for deconvolution ripple and
-        // the finite window.
         double hd2 = MedianDbInBand(spectrum, spectrum.HarmonicDistortionRatio[2], 200, 2_000);
         double hd3 = MedianDbInBand(spectrum, spectrum.HarmonicDistortionRatio[3], 200, 2_000);
 
@@ -123,7 +112,6 @@ public sealed class EssPolynomialDistortionTests
         double hd2 = MedianDbInBand(spectrum, spectrum.HarmonicDistortionRatio[2], 200, 2_000);
         double hd3 = MedianDbInBand(spectrum, spectrum.HarmonicDistortionRatio[3], 200, 2_000);
 
-        // Expected spacing HD2 - HD3 = 20 log10((a2/2)/(a3/4)).
         double expectedSpacing = ExpectedHd2Db - ExpectedHd3Db;
         Assert.Equal(expectedSpacing, hd2 - hd3, 1.5);
     }
@@ -134,8 +122,6 @@ public sealed class EssPolynomialDistortionTests
         DistortionSpectrum spectrum = RunPolynomial();
         double[] hd2 = spectrum.HarmonicDistortionRatio[2];
 
-        // Above Nyquist/2 the second-harmonic product passes Nyquist, so HD2 must be
-        // masked (NaN), while it carries real values below.
         for (int i = 0; i < spectrum.Frequencies.Length; i++)
         {
             if (spectrum.Frequencies[i] > 13_000)
@@ -151,9 +137,7 @@ public sealed class EssPolynomialDistortionTests
     [Fact]
     public void Polynomial_LevelsAreInvariantToARecordingTimeShift()
     {
-        // Shifting the whole capture moves the deconvolution peak but not the
-        // relative packet geometry, so HDn is unchanged — the energy/magnitude
-        // pipeline does not depend on absolute placement or on packet phase.
+        // HDn is independent of absolute placement and packet phase.
         double aligned = MedianDbInBand(
             RunPolynomial(0), RunPolynomial(0).HarmonicDistortionRatio[2], 200, 2_000);
         double shifted = MedianDbInBand(

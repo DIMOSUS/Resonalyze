@@ -1,11 +1,5 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Copies device-owned PCM packets into the bounded slot pool of
-/// <see cref="CapturePump{TSlot,TBlock}"/>, which processes them away from the
-/// capture callback. The pool is sized once at construction: a WASAPI/MME
-/// packet size is known before the device starts.
-/// </summary>
 internal sealed class PcmCapturePump : CapturePump<PcmCapturePump.Slot, PcmCaptureBlock>
 {
     private const int SlotCount = 16;

@@ -29,11 +29,7 @@ internal static class MicrophoneCalibrationComboHelper
             ? option.CalibrationId
             : null;
 
-    // Off plus every configured calibration. An entry whose file is currently
-    // missing stays in the list, marked: dropping it would land the selection on
-    // "Off" and the next apply would silently overwrite the stored preference.
-    // The same reasoning keeps a selection the list no longer holds at all — an
-    // entry deleted while a saved project still points at it.
+    // Missing or deleted entries stay listed and marked; dropping them would let the next apply overwrite the preference.
     internal static IReadOnlyList<MicrophoneCalibrationOption> BuildOptions(
         string? selectedCalibrationId,
         IReadOnlyList<MicrophoneCalibrationEntry> entries)
@@ -52,9 +48,6 @@ internal static class MicrophoneCalibrationComboHelper
         if (!MicrophoneCalibrationIds.IsOff(selectedCalibrationId) &&
             !entries.Any(entry => IsSame(entry.Id, selectedCalibrationId)))
         {
-            // The id is all that is left of a deleted entry, and it is a
-            // generated one nobody can read, so the label says what happened
-            // rather than spelling it out.
             options.Add(new MicrophoneCalibrationOption(
                 selectedCalibrationId,
                 "Deleted calibration (missing)"));

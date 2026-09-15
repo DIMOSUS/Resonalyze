@@ -1,14 +1,8 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Two instances share one settings file and one history file, each read whole
-/// at startup and written back whole — so the copy that closes last silently
-/// discards the other's session.
-/// </summary>
+/// <summary>Instances read and rewrite shared settings/history whole, so the last to close discards the other's session.</summary>
 public sealed class SingleInstanceGuardTests
 {
-    // Unique per test run so a leftover kernel object from an earlier run, or a
-    // parallel run, cannot make these flaky.
     private static string Directory() =>
         Path.Combine(Path.GetTempPath(), $"resonalyze-guard-{Guid.NewGuid():N}");
 
@@ -45,12 +39,6 @@ public sealed class SingleInstanceGuardTests
         Assert.NotNull(second);
     }
 
-    /// <summary>
-    /// A portable copy keeps its data beside the executable, so it is a
-    /// different directory and must be free to run alongside an installed one.
-    /// The same applies to a second Windows user, who has their own
-    /// %LocalAppData%.
-    /// </summary>
     [Fact]
     public void TryAcquire_ADifferentDataDirectory_IsNotBlocked()
     {

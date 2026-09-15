@@ -8,9 +8,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     private readonly bool supportsSmoothing;
     private readonly bool supportsAmplitudeSpace;
     private readonly bool supportsComplexSum;
-    // Live preview: fired with a full snapshot of the candidate settings on every
-    // control change, so the caller can redraw the overlay immediately. Nothing is
-    // committed until Save; the caller restores its stored state on Cancel.
+    // Fired on every change; nothing is committed until Save, and the caller restores on Cancel.
     private readonly Action<OverlayOperationPreview>? previewChanged;
     private readonly bool initialized;
     private Color selectedColor;
@@ -43,14 +41,11 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         this.previewChanged = previewChanged;
         supportsSmoothing = OverlaySmoothing.SupportsMode(mode);
         supportsAmplitudeSpace = OverlayMath.SupportsAmplitudeSpace(mode);
-        // Complex sum reads the Main and Compare transfer IRs and only draws on the
-        // frequency-response axes (Live Spectrum shares the same overlay mode).
         supportsComplexSum = mode == Mode.FrequencyResponse;
         selectedColor = color;
 
         InitializeComponent();
-        // The accent fill is a palette value, not a literal the designer keeps a
-        // copy of: the two drifted apart once already.
+        // Palette value, not a designer literal: the two drifted apart once.
         Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill);
         PopulateControls(availableSources, availableLiveCurves);
         WireEvents();
@@ -94,11 +89,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         initialized = true;
     }
 
-    // Amplitude-space math and the tilt are both statements about decibels, so both need
-    // a magnitude mode AND a result that IS decibels — the operand list also offers
-    // coherence traces, whose 0…1 ratio neither belongs to. The complex sum is
-    // amplitude-domain by construction and "A only" does no arithmetic at all, so
-    // neither has anything to convert.
+    // Amplitude-space math and tilt need a magnitude mode and a decibel result (not coherence).
     private bool SupportsAmplitudeSpaceMath =>
         supportsAmplitudeSpace &&
         ResultSemantics.IsDecibels &&
@@ -110,9 +101,6 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
     private bool SupportsTilt => supportsAmplitudeSpace && ResultSemantics.IsDecibels;
 
-    // What the operation as configured right now would produce. Undefined operands (a
-    // pair that cannot be operated on) are reported by the Save validation, so here they
-    // simply state nothing.
     private OverlayCurveSemantics ResultSemantics
     {
         get
@@ -163,9 +151,6 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         IReadOnlyList<OverlaySlotOption> availableSources,
         IReadOnlyList<LiveCurveOption> availableLiveCurves)
     {
-        // Live curves (the ones drawn on the plot right now) first, then captured slots.
-        // A live-curve operand re-reads its curve on every rebuild; a slot operand is a
-        // one-off snapshot.
         foreach (LiveCurveOption live in availableLiveCurves)
         {
             var operand = new OverlayOperandOption(
@@ -222,8 +207,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
         foreach (int value in OverlaySmoothing.SupportedInverseOctaves)
         {
-            // The psychoacoustic mode is magnitude-only; in phase/GD modes the
-            // operation result is a signed curve its floor would bias upward.
+            // Psychoacoustic is magnitude-only; its floor would bias a signed phase/GD result upward.
             if (Dsp.SpectrumSmoothing.IsPsychoacoustic(value) &&
                 !supportsAmplitudeSpace)
             {
@@ -252,8 +236,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             NotifyPreview();
         };
         nameTextBox.TextChanged += (_, _) => NotifyPreview();
-        // The operands decide what the result IS, so what applies only to decibels —
-        // the tilt and amplitude-space math — follows them, not just the mode.
+        // Operands decide whether the result is decibels, so dB-only controls follow them.
         sourceAComboBox.SelectedIndexChanged += (_, _) => OperandChanged();
         sourceBComboBox.SelectedIndexChanged += (_, _) => OperandChanged();
         blendFrequencyInput.ValueChanged += (_, _) => NotifyPreview();
@@ -287,9 +270,6 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         NotifyPreview();
     }
 
-    // Live preview while tuning: fires a full snapshot of the candidate settings on
-    // every change so the caller can redraw the curve immediately. Suppressed during
-    // construction, where control values are still being seeded.
     private void NotifyPreview()
     {
         if (!initialized || previewChanged == null)
@@ -319,8 +299,6 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             SmoothingInverseOctaves));
     }
 
-    // Smoothing and amplitude-space are only meaningful for some modes; instead of
-    // reflowing the dialog those controls are greyed out, keeping a fixed layout.
     private void ApplyModeAvailability()
     {
         UiStyle.SetTextEnabledLook(smoothingLabel, supportsSmoothing);
@@ -328,8 +306,6 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         UiStyle.SetTextEnabledLook(amplitudeSpaceCheckBox, supportsAmplitudeSpace, interactive: true);
     }
 
-    // The two tilt numbers only mean something once the tilt is switched on — and the
-    // tilt itself only in the magnitude views.
     private void UpdateTiltControls()
     {
         UiStyle.SetTextEnabledLook(tiltCheckBox, SupportsTilt, interactive: true);
@@ -406,11 +382,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
         OverlayOperandOption? a = OperandOf(sourceAComboBox);
         OverlayOperandOption? b = OperandOf(sourceBComboBox);
-        // Complex sum (and its loss variant) has no operands to validate — sources are
-        // fixed; "A only" has just the one, which may freely equal whatever B still holds.
-        // Two operands must also be the same kind of number: dB SPL against relative
-        // decibels, or coherence against decibels, has no result any axis could carry, so
-        // it is refused here rather than saved into a slot that could never draw.
+        // Incompatible operands (SPL vs relative, coherence vs dB) are refused rather than saved into a slot that never draws.
         bool operandsValid = Operation switch
         {
             OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss => true,
@@ -470,16 +442,12 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         }
     }
 
-    // What each operation actually uses: blend frequency / width only apply to the
-    // Blend operation, "A only" uses just the first operand, and the complex sum takes
-    // no operands at all (it reads the Main and Compare transfer IRs directly). The
-    // inapplicable controls are greyed out rather than hidden so nothing shifts.
+    // Inapplicable controls are greyed out, not hidden, so the layout stays fixed.
     private void UpdateOperationControls()
     {
         OverlayOperation? op = operationComboBox.SelectedItem as OverlayOperation?;
         bool isBlend = op == OverlayOperation.Blend;
         bool isComplexSum = op is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss;
-        // "A only" reads one curve, so operand B is greyed out as well.
         bool usesB = !isComplexSum && op != OverlayOperation.CurveA;
         UiStyle.SetTextEnabledLook(blendFrequencyLabel, isBlend);
         blendFrequencyInput.Enabled = isBlend;
@@ -489,15 +457,10 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         sourceAComboBox.Enabled = !isComplexSum;
         UiStyle.SetTextEnabledLook(curveBLabel, usesB);
         sourceBComboBox.Enabled = usesB;
-        // Complex sum is inherently amplitude-domain math, and "A only" performs no
-        // arithmetic at all — it hands curve A through. The checkbox is moot for both,
-        // and for a result that is not decibels: converting a 0…1 coherence ratio to
-        // linear amplitude and back is arithmetic on the wrong kind of number.
         UiStyle.SetTextEnabledLook(
             amplitudeSpaceCheckBox,
             SupportsAmplitudeSpaceMath,
             interactive: true);
-        // The Compare delay / polarity flip only shape the complex sum.
         UiStyle.SetTextEnabledLook(labelTimeOffset, isComplexSum);
         numericTimeOffset.Enabled = isComplexSum;
         UiStyle.SetTextEnabledLook(checkBoxInvPhase, isComplexSum, interactive: true);
@@ -578,16 +541,12 @@ internal sealed record OverlaySlotOption(
     public override string ToString() => $"{Slot}: {Title}";
 }
 
-// A live analysis curve (identified by its CurveTag Key) selectable as an operation
-// operand directly from the plot, without capturing it into a slot first.
 internal sealed record LiveCurveOption(
     string Key,
     string Label,
     OverlayCurveSemantics Semantics = default);
 
-// A full snapshot of the candidate settings in the calculated-overlay dialog, fired
-// on every control change for the live preview. Mirrors the dialog's output
-// properties so the caller can render exactly what Save would commit.
+// Mirrors the dialog's output so the caller renders exactly what Save would commit.
 internal sealed record OverlayOperationPreview(
     string Name,
     int SourceSlotA,
@@ -609,7 +568,6 @@ internal sealed record OverlayOperationPreview(
     int OpacityPercent,
     int SmoothingInverseOctaves);
 
-// A unified operation operand: a captured slot (CurveKey null) or a live curve.
 internal sealed record OverlayOperandOption(
     int Slot,
     string? CurveKey,
@@ -652,7 +610,7 @@ internal static class OverlayOperationLabels
             OverlayOperation.Average => "(A + B) / 2",
             OverlayOperation.AbsoluteDifference => "|A - B|",
             OverlayOperation.Blend => "Blend A/B",
-            OverlayOperation.ComplexSum => "Main ⊕ Compare (complex sum)", // ⊕ circled plus
+            OverlayOperation.ComplexSum => "Main ⊕ Compare (complex sum)",
             OverlayOperation.ComplexSumLoss => "Sum loss (complex − magnitude)",
             _ => "Off"
         };

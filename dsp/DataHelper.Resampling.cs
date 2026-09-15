@@ -22,10 +22,7 @@ namespace Resonalyze.Dsp
         public static double LanczosKernel(double x, double a = 1) =>
             DspMath.LanczosKernel(x, a);
 
-        /// <summary>
-        /// Resamples linearly spaced FFT bins onto a logarithmic frequency grid.
-        /// A Lanczos kernel is used to avoid the aliasing and jagged traces produced by nearest-bin lookup.
-        /// </summary>
+        /// <summary>Linear FFT bins onto a log grid through a Lanczos kernel (no nearest-bin aliasing).</summary>
         public static List<SignalPoint> LogarithmicResample(
             List<SignalPoint> input,
             double start,
@@ -131,17 +128,12 @@ namespace Resonalyze.Dsp
                 }
                 else
                 {
-                    // Lanczos weights are signed, so the sum degenerates when the
-                    // kernel window falls outside the input grid (e.g. resampling to
-                    // 20 kHz from a spectrum that ends below it). Hold the nearest
-                    // input sample instead of pinning the point to the -160 dB floor.
+                    // Signed Lanczos weights degenerate when the kernel leaves the input grid: hold the nearest sample, not the -160 dB floor.
                     filteredValue = Sample(centerIndex).Y;
                 }
 
                 if (psychoacoustic)
                 {
-                    // A Gaussian cubic mean gives peaks more perceptual weight
-                    // without a hard lower envelope that can kink smooth valleys.
                     filteredValue = PsychoacousticCubicMean(
                         input,
                         frequency,
@@ -166,9 +158,7 @@ namespace Resonalyze.Dsp
             return output;
         }
 
-        // Direct Gaussian approximation of the psychoacoustic smoother. Its FWHM
-        // follows the frequency-dependent octave width and its cubic mean favours
-        // audible peaks without clipping the lower side of the response.
+        // Gaussian cubic mean: FWHM follows the octave width; favours audible peaks without a hard lower envelope.
         private static double PsychoacousticCubicMean(
             List<SignalPoint> input,
             double centerFrequency,
@@ -252,16 +242,8 @@ namespace Resonalyze.Dsp
                 return requestedSigma;
             }
 
-            // Match the ordinary resampler's minimum half-width of two FFT bins.
-            // On a log axis equal Hz distances are asymmetric, so use whichever
-            // side requires the larger octave radius. The lower side is bounded
-            // by the input grid itself: the spectrum's first sample sits one bin
-            // above DC, so the kernel is never asked to reach below it. Without
-            // that bound the lower octave distance diverges as the centre
-            // approaches two bins from DC — the Gaussian then covered the whole
-            // spectrum and the cubic mean drew the (loud) midrange level as a
-            // spike at ~2 bins, mid-display on coarse grids (a 192 kHz
-            // measurement with a 2048-sample window spiked +33 dB at 47 Hz).
+            // Minimum half-width of two bins, using the larger side's octave radius; the lower side is bounded by the first bin,
+            // or near DC the Gaussian covers everything and draws a spike (+33 dB at 47 Hz on 192 kHz / 2048 samples).
             double minimumRadiusHz = 2.0 * inputStep;
             double upperRadiusOctaves = Math.Log2(
                 (centerFrequency + minimumRadiusHz) / centerFrequency);
@@ -277,47 +259,8 @@ namespace Resonalyze.Dsp
                 minimumRadiusOctaves / radiusSigma);
         }
 
-        /// <summary>
-        /// FFT-size-independent band levels for an RTA shown in absolute units, ABOVE the
-        /// FFT resolution limit. Where <see cref="LogarithmicResample"/> interpolates and
-        /// averages AMPLITUDE (correct for a relative / transfer trace), this integrates
-        /// POWER over each display band, so a broadband level does not shift with the FFT
-        /// length: summed bin power in a fixed frequency band is invariant to N. The sum
-        /// is divided by the window's equivalent noise bandwidth so a noise band reads its
-        /// true power rather than the coherent-gain (tone) over-estimate, while a
-        /// bin-centred full-scale tone under a rectangular window still reads its
-        /// calibrated level. Each bin contributes only the fraction of its power
-        /// overlapping the band, and no band is narrower than the window's spectral main
-        /// lobe, so the level is continuous (no jump as a bin centre crosses a band edge),
-        /// never sub-bin, and a tone keeps its whole main lobe.
-        /// <para>
-        /// The N-invariance holds only where the fixed <c>1/12</c>-octave reference band is
-        /// WIDER than that main lobe. Below the crossover (a low frequency, a long window
-        /// such as Flat Top, or a short FFT) the band is floored to the main lobe, whose
-        /// width in Hz — <c>mainLobeBins·Fs/N</c> — DOES shrink with N, so a broadband
-        /// level there drops ~3 dB per doubling of N. That is the resolution limit of a
-        /// single FFT, shared by every FFT RTA, and the deliberate cost of the main-lobe
-        /// floor: without it a coherent tone in that region would read low. Use a longer
-        /// FFT for finer low-frequency resolution.
-        /// </para>
-        /// <para>
-        /// The integration band is a FIXED reference resolution, NOT the display
-        /// smoothing: band power grows with bandwidth, so tying it to smoothing would lift
-        /// a quiet spectrum by many dB. <paramref name="smoothingOctaves"/> applies
-        /// afterwards as a level-preserving dB average that only smooths scatter. The grid
-        /// is bounded so every emitted band fits WHOLE inside the resolved range — none
-        /// straddles Nyquist or DC (a half-empty band would show a false roll-off on a
-        /// flat input), and nothing above the last bin is synthesized from it.
-        /// </para>
-        /// <para>
-        /// Returns RELATIVE band levels in dB (<c>10·log10</c> of the band power); the
-        /// caller adds any microphone-calibration correction and the SPL offset.
-        /// </para>
-        /// </summary>
-        /// <param name="amplitudeSpectrum">
-        /// Tone-calibrated amplitude per bin (index = bin, 0..N/2), as produced by
-        /// <c>SpectrumAnalysis.ComputeInputMagnitudeSpectrum</c>.
-        /// </param>
+        /// <summary>Power-integrated RTA band levels (relative dB), FFT-size-independent above the main-lobe limit. See docs/tech/phase-and-group-delay.md#rta-power-bands.</summary>
+        /// <param name="amplitudeSpectrum">Tone-calibrated amplitude per bin (0..N/2), from <c>SpectrumAnalysis.ComputeInputMagnitudeSpectrum</c>.</param>
         public static List<SignalPoint> LogarithmicPowerBandResample(
             IReadOnlyList<double> amplitudeSpectrum,
             int fftLength,
@@ -346,20 +289,11 @@ namespace Resonalyze.Dsp
 
             double enbw = windowEnbwBins > 0.0 ? windowEnbwBins : 1.0;
 
-            // The window's spectral resolution, in Hz: the main-lobe width, not the
-            // (narrower) equivalent NOISE bandwidth. A band is never integrated narrower
-            // than this, so a sub-bin band does not read a random fraction of a bin, and
-            // a coherent tone keeps its whole main lobe.
+            // Main-lobe width (not ENBW): the band floor, so a tone keeps its whole lobe.
             double mainLobeBins = windowMainLobeBins > 0.0 ? windowMainLobeBins : 1.0;
             double resolutionHz = mainLobeBins * binWidth;
 
-            // The band the power is integrated over is a FIXED reference resolution — a
-            // fixed fractional octave, widened to the window main lobe or the grid cell
-            // where those are coarser — NOT the display smoothing. Tying the band to
-            // smoothing lifts the level, because band power grows with bandwidth: a wide
-            // smoothing swept ever more Hz into each band and raised a quiet spectrum by
-            // many dB at high frequencies. Smoothing is applied afterwards, as a
-            // level-preserving average that only smooths scatter.
+            // Fixed reference resolution, NOT the display smoothing: band power grows with bandwidth.
             const double referenceBandOctaves = 1.0 / 12.0;
 
             double preliminaryStop = Math.Min(stop, maxBin * binWidth);
@@ -373,13 +307,7 @@ namespace Resonalyze.Dsp
             double upperFactor = Math.Pow(2.0, halfOctaves);
             double lowerFactor = 1.0 / upperFactor;
 
-            // Keep the WHOLE band inside the resolved spectrum, not just its centre. A
-            // band whose fractional-octave OR main-lobe width spilled past the last bin
-            // (near Nyquist) or below the first bin (near 20 Hz with a wide main lobe)
-            // would integrate a half-empty band and show a false roll-off on an input
-            // that is actually flat. Bound the centre so both the octave band
-            // [f/upperFactor, f·upperFactor] and the resolution band [f ± resolutionHz/2]
-            // fit within the resolved range [firstBinLowEdge, lastBinHighEdge].
+            // The whole band (octave and resolution width) must fit inside the resolved range, or a flat input shows a false roll-off.
             double lowerEdge = 0.5 * binWidth;
             double upperEdge = (maxBin + 0.5) * binWidth;
             double effectiveStart = Math.Max(
@@ -393,7 +321,6 @@ namespace Resonalyze.Dsp
                 return output;
             }
 
-            // First pass: the fixed-resolution band POWER (linear) at each grid point.
             var frequencies = new double[steps];
             var bandPowers = new double[steps];
             for (int i = 0; i < steps; i++)
@@ -409,12 +336,7 @@ namespace Resonalyze.Dsp
                     highFrequency = frequency + half;
                 }
 
-                // Integrate the fraction of every bin's power that overlaps the band —
-                // each bin owns the frequency interval [(k-½)·Δf, (k+½)·Δf], and only
-                // its overlap with the band counts — so the level is continuous as
-                // bins cross band edges instead of jumping when a centre lands inside.
-                // Dividing by the window ENBW turns the coherent-gain bin power into
-                // true band power (a rectangular-window tone still reads its level).
+                // Fractional bin overlap keeps the level continuous at band edges; ENBW turns coherent-gain power into band power.
                 double bandPower = 0.0;
                 int firstBin = Math.Max(1, (int)Math.Ceiling(lowFrequency / binWidth - 0.5));
                 int lastBin = Math.Min(maxBin, (int)Math.Floor(highFrequency / binWidth + 0.5));
@@ -436,19 +358,12 @@ namespace Resonalyze.Dsp
                 bandPowers[i] = bandPower / enbw;
             }
 
-            // Second pass: display smoothing as a level-preserving moving MEAN of the
-            // band POWERS over the requested fractional octave. A mean (not a sum) leaves
-            // a flat or sloped spectrum's level unchanged and only smooths scatter; a
-            // tone is diluted toward the surrounding level, as any smoothing softens a
-            // spike. Averaging in the power domain (not dB) keeps a silent neighbour at
-            // zero power rather than -160 dB, so it does not swamp a nearby tone. It never
-            // lifts the level the way widening the integration band would.
+            // Level-preserving mean of linear powers (a silent neighbour stays at zero power, not -160 dB).
             double octavesPerStep = Math.Log2(effectiveStop / effectiveStart) / (steps - 1);
             int smoothingHalfSteps = smoothingOctaves > 0.0 && octavesPerStep > 0.0
                 ? (int)Math.Round(smoothingOctaves * 0.5 / octavesPerStep)
                 : 0;
 
-            // 10·log10(power) == 20·log10(sqrt(power)); reuse the amplitude floor.
             if (smoothingHalfSteps <= 0)
             {
                 for (int i = 0; i < steps; i++)
@@ -471,22 +386,7 @@ namespace Resonalyze.Dsp
             return output;
         }
 
-        /// <summary>
-        /// Re-applies this analyzer's display smoothing to band levels it already produced
-        /// — the finished dB curve of a dB SPL RTA, on the very grid it was drawn on.
-        /// </summary>
-        /// <remarks>
-        /// A consumer that stores such a curve (an overlay slot, and through it the EQ
-        /// Wizard) has no raw spectrum to go back to, but the smoothing is a SECOND PASS
-        /// over the band powers, not part of the integration — so it can be replayed
-        /// exactly. It shares its core with <see cref="LogarithmicPowerBandResample"/>,
-        /// which is the point: a level-preserving mean of linear POWER, not of decibels,
-        /// with the same window and the same psychoacoustic cubic mean, so "1/6 octave"
-        /// means the same thing in both places and cannot drift apart later.
-        /// A non-finite level marks a band the analyzer could not measure: it is passed
-        /// through and excluded from its neighbours' means, so gaps neither spread nor fill.
-        /// Points must be ascending and logarithmically spaced, as that grid is.
-        /// </remarks>
+        /// <summary>Replays the RTA display smoothing over stored dB band levels on their own log grid; shares the core of <see cref="LogarithmicPowerBandResample"/>. Non-finite bands pass through and are excluded from means.</summary>
         public static List<SignalPoint> SmoothBandLevels(
             IReadOnlyList<SignalPoint> bandLevelsDb,
             double smoothingOctaves,
@@ -507,8 +407,6 @@ namespace Resonalyze.Dsp
             int smoothingHalfSteps = smoothingOctaves > 0.0 && octavesPerStep > 0.0
                 ? (int)Math.Round(smoothingOctaves * 0.5 / octavesPerStep)
                 : 0;
-            // Matches the resampler, which also leaves the levels alone when the requested
-            // width does not reach a whole grid step.
             if (smoothingHalfSteps <= 0)
             {
                 result.AddRange(bandLevelsDb);
@@ -520,8 +418,6 @@ namespace Resonalyze.Dsp
             for (int i = 0; i < steps; i++)
             {
                 frequencies[i] = bandLevelsDb[i].X;
-                // 10^(dB/10) is the power a level of that many decibels stands for; a gap
-                // stays a gap.
                 bandPowers[i] = double.IsFinite(bandLevelsDb[i].Y)
                     ? Math.Pow(10.0, bandLevelsDb[i].Y / 10.0)
                     : double.NaN;
@@ -541,10 +437,7 @@ namespace Resonalyze.Dsp
             return result;
         }
 
-        // The display smoothing itself: a level-preserving mean of band POWERS returned as
-        // amplitudes. Shared so the live resampler and a replay over stored levels are the
-        // same algorithm by construction. Bands with a non-finite power are excluded from
-        // every mean and stay non-finite in the result.
+        // Shared by the live resampler and the replay so they cannot drift; non-finite bands stay non-finite.
         private static double[] SmoothBandPowersToAmplitudes(
             double[] bandPowers,
             double[] frequencies,
@@ -555,9 +448,7 @@ namespace Resonalyze.Dsp
             int steps = bandPowers.Length;
             var result = new double[steps];
 
-            // Prefix sums carry a COUNT as well as a total, so a gap simply does not
-            // contribute; with no gaps the count is the plain window width and the mean is
-            // identical to a straight prefix-sum average.
+            // Prefix sums carry a count too, so gaps drop out of the mean.
             var powerPrefix = new double[steps + 1];
             var countPrefix = new int[steps + 1];
             for (int i = 0; i < steps; i++)
@@ -617,8 +508,6 @@ namespace Resonalyze.Dsp
             double weightedCubeSum = 0.0;
             for (int index = firstIndex; index <= lastIndex; index++)
             {
-                // A band the analyzer could not measure contributes nothing rather than
-                // poisoning the mean; a live resample never has one.
                 if (!double.IsFinite(bandPowers[index]))
                 {
                     continue;
@@ -649,29 +538,7 @@ namespace Resonalyze.Dsp
                 : Math.Sqrt(Math.Max(0.0, bandPowers[centerIndex]));
         }
 
-        /// <summary>
-        /// Smooths a RATIO curve that already sits on the logarithmic display grid —
-        /// a per-point dB difference between two responses, such as the Virtual DSP
-        /// summation loss — with a plain arithmetic mean of its decibels.
-        /// </summary>
-        /// <remarks>
-        /// <para>
-        /// A ratio is not a level, so it must never take the magnitude path
-        /// (<see cref="SmoothBandLevels"/>, <see cref="LogarithmicResample"/>): those
-        /// average POWER and weight peaks with a cubic mean, which on a ratio reads as
-        /// a bias toward whichever side of the window is closer to 0 dB. More
-        /// importantly the smoothing has to happen HERE, on the finished ratio, and not
-        /// on the two operands before they are divided — see
-        /// <see cref="VirtualCrossoverAnalysis.SumLossCurve"/> for what that order costs.
-        /// </para>
-        /// <para>
-        /// The psychoacoustic mode keeps its frequency-dependent WIDTH (and its Gaussian
-        /// kernel), only dropping the magnitude weighting. Non-finite points — gated-out
-        /// gaps — pass through and are excluded from their neighbours' means, so a gap
-        /// neither spreads nor fills. Points must be ascending and logarithmically
-        /// spaced, as the display grid is.
-        /// </para>
-        /// </remarks>
+        /// <summary>Arithmetic dB mean for a ratio curve on the log display grid (e.g. summation loss). Never the magnitude path, and smooth the finished ratio, not its operands. See docs/tech/phase-and-group-delay.md#ratio-smoothing.</summary>
         public static List<SignalPoint> SmoothRatioLevels(
             IReadOnlyList<SignalPoint> ratioDb,
             double smoothingOctaves,
@@ -691,8 +558,6 @@ namespace Resonalyze.Dsp
             int smoothingHalfSteps = smoothingOctaves > 0.0 && octavesPerStep > 0.0
                 ? (int)Math.Round(smoothingOctaves * 0.5 / octavesPerStep)
                 : 0;
-            // Matches the resampler and SmoothBandLevels, which also leave the curve
-            // alone when the requested width does not reach a whole grid step.
             if (!psychoacoustic && smoothingHalfSteps <= 0)
             {
                 result.AddRange(ratioDb);
@@ -721,8 +586,6 @@ namespace Resonalyze.Dsp
             return result;
         }
 
-        // The plain-width mean: every measured point within +/- half the requested
-        // width counts once. Gaps are skipped, so the mean is over what was measured.
         private static double BoxDecibelMean(
             IReadOnlyList<SignalPoint> curve,
             int centerIndex,
@@ -744,9 +607,7 @@ namespace Resonalyze.Dsp
             return count > 0 ? total / count : curve[centerIndex].Y;
         }
 
-        // The psychoacoustic width's kernel, shaped exactly like the magnitude one
-        // (Gaussian of the given FWHM, tapered to zero at three sigma) but averaging
-        // decibels linearly instead of cubing powers.
+        // Same Gaussian as the magnitude kernel, averaging dB linearly instead of cubing powers.
         private static double GaussianDecibelMean(
             IReadOnlyList<SignalPoint> curve,
             int centerIndex,
@@ -847,8 +708,7 @@ namespace Resonalyze.Dsp
                     weightSum += weight;
                 }
 
-                // Same degenerate-weight-sum fallback as LogarithmicResample: hold
-                // the centre sample rather than collapsing the point to 0.
+                // Degenerate weight sum: hold the centre sample, as LogarithmicResample does.
                 double filteredValue = weightSum > 1e-12
                     ? weightedSum / weightSum
                     : centerPoint.Y;

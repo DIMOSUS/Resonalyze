@@ -4,50 +4,23 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Computes the Virtual DSP summed-response read-out for a set of channels: the
-/// per-channel magnitude spectra and complex sum, the per-junction and total
-/// sum-loss entries, the final per-pair stereo Δ timing and the opposite side's
-/// sum curve. UI-free — it reads the channel model and the processing
-/// coordinator and returns data; the panel owns the read-out label and the plot.
-/// Heavy processed-response work runs through the coordinator, sharing its cache
-/// and stale-result guard with the main redraw.
-/// </summary>
+/// <summary>UI-free Virtual DSP read-outs: channel curves and sum, sum-loss entries, stereo and group deltas, opposite-side sum.
+/// See docs/tech/virtual-dsp-analysis.md.</summary>
 internal sealed class VirtualCrossoverMetrics
 {
     private readonly VirtualCrossoverProcessingCoordinator coordinator;
     private readonly Func<Complex[], int, int, MeasuredBand, CalibrationFile?, GatedMagnitude>
         buildMagnitudeCurve;
 
-    // How a curve's microphone correction is chosen. Passed in rather than read from
-    // a field, because under the panel's "Own (as measured)" it is a property of each
-    // MEASUREMENT and not of the project: one channel's file may name a calibration
-    // its neighbour's does not, and a sum of two such channels names neither.
+    // Per channel: under "Own (as measured)" calibration belongs to each measurement, not the project.
     private readonly Func<ProcessedChannel, CalibrationFile?> channelCalibration;
 
-    // The SUM is not the gated total of the summed responses, though the arithmetic
-    // says it is: one shared window makes the transform linear, so that total carries
-    // every channel's window leakage into ranges that channel never measured. Built
-    // by the panel, which owns the gate placement.
+    // Not the gated total of the summed IR: a shared window would carry every channel's leakage into ranges it never measured.
     private readonly Func<IReadOnlyList<ProcessedChannel>, int, GatedMagnitude>?
         buildSumCurve;
 
-    // The last group Δ read-out and the inputs it was computed from. Without it
-    // every frame rebuilds the set from scratch, and a view switch IS a frame:
-    // Front + Center ran its arrival FFTs again on each magnitude/phase/impulse
-    // toggle — hundreds of milliseconds per switch on a full installation, and
-    // the whole redraw waits on them — while Front + Sub, which quotes no group
-    // Δ, switched instantly off the coordinator's processed-response cache. The
-    // stereo block next to it already remembered its arrivals this way; this is
-    // the same bargain for the group ones, and it is written on the UI thread
-    // only, in the continuation after the auxiliary run, exactly as ArrivalCache
-    // is.
-    //
-    // The price is that it holds the processed responses it was measured from
-    // alive: one generation of the front stage and the compared groups, no more,
-    // and only for as long as a view quoting no group Δ stays on screen. The
-    // alternative is dropping the answer the moment the user looks away, which
-    // is the complaint this exists to close.
+    // Last group-delta result, so view switches do not rerun arrival FFTs; UI thread only.
+    // See docs/tech/virtual-dsp-analysis.md#group-delta-read-out.
     private (GroupDeltaKey Key, IReadOnlyList<VirtualCrossoverMetric.GroupDelta> Deltas)?
         groupDeltas;
 
@@ -61,33 +34,13 @@ internal sealed class VirtualCrossoverMetrics
         this.coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         this.buildMagnitudeCurve = buildMagnitudeCurve
             ?? throw new ArgumentNullException(nameof(buildMagnitudeCurve));
-        // No correction by default: a caller that does not draw for a user has no
-        // microphone to correct for, and the metric is a comparison between curves
-        // built the same way rather than an absolute reading.
         this.channelCalibration = channelCalibration ?? (_ => null);
         this.buildSumCurve = buildSumCurve;
     }
 
-    // The magnitude curves, complex sum and summation loss the metric reads,
-    // built the same way for the on-screen redraw and for a synchronous read
-    // (e.g. the Auto delay log) so the two never disagree. The drawn magnitudes
-    // carry the display smoothing; the loss is divided out of the UNSMOOTHED
-    // pair and smoothed afterwards (see VirtualCrossoverAnalysis.SumLossCurve),
-    // which is why the builder hands back both widths.
-    // Fewer than two channels yield no METRIC — a sum of one channel is that
-    // channel, and its summation loss is zero by definition. The per-channel
-    // magnitudes are not a metric: they are what the plot draws, and one channel is
-    // drawn like any other. Withholding them was what made the hybrid view stop
-    // working when every channel but one was muted, in the panel and in the EQ
-    // handoff alike, both of which gate on these being present.
-    /// <param name="summed">
-    /// The subset of <paramref name="processed"/> that enters the SUM, when the
-    /// two differ — a grouped view draws a centre beside the front stage without
-    /// adding it to anything. Null means every drawn channel sums, which is what
-    /// a single-stage project always did. Both share one window anchor, taken
-    /// from the drawn set: a sum anchored differently from the curves it is drawn
-    /// over stops being their vector sum.
-    /// </param>
+    // The loss is divided out of the UNSMOOTHED pair (see VirtualCrossoverAnalysis.SumLossCurve), hence both widths.
+    // Per-channel magnitudes come back even for one channel; only the metric needs two.
+    /// <param name="summed">Subset entering the SUM (null = all drawn). Both share one window anchor from the drawn set.</param>
     public (List<AnalysisCurve>? Magnitudes, AnalysisCurve? Sum, List<SignalPoint>? Loss)
         BuildCurves(
             List<ProcessedChannel> processed,
@@ -101,31 +54,9 @@ internal sealed class VirtualCrossoverMetrics
 
         summed ??= processed;
 
-        // Every curve — the channels AND the sum — shares one window anchor
-        // (the earliest arrival): with per-channel anchors the gates capture
-        // slightly different room content, the drawn Sum stops being the
-        // vector sum of the drawn channels, and the loss can poke above its
-        // 0 dB ceiling. The summed envelope peak can sit between the arrivals
-        // or vanish under cancellation, so the anchor is the earliest arrival,
-        // not the sum peak. (With the gate pinned in the dialog the offset is
-        // absolute and shared by construction; the anchor is the
-        // Auto-placement fallback. The magnitude always reads the FIXED gate —
-        // FDW would need per-channel windows here, exactly what the shared
-        // window exists to prevent — so FDW shapes the phase view, and the direct
-        // loss of BuildDirectLossCurve, which sums per-channel SPECTRA; never
-        // these curves.)
-        // The arrival is each channel's estimated START, not its peak: a
-        // crossover's group delay puts the peak behind the front, and the
-        // window has to open ahead of every channel's front, not of its
-        // loudest moment (see ProcessedChannels.StartAnchorIndex). The phase
-        // view's Auto placement and the junction gate the Auto delay search
-        // places both read the front too, so the three no longer differ in
-        // RULE — only in span, which is what each of them is for.
+        // One shared anchor at the earliest START for channels and sum, or the sum stops being their vector sum.
+        // See docs/tech/virtual-dsp-analysis.md#magnitude-curves-and-the-shared-window.
         int anchor = ProcessedChannels.SharedStartAnchorIndex(processed);
-        // One gated build per channel, resampled at both widths; the panel's
-        // magnitude builder reads only its immutable UI-thread snapshots and the
-        // calibration, so the channels' spectra compute across cores. AsOrdered
-        // keeps the result aligned with the channel list.
         List<GatedMagnitude> magnitudes = processed
             .AsParallel()
             .AsOrdered()
@@ -136,8 +67,6 @@ internal sealed class VirtualCrossoverMetrics
                 item.MeasuredBand,
                 channelCalibration(item)))
             .ToList();
-        // The METRIC needs two summing channels; the drawn curves do not, and a
-        // view showing one driver beside an unsummed centre still draws both.
         List<int> summedIndices = [.. Enumerable.Range(0, processed.Count)
             .Where(index => summed.Contains(processed[index]))];
         if (summedIndices.Count < 2)
@@ -148,14 +77,7 @@ internal sealed class VirtualCrossoverMetrics
         List<ProcessedChannel> summedChannels =
             [.. summedIndices.Select(index => processed[index])];
 
-        // Each channel contributing only where it measured, then added as phasors,
-        // each through its OWN microphone correction. Without a builder — a caller
-        // that only wants the metric arithmetic — the old total stands: the sum plays
-        // wherever ANY of its channels does, so its band is the UNION of theirs, and
-        // the per-frequency mask covers a hole between two channels whose sweeps do
-        // not overlap. That fallback sums impulse responses in the time domain, so it
-        // has nowhere to put a per-channel correction and takes none; it is not a
-        // path the panel uses.
+        // Without a builder: time-domain sum over the union of bands, no per-channel calibration (not a panel path).
         GatedMagnitude sumCurve = buildSumCurve?.Invoke(summedChannels, anchor)
             ?? buildMagnitudeCurve(
                 VirtualCrossoverAnalysis.SumImpulseResponses(
@@ -165,9 +87,7 @@ internal sealed class VirtualCrossoverMetrics
                 ProcessedChannels.UnionOfMeasuredBands(summedChannels),
                 null)
                 .MeasuredBySomeChannel(summedChannels);
-        // The loss divides the complex sum by the incoherent sum of the very
-        // channels that built it — a drawn-but-unsummed curve in the denominator
-        // would report a cancellation that the sum never suffered.
+        // Denominator uses only summed channels, or a drawn-but-unsummed curve reports a fake cancellation.
         List<IReadOnlyList<SignalPoint>> operands = summedIndices
             .Select(index => (IReadOnlyList<SignalPoint>)magnitudes[index].Unsmoothed.Points)
             .ToList();
@@ -179,11 +99,6 @@ internal sealed class VirtualCrossoverMetrics
             loss);
     }
 
-    // Builds the sum-loss read-outs for a processed set without touching any
-    // control, so they can feed the label, its tooltip, and the Auto delay log
-    // from one computation. Reads the very curve the plot draws, so the label
-    // and the trace can never quote different numbers. Empty when there is no
-    // metric (fewer than two channels).
     public List<VirtualCrossoverMetric.Entry> BuildEntries(
         List<ProcessedChannel> processed,
         List<SignalPoint>? lossCurve)
@@ -194,10 +109,6 @@ internal sealed class VirtualCrossoverMetrics
             return entries;
         }
 
-        // Per-junction read-outs first, so an improvement at one crossover is
-        // not averaged away by the other. Each junction reads the full sum
-        // inside its own pair band; the out-of-pair channels are filtered so
-        // far down there that their contribution is negligible.
         foreach (AdjacentPair pair in ProcessedChannels.GetAdjacentPairs(
             ProcessedChannels.OrderByBand(processed)))
         {
@@ -218,11 +129,7 @@ internal sealed class VirtualCrossoverMetrics
             }
         }
 
-        // A total only where the set IS one chain. With a hole in it — the
-        // reference car's two subwoofers and then a rear fill from 290 Hz — the
-        // per-junction rows above are still real and worth reading, but a single
-        // figure over the whole window would average them with a span only one
-        // member plays in, and present that as the chain's summation loss.
+        // No total over a set with a hole in its chain. See docs/tech/virtual-dsp-analysis.md#measured-bands-and-junctions.
         if (!ProcessedChannels.IsContinuousChain(processed))
         {
             return entries;
@@ -242,22 +149,8 @@ internal sealed class VirtualCrossoverMetrics
         return entries;
     }
 
-    /// <summary>
-    /// The per-junction phase read-outs: each adjacent pair's gated cross-phase
-    /// analysis (the phase score, the phase at the crossover, the
-    /// score-maximizing extra delay and polarity on the lower channel, and the
-    /// lobe margin). Purely informative — nothing here feeds the alignment
-    /// engine. Empty when there is no junction to read.
-    /// </summary>
-    /// <param name="buildSpectra">
-    /// The windowed spectra the junctions are read from, one per channel of the
-    /// BAND-ORDERED set it is handed (<see cref="JunctionPhaseSpectra.Build"/>
-    /// under the panel's own gate). Passed in rather than built here because the
-    /// window placement is the panel's state and the whole set decides it
-    /// together — a per-channel factory could not fall back to one shared
-    /// window when a placement fails. Pure by contract: it is invoked off the
-    /// UI thread.
-    /// </param>
+    /// <summary>Per-junction phase read-outs; informative only, nothing feeds the alignment engine.</summary>
+    /// <param name="buildSpectra">Windowed spectra of the band-ordered set under the panel's gate; invoked off the UI thread.</param>
     public List<VirtualCrossoverMetric.PhaseEntry> BuildPhaseEntries(
         List<ProcessedChannel> processed,
         Func<IReadOnlyList<ProcessedChannel>, IReadOnlyList<Complex[]>> buildSpectra)
@@ -277,8 +170,7 @@ internal sealed class VirtualCrossoverMetrics
                 "The spectrum builder must answer one spectrum per channel.");
         }
 
-        // By REFERENCE: a processed channel is a record, so two channels holding
-        // equal values would collide on a value-keyed lookup.
+        // By reference: equal-valued records would collide.
         Complex[] SpectrumOf(ProcessedChannel item)
         {
             for (int i = 0; i < ordered.Count; i++)
@@ -322,36 +214,8 @@ internal sealed class VirtualCrossoverMetrics
         return entries;
     }
 
-    /// <summary>
-    /// The summation loss of the DIRECT sound: the channels' complex sum against
-    /// their magnitude sum, both read from <paramref name="spectra"/> — the
-    /// junction phase block's per-channel 8-cycle windows
-    /// (<see cref="JunctionPhaseSpectra.Build"/>), each at its own front and
-    /// rotated into one absolute time frame, so adding them is superposition and
-    /// the loss stays at or under 0 dB by the triangle inequality. What the
-    /// panel's Sum loss selector shows on <see cref="SumLossWindow.Direct"/>.
-    /// Null where there is no metric: fewer than two channels, or channels at
-    /// different rates, whose bins do not line up.
-    /// </summary>
-    /// <remarks>
-    /// Same arithmetic as <see cref="BuildCurves"/> — unsmoothed operands, each
-    /// masked to what it measured, the sum with every channel's own microphone
-    /// correction inside it, the ratio smoothed afterwards — under other windows.
-    /// The drawn Sum is not rebuilt to match: the magnitude view is a steady-state
-    /// picture (see the panel's RequestRedraw), and this curve is read beside it,
-    /// not out of it. What the two windows measure differently, on a
-    /// seven-position grid: the direct window cuts the seat-to-seat scatter of
-    /// the group delay by 3–5 times, but its loss figures scatter MORE between
-    /// seats than the full read's and run deeper — the early reflections a car
-    /// puts within 1–3 ms of the direct sound sit inside any window that still
-    /// resolves a sixth of an octave, and the late tail the full window keeps
-    /// fills the notch. The owner tunes by this one (it is the selector's
-    /// default); the Auto delay battery and the tuning sheet stay on the full
-    /// read, and the AI package carries both. See <see cref="SumLossWindow"/>.
-    /// </remarks>
-    /// <param name="channels">
-    /// The summing channels, in the order <paramref name="spectra"/> answers them.
-    /// </param>
+    /// <summary>Direct-sound sum loss from per-channel 8-cycle windows rotated into one time frame (≤ 0 dB).
+    /// Null for fewer than two channels or mixed rates. See docs/tech/virtual-dsp-analysis.md#sum-loss-window-full-vs-direct.</summary>
     public List<SignalPoint>? BuildDirectLossCurve(
         IReadOnlyList<ProcessedChannel> channels,
         IReadOnlyList<Complex[]> spectra,
@@ -392,29 +256,8 @@ internal sealed class VirtualCrossoverMetrics
             smoothingInverseOctaves);
     }
 
-    /// <summary>
-    /// Each compared group against the front stage, on the ALREADY PROCESSED
-    /// responses this frame is drawing: their summed impulse responses give one
-    /// arrival and one level per group, and the difference is what the read-out
-    /// quotes where a summation loss would be meaningless.
-    /// </summary>
-    /// <remarks>
-    /// Cheaper than the stereo block by construction — nothing has to be
-    /// re-rendered, because a group's response is the sum of channels this frame
-    /// already computed. The arrival analysis still costs FFTs, so it runs on the
-    /// coordinator's auxiliary path, drops silently when superseded exactly as
-    /// the stereo deltas do, and is remembered between frames by
-    /// <see cref="groupDeltas"/> exactly as their arrivals are.
-    /// </remarks>
-    /// <param name="hybridGroupLevelDeltaDb">
-    /// A compared group's level against the front, read off both groups'
-    /// spatial averages through their chains in the shared band, or null where
-    /// the captures cannot say (a member without one). Supplied by the panel
-    /// while the hybrid mode is on, the same contract as the stereo block's
-    /// reader: invoked during the synchronous assembly, so it may read
-    /// UI-thread state, and its answer joins the cache key — a toggle of the
-    /// hybrid must not be served a remembered point-measured set.
-    /// </param>
+    /// <summary>Each compared group against the front stage (arrival and level), from this frame's processed responses.</summary>
+    /// <param name="hybridGroupLevelDeltaDb">Spatial-average level delta, invoked during synchronous assembly; part of the cache key.</param>
     public async Task<IReadOnlyList<VirtualCrossoverMetric.GroupDelta>> ComputeGroupDeltasAsync(
         IReadOnlyList<ProcessedChannel> shown,
         VirtualCrossoverGroupView view,
@@ -432,8 +275,6 @@ internal sealed class VirtualCrossoverMetrics
         List<ProcessedChannel> front = ZoneMembers(shown, VirtualCrossoverZone.Front);
         if (front.Count == 0)
         {
-            // Nothing to compare against. A rear-only project is a legitimate
-            // thing to look at; it just has no front stage to be late relative to.
             return [];
         }
 
@@ -444,9 +285,7 @@ internal sealed class VirtualCrossoverMetrics
             List<ProcessedChannel> members = ZoneMembers(shown, zone);
             if (members.Count > 0)
             {
-                // The band is settled here rather than inside the worker so the
-                // cache key below can carry it: two groups timed over different
-                // spans are two different answers even from the same responses.
+                // Band is part of the cache key.
                 (double zoneLow, double zoneHigh) = GroupBand(members);
                 double lowHz = Math.Max(frontLow, zoneLow);
                 double highHz = Math.Min(frontHigh, zoneHigh);
@@ -455,10 +294,7 @@ internal sealed class VirtualCrossoverMetrics
                     members,
                     lowHz,
                     highHz,
-                    // Read here, on the calling thread — captures, chains and
-                    // calibration are UI-thread state. A band the worker will
-                    // refuse to time is not asked either: that row stays the
-                    // all-null refusal it always was.
+                    // UI-thread state: read here, not in the worker.
                     highHz >= lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio
                         ? hybridGroupLevelDeltaDb?.Invoke(members, front, lowHz, highHz)
                         : null));
@@ -474,10 +310,6 @@ internal sealed class VirtualCrossoverMetrics
         var key = new GroupDeltaKey(front, jobs, sampleRate);
         if (groupDeltas is { } cached && cached.Key.Matches(key))
         {
-            // A superseded frame is answered exactly as it was before the set was
-            // remembered — with nothing. The cache changes what a CURRENT frame
-            // costs, not which frames get an answer, and the auxiliary path this
-            // replaces made the same refusal one line further in.
             return coordinator.IsCurrent(revision) ? cached.Deltas : [];
         }
 
@@ -486,10 +318,6 @@ internal sealed class VirtualCrossoverMetrics
             {
                 Complex[] frontIr = VirtualCrossoverAnalysis.SumImpulseResponses(
                     [.. front.Select(item => item.ImpulseResponse)]);
-                // The front stage is the reference for every compared group, and
-                // the views that compare two of them (Groups, Everything) usually
-                // time both over the same span — so its arrival and level are read
-                // once per BAND rather than once per group.
                 var frontByBand =
                     new Dictionary<(double LowHz, double HighHz),
                         (TimeAlignmentAnalysisResult Arrival, double? LevelDb)>();
@@ -505,10 +333,7 @@ internal sealed class VirtualCrossoverMetrics
                     double highHz = job.HighHz;
                     if (highHz < lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
                     {
-                        // Too little overlap to time anything — a rear pair crossed
-                        // entirely above the front stage would land here. Reported as
-                        // an unmeasurable row rather than dropped, so the group does
-                        // not silently vanish from the read-out.
+                        // Reported as unmeasurable rather than dropped, so the group does not vanish.
                         results.Add(new VirtualCrossoverMetric.GroupDelta(
                             job.Zone, null, null, lowHz, highHz));
                         continue;
@@ -538,9 +363,6 @@ internal sealed class VirtualCrossoverMetrics
                             ? zoneArrival.FirstArrivalDelayMilliseconds -
                                 frontRead.Arrival.FirstArrivalDelayMilliseconds
                             : null,
-                        // The spatial averages' level, where the panel supplied
-                        // one, outranks the point measurement — the same rule
-                        // as the stereo block's rows.
                         job.HybridLevelDeltaDb ??
                             VirtualCrossoverAnalysis.MeasureBandLevelDb(
                                 zoneIr, sampleRate, lowHz, highHz) - frontRead.LevelDb,
@@ -553,13 +375,11 @@ internal sealed class VirtualCrossoverMetrics
             });
         if (deltas == null)
         {
-            // Superseded: remember nothing, or the next frame would answer with
-            // a set that was never finished against inputs it never saw.
+            // Superseded: cache nothing.
             return [];
         }
 
-        // Read-only from here on: the same instance now answers many frames, and
-        // a caller that cast it back to its List would be editing the cache.
+        // Read-only: this instance answers many frames.
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> remembered = deltas.AsReadOnly();
         groupDeltas = (key, remembered);
         return remembered;
@@ -574,23 +394,10 @@ internal sealed class VirtualCrossoverMetrics
         List<ProcessedChannel> Members,
         double LowHz,
         double HighHz,
-        // The group's level against the front off the spatial averages,
-        // resolved at assembly time (see ComputeGroupDeltasAsync); null when
-        // the hybrid is off or the captures cannot produce one.
         double? HybridLevelDeltaDb = null);
 
-    /// <summary>
-    /// What a set of group Δs is a function of: which processed responses each
-    /// group holds, in order, the band each comparison is timed over, and the
-    /// rate they were processed at. Nothing else in a frame can move the answer.
-    /// </summary>
-    /// <remarks>
-    /// Responses are compared by REFERENCE, the way the stereo block's
-    /// <c>ArrivalCache</c> compares its own: the coordinator hands back the very
-    /// same array while nothing feeding a channel has changed, and manufactures a
-    /// new one as soon as anything has. So reference equality is not an
-    /// optimization over a value comparison here — it is the exact question.
-    /// </remarks>
+    /// <summary>Inputs a group-delta set depends on. Responses compare by REFERENCE: the coordinator returns a new array
+    /// exactly when anything feeding a channel changed.</summary>
     private sealed class GroupDeltaKey
     {
         private readonly Complex[][] front;
@@ -623,13 +430,7 @@ internal sealed class VirtualCrossoverMetrics
 
             for (int i = 0; i < jobs.Length; i++)
             {
-                // The hybrid level is part of the answer, not only of the
-                // inputs: the responses stand still while the hybrid is
-                // toggled (or a capture, chain or calibration moves its
-                // figure), and a remembered point-measured set must not
-                // answer for the capture-based one or vice versa. Nullable
-                // equality is exact here — the same inputs reproduce the
-                // same bits.
+                // The hybrid level is part of the answer: responses stand still while it toggles.
                 if (jobs[i].Zone != other.jobs[i].Zone ||
                     jobs[i].LowHz != other.jobs[i].LowHz ||
                     jobs[i].HighHz != other.jobs[i].HighHz ||
@@ -679,10 +480,7 @@ internal sealed class VirtualCrossoverMetrics
         VirtualCrossoverZone zone) =>
         [.. shown.Where(item => item.Channel.Pair.Zone == zone)];
 
-    // The span a group actually plays: the union of its members' crossover bands.
-    // The subwoofers are not in it — they belong to whichever stage is on screen,
-    // and dragging a group's low edge down to 20 Hz would hand the comparison a
-    // band where only one side plays.
+    // Union of members' crossover bands, excluding subwoofers (they belong to whichever stage is shown).
     private static (double LowHz, double HighHz) GroupBand(
         IReadOnlyList<ProcessedChannel> members)
     {
@@ -699,60 +497,9 @@ internal sealed class VirtualCrossoverMetrics
         return (low, high);
     }
 
-    /// <summary>
-    /// The final per-pair L−R timing: both sides' fully processed responses
-    /// (current delays included) get their band-limited envelope arrival read
-    /// in the pair's shared band, and the difference (positive: right leads —
-    /// the scene-offset convention) feeds the metric read-out. A mono channel
-    /// (the shared sub) has one response, so it reports that single arrival in
-    /// its own band with "—" for the right side and the delta; a stereo pair
-    /// needs both sides present and unbypassed.
-    ///
-    /// Which instant is "the arrival" follows the alignment engine's
-    /// cross-side link, because this row is that comparison on the final
-    /// chains — the selection RULE, applied to the row's own shared band;
-    /// the engine may read a narrower band of the same pair (a scene-locked
-    /// pair is timed on its part above the localization edge), so the two
-    /// share the rule, not always the figure. A pair whose shared band is
-    /// centred below
-    /// <see cref="AutoAlignmentEngine.EnergyOnsetBandCenterHz"/> is timed by
-    /// its bands' energy onsets, provided both sides clear
-    /// <see cref="AutoAlignmentEngine.EnergyOnsetMinimumSnrDb"/>; every other
-    /// pair, and a mono channel (no twin for the onset's bias to cancel
-    /// against), by the first envelope peak. On a slow low-frequency envelope
-    /// the first peak is a coin — whether the front's hump stands as a peak
-    /// or melts into the arrival behind it turns on a fraction of a dB — and
-    /// on one measured midbass pair the row read a 5.6 ms split (the right
-    /// side's peak sat 4.7 ms into the modal build-up, and its upper half sat
-    /// on the same mode, so the latch probe passed it) where the onsets
-    /// read 1.0 ms. The instrument is decided ONCE per pair from both sides'
-    /// full-band reads and applied to both sides and their latch probes, so
-    /// a Δ never subtracts a peak from an onset.
-    /// </summary>
-    /// <param name="channels">
-    /// EVERY channel of the project, never a pre-filtered subset. A block's
-    /// position in this list is its identity in the processing coordinator's
-    /// cache, and a filtered list renumbers the blocks after the first one it
-    /// drops — so the read-out would claim slots belonging to other channels and
-    /// evict the responses the frame had just processed, on every frame. Narrow
-    /// the set with <paramref name="includePair"/> instead, the way
-    /// <see cref="ComputeSideSumAsync"/> does.
-    /// </param>
-    /// <param name="includePair">
-    /// Which blocks the read-out covers, or null for all of them. The panel
-    /// passes the current view's zones: a front view listing the rear pair's L/R
-    /// skew is the read-out describing a set the plot does not draw.
-    /// </param>
-    /// <param name="hybridLevelDeltaDb">
-    /// A pair's L−R level read off the sides' spatial averages through their
-    /// chains, in the given band, or null where the captures cannot say
-    /// (a side without one, no overlap). Supplied by the panel while the
-    /// hybrid mode is on — the levels the tuner is judging the tune on are
-    /// then the captures', so the read-out follows them; the timing keeps
-    /// reading the impulse responses either way (an average carries no
-    /// phase). Invoked during the synchronous job assembly, so it may read
-    /// UI-thread state.
-    /// </param>
+    /// <summary>Final per-pair L−R arrival delta (positive: right leads) and level delta. Instrument and modal-latch probe follow
+    /// the engine's cross-side link rule. See docs/tech/virtual-dsp-analysis.md#stereo-delta-read-out.</summary>
+    /// <param name="channels">EVERY project channel: list position is the coordinator cache slot. Narrow with <paramref name="includePair"/>.</param>
     public async Task<List<VirtualCrossoverMetric.StereoDelta>> ComputeStereoDeltasAsync(
         IReadOnlyList<VirtualCrossoverChannel> channels,
         long revision,
@@ -770,8 +517,6 @@ internal sealed class VirtualCrossoverMetrics
             VirtualCrossoverChannel channel = channels[channelIndex];
             bool mono = channel.Pair.Mono;
 
-            // Mute and Bypass belong to the block, so they answer for both sides at
-            // once; only the measurements are per side.
             if (!channel.Pair.Enabled || channel.Pair.Bypass ||
                 includePair?.Invoke(channel.Pair) == false)
             {
@@ -846,9 +591,7 @@ internal sealed class VirtualCrossoverMetrics
                 leftJob,
                 rightJob,
                 mono,
-                // Read here, on the calling thread, never in the auxiliary
-                // pass below: the captures and chains are UI-thread state. A
-                // mono channel has no L−R to speak of, so it is never asked.
+                // UI-thread state: read here, never in the auxiliary pass.
                 mono ? null : hybridLevelDeltaDb?.Invoke(channel, lowHz, highHz)));
         }
 
@@ -907,9 +650,6 @@ internal sealed class VirtualCrossoverMetrics
                 {
                     foreach (SideProcessJob side in job.Sides)
                     {
-                        // Silent cancellation (see RunAuxiliaryAsync): null
-                        // says "superseded", and the caller drops the read-out
-                        // exactly as it did for the thrown version.
                         if (cancellationToken.IsCancellationRequested)
                         {
                             return null;
@@ -925,14 +665,7 @@ internal sealed class VirtualCrossoverMetrics
                             side.LevelDb = VirtualCrossoverAnalysis.MeasureBandLevelDb(
                                 side.ProcessedIr!, side.SampleRate,
                                 job.LowHz, job.HighHz);
-                            // A full read too weak to be reported earns no
-                            // probe (the certificate would abstain anyway),
-                            // and a silent band costs no second Hilbert pass.
-                            // The probe is cached beside the full read, so
-                            // it drops its envelope on the way in: the
-                            // certificate reads validity, SNR and the two
-                            // instants, and a second full-length envelope
-                            // per side per redraw is memory for nothing.
+                            // Weak full reads get no probe; the cached probe drops its envelope.
                             side.Probe = Reliable(side.Arrival.Value)
                                 ? ReadUpperHalf(side, job.LowHz, job.HighHz)
                                     is { } probe
@@ -970,8 +703,6 @@ internal sealed class VirtualCrossoverMetrics
                 bool leftReliable = Reliable(left);
                 if (job.Mono)
                 {
-                    // One response, nothing to cancel an onset's bias
-                    // against: the first peak, as the junction timelines read.
                     return new VirtualCrossoverMetric.StereoDelta(
                         job.Channel,
                         leftReliable ? left.FirstArrivalDelayMilliseconds : null,
@@ -983,9 +714,7 @@ internal sealed class VirtualCrossoverMetrics
 
                 TimeAlignmentAnalysisResult right = job.Right.Arrival!.Value;
                 bool rightReliable = Reliable(right);
-                // The pair's instrument (see the summary): the link rule,
-                // from the band and BOTH full-band reads, applied to both
-                // sides and to their latch probes alike.
+                // One instrument for both sides and their probes, so a delta never subtracts a peak from an onset.
                 bool energyOnset = left.IsValid && right.IsValid &&
                     AutoAlignmentEngine.LinkReadsEnergyOnset(
                         job.LowHz, job.HighHz,
@@ -993,10 +722,7 @@ internal sealed class VirtualCrossoverMetrics
                 static double Arrival(TimeAlignmentAnalysisResult read, bool onset) =>
                     (onset ? AutoAlignmentEngine.AsEnergyOnset(read) : read)
                         .FirstArrivalDelayMilliseconds;
-                // The spatial averages' level, where the panel supplied one,
-                // outranks the point measurement AND its reliability gate: a
-                // capture is a measurement of its own, and a noisy impulse
-                // response says nothing against it.
+                // A spatial-average level outranks the point measurement and its reliability gate.
                 double? levelDelta = job.HybridLevelDeltaDb ??
                     (leftReliable && rightReliable &&
                     job.Left.LevelDb is { } leftLevel &&
@@ -1016,20 +742,12 @@ internal sealed class VirtualCrossoverMetrics
                         right, job.Right.Probe, job.LowHz, job.HighHz, energyOnset),
                     LevelFromSpatialAverage: job.HybridLevelDeltaDb.HasValue,
                     EnergyOnset: energyOnset,
-                    // The band asked for onsets and both sides are on the
-                    // row, yet one is under the 30 dB the onset needs: the
-                    // row is back on the coin, and must say so.
                     EnergyOnsetWithheld: !energyOnset && leftReliable && rightReliable &&
                         AutoAlignmentEngine.LinkBandReadsEnergyOnset(job.LowHz, job.HighHz));
             })
             .ToList();
     }
 
-    // The latch probe of one side's read-out arrival: the SAME response
-    // measured in the band's upper half (from the geometric-mean frequency
-    // up), or null where the band is too narrow to cut one. Read once per
-    // processed response and cached beside the full read; the verdict is
-    // IsModalLatched, at assembly.
     private static TimeAlignmentAnalysisResult? ReadUpperHalf(
         SideProcessJob side,
         double lowHz,
@@ -1046,18 +764,8 @@ internal sealed class VirtualCrossoverMetrics
             side.ProcessedValidRange);
     }
 
-    // The alignment engine's modal-latch detection, applied to one side's
-    // read-out arrival: the full-band read must agree with its upper-half
-    // probe to within the dispersion one direct wave packet can show — half
-    // a period at the probe's low edge, never under 1 ms (the link's own
-    // allowance). A full-band read landing far BEHIND its own upper-half
-    // read means the envelope latched onto the in-room modal build-up
-    // instead of the direct rise, and the row's L/R difference then compares
-    // different features. Both reads are taken with the PAIR's instrument
-    // (an onset is graded against an onset), and a probe too noisy to
-    // witness an onset abstains rather than judges — the link's
-    // certificate, verbatim. The probe only VOTES on the full band's
-    // honesty; its own number is never a substitute.
+    // Full-band read far behind its upper-half probe (beyond half a period at the probe's low edge, min 1 ms) latched onto modal build-up.
+    // The probe only votes; its number never substitutes.
     private static bool IsModalLatched(
         TimeAlignmentAnalysisResult fullBand,
         TimeAlignmentAnalysisResult? probe,
@@ -1079,20 +787,7 @@ internal sealed class VirtualCrossoverMetrics
             energyOnset) == AutoAlignmentEngine.ArrivalCertificate.Latched;
     }
 
-    /// <summary>
-    /// The complex sum of one side's participating channels, processed through
-    /// their chains. Mono channels contribute their single response to both
-    /// sides, exactly as they do physically. Null when the side has fewer than
-    /// <paramref name="minimumChannels"/> participating channels, or when the
-    /// render went stale. Uses the coordinator cache, so it shares processed
-    /// responses and staleness handling with the main redraw.
-    /// </summary>
-    /// <param name="includePair">
-    /// Which blocks the sum is of, or null for all of them. The grouped views use
-    /// it so the opposite side's sum is the SAME part of the installation as the
-    /// one on screen — comparing a front stage against the other side's whole
-    /// system would read as an L/R difference that is really a scope difference.
-    /// </param>
+    /// <summary>Complex sum of one side's participating channels (mono channels feed both sides); null when too few or stale.</summary>
     public async Task<VirtualCrossoverSideSum?> ComputeSideSumAsync(
         IReadOnlyList<VirtualCrossoverChannel> channels,
         bool rightSide,
@@ -1166,17 +861,11 @@ internal sealed class VirtualCrossoverMetrics
             jobs.Select(side => side.ProcessedIr!).ToList());
         return new VirtualCrossoverSideSum(
             sum,
-            // The same placement rule as the shown side's (see BuildCurves):
-            // the earliest FRONT of the channels that went into this sum.
             jobs.Min(side => ProcessedChannels.StartAnchorIndex(
                 side.ProcessedIr!, side.ProcessedPeak, side.SampleRate,
                 side.ProcessedValidRange)),
             jobs[0].SampleRate,
-            // The parts the sum was made of, so a caller that has to rebuild it
-            // differently — the hybrid sum adds magnitudes, not vectors — is not
-            // left with only the finished total. The colour is not this method's to
-            // know: it belongs to the channel's slot in the panel, and nothing that
-            // reads a side sum draws these curves in their own right.
+            // Parts kept so the hybrid sum (magnitudes, not vectors) can rebuild it.
             jobs.Select(side => new ProcessedChannel(
                 side.Channel,
                 side.ProcessedIr!,
@@ -1188,10 +877,7 @@ internal sealed class VirtualCrossoverMetrics
                 side.State.MicrophoneCalibrationCurve)).ToList());
     }
 
-    // One channel side snapshotted on the UI thread for background processing
-    // (the stereo Δ read-out and the opposite-side sum): the background pass
-    // reads nothing mutable. Processed responses come exclusively from the
-    // coordinator cache; only the cheaper arrival analysis is cached per side.
+    // UI-thread snapshot of one channel side for background processing.
     private sealed class SideProcessJob
     {
         public required int Id { get; init; }
@@ -1200,9 +886,7 @@ internal sealed class VirtualCrossoverMetrics
         public required VirtualCrossoverSourceSnapshot Source { get; init; }
         public required int SampleRate { get; init; }
 
-        // Snapshotted like everything else here: the user may pick another
-        // processor while a metric rebuild is in flight, and the rate the chain
-        // was realized at has to be the one this job started with.
+        // Snapshotted: the processor may change while a rebuild is in flight.
         public required int ProcessorSampleRate { get; init; }
 
         public required DspChannelChain Chain { get; init; }
@@ -1223,13 +907,9 @@ internal sealed class VirtualCrossoverMetrics
         SideProcessJob Left,
         SideProcessJob Right,
         bool Mono = false,
-        // The pair's L−R level off the sides' spatial averages, resolved at
-        // assembly time (see ComputeStereoDeltasAsync); null when the hybrid
-        // is off or the captures cannot produce one.
         double? HybridLevelDeltaDb = null)
     {
-        // A mono job's Left and Right are the same instance; iterate the left
-        // slot alone so the shared response is processed once.
+        // Mono: Left and Right are one instance; process it once.
         public IEnumerable<SideProcessJob> Sides =>
             Mono ? new[] { Left } : new[] { Left, Right };
     }

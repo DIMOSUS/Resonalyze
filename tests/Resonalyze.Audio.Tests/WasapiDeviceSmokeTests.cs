@@ -3,11 +3,6 @@ using NAudio.Wave;
 
 namespace Resonalyze.Audio.Tests;
 
-/// <summary>
-/// Hardware smoke tests for the low-level WASAPI devices. Skipped unless the
-/// endpoint environment variables are set, so a normal CI run does not report
-/// them as executed.
-/// </summary>
 public sealed class WasapiDeviceSmokeTests
 {
     [HardwareFact]
@@ -16,9 +11,7 @@ public sealed class WasapiDeviceSmokeTests
     {
         (string captureId, string renderId) = HardwareFactAttribute.Endpoints();
 
-        // Enumerate first to reproduce the UI path. Explicitly releasing the
-        // returned MMDevice wrappers used to disconnect the cached COM RCW and
-        // make the following WasapiOut construction fail with E_NOINTERFACE.
+        // Releasing the enumerated MMDevice wrappers disconnected the cached COM RCW (E_NOINTERFACE in WasapiOut).
         using (var service = new WindowsAudioEndpointService())
         {
             Assert.Contains(service.GetCaptureEndpoints(), endpoint => endpoint.Id == captureId);

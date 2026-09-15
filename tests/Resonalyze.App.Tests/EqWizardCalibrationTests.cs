@@ -13,14 +13,11 @@ public sealed class EqWizardCalibrationTests
             EqWizardCalibrationChoice
                 .Microphone(MicrophoneCalibrationIds.ZeroDegrees)
                 .MicrophoneCalibrationId);
-        // "Own" applies the correction stored on the imported curve, not a configured
-        // calibration, so at the measurement layer it is Off.
+        // "Own" applies the correction stored on the imported curve, so at the measurement layer it is Off.
         Assert.Null(EqWizardCalibrationChoice.OwnCapture.MicrophoneCalibrationId);
         Assert.False(EqWizardCalibrationChoice.OwnCapture.IsOff);
         Assert.True(EqWizardCalibrationChoice.Microphone("   ").IsOff);
-        // Pinned applies the curve the Virtual DSP source arrived with — which may be
-        // one its session carries, absent from the list — so it names no entry and is
-        // not Off either.
+        // Pinned applies the source's own curve, which may be absent from the list.
         Assert.Null(EqWizardCalibrationChoice.PinnedToSource.MicrophoneCalibrationId);
         Assert.False(EqWizardCalibrationChoice.PinnedToSource.IsOff);
         Assert.True(EqWizardCalibrationChoice.PinnedToSource.Pinned);
@@ -42,8 +39,6 @@ public sealed class EqWizardCalibrationTests
     [Fact]
     public void UpdatedIrPreference_KeepsPreferenceWhenACurveForcesOwn()
     {
-        // The reported regression: the user's impulse-response preference must survive
-        // loading a raw RTA overlay, which forces the effective choice to Own.
         string? next = EqWizardCalibration.UpdatedIrPreference(
             current: "cal1",
             loadedKind: EqWizardSourceKind.OverlaySlot,
@@ -55,8 +50,6 @@ public sealed class EqWizardCalibrationTests
     [Fact]
     public void UpdatedIrPreference_KeepsPreferenceWhenATextCurveForcesOff()
     {
-        // A text curve carries no re-smoothable reference, so it forces Off; that must not
-        // erase the impulse-response preference either.
         string? next = EqWizardCalibration.UpdatedIrPreference(
             current: MicrophoneCalibrationIds.ZeroDegrees,
             loadedKind: EqWizardSourceKind.TextCurve,
@@ -68,10 +61,7 @@ public sealed class EqWizardCalibrationTests
     [Fact]
     public void UpdatedIrPreference_SurvivesAVirtualDspHandoff()
     {
-        // A Virtual DSP handoff pins the wizard's effective calibration to whatever
-        // the DSP panel renders with. That pin is the DSP project's choice, not the
-        // user's standing preference for impulse responses — installing it must not
-        // overwrite what returning to an IR restores.
+        // A handoff pin is the DSP project's choice, not the user's standing IR preference.
         string? next = EqWizardCalibration.UpdatedIrPreference(
             current: "cal1",
             loadedKind: EqWizardSourceKind.VirtualDspChannel,
@@ -83,8 +73,6 @@ public sealed class EqWizardCalibrationTests
     [Fact]
     public void UpdatedIrPreference_AdoptsAChoiceMadeAgainstAnImpulseResponse()
     {
-        // Choosing a calibration while an impulse response (or nothing) is loaded IS a
-        // standing preference and must be remembered.
         Assert.Equal(
             "cal1",
             EqWizardCalibration.UpdatedIrPreference(

@@ -3,7 +3,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>Where a strip's context menu was asked for, in screen coordinates.</summary>
 internal sealed class PeqSlotMenuEventArgs : EventArgs
 {
     public PeqSlotMenuEventArgs(Point screenPoint)
@@ -16,20 +15,12 @@ internal sealed class PeqSlotMenuEventArgs : EventArgs
 
 public partial class PeqSlotControl : UserControl
 {
-    /// <summary>
-    /// The Q range every strip accepts. Held here rather than only in the
-    /// designer because the panel needs it to bound Auto Tune even when the bank
-    /// holds no strip to read it from.
-    /// </summary>
+    /// <summary>Held here so the panel can bound Auto Tune even with no strip in the bank.</summary>
     internal const double MinimumQ = 0.1;
 
     /// <inheritdoc cref="MinimumQ"/>
     internal const double MaximumQ = 20;
 
-    // The strip being carried is dimmed, so the gap it will leave and the cell it
-    // currently sits in read differently from the strips it is passing over. One
-    // colour for all three shapes: a strip in flight is a strip in flight, and its
-    // type is still named in the header.
     private static readonly Color DraggingBackColor = Color.FromArgb(32, 36, 45);
 
     private int slotNumber = 1;
@@ -47,34 +38,21 @@ public partial class PeqSlotControl : UserControl
         qInput.Minimum = (decimal)MinimumQ;
         qInput.Maximum = (decimal)MaximumQ;
         WireGainFader();
-        // The corner group-delay readout follows the very fields that define the
-        // corner. Hooked unconditionally: on a non-all-pass strip the update is a
-        // no-op, and the strip may become an all-pass at any time.
+        // Hooked unconditionally: the strip may become an all-pass at any time.
         frequencyInput.ValueChanged += (_, _) => UpdateGroupDelayReadout();
         qInput.ValueChanged += (_, _) => UpdateGroupDelayReadout();
         HookActivation(this);
-        // The number strip is the drag handle. It has to be: the fader owns the
-        // mouse for gain and the three fields own it for editing, and WinForms
-        // mouse events do not bubble to the parent, so there is nowhere else on
-        // the strip a drag could start without stealing a working gesture.
+        // The number strip is the only drag handle: fader and fields own the mouse, and WinForms mouse events do not bubble.
         HookDragHandle(slotLabel);
         slotLabel.Cursor = Cursors.SizeAll;
-        // The designer's colours are a starting point for the design surface; the
-        // palette is what the strip actually wears.
         ApplyStripColor();
     }
 
-    // Raised when the user clicks the slot or focuses any of its fields, so the
-    // host can show this band's individual contribution.
     public event EventHandler? Activated;
 
-    // Raised once the pointer has left the system drag threshold with the number
-    // strip held down. The host runs the drag-and-drop loop, because only it
-    // knows the bank the strip is being moved within.
+    // The host runs the drag loop: only it knows the bank.
     public event EventHandler? DragStartRequested;
 
-    // Raised on a right-click of the number strip: the host offers the band shapes,
-    // since it owns the bank the change is an undo step of.
     internal event EventHandler<PeqSlotMenuEventArgs>? TypeMenuRequested;
 
     public void SetSelected(bool isSelected)
@@ -83,7 +61,6 @@ public partial class PeqSlotControl : UserControl
         ApplyStripColor();
     }
 
-    // Marks the strip as the one currently being carried by the pointer.
     internal void SetDragging(bool isDragging)
     {
         dragging = isDragging;
@@ -99,17 +76,13 @@ public partial class PeqSlotControl : UserControl
                 : PeqBandPalette.Strip(bandType);
         BackColor = color;
         slotLayout.BackColor = color;
-        // The fader paints its background from the strip colour, so it must be
-        // told to repaint when the tint changes. It also gates its click-to-drag
-        // on whether this band is the selected one.
+        // The fader paints from the strip colour and gates click-to-drag on selection.
         fader.StripActive = selected;
         fader.BackColor = color;
         fader.Invalidate();
     }
 
-    // Registers the whole strip — fields and fader included — as a drop target,
-    // so a drag passing over any part of it reaches the host's handlers instead
-    // of dying on a child window that never registered one.
+    // Whole strip registered, so a drag over a child window reaches the host instead of dying there.
     internal void EnableDropTarget(DragEventHandler dragOver, DragEventHandler drop)
     {
         foreach (Control control in SelfAndDescendants(this))
@@ -175,8 +148,7 @@ public partial class PeqSlotControl : UserControl
         };
     }
 
-    // Keeps the vertical fader and the gain field in lock-step: the numeric field
-    // stays the source of truth (the host reads it), the fader is a view over it.
+    // The numeric field is the source of truth; the fader is a view over it.
     private void WireGainFader()
     {
         fader.Minimum = (double)gainInput.Minimum;
@@ -244,12 +216,6 @@ public partial class PeqSlotControl : UserControl
         }
     }
 
-    /// <summary>
-    /// The filter shape this strip holds. The fields stay the same, but a shelf
-    /// reads two of them differently and an all-pass reads no gain at all (see
-    /// <see cref="PeqBandType"/>), so the header names the type rather than leaving
-    /// it to be guessed from the curve.
-    /// </summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal PeqBandType BandType
@@ -264,11 +230,7 @@ public partial class PeqSlotControl : UserControl
         }
     }
 
-    /// <summary>
-    /// Short header token for a band shape: "PK", "LS", "HS", "AP1" or "AP2". The
-    /// all-pass tokens are the ones Audiotec's PC-Tool names its slots with, so a
-    /// strip and the device field it lands in read the same.
-    /// </summary>
+    /// <summary>Header token; AP1/AP2 match Audiotec PC-Tool slot names.</summary>
     internal static string DescribeType(PeqBandType type) => type switch
     {
         PeqBandType.LowShelf => "LS",
@@ -281,19 +243,14 @@ public partial class PeqSlotControl : UserControl
     private void UpdateSlotLabel() =>
         slotLabel.Text = $"{slotNumber} {DescribeType(bandType)}";
 
-    // An all-pass has no gain, so the gain field and the fader give way to the one
-    // number a phase-only band has to show: the group delay it piles up at its own
-    // corner — why it works, and on a low corner its main cost. The gain VALUE is
-    // deliberately kept in the hidden field, so switching a bell to an all-pass and
-    // back restores the bell it was.
+    // All-pass hides gain in favour of its corner group delay; the gain VALUE stays in the hidden field so switching back restores the bell.
     private void UpdateBandTypeAppearance()
     {
         bool allPass = bandType.IsAllPass();
         gainInput.Visible = !allPass;
         fader.Visible = !allPass;
         groupDelayLabel.Visible = allPass;
-        // A first-order all-pass has a single real pole and no Q; the field is
-        // greyed rather than hidden so the strip keeps its shape.
+        // First-order all-pass has no Q; greyed, not hidden, so the strip keeps its shape.
         qInput.Enabled = bandType != PeqBandType.AllPassFirstOrder;
         UpdateGroupDelayReadout();
     }
@@ -305,9 +262,7 @@ public partial class PeqSlotControl : UserControl
             return;
         }
 
-        // Evaluated at the corner the filter actually runs at (Nyquist-clamped
-        // inside), at the rate the wizard realizes its biquads at. The two formats
-        // match the Virtual DSP channel card the readout came from.
+        // At the realised corner (Nyquist-clamped) and rate; formats match the Virtual DSP channel card.
         double ms = AllPassFilter.CornerGroupDelaySeconds(
             PeqBiquad.ToAllPassSpec(new PeqBand(
                 (double)frequencyInput.Value, (double)qInput.Value, 0, bandType)),
@@ -315,11 +270,7 @@ public partial class PeqSlotControl : UserControl
         groupDelayLabel.Text = ms < 100 ? $"= {ms:0.00} ms" : $"= {ms:0} ms";
     }
 
-    /// <summary>
-    /// The rate the corner group-delay readout is computed at — the wizard's own
-    /// biquad realization rate, pushed by the panel because only it knows which
-    /// source owns the rate.
-    /// </summary>
+    /// <summary>Biquad realisation rate for the GD readout, pushed by the panel (which knows the rate's owner).</summary>
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal double SampleRateHz
@@ -337,9 +288,6 @@ public partial class PeqSlotControl : UserControl
         }
     }
 
-    // Applies a new gain range to both the numeric field and the fader so they
-    // keep sharing one scale. The min is <= 0 <= max, so ordering never inverts;
-    // the field clamps its value and the fader is re-mirrored to match.
     internal void SetGainRange(decimal minimum, decimal maximum)
     {
         gainInput.Minimum = minimum;
@@ -349,12 +297,7 @@ public partial class PeqSlotControl : UserControl
         fader.Value = (double)gainInput.Value;
     }
 
-    /// <summary>
-    /// Lands text typed into any of the three fields without waiting for the focus
-    /// to leave it. A field commits on Leave or Enter, which is enough while the
-    /// application is running but not when it is being torn down with the caret
-    /// still in the box.
-    /// </summary>
+    /// <summary>Lands typed text without focus loss, for teardown with the caret still in a field.</summary>
     internal void CommitPendingText()
     {
         frequencyInput.CommitText();
@@ -362,7 +305,6 @@ public partial class PeqSlotControl : UserControl
         gainInput.CommitText();
     }
 
-    // The number strip, which doubles as the drag handle: the host tips it.
     internal Control SlotLabel => slotLabel;
 
     internal DarkNumericUpDown FrequencyInput => frequencyInput;
@@ -371,6 +313,5 @@ public partial class PeqSlotControl : UserControl
 
     internal DarkNumericUpDown GainInput => gainInput;
 
-    // The all-pass corner group-delay readout, exposed so the host can tip it.
     internal Control GroupDelayReadout => groupDelayLabel;
 }

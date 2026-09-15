@@ -4,13 +4,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// One channel's before/after row of an Auto delay proposal: the settings
-/// object the Apply step writes to, the display values, and the per-decision
-/// confidence the engines reported. Gains carry their own adjusted flag —
-/// a channel outside the gain balance (mono, no crossover, band below the
-/// localization floor, or gains not requested at all) keeps its gain.
-/// </summary>
+/// <summary>One channel's before/after proposal row. A channel outside the gain balance keeps its gain.</summary>
 internal sealed record AutoDelayChannelOutcome(
     VirtualCrossoverChannel Runtime,
     VirtualCrossoverChannelSettings Settings,
@@ -28,49 +22,23 @@ internal sealed record AutoDelayChannelOutcome(
     AlignmentConfidence? GainConfidence,
     string GainDetail);
 
-/// <summary>
-/// One side's predicted average summation loss (dB, &lt;= 0 — how far the
-/// coherent sum falls short of the phase-blind magnitude sum over the
-/// crossover window), for the current settings and for the proposal. The
-/// report's headline figure.
-/// </summary>
+/// <summary>Predicted average summation loss per side (dB, &lt;= 0): coherent sum vs phase-blind magnitude sum over the crossover window.</summary>
 internal sealed record AutoDelaySumLossForecast(double BeforeDb, double AfterDb);
 
-/// <summary>
-/// The inputs of one Auto delay run as the dialog collected them: the scene
-/// offset magnitude (ms, non-negative — the far side leads by this much),
-/// the steering layout that decides which side is the far one (LHD: the
-/// right side leads; RHD: the left side leads, the right lags), the gain
-/// balance opt-in, and the near-side cut it aims for (dB, non-negative —
-/// how much quieter the driver's side plays than the far one). Both
-/// magnitudes are layout-neutral: the layout toggle, not the user, owns
-/// every sign.
-/// </summary>
+/// <summary>Dialog inputs. Scene offset and near-side cut are non-negative magnitudes; the steering layout (LHD: right leads) owns every sign.</summary>
 internal sealed record AutoDelayRunRequest(
     double SceneOffsetMs,
     bool RightHandDrive,
     bool AdjustGains,
     double NearSideCutDb,
-    // How far BEHIND the front stage the rear fill should arrive. Zero sums the
-    // two coherently, which is what a second row of listeners wants; the default
-    // is the precedence-effect offset that keeps the image on the dash for the
-    // front seats while the rear adds room. Ignored by a project with no rear.
+    // How far BEHIND the front the rear fill arrives: 0 = coherent (second row), default = precedence offset keeping the image on the dash.
     double RearFillOffsetMs = 0)
 {
-    /// <summary>
-    /// The tilt in the gain engine's LEFT-minus-RIGHT convention: the near
-    /// side is the left one on LHD (left quieter, negative) and the right
-    /// one on RHD (left louder, positive).
-    /// </summary>
+    /// <summary>Tilt in the gain engine's LEFT-minus-RIGHT convention (LHD negative, RHD positive).</summary>
     public double LevelDifferenceDb =>
         RightHandDrive ? NearSideCutDb : -NearSideCutDb;
 }
 
-/// <summary>
-/// A completed (not yet applied) Auto delay run: the per-channel outcomes,
-/// the run mode and inputs, the formatted report the dialog shows, and the
-/// diagnostic log the Apply step closes with the resulting metric.
-/// </summary>
 internal sealed record AutoDelayRunResult(
     IReadOnlyList<AutoDelayChannelOutcome> Outcomes,
     bool Stereo,
@@ -78,12 +46,7 @@ internal sealed record AutoDelayRunResult(
     string ReportText,
     StringBuilder Log);
 
-/// <summary>
-/// Renders the proposal as the monospace table the Auto delay dialog shows —
-/// a channel per row, changes written "before -> after" and everything else
-/// "value (kept)" — with a notes section carrying each decision's short
-/// reasoning. Pure text-shaping, kept UI-free so it is unit-testable.
-/// </summary>
+/// <summary>Renders the proposal as the dialog's monospace table plus notes; UI-free for tests.</summary>
 internal static class VirtualCrossoverAutoDelayReport
 {
     private const int DelayDecimals = 2;
@@ -96,8 +59,7 @@ internal static class VirtualCrossoverAutoDelayReport
         AutoDelaySumLossForecast? leftSumLoss = null,
         AutoDelaySumLossForecast? rightSumLoss = null)
     {
-        // Invariant numbers throughout: the report is a shareable diagnostic
-        // artifact, so it must read the same regardless of the OS locale.
+        // Invariant culture: the report is a shareable diagnostic.
         var text = new StringBuilder();
         text.AppendLine(
             $"Auto delay proposal ({(stereo ? "stereo" : "single side")})  " +
@@ -117,15 +79,7 @@ internal static class VirtualCrossoverAutoDelayReport
         if (outcomes.Any(outcome =>
             outcome.Runtime.Pair.Zone == VirtualCrossoverZone.Rear))
         {
-            // The single most consequential number in a rear-fill tune: without
-            // it a saved proposal cannot say whether the rear was co-arrived or
-            // held back, which is the difference between a front image and a
-            // collapsed one.
-            //
-            // Printed whenever there IS a rear, zero included. Zero is a
-            // deliberate choice — the second row wants co-arrival — and hiding
-            // it left the report silent about exactly the case the line was
-            // added to disambiguate.
+            // Printed whenever there is a rear, zero included: zero (co-arrival) is a deliberate choice the report must state.
             text.AppendLine(request.RearFillOffsetMs > 0
                 ? FormattableString.Invariant(
                     $"Rear fill {request.RearFillOffsetMs:0.0} ms behind the front stage.")
@@ -136,10 +90,6 @@ internal static class VirtualCrossoverAutoDelayReport
             text.AppendLine("Gains not adjusted (checkbox off).");
         }
 
-        // The at-a-glance summary: what the proposal changes, what it buys
-        // (the same averaged sum loss the metric read-out shows), and which
-        // decisions deserve a second look. The table and notes below are the
-        // detail behind these lines.
         text.AppendLine();
         AppendChangeSummary(text, outcomes, request.AdjustGains);
         AppendSumLossForecast(text, stereo, leftSumLoss, rightSumLoss);
@@ -148,9 +98,7 @@ internal static class VirtualCrossoverAutoDelayReport
         text.AppendLine();
         AppendTable(text, outcomes);
 
-        // Short lines throughout the prose sections: the dialog's report box
-        // wraps instead of scrolling horizontally, and a soft wrap in the
-        // middle of a note reads worse than these explicit two-line blocks.
+        // Short explicit lines: the report box wraps rather than scrolls.
         text.AppendLine();
         text.AppendLine("Notes:");
         foreach (AutoDelayChannelOutcome outcome in outcomes)
@@ -186,9 +134,6 @@ internal static class VirtualCrossoverAutoDelayReport
         return text.ToString();
     }
 
-    // What the proposal actually changes, named channel by channel: most rows
-    // of a run are kept, so the two or three the engine wants to move are the
-    // whole story, and naming them saves hunting the table for the arrows.
     private static void AppendChangeSummary(
         StringBuilder text,
         IReadOnlyList<AutoDelayChannelOutcome> outcomes,
@@ -209,8 +154,6 @@ internal static class VirtualCrossoverAutoDelayReport
             ChangeList("delay", "delays", outcomes.Where(DelayChanged)),
             ChangeList("polarity", "polarities", outcomes.Where(PolarityChanged))
         };
-        // With the checkbox off the gain part would read "no gain changes" on
-        // every run, right under the line that already said gains are off.
         if (adjustGains)
         {
             parts.Add(ChangeList("gain", "gains", outcomes.Where(GainChanged)));
@@ -263,9 +206,6 @@ internal static class VirtualCrossoverAutoDelayReport
         }
     }
 
-    // This forecast is the reason to press Apply, so it states what the
-    // proposal buys instead of leaving two similar numbers to be subtracted
-    // by eye — and says "unchanged" where it buys nothing.
     private static string SumLossCell(AutoDelaySumLossForecast forecast, int width)
     {
         string before = Fixed(forecast.BeforeDb, GainDecimals).PadLeft(width);
@@ -275,9 +215,7 @@ internal static class VirtualCrossoverAutoDelayReport
             return $"{after} dB (unchanged)";
         }
 
-        // Read off the ROUNDED figures this line prints, not the raw ones: a
-        // pair straddling a rounding boundary (-2.449 -> -2.451) would
-        // otherwise show an arrow that moved 0.1 dB next to "0.0 dB worse".
+        // From the ROUNDED figures, or a pair straddling a rounding boundary shows a moved arrow beside "0.0 dB worse".
         double gained = Rounded(forecast.AfterDb, GainDecimals)
             - Rounded(forecast.BeforeDb, GainDecimals);
         return $"{before} -> {after} dB " +
@@ -285,9 +223,6 @@ internal static class VirtualCrossoverAutoDelayReport
             $"{(gained > 0 ? "better" : "worse")})";
     }
 
-    // One line per kind, naming the channels. The reasons stay in the notes:
-    // repeating them here doubled the longest lines of the report and made
-    // the reader meet the same sentence twice.
     private static void AppendLowConfidenceWarnings(
         StringBuilder text, IReadOnlyList<AutoDelayChannelOutcome> outcomes)
     {
@@ -314,9 +249,7 @@ internal static class VirtualCrossoverAutoDelayReport
     private static void AppendTable(
         StringBuilder text, IReadOnlyList<AutoDelayChannelOutcome> outcomes)
     {
-        // Numbers are padded to a shared width BEFORE the columns themselves
-        // are measured, so decimal points line up down the page: a two-digit
-        // delay used to push its whole row sideways.
+        // Numbers padded before measuring columns so decimal points line up.
         int delayWidth = NumberWidth(
             outcomes.SelectMany(outcome =>
                 new[] { outcome.BeforeDelayMs, outcome.AfterDelayMs }),
@@ -325,9 +258,6 @@ internal static class VirtualCrossoverAutoDelayReport
             outcomes.SelectMany(outcome =>
                 new[] { outcome.BeforeGainDb, outcome.AfterGainDb }),
             GainDecimals);
-        // A gain confidence exists only where the balance actually scored a
-        // channel; with the checkbox off the column is a wall of dashes, so
-        // it is dropped rather than shown empty.
         bool gainConfidence = outcomes.Any(outcome => outcome.GainConfidence != null);
 
         List<string> header =
@@ -374,9 +304,6 @@ internal static class VirtualCrossoverAutoDelayReport
         }
     }
 
-    // "2.43 (kept)" where the proposal leaves a value alone: the old
-    // "2.43 -> 2.43" made every row look like a change and buried the two
-    // rows that were one.
     private static string ValueCell(
         double before, double after, bool changed, int decimals, int width)
     {
@@ -386,10 +313,7 @@ internal static class VirtualCrossoverAutoDelayReport
             : $"{text} (kept)";
     }
 
-    // The delay column carries decision KINDS beyond confidence: a locked
-    // pick was chosen by its constraint and the reference was not chosen at
-    // all, so showing a confidence for either would misread as the
-    // measurement's vote.
+    // Locked picks and the reference were not chosen by measurement, so they show a kind, not a confidence.
     private static string DelayCell(
         AlignmentDecisionKind? kind, AlignmentConfidence? confidence) =>
         kind switch
@@ -407,8 +331,6 @@ internal static class VirtualCrossoverAutoDelayReport
             return after;
         }
 
-        // Padded to the longer token so the arrows sit under each other, for
-        // the same reason the numbers carry their own padding.
         string before = (beforeInvert ? "inv" : "norm").PadRight("norm".Length);
         return $"{before} -> {after}";
     }
@@ -422,9 +344,7 @@ internal static class VirtualCrossoverAutoDelayReport
             _ => "-"
         };
 
-    // A value counts as changed when the report would print a different
-    // number for it, so the summary's channel list and the table's arrows are
-    // always the same set and a move too small to show never claims a row.
+    // Changed = prints a different number, so summary list and table arrows are always the same set.
     private static bool DelayChanged(AutoDelayChannelOutcome outcome) =>
         Fixed(outcome.BeforeDelayMs, DelayDecimals)
             != Fixed(outcome.AfterDelayMs, DelayDecimals);
@@ -440,8 +360,7 @@ internal static class VirtualCrossoverAutoDelayReport
     private static int NumberWidth(IEnumerable<double> values, int decimals) =>
         values.Select(value => Fixed(value, decimals).Length).DefaultIfEmpty(0).Max();
 
-    // Rounding before formatting keeps a hair-negative value from printing as
-    // "-0.00" and reading as a change against a plain "0.00".
+    // Rounding first avoids "-0.00" reading as a change.
     private static string Fixed(double value, int decimals)
     {
         double rounded = Rounded(value, decimals);
@@ -449,9 +368,6 @@ internal static class VirtualCrossoverAutoDelayReport
             .ToString($"F{decimals}", CultureInfo.InvariantCulture);
     }
 
-    // What the report prints, as a number: the one place that decides how a
-    // figure rounds, so a difference taken between two of them agrees with
-    // the two figures themselves.
     private static double Rounded(double value, int decimals) =>
         Math.Round(value, decimals, MidpointRounding.AwayFromZero);
 
@@ -466,9 +382,6 @@ internal static class VirtualCrossoverAutoDelayReport
                 line.Append("  ");
             }
 
-            // Every column starts at its left edge: the cells carry their own
-            // internal padding, so right-aligning them as well would pull the
-            // short ones away from the header they belong to.
             line.Append(cells[column].PadRight(widths[column]));
         }
 

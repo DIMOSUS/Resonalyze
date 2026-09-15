@@ -3,13 +3,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A collection that runs beside no other (xUnit honours
-/// <c>DisableParallelization</c> against every other collection, not just
-/// within this one). The tests below park real pool threads and wait for them
-/// to meet; sharing the pool with the rest of the suite is what let a busy
-/// runner turn that rendezvous into a timeout.
-/// </summary>
+/// <summary>Runs beside no other collection: tests park real pool threads, and a busy shared pool timed out the rendezvous.</summary>
 [CollectionDefinition(ThreadPoolSensitive.Name, DisableParallelization = true)]
 public sealed class ThreadPoolSensitive
 {
@@ -19,24 +13,11 @@ public sealed class ThreadPoolSensitive
 [Collection(ThreadPoolSensitive.Name)]
 public sealed class VirtualCrossoverProcessingCoordinatorTests
 {
-    // A net under the rendezvous below, not a schedule: the threads meet as
-    // soon as the pool has one to give them, so anything approaching this is a
-    // hang worth failing on.
     private static readonly TimeSpan RendezvousTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
-    /// Holds the thread pool below its own minimum while a test parks worker
-    /// threads, so its work items get threads created on demand rather than
-    /// injected about one per second. The collection above is what keeps the
-    /// rest of the suite off this pool; this covers what isolation cannot — a
-    /// runner whose core count, and with it the pool's minimum, is smaller than
-    /// the number of threads one test parks. Note that a minimum is a threshold
-    /// and not an allocation: it only holds because nothing else is running.
-    /// <para>
-    /// Measured against this coordinator on a 16-core machine with 96 pool
-    /// threads parked: the two consumers never met inside five seconds, and met
-    /// in 0.5 s with this held.
-    /// </para>
+    /// Raises the pool minimum so parked threads are created on demand instead of injected ~1/s.
+    /// Measured on 16 cores with 96 parked: no meeting in 5 s without it, 0.5 s with it.
     /// </summary>
     private sealed class PoolHeadroom : IDisposable
     {
@@ -62,10 +43,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public void ChannelSnapshot_PreservesEveryChainStage()
     {
-        // The snapshot deep-copies the chain to detach the PEQ's mutable band list from
-        // the UI thread. Copying member by member silently drops any stage the copy
-        // forgets — and an optional record parameter means the compiler never says a
-        // word. Assert on the whole chain, so the next stage added cannot regress here.
+        // Member-by-member copying silently drops new optional record stages, so assert on the whole chain.
         var chain = new DspChannelChain(
             GainDb: -3,
             DelayMs: 0.5,
@@ -78,9 +56,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         var snapshot = new VirtualCrossoverChannelSnapshot(
             1, new VirtualCrossoverSourceSnapshot(CreateImpulse(32, 3, 1.0)), 48_000, 48_000, chain);
 
-        // The PEQ is deliberately a fresh instance and EqualizationCurve has no value
-        // equality, so compare everything else wholesale — that is what has to survive
-        // the copy, including stages added later — and the PEQ by content.
+        // EqualizationCurve has no value equality, so the PEQ is compared by content.
         Assert.Equal(chain with { Peq = null }, snapshot.Chain with { Peq = null });
         Assert.Equal(chain.Peq!.PreampDb, snapshot.Chain.Peq!.PreampDb);
         Assert.Equal(chain.Peq.Bands, snapshot.Chain.Peq.Bands);
@@ -90,16 +66,12 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public void SourceSnapshot_RunsTheChainOverTheHeadOfALongMeasurement()
     {
-        // A sweep's transfer IR is written full length — 524288 samples, ~12 s, with the
-        // arrival in the first thousand and the rest at the noise floor. That length is
-        // exactly 2^19, so the filter tail tips the FFT to 2^20 and every side costs a
-        // million-point transform to feed curves that read 32k samples around the arrival.
-        // The snapshot keeps the head; the processed response must shrink with it.
+        // A 2^19-sample sweep IR tips the FFT to 2^20 with the filter tail; the snapshot keeps the head.
         var full = new Complex[524_288];
         full[260] = 1.0;
         for (int i = 261; i < full.Length; i++)
         {
-            full[i] = 1e-4 * Math.Sin(i * 0.01); // decay/noise nothing reads
+            full[i] = 1e-4 * Math.Sin(i * 0.01);
         }
 
         var snapshot = new VirtualCrossoverSourceSnapshot(full);
@@ -111,20 +83,16 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
             48_000,
             48_000);
 
-        // 65536 head + the filter tail, rounded up — not the 1048576 the full record forced.
         Assert.True(
             processed.Length <= 131_072,
             $"Processed length {processed.Length}: the head crop did not take.");
-        // The arrival still sits where it did: truncation starts at sample 0, so no index,
-        // no inter-channel timing and no absolute gate offset moves.
+        // Truncation starts at sample 0, so no index or gate offset moves.
         Assert.InRange(VirtualCrossoverAnalysis.FindPeakIndex(processed), 200, 400);
     }
 
     [Fact]
     public void SourceSnapshot_KeepsAMeasurementWhoseArrivalWouldNotFitTheHead()
     {
-        // The guard: an arrival late enough that the head would cut into what the curves
-        // read keeps its full record rather than being quietly truncated into it.
         var late = new Complex[524_288];
         late[60_000] = 1.0;
 
@@ -140,11 +108,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public void ChainCacheKey_SeesAnAllPassBandsShapeCornerAndQ()
     {
-        // The key is written by hand, so anything it forgets never fails to compile — it
-        // just makes the coordinator serve a stale render: the user turns the all-pass
-        // and the plot does not move. The all-pass rides in the band list, where its
-        // SHAPE is the part a key could plausibly miss: an all-pass and a bell at the
-        // same corner, Q and (zero) gain differ in nothing but the type.
+        // The key is hand-written: an all-pass and a zero-gain bell at the same corner and Q differ only in type.
         DspChannelChain Chain(PeqBand band) =>
             new(Peq: new EqualizationCurve([band], 0));
 
@@ -164,7 +128,6 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
             key,
             new DspChannelChainCacheKey(
                 Chain(new PeqBand(90, 1.0, 0, PeqBandType.AllPassSecondOrder))));
-        // The one a magnitude-only key would miss: same numbers, different filter.
         Assert.NotEqual(
             key,
             new DspChannelChainCacheKey(
@@ -419,12 +382,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task ProcessAsync_CancellationReportedByNullDropsTheRenderSilently()
     {
-        // The production delegate reports a superseded render by RETURNING
-        // NULL rather than throwing (see ProcessChannel): every delay edit
-        // supersedes one, and an exception thrown out of the parallel body
-        // stops a Just My Code debugger even though this method catches it.
-        // The render must be dropped just as thoroughly, and no exception may
-        // escape or be raised on the way.
+        // A superseded render returns NULL, not throws: exceptions from the parallel body stop a Just My Code debugger.
         using var pool = new PoolHeadroom(parking: 3);
         using var entered = new CountdownEvent(1);
         using var release = new ManualResetEventSlim();
@@ -453,8 +411,6 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
         Assert.Null(await render);
         Assert.Equal(0, thrown);
 
-        // ...and nothing partial was committed: the next render for the same
-        // channel recomputes rather than serving a cached half-result.
         release.Reset();
         entered.Reset(1);
         long next = coordinator.CurrentRevision;
@@ -590,12 +546,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task ProcessAsync_ExternalCancellationDuringTheWorkIsPropagated()
     {
-        // The discriminating case: cancelling BEFORE the call is caught by the
-        // entry guard, so a token cancelled mid-computation is what actually
-        // tests the contract. The silent path cannot tell an external
-        // cancellation from a revision one — the delegate returns null for
-        // both — so without an explicit re-check this call would quietly
-        // answer null and the caller would never learn its own token fired.
+        // Cancel mid-computation: the delegate returns null for both external and revision cancellation, so an explicit re-check is required.
         using var pool = new PoolHeadroom(parking: 3);
         using var entered = new CountdownEvent(1);
         using var release = new ManualResetEventSlim();
@@ -623,8 +574,6 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task RunAuxiliaryAsync_ExternalCancellationDuringTheWorkIsPropagated()
     {
-        // Same contract on the auxiliary path, where an operation following
-        // the new convention also reports cancellation by returning null.
         using var pool = new PoolHeadroom(parking: 3);
         using var entered = new CountdownEvent(1);
         using var release = new ManualResetEventSlim();
@@ -731,13 +680,7 @@ public sealed class VirtualCrossoverProcessingCoordinatorTests
     [Fact]
     public async Task ProcessAsync_HandsBackTheVerySameArrayFromItsCache()
     {
-        // Two caches upstream — the stereo block's arrival cache and the group Δ
-        // read-out — recognise "nothing that feeds this moved" by comparing the
-        // processed array BY REFERENCE, because that is the exact question: a
-        // changed chain makes ApplyChain allocate a new one. Copying a cached
-        // response on the way out would be a reasonable-looking defensive change
-        // that silently turns both of those into permanent misses, and nothing
-        // else in the suite would notice.
+        // Upstream caches compare processed arrays BY REFERENCE; a defensive copy would make them permanent misses.
         using var coordinator = new VirtualCrossoverProcessingCoordinator(
             (source, chain, sampleRate, _, _) => source.Apply(chain, sampleRate, sampleRate));
         var snapshot = new VirtualCrossoverProcessingSnapshot(

@@ -33,12 +33,7 @@ public static class AsioDeviceCatalog
         }
     }
 
-    /// <summary>
-    /// Index of the named driver; 0 (the first driver) when no name is saved
-    /// yet; -1 when the saved driver is not in the list. A missing driver must
-    /// stay visible as its own entry instead of remapping to another driver,
-    /// or the next apply silently re-targets the persisted configuration.
-    /// </summary>
+    /// <summary>0 when no name is saved; -1 when the saved driver is missing, which must not remap to another driver on apply.</summary>
     public static int FindDriverIndex(
         IReadOnlyList<AsioDeviceInfo> drivers,
         string? driverName)
@@ -62,11 +57,6 @@ public static class AsioDeviceCatalog
         return -1;
     }
 
-    /// <summary>
-    /// Opens the driver once and reads everything the caller can need from it:
-    /// the channel lists, the buffer/latency figures for
-    /// <paramref name="sampleRate"/>, and the standard rates it accepts.
-    /// </summary>
     public static AsioDriverInfo GetDriverInfo(
         string? driverName,
         int sampleRate,
@@ -125,11 +115,7 @@ public static class AsioDeviceCatalog
         }
     }
 
-    /// <summary>
-    /// Index of the channel with the given offset, or -1 when the driver does
-    /// not report it (fewer channels, or the driver failed to open). Callers
-    /// keep the offset visible as a "(missing)" entry so it survives an apply.
-    /// </summary>
+    /// <summary>-1 when the driver does not report the offset; callers keep it as a "(missing)" entry.</summary>
     public static int FindChannelIndex(
         IReadOnlyList<AsioChannelInfo> channels,
         int offset)
@@ -145,10 +131,6 @@ public static class AsioDeviceCatalog
         return -1;
     }
 
-    /// <summary>
-    /// True when the channel names itself as a loopback, so a UI can offer it as
-    /// the reference channel without the user hunting for it.
-    /// </summary>
     /// <remarks>Reserve API: no caller in the solution today (see AGENTS.md).</remarks>
     public static bool IsLoopbackChannel(AsioChannelInfo channel)
     {

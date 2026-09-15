@@ -16,9 +16,7 @@ public sealed class TuningSheetQConventionDialogTests
         Assert.Equal(convention, dialog.SelectedConvention);
     }
 
-    // Exactly one option is checked whatever it opens with: the three radios are
-    // set individually rather than by a group, so a convention matching none of
-    // them would silently leave the dialog with no answer at all.
+    // Radios are set individually, not as a group, so an unmatched convention would leave none checked.
     [Fact]
     public void ChecksExactlyOneOption()
     {
@@ -41,9 +39,6 @@ public sealed class TuningSheetQConventionDialogTests
         Assert.True(cancel.Right <= dialog.ClientSize.Width);
     }
 
-    // The crib is the reason the dialog can be answered at all — most tuners pick by
-    // recognising their processor in the list — so it has to follow the radio that is
-    // actually checked, not the one the dialog opened on.
     [Fact]
     public void CribFollowsTheSelection()
     {
@@ -62,8 +57,6 @@ public sealed class TuningSheetQConventionDialogTests
         Assert.Contains(PeqQConventions.DescribeBandwidth(PeqQConvention.Classic), crib.Text);
     }
 
-    // The option labels come from the DSP layer, so a sheet and the dialog that
-    // chose its convention can never describe the same convention differently.
     [Fact]
     public void LabelsTheOptionsAsTheSheetDoes()
     {

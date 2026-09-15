@@ -2,15 +2,7 @@ using System.Drawing;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A target read from a file is not only drawn — it also fills the target
-/// settings dialog, which clamps every number into a control by casting it to
-/// decimal and reads its enums back out of combo boxes. A non-finite number
-/// throws on that cast and an undefined enum leaves a box with no selection, and
-/// both are reachable: the session and settings files allow named
-/// floating-point literals, and the enum converter accepts numbers as well as
-/// names. So every target that comes off disk is normalized first.
-/// </summary>
+/// <summary>Stored targets fill a dialog that casts to decimal and reads enums from combos; files allow NaN literals and numeric enums, so targets are normalized.</summary>
 public sealed class EqTargetCurveNormalizationTests
 {
     [Fact]
@@ -48,8 +40,6 @@ public sealed class EqTargetCurveNormalizationTests
         Assert.Equal(TargetDeviationMode.Deviation, clean.DeviationMode);
         Assert.Equal(2, clean.StrokeThickness);
         Assert.Equal(OverlayLineStyle.Dash, clean.LineStyle);
-        // Only the unusable fields move. The colour, the smoothing and the
-        // finite numbers are the user's and are left exactly as they were.
         Assert.Equal(Color.FromArgb(255, 240, 120, 40), clean.Color);
         Assert.Equal(6, clean.SmoothingInverseOctaves);
         Assert.Equal(1.5, clean.Spec.BassShelfWidthOctaves);
@@ -75,9 +65,6 @@ public sealed class EqTargetCurveNormalizationTests
     [Fact]
     public void ASessionTargetThatCameBackCorrupt_StillOpensTheSettingsDialog()
     {
-        // The end of the path the file feeds. Without the normalization the
-        // dialog's constructor throws on the decimal cast, so the button that
-        // shapes the target would be dead until the file was hand-repaired.
         var stored = new VirtualCrossoverTargetSettings
         {
             Preset = (TargetPreset)999,
@@ -108,8 +95,6 @@ public sealed class EqTargetCurveNormalizationTests
             null,
             isolatedTarget: true);
 
-        // And it reads back, rather than leaving a combo box with no selection
-        // for the Save path to dereference.
         Assert.Equal(TargetPreset.Flat, dialog.Preset);
         Assert.Equal(OverlayLineStyle.Dash, dialog.LineStyle);
         Assert.Equal(TargetDeviationMode.Deviation, dialog.DeviationMode);

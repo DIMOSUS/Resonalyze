@@ -1,9 +1,5 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Matching the sweep against a recording: where it is, how well it matched, and
-/// what happens when it is not there at all.
-/// </summary>
 public sealed class RecordedSweepDetectorTests : IDisposable
 {
     private const int SampleRate = 48_000;
@@ -45,10 +41,7 @@ public sealed class RecordedSweepDetectorTests : IDisposable
         Assert.Equal(1.0, matches[0].Quality, tolerance: 0.001);
     }
 
-    // Level says nothing here: the sweep is 20 dB under the noise it was recorded
-    // in, which no threshold can reach. Matching concentrates the whole excitation
-    // into one peak — about 43 dB of gain for this one second — so the position is
-    // still exact.
+    // 20 dB under the noise; matching one second of sweep gives about 43 dB of gain.
     [Fact]
     public void FindsASweepBuriedUnderNoise()
     {
@@ -61,9 +54,7 @@ public sealed class RecordedSweepDetectorTests : IDisposable
         Assert.Equal(start, matches[0].Start);
     }
 
-    // Two attempts in one take: both are reported. Neither is the worse match for
-    // being quieter — quality is a correlation, so halving a take's level halves
-    // the numerator and the denominator alike.
+    // Quality is a correlation, so a quieter take is not a worse match.
     [Fact]
     public void ReportsEveryTakeInTheRecording()
     {
@@ -83,9 +74,6 @@ public sealed class RecordedSweepDetectorTests : IDisposable
         Assert.All(matches, match => Assert.Equal(1.0, match.Quality, tolerance: 0.01));
     }
 
-    // What DOES separate them is how well each one matches. The take buried in
-    // noise is the weaker match and has to rank below the clean one, because the
-    // caller analyzes them in that order.
     [Fact]
     public void RanksTheCleanerTakeFirst()
     {
@@ -107,10 +95,7 @@ public sealed class RecordedSweepDetectorTests : IDisposable
             $"clean {matches[0].Quality:0.000} against noisy {matches[1].Quality:0.000}");
     }
 
-    // A take that stopped mid-sweep: its true start is only among the placements
-    // that run off the end of the file, so those have to be searched. Leaving them
-    // out does not make the take usable — it makes the answer a wrong position
-    // that then reads as a complete recording.
+    // The true start of a cut-off take is among placements running off the file's end, so those are searched.
     [Fact]
     public void FindsASweepTheRecordingRanOutOn()
     {
@@ -127,8 +112,6 @@ public sealed class RecordedSweepDetectorTests : IDisposable
             "the match has to show the sweep running past the end of the file");
     }
 
-    // Quality is a correlation, not a level: the loud channel of hum must not
-    // outrank the quiet one that actually holds the sweep.
     [Fact]
     public void QualityJudgesTheShapeRatherThanTheLevel()
     {
@@ -149,11 +132,7 @@ public sealed class RecordedSweepDetectorTests : IDisposable
             $"sweep {sweepQuality:0.000} against hum {humQuality:0.000}");
     }
 
-    // Long enough that the search decimates, which is where the pool and the
-    // refined answers stop being the same unit. A coarse start compared against
-    // an already-refined one measures a distance in two scales at once, and here
-    // the second take's COARSE index lands on the first take's FULL-RATE index —
-    // so it reads as the same arrival reported twice and disappears.
+    // Decimated search: comparing a coarse start with a refined one mixes scales and merged the two takes.
     [Fact]
     public void ReportsEveryTakeOnceTheSearchDecimates()
     {
@@ -162,10 +141,8 @@ public sealed class RecordedSweepDetectorTests : IDisposable
         using var shortSweep = new ExponentialSineSweep();
         shortSweep.FillData(20, 20_000, 0.25, 24, rate);
         float[] excitation = shortSweep.SweepData;
-        // Back to back, so the takes never overlap: 2 x (first / decimation) is
-        // exactly the second take's coarse index.
+        // 2 x (first / decimation) is exactly the second take's coarse index.
         int second = first + excitation.Length;
-        // Past the search ceiling, which is what turns decimation on.
         var samples = new float[1_200_000];
         var random = new Random(99);
         for (int i = 0; i < samples.Length; i++)
@@ -175,8 +152,6 @@ public sealed class RecordedSweepDetectorTests : IDisposable
         for (int i = 0; i < excitation.Length; i++)
         {
             samples[first + i] += excitation[i];
-            // The second take is the noisier one, so the clean take ranks first
-            // and the comparison happens in the order that loses it.
             samples[second + i] +=
                 excitation[i] * 0.5f + (float)((random.NextDouble() - 0.5) * 0.05);
         }
@@ -193,7 +168,6 @@ public sealed class RecordedSweepDetectorTests : IDisposable
     {
         Assert.Empty(RecordedSweepDetector.FindSweeps([], Excitation, 1));
         Assert.Empty(RecordedSweepDetector.FindSweeps(new float[1_000], [], 1));
-        // A recording shorter than the sweep cannot hold it.
         Assert.Empty(RecordedSweepDetector.FindSweeps(
             new float[Excitation.Length / 2], Excitation, 1));
     }

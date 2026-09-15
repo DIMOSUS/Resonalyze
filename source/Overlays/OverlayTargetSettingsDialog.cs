@@ -6,22 +6,12 @@ namespace Resonalyze;
 
 internal sealed partial class OverlayTargetSettingsDialog : Form
 {
-    // Live preview on the main plot: fired with a snapshot of the candidate settings
-    // on every control change, so the target shape, tolerance band, and deviation
-    // curve can be tuned against the real measurement. Nothing is committed until
-    // Save; the caller restores its stored state on Cancel.
+    // Fired on every change; nothing is committed until Save, and the caller restores on Cancel.
     private readonly Action<OverlayTargetPreview>? previewChanged;
     private readonly bool isolatedTarget;
-    // Magnitude-only gate for the Psychoacoustic smoothing item, mirroring the
-    // captured/operation dialogs.
     private readonly bool includePsychoacousticSmoothing;
     private readonly bool initialized;
-    // The shape the dialog opened on when it is a file, and the preset that came
-    // with it. An imported curve is offered as an extra entry in the preset list —
-    // that entry is what keeps it selected while the tolerance, colour or line
-    // style are edited, and picking a real preset is how the user drops it. The
-    // preset itself rides through untouched meanwhile: it names the parametric
-    // shape, which is still there behind the imported one.
+    // An imported shape is an extra preset-list entry; the preset behind it rides through untouched.
     private readonly ImportedTargetCurve? importedCurve;
     private readonly TargetPreset incomingPreset;
     private Color selectedColor;
@@ -52,8 +42,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         incomingPreset = preset;
 
         InitializeComponent();
-        // The accent fill is a palette value, not a literal the designer keeps a
-        // copy of: the two drifted apart once already.
+        // Palette value, not a designer literal: the two drifted apart once.
         Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill);
         PopulateControls(availableSources);
         WireEvents();
@@ -89,16 +78,10 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         }
     }
 
-    // In the EQ Wizard's isolated reuse there is no overlay to name and no
-    // tolerance band / deviation curve / opacity to render (the wizard draws its
-    // own error fill), so those fields are shown read-only to avoid implying they
-    // do anything. The name, colour, thickness and line style still apply.
+    // EQ Wizard reuse: no overlay name, tolerance, deviation or opacity, so those are read-only.
     private void ApplyIsolatedTargetMode()
     {
-        // The name is muted by hand rather than disabled: Windows paints a DISABLED
-        // TextBox in its own grey whatever ForeColor says (2.5:1 here), and this
-        // field still shows the name the overlay will carry. Read-only and off the
-        // tab order does the disabling.
+        // Muted by hand: Windows paints a disabled TextBox grey regardless of ForeColor (2.5:1).
         nameTextBox.ReadOnly = true;
         nameTextBox.TabStop = false;
         nameTextBox.BackColor = Ui.UiPalette.ButtonDisabledBackground;
@@ -111,10 +94,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
 
     public string OverlayName => nameTextBox.Text.Trim();
     public int SourceSlot => ((TargetSourceOption)sourceComboBox.SelectedItem!).Slot;
-    // While the imported entry is selected there is no preset to read off the list,
-    // and the one the dialog opened with is the honest answer: it still names the
-    // parametric shape the inputs hold, which is what the user goes back to by
-    // picking a preset here.
+    // With the imported entry selected, the opening preset still names the parametric shape behind it.
     public TargetPreset Preset => presetComboBox.SelectedItem is TargetPreset preset
         ? preset
         : incomingPreset;
@@ -150,8 +130,6 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     {
         if (isolatedTarget)
         {
-            // The EQ Wizard equalizes a separately loaded IR, so the source is
-            // fixed: show a single disabled placeholder instead of the slot list.
             sourceComboBox.Items.Add(new TargetSourceOption(0, "Loaded IR"));
             sourceComboBox.Enabled = false;
         }
@@ -166,9 +144,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
             }
         }
 
-        // The imported shape leads the list when there is one, and stays in it for
-        // the dialog's lifetime: a user who tries a preset against their house
-        // curve has to be able to get back to it without importing the file again.
+        // Stays in the list so the user can return to their house curve after trying a preset.
         if (importedCurve != null)
         {
             presetComboBox.Items.Add(new ImportedShapeOption(importedCurve));
@@ -229,7 +205,6 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     {
         presetComboBox.SelectedIndexChanged += PresetChanged;
 
-        // Editing the curve shape switches the preset to Custom and redraws.
         foreach (DarkNumericUpDown shape in ShapeInputs)
         {
             shape.ValueChanged += ParameterChanged;
@@ -317,10 +292,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         }
     }
 
-    // The ten parametric inputs describe nothing while an imported shape is
-    // selected, so they are disabled rather than left there to be edited into a
-    // curve the plot does not draw. They keep their values: they are what the user
-    // returns to by choosing a preset.
+    // Disabled while imported, but values kept for returning to a preset.
     private void UpdateShapeInputs()
     {
         bool parametric = SelectedImportedCurve == null;
@@ -435,10 +407,6 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         NotifyPreview();
     }
 
-    // Live preview on the main plot; fired alongside the dialog's own mini preview
-    // and by the controls the mini preview does not track (source, tolerance,
-    // deviation mode, styling). Suppressed during construction, where control
-    // values are still being seeded.
     private void NotifyPreview()
     {
         if (!initialized || previewChanged == null)
@@ -473,7 +441,6 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
 
     private bool ValidateSaveRequest(bool focusOnError)
     {
-        // The isolated target has no name or source to validate.
         if (isolatedTarget ||
             (OverlayName.Length > 0 && sourceComboBox.SelectedItem != null))
         {
@@ -630,10 +597,6 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         public override string ToString() => Display;
     }
 
-    // The imported shape as an entry in the preset list. It is not a preset — a
-    // preset is a set of numbers for the terms below it, and this replaces them —
-    // but it belongs in the same selector, because the list answers the one
-    // question "what shape is this target".
     private sealed record ImportedShapeOption(ImportedTargetCurve Curve)
     {
         public string Label => MenuText.Trim($"Imported: {Curve.Name}");
@@ -642,9 +605,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     }
 }
 
-// A snapshot of the candidate settings in the target-overlay dialog, fired on every
-// control change for the live preview on the main plot. Mirrors the dialog's output
-// properties so the caller can render exactly what Save would commit.
+// Mirrors the dialog's output so the caller renders exactly what Save would commit.
 internal sealed record OverlayTargetPreview(
     string Name,
     int SourceSlot,

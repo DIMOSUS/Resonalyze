@@ -1,46 +1,26 @@
 namespace Resonalyze.Dsp;
 
 /// <summary>
-/// One EQ band, described the way a PEQ slot exposes it: a centre frequency, a
-/// quality factor, a gain and the shape those three describe (bell by default,
-/// a shelf, or a phase-only all-pass — see <see cref="PeqBandType"/>). The
-/// magnitude response is the analog prototype, which is sample-rate independent
-/// and therefore suitable for plotting an EQ curve across the audible range.
+/// One PEQ band with an analog-prototype (rate-independent) magnitude. <see cref="Type"/> defaults to Peaking so
+/// files written before shelves existed read back as bells.
 /// </summary>
-/// <remarks>
-/// <see cref="Type"/> is the last parameter and defaults to
-/// <see cref="PeqBandType.Peaking"/>, so a three-argument band is still a bell and
-/// a settings or project file written before shelves existed reads back as one.
-/// </remarks>
 public readonly record struct PeqBand(
     double FrequencyHz,
     double Q,
     double GainDb,
     PeqBandType Type = PeqBandType.Peaking)
 {
-    /// <summary>
-    /// True for a band that contributes nothing: degenerate frequency/Q (e.g. a
-    /// half-filled PEQ slot), or zero gain on a band whose whole effect IS its gain.
-    /// Such bands are skipped when the curve is evaluated or realized as biquads.
-    /// An all-pass moves phase without carrying any gain, so its zero gain is not
-    /// transparency — only a degenerate frequency or Q silences one.
-    /// </summary>
+    /// <summary>Contributes nothing: degenerate frequency/Q, or zero gain on a gain band (an all-pass is never gain-transparent).</summary>
     public bool IsTransparent =>
         Q <= 0 || FrequencyHz <= 0 || (GainDb == 0 && !Type.IsAllPass());
 
-    /// <summary>
-    /// Magnitude contribution of this band at <paramref name="frequencyHz"/>, in dB.
-    /// Returns 0 for a transparent or degenerate band (no gain, non-positive Q,
-    /// centre or query frequency).
-    /// </summary>
     public double MagnitudeDbAt(double frequencyHz)
     {
         if (IsTransparent || frequencyHz <= 0)
         {
             return 0;
         }
-        // An all-pass has unity magnitude at every frequency, whatever gain the slot
-        // may still carry from a type switch — never let it fall through to the bell.
+        // Unity for any gain a slot kept from a type switch.
         if (Type.IsAllPass())
         {
             return 0;
@@ -56,11 +36,7 @@ public readonly record struct PeqBand(
         };
     }
 
-    // Analog peaking prototype H(j2pi f); evaluating |H|^2 in normalised frequency
-    // x = f / f0 keeps it independent of any sample rate.
-    //   |H|^2 = ((1 - x^2)^2 + (A x / Q)^2) / ((1 - x^2)^2 + (x / (A Q))^2)
-    // with A = 10^(gain / 40). At x = 1 this evaluates to A^4, i.e. exactly the
-    // band gain in dB; far from f0 it tends to unity (0 dB).
+    // |H|^2 = ((1 - x^2)^2 + (A x / Q)^2) / ((1 - x^2)^2 + (x / (A Q))^2), x = f / f0, A = 10^(gain / 40).
     private double PeakingMagnitudeDb(double a, double x)
     {
         double oneMinusXSquared = 1.0 - x * x;
@@ -74,14 +50,7 @@ public readonly record struct PeqBand(
         return 10.0 * Math.Log10(numerator / denominator);
     }
 
-    // The RBJ shelving prototypes the cookbook's biquads are derived from, with
-    // s = jx normalised to f0:
-    //   low  shelf  H(s) = A (s^2 + (sqrt(A)/Q) s + A) / (A s^2 + (sqrt(A)/Q) s + 1)
-    //   high shelf  H(s) = A (A s^2 + (sqrt(A)/Q) s + 1) / (s^2 + (sqrt(A)/Q) s + A)
-    // The two are mirror images: the low shelf reaches the full gain at DC and unity
-    // far above f0, the high shelf the other way round, and both pass through half
-    // the gain in dB exactly at f0 — which is what makes f0 the middle of a shelf
-    // rather than its corner.
+    // RBJ shelving prototypes in s = jx; both pass through half the gain (dB) exactly at f0, so f0 is the MIDDLE, not the corner.
     private double ShelfMagnitudeDb(double a, double x, bool low)
     {
         double xSquared = x * x;
@@ -100,14 +69,11 @@ public readonly record struct PeqBand(
 }
 
 /// <summary>
-/// A logical equalization curve: PEQ parameters (up to 32 bands) plus preamp.
-/// <see cref="MagnitudeDbAt"/> retains the sample-rate-independent analog model
-/// for legacy comparisons; DSP fitting, preview and coefficient-oriented output
-/// use <see cref="DigitalEqualizationResponse"/> so they match RBJ biquads.
+/// PEQ bands plus preamp. <see cref="MagnitudeDbAt"/> is the analog model; fitting and preview use
+/// <see cref="DigitalEqualizationResponse"/> to match RBJ biquads.
 /// </summary>
 public sealed class EqualizationCurve
 {
-    /// <summary>Maximum number of bands a curve may hold, matching the PEQ panel.</summary>
     public const int MaxBandCount = 32;
 
     private readonly PeqBand[] bands;
@@ -129,10 +95,8 @@ public sealed class EqualizationCurve
 
     public IReadOnlyList<PeqBand> Bands => bands;
 
-    /// <summary>Constant gain (dB) applied across the whole curve.</summary>
     public double PreampDb { get; }
 
-    /// <summary>Combined magnitude of every band plus the preamp, in dB.</summary>
     public double MagnitudeDbAt(double frequencyHz)
     {
         double total = PreampDb;
@@ -144,9 +108,6 @@ public sealed class EqualizationCurve
         return total;
     }
 
-    /// <summary>
-    /// Samples the curve at the supplied frequencies, returning (Hz, dB) points.
-    /// </summary>
     public IReadOnlyList<SignalPoint> Sample(IReadOnlyList<double> frequenciesHz)
     {
         ArgumentNullException.ThrowIfNull(frequenciesHz);
@@ -161,10 +122,6 @@ public sealed class EqualizationCurve
         return points;
     }
 
-    /// <summary>
-    /// Builds a logarithmically spaced frequency grid, the natural sampling for an
-    /// EQ curve drawn on a log frequency axis.
-    /// </summary>
     public static IReadOnlyList<double> LogFrequencyGrid(
         double minHz,
         double maxHz,

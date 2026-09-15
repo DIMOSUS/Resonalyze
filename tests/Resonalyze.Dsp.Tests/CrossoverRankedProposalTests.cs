@@ -100,10 +100,7 @@ public sealed class CrossoverRankedProposalTests
         }
     }
 
-    // No candidate in the whole ranked pool may carry a slope whose filter group
-    // delay blows the budget — the low-frequency guard, now on the delay itself
-    // rather than a fixed frequency. Holds even with steep families and
-    // independent slopes on (a low sub junction still cannot go steep).
+    // The low-frequency guard is on the filter group delay itself, not a fixed frequency.
     [Fact]
     public void ProposeRanked_KeepsEveryCrossoverWithinTheGroupDelayBudget()
     {
@@ -150,12 +147,7 @@ public sealed class CrossoverRankedProposalTests
             $"{groupDelay * 1000:0.0} ms group delay");
     }
 
-    // The budget caps steepness ABOVE the practical floor (24 dB/oct); the floor
-    // is always admitted. At a junction so low that even 24 dB/oct blows the
-    // budget, every candidate — the search seed, the descent result, AND the
-    // forced conventional baseline — uses exactly the floor there, never a
-    // steeper slope the budget forbids. This pins the two paths (Initialize and
-    // the conventional forced slope) that used to bypass the check entirely.
+    // The 24 dB/oct floor is always admitted; below budget every path (seed, descent, conventional) uses exactly the floor.
     [Fact]
     public void ProposeRanked_AtASubBudgetJunction_FallsBackToTheFloorConsistently()
     {
@@ -194,8 +186,6 @@ public sealed class CrossoverRankedProposalTests
                     double gd = CrossoverFilter.MaxGroupDelaySeconds(value, highPass, SampleRate);
                     if (gd > CrossoverAutoSetup.MaxCrossoverGroupDelaySeconds)
                     {
-                        // Tolerated only at the family's practical floor (the
-                        // gentlest slope it offers at or above 24 dB/oct).
                         int floor = CrossoverFilter.SupportedSlopes(value.Family)
                             .Where(slope => slope >= 24)
                             .Min();
@@ -211,11 +201,7 @@ public sealed class CrossoverRankedProposalTests
             "Expected a junction low enough that even the floor slope exceeds the budget.");
     }
 
-    // Independent oracle for the summation rule: flat unit drivers make the
-    // expected sum a pure amplitude sum of the exact digital filter
-    // magnitudes, computed here WITHOUT SummedResponseDb's internals. A
-    // power-sum regression (the old Butterworth branch) fails this by ~3 dB
-    // at the corner.
+    // Independent oracle: flat drivers make the sum a plain amplitude sum of filter magnitudes; a power sum fails by ~3 dB.
     [Fact]
     public void SummedResponseDb_IsThePlainAmplitudeSumOfTheFilteredChannels()
     {
@@ -264,8 +250,6 @@ public sealed class CrossoverRankedProposalTests
 
         Assert.InRange(ranked.Count, 2, 50);
         Assert.Contains(ranked, candidate => candidate.IsConventional24);
-        // Without IRs the penalty column stays empty and the ranking is the
-        // magnitude score alone.
         Assert.All(ranked, candidate => Assert.Null(candidate.AchievabilityPenaltyDb));
         // Proposals come back in input order: the tweeter is the last channel.
         Assert.All(ranked, candidate => Assert.Null(candidate.Proposals[2].LowPassEdge));
@@ -298,12 +282,7 @@ public sealed class CrossoverRankedProposalTests
         return points;
     }
 
-    // Per-junction pool options are each bounded against the descent optimum's
-    // neighbours; combined independently, two junctions moved toward each
-    // other can jointly break the half-octave minimum separation. A peaked
-    // middle driver pulls both of its junctions inward — without the joint
-    // check this configuration put an fc pair at ratio 1.375 (< sqrt 2) into
-    // the ranked list.
+    // Independently bounded junctions can jointly break the half-octave separation (ratio 1.375 < √2 seen).
     [Fact]
     public void ProposeRanked_KeepsTheMinimumJunctionSeparationInEveryCandidate()
     {
@@ -334,11 +313,7 @@ public sealed class CrossoverRankedProposalTests
         }
     }
 
-    // The tie preference protects the ONE candidate the dedicated conventional
-    // run built (all slopes 24 dB/oct, Linkwitz-Riley when allowed) — a pool
-    // candidate that merely landed on all-24 slopes, or a Butterworth/Bessel
-    // 24 mix, must not carry the flag. Before the signature match this
-    // configuration flagged five candidates, one of them pure Butterworth.
+    // Only the dedicated conventional run carries the flag, not a pool candidate that happens to be all-24.
     [Fact]
     public void ProposeRanked_FlagsOnlyTheDedicatedConventionalCandidate()
     {
@@ -368,11 +343,7 @@ public sealed class CrossoverRankedProposalTests
         }
     }
 
-    // With independent slopes OFF, each DRIVER's two shoulders share one slope
-    // (no 12/18 split on a single channel) — but different drivers stay free to
-    // pick different slopes. The earlier bug let the per-junction pool combine
-    // slopes independently, so a middle driver's high-pass and low-pass drifted
-    // apart after Apply even though the panel preview looked matched.
+    // Matched slopes tie each driver's two shoulders, not the whole system.
     [Fact]
     public void ProposeRanked_MatchedSlopes_TieEachDriversTwoShoulders()
     {
@@ -407,15 +378,10 @@ public sealed class CrossoverRankedProposalTests
         }
     }
 
-    // The per-channel tie must NOT collapse into one slope for the whole system:
-    // a sub junction below 300 Hz is capped at 24 dB/oct, but a tweeter far
-    // above it may still take a steeper slope, so the two drivers differ while
-    // each stays internally matched.
     [Fact]
     public void Propose_MatchedSlopes_LetDifferentDriversTakeDifferentSlopes()
     {
-        // A tweeter whose passband has a rising skirt the optimizer tames with a
-        // steep high-pass, over a sub crossed low (its junction < 300 Hz, capped).
+        // A sub junction < 300 Hz is capped at 24 dB/oct while the tweeter may go steeper.
         var sources = new List<AutoSetupSource>
         {
             new(BandCurve(20, 70), DriverType.Subwoofer),
@@ -433,7 +399,6 @@ public sealed class CrossoverRankedProposalTests
         IReadOnlyList<CrossoverProposal> proposals =
             CrossoverAutoSetup.Propose(sources, options);
 
-        // Each driver's shoulders still match…
         foreach (CrossoverProposal proposal in proposals)
         {
             if (proposal.HighPassEdge is { } hp && proposal.LowPassEdge is { } lp)
@@ -442,9 +407,6 @@ public sealed class CrossoverRankedProposalTests
             }
         }
 
-        // …and the sub junction sits low enough that a steeper slope would blow
-        // the group-delay budget, so it stays <= 24 while the tweeter, far above,
-        // is free to differ — the search is not one system slope.
         CrossoverEdge subLowPass = proposals[0].LowPassEdge!.Value;
         Assert.True(
             CrossoverFilter.MaxGroupDelaySeconds(
@@ -453,14 +415,9 @@ public sealed class CrossoverRankedProposalTests
         Assert.True(subLowPass.SlopeDbPerOctave <= 24);
     }
 
-    // A synthetic 4-way with a hot bass, a rolled-off midbass, and a matched
-    // mid/tweeter: the target-curve fit should level the mid & tweeter to each
-    // other, keep the bass at its raw level by default, and leave the midbass
-    // alone when it already sits below the target line (cut-only).
+    // Fit levels mid and tweeter to each other, keeps the bass raw by default, leaves a sub-target midbass alone (cut-only).
     private static List<AutoSetupSource> TargetCurveSources()
     {
-        // Absolute levels: sub +6, midbass -6, mid/tweeter -18, tweeter a touch
-        // louder so it gets attenuated to the midrange.
         List<SignalPoint> Shelf(double lowHz, double highHz, double levelDb) =>
             BandCurve(lowHz, highHz).Select(p => new SignalPoint(p.X, p.Y + levelDb)).ToList();
 
@@ -480,16 +437,12 @@ public sealed class CrossoverRankedProposalTests
         IReadOnlyList<CrossoverProposal> proposals =
             CrossoverAutoSetup.Propose(sources, Options());
 
-        // Every gain is a cut (headroom-safe): the reference driver is at 0.
         Assert.All(proposals, p => Assert.True(p.GainDb <= 0.0 + 1e-9, $"{p.GainDb} dB > 0"));
         Assert.Contains(proposals, p => Math.Abs(p.GainDb) < 1e-9);
 
-        // The tweeter measured louder than the midrange, so it is attenuated to
-        // it; the midrange (the quieter reference member) stays at 0.
         Assert.Equal(0.0, proposals[2].GainDb, precision: 6);
         Assert.True(proposals[3].GainDb < -0.5, $"tweeter {proposals[3].GainDb} not attenuated");
 
-        // Default elevation keeps the bass at its raw level (gain ~0).
         Assert.True(Math.Abs(proposals[0].GainDb) < 1.0, $"sub moved {proposals[0].GainDb} dB");
     }
 
@@ -508,24 +461,16 @@ public sealed class CrossoverRankedProposalTests
         IReadOnlyList<CrossoverProposal> half = CrossoverAutoSetup.ApplyTargetCurveGains(
             sources, proposals, SampleRate, subElevationDb: measured / 2);
 
-        // Trimming the elevation only ever cuts the bass further; the reference
-        // members are unaffected.
         Assert.True(flat[0].GainDb < half[0].GainDb, "flat sub not cut below half");
         Assert.True(half[0].GainDb < proposals[0].GainDb + 1e-9, "half sub not cut below default");
         Assert.Equal(proposals[2].GainDb, flat[2].GainDb, precision: 6);
-        // The elevation is clamped to the measured maximum: asking for more than
-        // measured cannot boost the bass above its raw level.
         IReadOnlyList<CrossoverProposal> over = CrossoverAutoSetup.ApplyTargetCurveGains(
             sources, proposals, SampleRate, subElevationDb: measured + 20);
         Assert.Equal(proposals[0].GainDb, over[0].GainDb, precision: 6);
         Assert.All(over, p => Assert.True(p.GainDb <= 0.0 + 1e-9));
     }
 
-    // The field case behind the woofer anchor: a 3-way with no subwoofer,
-    // whose woofer carries real cabin gain. The woofer must anchor the bass
-    // exactly as a sub would — kept at its raw level by default, trimmable
-    // through the elevation control — instead of being cut all the way down
-    // to the mid/tweeter reference (−24 dB on the field system).
+    // No sub: the woofer anchors the bass like a sub instead of being cut to the reference (−24 dB in the field).
     [Fact]
     public void ApplyTargetCurveGains_WithoutASubTheWooferAnchorsTheBass()
     {
@@ -540,9 +485,6 @@ public sealed class CrossoverRankedProposalTests
         IReadOnlyList<CrossoverProposal> proposals =
             CrossoverAutoSetup.Propose(sources, Options());
 
-        // The hot woofer keeps its raw level by default (the measured
-        // elevation), the louder tweeter is levelled to the midrange, and
-        // every gain stays a cut.
         double measured = CrossoverAutoSetup.MeasuredSubElevationDb(
             sources, proposals, SampleRate);
         Assert.True(measured > 8, $"measured elevation {measured} unexpectedly small");
@@ -551,17 +493,13 @@ public sealed class CrossoverRankedProposalTests
         Assert.True(proposals[2].GainDb < -0.5, $"tweeter {proposals[2].GainDb} not attenuated");
         Assert.All(proposals, p => Assert.True(p.GainDb <= 1e-9));
 
-        // Trimming the elevation to zero flattens the bottom: only then is the
-        // woofer cut down toward the reference.
         IReadOnlyList<CrossoverProposal> flat = CrossoverAutoSetup.ApplyTargetCurveGains(
             sources, proposals, SampleRate, subElevationDb: 0);
         Assert.True(flat[0].GainDb < -8, $"flat woofer {flat[0].GainDb} not cut");
         Assert.Equal(proposals[1].GainDb, flat[1].GainDb, precision: 6);
     }
 
-    // The conservative side of the woofer anchor: a bass driver QUIETER than
-    // the mid/treble has no elevation to preserve (cut-only gains cannot lift
-    // it), so the system still levels down to it — the pre-anchor behavior.
+    // A woofer quieter than mid/treble has no elevation to preserve: level down to it.
     [Fact]
     public void ApplyTargetCurveGains_AQuietWooferWithoutASubStaysLevelMatched()
     {
@@ -578,14 +516,11 @@ public sealed class CrossoverRankedProposalTests
         double measured = CrossoverAutoSetup.MeasuredSubElevationDb(
             sources, proposals, SampleRate);
         Assert.Equal(0.0, measured, precision: 6);
-        // The quiet woofer stays put; the louder tweeter is cut down to it.
         Assert.True(Math.Abs(proposals[0].GainDb) < 0.5, $"woofer moved {proposals[0].GainDb} dB");
         Assert.True(proposals[1].GainDb < proposals[0].GainDb, "tweeter not cut to the woofer");
     }
 
-    // With ideal impulse drivers a matched LR24 handover is losslessly
-    // alignable, so the post-check must hand the win to the conventional
-    // candidate with a near-zero penalty.
+    // Ideal impulses make matched LR24 losslessly alignable: the conventional candidate wins with ~zero penalty.
     [Fact]
     public void ProposeRanked_WithImpulseResponsesPrefersAnAchievableHandover()
     {

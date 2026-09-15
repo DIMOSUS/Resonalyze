@@ -3,11 +3,8 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Owns Virtual DSP redraw revisions, processed-response caching and background
-/// scheduling. The panel supplies a UI-thread snapshot and applies a result only
-/// when this coordinator confirms that the snapshot is still current.
-/// </summary>
+/// <summary>Redraw revisions, processed-response cache and background scheduling; results apply only while their snapshot is current.
+/// See docs/tech/virtual-dsp-analysis.md#processing-coordinator.</summary>
 internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
 {
     private readonly object sync = new();
@@ -41,11 +38,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         }
     }
 
-    /// <summary>
-    /// Makes the current computation stale and requests cancellation. The DSP
-    /// primitive itself is not interruptible, so a running FFT may finish, but
-    /// its result can no longer enter the cache or reach the view.
-    /// </summary>
+    /// <summary>Makes the current computation stale. A running FFT may finish, but its result never enters the cache or view.</summary>
     public long Invalidate()
     {
         CancellationTokenSource revisionToCancel;
@@ -122,29 +115,15 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         }
         try
         {
-            // EXTERNAL cancellation still propagates as an exception: a caller
-            // that passed its own token asked to be told, and that is the
-            // framework's convention. Only the internal, revision-driven
-            // cancellation — the one every delay edit triggers — is silent.
+            // External cancellation still throws; only revision-driven cancellation is silent.
             cancellationToken.ThrowIfCancellationRequested();
             if (misses.Count > 0)
             {
                 await Task.Run(() =>
                 {
-                    // Tracy zones live here, on the worker threads, because a
-                    // zone must begin and end synchronously on one thread — the
-                    // panel's async callers cannot carry one across their
-                    // awaits. The outer zone times the whole batch on the
-                    // scheduling worker; the per-channel zones time each
-                    // chain's FFTs on whichever pool thread runs it.
+                    // Tracy zones must begin and end on one thread, so they live on the workers.
                     using var _ = AppProfiler.Zone("VirtualDSP.ProcessChannels");
-                    // A cancelled batch STOPS the loop instead of throwing out
-                    // of it (see ProcessChannel): ParallelLoopState.Stop keeps
-                    // the "schedule no further iterations" behaviour the
-                    // ParallelOptions token used to give, without an exception
-                    // crossing the TPL boundary on every stale render. The
-                    // abandoned entries stay null in results, which the guard
-                    // below turns into a dropped render.
+                    // Cancelled batches Stop the loop instead of throwing across the TPL boundary; abandoned slots stay null.
                     Parallel.For(
                         0,
                         misses.Count,
@@ -185,12 +164,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                 });
             }
 
-            // The external contract, checked AFTER the work as well as before
-            // it: a caller's own token cancelling mid-computation must still
-            // raise, and the silent path cannot tell the two cancellations
-            // apart — both land in the linked source, and the delegate reports
-            // either of them by returning null. Only the revision-driven one
-            // is silent, so the external token is re-examined on its own here.
+            // Re-checked after the work: a null cannot tell external from revision-driven cancellation.
             cancellationToken.ThrowIfCancellationRequested();
 
             lock (sync)
@@ -201,11 +175,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
                     return null;
                 }
 
-                // A channel the loop abandoned leaves its slot null. The
-                // cancellation check above is what normally catches that, but
-                // the two are read at different moments, so the render is only
-                // published once every slot is actually filled — never with a
-                // hole in it.
+                // Published only when every slot is filled.
                 foreach (VirtualCrossoverProcessedChannel? result in results)
                 {
                     if (result == null)
@@ -235,15 +205,9 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         catch (AggregateException aggregate) when (
             aggregate.InnerExceptions.All(inner => inner is OperationCanceledException))
         {
-            // The external contract again: a delegate that threw because the
-            // CALLER's token cancelled must surface as a cancellation, not as
-            // an aggregate — the pre-silence code raised one from the parallel
-            // loop itself, and callers were entitled to it.
+            // A delegate that threw for the caller's token surfaces as cancellation, not an aggregate.
             cancellationToken.ThrowIfCancellationRequested();
-            // Backstops the OTHER convention: a processing delegate is still
-            // free to report cancellation by throwing, and without a token on
-            // the ParallelOptions those throws reach here aggregated rather
-            // than as a bare OperationCanceledException.
+            // Backstop: delegates may still throw for cancellation.
             return null;
         }
         finally
@@ -252,13 +216,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         }
     }
 
-    /// <summary>
-    /// Runs one auxiliary computation against a revision, returning null when
-    /// it was superseded. The operation reports its own cancellation by
-    /// RETURNING NULL — same reason as <see cref="ProcessChannel"/>: a stale
-    /// computation is routine, and throwing for it stops a Just My Code
-    /// debugger on every edit.
-    /// </summary>
+    /// <summary>Runs one auxiliary computation; null when superseded (operations report cancellation by returning null).</summary>
     public async Task<T?> RunAuxiliaryAsync<T>(
         long candidateRevision,
         Func<CancellationToken, T?> operation,
@@ -285,15 +243,11 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
             try
             {
                 T? result = await Task.Run(() => operation(linked.Token));
-                // As in ProcessAsync: a null can mean either cancellation, and
-                // the caller's own token still owes an exception.
                 cancellationToken.ThrowIfCancellationRequested();
                 return result != null && IsCurrent(candidateRevision) ? result : null;
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                // Kept as a backstop: an operation is free to throw for
-                // cancellation, it just no longer has to.
                 return null;
             }
         }
@@ -325,17 +279,10 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         }
         catch (ObjectDisposedException)
         {
-            // The operation that owned this source completed between the state
-            // transition and the out-of-lock cancellation request.
         }
     }
 
-    // Cancellation is reported by RETURNING NULL rather than by throwing: a
-    // stale render is an ordinary event here — every delay edit makes one —
-    // and an exception thrown out of this delegate crosses the TPL boundary,
-    // which a debugger with Just My Code enabled stops on as "user-unhandled"
-    // even though ProcessAsync catches it a frame later. Null means "this
-    // response was abandoned"; the caller drops the whole render.
+    // Returns null on cancellation: exceptions crossing the TPL boundary stop a Just My Code debugger on every edit.
     private static Complex[]? ProcessChannel(
         VirtualCrossoverSourceSnapshot source,
         DspChannelChain chain,
@@ -377,9 +324,7 @@ internal sealed class VirtualCrossoverProcessingCoordinator : IDisposable
         {
             this.source = source;
             this.sampleRate = sampleRate;
-            // Part of the key because the SAME chain realized at another processing
-            // rate is another filter: switching the project's DSP model must not be
-            // served the responses computed for the previous one.
+            // Same chain at another processing rate is another filter.
             this.processorSampleRate = processorSampleRate;
             this.chain = new DspChannelChainCacheKey(chain);
         }
@@ -409,15 +354,10 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
     private readonly double peqPreampDb;
     private readonly PeqBand[] peqBands;
     private readonly PhaseRotationSpec phaseRotation;
-    // By reference, which is the kernel's own equality: the same loaded instance is
-    // the same filter, a re-read file is a new one (see FirFilter).
+    // By reference: the same loaded instance is the same filter.
     private readonly FirFilter? fir;
 
-    // Every stage of the chain must be represented here. This key exists only because
-    // EqualizationCurve is a plain class with reference equality, so it cannot simply
-    // defer to the record's own equality — which means each new stage has to be added
-    // by hand, and one that is forgotten does not fail to compile: it just makes the
-    // coordinator serve a stale render forever.
+    // Every chain stage must be listed by hand (EqualizationCurve has reference equality); a forgotten stage serves stale renders.
     public DspChannelChainCacheKey(DspChannelChain chain)
     {
         ArgumentNullException.ThrowIfNull(chain);
@@ -463,38 +403,14 @@ internal sealed class DspChannelChainCacheKey : IEquatable<DspChannelChainCacheK
     }
 }
 
-/// <summary>
-/// Write-once source owned by the processing layer. Construction copies the
-/// panel's measurement array once, when the source is loaded, so background
-/// work never observes later mutation of panel-owned data — and keeps only the
-/// head of it (see <see cref="RenderCropLength"/>).
-/// </summary>
+/// <summary>Write-once copy of the panel's measurement, cropped to its head.</summary>
 internal sealed class VirtualCrossoverSourceSnapshot
 {
-    /// <summary>
-    /// How much of a measured transfer IR the chain is run over.
-    /// <para>
-    /// A sweep writes the whole record — 524288 samples, ~12 s, of which the last three
-    /// quarters sit at the noise floor (measured: −67 dBFS against the peak) while the
-    /// arrival lands inside the first thousand. Running the chain over all of it costs a
-    /// 1048576-point FFT per side: the length is exactly 2^19, so ANY filter-tail padding
-    /// tips <c>NextPowerOfTwo</c> to 2^20 — 82 ms and 16 MB per side, against 10 ms and
-    /// 2 MB over the head alone.
-    /// </para>
-    /// <para>
-    /// Nothing downstream reads past it: the magnitude window's analysis length is clamped
-    /// to 32768 by <c>GetOversampledLength</c>, and the phase gate is a few hundred samples
-    /// zero-padded to its own fixed FFT. Verified against three real cabin measurements —
-    /// the magnitude and phase curves come out identical to 0.00000 dB and 0.00000°.
-    /// </para>
-    /// </summary>
+    /// <summary>Head of the transfer IR the chain runs over; nothing downstream reads further and a full 2^19 sweep costs a 2^20 FFT.
+    /// See docs/tech/virtual-dsp-analysis.md#render-crop.</summary>
     private const int RenderCropLength = 65_536;
 
-    /// <summary>
-    /// The most any curve reads after the arrival — the magnitude's clamped analysis
-    /// length. A measurement whose arrival sits so late that this would not fit keeps its
-    /// full length rather than being quietly cut short.
-    /// </summary>
+    /// <summary>Magnitude's clamped analysis length; a later arrival keeps the full record.</summary>
     private const int RenderCropPostPeakSamples = 32_768;
 
     private readonly Complex[] impulseResponse;
@@ -513,31 +429,13 @@ internal sealed class VirtualCrossoverSourceSnapshot
         VirtualCrossoverAnalysis.ApplyChain(
             impulseResponse, chain, sampleRate, processorSampleRate);
 
-    /// <summary>
-    /// The cropped measurement itself, for a caller that must run
-    /// <see cref="VirtualCrossoverAnalysis.ApplyChain"/> over the SAME input this
-    /// snapshot would — the EQ Wizard handoff, whose corrected preview is only the
-    /// panel's own arithmetic if it starts from the panel's own array. Write-once by
-    /// construction (see the class summary): callers read it and never mutate it, which
-    /// is what lets it be handed out rather than copied per preview.
-    /// </summary>
+    /// <summary>The cropped measurement, for callers that must run ApplyChain over the same input (EQ Wizard handoff). Never mutate.</summary>
     public Complex[] CroppedImpulseResponse => impulseResponse;
 
-    /// <summary>
-    /// The source measurement's length: with a processed response's length
-    /// and its chain, enough to recover the ApplyChain valid range without
-    /// re-running the chain (see
-    /// <see cref="VirtualCrossoverAnalysis.ChainValidRange"/>) — the cache
-    /// keeps processed arrays only.
-    /// </summary>
+    /// <summary>Source length, enough with the chain to recover the valid range (<see cref="VirtualCrossoverAnalysis.ChainValidRange"/>).</summary>
     public int SampleCount => impulseResponse.Length;
 
-    // Truncation from sample 0 — deliberately NOT a window centred on the arrival. Every
-    // channel keeps its own peak index, the channels keep their relative timing, and the
-    // user's absolute gate offset still points where they put it. A per-channel crop
-    // offset breaks all three at once, which is why the auto-delay search has to share one
-    // offset across channels (VirtualCrossoverAnalysis.CropSharedDirectSoundWindow);
-    // starting at 0 sidesteps the question entirely.
+    // Truncated from sample 0, not around the arrival: peak indices, relative timing and the absolute gate offset all survive.
     private static Complex[] TakeHead(Complex[] impulseResponse)
     {
         if (impulseResponse.Length <= RenderCropLength)
@@ -599,13 +497,7 @@ internal sealed class VirtualCrossoverChannelSnapshot
         Source = source;
         SampleRate = sampleRate;
         ProcessorSampleRate = processorSampleRate;
-        // Only the PEQ needs detaching — its band list is mutable and the UI thread may
-        // edit it while this snapshot is processed in the background. Everything else is
-        // immutable, so `with` carries it across untouched. Copying member by member (as
-        // this once did) silently drops any stage the copy forgets, and an optional
-        // record parameter means the compiler never complains: that is exactly how the
-        // all-pass, back when it was a chain stage of its own, came to be a no-op on
-        // the whole processed-channel path.
+        // Only the mutable PEQ is detached; `with` carries every other stage (member-wise copying silently drops a forgotten one).
         Chain = chain.Peq == null
             ? chain
             : chain with { Peq = new EqualizationCurve(chain.Peq.Bands, chain.Peq.PreampDb) };
@@ -614,7 +506,7 @@ internal sealed class VirtualCrossoverChannelSnapshot
     public int Id { get; }
     public ProcessingSlotId SlotId { get; }
     public VirtualCrossoverSourceSnapshot Source { get; }
-    /// <summary>The MEASUREMENT's rate: the grid the source impulse response lives on.</summary>
+    /// <summary>The measurement's rate.</summary>
     public int SampleRate { get; }
 
     /// <summary>The rate the simulated processor realizes <see cref="Chain"/> at.</summary>
@@ -642,10 +534,7 @@ internal sealed class VirtualCrossoverProcessingSnapshot
     public IReadOnlyList<VirtualCrossoverChannelSnapshot> Channels => channels;
 }
 
-// SampleRate is the rate the response was PROCESSED at, carried with the
-// result: consumers must not read it back off the live channel, which a
-// session import rebinds (and momentarily zeroes) while a render is still in
-// flight — see ProcessedChannel.
+// SampleRate is the measurement's (record) rate, captured with the result; never read it off the live channel (see ProcessedChannel).
 internal sealed record VirtualCrossoverProcessedChannel(
     int Id,
     Complex[] ImpulseResponse,

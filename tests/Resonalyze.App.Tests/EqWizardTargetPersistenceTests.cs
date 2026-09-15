@@ -1,11 +1,6 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The EQ Wizard's target lives in the settings file. A house curve imported into
-/// it is carried there by value — the file is what the next launch opens on, and
-/// a path to wherever the curve was imported from would be a promise the settings
-/// cannot keep.
-/// </summary>
+/// <summary>An imported house curve is stored by value, not by path.</summary>
 public sealed class EqWizardTargetPersistenceTests : IDisposable
 {
     private readonly string directory = Path.Combine(
@@ -42,8 +37,6 @@ public sealed class EqWizardTargetPersistenceTests : IDisposable
     [Fact]
     public void AFileFromBeforeTheImportOpensOnItsParametricShape()
     {
-        // No imported curve is the ordinary state, and it has to stay readable:
-        // every settings file written before this existed is one of them.
         string path = NewSettingsPath();
         MeasurementSettingsFile settings = MeasurementSettingsFile.LoadOrDefault(path);
         settings.EqWizard.Preset = TargetPreset.Car;

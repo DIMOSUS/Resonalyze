@@ -2,13 +2,7 @@ using NAudio.Wave;
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Packs a mono float signal into PCM playback streams, one per
-/// <see cref="PlaybackChannel"/> routing, built lazily on first request: a
-/// measurement uses exactly one routing, while the previous eager four-way
-/// packing kept four PCM copies of the signal (tens of megabytes for long
-/// sweeps and noise buffers) alive for its whole lifetime.
-/// </summary>
+/// <summary>Built lazily per routing: a measurement uses one, and eager packing would keep four large PCM copies alive.</summary>
 internal sealed class PcmStreamSet : IDisposable
 {
     private static readonly int ChannelModeCount =
@@ -66,11 +60,7 @@ internal sealed class PcmStreamSet : IDisposable
         return stream;
     }
 
-    /// <summary>
-    /// Packs normalized floats into little-endian PCM frames for the routing:
-    /// Mono is a single channel; Left/Right are stereo frames with the other
-    /// side silent; Stereo carries the signal on both sides.
-    /// </summary>
+    /// <summary>Left/Right are stereo frames with the other side silent; Stereo carries the signal on both.</summary>
     internal static byte[] Pack(
         IReadOnlyList<float> samples,
         int bitsPerSample,

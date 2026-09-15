@@ -2,20 +2,14 @@ namespace Resonalyze.Audio;
 
 internal static class AudioLevelMetering
 {
-    /// <summary>Peak amplitude at or above which a channel counts as full scale.</summary>
     public const double FullScaleThreshold = 0.999;
 
-    // Inlined amplitude→dBFS: the audio library must not depend on Resonalyze.Dsp.
-    // Mirrors DataHelper.AmplitudeToDecibels (floor at 1e-8 → -160 dBFS).
+    // Inlined amplitude→dBFS (no Resonalyze.Dsp dependency); mirrors DataHelper.AmplitudeToDecibels.
     private const double MinimumAmplitude = 1e-8;
 
     private static double AmplitudeToDecibels(double amplitude) =>
         20.0 * Math.Log10(Math.Max(amplitude, MinimumAmplitude));
 
-    /// <summary>
-    /// The one Peak/RMS/dB summary all metering paths share: from an
-    /// accumulated peak, sum of squares and sample count.
-    /// </summary>
     public static AudioChannelLevel Measure(double peak, double sumSquares, long sampleCount)
     {
         double rms = Math.Sqrt(Math.Max(sumSquares, 0) / Math.Max(sampleCount, 1));
@@ -25,7 +19,6 @@ internal static class AudioLevelMetering
             peak >= FullScaleThreshold);
     }
 
-    /// <summary>Peak/RMS level of one recorded channel.</summary>
     public static AudioChannelLevel MeasureSamples(IReadOnlyList<float> samples)
     {
         ArgumentNullException.ThrowIfNull(samples);

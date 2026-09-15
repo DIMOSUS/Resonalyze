@@ -135,10 +135,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void GroupDelay_ReadsThroughTheOptionsWindow()
     {
-        // A direct arrival with a copy 6 ms later. Under Fixed the model's
-        // measured curve is the legacy fixed-gate read, point for point; under
-        // FDW the three curves are all there and the measured one no longer
-        // carries the reflection's ripple at the top of the band.
+        // Direct arrival plus a copy 6 ms later: FDW drops the reflection's ripple at the top of the band.
         const int sampleRate = 48_000;
         const int peakSample = 480;
         var impulse = new Complex[4_096];
@@ -168,8 +165,6 @@ public sealed class PlotModelFactoryTests
             groupDelayVisibility: visibility);
 
         LineSeries fixedMeasured = MeasuredGroupDelaySeries(factory);
-        // Auto snapped the offset while the model was built; the legacy read
-        // must use the same placement.
         GroupDelayCurveSet legacy = DataHelper.GetGroupDelayCurves(
             new MeasurementPlotContext(measurement).CreatePrimaryMeasurement(),
             options.GroupDelayGateOffsetMs,
@@ -247,8 +242,6 @@ public sealed class PlotModelFactoryTests
             tags, tag => tag.Kind == AnalysisCurveKind.MinimumPhaseGroupDelay);
         Assert.Contains(tags, tag => tag.Kind == AnalysisCurveKind.ExcessGroupDelay);
 
-        // Each curve follows its own flag: hiding the measured curve must not
-        // take the minimum/excess pair down with it, and vice versa.
         groupDelayVisibility.ShowGroupDelay = false;
         groupDelayVisibility.ShowExcessGroupDelay = false;
         tags = factory.CreateGroupDelay(includeCurves: true).Series
@@ -266,12 +259,8 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void GroupDelay_AxisAutoFit_FollowsMeasuredAndPinsZeroForMinimum()
     {
-        // A ~5.4 ms arrival — the typical car-audio scale, where the measured
-        // range (±2 ms pad) no longer straddles zero on its own. The fit must
-        // follow the measured absolute level even when only the excess is shown
-        // (in band the excess tracks it), must extend to zero when the minimum
-        // curve is shown (it lives at ≈ 0), and must never read the pair's own
-        // point values (their band-edge cepstral swings would wreck the scale).
+        // ~5.4 ms arrival: the fit follows the measured level, extends to zero only for the minimum curve,
+        // and never reads the pair's own points (band-edge cepstral swings).
         using var measurement = CreateTransferMeasurement(peakSample: 240);
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
 
@@ -289,8 +278,6 @@ public sealed class PlotModelFactoryTests
                 .First(axis => axis.Key == PlotModelFactory.GroupDelayAxisKey);
         }
 
-        // All three curves: the ~5.4 ms measured level AND the ≈ 0 minimum
-        // curve must both land inside the fitted range.
         OxyPlot.Axes.Axis allThree = AxisOf(
             showMeasured: true, showMinimum: true, showExcess: true);
         Assert.True(
@@ -300,9 +287,6 @@ public sealed class PlotModelFactoryTests
             allThree.Maximum > 5.0,
             $"the measured level is clipped out (axis ends at {allThree.Maximum:0.00} ms)");
 
-        // Excess only (measured hidden): the axis still follows the measured
-        // absolute level, where the in-band excess actually lives — not the
-        // −5…+5 default that would push an 8–10 ms system off screen.
         OxyPlot.Axes.Axis excessOnly = AxisOf(
             showMeasured: false, showMinimum: false, showExcess: true);
         Assert.True(
@@ -312,15 +296,12 @@ public sealed class PlotModelFactoryTests
             excessOnly.Minimum < 5.0,
             $"the excess curve is clipped out (axis starts at {excessOnly.Minimum:0.00} ms)");
 
-        // Measured + excess without the minimum curve: no zero extension — the
-        // range stays tight around the arrival.
         OxyPlot.Axes.Axis withoutMinimum = AxisOf(
             showMeasured: true, showMinimum: false, showExcess: true);
         Assert.True(
             withoutMinimum.Minimum > 2.0,
             $"zero was pinned with no minimum curve shown ({withoutMinimum.Minimum:0.00} ms)");
 
-        // Minimum alone: the default −5…+5 window already contains the curve.
         OxyPlot.Axes.Axis minimumOnly = AxisOf(
             showMeasured: false, showMinimum: true, showExcess: false);
         Assert.Equal(-5.0, minimumOnly.Minimum);
@@ -358,12 +339,7 @@ public sealed class PlotModelFactoryTests
                 tag.Kind == AnalysisCurveKind.ExcessGroupDelay);
     }
 
-    // An imported recording's time origin is its own arrival, so nothing that
-    // reads absolute time may be drawn beside a measurement that was referenced
-    // to a captured loopback. The minimum-phase curve is not such a statement —
-    // it is reconstructed from the gated magnitude and carries no bulk delay by
-    // construction — so it stays comparable, and hiding it would be hiding valid
-    // data rather than avoiding a wrong number.
+    // The minimum-phase curve carries no bulk delay, so it stays comparable across clocks.
     [Theory]
     [InlineData(TimingReference.SynchronizedLoopback, true)]
     [InlineData(TimingReference.RecordedSweep, false)]
@@ -453,8 +429,6 @@ public sealed class PlotModelFactoryTests
                 tag.Source == CurveSource.Main);
         Assert.DoesNotContain(mainTags, tag => tag.Source == CurveSource.Compare);
 
-        // A Compare source at the same sample rate adds a second, Compare-tagged curve
-        // that a linked overlay slot can bind to.
         var compareIr = new Complex[2048];
         compareIr[64] = Complex.One;
         factory.SetCompareSourceProvider(
@@ -587,9 +561,7 @@ public sealed class PlotModelFactoryTests
                 measurement, noiseMeasurement, frequencyResponseVisibility: shown)
             .CreateFrequencyResponse(includeCurves: true);
 
-        // A dB RANGE is not a level: on the magnitude axis it would either sit on
-        // top of the curves or fall off the bottom, and both invite reading it as
-        // a response.
+        // A dB range is not a level, so it must not sit on the magnitude axis.
         OxyPlot.Series.Series spread = model.Series.Single(
             series => series.Title == "Array spread");
         Assert.Equal(
@@ -822,13 +794,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void ComplexSum_StopsWhereNeitherResponseMeasured()
     {
-        // The sum is a record neither measurement made, so it carries no band of its
-        // own — and it was therefore the one curve on the plot still drawing the
-        // analysis window's leakage below a band sweep. Both contributors stop at
-        // 500 Hz here; the sum has to stop with them, and go on wherever EITHER of
-        // them plays.
-        // A band sweep on each side, and different ones: the main from 800 Hz up, the
-        // compared one from 500 to 8 kHz. Under 500 neither played.
+        // The sum has no band of its own: it stops where both contributors stop and plays where either does.
         var impulse = new Complex[2048];
         impulse[64] = Complex.One;
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
@@ -867,8 +833,6 @@ public sealed class PlotModelFactoryTests
             point => Assert.True(
                 double.IsNaN(point.Y),
                 $"{point.X:0} Hz is below every contributor and must be a break"));
-        // And it goes on wherever EITHER of them plays: 600 Hz is the compared
-        // measurement's alone, 10 kHz the main's alone.
         Assert.Contains(
             sum.Points,
             point => point.X is > 550 and < 700 && double.IsFinite(point.Y));
@@ -884,7 +848,6 @@ public sealed class PlotModelFactoryTests
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
-        // Without a Compare measurement the complex sum has nothing to add.
         Assert.Null(factory.TryBuildComplexSumCurve());
 
         var compareIr = new Complex[2048];
@@ -899,8 +862,7 @@ public sealed class PlotModelFactoryTests
         AnalysisCurve? sum = factory.TryBuildComplexSumCurve();
         Assert.NotNull(sum);
 
-        // The Compare IR equals the main transfer IR, so the coherent (complex)
-        // sum is exactly double the amplitude everywhere: +20·log10(2) dB.
+        // Compare IR equals the main IR: coherent sum is +20·log10(2) dB everywhere.
         AnalysisCurve main = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(
                 measurement.TransferImpulseResponse!,
@@ -924,9 +886,6 @@ public sealed class PlotModelFactoryTests
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
-        // The Compare impulse arrives 10 samples early; delaying it by exactly
-        // 10 samples' worth of milliseconds re-aligns it with the main impulse,
-        // restoring the fully coherent +6 dB sum.
         var compareIr = new Complex[2048];
         compareIr[54] = Complex.One;
         factory.SetCompareSourceProvider(
@@ -967,7 +926,6 @@ public sealed class PlotModelFactoryTests
             () => new CompareAnalysisSource(
                 "Reference", 44_100, compareIr, 64));
 
-        // An identical response in opposite polarity sums to silence everywhere.
         AnalysisCurve? cancelled = factory.TryBuildComplexSumCurve(
             compareDelayMs: 0,
             invertComparePolarity: true);
@@ -978,12 +936,8 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void ComplexSum_WindowsAtTheEarlierRecordsOwnStart_NotTheSumsDominantBand()
     {
-        // Two drivers, the honest hard case: a quiet low-frequency arrival first,
-        // a louder high-frequency one 30 ms later. The summed record's dominant
-        // band belongs to the LOUD driver, so a start estimated on the sum itself
-        // reads the late front — and a window opening there cuts the early driver
-        // out of the sum while its own curve keeps it. The sum must window at the
-        // earlier of the two records' own starts instead.
+        // Quiet LF arrival then a loud HF one 30 ms later: the sum must window at the earlier record's start,
+        // not at a start estimated on the sum (which reads the loud driver's late front).
         const int sampleRate = 44_100;
         var mainIr = new Complex[8_192];
         int mainPeak = Wavelet(mainIr, onset: 441, hz: 300, amplitude: 0.05,
@@ -999,9 +953,7 @@ public sealed class PlotModelFactoryTests
             () => new CompareAnalysisSource(
                 "Reference", sampleRate, compareIr, comparePeak));
 
-        // The fixture must actually discriminate: on the summed record the
-        // estimator locks onto the loud driver's late front, past the early
-        // driver AND the window's whole fade-in.
+        // The fixture must discriminate: on the sum the estimator locks onto the late front.
         var sum = new Complex[8_192];
         for (int i = 0; i < sum.Length; i++)
         {
@@ -1020,9 +972,6 @@ public sealed class PlotModelFactoryTests
         AnalysisCurve? summed = factory.TryBuildComplexSumCurve();
         Assert.NotNull(summed);
 
-        // In the early driver's band the loud driver contributes next to
-        // nothing, so the sum must read the early driver's own level there — a
-        // window anchored on the sum's dominant band loses it by far more.
         AnalysisCurve main = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(mainIr, mainPeak, sampleRate),
             options,
@@ -1034,11 +983,7 @@ public sealed class PlotModelFactoryTests
             $"the sum read {summedAt300:0.00} dB at 300 Hz against the early " +
             $"driver's own {mainAt300:0.00} dB");
 
-        // And the documented invariant survives the window bookkeeping: the loss
-        // divides the windowed sum by the individually windowed magnitudes, so a
-        // sum window that lost a driver the denominators kept would show up here
-        // as a loss far from the triangle inequality's <= 0. The epsilon covers
-        // the windows' different (per-record) placements, nothing more.
+        // The epsilon covers only the per-record window placements; a lost driver would break loss <= 0.
         AnalysisCurve? loss = factory.TryBuildComplexSumLossCurve();
         Assert.NotNull(loss);
         Assert.All(loss.Points, point => Assert.True(
@@ -1046,7 +991,6 @@ public sealed class PlotModelFactoryTests
             $"summation loss reads +{point.Y:0.000} dB at {point.X:0.#} Hz"));
     }
 
-    // A decaying wavelet from `onset`: returns the sample where the record peaks.
     private static int Wavelet(
         Complex[] impulse,
         int onset,
@@ -1094,13 +1038,11 @@ public sealed class PlotModelFactoryTests
         var compareIr = new Complex[2048];
         compareIr[64] = Complex.One;
 
-        // A Compare at a different sample rate cannot be summed sample-wise.
         factory.SetCompareSourceProvider(
             () => new CompareAnalysisSource(
                 "Reference", 48_000, compareIr, 64));
         Assert.Null(factory.TryBuildComplexSumCurve());
 
-        // A Compare without a transfer IR has no loopback time reference.
         factory.SetCompareSourceProvider(
             () => new CompareAnalysisSource(
                 "Reference", 44_100, Array.Empty<Complex>(), 0));
@@ -1114,7 +1056,6 @@ public sealed class PlotModelFactoryTests
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
-        // Without a Compare measurement there is nothing to compare against.
         Assert.Null(factory.TryBuildComplexSumLossCurve());
 
         var compareIr = new Complex[2048];
@@ -1123,8 +1064,6 @@ public sealed class PlotModelFactoryTests
             () => new CompareAnalysisSource(
                 "Reference", 44_100, compareIr, 64));
 
-        // Identical, in-phase responses: the magnitude sum and the complex sum are both
-        // exactly double the amplitude, so the phase-blind addition loses nothing.
         AnalysisCurve? loss = factory.TryBuildComplexSumLossCurve();
         Assert.NotNull(loss);
         Assert.All(loss.Points, point => Assert.Equal(0.0, point.Y, precision: 4));
@@ -1143,8 +1082,6 @@ public sealed class PlotModelFactoryTests
             () => new CompareAnalysisSource(
                 "Reference", 44_100, compareIr, 64));
 
-        // Opposite polarity: the complex sum cancels to near silence while the magnitude
-        // sum stays at full level, so the real sum falls far below it (a large negative gap).
         AnalysisCurve? loss = factory.TryBuildComplexSumLossCurve(
             compareDelayMs: 0,
             invertComparePolarity: true);
@@ -1155,11 +1092,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void ComplexSumLoss_WithAnExplicitWidth_IgnoresThePlotsOwnSmoothing()
     {
-        // An overlay slot asks for the loss at ITS width. The plot's smoothing must
-        // not reach the curve at all: it neither bakes into the operands (they are
-        // divided unsmoothed) nor smooths the ratio, so switching the plot from
-        // psychoacoustic to 1/6 octave leaves the slot's curve bit-identical — and
-        // a slot set to Off gets a genuinely unsmoothed ratio.
+        // The plot's smoothing must not reach the slot's loss curve (operands divided unsmoothed).
         using var measurement = CreateTransferMeasurement();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         var options = new FrequencyResponseOptions
@@ -1187,8 +1120,6 @@ public sealed class PlotModelFactoryTests
             Assert.Equal(underPsychoacoustic.Points[i].Y, underSixth.Points[i].Y, 12);
         }
 
-        // And the width that IS asked for still acts: the same curve smoothed
-        // psychoacoustically differs from the unsmoothed one.
         AnalysisCurve? smoothed = factory.TryBuildComplexSumLossCurve(
             smoothingInverseOctaves: SpectrumSmoothing.PsychoacousticCode);
         Assert.NotNull(smoothed);
@@ -1213,7 +1144,6 @@ public sealed class PlotModelFactoryTests
 
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
-        // The impulse view is now derived from the mandatory loopback transfer IR.
         measurement.RestoreImpulseResponse(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
@@ -1233,10 +1163,7 @@ public sealed class PlotModelFactoryTests
         var timeAxis = model.Axes.First(axis =>
             axis.Position == OxyPlot.Axes.AxisPosition.Bottom);
 
-        // The level axis is left to scale itself so a later overlay can widen it (see
-        // ImpulseResponse_LevelAxisTakesInAnOverlayAttachedAfterTheBuild); only the dB
-        // floor is pinned, because the impulse dives to the deconvolution silence floor
-        // at every zero crossing and fitting to that spends most of the plot on it.
+        // Only the dB floor is pinned: the impulse dives to the silence floor at every zero crossing.
         double expectedMaxY = series.Points.Max(point => point.Y);
         if (scale == ImpulseAmplitudeScale.Decibels)
         {
@@ -1249,15 +1176,11 @@ public sealed class PlotModelFactoryTests
 
         Assert.True(double.IsNaN(valueAxis.Maximum));
 
-        // The time axis can REACH the whole record — the traces are built whole, so
-        // zooming out ends at the end of the tail rather than at a length setting...
         double expectedMinX = series.Points.Min(point => point.X);
         double expectedMaxX = series.Points.Max(point => point.X);
         Assert.Equal(expectedMinX, timeAxis.AbsoluteMinimum, precision: 9);
         Assert.Equal(expectedMaxX, timeAxis.AbsoluteMaximum, precision: 9);
-        // ...while it OPENS on the peak plus the Length tail, because a deconvolved
-        // record is mostly silence and opening on all of it draws the response as one
-        // vertical line.
+        // The view opens on peak + Length: a deconvolved record is mostly silence.
         double expectedVisibleMaxX = (peak + options.Length) * 1000.0 / 44_100.0;
         Assert.Equal(expectedMinX, timeAxis.Minimum, precision: 9);
         Assert.Equal(expectedVisibleMaxX, timeAxis.Maximum, precision: 9);
@@ -1267,8 +1190,6 @@ public sealed class PlotModelFactoryTests
     private static (ExpSweepMeasurement Measurement, NoiseMeasurement Noise) BandedCabin(
         double toneHz, int sampleRate = 48_000, int arrival = 480)
     {
-        // A decaying tone: its dominant band sits around toneHz, which is what decides
-        // whether a band reading is offered at all.
         var ir = new Complex[16_384];
         for (int i = 0; i + arrival < ir.Length; i++)
         {
@@ -1332,9 +1253,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void ImpulseResponse_RefusesTheBandOffsetWhereTheDriverDoesNotPlay()
     {
-        // The field case this guard exists for: at 63 Hz a tweeter still has a "band
-        // peak", and across the archived cabins it landed seconds after the arrival
-        // because what peaked was leakage.
+        // Field case: at 63 Hz a tweeter's "band peak" is leakage landing seconds after the arrival.
         (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(8_000);
         using (measurement)
         using (noise)
@@ -1375,14 +1294,12 @@ public sealed class PlotModelFactoryTests
     }
 
     [Theory]
-    [InlineData(true, false)]   // impulse only: the step axis must still exist
-    [InlineData(false, true)]   // step only: the level axis must still exist
+    [InlineData(true, false)]
+    [InlineData(false, true)]
     public void ImpulseResponse_KeepsBothAxesForOverlaysCapturedOnTheOther(
         bool showImpulse, bool showStep)
     {
-        // An overlay carries the axis key it was captured with, and a series naming an
-        // axis the model does not have cannot bind — so switching a trace off must not
-        // take its axis out of the model.
+        // A series naming an axis the model lacks cannot bind, so hiding a trace must keep its axis.
         (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
         using (measurement)
         using (noise)
@@ -1411,10 +1328,7 @@ public sealed class PlotModelFactoryTests
     public void ImpulseResponse_LevelAxisTakesInAnOverlayAttachedAfterTheBuild(
         ImpulseAmplitudeScale scale)
     {
-        // Overlays join the model AFTER it is built, and a snapshot from a louder record
-        // re-frames above the live curve on purpose. An explicit Minimum/Maximum would
-        // win over the data range in OxyPlot, so the axis is left to scale itself and the
-        // level difference the shared normalization exists to show stays on screen.
+        // Explicit Minimum/Maximum would win over the data range in OxyPlot and clip a louder overlay.
         (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
         using (measurement)
         using (noise)
@@ -1426,9 +1340,6 @@ public sealed class PlotModelFactoryTests
             var valueAxis = model.Axes.First(axis =>
                 axis.Key == PlotModelFactory.ImpulseAxisKey);
 
-            // What an overlay louder than the live record looks like once re-framed. The
-            // linear case is read off the drawn curve: the axis has no data range yet,
-            // since nothing has updated the model.
             double liveMaximum = ((OxyPlot.Series.LineSeries)model.Series[0])
                 .Points.Max(point => point.Y);
             double louder = scale switch
@@ -1455,10 +1366,6 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void ImpulseResponse_FramesOverlaysEvenWithEveryLiveTraceHidden()
     {
-        // An overlay is framed by the view's origin and the live record's peak, and it
-        // can be the only thing on the plot. Resolving those inside the "is anything
-        // drawn" branch left it at the record start and at its own peak — ignoring the
-        // chosen time zero and erasing the level difference against the current record.
         (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
         using (measurement)
         using (noise)
@@ -1489,8 +1396,6 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void ImpulseResponse_PinsTheDecibelFloorButNotTheTop()
     {
-        // The floor is what keeps the plot off the silence the impulse dives to at every
-        // zero crossing; the top has to stay free for the case above.
         (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
         using (measurement)
         using (noise)
@@ -1521,8 +1426,6 @@ public sealed class PlotModelFactoryTests
         var ir = new Complex[8192];
         int peak = 1024;
         ir[peak] = Complex.One;
-        // A late reflection well past peak + Length: it must exist in the curve, or no
-        // amount of zooming out could ever bring it on screen.
         ir[7000] = new Complex(0.2, 0);
 
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
@@ -1562,8 +1465,6 @@ public sealed class PlotModelFactoryTests
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
-        // With no loopback transfer IR, every analysis mode draws nothing and shows an
-        // explanatory annotation instead. Sweep deconvolution alone is no longer rendered.
         OxyPlot.PlotModel[] models =
         [
             factory.CreateFrequencyResponse(includeCurves: true),
@@ -1593,8 +1494,6 @@ public sealed class PlotModelFactoryTests
     public void CreateFrequencyResponse_InSplMode_UsesTheSplAxisAndLimits()
     {
         ExpSweepMeasurement measurement = CreateTransferMeasurement();
-        // The result's own frozen calibration (matching the default Wave input) plus
-        // its input identity and a captured loopback level are the ingredients of K.
         var anchor = new SplCalibration
         {
             ReferenceLevelDbSpl = 94,
@@ -1623,8 +1522,6 @@ public sealed class PlotModelFactoryTests
         var dbAxis = (OxyPlot.Axes.LinearAxis)model.Axes.First(
             axis => axis.Key == PlotModelFactory.DecibelAxisKey);
         Assert.Equal("dB SPL", dbAxis.Title);
-        // Curves sit near 40–110 dB, so the axis must reach well above the
-        // relative one's ceiling or the plot would be blank.
         Assert.Equal(PlotModelStyle.SplDecibelMaximum, dbAxis.Maximum);
         Assert.Equal(PlotModelStyle.SplDecibelAbsoluteMaximum, dbAxis.AbsoluteMaximum);
     }
@@ -1643,27 +1540,19 @@ public sealed class PlotModelFactoryTests
             measurement, noise, frequencyResponseOptions: splOptions);
         OxyPlot.PlotModel model = factory.CreateFrequencyResponse(includeCurves: true);
 
-        // SPL was requested without a calibration. The axis used to fall back to
-        // dBr/dBc, which made SPL unreachable before the first calibrated run; now
-        // it stays SPL so overlays captured in dB SPL can at least be viewed...
+        // Without a calibration the axis stays SPL so dB SPL overlays can be viewed; own curves are omitted.
         var dbAxis = (OxyPlot.Axes.LinearAxis)model.Axes.First(
             axis => axis.Key == PlotModelFactory.DecibelAxisKey);
         Assert.Equal("dB SPL", dbAxis.Title);
         Assert.Equal(PlotModelStyle.SplDecibelMaximum, dbAxis.Maximum);
-        // ...and the overlay gate follows the axis, or those overlays stay hidden...
         Assert.Equal(
             MagnitudeScale.SoundPressureLevel,
             factory.EffectiveFrequencyResponseScale);
-        // ...while the measurement's own curves are omitted — their dBr shapes would
-        // read as absolute levels — replaced by the explanatory annotation.
         Assert.Empty(model.Series);
         var note = Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
         Assert.Contains("overlays only", note.Text, StringComparison.OrdinalIgnoreCase);
     }
 
-    // The Compare curve used to vanish the moment the plot went to dB SPL. It has
-    // its own K (own loopback level, own anchor), so it belongs on the absolute
-    // axis — placed by that K, not by the main measurement's.
     [Fact]
     public void CreateFrequencyResponse_InSplMode_DrawsCompareWithItsOwnOffset()
     {
@@ -1680,8 +1569,6 @@ public sealed class PlotModelFactoryTests
             {
                 MagnitudeScale = MagnitudeScale.SoundPressureLevel
             });
-        // The same impulse on the Compare side, so the two dBr shapes are identical
-        // and the only thing separating the curves on screen is K_compare - K_main.
         var compareImpulse = new Complex[2048];
         compareImpulse[peakSample] = Complex.One;
         factory.SetCompareSourceProvider(() => new CompareAnalysisSource(
@@ -1710,10 +1597,6 @@ public sealed class PlotModelFactoryTests
         }
     }
 
-    // Without an anchor of its own the compared measurement has no absolute level;
-    // drawing its dBr shape on a dB SPL axis would be a lie, so it stays out — but
-    // the plot has to name it, or the curve just silently disappears (which is how
-    // this was reported).
     [Fact]
     public void CreateFrequencyResponse_InSplMode_OmitsAnUncalibratedCompareAndSaysSo()
     {
@@ -1744,9 +1627,6 @@ public sealed class PlotModelFactoryTests
         Assert.Contains("uncalibrated.json", note.Text);
     }
 
-    // Mirrors the overlay rule: an SPL-capable source stays visible even when the
-    // measurement itself cannot supply SPL, so the view-only plot is not empty when
-    // there is something honest to show.
     [Fact]
     public void CreateFrequencyResponse_SplViewOnly_StillDrawsACalibratedCompare()
     {
@@ -1767,28 +1647,21 @@ public sealed class PlotModelFactoryTests
 
         OxyPlot.PlotModel model = factory.CreateFrequencyResponse(includeCurves: true);
 
-        // The measurement's own curves stay out, with the notice explaining why...
         Assert.DoesNotContain(
             model.Series.OfType<LineSeries>(),
             item => item.Tag is CurveTag { Source: CurveSource.Main });
         OverlayTextAnnotation note =
             Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
         Assert.Contains("overlays only", note.Text, StringComparison.OrdinalIgnoreCase);
-        // ...while the compared measurement, which does carry an anchor, is drawn.
         LineSeries compare = Assert.Single(
             model.Series.OfType<LineSeries>(),
             item => item.Tag is CurveTag { Source: CurveSource.Compare });
-        // A unit impulse is 0 dBr at every frequency, so the trace sits at K.
         Assert.All(
             compare.Points,
             point => Assert.Equal(100.0, point.Y, tolerance: 1e-6));
     }
 
-    // Unchecking the primary used to take HD2/HD3/THD/noise with it on the absolute
-    // axis: the lift reads the fundamental's level out of the curve set, so with the
-    // primary never computed the harmonics silently stayed in dBc — tens of dB below
-    // the SPL window, i.e. gone. The reference is computed either way now; only the
-    // drawing follows the checkbox.
+    // The fundamental's level is read from the curve set, so it is computed even with the primary hidden.
     [Fact]
     public void CreateFrequencyResponse_InSplMode_LiftsHarmonicsWithThePrimaryHidden()
     {
@@ -1815,7 +1688,6 @@ public sealed class PlotModelFactoryTests
                     })
                 .CreateFrequencyResponse(includeCurves: true);
 
-            // Computed as the anchor is not drawn as a curve: hidden stays hidden.
             Assert.Equal(
                 showPrimary,
                 model.Series.OfType<LineSeries>().Any(
@@ -1836,16 +1708,13 @@ public sealed class PlotModelFactoryTests
             Assert.Equal(shown.Points[i].X, hidden.Points[i].X, tolerance: 1e-9);
             if (double.IsNaN(shown.Points[i].Y))
             {
-                // Above Nyquist/2 the harmonic is unobservable in both plots.
                 Assert.True(double.IsNaN(hidden.Points[i].Y));
                 continue;
             }
 
             anyFinite = true;
             Assert.Equal(shown.Points[i].Y, hidden.Points[i].Y, tolerance: 1e-9);
-            // The unit impulse makes the primary 0 dBr, so the lifted HD2 sits at
-            // K + its dBc value: well inside the SPL window, where the bare dBc
-            // value it used to keep (about -34 dB here) is far below the floor.
+            // Lifted HD2 sits at K + dBc; the bare dBc value (about -34 dB) would be below the floor.
             Assert.True(
                 hidden.Points[i].Y > PlotModelStyle.SplDecibelMinimum,
                 $"HD2 at {hidden.Points[i].X:0.#} Hz reads {hidden.Points[i].Y:0.0}, " +
@@ -1855,10 +1724,7 @@ public sealed class PlotModelFactoryTests
         Assert.True(anyFinite, "the synthetic HD2 packet produced no usable points");
     }
 
-    // The amber "packet overlaps its neighbour" warning used to fire on the
-    // CLEANEST captures: a harmonic below the noise floor leaves a windowful of
-    // flat noise, which the peak-relative edge test misreads as a leak. Such
-    // orders get a neutral gray note now — never the amber warning.
+    // A harmonic below the noise floor leaves flat noise that the peak-relative edge test misread as a leak.
     [Fact]
     public void CreateFrequencyResponse_HarmonicsBelowTheNoiseFloor_GetANeutralNote()
     {
@@ -1883,10 +1749,6 @@ public sealed class PlotModelFactoryTests
         Assert.Equal(OxyColors.Gray, note.TextColor);
     }
 
-    // The counterpart: a packet that genuinely leaks into its neighbour — a
-    // visible curve, far above the noise floor — keeps the amber warning, while
-    // the orders that really are buried in the same record's noise get the gray
-    // note beside it, each bucket naming only its own curves.
     [Fact]
     public void CreateFrequencyResponse_AGenuineOverlap_KeepsTheAmberWarning()
     {
@@ -1894,7 +1756,6 @@ public sealed class PlotModelFactoryTests
         HarmonicWindowDefinition h2 = EssHarmonicAnalysis.BuildWindow(sweep, 2, 0.5);
 
         Complex[] deconvolution = NoisyCleanDeconvolution(sweep);
-        // HD2 content persisting at full level to its window edge: the real leak.
         for (int i = h2.PeakSample; i <= h2.EndSample && i < deconvolution.Length; i++)
         {
             deconvolution[i] = new Complex(0.3 * Math.Cos(0.3 * (i - h2.PeakSample)), 0.0);
@@ -1933,19 +1794,12 @@ public sealed class PlotModelFactoryTests
             axis => axis.Key == PlotModelFactory.DecibelAxisKey);
         Assert.Equal("dBr/dBc", dbAxis.Title);
         Assert.Equal(PlotModelStyle.RelativeDecibelMaximum, dbAxis.Maximum);
-        // The relative axis is a ratio to the reference, so attenuating the
-        // loopback — which is the recommended fix for an overdriven reference
-        // input — lifts the whole curve by the pad. The clamp has to leave room
-        // for that instead of pinning the view just above unity.
+        // Padding the loopback lifts the relative curve by the pad; the clamp must leave room.
         Assert.True(
             dbAxis.AbsoluteMaximum >= 40,
             $"the dBr ceiling of {dbAxis.AbsoluteMaximum} dB cannot show a padded loopback");
     }
 
-    // Raising the CLAMP made a padded response pannable; the default view must
-    // also open on it. A transfer IR with 20 dB of gain (a 20 dB pad in the
-    // loopback) draws near +20 dBr — the initial window has to rise to show
-    // it, while a normal response keeps the familiar -90..0 view.
     [Fact]
     public void CreateFrequencyResponse_OpensTheViewOnAPaddedResponse()
     {
@@ -1970,20 +1824,15 @@ public sealed class PlotModelFactoryTests
             .CreateFrequencyResponse(includeCurves: true);
         var paddedAxis = (OxyPlot.Axes.LinearAxis)padded.Axes.First(
             axis => axis.Key == PlotModelFactory.DecibelAxisKey);
-        // ~+20 dBr data raised to the next grid line with at least 5 dB of
-        // headroom.
         Assert.Equal(30, paddedAxis.Maximum);
 
         OxyPlot.PlotModel normal = CreateFactory(CreateTransferMeasurement(), noise)
             .CreateFrequencyResponse(includeCurves: true);
         var normalAxis = (OxyPlot.Axes.LinearAxis)normal.Axes.First(
             axis => axis.Key == PlotModelFactory.DecibelAxisKey);
-        // A unity response opens on the familiar window, exactly as before.
         Assert.Equal(PlotModelStyle.RelativeDecibelMaximum, normalAxis.Maximum);
     }
 
-    // The same headroom on the live analyzer's native dB axis: it is the same
-    // loopback-referenced ratio, measured on the same wiring.
     [Fact]
     public void CreateLiveSpectrum_RelativeAxis_ClearsAPaddedLoopback()
     {
@@ -2041,17 +1890,12 @@ public sealed class PlotModelFactoryTests
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: transferImpulse,
             transferPeakIndex: peakSample,
-            // Stated, not inherited from a regenerated sweep: these fixtures are about
-            // what the curves DO over the whole analysis grid, and a one-second sweep
-            // of ten octaves reaches full amplitude well inside it, which would mask
-            // the very points under test.
+            // Stated achieved band: a regenerated 1 s sweep would reach full amplitude inside the grid and mask the points.
             achievedLowFrequencyHz: 20,
             achievedHighFrequencyHz: 20_000);
         return measurement;
     }
 
-    // A transfer measurement carrying the whole SPL recipe: an anchor frozen onto
-    // the result and pinned to the input it ran on, plus a captured loopback level.
     // K = loopbackPeakDbFs + (referenceLevelDbSpl - measuredLevelDbFs).
     private static ExpSweepMeasurement CreateSplTransferMeasurement(
         int peakSample,
@@ -2079,11 +1923,7 @@ public sealed class PlotModelFactoryTests
         return measurement;
     }
 
-    // A calibrated result carrying a REAL second-harmonic packet: the delta at the
-    // sweep peak makes |H1| flat, the delta at the H2 packet position makes HD2 a
-    // flat -34 dBc, and the separate transfer impulse makes the primary 0 dBr — so
-    // every level on the SPL plot is K (= -6 + 94 + 20 = 108 dB) plus the curve's
-    // own dB value.
+    // Flat |H1|, flat -34 dBc HD2 and a 0 dBr primary: every SPL level is K (108 dB) plus the curve's dB.
     private static ExpSweepMeasurement CreateSplSweepWithSecondHarmonic()
     {
         const int sampleRate = 48_000;
@@ -2140,8 +1980,6 @@ public sealed class PlotModelFactoryTests
             sampleRate: 48_000, octaves: 10, sweepSampleCount: 200_000,
             deconvolutionPeakIndex: 150_000);
 
-    // The deconvolution every clean capture approximates: a linear delta over a
-    // deterministic broadband noise floor, with no harmonic content at all.
     private static Complex[] NoisyCleanDeconvolution(EssSweepMetadata sweep)
     {
         var random = new Random(9241);
@@ -2252,8 +2090,6 @@ public sealed class PlotModelFactoryTests
                 BurstDecay: new WaterfallGenerateOptions()));
     }
 
-    // A live analyzer configured for the default Wave input, so it produces a
-    // concrete input identity an SPL anchor can be pinned to.
     private static NoiseMeasurement CreateLiveAnalyzer()
     {
         var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
@@ -2268,7 +2104,6 @@ public sealed class PlotModelFactoryTests
         return noise;
     }
 
-    // An SPL anchor captured on the input the live analyzer runs on, so it validates.
     private static SplCalibration LiveAnchorMatching(
         NoiseMeasurement noise,
         double referenceLevelDbSpl,
@@ -2294,8 +2129,6 @@ public sealed class PlotModelFactoryTests
     {
         using ExpSweepMeasurement measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
-        // Live uses the CONFIGURED calibration (there is no frozen snapshot), validated
-        // against the live input.
         measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
         var options = new LiveSpectrumOptions
         {
@@ -2330,10 +2163,6 @@ public sealed class PlotModelFactoryTests
         PlotModelFactory factory =
             CreateFactory(measurement, noise, liveSpectrumOptions: options);
 
-        // No configured calibration: the offset is unavailable, but the scale (and so
-        // the axis and the overlay gate) follows the SELECTION — the view-only state
-        // that lets overlays captured in dB SPL be seen. The controller suppresses
-        // live curves there, and the record button resets the scale before a run.
         Assert.Null(factory.LiveSplOffsetDb);
         Assert.Equal(
             MagnitudeScale.SoundPressureLevel, factory.EffectiveLiveSpectrumScale);
@@ -2341,8 +2170,6 @@ public sealed class PlotModelFactoryTests
             axis => axis.Key == PlotModelFactory.DecibelAxisKey);
         Assert.Equal("dB SPL", dbAxis.Title);
 
-        // A calibration captured on a different digital input (sample rate) does not
-        // apply to this live input either: still no offset, still view-only.
         SplCalibration mismatched = LiveAnchorMatching(noise, 94, -16);
         mismatched.SampleRate = 48_000;
         measurement.SplCalibration = mismatched;
@@ -2354,10 +2181,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void LiveSplPeakHold_HoldsBandPowerNotTheSumOfPerBinMaxima()
     {
-        // Finding: two frames whose energy sits in different bins of one band must not
-        // peak-hold to the SUM of their bin maxima (+3 dB over any real band level).
-        // The controller holds the max of BuildMainDisplayPoints (already band powers),
-        // so the held level is one frame's band, not both bins added.
+        // Two frames in different bins of one band must not peak-hold to the sum of bin maxima (+3 dB).
         using ExpSweepMeasurement measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
@@ -2372,7 +2196,7 @@ public sealed class PlotModelFactoryTests
             CreateFactory(measurement, noise, liveSpectrumOptions: options);
 
         int binCount = noise.SequenceLength / 2;
-        // Two adjacent bins near 1 kHz (44100/2048 ≈ 21.5 Hz/bin, ~5 bins per 1/6 oct).
+        // 44100/2048 ≈ 21.5 Hz/bin, ~5 bins per 1/6 oct near 1 kHz.
         const int binA = 47;
         const int binB = 48;
         var frameA = new double[binCount];
@@ -2387,7 +2211,6 @@ public sealed class PlotModelFactoryTests
         List<SignalPoint> bandB = factory.BuildMainDisplayPoints(frameB, rtaOnly: true);
         List<SignalPoint> bandBoth = factory.BuildMainDisplayPoints(frameBoth, rtaOnly: true);
 
-        // The peak band across the two single-bin frames (what a correct peak hold shows).
         int peak = 0;
         for (int i = 1; i < bandBoth.Count; i++)
         {
@@ -2398,8 +2221,6 @@ public sealed class PlotModelFactoryTests
         }
 
         double held = Math.Max(bandA[peak].Y, bandB[peak].Y);
-        // Both bins present in one frame is ~3 dB above either alone; the peak hold of
-        // the two single-bin frames must stay near a single band, well below that sum.
         Assert.True(
             bandBoth[peak].Y - held > 2.0,
             $"peak hold {held:0.00} dB reached the summed band {bandBoth[peak].Y:0.00} dB");
@@ -2410,7 +2231,6 @@ public sealed class PlotModelFactoryTests
     {
         using ExpSweepMeasurement measurement = CreateTransferMeasurement();
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
-        // No loopback configured: the analyzer is a single-channel RTA.
         noise.Init(44_100, 24, 60, PlaybackChannel.Mono, sequenceLength: 2048, waveInputChannelOffset: 0);
         Assert.True(noise.IsMicOnly);
 
@@ -2421,8 +2241,6 @@ public sealed class PlotModelFactoryTests
         OxyPlot.PlotModel model = factory.CreateLiveSpectrum();
 
         Assert.Contains("RTA", model.Title);
-        // There is no transfer function, so no coherence axis even though the
-        // coherence curve is requested.
         Assert.DoesNotContain(model.Axes, axis => axis.Key == PlotModelFactory.CoherenceAxisKey);
     }
 
@@ -2432,9 +2250,7 @@ public sealed class PlotModelFactoryTests
         using ExpSweepMeasurement measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
 
-        // The SPL RTA is power-integrated (not a constant shift of the amplitude
-        // trace), so isolate the OFFSET: two calibrations differing only in offset
-        // must move the identical power-band curve by exactly the offset difference.
+        // The SPL RTA is power-integrated, so only the offset difference is compared.
         var options = new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Rta,
@@ -2448,9 +2264,9 @@ public sealed class PlotModelFactoryTests
         var magnitude = new double[noise.SequenceLength / 2];
         Array.Fill(magnitude, 0.1);
 
-        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);  // offset 110
+        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
         LineSeries lower = factory.BuildInputMagnitudeSeries(magnitude);
-        measurement.SplCalibration = LiveAnchorMatching(noise, 104, -16); // offset 120
+        measurement.SplCalibration = LiveAnchorMatching(noise, 104, -16);
         LineSeries higher = factory.BuildInputMagnitudeSeries(magnitude);
 
         Assert.Equal(lower.Points.Count, higher.Points.Count);
@@ -2467,9 +2283,7 @@ public sealed class PlotModelFactoryTests
     {
         using ExpSweepMeasurement measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
-        // Periodic pink: the one colour whose synthesis is an exact power law, so
-        // its model is the mirrored straight line and the cancellation is exact.
-        // (Random pink models the Kellett bank instead — pinned in the dsp tests.)
+        // Periodic pink is an exact power law, so the cancellation is exact (random pink models the Kellett bank).
         var options = new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Rta,
@@ -2480,9 +2294,6 @@ public sealed class PlotModelFactoryTests
         PlotModelFactory factory =
             CreateFactory(measurement, noise, liveSpectrumOptions: options);
 
-        // An exactly pink spectrum (amplitude ∝ 1/√f) through a flat system: with
-        // the compensation on, the relative RTA must read flat — the per-bin line
-        // mirrors the noise exactly.
         var magnitude = new double[(noise.SequenceLength / 2) + 1];
         for (int k = 1; k < magnitude.Length; k++)
         {
@@ -2496,25 +2307,17 @@ public sealed class PlotModelFactoryTests
             compensated.Points,
             point => Assert.Equal(reference, point.Y, precision: 6));
 
-        // The same input with the compensation off keeps the noise's own slope, so
-        // the checkbox demonstrably does something: -3.01 dB per octave.
         options.CompensateNoiseTilt = false;
         LineSeries plain = factory.BuildInputMagnitudeSeries(magnitude);
         OxyPlot.DataPoint low = PointNear(plain, 1000.0);
         OxyPlot.DataPoint high = PointNear(plain, 4000.0);
-        // The grid points sit near, not exactly at, the probe frequencies, so the
-        // expected drop follows the actual span: amplitude ~ 1/sqrt(f).
-        // precision 2: the resample interpolates linearly between bins, which for a
-        // 1/sqrt(f) curve deviates from the analytic value by a few thousandths of a dB.
+        // precision 2: linear interpolation of a 1/sqrt(f) curve deviates by a few thousandths of a dB.
         Assert.Equal(-10.0 * Math.Log10(high.X / low.X), high.Y - low.Y, precision: 2);
     }
 
     [Fact]
     public void LiveRtaTilt_IsInertInTransferMode()
     {
-        // The transfer function divides the excitation out, so the compensation must
-        // not touch the RTA overlay drawn inside Transfer mode even when its
-        // checkbox is stored on.
         using ExpSweepMeasurement measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         var options = new LiveSpectrumOptions
@@ -2538,17 +2341,13 @@ public sealed class PlotModelFactoryTests
         LineSeries series = factory.BuildInputMagnitudeSeries(magnitude);
         OxyPlot.DataPoint low = PointNear(series, 1000.0);
         OxyPlot.DataPoint high = PointNear(series, 4000.0);
-        // precision 2: the resample interpolates linearly between bins, which for a
-        // 1/sqrt(f) curve deviates from the analytic value by a few thousandths of a dB.
         Assert.Equal(-10.0 * Math.Log10(high.X / low.X), high.Y - low.Y, precision: 2);
     }
 
     [Fact]
     public void LiveSplTilt_FlattensWhiteOnTheBandAxis()
     {
-        // The band-power (SPL) display tilts even a flat white PSD by +3 dB/octave
-        // (band power grows with bandwidth), so the compensation there must follow
-        // the BAND law, not the per-bin line — a zero PSD slope still compensates.
+        // Band power tilts flat white by +3 dB/oct, so the compensation follows the band law.
         using ExpSweepMeasurement measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
@@ -2569,8 +2368,6 @@ public sealed class PlotModelFactoryTests
 
         LineSeries compensated = factory.BuildInputMagnitudeSeries(magnitude);
         Assert.NotEmpty(compensated.Points);
-        // The compensation renders the same flat spectrum through the same band
-        // resampler and subtracts, so the cancellation is exact per point.
         double reference = compensated.Points[0].Y;
         Assert.All(
             compensated.Points,
@@ -2580,22 +2377,10 @@ public sealed class PlotModelFactoryTests
         LineSeries plain = factory.BuildInputMagnitudeSeries(magnitude);
         double at2K = PointNear(plain, 2000.0).Y;
         double at8K = PointNear(plain, 8000.0).Y;
-        // Uncompensated white climbs ~3.01 dB per octave on the band axis.
         Assert.Equal(2.0 * 10.0 * Math.Log10(2.0), at8K - at2K, precision: 1);
     }
 
-    /// <summary>
-    /// A capture is drawn and saved through the microphone calibration frozen on it
-    /// when its run began — never the rig's current one.
-    /// </summary>
-    /// <remarks>
-    /// The bins are rendered again on every redraw and once more on Save, so reading
-    /// the live selection let this happen: walk with calibration A, change **Measure
-    /// through** to B before saving (an edit that does not restart the analyzer when
-    /// the audio session is unchanged), and the stored curve was recomputed through B
-    /// while the file claimed to have been taken with it. Silent corruption of a
-    /// measurement, and the saved file did not even match what was on screen.
-    /// </remarks>
+    /// <summary>Bins are re-rendered on redraw and Save, so a later Measure-through change must not reach a capture.</summary>
     [Fact]
     public void AnMmmCaptureKeepsTheMicrophoneItsRunWasTakenThrough()
     {
@@ -2614,7 +2399,6 @@ public sealed class PlotModelFactoryTests
             [new CalibrationPoint(20, 6.0), new CalibrationPoint(20_000, 6.0)]);
         CalibrationFile b = CalibrationFile.FromPoints(
             [new CalibrationPoint(20, -6.0), new CalibrationPoint(20_000, -6.0)]);
-        // The factory resolves whichever id it is handed; the rig moves below.
         PlotModelFactory factory = CreateFactory(
             measurement,
             noise,
@@ -2623,7 +2407,6 @@ public sealed class PlotModelFactoryTests
         var magnitude = new double[(noise.SequenceLength / 2) + 1];
         Array.Fill(magnitude, 0.1);
 
-        // The run begins through A, and freezes it the way the controller does.
         noise.SetCaptureMicrophoneCalibration(
             new CapturedMicrophoneCalibration("cal-a", "90° capsule 2", a));
         LiveCaptureDocument? taken = factory.BuildLiveCaptureDocument(
@@ -2631,14 +2414,11 @@ public sealed class PlotModelFactoryTests
         Assert.NotNull(taken);
         double[] curveThroughA = taken.CurveDb;
 
-        // The rig moves to B between the walk and the Save.
         options.CalibrationId = "cal-b";
 
         LiveCaptureDocument? saved = factory.BuildLiveCaptureDocument(
             magnitude, frameCount: 8, title: "saved after the rig moved");
         Assert.NotNull(saved);
-        // The NAME its author was shown, not the generated id behind it: a saved
-        // capture is read by whoever opens it, and "cal-<guid>" tells them nothing.
         Assert.Equal("90° capsule 2", saved.Calibration?.Name);
         Assert.Equal(curveThroughA, saved.CurveDb);
         Assert.All(
@@ -2646,17 +2426,7 @@ public sealed class PlotModelFactoryTests
             correction => Assert.Equal(6.0, correction, precision: 6));
     }
 
-    /// <summary>
-    /// The curve and the recipe divide out the filter the ACCUMULATION was taken
-    /// through, and it is one field, so they cannot describe different filters.
-    /// </summary>
-    /// <remarks>
-    /// This read the sweep measurement's own copy at first, which is refreshed only
-    /// when a sweep is configured to run: turning the protective high-pass on and
-    /// capturing straight away compensated for the previous filter or for none, and a
-    /// later sweep could restamp a capture already held on screen. Both now read the
-    /// value frozen on the analyzer when the run began.
-    /// </remarks>
+    /// <summary>Curve and recipe read the high-pass frozen when the run began, not the sweep's refreshed copy.</summary>
     [Fact]
     public void AnMmmCaptureDividesOutTheFilterItsRunWasTakenThrough()
     {
@@ -2682,7 +2452,6 @@ public sealed class PlotModelFactoryTests
         Assert.Equal(ProtectiveHighPassKind.Off, unfiltered.Recipe.ProtectiveHighPassKind);
         Assert.Empty(unfiltered.ProtectiveHighPassCorrectionDb);
 
-        // The run that follows is taken through a filter.
         noise.SetCaptureProtectiveHighPass(new ProtectiveHighPassConfiguration(
             ProtectiveHighPassKind.Butterworth, 2_000, 24));
 
@@ -2691,15 +2460,12 @@ public sealed class PlotModelFactoryTests
             magnitude, frameCount: 8, title: "filtered");
         Assert.NotNull(compensated);
 
-        // The recipe names the filter the curve was corrected for...
         Assert.Equal(
             ProtectiveHighPassKind.Butterworth,
             compensated.Recipe.ProtectiveHighPassKind);
         Assert.Equal(2_000, compensated.Recipe.ProtectiveHighPassFrequencyHz);
         Assert.NotEmpty(compensated.ProtectiveHighPassCorrectionDb);
 
-        // ...and the correction it records is exactly what the drawn curve received,
-        // so a reader can undo it.
         Assert.Equal(compensated.CurveDb.Length, compensated.ProtectiveHighPassCorrectionDb.Length);
         double before = PointNear(none, 900.0).Y;
         double after = PointNear(filtered, 900.0).Y;
@@ -2711,10 +2477,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void MmmWithoutAnAnchorKeepsBandPowerOnARelativeAxis()
     {
-        // The band-power pipeline is what a spatial average is defined on; the
-        // absolute axis is a separate question, answered by whether an anchor exists.
-        // Tying the two together drew an unanchored capture at raw dBFS onto an axis
-        // whose hard floor is -20 dB SPL: computed correctly, rendered off-plot.
+        // The pipeline and the absolute axis are independent: an unanchored capture must not land at raw dBFS on the SPL axis.
         using ExpSweepMeasurement measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         var options = new LiveSpectrumOptions
@@ -2738,8 +2501,6 @@ public sealed class PlotModelFactoryTests
         Assert.NotEmpty(relative.Points);
         Assert.All(relative.Points, point => Assert.True(double.IsFinite(point.Y)));
 
-        // Anchoring must move the whole curve by exactly the anchor and change
-        // nothing else: same pipeline, different reference.
         measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
         PlotModelFactory anchored =
             CreateFactory(measurement, noise, liveSpectrumOptions: options);

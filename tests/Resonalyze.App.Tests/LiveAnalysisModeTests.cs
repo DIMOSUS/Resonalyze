@@ -5,17 +5,7 @@ namespace Resonalyze.App.Tests;
 
 public sealed class LiveAnalysisModeTests
 {
-    /// <summary>
-    /// The two settings a spatial average cannot be allowed to get wrong follow the
-    /// TRAIT, for every mode the enum holds.
-    /// </summary>
-    /// <remarks>
-    /// The excitation model the slope compensation undoes, and whether the average is
-    /// cumulative, are the pins that fail silently: get either wrong and the capture
-    /// is a smooth, plausible, wrong curve with nothing downstream able to tell. This
-    /// walks the whole enum rather than asserting about MMM, so a mode added to
-    /// IsSpatialAverageCapture and not to the pins fails here instead of in a car.
-    /// </remarks>
+    /// <summary>Walks the whole enum so a mode added to IsSpatialAverageCapture but not to the recipe pins fails here.</summary>
     [Fact]
     public void ThePinnedRecipeFollowsTheTrait_ForEveryAnalysisMode()
     {
@@ -24,8 +14,7 @@ public sealed class LiveAnalysisModeTests
             var options = new LiveSpectrumOptions
             {
                 AnalysisMode = mode,
-                // Deliberately the wrong answers for a capture, so a pin that failed
-                // to fire would be visible rather than accidentally right.
+                // Deliberately wrong, so a pin that failed to fire is visible.
                 NoiseColor = NoiseColor.White,
                 AveragingSpeed = AveragingSpeed.Fast
             };
@@ -43,10 +32,6 @@ public sealed class LiveAnalysisModeTests
     [Fact]
     public async Task RtaModeWithLoopback_UsesMicOnlyAnalysisAndKeepsTheExcitation()
     {
-        // The decoupling the explicit mode buys: an RTA capture stays reference-free
-        // even when a loopback IS configured — and unlike Silent it still plays its
-        // excitation. Before the split, RTA analysis existed only as a side effect of
-        // the Silent signal or a missing loopback.
         RecordingStreamingSession? session = null;
         var factory = new FakeAudioSessionFactory(
             streamingFactory: _ => session = new RecordingStreamingSession(
@@ -90,10 +75,7 @@ public sealed class LiveAnalysisModeTests
             session!.LastPlaybackSignal!.MonoSamples,
             sample => sample != 0.0f);
 
-        // Mic-only in CAPTURE too, not just in analysis: the session request must
-        // not ask the backend for the loopback channel — WASAPI refuses an endpoint
-        // with fewer channels than the routing requires, and ASIO widens the
-        // captured window to span from the mic to the reference.
+        // WASAPI refuses an endpoint with fewer channels than routing needs, and ASIO widens the captured window.
         Assert.NotNull(factory.LastRequest);
         Assert.Equal(0, factory.LastRequest!.Routing.MicrophoneChannel);
         Assert.Null(factory.LastRequest.Routing.LoopbackChannel);
@@ -102,8 +84,6 @@ public sealed class LiveAnalysisModeTests
     [Fact]
     public async Task TransferCapture_StillRequestsTheLoopbackChannel()
     {
-        // The counterpart pin: dropping the loopback from the request is an
-        // RTA-only behavior — the transfer capture must keep asking for it.
         var factory = new FakeAudioSessionFactory(
             streamingFactory: _ => new RecordingStreamingSession(
                 framesToRaise: 1,
@@ -173,13 +153,10 @@ public sealed class LiveAnalysisModeTests
         Assert.True(measurement.IsRtaCapture);
     }
 
-    // ----- settings migration: files written before the explicit mode existed -----
-
     [Fact]
     public void LegacySplScale_MigratesToRtaMode()
     {
-        // Before the split, dB SPL was only reachable as an RTA, so a legacy file
-        // with the SPL scale selected marks an RTA session.
+        // Before the split dB SPL was reachable only as an RTA, so a legacy file with the SPL scale is an RTA session.
         var legacy = new MeasurementSettingsFile.LiveSpectrumSettings
         {
             MagnitudeScale = MagnitudeScale.SoundPressureLevel,
@@ -228,8 +205,6 @@ public sealed class LiveAnalysisModeTests
     [Fact]
     public void ExplicitMode_WinsOverTheLegacyInference()
     {
-        // A new file stores the mode explicitly; a stored SPL scale is then just the
-        // remembered RTA-mode checkbox preference, not evidence of an RTA session.
         var stored = new MeasurementSettingsFile.LiveSpectrumSettings
         {
             AnalysisMode = LiveAnalysisMode.TransferFunction,
@@ -247,8 +222,6 @@ public sealed class LiveAnalysisModeTests
     [Fact]
     public void HandEditedSilentInTransferMode_RepairsTheSignal()
     {
-        // Only a hand-edited file can pair Silent with an explicit Transfer mode; the
-        // invariant (Silent is RTA-only) is repaired on load, keeping the stated mode.
         var stored = new MeasurementSettingsFile.LiveSpectrumSettings
         {
             AnalysisMode = LiveAnalysisMode.TransferFunction,

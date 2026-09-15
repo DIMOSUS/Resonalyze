@@ -2,13 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// What the Lock beside the side radios carries across, and what it leaves alone.
-/// It reads by difference at every save, so the questions are all about WHICH
-/// difference: one the hand made on the shown side (carried), one already there
-/// when the lock went on (kept), one an automatic run wrote on both sides at once
-/// (kept), one made on the hidden side (kept).
-/// </summary>
+/// <summary>The Lock reads by difference at every save: shown-side hand edits carry; pre-existing, automatic and hidden-side ones are kept.</summary>
 public sealed class VirtualCrossoverSideLockTests
 {
     private static readonly CrossoverEdge Lr24At80 =
@@ -40,10 +34,7 @@ public sealed class VirtualCrossoverSideLockTests
     [Fact]
     public void ACornerMovedOnTheShownSide_CarriesTheWholeCrossoverAcross()
     {
-        // The sides disagreed on the low-pass before the lock; moving the HIGH-pass
-        // on the left equalizes the whole crossover, not just the corner touched —
-        // otherwise the two crossovers would still differ after an edit meant to
-        // make them the same. Polarity is its own unit and stays.
+        // Moving one edge equalizes the whole crossover; polarity is its own unit.
         VirtualCrossoverChannelPairSettings pair = StereoPair();
         pair.Right.LowPassEdge = Lr48At3000;
         pair.Right.InvertPolarity = true;
@@ -95,9 +86,6 @@ public sealed class VirtualCrossoverSideLockTests
     [Fact]
     public void BothUnitsMovedOnTheShownSideInOneStep_AreBothCarried()
     {
-        // One save can hold a crossover move and a polarity flip together (a batch
-        // update of the block); the two units are read independently, so neither
-        // hides the other.
         VirtualCrossoverChannelPairSettings pair = StereoPair();
         var sideLock = new VirtualCrossoverSideLock();
         sideLock.Engage([pair]);
@@ -114,9 +102,6 @@ public sealed class VirtualCrossoverSideLockTests
     [Fact]
     public void ACarriedChange_IsNotCarriedBackFromTheOtherSide()
     {
-        // The write onto the hidden side is remembered in the same pass, so when
-        // the user switches to that side the lock finds nothing that moved there —
-        // a carried value is not a hand edit to bounce back.
         VirtualCrossoverChannelPairSettings pair = StereoPair();
         var sideLock = new VirtualCrossoverSideLock();
         sideLock.Engage([pair]);
@@ -155,11 +140,7 @@ public sealed class VirtualCrossoverSideLockTests
     [Fact]
     public void AnEdgeWrittenOntoBothSides_IsRememberedNotCarriedWholesale()
     {
-        // A junction tune (or the crossover wizard) writes ONE edge onto both sides.
-        // The hidden side already held that edge, so as a difference it looks
-        // untouched — and a difference would then carry the shown side's whole
-        // crossover, its OTHER edge included, over the hidden side's own. The panel
-        // hands such a run to Remember instead; here is what that keeps.
+        // A junction tune writes one edge on both sides, so as a difference it would carry the other edge too; the panel calls Remember.
         VirtualCrossoverChannelPairSettings pair = StereoPair();
         pair.Right.HighPassEdge = Bw12At100;
         pair.Right.LowPassEdge = Lr48At3000;
@@ -179,9 +160,7 @@ public sealed class VirtualCrossoverSideLockTests
     [Fact]
     public void WithoutRemember_TheSameRunWouldBeReadAsAHandEdit()
     {
-        // The reason the panel names every such run: read as a difference, the case
-        // above carries the whole crossover. Pinned so that a guard which "detects"
-        // automatic runs is not reintroduced in place of the explicit call.
+        // Pinned so a guard that "detects" automatic runs is not reintroduced in place of the explicit call.
         VirtualCrossoverChannelPairSettings pair = StereoPair();
         pair.Right.HighPassEdge = Bw12At100;
         pair.Right.LowPassEdge = Lr48At3000;
@@ -199,9 +178,6 @@ public sealed class VirtualCrossoverSideLockTests
     [Fact]
     public void ARunThatKeptTheHiddenSide_IsRememberedRatherThanRead()
     {
-        // The auto-delay may flip the shown side and decide to KEEP the hidden one —
-        // which a difference cannot tell from a hand that only reached the shown
-        // side. The panel hands such a result to Remember, and nothing is carried.
         VirtualCrossoverChannelPairSettings pair = StereoPair();
         var sideLock = new VirtualCrossoverSideLock();
         sideLock.Engage([pair]);
@@ -217,9 +193,6 @@ public sealed class VirtualCrossoverSideLockTests
     [Fact]
     public void AChangeOnTheHiddenSide_IsAbsorbedRatherThanMirroredBack()
     {
-        // Something wrote the hidden side alone (an L→R copy from the dialog, say)
-        // while the left was shown. It is not undone, and when the user then switches
-        // to that side it is not carried back either: it was already remembered.
         VirtualCrossoverChannelPairSettings pair = StereoPair();
         var sideLock = new VirtualCrossoverSideLock();
         sideLock.Engage([pair]);
@@ -251,8 +224,6 @@ public sealed class VirtualCrossoverSideLockTests
     [Fact]
     public void APairFirstSeenAtASave_IsRememberedNotMirrored()
     {
-        // A block added under the lock arrives at the save that added it: its state
-        // is the starting point, and nothing is carried for it until it is edited.
         VirtualCrossoverChannelPairSettings first = StereoPair();
         var sideLock = new VirtualCrossoverSideLock();
         sideLock.Engage([first]);
@@ -270,8 +241,6 @@ public sealed class VirtualCrossoverSideLockTests
     [Fact]
     public void RebindingAfterALoad_StartsFromTheLoadedState()
     {
-        // The panel binds new pair objects on a load. Remember takes them as
-        // loaded, so the very first edit afterwards is carried like any other.
         VirtualCrossoverChannelPairSettings before = StereoPair();
         var sideLock = new VirtualCrossoverSideLock();
         sideLock.Engage([before]);

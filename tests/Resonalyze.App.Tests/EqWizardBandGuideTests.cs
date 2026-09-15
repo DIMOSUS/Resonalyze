@@ -5,12 +5,6 @@ using OxyPlot.WindowsForms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The vertical guide the wizard draws at the selected band's frequency. The band
-/// curve beside it answers what the filter DOES; this answers where it sits, which
-/// a curve is bad at — a low-Q bell is a shape an octave wide, and a shelf or an
-/// all-pass has no summit to read a centre off at all.
-/// </summary>
 public sealed class EqWizardBandGuideTests
 {
     [Fact]
@@ -54,8 +48,7 @@ public sealed class EqWizardBandGuideTests
 
         Invoke(panel, "DeselectBand");
 
-        // This OxyPlot has no Visible on an annotation, so being off the plot is
-        // being out of the collection — the Auto Tune range guides stay.
+        // This OxyPlot has no annotation Visible, so hidden means removed from the collection.
         Assert.DoesNotContain(Guide(panel), Model(panel).Annotations);
     }
 
@@ -74,8 +67,6 @@ public sealed class EqWizardBandGuideTests
     private static void SelectSlot(EqWizardPanel panel, object slot) =>
         Invoke(panel, "SelectSlot", slot);
 
-    // Through the control the user types into, so the edit travels the path a
-    // typed frequency travels: the strip raises its change, the bank redraws.
     private static void SetFrequency(object slot, decimal frequencyHz) =>
         ((PeqSlotControl)slot).FrequencyInput.Value = frequencyHz;
 

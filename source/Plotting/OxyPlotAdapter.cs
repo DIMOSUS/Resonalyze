@@ -4,9 +4,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Converts framework-independent DSP results into OxyPlot presentation models.
-/// </summary>
 internal static class OxyPlotAdapter
 {
     public static LineSeries ToLineSeries(AnalysisCurve curve)
@@ -40,11 +37,6 @@ internal static class OxyPlotAdapter
             .ToList();
     }
 
-    /// <summary>
-    /// The hue a curve of this kind is drawn in. Exposed so a mode that builds its
-    /// own series type (the impulse view's tracker-aware trace) still takes its
-    /// colours from the one table.
-    /// </summary>
     public static OxyColor GetCurveColor(AnalysisCurveKind kind) => GetColor(kind);
 
     private static OxyColor GetColor(AnalysisCurveKind kind)
@@ -58,19 +50,11 @@ internal static class OxyPlotAdapter
             AnalysisCurveKind.NoiseFloor => OxyColor.FromRgb(128, 128, 128),
             AnalysisCurveKind.MinimumPhase => OxyColor.FromRgb(0, 200, 255),
             AnalysisCurveKind.ExcessPhase => OxyColor.FromRgb(130, 220, 90),
-            // The GD counterparts reuse the phase pair's hues so "minimum = cyan,
-            // excess = green" reads the same across modes.
+            // GD counterparts reuse the phase pair's hues across modes.
             AnalysisCurveKind.MinimumPhaseGroupDelay => OxyColor.FromRgb(0, 200, 255),
             AnalysisCurveKind.ExcessGroupDelay => OxyColor.FromRgb(130, 220, 90),
-            // The impulse view's derived traces: the envelope rides directly on top of
-            // the orange impulse, so it takes a lighter amber of the same family, while
-            // the step — a different quantity on a different axis — steps out to blue.
             AnalysisCurveKind.ImpulseEnvelope => OxyColor.FromRgb(255, 210, 80),
             AnalysisCurveKind.ImpulseStep => OxyColor.FromRgb(120, 200, 255),
-            // The spatial average is the array's answer, so it takes a strong hue
-            // of its own; the positions behind it are the same family, dimmed,
-            // because they are what it is made of rather than rivals to it. The
-            // spread is neither — a range on its own axis — and steps away.
             AnalysisCurveKind.ArrayAverage => OxyColor.FromRgb(120, 230, 190),
             AnalysisCurveKind.ArrayMicrophone => OxyColor.FromRgb(70, 130, 115),
             AnalysisCurveKind.ArraySpread => OxyColor.FromRgb(200, 140, 220),

@@ -4,21 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Stores a bulk sample array as the base64 of its little-endian float32
-/// values, and reads back either that or the plain JSON number array every
-/// file before impulse-response format version 8 carries.
-/// </summary>
-/// <remarks>
-/// The arrays this converter is put on are the megabytes of an impulse-response
-/// file: written as indented JSON numbers they cost ~28 bytes per sample, as
-/// base64 float32 they cost 5⅓. The precision given up is real but irrelevant —
-/// float32 keeps ~7 significant digits (≈ −140 dB relative), far below any
-/// measured noise floor — and it is given up only in the FILE: the property
-/// stays <c>double[]</c>, so everything downstream of a load computes in double
-/// exactly as it always has. Byte order is fixed little-endian by contract,
-/// not by host: a stored file outlives the machine that wrote it.
-/// </remarks>
+/// <summary>Base64 float32 LE sample arrays (reads pre-v8 number arrays too). See docs/tech/sweep-measurement.md#impulse-response-file-format.</summary>
 internal sealed class Float32SampleArrayJsonConverter : JsonConverter<double[]>
 {
     public override double[] Read(
@@ -26,8 +12,7 @@ internal sealed class Float32SampleArrayJsonConverter : JsonConverter<double[]>
         Type typeToConvert,
         JsonSerializerOptions options)
     {
-        // Pre-v8 files carry these arrays as JSON numbers; read them at full
-        // double precision — the legacy path must not inherit float32 rounding.
+        // Legacy arrays keep full double precision.
         if (reader.TokenType == JsonTokenType.StartArray)
         {
             List<double> samples = [];
@@ -73,10 +58,7 @@ internal sealed class Float32SampleArrayJsonConverter : JsonConverter<double[]>
             float sample = (float)value[i];
             if (!float.IsFinite(sample))
             {
-                // A double past ±float.MaxValue rounds to infinity, which would
-                // pass the writer's own finite-double validation and only blow
-                // up on the next load. No physical sample is within orders of
-                // magnitude of this; refuse at the save rather than store it.
+                // Beyond float.MaxValue it would round to infinity and only fail on the next load; refuse at save.
                 throw new InvalidOperationException(
                     $"Sample {i} ({value[i]}) does not fit a float32.");
             }

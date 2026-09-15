@@ -6,19 +6,12 @@ using Resonalyze.Ui;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The calculated-overlay dialog offers every capture of the mode as an operand,
-/// coherence traces included, so what only applies to decibels — the tilt and
-/// amplitude-space math — has to follow the OPERANDS and not just the mode. Both were
-/// left on the mode alone and had to be found by reading.
-/// </summary>
+/// <summary>Decibel-only controls (tilt, amplitude-space math) follow the operands, not just the mode.</summary>
 public sealed class OverlayOperationSettingsDialogTests
 {
     [Theory]
     [InlineData(OverlayOperation.AMinusB, false, true, true)]
     [InlineData(OverlayOperation.AMinusB, true, false, false)]
-    // "A only" hands curve A through: there is no arithmetic to do in amplitude space,
-    // but a slope still applies to the decibels it draws.
     [InlineData(OverlayOperation.CurveA, false, false, true)]
     [InlineData(OverlayOperation.CurveA, true, false, false)]
     public void DecibelOnlyControls_FollowTheOperands(
@@ -32,8 +25,7 @@ public sealed class OverlayOperationSettingsDialogTests
 
         Assert.Equal(expectedAmplitudeSpace, IsOffered(dialog, "amplitudeSpaceCheckBox"));
         Assert.Equal(expectedTilt, IsOffered(dialog, "tiltCheckBox"));
-        // Greyed out is not enough: what the dialog REPORTS must not carry the setting
-        // either, or a slot saved before the operands changed would keep applying it.
+        // The reported value must drop the setting too, or a saved slot keeps applying it.
         Assert.Equal(expectedAmplitudeSpace, dialog.UseAmplitudeSpace);
         Assert.Equal(expectedTilt, dialog.TiltEnabled);
     });
@@ -48,7 +40,6 @@ public sealed class OverlayOperationSettingsDialogTests
         Assert.False(Control<Control>(dialog, "tiltSlopeInput").Enabled);
     });
 
-    // CreateControl realises the handle, so every caller runs on an STA thread.
     private static OverlayOperationSettingsDialog CreateDialog(
         OverlayOperation operation,
         bool coherenceOperands)
@@ -84,8 +75,7 @@ public sealed class OverlayOperationSettingsDialogTests
         return dialog;
     }
 
-    // A control the dialog greys out stays visible but stops taking input, so "offered"
-    // is the muted text plus AutoCheck, not Enabled (see UiStyle.SetTextEnabledLook).
+    // Greyed-out controls stay Enabled; "offered" is the muted look plus AutoCheck (UiStyle.SetTextEnabledLook).
     private static bool IsOffered(OverlayOperationSettingsDialog dialog, string name)
     {
         CheckBox checkBox = Control<CheckBox>(dialog, name);

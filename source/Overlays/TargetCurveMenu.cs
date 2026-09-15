@@ -1,11 +1,6 @@
 namespace Resonalyze;
 
-/// <summary>
-/// The menu the Target button drops, in both places that share one target (the EQ
-/// Wizard and Virtual DSP). Two entries, because a target has two possible
-/// shapes: the parametric one the settings dialog edits, and a curve imported
-/// from a file. The tick says which one is being drawn.
-/// </summary>
+/// <summary>Target button menu (EQ Wizard, Virtual DSP): parametric or imported shape; the tick marks the drawn one.</summary>
 internal static class TargetCurveMenu
 {
     public static ContextMenuStrip Build(

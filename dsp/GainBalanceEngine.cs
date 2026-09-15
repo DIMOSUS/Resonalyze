@@ -4,14 +4,7 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// One channel's inputs to a gain-balance run: its identity, the processed
-/// (chain-applied, so the CURRENT gain is baked in) impulse response the level
-/// is measured from, the current gain to subtract back out, the band the
-/// channel plays in (its crossover corners) and its side/pairing. A right-side
-/// channel names its left counterpart so the balance can judge how consistent
-/// the two sides' responses are across the shared band.
-/// </summary>
+/// <summary>The impulse response is chain-applied (current gain baked in); a right channel names its left counterpart.</summary>
 public sealed record GainBalanceInput(
     IAlignmentChannel Channel,
     Complex[] ImpulseResponse,
@@ -24,11 +17,6 @@ public sealed record GainBalanceInput(
     bool RightSide,
     IAlignmentChannel? LeftPeer = null);
 
-/// <summary>
-/// The gain proposal for one channel. A skipped channel (mono, no crossover,
-/// band mostly below the localization floor) keeps its current gain and
-/// carries the reason instead of a confidence.
-/// </summary>
 public sealed record GainBalanceResult(
     IAlignmentChannel Channel,
     bool Adjusted,
@@ -39,105 +27,44 @@ public sealed record GainBalanceResult(
     AlignmentConfidence? Confidence,
     string Detail);
 
-/// <summary>
-/// Cut-only gain balancing of the channels that carry the localized part of
-/// the spectrum. Levels are 1/f-weighted band power means (energy per octave,
-/// so narrow interference dips barely register and band width does not bias
-/// the figure), measured at 0 dB gain by subtracting the current gain from the
-/// chain-applied response. Every eligible left channel is levelled to one
-/// target, every eligible right channel to that target MINUS the L-R level
-/// difference the caller asks for; the shared target sits as high as the
-/// cut-only constraint allows (the quietest channel ends at 0 dB of cut).
-/// </summary>
+/// <summary>Cut-only gain balancing on 1/f-weighted band power (energy per octave), measured at 0 dB gain.
+/// Left channels share one target, right channels that target minus the requested L-R difference; the quietest ends at 0 dB cut.</summary>
 public static class GainBalanceEngine
 {
-    /// <summary>
-    /// The localization floor: gain balancing only touches drivers whose band
-    /// meaningfully reaches above it — below, channel level is a bass-tuning
-    /// decision (sub elevation), not an image/tonality one.
-    /// </summary>
+    /// <summary>Below this, channel level is a bass-tuning decision, not an imaging one.</summary>
     public const double EligibilityFloorHz = 300;
 
-    /// <summary>
-    /// The minimum fraction of a channel's band (in OCTAVES — a linear-Hz
-    /// fraction would qualify nearly everything) that must sit above the
-    /// floor for its gain to be adjusted.
-    /// </summary>
+    /// <summary>Measured in octaves; a linear-Hz fraction would qualify nearly everything.</summary>
     public const double EligibilityMinOctaveFraction = 1.0 / 3.0;
 
-    /// <summary>
-    /// The range of the intentional L-R level difference the caller may ask
-    /// for. The tilt is the tuner's decision, not a derived figure — but past
-    /// this magnitude a "level difference" stops being an image placement and
-    /// becomes one side switched off, so the engine treats a larger request as
-    /// a typo and clamps it.
-    /// </summary>
+    /// <summary>Past this a level difference is one side switched off; larger requests are clamped as typos.</summary>
     public const double MaxLevelDifferenceDb = 6.0;
 
-    // Confidence thresholds on the robust in-band spread of the smoothed
-    // level (or of the L−R difference): a flat relation means the single
-    // average genuinely represents the band; past several dB of swing the
-    // average is an arbitrary compromise.
     public const double HighConfidenceMaxSpreadDb = 1.5;
     public const double LowConfidenceMinSpreadDb = 6.0;
 
-    // The smoothing that precedes the spread estimate: symmetric 1/3-octave
-    // power smoothing — wide enough to swallow the narrow interference dips
-    // that sit at DIFFERENT frequencies on the two sides (an asymmetric,
-    // peak-favouring smoother would leave residue in the difference), and
-    // roughly the ear's critical bandwidth above ~500 Hz.
+    // Symmetric 1/3-octave power smoothing swallows dips at different frequencies on the two sides (~critical band above 500 Hz).
     private const double SmoothingHalfWidthOctaves = 1.0 / 6.0;
     private const double SpreadGridStepOctaves = 1.0 / 24.0;
 
-    // Proposed cuts smaller than this land on exactly 0 dB, so a channel that
-    // already sits at the target is reported as unchanged instead of -0.0.
+    // Smaller cuts snap to exactly 0 dB, so a channel already at target reads unchanged, not -0.0.
     private const double MinimumCutDb = 0.05;
 
-    /// <summary>
-    /// The minimum grid samples a spread estimate needs before it means
-    /// anything — a third of an octave of 1/24-octave points. Fewer reads as
-    /// NaN (mapped to Low confidence), never as a perfectly stable
-    /// measurement: an unmeasurably narrow band is the opposite of certainty.
-    /// </summary>
+    /// <summary>Fewer grid points read as NaN (Low confidence), never as perfectly stable.</summary>
     public const int MinimumSpreadSamples = 8;
 
-    /// <summary>
-    /// How far below the LOUDEST adjustable channel a channel's band level
-    /// may sit before it stops being credible as a playing driver. Real
-    /// drivers of one measured system sit within a couple of tens of dB
-    /// before balancing; a dead input's finite noise floor reads 40+ dB down
-    /// — and, being the quietest, would otherwise become the cut-only target
-    /// and drag every gain to its floor (a flat noise floor can even read as
-    /// a HIGH-confidence level). Gated channels keep their gain with the
-    /// reason named; the pair rule then keeps their twins too.
-    /// </summary>
+    /// <summary>A dead input's noise floor reads 40+ dB down and, as the quietest, would drag every cut to it. Real drivers sit within a couple of tens of dB.</summary>
     public const double MaxLevelBelowLoudestDb = 30;
 
-    /// <summary>
-    /// The hard cap on a proposed cut — the shared chain gain range, so a
-    /// proposal can never produce a setting the project validator refuses to
-    /// save. The credibility gate above keeps real solves far from this; the
-    /// clamp is the independent invariant guard.
-    /// </summary>
+    /// <summary>Keeps proposals inside the validator's gain range; independent of the credibility gate.</summary>
     public const double MaxProposedCutDb = DspChannelChain.MaximumGainDb;
 
-    /// <summary>
-    /// The intentional L-R level difference (dB) as the balance will apply
-    /// it: LEFT minus RIGHT, so a positive value means the left side plays
-    /// louder and a negative one asks for the near side of a left-seated
-    /// listener to sit below the far side (the level half of the same image
-    /// placement the delay scene offset makes in time). Clamped to
-    /// <see cref="MaxLevelDifferenceDb"/>, and a non-finite request reads as
-    /// no tilt at all.
-    /// </summary>
+    /// <summary>LEFT minus RIGHT, clamped; non-finite reads as 0.</summary>
     public static double LevelDifferenceDb(double requestedDb) =>
         double.IsFinite(requestedDb)
             ? Math.Clamp(requestedDb, -MaxLevelDifferenceDb, MaxLevelDifferenceDb)
             : 0;
 
-    /// <summary>
-    /// Why a channel's gain is left alone, or null when it is adjustable.
-    /// </summary>
     public static string? SkipReason(
         double bandLowHz,
         double bandHighHz,
@@ -169,11 +96,7 @@ public static class GainBalanceEngine
         return null;
     }
 
-    /// <summary>
-    /// Computes the cut-only gain proposal for every channel. The requested
-    /// L-R level difference only matters when right-side channels
-    /// participate; pass 0 for a single-side run.
-    /// </summary>
+    /// <summary>Pass 0 for the L-R difference on a single-side run.</summary>
     public static IReadOnlyList<GainBalanceResult> Compute(
         IReadOnlyList<GainBalanceInput> channels,
         double levelDifferenceDb,
@@ -185,8 +108,7 @@ public static class GainBalanceEngine
         double differenceDb = channels.Any(input => input.RightSide)
             ? LevelDifferenceDb(levelDifferenceDb)
             : 0;
-        // The request is L-R while every target below is expressed relative to
-        // the LEFT board, so the right side's own offset is its negation.
+        // Targets are relative to the left side, so the right offset is the negated L-R request.
         double tiltDb = -differenceDb;
         log.AppendLine(
             $"Gain balance: L-R level difference {differenceDb:+0.00;-0.00} dB " +
@@ -213,10 +135,6 @@ public static class GainBalanceEngine
             reasons[input.Channel] = reason;
         }
 
-        // The level-credibility gate: a channel implausibly far below the
-        // loudest adjustable one is a broken or noise-only capture, not the
-        // quietest driver — and the quietest channel is exactly what the
-        // cut-only solve levels everyone down to.
         List<GainBalanceInput> credible = channels
             .Where(input => reasons[input.Channel] == null)
             .ToList();
@@ -235,10 +153,7 @@ public static class GainBalanceEngine
             }
         }
 
-        // A stereo pair is balanced as a pair or not at all: adjusting one
-        // side while its twin is skipped silently breaks the promised L/R
-        // relation for that pair — the adjusted side would chase a tilt its
-        // twin cannot follow (cut-only forbids the compensating boost).
+        // Pairs are balanced together or not at all: cut-only cannot let a skipped twin follow the tilt.
         foreach (GainBalanceInput right in channels)
         {
             if (!right.RightSide || right.LeftPeer == null)
@@ -265,10 +180,7 @@ public static class GainBalanceEngine
             }
         }
 
-        // One shared left target as high as cut-only allows: every eligible
-        // channel votes with the target the OTHERS would need if it became
-        // the quietest — a right channel's vote arrives tilt-adjusted so the
-        // final relation (right = left + tilt) holds without a boost anywhere.
+        // Each eligible channel votes the target the others need if it were quietest (right votes tilt-adjusted), so no boost is needed.
         List<GainBalanceInput> eligible = channels
             .Where(input => reasons[input.Channel] == null)
             .ToList();
@@ -312,9 +224,7 @@ public static class GainBalanceEngine
             }
             if (gainDb < -MaxProposedCutDb)
             {
-                // Unreachable while the credibility gate holds (it bounds the
-                // eligible level spread far under this), but the settings
-                // model's |GainDb| <= 60 invariant must never depend on that.
+                // Unreachable while the credibility gate holds; the |GainDb| <= 60 invariant must not depend on it.
                 log.AppendLine(
                     $"  {input.Channel.Name}: proposed cut clamped to " +
                     $"-{MaxProposedCutDb:0} dB (settings range)");
@@ -336,13 +246,7 @@ public static class GainBalanceEngine
         return results;
     }
 
-    /// <summary>
-    /// The 1/f-weighted power mean of a band in dB: with the weight, every
-    /// octave contributes equally (energy per octave), so a wide band is not
-    /// dominated by its numerous high-frequency bins; the POWER mean itself
-    /// is what lets narrow interference dips vanish — they hold almost no
-    /// energy. NaN when the band contains no bins.
-    /// </summary>
+    /// <summary>1/f-weighted power mean in dB: every octave counts equally and narrow dips vanish. NaN for an empty band.</summary>
     public static double WeightedBandLevelDb(
         IReadOnlyList<double> powerByBin,
         double binWidthHz,
@@ -366,12 +270,6 @@ public static class GainBalanceEngine
             : double.NaN;
     }
 
-    /// <summary>
-    /// The band's smoothed level curve on a 1/24-octave grid, each point a
-    /// plain power mean over ±1/6 octave (symmetric 1/3-octave smoothing).
-    /// Feeds the spread estimates; points whose window holds no bins are
-    /// skipped.
-    /// </summary>
     public static List<double> SmoothedBandCurveDb(
         IReadOnlyList<double> powerByBin,
         double binWidthHz,
@@ -399,13 +297,7 @@ public static class GainBalanceEngine
         return values;
     }
 
-    /// <summary>
-    /// A robust spread estimate (σ-equivalent) of a dB curve: the
-    /// interquartile range scaled by the normal-distribution factor, so a
-    /// single surviving outlier cannot dominate the figure. NaN below
-    /// <see cref="MinimumSpreadSamples"/> — too few points to judge is NOT
-    /// the same as perfectly stable.
-    /// </summary>
+    /// <summary>IQR-based σ-equivalent spread; NaN below <see cref="MinimumSpreadSamples"/>.</summary>
     public static double RobustSpreadDb(IReadOnlyList<double> valuesDb)
     {
         if (valuesDb.Count < MinimumSpreadSamples)
@@ -419,10 +311,6 @@ public static class GainBalanceEngine
         return (q75 - q25) / 1.349;
     }
 
-    /// <summary>
-    /// Maps an in-band spread to the qualitative confidence the report shows:
-    /// a flat relation means the single average genuinely represents the band.
-    /// </summary>
     public static AlignmentConfidence ConfidenceOf(double spreadDb) =>
         double.IsNaN(spreadDb) || spreadDb >= LowConfidenceMinSpreadDb
             ? AlignmentConfidence.Low
@@ -430,14 +318,7 @@ public static class GainBalanceEngine
                 ? AlignmentConfidence.High
                 : AlignmentConfidence.Medium;
 
-    // The spread the confidence is judged by: a right channel with an
-    // adjustable left peer measures the L−R difference across the bands'
-    // intersection — the actual quantity its gain equalizes. When that
-    // intersection cannot be measured the confidence honestly reads
-    // unavailable (NaN -> Low) rather than silently falling back to the
-    // channel's own flatness, which says nothing about the L/R relation. A
-    // channel without a measured peer judges its own in-band flatness (how
-    // well-defined "the channel's level" is at all).
+    // Right channel with a left peer: spread of L−R over the intersection (NaN if unmeasurable, no fallback to own flatness).
     private static (double SpreadDb, string Detail) SpreadOf(
         GainBalanceInput input,
         IReadOnlyList<GainBalanceInput> channels,
@@ -481,8 +362,7 @@ public static class GainBalanceEngine
                     return (spread, "shared L-R band too narrow to judge");
                 }
 
-                // Invariant: the detail feeds the user report, which must
-                // read the same regardless of the OS locale.
+                // Invariant culture: the report must not depend on OS locale.
                 return (spread, FormattableString.Invariant(
                     $"L-R spread {spread:0.0} dB"));
             }
@@ -497,9 +377,6 @@ public static class GainBalanceEngine
             : (own, FormattableString.Invariant($"in-band spread {own:0.0} dB"));
     }
 
-    // One point of the smoothed curve: the plain power mean over ±1/6 octave
-    // around the center. The window is narrow enough that the 1/f weight
-    // inside it would change nothing measurable.
     private static double SmoothedLevelAtDb(
         IReadOnlyList<double> powerByBin,
         double binWidthHz,
@@ -534,8 +411,6 @@ public static class GainBalanceEngine
         return sorted[below] * (1 - weight) + sorted[above] * weight;
     }
 
-    // The one-sided power spectrum of the processed IR, DC..Nyquist. The
-    // search crops are power-of-two already; anything else is zero-padded up.
     private static double[] PowerSpectrum(Complex[] impulseResponse)
     {
         int length = DspMath.NextPowerOfTwo(impulseResponse.Length);

@@ -2,19 +2,12 @@
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// What the frequency-response view draws for an array. The stored curves are raw
-/// — uncalibrated, unsmoothed, untrimmed — so every step happens here, and two of
-/// them are in an order that was settled by measurement rather than by taste.
-/// </summary>
 public sealed class ArrayMicrophoneCurvesTests
 {
     private static readonly IReadOnlyList<double> Grid = SpatialAverage.BuildGrid();
 
     private const double NoSmoothing = 0;
 
-    // Asserts non-null and hands the value back, which this xUnit's Assert.NotNull
-    // does not do.
     private static AnalysisCurve NotNull(AnalysisCurve? curve)
     {
         Assert.NotNull(curve);
@@ -79,9 +72,7 @@ public sealed class ArrayMicrophoneCurvesTests
     [Fact]
     public void EveryPositionIsLevelledOntoTheMeasurementMicrophone()
     {
-        // The measurement microphone is the anchor because its level is the one
-        // tied to the SPL calibration and to the impulse response — so the average
-        // sits on ITS level, not on the set's mean.
+        // The measurement mic's level is tied to SPL calibration and the IR, so the average sits on it.
         ArrayMicrophoneDisplay display = ArrayMicrophoneCurves.Build(
             [
                 Microphone(70.0, measurement: true, channel: 0),
@@ -102,10 +93,7 @@ public sealed class ArrayMicrophoneCurvesTests
     [Fact]
     public void EachMicrophoneIsCorrectedByItsOwnCalibration()
     {
-        // An array is not required to be one model of capsule, so the correction
-        // is per microphone. The pipeline SUBTRACTS a microphone correction from a
-        // level, and this has to subtract it the same way or the array would part
-        // from every other curve on the plot.
+        // The pipeline subtracts a mic correction from a level; the array must do the same.
         ArrayMicrophoneDisplay display = ArrayMicrophoneCurves.Build(
             [
                 Microphone(70.0, measurement: true, channel: 0, calibration: Calibration(-2.0)),
@@ -115,16 +103,12 @@ public sealed class ArrayMicrophoneCurvesTests
             NoSmoothing);
 
         int band = BandOf(1_000);
-        // The anchor reads 70 - (-2) = 72; the other reads 70 - 3 = 67 and is then
-        // levelled onto the anchor, so both draw at 72.
         Assert.Equal(72.0, NotNull(display.Average).Points[band].Y, 6);
     }
 
     [Fact]
     public void TurningCalibrationOffLeavesEveryArrayCurveRaw()
     {
-        // The switch means the same thing for these as for every other curve on
-        // the plot: off is off, whatever each microphone carries.
         ArrayMicrophoneDisplay display = ArrayMicrophoneCurves.Build(
             [Microphone(70.0, measurement: true, channel: 0, calibration: Calibration(-6.0))],
             useCalibration: false,
@@ -136,12 +120,7 @@ public sealed class ArrayMicrophoneCurvesTests
     [Fact]
     public void TheAverageIsSmoothedAfterAveragingAndNotBefore()
     {
-        // Not interchangeable: the spatial average is a mean of POWER across
-        // positions, the psychoacoustic smoothing a CUBIC mean of amplitude across
-        // frequency, and a cubic mean does not commute with a quadratic one. On a
-        // seven-position field set, smoothing first read 0.11 dB high on a midrange
-        // and 0.39 dB on a tweeter, and sat further from what a moving microphone
-        // measures.
+        // Power mean across positions and cubic smoothing do not commute; smoothing first read 0.11 dB (mid) / 0.39 dB (tweeter) high.
         double[] rough = Enumerable
             .Range(0, Grid.Count)
             .Select(band => 70.0 + (band % 2 == 0 ? 9.0 : -9.0))
@@ -156,7 +135,6 @@ public sealed class ArrayMicrophoneCurvesTests
             useCalibration: false,
             SpectrumSmoothing.PsychoacousticCode);
 
-        // Average first, then smooth: the power mean of the two curves, smoothed.
         IReadOnlyList<double> expected = SpatialAverage.RmsAverageDb([rough, flat]);
         List<SignalPoint> expectedSmoothed = DataHelper.SmoothBandLevels(
             expected.Select((value, band) => new SignalPoint(Grid[band], value)).ToList(),
@@ -176,8 +154,6 @@ public sealed class ArrayMicrophoneCurvesTests
             useCalibration: false,
             NoSmoothing);
 
-        // Zero would read as perfect agreement between positions that were never
-        // compared.
         Assert.Null(display.Spread);
         Assert.NotNull(display.Average);
     }
@@ -224,9 +200,7 @@ public sealed class ArrayMicrophoneCurvesTests
     [Fact]
     public void ACurveFromAnotherGridIsRefusedRatherThanDrawnShifted()
     {
-        // A stored curve outlives the code that wrote it. Drawing one whose grid
-        // this build does not use would shift every level in frequency while still
-        // looking like an ordinary response.
+        // A stored grid this build does not use would shift every level in frequency.
         ArrayMicrophoneDisplay display = ArrayMicrophoneCurves.Build(
             [new ArrayMicrophoneCurve(0, true, new double[16], 1)],
             useCalibration: false,

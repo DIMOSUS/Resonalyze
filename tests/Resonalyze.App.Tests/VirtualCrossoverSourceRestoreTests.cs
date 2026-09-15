@@ -1,16 +1,8 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The project-bind source restore sequence (see
-/// <see cref="VirtualCrossoverPanel.RestoreProjectSourcesAsync{TChannel}"/>):
-/// its ORDER is the cross-rate import contract.
-/// </summary>
 public sealed class VirtualCrossoverSourceRestoreTests
 {
-    // The field bug this pins: importing a session at a different sample
-    // rate lost every channel but the last, because each new source was
-    // rate-checked against the previous project's not-yet-replaced
-    // channels. Every wipe must precede the FIRST resolve.
+    // Field bug: cross-rate import rate-checked each source against not-yet-replaced channels; every wipe must precede the first resolve.
     [Fact]
     public async Task RestoreProjectSourcesAsync_WipesEveryChannelBeforeResolvingAny()
     {
@@ -32,7 +24,6 @@ public sealed class VirtualCrossoverSourceRestoreTests
             [
                 "clear A", "clear B", "clear C",
                 "resolve A L", "resolve A R", "done A",
-                // The mono pair resolves its single slot once.
                 "resolve B L", "done B",
                 "resolve C L", "resolve C R", "done C"
             ],

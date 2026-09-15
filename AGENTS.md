@@ -179,6 +179,19 @@ A handful of figures cannot be produced offline and stay committed artifacts: th
 Live Spectrum RTA shot (it needs a live signal), the sum-loss before/after crop, and
 the manual figures that came from the forum article. The tool's README lists them.
 
+### Technical documentation
+
+`docs/tech/<feature>.md` holds the maintainer-facing design of the complex features:
+how an algorithm works, why it is built that way, what was measured, which
+alternatives were rejected and the thresholds' provenance. One file per feature,
+organised by mechanism rather than by source file. This is where reasoning that
+would otherwise become a long code comment goes; the code keeps a one-line pointer
+(`// See docs/tech/auto-alignment.md#seed-selection.`). A change to such a mechanism
+updates its section in the same commit. `TechDocPointerTests` fails on any
+`docs/tech/<file>.md#anchor` pointer whose heading no longer exists, so a renamed
+heading takes its pointers along. `docs/specs/` holds feature specifications written
+before implementation; `docs/agent/` is what the external AI assistant reads.
+
 ## Pull requests
 
 Unless the owner asks for something else, a finished pull request is merged
@@ -206,7 +219,31 @@ Enforced by `.editorconfig`; notable deviations from common C# defaults:
 - New non-UI code uses file-scoped namespaces (see `Program.cs`, `ModeController.cs`).
 - Keep static WinForms controls in `.Designer.cs`. For genuinely dynamic controls, use a designer-defined `TableLayoutPanel` or `FlowLayoutPanel`; avoid absolute 96-DPI coordinates because controls created after `InitializeComponent` miss designer autoscaling.
 - Buttons, checkboxes and radio buttons are `ReleaseClickButton` / `ReleaseClickCheckBox` / `ReleaseClickRadioButton`, never the WinForms types they derive from — in the designer as well as in code. WinForms puts a `WindowFromPoint` ownership check in its mouse-release click path — one of several conditions, alongside cancelled validation and `ButtonBase`'s own press/capture state — so any window overlapping that one pixel (a tooltip, above all — measured: 20 of 20 clicks lost) takes the click silently while the control still paints its press. `ReleaseClick*` works around that hit-test failure and only it, and does not decide anything itself: when the release point belongs to another window, the release is handed to the framework at another free point on the same control, so the framework still answers whether a click is due and every other condition it withholds one under keeps applying. A release outside the control, or a control covered edge to edge, is left exactly as it arrived. A menu is then opened through `DropDownMenu`, which posts the show clear of the mouse message and guards it against the focus change opening it causes.
+- Comments stay under roughly 10% of code lines; every line of them is read, and paid for, by each agent that opens the file. See **Comments** below.
 - Every WinForms container scales with `AutoScaleMode.Dpi` and `AutoScaleDimensions = (96, 96)` — do not go back to `AutoScaleMode.Font`. Font autoscaling is anisotropic: at 120 DPI it widens boxes by the average character width (7→8, ×1.14) while the glyphs themselves grow ×1.25, so labels, radios and buttons were clipped across the app at 125%. DPI scaling uses one uniform `DeviceDpi / 96` on both axes, which is the ratio the text grows by. Designer slack therefore scales with the text: leave a few pixels beside a label rather than sizing a box to its exact 96-DPI extent.
+
+### Comments
+
+A comment says what the code cannot: a non-obvious reason, an invariant, a unit, a
+trap a future edit would fall into. Everything else is noise that costs every
+reader tokens and goes stale silently.
+
+- Do not describe what the next lines obviously do, and do not restate a name:
+  `/// <summary>Gets the sample rate.</summary>` on `GetSampleRate` is deleted, not written.
+- No `<param>`/`<returns>` on every parameter. Add one only when it carries a unit,
+  range or contract the name does not (`delayMs` needs none; "seconds, relative to the
+  capture start, may be negative" earns one).
+- Keep a comment to 1–3 lines. Longer design reasoning — what was measured, rejected
+  alternatives, where a threshold came from — goes to `docs/tech/<feature>.md` (see
+  Technical documentation), with a one-line pointer in code.
+- No history in comments: no "used to", "previously", PR or review references, owner
+  requests. Git and the PR description keep that.
+- Tests: the test name and asserts are the explanation. At most a short line for a
+  scenario that is not evident, such as which field defect a synthetic fixture reproduces.
+- Not deleted as noise: the `Reserve API` remark described above.
+
+When you change code, fix or delete the comments it made false; a stale comment is
+worse than none.
 
 ## User data paths
 

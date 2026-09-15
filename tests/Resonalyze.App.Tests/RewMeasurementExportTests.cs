@@ -5,12 +5,6 @@ using Resonalyze.Integration.Rew;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The send, driven by a fake handler standing in for REW. What is under test is
-/// the conversation: which routes are called, how the new measurement is picked out
-/// of the ones REW already holds, and what the round-trip check does with the number
-/// it reads back.
-/// </summary>
 public sealed class RewMeasurementExportTests
 {
     private const int SampleRate = 48_000;
@@ -45,8 +39,7 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public async Task SendAsync_ToleratesTheRoundingOfADoubleButNotASample()
     {
-        // The measured disagreement on a real import was around 1e-18 s; anything
-        // that survives to the sample grid is a different sample and a real fault.
+        // Measured disagreement on a real import was ~1e-18 s; anything reaching the sample grid is a real fault.
         RewExportResult withinRounding =
             await SendAsync(new FakeRew(), PeakSeconds(PeakIndex) + 1e-15);
         RewExportResult offByOneSample =
@@ -64,8 +57,6 @@ public sealed class RewMeasurementExportTests
         Assert.False(result.Verified);
         Assert.Contains("64", result.Problem!);
         Assert.Contains("samples", result.Problem!);
-        // The version is not gated on, but a report of this has to say what it was
-        // talking to — REW's API is a moving beta.
         Assert.Contains(Version, result.Problem!);
     }
 
@@ -78,15 +69,12 @@ public sealed class RewMeasurementExportTests
 
         Assert.False(result.Verified);
         Assert.Contains("not answering", result.Problem!);
-        // Nothing was sent, so nothing has to be undone in REW.
         Assert.DoesNotContain("/import/impulse-response-data", rew.Paths);
     }
 
     [Fact]
     public async Task SendAsync_PicksTheNewMeasurementByUuidRatherThanByName()
     {
-        // REW lets two measurements share a title, so a second send of the same name
-        // would otherwise be verified against the first one's numbers.
         var rew = new FakeRew
         {
             Existing =
@@ -114,27 +102,20 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public async Task SendAsync_ReportsAMeasurementListItCannotRead()
     {
-        // The export deliberately does not gate on REW's version, so a beta that
-        // still answers while having changed this shape is the way the design is
-        // expected to fail. It has to arrive as a reported problem, not as a
-        // JsonException through the application's global unexpected-error handler.
+        // The export does not gate on REW's version, so a changed shape must be a reported problem, not a JsonException.
         var rew = new FakeRew { MeasurementsBody = "{\"1\":{\"title\":" };
 
         RewApiException exception = await Assert.ThrowsAsync<RewApiException>(
             () => SendAsync(rew, PeakSeconds(PeakIndex)));
 
         Assert.Contains("could not read", exception.Message);
-        // The list is read before the import, so nothing was left behind in REW.
         Assert.DoesNotContain("/import/impulse-response-data", rew.Paths);
     }
 
     [Fact]
     public async Task SendAsync_ReportsAMeasurementListThatIsNotJsonAtAll()
     {
-        // Something is on the port and it is not REW. Measured (.NET 10.0.301):
-        // ReadFromJsonAsync does NOT reject the foreign content type, it parses the
-        // bytes regardless, so this arrives as a JsonException about '<' — not as
-        // the NotSupportedException the media type would suggest.
+        // Measured (.NET 10.0.301): ReadFromJsonAsync ignores a foreign content type and throws JsonException about '<'.
         var rew = new FakeRew
         {
             MeasurementsBody = "<html><body>not REW</body></html>",
@@ -150,9 +131,7 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public async Task SendAsync_ReportsAMeasurementListItCannotEvenDecode()
     {
-        // The other half, and the one that is a header fault rather than a body
-        // fault: a charset HttpClient cannot resolve raises InvalidOperationException
-        // from ReadFromJsonAsync, which no JsonException catch would have covered.
+        // An unresolvable charset raises InvalidOperationException, which a JsonException catch misses.
         var rew = new FakeRew
         {
             MeasurementsContentType = "application/json; charset=utf-9"
@@ -167,8 +146,6 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public async Task SendAsync_ReportsAMeasurementListThatGoesWrongAfterTheImport()
     {
-        // The same failure on the polling read, where the import has already gone
-        // through: still a reported problem rather than an unhandled exception.
         var rew = new FakeRew();
 
         RewApiException exception = await Assert.ThrowsAsync<RewApiException>(async () =>
@@ -189,11 +166,7 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public async Task ProbeAsync_TreatsAPortThatAnswersSomethingElseAsNotRew()
     {
-        // Something is listening on 4735 and it is not REW. That is the same news
-        // as nothing listening at all, and must not throw at the button — this runs
-        // from an async void handler, so an escape is a crash rather than a message.
-        // The charset case is the one that was NOT already covered: it raises
-        // InvalidOperationException, which the old "unreachable" rule did not list.
+        // Runs from an async void handler, so any escape is a crash.
         var rew = new FakeRew
         {
             VersionContentType = "application/json; charset=utf-9"
@@ -212,10 +185,7 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public async Task SendAsync_FindsItsMeasurementWhenRewShortensTheName()
     {
-        // REW truncates a long title as it files it and reports the short one back
-        // (measured on 5.40 Beta 132: 54 characters came back as 48, 64 as 45).
-        // Requiring the name to match exactly made every export of a long name wait
-        // out the filing timeout and then report that REW had not filed it.
+        // REW truncates long titles (5.40 Beta 132: 54 chars -> 48, 64 -> 45), hence prefix matching.
         const string identifier = "Resonalyze 2026-09-01 12-00-00 export probe name";
         var rew = new FakeRew { TitleLimit = 45 };
 
@@ -230,35 +200,27 @@ public sealed class RewMeasurementExportTests
     {
         const string identifier = "Resonalyze 2026-09-01 12-00-00 export probe name";
 
-        // Filed whole, and filed shortened to a length REW could have cut it to.
         Assert.True(RewMeasurementExport.IsFiledAs(identifier, identifier));
         Assert.True(RewMeasurementExport.IsFiledAs(identifier[..45], identifier));
         Assert.True(RewMeasurementExport.IsFiledAs(identifier[..40], identifier));
 
-        // A SHORT name that merely begins the same way is somebody else's measurement.
         Assert.False(RewMeasurementExport.IsFiledAs("Resonalyze", identifier));
         Assert.False(RewMeasurementExport.IsFiledAs(identifier[..39], identifier));
 
-        // An empty title is a prefix of everything, so it must not count as one.
         Assert.False(RewMeasurementExport.IsFiledAs("", identifier));
         Assert.False(RewMeasurementExport.IsFiledAs(null, identifier));
 
-        // Longer than what was sent, another name, or a different case: not ours.
         Assert.False(RewMeasurementExport.IsFiledAs(identifier + "x", identifier));
         Assert.False(RewMeasurementExport.IsFiledAs("something else entirely, and long enough", identifier));
         Assert.False(RewMeasurementExport.IsFiledAs(identifier[..45].ToUpperInvariant(), identifier));
 
-        // A short name is still matched when REW filed it WHOLE - the floor only
-        // governs what may pass as a shortening.
         Assert.True(RewMeasurementExport.IsFiledAs("probe", "probe"));
     }
 
     [Fact]
     public async Task SendAsync_RefusesToGuessWhenTwoNewMeasurementsShareTheName()
     {
-        // REW lets two measurements share a title, and both are new since the
-        // snapshot. Nothing separates them, so the export must say so rather than
-        // verify whichever the dictionary happened to yield first.
+        // Two new measurements share a title: nothing separates them, so the export must say so.
         var rew = new FakeRew
         {
             Concurrent = new FakeMeasurement("probe", "someone-elses-uuid", 0.5)
@@ -277,14 +239,11 @@ public sealed class RewMeasurementExportTests
         var rew = new FakeRew
         {
             SentIdentifier = identifier,
-            // Filed first, and a prefix of ours: the user's own measurement.
             Concurrent = new FakeMeasurement("Resonalyze", "someone-elses-uuid", 0.5)
         };
 
         RewExportResult result = await SendAsync(rew, PeakSeconds(PeakIndex), identifier);
 
-        // Verified against OURS — 0.5 s would have been reported as a huge disagreement
-        // had the concurrent one been picked.
         Assert.True(result.Verified);
         Assert.Null(result.Problem);
     }
@@ -292,9 +251,6 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public async Task SendAsync_RefusesToGuessBetweenTwoEquallyGoodTruncations()
     {
-        // Two new measurements, both shortened to the same length, both a prefix of
-        // what was sent. Waiting cannot separate them and neither can a rule, so the
-        // export says so instead of verifying one of them at random.
         const string identifier = "Resonalyze 2026-09-01 12-00-00 export probe name";
         var rew = new FakeRew
         {
@@ -313,19 +269,13 @@ public sealed class RewMeasurementExportTests
     public void IsFiledAs_RefusesAShortNameThatIsMerelyAPrefix()
     {
         const string identifier = "Resonalyze 2026-09-01 12-00-00 export probe name";
-        // A real truncation: long enough that REW could have cut a title to it.
         Assert.True(RewMeasurementExport.IsFiledAs(identifier[..45], identifier));
         Assert.True(RewMeasurementExport.IsFiledAs(identifier, identifier));
-        // Someone else's short name that happens to start the same way.
         Assert.False(RewMeasurementExport.IsFiledAs("Resonalyze", identifier));
         Assert.False(RewMeasurementExport.IsFiledAs(identifier[..39], identifier));
     }
 
-    /// <summary>
-    /// The whole path against a running REW, which is the only thing that can prove
-    /// the fields are REW's and the start time survives. It creates one measurement
-    /// and deletes it again.
-    /// </summary>
+    /// <summary>Against a running REW: creates one measurement and deletes it again.</summary>
     [RewFact]
     [Trait("Category", "Hardware")]
     public async Task SendAsync_RoundTripsThroughARunningRew()
@@ -333,10 +283,7 @@ public sealed class RewMeasurementExportTests
         Assert.True(RewApiClient.TryParseBaseAddress(RewFactAttribute.ApiUrl(), out Uri? baseAddress));
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         var client = new RewApiClient(http, baseAddress!);
-        // The GUID leads, so that what REW keeps of the name is still unique to this
-        // run: REW shortens a long title, and a discriminator at the end is the part
-        // it drops. Cleanup deletes by this name, so the cost of getting it wrong is
-        // deleting a measurement belonging to whoever is using REW.
+        // The GUID leads because REW drops the end of a long title, and cleanup deletes by this name.
         string identifier = $"{Guid.NewGuid():N} Resonalyze round trip";
 
         IReadOnlyDictionary<string, RewMeasurementSummary> before =
@@ -345,9 +292,7 @@ public sealed class RewMeasurementExportTests
             new RewExportRequest(Arrival(), PeakIndex, SampleRate, identifier, null),
             CancellationToken.None);
 
-        // Clean up BEFORE asserting, and report the two failures separately: a
-        // cleanup thrown from a finally block replaces the assertion that matters
-        // with the news that a leftover could not be removed.
+        // Clean up before asserting: a throw from finally would replace the assertion that matters.
         string? cleanup = await DeleteMeasurementsAddedSinceAsync(
             http, baseAddress!, client, before, identifier);
 
@@ -355,14 +300,7 @@ public sealed class RewMeasurementExportTests
         Assert.Null(cleanup);
     }
 
-    /// <summary>
-    /// Removes what THIS test added, and nothing else. Rule of the house for anything
-    /// that touches a live REW: it may be mid-session, so put back everything you
-    /// added — and, just as strictly, touch nothing you did not. "New since the
-    /// snapshot" is not that test: a measurement the user makes while this runs is
-    /// also new, and deleting it would destroy their work. The identifier this test
-    /// invented is unique, so it names its own import exactly.
-    /// </summary>
+    /// <summary>Deletes only what this test added: the user's REW may be mid-session.</summary>
     private static async Task<string?> DeleteMeasurementsAddedSinceAsync(
         HttpClient http,
         Uri baseAddress,
@@ -383,9 +321,6 @@ public sealed class RewMeasurementExportTests
             await client.GetMeasurementsAsync(CancellationToken.None);
         foreach (RewMeasurementSummary summary in after.Values)
         {
-            // The same prefix rule the export itself uses: REW truncates a long
-            // title as it files it, and an equality test here would walk past the
-            // measurement this test created and leave it in the user's session.
             if (string.IsNullOrEmpty(summary.Uuid) ||
                 known.Contains(summary.Uuid) ||
                 !RewMeasurementExport.IsFiledAs(summary.Title, identifier))
@@ -402,11 +337,7 @@ public sealed class RewMeasurementExportTests
         return null;
     }
 
-    /// <summary>
-    /// REW can still be finishing with a measurement it has already listed, and
-    /// refuses the delete while it is; a couple of retries is the difference between
-    /// leaving the user's session clean and leaving a probe in it.
-    /// </summary>
+    /// <summary>REW refuses a delete while still finishing a listed measurement, hence retries.</summary>
     private static async Task<string?> TryDeleteAsync(HttpClient http, Uri baseAddress, string uuid)
     {
         HttpStatusCode status = HttpStatusCode.Unused;
@@ -444,9 +375,7 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public async Task ProbeAsync_TreatsItsOwnDeadlineAsNotAnswering()
     {
-        // The case a refused connection does not cover. Before this, the probe's own
-        // timeout cancelled the token it was watching, so the cancellation was not
-        // read as "unreachable" and escaped through an async void handler.
+        // The probe's own timeout cancelling its token must not escape through the async void handler.
         using var http = new HttpClient(new FakeRew { Silent = true });
         var export = new RewMeasurementExport(
             new RewApiClient(http, new Uri("http://localhost:4735/")));
@@ -461,8 +390,6 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public async Task ProbeAsync_StillPropagatesTheCallersOwnCancellation()
     {
-        // The other half of the same fix: a caller who gives up must not be told
-        // "REW is not answering", which is a different fact about a different thing.
         using var http = new HttpClient(new FakeRew { Silent = true });
         var export = new RewMeasurementExport(
             new RewApiClient(http, new Uri("http://localhost:4735/")));
@@ -476,9 +403,7 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public async Task SendAsync_IgnoresAMeasurementTheUserMadeWhileThisOneWasFiling()
     {
-        // REW stays usable during a send. A measurement that appears meanwhile is new
-        // since the snapshot exactly as ours is, so UUID alone would let this export
-        // verify a stranger's timing — and report a fault that belongs to neither.
+        // A measurement the user makes during the send is also new since the snapshot; UUID alone would verify a stranger.
         var rew = new FakeRew
         {
             Concurrent = new FakeMeasurement(
@@ -522,11 +447,6 @@ public sealed class RewMeasurementExportTests
 
     private sealed record FakeMeasurement(string Title, string Uuid, double PeakSeconds);
 
-    /// <summary>
-    /// REW as far as this export is concerned: a version, a measurement list that
-    /// gains one entry when the import route is called, and the peak time it reports
-    /// for it.
-    /// </summary>
     private sealed class FakeRew : HttpMessageHandler
     {
         private bool imported;
@@ -537,44 +457,22 @@ public sealed class RewMeasurementExportTests
         public double ReportedPeakSeconds { get; set; }
         public bool Unreachable { get; set; }
 
-        /// <summary>
-        /// An address that accepts the connection and then says nothing — a firewall
-        /// that drops packets, or a machine that is up with REW closed. This is the
-        /// case a refused connection does NOT cover: nothing throws, the wait simply
-        /// runs to whatever deadline is watching it.
-        /// </summary>
+        /// <summary>Accepts the connection and says nothing (dropped packets): no throw, only a deadline.</summary>
         public bool Silent { get; set; }
         public HttpStatusCode ImportStatus { get; set; } = HttpStatusCode.Accepted;
         public FakeMeasurement? Concurrent { get; set; }
 
-        /// <summary>
-        /// What /measurements answers instead of the list, when set: a REW that is
-        /// still there and still answering, having changed or malformed the shape.
-        /// The export does not gate on REW's version, so this is the case that
-        /// stands in for a future beta.
-        /// </summary>
         public string? MeasurementsBody { get; set; }
 
-        /// <summary>The content type it answers with, for a body that is not JSON at all.</summary>
         public string MeasurementsContentType { get; set; } = "application/json";
 
-        /// <summary>
-        /// Answer /measurements normally until the import has gone through, then
-        /// stop being readable — the polling read, not the snapshot.
-        /// </summary>
         public bool BreakMeasurementsAfterImport { get; set; }
 
-        /// <summary>
-        /// How many characters of a title REW keeps when it files one, or 0 for all
-        /// of them. REW really does shorten a long name and report the short one
-        /// back, which is why the export matches on a prefix.
-        /// </summary>
+        /// <summary>Title characters REW keeps when filing, 0 for all.</summary>
         public int TitleLimit { get; set; }
 
-        /// <summary>The name the export sent, which is what REW files it under.</summary>
         public string SentIdentifier { get; set; } = "probe";
 
-        /// <summary>The same, for /version — the route the probe reads.</summary>
         public string? VersionBody { get; set; }
 
         public string VersionContentType { get; set; } = "application/json";
@@ -641,9 +539,7 @@ public sealed class RewMeasurementExportTests
                 entries.Add(Entry(index, measurement));
             }
 
-            // The stranger is listed BEFORE ours on purpose. Whichever candidate the
-            // export happens to meet first must not be the one it keeps, and a fake
-            // that always yields ours first cannot show the difference.
+            // The stranger is listed first on purpose, so first-found cannot pass.
             if (imported && Concurrent is { } first)
             {
                 entries.Add(Entry((Existing.Count + 2).ToString(), first));
@@ -662,11 +558,7 @@ public sealed class RewMeasurementExportTests
                     new FakeMeasurement(filed, "new-uuid", ReportedPeakSeconds)));
             }
 
-            // Someone at the keyboard in REW while this send was being filed. It has
-            // to appear only once the import is under way: listed from the start it
-            // would be in the caller's own before-snapshot, which is to say KNOWN, and
-            // a test meaning to exercise the concurrency would quietly exercise
-            // nothing.
+            // Appears only after import starts; otherwise it would be in the before-snapshot and test nothing.
             return "{" + string.Join(",", entries) + "}";
         }
 
@@ -674,11 +566,6 @@ public sealed class RewMeasurementExportTests
             FormattableString.Invariant(
                 $"\"{index}\":{{\"title\":\"{measurement.Title}\",\"uuid\":\"{measurement.Uuid}\",\"timeOfIRPeakSeconds\":{measurement.PeakSeconds:R}}}");
 
-        /// <summary>
-        /// The header goes on unvalidated so a test can send one REW could send and
-        /// HttpClient cannot decode — an unusable charset, which is a header fault
-        /// rather than a body fault and raises a different exception.
-        /// </summary>
         private static HttpResponseMessage Json(
             HttpStatusCode status,
             string body,

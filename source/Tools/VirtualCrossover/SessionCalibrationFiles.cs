@@ -1,21 +1,12 @@
 namespace Resonalyze;
 
-/// <summary>
-/// Where a calibration curve that arrived inside a Virtual DSP session lands
-/// when the user keeps it: a file name safe for the file system, distinct from
-/// anything already there, and an entry name distinct from the configured ones.
-/// </summary>
+/// <summary>File and entry names for a session-carried calibration curve the user keeps.</summary>
 internal static class SessionCalibrationFiles
 {
     private const string DefaultExtension = ".txt";
     private const string FallbackName = "calibration";
 
-    /// <summary>
-    /// A path under <paramref name="directory"/> for a curve named
-    /// <paramref name="preferredName"/> (a file name or a free-form entry name):
-    /// characters the file system refuses become underscores, a missing extension
-    /// becomes <c>.txt</c>, and a taken name gets a counter before its extension.
-    /// </summary>
+    /// <summary>Refused characters become underscores, a missing extension becomes <c>.txt</c>, a taken name gets a counter.</summary>
     public static string UniquePath(
         string directory,
         string preferredName,
@@ -47,11 +38,7 @@ internal static class SessionCalibrationFiles
         return candidate;
     }
 
-    /// <summary>
-    /// <paramref name="name"/>, or <c>name (2)</c>, <c>name (3)</c>… when an
-    /// entry of that name already exists (compared case-insensitively, as the
-    /// selectors show them).
-    /// </summary>
+    /// <summary>Adds <c>(2)</c>, <c>(3)</c>… on a case-insensitive clash, as the selectors show names.</summary>
     public static string UniqueName(string name, IEnumerable<string> existingNames)
     {
         ArgumentNullException.ThrowIfNull(name);
@@ -82,7 +69,6 @@ internal static class SessionCalibrationFiles
             builder.Append(Array.IndexOf(invalid, character) >= 0 ? '_' : character);
         }
 
-        // A name of only dots or spaces is not a file name on Windows.
         return builder.ToString().Trim(' ', '.');
     }
 }

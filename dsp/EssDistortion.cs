@@ -4,9 +4,6 @@ using System.Linq;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Tuning for the relative distortion computation.
-/// </summary>
 public sealed record DistortionOptions(
     int MaxHarmonic = 5,
     double LowFrequencyHz = 20.0,
@@ -14,8 +11,7 @@ public sealed record DistortionOptions(
     int GridPoints = 1024,
     double MaxDenominatorDropDb = 45.0,
     double FadeFraction = 0.5,
-    // Fractional-octave smoothing WIDTH (FWHM), e.g. 1/12 for 1/12-octave — the
-    // same convention as the primary response. 0 disables smoothing.
+    // Fractional-octave WIDTH (FWHM), same convention as the primary response; 0 disables.
     double SmoothingOctaves = 0.0,
     bool IncludeNoise = false,
     int NoiseWindowLength = 8_192,
@@ -43,13 +39,7 @@ public sealed record DistortionOptions(
     }
 }
 
-/// <summary>
-/// Relative distortion on an excitation-frequency grid. Every quantity is a ratio
-/// to the linear packet |H1| of the SAME ESS decomposition, so the numbers are
-/// true HDn/THD fractions. Unreliable points (H1 near zero, or a harmonic outside
-/// its observable range) are <see cref="double.NaN"/>, never a fictitious large
-/// percentage.
-/// </summary>
+/// <summary>Ratios to |H1| of the same decomposition; unreliable points are NaN, never a fictitious percentage.</summary>
 public sealed record DistortionSpectrum(
     double[] Frequencies,
     double[] LinearAmplitude,
@@ -61,14 +51,8 @@ public sealed record DistortionSpectrum(
     bool[] Reliable,
     IReadOnlyList<string> Warnings);
 
-/// <summary>
-/// Computes relative harmonic distortion (HDn) and total harmonic distortion (THD)
-/// from an <see cref="EssHarmonicDecomposition"/>. THD sums the harmonics'
-/// ENERGY on a common excitation grid (not a complex sum of one shared window),
-/// each harmonic is drawn against the excitation frequency, and microphone
-/// calibration is applied at each product frequency n·f before the ratio, so a
-/// calibration difference C(n·f) − C(f) is honoured.
-/// </summary>
+/// <summary>HDn and THD from an <see cref="EssHarmonicDecomposition"/>: THD sums energy on the excitation grid,
+/// and calibration is applied at each product frequency n·f before the ratio.</summary>
 public static class EssDistortion
 {
     public static DistortionSpectrum ComputeDistortion(
@@ -103,9 +87,7 @@ public static class EssDistortion
                 packet, decomposition.Sweep, calibration, frequencies);
         }
 
-        // Denominator floor: where the linear response has dropped far below its
-        // own peak the ratio divides noise by noise, so mark the point unreliable
-        // rather than emitting a runaway percentage.
+        // Where H1 is far below its peak the ratio divides noise by noise: mark unreliable.
         double linearPeak = 0.0;
         for (int i = 0; i < gridPoints; i++)
         {
@@ -118,9 +100,7 @@ public static class EssDistortion
         double denominatorFloor = linearPeak * Math.Pow(10.0, -options.MaxDenominatorDropDb / 20.0);
         bool[] reliable = new bool[gridPoints];
 
-        // Orders whose packet overlaps a neighbour cannot be trusted: a leaking
-        // packet reports a confident-looking curve, so it is dropped entirely (and
-        // excluded from THD) rather than drawn, with the warning surfaced.
+        // Overlapping orders are dropped (and excluded from THD), with the warning surfaced.
         var overlappingOrders = new HashSet<int>(
             decomposition.Validity.Packets
                 .Where(packet => !packet.IsReliable)
@@ -133,9 +113,7 @@ public static class EssDistortion
             harmonicDistortion[order] = new double[gridPoints];
         }
 
-        // The noise floor is a SEPARATE trace (|N|/|H1|), not fused into THD — so
-        // THD stays a clean harmonics-only figure and the noise floor needs no
-        // bandwidth convention beyond its stated analysis resolution.
+        // Noise floor is a separate trace, never fused into THD.
         bool useNoise = noise != null && noise.Confidence >= options.MinNoiseConfidence;
         double[]? noiseOnGrid = useNoise
             ? NoiseAmplitudeOnGrid(noise!, calibration, frequencies)
@@ -208,9 +186,6 @@ public static class EssDistortion
             decomposition.Validity.Warnings);
     }
 
-    // Samples the noise magnitude onto the excitation grid (order 1, so the product
-    // frequency is the grid frequency) and applies calibration at that frequency —
-    // the same treatment as the linear packet, so noise and |H1| stay comparable.
     private static double[] NoiseAmplitudeOnGrid(
         NoiseEstimate noise,
         CalibrationFile? calibration,
@@ -250,24 +225,14 @@ public static class EssDistortion
         return result;
     }
 
-    /// <summary>
-    /// The distortion display curves together with the diagnostics a display layer
-    /// needs: the overlap/isolation warnings (a dropped or marginal order must be
-    /// explained, not silently missing) and the per-order packet validity. Without
-    /// this the warnings computed during decomposition never reach the UI.
-    /// </summary>
+    /// <summary>Curves plus the isolation warnings and packet validity a display needs to explain a dropped order.</summary>
     public sealed record DistortionCurveResult(
         IReadOnlyList<AnalysisCurve> Curves,
         IReadOnlyList<string> Warnings,
         IReadOnlyList<HarmonicPacketValidity> PacketValidity,
         bool IncludesNoise);
 
-    /// <summary>
-    /// Builds the distortion display curves (HD2/HD3/HD4 and THD, in dB relative to
-    /// H1) for the requested set, keeping curves-only compatibility. Prefer
-    /// <see cref="ComputeDistortionCurvesResult"/> to also receive the isolation
-    /// warnings that explain a dropped order.
-    /// </summary>
+    /// <summary>Curves only; prefer <see cref="ComputeDistortionCurvesResult"/> to also get the warnings.</summary>
     public static IReadOnlyList<AnalysisCurve> ComputeDistortionCurves(
         ReadOnlySpan<double> deconvolvedImpulse,
         EssSweepMetadata sweep,
@@ -276,11 +241,6 @@ public static class EssDistortion
         SpectrumCurves curves) =>
         ComputeDistortionCurvesResult(deconvolvedImpulse, sweep, options, calibration, curves).Curves;
 
-    /// <summary>
-    /// Runs the full distortion pipeline and returns the curves plus the isolation
-    /// warnings and packet validity. The primary response is NOT produced here — it
-    /// stays the loopback transfer curve.
-    /// </summary>
     public static DistortionCurveResult ComputeDistortionCurvesResult(
         ReadOnlySpan<double> deconvolvedImpulse,
         EssSweepMetadata sweep,
@@ -309,9 +269,6 @@ public static class EssDistortion
             : null;
         DistortionSpectrum spectrum = ComputeDistortion(decomposition, calibration, options, noise);
 
-        // Orders whose packet overlaps a neighbour are dropped entirely — no curve,
-        // no THD contribution — and explained by a warning, rather than left as an
-        // all-NaN line in the legend.
         var droppedOrders = new HashSet<int>(
             decomposition.Validity.Packets
                 .Where(packet => !packet.IsReliable)
@@ -339,8 +296,6 @@ public static class EssDistortion
         bool includesNoise = spectrum.NoiseFloorRatio != null;
         if ((curves & SpectrumCurves.ThdPlusNoise) != 0)
         {
-            // THD is harmonics only. The noise floor is a separate trace (REW-style)
-            // under its own flag, so THD is never inflated by noise.
             result.Add(new AnalysisCurve(
                 "THD",
                 BuildDbCurve(spectrum.Frequencies, spectrum.ThdRatio, options.SmoothingOctaves),
@@ -349,10 +304,7 @@ public static class EssDistortion
 
         if ((curves & SpectrumCurves.NoiseFloor) != 0 && includesNoise)
         {
-            // The noise floor is meaningful only at its analysis resolution — two
-            // captures with the same physical noise but different usable tail lengths
-            // read at different levels — so the equivalent noise bandwidth is named in
-            // the curve label rather than left implicit.
+            // The noise floor level depends on analysis resolution, so the bandwidth is named in the label.
             string label = spectrum.Noise is { } estimate
                 ? $"Noise floor ({estimate.EquivalentNoiseBandwidthHz:0.##} Hz BW)"
                 : "Noise floor";
@@ -366,9 +318,7 @@ public static class EssDistortion
             result, spectrum.Warnings, decomposition.Validity.Packets, includesNoise);
     }
 
-    // Samples one packet's spectrum onto the excitation grid: each product-frequency
-    // bin is calibrated at its own frequency, mapped to excitation frequency f = fp/n,
-    // then linearly interpolated in AMPLITUDE (never dB) onto the grid.
+    // Calibrated at the product frequency, mapped to f = fp/n, interpolated in amplitude (never dB).
     private static double[] ExcitationAmplitudeOnGrid(
         HarmonicPacket packet,
         EssSweepMetadata sweep,
@@ -426,8 +376,6 @@ public static class EssDistortion
         return result;
     }
 
-    // Converts a ratio to dB (NaN preserved as a gap), then applies a NaN-aware
-    // fractional-octave Gaussian smooth over the log-frequency grid.
     private static List<SignalPoint> BuildDbCurve(
         double[] frequencies,
         double[] ratio,
@@ -452,16 +400,7 @@ public static class EssDistortion
         return points;
     }
 
-    /// <summary>
-    /// NaN-aware fractional-octave Gaussian smooth of a dB curve on a
-    /// log-frequency grid. <paramref name="widthOctaves"/> is a fractional-octave
-    /// WINDOW WIDTH (the same 1/N the primary response uses, e.g. 1/12), not a
-    /// Gaussian sigma: it is the full width at half maximum, so a "1/12-octave"
-    /// smooth resolves detail at 1/12 octave rather than blurring across a whole
-    /// octave. Masked points (NaN) stay NaN and are never used as neighbours, so a
-    /// gap where a harmonic is unobservable is preserved rather than filled. A
-    /// width &lt;= 0 returns the input unchanged.
-    /// </summary>
+    /// <summary><paramref name="widthOctaves"/> is the FWHM (e.g. 1/12), not sigma. NaN points stay gaps and are never neighbours.</summary>
     public static double[] SmoothOctaves(
         double[] frequencies,
         double[] db,
@@ -478,8 +417,6 @@ public static class EssDistortion
             return output;
         }
 
-        // FWHM = 2·sqrt(2·ln2)·sigma, so convert the requested window width to the
-        // Gaussian sigma that has that width at half maximum.
         const double fwhmToSigma = 2.354820045;
         double sigmaOctaves = widthOctaves / fwhmToSigma;
         double octavesPerStep =
@@ -494,10 +431,7 @@ public static class EssDistortion
         int radius = (int)Math.Ceiling(3.0 * sigmaIndices);
         for (int i = 0; i < count; i++)
         {
-            // A masked point (harmonic above Nyquist/n, denominator rejected, or an
-            // overlapping order) stays a gap: smoothing must not fill it from
-            // neighbouring valid bins, or the plot would show finite distortion
-            // where the harmonic is unobservable.
+            // Masked points stay gaps: filling them would draw distortion where the harmonic is unobservable.
             if (!double.IsFinite(db[i]))
             {
                 output[i] = double.NaN;

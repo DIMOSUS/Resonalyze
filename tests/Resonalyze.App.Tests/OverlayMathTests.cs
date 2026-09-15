@@ -17,8 +17,7 @@ public sealed class OverlayMathTests
         OverlayOperation operation,
         double[] expectedValues)
     {
-        // Interpolation is logarithmic in frequency, so x = 2 — the GEOMETRIC
-        // midpoint of the b span [1, 4] — reads the midpoint value 12.
+        // Log-frequency interpolation: x = 2 is the geometric midpoint of [1, 4].
         OverlayPoint[] a =
         [
             new OverlayPoint(1, 10),
@@ -44,8 +43,6 @@ public sealed class OverlayMathTests
     [Fact]
     public void CalculateOperation_CurveAPassesTheFirstOperandThrough()
     {
-        // "A only" has no second operand — not an empty one, none — so it must neither
-        // read B nor drop the points that fall outside it.
         OverlayPoint[] a =
         [
             new OverlayPoint(20, -3),
@@ -62,8 +59,6 @@ public sealed class OverlayMathTests
     }
 
     [Theory]
-    // At the pivot the tilt adds nothing; an octave up adds the slope, an octave down
-    // subtracts it, and the line keeps going by octaves either way.
     [InlineData(1_000, 0)]
     [InlineData(2_000, 6)]
     [InlineData(500, -6)]
@@ -76,8 +71,6 @@ public sealed class OverlayMathTests
     [Fact]
     public void TiltDb_ReversesWithTheSlopeSign()
     {
-        // A negative slope is the same line mirrored — the compensation for an
-        // excitation that RISES with frequency.
         Assert.Equal(
             -OverlayMath.TiltDb(4_000, 3, 250),
             OverlayMath.TiltDb(4_000, -3, 250),
@@ -85,9 +78,9 @@ public sealed class OverlayMathTests
     }
 
     [Theory]
-    [InlineData(0, 3, 1_000)]        // no frequency to place on the line
-    [InlineData(1_000, 3, 0)]        // no pivot to hinge on
-    [InlineData(1_000, 0, 1_000)]    // flat tilt
+    [InlineData(0, 3, 1_000)]
+    [InlineData(1_000, 3, 0)]
+    [InlineData(1_000, 0, 1_000)]
     [InlineData(1_000, double.NaN, 1_000)]
     public void TiltDb_IsNeutralWithoutAUsableSlope(
         double frequencyHz,
@@ -100,10 +93,7 @@ public sealed class OverlayMathTests
     [Fact]
     public void CalculateOperation_WrappedPhaseInterpolatesThroughTheBranchCut()
     {
-        // B steps from +170° to −170°: physically the short way passes through
-        // ±180°. A linear blend of the raw numbers would read 0° at the
-        // geometric midpoint and the wrapped difference could never recover
-        // the lost branch; the phasor interpolation must read ±180°.
+        // +170° to −170° passes through ±180°; phasor interpolation must read ±180°, not the linear 0°.
         OverlayPoint[] a =
         [
             new OverlayPoint(1_000, 0),
@@ -123,15 +113,12 @@ public sealed class OverlayMathTests
             wrapPhaseDifference: true);
 
         Assert.Equal(3, result.Length);
-        // A − B at the midpoint: 0 − (±180) wraps to ±180, never to 0.
         Assert.Equal(180.0, Math.Abs(result[1].Y), precision: 6);
     }
 
     [Fact]
     public void CalculateOperation_AmplitudeSpaceDifferenceKeepsPositiveResults()
     {
-        // A is 6 dB above B everywhere, so the amplitude difference is positive
-        // and has a real dB value.
         OverlayPoint[] a =
         [
             new OverlayPoint(100, 6),
@@ -155,9 +142,7 @@ public sealed class OverlayMathTests
     [Fact]
     public void CalculateOperation_AmplitudeSpaceDifferenceGapsNegativeResults()
     {
-        // B is louder than A, so the amplitude difference is negative: there is
-        // no dB value for it. The curve must show a gap (NaN), not a -160 dB
-        // floor pretending to be data.
+        // B louder than A: no dB value, so a NaN gap rather than a -160 dB floor.
         OverlayPoint[] a =
         [
             new OverlayPoint(100, 0),
@@ -182,9 +167,7 @@ public sealed class OverlayMathTests
     [Fact]
     public void CalculateOperation_BlendCrossfadesAroundCenterFrequency()
     {
-        // x = 2 is the GEOMETRIC midpoint of the b span [1, 4] (interpolation
-        // is logarithmic in frequency), so b(2) = 12; it is also the blend
-        // centre, so the result is the plain average (14 + 12) / 2 = 13.
+        // x = 2 is the geometric midpoint and blend centre: (14 + 12) / 2 = 13.
         OverlayPoint[] a =
         [
             new OverlayPoint(1, 10),
@@ -329,8 +312,6 @@ public sealed class OverlayMathTests
         OverlayOperation operation,
         double expected)
     {
-        // 170 and -170 degrees are only 20 degrees apart; a raw subtraction would report
-        // 340. The wrapped formula must take the shortest angular distance.
         OverlayPoint[] a =
         [
             new OverlayPoint(1, 170),
@@ -355,8 +336,6 @@ public sealed class OverlayMathTests
     [Fact]
     public void CalculateOperation_RawDifferencePreservesUnwrappedSlope()
     {
-        // Two unwrapped curves whose difference exceeds 180 degrees: without wrapping the
-        // accumulated slope (and hence delay) must survive untouched.
         OverlayPoint[] a =
         [
             new OverlayPoint(1, 170),
@@ -474,10 +453,7 @@ public sealed class OverlayMathTests
     [Fact]
     public void SmoothByOctaves_PsychoacousticWeightsPeaksWithoutClippingDips()
     {
-        // A fine log grid (1/96 octave) around 1 kHz, flat at 0 dB, with a
-        // -24 dB dip and a +9 dB peak each 5 points (~1/19 octave) wide.
-        // Psychoacoustic cubic averaging must favour the peak while retaining
-        // a smooth, finite dip instead of clipping it to a median envelope.
+        // 1/96-octave grid with a -24 dB dip and +9 dB peak ~1/19 octave wide: cubic averaging favours the peak, keeps a finite dip.
         OverlayPoint[] points = Enumerable.Range(0, 385)
             .Select(index =>
             {
@@ -511,10 +487,7 @@ public sealed class OverlayMathTests
     [Fact]
     public void SmoothByOctaves_MagnitudeSemanticsDisabledMatchesPlainBaseWidth()
     {
-        // A phase-like signed curve with a sharp negative excursion: with the
-        // magnitude semantics disabled (phase / group-delay / coherence) the
-        // psychoacoustic code must decode to plain 1/6-octave smoothing —
-        // identical per point, no upward bias anywhere.
+        // Without magnitude semantics the psychoacoustic code decodes to plain 1/6-octave smoothing.
         OverlayPoint[] points = Enumerable.Range(0, 385)
             .Select(index => new OverlayPoint(
                 250.0 * Math.Pow(2, index / 96.0),

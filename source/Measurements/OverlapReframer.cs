@@ -1,12 +1,6 @@
 namespace Resonalyze
 {
-    /// <summary>
-    /// Re-frames a contiguous multi-channel sample stream into overlapping
-    /// frames of a fixed size, advancing by a fractional hop. This decouples
-    /// the analysis window size from the audio capture block size so a live
-    /// analyzer can slide its FFT window with overlap instead of consuming the
-    /// stream in non-overlapping blocks.
-    /// </summary>
+    /// <summary>Re-frames a contiguous stream into fixed-size overlapping frames, decoupling FFT size from capture block size.</summary>
     internal sealed class OverlapReframer
     {
         private readonly int frameSize;
@@ -35,12 +29,6 @@ namespace Resonalyze
             bufferedCount = 0;
         }
 
-        /// <summary>
-        /// Appends an incoming capture block (channels × samples) to the
-        /// internal buffer and yields every complete overlapping frame that
-        /// becomes available. The retained tail preserves the overlap region
-        /// for frames straddling block boundaries.
-        /// </summary>
         public IEnumerable<float[][]> Push(float[][] block)
         {
             ArgumentNullException.ThrowIfNull(block);

@@ -38,8 +38,7 @@ public sealed class VirtualCrossoverMetricTests
         {
             string text = VirtualCrossoverMetric.FormatCompact([Junction, Total]);
 
-            // Two decimals: lobe alternatives differ by hundredths of a dB,
-            // and the columns line up under the header at that width.
+            // Two decimals: lobe alternatives differ by hundredths of a dB.
             Assert.StartsWith("Sum loss (dB)\r\n         avg /   dip\r\n\r\n", text);
             Assert.Contains("A/B    -1.23 / -6.50", text);
             Assert.Contains("Total  -0.80 /     —", text);
@@ -63,9 +62,7 @@ public sealed class VirtualCrossoverMetricTests
     [Fact]
     public void DirectRead_IsHeadedAsSuch_SoItIsNeverMistakenForTheFullOne()
     {
-        // The direct-sound loss (Sum loss selector on FDW-8) is deeper and more
-        // seat-sensitive than the steady-state read; the two must never be
-        // compared, so every rendering names the family it belongs to.
+        // Direct-sound (FDW-8) loss must never be compared with steady-state, so every rendering names its family.
         RunWithInvariantCulture(() =>
         {
             string compact = VirtualCrossoverMetric.FormatCompact([Junction], direct: true);
@@ -117,8 +114,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // The shared mono sub carries a single arrival on the left slot; the
-            // right side and the L−R delta have no meaning and read "—".
             string text = VirtualCrossoverMetric.FormatStereoDeltasCompact(
             [
                 new VirtualCrossoverMetric.StereoDelta("A", 22.39, null, 20, 80),
@@ -144,8 +139,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // The right side's envelope timed the modal build-up, not the
-            // direct rise: its number and the Δ built on it carry a "~".
             string text = VirtualCrossoverMetric.FormatStereoDeltasCompact(
             [
                 new VirtualCrossoverMetric.StereoDelta(
@@ -194,9 +187,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // The midbass pair reads its energy onsets, the mid pair its first
-            // peaks: the row says which, and the legend explains the
-            // instrument once.
             string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
             [
                 new VirtualCrossoverMetric.StereoDelta(
@@ -270,9 +260,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // With the hybrid mode on the level rows compare the sides' spatial
-            // averages, and the legend must say so instead of claiming the gated
-            // point measurement. A uniform list carries no per-row marks.
             string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
             [
                 new VirtualCrossoverMetric.StereoDelta(
@@ -292,9 +279,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // An array set may have gaps: a pair the captures cannot speak for
-            // keeps its point-measured level, and in a spatial list that row is
-            // the exception — marked in place, explained in the legend.
             string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
             [
                 new VirtualCrossoverMetric.StereoDelta(
@@ -315,9 +299,7 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // A capture is a measurement of its own, so its level outlives the
-            // arrivals — and the compact block shows it, so the tooltip must
-            // not swallow it behind the "no measurable arrival" early row.
+            // A capture's level outlives the arrivals, so the early "no measurable arrival" row must not swallow it.
             string text = VirtualCrossoverMetric.FormatStereoDeltasDetail(
             [
                 new VirtualCrossoverMetric.StereoDelta(
@@ -335,9 +317,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // With the hybrid on the ΔdB rows read the groups' spatial
-            // averages; a group with a member that has no capture keeps its
-            // point-measured figure and is the marked exception.
             string text = VirtualCrossoverMetric.FormatGroupDeltasDetail(
             [
                 new VirtualCrossoverMetric.GroupDelta(
@@ -403,12 +382,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // Three columns, each one a reader can act on: where the phase
-            // stands at fc, the delay worth applying, and the score the
-            // junction reaches as it stands. The lobe margin moved to the
-            // tooltip — a bare difference of two phase scores carries no
-            // scale, and the only decision it drives is the "!" beside the
-            // fix.
             string text = VirtualCrossoverMetric.FormatPhaseCompact([PhaseJunction()]);
 
             Assert.Equal(
@@ -424,9 +397,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // The score column reads the junction AS IT STANDS, on the scale
-            // the fix maximizes — bounded, so it needs no legend, and negative
-            // when the overlap is subtracting rather than adding.
             VirtualCrossoverMetric.PhaseEntry cancelling = PhaseJunction() with
             {
                 Result = PhaseJunction().Result with { CurrentScore = -0.42 }
@@ -443,16 +413,13 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // 0.05 ms at this 80 Hz junction is 1.4° of phase — nothing to
-            // apply, and a settled tune fills the column with such values.
+            // 0.05 ms at 80 Hz is 1.4 deg: the threshold is phase at fc, not milliseconds.
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(bestExtraDelayMs: -0.05)]);
 
             Assert.Contains("A/B     -3°      ·", text);
             Assert.DoesNotContain("-0.05", text);
 
-            // The same delay at a 4 kHz junction is most of a period, so it
-            // stays: the threshold is phase at fc, not milliseconds.
             VirtualCrossoverMetric.PhaseEntry high =
                 PhaseJunction(bestExtraDelayMs: -0.05) with { CrossoverHz = 4_000 };
             Assert.Contains("-0.05", VirtualCrossoverMetric.FormatPhaseCompact([high]));
@@ -464,11 +431,7 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // A junction whose two drivers do not correlate over the overlap:
-            // the sweep's best is still far out of phase, so its optimum is the
-            // least bad of a set of bad alignments and not a delay to apply.
-            // Field case behind the threshold: a 2 kHz handover whose −0.37 ms
-            // "fix" cost 1.15 dB of summation loss when applied.
+            // Field case behind the threshold: a 2 kHz handover whose -0.37 ms "fix" cost 1.15 dB of summation loss.
             VirtualCrossoverMetric.PhaseEntry incoherent = PhaseJunction() with
             {
                 Result = PhaseJunction().Result with
@@ -483,13 +446,9 @@ public sealed class VirtualCrossoverMetricTests
 
             Assert.Contains("A/B     -3°      —   0.29", text);
             Assert.DoesNotContain("-1.30", text);
-            // The polarity mark goes with it: it is read off the same two
-            // scores, and a flip is the more disruptive of the two changes.
             Assert.DoesNotContain("~", text);
-            // And the period-hop warning, which is about the withheld fix.
             Assert.DoesNotContain("!", text);
 
-            // Above the threshold the same junction recommends normally.
             Assert.Contains(
                 "-1.30",
                 VirtualCrossoverMetric.FormatPhaseCompact([PhaseJunction()]));
@@ -508,8 +467,6 @@ public sealed class VirtualCrossoverMetricTests
 
             string text = VirtualCrossoverMetric.FormatPhaseDetail([incoherent]);
 
-            // The ceiling is still reported — it is the evidence for the
-            // verdict — but named as a ceiling rather than offered as a delay.
             Assert.Contains("no delay aligns this band (ceiling 0.34)", text);
             Assert.DoesNotContain("best 0.34 at", text);
         });
@@ -520,8 +477,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // An inversion is not a matter of magnitude: it stays actionable
-            // exactly when the delay beside it does not.
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(bestInvert: true, bestExtraDelayMs: -0.05)]);
 
@@ -534,26 +489,16 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // The mute threshold is a PHASE, so above roughly 5.6 kHz a fix
-            // worth acting on is smaller than 0.005 ms: at 16 kHz these
-            // 0.004 ms are 23° at the crossover. Two decimals would render
-            // that as "0.00" — a significant correction shown as nothing, its
-            // sign lost with it — so such a value takes a third decimal.
+            // Above ~5.6 kHz a meaningful fix is under 0.005 ms (0.004 ms = 23 deg at 16 kHz), so it takes a third decimal.
             VirtualCrossoverMetric.PhaseEntry entry =
                 PhaseJunction(bestExtraDelayMs: -0.004) with { CrossoverHz = 16_000 };
 
             string text = VirtualCrossoverMetric.FormatPhaseCompact([entry]);
 
-            // Six characters wide, so a three-decimal value fills the column
-            // exactly and the separating space comes from the phase field.
             Assert.Contains("A/B     -3° -0.004", text);
             Assert.DoesNotContain("0.00 ", text);
-            // Since the .NET Core 3.0 signed-zero change, a negative value
-            // that rounds to zero renders through a TWO-section format as
-            // "-+0.00"; every fix format here stays three-section.
+            // Since .NET Core 3.0 a negative value rounding to zero renders "-+0.00" in a two-section format.
             Assert.DoesNotContain("-+", text);
-            // The tooltip quotes the same value and must not round it away
-            // either.
             Assert.Contains(
                 "-0.004 ms", VirtualCrossoverMetric.FormatPhaseDetail([entry]));
         });
@@ -590,8 +535,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // A notch or spectral gap at the handover leaves the fc window's
-            // bins disagreeing; the φ column must dash, not show mush.
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(phaseConsistency: 0.31)]);
 
@@ -617,8 +560,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // BestInvert renders an "i" right after the fix; the columns stay
-            // aligned with the space a settled-polarity row uses there.
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(bestInvert: true)]);
 
@@ -631,8 +572,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // Kept polarity, but the flip nearly ties (best 0.97 vs opposite
-            // 0.96): "~", distinct from the period-hop "!" on the lobe.
             string text = VirtualCrossoverMetric.FormatPhaseCompact(
                 [PhaseJunction(oppositePolarityScore: 0.96)]);
 
@@ -646,8 +585,6 @@ public sealed class VirtualCrossoverMetricTests
     {
         RunWithInvariantCulture(() =>
         {
-            // The default opposite score (0.42) is far below best (0.97): the
-            // current polarity is clearly right, so no mark.
             string text = VirtualCrossoverMetric.FormatPhaseCompact([PhaseJunction()]);
 
             Assert.Contains("A/B     -3°  -1.30", text);

@@ -2,20 +2,8 @@ using Xunit;
 
 namespace Resonalyze.Testing;
 
-/// <summary>
-/// A <see cref="FactAttribute"/> that reports the test as SKIPPED, with a
-/// reason, when the WASAPI endpoint environment variables are not set.
-///
-/// The tests used to open with <c>if (endpoints is null) return;</c>, which xUnit
-/// records as a pass — so a machine with no audio hardware showed nine green
-/// hardware tests that had not executed a single assert. xUnit v2 has no runtime
-/// skip (that arrived in v3), but <see cref="FactAttribute.Skip"/> is evaluated
-/// at discovery, which is early enough: the variables have to be set before the
-/// test host starts anyway.
-///
-/// Linked into both test projects rather than duplicated; see the Compile item
-/// in each .csproj.
-/// </summary>
+/// <summary>A <see cref="FactAttribute"/> SKIPPED when the WASAPI endpoint variables are unset: an early return counted as a pass.
+/// <see cref="FactAttribute.Skip"/> is evaluated at discovery. Linked into both test projects (see each .csproj).</summary>
 public sealed class HardwareFactAttribute : FactAttribute
 {
     public const string CaptureEndpointVariable = "RESONALYZE_WASAPI_CAPTURE_ENDPOINT_ID";
@@ -37,11 +25,7 @@ public sealed class HardwareFactAttribute : FactAttribute
         !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(CaptureEndpointVariable)) &&
         !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(RenderEndpointVariable));
 
-    /// <summary>
-    /// The endpoint pair. Only called from a <see cref="HardwareFactAttribute"/>
-    /// test, so the variables are set; the throw is a guard against a plain
-    /// <c>[Fact]</c> creeping in, not an expected path.
-    /// </summary>
+    /// <summary>Only called from a <see cref="HardwareFactAttribute"/> test; the throw guards a plain <c>[Fact]</c>.</summary>
     public static (string Capture, string Render) Endpoints()
     {
         string? capture = Environment.GetEnvironmentVariable(CaptureEndpointVariable);

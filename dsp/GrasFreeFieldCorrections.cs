@@ -3,13 +3,7 @@ using System.Reflection;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Whether the microphone wears its protection grid. The grid changes the front
-/// geometry enough to move the high-frequency directivity by more than a
-/// decibel, so it selects which GRAS reference variants may be used; Unknown
-/// keeps both kinds as candidates and widens the uncertainty band instead of
-/// guessing.
-/// </summary>
+/// <summary>The grid moves HF directivity by over a dB; Unknown keeps both variants and widens the uncertainty.</summary>
 public enum MicrophoneProtectionGrid
 {
     Unknown,
@@ -17,16 +11,9 @@ public enum MicrophoneProtectionGrid
     Removed
 }
 
-/// <summary>The angular differences G(theta) - G(0 deg) of a reference curve, in dB.</summary>
 public readonly record struct GrasAngleDeltas(double At30, double At60, double At90);
 
-/// <summary>
-/// One tabulated GRAS reference variant: free-field corrections at 0, 30, 60 and
-/// 90 degrees of incidence for a microphone of a known outer diameter, with or
-/// without its protection grid. Only the differences between angles are used by
-/// the angle model, so the table's normalization (dB relative to the pressure
-/// response at 250 Hz) cancels out.
-/// </summary>
+/// <summary>One GRAS variant at 0/30/60/90°; only angle differences are used, so the 250 Hz normalization cancels.</summary>
 public sealed class GrasReferenceCurve
 {
     private readonly double[] frequencies;
@@ -47,27 +34,17 @@ public sealed class GrasReferenceCurve
         this.levels = levels;
     }
 
-    /// <summary>Human-readable reference name, e.g. "Half-inch (Opt1), no grid".</summary>
     public string Label { get; }
 
     public MicrophoneProtectionGrid Grid { get; }
 
-    /// <summary>Nominal outer diameter of the reference microphone, in millimetres.</summary>
     public double DiameterMm { get; }
 
     public double MinFrequencyHz => frequencies[0];
 
     public double MaxFrequencyHz => frequencies[^1];
 
-    /// <summary>
-    /// The angular differences at <paramref name="hz"/>, interpolated linearly in
-    /// (log frequency, dB) — the reading the table is drawn for. Below the
-    /// tabulated range the differences are zero: diffraction around the housing
-    /// is negligible there, and the table itself starts at 0.01 dB. Above it the
-    /// lookup FAILS rather than extrapolating, and the caller holds its last
-    /// value: reading another size's curve instead would step the correction by
-    /// several decibels mid-band.
-    /// </summary>
+    /// <summary>Linear in (log f, dB); zero below the table, fails above it (the caller holds the last value instead of switching size).</summary>
     public bool TryGetAngleDeltas(double hz, out GrasAngleDeltas deltas)
     {
         if (hz > MaxFrequencyHz)
@@ -115,16 +92,8 @@ public sealed class GrasReferenceCurve
     }
 }
 
-/// <summary>
-/// The GRAS free-field correction table, shipped as an embedded copy of the
-/// published workbook (see THIRD-PARTY-NOTICES.md). Three blocks of the workbook
-/// are deliberately absent: the 1-inch sheet's second block, which is a
-/// normalized view of the same grid-fitted microphone rather than a second
-/// variant; the 46BC sheet, whose construction has no stated outer diameter and
-/// therefore cannot be frequency-scaled onto another microphone honestly; and
-/// the 146AE "without grid" block, which is byte-identical to the half-inch Opt1
-/// one and would give that single shape two votes in the median.
-/// </summary>
+/// <summary>Embedded GRAS workbook (see THIRD-PARTY-NOTICES.md). Omitted: 1-inch second block (a normalized duplicate), 46BC (no stated
+/// diameter to scale by), 146AE without grid (identical to half-inch Opt1, would vote twice).</summary>
 public static class GrasFreeFieldCorrections
 {
     private const string ResourceName = "Resonalyze.Dsp.Data.GrasFreeFieldCorrections.csv";
@@ -133,7 +102,6 @@ public static class GrasFreeFieldCorrections
 
     public static IReadOnlyList<GrasReferenceCurve> Curves => LazyCurves.Value;
 
-    /// <summary>The distinct reference diameters, ascending.</summary>
     public static IReadOnlyList<double> Diameters => LazyCurves.Value
         .Select(curve => curve.DiameterMm)
         .Distinct()

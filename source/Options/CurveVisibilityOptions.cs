@@ -2,17 +2,9 @@
 
 namespace Resonalyze.Options;
 
-/// <summary>
-/// Per-mode curve visibility for the frequency-response family of analysis modes
-/// (frequency response, phase, group delay). These are presentation choices, so
-/// they live in the app rather than on the DSP <see cref="FrequencyResponseOptions"/>.
-/// One instance is kept per mode, mirroring the one-options-object-per-mode pattern;
-/// each mode reads only the flags it uses. The flat shape maps 1:1 onto the
-/// persisted settings DTO so saving/loading stays byte-for-byte unchanged.
-/// </summary>
+/// <summary>Presentation flags per FR-family mode, kept out of the DSP options; maps 1:1 onto the settings DTO.</summary>
 public sealed class CurveVisibilityOptions
 {
-    // Frequency-response mode.
     public bool ShowPrimary { get; set; } = true;
     public bool ShowHd2 { get; set; } = true;
     public bool ShowHd3 { get; set; } = true;
@@ -20,29 +12,21 @@ public sealed class CurveVisibilityOptions
     public bool ShowThdPlusNoise { get; set; } = true;
     public bool ShowNoiseFloor { get; set; } = true;
 
-    // Phase mode.
     public bool ShowMeasuredPhase { get; set; } = true;
     public bool ShowMinimumPhase { get; set; } = true;
     public bool ShowExcessPhase { get; set; } = true;
 
-    // Group-delay mode.
     public bool ShowGroupDelay { get; set; } = true;
     public bool ShowMinimumPhaseGroupDelay { get; set; } = true;
     public bool ShowExcessGroupDelay { get; set; } = true;
 
-    // Shared coherence curve, shown in all three modes.
     public bool ShowCoherence { get; set; } = true;
 
-    // The measurement's spatial average and the microphones behind it. Off by
-    // default: most measurements have no array, and the ones that do should show
-    // it because the user asked, not because it was there.
+    // Off by default: shown only when the user asks.
     public bool ShowArrayAverage { get; set; }
     public bool ShowArrayMicrophones { get; set; }
     public bool ShowArraySpread { get; set; }
 
-    /// <summary>
-    /// The frequency-response curves to compute, translated for the DSP layer.
-    /// </summary>
     public SpectrumCurves ToSpectrumCurves()
     {
         SpectrumCurves curves = SpectrumCurves.None;

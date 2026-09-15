@@ -1,10 +1,6 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Hardware-reported anomalies observed during one capture run. The audio layer
-/// only records these facts; whether they should reject a measurement run is a
-/// decision for the application/measurement layer.
-/// </summary>
+/// <summary>Recorded facts only; rejecting a run is the measurement layer's decision.</summary>
 [Flags]
 public enum AudioCaptureAnomalies
 {
@@ -14,11 +10,6 @@ public enum AudioCaptureAnomalies
     RenderUnderrun = 1 << 2
 }
 
-/// <summary>
-/// The result of one finite play-and-capture run: the captured channels and
-/// where the microphone / loopback roles landed within them, plus anomalies and
-/// a diagnostics snapshot.
-/// </summary>
 public sealed record AudioCaptureResult(
     float[][] Channels,
     int MicrophoneChannel,
@@ -27,17 +18,9 @@ public sealed record AudioCaptureResult(
     AudioCaptureAnomalies Anomalies,
     AudioSessionDiagnostics? Diagnostics)
 {
-    /// <summary>
-    /// Where the array microphones landed in <see cref="Channels"/>, in the order
-    /// the routing asked for them; empty when the routing had none.
-    /// </summary>
     public IReadOnlyList<int> ArrayChannels { get; init; } = [];
 }
 
-/// <summary>
-/// One fixed-length sequence delivered by a streaming capture session, with the
-/// microphone / loopback roles located within the channel array.
-/// </summary>
 public sealed record AudioCaptureFrame(
     float[][] Channels,
     int MicrophoneChannel,

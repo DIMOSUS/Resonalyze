@@ -1,10 +1,5 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The startup warm-up task/cancellation pair moved off Form1 into
-/// <see cref="StartupAudioWarmup"/>; these pin the once-only start, the
-/// non-fatal wait and the cancel used by the close paths.
-/// </summary>
 public sealed class StartupAudioWarmupTests
 {
     [Fact]

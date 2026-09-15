@@ -6,58 +6,30 @@ using Resonalyze.Options;
 
 namespace Resonalyze;
 
-// The wizard's phase view: the measured phase of the channel being edited, against
-// the neighbouring drivers a Virtual DSP handoff froze into the source.
-//
-// This is the only view an all-pass band shows up in at all — on a magnitude plot it
-// is flat by construction — and lining a driver up with its neighbour through the
-// crossover region is what such a band exists for.
+// Phase view: the edited channel's measured phase against handoff neighbours. The only view where all-pass bands show. See docs/tech/eq-auto-tuner.md#phase-mode.
 public partial class EqWizardPanel
 {
     private readonly EqWizardPhaseOrchestrator phaseOrchestrator = new();
 
-    // The landed curves. The edited channel is re-rendered per bank edit (keyed by the
-    // bank, like the magnitude preview); the neighbours and the bare curve only change
-    // when the gate does, so they are computed once and kept.
+    // The edited channel re-renders per bank; neighbours and the bare curve change only with the gate.
     private GatedPhaseCurve? landedPhaseCurve;
     private PeqBankState? landedPhaseBank;
     private GatedPhaseCurve? cachedBarePhaseCurve;
     private List<GatedPhaseCurve>? cachedNeighbourPhaseCurves;
     private bool phaseRenderInFlight;
 
-    /// <summary>
-    /// Whether the plot is showing phase instead of magnitude. A MODE, not an extra
-    /// curve: the source, the target, the error fill and the deviation statistics are
-    /// magnitude ideas and have nothing to say here, so they leave the plot entirely.
-    /// </summary>
     private bool PhaseMode => checkBoxEqPhase.Checked;
 
-    // The gate the phase curves are read through, and where each of them opens. It
-    // ARRIVES with a Virtual DSP handoff — the panel resolved it over the whole set of
-    // drivers, and taking anything else would draw this channel against neighbours
-    // read a different way — and is built locally for a lone impulse response, which
-    // has no neighbours and only its own front to open on. The Phase gate button
-    // edits it from there.
+    // Arrives with a handoff (resolved over the whole set); built locally for a lone IR.
     private EqWizardPhaseContext? phaseContext;
-    // Whether the user pinned one window for every curve. Unpinned keeps the
-    // placements as they arrived: each driver's window sits on its own arrival, which
-    // is what the offsets in the context ARE.
+    // Unpinned keeps each driver's window on its own arrival (the context's offsets).
     private bool phaseGatePinned;
 
-    /// <summary>
-    /// The measured phase this source can draw, or null when it has none — an overlay
-    /// slot or a text curve is a magnitude and nothing else, and no window or
-    /// correction can invent a phase for it.
-    /// </summary>
+    /// <summary>Null for magnitude-only sources (overlay slot, text curve).</summary>
     private EqWizardPhaseContext? PhaseContextFor(EqWizardCurveSource? source) =>
         source is { Measurement: not null } ? phaseContext : null;
 
-    /// <summary>
-    /// What the phase render runs: the measurement and the chain to put it through.
-    /// A Virtual DSP handoff carries both, so the curve moves with the bank exactly as
-    /// the panel's does. A measurement opened straight into the wizard has no chain of
-    /// its own — the bank IS everything applied to it — so the identity stands in.
-    /// </summary>
+    /// <summary>A handoff brings its chain; a measurement opened directly uses the identity (the bank is everything).</summary>
     private static (Complex[] Response, DspChannelChain Chain)? PhaseSourceFor(
         EqWizardCurveSource source)
     {
@@ -68,25 +40,12 @@ public partial class EqWizardPanel
             : (response, source.PreviewChain ?? DspChannelChain.Identity);
     }
 
-    /// <summary>Whether the phase view has a measured curve to draw at all.</summary>
     private bool HasMeasuredPhase => PhaseContextFor(loadedSource) != null;
 
     /// <summary>
-    /// Adopts the phase context a newly loaded source brings, or builds one for a lone
-    /// impulse response. Called wherever the source changes, before anything draws.
+    /// Adopts a handoff's context as-is (resolved over every driver), or builds one for a lone IR whose window and τ
+    /// open on its own front. Call before anything draws.
     /// </summary>
-    /// <remarks>
-    /// A handoff's context is taken as it stands: the Virtual DSP panel resolved those
-    /// windows and that τ over every driver on screen, and re-deriving them here from
-    /// one channel would place this curve somewhere the panel never had it.
-    /// <para>
-    /// A source loaded straight into the wizard has no neighbours to be comparable
-    /// with, so its window simply opens on its own front and its τ references the same
-    /// instant — which flattens the propagation delay out of the curve and leaves the
-    /// driver's own phase, the only thing there is to see with nothing to compare
-    /// against.
-    /// </para>
-    /// </remarks>
     private void SeedPhaseContext(EqWizardCurveSource? source)
     {
         InvalidatePhaseCurves();
@@ -102,8 +61,7 @@ public partial class EqWizardPanel
         if (source.PhaseContext is { } handed)
         {
             phaseContext = handed;
-            // The pin travels with the gate: an absolute window the user placed by hand
-            // in the panel must not read as Auto in the dialog here.
+            // An absolute window placed by hand must not read as Auto here.
             phaseGatePinned = handed.PinnedOffset;
             UpdatePhaseGateAvailability();
             return;
@@ -141,15 +99,6 @@ public partial class EqWizardPanel
         buttonPhaseGate.Enabled = HasMeasuredPhase;
     }
 
-    /// <summary>
-    /// What the phase plot says about itself when it is showing less than the source
-    /// suggests it might. Empty when there is nothing to explain.
-    /// </summary>
-    /// <remarks>
-    /// The absence of the neighbours is the part worth spelling out: a channel arrives
-    /// from Virtual DSP and the drivers beside it do not, which reads as a bug rather
-    /// than as the deliberate refusal it is.
-    /// </remarks>
     private string PhaseModeHint()
     {
         if (loadedSource is not { } source)
@@ -172,11 +121,7 @@ public partial class EqWizardPanel
             : string.Empty;
     }
 
-    /// <summary>
-    /// Opens the Virtual DSP gate dialog on the wizard's own phase gate — the same
-    /// dialog, so a window dialled in one tool reads the same in the other, with this
-    /// channel and its neighbours drawn on its impulse preview.
-    /// </summary>
+    /// <summary>The Virtual DSP gate dialog, so a window reads the same in both tools.</summary>
     private void OpenPhaseGateDialog()
     {
         if (loadedSource is not { } source || PhaseContextFor(source) is not { } context)
@@ -185,8 +130,6 @@ public partial class EqWizardPanel
         }
 
         int sampleRate = source.Measurement!.SampleRate;
-        // The preview shows what the windows actually sit on: this channel through its
-        // chain and the bank as it stands, plus the frozen neighbours.
         var traces = new List<IrPreviewTrace>
         {
             new(
@@ -206,9 +149,7 @@ public partial class EqWizardPanel
 
         bool committedPin = phaseGatePinned;
         using var dialog = new VirtualCrossoverGateDialog();
-        // The plot tracks the dialog while it is open, exactly as the Virtual DSP plots
-        // do: a gate is placed by looking at what it does to the curves, and a window
-        // whose effect only appears after Save is one dialled in blind.
+        // The plot tracks the dialog live, like Virtual DSP: a gate is placed by watching its effect.
         dialog.PreviewChanged = (offsetMs, autoOffset, leftMs, plateauMs, rightMs,
             windowMode, fdwCycles, detrendMode, detrendMs) =>
         {
@@ -237,7 +178,6 @@ public partial class EqWizardPanel
         dialog.PreviewChanged = null;
         if (result == DialogResult.OK)
         {
-            // The last preview already built exactly what Save commits.
             ApplyPhaseGate(
                 context, dialog.GateOffsetMs, dialog.AutoOffset, dialog.LeftMs,
                 dialog.PlateauMs, dialog.RightMs, dialog.WindowMode, dialog.FdwCycles,
@@ -245,8 +185,7 @@ public partial class EqWizardPanel
         }
         else
         {
-            // Cancel drops the candidates: the stored gate is what the plot goes back
-            // to, which is the only reason previewing live is safe.
+            // Cancel returns to the stored gate, which is what makes live preview safe.
             phaseGatePinned = committedPin;
             phaseContext = context;
             InvalidatePhaseCurves();
@@ -256,23 +195,13 @@ public partial class EqWizardPanel
     }
 
     /// <summary>
-    /// What the gate dialog's Auto button snaps its offset to: the earliest front of
-    /// the set, the same figure the Virtual DSP panel fits to.
+    /// Auto snaps to the set's earliest front, read from the RESPONSES: under a pin the offsets are one absolute time
+    /// and would make the dialog's preview disagree with the plot.
     /// </summary>
-    /// <remarks>
-    /// Read from the RESPONSES, not from the offsets in force. Under a pin those are
-    /// all one absolute time, so taking the smallest of them would tell the dialog
-    /// that Auto means the pin — and its own impulse preview would draw the window
-    /// there while the plot behind it, which resolves Auto properly, drew the windows
-    /// on the drivers. The saved result was right either way; what the user saw while
-    /// choosing was not.
-    /// </remarks>
     private static double AutoGateFitOffsetMs(EqWizardPhaseContext context) =>
         PhaseGatePlacement.EarliestStartMs(context.PlacementSet, context.SampleRate);
 
-    // One candidate gate over the context the dialog opened on. Pinned is one absolute
-    // window for every curve; unpinned puts each on its own driver's arrival — the
-    // distinction the Auto flag carries.
+    // Pinned: one absolute window for every curve; unpinned: each on its driver's arrival.
     private void ApplyPhaseGate(
         EqWizardPhaseContext opened,
         double offsetMs,
@@ -295,13 +224,7 @@ public partial class EqWizardPanel
             FdwCycles = fdwCycles,
             DetrendMode = detrendMode
         };
-        // Resolved AGAIN, over the frozen set, with the same arithmetic the panel
-        // runs. Not reused from what arrived: the per-curve placement is only allowed
-        // while every window still opens before its own channel's response, and that
-        // verdict depends on the window LENGTHS the dialog just changed. Carrying the
-        // old answer would let the wizard keep placements the panel would refuse — or
-        // stay on a shared window the panel would have released — and the two views
-        // would read the junction differently.
+        // Re-resolved with the panel's arithmetic: per-curve placement validity depends on the window lengths just changed.
         IReadOnlyList<PlacementChannel> set = opened.PlacementSet;
         double sharedOffsetMs = PhaseGatePlacement.ResolveSharedOffsetMs(
             set, opened.SampleRate, phaseGatePinned ? offsetMs : null);
@@ -317,11 +240,7 @@ public partial class EqWizardPanel
         phaseContext = new EqWizardPhaseContext(
             gate,
             offsets[0],
-            // The τ comes out of the SAME helper the panel calls, over the same set and
-            // the window just resolved. A second implementation here read the
-            // neighbours' offsets from the context the dialog opened on — the ones this
-            // very call was replacing — so an estimated τ could be taken through a
-            // window that no longer existed.
+            // Same helper as the panel, over the window just resolved (not the offsets being replaced).
             PhaseGatePlacement.ResolveCommonDetrendMs(
                 set,
                 opened.SampleRate,
@@ -341,8 +260,7 @@ public partial class EqWizardPanel
         InvalidatePhaseCurves();
     }
 
-    // The dB axis has nothing on it in phase mode, and an empty axis with gridlines
-    // reads as a scale for the curves that ARE drawn — which are degrees.
+    // In phase mode the empty dB axis would read as a scale for the degree curves.
     private void SetMagnitudeAxisVisible(bool visible)
     {
         if (plotWizard.Model?.Axes.FirstOrDefault(axis =>
@@ -354,9 +272,7 @@ public partial class EqWizardPanel
         }
     }
 
-    // Same rule for the right-hand axis, asked of the series rather than of the
-    // view: in magnitude it carries the EQ curve alone, so turning that curve off
-    // empties it, while in phase every measured curve is on it and it stays.
+    // In magnitude the right axis holds only the EQ curve; in phase every measured curve is on it.
     private void SetEqAxisVisible(bool visible)
     {
         if (plotWizard.Model?.Axes.FirstOrDefault(axis => axis.Key == EqGainAxisKey)
@@ -375,9 +291,7 @@ public partial class EqWizardPanel
         cachedNeighbourPhaseCurves = null;
     }
 
-    // One render request: the channel's own measurement and chain, the bank to
-    // substitute, and the placements the handoff resolved. Captured here, on the UI
-    // thread, so the render itself touches no control.
+    // Captured on the UI thread so the render touches no control.
     private EqWizardPhaseRequest BuildPhaseRequest(
         EqWizardCurveSource source,
         EqWizardPhaseContext context,
@@ -396,17 +310,13 @@ public partial class EqWizardPanel
             EqProcessorSampleRate);
     }
 
-    // Starts a render unless the landed curve already answers for this bank — the same
-    // identity the magnitude preview uses, so a target nudge or a selection change
-    // does not re-run a convolution.
+    // Keyed by bank, like the magnitude preview.
     private void RequestPhaseCurve(
         EqWizardCurveSource source,
         EqWizardPhaseContext context,
         EqualizationCurve eq)
     {
-        // Nothing starts before the panel is on screen: a handoff installs its source
-        // while the wizard is still the hidden mode, and a render landing inside that
-        // pump would draw into a half-created control.
+        // Not before the handle exists: a render landing in the creation pump draws into a half-created control.
         if (!IsHandleCreated)
         {
             return;
@@ -432,11 +342,7 @@ public partial class EqWizardPanel
         {
             GatedPhaseCurve? curve =
                 await phaseOrchestrator.RenderLatestAsync(request, color);
-            // A null curve means a newer render started while this one ran, so there is
-            // nothing to land — but the redraw below still has to happen. It is the one
-            // that starts the follow-up, and this is the ONLY case that needs starting:
-            // returning here left the view with no curve and nothing on its way, which
-            // is exactly what turning the gate's τ produced.
+            // Null = superseded; still redraw below, since that starts the follow-up render (returning early would leave no curve and nothing on its way).
             if (curve != null && !IsDisposed && IsHandleCreated)
             {
                 landedPhaseCurve = curve;
@@ -445,8 +351,6 @@ public partial class EqWizardPanel
         }
         catch (Exception exception)
         {
-            // A render that throws must not take the panel with it: the curve stays as
-            // it was, and the bank is still editable and exportable.
             System.Diagnostics.Debug.WriteLine($"EQ Wizard phase render failed: {exception}");
         }
         finally
@@ -456,17 +360,12 @@ public partial class EqWizardPanel
 
         if (!IsDisposed && IsHandleCreated)
         {
-            // Whatever happened above: paint what landed, and — since a request that
-            // arrived while this was in flight was dropped by the in-flight guard —
-            // start the render the current gate and bank are waiting for.
+            // Paint what landed and start the render a dropped in-flight request is waiting for.
             DrawSelectedCurves();
         }
     }
 
-    // The reference curves — the neighbours, and this channel before its bank. Neither
-    // depends on the bank, so they are built once per gate and kept: they are what the
-    // moving curve is read against, and rebuilding them per keystroke would cost a
-    // convolution each for a picture that never changes.
+    // Built once per gate: they do not depend on the bank.
     private void EnsurePhaseReferenceCurves(
         EqWizardCurveSource source,
         EqWizardPhaseContext context)
@@ -486,9 +385,6 @@ public partial class EqWizardPanel
             EqWizardPhaseRender.NeighbourThickness);
     }
 
-    // Draws the measured phase curves. The analytic curves — the bank's own phase and
-    // the selected band's — are added by the shared path afterwards, so the view shows
-    // both what the filter does and what the driver does with it.
     private void DrawMeasuredPhaseCurves(PlotModel model, EqualizationCurve eq)
     {
         if (loadedSource is not { } source ||
@@ -500,8 +396,7 @@ public partial class EqWizardPanel
         EnsurePhaseReferenceCurves(source, context);
         RequestPhaseCurve(source, context, eq);
 
-        // The neighbours first, then this channel's own before/after on top: the curve
-        // the user is moving must never be hidden under a reference.
+        // Neighbours first so the edited curve is never hidden under a reference.
         foreach (GatedPhaseCurve neighbour in cachedNeighbourPhaseCurves!)
         {
             AddPhaseSeries(model, neighbour, dimmed: true);
@@ -514,19 +409,11 @@ public partial class EqWizardPanel
 
         if (landedPhaseCurve is { } live)
         {
-            // The only curve whose wraps are marked. See AddPhaseSeries.
             AddPhaseSeries(model, live, dimmed: false, markWraps: true);
         }
     }
 
-    /// <remarks>
-    /// Wrap verticals are drawn for the curve under edit ALONE. Every measured phase
-    /// curve wraps many times over the decade above a few kHz, and with the
-    /// neighbours, the before-curve and this one all marking their own, the plot turns
-    /// into a picket fence in which no trace can be followed — the opposite of what
-    /// the markers are for. A curve that is only being read has its NaN break at the
-    /// wrap, which is enough to keep the jump from reading as a phase transition.
-    /// </remarks>
+    /// <remarks>Only the edited curve marks wraps: every curve marking them turns the HF into a picket fence.</remarks>
     private void AddPhaseSeries(
         PlotModel model,
         GatedPhaseCurve curve,
@@ -539,9 +426,7 @@ public partial class EqWizardPanel
             : curve.Color;
         if (markWraps && curve.WrapSegments.Count > 0)
         {
-            // The wrap verticals, faded and thinned well below the curve: visible as
-            // wraps without competing with the traces. The empty title keeps them out
-            // of the labels panel — the same treatment the Virtual DSP view gives them.
+            // Empty title keeps them out of the labels panel, as in Virtual DSP.
             AddWizardSeries(
                 model,
                 new EqWizardCurve(

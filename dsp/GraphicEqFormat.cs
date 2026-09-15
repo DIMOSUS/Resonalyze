@@ -2,11 +2,7 @@
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// The one-line "GraphicEQ:" format used by Wavelet and JamesDSP (export only). The
-/// parametric EQ is sampled to frequency/gain points, so it cannot be re-imported as
-/// discrete bands.
-/// </summary>
+/// <summary>Wavelet/JamesDSP "GraphicEQ:" line, export only (sampled points, not bands).</summary>
 public sealed class GraphicEqFormat : IEqProfileFormat
 {
     private const int PointCount = 64;
@@ -26,8 +22,7 @@ public sealed class GraphicEqFormat : IEqProfileFormat
     public bool CanImport => false;
     public bool CanExport => true;
 
-    // A sampled magnitude curve cannot state phase at all: an all-pass contributes
-    // exactly 0 dB everywhere and would be silently, completely lost.
+    // A magnitude curve cannot carry an all-pass: it would be silently lost.
     public bool SupportsAllPass(PeqBandType type) => false;
 
     public string Export(EqualizationCurve curve)

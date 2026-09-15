@@ -4,33 +4,13 @@ using System.Text;
 
 namespace Resonalyze.Screenshots;
 
-/// <summary>
-/// One run of the application, driven to produce screenshots.
-/// </summary>
-/// <remarks>
-/// Four things here are not obvious and were each learned the hard way:
-/// <list type="bullet">
-/// <item>The shell runs under a real <see cref="Application.Run(Form)"/> loop, with
-/// the work driven from <c>Shown</c>. Only that loop installs the WinForms
-/// synchronization context; without it an <c>await</c> inside the EQ Wizard's Auto
-/// Tune resumes on a thread-pool thread and builds its band controls there, which
-/// WinForms then refuses to parent.</item>
-/// <item>Waiting is done by pumping messages, never by blocking. The panels marshal
-/// their background work back to this thread, so a plain <c>Wait()</c> deadlocks.</item>
-/// <item>A mode's settings panel is a separate owned window
-/// (<c>DockedModeSettingsHost</c> calls <c>Show</c>), so <see cref="Control.DrawToBitmap"/>
-/// on the shell renders everything except it. Those shots come off the SCREEN.</item>
-/// <item>That panel docks to whichever side of the shell has room, so the shell is
-/// pinned to the right edge of the screen. With space on the right it docks outside
-/// the window and lands outside the captured rectangle.</item>
-/// </list>
-/// </remarks>
+/// <summary>One application run driven to produce screenshots.</summary>
+/// <remarks>Runs under a real Application.Run loop (async Auto Tune needs its sync context); waits pump messages (Wait() deadlocks);
+/// the mode settings panel is an owned window, so those shots come off the screen, with the shell pinned right so it docks inside.</remarks>
 internal sealed class ShotSession
 {
-    /// <summary>The size the committed assets are taken at.</summary>
     public static readonly Size AssetWindowSize = new(1494, 832);
 
-    /// <summary>Roomier, for the manual's figures of the densest panels.</summary>
     public static readonly Size ManualWindowSize = new(1720, 1035);
 
     private readonly ShotConfig config;
@@ -47,9 +27,6 @@ internal sealed class ShotSession
 
     public ShotConfig Config => config;
 
-    /// <summary>
-    /// Opens the application, runs <paramref name="body"/> against it, and closes it.
-    /// </summary>
     public static void Run(ShotConfig config, Size windowSize, Action<ShotSession> body)
     {
         ArgumentNullException.ThrowIfNull(config);
@@ -98,9 +75,6 @@ internal sealed class ShotSession
         }
     }
 
-    // ------------------------------------------------------------------ waiting
-
-    /// <summary>Runs the message loop for a while without blocking it.</summary>
     public void Pump(int milliseconds)
     {
         for (int elapsed = 0; elapsed < milliseconds; elapsed += 20)
@@ -110,7 +84,6 @@ internal sealed class ShotSession
         }
     }
 
-    /// <summary>Awaits work that marshals back to this thread.</summary>
     public void Await(Task task)
     {
         ArgumentNullException.ThrowIfNull(task);
@@ -123,9 +96,6 @@ internal sealed class ShotSession
         task.GetAwaiter().GetResult();
     }
 
-    // ----------------------------------------------------------------- steering
-
-    /// <summary>Switches modes the way a tab click does — layout included.</summary>
     public void SelectTab(string tabName)
     {
         object controller = Reflect.Field(Shell, "modeController");
@@ -135,14 +105,12 @@ internal sealed class ShotSession
         Pump(1_500);
     }
 
-    /// <summary>Loads an impulse response, a recorded sweep or a REW export.</summary>
     public void LoadMeasurement(string path)
     {
         Await((Task)Reflect.Invoke(Shell, "LoadImpulseResponseLikeAsync", path)!);
         Pump(4_000);
     }
 
-    /// <summary>Opens the current mode's settings panel if it is not already open.</summary>
     public void OpenModeSettings()
     {
         var button = Reflect.Field<Button>(Shell, "buttonCurrentModeSettings");
@@ -160,7 +128,6 @@ internal sealed class ShotSession
         Pump(1_500);
     }
 
-    /// <summary>The dialog the mode settings panel is currently showing, if any.</summary>
     public Form? ModeSettingsDialog
     {
         get
@@ -172,18 +139,9 @@ internal sealed class ShotSession
         }
     }
 
-    // ----------------------------------------------------------------- capturing
-
-    /// <summary>
-    /// Captures the shell from the screen, which is the only way to include an owned
-    /// window such as the mode settings panel.
-    /// </summary>
     public void CaptureScreen(string name)
     {
-        // Activate() cannot raise a window while another process owns the foreground
-        // — Windows refuses the steal — and a screen grab then copies whatever IS on
-        // top. TopMost does not need the foreground, and the check below refuses to
-        // write a frame that is not ours rather than saving someone's browser.
+        // Activate() cannot steal the foreground from another process; TopMost can, and the check below refuses a foreign frame.
         bool wasTopMost = Shell.TopMost;
         try
         {
@@ -207,12 +165,6 @@ internal sealed class ShotSession
         }
     }
 
-    /// <summary>
-    /// Refuses the shot when another process's window sits over the rectangle about
-    /// to be copied. Sampling the corners and the middle catches anything large
-    /// enough to matter, and a foreign pixel means the figure would be wrong in a way
-    /// no later review would notice.
-    /// </summary>
     private static void EnsureNothingCovers(Rectangle bounds, string name)
     {
         Point[] probes =
@@ -237,7 +189,6 @@ internal sealed class ShotSession
         }
     }
 
-    /// <summary>Captures a control's own rendering, owned windows excluded.</summary>
     public void Capture(Control control, string name)
     {
         ArgumentNullException.ThrowIfNull(control);
@@ -246,12 +197,7 @@ internal sealed class ShotSession
         Write(bitmap, name);
     }
 
-    /// <summary>
-    /// Shoots a modal dialog: the real button is clicked, and a timer running inside
-    /// the dialog's own message loop grabs it and cancels out. <paramref name="pose"/>
-    /// runs on that timer, so a dialog can be driven (a value typed, a search run)
-    /// before the shot.
-    /// </summary>
+    /// <summary>A timer inside the dialog's own modal loop runs <paramref name="pose"/>, grabs the dialog and cancels it.</summary>
     public void CaptureModal(
         string name,
         Action open,
@@ -270,18 +216,14 @@ internal sealed class ShotSession
                 .LastOrDefault(form => form != Shell && form.Visible && form.Modal);
             if (dialog == null)
             {
-                // A MessageBox or a common file dialog is not a Form in OpenForms, so
-                // nothing above can see it — and it blocks the click that opened it
-                // for ever. Closing turns a hang into the error below.
+                // A MessageBox or file dialog is not in OpenForms and would block forever; closing turns the hang into an error.
                 wasNative = CloseNativeDialog();
                 return;
             }
 
             pose?.Invoke(dialog);
             Application.DoEvents();
-            // DrawToBitmap renders a bordered dialog's frame too, so the bitmap is
-            // sized to the WHOLE window; sizing it to ClientSize crops the buttons
-            // off the bottom by exactly the title bar's height.
+            // Whole window size: DrawToBitmap includes the frame, and ClientSize crops the bottom buttons.
             using (var bitmap = new Bitmap(dialog.Width, dialog.Height))
             {
                 dialog.DrawToBitmap(bitmap, new Rectangle(Point.Empty, dialog.Size));
@@ -307,7 +249,6 @@ internal sealed class ShotSession
         }
     }
 
-    /// <summary>Captures a dialog opened without a modal loop.</summary>
     public void CaptureDialog(Form dialog, string name)
     {
         ArgumentNullException.ThrowIfNull(dialog);
@@ -319,11 +260,7 @@ internal sealed class ShotSession
         dialog.Close();
     }
 
-    /// <summary>
-    /// Closes a native dialog this process is showing, if any. MessageBox and the
-    /// common file dialogs are window class <c>#32770</c> rather than WinForms
-    /// windows, so they never appear in <see cref="Application.OpenForms"/>.
-    /// </summary>
+    /// <summary>MessageBox and common file dialogs are class <c>#32770</c>, never in <see cref="Application.OpenForms"/>.</summary>
     private static bool CloseNativeDialog()
     {
         nint found = 0;
@@ -358,9 +295,7 @@ internal sealed class ShotSession
 
     private delegate bool EnumWindowsProc(nint window, nint parameter);
 
-    // DllImport rather than LibraryImport: the source generator needs
-    // AllowUnsafeBlocks, and it cannot marshal StringBuilder — neither is worth
-    // taking on for five calls that run once per shot.
+    // DllImport: LibraryImport needs AllowUnsafeBlocks and cannot marshal StringBuilder.
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnumWindows(EnumWindowsProc callback, nint parameter);
@@ -390,6 +325,5 @@ internal sealed class ShotSession
         Console.WriteLine($"  {name}  {bitmap.Width}x{bitmap.Height}  ->  {path}");
     }
 
-    /// <summary>The size this session's shell was opened at.</summary>
     public Size WindowSize => windowSize;
 }

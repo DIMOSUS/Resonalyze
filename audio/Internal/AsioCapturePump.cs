@@ -3,14 +3,7 @@ using NAudio.Wave.Asio;
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Moves ASIO input processing off the driver's buffer-switch callback via the
-/// bounded slot pool of <see cref="CapturePump{TSlot,TBlock}"/>. Unlike the PCM
-/// pump, the pool cannot be sized at construction: the buffer size only becomes
-/// known when the driver opens, so <see cref="Prepare"/> allocates the slots and
-/// their per-channel buffers before playback starts and the callback then only
-/// copies into that fixed pool.
-/// </summary>
+/// <summary>The slot pool is allocated in <see cref="Prepare"/>: the ASIO buffer size is known only once the driver opens.</summary>
 internal sealed class AsioCapturePump : CapturePump<AsioCapturePump.Slot, AsioCaptureBlock>
 {
     private const int SlotCount = 8;
@@ -34,7 +27,6 @@ internal sealed class AsioCapturePump : CapturePump<AsioCapturePump.Slot, AsioCa
         StartWorker();
     }
 
-    /// <summary>Allocates the complete callback buffer pool before the driver starts.</summary>
     public void Prepare(int maximumByteCount)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumByteCount);

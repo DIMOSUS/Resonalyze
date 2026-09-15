@@ -2,11 +2,7 @@
 
 namespace Resonalyze.Audio.Tests;
 
-/// <summary>
-/// Verifies the PCM duplex-session core (shared by the MME and WASAPI backends)
-/// against fake devices: role routing, session reuse across runs, WASAPI-style
-/// diagnostics and anomaly reporting — all without hardware.
-/// </summary>
+/// <summary>The PCM duplex-session core shared by MME and WASAPI, against fake devices.</summary>
 public sealed class PcmDuplexSessionTests
 {
     private const int SweepSamples = 64;
@@ -40,8 +36,6 @@ public sealed class PcmDuplexSessionTests
     [Fact]
     public async Task ArrayMicrophonesAreCapturedAndReportedWhereTheyLanded()
     {
-        // A six-input interface: the measurement pair on 0/1 and two array
-        // microphones on 4 and 2, in that order.
         var capture = new PushCaptureDevice(new WaveFormat(48_000, 16, 6));
         var playback = new PushPlaybackDevice(capture, pushFrames: SweepSamples);
         await using var session = new PcmDuplexSession(
@@ -60,9 +54,7 @@ public sealed class PcmDuplexSessionTests
         Assert.Equal(0, result.MicrophoneChannel);
         Assert.Equal(1, result.LoopbackChannel);
 
-        // The order is the identity of each microphone, so the FIRST array entry
-        // must hold hardware input 4 and the second input 2 — not the other way
-        // round, and not sorted.
+        // Order is each microphone's identity: not swapped, not sorted.
         Assert.Equal(5_000.0 / 32_768.0, result.Channels[4][0], 4);
         Assert.Equal(3_000.0 / 32_768.0, result.Channels[2][0], 4);
     }
@@ -96,8 +88,6 @@ public sealed class PcmDuplexSessionTests
 
         Assert.Equal(1, capture.StartCount);
         Assert.Equal(2, playback.StartCount);
-        // The same bound signal is replayed each run — the render device's
-        // single-source guard must never trip.
         Assert.False(playback.SawDifferentSource);
     }
 
@@ -123,8 +113,7 @@ public sealed class PcmDuplexSessionTests
     public async Task DeviceStopDuringRunSurfacesAsExceptionInsteadOfHanging()
     {
         var capture = new PushCaptureDevice(new WaveFormat(48_000, 16, 2));
-        // Push fewer frames than the run needs, then stop the capture device — the
-        // sweep sample wait must fault, not block until an Abort.
+        // Too few frames then capture stops: the sample wait must fault, not block.
         var playback = new PushPlaybackDevice(capture, pushFrames: 10)
         {
             StopCaptureOnStart = new IOException("Capture device removed mid-sweep.")
@@ -138,9 +127,6 @@ public sealed class PcmDuplexSessionTests
         Assert.Equal("Capture device removed mid-sweep.", exception.Message);
     }
 
-    // A capture device that emits one startup frame (to release the first-buffer
-    // wait) and then, when the playback device "plays", the frames that satisfy
-    // the sample wait.
     private sealed class PushCaptureDevice : IAudioCaptureDevice, ICaptureDiagnosticsSource
     {
         public PushCaptureDevice(WaveFormat format) => CaptureFormat = format;
@@ -175,9 +161,7 @@ public sealed class PcmDuplexSessionTests
         {
             CapturePackets++;
             var bytes = new byte[frames * CaptureFormat.BlockAlign];
-            // Each hardware channel carries its own constant, so a test can tell
-            // WHICH input a captured channel came from rather than only how many
-            // there were.
+            // A constant per hardware channel identifies which input a captured channel came from.
             for (int frame = 0; frame < frames; frame++)
             {
                 for (int channel = 0; channel < CaptureFormat.Channels; channel++)
@@ -222,8 +206,6 @@ public sealed class PcmDuplexSessionTests
 
         public Task StartAsync(IWaveProvider source, CancellationToken cancellationToken)
         {
-            // Mirror the real render devices: a session must replay the one
-            // source it was opened with, never a different instance.
             if (initializedSource != null && !ReferenceEquals(initializedSource, source))
             {
                 SawDifferentSource = true;
@@ -235,7 +217,6 @@ public sealed class PcmDuplexSessionTests
                 capture.Discontinuities++;
             }
             capture.Push(pushFrames);
-            // Simulate the capture device dying while playback is running.
             if (StopCaptureOnStart != null)
             {
                 capture.StopWithError(StopCaptureOnStart);

@@ -173,49 +173,28 @@ public partial class Form1
     {
         microphoneCalibration.InvalidateCache();
         IReadOnlyList<MicrophoneCalibrationEntry> entries = microphoneCalibration.GetEntries();
-        // Only the analysis selectors are offered the loaded measurement's own
-        // curve. The Virtual DSP and wizard panels carry their own calibration
-        // story (a session's, a handoff's), and a third source in those lists
-        // would be one more thing meaning "not from your list" beside two that
-        // already do.
+        // Only analysis selectors get the measurement's own curve; VDSP and wizard have their own calibration sources.
         IReadOnlyList<MicrophoneCalibrationEntry> analysisEntries = CalibrationEntries();
         virtualCrossoverPanel?.ConfigureCalibration(
             microphoneCalibration.Get, entries, AddSessionCalibration);
         eqWizardPanel?.ConfigureCalibration(microphoneCalibration.Get, entries);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshCalibrationEntries(analysisEntries));
-        // The live panel shows the RIG's calibration and does not choose it, so it is
-        // told which one to show rather than asked which it had.
-        // The rig's choice describes the NEXT run. A capture already taken — running,
-        // held, or waiting to be saved — keeps the calibration frozen on it when it
-        // began, so nothing here reaches back into it: no re-render, and no peak hold
-        // dropped for a change that cannot touch the curve it holds.
+        // The rig's choice describes the next run; a capture taken keeps its frozen calibration (no re-render, no peak-hold drop).
         string? rigCalibrationId =
             measurementSettings.Measurement.MicrophoneCalibrationId;
         liveSpectrumOptions.CalibrationId = rigCalibrationId;
         RefreshLiveCalibrationReadout();
     }
 
-    /// <summary>
-    /// Tells the live panel what the plot in front of it is corrected through.
-    /// </summary>
-    /// <remarks>
-    /// The controller answers for the curve on screen — a loaded capture by the name
-    /// stored in it, a running or held one by the calibration frozen when its run
-    /// began — and only an empty plot falls through to the rig, which is what the NEXT
-    /// run will use. Pushed from here rather than read by the panel because the panel
-    /// is opened, refreshed and re-opened at moments it does not choose.
-    /// </remarks>
+    /// <summary>Pushes to the live panel what the on-screen curve is corrected through; an empty plot falls through to the rig.</summary>
     private void RefreshLiveCalibrationReadout() =>
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
             panel => panel.ShowCalibration(DescribeLiveCalibration()));
 
     private string DescribeLiveCalibration()
     {
-        // The name a capture carries is already the one a reader was shown when it was
-        // taken — its own if it came from a file, this machine's if the capture is
-        // still here — so it is displayed as written rather than looked up again.
-        // Only an empty plot falls through to the rig, whose id has to be named.
+        // A capture's stored name is shown as written; only the rig's id needs a lookup.
         if (liveSpectrumController.DisplayedCalibrationName is not { } name)
         {
             return NameCalibration(
@@ -225,10 +204,6 @@ public partial class Form1
         return string.IsNullOrWhiteSpace(name) ? "Off" : name;
     }
 
-    /// <summary>
-    /// Everything a run has to freeze about the microphone it is taken through: the
-    /// curve that corrects it, the name a reader will be shown, and the id behind it.
-    /// </summary>
     private CapturedMicrophoneCalibration DescribeCalibrationForCapture(
         string? calibrationId) =>
         ResolveCalibration(calibrationId) is { } curve
@@ -250,11 +225,7 @@ public partial class Form1
         return entry?.Name ?? "Deleted calibration";
     }
 
-    // Adds a calibration curve a Virtual DSP session carried in to the configured
-    // list, as a file entry like any other: the curve is written to the application
-    // data folder under its original file name and an entry is created for it, so
-    // every view can pick it. Returns the new entry's id, or null when nothing was
-    // added.
+    // Writes the session's curve to app data as a regular file entry. Returns the new id, or null.
     private string? AddSessionCalibration(VirtualCrossoverSessionCalibration session)
     {
         List<MicrophoneCalibrationDefinition> definitions =
@@ -293,9 +264,7 @@ public partial class Form1
             Path = path
         };
         definitions.Add(definition);
-        // An open Record Settings panel works on its own copy of the list and
-        // writes it back on Apply, so it has to learn about the entry or it would
-        // overwrite it.
+        // An open Record Settings panel writes its own copy back on Apply, so it must learn the entry.
         dockedMeasurementSettingsHost.InvokeIfOpen<Options.MeasurementOptions>(
             panel => panel.AdoptAdditionalCalibrations(definitions));
         ScheduleMeasurementSettingsSave();
@@ -308,10 +277,7 @@ public partial class Form1
         buttonCompare.Click += (_, _) => ShowCompareMenu();
         FormClosing += Form1_FormClosing;
         Shown += Form1_Shown;
-        // Files dragged in from Explorer, which the window accepts anywhere on it
-        // (see Form1.FileDrop). Last in construction, so the controls the shell has
-        // built are all there to be registered; the ones it builds later register
-        // themselves as they are added.
+        // Last in construction so built controls exist to register; later ones register when added.
         EnableFileDrop();
     }
 
@@ -321,20 +287,13 @@ public partial class Form1
         {
             if (success)
             {
-                // A finished sweep is the current measurement, so it supersedes any
-                // read still in flight — a file picked before the run started must
-                // not land on top of what was just measured.
+                // A finished sweep supersedes any in-flight read.
                 measurementActivationRevision++;
                 buttonRecord.Text = "Ready";
                 plotModelFactory.SetImpulseResponseFileName(null);
                 SetImpulseResponseAvailability(true);
                 sessionTracker.MarkMeasurementCompleted(expSweepMeasurement);
-                // A new measurement is read through the microphone that took it. The
-                // view is moved even when it was on one of the user's own entries:
-                // the run has just frozen a calibration into the result, and leaving
-                // the plot on a different one draws the response through a microphone
-                // it never passed — silently, and with the selector still naming the
-                // curve it was left on.
+                // Move the view to the run's frozen calibration even from a user entry, or the response is drawn through the wrong mic.
                 SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
             }
             else
@@ -351,18 +310,10 @@ public partial class Form1
                 DrawSelectedMode(true);
             }
 
-            // The Frequency Response panel evaluates dB SPL availability only when it
-            // opens; a run changes it in both directions (a good run captures the
-            // loopback level SPL needs; a failed/aborted run clears the level snapshot),
-            // so recolour the SPL choice — full or view-only — after EVERY completion,
-            // not just success.
+            // Every completion can change SPL availability either way; the panel only evaluates on open.
             dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
                 panel => panel.RefreshSplAvailability());
-            // The same debt the live spectrum pays when it stops, and for the same
-            // reason: an Apply made while the sweep held the device left the settings
-            // panel's picture of the driver alone rather than probing a device it did
-            // not own. The run has just released it — after EVERY completion, since an
-            // aborted or failed run releases it exactly as a good one does.
+            // The run released the device (success or not); refresh the settings panel's deferred device view.
             RefreshOpenMeasurementSettingsDevice();
 
             if (success)
@@ -373,9 +324,7 @@ public partial class Form1
         });
     }
 
-    // Sweep-run acceptance: a bad run stops the measurement, and the refusal
-    // says why. This notice covers what the refusal cannot — a report left on a
-    // measurement that did publish, which is any run count short of the request.
+    // Covers a published run with fewer averages than requested; a bad run is refused elsewhere.
     private void NotifyDegradedSweepAverage()
     {
         SweepRunQualityReport? report = expSweepMeasurement.QualityReport;
@@ -392,10 +341,7 @@ public partial class Form1
             MessageBoxIcon.Information);
     }
 
-    // The result published, and its own shape says something the user would
-    // otherwise only find by wondering why a tune fought back. A warning rather
-    // than the information icon the run report uses: nothing is wrong with the
-    // capture, but the reference it was divided by is suspect.
+    // Warning icon: the capture is fine but its reference is suspect.
     private void NotifyResultCaution()
     {
         SweepResultCaution? caution = expSweepMeasurement.ResultCaution;

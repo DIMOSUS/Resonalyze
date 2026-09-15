@@ -4,9 +4,6 @@ using System.Globalization;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Provides a compact color picker tailored to the dark Resonalyze interface.
-/// </summary>
 internal sealed class ColorPickerDialog : Form
 {
     private static readonly Color[] PresetColors =
@@ -327,8 +324,7 @@ internal sealed class ColorSpectrum : Control
         {
             args.Graphics.FillRectangle(saturationBrush, ClientRectangle);
         }
-        // Color.Transparent is transparent WHITE; GDI+ interpolates the raw
-        // channels, so mid-gradient it brightens instead of purely darkening.
+        // Color.Transparent is transparent white; GDI+ interpolates raw channels, so it would brighten mid-gradient.
         using (var valueBrush = new LinearGradientBrush(
             ClientRectangle,
             Color.FromArgb(0, Color.Black),
@@ -413,9 +409,7 @@ internal sealed class HueSlider : Control
         int width = Math.Max(1, ClientSize.Width);
         int height = Math.Max(1, ClientSize.Height);
 
-        // The rainbow depends only on size, but was redrawn line-by-line on every
-        // paint — including every mouse-move while dragging. Cache it and rebuild
-        // only when the control resizes.
+        // Cached: redrawing line by line on every drag mouse-move was slow; rebuilt only on resize.
         if (rainbowCache == null || rainbowCache.Width != width || rainbowCache.Height != height)
         {
             rainbowCache?.Dispose();

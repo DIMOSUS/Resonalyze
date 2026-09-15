@@ -2,11 +2,7 @@
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// The MME (WaveIn/WaveOut) compatibility backend. Microphone and loopback are
-/// two channels of one numbered capture device; playback goes to a numbered
-/// render device.
-/// </summary>
+/// <summary>MME compatibility backend: microphone and loopback are two channels of one numbered capture device.</summary>
 public sealed class MmeBackend : IAudioBackend
 {
     public AudioBackendDescriptor Descriptor { get; } = new(
@@ -82,10 +78,6 @@ public sealed class MmeBackend : IAudioBackend
             new WaveFormat(request.SampleRate, request.BitsPerSample, channelCount));
     }
 
-    // Best-effort rollback of a partially-opened session: every resource is
-    // released even if an earlier release throws, and cleanup failures are
-    // swallowed so they never mask the primary open/validation exception that
-    // the caller is about to rethrow.
     private static ValueTask DisposeQuietlyAsync(
         IAudioPlaybackDevice? playback,
         IAudioCaptureDevice? capture) =>

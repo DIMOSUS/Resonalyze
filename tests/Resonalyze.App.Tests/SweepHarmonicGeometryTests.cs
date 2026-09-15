@@ -3,13 +3,7 @@ using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Harmonic packets in a deconvolved sweep sit at
-/// <c>SweepSamples * ln(harmonic) / ln(ratio)</c>, so every path that reads a
-/// stored measurement has to use the band that was ACTUALLY swept. Reading the
-/// requested band instead — or re-deriving a sweep from a band that was already
-/// achieved — moves the packets, and the distortion curves with them.
-/// </summary>
+/// <summary>Harmonic packets sit at SweepSamples * ln(h) / ln(ratio), so stored measurements must use the ACTUALLY swept band.</summary>
 public sealed class SweepHarmonicGeometryTests
 {
     private static Complex[] Impulse(int length, int peakIndex)
@@ -22,7 +16,7 @@ public sealed class SweepHarmonicGeometryTests
     [Fact]
     public void RestoringALegacyFile_KeepsTheHarmonicOffsetsOfTheOriginalSweep()
     {
-        // A pre-band file: 12 octaves ending at Nyquist, ratio exactly 4096.
+        // Pre-band file: 12 octaves ending at Nyquist, ratio exactly 4096.
         const int sampleRate = 48_000;
         const int octaves = 12;
         const double durationSeconds = 1.0;
@@ -49,7 +43,6 @@ public sealed class SweepHarmonicGeometryTests
         Assert.Equal(nyquist, legacyHighHz);
         Assert.Equal(Math.Pow(2.0, octaves), measurement.AchievedFrequencyRatio, 6);
 
-        // What the pre-band build computed: SweepSamples * ln(h) / (octaves * ln 2).
         double expectedSecondHarmonic =
             measurement.Sweep!.SweepSamples * Math.Log(2.0) / (octaves * Math.Log(2.0));
         Assert.Equal(expectedSecondHarmonic, measurement.HarmonicIROffset(2.0), 6);
@@ -61,9 +54,7 @@ public sealed class SweepHarmonicGeometryTests
     [Fact]
     public void RestoringALegacyFile_DoesNotWidenItsBandWithGuardBands()
     {
-        // Regression: the recorded band used to be fed back in as a REQUEST, so
-        // ComputeSpec added the guard bands a second time and the reconstructed
-        // sweep no longer matched the one that produced the IR.
+        // The recorded band fed back as a REQUEST got guard bands added twice.
         const int sampleRate = 48_000;
         (double legacyLowHz, double legacyHighHz) = ImpulseResponseFile.ResolveSweepBand(
             lowFrequencyHz: 0,
@@ -84,9 +75,7 @@ public sealed class SweepHarmonicGeometryTests
             achievedLowFrequencyHz: legacyLowHz,
             achievedHighFrequencyHz: legacyHighHz);
 
-        // The sweep rebuilt on load cannot express the legacy geometry (its low
-        // edge carried less than one whole cycle), which is exactly why the
-        // recorded edges have to win.
+        // The rebuilt sweep cannot express the legacy geometry (under one cycle at the low edge).
         ExpSweepSpec rebuilt = ExponentialSineSweep.ComputeSpec(
             legacyLowHz, legacyHighHz, 1.0, sampleRate);
         Assert.True(
@@ -112,7 +101,6 @@ public sealed class SweepHarmonicGeometryTests
 
         Assert.Equal(1000.0, measurement.LowFrequencyHz);
         Assert.Equal(20_000.0, measurement.HighFrequencyHz);
-        // The swept band encloses the request, so its ratio is the larger one.
         Assert.Equal(measurement.Sweep!.LowFrequencyHz, measurement.AchievedLowFrequencyHz, 9);
         Assert.Equal(measurement.Sweep.HighFrequencyHz, measurement.AchievedHighFrequencyHz, 9);
         Assert.True(measurement.AchievedLowFrequencyHz < 1000.0);
@@ -123,8 +111,7 @@ public sealed class SweepHarmonicGeometryTests
     [Fact]
     public void AStoredMeasurement_CarriesTheSweptBandForHarmonicAnalysis()
     {
-        // Requested 1000-20000 Hz is 4.32 octaves while the sweep runs about 5.08:
-        // handing the request to the harmonic analysis shifts every packet.
+        // Requested 1-20 kHz is 4.32 octaves; the sweep runs ~5.08.
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         measurement.Init(new SweepMeasurementConfiguration(
             new SweepSignalConfiguration(
@@ -141,8 +128,6 @@ public sealed class SweepHarmonicGeometryTests
         double achievedRatio = measurement.AchievedFrequencyRatio;
         Assert.True(achievedRatio > requestedRatio * 1.5, "guard bands widen the sweep");
 
-        // The offset the requested band would have produced is far enough out to
-        // land in the wrong place: tens of milliseconds at this sweep length.
         double correct = measurement.Sweep!.SweepSamples * Math.Log(2.0) / Math.Log(achievedRatio);
         double wrong = measurement.Sweep.SweepSamples * Math.Log(2.0) / Math.Log(requestedRatio);
         Assert.Equal(correct, measurement.HarmonicIROffset(2.0), 6);
@@ -154,10 +139,7 @@ public sealed class SweepHarmonicGeometryTests
     [Fact]
     public void RestoringASweepLongerThanTheGenerationCap_KeepsItsRealLength()
     {
-        // The generator will not build a sweep past MaxDurationSeconds, but the
-        // file format stores up to an hour and the harmonic offsets scale with the
-        // length: reading the rebuilt sweep's sample count would halve them for a
-        // 200-second capture.
+        // The generator caps at MaxDurationSeconds but files store up to an hour; the rebuilt count would halve offsets at 200 s.
         const int sampleRate = 48_000;
         const double storedDurationSeconds = 200.0;
         Assert.True(storedDurationSeconds > ExponentialSineSweep.MaxDurationSeconds);
@@ -177,7 +159,6 @@ public sealed class SweepHarmonicGeometryTests
             (int)Math.Round(storedDurationSeconds * sampleRate),
             measurement.AchievedSweepSampleCount);
         Assert.Equal(storedDurationSeconds, measurement.AchievedSweepDurationSeconds, 6);
-        // The rebuilt sweep really is capped, which is why its count cannot be used.
         Assert.Equal(
             (int)Math.Round(ExponentialSineSweep.MaxDurationSeconds * sampleRate),
             measurement.Sweep!.SweepSamples);
@@ -214,7 +195,6 @@ public sealed class SweepHarmonicGeometryTests
     [Fact]
     public void AHistorySnapshotOfAStoredFile_ResolvesTheSweptBandNotTheRequest()
     {
-        // The path the Virtual DSP wizard reads its distortion curve through.
         var file = new ImpulseResponseFile
         {
             SampleRate = 48_000,

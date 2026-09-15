@@ -6,11 +6,6 @@ public enum AudioEndpointDirection
     Render
 }
 
-/// <summary>
-/// A backend-neutral description of a selectable audio endpoint (a WASAPI
-/// device, a Wave/MME numbered device, or an ASIO channel group). Replaces the
-/// NAudio-flavoured <c>AudioEndpointInfo</c> at the public boundary.
-/// </summary>
 public sealed record AudioEndpointDescriptor(
     string Id,
     string DisplayName,

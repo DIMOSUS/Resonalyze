@@ -19,10 +19,7 @@ public sealed class DataHelperResampleTests
     [Fact]
     public void LogarithmicResample_HoldsLastValueBeyondInputRange()
     {
-        // The input spectrum ends at 10 kHz (e.g. a low sample rate), while the
-        // output grid runs to 20 kHz. The kernel window above 10 kHz contains no
-        // input samples, so the weight sum degenerates; the point must hold the
-        // nearest sample instead of collapsing to the -160 dB floor.
+        // No input samples above 10 kHz: the weight sum degenerates, so hold the nearest sample, not the -160 dB floor.
         List<SignalPoint> input = BuildLinearGrid(
             startHz: 10,
             stepHz: 10,
@@ -37,22 +34,16 @@ public sealed class DataHelperResampleTests
     [Fact]
     public void LogarithmicResample_PlacesAnIsolatedFeatureAtTheCorrectOutputFrequency()
     {
-        // A single distinct bin at 1 kHz against a flat 0 dB floor. With a very small
-        // smoothing width the Lanczos window collapses to +/-2 input bins (10 Hz
-        // apart), and the kernel is exactly zero at those integer offsets, so the
-        // 1 kHz output point reads ONLY the 1 kHz bin. This pins LogPositionToFrequency,
-        // the BinarySearchX centre, and the kernel weighting together: a frequency-axis
-        // inversion or an off-by-one centre would read a 0 dB neighbour instead of -6.
+        // Tiny smoothing collapses Lanczos to ±2 bins where the kernel is zero: pins axis inversion and centre off-by-one.
         List<SignalPoint> input = BuildLinearGrid(startHz: 10, stepHz: 10, count: 2000, decibels: 0.0);
         input[99] = new SignalPoint(1_000.0, -6.0); // bin index 99 -> 1000 Hz
 
-        // steps = 3 over [100, 10000] puts output[1] at the geometric mean = 1000 Hz.
+        // steps = 3 over [100, 10000] puts output[1] at 1000 Hz.
         List<SignalPoint> output = DataHelper.LogarithmicResample(
             input, start: 100, stop: 10_000, steps: 3, smoothingOctaves: 0.01);
 
         Assert.Equal(1_000.0, output[1].X, precision: 6);
         Assert.Equal(-6.0, output[1].Y, precision: 6);
-        // The flat-floor endpoints stay at 0 dB, confirming the feature did not leak.
         Assert.Equal(0.0, output[0].Y, precision: 6);
         Assert.Equal(0.0, output[2].Y, precision: 6);
     }
@@ -94,8 +85,6 @@ public sealed class DataHelperResampleTests
     [Fact]
     public void LogarithmicResample_PsychoacousticReducesANarrowDipWithoutClippingIt()
     {
-        // A -30 dB notch 30 Hz wide at 1 kHz. Cubic averaging should reduce
-        // its perceptual weight, but must not hard-clip it out of the curve.
         List<SignalPoint> input = BuildLinearGrid(
             startHz: 10, stepHz: 10, count: 2400, decibels: 0.0);
         for (int i = 0; i < input.Count; i++)
@@ -126,8 +115,6 @@ public sealed class DataHelperResampleTests
     [Fact]
     public void LogarithmicResample_PsychoacousticRetainsANarrowPeak()
     {
-        // A +10 dB peak of the same narrow width must remain clearly visible
-        // after the frequency-dependent Gaussian cubic average.
         List<SignalPoint> input = BuildLinearGrid(
             startHz: 10, stepHz: 10, count: 2400, decibels: 0.0);
         for (int i = 0; i < input.Count; i++)
@@ -156,8 +143,6 @@ public sealed class DataHelperResampleTests
     [Fact]
     public void LogarithmicResample_PsychoacousticKeepsAValleyWiderThanTheWindow()
     {
-        // A -10 dB valley spanning a full octave (700-1400 Hz) represents broad
-        // tonal structure and must remain visible.
         List<SignalPoint> input = BuildLinearGrid(
             startHz: 10, stepHz: 10, count: 2400, decibels: 0.0);
         for (int i = 0; i < input.Count; i++)
@@ -241,9 +226,7 @@ public sealed class DataHelperResampleTests
             smoothingOctaves: 1.0 / 6.0,
             psychoacoustic: true);
 
-        // Without the resolution floor the Gaussian is effectively a single-bin
-        // lookup here and the first point remains 20 dB. Two-bin support must
-        // mix in the neighbouring 0 dB bins even with cubic peak weighting.
+        // Without the two-bin resolution floor the Gaussian is a single-bin lookup here.
         Assert.InRange(output[0].Y, 1.0, 19.0);
     }
 
@@ -253,14 +236,7 @@ public sealed class DataHelperResampleTests
     public void LogarithmicResample_PsychoacousticStaysLocalNearTwoBinsOnACoarseGrid(
         double stepHz)
     {
-        // A quiet low end against a loud midrange, on a grid coarse enough that
-        // the two-bin resolution floor lands INSIDE the display range. The
-        // lower octave radius of the Gaussian floor used to diverge just above
-        // two bins from DC: the kernel swallowed the whole spectrum and the
-        // cubic mean drew the midrange level as a spike on the low-frequency
-        // floor (field case: a 192 kHz measurement with a 2048-sample window
-        // spiked +33 dB at 47 Hz). Every point in the formerly diverging zone
-        // must stay at the local floor.
+        // The Gaussian floor's lower radius diverged near two bins from DC and drew the midrange as a spike (field: +33 dB at 47 Hz).
         var input = new List<SignalPoint>();
         for (double f = stepHz; f <= 24_000; f += stepHz)
         {
@@ -281,13 +257,7 @@ public sealed class DataHelperResampleTests
     [Fact]
     public void LogarithmicPowerBandResample_PsychoacousticDoesNotClipANarrowDip()
     {
-        // The RTA path pre-integrates a fixed 1/12-octave reference band, so a
-        // notch smears by that band before the display smoothing ever sees it.
-        // Psychoacoustic smoothing must retain a finite valley rather than
-        // replacing it with a hard lower envelope.
-        // Pink amplitude (1/sqrt f): flat band power per fractional octave, so
-        // the smoothing window is untilted. The dip is measured against the
-        // same curve computed without the notch.
+        // The RTA path pre-integrates 1/12 octave; psychoacoustic smoothing must keep a finite valley. Pink amplitude keeps the window untilted.
         const int fftLength = 8_192;
         const int sampleRate = 48_000;
         double binWidth = (double)sampleRate / fftLength;

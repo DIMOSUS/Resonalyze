@@ -3,13 +3,7 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// Locks the translation from the presentation-layer frequency-response
-/// visibility flags to the DSP <see cref="SpectrumCurves"/> set. Combined with
-/// the DSP-side <c>SpectrumCurveSelectionTests</c> (which pin SpectrumCurves to
-/// the produced curves), this makes the full "flag → computed curve" chain
-/// CI-verifiable after the flags moved off the DSP options type.
-/// </summary>
+/// <summary>Flag-to-<see cref="SpectrumCurves"/> mapping; with the DSP-side SpectrumCurveSelectionTests it covers flag to computed curve.</summary>
 public sealed class CurveVisibilityOptionsTests
 {
     [Fact]

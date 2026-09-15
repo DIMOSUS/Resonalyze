@@ -7,34 +7,19 @@ using Color = MigraDoc.DocumentObjectModel.Color;
 
 namespace Resonalyze;
 
-/// <summary>
-/// The shared layout core of the tuning-sheet PDF exporters (TuningSheetPdf,
-/// VirtualCrossoverSheetPdf): the A4 scaffold with the product banner, title and
-/// subtitle, centred PNG images (via temp files — MigraDoc's AddImage takes a
-/// path), the PEQ filter cards, and the render-and-save step. Dispose deletes
-/// the temp images, so exporters wrap the sheet in a using block.
-/// </summary>
+/// <summary>Shared layout core of the tuning-sheet PDFs. Images go through temp files (MigraDoc takes a path); Dispose deletes them.</summary>
 internal sealed class PdfSheet : IDisposable
 {
-    /// <summary>
-    /// Filters printed side by side in one block of the PEQ table. A bank longer than
-    /// this continues in further blocks below, each the same width so they line up.
-    /// </summary>
     public const int FiltersPerTableBlock = 10;
 
-    // Label column plus the filter columns come to the 17.2 cm the rest of the sheet's
-    // tables run to; every block declares all its columns even when the last one is
-    // part-filled, so a continuation block cannot come out a different width.
+    // Every block declares all columns even when part-filled, so continuation blocks keep the same width.
     private static readonly Unit FilterLabelColumnWidth = Unit.FromCentimeter(2.8);
     private static readonly Unit FilterValueColumnWidth = Unit.FromCentimeter(1.44);
 
     public static readonly Color CaptionColor = Color.FromRgb(90, 90, 90);
     public static readonly Color CardBorderColor = Color.FromRgb(210, 210, 210);
 
-    // Polarity is the one setting on the sheet that is silent when it is typed in wrong —
-    // a flipped channel measures as a hole rather than as an error — so it is colour-coded
-    // to be read at a glance: red for a deliberate flip, green for a channel left alone.
-    // Both are dark enough to stay legible printed in greyscale.
+    // Colour-coded: a wrongly typed polarity is silent (it measures as a hole). Both dark enough for greyscale print.
     public static readonly Color InvertedPolarityColor = Color.FromRgb(180, 30, 30);
     public static readonly Color NormalPolarityColor = Color.FromRgb(20, 115, 65);
 
@@ -44,8 +29,6 @@ internal sealed class PdfSheet : IDisposable
 
     public Section Section { get; }
 
-    // The built MigraDoc model, for tests that assert the layout before it is
-    // rendered to a PDF.
     internal Document Document => document;
 
     public PdfSheet(
@@ -99,33 +82,9 @@ internal sealed class PdfSheet : IDisposable
         image.LockAspectRatio = true;
     }
 
-    /// <summary>
-    /// Lays the bands out as a compact table read down its columns: the filter numbers
-    /// across the top, then one row each for gain, centre frequency and Q. A bank wider
-    /// than <see cref="FiltersPerTableBlock"/> continues in further blocks below, spaced
-    /// slightly apart, each declaring the full column set so the blocks line up.
-    /// </summary>
-    /// <remarks>
-    /// An optional <paramref name="caption"/> is added as the block's HEADING row rather
-    /// than as a paragraph above it: a heading row is the only thing MigraDoc repeats when
-    /// a table breaks across pages, and a caption left outside would name the first page
-    /// and leave the rest anonymous — which on a sheet holding several channels reads as
-    /// the wrong channel's filters. Continuation blocks carry it too, marked as such,
-    /// since a long bank can put them on a page of their own.
-    /// </remarks>
-    /// <remarks>
-    /// Shelves are printed in a table of their own, after the bells. They are not
-    /// the same filter with a different number: their frequency is the middle of a
-    /// transition rather than a centre, their Q is a knee rather than a bandwidth
-    /// (so the DSP's Q convention does not restate it), and they need a row saying
-    /// which direction they shelve. Mixing them into the bell table would put four
-    /// meanings under three row labels. The all-pass bands get a third table for
-    /// the same reason turned up louder: they have no gain at all, their Q is the
-    /// sharpness of a phase turn, and printing one as a 0 dB bell is an instruction
-    /// to dial in the wrong filter. Every table keeps the filter's number in the
-    /// bank, so the sheet, the panel and an exported profile agree on what
-    /// "filter 5" is.
-    /// </remarks>
+    /// <summary>Compact PEQ tables read down columns, split into blocks of <see cref="FiltersPerTableBlock"/>.</summary>
+    /// <remarks>The caption is a heading row, the only thing MigraDoc repeats across page breaks. Shelves and all-pass bands get
+    /// their own tables (different meaning of F/Q, no gain for AP); every table keeps the band's number in the bank.</remarks>
     public void AddFilterTable(IReadOnlyList<PeqBand> bands, string? caption = null)
     {
         ArgumentNullException.ThrowIfNull(bands);
@@ -138,11 +97,6 @@ internal sealed class PdfSheet : IDisposable
         AddBandTable(allPass, ShapeCaption(caption, "all-pass filters"), TableShape.AllPass);
     }
 
-    /// <summary>
-    /// Splits a bank into the bells, the shelves and the all-pass bands, each entry
-    /// keeping its number in the bank rather than in its own table — the number is
-    /// what the panel shows and what an exported profile calls the filter.
-    /// </summary>
     internal static (
         IReadOnlyList<NumberedBand> Peaking,
         IReadOnlyList<NumberedBand> Shelving,
@@ -163,7 +117,6 @@ internal sealed class PdfSheet : IDisposable
             numbered.Where(entry => entry.Band.Type.IsAllPass()).ToList());
     }
 
-    /// <summary>Which of the three filter tables a block belongs to.</summary>
     private enum TableShape
     {
         Bell,
@@ -180,8 +133,6 @@ internal sealed class PdfSheet : IDisposable
         {
             if (start > 0)
             {
-                // Separates the blocks without the weight of a blank line: they are one
-                // logical table continued, not four unrelated ones.
                 Paragraph gap = Section.AddParagraph();
                 gap.Format.Font.Size = 4;
                 gap.Format.SpaceAfter = 0;
@@ -196,15 +147,12 @@ internal sealed class PdfSheet : IDisposable
             ? caption
             : $"{caption} (cont.)";
 
-    // The shelf and all-pass tables always name themselves, even where the bell
-    // table above them needs no caption: an unlabelled further table of filters
-    // reads as a continuation.
+    // Shelf/all-pass tables always name themselves: an unlabelled further table reads as a continuation.
     private static string ShapeCaption(string? caption, string shapeName) =>
         string.IsNullOrWhiteSpace(caption)
             ? char.ToUpperInvariant(shapeName[0]) + shapeName[1..]
             : $"{caption} — {shapeName}";
 
-    /// <summary>A band together with its position in the bank it came from.</summary>
     internal readonly record struct NumberedBand(int Number, PeqBand Band);
 
     private void AddFilterTableBlock(
@@ -231,7 +179,6 @@ internal sealed class PdfSheet : IDisposable
         {
             Row captionRow = table.AddRow();
             captionRow.HeadingFormat = true;
-            // Never leave the caption alone at the foot of a page.
             captionRow.KeepWith = 1;
             captionRow.Borders.Visible = false;
             captionRow.TopPadding = Unit.FromMillimeter(1.5);
@@ -244,12 +191,9 @@ internal sealed class PdfSheet : IDisposable
 
         int count = Math.Min(FiltersPerTableBlock, bands.Count - start);
 
-        // The corner cell labels what kind of filter the numbers below are — the type to
-        // select in the DSP alongside them. The value rows are bound to this row so a
-        // block cannot be split from its own column headings.
+        // Value rows are bound to the header so a block is not split from its column headings.
         Row header = table.AddRow();
         header.HeadingFormat = true;
-        // Every shape prints three value rows except the bell, which needs no Type row.
         header.KeepWith = shape == TableShape.Bell ? 3 : 4;
         WriteLabel(
             header.Cells[0],
@@ -270,34 +214,24 @@ internal sealed class PdfSheet : IDisposable
 
         if (shape == TableShape.Shelf)
         {
-            // Which way the shelf runs is the first thing to dial in, and the one thing
-            // a bell table never has to say.
             AddFilterValueRow(table, "Type", bands, start, count, bold: true,
                 value: band => band.Type == PeqBandType.LowShelf ? "LS" : "HS");
         }
 
         if (shape == TableShape.AllPass)
         {
-            // The order is the filter: AP1 and AP2 are different slot types in the
-            // DSP, and there is no gain row — an all-pass has none.
+            // AP1 and AP2 are different DSP slot types; an all-pass has no gain row.
             AddFilterValueRow(table, "Type", bands, start, count, bold: true,
                 value: band =>
                     band.Type == PeqBandType.AllPassFirstOrder ? "AP1" : "AP2");
         }
         else
         {
-            // Gain first: it is the value most often changed by ear once the sheet
-            // is in hand.
             AddFilterValueRow(table, "Gain, dB", bands, start, count, bold: true,
                 value: band => SheetFormat.Signed(band.GainDb));
         }
 
-        // Q is restated in the target DSP's convention and says so on its own row, because
-        // frequency and gain mean the same thing everywhere but Q does not — and a bank
-        // running to several blocks must not rely on a note printed once in the subtitle.
-        // A shelf's Q is a knee and an all-pass's the sharpness of its phase turn — not
-        // bandwidths, no convention restates them — so those rows are labelled plainly;
-        // a first-order all-pass has no Q at all and prints a dash.
+        // Q is restated in the DSP's convention and labelled per block; shelf/AP Q are not bandwidths, so no convention applies.
         AddFilterValueRow(table, "F, Hz", bands, start, count, bold: false,
             value: band => SheetFormat.Number(band.FrequencyHz, "0"));
         AddFilterValueRow(
@@ -345,10 +279,7 @@ internal sealed class PdfSheet : IDisposable
         var renderer = new PdfDocumentRenderer { Document = document };
         renderer.RenderDocument();
 
-        // Through AtomicFile like every other export: PdfDocument.Save(path)
-        // truncates the destination on open, so overwriting an existing sheet
-        // and failing partway left a broken PDF where a good one had been.
-        // closeStream: false — AtomicFile owns the stream's lifetime.
+        // Through AtomicFile: PdfDocument.Save(path) truncates on open, leaving a broken PDF on failure. AtomicFile owns the stream.
         AtomicFile.Write(
             filePath,
             stream => renderer.PdfDocument.Save(stream, closeStream: false));
@@ -364,8 +295,6 @@ internal sealed class PdfSheet : IDisposable
             }
             catch (Exception)
             {
-                // Best-effort cleanup; a leftover temp image must not fail
-                // (or mask the failure of) an export.
             }
         }
 

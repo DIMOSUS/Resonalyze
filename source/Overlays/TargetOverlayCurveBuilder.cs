@@ -2,19 +2,10 @@ using OxyPlot;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Builds the plot-ready curves of a Target overlay. The parametric target
-/// shape and its tolerance band depend only on the spec, offset and tolerance,
-/// so they are cached and reused across the ~30 fps live redraws; only the
-/// deviation curve, which follows the measurement, is rebuilt per call.
-/// </summary>
+/// <summary>Caches shape and tolerance across ~30 fps redraws; only the deviation is rebuilt per call.</summary>
 internal sealed class TargetOverlayCurveBuilder
 {
-    /// <summary>
-    /// Log-spaced 20 Hz … 20 kHz grid used to draw a target shape and its
-    /// tolerance band. The shape is parametric over frequency and must never
-    /// be clipped to the measurement, even when its coverage is partial.
-    /// </summary>
+    /// <summary>20 Hz–20 kHz log grid; the shape is never clipped to the measurement.</summary>
     internal static readonly OverlayPoint[] DefaultTargetGrid = BuildDefaultTargetGrid();
 
     private TargetShapeKey? cachedKey;
@@ -100,7 +91,7 @@ internal sealed class TargetOverlayCurveBuilder
         double ToleranceDb);
 }
 
-/// <summary>Plot-ready curves of a target shape; arrays are cached, do not mutate.</summary>
+/// <summary>Arrays are cached; do not mutate.</summary>
 internal sealed record TargetOverlayShape(
     DataPoint[] Target,
     DataPoint[] ToleranceUpper,

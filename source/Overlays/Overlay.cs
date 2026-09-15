@@ -8,34 +8,17 @@ using CheckBox = System.Windows.Forms.CheckBox;
 namespace Resonalyze;
 
 /// <summary>
-/// What the plot knows about a curve being captured: its uncalibrated oversampled
-/// spectrum, the calibration correction frozen on the display grid, the display-smoothing
-/// code, and the measurement's sample rate. Keeping calibration separate preserves the
-/// primary curve's smooth-then-calibrate operation order.
+/// Captured curve for the plot: uncalibrated oversampled spectrum plus calibration frozen on the display grid,
+/// kept separate to preserve smooth-then-calibrate order. <paramref name="Spectrum"/> may be empty (no raw form).
 /// </summary>
-/// <remarks>
-/// <paramref name="Spectrum"/> may be EMPTY: some curves have no re-smoothable raw form
-/// (see <see cref="LiveRtaRawCapture"/>) yet still know their sample rate. Such a capture
-/// stores the drawn curve while keeping the metadata, so a consumer outside the
-/// measurement — the EQ Wizard — still knows the rate its filters must be realized at.
-/// </remarks>
-/// <param name="PointsCalibration">
-/// For a capture with NO raw form only: the microphone calibration baked into the drawn
-/// curve. The overlay freezes it per DRAWN point (their frequencies are the only grid such
-/// a capture has), so a consumer can undo it and apply another — exact, because the
-/// correction is applied additively per frequency. Null when the curve has a raw form (the
-/// correction travels with the raw grid instead) or when no calibration was in effect.
-/// </param>
+/// <param name="PointsCalibration">No-raw captures only: calibration baked into the drawn points, per point, so a consumer can undo it.</param>
 public readonly record struct RawCurveCapture(
     IReadOnlyList<SignalPoint> Spectrum,
     IReadOnlyList<double> CalibrationCorrectionDb,
     int SmoothingCode,
     int? SampleRateHz = null,
     CalibrationFile? PointsCalibration = null,
-    // What the measurement behind this curve actually measured. The stored spectrum is
-    // taken BEFORE the mask — deliberately, because masking it would let a smoothing
-    // window straddle the boundary in both directions at every later width — so the
-    // band has to travel with it and be applied to each finished re-smoothing.
+    // Spectrum is stored unmasked (masking would let smoothing straddle the break), so the band travels with it.
     MeasuredBand Band = default);
 
 internal static class RawCurveRenderer
@@ -44,14 +27,7 @@ internal static class RawCurveRenderer
     public const double StopFrequency = 20_000.0;
     public const int PointCount = 1024;
 
-    /// <summary>
-    /// Freezes a calibration onto the frequencies of an ALREADY DRAWN curve. A capture with
-    /// no re-smoothable raw form has no other grid, and the correction must line up with
-    /// the very points it was baked into, so it is sampled per point rather than on the
-    /// standard log grid. A null calibration yields zeros — the honest record of "captured
-    /// with no correction", which still lets a consumer apply one later. Always the same
-    /// length as <paramref name="points"/>, so the two cannot drift apart.
-    /// </summary>
+    /// <summary>Calibration sampled per drawn point (no other grid for no-raw captures); null calibration yields zeros.</summary>
     public static double[] CaptureCalibrationCorrectionAt(
         CalibrationFile? calibration,
         IReadOnlyList<DataPoint> points)
@@ -92,15 +68,7 @@ internal static class RawCurveRenderer
         return correction;
     }
 
-    /// <param name="band">
-    /// What the measurement behind <paramref name="spectrum"/> actually measured.
-    /// The spectrum is stored UNMASKED on purpose — masking it would let a smoothing
-    /// window straddle the boundary in both directions, and the break would then
-    /// slide with whichever width it is drawn at — so it is applied here, to the
-    /// finished curve, where it lands exactly where the filter and the sweep put it.
-    /// The default is the whole range, which is what a legacy file, an imported text
-    /// curve and a live RTA capture all read as.
-    /// </param>
+    /// <param name="band">Applied to the finished curve, since the spectrum is stored unmasked. Default = whole range.</param>
     public static List<SignalPoint> Render(
         IReadOnlyList<SignalPoint> spectrum,
         IReadOnlyList<double> calibrationCorrectionDb,
@@ -140,8 +108,7 @@ internal static class RawCurveRenderer
         return Mask(result, band);
     }
 
-    // Last, after the smoothing and the calibration alike: a break is not a level and
-    // must not be corrected, smoothed, or allowed into a neighbour's mean.
+    // Last: a break is not a level and must not be corrected, smoothed, or leak into a neighbour's mean.
     private static List<SignalPoint> Mask(List<SignalPoint> curve, MeasuredBand band)
     {
         double low = band.LowEdgeHz;
@@ -261,19 +228,13 @@ public sealed class OverlayCollection
     public OxyPlot.WindowsForms.PlotView PlotView { get; }
     public Form1 Form { get; }
 
-    // The magnitude scale the plot is currently drawn in, so a captured overlay is
-    // tagged with its unit and only shown again on a matching axis. Defaults to
-    // Relative until the shell provides the live value.
     public void SetMagnitudeScaleProvider(Func<MagnitudeScale> provider) =>
         getCurrentMagnitudeScale = provider;
 
     public MagnitudeScale CurrentMagnitudeScale =>
         getCurrentMagnitudeScale?.Invoke() ?? MagnitudeScale.Relative;
 
-    // The shell wires this to recompute a captured analysis curve WITHOUT display
-    // smoothing (with the mode's current smoothing code), so a captured overlay stores
-    // the raw reference and re-applies its own adjustable smoothing on top. Null when
-    // the curve has no raw form; the capture then falls back to the drawn samples.
+    // Recomputes a captured curve without display smoothing so the overlay re-smooths itself; null = no raw form.
     public void SetRawCurveProvider(Func<CurveTag, RawCurveCapture?> provider) =>
         rawCurveProvider = provider;
 
@@ -283,9 +244,6 @@ public sealed class OverlayCollection
     internal RawCurveCapture? TryGetRawCapture(CurveTag tag) =>
         rawCurveProvider?.Invoke(tag);
 
-    // The time-domain twin of the raw curve provider: the shell wires these to the plot
-    // factory so a captured impulse trace is stored in the record's own coordinates and
-    // re-drawn under whatever framing the view has later.
     internal void SetImpulseCaptureProvider(Func<CurveTag, ImpulseOverlayCapture?> provider) =>
         impulseCaptureProvider = provider;
 
@@ -298,8 +256,7 @@ public sealed class OverlayCollection
     internal ImpulseOverlayFrame? TryGetImpulseFrame() =>
         impulseFrameProvider?.Invoke();
 
-    // Lands any debounced offset saves immediately; the shell calls this on
-    // close so an offset changed within the debounce window still persists.
+    // Called on close so an offset changed within the debounce window still persists.
     public void FlushPendingSaves()
     {
         foreach (Overlay overlay in overlays)
@@ -316,7 +273,6 @@ public sealed class OverlayCollection
             overlay.Prepare(overlayMode);
         }
 
-        // Resolve operation sources once every captured slot is loaded.
         foreach (Overlay overlay in overlays)
         {
             overlay.RefreshSources();
@@ -333,8 +289,6 @@ public sealed class OverlayCollection
                 continue;
             }
 
-            // The magnitude-axis rule is Show()'s own; a slot that does not belong on
-            // the axis showing stays checked and draws nothing.
             overlay.Show();
         }
 
@@ -351,9 +305,6 @@ public sealed class OverlayCollection
         notifyPlotChanged();
     }
 
-    // Redraws shown Target overlays bound to the current measurement so they
-    // track a live-updating trace (for example the running Live Spectrum curve).
-    // Returns true if any such overlay was redrawn.
     public bool RefreshCurrentMeasurementTargets()
     {
         bool any = false;
@@ -365,8 +316,6 @@ public sealed class OverlayCollection
         return any;
     }
 
-    // True when at least one slot for this mode is populated, so the bulk
-    // Show all / Hide all controls have something to act on.
     public bool HasOverlays(Mode mode)
     {
         Mode overlayMode = OverlayModeFor(mode);
@@ -386,9 +335,7 @@ public sealed class OverlayCollection
             Mode.Autocorrelation;
     }
 
-    // Frequency Response and Live Spectrum share the same frequency/dB axes, so
-    // they share a single set of overlay slots and on-disk storage. Both map to a
-    // single canonical mode used for every overlay comparison, path, and tag.
+    // FR, Live Spectrum and EQ Wizard share axes, so they share one set of overlay slots and storage.
     public static Mode OverlayModeFor(Mode mode) =>
         mode is Mode.LiveSpectrum or Mode.EqWizard ? Mode.FrequencyResponse : mode;
 
@@ -406,10 +353,7 @@ public sealed class OverlayCollection
             .ToArray();
     }
 
-    // What an operation operand states about its numbers — the magnitude scale and the
-    // Y axis they belong to. Read from the same slot / series the points come from, so
-    // the two can never disagree; it exists apart from the source because the draw gate
-    // asks this of every checked slot on every rebuild and has no use for the points.
+    // Separate from the source because the draw gate asks this of every checked slot on every rebuild.
     internal OverlayCurveSemantics OperandSemantics(string? curveKey, int slot)
     {
         if (curveKey != null)
@@ -443,16 +387,10 @@ public sealed class OverlayCollection
             .FirstOrDefault(series =>
                 series.Tag is CurveTag tag && tag.Key == key && series.Points.Count >= 2);
 
-    // A live curve is drawn on the axis showing right now, so it states THAT scale —
-    // not "no scale": while the plot is relative its numbers are relative, and mixing a
-    // dB SPL capture into them is the same error as between two captures. It is re-read
-    // on every rebuild, so the statement follows the axis switch. It also carries the Y
-    // axis it is drawn against (coherence lives on its own), which the result inherits.
+    // A live curve states the scale of the axis showing now (re-read each rebuild), not "no scale".
     private OverlayCurveSemantics LiveCurveSemantics(LineSeries series) =>
         OverlayCurveSemantics.ForCurve(CurrentMagnitudeScale, series.YAxisKey);
 
-    // Live analysis curves on the current plot that an operation operand can reference
-    // directly (every such curve carries a CurveTag). Both Main and Compare are offered.
     internal IReadOnlyList<LiveCurveOption> GetLiveCurveOptions()
     {
         PlotModel? model = PlotView.Model;
@@ -475,8 +413,6 @@ public sealed class OverlayCollection
             .ToArray();
     }
 
-    // Resolves a live-curve operand from the current plot by its CurveTag Key. Returns
-    // false when that curve is not currently drawn (e.g. its Show toggle is off).
     internal bool TryGetLiveCurveSource(string key, out OverlayOperationSource? source)
     {
         source = null;
@@ -517,8 +453,6 @@ public sealed class OverlayCollection
         }
     }
 
-    // Records which slots were active (shown) for the given mode. Overlay
-    // contents are not captured here; they live in their own on-disk files.
     internal List<int> CaptureActiveSlots(Mode mode)
     {
         Mode overlayMode = OverlayModeFor(mode);
@@ -528,9 +462,6 @@ public sealed class OverlayCollection
             .ToList();
     }
 
-    // Shows the previously-active slots after a mode switch has already reloaded
-    // every overlay from disk and left them hidden. Slots not listed stay hidden,
-    // so this is a clean replace rather than a merge with prior UI state.
     internal void RestoreActiveSlots(Mode mode, IReadOnlyList<int>? activeSlots)
     {
         if (activeSlots == null || activeSlots.Count == 0)
@@ -543,9 +474,7 @@ public sealed class OverlayCollection
         {
             Overlay? overlay = overlays.FirstOrDefault(
                 candidate => candidate.Index == slot && candidate.SeriesMode == overlayMode);
-            // A slot may have been active on the other magnitude axis; Show() applies
-            // that rule itself, so an SPL capture does not reappear on the relative axis
-            // after a round trip through another mode.
+            // Show() applies the magnitude-axis rule, so an SPL capture does not reappear on the relative axis.
             overlay?.Show();
         }
 
@@ -559,7 +488,7 @@ public sealed class OverlayCollection
             Mode.FrequencyResponse or Mode.LiveSpectrum =>
                 "{0}\n{2:0.0} Hz\n{4:0.00} dB",
             Mode.PhaseResponse =>
-                "{0}\n{2:0.0} Hz\n{4:0.0}°", // u00B0 degree char
+                "{0}\n{2:0.0} Hz\n{4:0.0}°",
             Mode.GroupDelay =>
                 "{0}\n{2:0.0} Hz\n{4:0.000} ms",
             Mode.ImpulseResponse =>
@@ -626,8 +555,7 @@ public sealed class OverlayCollection
         };
     }
 
-    // Cloned from the designer template so the label inherits the font and the
-    // coordinates the designer already scaled for the current DPI.
+    // Cloned from the designer template to inherit its font and DPI-scaled coordinates.
     private static Label CreateNameLabel(Label template, int index)
     {
         return new Label
@@ -663,11 +591,7 @@ public sealed class OverlayCollection
 
 }
 
-/// <summary>
-/// A single universal overlay slot. Every slot can hold a captured curve or a
-/// calculated recipe (operation between two captured slots); the kind is chosen
-/// from the capture button menu or the settings dialog.
-/// </summary>
+/// <summary>One universal overlay slot: captured curve, operation between slots, or target.</summary>
 public sealed class Overlay
 {
     private readonly OverlayCollection collection;
@@ -692,64 +616,36 @@ public sealed class Overlay
 
     private OverlayKind kind = OverlayKind.Captured;
     private bool updatingControls;
-    // True while a settings dialog is live-previewing candidate values on the plot;
-    // keeps periodic redraws (e.g. the running Live Spectrum's current-measurement
-    // target refresh) from stomping the preview with the stored state.
+    // Keeps periodic redraws (live target refresh) from stomping a settings dialog's preview.
     private bool previewActive;
 
-    // Presentation (all kinds).
     private double strokeThickness = 2;
     private OverlayLineStyle lineStyle = OverlayLineStyle.Solid;
     private int opacityPercent = 100;
     private int smoothingInverseOctaves;
 
-    // Captured kind.
     private DataPoint[]? sourcePoints;
     private DataPoint[]? drawPoints;
     private string? capturedYAxisKey;
-    // The magnitude scale this slot was captured in (meaningful for a captured
-    // FR curve; Relative for every other kind). Gates which magnitude mode shows it.
     private MagnitudeScale capturedMagnitudeScale = MagnitudeScale.Relative;
-    // Phase representation of a captured curve: true unwrapped, false wrapped, null
-    // unknown. Drives the wrapped-difference choice in phase overlay operations.
     private bool? phaseUnwrapped;
-    // Analysis-curve kind the slot was captured from (null for imported text or a
-    // legacy file). Gates magnitude-only smoothing (psychoacoustic) by curve type.
+    // Null for imported text or legacy files. Gates magnitude-only (psychoacoustic) smoothing.
     private Resonalyze.Dsp.AnalysisCurveKind? capturedCurveKind;
-    // Captured FR only: the oversampled raw spectrum, re-smoothed by the SAME
-    // LogarithmicResample the mode uses so any width (Off = raw) reproduces the
-    // reference exactly. Null for fallback captures (imported, operations, legacy,
-    // non-FR), which re-smooth the display-resolution sourcePoints instead.
+    // Captured FR only: re-smoothed by the same LogarithmicResample as the mode, so any width reproduces it exactly.
     private List<SignalPoint>? rawSpectrumPoints;
-    // Frozen microphone correction at the 1024 output frequencies. It remains
-    // separate because the primary FR smooths first and calibrates afterwards.
+    // Kept separate because the primary FR smooths first and calibrates afterwards.
     private double[] rawCalibrationCorrectionDb = Array.Empty<double>();
-    // What the measurement behind the raw spectrum actually measured. The spectrum
-    // is stored unmasked so a later re-smoothing at any width is exact, which means
-    // the break has to be re-applied to every finished curve — and a slot outlives
-    // the measurement, so it has to carry the band itself. Default is the whole
-    // range, which is what every legacy file and every non-FR capture reads as.
+    // Slot outlives the measurement and the spectrum is unmasked, so it carries the band itself.
     private MeasuredBand capturedMeasuredBand;
-    // No-raw captures only (dB SPL): the correction baked into sourcePoints, frozen per
-    // point. Empty when the capture has a raw form or never described itself. Only
-    // consumers outside the plot read it — the drawn curve already includes it.
+    // No-raw captures only: correction baked into sourcePoints, for consumers outside the plot.
     private double[] pointsCalibrationCorrectionDb = Array.Empty<double>();
-    // The smoothing baked into sourcePoints (0 = none); null when unknown. Distinct from
-    // smoothingInverseOctaves, this slot's own display smoothing applied on top.
+    // Smoothing baked into sourcePoints (0 = none, null = unknown); the display smoothing is applied on top.
     private int? capturedSmoothingCode;
-    // Sample rate of the captured measurement; null when unknown (imported text,
-    // fallback captures, legacy files). Only consumers outside the plot read it.
     private int? capturedSampleRateHz;
-    // Captured impulse traces only: the trace in absolute samples and raw linear values,
-    // which is what lets it be re-drawn under the view's CURRENT time unit, time origin,
-    // amplitude scale and polarity instead of staying frozen in the ones it was captured
-    // under (see ImpulseOverlayCapture). Null for every other mode.
+    // Absolute samples and raw linear values, so the trace re-draws under the view's current framing.
     private ImpulseOverlayCapture? impulseCapture;
 
-    // Operation kind. Each operand is either a captured slot (SourceSlotA/B) or, when
-    // SourceCurveKeyA/B is set, a live analysis curve resolved from the plot by its
-    // CurveTag Key on every rebuild — so an operation over live curves recomputes as
-    // the analysis changes (e.g. while tweaking window settings).
+    // An operand with SourceCurveKeyA/B set is a live curve resolved by CurveTag Key on every rebuild.
     private bool operationConfigured;
     private int sourceSlotA;
     private int sourceSlotB;
@@ -759,17 +655,13 @@ public sealed class Overlay
     private double blendFrequencyHz = 1_000;
     private double blendWidthOctaves = 1;
     private bool useAmplitudeSpace;
-    // A straight slope (dB/octave) added to the result, hinged at the pivot frequency
-    // where it adds nothing — the compensation for an excitation whose own spectrum is
-    // sloped. Off by default; the slope may point either way.
+    // dB/octave slope hinged at the pivot, compensating a sloped excitation.
     private bool tiltEnabled;
     private double tiltDbPerOctave = OverlayFile.DefaultTiltDbPerOctave;
     private double tiltPivotHz = OverlayFile.DefaultTiltPivotHz;
-    // ComplexSum only: delay (ms) and polarity flip applied to the Compare response.
     private double compareDelayMs;
     private bool compareInvertPolarity;
 
-    // Target kind.
     private bool targetConfigured;
     private readonly TargetOverlayCurveBuilder targetCurveBuilder = new();
     private int targetSourceSlot;
@@ -815,14 +707,11 @@ public sealed class Overlay
             out settingsMenuItem,
             out clearSlotMenuItem);
 
-        // Holding the button for over half a second jumps straight to the slot's
-        // settings; a normal click still opens the capture menu.
+        // Long press (>0.5 s) opens settings; a click opens the capture menu.
         longPressTimer = new System.Windows.Forms.Timer { Interval = 500 };
         longPressTimer.Tick += LongPressTimerTick;
 
-        // Persisting the slot serializes every captured point and flushes to
-        // disk; debounce it so holding the offset spinner arrow doesn't fsync
-        // on each tick. The redraw itself stays immediate.
+        // Debounced: saving serializes every point and flushes to disk; the redraw stays immediate.
         offsetSaveTimer = new System.Windows.Forms.Timer { Interval = 500 };
         offsetSaveTimer.Tick += OffsetSaveTimerTick;
 
@@ -843,11 +732,6 @@ public sealed class Overlay
 
     public int Index { get; }
 
-    /// <summary>
-    /// The slot's display name. Assigning it also refreshes the panel's name label,
-    /// so every path that names a slot — capture, import, settings, load, reset —
-    /// keeps the label in step.
-    /// </summary>
     public string Title
     {
         get => title;
@@ -865,18 +749,10 @@ public sealed class Overlay
     public bool Checked => checkBox.Checked;
     public OverlayKind Kind => kind;
 
-    /// <summary>
-    /// Whether this slot may draw on the magnitude axis currently shown (see
-    /// <see cref="OverlayCurveSemantics"/>).
-    /// </summary>
     internal bool DrawsOnMagnitudeScale(MagnitudeScale scale) =>
         SlotSemantics.DrawsOn(SeriesMode, scale);
 
-    // What this slot's drawn curve states about its numbers. A capture states the scale
-    // it was measured on and the axis it was drawn against. An operation states whatever
-    // its operands do, carried through the operation — its points are the stored ones,
-    // never recomputed for the axis on screen. A target is a relative shape its offset
-    // places, on the main axis, and states nothing.
+    // A capture states its measured scale; an operation carries its operands'; a target states nothing.
     internal OverlayCurveSemantics SlotSemantics => kind switch
     {
         OverlayKind.Captured => OverlayCurveSemantics.ForCurve(
@@ -886,15 +762,11 @@ public sealed class Overlay
         _ => OverlayCurveSemantics.None
     };
 
-    // Whether this slot's operands can be operated on at all — dB SPL against relative
-    // decibels, or coherence against decibels, produces a number that is neither, and
-    // the slot stays unavailable rather than drawing it.
+    // dB SPL vs relative dB, or coherence vs dB, yields a meaningless number; the slot stays unavailable.
     private bool OperationIsDefined =>
         kind != OverlayKind.Operation ||
         ResultFor(CurrentOperationSnapshot()).IsDefined;
 
-    // What the operation produces, for candidate settings the dialog has not committed
-    // as well: a live preview may point at different operands than the slot holds.
     private OverlayOperationResult ResultFor(OverlayOperationPreview settings) =>
         OverlayCurveSemantics.ForOperation(
             settings.Operation,
@@ -905,15 +777,12 @@ public sealed class Overlay
 
     public bool HasCaptureData => sourcePoints is { Length: > 1 };
 
-    // The overlay mode for the current view; Frequency Response and Live Spectrum
-    // collapse to one shared mode so they use the same slots and storage.
     private Mode CurrentOverlayMode =>
         OverlayCollection.OverlayModeFor(collection.Form.CurrentMode);
 
     public void Prepare(Mode mode)
     {
-        // A pending debounced offset save must land before the slot state is
-        // replaced from disk, or the last spinner change would be dropped.
+        // Flush first, or the last spinner change is dropped when state is replaced from disk.
         FlushPendingOffsetSave();
         ResetState();
         if (mode == Mode.None)
@@ -938,9 +807,7 @@ public sealed class Overlay
         }
     }
 
-    // Left in place, a slot file that fails to load presents as an empty slot
-    // and the next capture silently overwrites it. Setting it aside keeps the
-    // damaged data recoverable and makes each broken file warn exactly once.
+    // Set aside so the next capture does not silently overwrite a damaged file, and it warns once.
     private void QuarantineCorruptSlot(Mode mode, Exception error)
     {
         try
@@ -956,8 +823,6 @@ public sealed class Overlay
         }
         catch
         {
-            // A transiently locked file stays in place and is retried on the
-            // next mode switch; quarantining must never break the switch itself.
         }
     }
 
@@ -970,14 +835,8 @@ public sealed class Overlay
             return;
         }
 
-        // Every draw of this slot lands here — the plot rebuild, the active-slot restore
-        // after a mode switch, both settings dialogs on Save — so the axis rule is asked
-        // once, here, rather than at each call site: two of them used to draw straight
-        // past it and put an ~80 dB SPL curve on the relative axis until the next
-        // rebuild swept it off. A slot belonging to the other magnitude axis stays
-        // CHECKED and undrawn, so flipping the axis back brings it straight back; the
-        // checkbox path refuses the tick itself (see CheckBoxChanged), which is a
-        // different answer to a different question.
+        // Every draw path lands here, so the axis rule is asked once. An off-axis slot stays checked and undrawn,
+        // so flipping the axis back restores it; CheckBoxChanged refuses the tick separately.
         if (!DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale))
         {
             if (RemoveSeries(model))
@@ -1007,11 +866,7 @@ public sealed class Overlay
         }
         else if (IsCurrentMeasurementTarget || ReferencesLiveCurve || IsComplexSumOperation)
         {
-            // A target bound to the current measurement — or an operation over a live
-            // curve or the Main/Compare transfer IRs — stays armed even when its source
-            // is not available yet (e.g. the running Live Spectrum before its first
-            // frame, a curve whose Show toggle is momentarily off, or no Compare
-            // selected); it redraws once the data appears.
+            // Live-sourced targets/operations stay armed while their source is absent; they redraw once data appears.
             SetChecked(true);
             RefreshPlot(model);
         }
@@ -1028,13 +883,10 @@ public sealed class Overlay
         kind == OverlayKind.Operation &&
         (sourceCurveKeyA != null || (UsesOperandB && sourceCurveKeyB != null));
 
-    // "A only" reads one curve, so operand B — and whatever stale slot or curve key it
-    // still holds — takes no part in availability, resolution or validation.
+    // "A only": stale operand B takes no part in availability, resolution or validation.
     private bool UsesOperandB => operation != OverlayOperation.CurveA;
 
-    // Complex sum reads the Main and Compare transfer IRs from the measurement, not
-    // from operands; like a live-curve operation it recomputes on every rebuild and
-    // stays armed while the Compare data is absent.
+    // Reads Main/Compare transfer IRs, not operands; recomputes each rebuild.
     private bool IsComplexSumOperation =>
         kind == OverlayKind.Operation &&
         operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss;
@@ -1046,14 +898,9 @@ public sealed class Overlay
         return OxyColor.FromArgb(alpha, color.R, color.G, color.B);
     }
 
-    // Redraws a shown current-measurement Target overlay so it follows a
-    // live-updating source such as the running Live Spectrum trace. Returns true
-    // if this overlay is such a target. The caller invalidates the plot.
     internal bool RedrawCurrentMeasurementTarget()
     {
-        // A target shape states no absolute level, so the axis rule never stops one
-        // today; it is asked anyway, because this draws the curve directly and the
-        // paths that skipped the question are what put SPL numbers on a relative axis.
+        // Asked anyway: this draws directly, and skipped axis checks are what put SPL on a relative axis.
         if (!Checked ||
             !IsCurrentMeasurementTarget ||
             previewActive ||
@@ -1089,8 +936,6 @@ public sealed class Overlay
             Title,
             yAxisKey);
 
-    // Style-parameterized so the settings dialog's live preview can render candidate
-    // presentation values without committing them to the slot first.
     private bool AddCurveSeries(
         PlotModel model,
         string part,
@@ -1152,8 +997,6 @@ public sealed class Overlay
             lineStyle,
             Title);
 
-    // Fully parameterized so the settings dialog's live preview can render candidate
-    // target settings without committing them to the slot first.
     private bool AddTargetSeries(
         PlotModel model,
         TargetCurveSpec spec,
@@ -1169,8 +1012,7 @@ public sealed class Overlay
     {
         double offset = (double)offsetControl.Value;
 
-        // The shape and tolerance band are constant between edits; the builder
-        // caches them so the ~30 fps live redraw does not rebuild the grid math.
+        // Builder caches shape and tolerance so the ~30 fps live redraw skips the grid math.
         TargetOverlayShape shape = targetCurveBuilder.BuildShape(
             spec,
             offset,
@@ -1180,9 +1022,7 @@ public sealed class Overlay
             return false;
         }
 
-        // Deviation / EQ correction compares against the incoming curve, so it is
-        // built from the source and clipped to wherever that curve has data (gaps
-        // appear where, for example, coherence is below the threshold).
+        // Clipped to where the source has data (gaps where coherence is below threshold).
         DataPoint[] deviation =
             deviationMode != TargetDeviationMode.None &&
             ResolveTargetSource(sourceSlot) is { Length: >= 2 } source
@@ -1198,7 +1038,6 @@ public sealed class Overlay
         OxyColor lineColor = OxyColor.FromArgb(alpha, color.R, color.G, color.B);
         string? trackerFormat = OverlayCollection.GetTrackerFormatString(SeriesMode);
 
-        // Tolerance band first so the curves draw on top of it.
         if (shape.ToleranceUpper.Length >= 2 &&
             shape.ToleranceLower.Length == shape.ToleranceUpper.Length)
         {
@@ -1253,8 +1092,6 @@ public sealed class Overlay
         return true;
     }
 
-    // Redraws this slot's series with the target dialog's candidate settings while
-    // it is open; nothing is committed, so Cancel can restore cleanly.
     private void PreviewTarget(OverlayTargetPreview settings)
     {
         PlotModel? model = collection.PlotView.Model;
@@ -1308,17 +1145,12 @@ public sealed class Overlay
                 : null;
         }
 
-        // Current measurement: prefer the live trace, else the main analysis
-        // curve (any non-overlay, non-live-helper line series).
         PlotModel? model = collection.PlotView.Model;
         if (model == null)
         {
             return null;
         }
 
-        // Every analysis curve carries a CurveTag; the current-measurement primary is
-        // the main Primary-kind curve (the live transfer function while running, or the
-        // mode's main trace otherwise). Overlay and live-helper series are skipped.
         LineSeries? primary = model.Series
             .OfType<LineSeries>()
             .FirstOrDefault(series =>
@@ -1332,9 +1164,7 @@ public sealed class Overlay
             return null;
         }
 
-        // Keep NaN gaps (e.g. where live coherence is below the threshold): they
-        // make the deviation / EQ-correction curve break over unreliable bands
-        // instead of bridging them.
+        // Keep NaN gaps so the deviation curve breaks over unreliable bands instead of bridging them.
         return primary.Points
             .Select(point => new OverlayPoint(point.X, point.Y))
             .ToArray();
@@ -1352,10 +1182,6 @@ public sealed class Overlay
         SetChecked(false);
     }
 
-    /// <summary>
-    /// Re-evaluates availability of calculated slots when their captured
-    /// sources change. Captured slots are unaffected.
-    /// </summary>
     public void RefreshSources()
     {
         if (kind == OverlayKind.Operation)
@@ -1371,10 +1197,7 @@ public sealed class Overlay
     private void RefreshOperationSources()
     {
         bool wasChecked = Checked;
-        // A live-curve operand may not be on the plot at this instant (mode just loaded,
-        // its Show toggle off), and the complex sum's Compare data may not be selected
-        // yet; keep such an operation available as long as it is configured, like a
-        // target. Slot-only operations still require their captures.
+        // A live operand may be momentarily absent; keep a configured operation available. Slot-only ones need captures.
         bool available = operationConfigured &&
             OperationIsDefined &&
             (ReferencesLiveCurve || IsComplexSumOperation || TryGetSources(out _, out _));
@@ -1387,8 +1210,6 @@ public sealed class Overlay
     private void RefreshTargetSources()
     {
         bool wasChecked = Checked;
-        // A configured target can always draw its shape and tolerance band; the
-        // comparison source only governs whether the deviation curve appears.
         ApplyCalculatedAvailability(
             targetConfigured,
             targetConfigured,
@@ -1451,29 +1272,25 @@ public sealed class Overlay
             (_, _) => ExportDeviationToText());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(
-            "\u0192  Calculated overlay…", // \u0192 f
+            "\u0192  Calculated overlay…",
             null,
             (_, _) => ConfigureOperation());
         targetItem = menu.Items.Add(
-            "\u25B3  Target…", // \u25B3 triangle
+            "\u25B3  Target…",
             null,
             (_, _) => ConfigureTarget());
         menu.Items.Add(new ToolStripSeparator());
         settingsItem = menu.Items.Add(
-            "\u2699  Settings\u2026", // \u2699 gear
+            "\u2699  Settings\u2026",
             null,
             (_, _) => OpenSettings());
         clearSlotItem = menu.Items.Add(
-            "\u2715  Clear slot", // \u2715 multiplication x
+            "\u2715  Clear slot",
             null,
             (_, _) => ClearSlot());
         return menu;
     }
 
-    // Empties the slot: the saved file goes, the row returns to its virgin state,
-    // and everything reading captured slots (calculated overlays, target sources,
-    // the EQ Wizard's slot menu) sees it gone. A curve saved into the cleared slot
-    // later gets the automatic name again, exactly like a never-used slot.
     private void ClearSlot()
     {
         Mode mode = CurrentOverlayMode;
@@ -1485,11 +1302,7 @@ public sealed class Overlay
         try
         {
             OverlayFile.Delete(mode, Index);
-            // A debounced offset save still in flight is moot for a slot that is
-            // going away — but only once the delete succeeded: stopping it earlier
-            // would silently drop the user's offset when the delete fails and the
-            // slot lives on. (A tick landing after the reset below is a no-op:
-            // TrySaveCurrentState declines an empty slot.)
+            // Stop only after the delete succeeded, or a failed delete silently drops the offset.
             offsetSaveTimer.Stop();
         }
         catch (Exception exception)
@@ -1501,10 +1314,7 @@ public sealed class Overlay
         Hide();
         ResetState();
         collection.NotifyCapturedOverlayChanged();
-        // Hide() already refreshed the shell, but that ran BEFORE the reset, with
-        // the slot still counting as occupied. Re-notify with the cleared state, or
-        // the bulk Show/Hide All buttons and the labels panel stay stale after the
-        // last slot is cleared.
+        // Hide() refreshed before the reset; re-notify so Show/Hide All and labels see the cleared slot.
         collection.NotifyPlotChanged();
     }
 
@@ -1518,19 +1328,13 @@ public sealed class Overlay
 
     private void OpenCaptureMenu()
     {
-        // A long press already opened the settings dialog, so swallow the release that
-        // ends the hold instead of also opening the menu.
         if (longPressTriggered)
         {
             longPressTriggered = false;
             return;
         }
 
-        // On Click (which the button raises from the release, reliably — see
-        // ReleaseClickButton) rather than on mouse-down: opened from mouse-down, the
-        // click's own mouse-up lands outside the just-opened menu and closes it again.
-        // The rest of the opening — posting the show clear of the mouse message, and
-        // the focus guard — belongs to DropDownMenu, which every menu goes out through.
+        // Open on Click, not mouse-down: the mouse-up would land outside the new menu and close it.
         if (captureMenu.Visible)
         {
             captureMenu.Close();
@@ -1547,9 +1351,6 @@ public sealed class Overlay
             return;
         }
 
-        // Each fresh press clears the flag so a click that follows a held-but-aborted
-        // press (e.g. no settings to show) is still treated as a long press here, and
-        // a later genuine click is never wrongly swallowed.
         longPressTriggered = false;
         longPressTimer.Start();
     }
@@ -1563,18 +1364,12 @@ public sealed class Overlay
     {
         longPressTimer.Stop();
 
-        // The click that opens the menu only fires on mouse-up, so the menu is not
-        // up yet during the hold; close it defensively in case of odd ordering.
         if (captureMenu.Visible)
         {
             captureMenu.Close();
         }
 
-        // Only a hold that actually OPENED something swallows the click that ends it.
-        // An empty slot has no settings, so a slow press on one used to hit the timer,
-        // open nothing, and then eat the click as if it had — the button painted its
-        // press and no menu appeared, on exactly the slots a user clicks to capture
-        // something into.
+        // Only a hold that actually opened something swallows its click (empty slots open nothing).
         longPressTriggered = OpenSettings();
     }
 
@@ -1585,26 +1380,18 @@ public sealed class Overlay
             return;
         }
 
-        // Make sure no other slot's menu stays open. A programmatic Close uses
-        // reason CloseCalled, which bypasses the spurious-focus-close guard, so this
-        // reliably leaves only one capture menu open at a time.
+        // Programmatic Close (CloseCalled) bypasses the focus-close guard, leaving one menu open.
         collection.CloseCaptureMenus();
 
         RebuildCaptureCurveMenu();
-        // The deviation export only applies to a target slot, and its label
-        // reflects the current deviation mode.
         exportDeviationMenuItem.Visible = kind == OverlayKind.Target;
         exportDeviationMenuItem.Text =
             targetDeviationMode == TargetDeviationMode.Correction
                 ? "Export EQ correction…"
                 : "Export deviation…";
-        // A target is a dB magnitude shape, so it is meaningless on the phase,
-        // group delay and time axes; do not offer it there at all.
         targetMenuItem.Visible = OverlayTargets.SupportsMode(CurrentOverlayMode);
         settingsMenuItem.Enabled =
             SeriesMode == CurrentOverlayMode && HasConfiguredContent();
-        // Clearing only applies to a slot that holds content, under the same
-        // mode-ownership rule as Settings.
         clearSlotMenuItem.Enabled = settingsMenuItem.Enabled;
         DropDownMenu.ShowUnder(captureButton, captureMenu);
     }
@@ -1682,16 +1469,8 @@ public sealed class Overlay
 
         CurveTag? tag = selected.Tag as CurveTag;
 
-        // Prefer the RAW (unsmoothed) reference so the overlay's own smoothing — which
-        // the user can lower to Off to see the original curve — starts from the true
-        // data, seeded with the mode's current smoothing so the fresh overlay matches
-        // what is on screen. Curves with no raw form (imported text, operations, modes
-        // that do not octave-smooth) fall back to capturing the drawn curve as-is
-        // at smoothing Off.
+        // Prefer the raw reference so the overlay's own smoothing starts from true data; no-raw curves capture as drawn.
         RawCurveCapture? raw = tag != null ? collection.TryGetRawCapture(tag) : null;
-        // A time-domain trace has its own framing-independent form; it is stored beside
-        // the drawn points, which stay as the fallback for a slot with no live view to
-        // re-frame against.
         ImpulseOverlayCapture? impulse =
             tag != null ? collection.TryGetImpulseCapture(tag) : null;
         DataPoint[] points;
@@ -1699,28 +1478,17 @@ public sealed class Overlay
         double[] calibrationCorrectionDb;
         double[] pointsCorrectionDb;
         int seedSmoothing;
-        // The smoothing already baked into the captured points, which is NOT the same as
-        // the slot's own display smoothing seeded below: a raw capture renders its points
-        // unsmoothed, a drawn-curve capture inherits whatever its source mode was showing.
-        // Null where the source never described itself (an operation, a legacy mode): the
-        // points may or may not be smoothed, and guessing "none" would invite a consumer
-        // to smooth them twice.
+        // Smoothing baked into the points, distinct from display smoothing. Null when unknown, so consumers do not smooth twice.
         int? bakedSmoothing;
-        // The rate describes the measurement, not the raw form, so it survives a capture
-        // that falls back to the drawn curve (an SPL trace, an operation, a legacy mode).
+        // Rate describes the measurement, so it survives a fallback capture.
         int? sampleRateHz = raw?.SampleRateHz;
-        // Only a capture with a raw form carries one; everything else — imported text,
-        // an operation, a legacy mode — measured no band and keeps the whole range.
         MeasuredBand measuredBand = raw?.Band ?? default;
         if (raw is { } rawCapture && rawCapture.Spectrum.Count >= 2)
         {
-            // Keep the oversampled spectrum for exact re-smoothing, and derive the
-            // display-resolution raw curve (Off) for export / operations / legacy.
             spectrum = rawCapture.Spectrum as List<SignalPoint> ?? rawCapture.Spectrum.ToList();
             calibrationCorrectionDb = rawCapture.CalibrationCorrectionDb.ToArray();
             points = SmoothRawSpectrum(
                 spectrum, calibrationCorrectionDb, 0, measuredBand);
-            // The correction travels on the raw grid; the drawn points need no copy of it.
             pointsCorrectionDb = Array.Empty<double>();
             seedSmoothing = rawCapture.SmoothingCode;
             bakedSmoothing = 0;
@@ -1731,25 +1499,17 @@ public sealed class Overlay
             selected.Points.CopyTo(points);
             spectrum = null;
             calibrationCorrectionDb = Array.Empty<double>();
-            // With no raw form the drawn points ARE the reference, so freeze the
-            // correction baked into them per point (zeros when none was applied). Only a
-            // capture that described itself this way gets one; a curve with no raw
-            // capture at all (an operation, a legacy mode) stays unannotated.
+            // No raw form: the drawn points are the reference, so freeze their baked correction per point.
             pointsCorrectionDb = raw is { } describedCapture
                 ? RawCurveRenderer.CaptureCalibrationCorrectionAt(
                     describedCapture.PointsCalibration, points)
                 : Array.Empty<double>();
-            // The points already carry their source's smoothing, so the slot's own
-            // smoothing starts at Off (applying the source's again would compound it) —
-            // but record what was baked in so a consumer knows whether it may re-smooth.
+            // Source smoothing is already baked in; applying it again would compound.
             seedSmoothing = 0;
             bakedSmoothing = raw?.SmoothingCode;
         }
 
-        // An occupied slot keeps its name across a re-capture — the user may have
-        // renamed it, and a re-measure updates the curve, not the label. Only an
-        // empty (never used or cleared) slot gets the automatic name. Evaluated
-        // before the state below is overwritten.
+        // An occupied slot keeps its (possibly user-renamed) name; evaluate before state is overwritten.
         string title = OverlaySlotName.ForSave(
             HasConfiguredContent(), Title, Index, selected.Title ?? string.Empty);
         Mode mode = CurrentOverlayMode;
@@ -1765,7 +1525,6 @@ public sealed class Overlay
         capturedSmoothingCode = bakedSmoothing;
         capturedSampleRateHz = sampleRateHz ?? impulse?.SampleRateHz;
         impulseCapture = impulse;
-        // The curve was drawn in the plot's current scale, so it carries that unit.
         capturedMagnitudeScale = collection.CurrentMagnitudeScale;
         capturedYAxisKey = string.IsNullOrEmpty(selected.YAxisKey)
             ? null
@@ -1774,10 +1533,7 @@ public sealed class Overlay
         capturedCurveKind = tag?.Kind;
         SeriesMode = mode;
         Title = title;
-        // Seed the slot's smoothing with the mode's, but never carry the magnitude-only
-        // psychoacoustic mode onto a non-magnitude capture (phase / coherence): decode
-        // it to its plain width there. MagnitudeSmoothingSemantics reads the fields set
-        // just above, so this must follow them.
+        // Psychoacoustic smoothing is magnitude-only; MagnitudeSmoothingSemantics reads the fields set above.
         smoothingInverseOctaves = MagnitudeSmoothingSemantics
             ? seedSmoothing
             : Dsp.SpectrumSmoothing.EquivalentInverseOctaves(seedSmoothing);
@@ -1824,12 +1580,7 @@ public sealed class Overlay
             return;
         }
 
-        // An imported slot becomes a plain captured response, which has no field for a
-        // non-response role. A file that declares itself as anything other than a response
-        // (a deviation, an EQ correction, a target, a calculated curve) would therefore be
-        // stripped of that identity and could re-export as a response — laundering a
-        // derived shape into an equalization source. Refuse it rather than lose the role.
-        // A headerless foreign file (role unstated) is the safe response default and loads.
+        // Refuse non-response roles: a captured slot has no role field, so a derived shape would re-export as a response.
         if (imported.Metadata.Role is { } role && role != OverlayCurveRole.Response)
         {
             MessageBox.Show(
@@ -1855,23 +1606,15 @@ public sealed class Overlay
         kind = OverlayKind.Captured;
         operationConfigured = false;
         targetConfigured = false;
-        // Imported text gives no wrap/unwrap hint; leave it unknown.
         phaseUnwrapped = null;
-        // A file we exported declares what it holds, so a slot → text → slot round trip
-        // keeps its identity; a foreign headerless file states nothing and stays unknown.
         capturedCurveKind = imported.Metadata.CurveKind;
-        // Imported points are a display curve, not an oversampled spectrum, and a text
-        // file states neither the calibration behind it nor the smoothing already in it.
         rawSpectrumPoints = null;
         rawCalibrationCorrectionDb = Array.Empty<double>();
         capturedMeasuredBand = default;
         pointsCalibrationCorrectionDb = Array.Empty<double>();
         capturedSmoothingCode = null;
         capturedSampleRateHz = imported.Metadata.SampleRateHz;
-        // An imported text curve is whatever numbers the file held: there is no record
-        // behind it to re-frame against, so it keeps the drawn-points path.
         impulseCapture = null;
-        // Believe a declared unit; assume the current view's otherwise.
         capturedMagnitudeScale =
             imported.Metadata.Scale ?? collection.CurrentMagnitudeScale;
         capturedYAxisKey = null;
@@ -1925,10 +1668,7 @@ public sealed class Overlay
         }
     }
 
-    // Describes the exported curve so a consumer (the EQ Wizard) reads real units, a real
-    // sample rate, and — crucially — an honest role: the slot's kind decides whether this
-    // is a response, a target or a calculated curve, so a derived shape cannot re-enter as
-    // a measured response through a text round trip.
+    // The slot kind decides the role, so a derived shape cannot re-enter as a measured response via text.
     private OverlayTextMetadata BuildExportMetadata() =>
         OverlayTextFile.BuildCurveMetadata(
             kind,
@@ -1946,10 +1686,7 @@ public sealed class Overlay
         _ => "derived"
     };
 
-    // A slot leaving the captured-response kind (becoming a target or an operation) must
-    // drop the response-only metadata it carried, or a stale curve kind or raw spectrum
-    // would travel with the new curve — enough to mislabel an exported target as a Primary
-    // response. Kept in one place so both conversions stay consistent.
+    // Drop response-only metadata, or a stale curve kind could mislabel an exported target as a Primary response.
     private void ClearCapturedResponseMetadata()
     {
         capturedCurveKind = null;
@@ -1975,8 +1712,6 @@ public sealed class Overlay
             return;
         }
 
-        // Export the deviation even if the displayed mode hides it; default to
-        // plain deviation when no curve mode is selected.
         TargetDeviationMode exportMode = targetDeviationMode == TargetDeviationMode.None
             ? TargetDeviationMode.Deviation
             : targetDeviationMode;
@@ -2011,8 +1746,7 @@ public sealed class Overlay
 
         try
         {
-            // A deviation / correction is a DIFFERENCE, not a response. Saying so keeps
-            // a consumer that equalizes curves from treating it as one.
+            // A deviation is a difference, not a response; saying so keeps curve equalizers from using it.
             OverlayTextFile.Export(
                 dialog.FileName,
                 result.Deviation,
@@ -2069,18 +1803,7 @@ public sealed class Overlay
         return trimmed;
     }
 
-    /// <summary>
-    /// Routes the capture menu's "Settings…" entry to the editor for the slot's
-    /// current kind. Captured slots open the curve settings (name, color, clear);
-    /// calculated and target slots reopen their own configuration dialogs.
-    /// </summary>
-    /// <returns>
-    /// Whether there was anything to open. An empty slot — and any slot belonging to
-    /// another mode — has no settings, and says so rather than silently doing nothing:
-    /// the long press reads this to decide whether it took the gesture, and a hold
-    /// that opened nothing must leave the click to the menu (see
-    /// <see cref="LongPressTimerTick"/>).
-    /// </returns>
+    /// <returns>False for an empty or other-mode slot; the long press then leaves the click to the menu.</returns>
     private bool OpenSettings()
     {
         if (SeriesMode != CurrentOverlayMode)
@@ -2109,7 +1832,6 @@ public sealed class Overlay
         return true;
     }
 
-    // The Settings entry only applies to a slot that already holds content.
     private bool HasConfiguredContent() => kind switch
     {
         OverlayKind.Operation => operationConfigured,
@@ -2131,10 +1853,6 @@ public sealed class Overlay
             ? CurrentTargetSpec()
             : TargetCurveSpec.FromPreset(OverlayTargets.DefaultPreset);
 
-        // Live preview while the dialog is open: the target shape, tolerance band,
-        // and deviation curve redraw on the main plot as the parameters change, so
-        // a target can be shaped against the real measurement. Cancel restores the
-        // stored rendering.
         bool previewShown = false;
         bool wasCheckedBefore = Checked;
         using var dialog = new OverlayTargetSettingsDialog(
@@ -2173,8 +1891,7 @@ public sealed class Overlay
         kind = OverlayKind.Target;
         capturedYAxisKey = null;
         ClearCapturedResponseMetadata();
-        // Targets and operations are defined in relative dB; they belong to the
-        // Relative axis until an SPL-native form exists.
+        // Targets and operations are defined in relative dB.
         capturedMagnitudeScale = MagnitudeScale.Relative;
         Title = dialog.OverlayName;
         targetSourceSlot = dialog.SourceSlot;
@@ -2207,8 +1924,6 @@ public sealed class Overlay
 
     private void ConfigureCaptured()
     {
-        // Live preview while the dialog is open: styling and smoothing changes
-        // redraw the shown curve immediately; Cancel restores the stored rendering.
         bool previewShown = false;
         bool wasCheckedBefore = Checked;
         using var dialog = new OverlaySettingsDialog(
@@ -2225,8 +1940,6 @@ public sealed class Overlay
                 previewActive = true;
                 PreviewCaptured(settings);
             },
-            // A captured coherence trace must not offer the magnitude-only
-            // psychoacoustic mode (see MagnitudeSmoothingSemantics).
             allowPsychoacousticSmoothing: MagnitudeSmoothingSemantics);
         DialogResult result = dialog.ShowDialog(collection.Form);
         previewActive = false;
@@ -2270,11 +1983,6 @@ public sealed class Overlay
         IReadOnlyList<LiveCurveOption> liveCurves =
             collection.GetLiveCurveOptions();
 
-        // Live preview while the dialog is open: every change — operands, operation,
-        // blend, complex-sum delay / polarity, styling, smoothing — redraws the
-        // candidate curve immediately, so e.g. a crossover delay can be tuned by
-        // watching the plot. Nothing is committed until Save; Cancel restores the
-        // slot's stored rendering.
         bool previewShown = false;
         bool wasCheckedBefore = Checked;
         using var dialog = new OverlayOperationSettingsDialog(
@@ -2287,8 +1995,6 @@ public sealed class Overlay
             operation,
             blendFrequencyHz,
             blendWidthOctaves,
-            // A brand-new calculated overlay defaults to amplitude space; editing an
-            // existing one keeps whatever was saved.
             operationConfigured ? useAmplitudeSpace : true,
             tiltEnabled,
             tiltDbPerOctave,
@@ -2407,8 +2113,7 @@ public sealed class Overlay
         {
             Show();
         }
-        // Only captured slots feed other overlays (operations consume their
-        // draw points); a target or operation offset cannot change any input.
+        // Only captured slots feed other overlays; a target/operation offset cannot change any input.
         if (kind == OverlayKind.Captured)
         {
             collection.NotifyCapturedOverlayChanged();
@@ -2440,9 +2145,7 @@ public sealed class Overlay
 
         if (checkBox.Checked)
         {
-            // Show only on a matching mode and a matching magnitude scale, by exactly
-            // the rule the redraw after every plot rebuild uses — the two disagreeing
-            // is what made a calculated slot appear on Save and refuse the checkbox.
+            // Same rule as the post-rebuild redraw; disagreement made a slot appear on Save yet refuse the checkbox.
             if (SeriesMode == CurrentOverlayMode &&
                 DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale))
             {
@@ -2500,7 +2203,6 @@ public sealed class Overlay
             tiltPivotHz = file.TiltPivotHz;
             compareDelayMs = file.CompareDelayMs;
             compareInvertPolarity = file.CompareInvertPolarity;
-            // Availability is resolved by RefreshSources after all slots load.
         }
         else if (kind == OverlayKind.Target)
         {
@@ -2664,8 +2366,6 @@ public sealed class Overlay
         return file;
     }
 
-    // The stored slot configuration expressed as the same snapshot the settings
-    // dialog fires for its live preview, so both paths share one build routine.
     private OverlayOperationPreview CurrentOperationSnapshot() => new(
         Title,
         sourceSlotA,
@@ -2692,12 +2392,7 @@ public sealed class Overlay
 
     private DataPoint[]? BuildOperationPointsFor(OverlayOperationPreview settings)
     {
-        // Complex sum is computed from the Main and Compare transfer IRs by the
-        // measurement pipeline (identical FR window / calibration / smoothing), not
-        // from operand curves; only the overlay's own smoothing and offset apply
-        // here. The sum-LOSS variant divides unsmoothed operands and is smoothed
-        // once, down in the pipeline, at this slot's width — a ratio has no business
-        // carrying the plot's smoothing (see BuildComplexSumPoints).
+        // Computed from Main/Compare transfer IRs by the pipeline; sum-loss is smoothed once there at this slot's width.
         if (settings.Operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss)
         {
             return BuildComplexSumPoints(
@@ -2708,15 +2403,12 @@ public sealed class Overlay
         OverlayOperationResult result = ResultFor(settings);
         if (!result.IsDefined)
         {
-            // Operands that are not the same kind of number (dB SPL against relative
-            // decibels, coherence against decibels): there is no curve to draw.
             return null;
         }
 
         bool usesB = settings.Operation != OverlayOperation.CurveA;
         OverlayOperationSource? sourceA =
             ResolveOperand(settings.SourceCurveKeyA, settings.SourceSlotA);
-        // "A only" never reads B, so an unresolvable B must not veto the curve.
         OverlayOperationSource? sourceB = usesB
             ? ResolveOperand(settings.SourceCurveKeyB, settings.SourceSlotB)
             : null;
@@ -2725,11 +2417,7 @@ public sealed class Overlay
             return null;
         }
 
-        // Phase is circular: subtracting two curves needs the wrapped formula whenever
-        // either operand is a wrapped (-180..180) representation, so the difference is the
-        // shortest angular distance instead of jumping by +/-360. Two unwrapped curves
-        // (the default, plus minimum/excess phase) keep the raw subtraction so their slope
-        // (and hence delay) survives. Unknown representations are treated as unwrapped.
+        // Wrapped operands need the wrapped (shortest-angle) difference; unwrapped keep raw subtraction to preserve delay slope.
         bool wrapPhaseDifference = SeriesMode == Mode.PhaseResponse &&
             (sourceA.PhaseUnwrapped == false || sourceB?.PhaseUnwrapped == false);
 
@@ -2739,8 +2427,6 @@ public sealed class Overlay
             settings.Operation,
             settings.BlendFrequencyHz,
             settings.BlendWidthOctaves,
-            // Converting to linear amplitude and back is decibel arithmetic; on a 0…1
-            // coherence ratio it is meaningless whatever the dialog last stored.
             settings.UseAmplitudeSpace && result.Curve.IsDecibels,
             wrapPhaseDifference);
         points = OverlayMath.SmoothByOctaves(
@@ -2755,11 +2441,7 @@ public sealed class Overlay
         return ApplyOffsetAndTilt(points, settings, result.Curve);
     }
 
-    // The slot's vertical offset and its tilt, applied together as the last step: both
-    // move the drawn curve without belonging to the math above, and the tilt is just the
-    // offset generalized to a slope — 0 dB at the pivot, TiltDbPerOctave per octave from
-    // it. Applied AFTER smoothing so the smoother still sees the measured shape, and
-    // only to decibels: dB per octave says nothing about a 0…1 coherence ratio.
+    // Offset and tilt last, after smoothing, and only on decibels (dB/octave is meaningless on coherence).
     private DataPoint[] ApplyOffsetAndTilt(
         IReadOnlyList<OverlayPoint> points,
         OverlayOperationPreview settings,
@@ -2788,13 +2470,8 @@ public sealed class Overlay
         bool showLoss = false)
     {
         int smoothing = settings.SmoothingInverseOctaves;
-        // The loss curve is a RATIO of two responses, not a level: it is divided out
-        // of unsmoothed operands and smoothed once, by the measurement pipeline, at
-        // THIS slot's width (see DataHelper.SmoothRatioLevels). Handing that width
-        // down instead of smoothing the returned curve here keeps the plot's own
-        // smoothing out of the slot and avoids a second pass; it also keeps the
-        // psychoacoustic mode's variable bandwidth, which the overlay smoother —
-        // magnitude-only by construction — would flatten to a fixed 1/6 octave.
+        // A ratio, smoothed once by the pipeline at this slot's width (DataHelper.SmoothRatioLevels); smoothing here
+        // would double-smooth and flatten the psychoacoustic mode's variable bandwidth to 1/6 octave.
         OverlayPoint[]? sumPoints = collection.Form.BuildComplexSumOverlayPoints(
             settings.CompareDelayMs,
             settings.CompareInvertPolarity,
@@ -2808,14 +2485,9 @@ public sealed class Overlay
         OverlayPoint[] smoothed = showLoss
             ? sumPoints
             : OverlayMath.SmoothByOctaves(sumPoints, smoothing);
-        // The complex sum is decibels by construction; it has no operands to inherit
-        // an axis from.
         return ApplyOffsetAndTilt(smoothed, settings, OverlayCurveSemantics.None);
     }
 
-    // Redraws this slot's series with the dialog's candidate settings — operands,
-    // operation, styling, everything — while the dialog is open; nothing is
-    // committed, so Cancel can restore cleanly.
     private void PreviewOperation(OverlayOperationPreview settings)
     {
         PlotModel? model = collection.PlotView.Model;
@@ -2825,8 +2497,6 @@ public sealed class Overlay
         }
 
         RemoveSeries(model);
-        // A preview is a draw like any other: a candidate curve that would not belong on
-        // the axis showing is not put there just because a dialog is open.
         OverlayCurveSemantics semantics = ResultFor(settings).Curve;
         DataPoint[]? points = semantics.DrawsOn(SeriesMode, collection.CurrentMagnitudeScale)
             ? BuildOperationPointsFor(settings)
@@ -2848,9 +2518,6 @@ public sealed class Overlay
         RefreshPlot(model);
     }
 
-    // Clears a live preview after the dialog is cancelled: the stored slot state is
-    // unchanged, so simply redraw it — or just remove the preview if the slot was
-    // hidden before the dialog opened.
     private void RestoreAfterPreview(bool wasChecked)
     {
         PlotModel? model = collection.PlotView.Model;
@@ -2881,8 +2548,6 @@ public sealed class Overlay
         return sourceA != null && (sourceB != null || !UsesOperandB);
     }
 
-    // A live-curve operand (curveKey set) resolves from the current plot each time, so
-    // the operation tracks the analysis; otherwise it reads the captured slot.
     private OverlayOperationSource? ResolveOperand(string? curveKey, int slot)
     {
         if (curveKey != null)
@@ -2902,31 +2567,19 @@ public sealed class Overlay
         drawPoints = BuildCapturedPoints(smoothingInverseOctaves);
     }
 
-    // Whether this slot's curve carries dB MAGNITUDE semantics, as required by
-    // psychoacoustic cubic averaging. Phase, group-delay and coherence traces
-    // use the plain base width because their signed values are not amplitudes.
-    // The axis is read off the SLOT, so an operation over coherence curves is judged
-    // by the axis it inherits rather than by the empty key an operation slot holds.
+    // Psychoacoustic cubic averaging needs dB magnitude; axis is read off the slot so operations use the inherited axis.
     private bool MagnitudeSmoothingSemantics =>
         OverlayMath.SupportsAmplitudeSpace(SeriesMode) &&
         SlotSemantics.YAxisKey != PlotModelFactory.CoherenceAxisKey &&
-        // When the captured kind is known, only a magnitude-domain curve is eligible;
-        // a phase kind (min/excess phase) never applies magnitude cubic averaging. A null
-        // kind (imported text, legacy files) falls back to the mode/axis test above.
         capturedCurveKind is not (
             Resonalyze.Dsp.AnalysisCurveKind.MinimumPhase or
             Resonalyze.Dsp.AnalysisCurveKind.ExcessPhase);
 
-    // Parameterized so the settings dialog's live preview can render a candidate
-    // smoothing without committing it to the slot first.
     private DataPoint[]? BuildCapturedPoints(int smoothing)
     {
         double offset = (double)offsetControl.Value;
 
-        // A time-domain capture is re-drawn under the framing on screen NOW: its stored
-        // sample indices and raw values go through the view's current unit, origin,
-        // scale and polarity. Octave smoothing has no meaning on a time axis, so this
-        // path skips it rather than pretending the setting applies.
+        // Time-domain capture re-drawn under the current framing; octave smoothing does not apply.
         if (impulseCapture is { Samples.Count: > 1 } capture &&
             collection.TryGetImpulseFrame() is { } frame)
         {
@@ -2942,9 +2595,6 @@ public sealed class Overlay
             return framed;
         }
 
-        // Exact path (FR captures): re-smooth the stored oversampled spectrum with the
-        // SAME LogarithmicResample the mode's primary curve uses, so any width — Off =
-        // raw — reproduces the on-screen reference rather than a re-smoothed decimation.
         if (rawSpectrumPoints != null)
         {
             DataPoint[] exact = SmoothRawSpectrum(
@@ -2979,19 +2629,7 @@ public sealed class Overlay
             .ToArray();
     }
 
-    // Re-smooths the stored uncalibrated spectrum, then subtracts the correction
-    // frozen at capture, in the same order as the primary frequency-response path.
-    /// <summary>
-    /// One re-smoothing of a stored raw spectrum, broken where the measurement behind
-    /// it never measured anything.
-    /// </summary>
-    /// <remarks>
-    /// AFTER the smoothing, the same rule the live curve follows: masking the stored
-    /// spectrum instead would let a smoothing window straddle the boundary in both
-    /// directions, and the break would then slide with whichever width the slot is
-    /// drawn at. On the output grid it lands where the filter and the sweep put it,
-    /// at every width.
-    /// </remarks>
+    /// <summary>Re-smooths a stored raw spectrum, masked after smoothing so the break does not slide with width.</summary>
     private static DataPoint[] SmoothRawSpectrum(
         List<SignalPoint> spectrum,
         IReadOnlyList<double> calibrationCorrectionDb,
@@ -3012,9 +2650,6 @@ public sealed class Overlay
         return result;
     }
 
-    // Redraws this slot's series with the captured-curve dialog's candidate
-    // styling / smoothing while it is open; nothing is committed, so Cancel can
-    // restore cleanly.
     private void PreviewCaptured(OverlayCapturedPreview settings)
     {
         PlotModel? model = collection.PlotView.Model;
@@ -3027,8 +2662,6 @@ public sealed class Overlay
         AddCurveSeries(
             model,
             "curve",
-            // Styling and smoothing do not change what the curve IS, so the same axis
-            // rule applies to the candidate as to the stored slot.
             DrawsOnMagnitudeScale(collection.CurrentMagnitudeScale)
                 ? BuildCapturedPoints(settings.SmoothingInverseOctaves)
                 : null,
@@ -3109,8 +2742,7 @@ public sealed class Overlay
         UpdateKindGlyph();
     }
 
-    // The slot colour is the curve colour — random per panel and user-editable — so
-    // the name is drawn in whichever of black / white stays legible on top of it.
+    // Name drawn in black or white, whichever stays legible on the user-editable slot colour.
     private void SetPanelColor(Color color)
     {
         panel.BackColor = color;
@@ -3118,14 +2750,12 @@ public sealed class Overlay
         nameLabel.ForeColor = luminance > 0.55 ? Color.Black : Color.White;
     }
 
-    // Shows the slot number plus a compact kind glyph: plain number for a
-    // captured curve, ƒ for an operation, △ for a target.
     private void UpdateKindGlyph()
     {
         captureButton.Text = kind switch
         {
-            OverlayKind.Operation => $"{Index}\u0192", // \u0192 f
-            OverlayKind.Target => $"{Index}\u25B3", // \u25B3 triangle
+            OverlayKind.Operation => $"{Index}\u0192",
+            OverlayKind.Target => $"{Index}\u25B3",
             _ => $"{Index}"
         };
     }
@@ -3153,8 +2783,6 @@ public sealed class Overlay
         }
     }
 
-    // Returns whether anything was actually on the plot, so a caller that removes and
-    // then draws nothing can skip the repaint when there was nothing to erase.
     private bool RemoveSeries(PlotModel model)
     {
         string prefix = $"overlay:{SeriesMode}:{Index}:";
@@ -3215,7 +2843,5 @@ internal sealed record OverlayOperationSource(
     string Title,
     IReadOnlyList<OverlayPoint> Points,
     bool? PhaseUnwrapped = null,
-    // What the points state about themselves — the magnitude scale and the Y axis they
-    // belong to. An operation reuses them verbatim, so the result inherits this rather
-    // than being assumed to be relative decibels on the main axis.
+    // Operations reuse the points verbatim, so the result inherits these semantics.
     OverlayCurveSemantics Semantics = default);

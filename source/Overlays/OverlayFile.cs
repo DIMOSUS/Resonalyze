@@ -5,28 +5,21 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Stores one overlay slot independently from OxyPlot and Windows Forms.
-/// </summary>
 public sealed class OverlayFile
 {
     public const string CurrentFormat = "resonalyze-overlay";
     public const int CurrentVersion = 5;
     public const int MaximumSlotCount = 12;
 
-    /// <summary>Frequency a new tilt hinges on, in Hz: the anchor of the dB axis.</summary>
+    /// <summary>Hz; the tilt adds 0 dB here.</summary>
     public const double DefaultTiltPivotHz = 1_000;
 
-    /// <summary>Slope a new tilt starts at, in dB per octave.</summary>
     public const double DefaultTiltDbPerOctave = 6;
 
-    /// <summary>Largest tilt slope accepted, in dB per octave (either sign).</summary>
+    /// <summary>dB per octave, either sign.</summary>
     public const double MaximumTiltDbPerOctave = 24;
 
-    // Every mode switch re-reads all 12 slot files; the cache turns the
-    // unchanged case into a stat call. In-app Save/Delete/Quarantine invalidate
-    // their entry, external edits are caught by the write-stamp check. Loaded
-    // instances are never mutated by callers (ApplyFile copies the values out).
+    // Every mode switch re-reads all 12 slot files; cached by write stamp. Loaded instances are never mutated.
     private static readonly ConcurrentDictionary<
         string,
         (DateTime WriteTimeUtc, long Length, OverlayFile File)> LoadCache =
@@ -48,12 +41,10 @@ public sealed class OverlayFile
     public Mode Mode { get; set; }
     public int Slot { get; set; }
 
-    /// <summary>Selects how the slot produces its curve(s).</summary>
     public OverlayKind Kind { get; set; } = OverlayKind.Captured;
 
     public string Title { get; set; } = string.Empty;
 
-    // Presentation (all kinds).
     public double Offset { get; set; }
     public int ColorArgb { get; set; }
     public double StrokeThickness { get; set; } = 2;
@@ -61,19 +52,10 @@ public sealed class OverlayFile
     public int OpacityPercent { get; set; } = 100;
     public int SmoothingInverseOctaves { get; set; }
 
-    // The psychoacoustic magnitude smoothing mode (see SpectrumSmoothing in
-    // dsp). Stored as a separate additive flag while SmoothingInverseOctaves
-    // keeps the plain base width, so an older build reads such a file as plain
-    // 1/6-octave smoothing instead of rejecting an unknown code. Additive with
-    // a safe default — no file version bump.
+    // Separate flag (width kept in SmoothingInverseOctaves) so older builds read it as plain 1/6 octave.
     public bool PsychoacousticSmoothing { get; set; }
 
-    /// <summary>
-    /// The in-memory smoothing code of this file: the psychoacoustic code when
-    /// the flag is set, the stored width otherwise. The write-side counterpart
-    /// is <see cref="SetSmoothingCode"/>; every reader and writer goes through
-    /// this pair so the dual representation cannot half-apply.
-    /// </summary>
+    /// <summary>Read/write only through this and <see cref="SetSmoothingCode"/> so the dual representation cannot half-apply.</summary>
     [JsonIgnore]
     public int SmoothingCode =>
         PsychoacousticSmoothing
@@ -88,110 +70,47 @@ public sealed class OverlayFile
             Resonalyze.Dsp.SpectrumSmoothing.EquivalentInverseOctaves(code);
     }
 
-    // Captured kind: the stored curve samples.
     public OverlayPoint[] Points { get; set; } = Array.Empty<OverlayPoint>();
 
-    // Captured kind: optional OxyPlot Y axis key used by non-primary curves
-    // such as Coherence. Additive and nullable: older files stay on the mode's
-    // default axis, older app builds ignore this property.
     public string? CapturedYAxisKey { get; set; }
 
-    // The magnitude scale the samples were captured in: dBr/dBc (Relative) or
-    // dB SPL. An SPL overlay only makes sense on an SPL axis and vice versa, so this
-    // gates which magnitude mode shows it. Additive with a safe default, so it needs
-    // no file version bump: older files deserialize to Relative and older app builds
-    // ignore the unknown property.
+    // Gates which magnitude axis shows the slot. New properties below are additive: no file version bump.
     public Resonalyze.Dsp.MagnitudeScale CapturedMagnitudeScale { get; set; } =
         Resonalyze.Dsp.MagnitudeScale.Relative;
 
-    // Captured phase curves only: true if the samples are an unwrapped (continuous)
-    // representation, false if wrapped (-180..180), null if unknown (e.g. imported text
-    // or a non-phase mode). Additive and nullable, so it needs no file version bump:
-    // older files deserialize to null and older app builds ignore the unknown property.
+    // Phase only: true unwrapped, false wrapped (-180..180), null unknown.
     public bool? PhaseUnwrapped { get; set; }
 
-    // Captured kind: the analysis-curve kind the samples were taken from (magnitude,
-    // harmonic, phase, ...). Lets the settings dialog gate magnitude-only options
-    // (psychoacoustic smoothing) by the actual curve type rather than the mode alone.
-    // Additive and nullable, so no file version bump: older files deserialize to null
-    // (kind unknown) and older app builds ignore the unknown property.
     public Resonalyze.Dsp.AnalysisCurveKind? CapturedCurveKind { get; set; }
 
-    // Captured FR only: the oversampled raw spectrum the overlay re-smooths with the
-    // mode's own LogarithmicResample, so any smoothing width (Off = raw) reproduces the
-    // on-screen reference exactly instead of a re-smoothed decimation. Empty for
-    // fallback captures (imported, operations, legacy). Additive, so no file version
-    // bump: older files deserialize to empty and older app builds ignore the property.
+    // Captured FR only: oversampled raw spectrum, re-smoothed with the mode's LogarithmicResample for exact reproduction.
     public OverlayPoint[] RawSpectrum { get; set; } = Array.Empty<OverlayPoint>();
 
-    // Captured impulse traces only: the trace in the record's own ABSOLUTE sample
-    // indices and raw linear values, which is what lets the slot be re-drawn under the
-    // view's current time unit, time origin, amplitude scale and polarity. A
-    // frequency-domain overlay needs nothing like this — its axis means the same thing
-    // forever — but the impulse view's axes are all view settings, and a snapshot frozen
-    // in drawn coordinates silently lands where the live curve never would. Empty for
-    // every other mode and for legacy files, which keep the frozen Points. Additive, so
-    // no file version bump.
+    // Impulse only: absolute sample indices and raw linear values, so the slot re-draws under the current
+    // time unit, origin, amplitude scale and polarity. Legacy files keep the frozen Points.
     public OverlayPoint[] RawImpulse { get; set; } = Array.Empty<OverlayPoint>();
 
-    // Captured impulse traces only: the record's own peak at capture time, in the same
-    // raw units as RawImpulse. Used only when there is no live measurement to normalize
-    // against. Null for every other mode and for legacy files.
+    // Record peak at capture, used only when no live measurement is available to normalize against.
     public double? RawImpulsePeakReference { get; set; }
 
-    // Captured FR only: microphone correction frozen on the 1024 logarithmic output
-    // frequencies. It is subtracted after smoothing, matching the primary FR path.
-    // Empty means no calibration or a legacy raw capture.
+    // Calibration on the 1024 log output frequencies, subtracted after smoothing like the primary FR path.
     public double[] RawCalibrationCorrectionDb { get; set; } = Array.Empty<double>();
 
-    /// <summary>
-    /// The band the measurement behind <see cref="RawSpectrum"/> actually measured;
-    /// zero and zero when it measured everywhere, which is also what a file written
-    /// before these existed reads as.
-    /// </summary>
-    /// <remarks>
-    /// The spectrum is stored unmasked, so the break has to be re-applied every time
-    /// the slot is re-smoothed — and a slot outlives the measurement it came from.
-    /// Additive, so no file version moves: an older build ignores them and draws what
-    /// it drew before.
-    /// </remarks>
+    /// <summary>Band measured behind <see cref="RawSpectrum"/>; 0/0 = everywhere. Re-applied after every re-smoothing.</summary>
     public double MeasuredLowFrequencyHz { get; set; }
 
     /// <inheritdoc cref="MeasuredLowFrequencyHz"/>
     public double MeasuredHighFrequencyHz { get; set; }
 
-    // No-raw captures only (a dB SPL RTA or FR, which cannot store a re-smoothable raw
-    // spectrum): the microphone correction that was baked into the DRAWN Points, frozen
-    // per drawn point (so its length matches Points). It lets a consumer that equalizes
-    // the curve (the EQ Wizard) switch calibration exactly — the SPL correction is applied
-    // additively per frequency, so removing this and applying another is lossless — even
-    // though there is no raw spectrum. Its presence also marks the capture as one whose
-    // Points may be re-smoothed when it was taken unsmoothed. Empty for raw captures
-    // (which use RawCalibrationCorrectionDb) and for legacy files. Additive, so no file
-    // version bump.
+    // No-raw (dB SPL) captures only: correction baked into Points, per point, so a consumer can swap calibration exactly.
     public double[] PointsCalibrationCorrectionDb { get; set; } = Array.Empty<double>();
 
-    // The display smoothing already BAKED INTO Points at capture time, in the shared
-    // SpectrumSmoothing encoding (0 = none, N = 1/N octave, negative = psychoacoustic).
-    // Distinct from SmoothingInverseOctaves, which is this slot's own display setting
-    // applied ON TOP of Points. A raw capture renders its Points unsmoothed, so it stores
-    // 0; a no-raw capture (dB SPL) stores whatever its source mode was showing. A consumer
-    // that re-smooths the stored curve (the EQ Wizard) may only do so when this is 0 —
-    // smoothing an already-smoothed curve compounds it. Null in legacy files: unknown, so
-    // consumers must assume the curve may already be smoothed. Additive, no version bump.
+    // Smoothing baked into Points (SpectrumSmoothing encoding); a consumer may re-smooth only when 0. Null = unknown.
     public int? CapturedSmoothingCode { get; set; }
 
-    // Sample rate of the measurement this slot was captured from. Carried so a
-    // consumer that equalizes the stored curve (the EQ Wizard) can realize its
-    // biquads at the rate the curve was measured at instead of assuming one.
-    // Additive and nullable, so it needs no file version bump: older files
-    // deserialize to null (rate unknown) and older app builds ignore it.
     public int? SampleRateHz { get; set; }
 
-    // Operation kind: recipe referencing two operands. Each operand is a captured slot
-    // (SourceSlotA/B), unless SourceCurveKeyA/B is set — then it is a live analysis
-    // curve resolved by its CurveTag Key on every rebuild. Additive and nullable, so no
-    // file version bump is needed (older files load the key as null = slot operand).
+    // An operand is a live curve (CurveTag Key) when SourceCurveKeyA/B is set, otherwise a slot.
     public int SourceSlotA { get; set; }
     public int SourceSlotB { get; set; }
     public string? SourceCurveKeyA { get; set; }
@@ -201,23 +120,16 @@ public sealed class OverlayFile
     public double BlendWidthOctaves { get; set; } = 1;
     public bool UseAmplitudeSpace { get; set; }
 
-    // Tilt: a straight line of TiltDbPerOctave dB per octave added to the result, hinged
-    // at TiltPivotHz where it adds nothing. It compensates an excitation whose own
-    // spectrum is sloped — pink noise falls 3 dB per octave on a constant-bandwidth
-    // analyzer — and the slope may go either way. Additive with safe defaults (disabled),
-    // so no file version bump is needed.
+    // Compensates a sloped excitation (pink noise falls 3 dB/octave on a constant-bandwidth analyzer).
     public bool TiltEnabled { get; set; }
     public double TiltDbPerOctave { get; set; } = DefaultTiltDbPerOctave;
     public double TiltPivotHz { get; set; } = DefaultTiltPivotHz;
 
-    // ComplexSum / ComplexSumLoss only: extra delay (ms) and a polarity flip applied to
-    // the Compare transfer response before the sum, mirroring a DSP channel setup.
-    // Additive with safe defaults, so no file version bump is needed.
+    // Applied to the Compare transfer response before the sum, mirroring a DSP channel.
     public double CompareDelayMs { get; set; }
     public bool CompareInvertPolarity { get; set; }
 
-    // Target kind: compares a source against a parametric target curve.
-    // TargetSourceSlot 0 means the current measurement; 1..12 a captured slot.
+    // TargetSourceSlot 0 = current measurement; 1..12 = a captured slot.
     public int TargetSourceSlot { get; set; }
     public TargetPreset TargetPreset { get; set; } = TargetPreset.HarmanRoom;
     public double TargetTiltDbPerOctave { get; set; }
@@ -265,8 +177,7 @@ public sealed class OverlayFile
             }
 
             File.Move(temporaryPath, path, overwrite: true);
-            // Invalidate rather than store `this`: the cache must only hold
-            // instances that no caller can mutate, i.e. those Load creates.
+            // Invalidate rather than store `this`: only Load-created instances are safe from mutation.
             LoadCache.TryRemove(path, out _);
         }
         finally
@@ -319,11 +230,7 @@ public sealed class OverlayFile
         return file;
     }
 
-    /// <summary>
-    /// Moves a slot file that failed to load aside as "&lt;name&gt;.corrupt" so
-    /// the next save cannot silently overwrite the damaged data. Returns the
-    /// quarantine path, or null when there is no slot file to move.
-    /// </summary>
+    /// <summary>Renames a failed slot file to "&lt;name&gt;.corrupt"; null when there is no file.</summary>
     public static string? QuarantineCorruptFile(
         Mode mode,
         int slot,
@@ -502,9 +409,7 @@ public sealed class OverlayFile
         {
             throw new InvalidDataException("The points calibration correction is invalid.");
         }
-        // Frozen per drawn point, so it is only meaningful alongside the points it was
-        // measured on; a mismatched length would silently shift the correction in
-        // frequency.
+        // A mismatched length would silently shift the correction in frequency.
         if (PointsCalibrationCorrectionDb.Length != 0 &&
             PointsCalibrationCorrectionDb.Length != Points.Length)
         {
@@ -526,8 +431,6 @@ public sealed class OverlayFile
     {
         if (Operation is OverlayOperation.ComplexSum or OverlayOperation.ComplexSumLoss)
         {
-            // Complex sum (and its loss variant) reads the Main and Compare transfer IRs
-            // directly; it has no operands and only draws on the frequency-response axes.
             if (Mode != Mode.FrequencyResponse)
             {
                 throw new InvalidDataException(
@@ -541,10 +444,7 @@ public sealed class OverlayFile
         }
         else
         {
-            // An operand is a live curve when its CurveKey is set; otherwise a captured
-            // slot whose index must be in range. The two operands must not be identical
-            // — unless the operation reads curve A alone, which has no second operand to
-            // collide with and leaves B at whatever it was.
+            // Operands must differ, unless the operation reads A alone.
             bool aIsCurve = !string.IsNullOrEmpty(SourceCurveKeyA);
             bool bIsCurve = !string.IsNullOrEmpty(SourceCurveKeyB);
             bool usesB = Operation != OverlayOperation.CurveA;
@@ -589,8 +489,6 @@ public sealed class OverlayFile
         }
         if (TiltEnabled)
         {
-            // dB per octave is a magnitude statement; on a phase or group-delay curve
-            // there is nothing for it to mean.
             if (!OverlayMath.SupportsAmplitudeSpace(Mode))
             {
                 throw new InvalidDataException(
@@ -628,12 +526,7 @@ public enum OverlayLineStyle
 
 public enum OverlayOperation
 {
-    /// <summary>
-    /// Curve A passed through unchanged — no second operand. On its own it is a
-    /// copy, but it is what lets this slot's own smoothing, offset and tilt be
-    /// applied to a single curve (a live one included) without inventing a
-    /// neutral B to operate against.
-    /// </summary>
+    /// <summary>A alone, so the slot's smoothing, offset and tilt apply to a single curve.</summary>
     CurveA,
 
     AMinusB,
@@ -643,34 +536,20 @@ public enum OverlayOperation
     AbsoluteDifference,
     Blend,
 
-    /// <summary>
-    /// The complex (vector) sum of the Main and Compare transfer responses,
-    /// FFT(h1 + h2). Takes no operands — it reads the two transfer impulse
-    /// responses directly, so it captures relative delay, polarity, and phase
-    /// (the physically correct summed output of two drivers), which arithmetic
-    /// on dB curves cannot. Frequency Response only.
-    /// </summary>
+    /// <summary>FFT(h1 + h2) from the Main/Compare transfer IRs: keeps delay, polarity and phase. FR only.</summary>
     ComplexSum,
 
-    /// <summary>
-    /// The dB gap between the phase-blind amplitude-magnitude sum (|H1| + |H2|) and the
-    /// complex sum (|H1 + H2|). Always &gt;= 0 by the triangle inequality; shows how much
-    /// the naive addition overestimates because it ignores the phase between the two
-    /// sources. Like <see cref="ComplexSum"/> it takes no operands and reads the two
-    /// transfer impulse responses directly. Frequency Response only.
-    /// </summary>
+    /// <summary>|H1| + |H2| over |H1 + H2| in dB (&gt;= 0): what phase-blind addition overestimates. FR only.</summary>
     ComplexSumLoss
 }
 
 public enum TargetDeviationMode
 {
-    /// <summary>measurement − target (how far the response is from the target).</summary>
     Deviation,
 
-    /// <summary>target − measurement (the EQ gain needed to reach the target).</summary>
+    /// <summary>target − measurement: the EQ gain needed.</summary>
     Correction,
 
-    /// <summary>Do not draw a deviation curve.</summary>
     None
 }
 
@@ -678,12 +557,7 @@ public enum TargetPreset
 {
     Flat,
 
-    /// <summary>
-    /// Shown as "Room (Harman-style)": a room slope with a bass lift in the
-    /// spirit of the Harman work, not a reproduction of a published curve. The
-    /// member keeps its original name because presets persist by name, in both
-    /// overlay files and the measurement settings.
-    /// </summary>
+    /// <summary>Shown as "Room (Harman-style)", not a published curve; name kept because presets persist by name.</summary>
     HarmanRoom,
     RoomGentle,
     Warm,
@@ -697,14 +571,7 @@ public enum TargetPreset
     Custom
 }
 
-/// <summary>
-/// A target response shape (relative dB). By default it is parametric: an overall
-/// tilt around a 1 kHz pivot, a low-frequency shelf, a high-frequency shelf, and a
-/// presence bump. Presets are just parameter sets the user can edit, and the four
-/// terms cover room, car, home-theater (X-curve), and voicing targets. When
-/// <see cref="Imported"/> is set the shape is a curve read from a file instead,
-/// and the parametric terms are carried along untouched but unused.
-/// </summary>
+/// <summary>Parametric relative-dB target (tilt at 1 kHz, bass/treble shelves, presence), or <see cref="Imported"/>.</summary>
 public sealed record TargetCurveSpec(
     double TiltDbPerOctave,
     double BassShelfGainDb,
@@ -719,14 +586,7 @@ public sealed record TargetCurveSpec(
 {
     public const double PivotHz = 1_000.0;
 
-    /// <summary>
-    /// A shape read from a file, which REPLACES the parametric terms while it is
-    /// set. It rides inside the spec rather than beside it so that everything
-    /// already passing a target shape around — the settings dialog and its live
-    /// preview, the overlay math, the wizard plot, the Virtual DSP plot and the
-    /// auto-tuner behind it — keeps working through the one <see cref="Evaluate"/>
-    /// they all ask, and so that a target has exactly one shape at a time.
-    /// </summary>
+    /// <summary>Replaces the parametric terms while set; lives in the spec so every <see cref="Evaluate"/> caller sees one shape.</summary>
     public ImportedTargetCurve? Imported { get; init; }
 
     public static TargetCurveSpec FromPreset(TargetPreset preset) => preset switch
@@ -736,32 +596,19 @@ public sealed record TargetCurveSpec(
         TargetPreset.HarmanRoom => new(-0.8, 4, 105, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
         TargetPreset.RoomGentle => new(-0.5, 2, 120, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
         TargetPreset.Warm => new(-1.0, 3, 110, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0),
-        // The car targets are not a tilt. The in-car reference of record here is
-        // the third-octave table in OverlayTargetTests.CarTargetTable: a bass
-        // shelf on top of a FLAT 400 Hz…5 kHz band, then a gentle rolloff
-        // reaching ≈3 dB by 20 kHz over the two octaves above 5 kHz, rather than
-        // a downslope that starts in the midrange. Car fits that table to within
-        // 0.2 dB; the other two move the bass shelf GAIN only, because raising
-        // its corner instead would drag up 150…300 Hz, which is where cabin boom
-        // lives. The +6/+9/+12 dB spread is a taste range over one shape, not
-        // three shapes — bass preference varies widely between listeners, and
-        // road noise masks the low end at speed.
+        // Car: bass shelf on a flat 400 Hz–5 kHz band, ≈3 dB down by 20 kHz (OverlayTargetTests.CarTargetTable, within 0.2 dB).
+        // Variants move only the shelf gain; raising the corner would lift 150–300 Hz cabin boom.
         TargetPreset.Car => new(0, 9.2, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
         TargetPreset.CarMild => new(0, 6, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
         TargetPreset.CarBass => new(0, 12, 100, 0.9, -3, 10_000, 0.7, 0, 3_000, 1.0),
         TargetPreset.House => new(0, 6, 120, 1.0, 0, 5_000, 1.5, 0, 3_000, 1.0),
-        // ISO 2969 / SMPTE ST 202: flat to 2 kHz, then -3 dB/octave. The shelf
-        // used to sit at 2.5 kHz / 2.0 octaves, whose tail reached down into the
-        // midrange and put the curve 2.1 dB low at 1 kHz and 4.2 dB low at 2 kHz,
-        // where the standard is still flat. A higher, narrower shelf tracks the
-        // straight line to within 0.6 dB (see OverlayTargetTests.XCurveTable).
+        // ISO 2969 / SMPTE ST 202: flat to 2 kHz, then -3 dB/oct; within 0.6 dB (OverlayTargetTests.XCurveTable).
         TargetPreset.XCurve => new(0, 0, 100, 1.5, -10, 6_300, 1.2, 0, 3_000, 1.0),
         TargetPreset.Smiley => new(0, 6, 100, 1.0, 5, 4_000, 1.5, 0, 3_000, 1.0),
         TargetPreset.BbcDip => new(-0.5, 0, 100, 1.5, 0, 5_000, 1.5, -3, 2_800, 1.0),
         _ => new TargetCurveSpec(-0.5, 0, 100, 1.5, 0, 5_000, 1.5, 0, 3_000, 1.0)
     };
 
-    /// <summary>Relative target level (dB) at the given frequency.</summary>
     public double Evaluate(double frequencyHz)
     {
         if (!(frequencyHz > 0))
@@ -776,7 +623,6 @@ public sealed record TargetCurveSpec(
 
         double value = TiltDbPerOctave * Math.Log2(frequencyHz / PivotHz);
 
-        // Low shelf: → gain well below the corner, → 0 well above it.
         if (BassShelfGainDb != 0 &&
             BassShelfFrequencyHz > 0 &&
             BassShelfWidthOctaves > 0)
@@ -786,7 +632,6 @@ public sealed record TargetCurveSpec(
             value += BassShelfGainDb * 0.5 * (1 - Math.Tanh(x));
         }
 
-        // High shelf: → gain well above the corner, → 0 well below it.
         if (TrebleShelfGainDb != 0 &&
             TrebleShelfFrequencyHz > 0 &&
             TrebleShelfWidthOctaves > 0)
@@ -796,7 +641,7 @@ public sealed record TargetCurveSpec(
             value += TrebleShelfGainDb * 0.5 * (1 + Math.Tanh(x));
         }
 
-        // Presence: a log-Gaussian bump (or dip) centered on its frequency.
+        // Presence: log-Gaussian bump centered on its frequency.
         if (PresenceGainDb != 0 &&
             PresenceFrequencyHz > 0 &&
             PresenceWidthOctaves > 0)
@@ -818,20 +663,9 @@ public sealed record TargetCurveResult(
 
 public static class OverlayTargets
 {
-    /// <summary>
-    /// Preset a Target overlay opens with before it has been configured. This is
-    /// a car analyzer, so the in-car shape is the sane starting point.
-    /// </summary>
     public const TargetPreset DefaultPreset = TargetPreset.Car;
 
-    /// <summary>
-    /// The preset a stored target should present itself as. A target persists
-    /// its shape as parameters, not as a reference to the preset table, so one
-    /// saved before a preset's numbers changed still names that preset while
-    /// drawing the old shape. Report such a target as <see cref="TargetPreset.
-    /// Custom"/>: the stored curve is left exactly as the user had it, and the
-    /// name stops promising a shape it no longer has.
-    /// </summary>
+    /// <summary>Targets persist parameters, so one whose preset numbers changed since reports as <see cref="TargetPreset.Custom"/>.</summary>
     public static TargetPreset ResolvePreset(TargetPreset preset, TargetCurveSpec spec)
     {
         ArgumentNullException.ThrowIfNull(spec);
@@ -842,13 +676,7 @@ public static class OverlayTargets
             : TargetPreset.Custom;
     }
 
-    /// <summary>
-    /// Modes a Target overlay can be defined in. A target is a magnitude shape in
-    /// dB — a tilt with shelves — so it only means something on a dB-over-frequency
-    /// axis. On the phase (degrees), group delay (ms), impulse and autocorrelation
-    /// axes it would be a curve in the wrong unit, so targets are not offered there.
-    /// Takes the canonical overlay mode (see OverlayCollection.OverlayModeFor).
-    /// </summary>
+    /// <summary>Only dB-over-frequency modes; takes the canonical overlay mode (OverlayCollection.OverlayModeFor).</summary>
     public static bool SupportsMode(Mode mode)
     {
         return mode is Mode.FrequencyResponse or Mode.LiveSpectrum;

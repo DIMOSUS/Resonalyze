@@ -32,9 +32,7 @@ internal sealed class ModeController
 
     private Task selectChain = Task.CompletedTask;
 
-    // Switches queue behind each other: a tab click during a slow switch (one
-    // that aborts a running measurement) must not interleave with it, otherwise
-    // ActiveTab and Form1.CurrentMode end up describing different modes.
+    // Switches queue: interleaving with a slow switch leaves ActiveTab and Form1.CurrentMode disagreeing.
     public Task SelectAsync(ModeTab tab)
     {
         Task current = SelectAfterAsync(selectChain, tab);
@@ -50,7 +48,6 @@ internal sealed class ModeController
         }
         catch
         {
-            // The previous switch reported its failure to its own caller.
         }
 
         await changeModeAsync(getMode(tab));

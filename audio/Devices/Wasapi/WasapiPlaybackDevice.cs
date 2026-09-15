@@ -355,9 +355,7 @@ internal sealed class WasapiPlaybackDevice : IAudioPlaybackDevice, IRenderDiagno
         {
             if (read.BytesRead > 0)
             {
-                // The last source read can be shorter than the WASAPI buffer.
-                // Copy the zero-initialized tail too so no stale device-buffer
-                // contents are rendered after the final source frame.
+                // Copy the zeroed tail too, or stale device-buffer contents play after the last frame.
                 Marshal.Copy(buffer, 0, destination, byteCount);
             }
             RenderCallbacks++;

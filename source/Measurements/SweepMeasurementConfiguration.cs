@@ -15,11 +15,7 @@ public enum ProtectiveHighPassKind
     LinkwitzRiley
 }
 
-/// <summary>
-/// The high-pass the user has configured in the external DSP between the sound
-/// card output and the loudspeaker. The synchronized loopback is captured before
-/// that DSP, so this model is divided out of the resulting transfer IR.
-/// </summary>
+/// <summary>High-pass in the external DSP after the loopback tap; divided out of the transfer IR.</summary>
 public sealed record ProtectiveHighPassConfiguration(
     ProtectiveHighPassKind Kind = ProtectiveHighPassKind.Off,
     double FrequencyHz = 2_000.0,
@@ -58,21 +54,7 @@ public sealed record ProtectiveHighPassConfiguration(
             NormalizeSlope(configuration.Kind, configuration.SlopeDbPerOctave));
     }
 
-    /// <summary>
-    /// Where a response this filter was divided back out of stops carrying a
-    /// measurement, in Hz; zero when it carries one everywhere.
-    /// </summary>
-    /// <remarks>
-    /// Takes the MEASUREMENT's own filter, which is null for a response measured
-    /// before that was recorded. Null is "unknown", not "off", so nothing is
-    /// masked — the alternative is breaking an old curve at a frequency belonging
-    /// to a filter nobody knows it passed through.
-    /// <para>
-    /// Only for a response the filter was REMOVED from — a loopback transfer. A
-    /// sweep deconvolution still carries the filter, so its rolloff is signal the
-    /// loudspeaker really produced and masking it would delete a measurement.
-    /// </para>
-    /// </remarks>
+    /// <summary>Low edge a loopback transfer carries after this filter was divided out; null filter (unknown) masks nothing. See docs/tech/sweep-measurement.md#measured-band.</summary>
     public static double LowestMeasuredFrequencyHz(
         ProtectiveHighPassConfiguration? measurementFilter,
         int sampleRate) =>

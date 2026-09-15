@@ -27,32 +27,7 @@ namespace Resonalyze.Dsp
             return data;
         }
 
-        /// <summary>
-        /// An impulse response's UNGATED band levels on the shared spatial-average
-        /// grid: the WHOLE record, no window and no gate, integrated as the band mean
-        /// of POWER — the estimator an array's own positions are read with.
-        /// </summary>
-        /// <remarks>
-        /// This is what a steady-state measurement of the same source reads, and it
-        /// exists so a response can be compared against one. Two choices, both of them
-        /// spelled out in <see cref="SpatialAverage.FromTransferMagnitude"/>, and both
-        /// of them load-bearing here.
-        /// <list type="bullet">
-        /// <item>UNGATED, because the kernel it will be compared against carries the
-        /// whole decay and a steady-state capture carries it too. A window leaves out
-        /// the cabin's own decay, and a difference taken against a gated curve would
-        /// read the missing energy as a disagreement between the measurements.</item>
-        /// <item>The band mean of POWER, not the interpolating resampler. An ungated
-        /// response carries every mode at full bin resolution, so sampling a handful of
-        /// bins around each grid point reports whichever modal notch that point landed
-        /// in — on a response with one 5 ms reflection the two estimators part by 11 dB
-        /// at 500 Hz, which a difference against a capture would then spend as
-        /// correction.</item>
-        /// </list>
-        /// The level is RELATIVE — the caller compares shapes, or levels it has
-        /// levelled itself — and the result is raw band levels: smoothing and any
-        /// calibration belong to the caller, in that order, as they do for a capture.
-        /// </remarks>
+        /// <summary>Ungated band levels (whole record, band mean of power) on the spatial-average grid; relative, unsmoothed, uncalibrated. See docs/tech/phase-and-group-delay.md#ungated-band-levels.</summary>
         public static double[] GetUngatedBandLevels(IImpulseMeasurement measurement)
         {
             ArgumentNullException.ThrowIfNull(measurement);
@@ -78,24 +53,8 @@ namespace Resonalyze.Dsp
                 magnitude, measurement.SampleRate / (double)length);
         }
 
-        /// <summary>
-        /// The primary (linear) response spectrum: windowed at the response's own
-        /// start (fixed Tukey or FDW), oversampled, log-resampled with optional
-        /// calibration and smoothing. Used
-        /// by GetSpectrum for its primary curve and directly for derived responses
-        /// (e.g. the complex sum of two transfer impulse responses), where the
-        /// per-curve visibility gating of GetSpectrum must not apply.
-        /// <para>
-        /// <paramref name="anchorIndex"/> overrides where the window opens. A
-        /// COMPOSITE record (a sum of arrivals) must pass the earliest of its
-        /// parts' own starts: run on the mixed record, the start estimator reads
-        /// the front of the record's dominant band, which a later, louder
-        /// arrival can own — the same reason the Virtual DSP tool anchors its
-        /// shared window at the min of per-channel starts
-        /// (ProcessedChannels.SharedStartAnchorIndex) rather than estimating on
-        /// the sum. Single records leave it null.
-        /// </para>
-        /// </summary>
+        /// <summary>Primary magnitude spectrum windowed at the response start (Tukey or FDW), log-resampled, calibrated and smoothed, without GetSpectrum's visibility gating.</summary>
+        /// <remarks>A composite record must pass <paramref name="anchorIndex"/> = the earliest part's start. See docs/tech/phase-and-group-delay.md#magnitude-window-anchor.</remarks>
         public static AnalysisCurve GetPrimarySpectrum(
             IImpulseMeasurement measurement,
             FrequencyResponseOptions frequencyResponseOptions,
@@ -121,17 +80,7 @@ namespace Resonalyze.Dsp
                     measurement.HighestMeasuredFrequencyHz));
         }
 
-        /// <summary>
-        /// Breaks a finished curve where the response carries no measurement.
-        /// </summary>
-        /// <remarks>
-        /// AFTER the smoothing, deliberately. Masking the oversampled spectrum that
-        /// feeds it would let the smoothing window straddle the boundary in both
-        /// directions: measured on a 1 kHz / 48 dB per octave corner, 29 bands below
-        /// the limit survived on borrowed passband energy while 9 bands above it
-        /// were lost to the NaN. On the output grid the break lands exactly where
-        /// the filter put it.
-        /// </remarks>
+        /// <summary>Breaks a finished curve where nothing was measured; applied AFTER smoothing. See docs/tech/phase-and-group-delay.md#measured-band-mask.</summary>
         private static AnalysisCurve Masked(
             AnalysisCurve curve,
             double lowestMeasuredFrequencyHz,
@@ -173,14 +122,7 @@ namespace Resonalyze.Dsp
             return data;
         }
 
-        /// <summary>
-        /// The oversampled linear-frequency spectrum that feeds
-        /// <see cref="GetPrimarySpectrum"/>: Tukey-windowed at the response start (or
-        /// FDW-windowed, per <see cref="FrequencyResponseOptions.MagnitudeWindowMode"/>)
-        /// and oversampled, BEFORE the logarithmic resample, calibration and smoothing.
-        /// Overlays store this so they reproduce the mode's smoothing EXACTLY (the same
-        /// <see cref="LogarithmicResample"/>) at any width, and Off = the raw curve.
-        /// </summary>
+        /// <summary>The oversampled linear spectrum before log resample, calibration and smoothing; overlays store it to reproduce smoothing exactly.</summary>
         public static List<SignalPoint> GetOversampledPrimarySpectrum(
             IImpulseMeasurement measurement,
             FrequencyResponseOptions frequencyResponseOptions,
@@ -201,31 +143,14 @@ namespace Resonalyze.Dsp
             return GetOversampledSpectrumData(measurement, h1Start, window);
         }
 
-        // Where the magnitude window opens: the response's estimated START, not
-        // its peak. A driver's group delay puts the peak milliseconds behind the
-        // front (the archived Passat woofer peaks 5.4 ms after its onset), so a
-        // window whose fade-in ends at the peak starts AFTER the response has
-        // begun and discards the direct arrival — with the left fade a couple of
-        // milliseconds, entire octave bands misread by 10+ dB. The estimate is
-        // memoized per IR array; the peak remains the fallback when the
-        // estimator refuses the record.
+        // The response START, not the peak: driver GD delays the peak. See docs/tech/phase-and-group-delay.md#magnitude-window-anchor.
         private static int MagnitudeAnchorIndex(IImpulseMeasurement measurement) =>
             measurement.ImpulseResponse is { Length: > 0 } impulseResponse
                 ? TransferIrStartCache.ResolveStartIndex(
                     impulseResponse, measurement.SampleRate, measurement.PeakIndex)
                 : measurement.PeakIndex;
 
-        // REW-style frequency-dependent window for the magnitude curve, built on
-        // the SAME bank the FDW phase analysis uses (BuildAnalysisSpectrum), so
-        // the two views read one analysis and share its per-impulse cache. The
-        // fixed window's geometry maps directly onto the gate: its fade-in ends
-        // at the response start (MagnitudeAnchorIndex — the same anchor as the
-        // fixed window's), so the gate offset is the start time, and the
-        // configured window is the outer gate that FDW never exceeds — below
-        // the transition frequency (where MagnitudeFdwCycles periods outgrow
-        // the window) the curve is the fixed window's, above it the effective
-        // window shrinks as cycles/frequency. Detrend/unwrap/smoothing fields
-        // of the settings record are phase-only and never reach the bank.
+        // FDW magnitude on the phase analysis bank (shared cache); the configured window is the outer gate. See docs/tech/phase-and-group-delay.md#fdw-magnitude.
         private static List<SignalPoint> GetFdwPrimarySpectrum(
             IImpulseMeasurement measurement,
             FrequencyResponseOptions options,
@@ -249,17 +174,7 @@ namespace Resonalyze.Dsp
             return GatedMagnitudePoints(spectrum, measurement.SampleRate);
         }
 
-        /// <summary>
-        /// The primary magnitude curve computed through the SAME gate
-        /// construction as the phase analyses (<see cref="PhaseAnalysisSettings"/>:
-        /// absolute ms offset and shoulders, Fixed or FDW) — for callers whose
-        /// magnitude must read exactly the time window their phase view shows
-        /// (the Virtual DSP tool). Shares the gated-spectrum bank and its
-        /// per-impulse cache; the settings' detrend/unwrap/smoothing fields are
-        /// phase-only and never affect the magnitude. Smoothing and calibration
-        /// apply on the logarithmic grid exactly as in
-        /// <see cref="GetPrimarySpectrum"/>.
-        /// </summary>
+        /// <summary>Primary magnitude through the phase analyses' gate construction, so it reads the window the phase view shows; phase-only settings fields are ignored.</summary>
         public static AnalysisCurve GetGatedPrimarySpectrum(
             IImpulseMeasurement measurement,
             PhaseAnalysisSettings settings,
@@ -276,14 +191,7 @@ namespace Resonalyze.Dsp
                 measurement.HighestMeasuredFrequencyHz);
         }
 
-        /// <summary>
-        /// <see cref="GetGatedPrimarySpectrum"/> at two smoothing widths from ONE
-        /// gate and one FFT: the display curve and the unsmoothed curve. A caller
-        /// that both draws a curve and divides it into another one (the Virtual DSP
-        /// summation loss) needs both, and the gated FFT — not the resample — is
-        /// what costs; see <see cref="VirtualCrossoverAnalysis.SumLossCurve"/> for
-        /// why the division must read the unsmoothed pair.
-        /// </summary>
+        /// <summary>Display and unsmoothed curves from one gated FFT; the summation loss divides the unsmoothed pair (see <see cref="VirtualCrossoverAnalysis.SumLossCurve"/>).</summary>
         public static (AnalysisCurve Display, AnalysisCurve Unsmoothed)
             GetGatedPrimarySpectrumPair(
                 IImpulseMeasurement measurement,
@@ -295,9 +203,7 @@ namespace Resonalyze.Dsp
             List<SignalPoint> bins = GatedMagnitudePoints(spectrum, measurement.SampleRate);
             double lowest = measurement.LowestMeasuredFrequencyHz;
             double highest = measurement.HighestMeasuredFrequencyHz;
-            // BOTH widths, including the one the summation loss divides: a channel
-            // that measured nothing must contribute nothing there, and the loss is
-            // told to skip what is not a number rather than to add it.
+            // Mask both widths: an unmeasured channel must contribute NaN, which the loss skips.
             AnalysisCurve unsmoothed = Masked(
                 ResampleGatedMagnitude(bins, calibration, 0), lowest, highest);
             return (
@@ -310,16 +216,7 @@ namespace Resonalyze.Dsp
                 unsmoothed);
         }
 
-        /// <summary>
-        /// The magnitude curve of a gated spectrum somebody else built — the same
-        /// resample, calibration, smoothing and measured-band mask
-        /// <see cref="GetGatedPrimarySpectrumPair"/> applies to the spectra it
-        /// builds itself, for a caller holding one already (the Virtual DSP
-        /// direct-sound loss reads the junction phase block's per-channel
-        /// spectra). <paramref name="spectrum"/> is a full complex FFT at
-        /// <paramref name="sampleRate"/>, as <see cref="GetPhaseAnalysisSpectrum"/>
-        /// returns it.
-        /// </summary>
+        /// <summary>Magnitude of a caller-built gated spectrum (full complex FFT at <paramref name="sampleRate"/>), with the same resample, calibration, smoothing and mask.</summary>
         public static AnalysisCurve GetGatedMagnitude(
             Complex[] spectrum,
             int sampleRate,
@@ -343,42 +240,7 @@ namespace Resonalyze.Dsp
                 highestMeasuredFrequencyHz);
         }
 
-        /// <summary>
-        /// The gated magnitude of a SUM of measured channels, at two smoothing widths,
-        /// with each channel contributing only where it measured anything.
-        /// </summary>
-        /// <remarks>
-        /// Summing the impulse responses and gating the total once is the same thing
-        /// arithmetically — one shared window makes the transform linear, so the gated
-        /// sum IS the sum of the gated spectra — but it is not the same thing
-        /// honestly. A channel the sweep never excited below its corner carries an
-        /// exactly zero spectrum there, and the window smears its in-band energy
-        /// across the gap: measured on two brick-walled bands an octave apart, the
-        /// total read 1.4 dB above the only channel that measured at 900 Hz and 2.5 dB
-        /// above it at 990 Hz, falling to nothing an octave away. That is a summation
-        /// GAIN the loudspeakers never produced, drawn exactly where a crossover is
-        /// read most carefully — and the per-channel curves cannot show it, because
-        /// each of them is broken there.
-        /// <para>
-        /// So each channel is gated first, its own unmeasured bins are cleared, and
-        /// the phasors are added. Where NO channel measured the total comes out zero
-        /// rather than as a level; the caller breaks those frequencies, which it must
-        /// do anyway for a hole its channels' band edges cannot express.
-        /// </para>
-        /// <para>
-        /// <paramref name="calibrations"/> is one correction per channel, because the
-        /// pressure a microphone measured is the response TIMES its calibration and
-        /// the sum is taken over the pressures: Σ HᵢCᵢ, not C·ΣHᵢ. The two agree
-        /// exactly when one microphone measured everything, which is the ordinary
-        /// case, and that case still applies the correction once at the end — where
-        /// the per-channel curves apply theirs, so the summation loss that divides one
-        /// by the other cancels it exactly. They part when the channels were measured
-        /// through DIFFERENT microphones, and there the correction has to go inside
-        /// the sum: a single one cannot undo two microphones, and leaving it out drew
-        /// a raw total beside corrected channels, whose difference reads as summation
-        /// loss and is not.
-        /// </para>
-        /// </remarks>
+        /// <summary>Gated magnitude of a sum of channels, each contributing only where it measured; per-channel calibration when microphones differ. See docs/tech/phase-and-group-delay.md#measured-sums.</summary>
         public static (AnalysisCurve Display, AnalysisCurve Unsmoothed)
             GetGatedMeasuredMagnitudeSumPair(
                 IReadOnlyList<IImpulseMeasurement> channels,
@@ -416,15 +278,7 @@ namespace Resonalyze.Dsp
                 spectra, sampleRate, bands, calibrations, smoothingInverseOctaves);
         }
 
-        /// <summary>
-        /// The same measured sum from spectra already gated — one per channel, every
-        /// one a full complex FFT of the same length at <paramref name="sampleRate"/>,
-        /// as <see cref="GetPhaseAnalysisSpectrum"/> returns them — with each
-        /// channel's measured band beside it. For the caller whose windows are not
-        /// one <see cref="PhaseAnalysisSettings"/>: the Virtual DSP direct-sound loss
-        /// adds the junction phase block's per-channel windows, each at its own
-        /// front and already rotated into one time frame.
-        /// </summary>
+        /// <summary>The measured sum from spectra already gated in one time frame, with each channel's measured band.</summary>
         public static (AnalysisCurve Display, AnalysisCurve Unsmoothed)
             GetGatedMeasuredMagnitudeSumPair(
                 IReadOnlyList<Complex[]> spectra,
@@ -448,9 +302,7 @@ namespace Resonalyze.Dsp
                 return (empty, empty);
             }
 
-            // One microphone measured everything: keep the correction out of the sum
-            // and let the resample apply it, exactly as before and exactly as the
-            // channel curves do.
+            // One microphone: calibration applied once by the resample, like the channel curves, so the loss cancels it.
             bool shared = calibrations.All(
                 entry => CalibrationFile.SameCurve(entry, calibrations[0]));
             CalibrationFile? calibration = shared ? calibrations[0] : null;
@@ -461,7 +313,6 @@ namespace Resonalyze.Dsp
                 Complex[] spectrum = spectra[channel];
                 total ??= new Complex[spectrum.Length];
                 (double lowest, double highest) = measuredBands[channel];
-                // Null in the shared case, where the resample applies it instead.
                 CalibrationFile? own = shared ? null : calibrations[channel];
                 int usable = Math.Min(total.Length, spectrum.Length);
                 for (int i = 1; i < usable / 2; i++)
@@ -502,30 +353,7 @@ namespace Resonalyze.Dsp
                 unsmoothed);
         }
 
-        /// <summary>
-        /// The summed magnitude of a channel set whose MAGNITUDE is taken from one
-        /// measurement and whose PHASE is taken from another: each channel's gated
-        /// complex spectrum is rescaled, bin by bin, to the level
-        /// <paramref name="channels"/> supplies, and the rescaled phasors are added.
-        /// </summary>
-        /// <remarks>
-        /// This exists for the Virtual DSP hybrid view, where the levels come from
-        /// spatial averages (which hold no phase) and the phase can only come from
-        /// the impulse responses. The obvious shortcut — add the supplied magnitudes
-        /// as amplitudes and lay the impulse responses' own summation loss on top —
-        /// is wrong wherever the two families disagree about the RELATIVE levels of
-        /// the channels, because that loss is a property of the levels it was
-        /// measured at. On a real car at a 1.6 kHz junction the disagreement reached
-        /// 23 dB (a gate does not commute with a steep filter, so a stopband reads
-        /// far above its analytic slope), and the borrowed loss drew a 13 dB dip into
-        /// a sum whose own channels could not have produced more than 1.9 dB.
-        /// <para>
-        /// One window for every channel, the caller's: the sum of gated spectra is
-        /// the gated sum only while they share it. A channel whose supplied level is
-        /// NaN contributes nothing here — deciding whether that is a hole or a
-        /// silence belongs to the caller, which knows what the channel was doing.
-        /// </para>
-        /// </remarks>
+        /// <summary>Sum with MAGNITUDE from <paramref name="channels"/> and PHASE from each gated spectrum; one shared window. See docs/tech/phase-and-group-delay.md#substituted-magnitude-sum.</summary>
         public static List<SignalPoint> GetGatedSubstitutedMagnitudeSum(
             IReadOnlyList<(IImpulseMeasurement Measurement,
                 IReadOnlyList<SignalPoint> MagnitudeDb)> channels,
@@ -562,8 +390,6 @@ namespace Resonalyze.Dsp
                         continue;
                     }
 
-                    // The channel's own phase, at the level the other measurement
-                    // says: a unit phasor times the substituted amplitude.
                     total[i] += spectrum[i] / magnitude * DecibelsToAmplitude(levelDb);
                 }
             }
@@ -591,9 +417,7 @@ namespace Resonalyze.Dsp
                 psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(smoothingInverseOctaves));
         }
 
-        // A level from an ascending (Hz, dB) curve, interpolated on the logarithmic
-        // frequency axis it is sampled on. NaN outside the curve and wherever the
-        // curve itself has none — a hole must not be bridged by its neighbours.
+        // Log-frequency interpolation; NaN outside the curve and at holes (never bridged).
         private static double InterpolateLevelDb(
             IReadOnlyList<SignalPoint> curve, double frequency)
         {
@@ -624,9 +448,7 @@ namespace Resonalyze.Dsp
                 return curve[low].Y;
             }
 
-            // Snapped at the ends for the same reason the capture sampler is: NaN
-            // times zero is NaN, so a point landing ON a level next to a hole would
-            // come back as a hole itself.
+            // Snap at the ends: NaN times zero is NaN, so a point on a level next to a hole would read as a hole.
             double fraction = Math.Log(frequency / curve[low].X) / span;
             const double SnapTolerance = 1e-9;
             if (fraction <= SnapTolerance)
@@ -655,9 +477,6 @@ namespace Resonalyze.Dsp
                     psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
                         smoothingInverseOctaves)));
 
-        // The magnitude bins of a gated analysis spectrum as ascending (Hz, dB)
-        // points on its linear grid — the resample-ready form every gated
-        // magnitude path shares.
         private static List<SignalPoint> GatedMagnitudePoints(
             Complex[] spectrum,
             int sampleRate)
@@ -674,13 +493,7 @@ namespace Resonalyze.Dsp
             return data;
         }
 
-        /// <summary>
-        /// The primary (linear) response curve for the requested set. Only
-        /// <see cref="SpectrumCurves.Primary"/> is honoured here; harmonic and THD
-        /// curves are produced by <see cref="EssDistortion"/> from the sweep
-        /// deconvolution, which carries the harmonic packets and normalizes every
-        /// order against the same linear packet.
-        /// </summary>
+        /// <summary>Only <see cref="SpectrumCurves.Primary"/> is honoured; harmonics come from <see cref="EssDistortion"/>.</summary>
         public static IReadOnlyList<AnalysisCurve> GetSpectrum(
             IImpulseMeasurement measurement,
             FrequencyResponseOptions frequencyResponseOptions,
@@ -699,20 +512,14 @@ namespace Resonalyze.Dsp
             return result;
         }
 
-        // Oversampling length shared by the spectrum, phase and minimum-phase
-        // analyses. The finer linear grid keeps the logarithmic resample well-fed at
-        // low frequencies and improves the cepstral minimum-phase reconstruction (see
-        // GetMinimumPhase). Rounded up to a power of two for the fast radix-2 FFT.
+        // Finer grid feeds the log resample at LF and the cepstral minimum phase; power of two for the radix-2 FFT.
         private static int GetOversampledLength(int length)
         {
             int target = Math.Clamp(length * 4, 4096, 32768);
             return Math.Max(length, DspMath.NextPowerOfTwo(target));
         }
 
-        // Computes a magnitude spectrum from a windowed segment, zero-padded to the
-        // shared oversampled length. The extraction start stays at the caller's
-        // window; only a zero tail is appended, so the extra samples it spans add
-        // nothing while the finer frequency grid sharpens the logarithmic resample.
+        // Only a zero tail is appended: the window stays put, the grid gets finer.
         public static List<SignalPoint> GetOversampledSpectrumData(
             IImpulseMeasurement measurement,
             int start,

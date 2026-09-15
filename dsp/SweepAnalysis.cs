@@ -3,9 +3,6 @@ using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Performs sweep-specific signal processing that belongs in the DSP layer.
-/// </summary>
 public static class SweepAnalysis
 {
     public static SweepDeconvolutionResult DeconvolveWithInverseFilter(
@@ -80,13 +77,7 @@ public static class SweepAnalysis
         }
     }
 
-    /// <summary>
-    /// Shared FFT core: circular-convolves two full-length <see cref="Complex"/>
-    /// spectra already zero-padded to the FFT length, then extracts the first
-    /// <paramref name="convolutionLength"/> real samples and the peak index.
-    /// Callers fill the spectra directly from their native sample type, so no
-    /// intermediate real-valued copy is materialized.
-    /// </summary>
+    /// <summary>Circular convolution of two padded spectra; callers fill them from native samples, avoiding a real-valued copy.</summary>
     private static SweepDeconvolutionResult Deconvolve(
         Complex[] signalSpectrum,
         Complex[] filterSpectrum,

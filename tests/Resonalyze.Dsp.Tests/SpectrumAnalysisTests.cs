@@ -90,8 +90,6 @@ public sealed class SpectrumAnalysisTests
 
         double[] power = SpectrumAnalysis.ComputePowerSpectrum(ones);
 
-        // Tone-calibrated (dBFS) scale: a DC level of 1.0 reads amplitude 1.0
-        // regardless of the FFT length.
         Assert.Equal(1.0, power[0], precision: 3);
     }
 
@@ -108,8 +106,6 @@ public sealed class SpectrumAnalysisTests
 
         double[] power = SpectrumAnalysis.ComputePowerSpectrum(ones, windowType);
 
-        // Coherent-gain normalization cancels the window sum, so DC always
-        // reads the true 1.0 level regardless of window.
         Assert.Equal(1.0, power[0], precision: 3);
     }
 
@@ -184,9 +180,7 @@ public sealed class SpectrumAnalysisTests
     [InlineData(4_096)]
     public void ComputeInputMagnitudeSpectrum_ToneLevelIsFftLengthInvariant(int length)
     {
-        // The same full-scale tone must read amplitude 1.0 whatever the FFT
-        // size — the RTA level used to jump 6.02 dB per doubling, on the same
-        // dB axis as the length-invariant H1 transfer gain.
+        // The RTA level once jumped 6.02 dB per FFT-size doubling.
         int bin = length / 16;
         float[] signal = CreateSine(length, bin);
 
@@ -287,27 +281,19 @@ public sealed class SpectrumAnalysisTests
     [Fact]
     public void DebiasCoherence_MapsTheNullExpectationToZero()
     {
-        // The raw MSC over K averages reads 1/K for pure noise — at K = 2 that
-        // is 0.5, exactly at the trust thresholds downstream. The correction
-        // must send the null expectation to 0, keep 1 at 1, and collapse the
-        // no-estimate case (K = 1) entirely.
+        // Raw MSC reads 1/K for noise (0.5 at K = 2, exactly at trust thresholds): debias to 0, keep 1, collapse K = 1.
         Assert.Equal(0.0, SpectrumAnalysis.DebiasCoherence([0.5], 2)[0], 9);
         Assert.Equal(0.0, SpectrumAnalysis.DebiasCoherence([0.25], 4)[0], 9);
         Assert.Equal(1.0, SpectrumAnalysis.DebiasCoherence([1.0], 2)[0], 9);
         Assert.Equal(1.0, SpectrumAnalysis.DebiasCoherence([0.9], 1)[0] + 1.0, 9);
-        // Below the null expectation clamps at zero rather than going negative.
         Assert.Equal(0.0, SpectrumAnalysis.DebiasCoherence([0.1], 2)[0], 9);
-        // Large K leaves an honest estimate nearly untouched.
         Assert.Equal(0.9, SpectrumAnalysis.DebiasCoherence([0.9], 1000)[0], 3);
     }
 
     [Fact]
     public void ComputeAveragedRelativeIr_TwoNoiseFramesReadMostlyIncoherent()
     {
-        // Two frames whose targets are unrelated noise: the raw two-average MSC
-        // averages ~0.5 across the band (estimator bias, not information) and
-        // used to sit exactly at the unwrap trust floor. The stored coherence
-        // is debiased, so it must average well below that.
+        // Unrelated noise averaged ~0.5 raw MSC at the unwrap trust floor; stored coherence is debiased.
         const int length = 2_048;
         float[] reference = CreateSine(length, bin: 24);
         var frames = new List<TransferFunctionFrame>();
@@ -316,7 +302,6 @@ public sealed class SpectrumAnalysisTests
             var target = new double[length];
             for (int i = 0; i < length; i++)
             {
-                // Deterministic pseudo-noise, different per frame.
                 target[i] = Math.Sin(i * (12.9898 + frame * 3.7) + frame * 78.233)
                     * Math.Sin(i * 0.7301 + frame);
             }
@@ -380,9 +365,6 @@ public sealed class SpectrumAnalysisTests
             length);
         double[] power = SpectrumAnalysis.ComputePowerSpectrum(signal, windowType);
 
-        // The RTA magnitude is coherent-gain-normalized just like the trusted
-        // single-block power spectrum, so it must equal its square root exactly
-        // (same window, same |FFT|², same scale).
         Assert.Equal(power.Length, magnitude.Length);
         for (int i = 0; i < magnitude.Length; i++)
         {
@@ -399,8 +381,6 @@ public sealed class SpectrumAnalysisTests
     {
         const int length = 512;
         const int bin = 40;
-        // A full-scale tone sitting exactly on a bin: coherent-gain
-        // normalization must recover the same peak amplitude for every window.
         float[] signal = CreateSine(length, bin);
 
         TransferSpectrumFrame frame =
@@ -410,9 +390,6 @@ public sealed class SpectrumAnalysisTests
             windowType,
             length);
 
-        // Tone calibration: a full-scale on-bin sine reads amplitude 1.0 for
-        // every window AND every FFT length (the level used to jump 6 dB per
-        // FFT-size doubling). Allow 2% for the tiny double-frequency leakage.
         Assert.InRange(magnitude[bin], 0.98, 1.02);
     }
 
@@ -428,9 +405,7 @@ public sealed class SpectrumAnalysisTests
     [InlineData(WindowType.Rectangular)]
     public void ComputeAutoPowerSpectrumFrame_MatchesTheTransferFrameTargetPower(WindowType windowType)
     {
-        // The mic-only RTA path accumulates ComputeAutoPowerSpectrumFrame; it must
-        // produce exactly the target auto-power the dual-channel transfer frame does,
-        // so a reference-free capture reads the same RTA as one with a loopback.
+        // A reference-free capture must read the same RTA as one with a loopback.
         const int length = 512;
         float[] signal = CreateSine(length, bin: 40);
 

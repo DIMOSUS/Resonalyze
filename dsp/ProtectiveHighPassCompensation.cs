@@ -7,11 +7,7 @@ public sealed record ProtectiveHighPassCompensationResult(
     Complex[] ImpulseResponse,
     double[] Reliability)
 {
-    /// <summary>
-    /// Applies the compensation-validity mask to an existing coherence estimate.
-    /// The transfer estimator already folds its excitation validity into coherence;
-    /// this adds the corresponding target-side validity after the known high-pass.
-    /// </summary>
+    /// <summary>Adds the target-side validity after the known high-pass (excitation validity is already folded in).</summary>
     public double[]? MaskCoherence(IReadOnlyList<double>? coherence)
     {
         if (coherence == null)
@@ -35,27 +31,15 @@ public sealed record ProtectiveHighPassCompensationResult(
     }
 }
 
-/// <summary>
-/// Removes a known protective high-pass from a measured transfer impulse
-/// response. This is the frequency-domain equivalent of filtering the clean
-/// loopback reference through the same high-pass before dividing microphone by
-/// reference, while keeping the original full-band loopback available to the H1
-/// estimator and its coherence calculation.
-/// </summary>
+/// <summary>Removes a known protective high-pass from a transfer IR: equivalent to filtering the loopback reference first,
+/// while the full-band loopback stays available to H1 and coherence.</summary>
 public static class ProtectiveHighPassCompensation
 {
     private const int PhaseRefreshInterval = 1_024;
     private const double ReliabilityFadeWidthDb = 6.0;
 
-    /// <summary>
-    /// Returns a copy of <paramref name="impulseResponse"/> with the magnitude
-    /// and phase of <paramref name="edge"/> divided out, plus the per-bin
-    /// reliability of that inversion. Full trust ends 6 dB before
-    /// <paramref name="maximumBoostDb"/>; a raised-cosine fade reaches zero at
-    /// the limit. Unrecoverable bins are suppressed by a smooth frequency mask
-    /// derived only from that known-filter reliability; measured coherence is
-    /// deliberately not punched into the IR bin by bin.
-    /// </summary>
+    /// <summary>Divides out the edge with per-bin reliability: full trust ends 6 dB before <paramref name="maximumBoostDb"/>, raised-cosine to zero at it.
+    /// The mask comes only from filter reliability, never from measured coherence.</summary>
     public static ProtectiveHighPassCompensationResult RemoveFromImpulseResponse(
         IReadOnlyList<Complex> impulseResponse,
         CrossoverEdge edge,
@@ -86,9 +70,6 @@ public static class ProtectiveHighPassCompensation
                 "Protective high-pass compensation supports only Butterworth and Linkwitz-Riley filters.");
         }
 
-        // BuildSections owns the shared validation of the corner and slope. Do
-        // this once before the FFT loop, rather than rediscovering an invalid
-        // setting independently at every bin through CrossoverFilter.Response.
         IReadOnlyList<BiquadCoefficients> sections =
             CrossoverFilter.BuildSections(edge, highPass: true, sampleRateHz);
         double maximumGain = Math.Pow(10.0, maximumBoostDb / 20.0);
@@ -108,9 +89,7 @@ public static class ProtectiveHighPassCompensation
         {
             if (bin > 0)
             {
-                // Step around the unit circle instead of evaluating one complex
-                // exponential per section per bin. Periodic exact refreshes keep
-                // the recurrence from drifting over multi-million-sample IRs.
+                // Periodic exact refresh keeps the unit-circle recurrence from drifting on multi-million-sample IRs.
                 z1 = bin % PhaseRefreshInterval == 0
                     ? Complex.Exp(new Complex(
                         0.0,
@@ -140,29 +119,8 @@ public static class ProtectiveHighPassCompensation
         return new ProtectiveHighPassCompensationResult(spectrum, reliability);
     }
 
-    /// <summary>
-    /// The same compensation as a per-frequency dB correction, for a curve that is
-    /// only ever a magnitude: the dB to ADD at each frequency, or NaN where the
-    /// filter has taken the signal below what <paramref name="maximumBoostDb"/>
-    /// allows recovering.
-    /// </summary>
-    /// <remarks>
-    /// A reference-free capture CARRIES the protective high-pass, because the filter
-    /// sits in the hardware ahead of the loudspeaker and there is no loopback to
-    /// divide it out with. A swept impulse response has it removed by
-    /// <see cref="RemoveFromImpulseResponse"/>. Compared against each other without
-    /// this, the two measurements of one tweeter sit a whole filter slope apart —
-    /// 28 dB at 900 Hz under a 2 kHz / 24 dB per octave corner — which is exactly
-    /// the smooth, plausible discrepancy a spatial average must not carry.
-    /// <para>
-    /// Deliberately the same edge, the same cap and the same raised-cosine fade as
-    /// the impulse-response path: the two corrections have to agree bin for bin, or
-    /// the curves they produce cannot be compared, which is the only reason either
-    /// exists. NaN rather than a very negative level where the fade reaches zero —
-    /// there is nothing to recover there, and a plotted −900 dB is a lie a break in
-    /// the curve is not.
-    /// </para>
-    /// </remarks>
+    /// <summary>The same compensation as dB to add per frequency (NaN where unrecoverable), for reference-free captures that still carry the filter.
+    /// Must match <see cref="RemoveFromImpulseResponse"/> bin for bin (same edge, cap and fade) or the two measurements differ by a slope.</summary>
     public static double[] MagnitudeCorrectionDb(
         CrossoverEdge edge,
         double sampleRateHz,
@@ -178,12 +136,7 @@ public static class ProtectiveHighPassCompensation
         {
             throw new ArgumentOutOfRangeException(nameof(maximumBoostDb));
         }
-        // The same families the impulse-response path accepts, refused the same way.
-        // The promise above is that the two corrections agree bin for bin, and they do
-        // only for a MONOTONIC high-pass: where a rippled passband puts |H| above one,
-        // this path floors its correction at zero while CappedInverse attenuates, so
-        // the two measurements of one driver would part by the ripple depth — the
-        // smooth, plausible discrepancy both methods exist to remove.
+        // Monotonic high-passes only: a rippled |H| > 1 would make this path and CappedInverse disagree by the ripple depth.
         if (edge.Family is not (
             CrossoverFilterFamily.Butterworth or
             CrossoverFilterFamily.LinkwitzRiley))
@@ -225,28 +178,8 @@ public static class ProtectiveHighPassCompensation
         return correction;
     }
 
-    /// <summary>
-    /// The lowest frequency this compensation can speak about: below it the
-    /// high-pass has taken the signal past <paramref name="maximumBoostDb"/> and
-    /// there is nothing left to recover. Zero when the whole band survives.
-    /// </summary>
-    /// <remarks>
-    /// The same question <see cref="MagnitudeCorrectionDb"/> answers per frequency,
-    /// as the single number a half-line actually is — a high-pass takes everything
-    /// below one frequency and nothing above it. It exists because the two paths
-    /// end differently: a magnitude curve can carry NaN and say "nothing here", but
-    /// an impulse response is a time series and cannot, so
-    /// <see cref="RemoveFromImpulseResponse"/> zeroes those bins instead. A gated
-    /// spectrum of that response then fills them back in with the analysis window's
-    /// own leakage — measured 270 dB above the truth on a 1 kHz / 48 dB per octave
-    /// corner, and drawn as a smooth, entirely plausible driver rolloff. Whoever
-    /// draws such a curve needs this frequency to break it at.
-    /// <para>
-    /// Found by bisection on the same sections and the same reliability rule as
-    /// both corrections, rather than from the analogue asymptote, so the three can
-    /// never disagree about where the signal ended.
-    /// </para>
-    /// </remarks>
+    /// <summary>Below this the signal is unrecoverable; zero when the whole band survives. Needed because the IR path zeroes those bins,
+    /// and a gated spectrum refills them with window leakage (270 dB above truth) that looks like a plausible rolloff.</summary>
     public static double LowestRecoverableFrequencyHz(
         CrossoverEdge edge,
         double sampleRateHz,
@@ -274,9 +207,7 @@ public static class ProtectiveHighPassCompensation
         double nyquist = sampleRateHz / 2.0;
         if (!Recoverable(sections, nyquist, sampleRateHz, maximumBoostDb))
         {
-            // A cap of zero on a filter that never quite reaches unity gain. Nothing
-            // is recoverable, and saying so beats returning a frequency that implies
-            // the top of the band is.
+            // Cap of zero on a filter never reaching unity: nothing is recoverable.
             return nyquist;
         }
 
@@ -328,9 +259,6 @@ public static class ProtectiveHighPassCompensation
         double magnitude = response.Magnitude;
         if (!(magnitude > 0) || !double.IsFinite(magnitude))
         {
-            // A high-pass has an exact zero at DC. There is no phase or signal
-            // there to recover, so keep that bin at zero instead of inventing a
-            // maximum-gain DC component.
             return Complex.Zero;
         }
 

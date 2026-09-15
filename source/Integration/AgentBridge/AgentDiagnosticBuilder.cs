@@ -5,10 +5,8 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Integration.AgentBridge;
 
-/// <summary>One measured channel's curve for a diagnostic: its package id and the points.</summary>
 internal sealed record AgentDiagnosticChannel(string Id, IReadOnlyList<SignalPoint> Curve);
 
-/// <summary>What Copy diagnostics produced: the clipboard text and its JSON size.</summary>
 internal sealed record AgentDiagnosticBuildResult(string Text, int JsonBytes);
 
 internal sealed record AgentDiagnostic(
@@ -22,14 +20,7 @@ internal sealed record AgentDiagnostic(
     IReadOnlyDictionary<string, string> Conventions,
     IReadOnlyList<AgentDiagnosticSeries> Channels);
 
-/// <summary>
-/// The window the diagnostic was read through, in the package's own names
-/// (<c>analysis.phaseWindowMode</c>, <c>fdwCycles</c>, <c>gateShapeMs</c>): a
-/// reader holding the document alone — no package beside it, or one copied
-/// under another window — still knows whether it is looking at the classical
-/// excess of a Fixed gate or the windowed reading of FDW, and how long the
-/// gate was.
-/// </summary>
+/// <summary>The window stamped on the document, in the package's names, so a document read alone still says Fixed vs FDW and the gate length.</summary>
 internal sealed record AgentDiagnosticWindow(
     string PhaseWindowMode,
     int FdwCycles,
@@ -43,13 +34,7 @@ internal sealed record AgentDiagnosticWindow(
 
 internal sealed record AgentDiagnosticSeries(string Id, AgentSeries Series);
 
-/// <summary>
-/// Diagnostics the assistant asks for by name, built as a text of their own:
-/// the package is already the size a chat takes, and a curve most tunes never
-/// need does not belong in every copy. Same grids, same rounding and the same
-/// holes-as-null rule as the package, so a reader holding both can lay them
-/// side by side by channel id.
-/// </summary>
+/// <summary>Named diagnostics as a text of their own (the package already fills a chat); same grids, rounding and holes-as-null rule as the package.</summary>
 internal static class AgentDiagnosticBuilder
 {
     private static readonly JsonSerializerOptions Options = new()
@@ -61,11 +46,7 @@ internal static class AgentDiagnosticBuilder
         NumberHandling = JsonNumberHandling.Strict
     };
 
-    /// <summary>
-    /// The excess group delay curves as series on the package's broadband grid,
-    /// a row left out where the reading could not be made. Shared with the probe
-    /// that asks for the same reading, so the two documents carry one shape.
-    /// </summary>
+    /// <summary>Shared with the probe asking for the same reading, so both documents carry one shape.</summary>
     public static IReadOnlyList<AgentDiagnosticSeries> ExcessGroupDelaySeries(
         IReadOnlyList<AgentDiagnosticChannel> channels)
     {
@@ -92,17 +73,7 @@ internal static class AgentDiagnosticBuilder
         return series;
     }
 
-    /// <summary>
-    /// The excess group delay of each measured channel on the package's
-    /// broadband grid: the group delay less its minimum-phase part — what the
-    /// magnitude dictates and a minimum-phase PEQ straightens along with it —
-    /// read through the project's gate and window: the classical excess under
-    /// Fixed, a windowed reading under FDW, and at a band edge possibly the
-    /// gate's own truncation of a steep filter (the conventions text the
-    /// document carries says what that changes). <paramref name="window"/>
-    /// is that gate and window, stamped on the document; <paramref name="packageId"/>
-    /// names the package the curves belong beside, when one was copied.
-    /// </summary>
+    /// <summary>Excess group delay per measured channel. See docs/tech/agent-bridge.md#excess-group-delay-diagnostic.</summary>
     public static AgentDiagnosticBuildResult BuildExcessGroupDelay(
         IReadOnlyList<AgentDiagnosticChannel> channels,
         string? packageId,

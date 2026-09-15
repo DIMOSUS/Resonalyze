@@ -1,52 +1,20 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Which hardware input channels carry the microphone and (optional) loopback
-/// reference. The channel indices are backend-relative: Wave/MME use 0/1, WASAPI
-/// uses mix-format channel indices, ASIO uses absolute driver input channels.
-/// The backend maps these to hardware and reports back where each role landed
-/// in the captured channel array.
-/// </summary>
+/// <summary>Backend-relative input channels: Wave/MME 0/1, WASAPI mix-format indices, ASIO absolute driver inputs.</summary>
 public sealed record AudioCaptureRouting(
     int MicrophoneChannel,
     int? LoopbackChannel)
 {
     private readonly IReadOnlyList<int> arrayChannels = [];
 
-    /// <summary>
-    /// Further microphones recorded alongside the measurement one, for spatial
-    /// averaging. Empty for every measurement that does not use an array.
-    /// </summary>
-    /// <remarks>
-    /// They are channels of the SAME device on purpose, and that is the whole
-    /// reason this is a list on the existing routing rather than a second
-    /// session: one device means one clock, so the array shares the sweep, the
-    /// loopback, the averaging runs and the quality verdict of the measurement
-    /// microphone. Nothing here is time-critical — a spatial average is a
-    /// magnitude — but being sample-synchronous with the loopback is what lets
-    /// each array microphone be read as an honest transfer function instead of a
-    /// bare deconvolution, which is what keeps the array in the same measurement
-    /// family as the impulse response.
-    /// </remarks>
+    /// <summary>Extra array microphones on the SAME device: one clock keeps them sample-synchronous with the loopback, so each reads as a transfer function.</summary>
     public IReadOnlyList<int> ArrayChannels
     {
         get => arrayChannels;
         init => arrayChannels = Validate(value);
     }
 
-    /// <summary>
-    /// How many input channels a capture has to open to reach every channel this
-    /// routing names — the microphone, the loopback and every array microphone.
-    /// </summary>
-    /// <remarks>
-    /// On the routing rather than beside it because the answer is asked in two very
-    /// different places: the backend opens a device with it, and the settings panel
-    /// asks a WASAPI endpoint whether it supports that width before offering a sample
-    /// rate. Those two disagreed — the panel counted the microphone and the loopback
-    /// and stopped there, so a card that supports two channels at 96 kHz but not eight
-    /// was offered the rate and then failed to open at measurement time, which is the
-    /// worst moment to find out.
-    /// </remarks>
+    /// <summary>Input width needed for mic, loopback and array; the settings panel must probe WASAPI support with this same count.</summary>
     public int RequiredInputChannelCount
     {
         get
@@ -65,19 +33,7 @@ public sealed record AudioCaptureRouting(
         }
     }
 
-    /// <summary>
-    /// Value equality over the channel list, which the generated one does not give.
-    /// </summary>
-    /// <remarks>
-    /// A record compares its FIELDS, and this one holds an array: two routings naming
-    /// the same channels held two different arrays and compared unequal. The empty
-    /// case hid it — `[]` is a singleton, so a routing without an array compared equal
-    /// and everything downstream looked right — while a routing WITH one never
-    /// did. The caller that suffers is the settings panel's live apply, which asks
-    /// whether the audio request actually changed before reopening the device: with an
-    /// array configured the answer was always yes, so every edit anywhere on the panel
-    /// paid for a device warm-up nothing had asked for.
-    /// </remarks>
+    /// <summary>Value equality over the channel list: the generated record compares array references.</summary>
     public bool Equals(AudioCaptureRouting? other) =>
         other is not null &&
         MicrophoneChannel == other.MicrophoneChannel &&
@@ -114,10 +70,7 @@ public sealed record AudioCaptureRouting(
                     nameof(ArrayChannels),
                     "An array microphone channel cannot be negative.");
             }
-            // A duplicate is a configuration mistake with a quiet consequence:
-            // the same position would enter the spatial average twice and weigh
-            // double, which reads as a perfectly plausible curve. Refuse it here,
-            // where the whole set is visible, rather than later where it is not.
+            // A duplicate would weigh double in the spatial average and still look plausible.
             if (channel == MicrophoneChannel || channel == LoopbackChannel)
             {
                 throw new ArgumentException(
@@ -141,12 +94,6 @@ public sealed record AudioCaptureRouting(
     }
 }
 
-/// <summary>
-/// Everything a backend needs to open a capture/render session, expressed
-/// without any NAudio type. Backend-specific selection fields are all present;
-/// each backend reads only the ones that apply to it (chosen by
-/// <see cref="Backend"/> in the registry).
-/// </summary>
 public sealed record AudioSessionRequest(
     AudioBackend Backend,
     int SampleRate,
@@ -154,24 +101,15 @@ public sealed record AudioSessionRequest(
     PlaybackChannel PlaybackChannel,
     AudioCaptureRouting Routing,
     int BufferMilliseconds = 100,
-    // Hint for pre-allocating the capture buffer (sweep length + tail); 0 lets
-    // the backend size from the sample rate.
+    // Preallocation hint for the capture buffer (sweep + tail), not a stop condition; 0 sizes it from the sample rate.
     int ExpectedCaptureSamples = 0,
-    // Wave / MME
     int WaveOutputDeviceNumber = -1,
     int WaveInputDeviceNumber = -1,
-    // WASAPI
     string? WasapiCaptureEndpointId = null,
     string? WasapiRenderEndpointId = null,
-    // ASIO
     string? AsioDriverName = null,
     int AsioOutputChannelOffset = 0);
 
-/// <summary>
-/// A prepared mono excitation signal handed to a backend for playback. The
-/// backend builds whatever concrete stream (PCM or IEEE float) its device
-/// needs from these samples; the caller never sees a wave provider.
-/// </summary>
 public sealed record AudioPlaybackSignal(
     float[] MonoSamples,
     int SampleRate,

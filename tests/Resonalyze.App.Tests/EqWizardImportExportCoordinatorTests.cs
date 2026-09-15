@@ -128,12 +128,7 @@ public sealed class EqWizardImportExportCoordinatorTests
         Assert.DoesNotContain("Tuning sheet", coordinator.ImportFilter);
     }
 
-    /// <summary>
-    /// The field case: pick the wrong filter in the import dialog, the parser
-    /// returns an empty curve by its pinned contract, and the panel used to take
-    /// that as success — clearing bypass and applying zero bands over a finished
-    /// tuning session, with no error shown.
-    /// </summary>
+    /// <summary>An unrecognised file parses to an empty curve by contract; importing it would wipe a finished bank.</summary>
     [Theory]
     [InlineData("not a profile at all")]
     [InlineData("{ \"something\": 1 }")]
@@ -149,11 +144,7 @@ public sealed class EqWizardImportExportCoordinatorTests
         Assert.IsType<InvalidDataException>(result.Exception);
     }
 
-    /// <summary>
-    /// A preamp-only profile is valid Equalizer APO and carries no bands, so
-    /// band count cannot be the failure signal — the format's own recognition
-    /// result is. A neutral "Preamp: 0 dB" counts too.
-    /// </summary>
+    /// <summary>Preamp-only profiles have no bands, so recognition, not band count, signals failure.</summary>
     [Theory]
     [InlineData("Preamp: -6.0 dB", -6.0)]
     [InlineData("Preamp: 0 dB", 0.0)]
@@ -172,7 +163,6 @@ public sealed class EqWizardImportExportCoordinatorTests
     [Fact]
     public void Import_AProfileWithBands_StillSucceeds()
     {
-        // Equalizer APO is the first importable format, so filter index 1.
         EqWizardImportExportCoordinator coordinator = CreateCoordinator(
             readAllText: _ => "Preamp: -3.0 dB\nFilter 1: ON PK Fc 1000 Hz Gain -3.0 dB Q 1.00");
 

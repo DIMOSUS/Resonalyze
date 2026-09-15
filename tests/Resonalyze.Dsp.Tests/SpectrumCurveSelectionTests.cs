@@ -2,14 +2,7 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// Locks the mapping from <see cref="SpectrumCurves"/> to the curves
-/// <see cref="DataHelper.GetSpectrum"/> produces. GetSpectrum now owns only the
-/// primary (linear) response; harmonic and THD curves moved to
-/// <see cref="EssDistortion"/> (which needs the sweep metadata to normalize every
-/// order against the same linear packet). So GetSpectrum honours the Primary flag
-/// and ignores the harmonic flags.
-/// </summary>
+/// <summary><see cref="DataHelper.GetSpectrum"/> owns only the primary; harmonic/THD curves live in <see cref="EssDistortion"/>.</summary>
 public sealed class SpectrumCurveSelectionTests
 {
     private const int SampleRate = 48_000;

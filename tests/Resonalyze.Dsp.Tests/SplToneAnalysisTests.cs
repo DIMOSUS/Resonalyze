@@ -1,12 +1,6 @@
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// The SPL calibration listens for an acoustic calibrator's reference tone and
-/// anchors the whole SPL scale to the level it reads there, so two things must
-/// hold: the tone level must be accurate to a fraction of a dB wherever the tone
-/// falls between bins (why the flat-top window is used), and the verdict must
-/// reject anything that is not a clean, dominant tone at the target frequency.
-/// </summary>
+/// <summary>The calibrator tone anchors the SPL scale: accurate across sub-bin offsets (flat-top window) and rejected unless clean and dominant.</summary>
 public sealed class SplToneAnalysisTests
 {
     private const int SampleRate = 48_000;
@@ -30,10 +24,7 @@ public sealed class SplToneAnalysisTests
     }
 
     [Theory]
-    // Bin-centred, and three tones that fall progressively further between bins
-    // (bin width ~2.93 Hz). A Hann or rectangular window would read 1.4–3.9 dB
-    // low here; the flat-top window is what keeps every one within a fraction of
-    // a dB — this is the test that pins that choice.
+    // Bin width ~2.93 Hz; Hann or rectangular would read 1.4–3.9 dB low. Pins the flat-top choice.
     [InlineData(1_000.0)]
     [InlineData(1_000.7)]
     [InlineData(1_001.5)]
@@ -53,8 +44,6 @@ public sealed class SplToneAnalysisTests
     [Fact]
     public void Analyze_MeasuredLevelTracksTheReferenceOffset()
     {
-        // The number the whole feature depends on: two calibrator levels 20 dB
-        // apart must read 20 dB apart, so ref - measured is a stable offset.
         double quiet = SplToneAnalysis.Analyze(
             PowerSpectrumOf(Tone(1_000.0, 0.02)), BinWidthHz, Criteria).LevelDbFs;
         double loud = SplToneAnalysis.Analyze(
@@ -66,8 +55,6 @@ public sealed class SplToneAnalysisTests
     [Fact]
     public void Analyze_NoiseOnly_HasNoClearPeak()
     {
-        // Broadband noise averaged over many frames is flat: no bin stands 20 dB
-        // above the background, so there is no calibrator tone to lock onto.
         double[] spectrum = AveragedPowerSpectrum(
             frameCount: 32, frame => Noise(seed: frame, amplitude: 0.05));
 
@@ -79,7 +66,6 @@ public sealed class SplToneAnalysisTests
     [Fact]
     public void Analyze_OffFrequencyTone_FailsTolerance()
     {
-        // A clean tone, but at 1.5 kHz: prominent, yet not the calibrator's tone.
         double[] spectrum = PowerSpectrumOf(Tone(frequencyHz: 1_500.0, amplitude: 0.1));
 
         SplToneReading reading = SplToneAnalysis.Analyze(spectrum, BinWidthHz, Criteria);
@@ -92,9 +78,7 @@ public sealed class SplToneAnalysisTests
     [Fact]
     public void Analyze_LowFrequencyRumbleDoesNotOutrankTheTone()
     {
-        // A large sub-100 Hz rumble sits below the analysis floor, so the 1 kHz
-        // calibrator tone still wins the dominant-peak search even though the
-        // rumble carries far more energy.
+        // Sub-100 Hz rumble is below the analysis floor, so the 1 kHz tone still wins.
         float[] rumbleAndTone = Sum(
             Tone(frequencyHz: 50.0, amplitude: 0.8),
             Tone(frequencyHz: 1_000.0, amplitude: 0.1));

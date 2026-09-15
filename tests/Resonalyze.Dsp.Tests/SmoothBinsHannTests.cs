@@ -1,18 +1,7 @@
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// SmoothBinsHann evaluates its Hann-weighted fractional-octave average on log-spaced
-/// anchors and interpolates between them, refining a span until the chord agrees with the
-/// exact curve at its midpoint. Its contract is therefore an error BOUND, and nothing on
-/// the public surface pins that — so these tests keep the exact convolution as their own
-/// reference and hold the real implementation against it.
-/// <para>
-/// The inputs are deliberately hostile. "Smoothed" does not mean "linear": across a band
-/// edge or a steep stopband the average falls exponentially, and a chord over it reads
-/// high. A seeded grid alone was 10 dB out at the sweep's edge; the midpoint refinement is
-/// what these tests exist to hold in place.
-/// </para>
-/// </summary>
+/// <summary>SmoothBinsHann interpolates between log-spaced anchors, refining until the chord matches the exact midpoint; these hold
+/// that error bound against the exact convolution on hostile inputs (a seeded grid alone was 10 dB out at a band edge).</summary>
 public sealed class SmoothBinsHannTests
 {
     private const int BinCount = 16_384;              // a 32768-point gated FFT's half
@@ -20,15 +9,10 @@ public sealed class SmoothBinsHannTests
     private const double EnvelopeOctaves = 1.0;       // the reliability gate's envelope
     private const double GroupDelayOctaves = 1.0 / 6.0;
 
-    // The bound the implementation promises: its tolerance is 0.005 relative, i.e.
-    // ~0.043 dB. A little headroom for the exactly-evaluated stretches around it.
+    // The implementation's tolerance is 0.005 relative (~0.043 dB).
     private const double MaximumErrorDb = 0.1;
 
-    /// <summary>
-    /// The original implementation, kept here and only here: the exact Hann-weighted
-    /// average at every bin. It is what the shipped smoother approximates, and the only
-    /// honest reference for "how far off is the approximation".
-    /// </summary>
+    /// <summary>The exact Hann-weighted average at every bin: the reference the shipped smoother approximates.</summary>
     private static double[] Exact(
         double[] source, double smoothingOctaves, double binWidthHz, double minHalfWidthHz)
     {
@@ -118,9 +102,7 @@ public sealed class SmoothBinsHannTests
     [MemberData(nameof(HostileInputs))]
     public void Smoothing_DoesNotMoveTheReliabilityGate(string shape, double octaves)
     {
-        // What the envelope is FOR. A single bin sitting exactly on the threshold may
-        // flip for any non-zero error and nobody could see it; a flipped RUN is a visible
-        // band of phase appearing or vanishing, and that must not happen.
+        // A flipped run of bins would be a visible band of phase appearing or vanishing.
         double[] source = Build(shape);
         double[] actual = DataHelper.SmoothBinsHann(source, octaves, BinWidthHz, 0.0);
         double[] exact = Exact(source, octaves, BinWidthHz, 0.0);
@@ -157,10 +139,7 @@ public sealed class SmoothBinsHannTests
     [Fact]
     public void Smoothing_KeepsASmoothedEnergyPositive()
     {
-        // The group delay divides the smoothed numerator by the smoothed energy. A
-        // negative or zero energy there would blow the ratio up, so the kernel is
-        // non-negative and the interpolation between two positive anchors must stay
-        // positive too.
+        // GD divides by smoothed energy, so interpolation between positive anchors must stay positive.
         double[] energy = Build("cabin response").Select(x => x * x).ToArray();
 
         double[] smoothed = DataHelper.SmoothBinsHann(
@@ -172,9 +151,7 @@ public sealed class SmoothBinsHannTests
     [Fact]
     public void Smoothing_HandlesASignedSource()
     {
-        // The group-delay numerator is signed (a dot product, not a magnitude), so the
-        // bound has to hold through zero crossings — where a relative tolerance alone
-        // would be meaningless and the peak-referenced floor carries it.
+        // The signed GD numerator crosses zero, where the peak-referenced floor carries the bound.
         var signed = new double[BinCount];
         for (int i = 1; i < BinCount; i++)
         {
@@ -198,8 +175,7 @@ public sealed class SmoothBinsHannTests
     [Fact]
     public void Smoothing_LeavesBinZeroAloneAndReachesNyquist()
     {
-        // Bin 0 is excluded by contract (DC carries no phase); the last bin is an anchor
-        // in its own right, so it must hold the exact value rather than an extrapolation.
+        // Bin 0 is excluded (DC has no phase); the last bin is an anchor and must be exact.
         double[] source = Build("cabin response");
 
         double[] actual = DataHelper.SmoothBinsHann(source, EnvelopeOctaves, BinWidthHz, 0.0);
@@ -212,8 +188,7 @@ public sealed class SmoothBinsHannTests
     [Fact]
     public void Smoothing_HonoursAMinimumHalfWidth()
     {
-        // The group-delay path floors the kernel in Hz, which widens it at the low end
-        // where a frequency-proportional width would collapse to a couple of bins.
+        // The GD path floors the kernel in Hz, widening it at the low end.
         double[] source = Build("cabin response");
         const double minHalfWidthHz = 114.0;
 
@@ -243,10 +218,8 @@ public sealed class SmoothBinsHannTests
             source[i] = shape switch
             {
                 "smooth broadband" => 1.0 / Math.Sqrt(1 + Math.Pow(80.0 / f, 4)),
-                // The chord's worst enemy: an instant 40 / 80 dB wall.
                 "step 40 dB" => i < BinCount / 2 ? 1.0 : 100.0,
                 "step 80 dB" => i < BinCount / 2 ? 1e-4 : 1.0,
-                // A sweep dies past its bandwidth; the envelope falls off a cliff.
                 "band edge" => f > 20_000 ? 1e-4 : 1.0,
                 "narrow peak" => 1.0 + 999.0 * Math.Exp(-Math.Pow((f - 1_000) / 20.0, 2)),
                 "deep narrow notch" =>

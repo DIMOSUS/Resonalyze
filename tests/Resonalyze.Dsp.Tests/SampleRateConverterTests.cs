@@ -27,10 +27,7 @@ public sealed class SampleRateConverterTests
     [InlineData(48_000, 96_000)]
     public void Resample_PreservesAMidbandTone(int fromRate, int toRate)
     {
-        // A 1 kHz tone sits far below either Nyquist, so it must pass with its
-        // amplitude and phase intact — the whole point of the converter being
-        // time-aligned. The edges carry the kernel's ramp-in, so the check reads
-        // the interior.
+        // Edges carry the kernel's ramp-in, so only the interior is checked.
         const double Frequency = 1_000.0;
         int length = fromRate / 2;
         var input = new float[length];
@@ -41,7 +38,6 @@ public sealed class SampleRateConverterTests
 
         float[] output = SampleRateConverter.Resample(input, fromRate, toRate);
 
-        // ceil(length · to / from): one second of material stays one second.
         Assert.Equal(
             ((long)length * toRate + fromRate - 1) / fromRate,
             output.Length);
@@ -53,8 +49,7 @@ public sealed class SampleRateConverterTests
             maxError = Math.Max(maxError, Math.Abs(output[i] - expected));
         }
 
-        // −60 dB against a full-scale tone: far beyond audibility and well
-        // inside the kernel's design stopband.
+        // −60 dB: inside the kernel's design stopband.
         Assert.True(
             maxError < 1e-3,
             $"Tone error after {fromRate} -> {toRate}: {maxError:E2}");
@@ -63,8 +58,6 @@ public sealed class SampleRateConverterTests
     [Fact]
     public void Resample_RejectsAToneAboveTheTargetNyquist()
     {
-        // Downsampling 96 kHz material carrying a 30 kHz tone to 48 kHz must
-        // suppress it (24 kHz Nyquist), not fold it into the audible band.
         const int FromRate = 96_000;
         const int ToRate = 48_000;
         const double Frequency = 30_000.0;
@@ -90,10 +83,7 @@ public sealed class SampleRateConverterTests
     [Fact]
     public void Resample_KeepsTheTopOfTheAudibleBand()
     {
-        // 48 → 44.1: a 20 kHz tone sits inside the design's passband (91% of
-        // the 22.05 kHz Nyquist ≈ 20.07 kHz) and must survive at full level.
-        // A single-cutoff kernel with its −6 dB point AT Nyquist was ~2 dB
-        // down here — audibly shaving the top of real material.
+        // 20 kHz is inside the passband (91% of 22.05 kHz); a cutoff with −6 dB AT Nyquist was ~2 dB down.
         const int FromRate = 48_000;
         const int ToRate = 44_100;
         const double Frequency = 20_000.0;
@@ -115,8 +105,6 @@ public sealed class SampleRateConverterTests
             count++;
         }
 
-        // A unit sine's RMS is 1/√2; allow ±0.26 dB for passband ripple and
-        // the finite measurement window.
         double rms = Math.Sqrt(sumSquares / count);
         Assert.InRange(rms, 0.97 / Math.Sqrt(2.0), 1.03 / Math.Sqrt(2.0));
     }
@@ -126,11 +114,7 @@ public sealed class SampleRateConverterTests
     [InlineData(23_000.0)]
     public void Resample_SuppressesContentJustAboveTheTargetNyquist(double frequency)
     {
-        // 48 → 44.1: content just past the 22.05 kHz target Nyquist is exactly
-        // what folds back into the audible band, so the full stopband
-        // attenuation must hold THERE — not only deep inside the stopband.
-        // The previous design left 22.5 kHz only ~9 dB down (aliased to
-        // 21.6 kHz).
+        // Full stopband attenuation must hold just past the target Nyquist (22.5 kHz was only ~9 dB down before).
         const int FromRate = 48_000;
         const int ToRate = 44_100;
         int length = FromRate / 2;
@@ -184,9 +168,7 @@ public sealed class SampleRateConverterTests
     [Fact]
     public void Resample_KeepsAnImpulseWhereItWas()
     {
-        // The converter must not shift the material against the (untouched)
-        // impulse responses it will be convolved with: an impulse at a known
-        // time must come out at the same time in the new rate.
+        // No time shift against the impulse responses the material will be convolved with.
         const int FromRate = 44_100;
         const int ToRate = 48_000;
         var input = new float[FromRate / 4];

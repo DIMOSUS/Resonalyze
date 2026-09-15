@@ -1,9 +1,5 @@
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Playback-only session for the PCM backends (Wave/MME and WASAPI): plays a
-/// prepared finite (or looping) signal to completion or until stopped.
-/// </summary>
 internal sealed class PcmPlaybackSession : IAudioPlaybackSession
 {
     private readonly IAudioPlaybackDevice playback;

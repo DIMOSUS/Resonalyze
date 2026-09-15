@@ -55,7 +55,6 @@ public sealed class ImpulseResponseFileTests
             },
             SweepDeconvolutionRealSamples = [0.125, 0.5, 1.0, -0.25],
             TransferPeakIndex = 1,
-            // Coherence must be N/2 + 1 bins for an N-sample transfer IR.
             TransferRealSamples = [0.25, 1.0, -0.5, 0.125],
             TransferImaginarySamples = [0, 0.125, 0, 0],
             TransferCoherence = [0.91, 0.82, 0.73]
@@ -132,8 +131,6 @@ public sealed class ImpulseResponseFileTests
                 ],
                 transferSamples);
             Assert.NotNull(loaded.TransferCoherence);
-            // Bulk arrays are stored as float32, so a round trip keeps each
-            // value to float precision, not the original double.
             Assert.Equal([(float)0.91, (float)0.82, (float)0.73], loaded.TransferCoherence);
         }
         finally
@@ -142,8 +139,6 @@ public sealed class ImpulseResponseFileTests
         }
     }
 
-    // The five bulk arrays are the megabytes of the file; version 8 stores them
-    // as base64 float32 (little-endian) strings instead of JSON number arrays.
     [Fact]
     public async Task Save_StoresBulkSampleArraysAsBase64Float32()
     {
@@ -182,9 +177,7 @@ public sealed class ImpulseResponseFileTests
         }
     }
 
-    // Files written before version 8 carry the sample arrays as JSON numbers.
-    // They must still load, and at their FULL double precision — the legacy
-    // read path must not inherit the float32 rounding of the new one.
+    // Legacy JSON number arrays must load at full double precision.
     [Fact]
     public async Task Load_ReadsLegacyNumberArraysAtFullDoublePrecision()
     {
@@ -232,17 +225,13 @@ public sealed class ImpulseResponseFileTests
         }
     }
 
-    // The whole point of the version bump: a later version exists to change how
-    // something is represented, so this build must refuse it by its DECLARED
-    // version, up front — not trip over the representation mid-parse the way a
-    // v7 build does on v8's base64 sample strings.
+    // Refused by declared version up front, not by a parse error mid-file.
     [Fact]
     public async Task Load_RefusesAFutureVersionByVersionNotByParseError()
     {
         string path = Path.Combine(
             Path.GetTempPath(),
             $"resonalyze-ir-{Guid.NewGuid():N}.json");
-        // Samples in a representation this build does not know how to read.
         const string json = """
             {
               "format": "resonalyze-impulse-response",
@@ -278,7 +267,6 @@ public sealed class ImpulseResponseFileTests
         string path = Path.Combine(
             Path.GetTempPath(),
             $"resonalyze-ir-{Guid.NewGuid():N}.json");
-        // "AAAA" is three bytes — not a whole number of float32 values.
         const string json = """
             {
               "format": "resonalyze-impulse-response",
@@ -360,8 +348,6 @@ public sealed class ImpulseResponseFileTests
 
         ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
 
-        // Capture stores the sweep's actual (sample-quantized) duration, which the
-        // sweep exposes as ComputedDuration = SweepSamples / SampleRate.
         Assert.Equal(measurement.Sweep!.ComputedDuration, file.SweepDurationSeconds);
         Assert.Equal(
             measurement.Sweep.SweepSamples / (double)measurement.SampleRate,

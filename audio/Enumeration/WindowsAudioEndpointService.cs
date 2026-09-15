@@ -4,11 +4,6 @@ using NAudio.CoreAudioApi.Interfaces;
 
 namespace Resonalyze.Audio;
 
-/// <summary>
-/// Enumerates WASAPI capture/render endpoints and watches for hot-plug changes,
-/// exposing everything through the neutral <see cref="AudioEndpointDescriptor"/>
-/// so no NAudio Core Audio type crosses the boundary.
-/// </summary>
 public sealed class WindowsAudioEndpointService : IDisposable
 {
     private readonly MMDeviceEnumerator enumerator = new();
@@ -21,7 +16,6 @@ public sealed class WindowsAudioEndpointService : IDisposable
         enumerator.RegisterEndpointNotificationCallback(notificationClient);
     }
 
-    /// <summary>Raised on any endpoint add/remove/state/default change.</summary>
     public event Action? EndpointsChanged;
 
     public IReadOnlyList<AudioEndpointDescriptor> GetCaptureEndpoints() =>
@@ -40,11 +34,7 @@ public sealed class WindowsAudioEndpointService : IDisposable
             flow,
             DeviceState.Active | DeviceState.Unplugged))
         {
-            // Do not explicitly dispose MMDevice wrappers here. Core Audio can
-            // return the same COM identity from a later GetDevice call; forcing
-            // ReleaseComObject through MMDevice.Dispose can leave the cached RCW
-            // disconnected and WasapiOut then fails to query IMMDevice with
-            // E_NOINTERFACE. The short-lived wrappers are released by the CLR.
+            // Never dispose MMDevice wrappers here: a shared COM identity breaks WasapiOut with E_NOINTERFACE. See docs/tech/audio-layer.md#mmdevice-wrappers-are-not-disposed.
             NAudio.Wave.WaveFormat mixFormat;
             try
             {

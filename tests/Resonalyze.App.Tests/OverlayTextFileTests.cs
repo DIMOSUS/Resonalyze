@@ -53,9 +53,7 @@ public sealed class OverlayTextFileTests
         OverlayKind kind,
         OverlayCurveRole expectedRole)
     {
-        // A slot converted from a captured Primary can still carry that kind; the export
-        // must label the role from the slot's real nature and NOT ship the stale kind, or
-        // the EQ Wizard would read a target/operation as a measured Primary response.
+        // A converted slot may carry a stale Primary kind; exporting it would let the wizard read a target as a response.
         OverlayTextMetadata metadata = OverlayTextFile.BuildCurveMetadata(
             kind,
             AnalysisCurveKind.Primary,
@@ -65,7 +63,6 @@ public sealed class OverlayTextFileTests
 
         Assert.Equal(expectedRole, metadata.Role);
         Assert.Null(metadata.CurveKind);
-        // And the wizard refuses what it exports.
         Assert.False(
             EqWizardSourceResolver.IsEqualizableResponse(metadata.Role, metadata.CurveKind));
     }
@@ -187,7 +184,6 @@ public sealed class OverlayTextFileTests
     public void ImportCurve_LeavesTheHeaderEmptyForAForeignFile()
     {
         string path = CreateTemporaryPath();
-        // What another measurement tool exports: a comment banner and bare pairs.
         File.WriteAllText(path, "* Exported by SomeTool\n100 -3.0\n200 -4.5\n");
 
         try
@@ -207,7 +203,6 @@ public sealed class OverlayTextFileTests
     public void ImportCurve_KeepsHeaderLinesOutOfThePoints()
     {
         string path = CreateTemporaryPath();
-        // A header key whose value parses as a number must not be read as a data pair.
         File.WriteAllText(
             path,
             "# resonalyze-curve v1\n# sample-rate: 48000\n100 -3.0\n200 -4.5\n");
@@ -244,7 +239,6 @@ public sealed class OverlayTextFileTests
         {
             OverlayTextCurve loaded = OverlayTextFile.ImportCurve(path);
 
-            // The one key this build understands survives; the rest are simply not stated.
             Assert.Equal(MagnitudeScale.SoundPressureLevel, loaded.Metadata.Scale);
             Assert.Null(loaded.Metadata.CurveKind);
             Assert.Null(loaded.Metadata.SampleRateHz);

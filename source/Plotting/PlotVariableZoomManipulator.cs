@@ -2,20 +2,9 @@ using OxyPlot;
 
 namespace Resonalyze;
 
-/// <summary>
-/// REW's "variable zoom": hold the middle mouse button and drag — right and left
-/// zoom the horizontal axis in and out, up and down do the same for the vertical
-/// one, both around the point where the button went down. It replaces OxyPlot's
-/// default middle-button zoom rectangle, which REW puts on Ctrl + right drag
-/// instead (where OxyPlot also has it).
-/// </summary>
+/// <summary>REW's variable zoom (middle drag): horizontal drag zooms X, vertical zooms Y, around the press point.</summary>
 internal sealed class PlotVariableZoomManipulator : MouseManipulator
 {
-    /// <summary>
-    /// Drag distance that doubles (or halves) an axis. Roughly a thumb's travel:
-    /// short enough to cross two octaves in one gesture, long enough to land on a
-    /// particular decade without fighting it.
-    /// </summary>
     private const double PixelsPerDoubling = 150;
 
     private ScreenPoint anchor;
@@ -42,9 +31,7 @@ internal sealed class PlotVariableZoomManipulator : MouseManipulator
         double dy = previous.Y - e.Position.Y;
         previous = e.Position;
 
-        // The anchor is held in screen coordinates and re-read through the axis on
-        // every step: zooming AT the value currently under that pixel is what keeps
-        // the pressed point still while the scale changes underneath it.
+        // Re-read the anchor pixel through the axis each step so the pressed point stays still.
         if (XAxis is { IsZoomEnabled: true } && dx != 0)
         {
             XAxis.ZoomAt(ScaleFor(dx), XAxis.InverseTransform(anchor.X));

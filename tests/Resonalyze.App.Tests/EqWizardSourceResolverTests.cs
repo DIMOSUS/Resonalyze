@@ -5,8 +5,6 @@ namespace Resonalyze.App.Tests;
 
 public sealed class EqWizardSourceResolverTests
 {
-    // ------------------------------------------------------------ slot eligibility
-
     [Theory]
     [InlineData(AnalysisCurveKind.Primary, true)]
     [InlineData(AnalysisCurveKind.InputSpectrum, true)]
@@ -36,7 +34,6 @@ public sealed class EqWizardSourceResolverTests
     public void IsEligible_RejectsACoherenceCapture()
     {
         OverlayFile file = CreateCapturedSlot(1);
-        // Coherence is drawn on its own 0..1 axis; it is a confidence, not a level.
         file.CapturedYAxisKey = "coherence";
 
         Assert.False(EqWizardSourceResolver.IsEligible(file));
@@ -46,10 +43,7 @@ public sealed class EqWizardSourceResolverTests
     public void IsEligible_AcceptsASweepCaptureOnTheNamedDecibelAxis()
     {
         OverlayFile file = CreateCapturedSlot(1);
-        // Sweep modes attach every curve to the dB axis BY KEY, so a Frequency Response
-        // capture records that key rather than null. It is still the plot's own level
-        // axis — reading it as "a secondary axis" hid every sweep capture from the
-        // wizard while the RTA (whose series carries no key) sailed through.
+        // Sweep modes attach curves to the dB axis by key; it is still the level axis, not a secondary one.
         file.CapturedYAxisKey = PlotModelFactory.DecibelAxisKey;
 
         Assert.True(EqWizardSourceResolver.IsEligible(file));
@@ -73,8 +67,6 @@ public sealed class EqWizardSourceResolverTests
         try
         {
             OverlayFile sweep = CreateCapturedSlot(3);
-            // A sweep FR capture stores the named dB axis key; the file round trip must
-            // still surface it — this is the path the live slot menu takes.
             sweep.CapturedYAxisKey = PlotModelFactory.DecibelAxisKey;
             Save(sweep, root);
             Save(CreateCapturedSlot(1), root);
@@ -109,8 +101,6 @@ public sealed class EqWizardSourceResolverTests
                 new EqWizardSourceResolver(root).ListEligibleSlots();
 
             Assert.Equal([1], slots.Select(slot => slot.Slot));
-            // Quarantining a damaged slot belongs to the overlay UI that owns it; the
-            // wizard is a reader and must leave the file exactly where it was.
             Assert.True(File.Exists(corruptPath));
             Assert.False(File.Exists(corruptPath + ".corrupt"));
         }
@@ -119,8 +109,6 @@ public sealed class EqWizardSourceResolverTests
             Directory.Delete(root, recursive: true);
         }
     }
-
-    // ----------------------------------------------------------------- slot import
 
     [Fact]
     public void TryCreateFromOverlaySlot_CarriesUnitRateAndRawReference()
@@ -145,7 +133,6 @@ public sealed class EqWizardSourceResolverTests
             Assert.Equal(44_100, source.SampleRateHz);
             Assert.Equal(AnalysisCurveKind.InputSpectrum, source.CurveKind);
             Assert.NotNull(source.RawSpectrum);
-            // A stored raw reference is what makes re-calibration and re-smoothing valid.
             Assert.True(source.SupportsCalibration);
             Assert.True(source.SupportsSmoothing);
             Assert.Null(source.Coherence);
@@ -162,8 +149,6 @@ public sealed class EqWizardSourceResolverTests
         string root = CreateTemporaryDirectory();
         try
         {
-            // A slot filled by importing text has points but no unsmoothed reference:
-            // whatever calibration and smoothing it carries are already baked in.
             Save(CreateCapturedSlot(5), root);
 
             EqWizardCurveSource? source =
@@ -187,8 +172,7 @@ public sealed class EqWizardSourceResolverTests
         try
         {
             OverlayFile file = CreateCapturedSlot(6);
-            // The offset pulls curves apart on the plot; equalization needs the level
-            // as measured, or every imported tune would inherit a cosmetic shift.
+            // The offset is cosmetic; equalization needs the level as measured.
             file.Offset = 12;
             file.Points = [new OverlayPoint(100, -6), new OverlayPoint(1_000, -3)];
             Save(file, root);
@@ -224,8 +208,6 @@ public sealed class EqWizardSourceResolverTests
         }
     }
 
-    // ----------------------------------------------------------------- text import
-
     [Theory]
     [InlineData(OverlayCurveRole.Deviation)]
     [InlineData(OverlayCurveRole.EqCorrection)]
@@ -260,8 +242,6 @@ public sealed class EqWizardSourceResolverTests
 
         Assert.Equal(MagnitudeScale.SoundPressureLevel, fromDeclared.Scale);
         Assert.Equal(48_000, fromDeclared.SampleRateHz);
-        // An undeclared file states no unit and no rate; relative dB is the safe reading
-        // and the rate falls to the panel's own selector.
         Assert.Equal(MagnitudeScale.Relative, fromForeign.Scale);
         Assert.Null(fromForeign.SampleRateHz);
         Assert.False(fromForeign.SupportsCalibration);
@@ -274,9 +254,7 @@ public sealed class EqWizardSourceResolverTests
     public void CreateFromTextCurve_RejectsANonResponseKindEvenWhenRoleSaysResponse(
         AnalysisCurveKind kind)
     {
-        // A harmonic/THD/phase slot exports as role=Response but keeps its kind. The text
-        // path must honour the kind, exactly like the slot menu, so exporting such a slot
-        // and loading the text file cannot smuggle it in as a measured response.
+        // The text path must honour the kind like the slot menu, or an exported harmonic slot imports as a response.
         var curve = new OverlayTextCurve(
             [new OverlayPoint(100, -40), new OverlayPoint(1_000, -55)],
             new OverlayTextMetadata(OverlayCurveRole.Response, CurveKind: kind));
@@ -292,8 +270,6 @@ public sealed class EqWizardSourceResolverTests
     [InlineData(null, null, true)]
     [InlineData(OverlayCurveRole.Deviation, AnalysisCurveKind.Primary, false)]
     [InlineData(OverlayCurveRole.EqCorrection, null, false)]
-    // A target or calculated curve exported with a (possibly stale) response kind is still
-    // refused on its role alone.
     [InlineData(OverlayCurveRole.Target, AnalysisCurveKind.Primary, false)]
     [InlineData(OverlayCurveRole.Calculated, AnalysisCurveKind.Primary, false)]
     [InlineData(OverlayCurveRole.Response, AnalysisCurveKind.SecondHarmonic, false)]
@@ -311,8 +287,6 @@ public sealed class EqWizardSourceResolverTests
     [InlineData(OverlayCurveRole.Calculated)]
     public void CreateFromTextCurve_RejectsATargetOrCalculatedCurve(OverlayCurveRole role)
     {
-        // Even with a response kind attached, a target/calculated file must not import as a
-        // source — the exact leak of a slot exported to text and loaded straight in.
         var curve = new OverlayTextCurve(
             [new OverlayPoint(100, 0), new OverlayPoint(1_000, -2)],
             new OverlayTextMetadata(role, CurveKind: AnalysisCurveKind.Primary));
@@ -321,14 +295,9 @@ public sealed class EqWizardSourceResolverTests
             () => EqWizardSourceResolver.CreateFromTextCurve(curve, "target.txt"));
     }
 
-    // ------------------------------------- no-raw captures (dB SPL calibration/smoothing)
-
     [Fact]
     public void CreateFromOverlayFile_NoRawCapture_CarriesItsPointsCalibrationAndSmoothing()
     {
-        // A dB SPL RTA has no raw spectrum, but the correction frozen onto its points and
-        // the smoothing it was taken under travel with it — which is what lets the wizard
-        // offer the calibration selector, and the smoothing one for an unsmoothed capture.
         OverlayFile file = CreateCapturedSlot(1);
         file.CapturedCurveKind = AnalysisCurveKind.InputSpectrum;
         file.CapturedMagnitudeScale = MagnitudeScale.SoundPressureLevel;
@@ -348,7 +317,6 @@ public sealed class EqWizardSourceResolverTests
     [Fact]
     public void CreateFromOverlayFile_NoRawCaptureTakenSmoothed_DoesNotOfferSmoothing()
     {
-        // Its points already carry 1/6-octave smoothing; smoothing them again compounds it.
         OverlayFile file = CreateCapturedSlot(1);
         file.CapturedCurveKind = AnalysisCurveKind.InputSpectrum;
         file.Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)];
@@ -364,12 +332,8 @@ public sealed class EqWizardSourceResolverTests
     [Fact]
     public void CreateFromOverlayFile_UnsmoothedSplSweep_OffersCalibrationButNotSmoothing()
     {
-        // A dB SPL SWEEP has no raw form here either, and its calibration can still be
-        // swapped. But its smoothing happens inside a Lanczos resample of linear
-        // amplitude, which cannot be replayed from the finished curve — so it is left
-        // unsmoothable rather than smoothed by a near-enough algorithm, which would feed
-        // Auto Tune a shape the measurement never had. Only the RTA's smoothing is a
-        // replayable second pass over stored band levels.
+        // A dB SPL sweep smooths inside a Lanczos resample of linear amplitude, which cannot be replayed from the curve,
+        // so it stays unsmoothable; only the RTA's band smoothing is replayable.
         OverlayFile file = CreateCapturedSlot(1);
         file.CapturedCurveKind = AnalysisCurveKind.Primary;
         file.CapturedMagnitudeScale = MagnitudeScale.SoundPressureLevel;
@@ -386,8 +350,6 @@ public sealed class EqWizardSourceResolverTests
     [Fact]
     public void CreateFromOverlayFile_LegacyCaptureWithoutAnnotations_OffersNeither()
     {
-        // A slot from before these fields existed says nothing: its calibration cannot be
-        // undone and its points may already be smoothed, so both selectors stay closed.
         OverlayFile file = CreateCapturedSlot(1);
         file.Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)];
 
@@ -401,29 +363,25 @@ public sealed class EqWizardSourceResolverTests
     [Fact]
     public void CreateFromOverlayFile_DroppedPointsTakeTheirCorrectionWithThem()
     {
-        // Normalization reorders and drops points (a duplicate frequency here). If the
-        // correction were normalized separately it would shift by one and be applied at
-        // the wrong frequencies — a silent mis-calibration.
+        // Normalization drops points; a separately normalized correction would shift to the wrong frequencies.
         OverlayFile file = CreateCapturedSlot(1);
         file.Points =
         [
             new OverlayPoint(1_000, 78),
             new OverlayPoint(100, 80),
-            new OverlayPoint(100, 99)   // duplicate frequency: dropped
+            new OverlayPoint(100, 99)
         ];
         file.PointsCalibrationCorrectionDb = [3.0, 1.0, 9.0];
 
         EqWizardCurveSource source = EqWizardSourceResolver.CreateFromOverlayFile(file);
 
         Assert.Equal([100, 1_000], source.Points.Select(point => point.X));
-        // 100 Hz keeps ITS correction (1.0) and 1 kHz keeps its own (3.0).
         Assert.Equal([1.0, 3.0], source.PointsCalibrationCorrectionDb);
     }
 
     [Fact]
     public void CreateFromOverlayFile_MismatchedCorrectionIsDiscarded()
     {
-        // Not aligned to these points, so it cannot be trusted to name their frequencies.
         OverlayFile file = CreateCapturedSlot(1);
         file.Points = [new OverlayPoint(100, 80), new OverlayPoint(1_000, 78)];
         file.PointsCalibrationCorrectionDb = [1.0];
@@ -434,8 +392,6 @@ public sealed class EqWizardSourceResolverTests
         Assert.False(source.SupportsCalibration);
     }
 
-    // ------------------------------------------------------------- point hygiene
-
     [Fact]
     public void NormalizePoints_SortsDropsDuplicatesAndKeepsUnmeasuredBands()
     {
@@ -443,21 +399,18 @@ public sealed class EqWizardSourceResolverTests
         [
             new SignalPoint(1_000, -3),
             new SignalPoint(100, -6),
-            new SignalPoint(100, -99),            // duplicate frequency
-            new SignalPoint(double.NaN, -1),      // no place on the axis
-            new SignalPoint(-5, -1),              // ditto
-            new SignalPoint(500, double.NaN),     // an unmeasured band: kept
+            new SignalPoint(100, -99),
+            new SignalPoint(double.NaN, -1),
+            new SignalPoint(-5, -1),
+            new SignalPoint(500, double.NaN),
             new SignalPoint(2_000, double.PositiveInfinity)
         ]);
 
         Assert.Equal([100, 500, 1_000], result.Select(point => point.X));
         Assert.Equal(-6, result[0].Y);
-        // A NaN level is how a curve records a band it could not trust; bridging it
-        // would invent data for the fitter to correct.
+        // A NaN level marks an untrusted band; bridging it would invent data for the fitter.
         Assert.True(double.IsNaN(result[1].Y));
     }
-
-    // ----------------------------------------------------------------- helpers
 
     private static OverlayFile CreateCapturedSlot(int slot) => new()
     {

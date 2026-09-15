@@ -1,17 +1,6 @@
 namespace Resonalyze;
 
-/// <summary>
-/// Writes a file so that an interrupted write cannot destroy what was there
-/// before: the content goes to a sibling temporary file first and only replaces
-/// the target once it is complete.
-///
-/// The application's own stores (settings, history) do this inline; this exists
-/// for the files the USER exports and shares — tuning sheets, PEQ profiles,
-/// Virtual DSP projects. Writing them through <c>File.Create</c> truncates the
-/// destination on open, so a crash or a full disk mid-write leaves a
-/// zero-length or half-written file in place of a good one, and overwriting an
-/// existing export is exactly when that matters.
-/// </summary>
+/// <summary>Temp file then replace, for user exports: File.Create truncates on open, so a crash leaves a broken file.</summary>
 internal static class AtomicFile
 {
     public static void WriteAllText(string path, string contents) =>
@@ -32,8 +21,7 @@ internal static class AtomicFile
             Directory.CreateDirectory(directory);
         }
 
-        // Beside the target, so the replace stays on one volume and File.Move
-        // can be a rename rather than a copy.
+        // Same volume, so File.Move is a rename.
         string tempPath = path + ".tmp";
         try
         {
@@ -46,15 +34,13 @@ internal static class AtomicFile
         }
         catch
         {
-            // Leave the original intact and take the debris with us.
             try
             {
                 File.Delete(tempPath);
             }
             catch
             {
-                // The write already failed; a stuck temp file is not worth
-                // masking the real exception for.
+                // Do not mask the real exception for a stuck temp file.
             }
 
             throw;

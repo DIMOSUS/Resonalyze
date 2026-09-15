@@ -3,17 +3,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Options;
 
-/// <summary>
-/// Edits the array of further microphones recorded alongside the measurement
-/// one. Works on a copy; <see cref="Microphones"/> is the edited list once the
-/// dialog returned OK.
-/// </summary>
-/// <remarks>
-/// It offers a channel and a calibration and nothing else, and that is the whole
-/// point of the array being channels of the SAME interface: there is no driver
-/// to pick, no sample rate to agree on and no clock to reconcile, because every
-/// array microphone rides the measurement's own session.
-/// </remarks>
+/// <summary>Edits further array microphones on the measurement's own interface (no driver, rate or clock to pick).</summary>
 internal sealed partial class ArrayMicrophonesDialog : Form
 {
     private readonly List<ArrayMicrophoneDefinition> microphones;
@@ -24,16 +14,7 @@ internal sealed partial class ArrayMicrophonesDialog : Form
     private readonly string channelSourceHint;
     private bool refreshing;
 
-    /// <param name="availableChannels">
-    /// Every input the current backend can actually record, INCLUDING the two the
-    /// measurement already uses — they are filtered here, so the reason a channel
-    /// is missing can be told apart from the device simply not having it.
-    /// </param>
-    /// <param name="channelSourceHint">
-    /// Where that channel count came from, for the status line. A user whose
-    /// interface presents itself to WASAPI as a stereo pair needs to be told that
-    /// its further inputs are unreachable this way rather than left guessing.
-    /// </param>
+    /// <param name="availableChannels">Includes the two measurement inputs; filtered here so the reason a channel is missing shows.</param>
     public ArrayMicrophonesDialog(
         IReadOnlyList<ArrayMicrophoneDefinition> microphones,
         IReadOnlyList<MicrophoneCalibrationEntry> calibrations,
@@ -60,8 +41,7 @@ internal sealed partial class ArrayMicrophonesDialog : Form
         buttonRemove.Click += (_, _) => RemoveSelected();
         comboBoxInput.SelectedIndexChanged += (_, _) => UpdateAddAvailability();
         listViewMicrophones.SelectedIndexChanged += (_, _) => LoadSelectionIntoEditor();
-        // Column headers are drawn by the system and ignore the control's dark
-        // colours; only they are taken over, the rows keep the default drawing.
+        // System-drawn column headers ignore dark colours; only they are owner-drawn.
         listViewMicrophones.OwnerDraw = true;
         listViewMicrophones.DrawColumnHeader += DrawColumnHeader;
         listViewMicrophones.DrawItem += (_, e) => e.DrawDefault = true;
@@ -71,17 +51,10 @@ internal sealed partial class ArrayMicrophonesDialog : Form
         RefreshList(selectedIndex: -1);
     }
 
-    /// <summary>The edited array; valid once the dialog returned OK.</summary>
     public IReadOnlyList<ArrayMicrophoneDefinition> Microphones => microphones;
 
-    // The inputs still free: the measurement microphone and the loopback are in
-    // use, and one already assigned to another array microphone would enter the
-    // spatial average twice and weigh double.
-    //
-    // excludingIndex names the microphone being EDITED, whose own input is free for
-    // it. Pass null for the question a new microphone asks — see
-    // <see cref="UpdateAddAvailability"/>, where the difference between the two is
-    // what stops Add from making a duplicate.
+    // A channel used twice would weigh double in the spatial average. excludingIndex = the microphone being edited;
+    // null for a new one (see <see cref="UpdateAddAvailability"/>).
     private List<int> FreeChannels(int? excludingIndex)
     {
         var taken = new HashSet<int> { microphoneChannel };
@@ -115,18 +88,7 @@ internal sealed partial class ArrayMicrophonesDialog : Form
         UpdateAddAvailability();
     }
 
-    /// <summary>
-    /// Whether the editor's current input may be given to a NEW microphone.
-    /// </summary>
-    /// <remarks>
-    /// Not the same question as whether the combo has anything in it, and the
-    /// difference is a duplicate. Adding selects the new row, which puts its OWN
-    /// input back on offer so its calibration can be edited without moving it — and
-    /// a second Add on that offer produced a second microphone on the same input.
-    /// Nothing downstream said so: the settings layer drops a duplicate silently to
-    /// stay able to start on its own file, so the panel went on reporting seven
-    /// microphones while six were recorded.
-    /// </remarks>
+    /// <remarks>The selected row's own input is on offer for editing, so a second Add made a duplicate that settings silently drop.</remarks>
     private void UpdateAddAvailability() =>
         buttonAdd.Enabled =
             comboBoxInput.SelectedItem is InputChannelOption { Offset: int channel } &&
@@ -135,8 +97,7 @@ internal sealed partial class ArrayMicrophonesDialog : Form
     private void Add()
     {
         if (comboBoxInput.SelectedItem is not InputChannelOption { Offset: int channel } ||
-            // The button is disabled in this state; the check stands anyway, because
-            // this is the invariant and the button is only its display.
+            // The check is the invariant; the disabled button is only its display.
             !FreeChannels(excludingIndex: null).Contains(channel))
         {
             return;
@@ -200,8 +161,6 @@ internal sealed partial class ArrayMicrophonesDialog : Form
         ArrayMicrophoneDefinition microphone = microphones[index];
         buttonUpdate.Enabled = true;
         buttonRemove.Enabled = true;
-        // The selected microphone's own channel is free FOR IT, so editing its
-        // calibration without moving it is possible.
         FillChannelCombo(index, microphone.ChannelOffset);
         MicrophoneCalibrationComboHelper.Configure(
             comboBoxCalibration,
@@ -245,8 +204,7 @@ internal sealed partial class ArrayMicrophonesDialog : Form
 
     private void UpdateStatus()
     {
-        // What a NEW microphone could take, not what the selected one may keep: the
-        // status sits under the Add button and is read as an answer to it.
+        // What a new microphone could take: the status is read as the Add button's answer.
         int free = FreeChannels(excludingIndex: null).Count;
         int conflicting = microphones.Count(Conflicts);
         string conflict = conflicting == 0
@@ -261,17 +219,7 @@ internal sealed partial class ArrayMicrophonesDialog : Form
                 : $"{microphones.Count} configured; every input is in use ({channelSourceHint}).{conflict}";
     }
 
-    /// <summary>
-    /// Whether this microphone sits on an input the measurement itself has taken.
-    /// </summary>
-    /// <remarks>
-    /// Impossible to configure here, and perfectly possible to arrive at: the array
-    /// is stored per backend and the measurement microphone or the loopback can be
-    /// moved onto one of its inputs afterwards, in a different part of the panel.
-    /// The measurement layer then drops it — one recorded position fewer than the
-    /// button promises — so the collision is named where it can be acted on rather
-    /// than left to be inferred from a curve that never appeared.
-    /// </remarks>
+    /// <remarks>Arrived at by moving the mic or loopback later; the measurement layer drops it, so name it here.</remarks>
     private bool Conflicts(ArrayMicrophoneDefinition microphone) =>
         microphone.ChannelOffset == microphoneChannel ||
         microphone.ChannelOffset == loopbackChannel;
@@ -291,8 +239,6 @@ internal sealed partial class ArrayMicrophonesDialog : Form
     {
         if (MicrophoneCalibrationIds.IsOff(calibrationId))
         {
-            // The same word the selector uses for it, so the table and the editor
-            // below it are not two vocabularies for one state.
             return "Off";
         }
 
@@ -301,9 +247,7 @@ internal sealed partial class ArrayMicrophonesDialog : Form
                 candidate.Id,
                 calibrationId,
                 StringComparison.OrdinalIgnoreCase));
-        // A calibration that has since been removed keeps its id on screen rather
-        // than reading "None": the microphone is not uncalibrated, its
-        // calibration is missing, and those want different fixes.
+        // A removed calibration shows as missing, not "None": different fix.
         return entry?.Name ?? $"{calibrationId} (missing)";
     }
 

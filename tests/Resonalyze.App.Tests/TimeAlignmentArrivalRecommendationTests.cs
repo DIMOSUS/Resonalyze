@@ -2,11 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-// The "Use First Arrival for alignment" hint and the disqualifying verdicts
-// (modal latch, near-noise, contaminated full-band) are independent states;
-// this contract pins that the recommendation is suppressed whenever any
-// verdict has just disqualified the arrival, so the status box can never
-// give two opposite instructions at once.
+// The recommendation is suppressed whenever a verdict disqualified the arrival, so the status never gives opposite instructions.
 public sealed class TimeAlignmentArrivalRecommendationTests
 {
     private static TimeAlignmentAnalysisResult Result(
@@ -38,9 +34,6 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     [Fact]
     public void ModalLatchSuppressesTheFirstArrivalRecommendation()
     {
-        // The exact contradiction from review: Latched + a separate late
-        // strongest peak — "do not align from this arrival" must not be
-        // followed by "Use First Arrival for alignment".
         Assert.False(TimeAlignmentPanelController.IsArrivalRecommendable(
             Result(snrDb: 40, strongestIsSeparateArrival: true),
             Probe(AutoAlignmentEngine.ArrivalCertificate.Latched),
@@ -61,8 +54,7 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     [Fact]
     public void ContaminatedFullBandSuppressesTheFirstArrivalRecommendation()
     {
-        // Bypass analyzes the raw record, so with detected crosstalk the
-        // First Arrival may be timing the click.
+        // Bypass analyzes the raw record, so detected crosstalk may be what First Arrival times.
         Assert.False(TimeAlignmentPanelController.IsArrivalRecommendable(
             Result(snrDb: 40),
             honestyProbe: null,
@@ -73,8 +65,6 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     [Fact]
     public void CleanedBandedModeWithCrosstalkKeepsTheRecommendation()
     {
-        // In the banded modes the analysis ran on the CLEANED record — the
-        // detected crosstalk is no longer in the figures.
         Assert.True(TimeAlignmentPanelController.IsArrivalRecommendable(
             Result(snrDb: 40),
             Probe(AutoAlignmentEngine.ArrivalCertificate.Verified),
@@ -100,9 +90,6 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     [Fact]
     public void AnUnverifiedProbeAloneDoesNotSuppressTheRecommendation()
     {
-        // Unverified = no certificate either way; the arrival stays usable
-        // (mirrors the engine: unverified reads keep working, just without
-        // a tight lock).
         Assert.True(TimeAlignmentPanelController.IsArrivalRecommendable(
             Result(snrDb: 40),
             Probe(AutoAlignmentEngine.ArrivalCertificate.Unverified),
@@ -110,11 +97,7 @@ public sealed class TimeAlignmentArrivalRecommendationTests
             crosstalkDetected: false));
     }
 
-    // Which ROW of the delay table is marked: the first arrival when it
-    // stands, none where a verdict disqualified the read. The energy onset is
-    // never the pick here, however low the band and clean the record: its
-    // bias cancels only between the two sides of one driver pair (the
-    // engine's links), and this panel cannot know what two records are.
+    // The energy onset is never recommended here: its bias cancels only between two sides of one driver pair.
     [Fact]
     public void RecommendedRow_IsTheFirstArrivalWhereItStands()
     {
@@ -137,8 +120,6 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     [Fact]
     public void RecommendedRow_NeverPicksTheEnergyOnsetOrTheStrongestPeak()
     {
-        // A clean low band — the engine's own onset case — still marks the
-        // first arrival: the table shows the onset, it does not recommend it.
         Assert.Equal(
             TimeAlignmentPanelController.DelayRow.FirstArrival,
             TimeAlignmentPanelController.RecommendedRow(

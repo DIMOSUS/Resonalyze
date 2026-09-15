@@ -1,18 +1,11 @@
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The options panels assign settings straight to these controls without
-/// pre-clamping them to each control's range, so the control has to absorb an
-/// out-of-range value. <see cref="System.Windows.Forms.NumericUpDown"/> throws
-/// there; this one is expected to clamp, and several panels depend on it.
-/// </summary>
+/// <summary>Panels assign settings without pre-clamping; NumericUpDown throws, this control must clamp.</summary>
 public sealed class DarkNumericUpDownRangeTests
 {
     [Fact]
     public void AValueBelowTheMinimum_ClampsInsteadOfThrowing()
     {
-        // The Measurements control offers 2..64 while a settings file may still
-        // carry the old single-run default of 1, which Init assigns directly.
         using var control = new DarkNumericUpDown
         {
             Minimum = 2,
@@ -55,7 +48,6 @@ public sealed class DarkNumericUpDownRangeTests
         control.Value = 5;
 
         Assert.Equal(20m, control.Value);
-        // Already at the minimum, so nothing changed and nothing is raised.
         Assert.Null(observed);
     }
 }

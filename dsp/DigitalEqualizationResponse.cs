@@ -1,10 +1,6 @@
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// Evaluates the actual RBJ digital PEQ realization used by Virtual DSP and
-/// coefficient exports. Sample-rate-aware fitting and previews must use this
-/// instead of the sample-rate-independent analog prototype.
-/// </summary>
+/// <summary>The actual RBJ digital PEQ realization; rate-aware fitting and previews must use this, not the analog prototype.</summary>
 public static class DigitalEqualizationResponse
 {
     public static double MagnitudeDbAt(

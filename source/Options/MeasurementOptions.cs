@@ -18,19 +18,11 @@ namespace Resonalyze.Options
     public partial class MeasurementOptions : Form
     {
         private readonly WrappingToolTip deviceToolTip = new();
-        // Raised the moment any calibration (the microphone's 0° file, the list of
-        // additional ones, or the SPL anchor) is selected, edited, captured, or
-        // cleared, so the host can apply and persist it immediately instead of
-        // only when the panel is applied.
+        // Raised on any calibration change so the host persists it immediately, not on Apply.
         internal event Action<CalibrationSelection>? CalibrationChanged;
-        // Raised whenever a control outside the audio-backend group changes. That
-        // whole group — the backend, the format it opens the device with (sample
-        // rate and bit depth), its device panel and the Apply button — is the only
-        // part of this panel that waits to be applied; everything else takes
-        // effect as it is edited.
+        // Only the audio-backend group (backend, rate, bit depth, device panel) waits for Apply; everything else raises this.
         public event Action? SweepSettingsChanged;
 
-        /// <summary>A snapshot of the calibrations the panel manages.</summary>
         internal sealed record CalibrationSelection(
             string? MicrophoneCalibration0DegreesPath,
             IReadOnlyList<MicrophoneCalibrationDefinition> AdditionalMicrophoneCalibrations,
@@ -45,32 +37,22 @@ namespace Resonalyze.Options
         private IReadOnlyList<AudioEndpointDescriptor> wasapiRenderEndpoints = Array.Empty<AudioEndpointDescriptor>();
         private IReadOnlyList<AsioDeviceInfo> asioDrivers = Array.Empty<AsioDeviceInfo>();
         private AsioDriverInfo asioDriverInfo = AsioDeviceCatalog.EmptyDriverInfo;
-        // What the last rate probe amounted to, so the status line can say which of the
-        // three situations it is in rather than pronouncing on a rate it did not test.
         private bool sampleRateProbeFailed;
         private int? sampleRateFellBackFrom;
         private bool initializing;
         private string? microphoneCalibration0DegreesPath;
         private List<MicrophoneCalibrationDefinition> additionalMicrophoneCalibrations = [];
-        // Which calibration the measurement microphone is read through. It is the
-        // rig's answer, not a view's: the run freezes it into the file, and the array
-        // microphones' own choices sit two rows below it in the same panel.
+        // The rig's choice, frozen into the file by the run.
         private string? microphoneCalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
         private List<ArrayMicrophoneDefinition> waveArrayMicrophones = [];
         private List<ArrayMicrophoneDefinition> asioArrayMicrophones = [];
-        // The device each array was configured on. Null until the array is next
-        // edited; see MeasurementSettingsFile.ArrayMatchesDevice.
+        // Null until the array is next edited; see MeasurementSettingsFile.ArrayMatchesDevice.
         private string? waveArrayDeviceId;
         private string? asioArrayDeviceId;
-        // The SPL calibration anchor and the factory used to capture it. The
-        // factory is only present when the form is created for real use (the
-        // parameterless designer constructor leaves it null, which disables the
-        // Calibrate button).
+        // Null under the designer constructor, which disables the Calibrate button.
         private readonly IAudioSessionFactory? audioSessionFactory;
         private SplCalibration? splCalibration;
-        // Remembers the loopback channel choice while a mono or missing
-        // recording device forces the combo to "None", so selecting a stereo
-        // device again restores it instead of losing it on the next apply.
+        // Remembered while a mono/missing device forces "None", so a stereo device restores it.
         private int? preferredWaveLoopbackChannelOffset;
         private bool updatingWaveLoopbackSelection;
         private bool updatingSweepBand;
@@ -208,10 +190,7 @@ namespace Resonalyze.Options
             comboBoxWaveLoopbackChannel.SelectedIndexChanged += comboBoxWaveLoopbackChannel_SelectedIndexChanged;
             comboBoxWaveInputChannel.SelectedIndexChanged += comboBoxWaveInputChannel_SelectedIndexChanged;
             comboBoxAsioDriver.SelectedIndexChanged += comboBoxAsioDriver_SelectedIndexChanged;
-            // The array button reports what would actually be RECORDED, so moving the
-            // measurement microphone or the loopback onto one of the array's inputs
-            // has to show there: that is the moment a configured position stops being
-            // recordable, and it happens in a different part of this panel.
+            // Moving the mic or loopback onto an array input makes a position unrecordable; the button must show it.
             comboBoxWaveInputChannel.SelectedIndexChanged +=
                 (_, _) => UpdateArrayMicrophoneButton();
             comboBoxWaveLoopbackChannel.SelectedIndexChanged +=
@@ -405,9 +384,7 @@ namespace Resonalyze.Options
                 settings.AsioDriverName);
             if (asioDriverIndex < 0 && !string.IsNullOrWhiteSpace(settings.AsioDriverName))
             {
-                // The saved driver is currently absent (uninstalled, or the ASIO
-                // subsystem is unavailable). Keep it selectable so an apply
-                // re-persists the same name instead of another driver or null.
+                // Keep an absent saved driver selectable so Apply re-persists the same name.
                 comboBoxAsioDriver.Items.Add(
                     new AsioDeviceInfo(settings.AsioDriverName, Missing: true));
                 asioDriverIndex = comboBoxAsioDriver.Items.Count - 1;
@@ -422,15 +399,12 @@ namespace Resonalyze.Options
                 UpdateComboBoxToolTip(comboBoxAsioDriver);
             }
 
-            // Clamped and rounded: the settings file is not normalized against
-            // the control ranges, and (int) truncation shaves a millisecond off
-            // durations that are not exactly representable in binary.
+            // Clamped and rounded: the file is not normalized to control ranges, and (int) truncation loses a millisecond.
             (double lowFrequencyHz, double highFrequencyHz) = settings.ResolveBand(settings.SampleRate);
             numericUpDownLowFrequency.Value = numericUpDownLowFrequency.ClampValue(
                 Math.Round(lowFrequencyHz));
             numericUpDownHighFrequency.Value = numericUpDownHighFrequency.ClampValue(
                 Math.Max((double)numericUpDownLowFrequency.Value + 1.0, Math.Round(highFrequencyHz)));
-            // The duration is entered per octave; show the stored total that way.
             double perOctaveMs = ExponentialSineSweep.OctavePaceForTotalDuration(
                 lowFrequencyHz,
                 highFrequencyHz,
@@ -450,8 +424,6 @@ namespace Resonalyze.Options
                     protectiveHighPass.FrequencyHz);
             PopulateProtectiveHighPassSlopes(protectiveHighPass.SlopeDbPerOctave);
             UpdateProtectiveHighPassAvailability();
-            // Total duration and the achieved-range line are filled by the shared
-            // preview at the end of Init, once the sample-rate control is settled.
             numericUpDownAverageRunCount.Value = Math.Clamp(settings.AverageRunCount, 1, 64);
             microphoneCalibration0DegreesPath = settings.MicrophoneCalibration0DegreesPath;
             additionalMicrophoneCalibrations = settings.AdditionalMicrophoneCalibrations
@@ -469,10 +441,7 @@ namespace Resonalyze.Options
             asioArrayDeviceId = settings.AsioArrayDeviceId;
             splCalibration = settings.SplCalibration;
             UpdateCalibrationButtons();
-            // The button's own refresh happens in the UpdateAudioBackendControls
-            // call at the end of Init, once the device/rate selections are settled.
-            // The driver probe comes first: with ASIO it is what supplies the list
-            // of sample rates, so the rate control cannot be filled before it.
+            // With ASIO the driver probe supplies the rate list, so it must run before the rate control is filled.
             RefreshAsioDriverInfo(
                 settings.SampleRate,
                 settings.AsioInputChannelOffset,
@@ -505,10 +474,7 @@ namespace Resonalyze.Options
             settings.SplCalibration = splCalibration;
 
             int sampleRate = GetSelectedSampleRate();
-            // Read the bit depth from the control, the single UI source of truth,
-            // matching GetSupportedSampleRates. Equal to expSweepMeasurement.Bits
-            // while the control is read-only, so this is a no-op today; it stops
-            // silently ignoring the control the day it becomes editable.
+            // The control is the UI source of truth (read-only today, equal to expSweepMeasurement.Bits).
             int bits = (int)numericUpDownBits.Value;
             PlaybackChannel playbackChannel = GetSelectedPlaybackChannel();
             double lowFrequencyHz = (double)numericUpDownLowFrequency.Value;
@@ -603,19 +569,12 @@ namespace Resonalyze.Options
                 wasapiRenderEndpointId = renderEndpoint.Id;
                 if (audioBackend == AudioBackend.WasapiShared)
                 {
-                    // Shared never takes the rate from the combo, so no fallback of the
-                    // combo's can reach the configuration through it.
                     sampleRate = captureEndpoint.PreferredFormat.SampleRate;
                 }
                 else if (audioBackend == AudioBackend.WasapiExclusive)
                 {
-                    // Exclusive does take it from the combo, and the combo can be empty:
-                    // an endpoint pair with no rate in common is a real answer, and
-                    // GetSelectedSampleRate then answers with its own 44.1 kHz fallback.
-                    // Persisting that is persisting a format the endpoints just refused.
-                    // Checked here, after the availability test above, so an endpoint that
-                    // is simply gone keeps its own message instead of being reported as a
-                    // rate mismatch.
+                    // Exclusive reads the combo, which can be empty (no common rate) and then falls back to 44.1 kHz;
+                    // persisting that would persist a refused format. Checked after availability so a gone endpoint keeps its message.
                     SampleRateOptions.ValidateSelectedRate(
                         GetSupportedSampleRates(),
                         sampleRate,
@@ -659,12 +618,7 @@ namespace Resonalyze.Options
                             ? renderInfo.DisplayName
                             : preferredWasapiRenderEndpointName,
                     WasapiBufferMilliseconds: settings.WasapiBufferMilliseconds,
-                    // The array too, or applying this panel hands the measurement a
-                    // configuration that differs from the one the settings file builds
-                    // for the next run — the array simply absent from it. Harmless
-                    // today only because a run re-applies from the settings; a
-                    // configuration that is quietly not the one being measured with is
-                    // the shape of a defect, not a state to leave standing.
+                    // Include the array, or the applied configuration differs from what the settings build for the next run.
                     WaveArrayInputChannelOffsets: audioBackend == AudioBackend.Asio
                         ? []
                         : SelectedReachableArrayChannels(),
@@ -691,33 +645,17 @@ namespace Resonalyze.Options
             preferredWasapiCaptureEndpointName = settings.WasapiCaptureEndpointName;
             preferredWasapiRenderEndpointName = settings.WasapiRenderEndpointName;
 
-            // Keep the live measurement's anchor in step with the applied settings,
-            // so a freshly captured impulse response stamps the current calibration.
             expSweepMeasurement.SplCalibration = splCalibration;
         }
 
-        /// <summary>
-        /// Writes the immediately-applied half of the panel — the sweep band, its
-        /// pacing, the playback channel and the averaging — into
-        /// <paramref name="settings"/>. The audio backend group is deliberately
-        /// left out: the backend, its format (sample rate and bit depth), its
-        /// device panel and the Apply button all stay pending on the controls
-        /// until <see cref="SetOptions"/> commits them together.
-        /// </summary>
-        /// <remarks>
-        /// Nothing is pushed into the live <see cref="ExpSweepMeasurement"/> here.
-        /// Its <c>Init</c> discards the measured result, and the settings reach it
-        /// anyway right before the next sweep runs, so an edit made while looking
-        /// at a measurement cannot throw that measurement away.
-        /// </remarks>
+        /// <summary>Writes the immediately-applied half of the panel; the backend group waits for <see cref="SetOptions"/>.</summary>
+        /// <remarks>Nothing is pushed into <see cref="ExpSweepMeasurement"/>: its <c>Init</c> discards the measured result.</remarks>
         internal void ApplySweepSettings(
             MeasurementSettingsFile.SweepMeasurementSettings settings)
         {
             settings.LowFrequencyHz = (double)numericUpDownLowFrequency.Value;
             settings.HighFrequencyHz = (double)numericUpDownHighFrequency.Value;
-            // Paced against the APPLIED sample rate, not the one selected in the
-            // backend group: an uncommitted rate must not leak into the sweep. The
-            // total is recomputed against the new rate when Apply commits it.
+            // Paced against the applied rate: an uncommitted rate must not leak into the sweep.
             settings.RequestedDurationSeconds = GetRequestedDurationSeconds(settings.SampleRate);
             settings.PlaybackChannel = GetSelectedPlaybackChannel();
             settings.AverageRunCount = (int)numericUpDownAverageRunCount.Value;
@@ -726,11 +664,7 @@ namespace Resonalyze.Options
             settings.ProtectiveHighPassFrequencyHz = protectiveHighPass.FrequencyHz;
             settings.ProtectiveHighPassSlopeDbPerOctave =
                 protectiveHighPass.SlopeDbPerOctave;
-            // The array belongs here as much as the sweep does: it is part of the
-            // capture routing, so an edit has to reach the settings on the same
-            // apply that reopens the device with the new channels. Left out, the
-            // panel showed the new count while the file kept the old list and the
-            // next open read it back empty.
+            // Array is capture routing, so it reaches the settings on the same apply that reopens the device.
             settings.WaveArrayMicrophones = waveArrayMicrophones
                 .Select(definition => definition.Clone())
                 .ToList();
@@ -739,13 +673,9 @@ namespace Resonalyze.Options
                 .ToList();
             settings.WaveArrayDeviceId = waveArrayDeviceId;
             settings.AsioArrayDeviceId = asioArrayDeviceId;
-            // Same reason as the array: it is part of what the next run records, so it
-            // has to reach the settings on the edit rather than on the panel's close.
             settings.MicrophoneCalibrationId = microphoneCalibrationId;
         }
 
-        // The duration field holds a per-octave pace; expand it to the total sweep
-        // length the achieved band needs.
         private double GetRequestedDurationSeconds(int sampleRate)
         {
             double perOctaveSeconds = (double)numericUpDownRequestedDuration.Value * 0.001;
@@ -780,12 +710,7 @@ namespace Resonalyze.Options
             RaiseCalibrationChanged();
         }
 
-        /// <summary>
-        /// Replaces the working copy of the additional-calibration list with one
-        /// the shell changed behind this panel (a curve kept from a Virtual DSP
-        /// session), so the next Apply writes that list back rather than the one
-        /// this panel opened on.
-        /// </summary>
+        /// <summary>Adopts a list the shell changed behind this panel, so the next Apply does not write back the stale one.</summary>
         internal void AdoptAdditionalCalibrations(
             IReadOnlyList<MicrophoneCalibrationDefinition> definitions)
         {
@@ -817,11 +742,7 @@ namespace Resonalyze.Options
                 ? (AudioBackend)comboBoxAudioBackend.SelectedIndex
                 : AudioBackend.Wave;
 
-        /// <summary>
-        /// The calibrations the array can choose from: this panel's WORKING copy,
-        /// not the applied one, so a calibration added here a moment ago can be
-        /// assigned to an array microphone before anything is applied.
-        /// </summary>
+        /// <summary>From the working copy, so a just-added calibration is assignable before Apply.</summary>
         private IReadOnlyList<MicrophoneCalibrationEntry> BuildCalibrationEntries()
         {
             string? zeroDegreePath = NormalizeCalibrationPath(microphoneCalibration0DegreesPath);
@@ -841,38 +762,30 @@ namespace Resonalyze.Options
             return entries;
         }
 
-        // The array belongs to the backend it was configured on: a channel
-        // number names a different input on each.
+        // A channel number names a different input on each backend (and each device).
         private List<ArrayMicrophoneDefinition> SelectedArrayMicrophones =>
             SelectedAudioBackend == AudioBackend.Asio
                 ? asioArrayMicrophones
                 : waveArrayMicrophones;
 
-        // ...and to the DEVICE, which the backend does not narrow down. Two
-        // interfaces with eight inputs each agree about every channel NUMBER and
-        // about nothing else, so an array carried across them keeps its
-        // calibrations and its notes while pointing at inputs nobody chose.
         private string? SelectedArrayDeviceId =>
             SelectedAudioBackend == AudioBackend.Asio
                 ? asioArrayDeviceId
                 : waveArrayDeviceId;
 
-        // What the array would be stamped with if it were configured right now.
         private string? CurrentCaptureDeviceId =>
             SelectedAudioBackend == AudioBackend.Asio
                 ? (comboBoxAsioDriver.SelectedItem as AsioDeviceInfo)?.DriverName
                 : (comboBoxRecordingDevice.SelectedItem as AudioEndpointDescriptor)?.Id
                     ?? preferredWasapiCaptureEndpointId;
 
-        // The same verdict the settings reach, so the panel is not a second opinion.
+        // Same verdict as the settings, so the panel is not a second opinion.
         private bool SelectedArrayMatchesDevice =>
             MeasurementSettingsFile.SweepMeasurementSettings.ArrayMatchesDevice(
                 SelectedArrayDeviceId,
                 CurrentCaptureDeviceId);
 
-        // The name to show for the device an array was configured on, when it is not
-        // this one. An ASIO stamp IS the driver name; a WASAPI stamp is an endpoint
-        // id, which is unreadable, so the list is asked for its name.
+        // An ASIO stamp is the driver name; a WASAPI stamp is an unreadable endpoint id, so look up its name.
         private string DescribeArrayDevice()
         {
             string? id = SelectedArrayDeviceId;
@@ -897,11 +810,7 @@ namespace Resonalyze.Options
             return "another device";
         }
 
-        /// <summary>
-        /// Every input the selected backend can record, and where that list comes
-        /// from — the second half matters because "there is no room for an array"
-        /// has more than one cause, and the user can only act on the right one.
-        /// </summary>
+        /// <summary>Recordable inputs and where the list came from, since "no room for an array" has several causes.</summary>
         private (IReadOnlyList<int> Channels, string Source) GetArrayInputChannels()
         {
             AudioBackend backend = SelectedAudioBackend;
@@ -939,11 +848,6 @@ namespace Resonalyze.Options
             RaiseSweepSettingsChanged();
         }
 
-        /// <summary>
-        /// Rebuilds the measurement microphone's calibration list from this panel's
-        /// WORKING copy, so a calibration added a moment ago can be chosen before
-        /// anything is applied — the same rule the array dialog follows.
-        /// </summary>
         private void RefreshMicrophoneCalibrationCombo()
         {
             bool wasInitializing = initializing;
@@ -979,8 +883,6 @@ namespace Resonalyze.Options
             List<ArrayMicrophoneDefinition> edited = dialog.Microphones
                 .Select(microphone => microphone.Clone())
                 .ToList();
-            // Confirming the dialog is the confirmation: whatever the list said
-            // before, these inputs are now meant for the device selected now.
             if (asio)
             {
                 asioArrayMicrophones = edited;
@@ -993,10 +895,7 @@ namespace Resonalyze.Options
             }
 
             UpdateArrayMicrophoneButton();
-            // Every other control on this panel applies on the fly; a dialog is no
-            // different. Without this the edit sat in the field until some unrelated
-            // control happened to raise the event, and closing the panel first threw
-            // it away.
+            // Apply on the fly like every other control; otherwise closing the panel dropped the edit.
             RaiseSweepSettingsChanged();
         }
 
@@ -1005,9 +904,7 @@ namespace Resonalyze.Options
             int count = SelectedArrayMicrophones.Count;
             if (count > 0 && !SelectedArrayMatchesDevice)
             {
-                // Not a count, because none of them would be recorded. Naming the
-                // device it belongs to is the whole message: the inputs are still
-                // there, so nothing else on this panel would look wrong.
+                // Not a count: none would be recorded; the device name is the whole message.
                 buttonArrayMicrophones.Text =
                     $"{count} on {DescribeArrayDevice()}...";
                 return;
@@ -1022,17 +919,7 @@ namespace Resonalyze.Options
                     : $"{count} microphones{suffix}...";
         }
 
-        /// <summary>
-        /// How many of the configured array microphones would actually be recorded.
-        /// </summary>
-        /// <remarks>
-        /// The same rule <c>MeasurementSettingsFile.ResolveArrayChannels</c> applies,
-        /// and it has to be the same or the button is a second opinion. It matters
-        /// because that rule DROPS what it cannot record — a settings file has to stay
-        /// startable — so a measurement microphone moved onto an array input after the
-        /// array was configured takes a position out of the set. Reported here rather
-        /// than left to be noticed as a curve that never appeared.
-        /// </remarks>
+        /// <remarks>Must match <c>MeasurementSettingsFile.ResolveArrayChannels</c>, which drops unrecordable inputs.</remarks>
         private int UsableArrayMicrophoneCount() =>
             SelectedArrayMatchesDevice ? SelectedReachableArrayChannels().Count : 0;
 
@@ -1079,9 +966,7 @@ namespace Resonalyze.Options
             {
                 splCalibration = dialog.Result;
                 UpdateSplCalibrationButton();
-                // A completed physical calibration is not a tentative edit: persist
-                // it now instead of waiting for an Apply that the user may never
-                // make (the panel only applies on the Apply button, not on close).
+                // Persist a completed physical calibration now, not on an Apply that may never come.
                 RaiseCalibrationChanged();
             }
         }
@@ -1093,10 +978,7 @@ namespace Resonalyze.Options
             RaiseCalibrationChanged();
         }
 
-        // The capture side of the currently selected audio configuration, with no
-        // loopback: the SPL calibration listens to the microphone alone against an
-        // external calibrator. Playback is silent, so the render selection only
-        // needs to be openable.
+        // Microphone only, no loopback: calibrated against an external calibrator.
         private AudioSessionRequest BuildCalibrationCaptureRequest()
         {
             var backend = (AudioBackend)comboBoxAudioBackend.SelectedIndex;
@@ -1210,9 +1092,7 @@ namespace Resonalyze.Options
                 return currentPath;
             }
 
-            // Probe the pick immediately: a file that cannot be parsed would
-            // otherwise fail silently at plot time and leave every measurement
-            // uncalibrated. The selection is kept so the user can fix the file.
+            // Probe now: an unparsable file would otherwise silently leave measurements uncalibrated.
             var probe = new CalibrationFile(dialog.FileName);
             if (!probe.HasData)
             {
@@ -1251,7 +1131,6 @@ namespace Resonalyze.Options
                 "about to record — set it before measuring, not after. The analysis " +
                 "views then read a measurement through the curve it was recorded " +
                 "with, and Virtual DSP offers it as \"Own (as measured)\".");
-            // The library changed under it: a file cleared, an entry added or renamed.
             RefreshMicrophoneCalibrationCombo();
         }
 
@@ -1261,8 +1140,7 @@ namespace Resonalyze.Options
             string? path)
         {
             string? normalized = NormalizeCalibrationPath(path);
-            // Covers a deleted file and an existing-but-unparsable one; both
-            // silently disable the correction at plot time otherwise.
+            // Deleted or unparsable files both silently disable correction at plot time otherwise.
             string? problem = normalized == null
                 ? null
                 : new CalibrationFile(normalized).LoadError;
@@ -1300,8 +1178,6 @@ namespace Resonalyze.Options
         private void averagingSetting_Changed(object? sender, EventArgs e) =>
             RaiseSweepSettingsChanged();
 
-        // Keeps low < high while the user edits either bound, then refreshes the
-        // achieved-range preview. Guarded so the cross-adjustment does not recurse.
         private void numericUpDownSweepBand_ValueChanged(object? sender, EventArgs e)
         {
             if (initializing || updatingSweepBand)
@@ -1342,17 +1218,12 @@ namespace Resonalyze.Options
             RaiseSweepSettingsChanged();
         }
 
-        // Fills the read-only Compute Duration field and the achieved-range line
-        // from the values shown in the panel, not from the last generated sweep's
-        // state (which is stale until the next run).
+        // From the panel's values, not the last generated sweep (stale until the next run).
         private void RefreshSweepBandPreview()
         {
             if (comboBoxSampleRate.SelectedItem is not int)
             {
-                // Nothing is selected because nothing is offered: no rate opens for this
-                // configuration. GetSelectedSampleRate answers 44.1 kHz to callers that
-                // need a number anyway, and a band and duration computed from it would
-                // describe a sweep this configuration cannot run.
+                // No rate opens: GetSelectedSampleRate's 44.1 kHz fallback would describe an unrunnable sweep.
                 labelActualRangeCaption.Text = "—";
                 labelActualRangeCaption.ForeColor = Color.Gold;
                 deviceToolTip.SetToolTip(
@@ -1370,14 +1241,10 @@ namespace Resonalyze.Options
                 lowHz, highHz, perOctaveSeconds, sampleRate);
             ExpSweepSpec spec = ExponentialSineSweep.ComputeSpec(
                 lowHz, highHz, totalSeconds, sampleRate);
-            // The achieved band, its octave span and the resulting total sweep
-            // duration, all in one line (there is no separate duration field).
             labelActualRangeCaption.Text = spec.IsValid
                 ? $"{spec.LowFrequencyHz:0.#}–{spec.HighFrequencyHz:0} Hz · " +
                     $"{spec.OctaveSpan:0.00} oct · {spec.ComputedDurationSeconds:0.00} s"
                 : "—";
-            // The line already shows the truth, but silently, so say out loud when
-            // the sweep does not deliver what the fields above ask for.
             string? warning = DescribeSweepShortfall(spec, lowHz, highHz, totalSeconds);
             labelActualRangeCaption.ForeColor = warning == null
                 ? Color.FromArgb(150, 200, 170)
@@ -1389,8 +1256,6 @@ namespace Resonalyze.Options
                     "outside it, and how long it takes.");
         }
 
-        // Null when the sweep delivers the requested band at full amplitude within
-        // the length limit; otherwise what the user is actually getting instead.
         private static string? DescribeSweepShortfall(
             ExpSweepSpec spec,
             double requestedLowHz,
@@ -1416,8 +1281,7 @@ namespace Resonalyze.Options
                 return null;
             }
 
-            // Full amplitude needs a whole cycle plus room for the fade, so a short
-            // sweep falls short at the bottom first.
+            // Full amplitude needs a whole cycle plus fade room, so a short sweep falls short at the bottom first.
             return $"⚠ Full amplitude only from {spec.FullAmplitudeLowFrequencyHz:0.#} " +
                 $"to {spec.FullAmplitudeHighFrequencyHz:0} Hz: one cycle at " +
                 $"{requestedLowHz:0.#} Hz already takes " +
@@ -1425,13 +1289,8 @@ namespace Resonalyze.Options
                 "per-octave time to reach the requested band.";
         }
 
-        // Writes the sweep the panel currently describes — the same samples the
-        // next measurement would play, on the channels the playback selection
-        // routes them to — so it can be played from something that is not
-        // Resonalyze (a phone, a head unit, a test disc) while this still
-        // records. The band and pace are read from the controls; the sample rate
-        // is the SELECTED one, matching the achieved-range line above the button
-        // rather than whatever the last Apply committed.
+        // Writes the sweep the next measurement would play, for playback from another device while this records.
+        // Uses the selected (not applied) rate, matching the achieved-range line.
         private void buttonSaveSweepFile_Click(object? sender, EventArgs e)
         {
             double lowFrequencyHz = (double)numericUpDownLowFrequency.Value;
@@ -1460,8 +1319,7 @@ namespace Resonalyze.Options
             UseWaitCursor = true;
             try
             {
-                // A sweep of its own, not the live measurement's: generating into
-                // that one would discard the result currently on screen.
+                // Own instance: generating into the live one would discard the result on screen.
                 using var sweep = new ExponentialSineSweep();
                 sweep.FillData(
                     lowFrequencyHz,
@@ -1501,8 +1359,7 @@ namespace Resonalyze.Options
                 return;
             }
 
-            // The microphone channel choice changes how many channels the
-            // device must open, and therefore which sample rates it supports.
+            // Channel count changes which sample rates the device supports.
             RefreshSampleRateOptions(GetSelectedSampleRate());
         }
 
@@ -1571,8 +1428,7 @@ namespace Resonalyze.Options
             }
 
             UpdateComboBoxToolTip(comboBoxAsioDriver);
-            // Probe the new driver before rebuilding the rate list: with ASIO the
-            // list comes out of that probe.
+            // With ASIO the rate list comes from the driver probe.
             RefreshAsioDriverInfo(
                 GetSelectedSampleRate(),
                 GetSelectedAsioInputChannelOffset(),
@@ -1589,8 +1445,6 @@ namespace Resonalyze.Options
                 return;
             }
 
-            // The playback channel count decides which sample rates the device can
-            // open, so the rate list is rebuilt before the change is applied.
             RefreshSampleRateOptions(GetSelectedSampleRate());
             RaiseSweepSettingsChanged();
         }
@@ -1602,29 +1456,14 @@ namespace Resonalyze.Options
                 return;
             }
 
-            // The user picked this rate, so nothing was taken away from them: the
-            // marker left by an earlier automatic fallback describes an action that is
-            // now over, and UpdateAsioStatusLabels would otherwise keep reporting
-            // "96000 Hz is not offered — changed to 48000 Hz" about a rate the user
-            // chose. The probe verdict is not cleared here but re-taken below: the
-            // re-probe for the new rate is a fresh answer, and RefreshAsioDriverInfo
-            // settles the flag from it before the status line is written.
+            // A user pick ends any earlier automatic-fallback marker; the probe verdict is re-taken below.
             sampleRateFellBackFrom = null;
 
-            // The achieved band and its cycle-quantized duration depend on the
-            // sample rate, so re-preview on any change (not just for ASIO). The
-            // rate itself belongs to the audio backend group and is not applied
-            // until the Apply button commits it — only the preview moves here.
+            // Preview only; the rate itself waits for Apply.
             RefreshSweepBandPreview();
             if (IsSelectedWasapiBackend())
             {
-                // The endpoint status line reports on the SELECTED rate, and picking
-                // another one out of a list that already holds it does not rebuild the
-                // list — so RefreshSampleRateOptions, the other place that rewrites the
-                // line, never runs here. Without this the line goes on naming the rate
-                // the user just moved away from. Only for WASAPI: the other branches of
-                // UpdateWaveLoopbackControls move the loopback selection, which would
-                // re-enter through its own SelectedIndexChanged.
+                // Picking a rate already in the list does not rebuild it, so the WASAPI status line must be rewritten here.
                 UpdateWaveLoopbackControls();
             }
             if (comboBoxAudioBackend.SelectedIndex != (int)AudioBackend.Asio)
@@ -1632,8 +1471,7 @@ namespace Resonalyze.Options
                 return;
             }
 
-            // Buffer size and latency are rate-dependent, so the driver is probed
-            // again for the new rate; the rate list itself does not change.
+            // Buffer size and latency are rate-dependent.
             RefreshAsioDriverInfo(
                 GetSelectedSampleRate(),
                 GetSelectedAsioInputChannelOffset(),
@@ -1644,8 +1482,6 @@ namespace Resonalyze.Options
 
         private void UpdateAudioBackendControls()
         {
-            // The array is per backend, so the button's count changes with the
-            // selection, not only when the array itself is edited.
             UpdateArrayMicrophoneButton();
             bool useAsio =
                 comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio;
@@ -1687,8 +1523,7 @@ namespace Resonalyze.Options
             buttonDeviceSettings.Visible = useWasapi;
             buttonDeviceSettings.Enabled = useWasapi;
             UiStyle.SetTextEnabledLook(labelAsioLoopbackChannel, useAsio);
-            // Refresh the stale marker: the calibration is pinned to one input, so
-            // switching backend/device must flag it if it no longer matches.
+            // The calibration is pinned to one input; flag it stale when backend/device changes.
             UpdateSplCalibrationButton();
             if (useWasapi)
             {
@@ -1762,8 +1597,7 @@ namespace Resonalyze.Options
                 int preferredOutputOffset = GetSelectedAsioOutputChannelOffset();
                 int? preferredLoopbackOffset = GetSelectedAsioLoopbackInputChannelOffset();
                 AsioDeviceCatalog.ShowControlPanel(asioDriver.DriverName);
-                // Re-probe first: the control panel may have changed the buffer
-                // size or the rates the driver reports.
+                // The control panel may have changed buffer size or reported rates.
                 RefreshAsioDriverInfo(
                     preferredSampleRate,
                     preferredInputOffset,
@@ -1803,9 +1637,7 @@ namespace Resonalyze.Options
             }
         }
 
-        // Opens the selected driver once and caches everything read from it,
-        // including the sample rates GetSupportedSampleRates then serves. The rate
-        // is passed in because Init probes before the rate control exists.
+        // Opens the driver once and caches it, including the rates GetSupportedSampleRates serves.
         private void RefreshAsioDriverInfo(
             int sampleRate,
             int preferredInputOffset,
@@ -1816,12 +1648,7 @@ namespace Resonalyze.Options
                 ? asioDriver.DriverName
                 : null;
             asioDriverInfo = AsioDeviceCatalog.GetDriverInfo(driverName, sampleRate);
-            // The probe just happened, so its verdict is settled here rather than
-            // wherever the rate list is next rebuilt. Not every caller rebuilds one:
-            // a manual rate change re-probes for the latency figures alone, and
-            // leaving the flag behind let a probe that has since SUCCEEDED still be
-            // reported as "the driver did not report its rates". RefreshSampleRateOptions
-            // recomputes the same predicate for the resolution it acts on.
+            // Settled here: not every caller rebuilds the rate list, and a stale flag reported a succeeded probe as failed.
             sampleRateProbeFailed = IsAsioSampleRateProbeFailure();
 
             comboBoxAsioInputChannel.Items.Clear();
@@ -1837,10 +1664,7 @@ namespace Resonalyze.Options
                     .ToArray());
             comboBoxAsioOutputChannel.Items.AddRange(
                 asioDriverInfo.OutputChannels.Cast<object>().ToArray());
-            // With no driver selected at all there is nothing to preserve; with a
-            // named driver that cannot be opened (busy/uninstalled) the saved
-            // channel routing must not collapse to channel 1 / "None" and get
-            // re-persisted by the next apply.
+            // A named but unopenable driver must not collapse the saved routing to channel 1 / None on the next apply.
             bool preserveOffsets = !string.IsNullOrWhiteSpace(asioDriverInfo.DriverName);
             comboBoxAsioInputChannel.SelectedIndex = SelectAsioChannelIndex(
                 comboBoxAsioInputChannel,
@@ -1882,9 +1706,7 @@ namespace Resonalyze.Options
             int sampleRate = GetSelectedSampleRate();
             if (sampleRateProbeFailed)
             {
-                // The number is the live selection and the verdict came from the last
-                // probe; when that probe told us nothing the two must not be combined
-                // into a confident sentence about a rate nobody tested.
+                // The last probe said nothing, so do not claim support for an untested rate.
                 labelAsioSampleRateStatus.Text =
                     $"{sampleRate} Hz kept — the driver did not report its rates";
                 labelAsioSampleRateStatus.ForeColor = Color.Khaki;
@@ -2140,14 +1962,8 @@ namespace Resonalyze.Options
                     int renderChannels = GetSelectedPlaybackChannelCount();
                     if (comboBoxSampleRate.Items.Count == 0)
                     {
-                        // Not "that rate is unsupported": no rate is, so the combo is
-                        // empty and GetSelectedSampleRate is answering with its own
-                        // fallback — naming it here would report on a rate nobody
-                        // offered. What was refused is the format, and Exclusive hands
-                        // it to the endpoint unchanged, so the way out is to ask for a
-                        // different one. Mono is the usual reason: it asks for a
-                        // one-channel format, and endpoints that only accept their
-                        // native stereo one then refuse at every rate.
+                        // No rate opens at all, so do not name the fallback rate. Exclusive passes the format unchanged;
+                        // mono (a one-channel format) is the usual reason native-stereo endpoints refuse.
                         labelWaveLoopbackStatus.Text =
                             $"⚠ No sample rate opens in Exclusive: {bits}-bit, " +
                             $"{captureChannels}-ch capture, {renderChannels}-ch render. " +
@@ -2193,8 +2009,6 @@ namespace Resonalyze.Options
             bool supportsLoopback = SelectedRecordingDeviceSupportsWaveLoopback();
             if (!supportsLoopback && comboBoxWaveLoopbackChannel.Items.Count > 0)
             {
-                // Forced, not a user choice: the preferred offset is kept so a
-                // stereo device restores it below.
                 SetWaveLoopbackSelection(0);
                 loopbackSelected = false;
             }
@@ -2214,8 +2028,7 @@ namespace Resonalyze.Options
             comboBoxWaveLoopbackChannel.Enabled =
                 comboBoxAudioBackend.SelectedIndex != (int)AudioBackend.Asio &&
                 supportsLoopback;
-            // The loopback channel is mandatory: without it there is no transfer IR and no
-            // measurement can run. Make an unset loopback impossible to overlook.
+            // No loopback = no transfer IR, no measurement; make it impossible to overlook.
             if (!loopbackSelected)
             {
                 labelWaveLoopbackStatus.Font = WarningStatusFont;
@@ -2291,9 +2104,7 @@ namespace Resonalyze.Options
             }
         }
 
-        // Empty is an answer here, never silence: a Wave pair reports no rate in common
-        // only when there is none. Skipping validation on it let the rate sitting in the
-        // combo through to a device that cannot open it.
+        // An empty Wave rate list means none in common; skipping validation let an unopenable rate through.
         private void ValidateSelectedWaveSampleRate(int sampleRate) =>
             SampleRateOptions.ValidateSelectedRate(
                 GetSupportedSampleRates(),
@@ -2316,9 +2127,7 @@ namespace Resonalyze.Options
             return -1;
         }
 
-        // A persisted device that is not currently present stays visible as a
-        // "(missing)" entry with its original number, so an apply cannot
-        // silently re-target the configuration to another device.
+        // A missing persisted device stays as "(missing)" so Apply cannot silently re-target another device.
         private static void SelectDeviceOrShowMissing(
             DarkComboBox comboBox,
             IReadOnlyList<AudioDeviceInfo> devices,
@@ -2335,9 +2144,7 @@ namespace Resonalyze.Options
             comboBox.SelectedIndex = comboBox.Items.Count - 1;
         }
 
-        // Same idea for ASIO channels: an offset the driver does not currently
-        // report (fewer channels, or the driver failed to open — e.g. it is in
-        // use by another application) must survive the panel round-trip.
+        // An offset the driver does not report now (fewer channels, busy driver) must survive the round-trip.
         private static int SelectAsioChannelIndex(
             DarkComboBox comboBox,
             IReadOnlyList<AsioChannelInfo> channels,
@@ -2399,9 +2206,7 @@ namespace Resonalyze.Options
                         outputChannelOffset,
                         milliseconds: 1000,
                         CancellationToken.None);
-                // The docked panel can be closed while the ~1 s capture runs;
-                // touching the disposed form would throw out of an async void
-                // handler and kill the process.
+                // The panel can close during the ~1 s capture; touching a disposed form would crash the async void handler.
                 if (IsDisposed)
                 {
                     return;
@@ -2466,9 +2271,7 @@ namespace Resonalyze.Options
                 GetSelectedWaveLoopbackChannelOffset());
             if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
             {
-                // Opening the ASIO driver is a synchronous COM instantiation
-                // that can take seconds; don't pay it for Wave-side changes. It
-                // has to happen before the rate list, which ASIO reads off it.
+                // Opening ASIO is a slow synchronous COM call; skip it for Wave changes.
                 RefreshAsioDriverInfo(
                     preferredSampleRate,
                     GetSelectedAsioInputChannelOffset(),
@@ -2479,19 +2282,7 @@ namespace Resonalyze.Options
             UpdateAudioBackendControls();
         }
 
-        /// <summary>
-        /// Re-reads the audio device after the host has applied these settings to it.
-        /// </summary>
-        /// <remarks>
-        /// The panel's picture of the driver is a snapshot, taken when the panel opened
-        /// or when a control changed — and Apply reconfigures the device UNDER it while
-        /// it stays on screen. So a rate change probed the driver while it was still
-        /// open at the old rate, got "not supported", painted the status amber, and
-        /// kept it there: the driver was reinitialised at the new rate a moment later
-        /// and nothing asked it again. Reopening the panel was the only way to get a
-        /// straight answer, which is the tell that the view had gone stale rather than
-        /// the device being wrong.
-        /// </remarks>
+        /// <summary>Re-reads the device after Apply reconfigured it under the open panel (otherwise the status stays stale).</summary>
         internal void RefreshAudioDeviceView()
         {
             if (initializing || IsDisposed)
@@ -2524,16 +2315,8 @@ namespace Resonalyze.Options
             sampleRateFellBackFrom = resolution.FellBackFrom;
             if (resolution.Rates is null)
             {
-                // Nothing is rebuilt on the absence of an answer: the list and the
-                // user's selection stand, and the status line says the driver did not
-                // report. Rebuilding here is what used to replace a working 96 kHz with
-                // 44.1 and persist it on the next Apply.
-                //
-                // The flags above have just changed, and the last thing to write the
-                // status line was RefreshAsioDriverInfo, before Resolve ran — so it is
-                // still rendered from the previous state and would keep a stale
-                // supported/not-supported sentence. Write it here too, exactly as the
-                // settled path below does.
+                // No answer: keep the list and selection (rebuilding replaced a working 96 kHz with 44.1).
+                // Rewrite the status line, which was rendered from the previous flags.
                 if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
                 {
                     UpdateAsioStatusLabels();
@@ -2543,9 +2326,7 @@ namespace Resonalyze.Options
 
             int[] availableRates = resolution.Rates;
             int selectedSampleRate = resolution.Selected;
-            // An empty list is a real outcome, not a missing one: no rate works for this
-            // configuration, so the combo offers nothing and Apply refuses. Filling in the
-            // configured rate here is what used to hand the user a rate no device reported.
+            // Empty list is a real outcome: no rate works, Apply refuses. Do not fill in the configured rate.
 
             bool wasInitializing = initializing;
             initializing = true;
@@ -2556,10 +2337,7 @@ namespace Resonalyze.Options
                     availableRates
                         .Select(rate => (object)rate)
                         .ToArray());
-                // -1 on the empty list, which is a list nobody can select from rather
-                // than a missing one. Asking for entry 0 there throws, and the throw
-                // used to escape mid-rebuild with the guard still raised, leaving every
-                // combo in the window deaf to selection until it was reopened.
+                // -1 on an empty list; index 0 would throw mid-rebuild with the guard raised, deafening all combos.
                 comboBoxSampleRate.SelectedIndex = SampleRateOptions.FindRateIndex(
                     availableRates,
                     selectedSampleRate);
@@ -2568,39 +2346,24 @@ namespace Resonalyze.Options
             {
                 initializing = wasInitializing;
             }
-            // A device/backend change can move the selected sample rate under the
-            // initializing guard (so comboBoxSampleRate_SelectedIndexChanged is
-            // suppressed); refresh the achieved-range and Compute Duration preview
-            // here so they never lag the rate. Skipped during Init, which previews
-            // once at the end.
+            // Rate may move under the initializing guard, so refresh the preview here (Init previews once at the end).
             if (!initializing)
             {
                 RefreshSweepBandPreview();
             }
 
-            // The status line pairs a number taken from the selection with a verdict
-            // taken from the probe, so it can only be written once the selection has
-            // settled. RefreshAsioDriverInfo writes it before this method has filled the
-            // combo, when GetSelectedSampleRate still answers with its own fallback —
-            // which is how "96000" in the list came to sit above "44100 Hz supported"
-            // in green. Writing it again here is what keeps the two halves in step.
+            // Written after the combo is filled: RefreshAsioDriverInfo wrote it while the selection was still the fallback.
             if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
             {
                 UpdateAsioStatusLabels();
             }
             else if (IsSelectedWasapiBackend())
             {
-                // Same reason, for the endpoint status line: it reports on the rate list
-                // this method has just rebuilt. The playback channel and the microphone
-                // channel both rebuild it without going through UpdateAudioBackendControls,
-                // and those are exactly the two things the "no rate opens" line asks the
-                // user to change — so without this it would still say so afterwards.
+                // Channel changes rebuild the rate list without UpdateAudioBackendControls, so rewrite the endpoint line.
                 UpdateWaveLoopbackControls();
             }
         }
 
-        // The driver name is what decides whether there is anything to preserve, the
-        // same test RefreshAsioDriverInfo uses for the saved channel routing.
         private bool IsAsioSampleRateProbeFailure() =>
             SampleRateOptions.IsProbeFailure(
                 comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio,
@@ -2611,9 +2374,7 @@ namespace Resonalyze.Options
         {
             if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.Asio)
             {
-                // From the last driver probe, not a fresh open: RefreshAsioDriverInfo
-                // always runs first, and a second open of the same driver moments
-                // later is what some drivers refuse (leaving an empty rate list).
+                // From the last probe: some drivers refuse a second open moments later (empty rate list).
                 return asioDriverInfo.SupportedSampleRates;
             }
 
@@ -2716,17 +2477,8 @@ namespace Resonalyze.Options
         private int GetSelectedPlaybackChannelCount() =>
             GetSelectedPlaybackChannel() == PlaybackChannel.Mono ? 1 : 2;
 
-        /// <summary>
-        /// The array microphones this panel would actually record on the selected
-        /// device: configured, not colliding with the measurement pair, and present on
-        /// the interface now chosen.
-        /// </summary>
-        /// <remarks>
-        /// The same rule <c>MeasurementSettingsFile.ResolveArrayChannels</c> applies
-        /// when it builds the configuration, because a panel that offered a sample
-        /// rate for a narrower capture than the measurement will open is a panel that
-        /// says Supported and then fails at the device.
-        /// </remarks>
+        /// <summary>Array channels actually recordable on the selected device.</summary>
+        /// <remarks>Must match <c>MeasurementSettingsFile.ResolveArrayChannels</c>, or a probed rate fails at the device.</remarks>
         private IReadOnlyList<int> SelectedReachableArrayChannels()
         {
             bool asio = SelectedAudioBackend == AudioBackend.Asio;
@@ -2753,17 +2505,7 @@ namespace Resonalyze.Options
             return channels;
         }
 
-        /// <summary>
-        /// How many input channels the measurement will ask the device to open.
-        /// </summary>
-        /// <remarks>
-        /// Answered by <see cref="AudioCaptureRouting.RequiredInputChannelCount"/>, the
-        /// very property every backend opens its capture with, so the width this panel
-        /// probes a format at and the width the measurement asks for cannot drift. They
-        /// did: this counted the microphone and the loopback and stopped there, so an
-        /// interface that supports two channels at 96 kHz but not eight was offered the
-        /// rate, said Supported, and failed at the device when the sweep ran.
-        /// </remarks>
+        /// <remarks>Uses <see cref="AudioCaptureRouting.RequiredInputChannelCount"/> so the probed width matches the opened width.</remarks>
         private int GetSelectedWaveRecordingChannelCount()
         {
             int microphone = GetSelectedWaveInputChannelOffset();
@@ -2772,9 +2514,7 @@ namespace Resonalyze.Options
             {
                 ArrayChannels = SelectedReachableArrayChannels()
             };
-            // The microphone on channel 2 (offset 1) needs a 2-channel format even
-            // without a loopback selection, and a loopback needs two whichever
-            // channels the pair sits on.
+            // Mic on offset 1 needs a 2-channel format even without loopback.
             int loopbackChannels = loopback.HasValue ? 2 : 1;
             return Math.Max(routing.RequiredInputChannelCount, loopbackChannels);
         }

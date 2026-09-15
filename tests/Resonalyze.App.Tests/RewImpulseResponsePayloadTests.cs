@@ -4,11 +4,6 @@ using Resonalyze.Integration.Rew;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The payload layer, which is where every decision about what REW receives is
-/// made. It touches no HTTP, so these run everywhere and REW is never needed to
-/// prove that the framing is lossless and the encoding is the one REW reads.
-/// </summary>
 public sealed class RewImpulseResponsePayloadTests
 {
     private const int SampleRate = 48_000;
@@ -22,8 +17,6 @@ public sealed class RewImpulseResponsePayloadTests
 
         float[] decoded = Decode(import.Body.Data);
         Assert.Equal(impulseResponse.Length, decoded.Length);
-        // Read back through the roll: the encoding is what is under test here, not
-        // the framing, so compare each sample with the one it was taken from.
         for (int i = 0; i < decoded.Length; i++)
         {
             int source = (i + impulseResponse.Length - import.PreRollSamples) % impulseResponse.Length;
@@ -38,8 +31,6 @@ public sealed class RewImpulseResponsePayloadTests
 
         RewImpulseResponseImport import = Build(impulseResponse, peakIndex: 1_000);
 
-        // Rolling back has to reproduce the input exactly. A circular roll moves no
-        // energy; anything that truncated or padded would fail here.
         float[] decoded = Decode(import.Body.Data);
         var restored = new float[decoded.Length];
         for (int i = 0; i < decoded.Length; i++)
@@ -66,8 +57,7 @@ public sealed class RewImpulseResponsePayloadTests
     [Fact]
     public void Build_LeavesTheArrivalAtTheTimeItWasMeasuredAt()
     {
-        // t = 0 is the loopback reference, so the arrival must land at exactly the
-        // delay the measurement found — the roll must not move it.
+        // t = 0 is the loopback reference, so the roll must not move the arrival.
         RewImpulseResponseImport import = Build(Ramp(262_144, peakIndex: 5_000), peakIndex: 5_000);
 
         Assert.Equal(5_000 / (double)SampleRate, import.PeakTimeSeconds, 12);
@@ -76,7 +66,6 @@ public sealed class RewImpulseResponsePayloadTests
     [Fact]
     public void Build_CapsThePreRollAtAQuarterOfAShortBuffer()
     {
-        // 100 ms is 4800 samples, which a 1024-sample buffer cannot lend.
         RewImpulseResponseImport import = Build(Ramp(1_024, peakIndex: 300), peakIndex: 300);
 
         Assert.Equal(256, import.PreRollSamples);
@@ -94,8 +83,7 @@ public sealed class RewImpulseResponsePayloadTests
             Build(impulseResponse, peakIndex: 1_000).Body);
 
         Assert.Contains("\"splOffset\":-12.5", withAnchor);
-        // Not a zero, and not any other placeholder: an absent field is REW's way of
-        // being told nothing, and a number here would be a level claim nobody made.
+        // An absent field tells REW nothing; any number would be a level claim.
         Assert.DoesNotContain("splOffset", without);
     }
 
@@ -121,8 +109,7 @@ public sealed class RewImpulseResponsePayloadTests
     {
         Assert.True(RewApiClient.TryParseBaseAddress(entered, out Uri? parsed));
         Assert.Equal(expected, parsed!.ToString());
-        // The trailing slash is why it is added: without it the last segment is
-        // replaced rather than appended, and "/version" would overwrite the port path.
+        // Without the trailing slash Uri replaces the last segment instead of appending.
         Assert.Equal(expected + "version", new Uri(parsed!, "version").ToString());
     }
 
@@ -148,10 +135,6 @@ public sealed class RewImpulseResponsePayloadTests
             "probe",
             splOffsetDb);
 
-    /// <summary>
-    /// A buffer whose every sample is distinguishable, so a roll that dropped or
-    /// duplicated one is visible, with a clear maximum at the arrival.
-    /// </summary>
     private static double[] Ramp(int length, int peakIndex)
     {
         var samples = new double[length];

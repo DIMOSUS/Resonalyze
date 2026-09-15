@@ -3,10 +3,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-// The energy onset on the Time Alignment envelope plot: a third callout
-// beside the two peaks, placed where the analysis put the onset — relative to
-// the Main first arrival like every other marker — and read off the envelope
-// through the same wrap a complete record's signed positions need.
 public sealed class TimeAlignmentEnergyOnsetMarkerTests
 {
     private const int SampleRate = 96_000;
@@ -53,8 +49,7 @@ public sealed class TimeAlignmentEnergyOnsetMarkerTests
     {
         Assert.Equal(370, TimeAlignmentPanelController.GetEnergyOnsetIndex(
             MakeResult(400, 500, 370.4)));
-        // A complete record reports a position past its midpoint as a
-        // negative delay; the envelope index wraps back into the buffer.
+        // A complete record reports a position past its midpoint as a negative delay; the index wraps.
         Assert.Equal(2048 - 30, TimeAlignmentPanelController.GetEnergyOnsetIndex(
             MakeResult(400, 500, -30.0)));
     }

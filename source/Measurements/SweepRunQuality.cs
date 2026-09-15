@@ -3,38 +3,13 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Acceptance checks for one captured sweep run, evaluated BEFORE the run is
-/// added to the average, so one bad capture cannot contaminate it irreversibly.
-/// Deliberately limited to unambiguous failures (clipping, a
-/// dead signal, an undersized capture): statistical outlier checks
-/// (peak-delay vs median, IR correlation against a reference run) need
-/// thresholds calibrated on real multi-run captures and are a later phase.
-/// A quiet-but-present loopback is deliberately NOT a failure here: transfer
-/// estimation is scale-invariant, so a cleanly attenuated wire (the readme
-/// itself says to turn the playback level well down) measures fine — whether
-/// a reference was usable is judged by the transfer IR's SHAPE after the
-/// runs (see ExpSweepMeasurement.RequireCredibleTransferIr).
-/// </summary>
+/// <summary>Unambiguous per-run failures only (clipping, dead signal, short capture). See docs/tech/sweep-measurement.md#run-acceptance.</summary>
 internal static class SweepRunQualityCheck
 {
-    /// <summary>
-    /// Peak amplitude below which a channel counts as carrying no signal at
-    /// all (~-80 dBFS): an unplugged cable, a wrong channel or a dead device.
-    /// Far below any usable capture level, so a quiet-but-working signal is
-    /// never rejected.
-    /// </summary>
+    /// <summary>~-80 dBFS: unplugged, wrong channel or dead device; never a quiet working signal.</summary>
     public const double SilentPeakThreshold = 1e-4;
 
-    /// <summary>
-    /// Issues found in the captured run; empty means the run is accepted.
-    /// Judges the ENTIRE capture — both recorders reset per run, and the
-    /// whole snapshot (including the pre-playback roll) feeds the
-    /// deconvolution and transfer analysis, so the checked range and the
-    /// analyzed range must match. A full-scale loopback is NOT flagged: by
-    /// the metering convention the loopback is the reference and routinely
-    /// sits at full scale.
-    /// </summary>
+    /// <summary>Judges the whole capture (the analyzed range includes pre-roll). Full-scale loopback is normal, not flagged.</summary>
     public static IReadOnlyList<string> Assess(
         float[] microphone,
         float[]? loopback,
@@ -68,21 +43,7 @@ internal static class SweepRunQualityCheck
         return issues;
     }
 
-    /// <summary>
-    /// The same checks for one ARRAY microphone: clipping, silence and a short
-    /// capture, without the loopback — that is judged once for the run, not once
-    /// per microphone.
-    /// </summary>
-    /// <remarks>
-    /// A failure here REJECTS THE RUN, the same as one on the measurement
-    /// microphone: the caller folds what this returns into the run's own issues.
-    /// This used to drop the offending microphone from that run and keep the rest,
-    /// which bought a measurement that looks complete and is not — the array keeps
-    /// only the curve each position produced, so a position that lost its runs is
-    /// simply absent, and an average of six positions where seven were set up is a
-    /// different measurement wearing the same name. A sweep is cheap; a spatial
-    /// average built over a listening volume the user did not choose is not.
-    /// </remarks>
+    /// <summary>Clipping, silence and length for one array mic; a failure rejects the whole run.</summary>
     public static IReadOnlyList<string> AssessArrayMicrophone(
         float[] samples,
         int expectedSweepSamples)
@@ -122,41 +83,13 @@ internal static class SweepRunQualityCheck
     }
 }
 
-/// <summary>The rejected run that stopped an averaged measurement.</summary>
 internal sealed record SweepRunRejection(
     int Run,
     IReadOnlyList<string> Issues);
 
-/// <summary>
-/// A published measurement whose own shape says something the user would
-/// otherwise only find by wondering why a tune fought back.
-/// </summary>
-/// <remarks>
-/// The field session behind this spent an evening on eleven takes whose reference
-/// ran through an interface's direct mixer instead of the wire. Every level
-/// normal, coherence 0.9995, four of four runs accepted, and the two worst records
-/// carried a 34 Hz resonance of Q 38-54 that rang for seconds and put half their
-/// energy before their own arrival. They cleared the compactness floor at 26.0 and
-/// 24.1 dB against 22 and were published without a word. This notice is what was
-/// missing.
-/// <para>
-/// A notice and never a refusal. A refusal was built on this reading and
-/// withdrawn: what separates a contaminated reference from a record whose
-/// strongest sample is simply not its arrival is how localized the pre-arrival
-/// energy is, and that separation narrows with the record's own bandwidth until it
-/// is 2.5 dB at the effective width one of the two field faults has. Too thin to
-/// destroy a measurement over, on a calibration set of two records from one rig.
-/// </para>
-/// <para>
-/// So the text names no cause. Both shapes are given, the reference first because
-/// everything is divided by it, and the reader is left to look. Naming one is how
-/// a tuner ends up checking wiring that was correct all along — the failure the
-/// distortion diagnosis was written to end.
-/// </para>
-/// </remarks>
+/// <summary>Notice published with the result, from its own shape; never a refusal and names no cause. See docs/tech/sweep-measurement.md#pre-arrival.</summary>
 internal sealed record SweepResultCaution(double PreArrivalDb)
 {
-    /// <summary>User-facing summary for the end-of-measurement notice.</summary>
     public string Describe() =>
         FormattableString.Invariant(
             $"The measurement was saved, but it carries unusual energy well before its arrival: the stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms AHEAD of the peak reads {PreArrivalDb:0.0} dB against the arrival itself, where a clean field record reads -39 dB or less.\r\n\r\n") +
@@ -173,35 +106,13 @@ internal sealed record SweepResultCaution(double PreArrivalDb)
         "cleanly before you tune on this one.";
 }
 
-/// <summary>
-/// Outcome of the per-run acceptance over a whole averaged measurement.
-/// </summary>
 internal sealed record SweepRunQualityReport(
     int RequestedRuns,
     int AcceptedRuns,
     IReadOnlyList<SweepRunRejection> Rejections)
 {
-    /// <summary>
-    /// Whether the end-of-measurement notice has anything to say.
-    /// </summary>
-    /// <remarks>
-    /// An array microphone needs no clause of its own here. A run that compromised
-    /// one stops the measurement like any other bad run, with the input named among
-    /// its reasons — the array cannot quietly end up with fewer positions than the
-    /// user set up, because a measurement that would have is not a measurement at all.
-    /// <para>
-    /// There is no retry to report. One used to run automatically, and the field
-    /// answer is that it never recovered anything: what these checks catch is a gain
-    /// set wrong, a cable in the wrong socket, a channel that is not there —
-    /// configuration, which the next sweep reproduces exactly. Sweeping again to prove
-    /// it costs the user their time twice over.
-    /// </para>
-    /// </remarks>
     public bool IsDegraded => AcceptedRuns < RequestedRuns || Rejections.Count > 0;
 
-    /// <summary>
-    /// User-facing summary for the end-of-measurement notice.
-    /// </summary>
     public string Describe()
     {
         var text = new StringBuilder();

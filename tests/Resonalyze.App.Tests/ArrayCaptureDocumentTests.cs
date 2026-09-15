@@ -2,12 +2,6 @@
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A measurement's array handed to the consumers that already understand a
-/// spatial average — and the rules a SET of them lives under, which are far
-/// fewer than a moving microphone's because an array is tethered to the loopback
-/// rather than to one analyzer session.
-/// </summary>
 public sealed class ArrayCaptureDocumentTests
 {
     private static readonly IReadOnlyList<double> Grid = SpatialAverage.BuildGrid();
@@ -37,10 +31,7 @@ public sealed class ArrayCaptureDocumentTests
             $"flat {correctionDb:0.#}",
             null);
 
-    // The smallest array there is: two positions. Used wherever the subject is
-    // something else entirely — the recipe, the method label, the rules a SET lives
-    // under — so those tests do not quietly depend on a lone microphone being
-    // accepted as a spatial average, which it is not.
+    // Two positions: a lone microphone is not a spatial average.
     private static IReadOnlyList<ArrayMicrophoneCurve> Pair(double levelDb) =>
     [
         Microphone(levelDb, measurement: true, channel: 0),
@@ -66,8 +57,6 @@ public sealed class ArrayCaptureDocumentTests
     {
         LiveCaptureDocument document = Create(Pair(70.0));
 
-        // The consumers stay blind to the method, but a SET is judged on it: the
-        // two families are levelled differently and may not be mixed.
         Assert.Equal(SpatialAverageMethod.MicArray, document.Method);
         Assert.Equal("Array of 2 microphones", document.Title);
     }
@@ -89,9 +78,6 @@ public sealed class ArrayCaptureDocumentTests
     [Fact]
     public void EveryMicrophoneIsCorrectedByItsOwnCalibration()
     {
-        // Unlike the frequency-response view, a consumer of this document wants the
-        // driver's response rather than the microphones' colouring, so there is no
-        // switch: the calibration is always applied, each microphone through its own.
         LiveCaptureDocument document = Create(
         [
             Microphone(70.0, measurement: true, channel: 0, calibration: Calibration(-2.0)),
@@ -111,9 +97,7 @@ public sealed class ArrayCaptureDocumentTests
         ]);
         Assert.Equal("flat -2", shared.Calibration!.Name);
 
-        // A mixed array averages correctly all the same, but no single curve
-        // describes what was applied — claiming one would let a reader "undo" a
-        // correction that was never uniform.
+        // No single curve describes a mixed correction, so none is claimed.
         LiveCaptureDocument mixed = Create(
         [
             Microphone(70.0, measurement: true, channel: 0, calibration: Calibration(-2.0)),
@@ -133,8 +117,6 @@ public sealed class ArrayCaptureDocumentTests
         Assert.Equal(2_000, document.Recipe.ProtectiveHighPassFrequencyHz);
         Assert.Equal(24, document.Recipe.ProtectiveHighPassSlopeDbPerOctave);
 
-        // A swept transfer magnitude is not an absolute level and must not claim to
-        // be one, and it carries no analyzer settings to invent.
         Assert.Equal(MagnitudeScale.Relative, document.Recipe.MagnitudeScale);
         Assert.False(document.Recipe.SlopeCompensation);
         Assert.Equal(0, document.Recipe.SmoothingCode);
@@ -151,9 +133,6 @@ public sealed class ArrayCaptureDocumentTests
             Microphone(70.0, channel: 3)
         ]);
 
-        // Changes nothing about the arithmetic — the consumers are blind to it —
-        // but two channels averaged over different arrays are two different
-        // questions asked of the listening volume, and the panel says so.
         Assert.Equal(3, document.Recipe.MicrophoneCount);
         Assert.Equal("Array of 3 microphones", document.Title);
     }
@@ -161,9 +140,7 @@ public sealed class ArrayCaptureDocumentTests
     [Fact]
     public void ASetOfArraysNeedsNoMatchingAnalyzerRecipe()
     {
-        // Two channels measured minutes apart, each its own "session". For a moving
-        // microphone that would demand an SPL anchor; for an array the loopback each
-        // measurement carries has already held their levels together.
+        // The loopback holds array levels together, so separate sessions need no SPL anchor.
         LiveCaptureDocument first = Create(Pair(70.0));
         LiveCaptureDocument second = Create(Pair(64.0));
         Assert.NotEqual(first.CaptureSessionId, second.CaptureSessionId);
@@ -175,18 +152,7 @@ public sealed class ArrayCaptureDocumentTests
     [Fact]
     public void ASetOfArraysAcceptsChannelsFilteredDifferently()
     {
-        // A protective high-pass describes the CHANNEL's own hardware path: a tweeter
-        // has one and a subwoofer does not, which is the ordinary four-way car. Each
-        // array has its own divided back out per position before anything is
-        // averaged, so two channels filtered differently are on the same footing
-        // afterwards — and where the compensation could not reach, the curve carries
-        // NaN and the channel's measured band says so.
-        //
-        // This test used to assert the opposite, with a comment explaining why. The
-        // rule it pinned refused an ordinary set for the one difference that was
-        // physically correct, and the SAME lesson is written a hundred lines above it
-        // for moving-microphone captures, where comparing the filter had already been
-        // tried and reverted.
+        // The protective high-pass is per-channel hardware, divided out per position, so differing filters are allowed.
         LiveCaptureDocument plain = Create(Pair(70.0));
         LiveCaptureDocument filtered = Create(
             Pair(70.0),

@@ -9,8 +9,7 @@ namespace Resonalyze.Options
     {
         private readonly WrappingToolTip toolTip = new();
 
-        // The record the offered bands have to fit inside; zero until Init runs, which
-        // offers the full ISO list rather than guessing a rate.
+        // Zero until Init, which then offers the full ISO list.
         private int sampleRate;
 
         public IROpt()
@@ -23,8 +22,7 @@ namespace Resonalyze.Options
 
         public void Init(ExpSweepMeasurement expSweepMeasurement, ImpulseResponseOptions opt)
         {
-            // The settings file clamps to a wider range than the control; an
-            // out-of-range persisted value must not throw when the panel opens.
+            // The settings file clamps wider than the control; an out-of-range value must not throw.
             sampleRate = expSweepMeasurement?.SampleRate ?? 0;
             numericLength.Value = numericLength.ClampValue(opt.Length);
             numericEnvelopeSmoothing.Value =
@@ -64,14 +62,10 @@ namespace Resonalyze.Options
             where T : struct, Enum =>
             comboBox.SelectedItem is T value ? value : fallback;
 
-        // The band widths on offer, in octaves. Off is a width of zero rather than a
-        // separate flag, so "no band" and "which band" are one setting.
+        // Off is width zero, so "no band" and "which band" are one setting.
         private const double OctaveBand = 1.0;
         private const double ThirdOctaveBand = 1.0 / 3.0;
 
-        // ISO preferred centre frequencies. The octave list is the one every octave
-        // analyser uses; the third-octave list is its refinement, and both stop where a
-        // 48 kHz record does.
         private static readonly double[] OctaveCentres =
             [31.5, 63, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000];
 
@@ -129,10 +123,7 @@ namespace Resonalyze.Options
                 ImpulseTimeOrigin.Peak);
         }
 
-        // Refills the centre list for the selected width and keeps the nearest centre to
-        // the one that was showing, so stepping between 1/1 and 1/3 stays where the user
-        // was looking instead of jumping to the start of a different list. The centre is
-        // meaningless without a band, so it greys out with the filter off.
+        // Keeps the nearest centre when switching widths.
         private void SyncBandCentres(double preferredCentreHz)
         {
             double octaves = comboBandWidth.SelectedItem is double width ? width : 0.0;
@@ -140,12 +131,7 @@ namespace Resonalyze.Options
             double[] centres = active && octaves < OctaveBand
                 ? ThirdOctaveCentres
                 : OctaveCentres;
-            // Only the bands this record can actually carry are offered: the band is
-            // symmetric in octaves around its centre, so at 44.1 kHz a full octave at
-            // 16 kHz would ask for a passband past Nyquist and come back clipped on one
-            // side. The same rule decides it here and in the analysis
-            // (ImpulseResponseOptions.HasBandFilter), so the panel cannot offer a band
-            // the view would then refuse.
+            // Only bands whose whole octave-symmetric passband fits under Nyquist; same rule as ImpulseResponseOptions.HasBandFilter.
             if (active && sampleRate > 0)
             {
                 double[] realizable = centres
@@ -164,8 +150,7 @@ namespace Resonalyze.Options
             SetItems(comboBandCenter, centres);
             comboBandCenter.SelectedItem = Nearest(centres, preferredCentreHz);
             comboBandCenter.Enabled = active;
-            // Through the shared helper, not Enabled: WinForms paints a disabled label in
-            // the system grey, which on this dark panel is all but black.
+            // Not Enabled: a disabled label paints near-black on this dark panel.
             UiStyle.SetTextEnabledLook(labelBandCenter, active);
         }
 
@@ -174,8 +159,7 @@ namespace Resonalyze.Options
                 ? 0.0
                 : Nearest([OctaveBand, ThirdOctaveBand], octaves);
 
-        // Nearest in OCTAVES, not in hertz: band centres are a geometric series, and a
-        // linear "closest" reads 250 Hz as nearer to 500 than to 125.
+        // Nearest in octaves: linear Hz reads 250 as nearer to 500 than to 125.
         private static double Nearest(IReadOnlyList<double> values, double wanted) =>
             values.MinBy(value => Math.Abs(Math.Log2(value / wanted)));
 
@@ -184,9 +168,7 @@ namespace Resonalyze.Options
                 ? $"{hertz / 1_000.0:0.###} kHz"
                 : $"{hertz:0.#} Hz";
 
-        // Numeric items with a display name. The Format handler is attached ONCE, here,
-        // because the centre list is refilled whenever the width changes and a handler
-        // added per fill would stack up.
+        // Format handler attached once; the list is refilled on width change and handlers would stack.
         private static void FillNumeric(
             DarkComboBox comboBox,
             Func<double, string> label,
@@ -213,8 +195,6 @@ namespace Resonalyze.Options
             }
         }
 
-        // Enum items with a display name, so the combo carries the value itself and
-        // SetOptions never has to map a caption back to a member.
         private static void Fill<T>(
             DarkComboBox comboBox,
             Func<T, string> label,

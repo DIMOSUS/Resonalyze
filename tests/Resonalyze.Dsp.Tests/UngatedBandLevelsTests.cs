@@ -2,26 +2,12 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp.Tests;
 
-/// <summary>
-/// An impulse response read onto the shared spatial-average grid: the whole record,
-/// no window, as the band mean of POWER.
-/// </summary>
-/// <remarks>
-/// The estimator is the point. A capture's bands are read this way, and a difference
-/// between a response and a capture is only a difference when both sides are the same
-/// quantity — the two alternatives already in the library are each wrong here for
-/// their own reason, and <see cref="SpatialAverage.FromTransferMagnitude"/> says which.
-/// </remarks>
+/// <summary>Whole-record, unwindowed band mean of POWER on the spatial-average grid (see <see cref="SpatialAverage.FromTransferMagnitude"/>).</summary>
 public sealed class UngatedBandLevelsTests
 {
     private const int SampleRate = 48_000;
 
-    /// <summary>
-    /// A unit impulse is flat at every frequency and reads flat at every BAND — the
-    /// low ones, which hold a single bin, and the high ones, which hold dozens. That
-    /// is the difference between a mean and a sum: integrating the band instead would
-    /// climb 3 dB per octave on this input, because a wider band holds more bins.
-    /// </summary>
+    /// <summary>A mean, not a sum: integrating would climb 3 dB per octave on a unit impulse.</summary>
     [Fact]
     public void AUnitImpulseReadsFlatAtEveryBand()
     {
@@ -31,10 +17,6 @@ public sealed class UngatedBandLevelsTests
         Assert.All(levels, level => Assert.Equal(0.0, level, 9));
     }
 
-    /// <summary>
-    /// A response twice as loud reads exactly 6 dB higher everywhere: the level is a
-    /// level, and nothing about the estimator scales with the band it was read over.
-    /// </summary>
     [Fact]
     public void AGainShiftsEveryBandByExactlyIt()
     {
@@ -47,16 +29,9 @@ public sealed class UngatedBandLevelsTests
         }
     }
 
-    /// <summary>
-    /// A reflection five milliseconds behind the arrival is IN the curve, as the comb
-    /// it makes — the energy a window would have cut away, and exactly what a
-    /// steady-state capture of the same room holds.
-    /// </summary>
     [Fact]
     public void ALateReflectionIsInTheCurve()
     {
-        // 0.9 of the arrival, 5 ms later: constructive at every 200 Hz, destructive
-        // half way between.
         double[] levels = DataHelper.GetUngatedBandLevels(
             Response(0.9, SampleRate * 5 / 1_000));
 
@@ -64,10 +39,6 @@ public sealed class UngatedBandLevelsTests
         Assert.True(LevelAt(levels, 100) < -12.0, $"100 Hz read {LevelAt(levels, 100):0.0} dB");
     }
 
-    /// <summary>
-    /// A response the sweep never reached at all has no level to report, and says so
-    /// rather than reporting the arithmetic of an empty band.
-    /// </summary>
     [Fact]
     public void ASilentResponseReportsNothing()
     {

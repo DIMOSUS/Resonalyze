@@ -2,13 +2,7 @@ using System.Windows.Forms;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Long-press detection for a button: holding the left mouse button down for
-/// the configured delay fires <c>onLongPress</c> and swallows the click that
-/// the release would otherwise deliver. Replaces the timer + two flags that
-/// lived as raw fields on <c>Form1</c> (the record button uses it to cancel
-/// a whole averaged-measurement series). UI-thread only.
-/// </summary>
+/// <summary>Holding the left button for the delay fires the long press and swallows the release click. UI thread only.</summary>
 internal sealed class ButtonLongPressBehavior : IDisposable
 {
     private readonly System.Windows.Forms.Timer timer;
@@ -32,11 +26,7 @@ internal sealed class ButtonLongPressBehavior : IDisposable
         button.MouseLeave += (_, _) => timer.Stop();
     }
 
-    /// <summary>
-    /// Called at the start of the button's Click handler: stops a pending
-    /// long-press countdown and returns true exactly once after a long press
-    /// fired, so the click that ends the press is swallowed.
-    /// </summary>
+    /// <summary>Call first in Click: true exactly once after a long press fired.</summary>
     public bool ConsumeClickSuppression()
     {
         timer.Stop();
@@ -55,8 +45,7 @@ internal sealed class ButtonLongPressBehavior : IDisposable
         timer.Dispose();
     }
 
-    // The two handlers below are internal so tests can drive the state
-    // machine directly — the WinForms timer needs a message pump to tick.
+    // Internal so tests can drive the state machine; the WinForms timer needs a message pump.
     internal void HandleMouseDown(MouseButtons buttons)
     {
         if (buttons != MouseButtons.Left || !canTrigger())

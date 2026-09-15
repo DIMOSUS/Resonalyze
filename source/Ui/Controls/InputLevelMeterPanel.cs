@@ -17,7 +17,6 @@ internal sealed class InputLevelMeterPanel : Control
     private static readonly Color PeakHoldColor = UiPalette.MeterPeakHold;
     private const double MinimumDecibels = InputLevelMeterBallistics.MinimumDecibels;
     private const double MaximumDecibels = InputLevelMeterBallistics.MaximumDecibels;
-    // Fill colour steps, read off the held peak.
     private const double HotDecibels = -12;
     private const double LoudDecibels = -24;
     private readonly System.Windows.Forms.Timer animationTimer;
@@ -25,8 +24,6 @@ internal sealed class InputLevelMeterPanel : Control
     private InputLevelMeterTarget loopbackTarget = InputLevelMeterTarget.Unavailable;
     private InputLevelMeterState microphoneState = InputLevelMeterState.CreateUnavailable();
     private InputLevelMeterState loopbackState = InputLevelMeterState.CreateUnavailable();
-    // Monotonic clock: a wall-clock (NTP/DST) step must not distort the
-    // animation delta or the peak-hold timing.
     private long lastAnimationTickMs = Environment.TickCount64;
 
     public InputLevelMeterPanel()
@@ -81,7 +78,6 @@ internal sealed class InputLevelMeterPanel : Control
 
         Graphics graphics = args.Graphics;
 
-        // The meter is one of the sidebar's cards, so it is cornered like them.
         RoundedSurface.Paint(
             this,
             graphics,
@@ -181,11 +177,7 @@ internal sealed class InputLevelMeterPanel : Control
         }
     }
 
-    /// <summary>
-    /// The one dB→pixel mapping of the track. Fill, ticks and the peak marker
-    /// all read the same scale, so the edge of the fill lines up with the tick
-    /// it has just reached.
-    /// </summary>
+    /// <summary>The single dB-to-pixel mapping, so the fill edge lines up with its tick.</summary>
     private static int GetTrackX(Rectangle innerRectangle, double valueDbFs) =>
         innerRectangle.Left + (int)Math.Round((innerRectangle.Width - 1) * Normalize(valueDbFs));
 
@@ -266,14 +258,12 @@ internal sealed class InputLevelMeterPanel : Control
             microphoneState, microphoneTarget.Pending, now, dt);
         InputLevelMeterState newLoopbackState = InputLevelMeterBallistics.Advance(
             loopbackState, loopbackTarget.Pending, now, dt);
-        // Unconditionally, including on the idle path below: this frame has
-        // latched whatever the fold was carrying.
+        // Unconditionally, including the idle path: this frame latched whatever the fold carried.
         microphoneTarget = microphoneTarget.Consume();
         loopbackTarget = loopbackTarget.Consume();
         if (newMicrophoneState == microphoneState &&
             newLoopbackState == loopbackState)
         {
-            // Idle meters (no measurement running) must not repaint at 30 Hz.
             return;
         }
 

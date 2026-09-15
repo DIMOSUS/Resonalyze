@@ -3,12 +3,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The Auto Tune Q ceiling. A fit reads one microphone position, and the sharpest
-/// bands it can propose correct a peak that only exists there — so the panel caps
-/// how narrow a filter the fit may place, well below the Q a strip accepts from the
-/// keyboard. These pin the number the fit is handed, and that it survives a restart.
-/// </summary>
+/// <summary>A fit reads one position, so its sharpest bands would correct a peak only there; the Q ceiling is capped below the strip's.</summary>
 public sealed class EqWizardAutoTuneMaxQTests : IDisposable
 {
     private readonly string directory = Path.Combine(
@@ -37,8 +32,6 @@ public sealed class EqWizardAutoTuneMaxQTests : IDisposable
     [Fact]
     public void TheWidestBandIsStillTheStripsOwnFloor()
     {
-        // Only the narrow end is the user's: a broad band is what the fit should
-        // reach for, so the lower bound stays the range every strip accepts.
         using var panel = new EqWizardPanel();
 
         MaxQBox(panel).Value = 4.0m;
@@ -62,9 +55,7 @@ public sealed class EqWizardAutoTuneMaxQTests : IDisposable
     [Fact]
     public void AFileFromBeforeTheCeilingExistedOpensAtTheDefault()
     {
-        // The ceiling is a change of behaviour for an existing installation, and
-        // that is deliberate: the file says nothing, so the fit is capped the same
-        // way a fresh one is.
+        // Deliberate behaviour change: a file without the field is capped like a fresh install.
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "measurement-settings.json");
         File.WriteAllText(
@@ -80,9 +71,6 @@ public sealed class EqWizardAutoTuneMaxQTests : IDisposable
     [Fact]
     public void AFileHoldingAnUnusableCeilingIsClampedRatherThanObeyed()
     {
-        // The settings file is a format: it can hold a zero, a negative or a
-        // number no strip could realise. The box clamps it, and the fit is handed
-        // what the box shows.
         using var panel = new EqWizardPanel();
 
         MeasurementSettingsFile.EqWizardSettings settings = panel.CaptureSettings();

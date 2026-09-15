@@ -5,9 +5,6 @@ using OxyPlot.WindowsForms;
 
 namespace Resonalyze.App.Tests;
 
-// The zoom arithmetic and hit tests behind the REW-shaped plot gestures: which axis
-// a wheel notch over an axis strip moves, how far a step zooms, and where the
-// on-graph zoom buttons sit.
 public sealed class PlotAxisZoomTests
 {
     private const int PlotWidth = 800;
@@ -21,8 +18,6 @@ public sealed class PlotAxisZoomTests
 
         Assert.True(zoomIn > 1);
         Assert.True(zoomOut < 1);
-        // A notch each way must land back where it started, or a wheel wobble would
-        // walk the axis.
         Assert.Equal(1.0, zoomIn * zoomOut, 12);
     }
 
@@ -55,8 +50,6 @@ public sealed class PlotAxisZoomTests
         PlotModel model = RenderedModel();
         OxyRect area = model.PlotArea;
 
-        // The middle of an axis is the "zoom this axis" zone, not the "move one
-        // limit" zone.
         Assert.False(PlotAxisZoom.TryGetAxisEnd(
             model,
             new ScreenPoint((area.Left + area.Right) / 2, area.Bottom + 8),
@@ -193,8 +186,6 @@ public sealed class PlotAxisZoomTests
     [Fact]
     public void ZoomButtons_AreLeftOutForAnAxisThatCannotBeMoved()
     {
-        // The waterfall shape: every axis pinned by the mode, so a pair of buttons
-        // there would be a control that does nothing.
         PlotModel model = RenderedModel();
         foreach (Axis axis in model.Axes)
         {
@@ -221,8 +212,7 @@ public sealed class PlotAxisZoomTests
         return model;
     }
 
-    // PlotArea is computed while rendering, and the hit tests read it; exporting to a
-    // throwaway PNG is the cheapest way to get a laid-out model in a test.
+    // PlotArea is computed while rendering; a throwaway PNG export lays the model out.
     private static void Render(PlotModel model)
     {
         var exporter = new PngExporter { Width = PlotWidth, Height = PlotHeight };

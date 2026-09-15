@@ -2,18 +2,8 @@
 
 namespace Resonalyze.Dsp;
 
-/// <summary>
-/// EasyEffects equalizer preset (JSON). Only peaking ("Bell") bands are handled;
-/// other band types are skipped on import. The overall level maps to the
-/// equalizer's output gain.
-/// </summary>
-/// <remarks>
-/// EasyEffects does have "Low Shelf" / "High Shelf" band types, but its bands are
-/// LSP filters whose steepness is set by a mode and a slope multiplier alongside
-/// q — not the RBJ shelf Q this library holds — so writing our number into one
-/// would produce a differently-shaped shelf on the target. Shelves are therefore
-/// declared unsupported and dropped from an export instead.
-/// </remarks>
+/// <summary>EasyEffects preset (JSON), Bell bands only; level maps to output gain. Its shelf and all-pass bands are LSP filters
+/// shaped by mode/slope, not our Q, so they are unsupported.</summary>
 public sealed class EasyEffectsFormat : IEqProfileFormat
 {
     public string Name => "EasyEffects";
@@ -22,9 +12,6 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
     public bool CanExport => true;
     public bool SupportsShelvingFilters => false;
 
-    // EasyEffects has an "Allpass" band type, but — as with its shelves — it is an
-    // LSP filter parameterised by mode and slope rather than our Q, so writing our
-    // number into one would turn the phase somewhere else.
     public bool SupportsAllPass(PeqBandType type) => false;
 
     public string Export(EqualizationCurve curve)
@@ -35,9 +22,7 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
         for (int i = 0; i < curve.Bands.Count; i++)
         {
             PeqBand band = curve.Bands[i];
-            // The Bell band schema used by real EasyEffects presets: frequency,
-            // gain, mode, mute, q, slope, solo, type. There is no "width" field —
-            // a Bell's bandwidth is expressed by q alone.
+            // Real presets have no "width" field: a Bell's bandwidth is q alone.
             bands[$"band{i}"] = new Dictionary<string, object?>
             {
                 ["type"] = "Bell",
@@ -80,7 +65,6 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
         {
             // All JsonElement access must happen before the document is disposed.
             using JsonDocument document = JsonDocument.Parse(text);
-            // Valid JSON that carries no equalizer is not an EasyEffects preset.
             if (!TryFindEqualizer(document.RootElement, out JsonElement equalizer))
             {
                 return false;
@@ -88,8 +72,7 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
 
             double preampDb = ReadDouble(equalizer, "output-gain", 0);
 
-            // Bands live under "left" (and a mirrored "right") in current versions,
-            // or directly under the equalizer in older ones.
+            // Current versions nest bands under "left"/"right"; older ones under the equalizer.
             JsonElement bandsHost = equalizer;
             if (equalizer.TryGetProperty("left", out JsonElement left) &&
                 left.ValueKind == JsonValueKind.Object)
@@ -142,7 +125,6 @@ public sealed class EasyEffectsFormat : IEqProfileFormat
                 return true;
             }
 
-            // The root may already be the equalizer node.
             if (root.TryGetProperty("num-bands", out _) || root.TryGetProperty("left", out _))
             {
                 equalizer = root;

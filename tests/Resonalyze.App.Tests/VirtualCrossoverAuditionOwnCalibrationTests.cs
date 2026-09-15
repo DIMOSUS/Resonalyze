@@ -4,23 +4,9 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// What the panel's "Own (as measured)" resolves to for an audition render.
-/// </summary>
-/// <remarks>
-/// The panel can hold that selection because it corrects each channel separately; a
-/// render bakes one filter into a side several channels have already been summed
-/// into. Where the channels agree the rule still names a curve; where they do not,
-/// the render has to refuse rather than pick one and label it as though it answered
-/// for all of them.
-/// </remarks>
+/// <remarks>A render bakes one filter into a summed side, so disagreeing channels must refuse rather than pick one.</remarks>
 public sealed class VirtualCrossoverAuditionOwnCalibrationTests
 {
-    /// <summary>
-    /// One microphone measured the car — the ordinary case — so Own names its curve
-    /// and the render carries it. This is the case that used to render UNCALIBRATED,
-    /// because the app's calibration list has never heard of the Own id.
-    /// </summary>
     [Fact]
     public void ChannelsThroughOneCalibration_ResolveToIt()
     {
@@ -34,13 +20,7 @@ public sealed class VirtualCrossoverAuditionOwnCalibrationTests
         Assert.True(CalibrationFile.SameCurve(curve, own.Curve));
     }
 
-    /// <summary>
-    /// Channels read through different calibrations have no single answer, and the
-    /// refusal names them: channels measured on separate days with different
-    /// microphones. (A microphone array is NOT this case — the array shares one sweep
-    /// with the measurement microphone, so the impulse responses have one microphone
-    /// behind them however many were listening.)
-    /// </summary>
+    /// <summary>A microphone array is NOT this case: it shares one sweep with the measurement microphone.</summary>
     [Fact]
     public void ChannelsThroughDifferentCalibrations_Refuse()
     {
@@ -53,11 +33,6 @@ public sealed class VirtualCrossoverAuditionOwnCalibrationTests
         Assert.Null(own.Curve);
     }
 
-    /// <summary>
-    /// A measurement that recorded no calibration is an answer too — "none" — and a
-    /// render with no correction is what Own means there. It must not read as a
-    /// refusal.
-    /// </summary>
     [Fact]
     public void MeasurementsThatRecordedNone_RenderWithNone()
     {
@@ -69,10 +44,6 @@ public sealed class VirtualCrossoverAuditionOwnCalibrationTests
         Assert.Null(own.Name);
     }
 
-    /// <summary>
-    /// One channel corrected and another not is a disagreement like any other: the
-    /// render cannot carry a correction for half a side.
-    /// </summary>
     [Fact]
     public void OneChannelCorrectedAndAnotherNot_Refuses()
     {
@@ -83,12 +54,7 @@ public sealed class VirtualCrossoverAuditionOwnCalibrationTests
         Assert.Contains("none recorded", own.Conflict);
     }
 
-    /// <summary>
-    /// Half a tune renders both ears from the one side that HAS sources, and the flag
-    /// names that side. Backwards it is invisible on a full tune and silent on a half
-    /// one: every per-side lookup reads the empty side, so a tune with averages on the
-    /// side it renders from reports having none.
-    /// </summary>
+    /// <summary>Half a tune renders both ears from the side that HAS sources; reversed, per-side lookups read the empty side.</summary>
     [Theory]
     [InlineData(true, true, new[] { false, true })]
     [InlineData(true, false, new[] { false })]
@@ -97,8 +63,6 @@ public sealed class VirtualCrossoverAuditionOwnCalibrationTests
         bool hasLeft, bool hasRight, bool[] expected) =>
         Assert.Equal(expected, VirtualCrossoverPanel.MeasuredSides(hasLeft, hasRight));
 
-    // One side carrying the given channels, judged on its own — the borrowed-ear
-    // shape, which is also the shape that keeps a mono pair from being counted twice.
     private static VirtualCrossoverAuditionOwnCalibration Resolve(
         IReadOnlyList<(string Name, CalibrationFile? Curve, string? CalibrationName)> channels)
     {

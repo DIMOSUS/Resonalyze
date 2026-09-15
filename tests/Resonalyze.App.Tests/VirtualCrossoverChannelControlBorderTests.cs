@@ -2,18 +2,9 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The channel block draws its own rounded outline, which puts that outline on the
-/// last row and column of its CLIENT area — where the framework's old
-/// <see cref="BorderStyle.FixedSingle"/> sat outside it, and clipped whatever
-/// reached it. Nothing clips now, so the block has to keep its own content off its
-/// edge; both ways it failed in the field are below.
-/// </summary>
+/// <summary>The self-drawn outline sits inside the client area, so content must keep off the edge.</summary>
 public sealed class VirtualCrossoverChannelControlBorderTests
 {
-    // The fold measured the block to the last kept row, which the border was then
-    // drawn on: the fold button came out with the outline through its bottom edge
-    // and the corners cut off. Folded, the block leaves the gap it leaves expanded.
     [Fact]
     public void Folding_LeavesTheSameGapUnderTheLastRowAsTheExpandedBlock()
     {
@@ -27,10 +18,6 @@ public sealed class VirtualCrossoverChannelControlBorderTests
         Assert.True(control.CollapseButton.Bottom < control.ClientSize.Height);
     }
 
-    // The PEQ summary is written at run time and is longer than its row: it used to
-    // be cut mid-glyph by the non-client border, and with that gone it painted its
-    // own background over the outline instead. It is bounded and ellipsised now —
-    // the full text was already in its tooltip.
     [Fact]
     public void ThePeqSummary_StaysInsideTheBlockHoweverLongItGets()
     {

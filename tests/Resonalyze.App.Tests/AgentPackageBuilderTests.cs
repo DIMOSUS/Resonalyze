@@ -4,13 +4,6 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The package builder turns what the panel gathered into the text a chat
-/// assistant reads. Pinned here: the envelope and identity, the protocol grids
-/// (fixed density, holes kept as holes, nothing invented past a curve's edge),
-/// the read-outs mapped onto the right junction, determinism, and the fixed
-/// order in which a too-large package sheds its optional series.
-/// </summary>
 public sealed class AgentPackageBuilderTests
 {
     private static readonly Guid Id = Guid.Parse("b6bd73c2-997b-4fe0-814a-d123cc403b8a");
@@ -31,8 +24,6 @@ public sealed class AgentPackageBuilderTests
         JsonElement root = Json(text);
         Assert.Equal(AgentProtocol.PackageKind, root.GetProperty("kind").GetString());
         Assert.Equal(1, root.GetProperty("protocolVersion").GetInt32());
-        // The methodology the package's author wrote against, since the guide at
-        // the URL moves on without the program.
         Assert.Equal(AgentProtocol.GuideVersion, root.GetProperty("guideVersion").GetString());
         Assert.Equal(Id.ToString(), root.GetProperty("packageId").GetString());
         Assert.Equal("2026-09-02T07:00:00Z", root.GetProperty("createdAtUtc").GetString());
@@ -44,14 +35,12 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal("FrontAndSub", root.GetProperty("analysis").GetProperty("groupView").GetString());
         Assert.Equal(6, root.GetProperty("analysis").GetProperty("fdwCycles").GetInt32());
 
-        // Every convention a reader needs to use the numbers is stated in the package.
         JsonElement conventions = root.GetProperty("conventions");
         foreach (string key in new[] { "delay", "peqQ", "sumLoss", "sweep", "correlation", "stereo", "groups", "crossoverEdges" })
         {
             Assert.True(conventions.TryGetProperty(key, out _), key);
         }
 
-        // Nothing that names a file, a folder or a machine.
         Assert.DoesNotContain("sourceFilePath", text);
         Assert.DoesNotContain("historyEntryId", text);
         Assert.DoesNotContain(@"D:\", text);
@@ -81,7 +70,6 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal(AgentPeqHash.Compute(-1, [new PeqBand(820, 2.1, -2.4)]), peq.GetProperty("hash").GetString());
         Assert.Equal("Peaking", peq.GetProperty("bands")[0].GetProperty("type").GetString());
         Assert.Equal(2.1, peq.GetProperty("bands")[0].GetProperty("q").GetDouble());
-        // A cut under a −1 dB preamp: the net response never rises above the preamp.
         Assert.Equal(-1.0, peq.GetProperty("peakDb").GetDouble());
         Assert.True(peq.TryGetProperty("peakHz", out _));
 
@@ -110,27 +98,20 @@ public sealed class AgentPackageBuilderTests
             ["frequencyHz", "preDspDb", "processedDb", "chainDb", "peqDb"],
             series.GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
 
-        // 20 Hz to 20 kHz at 12 points per octave: 9.97 octaves → 120 points, plus
-        // the 20 kHz endpoint; the source is 48 kHz and the processor 96 kHz, so
-        // nothing lowers the top.
+        // 9.97 octaves x 12 = 120 points plus the 20 kHz endpoint; 48 kHz source / 96 kHz processor do not lower the top.
         List<JsonElement> rows = series.GetProperty("rows").EnumerateArray().ToList();
         Assert.Equal(121, rows.Count);
         Assert.Equal(20, rows[0][0].GetDouble());
         Assert.Equal(20_000, rows[^1][0].GetDouble());
-        // Twelve steps up is exactly one octave.
         Assert.Equal(40, rows[12][0].GetDouble());
 
-        // The synthetic curves run 40 Hz .. 10 kHz; outside them the acoustic
-        // columns are holes while the chain columns, which need no measurement,
-        // are filled.
+        // Synthetic curves run 40 Hz..10 kHz: acoustic columns are holes outside, chain columns are filled.
         Assert.Equal(JsonValueKind.Null, rows[0][1].ValueKind);
         Assert.Equal(JsonValueKind.Null, rows[0][2].ValueKind);
         Assert.Equal(JsonValueKind.Number, rows[0][3].ValueKind);
         Assert.Equal(JsonValueKind.Number, rows[0][4].ValueKind);
-        // Inside, the pre-DSP curve is the synthetic ramp (−0.5 dB per octave above 40 Hz).
         Assert.Equal(-0.5, rows[24][1].GetDouble(), 1);
-        // The chain column is the chain alone: gain −2 dB plus preamp −1 dB where
-        // the corners and the 820 Hz bell barely reach (320 Hz).
+        // Gain -2 dB plus preamp -1 dB where the corners and the 820 Hz bell barely reach.
         Assert.InRange(rows[12 * 4][3].GetDouble(), -3.6, -2.9);
     }
 
@@ -167,8 +148,6 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal(0.12, junction.GetProperty("phase").GetProperty("bestExtraDelayMs").GetDouble());
         Assert.False(junction.GetProperty("phase").TryGetProperty("rivalScore", out _));
 
-        // Lobes: the two synthetic parabolas peak at +0.5 ms (normal) and −1.0 ms
-        // (inverted); the normal one is the better of the two.
         JsonElement lobes = junction.GetProperty("lobes");
         Assert.Equal(2, lobes.GetArrayLength());
         Assert.Equal(0.5, lobes[0].GetProperty("extraDelayMs").GetDouble());
@@ -188,7 +167,6 @@ public sealed class AgentPackageBuilderTests
         JsonElement ladder = junction.GetProperty("coherenceLadder");
         Assert.Equal(2, ladder.GetProperty("rows").GetArrayLength());
 
-        // The dense grid spans an octave each way of the crossover and includes it.
         JsonElement curves = junction.GetProperty("curves");
         List<double> grid = curves.GetProperty("rows").EnumerateArray().Select(row => row[0].GetDouble()).ToList();
         Assert.Equal(40, grid[0]);
@@ -200,10 +178,7 @@ public sealed class AgentPackageBuilderTests
     [Fact]
     public void Build_CarriesBothSumLossWindows_AndDropsTheDirectOneWhereItHasNoRead()
     {
-        // Both families travel whatever the panel shows, under their own names; the
-        // junction curves get the direct loss as one more column. A side whose direct
-        // read has no metric carries neither the figures nor the column — never a
-        // column of nulls standing for "no such read".
+        // A side without a direct-read metric carries no column, never a column of nulls.
         AgentPackageInputs inputs = Inputs();
         JsonElement root = Json(AgentPackageBuilder.Build(inputs, Id, Clock).Text!);
         JsonElement junction = root.GetProperty("junctions")[0];
@@ -217,8 +192,6 @@ public sealed class AgentPackageBuilderTests
             curves.GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
         JsonElement row = curves.GetProperty("rows").EnumerateArray()
             .First(r => r[4].ValueKind == JsonValueKind.Number && r[5].ValueKind == JsonValueKind.Number);
-        // The fixture's direct curve is twice as deep as its full one at every
-        // point, so the column carries the direct read and not a copy of the full.
         Assert.True(row[5].GetDouble() < row[4].GetDouble(),
             $"direct {row[5].GetDouble()} should be deeper than full {row[4].GetDouble()}");
 
@@ -257,28 +230,23 @@ public sealed class AgentPackageBuilderTests
     [Fact]
     public void Build_SaysWhereTheTuneStandsWithSpatialAverages()
     {
-        // The fixture: the left view shows A:left (measured, no capture) and
-        // B:mono (a moving-microphone capture, hybrid curves in the package). One
-        // of two shown channels drawn from its average: partial.
+        // Left view: A:left measured, B:mono a capture with hybrid curves; one of two drawn from its average.
         AgentPackageInputs inputs = Inputs();
         JsonElement status = Json(AgentPackageBuilder.Build(inputs, Id, Clock).Text!)
             .GetProperty("analysis").GetProperty("spatialAverage");
         Assert.Equal("MovingMic", status.GetProperty("mode").GetString());
         Assert.True(status.GetProperty("hybridTicked").GetBoolean());
         Assert.True(status.GetProperty("hybridDrawn").GetBoolean());
-        // The hybrid curves' own width, beside the package's psychoacoustic one.
         Assert.Equal(12, status.GetProperty("smoothingInverseOctaves").GetInt32());
         Assert.Equal("partial", status.GetProperty("status").GetString());
         Assert.Equal(2, status.GetProperty("channelsShown").GetInt32());
         Assert.Equal(1, status.GetProperty("channelsWithCapture").GetInt32());
         Assert.Equal(1, status.GetProperty("channelsDrawn").GetInt32());
 
-        // Each channel lists what it holds, and only when it holds something.
         JsonElement channels = Json(AgentPackageBuilder.Build(inputs, Id, Clock).Text!).GetProperty("channels");
         Assert.False(channels[0].GetProperty("source").TryGetProperty("spatialAverageCaptures", out _));
         Assert.Equal(["MovingMic"], channels[2].GetProperty("source").GetProperty("spatialAverageCaptures").EnumerateArray().Select(c => c.GetString()));
 
-        // Every shown channel drawn from its average.
         AgentPackageInputs everywhere = inputs with
         {
             Channels = inputs.Channels
@@ -289,9 +257,7 @@ public sealed class AgentPackageBuilderTests
         };
         Assert.Equal("active", Status(everywhere));
 
-        // "Drawn" is the hybrid curves actually in the package, not the
-        // attachment: captures the view did not turn into curves — the box off,
-        // the mode reading another family, a group view — are captured, not shown.
+        // "Drawn" means hybrid curves in the package, not an attached capture.
         AgentPackageInputs notDrawn = everywhere with
         {
             Analysis = everywhere.Analysis with { HybridDrawn = false },
@@ -303,9 +269,6 @@ public sealed class AgentPackageBuilderTests
         };
         Assert.Equal("capturedNotShown", Status(notDrawn));
 
-        // A channel the view leaves out has curves of its own but no hybrid ones,
-        // whatever it holds; a muted one has no curves at all. Neither is counted:
-        // the status describes the channels the diagnostics are built from.
         AgentPackageInputs outsideTheView = everywhere with
         {
             Channels =
@@ -324,7 +287,6 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal("active", outside.GetProperty("status").GetString());
         Assert.Equal(2, outside.GetProperty("channelsShown").GetInt32());
 
-        // Nothing to draw from at all: the case the assistant is told to press.
         AgentPackageInputs none = notDrawn with
         {
             Channels = notDrawn.Channels
@@ -343,16 +305,10 @@ public sealed class AgentPackageBuilderTests
     [Fact]
     public void Build_ReadsTheSidesLevelAgainstTheTarget()
     {
-        // The left sum is Ramp(2): 2 dB at 40 Hz falling half a dB per octave,
-        // against a flat target at -4 dB. On the 20 Hz..20 kHz grid the sum has
-        // points from 40 Hz to 10 kHz; the median of sum - target lands in the
-        // middle of that span, near 640 Hz: 2 - 0.5 * log2(16) + 4 = 4 dB.
+        // Median of Ramp(2) - (-4 dB) over 40 Hz..10 kHz lands near 640 Hz: 2 - 0.5·log2(16) + 4 = 4 dB.
         JsonElement root = Json(AgentPackageBuilder.Build(Inputs(), Id, Clock).Text!);
 
         Assert.Equal(4.0, root.GetProperty("sides")[0].GetProperty("sumVsTargetDb").GetDouble(), 1);
-        // The hybrid sum, Ramp(3), reads one dB higher — its own datum, so the
-        // assistant is not sent to move the target by a point measurement while
-        // the tune is judged on averages.
         Assert.Equal(5.0, root.GetProperty("sides")[0].GetProperty("hybridSumVsTargetDb").GetDouble(), 1);
         Assert.False(root.GetProperty("sides")[1].TryGetProperty("sumVsTargetDb", out _));
         Assert.False(root.GetProperty("sides")[1].TryGetProperty("hybridSumVsTargetDb", out _));
@@ -380,9 +336,6 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal(48, nominal.GetProperty("correlationRows").GetInt32());
         Assert.Empty(whole.Omitted);
 
-        // Just under the full size as the TARGET: the first step of the density
-        // ladder is taken and nothing is dropped — every series is still there,
-        // the junction grid and the lag series merely sparser.
         AgentPackageBuildResult thinned = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: full - 1);
         Assert.True(thinned.Succeeded, thinned.Error);
         Assert.Empty(thinned.Omitted);
@@ -399,8 +352,6 @@ public sealed class AgentPackageBuilderTests
         Assert.True(junction.TryGetProperty("sumLossDirect", out _));
         Assert.True(thinned.JsonBytes < full);
 
-        // The figures do not move with the rows: the same sum loss, the same
-        // target datum, whatever density the curves went out at.
         JsonElement wholeRoot = Json(whole.Text!);
         Assert.Equal(
             wholeRoot.GetProperty("junctions")[0].GetProperty("sumLoss").GetProperty("averageDb").GetDouble(),
@@ -409,8 +360,6 @@ public sealed class AgentPackageBuilderTests
             wholeRoot.GetProperty("sides")[0].GetProperty("sumVsTargetDb").GetDouble(),
             root.GetProperty("sides")[0].GetProperty("sumVsTargetDb").GetDouble());
 
-        // Over the target at the thinnest density, the optional series go in the
-        // fixed order, and the mandatory payload may still grow up to the ceiling.
         AgentPackageBuildResult mandatory = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: 100, maxBytes: full);
         Assert.True(mandatory.Succeeded, mandatory.Error);
         Assert.Equal(
@@ -424,7 +373,6 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal(6, thinnest.GetProperty("junctionPointsPerOctave").GetInt32());
         Assert.True(mandatory.JsonBytes < full);
 
-        // Nothing optional is enough: the failure names the size, and no text is handed out.
         AgentPackageBuildResult failed = AgentPackageBuilder.Build(inputs, Id, Clock, targetBytes: 100, maxBytes: 100);
         Assert.False(failed.Succeeded);
         Assert.Null(failed.Text);
@@ -435,10 +383,6 @@ public sealed class AgentPackageBuilderTests
     [Fact]
     public void SeriesProbe_AnswersTheSeriesAsked_AtTheDensityAsked_UnderNoSizeTarget()
     {
-        // The package's own rows again: the broadband table of the one channel
-        // named, one junction's curves and sweep, at twice the nominal density
-        // and with twice the rows — built by the package's own methods, so the
-        // columns and ids are the package's.
         AgentPackageInputs inputs = Inputs();
         var probe = new ProbeOperation(
             "op-9", "the package was thinned", AgentProtocol.SeriesProbe, "left:B-A", null,
@@ -456,7 +400,6 @@ public sealed class AgentPackageBuilderTests
         AgentDiagnosticSeries channel = Assert.Single(report.Channels!);
         Assert.Equal("A:left", channel.Id);
         Assert.Contains("processedDb", channel.Series.Columns);
-        // Twice the package's density over the same span: about twice the rows.
         JsonElement packaged = Json(AgentPackageBuilder.Build(inputs, Id, Clock).Text!);
         int packagedRows = packaged.GetProperty("channels").EnumerateArray()
             .First(c => c.GetProperty("id").GetString() == "A:left")
@@ -472,7 +415,6 @@ public sealed class AgentPackageBuilderTests
         Assert.Null(report.Target);
         Assert.Null(report.Sums);
 
-        // The whole answer travels in a probe document, whatever its size.
         AgentProbeBuildResult document = AgentProbeBuilder.Build([report], Id.ToString("D"), true, true, Clock);
         string text = document.Text;
         int begin = text.IndexOf(AgentProtocol.ProbeJsonBegin, StringComparison.Ordinal) + AgentProtocol.ProbeJsonBegin.Length;
@@ -482,7 +424,6 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal(96, answered.GetProperty("sampling").GetProperty("sweepRows").GetInt32());
         Assert.Single(answered.GetProperty("junctions").EnumerateArray());
 
-        // Nothing named: the report says so instead of answering with nothing.
         AgentProbeReport empty = AgentSeriesProbe.Build(
             probe with { JunctionId = "right:B-A", Series = [AgentProtocol.SweepSeries] }, inputs);
         Assert.NotNull(empty.Unavailable);
@@ -501,8 +442,6 @@ public sealed class AgentPackageBuilderTests
         Assert.Contains("runAutoCrossover", operations);
         Assert.Contains("tuneJunction", operations);
         Assert.Contains("runAutoDelay", operations);
-        // A probe is an operation like any other, and what it may read is
-        // published beside the list, so a reply asks for one this build has.
         Assert.Contains("probe", operations);
         Assert.Equal(
             AgentProtocol.Probes,
@@ -524,7 +463,6 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal(EqualizationCurve.MaxBandCount, limits.GetProperty("peqBands").GetInt32());
         Assert.Equal([12, 24, 36, 48], limits.GetProperty("slopes").GetProperty("LinkwitzRiley").EnumerateArray().Select(s => s.GetInt32()));
 
-        // The package's numbers are the file validator's: one hertz past the edge fails it.
         Validates(new VirtualCrossoverChannelSettings { LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, highHz, 12) }, valid: true);
         Validates(new VirtualCrossoverChannelSettings { LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, highHz + 1, 12) }, valid: false);
         Validates(new VirtualCrossoverChannelSettings { LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, lowHz, 12) }, valid: true);
@@ -548,7 +486,6 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal(5_000, junction[^1]);
         Assert.Contains(3_000, junction);
 
-        // Log-linear between neighbours; a NaN neighbour makes a hole; nothing outside.
         SignalPoint[] curve = [new(100, 0), new(200, 6), new(400, double.NaN), new(800, 12)];
         Assert.Equal(3, AgentCurveSampling.Sample(curve, 141.4213562)!.Value, 3);
         Assert.Equal(6.0, AgentCurveSampling.Sample(curve, 200));
@@ -563,7 +500,6 @@ public sealed class AgentPackageBuilderTests
         Assert.Equal(0, thinned[0]);
         Assert.Equal(99, thinned[^1]);
 
-        // Lobes are interior local maxima; a sweep climbing into its edge has none there.
         SignalPoint[] climbing = [new(-1, -6), new(0, -4), new(1, -2)];
         SignalPoint[] peaked = [new(-1, -6), new(0, -1), new(1, -3), new(2, -2), new(3, -5)];
         List<AgentLobe> lobes = AgentCurveSampling.Lobes(peaked, climbing, 5);
@@ -595,7 +531,6 @@ public sealed class AgentPackageBuilderTests
         return JsonDocument.Parse(envelope[begin..end].Trim()).RootElement;
     }
 
-    // A −0.5 dB/octave ramp from 40 Hz to 10 kHz, with a hole (NaN) at 1 kHz.
     private static List<SignalPoint> Ramp(double offsetDb)
     {
         var points = new List<SignalPoint>();
@@ -649,8 +584,7 @@ public sealed class AgentPackageBuilderTests
             "right mid.json", true, false, aRightSettings, 96_000, null);
         var b = new AgentChannelInputs("B", AgentChannelSide.Mono, VirtualCrossoverZone.Sub,
             string.Empty, true, false, bSettings, 96_000, null);
-        // B has curves on the left side (it sums there) but no source of its own
-        // listed: the side's channel list is what says it played.
+        // B has left-side curves but no source listed: the side's channel list is what says it played.
         var bWithCurves = b with
         {
             Source = new AgentSourceInputs(48_000, new MeasuredBand(20, 200), "MovingMic", ["MovingMic"], Ramp(-3), bProcessed, Ramp(-2), Ramp(-4), null, null)
@@ -687,8 +621,6 @@ public sealed class AgentPackageBuilderTests
             [new VirtualCrossoverMetric.PhaseEntry("B/A", "B", 80, 40, 160, phase)],
             [new AgentJunctionInputs("B", "A", 80, 40, 160, bProcessed, aLeftProcessed, correlation, coherence)],
             null,
-            // The direct-sound read: a different curve and different figures from
-            // the full one, so a test can tell which of the two a field carries.
             Ramp(-1).Select(point => new SignalPoint(point.X, double.IsNaN(point.Y) ? point.Y : -Math.Abs(point.Y) / 2)).ToList(),
             [
                 new VirtualCrossoverMetric.Entry("B/A", -0.4, -2.5, 40, 160, IsTotal: false),

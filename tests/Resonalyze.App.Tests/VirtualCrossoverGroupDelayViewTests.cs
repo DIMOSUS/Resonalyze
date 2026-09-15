@@ -6,18 +6,12 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The Virtual DSP group-delay view on synthetic channels: two pure delays, each
-/// gated at its own arrival through FDW-8, read flat at their arrivals; the Sum
-/// sits between them by energy; and hiding a channel leaves the others' windows
-/// where they were.
-/// </summary>
 public sealed class VirtualCrossoverGroupDelayViewTests
 {
     private const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
     private const int SampleRate = 48_000;
-    private const int FirstArrival = 480;   // 10 ms.
-    private const int SecondArrival = 960;  // 20 ms.
+    private const int FirstArrival = 480;
+    private const int SecondArrival = 960;
     private const double SecondAmplitude = 0.5;
 
     [Fact]
@@ -44,10 +38,7 @@ public sealed class VirtualCrossoverGroupDelayViewTests
         AssertFlat(first, 200, 10_000, firstMs, 0.05);
         AssertFlat(second, 200, 10_000, secondMs, 0.05);
 
-        // The energy-weighted mean where the smoothing spans the ripple (Δ = 10 ms,
-        // a 100 Hz period, against the f/16 floor of FDW-8) — a few hundredths of
-        // a millisecond off it, against the 10 ms a window or time weight left at
-        // its own start would move it by.
+        // Smoothing spans the ripple (10 ms = 100 Hz period vs FDW-8's f/16 floor), so the Sum reads the energy-weighted mean.
         double e2 = SecondAmplitude * SecondAmplitude;
         double expected = (firstMs + e2 * secondMs) / (1.0 + e2);
         AssertFlat(sum, 4_000, 10_000, expected, 0.1);
@@ -56,16 +47,7 @@ public sealed class VirtualCrossoverGroupDelayViewTests
     [Fact]
     public void PsychoacousticSmoothing_ReadsAsTheGroupDelayModesDefault()
     {
-        // The plot's psychoacoustic width is a hearing model for levels; on a
-        // time curve it reads as the Group Delay mode's own 1/12 octave — not
-        // as the psychoacoustic base width (1/6), which SmoothingPresetOptions
-        // .Normalize hands back and which the first cut of this view read.
-        // A reflection makes the width visible: the three reads must differ
-        // where they should and agree where they must. Set through the
-        // project's own setter, the way the selector sets it: the choice is
-        // persisted as the base width plus a flag, and a builder that read the
-        // stored width would see 1/6 — which is exactly what the first cut of
-        // this test hid by writing the field directly.
+        // Psycho width on a time curve means GD mode's 1/12 oct, not Normalize's 1/6; set via the project setter since the stored width is 1/6.
         using VirtualCrossoverPanel panel = Loaded();
         VirtualCrossoverProjectFile project = Project(panel);
         project.PhaseWindowMode = PhaseWindowMode.Fixed;
@@ -74,7 +56,7 @@ public sealed class VirtualCrossoverGroupDelayViewTests
         channels[0].Pair.ShowProcessedCurve = true;
         channels[1].Pair.ShowProcessedCurve = false;
         Complex[] reflected = Delta(FirstArrival, 1.0);
-        reflected[FirstArrival + 144] = new Complex(0.5, 0.0); // 3 ms late, inside the gate.
+        reflected[FirstArrival + 144] = new Complex(0.5, 0.0);
         List<ProcessedChannel> processed =
         [
             new ProcessedChannel(channels[0], reflected, FirstArrival, SampleRate, OxyColors.Red)
@@ -156,7 +138,6 @@ public sealed class VirtualCrossoverGroupDelayViewTests
         return impulse;
     }
 
-    // A panel bound to its project's pairs, the way applying a project binds them.
     private static VirtualCrossoverPanel Loaded()
     {
         var panel = new VirtualCrossoverPanel();

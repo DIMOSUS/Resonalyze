@@ -6,15 +6,7 @@ using Resonalyze.Ui;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The window accepts a dropped file anywhere on itself, which in WinForms means
-/// every control on it has to be registered as a drop target: drag events do not
-/// bubble, and a control that never registered refuses the drag where it stands.
-/// These pin that reach, and the two things it must not do — take a drag that
-/// belongs to somebody else, or open a file while a dialog has the window — and
-/// that the shell is told which control the file landed on, since the Compare
-/// button reads the same file differently from the rest of the window.
-/// </summary>
+/// <summary>WinForms drag events do not bubble, so every control must be registered as a drop target.</summary>
 public sealed class FileDropTargetTests
 {
     [Fact]
@@ -36,8 +28,7 @@ public sealed class FileDropTargetTests
     [Fact]
     public void AControlBuiltLaterRegistersItself() => StaTest.Run(() =>
     {
-        // Mode settings are docked in on demand and filter strips are built as they
-        // are added, so the tree the shell shows is not the tree it started with.
+        // Mode settings and filter strips are added later, so the control tree changes after start.
         using Form form = ShownForm();
         var panel = new Panel();
         form.Controls.Add(panel);
@@ -55,11 +46,7 @@ public sealed class FileDropTargetTests
     [Fact]
     public void ARichTextBoxTakesTheDragLikeAnythingElse() => StaTest.Run(() =>
     {
-        // Time Alignment fills much of its panel with a read-only RichTextBox, and
-        // that is the one control type whose AllowDrop goes down a path of its own —
-        // the native RichEdit drop target rather than the WinForms one. Pinned
-        // because a control that threw here would take the whole shell's wiring with
-        // it at construction, not just its own corner of the window.
+        // RichTextBox.AllowDrop goes through the native RichEdit target; a throw here would break the shell's constructor.
         using Form form = ShownForm();
         var box = new RichTextBox { Size = new Size(100, 60), ReadOnly = true };
         form.Controls.Add(box);
@@ -100,9 +87,7 @@ public sealed class FileDropTargetTests
     [Fact]
     public void SomebodyElseSDragIsLeftExactlyAsItWas() => StaTest.Run(() =>
     {
-        // The EQ wizard moves its filter strips by dragging, over the very controls
-        // this is registered on. Its drag carries no files, and clearing the effect
-        // here would cancel a move the bank had already accepted.
+        // The EQ wizard's strip drag carries no files; clearing the effect would cancel a move the bank accepted.
         using Form form = ShownForm();
         Button button = DeepChild(form);
         FileDropTarget.Attach(form, (_, _) => true, (_, _) => Assert.Fail("must not open"));
@@ -131,10 +116,7 @@ public sealed class FileDropTargetTests
     [Fact]
     public void TheControlTheFileLandedOnIsNamedWithIt() => StaTest.Run(() =>
     {
-        // The Compare button takes the same impulse response as the reference rather
-        // than as the measurement, so the shell has to be told where a drop landed —
-        // and the control raising the event is the one under the pointer, since drag
-        // events reach no other.
+        // Drag events reach only the control under the pointer, and Compare reads the file as the reference.
         using Form form = ShownForm();
         Button button = DeepChild(form);
         Control? landedOn = null;
@@ -148,9 +130,6 @@ public sealed class FileDropTargetTests
     [Fact]
     public void AControlMayRefuseWhatTheRestOfTheWindowTakes() => StaTest.Run(() =>
     {
-        // A sweep recording hovering over the Compare button is refused there and
-        // taken anywhere else: the answer is asked per control, on the hover as well
-        // as on the drop.
         using Form form = ShownForm();
         Button button = DeepChild(form);
         Control panel = button.Parent!;
@@ -170,9 +149,7 @@ public sealed class FileDropTargetTests
     [Fact]
     public void AWindowThatIsNotTakingInputTakesNoFileEither() => StaTest.Run(() =>
     {
-        // What a modal dialog leaves behind: the owner window is disabled while the
-        // dialog is up. A file opened underneath one would replace the very
-        // measurement the dialog is asking about.
+        // A modal dialog disables the owner; opening a file underneath would replace what the dialog is about.
         using Form form = ShownForm();
         Button button = DeepChild(form);
         FileDropTarget.Attach(form, (_, _) => true, (_, _) => Assert.Fail("must not open"));
@@ -199,12 +176,6 @@ public sealed class FileDropTargetTests
     [Fact]
     public void ThePanelsTheShellShowsAllTakeBeingMadeDropTargets() => StaTest.Run(() =>
     {
-        // Registering means setting AllowDrop on every control the window carries,
-        // and a control type that refused would throw where the shell wires this up:
-        // in its constructor, taking the whole application with it rather than one
-        // corner of one panel. The heavy panels are built and realized here for that
-        // reason — a plot, a rich text box, faders, numeric boxes and combos among
-        // them — and the assert is simply that they are all drop targets afterwards.
         using Form form = ShownForm();
         var wizard = new EqWizardPanel();
         var virtualDsp = new VirtualCrossoverPanel();
@@ -234,8 +205,7 @@ public sealed class FileDropTargetTests
 
     private static Form ShownForm()
     {
-        // Off screen: these realize a handle (a drop target is registered with OLE at
-        // that moment) without a window flashing over the test run.
+        // Off screen: a handle registers the OLE drop target without a window flashing.
         var form = new Form
         {
             ShowInTaskbar = false,
@@ -271,8 +241,6 @@ public sealed class FileDropTargetTests
         Control control, IDataObject data, DragDropEffects effect = DragDropEffects.None) =>
         Raise(control, "OnDragDrop", data, effect);
 
-    // The framework raises these; a test has no drag to make it do so, so the event
-    // is raised the way the framework would and the handlers run as they really do.
     private static DragEventArgs Raise(
         Control control, string method, IDataObject data, DragDropEffects effect)
     {

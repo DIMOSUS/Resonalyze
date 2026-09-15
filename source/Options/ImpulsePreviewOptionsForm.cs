@@ -5,30 +5,13 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Options;
 
-/// <summary>
-/// Base class for the options panels with a live impulse-response preview
-/// (FROptions, GDOpt, PROpt, BDOpt, WaterfallOptions). Owns the plumbing that
-/// had drifted across five copies: the measurement subscription swap, the
-/// UI-thread marshal of ImpulseResponseChanged, the Disposed cleanup (a dialog
-/// disposed without ever having been shown never raises FormClosed), and the
-/// suppression of redundant preview renders while Init writes control values.
-/// Control writes go through <see cref="DarkNumericUpDownExtensions.ClampValue"/>.
-///
-/// It also owns the two control groups the panels share. The Tukey trio
-/// (window + left/right fades) is bound by <see cref="BindTukeyWindowControls"/>;
-/// the gate group (offset + Auto + the trio + the reliable-frequency label) by
-/// <see cref="BindGateControls"/>, which brings the Auto-snap, the
-/// reliable-frequency read-out, the gated render and the tooltips that go with
-/// them. A panel binds what it has and overrides nothing else.
-/// </summary>
+/// <summary>Base for option panels with a live IR preview: measurement subscription, UI-thread marshal, Disposed cleanup
+/// (an unshown dialog never raises FormClosed), Init render suppression, and the shared Tukey/gate control groups.</summary>
 public class ImpulsePreviewOptionsForm : Form
 {
     protected readonly WrappingToolTip toolTip = new();
     private bool initializingControls;
 
-    // The window/fade trio both groups share, and the gate-only controls. Held
-    // as tuples so every member below unwraps a whole group in one check rather
-    // than testing each field.
     private (DarkNumericUpDown Window, DarkNumericUpDown Left, DarkNumericUpDown Right)? lengths;
     private (DarkNumericUpDown Offset, CheckBox AutoFit, Label MinFrequency)? gate;
 
@@ -43,10 +26,6 @@ public class ImpulsePreviewOptionsForm : Form
 
     protected ExpSweepMeasurement? Measurement { get; private set; }
 
-    /// <summary>
-    /// Points the panel at a measurement, re-targeting the
-    /// ImpulseResponseChanged subscription when the instance changes.
-    /// </summary>
     protected void AttachMeasurement(ExpSweepMeasurement measurement)
     {
         ArgumentNullException.ThrowIfNull(measurement);
@@ -60,11 +39,7 @@ public class ImpulsePreviewOptionsForm : Form
         measurement.ImpulseResponseChanged += HandleImpulseResponseChanged;
     }
 
-    /// <summary>
-    /// Runs Init's control writes with preview renders suppressed: every
-    /// ValueChanged would otherwise rebuild the preview several times before
-    /// Init's final explicit render.
-    /// </summary>
+    /// <summary>Suppresses the several renders each ValueChanged would trigger before Init's final render.</summary>
     protected void InitializeControls(Action applyValues)
     {
         ArgumentNullException.ThrowIfNull(applyValues);
@@ -89,19 +64,11 @@ public class ImpulsePreviewOptionsForm : Form
         RenderIrPreview();
     }
 
-    /// <summary>
-    /// The panel's actual preview render; only called outside Init suppression.
-    /// </summary>
     protected virtual void RenderIrPreview()
     {
     }
 
-    /// <summary>
-    /// Binds a window/left-fade/right-fade trio: any edit re-clamps the fades
-    /// against the window length and re-renders the preview. Call once from the
-    /// constructor. <paramref name="afterWindowChanged"/> carries the extra a
-    /// window edit implies (BurstDecay/Waterfall recompute their captured time).
-    /// </summary>
+    /// <summary>Call once from the constructor. <paramref name="afterWindowChanged"/>: extra work a window edit implies.</summary>
     protected void BindTukeyWindowControls(
         DarkNumericUpDown window,
         DarkNumericUpDown left,
@@ -119,8 +86,6 @@ public class ImpulsePreviewOptionsForm : Form
         right.ValueChanged += TukeyFadeChanged;
     }
 
-    /// <summary>Re-clamps the fades against the window length. Init calls it
-    /// inside the <see cref="InitializeControls"/> suppression.</summary>
     protected void RefreshTukeyWindowLimits()
     {
         if (lengths is { } l)
@@ -129,11 +94,6 @@ public class ImpulsePreviewOptionsForm : Form
         }
     }
 
-    /// <summary>
-    /// Binds the gated group (Phase, Group Delay): Auto snaps the offset to the
-    /// detected IR start and locks the field, every gate edit refreshes the
-    /// reliable-frequency read-out, and all of them re-render the preview.
-    /// </summary>
     protected void BindGateControls(
         DarkNumericUpDown offset,
         CheckBox autoFit,
@@ -148,9 +108,6 @@ public class ImpulsePreviewOptionsForm : Form
         offset.ValueChanged += (_, _) => UpdateIrPreview();
         autoFit.CheckedChanged += (_, _) =>
         {
-            // Auto pressed: the field turns read-only and follows the estimated
-            // IR start; released: it unlocks keeping the last value as the
-            // manual starting point.
             SyncGateOffsetEnabled();
             if (autoFit.Checked)
             {
@@ -162,8 +119,7 @@ public class ImpulsePreviewOptionsForm : Form
         right.ValueChanged += GateValueChanged;
     }
 
-    /// <summary>CheckedChanged only fires on a transition, so Init calls this to
-    /// sync the offset field for a false -> false init too.</summary>
+    /// <summary>CheckedChanged fires only on a transition, so Init calls this for a false -> false init.</summary>
     protected void SyncGateOffsetEnabled()
     {
         if (gate is { } g)
@@ -172,7 +128,6 @@ public class ImpulsePreviewOptionsForm : Form
         }
     }
 
-    /// <summary>Rewrites the "reliable from" read-out from the current gate.</summary>
     protected void UpdateMinFrequencyLabel()
     {
         if (lengths is not { } l || gate is not { } g)
@@ -189,8 +144,7 @@ public class ImpulsePreviewOptionsForm : Form
             : "Reliable from ≈ — Hz";
     }
 
-    /// <summary>Snaps the gate offset to the estimated IR start (band-limited
-    /// first-arrival front, memoized per IR in TransferIrStartCache).</summary>
+    /// <summary>Band-limited first-arrival front, memoized per IR in TransferIrStartCache.</summary>
     protected void ApplyAutoGateOffset()
     {
         if (gate is { } g &&
@@ -208,10 +162,7 @@ public class ImpulsePreviewOptionsForm : Form
         }
     }
 
-    /// <summary>
-    /// The gated panels' whole preview render. Auto re-snaps the offset on every
-    /// refresh, which includes every ImpulseResponseChanged of the measurement.
-    /// </summary>
+    /// <summary>Auto re-snaps the offset on every refresh, including every ImpulseResponseChanged.</summary>
     protected void RenderGatedIrPreview(PlotView plotView, CompareAnalysisSource? compare)
     {
         if (gate?.AutoFit.Checked == true)
@@ -239,13 +190,10 @@ public class ImpulsePreviewOptionsForm : Form
             compare);
     }
 
-    /// <summary>Runs after the Auto snap and before the render — the hook for a
-    /// panel whose read-outs track the gate (Phase refreshes its resolved tau).</summary>
     protected virtual void OnGatePreviewRendering()
     {
     }
 
-    /// <summary>Applies the tooltips shared by every gated panel control.</summary>
     protected void ApplyGateToolTips()
     {
         if (lengths is not { } l || gate is not { } g)
@@ -273,7 +221,6 @@ public class ImpulsePreviewOptionsForm : Form
             "Lowest frequency the current gate can resolve (≈ 1 / gate length). Below it the curve is not reliable.");
     }
 
-    /// <summary>Re-draws the preview after the Compare selection changes while docked.</summary>
     public void RefreshComparePreview() => UpdateIrPreview();
 
     private void TukeyFadeChanged(object? sender, EventArgs e)

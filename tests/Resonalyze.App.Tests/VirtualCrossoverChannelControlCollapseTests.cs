@@ -3,11 +3,6 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The foldable channel block of the Virtual DSP tool: folding shrinks the block to
-/// its header rows so the flow list reflows the blocks below it, and unfolding
-/// restores exactly the block the designer laid out.
-/// </summary>
 public sealed class VirtualCrossoverChannelControlCollapseTests
 {
     [Fact]
@@ -17,11 +12,6 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
 
         control.Collapsed = true;
 
-        // Everything down to the zone row — the row the fold button shares —
-        // stays inside the shrunken block; the crossover row and below are gone.
-        // The curve toggles are among the kept rows since they moved up under the
-        // source button: which curves a block draws is what a user reaches for
-        // while comparing blocks, which is exactly when they are folded.
         Assert.True(control.InvertCheckBox.Bottom <= control.ClientSize.Height);
         Assert.True(control.ZoneComboBox.Bottom <= control.ClientSize.Height);
         Assert.True(control.CollapseButton.Bottom <= control.ClientSize.Height);
@@ -48,17 +38,13 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
         Assert.True(collapsedHeight < expandedHeight);
         Assert.Equal(expandedHeight, control.Height);
         Assert.True(control.CrossoverKindComboBox.Visible);
-        // The PEQ row is the LAST one, so it is the one a short restore would clip;
-        // the curve toggles above the fold never went away to be restored.
         Assert.True(control.PeqMenuButton.Visible);
     }
 
     [Fact]
     public void Collapsing_MovesTheSizePinSoTheFlowListCannotStretchTheBlockBack()
     {
-        // The block is pinned to one size (MinimumSize == MaximumSize) so the flow
-        // list leaves it alone; a fold that only set Height would be undone by the
-        // next layout pass.
+        // Pinned via MinimumSize == MaximumSize; setting only Height would be undone by the next layout.
         using var control = new VirtualCrossoverChannelControl();
 
         control.Collapsed = true;
@@ -94,11 +80,7 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
     [Fact]
     public void ScalingWhileFolded_UnfoldsToAHeightThatStillHoldsEveryRow()
     {
-        // The block parks its expanded height outside the scaled bounds, so a scale
-        // that lands while it is folded is the one way the two can drift apart: the
-        // rows are scaled up, the parked height is not, and unfolding then clips the
-        // bottom of the chain. Scaled both ways because the block travels between
-        // monitors, not only up from 100%.
+        // The expanded height is parked outside scaled bounds, so a scale while folded could clip the chain on unfold.
         using var control = new VirtualCrossoverChannelControl();
         control.Collapsed = true;
         int foldedAt100 = control.Height;
@@ -112,8 +94,6 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
         control.Collapsed = false;
 
         Assert.Equal(control.Height, control.MaximumSize.Height);
-        // Measured on the BOTTOM row (the PEQ one): a parked height that drifted
-        // from the scaled rows clips there first.
         Assert.True(control.PeqMenuButton.Bottom <= control.ClientSize.Height);
         Assert.True(control.LowPassFrequencyInput.Bottom <= control.ClientSize.Height);
 
@@ -133,8 +113,6 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
 
         control.Collapsed = true;
 
-        // The fold line is read off the scaled rows, so it still cuts above the
-        // crossover row rather than at a stale pixel offset.
         Assert.True(control.InvertCheckBox.Bottom <= control.ClientSize.Height);
         Assert.False(control.CrossoverKindComboBox.Visible);
         Assert.True(control.CrossoverKindComboBox.Bottom > control.ClientSize.Height);
@@ -143,10 +121,6 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
     [Fact]
     public void FoldButton_IsReachedWithTheZoneRowRatherThanAfterTheChain()
     {
-        // It sits at the top of the block, so keyboard focus must not walk the whole
-        // filter chain before coming back up to it. The button opens the zone row
-        // (it is that row's leftmost control), so the tab order reaches it after the
-        // delay above and before the crossover chain below.
         using var control = new VirtualCrossoverChannelControl();
 
         Assert.True(control.CollapseButton.TabIndex > control.DelayInput.TabIndex);
@@ -157,17 +131,12 @@ public sealed class VirtualCrossoverChannelControlCollapseTests
     }
 
     [Fact]
-    // Shown, so the list is built and realised on one STA thread.
     public void FoldingInsideTheChannelList_NeverStacksOneBlockOverAnother() =>
         StaTest.Run(FoldEveryBlockInTurn);
 
     private static void FoldEveryBlockInTurn()
     {
-        // The field bug: with the size pin moved through an unbounded intermediate
-        // state, the flow list laid out the FOLLOWING block against a block it read as
-        // zero-height, and drew it 74 px over the one above — two blocks glued into one.
-        // The list is rebuilt here as the tool builds it, and the stacking is checked
-        // after every fold.
+        // Field bug: an unbounded intermediate size pin let the flow list draw the next block 74 px over the one above.
         using var form = new Form();
         using var list = new FlowLayoutPanel
         {

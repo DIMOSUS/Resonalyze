@@ -2,35 +2,19 @@ using System.Numerics;
 
 namespace Resonalyze.Dsp;
 
-/// <summary>The order of an all-pass section.</summary>
 public enum AllPassType
 {
-    /// <summary>
-    /// No all-pass. Deliberately the zero value: a virtual crossover project up to
-    /// schema v7 ran the all-pass as a channel stage and wrote this enum flat on the
-    /// channel, so a file that never dialled one in must deserialize to "no all-pass"
-    /// rather than a live filter. Nothing builds a spec with it any more — the
-    /// all-pass is a band of the PEQ bank now, and a band either exists or does not.
-    /// </summary>
+    /// <summary>Zero value so pre-v8 projects that never dialled an all-pass deserialize to none.</summary>
     Off,
 
-    /// <summary>One real pole: 180° of phase swing, -90° at the corner. Takes no Q.</summary>
+    /// <summary>180° swing, -90° at the corner; no Q.</summary>
     FirstOrder,
 
-    /// <summary>A pole pair: 360° of phase swing, -180° at the corner, width set by Q.</summary>
+    /// <summary>360° swing, -180° at the corner; width set by Q.</summary>
     SecondOrder
 }
 
-/// <summary>
-/// One all-pass filter: unity magnitude at every frequency, phase rotated around
-/// <see cref="FrequencyHz"/>. It is the only filter that moves phase without touching
-/// the tonal balance — unlike a delay (a constant group delay everywhere) or a
-/// polarity flip (180° everywhere), it rotates phase *locally*, which is what makes
-/// it the tool for lining up drivers through a crossover region.
-/// <see cref="Q"/> is read only by <see cref="AllPassType.SecondOrder"/>: it sets how
-/// abruptly the phase turns, and therefore how much group delay piles up at the corner
-/// (τ ≈ 4Q/ω₀). A first-order section has a single real pole and no Q at all.
-/// </summary>
+/// <summary>Unity magnitude, phase rotated locally around <see cref="FrequencyHz"/>. <see cref="Q"/> (second order only) sets corner group delay τ ≈ 4Q/ω₀.</summary>
 public sealed record AllPassSpec(
     AllPassType Type,
     double FrequencyHz,
@@ -38,10 +22,6 @@ public sealed record AllPassSpec(
 
 public static class AllPassFilter
 {
-    /// <summary>
-    /// Complex response of the all-pass at the given frequency. An Off spec is unity;
-    /// otherwise the magnitude is 1 at every frequency and only the phase moves.
-    /// </summary>
     public static Complex Response(
         AllPassSpec spec,
         double frequencyHz,
@@ -51,10 +31,6 @@ public static class AllPassFilter
         return Evaluate(BuildSections(spec, sampleRateHz), frequencyHz, sampleRateHz);
     }
 
-    /// <summary>
-    /// The digital biquad realizing this all-pass, in the same coefficient convention
-    /// a miniDSP-style device runs. An Off spec builds nothing.
-    /// </summary>
     public static IReadOnlyList<BiquadCoefficients> BuildSections(
         AllPassSpec spec,
         double sampleRateHz)
@@ -78,10 +54,7 @@ public static class AllPassFilter
                 nameof(spec),
                 "The all-pass corner frequency must be positive.");
         }
-        // Q has no upper bound to enforce — an extreme Q is merely a very sharp phase
-        // turn, still perfectly stable. Zero or negative, though, divides by zero in
-        // alpha and poisons every coefficient, so the DSP refuses it rather than trust
-        // the UI to have clamped: an imported or hand-edited project might not have.
+        // No upper Q bound needed; Q <= 0 divides by zero, refused here since imported projects may bypass UI clamps.
         if (spec.Type == AllPassType.SecondOrder &&
             (!double.IsFinite(spec.Q) || spec.Q <= 0))
         {
@@ -95,12 +68,7 @@ public static class AllPassFilter
             : [SecondOrderSection(spec.FrequencyHz, spec.Q, sampleRateHz)];
     }
 
-    /// <summary>
-    /// Group delay (seconds) the all-pass adds at <paramref name="frequencyHz"/>, read
-    /// from the exact digital biquad rather than the analog ideal (τ = 4Q/ω₀), which the
-    /// bilinear transform's frequency warping pulls away from as the corner climbs
-    /// toward Nyquist. Zero for an Off spec.
-    /// </summary>
+    /// <summary>From the exact digital biquad; the analog 4Q/ω₀ drifts with bilinear warping near Nyquist.</summary>
     public static double GroupDelaySeconds(
         AllPassSpec spec,
         double frequencyHz,
@@ -116,18 +84,7 @@ public static class AllPassFilter
         return samples / sampleRateHz;
     }
 
-    /// <summary>
-    /// Group delay (seconds) at the filter's own corner — where a second-order section's
-    /// delay peaks, and the figure worth showing a user: it is why an all-pass works,
-    /// and on a low corner, where it runs to many milliseconds, its main risk.
-    /// <para>
-    /// Evaluated at the corner the filter ACTUALLY runs at. <see cref="BuildSections"/>
-    /// clamps a corner at or above Nyquist below it, so reading the delay at the
-    /// requested frequency instead would miss the peak — and near Nyquist that peak is
-    /// enormous (a Q of 20 just under Nyquist holds a quarter of a second), which is
-    /// precisely where a readout must not understate.
-    /// </para>
-    /// </summary>
+    /// <summary>Group delay at the corner the filter actually runs at (BuildSections clamps below Nyquist), so the peak is never understated.</summary>
     public static double CornerGroupDelaySeconds(AllPassSpec spec, double sampleRateHz)
     {
         ArgumentNullException.ThrowIfNull(spec);
@@ -151,11 +108,7 @@ public static class AllPassFilter
         return response;
     }
 
-    // RBJ cookbook all-pass biquad (bilinear transform, prewarped at the corner),
-    // normalized to a0 = 1 with a1/a2 negated for the additive-feedback convention of
-    // BiquadCoefficients. The numerator is the denominator reversed (b0 = a2, b1 = a1,
-    // b2 = 1) — that mirror symmetry is what makes |H| exactly 1 at every frequency,
-    // analytically rather than approximately.
+    // RBJ all-pass, a1/a2 negated for the additive convention; numerator = reversed denominator gives |H| = 1 exactly.
     private static BiquadCoefficients SecondOrderSection(
         double frequencyHz,
         double q,
@@ -169,16 +122,13 @@ public static class AllPassFilter
 
         double b0 = (1.0 - alpha) / a0;
         double b1 = (-2.0 * cos) / a0;
-        const double b2 = 1.0; // (1 + alpha) / a0
+        const double b2 = 1.0;
         double a1 = (-2.0 * cos) / a0;
         double a2 = (1.0 - alpha) / a0;
         return new BiquadCoefficients(b0, b1, b2, -a1, -a2);
     }
 
-    // First-order all-pass via the bilinear transform of H(s) = (w0 - s)/(w0 + s):
-    // with K = tan(pi f / fs) it collapses to H(z) = (a + z^-1)/(1 + a z^-1), stored as
-    // a biquad with zero second-order terms. Here too the numerator is the denominator
-    // reversed, so the magnitude is exactly 1.
+    // H(z) = (a + z^-1)/(1 + a z^-1) with K = tan(pi f / fs); mirrored coefficients keep |H| = 1.
     private static BiquadCoefficients FirstOrderSection(
         double frequencyHz,
         double sampleRateHz)

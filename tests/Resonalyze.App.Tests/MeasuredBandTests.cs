@@ -6,17 +6,9 @@ using Resonalyze.History;
 namespace Resonalyze.App.Tests;
 
 /// <summary>
-/// What a measurement carries a measurement at, and which responses stop there.
+/// Only a loopback transfer goes quiet outside the measured band; a sweep deconvolution carries the filter,
+/// so its edges are real loudspeaker output.
 /// </summary>
-/// <remarks>
-/// Two things narrow it: a protective high-pass the compensation could not invert,
-/// and a sweep that never excited part of the range. Both leave the response exactly
-/// zero, and only a response those zeroes are IN goes quiet — a loopback transfer.
-/// A sweep deconvolution still CARRIES the filter and is normalized by the
-/// excitation rather than gated against a loopback, so its edges are signal the
-/// loudspeaker really produced and masking them would delete a measurement rather
-/// than a phantom.
-/// </remarks>
 public sealed class MeasuredBandTests
 {
     private const int SampleRate = 96_000;
@@ -33,9 +25,7 @@ public sealed class MeasuredBandTests
     [Fact]
     public void AnUnknownFilterMasksNothing()
     {
-        // Null is "nobody recorded what this response passed through", which is a
-        // different answer from Off. Breaking such a curve would put a boundary on
-        // it from a filter it may never have seen.
+        // Null (nobody recorded the filter) differs from Off and must not break the curve.
         Assert.Equal(
             0.0,
             ProtectiveHighPassConfiguration.LowestMeasuredFrequencyHz(null, SampleRate));
@@ -71,8 +61,6 @@ public sealed class MeasuredBandTests
             transferPeakIndex: TransferPeak(),
             MeasuredBand.Resolve(Tweeter, 0, 0, SampleRate));
 
-        // The thumbnail drops the broken bands, so it simply begins where the
-        // measurement does.
         Assert.NotEmpty(preview.Frequencies);
         Assert.True(
             preview.Frequencies[0] >= Limit,
@@ -91,8 +79,6 @@ public sealed class MeasuredBandTests
             transferPeakIndex: TransferPeak(),
             MeasuredBand.Resolve(Tweeter, 0, 0, SampleRate));
 
-        // Nothing divided the filter out of this one, so its rolloff is the
-        // loudspeaker's own and belongs on screen.
         Assert.True(
             preview.Frequencies[0] < Limit,
             $"the preview starts at {preview.Frequencies[0]:0.0} Hz, at or above {Limit:0.0} Hz");
@@ -101,11 +87,7 @@ public sealed class MeasuredBandTests
     [Fact]
     public void ASweepThatNeverReachedLowNarrowsTheBandOnItsOwn()
     {
-        // The owner's tweeters: a band sweep asked for from 800 Hz, with no
-        // protective high-pass anywhere. Below that nothing was played at full
-        // amplitude, and below 565 nothing was played at all — the excitation gate
-        // zeroed those bins, and a windowed spectrum of a zero is the window: 495 of
-        // 1024 points drawn as a rolloff from -60 dB down to -96, none of it measured.
+        // Band sweep from 800 Hz: below 565 Hz the gate zeroed the bins, and a windowed zero drew 495 of 1024 points as rolloff.
         MeasuredBand band = MeasuredBand.Resolve(
             measurementFilter: null,
             measuredLowHz: 800,
@@ -119,17 +101,8 @@ public sealed class MeasuredBandTests
     [Fact]
     public void TheGuardBandIsNotMeasured()
     {
-        // What the sweep REACHED is wider than what it excited at full amplitude, by
-        // half an octave each side — the generator puts its fades out there so the
-        // envelope is flat across the band that was asked for. Inside a guard band H1
-        // is still unbiased, because the taper cancels in Gxy/Gxx, but its
-        // signal-to-noise falls away and the estimate's validity weight attenuates it
-        // to match: on a 500-5000 Hz sweep that weight reads −13.0 dB at 400 Hz, −2.7
-        // at 450 and −10.3 at 6300.
-        //
-        // So the band a measurement may be READ over is the full-amplitude one. Handed
-        // the guard edges instead, this would publish the estimator's own roll-off as
-        // the driver's response, on a perfect system, with nothing to say otherwise.
+        // The fade guard bands (half an octave each side) are down-weighted by validity (−13.0 dB at 400 Hz on 500-5000),
+        // so the readable band is the full-amplitude one.
         MeasuredBand honest = MeasuredBand.Resolve(
             measurementFilter: null, measuredLowHz: 500, measuredHighHz: 5_000, SampleRate);
         Assert.Equal(500, honest.LowEdgeHz, 6);
@@ -142,7 +115,6 @@ public sealed class MeasuredBandTests
     [Fact]
     public void AFilterAndASweepBothNarrowIt_TheWiderLimitWins()
     {
-        // Both are true at once, so the response is silent wherever EITHER says so.
         MeasuredBand sweptLower = MeasuredBand.Resolve(Tweeter, 200, 20_000, SampleRate);
         Assert.Equal(Limit, sweptLower.LowEdgeHz, 6);
 
@@ -162,9 +134,7 @@ public sealed class MeasuredBandTests
     [Fact]
     public void ADefaultBandMeansEverything()
     {
-        // The trap this exists to close: a default-constructed band carries a HIGH
-        // edge of zero, and read literally that would blank every frequency above DC
-        // on any measurement whose band nobody set.
+        // A default band has a high edge of zero, which read literally would blank everything above DC.
         MeasuredBand band = default;
 
         Assert.Equal(0.0, band.LowEdgeHz);
@@ -176,8 +146,6 @@ public sealed class MeasuredBandTests
     [Fact]
     public void ANothingnessAtEitherEndIsRefusedRatherThanTrusted()
     {
-        // A reversed or absent sweep band says nothing about the measurement, so it
-        // narrows nothing — the alternative is blanking a curve on a bad number.
         MeasuredBand reversed = MeasuredBand.Resolve(null, 20_000, 20, SampleRate);
         Assert.Equal(0.0, reversed.LowEdgeHz);
         Assert.True(double.IsPositiveInfinity(reversed.HighEdgeHz));
@@ -215,8 +183,6 @@ public sealed class MeasuredBandTests
         return impulse;
     }
 
-    // A response measured through the filter and corrected for it, the same two
-    // steps a measurement performs.
     private static Complex[] CompensatedTransfer()
     {
         var spectrum = new Complex[32_768];

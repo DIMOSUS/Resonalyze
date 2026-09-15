@@ -12,8 +12,6 @@ internal sealed class MeasurementSessionSnapshot
     public MeasurementSettingsFile.LiveSpectrumSettings LiveSpectrum { get; set; } = new();
     public MeasurementSettingsFile.TimeAlignmentSettings TimeAlignment { get; set; } = new();
 
-    // Only the slots that were active (shown) for the active mode are recorded.
-    // The overlays themselves keep their own separate on-disk storage
-    // (overlays/&lt;Mode&gt;/overlay-NN.json) and are reloaded from there on restore.
+    // Overlay contents are reloaded from their own files on restore.
     public List<int> ActiveOverlaySlots { get; set; } = [];
 }

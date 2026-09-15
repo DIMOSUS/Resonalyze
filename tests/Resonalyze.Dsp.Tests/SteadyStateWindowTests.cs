@@ -3,9 +3,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Dsp.Tests;
 
-// The steady-state magnitude window: one definition in milliseconds for every
-// magnitude curve the Virtual DSP tool and the EQ Wizard draw, realized in samples
-// with the same clamp-and-trim the gated carve applies (ResolveGatePlacement).
 public sealed class SteadyStateWindowTests
 {
     [Fact]
@@ -14,7 +11,7 @@ public sealed class SteadyStateWindowTests
         (int window, int left, int right) =
             FrequencyResponseOptions.SteadyStateWindowSamples(48_000);
 
-        // 2 + 500 + 180 ms at 48 kHz — under the 32768-sample FFT, so nothing trims.
+        // 2 + 500 + 180 ms at 48 kHz fits the 32768-sample FFT, so nothing trims.
         Assert.Equal(32_736, window);
         Assert.Equal(96, left);
         Assert.Equal(8_640, right);
@@ -26,11 +23,7 @@ public sealed class SteadyStateWindowTests
     [InlineData(192_000)]
     public void AtHighRates_TheClampKeepsAPlateau_NotJustFades(int sampleRate)
     {
-        // 682 ms outruns the FFT above 48 kHz, and what the clamp does with the
-        // shortfall is the whole question. Trimming the fade alone spends all of it
-        // on the plateau — at 192 kHz that left ZERO plateau, a window that faded in
-        // and immediately out. The loss is shared instead, so the window keeps its
-        // shape: a real unity plateau with a fade-out a fraction of it.
+        // 682 ms outruns the FFT above 48 kHz; trimming only the fade left zero plateau at 192 kHz, so the loss is shared.
         (int window, int left, int right) =
             FrequencyResponseOptions.SteadyStateWindowSamples(sampleRate);
         int plateau = window - left - right;
@@ -40,19 +33,14 @@ public sealed class SteadyStateWindowTests
             plateau > right,
             $"at {sampleRate} Hz the plateau is {plateau} samples against a " +
             $"{right}-sample fade-out — the window is mostly fade");
-        // The 500:180 ratio the constants ask for, kept within rounding.
         Assert.InRange((double)plateau / right, 2.3, 3.3);
-        // Still a steady-state window: ~171 ms at the worst rate, dozens of times
-        // the junction gate it replaced.
         Assert.True(window * 1_000.0 / sampleRate > 150);
     }
 
     [Fact]
     public void TheTrimIsSharedByTheGatedAndPlainPaths()
     {
-        // Both ways to a windowed spectrum realize ONE geometry: the plain
-        // oversampled window asks for it here, and the gated carve
-        // (ResolveGatePlacement) asks the same helper. They cannot drift.
+        // The plain window and the gated carve (ResolveGatePlacement) share one helper, so they cannot drift.
         (int window, int left, int right) =
             FrequencyResponseOptions.SteadyStateWindowSamples(192_000);
         (int trimWindow, int trimLeft, int trimRight) =
@@ -64,8 +52,7 @@ public sealed class SteadyStateWindowTests
     [Fact]
     public void AGateShorterThanTheFft_PassesThroughUntouched()
     {
-        // Every phase gate is far shorter than the FFT, so the shared trim must be a
-        // no-op for them — the fix must not have moved the phase view's window.
+        // Phase gates are far shorter than the FFT: the shared trim must be a no-op for them.
         (int window, int left, int right) =
             FrequencyResponseOptions.TrimGateToFft(24, 192, 72);
 
@@ -74,14 +61,8 @@ public sealed class SteadyStateWindowTests
         Assert.Equal(72, right);
     }
 
-    // What the window actually delivers on the hardest realistic band — a Q 8 bell at
-    // 60 Hz, whose ringing needs ~290 ms to decay 60 dB. The tolerance is per rate
-    // BECAUSE the carve clamp is in SAMPLES: the window is the full 682 ms at 48 kHz
-    // (exact, under a hundredth of a dB) and shortens to 341 and 171 ms as the rate
-    // doubles, so the deepest band is read progressively short — measured 0.60 dB at
-    // 96 kHz and 1.34 dB at 192 kHz. Pinned so a change to the constants, the clamp
-    // or the carve cannot move them unnoticed; the root fix is a rate-scaled gated
-    // FFT, which is DSP-core work of its own.
+    // Q 8 bell at 60 Hz (~290 ms ring). The clamp is in samples, so the window shortens to 341/171 ms at 96/192 kHz:
+    // measured 0.60 / 1.34 dB. Root fix would be a rate-scaled gated FFT.
     [Theory]
     [InlineData(48_000, 0.05)]
     [InlineData(96_000, 0.70)]
@@ -94,8 +75,6 @@ public sealed class SteadyStateWindowTests
 
         (double windowed, double ideal) = ReadBandDepth(impulse, peak, sampleRate, bank);
 
-        // Against the ideal filter's own depth at its centre — the response the DSP
-        // realizes and the ear hears.
         Assert.True(
             Math.Abs(windowed - ideal) < toleranceDb,
             $"at {sampleRate} Hz the window read {windowed:0.00} dB against the " +
@@ -105,12 +84,7 @@ public sealed class SteadyStateWindowTests
     [Fact]
     public void ThePlainWindowOpensOnTheResponseStart_NotItsPeak()
     {
-        // The Passat woofer defect, synthetic: a low-frequency driver's envelope
-        // peaks MILLISECONDS after its onset (group delay), while the plain
-        // window's fade-in is only 2 ms — anchored on the peak it opened after
-        // the response had begun and read the record minus its direct arrival.
-        // The plain path must anchor on the estimated START instead, i.e. read
-        // the same curve as the gated carve placed at that start.
+        // LF envelope peaks ms after onset; a peak-anchored 2 ms fade-in dropped the direct arrival. Anchor on the start.
         const int sampleRate = 48_000;
         const int onset = 960; // 20 ms
         (Complex[] impulse, int peak) = RisingBurst(sampleRate, onset);
@@ -122,8 +96,7 @@ public sealed class SteadyStateWindowTests
             FrequencyResponseOptions.SteadyStateWindowSamples(sampleRate);
         double toMs = 1_000.0 / sampleRate;
 
-        // The fixture parts the two anchors by more than the fade-in — without
-        // that, peak and start anchoring would read the same and prove nothing.
+        // The anchors must differ by more than the fade-in, or the test proves nothing.
         Assert.True(
             peak - anchor > left,
             $"fixture: peak {peak} is only {peak - anchor} samples past the " +
@@ -144,7 +117,6 @@ public sealed class SteadyStateWindowTests
         AnalysisCurve atPeak = Carved(measurement, peak * toMs,
             left * toMs, (window - left - right) * toMs, right * toMs);
 
-        // Judged where the fixture has content; elsewhere both read noise floor.
         for (int i = 0; i < plain.Points.Count; i++)
         {
             if (plain.Points[i].X is < 30 or > 120)
@@ -159,8 +131,6 @@ public sealed class SteadyStateWindowTests
                 $"{atStart.Points[i].Y:0.000} dB");
         }
 
-        // And the anchor matters: at the band centre the peak-anchored window
-        // reads a different level — the reading the bug reports showed.
         double at60Start = AtHz(atStart, 60);
         double at60Peak = AtHz(atPeak, 60);
         Assert.True(
@@ -172,10 +142,7 @@ public sealed class SteadyStateWindowTests
     [Fact]
     public void AnExplicitAnchorOverridesTheEstimator()
     {
-        // The contract a COMPOSITE caller stands on (the Compare complex sum):
-        // the anchor it passes is where the window opens, estimator or not —
-        // run on a mixed record, the estimator would read the dominant band's
-        // front, which a later, louder arrival can own.
+        // A composite caller's anchor is where the window opens; the estimator could pick a later, louder arrival.
         const int sampleRate = 48_000;
         const int onset = 960;
         (Complex[] impulse, int peak) = RisingBurst(sampleRate, onset);
@@ -211,9 +178,6 @@ public sealed class SteadyStateWindowTests
             precision: 1);
     }
 
-    // A 60 Hz burst whose envelope rises over ~3 ms and decays over ~80 ms:
-    // the envelope maximum lands ~10 ms after the onset — the LF-driver shape
-    // whose peak-anchored window discards the direct arrival.
     private static (Complex[] Impulse, int Peak) RisingBurst(
         int sampleRate, int onset)
     {
@@ -272,11 +236,7 @@ public sealed class SteadyStateWindowTests
     [Fact]
     public void TheWindowBeatsTheJunctionGateItReplaced()
     {
-        // The claim that justifies the whole change, at the rate where the steady-state
-        // window is WEAKEST (192 kHz, clamped to 171 ms): even there it reads a deep
-        // high-Q bass band far closer to the truth than the old junction gate did.
-        // Without this, a future clamp could quietly shrink the window back toward the
-        // gate and every per-rate tolerance above would still pass.
+        // At the weakest rate (192 kHz, 171 ms) the window must still beat a 0.5/4/1.5 ms junction gate (1.34 vs 7.23 dB).
         const int rate = 192_000;
         var bank = new EqualizationCurve(new[] { new PeqBand(60, 8, -8) });
         Complex[] impulse = UnitImpulse(rate, out int peak);
@@ -287,33 +247,19 @@ public sealed class SteadyStateWindowTests
 
         double steadyError = Math.Abs(steady - ideal);
         double junctionError = Math.Abs(junction - ideal);
-        // Measured: 1.34 dB against 7.23 dB. The assertion is the GAP rather than a
-        // ratio — what matters is how many dB of the band's depth the reader would
-        // miss, and the ratio flatters a window that is merely less bad.
+        // Assert the gap, not a ratio: a ratio flatters a merely less-bad window.
         Assert.True(
             junctionError - steadyError > 4.0,
             $"steady-state window off by {steadyError:0.00} dB, junction gate by " +
             $"{junctionError:0.00} dB — the gap has closed");
     }
 
-    // Which chain stages actually move the GATED magnitude — measured through the real
-    // filter → window → FFT path, not argued from the ideal transfer function, and
-    // sampled across the ranges the UI allows — delay at 2/10/25/50/100 ms, all-pass
-    // at 10/40/120/2000 Hz with Q 1/5/10/20. A sample, not a proof of the true
-    // maximum: enough to decide the policy (both stages clearly move the curve at the
-    // clamped rate) without claiming the extremum has been found. It is the evidence
-    // behind the
-    // EQ Wizard handoff's return policy — a bank is refused when what it was fitted to
-    // has moved — and this PR has already been wrong twice by reasoning from |H| alone
-    // and then by measuring too narrow a case, so the policy is held to the sweep.
-    //
-    // The window is the handoff's: frozen at handoff time, which is what makes a DELAY
-    // edit matter — the response slides under a window that does not move.
+    // Measured through filter → window → FFT over the UI ranges: evidence for the EQ Wizard handoff refusing delay/all-pass edits.
+    // The handoff window is frozen, so a delay slides the response under it.
     [Theory]
     [InlineData(48_000, ChainEdit.Delay, 0.01)]
     [InlineData(48_000, ChainEdit.AllPass, 0.40)]
-    // At 192 kHz the window is clamped to 171 ms, and both stages then move the
-    // reading by dB: this is why neither is allowed to change under an open handoff.
+    // At 192 kHz (171 ms window) both stages move the reading by dB.
     [InlineData(192_000, ChainEdit.Delay, 2.00)]
     [InlineData(192_000, ChainEdit.AllPass, 5.20)]
     public void DelayAndAllPass_MoveTheGatedCurve_AtTheLimitsTheUiAllows(
@@ -321,15 +267,11 @@ public sealed class SteadyStateWindowTests
     {
         double worst = WorstOverSweep(sampleRate, edit);
 
-        // An upper bound, so a regression that made things WORSE is caught...
         Assert.True(
             worst < boundDb,
             $"{edit} at {sampleRate} Hz moved the gated curve by {worst:0.000} dB");
 
-        // ...and, at the clamped rate, a lower one: the guard that refuses these edits
-        // is only justified while they really do move the curve. If this ever stops
-        // being true (a rate-scaled FFT would do it), the policy should be revisited
-        // rather than kept out of habit.
+        // Lower bound: if a rate-scaled FFT ever makes these edits harmless, revisit the refusal policy.
         if (sampleRate == 192_000)
         {
             Assert.True(
@@ -344,8 +286,7 @@ public sealed class SteadyStateWindowTests
     [InlineData(192_000)]
     public void APolarityFlip_MovesNothing(int sampleRate)
     {
-        // The single chain stage the handoff lets change under it, and the reason is
-        // exact rather than empirical: |-x·w| = |x·w| for any window at all.
+        // Exact, not empirical: |-x·w| = |x·w| for any window.
         var baseChain = BaseChain();
 
         Assert.Equal(
@@ -358,10 +299,6 @@ public sealed class SteadyStateWindowTests
     [Fact]
     public void ACrossoverEdit_MovesTheGatedCurveByFarMore()
     {
-        // The clearest member of the refused class, at the rate where everything else
-        // is quietest: even with the full 682 ms window a moved corner is worth many
-        // dB, so the distinction between "refuse" and "allow" can never come down to
-        // measurement noise.
         DspChannelChain baseChain = BaseChain();
         DspChannelChain edited = baseChain with
         {
@@ -387,8 +324,6 @@ public sealed class SteadyStateWindowTests
             new PeqBand(300, 1.0, 0, PeqBandType.AllPassSecondOrder)
         }));
 
-    // The worst the edit can do anywhere in the range the UI offers — the figure the
-    // policy needs, rather than one convenient setting's.
     private static double WorstOverSweep(int sampleRate, ChainEdit edit)
     {
         DspChannelChain baseChain = BaseChain();
@@ -405,9 +340,7 @@ public sealed class SteadyStateWindowTests
             return worst;
         }
 
-        // 20 is the PEQ strip's own Q ceiling (PeqSlotControl.MaximumQ, in the app
-        // project this one cannot reference). The all-pass is a band of the bank
-        // now, so the edit under measurement replaces the bank's phase-only band.
+        // 20 = PeqSlotControl.MaximumQ (app project, not referenceable here).
         foreach (double q in new[] { 1.0, 5.0, 10.0, 20.0 })
         {
             foreach (double hz in new[] { 10.0, 40.0, 120.0, 2_000.0 })
@@ -436,9 +369,7 @@ public sealed class SteadyStateWindowTests
         AllPass
     }
 
-    // The largest SHAPE difference the two chains produce through one frozen gate,
-    // over 20 Hz..20 kHz and within 30 dB of the curve's own peak (a deep null turns
-    // a hair of complex difference into tens of dB and answers a different question).
+    // Within 30 dB of the curve's peak: a deep null turns a hair of complex difference into tens of dB.
     private static double WorstShapeShiftDb(
         int sampleRate, DspChannelChain before, DspChannelChain after)
     {
@@ -514,8 +445,7 @@ public sealed class SteadyStateWindowTests
             calibration: null,
             smoothingInverseOctaves: 0);
 
-    // A decaying wavelet with a room tail, as a measured channel really carries —
-    // the tail is what a window can cut, so a bare impulse would flatter the result.
+    // A room tail is what a window can cut; a bare impulse would flatter the result.
     private static Complex[] DriverLikeImpulse(int sampleRate, int peak)
     {
         var impulse = new Complex[sampleRate / 2];
@@ -535,9 +465,6 @@ public sealed class SteadyStateWindowTests
         return impulse;
     }
 
-    // A bare unit impulse: with a flat source the windowed reading IS the filter's
-    // own response, so any gap from the ideal magnitude is the window's doing and
-    // nothing else's.
     private static Complex[] UnitImpulse(int sampleRate, out int peak)
     {
         var impulse = new Complex[DataHelper.GatedFftLength * 2];

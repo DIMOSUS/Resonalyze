@@ -3,15 +3,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>
-/// Runtime state of one channel block — since the stereo rework, one L/R PAIR.
-/// The block's controls and every interactive computation read the ACTIVE side
-/// through the delegating members below, so the rest of the panel works
-/// unchanged; the side toggle just flips <see cref="ActiveRight"/> and rebinds.
-/// A mono pair (shared subwoofer) routes both sides to the left settings and
-/// state. The model owns no WinForms control: the panel keeps the
-/// model-to-control binding, so the algorithmic paths stay UI-free.
-/// </summary>
+/// <summary>Runtime state of one L/R channel block; members delegate to the active side, a mono pair routes both to the left. UI-free.</summary>
 internal sealed class VirtualCrossoverChannel : IAlignmentChannel
 {
     private readonly VirtualCrossoverChannelState leftState = new();
@@ -22,36 +14,22 @@ internal sealed class VirtualCrossoverChannel : IAlignmentChannel
         Name = name;
     }
 
-    // The alignment engine's log identity; the channel letter (A, B, C…) is a
-    // plain string, safe to read off the UI thread. It is the block's POSITION in
-    // the list, not an identity the channel carries — moving a block re-letters
-    // it, and nothing keys off the letter (the project file does not even store
-    // it). The host owns the setter for that reason.
+    // The block's position letter, not an identity: moving a block re-letters it and nothing keys off it.
     public string Name { get; set; }
 
     public VirtualCrossoverChannelPairSettings Pair { get; set; } = new();
     public bool ActiveRight { get; set; }
 
-    // The EFFECTIVE side slot: what the views and calculations read — a
-    // mono pair routes both sides to its single left slot.
     public VirtualCrossoverChannelState SideState(bool rightSide) =>
         Pair.Mono || !rightSide ? leftState : rightState;
 
-    // The PHYSICAL side slot, mono routing ignored. Lifetime management
-    // (project load, mono toggling) must use this one: through the
-    // effective accessor a mono pair's real right slot is unreachable, so
-    // a stale measurement could hide there and resurface the moment the
-    // pair stops being mono.
+    // Lifetime management must use the physical slot: a stale right-side measurement could hide behind mono routing.
     public VirtualCrossoverChannelState PhysicalSideState(bool rightSide) =>
         rightSide ? rightState : leftState;
     public VirtualCrossoverChannelSettings SideSettings(bool rightSide) =>
         Pair.SideFor(rightSide);
 
-    // Invalidates both physical slots when the channel leaves the panel (removed
-    // by the user or dropped by importing a smaller project). Clear() bumps each
-    // slot's SourceRevision, so a source load still in flight when the channel
-    // was removed captures a now-stale revision and can no longer write its
-    // result back or reach the channel's detached control.
+    // Clear() bumps SourceRevision, so an in-flight load for a removed channel can no longer land.
     public void Invalidate()
     {
         leftState.Clear();
@@ -60,7 +38,6 @@ internal sealed class VirtualCrossoverChannel : IAlignmentChannel
     private VirtualCrossoverChannelState Active => SideState(ActiveRight);
 
     public VirtualCrossoverChannelSettings Settings => Pair.SideFor(ActiveRight);
-    /// <summary>The active side's spatial average; see the state class.</summary>
     public LiveCaptureDocument? SpatialAverage
     {
         get => Active.SpatialAverage;
@@ -93,23 +70,11 @@ internal sealed class VirtualCrossoverChannel : IAlignmentChannel
         set => Active.SampleRate = value;
     }
 
-    /// <summary>
-    /// Answers with the rate the project's DSP processor realizes its filters at. The
-    /// panel installs it when the block is created, so the rate is READ when a
-    /// simulation needs it rather than copied into every channel each time the user
-    /// picks another processor — a copy is what goes stale. Unset (the tests, a block
-    /// outside a panel) falls back to the measurement's own rate, which is what every
-    /// project did before the processor became selectable.
-    /// </summary>
+    /// <summary>Read on demand rather than copied into channels (a copy goes stale); unset falls back to the measurement's rate.</summary>
     public Func<int>? ProcessorSampleRateProvider { get; set; }
 
     public int ProcessorSampleRate => ProcessorSampleRateFor(ActiveRight);
 
-    /// <summary>
-    /// <see cref="ProcessorSampleRate"/> for one particular side. The processor's rate
-    /// is a project-wide property, so the side only decides the fallback — which
-    /// measurement's rate answers when no panel installed a provider.
-    /// </summary>
     public int ProcessorSampleRateFor(bool rightSide) =>
         ProcessorSampleRateProvider?.Invoke() is int rate && rate > 0
             ? rate

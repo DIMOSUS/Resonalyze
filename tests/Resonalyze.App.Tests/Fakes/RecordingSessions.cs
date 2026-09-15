@@ -3,12 +3,9 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>Builds synthetic <see cref="AudioCaptureResult"/> values from a played signal.</summary>
 internal static class SyntheticCapture
 {
-    // A microphone channel scaled off the sweep (peak ~0.5, so it is neither
-    // silent nor clipped) and a loopback that differs from it, so the run
-    // passes both the quality check and the stereo-separation validator.
+    // Mic peak ~0.5 and a loopback that differs from it: passes quality and stereo-separation checks.
     public static AudioCaptureResult Good(
         AudioPlaybackSignal signal,
         int tailSamples,
@@ -19,7 +16,6 @@ internal static class SyntheticCapture
             [mic, loop], 0, 1, StereoSeparationExpected: true, anomalies, Diagnostics: null);
     }
 
-    // A silent microphone channel: the quality check rejects the run.
     public static AudioCaptureResult SilentMicrophone(AudioPlaybackSignal signal, int tailSamples)
     {
         (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.0f, 0.25f);
@@ -28,10 +24,7 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
-    // A CLEANLY attenuated loopback wire at ~-41 dBFS (the readme's
-    // "playback level well down" workflow taken far): still an exact copy of
-    // the sweep, so the scale-invariant transfer estimate is perfectly
-    // usable and the measurement must succeed.
+    // A cleanly attenuated loopback (~-41 dBFS) is still an exact copy: the measurement must succeed.
     public static AudioCaptureResult QuietCleanLoopback(AudioPlaybackSignal signal, int tailSamples)
     {
         (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.0089f);
@@ -40,9 +33,7 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
-    // The physical arrangement behind protective-HPF compensation: loopback is
-    // captured directly from the sound-card output, while only the microphone
-    // path passes through the external DSP's high-pass.
+    // Loopback taken from the card output; only the microphone path passes the external DSP's high-pass.
     public static AudioCaptureResult ProtectedLoudspeaker(
         AudioPlaybackSignal signal,
         int tailSamples,
@@ -62,10 +53,7 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
-    // The field failure: the "loopback" input picked up bleed, not the wire
-    // — uncorrelated content at ~-41 dBFS (deterministic LCG noise). Every
-    // per-run check passes, but the transfer function divides the microphone
-    // by garbage and the shape gate must refuse it, naming the level.
+    // Loopback bleed, not the wire: every per-run check passes, the shape gate must refuse it.
     public static AudioCaptureResult BleedLoopback(AudioPlaybackSignal signal, int tailSamples)
     {
         (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.0f);
@@ -80,13 +68,7 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
-    // The field failure this whole diagnosis exists for: the loopback wire is
-    // connected and carries the sweep, but the input stage it feeds is being
-    // driven past its limit, so what comes back is an asymmetrically saturated
-    // copy. Every per-run check passes — it is neither silent nor clipped, and
-    // it peaks well below full scale, exactly as the real one did at
-    // -14.6 dBFS — while the transfer function divides a clean microphone by a
-    // nonlinear reference.
+    // Overdriven loopback input: asymmetrically saturated copy peaking well below full scale (field: -14.6 dBFS).
     public static AudioCaptureResult DistortingLoopback(
         AudioPlaybackSignal signal,
         int tailSamples)
@@ -103,20 +85,10 @@ internal static class SyntheticCapture
 
         for (int i = 0; i < signal.SampleCount; i++)
         {
-            // Asymmetric saturation: the positive half compresses into a knee
-            // and the negative one passes, which is what a single-ended input
-            // driven past its limit does — and why the field record carried
-            // even harmonics (H2 and H4) with almost no odd ones. The knee
-            // depth was measured, not guessed: it puts this capture at ~-8 dB
-            // of harmonic content and ~10 dB of transfer compactness, the same
-            // class as the field one (-12 dB and 15.4 dB) with margin under the
-            // gate's 22 dB.
+            // Knee depth measured: ~-8 dB harmonics, ~10 dB compactness (field -12 dB / 15.4 dB, gate 22 dB).
             double sample = signal.MonoSamples[i] * 0.25;
             loop[i] = (float)(sample > 0 ? 0.01 * Math.Tanh(sample / 0.01) : sample);
 
-            // The microphone is a real arrival: delayed, with a short decay and
-            // a noise floor, so the refusal is not an artifact of feeding the
-            // estimator a mathematically exact copy of the excitation.
             for (int echo = 0; echo <= 3; echo++)
             {
                 int at = i + 40 + echo * 137;
@@ -137,9 +109,7 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
-    // A capture poisoned by one non-finite sample: NaN slips every level
-    // comparison, the transfer IR comes out NaN, and only the fail-closed
-    // shape gate stands between it and a published measurement.
+    // NaN slips every level comparison; only the fail-closed shape gate stops it.
     public static AudioCaptureResult NaNMicrophone(AudioPlaybackSignal signal, int tailSamples)
     {
         (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
@@ -149,11 +119,7 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
-    // NoiseMicrophone with a LOUD clean loopback. Pairs with a distorting run
-    // whose loopback is quiet: the aggregate loopback peak (a maximum over
-    // runs) then comes from THIS run, while the distortion came from the
-    // other — the refusal must quote the levels of the run that carried the
-    // fault, not the fleet-wide maximum.
+    // Aggregate loopback peak comes from this run while the distortion is the other's: the refusal must quote the faulty run.
     public static AudioCaptureResult NoiseMicrophoneLoudLoopback(
         AudioPlaybackSignal signal,
         int tailSamples)
@@ -170,10 +136,6 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
-    // Both inputs driven past their limit: the loopback exactly as in
-    // DistortingLoopback, and the microphone a delayed copy saturated the same
-    // asymmetric way. The refusal leads with the reference (everything is
-    // divided by it) but must say the microphone crossed the threshold too.
     public static AudioCaptureResult DistortingBothInputs(
         AudioPlaybackSignal signal,
         int tailSamples)
@@ -195,9 +157,7 @@ internal static class SyntheticCapture
             double micSample = signal.MonoSamples[i] * 0.5;
             if (i + 40 < length)
             {
-                // The OPPOSITE half from the loopback's knee: two matching
-                // nonlinearities partially cancel in the mic/loop ratio and
-                // the shape gate can pass the average; opposing halves cannot.
+                // Opposite half from the loopback's knee: matching nonlinearities would cancel in the mic/loop ratio.
                 mic[i + 40] = (float)(micSample < 0
                     ? -0.02 * Math.Tanh(-micSample / 0.02)
                     : micSample);
@@ -214,11 +174,7 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
-    // The loopback twin of NaNMicrophone. The run is accepted (NaN compares
-    // false against every level threshold) and the averaged transfer fails
-    // closed — and this run's loopback distortion reading is a MISSING
-    // measurement (the NaN smears over the whole deconvolution), not a clean
-    // one, which is what the judged-run count in the refusal must reflect.
+    // NaN smears the whole deconvolution: the distortion reading is missing, not clean.
     public static AudioCaptureResult NaNLoopback(AudioPlaybackSignal signal, int tailSamples)
     {
         (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.5f, 0.25f);
@@ -228,10 +184,6 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
-    // A level-plausible capture whose microphone recorded only noise
-    // uncorrelated with the sweep (deterministic LCG): every per-run level
-    // check passes, but the transfer function divides into stationary noise
-    // — the shape gate's case.
     public static AudioCaptureResult NoiseMicrophone(AudioPlaybackSignal signal, int tailSamples)
     {
         (float[] mic, float[] loop) = BuildChannels(signal, tailSamples, 0.0f, 0.25f);
@@ -246,15 +198,7 @@ internal static class SyntheticCapture
             AudioCaptureAnomalies.None, Diagnostics: null);
     }
 
-    /// <summary>
-    /// A measurement pair plus ONE array microphone carrying noise instead of the
-    /// sweep: an unused preamp hissing, the wrong socket, a failed capsule.
-    /// </summary>
-    /// <remarks>
-    /// The point is that it passes every level check there is — it is neither silent
-    /// nor clipped nor short, and it sits at an entirely ordinary level. What it does
-    /// not do is divide into a response.
-    /// </remarks>
+    /// <summary>One array microphone carries noise at an ordinary level: passes every level check.</summary>
     public static AudioCaptureResult WithNoisyArrayMicrophone(
         AudioPlaybackSignal signal,
         int tailSamples,
@@ -273,17 +217,7 @@ internal static class SyntheticCapture
         };
     }
 
-    /// <summary>
-    /// The array microphone recorded the sweep on some captures and noise on others:
-    /// an intermittent fault, which is the case a per-RUN rule exists for.
-    /// </summary>
-    /// <remarks>
-    /// Averaged, a bad run hides. Three good runs still put an arrival in the H1
-    /// total, so its shape stays compact and a verdict taken on the average passes —
-    /// while the bad run's reference power sits in the denominator all the same and
-    /// pulls that position's level down. It has to be caught where the level checks
-    /// are caught: on the run.
-    /// </remarks>
+    /// <summary>Intermittent noise: averaged, three good runs keep the shape compact, so it must be caught per run.</summary>
     public static AudioCaptureResult WithArrayMicrophoneNoisyOnThisCapture(
         AudioPlaybackSignal signal,
         int tailSamples,
@@ -304,10 +238,6 @@ internal static class SyntheticCapture
         };
     }
 
-    /// <summary>
-    /// The same intermittent fault on the MEASUREMENT microphone, which carries the
-    /// level every other channel is compared against.
-    /// </summary>
     public static AudioCaptureResult WithMeasurementMicrophoneNoisyOnThisCapture(
         AudioPlaybackSignal signal,
         int tailSamples,
@@ -324,16 +254,7 @@ internal static class SyntheticCapture
             Diagnostics: null);
     }
 
-    /// <summary>
-    /// The mirror image: the MEASUREMENT microphone carries noise while the array
-    /// microphone beside it recorded the sweep properly.
-    /// </summary>
-    /// <remarks>
-    /// The fault is the measurement's own, and the measurement has a diagnosis for
-    /// it that names the loopback level and the distorting channel. This exists to
-    /// pin that the array's cruder verdict does not get there first and blame an
-    /// input that is working.
-    /// </remarks>
+    /// <summary>The measurement microphone carries noise: the array's cruder verdict must not blame a working input first.</summary>
     public static AudioCaptureResult WithNoisyMeasurementMicrophone(
         AudioPlaybackSignal signal,
         int tailSamples,
@@ -352,7 +273,6 @@ internal static class SyntheticCapture
         };
     }
 
-    // Deterministic, so a verdict about it is the same on every run and machine.
     private static float[] Noise(int length, double peak)
     {
         var noise = new float[length];
@@ -366,22 +286,13 @@ internal static class SyntheticCapture
         return noise;
     }
 
-    /// <summary>
-    /// A measurement pair plus array microphones on channels 2, 3, ... Each
-    /// array scale is that microphone's level relative to the played sweep, so a
-    /// test can state what its transfer level must come out as.
-    /// </summary>
+    /// <summary>Array scales are relative to the played sweep, so tests can state the expected transfer level.</summary>
     public static AudioCaptureResult WithArray(
         AudioPlaybackSignal signal,
         int tailSamples,
         params float[] arrayScales) =>
         WithArray(signal, tailSamples, edge: null, sampleRateHz: 0, arrayScales);
 
-    /// <summary>
-    /// The same, with the protective high-pass in the acoustic path: every
-    /// microphone passes through it and the loopback — taken from the card output,
-    /// ahead of the external DSP — does not.
-    /// </summary>
     public static AudioCaptureResult WithArray(
         AudioPlaybackSignal signal,
         int tailSamples,
@@ -453,10 +364,6 @@ internal static class SyntheticCapture
     }
 }
 
-/// <summary>
-/// A duplex session bound to one signal (like the real sessions) whose per-run
-/// behaviour is supplied by a callback.
-/// </summary>
 internal sealed class RecordingDuplexSession : IAudioDuplexSession
 {
     private readonly AudioPlaybackSignal signal;
@@ -490,7 +397,6 @@ internal sealed class RecordingDuplexSession : IAudioDuplexSession
     }
 }
 
-/// <summary>A streaming session that raises a fixed number of frames then behaves as configured.</summary>
 internal sealed class RecordingStreamingSession : IAudioStreamingSession
 {
     private readonly int framesToRaise;

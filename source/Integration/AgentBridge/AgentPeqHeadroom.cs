@@ -2,27 +2,13 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Integration.AgentBridge;
 
-/// <summary>
-/// The highest point of a PEQ bank's NET response — preamp and every band
-/// together, built at the processor's rate like the simulation builds it. A
-/// bank whose net response rises above 0 dB anywhere asks the device for more
-/// than unity somewhere, which is where a full-scale signal clips; a boost that
-/// sits inside a wider cut, or under a negative preamp, asks for nothing. The
-/// sign of an individual band says nothing about headroom; this figure does.
-/// </summary>
+/// <summary>Peak of a PEQ bank's NET response at the processor's rate: above 0 dB a full-scale signal clips; individual band signs say nothing about headroom.</summary>
 internal static class AgentPeqHeadroom
 {
     private const int GridPoints = 512;
     private const int RefinementSteps = 24;
 
-    /// <summary>
-    /// The net response's maximum (dB) and where it sits (Hz), over the band the
-    /// tune is judged in — 20 Hz to 20 kHz, or the processor's Nyquist where that
-    /// is lower. A band may legally sit outside it; what it does there is not a
-    /// tuning question. A log grid alone would step over a narrow bell — Q is
-    /// unbounded — so every band's centre inside the range is sampled too, and
-    /// each local maximum of the grid is refined between its neighbours.
-    /// </summary>
+    /// <summary>Over 20 Hz to min(20 kHz, Nyquist). A log grid can step over a narrow bell (Q is unbounded), so band centres are sampled too and grid maxima refined.</summary>
     public static (double PeakDb, double PeakHz) Peak(
         double preampDb, IReadOnlyList<PeqBand> bands, int processorSampleRateHz)
     {
@@ -78,9 +64,7 @@ internal static class AgentPeqHeadroom
         return (peakDb, peakHz);
     }
 
-    // Golden-section climb in log-frequency between the two grid neighbours of a
-    // local maximum: the response is smooth there, and a narrow bell's true top
-    // sits between the samples that bracketed it.
+    // Golden-section in log-frequency between a local maximum's grid neighbours.
     private static (double Hz, double Db) Refine(
         PreparedDspResponse response, double lowHz, double highHz, double bestHz, double bestDb)
     {

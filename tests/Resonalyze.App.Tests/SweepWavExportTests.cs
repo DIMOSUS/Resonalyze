@@ -50,8 +50,6 @@ public sealed class SweepWavExportTests
         AssertCarriesTheSweep(content.Channels[1]);
     }
 
-    // The silence is measured in seconds, so it has to follow the rate the file
-    // is written at rather than being a fixed sample count.
     [Fact]
     public void TheSilenceFollowsTheSampleRate()
     {
@@ -70,8 +68,6 @@ public sealed class SweepWavExportTests
             SweepWavExport.BuildContent([], SampleRate, PlaybackChannel.Mono));
     }
 
-    // The name carries the settings, and a locale that writes 44,1 must not
-    // leak a decimal comma into it.
     [Fact]
     public void SuggestedNameIsInvariantAndCarriesTheSettings()
     {

@@ -401,11 +401,14 @@ internal sealed class RecordingStreamingSession : IAudioStreamingSession
 {
     private readonly int framesToRaise;
     private readonly bool failAfterFrames;
+    private readonly float microphonePeak;
 
-    public RecordingStreamingSession(int framesToRaise, bool failAfterFrames)
+    /// <param name="microphonePeak">The microphone tone's peak; the default 1.0 reaches full scale in every frame.</param>
+    public RecordingStreamingSession(int framesToRaise, bool failAfterFrames, float microphonePeak = 1.0f)
     {
         this.framesToRaise = framesToRaise;
         this.failAfterFrames = failAfterFrames;
+        this.microphonePeak = microphonePeak;
     }
 
     public event Action<AudioCaptureFrame>? FrameAvailable;
@@ -428,7 +431,7 @@ internal sealed class RecordingStreamingSession : IAudioStreamingSession
             for (int i = 0; i < sequenceLength; i++)
             {
                 double phase = 2.0 * Math.PI * 8.0 * i / sequenceLength;
-                mic[i] = (float)Math.Sin(phase);
+                mic[i] = microphonePeak * (float)Math.Sin(phase);
                 loop[i] = (float)(0.5 * Math.Sin(phase));
             }
             FrameAvailable?.Invoke(new AudioCaptureFrame([mic, loop], 0, 1));

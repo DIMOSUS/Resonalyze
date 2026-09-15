@@ -683,7 +683,9 @@ and shows the real-time relationship from loopback to microphone, which suppress
 input-side content not correlated with the playback signal. Alongside it a
 **coherence** curve (γ²) is drawn on a secondary 0-to-1 axis: values near 1 mark
 trustworthy frequencies, low values flag bands dominated by noise, reflections, or
-non-linear behavior. The estimate averages in the power domain, and on-screen
+non-linear behavior. It is corrected for the optimism of a short average, as the
+sweep's coherence is: uncorrected, pure noise would read 0.25 after four frames and
+about 0.07 indefinitely on `Fast` averaging with 2048-sample frames. The estimate averages in the power domain, and on-screen
 smoothing is referenced to wall-clock time, so the response stays consistent
 regardless of overlap and sequence length. The mode needs a loopback reference:
 without one the choice turns amber and the analyzer runs reference-free anyway,
@@ -739,7 +741,11 @@ level that was never measured.
 
 The read-out at the top left counts what has been integrated — `Integrating —
 42 s, 123 frames` — because a spatial average stops visibly moving long before it
-has settled. **Save** writes the capture as its own file: the accumulated FFT
+has settled. If the microphone input reached full scale in any of those frames, the
+read-out adds `, 4 clipped` in amber. Clipped frames stay in the average — a walk
+cannot be repeated frame by frame — so the count is what tells you the capture
+should be taken again at a lower microphone gain; it is saved with the capture.
+**Save** writes the capture as its own file: the accumulated FFT
 bins, the curve as drawn, the corrections applied, and the full recipe (rate,
 frame length, window, averaging, excitation, slope compensation, calibration
 curve, protective high-pass). The bins are what make a stored capture
@@ -782,7 +788,15 @@ Two checkboxes belong to RTA and are muted in Transfer:
 one FFT-length period of exactly pink noise, looped; being periodic with the
 analysis block it is measured **leakage-free** with a rectangular window and
 converges almost instantly, so **Window** is forced to `Rectangular` and
-**Overlap** to `Off`), **Pink noise** (continuous random, −3 dB/octave), **Brown
+**Overlap** to `Off`. Its phases are chosen for a crest factor of about 2.5 dB
+against some 13 dB for random phases, and it plays at −12 dBFS peak rather than
+the other signals' −6 dBFS: the cabin scatters those phases again, so at the
+microphone it peaks like noise, and at −6 dBFS its peaks there would match the
+sweep's and leave a gain set on the sweeps no headroom. At −12 dBFS it still
+delivers 5–6 dB more power to the microphone than the random-phase version did. It spans 10 Hz to
+28.3 kHz: below 10 Hz lay about a third of a long frame's power, excursion that no
+point on the plot reads),
+**Pink noise** (continuous random, −3 dB/octave), **Brown
 / red noise** (−6 dB/octave, for subwoofer and room-mode work), **White noise**
 (flat energy per hertz), or — in RTA only — **Silent**, which plays nothing and
 measures whatever the microphone hears: the ambient room, or an external source
@@ -1954,7 +1968,8 @@ loudspeaker, or feeding an external analyzer.
 **Sine** tone, **Duration, s** sets how long it plays, and **Level, %** scales
 its amplitude — the default `50` is −6 dBFS, exactly the level a
 [measurement sweep](#sweep-band-and-duration) plays at, so setting the output
-level here transfers to the measurement. The generator reuses the audio
+level here transfers to the measurement. **Pink noise (periodic)** is the Live
+Spectrum signal itself and plays 6 dB lower, −12 dBFS at `50`. The generator reuses the audio
 configuration from **Record Settings** and displays the resolved settings before
 you press **Play**.
 

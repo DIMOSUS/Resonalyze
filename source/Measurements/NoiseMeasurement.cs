@@ -20,6 +20,7 @@ namespace Resonalyze
         private double transferAlpha = 1.0;
         private bool infiniteAveraging;
         private int averagedFrameCount;
+        private int clippedFrameCount;
         private int sequencesCounter;
         private long lastDropTickMs;
         private int droppedFrameTotal;
@@ -241,6 +242,7 @@ namespace Resonalyze
                     accumulatedTargetPowerSpectrum = null;
                     sequencesCounter = 0;
                     averagedFrameCount = 0;
+                    clippedFrameCount = 0;
                 }
                 Interlocked.Exchange(ref lastDropTickMs, 0);
                 Interlocked.Exchange(ref droppedFrameTotal, 0);
@@ -283,6 +285,8 @@ namespace Resonalyze
             double[]? referencePowerSpectrum;
             double[] targetPowerSpectrum;
             int frameCount;
+            int clippedFrames;
+            int independentAverages;
             lock (dataSync)
             {
                 if (accumulatedTargetPowerSpectrum == null)
@@ -298,6 +302,8 @@ namespace Resonalyze
                     ? (double[])accumulatedReferencePowerSpectrum.Clone()
                     : null;
                 frameCount = averagedFrameCount;
+                clippedFrames = clippedFrameCount;
+                independentAverages = IndependentAverageCount(frameCount, infiniteAveraging, transferAlpha);
             }
 
             bool micOnly = crossSpectrum == null || referencePowerSpectrum == null;
@@ -306,12 +312,15 @@ namespace Resonalyze
                 : SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
                     crossSpectrum!,
                     referencePowerSpectrum!);
-            // Single-frame gamma^2 is 1 in every energized bin; unknown (null) until a few frames exist.
+            // Single-frame gamma^2 is 1 in every energized bin; unknown (null) until a few frames exist. Debiased like the sweep path
+            // (noise alone reads 1/K). See docs/tech/live-spectrum.md#clipped-frames-and-coherence-bias.
             double[]? coherence = !micOnly && frameCount >= MinCoherenceFrames
-                ? SpectrumAnalysis.ComputeCoherence(
-                    crossSpectrum!,
-                    referencePowerSpectrum!,
-                    targetPowerSpectrum)
+                ? SpectrumAnalysis.DebiasCoherence(
+                    SpectrumAnalysis.ComputeCoherence(
+                        crossSpectrum!,
+                        referencePowerSpectrum!,
+                        targetPowerSpectrum),
+                    independentAverages)
                 : null;
             double[]? inputMagnitude = includeInputMagnitude || micOnly
                 ? SpectrumAnalysis.ComputeInputMagnitudeSpectrum(
@@ -320,7 +329,29 @@ namespace Resonalyze
                     SequenceLength)
                 : null;
             return new LiveSpectrumSnapshot(
-                magnitude, coherence, inputMagnitude, frameCount);
+                magnitude, coherence, inputMagnitude, frameCount, clippedFrames);
+        }
+
+        /// <summary>K for the coherence bias: every frame counts in an infinite mean; an exponential one of weight α holds (2 − α)/α.</summary>
+        internal static int IndependentAverageCount(int frameCount, bool infinite, double alpha)
+        {
+            if (infinite || !(alpha > 0) || alpha >= 1.0)
+            {
+                return infinite ? frameCount : Math.Min(frameCount, 1);
+            }
+
+            return Math.Min(frameCount, (int)Math.Round((2.0 - alpha) / alpha));
+        }
+
+        public int ClippedFrameCount
+        {
+            get
+            {
+                lock (dataSync)
+                {
+                    return clippedFrameCount;
+                }
+            }
         }
 
         private static double AlphaFromTimeConstant(double frameInterval, double timeConstant)
@@ -351,6 +382,7 @@ namespace Resonalyze
                 accumulatedTargetPowerSpectrum = null;
                 sequencesCounter = 0;
                 averagedFrameCount = 0;
+                clippedFrameCount = 0;
             }
         }
 
@@ -366,6 +398,7 @@ namespace Resonalyze
                     accumulatedTargetPowerSpectrum = null;
                     sequencesCounter = 0;
                     averagedFrameCount = 0;
+                    clippedFrameCount = 0;
                 }
 
                 UpdateAveragingParameters();
@@ -591,9 +624,15 @@ namespace Resonalyze
         private void AccumulateTransferSequence(float[][] sequence)
         {
             TransferSpectrumFrame frame = ComputeTransferSpectrumFrame(sequence);
+            bool clipped = MicrophoneReachedFullScale(sequence);
 
             lock (dataSync)
             {
+                if (clipped && sequencesCounter > 2)
+                {
+                    clippedFrameCount++;
+                }
+
                 if (accumulatedCrossSpectrum == null ||
                     accumulatedReferencePowerSpectrum == null ||
                     accumulatedTargetPowerSpectrum == null)
@@ -648,9 +687,16 @@ namespace Resonalyze
             double[] targetPower = SpectrumAnalysis.ComputeAutoPowerSpectrumFrame(
                 sequence[microphoneIndex],
                 EffectiveWindowType);
+            bool clipped = MicrophoneReachedFullScale(sequence);
 
             lock (dataSync)
             {
+                // Counted exactly when the frame enters the average: the three settling frames are discarded unseen.
+                if (clipped && sequencesCounter > 2)
+                {
+                    clippedFrameCount++;
+                }
+
                 if (accumulatedTargetPowerSpectrum == null)
                 {
                     if (sequencesCounter <= 2)
@@ -677,6 +723,26 @@ namespace Resonalyze
                 averagedFrameCount++;
                 sequencesCounter++;
             }
+        }
+
+        /// <summary>A clipped frame still enters the average (a walk cannot be repeated), so it is counted and shown instead.</summary>
+        private bool MicrophoneReachedFullScale(float[][] sequence)
+        {
+            int microphoneIndex = captureMicrophoneIndex;
+            if ((uint)microphoneIndex >= (uint)sequence.Length)
+            {
+                return false;
+            }
+
+            foreach (float sample in sequence[microphoneIndex])
+            {
+                if (Math.Abs(sample) >= RecordedLevelMetering.FullScaleThreshold)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private TransferSpectrumFrame ComputeTransferSpectrumFrame(float[][] sequence)

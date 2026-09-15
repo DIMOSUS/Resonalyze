@@ -182,6 +182,31 @@ public sealed class LiveCaptureDocumentTests
         Assert.Equal(130, snapshot.FrameCount);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    [InlineData(12)]
+    public void TheClippedFrameCountSurvivesARoundTripAndStaysAbsentWhenUncounted(int? clippedFrames)
+    {
+        double[] amplitude = BuildPinkishSpectrum();
+        LiveCaptureDocument document = BuildDocument(amplitude, Resample(amplitude));
+        document.Recipe.ClippedFrameCount = clippedFrames;
+        string path = Path.Combine(Path.GetTempPath(), $"live-capture-{Guid.NewGuid():N}.json");
+        try
+        {
+            document.Save(path);
+
+            Assert.Equal(
+                clippedFrames.HasValue,
+                File.ReadAllText(path).Contains("ClippedFrameCount", StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(clippedFrames, LiveCaptureDocument.Load(path).Recipe.ClippedFrameCount);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static List<SignalPoint> Resample(double[] amplitude) =>
         DataHelper.LogarithmicPowerBandResample(
             amplitude,

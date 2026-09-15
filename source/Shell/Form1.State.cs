@@ -119,12 +119,13 @@ public partial class Form1
         commandController.SetLoadAvailable(false);
     }
 
-    private void ApplyLoadedImpulseResponseState(string? filePath)
+    /// <param name="sourceName">Titles a measurement with no file; must hold no path separators.</param>
+    private void ApplyLoadedImpulseResponseState(string? filePath, string? sourceName = null)
     {
         // Every file from disk is read through its own calibration; imports carry none and must not get the user's mic curve.
         SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
         ApplyMeasurementConfigurationToControllers();
-        SetImpulseResponseSourceFile(filePath);
+        SetImpulseResponseSourceFile(filePath ?? sourceName);
         if (!string.IsNullOrWhiteSpace(filePath))
         {
             UpdateLastImpulseResponseDirectory(filePath);

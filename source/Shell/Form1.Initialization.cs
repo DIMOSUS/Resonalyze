@@ -75,6 +75,7 @@ public partial class Form1
             buttonSave,
             buttonLoad,
             buttonRewExport,
+            buttonRewImport,
             buttonCurrentModeSettings,
             buttonRecordOpt,
             buttonHistory,

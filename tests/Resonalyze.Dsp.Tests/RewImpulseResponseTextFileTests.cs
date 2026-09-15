@@ -18,7 +18,8 @@ public sealed class RewImpulseResponseTextFileTests
             "* Excitation: 512k Log Swept Sine, 1 sweep at -10.0 dBFS using a loopback as a timing reference",
         int? declaredLength = null,
         string band = "* Response measured over: 20.1 to 19,999.9 Hz",
-        int? peakIndex = null)
+        int? peakIndex = null,
+        string? peakBeforeNormalisation = "0.0034054601565003395")
     {
         var text = new StringBuilder();
         text.AppendLine("* Impulse Response data saved by REW V5.40 Beta 132");
@@ -30,7 +31,11 @@ public sealed class RewImpulseResponseTextFileTests
         text.AppendLine("* Measurement: w-L_01 (sw)");
         text.AppendLine(excitation);
         text.AppendLine(band);
-        text.AppendLine("0.0034054601565003395 // Peak value before normalisation");
+        if (peakBeforeNormalisation != null)
+        {
+            text.AppendLine(peakBeforeNormalisation + " // Peak value before normalisation");
+        }
+
         text.AppendLine(Invariant(peakIndex ?? (samples.Count > 0 ? Peak(samples) : 0)) + " // Peak index");
         text.AppendLine(Invariant(declaredLength ?? samples.Count) + " // Response length");
         text.AppendLine("1.0416666666666666E-5 // Sample interval (seconds)");
@@ -109,7 +114,71 @@ public sealed class RewImpulseResponseTextFileTests
         Assert.Equal(19999.9, file.HighFrequencyHz);
         Assert.Equal(512 * 1024, file.SweepLengthSamples);
         Assert.Equal(1, file.SweepCount);
+        Assert.Equal(-10.0, file.SweepLevelDbfs);
         Assert.True(file.IsLoopbackReferenced);
+    }
+
+    [Fact]
+    public void Parse_RestoresANormalisedExportFromItsStatedPeak()
+    {
+        double[] samples = ImpulseAt(64, 34.0).Select(sample => sample * 0.0424).ToArray();
+        double peak = samples.Max(Math.Abs);
+        double[] normalisedSamples = samples.Select(sample => sample / peak).ToArray();
+
+        RewImpulseResponseTextFile file = RewImpulseResponseTextFile.Parse(Export(
+            normalisedSamples,
+            -20.25 / SampleRate,
+            normalised: "* IR is normalised",
+            peakBeforeNormalisation: peak.ToString("R", CultureInfo.InvariantCulture)));
+
+        Assert.True(file.WasNormalised);
+        for (int i = 0; i < samples.Length; i++)
+        {
+            Assert.Equal(samples[i], file.Samples[i], 15);
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("0")]
+    [InlineData("-0.5")]
+    public void Parse_RefusesANormalisedExportItCannotRestore(string? peakBeforeNormalisation)
+    {
+        Assert.False(RewImpulseResponseTextFile.TryParse(
+            Export(
+                ImpulseAt(64, 34.0),
+                -20.25 / SampleRate,
+                normalised: "* IR is normalised",
+                peakBeforeNormalisation: peakBeforeNormalisation),
+            out _,
+            out string? problem));
+        Assert.Contains("normalised", problem);
+    }
+
+    [Fact]
+    public void Parse_LeavesAnUnnormalisedExportAsWritten()
+    {
+        double[] samples = ImpulseAt(64, 34.0);
+
+        RewImpulseResponseTextFile file = RewImpulseResponseTextFile.Parse(Export(samples, -20.25 / SampleRate));
+
+        Assert.False(file.WasNormalised);
+        Assert.Equal(samples, file.Samples);
+    }
+
+    [Theory]
+    [InlineData("1 sweep at -12.0 dBFS using a loopback as a timing reference", -12.0)]
+    [InlineData("1 sweep at -12,5 dBFS using a loopback as a timing reference", -12.5)]
+    [InlineData("1 sweep at 0.0 dBFS using a loopback as a timing reference", 0.0)]
+    [InlineData("1 sweep using a loopback as a timing reference", null)]
+    public void Parse_ReadsTheSweepLevelInEitherDecimalConvention(string tail, double? expectedDbfs)
+    {
+        RewImpulseResponseTextFile file = RewImpulseResponseTextFile.Parse(Export(
+            ImpulseAt(64, 34.0),
+            -20.25 / SampleRate,
+            excitation: "* Excitation: 256k Log Swept Sine, " + tail));
+
+        Assert.Equal(expectedDbfs, file.SweepLevelDbfs);
     }
 
     [Fact]
@@ -139,13 +208,8 @@ public sealed class RewImpulseResponseTextFileTests
         double[] samples = ImpulseAt(64, 34.0);
         double startTime = -20.25 / SampleRate;
 
-        // Normalised: no level relation to other channels, and nothing in the samples says so.
         Assert.False(RewImpulseResponseTextFile.TryParse(
-            Export(samples, startTime, normalised: "* IR is normalised"), out _, out string? problem));
-        Assert.Contains("normalised", problem);
-
-        Assert.False(RewImpulseResponseTextFile.TryParse(
-            Export(samples, startTime, window: "* IR window has been applied"), out _, out problem));
+            Export(samples, startTime, window: "* IR window has been applied"), out _, out string? problem));
         Assert.Contains("window", problem);
 
         // Minimum phase removes the arrival time, the one thing this import preserves.

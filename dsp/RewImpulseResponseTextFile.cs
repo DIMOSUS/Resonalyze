@@ -3,7 +3,8 @@ using System.Globalization;
 namespace Resonalyze.Dsp;
 
 /// <summary>REW's "Impulse response as text" export: the only REW format carrying the absolute time base (time of sample 0).</summary>
-/// <remarks>Normalised exports (no level relation) and windowed exports (not the IR) are refused. Samples are fractions of full scale.</remarks>
+/// <remarks>Normalised exports are multiplied back by their stated peak; windowed and minimum-phase exports (not the IR) are refused.
+/// Samples are fractions of full scale.</remarks>
 public sealed class RewImpulseResponseTextFile
 {
     private const string FileMarker = "Impulse Response data saved by REW";
@@ -35,8 +36,10 @@ public sealed class RewImpulseResponseTextFile
     /// <summary>Peak minus reference before any timing offset; a negative value implies a REW timing offset larger than the arrival.</summary>
     public double ImpliedArrivalSamples => PeakIndex - TimeZeroIndex;
 
-    /// <summary>Interpolated sub-sample peak, slightly above the largest sample.</summary>
+    /// <summary>The divisor REW normalised by; <see cref="Samples"/> of a normalised export are already multiplied back.</summary>
     public double PeakValueBeforeNormalisation { get; private init; }
+
+    public bool WasNormalised { get; private init; }
 
     public double DataOffsetDb { get; private init; }
 
@@ -56,6 +59,9 @@ public sealed class RewImpulseResponseTextFile
     public int? SweepLengthSamples { get; private init; }
 
     public int? SweepCount { get; private init; }
+
+    /// <summary>The sweep's level from the excitation line (<c>at -12.0 dBFS</c>); null when the line states none.</summary>
+    public double? SweepLevelDbfs { get; private init; }
 
     /// <summary>Re-referenced so sample 0 is the loopback arrival; REW's pre-roll wraps to the tail.</summary>
     public double[] ToLoopbackReferencedImpulseResponse() =>
@@ -81,6 +87,7 @@ public sealed class RewImpulseResponseTextFile
 
         bool markerSeen = false;
         bool dataStarted = false;
+        bool normalised = false;
         string? measurement = null;
         string? source = null;
         string? excitation = null;
@@ -124,14 +131,7 @@ public sealed class RewImpulseResponseTextFile
                 }
                 else if (Says(note, "IR is", "normalised") || Says(note, "IR is", "normalized"))
                 {
-                    // Only "IR is not normalised" keeps a level relation to other channels.
-                    if (!note.Contains(" not ", StringComparison.OrdinalIgnoreCase))
-                    {
-                        problem = "the export is normalised: its peak has been scaled to one, " +
-                            "so it carries no level relation to any other measurement " +
-                            "(export again with normalisation off)";
-                        return false;
-                    }
+                    normalised = !note.Contains(" not ", StringComparison.OrdinalIgnoreCase);
                 }
                 else if (Says(note, "IR window", "applied"))
                 {
@@ -243,8 +243,25 @@ public sealed class RewImpulseResponseTextFile
             return false;
         }
 
+        bool statesPeak = values.TryGetValue("Peak value before normalisation", out double peak);
+        if (normalised)
+        {
+            if (!statesPeak || !double.IsFinite(peak) || !(peak > 0))
+            {
+                problem = "the export is normalised and states no peak value before normalisation, so its " +
+                    "level cannot be restored (export again with normalisation off)";
+                return false;
+            }
+
+            // Multiplying back matched REW's API samples to -139 dB of the peak (REW 5.40 b134).
+            for (int i = 0; i < samples.Count; i++)
+            {
+                samples[i] *= peak;
+            }
+        }
+
         // A negative implied arrival is not refused: it signals a REW timing offset, which the importer asks the user for.
-        (int? sweepLength, int? sweepCount) = ReadExcitation(excitation);
+        (int? sweepLength, int? sweepCount, double? sweepLevel) = ReadExcitation(excitation);
 
         file = new RewImpulseResponseTextFile([.. samples])
         {
@@ -252,8 +269,8 @@ public sealed class RewImpulseResponseTextFile
             SampleIntervalSeconds = interval,
             StartTimeSeconds = startTime,
             PeakIndex = peakIndexValue,
-            PeakValueBeforeNormalisation =
-                values.TryGetValue("Peak value before normalisation", out double peak) ? peak : 0.0,
+            WasNormalised = normalised,
+            PeakValueBeforeNormalisation = statesPeak ? peak : 0.0,
             DataOffsetDb = values.TryGetValue("Data offset (dB)", out double offset) ? offset : 0.0,
             MeasurementName = measurement,
             Source = source,
@@ -261,7 +278,8 @@ public sealed class RewImpulseResponseTextFile
             LowFrequencyHz = low,
             HighFrequencyHz = high,
             SweepLengthSamples = sweepLength,
-            SweepCount = sweepCount
+            SweepCount = sweepCount,
+            SweepLevelDbfs = sweepLevel
         };
 
         return true;
@@ -356,15 +374,16 @@ public sealed class RewImpulseResponseTextFile
     }
 
     // e.g. "512k Log Swept Sine, 1 sweep at -10.0 dBFS using a loopback as a timing reference"
-    private static (int? Length, int? Count) ReadExcitation(string? excitation)
+    private static (int? Length, int? Count, double? LevelDbfs) ReadExcitation(string? excitation)
     {
         if (string.IsNullOrWhiteSpace(excitation))
         {
-            return (null, null);
+            return (null, null, null);
         }
 
         int? length = null;
         int? count = null;
+        double? level = null;
         foreach (string token in excitation.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries))
         {
             if (length == null && token.Length > 1 &&
@@ -376,6 +395,17 @@ public sealed class RewImpulseResponseTextFile
         }
 
         int sweeps = excitation.IndexOf(" sweep", StringComparison.OrdinalIgnoreCase);
+        int dbfs = excitation.IndexOf(" dBFS", StringComparison.OrdinalIgnoreCase);
+        if (dbfs > 0)
+        {
+            string before = excitation[..dbfs].Trim();
+            string token = before[(before.LastIndexOf(' ') + 1)..];
+            if (TryReadGrouped(token.TrimStart('-', '+'), out double magnitude) && double.IsFinite(magnitude))
+            {
+                level = token.StartsWith('-') ? -magnitude : magnitude;
+            }
+        }
+
         if (sweeps > 0)
         {
             string before = excitation[..sweeps].Trim();
@@ -388,7 +418,7 @@ public sealed class RewImpulseResponseTextFile
             }
         }
 
-        return (length, count);
+        return (length, count, level);
     }
 
     private static string Excerpt(string line) =>

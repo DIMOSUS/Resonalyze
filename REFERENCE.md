@@ -32,6 +32,7 @@ read-out refuses rather than guesses, what a number was measured against.
   - [Importing a sweep recorded elsewhere](#importing-a-sweep-recorded-elsewhere)
   - [Dropping a file on the window](#dropping-a-file-on-the-window)
   - [Sending a measurement to REW](#sending-a-measurement-to-rew)
+  - [Importing a measurement from REW](#importing-a-measurement-from-rew)
 - [Plot Overlays](#plot-overlays)
   - [Target curves](#target-curves)
   - [Import and export](#import-and-export)
@@ -1227,6 +1228,79 @@ to produce. A disagreement is reported in samples, together with the version REW
 announced. The REW version itself is deliberately not gated on — it is a moving beta,
 and pinning it would make matching builds your problem while proving less than this
 comparison does.
+
+### Importing a measurement from REW
+
+**Import**, beside **Export**, brings a measurement REW holds into Resonalyze over the
+same API. It is available whenever **Load** is, and like Load it takes you to Frequency
+Response when the mode in front of you has nowhere to show a measurement.
+
+The dialog lists REW's measurements with their name, date, sample rate and the peak time
+REW reports, with REW's own selection chosen for you. It holds the same address setting
+as Export, asks REW as it opens, and **Refresh** asks again — after starting REW or
+correcting the address. A measurement at another sample rate than the one set in the
+[measurement settings](#audio-backends) is greyed out and cannot be imported: the sweep a
+result is filed under is generated at the configured rate.
+
+**REW's timing offset** is stated in the same dialog. REW folds that offset into a
+measurement's start time; a sweep REW measured itself also records it (REW 5.40 Beta 134),
+and then it is filled in for you. A measurement that came into REW from elsewhere records
+none, and only you can say what it was: most measurements are taken with none, so leave
+`0`. A stated value is taken back out, which places the measurement on this session's time
+base; the line under the offset says where REW puts the peak, and a stated offset moves the
+arrival later by that much. **I don't know** imports the measurement as a
+[recorded sweep](#importing-a-sweep-recorded-elsewhere): its shape and inner delays are
+real, its position is not, and everything that compares arrivals refuses it by name.
+
+**What is checked** before anything replaces the measurement on screen. The impulse
+response is read unnormalised (REW otherwise scales its peak to one, which would erase the
+level relation between channels) and unwindowed. A measurement not taken against a
+loopback timing reference is refused, with REW's own description of its reference quoted;
+so is a sample rate that does not match, a start time that leaves t = 0 outside the buffer,
+and an offset that would put the arrival before the reference — that refusal names the
+offset that would make the arrival physical. A refusal is shown in the dialog with the list
+still open, so another measurement can be chosen.
+
+**What arrives.** The loopback reference becomes sample 0 of the transfer response, its
+fractional part shifted rather than rounded. The measurement enters the history like a
+finished sweep, under its REW name. A notice lists what REW did not state and what was
+assumed in its place: an impulse response from REW carries no coherence, no level meters
+and no SPL calibration, and REW applies its microphone calibration to its own curves
+rather than to the impulse response, so the measurement is uncalibrated here. One sweep is
+assumed, since REW does not say how many it averaged.
+
+**Band and distortion.** The measured band is the range REW lists for the measurement, its
+top clamped to Nyquist; 20 Hz to Nyquist stands in only when REW lists none. That matters
+above the sweep: REW's impulse response carries content past its sweep's end — 70 dB above
+this program's gated response at 31.5 kHz, for a sweep ending at 20 kHz — which a wider band
+would draw as measured. REW states no sweep length either, and the
+harmonic distortion curves need the sweep's rate to find each harmonic, so the
+rate is read from where the harmonics themselves landed before the arrival. When none stands
+above the noise, the impulse response's length stands in and harmonics may not be drawn. The
+sweep duration the measurement then shows is the one that rate gives over the listed band,
+not REW's.
+
+**REW sweep level** is the dialog's third setting. REW scales an impulse response to
+digital full scale, where a transfer function here is divided by the loopback, so a REW
+measurement would arrive lower by the level its loopback ran at — a sweep REW played at
+−12 dBFS came in 12.0 dB below the same microphone position measured here. The level is
+taken back out. It starts at REW's current level setting, because REW records no level
+with a measurement: change it when the measurement was made at another level. Stated
+correctly for a digital loopback, the import matched a measurement taken here to within
+0.11 dB from 125 Hz to 16 kHz, with the arrival within 0.004 of a sample. An analog
+loopback adds the gain of its converters, which this number does not hold.
+
+The same measurement can also come as a file. **Load** accepts REW's *File → Export →
+Impulse response as text* (`.txt`), asks the timing offset in a dialog of its own, and
+refuses an export made with the IR window or the minimum-phase version switched on. A
+normalised export — REW's default — is accepted: its header states the peak it was divided
+by, and multiplying back reproduced the unnormalised export to −140 dB of the peak. Only a
+normalised export without that value is refused. Its header states the sweep's level, so no level is asked: the one stated
+there is taken back out. The band comes from the header too, and is assumed only when the
+header lacks it. The sweep's rate is read from the harmonics as above — the header's band and
+length do not give it (they put the second harmonic at −174.9 ms where it sat at
+−138.6 ms). Imported this way, REW's export of a measurement matched the same measurement
+brought over the API to −144 dB of its peak.
 
 ## Plot Overlays
 

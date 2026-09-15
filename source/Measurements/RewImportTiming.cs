@@ -54,7 +54,7 @@ internal static class RewImportTiming
             // Sound cannot reach the mic before the loopback: report the offset that would make the arrival physical.
             double neededMs = (peakIndex - timeZeroIndex) / (double)sampleRate * -1000.0;
             problem = FormattableString.Invariant(
-                $"with a {offsetSeconds * 1000.0:0.####} ms offset taken out the arrival would be {arrivalSamples / (double)sampleRate * 1000.0:0.####} ms, which a loopback-referenced sweep cannot produce — the microphone cannot hear the sweep before the reference does. This header needs an offset above {neededMs:0.####} ms to place the arrival after t = 0");
+                $"with a {offsetSeconds * 1000.0:0.####} ms offset taken out the arrival would be {arrivalSamples / (double)sampleRate * 1000.0:0.####} ms, which a loopback-referenced sweep cannot produce — the microphone cannot hear the sweep before the reference does. This measurement needs an offset above {neededMs:0.####} ms to place the arrival after t = 0");
             return false;
         }
 

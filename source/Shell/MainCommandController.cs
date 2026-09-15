@@ -5,6 +5,7 @@ internal sealed class MainCommandController
     private readonly Button saveButton;
     private readonly Button loadButton;
     private readonly Button rewExportButton;
+    private readonly Button rewImportButton;
     private readonly Button modeSettingsButton;
     private readonly Button recordSettingsButton;
     private readonly Button historyButton;
@@ -19,6 +20,7 @@ internal sealed class MainCommandController
         Button saveButton,
         Button loadButton,
         Button rewExportButton,
+        Button rewImportButton,
         Button modeSettingsButton,
         Button recordSettingsButton,
         Button historyButton,
@@ -29,6 +31,7 @@ internal sealed class MainCommandController
         this.saveButton = saveButton;
         this.loadButton = loadButton;
         this.rewExportButton = rewExportButton;
+        this.rewImportButton = rewImportButton;
         this.modeSettingsButton = modeSettingsButton;
         this.recordSettingsButton = recordSettingsButton;
         this.historyButton = historyButton;
@@ -50,8 +53,12 @@ internal sealed class MainCommandController
         SetButtonFrozen(rewExportButton, !(available && canExportToRew()));
     }
 
-    public void SetLoadAvailable(bool available) =>
+    /// <summary>Load and the REW import together: both replace the current measurement.</summary>
+    public void SetLoadAvailable(bool available)
+    {
         SetButtonFrozen(loadButton, !available);
+        SetButtonFrozen(rewImportButton, !available);
+    }
 
     public void FreezeSaveLoad()
     {

@@ -669,6 +669,51 @@ check. If a stated offset puts the arrival before the loopback, which is physica
 impossible, the refusal reports the offset that would make it physical. The logic lives
 beside the enum, like `SampleRateOptions.Resolve`, so it is testable without a window.
 
+The API route (`RewMeasurementImport`) feeds the same decision, and `PrepareAsync` runs every
+check before the picker closes, so a refusal leaves the list open. What REW 5.40 Beta 134 /
+API 0.9.7 serves, measured against a loopback sweep of the same microphone position taken
+by both programs:
+
+- **The offset is recorded** for a sweep REW measured: the summary and the IR object carry
+  `timingReference: "Loopback"`, `timingOffset` (seconds) and `delay`. The picker fills the
+  offset from `timingOffset` and still lets it be changed; a measurement imported into REW
+  has `timingReference: "No timing reference"` and no offset, so it is asked for. The sign is the
+  text route's: a sweep taken with a 4 ms offset reads its peak at -3.6153 ms with `timingOffset`
+  +0.004 and `cumulativeIRShiftSeconds` 0, and imports at 0.3847 ms, 0.003 samples from the same
+  position taken without an offset (r = 0.9994).
+- **Time base.** With offset 0 the imported arrival sat 0.004 samples from Resonalyze's own
+  measurement (xcorr, r = 0.996 over 85 ms), same polarity.
+- **Scale.** `unit=percent` is REW's default and is requested explicitly: a sample sent as
+  0.8 reads back as 80, so samples are divided by 100. REW then scales to digital full scale,
+  not to the loopback: the REW measurement at −12 dBFS came out 12.0 dB below Resonalyze's
+  (±0.1 dB from 125 Hz to 16 kHz). The picker's sweep level takes that back out
+  (`PrepareAsync` multiplies by `10^(-level/20)`), after which the same pair agrees within
+  0.11 dB. No measurement field states the level, so the picker starts at REW's current
+  setting (`GET /measure/level`, used only when its unit is dBFS). The relation holds for a
+  digital loopback; an analog one adds its converters' gain.
+- **Text route.** A text export holds fractions of full scale: an unnormalised export equals
+  the API's percent divided by 100 to -144..-151 dB of the peak on four REW 5.40 b134
+  measurements. A normalised export is multiplied back by its `Peak value before
+  normalisation` and then matches the unnormalised export of the same measurement to
+  -140..-150 dB, so it is accepted; one that states no positive peak is refused. Its excitation line states the level
+  (`at -12.0 dBFS`), which is taken out without asking. The header's band and sweep length do
+  not give REW's rate — 0.4 Hz to 20,000.2 Hz over 256k puts H2 at -174.9 ms, measured at
+  -138.6 ms — so the rate is read from the harmonics on both routes.
+- **Address.** REW listens on 127.0.0.1 only, and `localhost` resolves to ::1 first; the
+  refused IPv6 connect took 2037 ms, past the 2 s probe, so a running REW looked absent.
+  `RewApiClient` connects to 127.0.0.1 whenever the address says `localhost`.
+- `GET /measurements/selected-uuid` is a JSON string.
+- **Band.** The summary's `startFreq`/`endFreq` are REW's response range: 0.366 Hz (one bin) to
+  20,000.244 Hz for a 0–20 kHz sweep at 96 kHz, 2.197 Hz to 24,027 Hz on a 48 kHz measurement in
+  REW's own example. They become the measured band with the top clamped to Nyquist, falling back
+  to 20 Hz–Nyquist when absent. The fallback let REW's content above its sweep through as measured:
+  at 31.5 kHz it sat 70 dB above Resonalyze's gated response, 43 dB above its own noise, so it is
+  correlated leakage, not noise.
+- **Sweep length.** REW states none, so the harmonic geometry comes from the packets themselves
+  (see docs/tech/dsp-ess-harmonics.md#sweep-rate-from-harmonic-positions); without a packet the IR
+  length stands in, as for a header without one. The sweep count is not stated and one is assumed.
+- `cumulativeIRShiftSeconds` is shown, not compensated: it is already inside the start time.
+
 ## Array microphones
 
 A measurement can record further microphones on the same device for a spatial average.

@@ -187,8 +187,9 @@ alternatives were rejected and the thresholds' provenance. One file per feature,
 organised by mechanism rather than by source file. This is where reasoning that
 would otherwise become a long code comment goes; the code keeps a one-line pointer
 (`// See docs/tech/auto-alignment.md#seed-selection.`). A change to such a mechanism
-updates its section in the same commit, and a renamed heading means grepping for
-pointers to the old anchor. `docs/specs/` holds feature specifications written
+updates its section in the same commit. `TechDocPointerTests` fails on any
+`docs/tech/<file>.md#anchor` pointer whose heading no longer exists, so a renamed
+heading takes its pointers along. `docs/specs/` holds feature specifications written
 before implementation; `docs/agent/` is what the external AI assistant reads.
 
 ## Pull requests

@@ -49,6 +49,7 @@
             panel1 = new RoundedPanel();
             buttonCompare = new ReleaseClickButton();
             buttonRewExport = new ReleaseClickButton();
+            buttonRewImport = new ReleaseClickButton();
             inputLevelMeterPanel = new InputLevelMeterPanel();
             buttonHistory = new ReleaseClickButton();
             chromeTitleBar = new ChromeTitleBar();
@@ -278,6 +279,7 @@
             panel1.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             panel1.Controls.Add(buttonCompare);
             panel1.Controls.Add(buttonRewExport);
+            panel1.Controls.Add(buttonRewImport);
             panel1.Controls.Add(buttonRecord);
             panel1.Controls.Add(buttonRecordOpt);
             panel1.Controls.Add(buttonSave);
@@ -311,13 +313,30 @@
             buttonRewExport.ForeColor = Color.White;
             buttonRewExport.Location = new Point(3, 120);
             buttonRewExport.Name = "buttonRewExport";
-            buttonRewExport.Size = new Size(210, 23);
+            buttonRewExport.Size = new Size(102, 23);
             buttonRewExport.TabIndex = 32;
             buttonRewExport.Text = "Export";
             toolTip1.SetToolTip(buttonRewExport, "Send the impulse response to REW");
             buttonRewExport.UseCompatibleTextRendering = true;
             buttonRewExport.UseVisualStyleBackColor = false;
             buttonRewExport.Click += buttonRewExport_Click;
+            //
+            // buttonRewImport
+            //
+            buttonRewImport.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            buttonRewImport.BackColor = Color.FromArgb(50, 55, 80);
+            buttonRewImport.FlatStyle = FlatStyle.Popup;
+            buttonRewImport.Font = new Font("Segoe UI", 10F);
+            buttonRewImport.ForeColor = Color.White;
+            buttonRewImport.Location = new Point(111, 120);
+            buttonRewImport.Name = "buttonRewImport";
+            buttonRewImport.Size = new Size(102, 23);
+            buttonRewImport.TabIndex = 33;
+            buttonRewImport.Text = "Import";
+            toolTip1.SetToolTip(buttonRewImport, "Import a measurement from REW");
+            buttonRewImport.UseCompatibleTextRendering = true;
+            buttonRewImport.UseVisualStyleBackColor = false;
+            buttonRewImport.Click += buttonRewImport_Click;
             // 
             // inputLevelMeterPanel
             // 
@@ -545,5 +564,6 @@
         private Label virtualDspWarningLabel;
         private ReleaseClickButton buttonCompare;
         private ReleaseClickButton buttonRewExport;
+        private ReleaseClickButton buttonRewImport;
     }
 }

@@ -301,7 +301,7 @@ public sealed class RewMeasurementExportTests
     }
 
     /// <summary>Deletes only what this test added: the user's REW may be mid-session.</summary>
-    private static async Task<string?> DeleteMeasurementsAddedSinceAsync(
+    internal static async Task<string?> DeleteMeasurementsAddedSinceAsync(
         HttpClient http,
         Uri baseAddress,
         RewApiClient client,

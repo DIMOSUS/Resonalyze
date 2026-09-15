@@ -124,6 +124,38 @@ public sealed class RewImpulseResponsePayloadTests
         Assert.Null(parsed);
     }
 
+    [Fact]
+    public void DecodeSamples_ReadsRewsPublishedValidationVector()
+    {
+        double[] samples = RewImpulseResponsePayload.DecodeSamples("PgAAAD6AAAA+wAAAPwAAAA==");
+
+        Assert.Equal([0.125, 0.25, 0.375, 0.5], samples);
+    }
+
+    [Fact]
+    public void DecodeSamples_ReturnsWhatBuildEncoded()
+    {
+        double[] impulseResponse = Ramp(4_096, peakIndex: 1_000);
+        RewImpulseResponseImport import = Build(impulseResponse, peakIndex: 1_000);
+
+        double[] decoded = RewImpulseResponsePayload.DecodeSamples(import.Body.Data);
+
+        float[] expected = Decode(import.Body.Data);
+        Assert.Equal(expected.Length, decoded.Length);
+        for (int i = 0; i < decoded.Length; i++)
+        {
+            Assert.Equal(expected[i], decoded[i]);
+        }
+    }
+
+    [Fact]
+    public void DecodeSamples_RefusesAPartialSample()
+    {
+        string threeBytes = Convert.ToBase64String([0x3E, 0x00, 0x00]);
+
+        Assert.Throws<FormatException>(() => RewImpulseResponsePayload.DecodeSamples(threeBytes));
+    }
+
     private static RewImpulseResponseImport Build(
         double[] impulseResponse,
         int peakIndex,

@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
+using Resonalyze.Integration.Rew;
 using Resonalyze.Ui;
 using Resonalyze.Ui.Dialogs;
 
@@ -41,6 +42,20 @@ public sealed class CodeBuiltDialogScalingTests
                 splOffsetDb: null,
                 TimingReference.SynchronizedLoopback);
             AssertScaledOnce(dialog, new Size(width, height));
+        });
+
+    [Theory]
+    [InlineData(640, 576)]
+    public void RewImportDialog_ScalesItsDesignedSizeExactlyOnce(int width, int height) =>
+        StaTest.Run(() =>
+        {
+            using var dialog = new RewImportDialog(
+                "http://localhost:4735/",
+                48_000,
+                (_, _) => Task.FromResult(new RewMeasurementCatalog(null, [], null)),
+                (_, _, _, _, _) => Task.FromResult(new RewImportPreparation(null, "unused")));
+            AssertScaledOnce(dialog, new Size(width, height));
+            Assert.Null(dialog.AnsweringBaseUrl);
         });
 
     [Theory]

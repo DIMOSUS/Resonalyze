@@ -21,6 +21,27 @@ position is derived from it, never from constants scattered elsewhere.
   (`EssSweepMetadata.FromExponentialSweep`). Harmonic *n* is observable only up to
   `min(sweep end, Nyquist / n)` (`MaxExcitationHz`).
 
+## Sweep rate from harmonic positions
+
+A deconvolution made elsewhere (REW's API) states neither its sweep length nor its real start frequency,
+and REW's "0 Hz" start is an internal one. Offsets depend only on `L = duration / ln(f2/f1)`, so
+`EssSweepRateEstimator` reads `L` from where packets landed and the importer picks a duration that gives
+it over whatever band it states.
+
+- Blocks of 0.5 ms before the linear peak (a 10 ms guard excludes its own ringing); a block is a packet
+  when its peak clears the median block peak by 15 dB — Gaussian noise block maxima sit about 6 dB apart
+  at the extremes, so noise alone rarely qualifies.
+- Each of the eight strongest packets is tried as order 2..5, and each hypothesis counts the orders 2..5
+  whose predicted positions (±1 ms) hold a packet. Most matches wins; on a tie, a hypothesis that
+  matched the second harmonic; then the louder. Taking the strongest packet as H2 fails a symmetric
+  nonlinearity, whose H3 dominates and would put `L` off by ln3/ln2.
+- `L` is the least-squares fit of `offset_n = L·ln(n)` over the matched packets.
+- A lone packet is taken as H2: nothing in one position tells H2 from H3.
+- Measured on four REW 5.40 b134 sweeps (256k at 96 kHz): 199.76–199.99 ms per neper, H2 at −138.5 ms,
+  two with H2..H5 matched and two with H2 alone. With the imported geometry the distortion view draws
+  H2 within 0.3 dB of a Resonalyze sweep at the same position at 100–200 Hz; the fallback geometry
+  (20 Hz to Nyquist over the IR length) drew no harmonic at all.
+
 ## Spectrum normalization
 
 A packet is a contained impulse response isolated by a unity-plateau window. Over the plateau the window

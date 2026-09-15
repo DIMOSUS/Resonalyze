@@ -31,24 +31,10 @@ internal sealed class RewMeasurementExport
         this.client = client;
     }
 
-    /// <summary>REW version, or null when not answering within <paramref name="timeout"/>.</summary>
-    /// <remarks>Owns its deadline token: a just-cancelled caller token is indistinguishable from a timeout and escaped unhandled on the UI thread.</remarks>
-    public async Task<string?> ProbeAsync(
+    public Task<string?> ProbeAsync(
         TimeSpan timeout,
-        CancellationToken cancellationToken)
-    {
-        using var deadline =
-            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(timeout);
-        try
-        {
-            return await client.TryGetVersionAsync(deadline.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return null;
-        }
-    }
+        CancellationToken cancellationToken) =>
+        client.ProbeVersionAsync(timeout, cancellationToken);
 
     public async Task<RewExportResult> SendAsync(
         RewExportRequest request,
@@ -79,10 +65,20 @@ internal sealed class RewMeasurementExport
         await client.ImportImpulseResponseAsync(import.Body, cancellationToken)
             .ConfigureAwait(false);
 
-        (RewMeasurementSummary? filed, bool ambiguous) = await WaitForNewMeasurementAsync(
-            known,
-            request.Identifier,
-            cancellationToken).ConfigureAwait(false);
+        RewMeasurementSummary? filed;
+        bool ambiguous;
+        try
+        {
+            (filed, ambiguous) = await WaitForNewMeasurementAsync(
+                known,
+                request.Identifier,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (RewApiException exception)
+        {
+            throw new RewApiException(
+                $"{exception.Message} The measurement was sent, but it could not be found in the list to check its timing.");
+        }
         if (ambiguous)
         {
             return new RewExportResult(

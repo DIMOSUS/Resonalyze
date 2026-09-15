@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using Resonalyze.Dsp;
+using Resonalyze.Integration.Rew;
 using Resonalyze.Ui.Dialogs;
 
 namespace Resonalyze;
@@ -332,6 +333,7 @@ public partial class Form1
     {
         RewImpulseResponseTextFile file;
         RewImportTimingPlan plan;
+        EssSweepRateEstimate? sweepRate;
         // Claimed before the read so a sweep cannot start meanwhile; released before the redraw (busy draws nothing) and the modal notice.
         using (expSweepMeasurement.Claim())
         {
@@ -371,38 +373,72 @@ public partial class Form1
             double[] samples = file.Samples;
             double[] referenced = await Task.Run(
                 () => file.ToLoopbackReferencedImpulseResponse(plan.OffsetSeconds));
-            // Missing band is tolerated; the fallback is reported in the notes.
+            // The header's band and length do not give REW's sweep rate (H2 at -174.9 ms predicted, -138.6 ms measured).
+            sweepRate = await Task.Run(() => RewMeasurementImport.EstimateSweepRate(samples, file.SampleRate));
+            if (file.SweepLevelDbfs is { } levelDbfs && levelDbfs <= 0)
+            {
+                RewMeasurementImport.TakeLevelOut(samples, levelDbfs);
+                RewMeasurementImport.TakeLevelOut(referenced, levelDbfs);
+            }
+
             double lowHz = file.LowFrequencyHz ?? DefaultImportedLowFrequencyHz;
-            double highHz = file.HighFrequencyHz ?? (file.SampleRate / 2.0);
-            // REW keeps the IR shorter than the sweep, and harmonic geometry is keyed to the sweep length.
-            double sweepSeconds =
-                (file.SweepLengthSamples ?? samples.Length) / (double)file.SampleRate;
-            expSweepMeasurement.RestoreImpulseResponse(
+            double highHz = Math.Min(file.HighFrequencyHz ?? double.MaxValue, file.SampleRate / 2.0);
+            RestoreRewImpulseResponse(
+                samples,
+                referenced,
+                file.SampleRate,
                 lowHz,
                 highHz,
-                file.SampleRate,
-                ImportedBitDepth,
-                sweepSeconds,
-                PlaybackChannel.Mono,
-                ToComplex(samples),
-                PeakIndexOf(samples),
-                SweepMeasurementMode.LoopbackTransfer,
-                ToComplex(referenced),
-                PeakIndexOf(referenced),
-                transferCoherence: null,
-                averageRunCount: file.SweepCount ?? 1,
-                acceptedAverageRunCount: file.SweepCount ?? 1,
-                achievedLowFrequencyHz: lowHz,
-                achievedHighFrequencyHz: highHz,
-                timingReference: plan.Reference);
+                RewMeasurementImport.SweepLengthSamples(
+                    sweepRate, lowHz, highHz, file.SampleRate, file.SweepLengthSamples ?? samples.Length),
+                file.SweepCount ?? 1,
+                plan.Reference);
         }
 
-        // Enters as a measurement, not a file that could be saved back over its source.
-        ApplyLoadedImpulseResponseState(path);
+        FinishRewImport(path, sourceName: null);
+        NotifyRewImportDecisions(file, plan, sweepRate);
+    }
+
+    // Shared by both REW routes, inside the caller's claim. A missing band falls back to 20 Hz..Nyquist; callers report it.
+    private void RestoreRewImpulseResponse(
+        double[] samples,
+        double[] referenced,
+        int sampleRate,
+        double? lowHz,
+        double? highHz,
+        int sweepLengthSamples,
+        int sweepCount,
+        TimingReference timingReference)
+    {
+        double low = lowHz ?? DefaultImportedLowFrequencyHz;
+        double high = highHz ?? (sampleRate / 2.0);
+        expSweepMeasurement.RestoreImpulseResponse(
+            low,
+            high,
+            sampleRate,
+            ImportedBitDepth,
+            sweepLengthSamples / (double)sampleRate,
+            PlaybackChannel.Mono,
+            ToComplex(samples),
+            RewMeasurementImport.PeakIndexOf(samples),
+            SweepMeasurementMode.LoopbackTransfer,
+            ToComplex(referenced),
+            RewMeasurementImport.PeakIndexOf(referenced),
+            transferCoherence: null,
+            averageRunCount: sweepCount,
+            acceptedAverageRunCount: sweepCount,
+            achievedLowFrequencyHz: low,
+            achievedHighFrequencyHz: high,
+            timingReference: timingReference);
+    }
+
+    // Enters as a measurement, not a file that could be saved back over its source.
+    private void FinishRewImport(string? path, string? sourceName)
+    {
+        ApplyLoadedImpulseResponseState(path, sourceName);
         sessionTracker.MarkMeasurementCompleted(expSweepMeasurement);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
-        NotifyRewImportDecisions(file, plan);
     }
 
     // False means cancelled: not an error, no notice.
@@ -442,7 +478,8 @@ public partial class Form1
     // An imported measurement looks like a measured one; these notes say how it differs.
     private void NotifyRewImportDecisions(
         RewImpulseResponseTextFile file,
-        RewImportTimingPlan plan)
+        RewImportTimingPlan plan,
+        EssSweepRateEstimate? sweepRate)
     {
         if (closingInProgress)
         {
@@ -453,25 +490,36 @@ public partial class Form1
         {
             FormattableString.Invariant(
                 $"Imported {file.Samples.Length} samples at {file.SampleRate} Hz. The loopback reference sits at sample {file.TimeZeroIndex:0.###} of REW's buffer and is now sample 0 of the transfer response; the fractional part was shifted, not rounded."),
-            "REW's sweep exports carry no coherence, no level meters and no SPL calibration, " +
-                "and REW applies a microphone calibration to its own curves rather than to the " +
-                "impulse response — so this measurement is uncalibrated here, whatever REW showed.",
+            RewImportCarriesNoCalibrationNote,
             FormattableString.Invariant(
                 $"The export states no bit depth and no playback channel: {ImportedBitDepth}-bit and Mono were assumed. Neither changes the samples — they describe the sweep this result is filed under."),
-            DescribeImportedTiming(file, plan)
+            DescribeImportedTiming(file.SampleRate, plan, RewExportCannotWitnessOffset),
+            file.SweepLevelDbfs is { } levelDbfs && levelDbfs <= 0
+                ? FormattableString.Invariant(
+                    $"The export states a {levelDbfs:0.#} dBFS sweep. REW scales an impulse response to digital full scale and a transfer function here is divided by the loopback, so that level was taken back out; an analog loopback's gain is not in it.")
+                : "The export states no sweep level, so none was taken out: REW scales to digital full scale, and this " +
+                    "measurement sits lower than one taken here by the level its loopback ran at."
         };
+        if (file.WasNormalised)
+        {
+            notes.Add(FormattableString.Invariant(
+                $"The export was normalised; its samples were multiplied back by the peak value REW states it had before normalisation ({file.PeakValueBeforeNormalisation:G6}), which restores the level."));
+        }
+
         if (file.LowFrequencyHz == null || file.HighFrequencyHz == null)
         {
             notes.Add(FormattableString.Invariant(
-                $"The header did not state the swept band, so {DefaultImportedLowFrequencyHz:0.#} Hz to Nyquist was assumed. The harmonic geometry of this measurement follows that band, so set it right if the sweep was narrower."));
+                $"The header did not state the swept band, so {DefaultImportedLowFrequencyHz:0.#} Hz to Nyquist was assumed; set it right if the sweep was narrower."));
         }
 
-        if (file.SweepLengthSamples == null)
-        {
-            notes.Add(
-                "The header did not state the sweep's length, so the impulse response's own " +
-                "length stands in for it.");
-        }
+        notes.Add(sweepRate is { } rate
+            ? FormattableString.Invariant(
+                $"The sweep's rate was read from where its harmonics landed ({string.Join(", ", rate.Orders.Select(order => $"H{order}"))}; the second harmonic sits {rate.SecondsPerNeper * Math.Log(2) * 1000.0:0.#} ms before the arrival): the band and length REW's header states do not give its sweep's rate, and would misplace the distortion view's harmonic windows.")
+            : file.SweepLengthSamples == null
+                ? "No harmonic stood above the noise to read the sweep's rate from, and the header did not state the " +
+                    "sweep's length, so the impulse response's own length stands in: harmonics may not be drawn."
+                : "No harmonic stood above the noise to read the sweep's rate from, so the header's band and sweep " +
+                    "length place the harmonic windows; harmonics may not be drawn.");
 
         MessageBox.Show(
             this,
@@ -481,11 +529,18 @@ public partial class Form1
             MessageBoxIcon.Information);
     }
 
+    private const string RewImportCarriesNoCalibrationNote =
+        "REW's impulse responses carry no coherence, no level meters and no SPL calibration, " +
+        "and REW applies a microphone calibration to its own curves rather than to the " +
+        "impulse response — so this measurement is uncalibrated here, whatever REW showed.";
+
+    /// <param name="witness">Who vouches for the stated offset, as the sentence's last clause.</param>
     private static string DescribeImportedTiming(
-        RewImpulseResponseTextFile file,
-        RewImportTimingPlan plan)
+        int sampleRate,
+        RewImportTimingPlan plan,
+        string witness)
     {
-        double arrivalMs = plan.ArrivalSamples / file.SampleRate * 1000.0;
+        double arrivalMs = plan.ArrivalSamples / sampleRate * 1000.0;
         if (plan.Reference == TimingReference.RecordedSweep)
         {
             return FormattableString.Invariant(
@@ -497,8 +552,11 @@ public partial class Form1
             : FormattableString.Invariant(
                 $"You stated a {plan.OffsetSeconds * 1000.0:0.####} ms timing offset, which was taken back out");
         return FormattableString.Invariant(
-            $"{statedAs}, so this measurement is on the session's time base with an arrival of {arrivalMs:0.###} ms. The export itself cannot confirm that: REW folds the offset into the start time and records it nowhere else, so the arrival is true on your word rather than on the file's.");
+            $"{statedAs}, so this measurement is on the session's time base with an arrival of {arrivalMs:0.###} ms. {witness}");
     }
+
+    private const string RewExportCannotWitnessOffset =
+        "The export itself cannot confirm that: REW folds the offset into the start time and writes it nowhere in the export, so the arrival is true on your word rather than on the file's.";
 
     // REW's export states no bit depth; this only describes the sweep configuration.
     private const int ImportedBitDepth = 24;
@@ -514,20 +572,6 @@ public partial class Form1
         }
 
         return values;
-    }
-
-    private static int PeakIndexOf(double[] samples)
-    {
-        int peak = 0;
-        for (int i = 1; i < samples.Length; i++)
-        {
-            if (Math.Abs(samples[i]) > Math.Abs(samples[peak]))
-            {
-                peak = i;
-            }
-        }
-
-        return peak;
     }
 
     // Analyzed against the sweep the current settings describe; enters history like a finished sweep.

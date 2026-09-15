@@ -2242,7 +2242,11 @@ and the **Sum loss** curve, with a **View** row — **Magnitude**, **Phase**,
 junction plus a total). **Phase** draws each processed channel's phase and the
 Sum's through the phase gate; **Impulse** promotes the gate dialog's preview to
 the main plot, every channel's processed response on one absolute timeline,
-each trace normalized to its own peak; **Step** draws the same responses as
+each trace wrapped in its ± analytic (Hilbert) envelope — a thin translucent
+line in the channel's colour, named in the tracker — and normalized to that
+envelope's peak inside the window, so a band-limited arrival reads its size
+whatever phase its carrier peaks at and the envelope never runs off the scale;
+**Step** draws the same responses as
 step responses — the running sum of each processed impulse response — and the
 Sum's, over the same window and around the same gate, every curve on ONE common
 scale (the largest excursion among them inside the window) rather than each to

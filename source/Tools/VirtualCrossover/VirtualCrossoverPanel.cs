@@ -7739,9 +7739,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // The impulse view is the gate dialog's IR preview promoted to the main
     // plot: every processed channel IR (crossover/PEQ/gain/delay/polarity
-    // applied) on the shared absolute timeline, each normalized to its own
-    // in-window peak, with the phase-gate Tukey window drawn where it sits.
-    // Well-aligned drivers visibly start together.
+    // applied) on the shared absolute timeline, each wrapped in its envelope
+    // and normalized to that envelope's in-window peak, with the phase-gate
+    // Tukey window drawn where it sits. Well-aligned drivers visibly start
+    // together.
     private AcousticImpulseRender? BuildImpulseRender(List<ProcessedChannel> processed)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildImpulseRender");

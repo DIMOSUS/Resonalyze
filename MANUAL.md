@@ -2,7 +2,7 @@
 
 **A complete step-by-step guide**
 
-This guide tracks the repository's `main` branch. Everything in it is in **v0.7.5**.
+This guide tracks the repository's `main` branch. Everything in it is in **v0.8.0**.
 
 > **Author's note.** I wrote Resonalyze. It is free and open-source (MIT) — nothing to
 > buy, nothing to sign up for. If you go through this guide, successfully or not,
@@ -365,6 +365,14 @@ the longest frame carries the most bass and the finest grid, 0.7 Hz bins at 48 k
 against 23 Hz at the default. Keep it the same for every capture in a set.
 
 ![Live Spectrum in MMM mode, mid-capture](assets/images/manual/mmm-capture.png)
+
+**⚠ Protect the tweeters here too.** MMM plays full-range pink noise for the whole
+capture, and unlike the sweep it has no start frequency to raise, so for a tweeter or a
+small midrange the protective high-pass in the DSP is the only
+[protection](#-protect-the-drivers). Keep it in place and declare it in Record Settings
+exactly as for the sweep: the capture divides that filter back out, so its curve lines
+up with the driver's impulse response. The filter is read when you press **Start** —
+set or disable **HPF** before each driver's capture, not during it.
 
 Then, one driver at a time, with the DSP in the same bypassed state and at the same
 levels as the sweeps:

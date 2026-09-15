@@ -208,16 +208,17 @@ public sealed class RewMeasurementImportTests(ITestOutputHelper output)
     }
 
     [Theory]
-    [InlineData("{\"value\":-12.0,\"unit\":\"dBFS\"}", -12.0)]
-    [InlineData("{\"value\":-3.5,\"unit\":\"dBu\"}", null)]
-    [InlineData("<html>404</html>", null)]
-    public async Task ListAsync_ReadsRewsLevelSettingOnlyInDbfs(string body, double? expected)
+    [InlineData("{\"value\":-12.0,\"unit\":\"dBFS\"}", -12.0, "dBFS")]
+    [InlineData("{\"value\":-3.5,\"unit\":\"dBu\"}", null, "dBu")]
+    [InlineData("<html>404</html>", null, null)]
+    public async Task ListAsync_ReadsRewsLevelSettingOnlyInDbfs(string body, double? expected, string? expectedUnit)
     {
         var rew = new FakeRew { LevelBody = body };
 
         RewMeasurementCatalog catalog = await ListAsync(rew);
 
         Assert.Equal(expected, catalog.LevelDbfs);
+        Assert.Equal(expectedUnit, catalog.Level?.Unit);
     }
 
     [Fact]
@@ -266,6 +267,46 @@ public sealed class RewMeasurementImportTests(ITestOutputHelper output)
 
         Assert.Equal(arrivalSamples, preparation.Import!.Plan.ArrivalSamples, 6);
         Assert.Equal(TimingReference.SynchronizedLoopback, preparation.Import.Plan.Reference);
+    }
+
+    [Fact]
+    public async Task PrepareAsync_TakesRewsIrShiftOutWithTheStatedOffset()
+    {
+        // As REW 5.40 Beta 134 serves a response after Offset t=0 by +2 ms: cumulativeIRShiftSeconds +0.002, axis 2 ms earlier.
+        const double shift = 0.002;
+        var shifted = new FakeRew { StartTime = -(TimeZeroIndex + (shift * SampleRate)) / SampleRate };
+
+        RewPreparedImport import = (await PrepareAsync(shifted, offsetSeconds: 0.0, irShiftSeconds: shift)).Import!;
+
+        Assert.Equal(PeakIndex - TimeZeroIndex, import.Plan.ArrivalSamples, 6);
+        Assert.Equal(TimingReference.SynchronizedLoopback, import.Plan.Reference);
+        Assert.Equal(shift, import.IrShiftSeconds);
+        Assert.Equal(shift, import.Plan.OffsetSeconds, 12);
+    }
+
+    [Fact]
+    public async Task PrepareAsync_WithAnUnknownOffset_StillClaimsNoPosition_WhateverTheShift()
+    {
+        RewPreparedImport import = (await PrepareAsync(new FakeRew(), offsetSeconds: null, irShiftSeconds: 0.002)).Import!;
+
+        Assert.Equal(TimingReference.RecordedSweep, import.Plan.Reference);
+    }
+
+    [Fact]
+    public async Task PrepareAsync_SaysWhenAMeasurementHasNoImpulseResponse()
+    {
+        // REW 5.40 Beta 134 answers a magnitude-only measurement with 400 and this message.
+        var rew = new FakeRew
+        {
+            ImpulseResponseStatus = HttpStatusCode.BadRequest,
+            ImpulseResponseBody = $"{{\"message\":\"Magn test0.0 at index 6 uuid {Uuid} does not have an impulse response\"}}"
+        };
+
+        RewApiException exception = await Assert.ThrowsAsync<RewApiException>(
+            () => PrepareAsync(rew, offsetSeconds: 0.0));
+
+        Assert.Contains("does not have an impulse response", exception.Message);
+        Assert.DoesNotContain("no longer holds", exception.Message);
     }
 
     [Fact]
@@ -448,14 +489,16 @@ public sealed class RewMeasurementImportTests(ITestOutputHelper output)
         FakeRew rew,
         double? offsetSeconds,
         double? listedSampleRate = SampleRate,
-        double sweepLevelDbfs = 0.0)
+        double sweepLevelDbfs = 0.0,
+        double? irShiftSeconds = null)
     {
         using var http = new HttpClient(rew);
         var measurement = new RewMeasurementSummary
         {
             Title = "front left",
             Uuid = Uuid,
-            SampleRate = listedSampleRate
+            SampleRate = listedSampleRate,
+            CumulativeIRShiftSeconds = irShiftSeconds
         };
         return await new RewMeasurementImport(new RewApiClient(http, BaseAddress))
             .PrepareAsync(measurement, offsetSeconds, sweepLevelDbfs, SampleRate, CancellationToken.None);

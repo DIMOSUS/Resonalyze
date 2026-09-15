@@ -1244,11 +1244,14 @@ result is filed under is generated at the configured rate.
 
 **REW's timing offset** is stated in the same dialog. REW folds that offset into a
 measurement's start time; a sweep REW measured itself also records it (REW 5.40 Beta 134),
-and then it is filled in for you. A measurement that came into REW from elsewhere records
-none, and only you can say what it was: most measurements are taken with none, so leave
-`0`. A stated value is taken back out, which places the measurement on this session's time
-base; the line under the offset says where REW puts the peak, and a stated offset moves the
-arrival later by that much. **I don't know** imports the measurement as a
+and then it is filled in for you. A measurement that records none starts at `0` — most
+measurements are taken with none — and only you can say otherwise. What you set is kept
+for that measurement alone: moving to another row never carries an offset across. A stated
+value is taken back out, which places the measurement on this session's time base; the line
+under the offset says where REW puts the peak, and a stated offset moves the arrival later
+by that much. If t = 0 was moved inside REW (*Offset t=0*), REW reports the shift and it is
+taken out along with the offset: that command moves the axis exactly as a timing offset
+does. **I don't know** imports the measurement as a
 [recorded sweep](#importing-a-sweep-recorded-elsewhere): its shape and inner delays are
 real, its position is not, and everything that compares arrivals refuses it by name.
 
@@ -1258,8 +1261,10 @@ level relation between channels) and unwindowed. A measurement not taken against
 loopback timing reference is refused, with REW's own description of its reference quoted;
 so is a sample rate that does not match, a start time that leaves t = 0 outside the buffer,
 and an offset that would put the arrival before the reference — that refusal names the
-offset that would make the arrival physical. A refusal is shown in the dialog with the list
-still open, so another measurement can be chosen.
+offset that would make the arrival physical. A measurement with no impulse response at all
+(a magnitude-only copy, an imported frequency response) is refused with REW's own reason. A
+refusal is shown in the dialog with the list still open, so another measurement can be
+chosen.
 
 **What arrives.** The loopback reference becomes sample 0 of the transfer response, its
 fractional part shifted rather than rounded. The measurement enters the history like a
@@ -1285,7 +1290,10 @@ digital full scale, where a transfer function here is divided by the loopback, s
 measurement would arrive lower by the level its loopback ran at — a sweep REW played at
 −12 dBFS came in 12.0 dB below the same microphone position measured here. The level is
 taken back out. It starts at REW's current level setting, because REW records no level
-with a measurement: change it when the measurement was made at another level. Stated
+with a measurement: change it when the measurement was made at another level. The note
+beside the field says where the number came from, and turns amber when it did not come from
+REW — REW set to dBu, dBV or volts, or a level REW did not answer with — so a default is never
+passed off as REW's. Stated
 correctly for a digital loopback, the import matched a measurement taken here to within
 0.11 dB from 125 Hz to 16 kHz, with the arrival within 0.004 of a sample. An analog
 loopback adds the gain of its converters, which this number does not hold.

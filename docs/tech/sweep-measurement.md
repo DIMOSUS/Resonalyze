@@ -712,7 +712,16 @@ by both programs:
 - **Sweep length.** REW states none, so the harmonic geometry comes from the packets themselves
   (see docs/tech/dsp-ess-harmonics.md#sweep-rate-from-harmonic-positions); without a packet the IR
   length stands in, as for a header without one. The sweep count is not stated and one is assumed.
-- `cumulativeIRShiftSeconds` is shown, not compensated: it is already inside the start time.
+- **IR shift.** REW's *Offset t=0* moves the axis like a timing offset: on a copy of a measured
+  sweep, +2 ms read `cumulativeIRShiftSeconds` +0.002 and moved the peak time by exactly -2.000 ms,
+  so the shift is added to the stated offset before `RewImportTiming` (an unknown offset stays
+  unknown). The copy itself had lost its loopback reference, so the shifted original was not imported.
+- **No impulse response.** A magnitude-only measurement answers the IR route with 400 and
+  `... does not have an impulse response`; REW's message is shown rather than a generic failure.
+- **Offset per row.** The picker keeps what the user set per measurement UUID; a row takes that,
+  else REW's `timingOffset`, else 0, so no row inherits another's offset.
+- **Level source.** `/measure/level` may answer in dBu, dBV or V, or not at all; the field is then
+  left as it was and marked amber rather than presented as REW's.
 
 ## Array microphones
 

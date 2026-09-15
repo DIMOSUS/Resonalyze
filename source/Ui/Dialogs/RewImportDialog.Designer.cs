@@ -34,6 +34,7 @@ partial class RewImportDialog
         checkOffsetUnknown = new ReleaseClickCheckBox();
         labelLevel = new Label();
         numericLevel = new DarkNumericUpDown();
+        labelLevelSource = new Label();
         labelOffsetHelp = new Label();
         labelSelection = new Label();
         labelProblem = new Label();
@@ -205,6 +206,15 @@ partial class RewImportDialog
         numericLevel.ThousandsSeparator = false;
         numericLevel.Value = new decimal(new int[] { 12, 0, 0, int.MinValue });
         //
+        // labelLevelSource
+        //
+        labelLevelSource.AutoSize = true;
+        labelLevelSource.ForeColor = Color.FromArgb(185, 190, 200);
+        labelLevelSource.Location = new Point(288, 307);
+        labelLevelSource.Name = "labelLevelSource";
+        labelLevelSource.Size = new Size(0, 15);
+        labelLevelSource.TabIndex = 16;
+        //
         // labelOffsetHelp
         //
         labelOffsetHelp.ForeColor = Color.FromArgb(185, 190, 200);
@@ -212,7 +222,7 @@ partial class RewImportDialog
         labelOffsetHelp.Name = "labelOffsetHelp";
         labelOffsetHelp.Size = new Size(608, 70);
         labelOffsetHelp.TabIndex = 9;
-        labelOffsetHelp.Text = "Timing offset: filled in where REW records it; most measurements use none. I don't know imports the shape without claiming its position. Sweep level: REW scales a response to digital full scale, this program to the loopback, so the loopback's level is taken back out. It starts at REW's current setting; an analog loopback's gain is not in it.";
+        labelOffsetHelp.Text = "Timing offset: filled in where REW records it, otherwise 0; I don't know imports the shape without claiming its position. Sweep level: REW scales a response to digital full scale, this program to the loopback, so the level the loopback ran at is taken back out. REW keeps no level with a measurement, so check it; an analog loopback's gain is not in it.";
         //
         // labelSelection
         //
@@ -273,6 +283,7 @@ partial class RewImportDialog
         Controls.Add(checkOffsetUnknown);
         Controls.Add(labelLevel);
         Controls.Add(numericLevel);
+        Controls.Add(labelLevelSource);
         Controls.Add(labelOffsetHelp);
         Controls.Add(labelSelection);
         Controls.Add(labelProblem);
@@ -312,6 +323,7 @@ partial class RewImportDialog
     private ReleaseClickCheckBox checkOffsetUnknown;
     private Label labelLevel;
     private DarkNumericUpDown numericLevel;
+    private Label labelLevelSource;
     private Label labelOffsetHelp;
     private Label labelSelection;
     private Label labelProblem;

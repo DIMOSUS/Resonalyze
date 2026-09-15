@@ -5,15 +5,26 @@ using Resonalyze.Dsp;
 namespace Resonalyze.Integration.Rew;
 
 /// <param name="Version">Null when REW did not answer; the list is then empty.</param>
-/// <param name="LevelDbfs">REW's current level setting, null when REW states it in another unit.</param>
+/// <param name="Level">REW's current level setting in REW's unit; null when it could not be read.</param>
 internal sealed record RewMeasurementCatalog(
     string? Version,
     IReadOnlyList<RewMeasurementSummary> Measurements,
     string? SelectedUuid,
-    double? LevelDbfs = null);
+    RewLevel? Level = null)
+{
+    /// <summary>Null unless REW states its level in dBFS, the only unit a digital full scale can be taken out of.</summary>
+    public double? LevelDbfs =>
+        Level is { Value: { } value, Unit: { } unit } &&
+        double.IsFinite(value) &&
+        string.Equals(unit, "dBFS", StringComparison.OrdinalIgnoreCase)
+            ? value
+            : null;
+}
 
 /// <param name="Samples">The impulse response relative to the loopback, t = 0 at <see cref="TimeZeroIndex"/>.</param>
-/// <param name="Referenced">Re-referenced so sample 0 is the loopback arrival, the stated offset taken out.</param>
+/// <param name="Referenced">Re-referenced so sample 0 is the loopback arrival, the stated offset and REW's IR shift taken out.</param>
+/// <param name="Plan">Its offset is the stated offset plus <paramref name="IrShiftSeconds"/>.</param>
+/// <param name="IrShiftSeconds">REW's cumulative IR shift in seconds, taken out with the stated offset; 0 when none.</param>
 /// <param name="SweepLevelDbfs">The level taken back out of REW's full-scale samples.</param>
 /// <param name="BandFromRew">False when REW listed no usable range and 20 Hz to Nyquist stands in.</param>
 /// <param name="SweepRate">Read from the harmonic packets; null when none stood above the noise.</param>
@@ -24,6 +35,7 @@ internal sealed record RewPreparedImport(
     int SampleRate,
     double TimeZeroIndex,
     RewImportTimingPlan Plan,
+    double IrShiftSeconds,
     double SweepLevelDbfs,
     double LowFrequencyHz,
     double HighFrequencyHz,
@@ -67,7 +79,7 @@ internal sealed class RewMeasurementImport
             await client.GetMeasurementsAsync(cancellationToken).ConfigureAwait(false);
         string? selected = await client.TryGetSelectedMeasurementUuidAsync(cancellationToken)
             .ConfigureAwait(false);
-        double? level = await client.TryGetMeasurementLevelDbfsAsync(cancellationToken)
+        RewLevel? level = await client.TryGetMeasurementLevelAsync(cancellationToken)
             .ConfigureAwait(false);
 
         // Keyed by REW's index as text, so "10" would sort before "2" as a string.
@@ -136,8 +148,11 @@ internal sealed class RewMeasurementImport
                 $"REW's impulse response cannot be imported: t = 0 falls at sample {timeZeroIndex:0.###} of {samples.Length}, outside the buffer, so these samples do not contain the reference arrival."));
         }
 
+        // REW's Offset t=0 moves the axis as a timing offset does: +2 ms read cumulativeIRShiftSeconds +0.002 and a peak 2.000 ms
+        // earlier (REW 5.40 b134), so it is taken out with the stated offset.
+        double irShiftSeconds = measurement.CumulativeIRShiftSeconds is { } shift && double.IsFinite(shift) ? shift : 0.0;
         if (!RewImportTiming.TryResolve(
-                statedOffsetSeconds,
+                statedOffsetSeconds + irShiftSeconds,
                 timeZeroIndex,
                 PeakIndexOf(samples),
                 samples.Length,
@@ -146,7 +161,10 @@ internal sealed class RewMeasurementImport
                 out string? timingProblem) ||
             plan == null)
         {
-            return Refuse($"This measurement cannot be imported — {timingProblem}.");
+            return Refuse(irShiftSeconds == 0
+                ? $"This measurement cannot be imported — {timingProblem}."
+                : FormattableString.Invariant(
+                    $"This measurement cannot be imported — {timingProblem} (the offset taken out includes REW's {irShiftSeconds * 1000.0:0.####} ms IR shift)."));
         }
 
         double[] referenced = await Task.Run(
@@ -156,7 +174,7 @@ internal sealed class RewMeasurementImport
         (double lowHz, double highHz, bool bandFromRew) = ResolveBand(measurement, sampleRate);
         return new RewImportPreparation(
             new RewPreparedImport(
-                measurement, samples, referenced, sampleRate, timeZeroIndex, plan, sweepLevelDbfs,
+                measurement, samples, referenced, sampleRate, timeZeroIndex, plan, irShiftSeconds, sweepLevelDbfs,
                 lowHz, highHz, bandFromRew, sweepRate),
             null);
     }

@@ -136,7 +136,7 @@ public partial class Form1
             $" REW states no sweep length, so the sweep's rate was read from where its harmonics landed ({orders}; the second harmonic sits {rate.SecondsPerNeper * Math.Log(2) * 1000.0:0.#} ms before the arrival), which places the distortion view's harmonic windows. The sweep duration shown is the one that rate gives over this band, not REW's.");
     }
 
-    private static string DescribeOffsetWitness(RewPreparedImport import)
+    private static string DescribeOffsetWitness(RewPreparedImport import, double statedOffsetSeconds)
     {
         if (import.Measurement.TimingOffsetSeconds is not { } recorded)
         {
@@ -144,7 +144,7 @@ public partial class Form1
         }
 
         // The dialog rounds to 0.1 µs.
-        return Math.Abs(recorded - import.Plan.OffsetSeconds) < 1e-7
+        return Math.Abs(recorded - statedOffsetSeconds) < 1e-7
             ? "That is the offset REW records for this measurement."
             : FormattableString.Invariant(
                 $"REW records a {recorded * 1000.0:0.####} ms offset for this measurement, so the arrival is true on your word rather than on REW's.");
@@ -166,9 +166,17 @@ public partial class Form1
                 $"REW scales an impulse response to digital full scale, and a transfer function here is divided by the loopback, so the stated {import.SweepLevelDbfs:0.#} dBFS sweep level was taken back out. The level matches a measurement taken here when REW played at that level through a digital loopback; an analog loopback's gain is not in it."),
             FormattableString.Invariant(
                 $"REW's API states no bit depth, no playback channel and no sweep count: {ImportedBitDepth}-bit, Mono and one sweep were assumed. None of them changes the samples."),
-            DescribeImportedSweep(import),
-            DescribeImportedTiming(import.SampleRate, import.Plan, DescribeOffsetWitness(import))
+            DescribeImportedSweep(import)
         };
+
+        // The plan's offset carries REW's IR shift; the user stated only the rest.
+        RewImportTimingPlan stated = import.Plan with { OffsetSeconds = import.Plan.OffsetSeconds - import.IrShiftSeconds };
+        notes.Add(DescribeImportedTiming(import.SampleRate, stated, DescribeOffsetWitness(import, stated.OffsetSeconds)));
+        if (import.IrShiftSeconds != 0 && import.Plan.Reference == TimingReference.SynchronizedLoopback)
+        {
+            notes.Add(FormattableString.Invariant(
+                $"REW had moved this response's t = 0 by {import.IrShiftSeconds * 1000.0:0.####} ms (Offset t=0); that shift was taken back out as well, so the arrival is the one against the loopback."));
+        }
 
         MessageBox.Show(
             this,

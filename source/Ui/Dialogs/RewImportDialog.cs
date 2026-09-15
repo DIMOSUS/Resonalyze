@@ -13,9 +13,13 @@ internal sealed partial class RewImportDialog : Form
     private readonly Func<Uri, CancellationToken, Task<RewMeasurementCatalog>> list;
     private readonly Func<Uri, RewMeasurementSummary, double?, double, CancellationToken, Task<RewImportPreparation>> prepare;
     private readonly CancellationTokenSource closing = new();
+
+    /// <summary>What the user set for each measurement, by UUID, so no row inherits another row's offset.</summary>
+    private readonly Dictionary<string, (decimal OffsetMs, bool Unknown)> offsetAnswers = new(StringComparer.Ordinal);
     private Uri? listedAddress;
     private string answeringStatus = string.Empty;
     private bool busy;
+    private bool applyingOffset;
 
     /// <param name="prepare">Receives the offset in seconds (null for "I don't know") and the sweep level in dBFS.</param>
     public RewImportDialog(
@@ -44,7 +48,13 @@ internal sealed partial class RewImportDialog : Form
         };
         // CurrentRow is what an import reads, and SelectionChanged can fire before it moves.
         measurementGridView.CurrentCellChanged += (_, _) => UpdateSelection();
-        checkOffsetUnknown.CheckedChanged += (_, _) => UpdateControls();
+        checkOffsetUnknown.CheckedChanged += (_, _) =>
+        {
+            RememberOffsetAnswer();
+            UpdateControls();
+        };
+        numericOffset.ValueChanged += (_, _) => RememberOffsetAnswer();
+        ShowLevelSource(null, answered: false);
         UpdateControls();
     }
 
@@ -77,6 +87,7 @@ internal sealed partial class RewImportDialog : Form
 
         if (!RewApiClient.TryParseBaseAddress(textAddress.Text, out Uri? address))
         {
+            ShowLevelSource(null, answered: false);
             ShowList(null, [], null);
             SetStatus(
                 $"\"{textAddress.Text.Trim()}\" is not an http address. REW's API normally listens on {RewApiClient.DefaultBaseUrl}",
@@ -114,6 +125,7 @@ internal sealed partial class RewImportDialog : Form
         UseWaitCursor = false;
         if (catalog?.Version is not { } version)
         {
+            ShowLevelSource(null, answered: false);
             ShowList(null, [], null);
             SetStatus(failure ?? NotAnswering, warning: true);
             return;
@@ -125,6 +137,8 @@ internal sealed partial class RewImportDialog : Form
                 Math.Clamp((decimal)levelDbfs, numericLevel.Minimum, numericLevel.Maximum),
                 numericLevel.DecimalPlaces);
         }
+
+        ShowLevelSource(catalog.Level, answered: true);
 
         ShowList(address, catalog.Measurements, keepUuid ?? catalog.SelectedUuid);
         SetStatus(
@@ -235,24 +249,69 @@ internal sealed partial class RewImportDialog : Form
             ? FormattableString.Invariant(
                 $"REW puts this measurement's peak at {peakSeconds * 1000.0:0.###} ms. A stated offset is taken back out, which moves the arrival later by that much.")
             : "REW did not report where this measurement's peak is.";
-        if (measurement.TimingOffsetSeconds is { } reportedOffset && double.IsFinite(reportedOffset))
-        {
-            decimal offsetMs = Math.Clamp((decimal)(reportedOffset * 1000.0), numericOffset.Minimum, numericOffset.Maximum);
-            numericOffset.Value = Math.Round(offsetMs, numericOffset.DecimalPlaces);
-            checkOffsetUnknown.Checked = false;
-            peak += FormattableString.Invariant($" REW records a {reportedOffset * 1000.0:0.####} ms timing offset for it, filled in above.");
-        }
-
-        if (measurement.CumulativeIRShiftSeconds is { } shift && shift != 0)
+        bool recordsOffset = measurement.TimingOffsetSeconds is { } reportedOffset && double.IsFinite(reportedOffset);
+        if (recordsOffset)
         {
             peak += FormattableString.Invariant(
-                $" REW reports a cumulative IR shift of {shift * 1000.0:0.###} ms on this response; the peak time above already includes it.");
+                $" REW records a {measurement.TimingOffsetSeconds!.Value * 1000.0:0.####} ms timing offset for it.");
+        }
+
+        ApplyOffsetAnswer(measurement, recordsOffset);
+        if (measurement.CumulativeIRShiftSeconds is { } shift && double.IsFinite(shift) && shift != 0)
+        {
+            peak += FormattableString.Invariant(
+                $" REW has moved its t = 0 by {shift * 1000.0:0.####} ms (Offset t=0); that shift is taken back out with the offset.");
         }
 
         labelSelection.Text = peak;
         labelProblem.Text =
             RewMeasurementImport.DescribeRateMismatch(measurement.SampleRate, configuredSampleRate) ?? string.Empty;
         UpdateControls();
+    }
+
+    /// <summary>The user's own answer for this row if there is one; else REW's recorded offset; else 0.</summary>
+    private void ApplyOffsetAnswer(RewMeasurementSummary measurement, bool recordsOffset)
+    {
+        (decimal offsetMs, bool unknown) =
+            measurement.Uuid is { } uuid && offsetAnswers.TryGetValue(uuid, out (decimal, bool) answer)
+                ? answer
+                : (recordsOffset ? (decimal)(measurement.TimingOffsetSeconds!.Value * 1000.0) : 0m, false);
+        applyingOffset = true;
+        try
+        {
+            numericOffset.Value = Math.Round(
+                Math.Clamp(offsetMs, numericOffset.Minimum, numericOffset.Maximum),
+                numericOffset.DecimalPlaces);
+            checkOffsetUnknown.Checked = unknown;
+        }
+        finally
+        {
+            applyingOffset = false;
+        }
+    }
+
+    private void RememberOffsetAnswer()
+    {
+        if (!applyingOffset && SelectedMeasurement?.Uuid is { } uuid)
+        {
+            offsetAnswers[uuid] = (numericOffset.Value, checkOffsetUnknown.Checked);
+        }
+    }
+
+    /// <param name="answered">False before REW has been asked, so nothing is claimed about the level yet.</param>
+    private void ShowLevelSource(RewLevel? level, bool answered)
+    {
+        (string text, bool warning) = level switch
+        {
+            _ when !answered => (string.Empty, false),
+            { Value: { } value, Unit: { } unit } when string.Equals(unit, "dBFS", StringComparison.OrdinalIgnoreCase) &&
+                double.IsFinite(value) => ("REW's current setting", false),
+            { Unit: { } unit } when !string.IsNullOrWhiteSpace(unit) =>
+                ($"REW's level is set in {unit}: enter the dBFS it played at", true),
+            _ => ("REW's level could not be read: enter the dBFS it played at", true)
+        };
+        labelLevelSource.Text = text;
+        labelLevelSource.ForeColor = warning ? UiPalette.WarningAmber : UiPalette.TextSecondary;
     }
 
     private void SetBusy(bool value, string status)

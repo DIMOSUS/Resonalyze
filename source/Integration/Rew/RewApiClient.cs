@@ -109,21 +109,9 @@ internal sealed class RewApiClient
             return;
         }
 
-        string? reported = null;
-        try
-        {
-            RewApiMessage? message = await response.Content
-                .ReadFromJsonAsync<RewApiMessage>(SerializerOptions, cancellationToken)
-                .ConfigureAwait(false);
-            reported = message?.Message;
-        }
-        catch (Exception exception) when (IsUnreadable(exception))
-        {
-            // Classified like the measurement list; letting InvalidOperationException escape here would turn a refused import into a crash.
-        }
-
+        string? reported = await TryReadMessageAsync(response, cancellationToken).ConfigureAwait(false);
         throw new RewApiException(
-            string.IsNullOrWhiteSpace(reported)
+            reported == null
                 ? $"REW refused the import ({(int)response.StatusCode} {response.ReasonPhrase})."
                 : $"REW refused the import: {reported}");
     }
@@ -180,18 +168,13 @@ internal sealed class RewApiClient
         }
     }
 
-    /// <summary>REW's current measurement level, or null for any failure or a unit other than dBFS.</summary>
+    /// <summary>REW's current measurement level in whatever unit REW is set to, or null when it could not be read.</summary>
     /// <remarks>A setting, not a property of any measurement: REW's summary carries no level (REW 5.40 b134).</remarks>
-    public async Task<double?> TryGetMeasurementLevelDbfsAsync(CancellationToken cancellationToken)
+    public async Task<RewLevel?> TryGetMeasurementLevelAsync(CancellationToken cancellationToken)
     {
         try
         {
-            RewLevel? level = await GetAsync<RewLevel>("measure/level", cancellationToken).ConfigureAwait(false);
-            return level is { Value: { } value, Unit: { } unit } &&
-                double.IsFinite(value) &&
-                string.Equals(unit, "dBFS", StringComparison.OrdinalIgnoreCase)
-                    ? value
-                    : null;
+            return await GetAsync<RewLevel>("measure/level", cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (IsUnreachable(exception, cancellationToken))
         {
@@ -211,13 +194,18 @@ internal sealed class RewApiClient
                 new Uri(baseAddress, $"measurements/{Uri.EscapeDataString(uuid)}/impulse-response?unit=percent&normalised=false"),
                 cancellationToken)
             .ConfigureAwait(false);
-        if (response.StatusCode == HttpStatusCode.NotFound)
+        if (!response.IsSuccessStatusCode)
         {
+            // A measurement without an IR answers 400 "... does not have an impulse response" (REW 5.40 b134).
+            string? reported = await TryReadMessageAsync(response, cancellationToken).ConfigureAwait(false);
             throw new RewApiException(
-                "REW no longer holds this measurement. Refresh the list and choose again.");
+                reported != null
+                    ? $"REW could not give this measurement's impulse response: {reported}"
+                    : response.StatusCode == HttpStatusCode.NotFound
+                        ? "REW no longer holds this measurement. Refresh the list and choose again."
+                        : $"REW could not give this measurement's impulse response ({(int)response.StatusCode} {response.ReasonPhrase}).");
         }
 
-        response.EnsureSuccessStatusCode();
         try
         {
             RewImpulseResponseBody? body = await response.Content
@@ -229,6 +217,22 @@ internal sealed class RewApiClient
         {
             throw new RewApiException(
                 $"REW answered with an impulse response this build could not read. ({exception.Message})");
+        }
+    }
+
+    /// <summary>REW's one-line reason from a refusal; null when the body is not that shape (an escaping read would turn a refusal into a crash).</summary>
+    private static async Task<string?> TryReadMessageAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            RewApiMessage? message = await response.Content
+                .ReadFromJsonAsync<RewApiMessage>(SerializerOptions, cancellationToken)
+                .ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(message?.Message) ? null : message.Message;
+        }
+        catch (Exception exception) when (IsUnreadable(exception))
+        {
+            return null;
         }
     }
 

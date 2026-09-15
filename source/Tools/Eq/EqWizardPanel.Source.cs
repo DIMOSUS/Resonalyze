@@ -753,7 +753,7 @@ public partial class EqWizardPanel
     private PeqBankState? landedGatedPreviewBank;
     private bool gatedPreviewInFlight;
 
-    /// <summary>Gated previews start only once visible (see <see cref="RequestGatedPreview"/>).</summary>
+    /// <summary>Gated previews wait for the handle (see <see cref="RequestGatedPreview"/>); showing the panel creates it, so a source installed before that starts rendering here.</summary>
     protected override void OnVisibleChanged(EventArgs e)
     {
         base.OnVisibleChanged(e);

@@ -263,7 +263,7 @@ public static class TransferIrDiagnostics
     /// <summary>15 dB: driver-shaped bands; 20 swallows cabin shelves, 12 modal-latches midbass. See docs/tech/sweep-measurement.md#dominant-band.</summary>
     public const double DominantBandThresholdDb = 15.0;
 
-    // Resolves 1/6 octave at 20 Hz; the head artifact sits in the first milliseconds anyway.
+    // ~6 bins per 1/6 octave at 20 Hz at 48 kHz, 1-2 at 192 kHz (band edges move at most 2 grid steps); the head artifact sits in the first milliseconds anyway.
     private const int MaxAnalysisSamples = 65_536;
 
     // Crosstalk detection constants: see docs/tech/sweep-measurement.md#crosstalk-head-gate.

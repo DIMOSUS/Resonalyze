@@ -27,7 +27,8 @@ public sealed record DriverBandEstimate(
     double HighHz,
     double LevelDb,
     DriverType SuggestedType,
-    // With NoCleanBand these are the DIRTY span's edges, swapped, so the bound tightens; NaN when Unavailable/Unreliable.
+    // Lowest high-pass / highest low-pass corner. CleanBandFound: the clean sub-band's edges.
+    // NoCleanBand: Low = TOP of the dirty span, High = its BOTTOM (the bound tightens). NaN when Unavailable/Unreliable.
     double DistortionLowHz = double.NaN,
     double DistortionHighHz = double.NaN,
     DistortionBandStatus DistortionStatus = DistortionBandStatus.Unavailable);

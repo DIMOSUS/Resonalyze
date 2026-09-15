@@ -375,7 +375,7 @@ public sealed class RewMeasurementExportTests
     [Fact]
     public async Task ProbeAsync_TreatsItsOwnDeadlineAsNotAnswering()
     {
-        // The probe's own timeout cancelling its token used to escape through the async void handler.
+        // The probe's own timeout cancelling its token must not escape through the async void handler.
         using var http = new HttpClient(new FakeRew { Silent = true });
         var export = new RewMeasurementExport(
             new RewApiClient(http, new Uri("http://localhost:4735/")));

@@ -172,7 +172,7 @@ public sealed class ArrayCalibrationAndBandsTests
     [Fact]
     public void AHistoryEntryHandsOverItsArrayAndItsFilter()
     {
-        // History and disk loads must be the same measurement (conversion used to drop both fields).
+        // History and disk loads must be the same measurement (the conversion must carry both fields).
         var snapshot = new MeasurementHistorySnapshot
         {
             SampleRate = 48_000,

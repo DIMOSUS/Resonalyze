@@ -76,7 +76,7 @@ public sealed class SpatialAverageHybridTests
             point => Assert.Equal(-20, point.Y, 3));
     }
 
-    /// <summary>Interpolating toward a NaN successor gives NaN (NaN*0), which used to swallow the last good point.</summary>
+    /// <summary>Interpolating toward a NaN successor gives NaN (NaN*0); it must not swallow the last good point.</summary>
     [Fact]
     public void ThePointBeforeAGapIsNotSwallowedByIt()
     {

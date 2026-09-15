@@ -101,7 +101,7 @@ public sealed record AudioSessionRequest(
     PlaybackChannel PlaybackChannel,
     AudioCaptureRouting Routing,
     int BufferMilliseconds = 100,
-    // 0 lets the backend size from the sample rate.
+    // Preallocation hint for the capture buffer (sweep + tail), not a stop condition; 0 sizes it from the sample rate.
     int ExpectedCaptureSamples = 0,
     int WaveOutputDeviceNumber = -1,
     int WaveInputDeviceNumber = -1,

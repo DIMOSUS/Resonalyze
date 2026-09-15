@@ -85,7 +85,7 @@ public sealed class PreparedDspResponse
         IsTimeDomainScaleOnly && signalSampleRate <= processorRate;
 
     /// <summary>Zero-padding for the slowest biquad pole to decay by <paramref name="targetDecayDb"/>, in record samples, clamped;
-    /// plus N − 1 FIR samples outside the clamp. See docs/tech/dsp-chain-response.md#tail-padding.</summary>
+    /// plus the FIR tail (<see cref="FirTailSamples"/>) outside the clamp. See docs/tech/dsp-chain-response.md#tail-padding.</summary>
     public int RequiredTailSamples(
         double targetDecayDb,
         int minSamples,
@@ -134,7 +134,7 @@ public sealed class PreparedDspResponse
         return (int)Math.Clamp(Math.Ceiling(required), minSamples, maxSamples) + firTail;
     }
 
-    // N − 1 record samples; no safety sample (the caller rounds to a power of two).
+    // N − 1 processor-rate samples, rounded up to record samples; no safety sample (the caller rounds to a power of two).
     private int FirTailSamples(int signalSampleRate) =>
         fir == null
             ? 0

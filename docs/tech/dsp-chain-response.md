@@ -37,7 +37,9 @@ milliseconds, far past a pad sized for crossovers. Unstable sections (pole radiu
   For complex conjugate poles `|p|² = −A2`.
 - The pole radius is a per-sample decay at the processor rate; the count is converted to record samples
   before clamping, since ringing lasts a fixed time.
-- A FIR stage adds exactly N − 1 record samples, **outside** the clamp: there is no decay to wait for and a
+- A FIR stage adds N − 1 samples at the processor rate, converted to record samples as
+  `ceil((N − 1) · recordRate / processorRate)` — about (N − 1)/2 for a 48 kHz record through a 96 kHz
+  processor, about 2·(N − 1) the other way. The tail sits **outside** the clamp: there is no decay to wait for and a
   cap would wrap the kernel tail into the head. Kernel length is bounded at load (`FirFilter.MaximumTaps`).
   No safety sample is added: the caller rounds to a power of two, and one sample over doubles the render.
 

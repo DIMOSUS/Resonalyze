@@ -22,7 +22,7 @@ internal readonly record struct ImpulseOverlayFrame(
 /// <summary>Whole-record traces at 192 kHz are ~1M samples; thinning keeps overlay JSON small.</summary>
 internal static class ImpulseOverlayThinning
 {
-    /// <summary>About what a peak + Length trace used to hold.</summary>
+    /// <summary>Per-trace point budget: bounds overlay JSON regardless of record length and sample rate.</summary>
     public const int MaximumPoints = 32_768;
 
     /// <summary>Above the budget keeps each bucket's extremes at their own indices; averaging or subsampling would lose peaks.</summary>

@@ -64,7 +64,9 @@ internal static class ImpulseWindowPreview
     // The shared body of the gated multi-trace view: each trace normalized to
     // its own in-window peak, the Tukey gate outline, and a vertical mark at
     // the gate offset. Used by the gate dialog's preview and the Virtual DSP
-    // impulse view alike, so the two renderings cannot drift apart. Everything
+    // impulse view alike, so the window, the gate and the traces cannot drift
+    // apart; the two differ only by the envelopes below, which the Virtual DSP
+    // view alone asks for and which move its peak to the envelope's. Everything
     // added carries seriesTag so a host redrawing an existing model can find
     // and remove it. Returns the display window bounds (ms), or null when
     // there is nothing to draw.

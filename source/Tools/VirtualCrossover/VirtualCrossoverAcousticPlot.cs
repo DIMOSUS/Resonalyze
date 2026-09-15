@@ -205,9 +205,10 @@ internal sealed class VirtualCrossoverAcousticPlot
     {
         if (IsTimeDomain(acousticView))
         {
-            // The impulse traces are each normalized to their own peak, exactly
-            // like the IR Gate preview; the step traces to the largest among
-            // them. Either way the scale is unitless.
+            // The impulse traces are each normalized to their own envelope's
+            // peak (the IR Gate preview, which draws no envelopes, to the
+            // sample peak); the step traces to the largest among them. Either
+            // way the scale is unitless.
             valueAxis.Title = string.Empty;
             valueAxis.AbsoluteMinimum = -1.05;
             valueAxis.AbsoluteMaximum = 1.05;

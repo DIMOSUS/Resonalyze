@@ -3980,8 +3980,9 @@ public partial class VirtualCrossoverPanel : UserControl
 
         // The impulse view wraps every drawn trace in its envelope, a Hilbert
         // transform over the whole processed record — 2^17 samples a channel on
-        // an ordinary sweep capture, and 2^20 where a late arrival kept the
-        // source uncropped (VirtualCrossoverSourceSnapshot).
+        // an ordinary sweep capture, and many times that where a late arrival
+        // kept the source uncropped (VirtualCrossoverSourceSnapshot) or a
+        // high-Q or FIR tail stretched ApplyChain's padding.
         // Off the UI thread for the reason the phase entries above are: a chain
         // edit hands the edited channel a new array, so every frame of a drag is
         // the first time for it. The envelopes are memoized per array, and the

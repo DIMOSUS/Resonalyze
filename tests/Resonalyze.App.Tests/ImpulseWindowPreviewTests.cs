@@ -2,6 +2,7 @@ using System.Numerics;
 using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.Series;
+using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
@@ -144,6 +145,44 @@ public sealed class ImpulseWindowPreviewTests
             preview, traces, SampleRate,
             gateOffsetMs: 10, leftMs: 0.5, plateauMs: 15, rightMs: 5);
         Assert.Equal(0, EnvelopeGuides(preview.Model!, "A"));
+    }
+
+    [Fact]
+    public void Envelopes_AreReadOverTheWholeRecord_NotTheDisplayedWindow()
+    {
+        var model = new PlotModel();
+        // A burst straddling the window's right edge: a transform over the
+        // displayed samples alone cuts it in half and wraps the cut onto the
+        // window's quiet start, so the two readings part company near both ends.
+        const int displayEnd = 1_563; // gate 456 + 984, plus a 123-sample context
+        IrPreviewTrace burst = MakeBurst("A", centerSample: displayEnd, carrierHz: 500);
+
+        ImpulseWindowPreview.AddGatedTraceSeries(
+            model, [burst], SampleRate,
+            gateOffsetMs: 10, leftMs: 0.5, plateauMs: 15, rightMs: 5, Tag,
+            envelopes: true);
+        LineSeries upper = model.Series.OfType<LineSeries>().First();
+        int first = (int)Math.Round(upper.Points[0].X * SampleRate / 1_000.0);
+        Assert.Equal(displayEnd, first + upper.Points.Count - 1);
+
+        double[] whole = SignalEnvelope.Envelope(
+            [.. burst.Samples.Select(sample => sample.Real)]);
+        double[] windowed = SignalEnvelope.Envelope(
+            [.. burst.Samples.Skip(first).Take(upper.Points.Count).Select(sample => sample.Real)]);
+        double wholePeak = whole.Skip(first).Take(upper.Points.Count).Max();
+        double windowedPeak = windowed.Max();
+
+        double largestWindowedGap = 0;
+        for (int i = 0; i < upper.Points.Count; i++)
+        {
+            Assert.Equal(whole[first + i] / wholePeak, upper.Points[i].Y, 9);
+            largestWindowedGap = Math.Max(
+                largestWindowedGap,
+                Math.Abs(windowed[i] / windowedPeak - upper.Points[i].Y));
+        }
+
+        // The test would notice a window-only transform: it reads differently.
+        Assert.True(largestWindowedGap > 0.05, $"gap {largestWindowedGap}");
     }
 
     [Fact]

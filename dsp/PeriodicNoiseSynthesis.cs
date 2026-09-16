@@ -7,7 +7,7 @@ namespace Resonalyze.Dsp;
 /// See docs/tech/live-spectrum.md#periodic-pink-excitation.</summary>
 public static class PeriodicNoiseSynthesis
 {
-    public const int DefaultIterations = 60;
+    private const int DefaultIterations = 60;
 
     /// <param name="magnitudes">Bin k's magnitude for k = 0..length/2; bin 0 is ignored (no DC).</param>
     /// <returns>The period, unnormalised; its spectrum has exactly <paramref name="magnitudes"/>.</returns>

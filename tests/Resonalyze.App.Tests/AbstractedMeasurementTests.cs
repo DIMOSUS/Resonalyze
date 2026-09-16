@@ -547,14 +547,44 @@ public sealed class AbstractedMeasurementTests
     }
 
     [Theory]
-    [InlineData(40, true, 0.25, 40)]
-    [InlineData(40, false, 0.25, 7)]
-    [InlineData(3, false, 0.25, 3)]
-    [InlineData(40, false, 1.0, 1)]
-    public void LiveCoherenceDebiasesByTheAveragesTheMeanHolds(
-        int frames, bool infinite, double alpha, int expected)
+    [InlineData(1, true, 0.25)]
+    [InlineData(2, true, 0.25)]
+    [InlineData(40, true, 0.25)]
+    [InlineData(2, false, 0.25)]
+    [InlineData(4, false, 0.25)]
+    [InlineData(40, false, 0.25)]
+    [InlineData(400, false, 0.25)]
+    [InlineData(4, false, 0.0211)]
+    [InlineData(100, false, 0.0211)]
+    [InlineData(40, false, 1.0)]
+    public void TheCoherenceNoiseFloorIsTheSquaredWeightsTheAccumulatorHolds(
+        int frames, bool infinite, double alpha)
     {
-        Assert.Equal(expected, NoiseMeasurement.IndependentAverageCount(frames, infinite, alpha));
+        // Independent model of the accumulator: the first frame enters whole, every later one with weight alpha.
+        var weights = new List<double> { 1.0 };
+        for (int frame = 2; frame <= frames; frame++)
+        {
+            double step = infinite ? 1.0 / frame : alpha;
+            for (int i = 0; i < weights.Count; i++)
+            {
+                weights[i] *= 1.0 - step;
+            }
+            weights.Add(step);
+        }
+
+        Assert.Equal(1.0, weights.Sum(), 12);
+        Assert.Equal(
+            weights.Sum(weight => weight * weight),
+            NoiseMeasurement.CoherenceNoiseFloor(frames, infinite, alpha),
+            12);
+    }
+
+    [Fact]
+    public void TheCoherenceNoiseFloorFallsWellShortOfTheSteadyStateWhileAnExponentialAverageRampsUp()
+    {
+        // The seed keeps 12% of the weight after 100 frames at Medium/2048/48 kHz with 50% overlap.
+        Assert.Equal(0.0252, NoiseMeasurement.CoherenceNoiseFloor(100, infinite: false, 0.0211), 4);
+        Assert.Equal(0.0107, NoiseMeasurement.CoherenceNoiseFloor(10_000, infinite: false, 0.0211), 4);
     }
 
     private sealed class ThrowingOpenFactory : IAudioSessionFactory

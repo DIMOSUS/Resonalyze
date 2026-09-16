@@ -286,7 +286,7 @@ namespace Resonalyze
             double[] targetPowerSpectrum;
             int frameCount;
             int clippedFrames;
-            int independentAverages;
+            double coherenceNoiseFloor;
             lock (dataSync)
             {
                 if (accumulatedTargetPowerSpectrum == null)
@@ -303,7 +303,7 @@ namespace Resonalyze
                     : null;
                 frameCount = averagedFrameCount;
                 clippedFrames = clippedFrameCount;
-                independentAverages = IndependentAverageCount(frameCount, infiniteAveraging, transferAlpha);
+                coherenceNoiseFloor = CoherenceNoiseFloor(frameCount, infiniteAveraging, transferAlpha);
             }
 
             bool micOnly = crossSpectrum == null || referencePowerSpectrum == null;
@@ -312,15 +312,15 @@ namespace Resonalyze
                 : SpectrumAnalysis.ComputeH1MagnitudeSpectrum(
                     crossSpectrum!,
                     referencePowerSpectrum!);
-            // Single-frame gamma^2 is 1 in every energized bin; unknown (null) until a few frames exist. Debiased like the sweep path
-            // (noise alone reads 1/K). See docs/tech/live-spectrum.md#clipped-frames-and-coherence-bias.
+            // Single-frame gamma^2 is 1 in every energized bin; unknown (null) until a few frames exist. Debiased like the sweep path,
+            // against the floor these weights leave. See docs/tech/live-spectrum.md#clipped-frames-and-coherence-bias.
             double[]? coherence = !micOnly && frameCount >= MinCoherenceFrames
                 ? SpectrumAnalysis.DebiasCoherence(
                     SpectrumAnalysis.ComputeCoherence(
                         crossSpectrum!,
                         referencePowerSpectrum!,
                         targetPowerSpectrum),
-                    independentAverages)
+                    coherenceNoiseFloor)
                 : null;
             double[]? inputMagnitude = includeInputMagnitude || micOnly
                 ? SpectrumAnalysis.ComputeInputMagnitudeSpectrum(
@@ -332,15 +332,22 @@ namespace Resonalyze
                 magnitude, coherence, inputMagnitude, frameCount, clippedFrames);
         }
 
-        /// <summary>K for the coherence bias: every frame counts in an infinite mean; an exponential one of weight α holds (2 − α)/α.</summary>
-        internal static int IndependentAverageCount(int frameCount, bool infinite, double alpha)
+        /// <summary>What coherence reads on noise alone: the sum of the squared weights the accumulator actually holds. An infinite
+        /// mean weighs n frames alike; an exponential one seeds its first frame at weight 1 and decays it, so it reaches the
+        /// steady-state α/(2 − α) only after (1 − α)^(2(n−1)) has died away.</summary>
+        internal static double CoherenceNoiseFloor(int frameCount, bool infinite, double alpha)
         {
-            if (infinite || !(alpha > 0) || alpha >= 1.0)
+            if (frameCount <= 1)
             {
-                return infinite ? frameCount : Math.Min(frameCount, 1);
+                return 1.0;
+            }
+            if (infinite)
+            {
+                return 1.0 / frameCount;
             }
 
-            return Math.Min(frameCount, (int)Math.Round((2.0 - alpha) / alpha));
+            double retained = Math.Pow(1.0 - Math.Clamp(alpha, 0.0, 1.0), 2.0 * (frameCount - 1));
+            return retained + alpha / (2.0 - alpha) * (1.0 - retained);
         }
 
         public int ClippedFrameCount

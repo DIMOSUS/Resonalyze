@@ -45,8 +45,9 @@ of the same length reads every bin leakage-free.
   | --- | --- | --- | --- | --- | --- | --- |
   | Crest factor | 2.38 dB | 2.54 dB | 2.55 dB | 2.57 dB | 3.55 dB | 4.15 dB |
 
-  Magnitudes stay exact to 1e-14, so nothing the analyzer reads changes: H1 divides the excitation out,
-  the RTA reads power, and the slope-compensation model is the same `1/sqrt(f)`. REW's periodic noise is
+  Magnitudes stay exact to 1e-14 in the synthesis (the float playback buffer then rounds them at ~1e-7),
+  so nothing the analyzer reads changes: H1 divides the excitation out, the RTA reads power, and the
+  slope-compensation model is the same `1/sqrt(f)`. REW's periodic noise is
   optimised to a crest of 6 dB or less.
 - **Level.** The other colours are peak-normalised to 0.5 (−6 dBFS, the sweep's peak); periodic pink to
   `PeriodicPinkPeak` = 0.25 (−12 dBFS). The low crest does not reach the microphone: five cabin impulse
@@ -84,12 +85,18 @@ of the same length reads every bin leakage-free.
   instead: the MMM read-out appends `N clipped` in amber, and `LiveCaptureRecipe.ClippedFrameCount`
   stores it, null in captures saved before it was counted. The three settling frames are not counted.
   With overlap, one overload can land in two frames.
-- **Coherence bias.** γ² estimated from K independent averages reads about 1/K for pure noise, 0.25
-  after four frames. The live snapshot applies `SpectrumAnalysis.DebiasCoherence`, `(K·γ² − 1)/(K − 1)`,
-  as the sweep path does. `IndependentAverageCount` gives K: the frame count for Infinite averaging;
-  `(2 − α)/α` for an exponential average of weight α (the variance of such a mean of independent terms is
-  α/(2 − α) of one term), capped at the frames so far. Overlapping tapered frames are not fully
-  independent, so with overlap K is overstated and the correction is partial.
+- **Coherence bias.** γ² averaged over independent frames reads its own weights back on pure noise: the
+  floor is Σw², 1/K for K equal frames (0.25 after four). The live snapshot applies
+  `SpectrumAnalysis.DebiasCoherence`, `(γ² − floor)/(1 − floor)`, as the sweep path does.
+  `CoherenceNoiseFloor` gives the floor. An Infinite average weighs n frames alike: 1/n. An exponential
+  average is **not** at its steady state from the start — the accumulator seeds its first frame at weight
+  1 and only later ones enter with α — so its floor is
+  `q^2(n−1) + α/(2 − α)·(1 − q^2(n−1))` with `q = 1 − α`, reaching the steady-state α/(2 − α) only once
+  the seed has decayed. The difference is not a startup detail: at Medium, 2048 samples, 48 kHz and 50%
+  overlap (α ≈ 0.021) the seed still holds 12% of the weight after 100 frames, and the floor is 0.025
+  against the steady state's 0.011. Reading the steady state too early would leave uncorrelated channels
+  looking coherent. Overlapping tapered frames are not fully independent, so with overlap the floor is
+  still optimistic and the correction partial.
 
 ## Scale and SPL view-only
 

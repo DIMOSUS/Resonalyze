@@ -291,6 +291,20 @@ public sealed class SpectrumAnalysisTests
     }
 
     [Fact]
+    public void DebiasCoherence_AgainstAFloorMatchesTheEqualWeightForm()
+    {
+        // An unequally weighted mean reads its own floor on noise; 1/K is the equal-weight case of it.
+        Assert.Equal(0.0, SpectrumAnalysis.DebiasCoherence([0.3], 0.3)[0], 9);
+        Assert.Equal(0.5, SpectrumAnalysis.DebiasCoherence([0.65], 0.3)[0], 9);
+        Assert.Equal(1.0, SpectrumAnalysis.DebiasCoherence([1.0], 0.3)[0], 9);
+        Assert.Equal(0.0, SpectrumAnalysis.DebiasCoherence([0.9], 1.0)[0], 9);
+        Assert.Equal(
+            SpectrumAnalysis.DebiasCoherence([0.6], 4)[0],
+            SpectrumAnalysis.DebiasCoherence([0.6], 0.25)[0],
+            9);
+    }
+
+    [Fact]
     public void ComputeAveragedRelativeIr_TwoNoiseFramesReadMostlyIncoherent()
     {
         // Unrelated noise averaged ~0.5 raw MSC at the unwrap trust floor; stored coherence is debiased.

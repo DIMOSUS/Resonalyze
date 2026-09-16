@@ -1,5 +1,4 @@
-using System.Numerics;
-using MathNet.Numerics.IntegralTransforms;
+using System.Collections.Concurrent;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
@@ -58,7 +57,7 @@ public sealed class NoiseSignal : IDisposable
             case NoiseColor.Silent:
                 break;
             case NoiseColor.PinkPeriodic:
-                FillPinkPeriodic(random, periodLength);
+                FillPinkPeriodic(periodLength);
                 break;
             case NoiseColor.Pink:
                 FillPink(random);
@@ -118,42 +117,50 @@ public sealed class NoiseSignal : IDisposable
         }
     }
 
-    // One FFT-block period with exact 1/sqrt(f) magnitude and random phase, tiled: converges without spectral variance.
-    private void FillPinkPeriodic(Random random, int periodLength)
+    /// <summary>Periodic pink covers this band only: below it the energy is 29% of the total at 65536/48 kHz, drives excursion and
+    /// reaches no display point (the grid starts at 20 Hz). See docs/tech/live-spectrum.md#periodic-pink-excitation.</summary>
+    public const double PeriodicPinkLowHz = 10.0;
+
+    /// <summary>Just above 20 kHz·√2, the widest per-bin read (1/1-octave smoothing at the top grid point).</summary>
+    public const double PeriodicPinkHighHz = 28_300.0;
+
+    // Keyed by period and rate: the phase search is ~250 ms at 65536 samples, and a run restarts on every option change.
+    private static readonly ConcurrentDictionary<(int Length, int SampleRate), double[]> PinkPeriods = new();
+
+    // One FFT-block period with exact 1/sqrt(f) magnitude in the band, tiled: converges without spectral variance.
+    private void FillPinkPeriodic(int periodLength)
     {
         int n = Math.Max(2, periodLength);
-        var spectrum = new Complex[n];
-        int half = n / 2;
-        for (int k = 1; k <= half; k++)
-        {
-            double magnitude = 1.0 / Math.Sqrt(k);
-            if (k == n - k)
-            {
-                spectrum[k] = new Complex(random.NextDouble() < 0.5 ? -magnitude : magnitude, 0);
-                continue;
-            }
-
-            double phase = random.NextDouble() * 2.0 * Math.PI;
-            Complex value = Complex.FromPolarCoordinates(magnitude, phase);
-            spectrum[k] = value;
-            spectrum[n - k] = Complex.Conjugate(value);
-        }
-
-        Fourier.Inverse(spectrum, FourierOptions.Default);
-
-        var period = new double[n];
-        double peak = 0;
-        for (int i = 0; i < n; i++)
-        {
-            period[i] = spectrum[i].Real;
-            peak = Math.Max(peak, Math.Abs(period[i]));
-        }
-
-        double scale = peak > 0 ? 0.5 / peak : 1.0;
+        double[] period = PinkPeriods.GetOrAdd((n, SampleRate), key => SynthesizePinkPeriod(key.Length, key.SampleRate));
         for (int sampleIndex = 0; sampleIndex < Samples; sampleIndex++)
         {
-            FloatData[sampleIndex] = (float)(period[sampleIndex % n] * scale);
+            FloatData[sampleIndex] = (float)period[sampleIndex % n];
         }
+    }
+
+    /// <summary>−12 dBFS, 6 dB under the other colours: at the mic the cabin restores a noise-like crest, and at 0.5 the peaks
+    /// matched a sweep's. See docs/tech/live-spectrum.md#periodic-pink-excitation.</summary>
+    public const double PeriodicPinkPeak = 0.25;
+
+    internal static double[] SynthesizePinkPeriod(int length, int sampleRate)
+    {
+        var magnitudes = new double[(length / 2) + 1];
+        double highHz = Math.Min(PeriodicPinkHighHz, sampleRate / 2.0);
+        for (int k = 1; k < magnitudes.Length; k++)
+        {
+            double frequency = k * (double)sampleRate / length;
+            magnitudes[k] = frequency >= PeriodicPinkLowHz && frequency <= highHz ? 1.0 / Math.Sqrt(k) : 0.0;
+        }
+
+        double[] period = PeriodicNoiseSynthesis.Synthesize(magnitudes, length);
+        double peak = period.Max(Math.Abs);
+        double scale = peak > 0 ? PeriodicPinkPeak / peak : 1.0;
+        for (int i = 0; i < period.Length; i++)
+        {
+            period[i] *= scale;
+        }
+
+        return period;
     }
 
     // Leak derived from a fixed corner so the spectrum does not change with sample rate (0.99 put it at 76 Hz @48k, 305 Hz @192k).

@@ -29,6 +29,75 @@ Where the code lives (`source/LiveSpectrum/`):
   their raw form; the RTA is a curve in its own right (the only trace in RTA views and the source of a
   moving-microphone tune).
 
+## Periodic pink excitation
+
+`NoiseSignal.SynthesizePinkPeriod` builds one FFT-length period whose bin magnitudes are exactly
+`1/sqrt(k)` from `PeriodicPinkLowHz` (10 Hz) to `PeriodicPinkHighHz` (28.3 kHz, or Nyquist) and zero
+elsewhere; `Dsp.PeriodicNoiseSynthesis` chooses the phases. The period is tiled, so a rectangular frame
+of the same length reads every bin leakage-free.
+
+- **Phases.** Random phases (the generator before this one) give a noise-like waveform: 13.0 dB crest
+  factor at 32768 samples, 13.3 dB at 65536 (48 kHz). The synthesis starts from Schroeder's phases for
+  the requested power spectrum, then runs 60 passes of clip to a shrinking ceiling, take the phases the
+  clipped period implies, restore the exact magnitudes, keeping the lowest-crest period. Measured crest:
+
+  | Length @ rate | 2048 @ 48k | 8192 @ 48k | 32768 @ 48k | 65536 @ 48k | 65536 @ 96k | 65536 @ 192k |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | Crest factor | 2.38 dB | 2.54 dB | 2.55 dB | 2.57 dB | 3.55 dB | 4.15 dB |
+
+  Magnitudes stay exact to 1e-14 in the synthesis (the float playback buffer then rounds them at ~1e-7),
+  so nothing the analyzer reads changes: H1 divides the excitation out, the RTA reads power, and the
+  slope-compensation model is the same `1/sqrt(f)`. REW's periodic noise is
+  optimised to a crest of 6 dB or less.
+- **Level.** The other colours are peak-normalised to 0.5 (−6 dBFS, the sweep's peak); periodic pink to
+  `PeriodicPinkPeak` = 0.25 (−12 dBFS). The low crest does not reach the microphone: five cabin impulse
+  responses (a tweeter, a midrange and three bass channels) convolved with the period give a 12–16 dB crest at
+  the mic, against 9–13 dB for the random-phase period. So at 0.5 the new period's mic peaks came within
+  −0.9 to +1.2 dB of a 10 s sweep's (the random-phase one sat 12–16 dB under), a microphone gain set on
+  the sweeps had no margin left for a walk that passes closer to the driver, and a tweeter took roughly
+  the sweep's power continuously. At 0.25 the mic peaks sit 5–7 dB under the sweep's, the mic RMS is
+  5–6 dB above the random-phase period's, and the electrical RMS is about 6 dB under the sweep's. The
+  Signal Generator's periodic pink is the same signal, so its `Level, %` of 50 plays −12 dBFS peak.
+- **Low edge.** A `1/sqrt(k)` spectrum has equal power per octave, and a long frame resolves many
+  octaves under 20 Hz: below 20 Hz sat 31% of the power at 32768 samples and 36% at 65536 (48 kHz),
+  cone excursion and amplifier headroom that no display point reads (the grid starts at 20 Hz). A
+  band-limited and a full-band pink rendered through both display paths — band power and per-bin
+  Lanczos — at 44.1–192 kHz, 2048, 8192, 32768 and 65536 samples and every smoothing choice differ by
+  0.000 dB below 1 kHz with a 10 Hz edge.
+- **High edge.** Not 20 kHz: the per-bin path's kernel at the 20 kHz grid point reaches 20 kHz·√2 under
+  1/1-octave smoothing, and a 22.4 kHz edge read that point up to 0.97 dB low (0.38 dB at 24 kHz); at
+  28.3 kHz no point moves. At 44.1 and 48 kHz the edge is Nyquist; at 96 and 192 kHz it removes 6% and
+  13% of the power, all ultrasonic.
+- **Cost.** The phase search takes about 250 ms at 65536 samples and 50 ms at 2048, so periods are cached
+  per length and rate for the life of the process.
+- **Clocks.** REW's RTA can monitor whether the input and output clocks match; Resonalyze does not. With
+  two clocks the period drifts against the frame and each tone spreads into neighbouring bins. The
+  banded display integrates 1/12-octave bands that hold several bins except at the lowest frequencies of
+  short frames, so the spread mostly stays inside a band; per-bin views show it first. WASAPI and MME
+  expose one interface's input and output as separate devices, so a shared clock cannot be detected
+  from the device choice: play and capture through one interface.
+
+## Clipped frames and coherence bias
+
+- **Clipped frames.** `NoiseMeasurement` counts averaged frames in which a microphone sample reached
+  `RecordedLevelMetering.FullScaleThreshold`. A clipped frame still enters the average (a walk cannot be
+  repeated frame by frame, and dropping frames would reweight the path), so the count is reported
+  instead: the MMM read-out appends `N clipped` in amber, and `LiveCaptureRecipe.ClippedFrameCount`
+  stores it, null in captures saved before it was counted. The three settling frames are not counted.
+  With overlap, one overload can land in two frames.
+- **Coherence bias.** γ² averaged over independent frames reads its own weights back on pure noise: the
+  floor is Σw², 1/K for K equal frames (0.25 after four). The live snapshot applies
+  `SpectrumAnalysis.DebiasCoherence`, `(γ² − floor)/(1 − floor)`, as the sweep path does.
+  `CoherenceNoiseFloor` gives the floor. An Infinite average weighs n frames alike: 1/n. An exponential
+  average is **not** at its steady state from the start — the accumulator seeds its first frame at weight
+  1 and only later ones enter with α — so its floor is
+  `q^2(n−1) + α/(2 − α)·(1 − q^2(n−1))` with `q = 1 − α`, reaching the steady-state α/(2 − α) only once
+  the seed has decayed. The difference is not a startup detail: at Medium, 2048 samples, 48 kHz and 50%
+  overlap (α ≈ 0.021) the seed still holds 12% of the weight after 100 frames, and the floor is 0.025
+  against the steady state's 0.011. Reading the steady state too early would leave uncorrelated channels
+  looking coherent. Overlapping tapered frames are not fully independent, so with overlap the floor is
+  still optimistic and the correction partial.
+
 ## Scale and SPL view-only
 
 `RenderingSpl` follows the selection. With dB SPL selected but no matching calibration
@@ -106,7 +175,7 @@ switch, display option, calibration change) goes through `RebuildModel`, which r
 capture; painting it once let the surviving accumulation replace it on the next rebuild, which looked
 like Load did nothing. Live series and peak hold are cleared so two measurements are not blended. A new
 run is what replaces it. The capture progress read-out of a loaded capture reports its own recipe's
-frame count.
+frame and clipped-frame counts.
 
 ## Redraw loop
 
@@ -128,7 +197,7 @@ frame count.
   (SPL view-only notice, capture progress) are created per model instead: carrying one instance across
   models threw on add, left the plot empty and surfaced later as "element already belongs to a
   PlotModel". Notices are kept in sync by remove-then-add on each tick, which prevents duplicates and
-  removes them when their condition ends. The progress annotation's text is rebuilt only when the count
+  removes them when their condition ends. The progress annotation's text is rebuilt only when a count
   changes.
 - MMM shows an integration-progress read-out, because the curve stops visibly moving long before the
   average settles. While running it shows the live count; once held, the snapshot count Save will store.

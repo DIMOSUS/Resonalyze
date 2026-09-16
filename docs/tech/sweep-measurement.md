@@ -878,9 +878,10 @@ reference on the analysis path.
   Hann), so the same resolution costs twice the samples at twice the rate.
 
 **Noise colours and tilt compensation.** `NoiseSignal` uses a fixed seed. Periodic pink is
-one FFT-block period with exact `1/sqrt(f)` magnitude and random phase, tiled a whole number
-of times (a partial period would jump phase at the loop seam); being period-synchronous with
-the FFT it converges without spectral variance. Random pink uses Paul Kellett's filter bank
+one FFT-block period with exact `1/sqrt(f)` magnitude from 10 Hz to 28.3 kHz and phases chosen
+for a low crest factor, tiled a whole number of times (a partial period would jump phase at
+the loop seam); being period-synchronous with the FFT it converges without spectral variance
+(see [live-spectrum.md](live-spectrum.md#periodic-pink-excitation)). Random pink uses Paul Kellett's filter bank
 (`Dsp.KellettPinkFilter`), brown a leaky integrator whose leak is derived from a fixed
 `BrownCornerHz` (76 Hz) — a fixed 0.99 coefficient put the corner at 76 Hz at 48 kHz but
 305 Hz at 192 kHz. `NoiseColorTilt` models the shapes actually synthesised: both random

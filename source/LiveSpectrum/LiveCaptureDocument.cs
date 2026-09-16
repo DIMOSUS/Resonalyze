@@ -40,6 +40,10 @@ public sealed class LiveCaptureRecipe
 
     public int AveragedFrameCount { get; set; }
 
+    /// <summary>Averaged frames in which the microphone reached full scale; null in captures saved before it was counted.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? ClippedFrameCount { get; set; }
+
     /// <summary>Frames times hop, seconds.</summary>
     public double IntegratedSeconds { get; set; }
 

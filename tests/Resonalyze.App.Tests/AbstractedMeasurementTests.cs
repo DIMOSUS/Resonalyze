@@ -514,6 +514,79 @@ public sealed class AbstractedMeasurementTests
         Assert.True(opened!.Disposed);
     }
 
+    [Theory]
+    [InlineData(1.0f, true)]
+    [InlineData(0.5f, false)]
+    public async Task LiveSpectrumCountsTheAveragedFramesWhoseMicrophoneReachedFullScale(
+        float microphonePeak, bool clips)
+    {
+        var factory = new FakeAudioSessionFactory(
+            streamingFactory: _ => new RecordingStreamingSession(
+                framesToRaise: 40, failAfterFrames: false, microphonePeak));
+        using var measurement = new NoiseMeasurement(factory);
+        measurement.Init(
+            44_100, 24, 0.5, PlaybackChannel.Mono,
+            sequenceLength: 1024,
+            waveInputChannelOffset: 0,
+            waveLoopbackInputChannelOffset: 1);
+
+        Task<bool> running = measurement.RunAsync();
+        LiveSpectrumSnapshot? snapshot = null;
+        for (int i = 0; i < 200 && (snapshot?.FrameCount ?? 0) < 5; i++)
+        {
+            await Task.Delay(20);
+            snapshot = measurement.GetAccumulatedSpectrumSnapshot();
+        }
+        await measurement.AbortAsync();
+
+        Assert.True(await running, measurement.LastError?.ToString());
+        Assert.NotNull(snapshot);
+        Assert.True(snapshot.FrameCount >= 5);
+        // Every frame of the tone peaks at the same level, so a clipping run counts exactly the frames it averaged.
+        Assert.Equal(clips ? snapshot.FrameCount : 0, snapshot.ClippedFrameCount);
+    }
+
+    [Theory]
+    [InlineData(1, true, 0.25)]
+    [InlineData(2, true, 0.25)]
+    [InlineData(40, true, 0.25)]
+    [InlineData(2, false, 0.25)]
+    [InlineData(4, false, 0.25)]
+    [InlineData(40, false, 0.25)]
+    [InlineData(400, false, 0.25)]
+    [InlineData(4, false, 0.0211)]
+    [InlineData(100, false, 0.0211)]
+    [InlineData(40, false, 1.0)]
+    public void TheCoherenceNoiseFloorIsTheSquaredWeightsTheAccumulatorHolds(
+        int frames, bool infinite, double alpha)
+    {
+        // Independent model of the accumulator: the first frame enters whole, every later one with weight alpha.
+        var weights = new List<double> { 1.0 };
+        for (int frame = 2; frame <= frames; frame++)
+        {
+            double step = infinite ? 1.0 / frame : alpha;
+            for (int i = 0; i < weights.Count; i++)
+            {
+                weights[i] *= 1.0 - step;
+            }
+            weights.Add(step);
+        }
+
+        Assert.Equal(1.0, weights.Sum(), 12);
+        Assert.Equal(
+            weights.Sum(weight => weight * weight),
+            NoiseMeasurement.CoherenceNoiseFloor(frames, infinite, alpha),
+            12);
+    }
+
+    [Fact]
+    public void TheCoherenceNoiseFloorFallsWellShortOfTheSteadyStateWhileAnExponentialAverageRampsUp()
+    {
+        // The seed keeps 12% of the weight after 100 frames at Medium/2048/48 kHz with 50% overlap.
+        Assert.Equal(0.0252, NoiseMeasurement.CoherenceNoiseFloor(100, infinite: false, 0.0211), 4);
+        Assert.Equal(0.0107, NoiseMeasurement.CoherenceNoiseFloor(10_000, infinite: false, 0.0211), 4);
+    }
+
     private sealed class ThrowingOpenFactory : IAudioSessionFactory
     {
         public IReadOnlyList<AudioBackendDescriptor> Backends { get; } =

@@ -206,15 +206,19 @@ public static class SpectrumAnalysis
     }
 
     /// <summary>In place: (K·γ̂² − 1)/(K − 1), since E[γ̂²] = 1/K for noise (0.5 at K = 2, right at the PHAT/unwrap thresholds). K = 1 gives 0.</summary>
-    public static double[] DebiasCoherence(double[] coherence, int averageCount)
+    public static double[] DebiasCoherence(double[] coherence, int averageCount) =>
+        DebiasCoherence(coherence, averageCount >= 1 ? 1.0 / averageCount : 1.0);
+
+    /// <summary>The same correction for an unequally weighted mean, whose noise floor is Σw² rather than 1/K.</summary>
+    public static double[] DebiasCoherence(double[] coherence, double noiseFloor)
     {
         ArgumentNullException.ThrowIfNull(coherence);
         for (int i = 0; i < coherence.Length; i++)
         {
-            coherence[i] = averageCount <= 1
+            coherence[i] = noiseFloor >= 1.0 || !(noiseFloor >= 0.0)
                 ? 0.0
                 : Math.Clamp(
-                    (averageCount * coherence[i] - 1.0) / (averageCount - 1.0),
+                    (coherence[i] - noiseFloor) / (1.0 - noiseFloor),
                     0.0,
                     1.0);
         }

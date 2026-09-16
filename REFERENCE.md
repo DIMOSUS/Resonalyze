@@ -3364,6 +3364,11 @@ agree — the ordinary case — nothing changes; where the reference side's own
 junction was decided some other way, the far side follows it, so both stages of
 that walk read the junction the same way.
 
+The report shows the relation the way a tuner would write it: flipping every
+channel changes no sum, so a proposal that inverts more driver positions than it
+keeps is shown flipped, and when the count ties the subwoofer is the one left
+normal.
+
 Where two candidates of opposite polarity still score within a fraction of a
 decibel — at a mid/tweeter junction the summation metric frequently cannot tell
 a lobe from the flipped one half a period away at all — the **direct sound's

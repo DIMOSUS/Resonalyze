@@ -190,6 +190,9 @@ public sealed class VirtualCrossoverCorrelationViewTests
         channel.TransferImpulseResponse = Impulse(FrontSample + 4_800);
         channel.Settings.CrossoverKind = CrossoverKind.Off;
         channel.Pair.Bypass = true;
+        // The engine reads rates off the channel: a rebound block at another rate must not rescale the read either.
+        channel.SampleRate = 96_000;
+        channel.ProcessorSampleRateProvider = () => 192_000;
         JunctionCorrelationView after = VirtualCrossoverPanel.BuildCorrelationView(pair, [lower, upper]);
 
         Assert.Equal(before.ArrivalLagMs, after.ArrivalLagMs, 6);

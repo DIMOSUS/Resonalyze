@@ -637,7 +637,8 @@ term, since a bulk delay wraps the phase into a sawtooth and swamps the filter g
   `SearchSnapshot` gives the engine what it needs — the cropped processed response, the chain that produced it
   and the chain-free response at the same crop, which the render's head truncation from sample 0 makes exact.
   All three come from the render's own snapshot (`ProcessedChannel.Chain`, `SourceImpulseResponse`,
-  `ProcessorSampleRate`, frozen with the response), never from the live channel: the view is built on a
+  `ProcessorSampleRate`, frozen with the response), and so do the rates the engine reads off its channel
+  (`FrozenAlignmentChannel` stands in for the block), never from the live channel: the view is built on a
   background task and the channel may have been rebound, re-sourced or re-set since the render, and a
   bypassed block's chain is `Identity` whatever its settings name — grading a raw driver against a prediction
   through a crossover it does not run would invent a re-anchor. A raw envelope marker drew, on the v6 cabin's

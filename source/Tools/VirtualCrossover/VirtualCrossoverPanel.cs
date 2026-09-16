@@ -6993,9 +6993,13 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        // Without the frozen chain there is no predicted front; the upper-half probe still grades the read.
+        // Without the frozen chain there is no predicted front; the upper-half probe still grades the read. The engine
+        // reads the rates off the channel, so the channel it gets is frozen too, not the live block.
         return new AlignmentSnapshot(
-            item.Channel,
+            new FrozenAlignmentChannel(
+                item.Channel.Name,
+                item.SampleRate,
+                item.ProcessorSampleRate > 0 ? item.ProcessorSampleRate : item.SampleRate),
             processed,
             VirtualCrossoverAnalysis.FindPeakIndex(processed),
             range,
@@ -7003,6 +7007,12 @@ public partial class VirtualCrossoverPanel : UserControl
             bypassed,
             bypassedRange);
     }
+
+    /// <summary>The rates a render was made at, as the engine's channel: the live block may have been rebound since.</summary>
+    private sealed record FrozenAlignmentChannel(
+        string Name,
+        int SampleRate,
+        int ProcessorSampleRate) : IAlignmentChannel;
 
     private static List<SignalPoint> Penalized(
         List<VirtualCrossoverAnalysis.JunctionSweepPoint> sweep) =>

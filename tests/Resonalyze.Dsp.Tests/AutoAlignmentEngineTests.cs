@@ -206,14 +206,15 @@ public sealed class AutoAlignmentEngineTests
 
         Run([woofer, tweeter], [1_000], log, decisions: decisions);
 
-        Assert.Equal(AlignmentDecisionKind.Reference, decisions[woofer].Kind);
-        Assert.Null(decisions[woofer].Confidence);
-        Assert.Contains("reference", decisions[woofer].Detail);
+        // The top of the chain is the anchor, whoever arrives later.
+        Assert.Equal(AlignmentDecisionKind.Reference, decisions[tweeter].Kind);
+        Assert.Null(decisions[tweeter].Confidence);
+        Assert.Contains("reference", decisions[tweeter].Detail);
         // Trusted seed: the onset lock stands down, so a free Search with the rival margin as confidence.
-        Assert.Equal(AlignmentDecisionKind.Search, decisions[tweeter].Kind);
-        Assert.NotNull(decisions[tweeter].Confidence);
-        Assert.Contains("vs W", decisions[tweeter].Detail);
-        Assert.DoesNotContain("onset-locked", decisions[tweeter].Detail);
+        Assert.Equal(AlignmentDecisionKind.Search, decisions[woofer].Kind);
+        Assert.NotNull(decisions[woofer].Confidence);
+        Assert.Contains("vs T", decisions[woofer].Detail);
+        Assert.DoesNotContain("onset-locked", decisions[woofer].Detail);
     }
 
     [Fact]
@@ -226,30 +227,40 @@ public sealed class AutoAlignmentEngineTests
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
             Run([woofer, tweeter], [1_000], log);
 
-        Assert.False(alignment.ContainsKey(woofer));
+        // The tweeter anchors; a woofer that arrives 1 ms late is served by delaying the tweeter, not by re-anchoring.
         AlignmentOverride result = alignment[tweeter];
         Assert.InRange(result.DelayMs, 0.95, 1.05);
+        Assert.InRange(alignment.GetValueOrDefault(woofer).DelayMs, -0.001, 0.001);
         Assert.False(result.InvertPolarity);
+        Assert.False(alignment.GetValueOrDefault(woofer).InvertPolarity);
         Assert.Equal(Math.Round(result.DelayMs, 2), result.DelayMs, 9);
-        Assert.Contains("Reference: W", log.ToString());
+        Assert.Contains("Reference: T", log.ToString());
         Assert.Contains("Pair W/T:", log.ToString());
     }
 
-    [Fact]
-    public void Compute_ReferenceIsNotTheBottomChannel_WalksDownward()
+    [Theory]
+    [InlineData(0.0, 1.0)]
+    [InlineData(1.0, 0.0)]
+    public void Compute_AnchorsOnTheTopChannel_WhicheverArrivesLater(
+        double wooferMs, double tweeterMs)
     {
-        // Tweeter latest: exercises the downward-walk branch.
-        var woofer = new TestChannel("W", DelayedImpulse(0.0));
-        var tweeter = new TestChannel("T", DelayedImpulse(1.0));
+        // The walk descends from the top of the chain; the later arrival only decides who is delayed.
+        var woofer = new TestChannel("W", DelayedImpulse(wooferMs));
+        var tweeter = new TestChannel("T", DelayedImpulse(tweeterMs));
         var log = new StringBuilder();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
             Run([woofer, tweeter], [1_000], log);
 
-        Assert.False(alignment.ContainsKey(tweeter));
-        Assert.InRange(alignment[woofer].DelayMs, 0.95, 1.05);
-        Assert.False(alignment[woofer].InvertPolarity);
         Assert.Contains("Reference: T", log.ToString());
+        double wooferDelayMs = alignment.GetValueOrDefault(woofer).DelayMs;
+        double tweeterDelayMs = alignment.GetValueOrDefault(tweeter).DelayMs;
+        double expectedMs = tweeterMs - wooferMs;
+        Assert.InRange(
+            wooferDelayMs - tweeterDelayMs, expectedMs - 0.05, expectedMs + 0.05);
+        Assert.InRange(Math.Min(wooferDelayMs, tweeterDelayMs), -0.001, 0.001);
+        Assert.False(alignment.GetValueOrDefault(woofer).InvertPolarity);
+        Assert.False(alignment.GetValueOrDefault(tweeter).InvertPolarity);
     }
 
     [Fact]
@@ -262,46 +273,50 @@ public sealed class AutoAlignmentEngineTests
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
             Run([woofer, tweeter], [1_000], log);
 
+        // Inversion is a relation; the walk attributes it to the searched woofer, and the presentation
+        // then flips the pair so the bottom channel reads normal.
         AlignmentOverride result = alignment[tweeter];
         Assert.True(result.InvertPolarity);
-        Assert.InRange(result.DelayMs, 0.9, 1.1);
+        Assert.False(alignment.GetValueOrDefault(woofer).InvertPolarity);
+        Assert.InRange(
+            result.DelayMs - alignment.GetValueOrDefault(woofer).DelayMs, 0.9, 1.1);
     }
 
     [Fact]
     public void Compute_ChainsDelaysThroughASettledNeighbor_ThreeWay()
     {
-        // The tweeter aligns to the settled mid, so it inherits the mid's 2 ms.
-        var sub = new TestChannel("S", DelayedImpulse(2.0));
+        // The mid aligns to the late tweeter and the sub to the settled mid, so the sub inherits the mid's 2 ms.
+        var sub = new TestChannel("S", DelayedImpulse(0.0));
         var mid = new TestChannel("M", DelayedImpulse(0.0));
-        var tweeter = new TestChannel("T", DelayedImpulse(0.0));
+        var tweeter = new TestChannel("T", DelayedImpulse(2.0));
         var log = new StringBuilder();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
             Run([sub, mid, tweeter], [200, 2_000], log);
 
-        Assert.False(alignment.ContainsKey(sub));
+        Assert.Contains("Reference: T", log.ToString());
+        Assert.InRange(alignment.GetValueOrDefault(tweeter).DelayMs, -0.001, 0.001);
         Assert.InRange(alignment[mid].DelayMs, 1.9, 2.1);
-        Assert.InRange(alignment[tweeter].DelayMs, 1.9, 2.1);
+        Assert.InRange(alignment[sub].DelayMs, 1.9, 2.1);
         Assert.False(alignment[mid].InvertPolarity);
-        Assert.False(alignment[tweeter].InvertPolarity);
-        Assert.Contains("Reference: S", log.ToString());
+        Assert.False(alignment[sub].InvertPolarity);
     }
 
     [Fact]
     public void Compute_NegativeOptimum_ShiftsTheOtherChannelsInstead()
     {
-        // Search-time optimum is an impossible -0.3 ms: zero the tweeter, push the woofer out instead.
-        var woofer = new TestChannel("W", DelayedImpulse(1.0));
-        var tweeter = new TestChannel(
-            "T", DelayedImpulse(0.9), reprocessIr: DelayedImpulse(1.3));
+        // Search-time optimum is an impossible -0.3 ms: zero the woofer, push the tweeter out instead.
+        var woofer = new TestChannel(
+            "W", DelayedImpulse(0.9), reprocessIr: DelayedImpulse(1.3));
+        var tweeter = new TestChannel("T", DelayedImpulse(1.0));
         var log = new StringBuilder();
 
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment =
             Run([woofer, tweeter], [1_000], log);
 
-        Assert.InRange(alignment[tweeter].DelayMs, -0.001, 0.001);
-        Assert.InRange(alignment[woofer].DelayMs, 0.25, 0.35);
-        Assert.False(alignment[woofer].InvertPolarity);
+        Assert.InRange(alignment[woofer].DelayMs, -0.001, 0.001);
+        Assert.InRange(alignment[tweeter].DelayMs, 0.25, 0.35);
+        Assert.False(alignment[tweeter].InvertPolarity);
     }
 
     [Fact]
@@ -728,14 +743,18 @@ public sealed class AutoAlignmentEngineTests
             Run([midbass, mid], [85], log);
 
         string text = log.ToString();
-        Assert.False(alignment.ContainsKey(midbass));
+        Assert.Contains("Reference: C", text);
+        // The searched midbass finds the relative inversion (presented on the mid, the bottom channel reading
+        // normal); its 15.2 ms lateness delays the anchor instead.
         AlignmentOverride result = alignment[mid];
         Assert.True(result.InvertPolarity);
-        Assert.InRange(result.DelayMs, 15.0, 15.4);
+        Assert.False(alignment.GetValueOrDefault(midbass).InvertPolarity);
+        Assert.InRange(
+            result.DelayMs - alignment.GetValueOrDefault(midbass).DelayMs, 15.0, 15.4);
         string pairLine = TestLog.Line(text, "Pair B/C");
         Assert.Contains("phat trough", pairLine);
         Assert.Contains("-> seed phat", pairLine);
-        Assert.DoesNotContain("WIDE SEED", TestLog.Line(text, "Channel C:"));
+        Assert.DoesNotContain("WIDE SEED", TestLog.Line(text, "Channel B:"));
     }
 
     [Fact]
@@ -748,7 +767,9 @@ public sealed class AutoAlignmentEngineTests
 
         Run([midbass, mid], [85], log);
 
-        string channelLine = TestLog.Line(log.ToString(), "Channel C:");
+        // The midbass is searched against the mid anchor: its arrival sits at -15.2 ms in its own delay space.
+        const double ArrivalMs = -15.2;
+        string channelLine = TestLog.Line(log.ToString(), "Channel B:");
         Assert.DoesNotContain("WIDE SEED", channelLine);
         Match window = Regex.Match(
             channelLine.Replace(',', '.'),
@@ -759,7 +780,7 @@ public sealed class AutoAlignmentEngineTests
         double high = double.Parse(
             window.Groups[2].Value, CultureInfo.InvariantCulture);
         Assert.True(
-            high - 15.2 >= 5.0 || 15.2 - low >= 5.0,
+            high - ArrivalMs >= 5.0 || ArrivalMs - low >= 5.0,
             $"the polarity partner is out of the search window:\r\n{channelLine}");
         Assert.True(
             high - low < 2.0 * 1000.0 / 85.0,
@@ -779,11 +800,11 @@ public sealed class AutoAlignmentEngineTests
             Run([midbass, mid], [85], log);
 
         string text = log.ToString();
-        Assert.False(alignment.ContainsKey(midbass));
+        Assert.Contains("Reference: C", text);
         Assert.Contains(
             "seed arrival (peak beyond the arrival's reach)",
             TestLog.Line(text, "Pair B/C"));
-        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
+        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel B:"));
     }
 
     private static Complex[] SplitBandArrivals()
@@ -863,10 +884,13 @@ public sealed class AutoAlignmentEngineTests
             Run([midbass, mid], [180], log);
 
         string text = log.ToString();
-        Assert.False(alignment.ContainsKey(midbass));
+        Assert.Contains("Reference: C", text);
         Assert.Contains("(modal latch)", text);
         Assert.Contains("arrivals 15", TestLog.Line(text, "Pair B/C"));
-        Assert.InRange(alignment[mid].DelayMs, 3.0, 9.0);
+        Assert.InRange(
+            alignment.GetValueOrDefault(mid).DelayMs -
+                alignment.GetValueOrDefault(midbass).DelayMs,
+            3.0, 9.0);
     }
 
     // 0.20 reads -14.8 dB of prominence, 0.30 reads -11.6 dB: either side of half the search depth.
@@ -1162,11 +1186,11 @@ public sealed class AutoAlignmentEngineTests
             Run([midbass, mid], [85], log, bands: [(30, 340)]);
 
         string text = log.ToString();
-        Assert.False(alignment.ContainsKey(midbass));
+        Assert.Contains("Reference: C", text);
         Assert.Contains(
             "seed arrival (same-polarity rival near-tie)",
             TestLog.Line(text, "Pair B/C"));
-        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
+        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel B:"));
     }
 
     [Fact]
@@ -1182,12 +1206,12 @@ public sealed class AutoAlignmentEngineTests
             Run([midbass, mid], [85], log, bands: [(30, 340)]);
 
         string text = log.ToString();
-        Assert.False(alignment.ContainsKey(midbass));
+        Assert.Contains("Reference: C", text);
         string pairLine = TestLog.Line(text, "Pair B/C");
         Assert.Contains("phat trough", pairLine);
         Assert.Contains(
             "seed arrival (same-polarity rival near-tie)", pairLine);
-        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel C:"));
+        Assert.Contains("WIDE SEED", TestLog.Line(text, "Channel B:"));
     }
 
     [Fact]
@@ -1658,7 +1682,7 @@ public sealed class AutoAlignmentEngineTests
         Assert.Matches(@"dom 0,0\d\d", pairLine.Replace('.', ','));
         Assert.Contains("seed phat", pairLine);
 
-        string channelLine = TestLog.Line(text, "Channel C:");
+        string channelLine = TestLog.Line(text, "Channel B:");
         Assert.Contains(" inv (", channelLine);
         Assert.Contains("; ", channelLine);
     }

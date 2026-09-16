@@ -2773,8 +2773,12 @@ whitened cross-correlation together with its **direct twin**, the same comb read
 on the drivers' direct sound alone, plus the junction's **prior-free acoustic
 score** for both polarities. That score is the acoustics alone, while the searches
 also weigh the arrival prior and the lobe/onset/scene locks, so the gap between
-the solid marker (the current alignment) and the dashed one (the envelope-arrival
-estimate) is that trade, drawn. The direct twin is the engine's **polarity
+the solid marker (the current alignment) and the dashed one (the arrival the
+search anchored on) is that trade, drawn. That dashed marker is the search's own
+read, not the raw envelope: where the honesty probes convict a modal latch — a
+midbass whose band envelope rises with the room rather than the driver — the
+marker sits on the front they re-anchored it to, and its label says
+*re-anchored*. The direct twin is the engine's **polarity
 witness**: where the summation score is too close to call between a lag and its
 inverted rival, the wavefronts within a period or two of the front decide it,
 because that is the part of the record the drivers made and the room had not yet
@@ -3379,6 +3383,11 @@ agree — the ordinary case — nothing changes; where the reference side's own
 junction was decided some other way, the far side follows it, so both stages of
 that walk read the junction the same way.
 
+The report shows the relation the way a tuner would write it: flipping every
+channel changes no sum, so a proposal that inverts more driver positions than it
+keeps is shown flipped, and when the count ties the subwoofer is the one left
+normal.
+
 Where two candidates of opposite polarity still score within a fraction of a
 decibel — at a mid/tweeter junction the summation metric frequently cannot tell
 a lobe from the flipped one half a period away at all — the **direct sound's
@@ -3389,6 +3398,45 @@ lobe keeps it: the correlation is one comb across the whole pair band, so it
 carries the polarity but separates neighbouring lobes poorly, while the ladder
 reads polarity not at all and counts how many bands actually want the upper
 channel where a candidate puts it.
+
+Those two settle a tie between neighbouring lobes. A different failure needs a
+different question: the search looks half a crossover period either side of
+where the arrivals put it, so a single overruled arrival can leave the **right
+lobe outside the window altogether**, and then no arbitration among what the
+window did offer can reach it. So the same direct sound is asked once more about
+the **finished** pick, over a full period each way. Where it names a lag the
+search never covered, one extra search runs there — and its result is taken only
+if the summation *also* prefers it, because a move nothing but a correlation
+wants is not a measurement. Where the summation refuses, the delay stands and the
+junction is reported at low confidence, naming the lag the wavefronts wanted, so
+a suspicious handover can be checked by hand rather than quietly shipped.
+
+Under **120 Hz** neither of those witnesses can be asked — two periods of cut
+span the room's own build-up — and the tie is at its worst: across the archived
+cabins half of all low junctions carry an opposite-polarity lobe within half a
+decibel of the winner, some within a twentieth. There the **two channels' own
+crests** vote. The lower channel's tallest crest fixes a sign, and the upper is
+asked how far it would have to move to meet it with the same sign and with the
+opposite one; the nearer meeting names the polarity, and the summation still
+chooses the delay. The vote is only heard when the two meetings are at least a
+quarter period apart — a channel whose own response is smeared carries both
+signs at the same distance, and then the nearer one is noise — and only where
+the crossover's own filters do not say the opposite. Where they do, the pick the
+summation made stands and the junction is reported at **low confidence** with
+the disagreement named: a coin flip is worth saying out loud rather than
+presenting as a reading.
+
+One more question is asked once both sides are settled. The side you are tuning
+for decides each handover alone, and the far side then copies its polarity
+driver by driver — so a junction the near side could barely tell apart decides
+for the far side too, and the far side is the one that pays for it. So every
+junction is offered the **other branch**: the whole stack above it, on both
+sides, moved half a period and flipped. It is taken only when the far side
+plainly gains, the near side does not pay for it, and no half of either
+junction loses more than the far side gains — and the answer is checked on a
+real re-render, not on an estimate. Where the two sides want different branches
+and the move is refused, the run says so with the numbers, because that
+disagreement is something no single-side read-out can show you.
 
 With stereo pairs, Auto delay tunes **both sides in one run**, and an
 **LHD / RHD** toggle says which seat you are tuning for. The driver's side is
@@ -3419,9 +3467,12 @@ alone until you tick **Balance channel gains (cut-only)**. Pairs whose shared ba
 reaches the localization region are pinned to the scene, because the image
 outranks the handover there; a final scene-preserving pass may then shift both
 sides of a pair by one shared delta to recover what the pin cost. Each far-side
-channel may also leave its own scene position by up to 0.03 ms to buy back its
-junction's summation — below what the scene can resolve, and enough to close the
-skew the arithmetic bridge leaves behind.
+channel below the bridge may also leave its own scene position to buy back its
+junctions' summation, by an eighth of the period of its highest crossover: a
+few hundredths of a millisecond for a midrange under a 2 kHz split, half a
+millisecond for a midbass under a 200 Hz one, where the image does not
+localize. The bridge channel itself never moves: it stands at the scene offset
+you set.
 
 **Rear fill** sets how far behind the front stage the rear arrives, and is off
 unless the project has a block in the Rear zone. Ten to twenty milliseconds

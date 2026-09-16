@@ -11,6 +11,9 @@ because a specific field measurement went wrong without it.
 | --- | --- |
 | Engine, all passes and thresholds | `dsp/AutoAlignmentEngine.cs` (`AutoAlignmentEngine`) |
 | Tie-breaks between candidates | `dsp/AlignmentSelection.cs` (`AlignmentSelection`) |
+| Low-crossover polarity witness | `dsp/LowJunctionPolarity.cs` (`LowJunctionPolarity`) |
+| Direct-sound check on the final lobe | `dsp/DirectLobeWitness.cs` (`DirectLobeWitness`) |
+| Branch a junction's two sides disagree on | `dsp/StereoJunctionBranch.cs` (`StereoJunctionBranch`) |
 | Band-limited arrival detector, energy onset, manual-mode honesty probe | `dsp/TimeAlignmentAnalysis.cs` (`TimeAlignmentAnalysis`) |
 | Loss surfaces, candidates, direct-sound cuts, coherence ladder | `VirtualCrossoverAnalysis` (`FindAlignmentCandidates`, `BuildAlignmentBins`, `CutDirectSound`, `CutDirectSoundPair`, `SumLossEvaluator`, `ArrivalCoherencePoint`) |
 | Excess-delay readout (not used by the engine) | `dsp/ExcessDelay.cs` |
@@ -31,15 +34,19 @@ filter responses of the polarity rule, a FIR kernel's delay); everything measure
 1. **Stage 1, arrival timeline (`BuildArrivalTimeline`).** A band-limited arrival per junction side,
    graded by the honesty probes, refined by a whitened-correlation (GCC-PHAT) seed where that seed is
    trustworthy. The result is a coarse relative delay per channel.
-2. **Stage 2, fine alignment (`AlignChannelAtJunction`).** The latest-arriving channel is the fixed
-   reference (so delays are non-negative by construction). Walking outward along the band order,
-   each channel is searched against its already-settled neighbour only, inside their pair band.
-   Each window is therefore sized by its own junction: a mid channel's low-junction window is not
-   squeezed to the period of its high junction. An error at a low junction moves the whole upper
-   group together, which a per-channel search against all fixed channels could not do.
+2. **Stage 2, fine alignment (`AlignChannelAtJunction`).** The top channel of the chain is the
+   fixed reference and the walk descends from it (see [Walk order](#walk-order)); each channel is
+   searched against its already-settled upper neighbour only, inside their pair band. Each window
+   is therefore sized by its own junction: a mid channel's low-junction window is not squeezed to
+   the period of its high junction. An error at a low junction moves the whole group below it
+   together, which a per-channel search against all fixed channels could not do.
 3. **Polarity presentation (`NormalizePolarityPresentation`).** A global flip changes no relation.
    When a proposal inverts more channels than it keeps, the field is flipped, so an inverted
-   sub/stack relation reads as one inverted sub rather than three inverted stack channels.
+   sub/stack relation reads as one inverted sub rather than three inverted stack channels. Exactly
+   half is a tie, broken so that the bottom channel reads normal: a tuner leaves the sub alone and
+   flips the stack. A stereo run counts driver positions, not channels — the sides always share a
+   driver's polarity, so the reference side stands for both — or a mono sub plus two inverted pairs
+   would read as 3 of 7 and keep the sub inverted.
 
 **Stereo run (`ComputeStereo`).** See [Stereo cascade](#stereo-cascade).
 
@@ -54,6 +61,28 @@ The ceiling is `DefaultMaxDelayMs` = 50 ms when the device's own `DspProcessorPr
 unknown. It is tighter than the 100 ms manual UI range because car processors cap per-channel delay
 in the tens of milliseconds (about 17 m of path). Real cabin spans are well under 10 ms, so this is
 a transferability gate, not an operating region.
+
+## Walk order
+
+`Compute` anchors the walk on the top channel of the chain (`byBand[^1]`) and descends junction by
+junction; there is no upward leg. The anchor used to be the latest-arriving channel, chosen so that
+every delay came out non-negative by construction, and the walk went outward from it in both
+directions. On a typical car (sub last, tweeter first) that made the sub the anchor and the tweeter
+the last link of a chain of three inherited junction errors, while a stereo run then bridged the
+sides on that same tweeter, transporting the chain's error to the far side. The weighting is the
+owner's: the top junction wants 0.01 ms, the sub junction cannot hear 1 ms, and the far side is
+bridged on the top, so the top is where the walk must start.
+
+Non-negativity is served elsewhere and always was: a lower channel that arrives later than the
+settled stack above it needs a negative delay, which `ShiftAllExcept` turns into a uniform shift of
+everything settled so far, and `NormalizeAndVerifyFeasibility` rebases the union at the end. In a
+two-channel proposal that means a late woofer reads as a delayed tweeter, and the inversion of a
+pair is attributed to the searched (lower) member; both are relations, not per-channel facts.
+
+Measured on the archive the day it changed (stereo battery, 29 sides): the top junction's metric is
+unchanged on 21 sides, average −0.004 dB; the dip moved −0.32 dB, all of it on two v6 and two v4
+rows. The gain is structural, not metric: on v6 session 11 the tweeter went from a Low-confidence
+last link to the reference, and the unresolved junction is reported where it is, at B/C.
 
 ## Arrival detector
 
@@ -186,6 +215,12 @@ the correlation window and the fallback diff; a trustworthy PHAT extremum still 
 
 **Conviction without a comparable replacement changes nothing.** If the other side's probe read
 different physics, the corrupted diff keeps centring the window and the reach veto stays armed.
+
+**One read, two readers.** The whole honesty pass — prediction grading, dead-zone arbitration, the
+upper-half probe and both re-anchors — is `ReadJunctionArrivals`, which stage 1 walks and the Virtual
+DSP correlation view draws as its arrival marker. Before it was shared the view drew the raw envelope
+arrival, which on the v6 cabin's 200 Hz split put the midbass 9 ms behind the front the search had
+re-anchored to: a marker for a number the search had discarded.
 Lifting it would trust an extremum measured around the convicted anchor. The prominence exception
 must not undo this either.
 
@@ -764,6 +799,100 @@ the one combination where the comb is deciding on noise.
   wrong sign would offset every reported lag by the candidate delay.
 - **Reporting.** A veto is reported as a decision.
 
+## Direct lobe check
+
+The tie arbitration above only weighs the flip partner, and only inside `DirectCoherenceTieMarginDb`.
+It cannot see the other failure: a search whose **window never contained the answer**. The coarse base
+comes from the arrival timeline, so one overruled arrival displaces it, and the fine window — half a
+crossover period — then holds a set of candidates none of which is right. No arbitration among them
+can repair that, because the right lobe is not among them.
+
+`DirectLobeWitness` therefore asks the same whitened direct-sound correlation about the **final** pick,
+over a full period either way, and reports two different things:
+
+- **A better lobe among the candidates.** `Overturns` needs the rival to reach `MinimumR` (0.6, the tie
+  arbitration's own floor) and to beat the standing pick by `LobeAdvantage` (0.25). That is five times
+  the tie arbitration's advantage: one comb separates neighbouring lobes poorly (see
+  `#coherence-ladder-veto`), so only a gulf may move a pick the summation already made.
+- **A lobe no candidate occupies.** `NamesAnUnreachedLobe` needs only `ProbeAdvantage` (0.10) — a probe
+  proposes nothing by itself, so it may sit at the arbitration's resolution. One extra search runs
+  centred on that lag (`SearchJunction`'s `centerOverrideMs`, which also carries the prior, since the
+  arrival anchor is what sent the search to the wrong place). Its result is adopted only where the
+  **summation also prefers it** by more than `DecisionMediumMarginDb` — comb noise. Not the
+  score-only `WideWindowPromotionMarginDb`: that bar is for a move the score carries alone, and here
+  two independent witnesses agree. Where the summation does not agree, the junction is reported
+  unsettled with the lag the wavefronts wanted.
+
+The v6 cabin's 200 Hz junction is the case it was built for. `B`'s arrival in 100-400 Hz read 19.6 ms,
+the modal-latch conviction re-anchored it to 10.3 ms, and `C`'s window came out 1.3-6.3 ms while the
+hand tune sits at 10.1 ms — 3.7 ms outside it. The correlation reads r 0.97 at 9.98 ms against 0.47 at
+the search's own pick. The check first moves the pick one lobe among the candidates (r 0.47 -> 0.85),
+then probes 7.5-12.5 ms, finds 10.05 ms 0.93 dB better, and lands 0.07 ms from the hand tune.
+
+Field effect (16 archived sessions, 44 junctions): two v6 sessions change, both improve — the 200 Hz
+junction by 1.18 and 1.00 dB average and by 4.05 and 2.11 dB of dip — and nothing else moves by more
+than 0.005 dB. Over the whole battery the proposal goes from 0.021 dB WORSE than the saved hand tunes
+to 0.037 dB better (21 junctions better / 13 worse, against 18 / 16), and dip from -0.080 to +0.108.
+
+It stands down under a lock, a forced polarity or a joint search, and below
+`DirectCoherenceMinCrossoverHz`, where `#low-junction-polarity` takes over.
+
+## Low-junction polarity
+
+Below `DirectCoherenceMinCrossoverHz` the direct-coherence witness stands down, and nothing else
+separates a lobe from its half-period-plus-inversion twin: the two are phase-equivalent at the
+corner, and away from it one driver dominates, so the summed magnitude barely moves. Measured over
+the archive (30 sessions, 9 cabins, 190 junctions), **32 of 62 low junctions carry an
+opposite-polarity lobe within 0.5 dB** of the winner, some within 0.05 dB — the margin
+`AlignmentSelection.DefaultInvertPreferenceMarginDb` is asked to defend.
+
+`LowJunctionPolarity` reads the other evidence the channels carry: the neighbour's tallest crest
+fixes a sign, and the variable channel's tallest crest of each sign says how far that channel would
+have to move to meet it in phase and inverted. The nearer meeting names the polarity. This is crest
+matching, which `#predicted-front-arrival` rejects for **timing** — a filtered channel's crest trails
+its front by the crossover's group delay — and the rejection stands: the vote picks a branch, never a
+delay. Two channels either side of a low crossover carry similar group delay, so the branch survives
+what the delay does not.
+
+- **Frequency.** Only below `DirectCoherenceMinCrossoverHz`, so exactly where the direct-sound
+  correlation stands down and never alongside it. Above the bass the crests stop tracking the fronts
+  anyway: over the archive the vote matches the matched-split filters on 33 of 38 junctions under
+  150 Hz and on 8 of 36 between 150 Hz and 1 kHz.
+- **Broadband, deliberately.** The crests are read off the processed responses as they are, not
+  band-limited to the junction. The objection is fair — a midbass under an 80 Hz split carries its
+  passband up to 300 Hz and its tallest crest need not belong to the corner — but the archive
+  answers it: on the 30 distinct low matched junctions the broadband read matches the filters on 23,
+  the read band-limited to the junction's overlap band on 21; they disagree on 6, and the broadband
+  one is right on 4 of those (both Passat sides, the v2 right side, one negative-control session).
+  Below the corner a filtered channel is one click of its passband, and its crest is that click.
+- **Authority, per candidate.** Only candidates of the voted branch that the prior-free score ties
+  with the pick (within `TieMarginDb`) reach the tie-breaks: those read the prior-laden score and
+  would otherwise hand the vote to a lobe the acoustics never tied.
+- **Decisiveness.** `IsDecisive` requires the losing sign's crest to sit at least a quarter period
+  farther than the winner's. A dispersive channel carries both signs at nearly the same distance
+  (`FirCrossoverAlignmentTests`' tilted driver: 0.02 ms apart at a 120 Hz split), and then the nearer
+  one is noise — a magnitude tilt would otherwise move the verdict.
+- **Authority.** The vote only breaks ties, within `TieMarginDb` on the prior-free score, and only
+  among lobes inside one and a half half-periods of the standing pick, so it cannot walk a period.
+  It stands down under a lock, a forced polarity or a joint search.
+- **Cross-check.** The matched split does not decide down here (see `#expected-polarity`) — it never
+  flips anything — but it does withhold the crests' authority: where it is well posed and says the
+  opposite (5 of the 38 archived low matched junctions), the crests stand down, the summation's pick
+  stands, and the junction is reported unsettled with its confidence dropped to Low. Without the
+  stand-down the Passat cabin's 65 Hz junction moved off the branch its filters and its score agreed
+  on, on crests 6.3 ms apart.
+
+Judged against those filters, the crests and the summation score are equally accurate over the
+archive's low matched junctions — 33 of 38 each — but they are not wrong in the same places: they
+agree on 29, are both wrong on 1, and disagree on 8, which hold 8 of the 9 junctions where either is
+wrong. That is why the vote is a tie-break and a report rather than an authority: a disagreement is a
+coin flip, and saying so beats presenting one as a reading.
+
+Field effect (16 archived sessions, 44 junctions, judged by the panel's summation loss): one session
+changes. The v4 cabin's sub junction leaves the in-phase branch its score preferred for the inverted
+one the crests and its saved tune agree on, its B/C dip improves 0.46 dB, and its total average
+improves 0.02 dB. Everywhere else the gate is inert or only reports.
+
 ## Stereo cascade
 
 `ComputeStereo` aligns two sides that never meet at a crossover:
@@ -783,6 +912,15 @@ the one combination where the comb is deciding on noise.
 
 Every uniform shift spans both sides, or the bridge's offset would silently break.
 
+**The battery can judge this cascade, and until recently it could not.**
+`SessionBatteryHarness` mirrored the panel's single-side Auto delay, so the bridge, the cross-side
+targets, the scene lock, the mono co-move, the far-side polish and the polarity symmetry had no
+archive coverage at all — the numbers in this file that predate that ran through `Compute`, one side
+per session. Setting `RESONALYZE_SESSION_BATTERY_STEREO` runs `ComputeStereo` instead and judges both
+sides, through the panel's own plan builders (`CollectStereoSides`, `PickStereoBridge`,
+`StereoBridgeBand`, `ComputeStereoAlignment`) so the battery cannot drift from what the app does.
+A session with no front-chain pair resolved on both sides says so and falls back to one side.
+
 **Bridge gates.** The bridge is the single link between the sides, so its arrivals are gated, not
 trusted:
 
@@ -801,6 +939,67 @@ and each right channel inherits its left twin's, so asymmetric per-driver invers
 impossible. There is no sum-loss polarity guess for the tops: two separated tops comb-filter, and
 the guess would invert an identical off-axis tweeter alone. `EnforcePolaritySymmetry` restates the
 invariant in one testable place. Reverse-wired drivers are a manual flip.
+
+## Stereo branch check
+
+The reference side settles its junctions alone, and the far side then inherits that polarity driver by
+driver. So a junction the reference side could barely tell apart — the archive's v6 200 Hz split reads
+r 0.75 against 0.81 for its flip partner, 0.04 dB on the panel metric — commits the far side too, and
+the far side is the one that pays: at that junction it lands anti-correlated (r -0.97) and 0.45 dB down.
+The information that would settle the branch lives on the side that is never asked.
+
+`RebalanceJunctionBranches` asks it, after both descents. For each junction that has a twin on the far
+side it probes ONE move: the whole stack ABOVE the junction, on both sides, shifted half a period and
+flipped. That operation changes the junction and nothing else — every junction above it moves rigidly,
+which is why a lone pair co-move cannot express it (the tweeter has to follow the midrange).
+
+- **Finding the candidate** is an analytic scan (`StereoJunctionBranch.Read`, `SumLossEvaluator`
+  rotations either way around the half period). The feasible set is searched first: the delta that
+  serves the far side most is not always one the reference side can live with. The refinement step
+  is 0.1 ms or an eighth of the half period, whichever is smaller: where the eighth is the step the
+  flip partner itself is probed, and under the cap the grid is far finer than the lobe. A flat
+  0.1 ms probed 0.15 and 0.25 ms at a 2500 Hz junction and never 0.20, and a single point at 5 kHz.
+  The optimum is then re-read at the better of the two DSP ticks around it (`Quantize`, the scan's
+  own preference: reference-feasible first, then the far gain) before anything else reads it, so the
+  re-render judges, the log names and the alignment carries a delay the processor can play.
+- **Adopting it is decided on a RE-RENDER.** The scan rotates inside a window anchored to the current
+  fronts, and half a period is where that approximation is weakest, so the candidate is applied to a
+  trial alignment, `reprocess`ed, and measured. Worth the reprocess: on the v6 junction the scan and
+  the re-render disagreed by 2.8 dB on one half-band.
+- **The far side must gain** more than `FarGainDb` (0.30) and **the reference side must not pay**
+  more than `ReferenceLossDb` (0.10). This pass is for branches the reference could not tell apart,
+  not for trading one side against the other — `RebalancePairsKeepingScene` states the same rule for
+  its own polish ("a two-side mean buys the far junction with the near one").
+- **No half-band may lose more than the far side gains** — both halves of both junctions. Scale-free
+  on purpose, so there is no threshold to overfit: the far gain is the whole justification for
+  disturbing a settled junction, and damage beyond it is not paid for.
+- **The field stays realizable.** The move is optional, so one whose rebased span would pass the
+  device ceiling is declined rather than left for the final feasibility check to refuse the whole run.
+- **Both reads are the PHYSICAL sum** (`levelMatch: false`), the sum the panel judges. A level match
+  lifts a member that is tens of dB down in a half-band it barely reaches and turns its phase into a
+  cancellation that never plays: on the v6 200 Hz split the level-matched 200-400 Hz half read the
+  owner's tune at a −8.9 dB dip against −2.1 in the physical sum, and vetoed a 0.3 dB difference as
+  3.2 dB.
+
+The trial and the adopted move go through the same `ApplyBranchMove`: a delay without the flip is the
+worst of both branches, which `RebalanceJunctionBranches_AdoptedMove_DelaysAndFlipsTheStackAbove`
+pins with a reference junction tied between its lobes and a far tweeter wired inverted on the alias.
+
+Field effect (10 stereo sessions, 20 sides, 58 junctions, walk anchored on the top channel): five
+moves are adopted. The v6 200 Hz split goes +2.58 ms flipped and lands on the owner's lobe (left
+within 0.13 ms of the hand tune); v2 takes two, v4 one at its 750 Hz split (a wash by the metric,
+better dip on both sides), and the synthetic array one at its mono sub junction (a wash). The battery
+moves from +0.091 to +0.120 dB on the junction average (31 better / 19 worse, from 24 / 23) and from
+−0.092 to −0.050 on the dip. The totals' dip reads worse (−0.585 to −0.803), all of it a −17 to −25 dB
+notch on the v6 right mid/tweeter split that no setting removes and where 0.01 ms swings 3 dB.
+
+One delta serves both sides, so a junction the owner tuned asymmetrically (v6: 8.27 ms on the left,
+7.63 on the right) leaves a residual on the far side for `PolishFarSideJunctions` to take, within its
+period-scaled reach.
+
+That reporting is the pass's other half. A junction whose two sides want different branches is named in
+the log whenever the far side would gain more than `NoteworthyFarGainDb` (0.15), even where the move is
+refused, because the disagreement is a tuning fact the tuner cannot otherwise see.
 
 ## Cross-side target
 
@@ -962,11 +1161,30 @@ preferred the flip partner a third of a period away.
     where the clean lower half reads −6.6 dB).
 - **Relative move.** Results below zero rebase the rest of the field.
 
-**Far-side polish** (`PolishFarSideJunctions`). Each far channel may leave its scene position by
-`FarSideJunctionPolishMs` (0.03 ms) to recover its own far-side junctions.
+**Far-side polish** (`PolishFarSideJunctions`). Each far channel may leave its scene position to
+recover its own far-side junctions, by an eighth of the period of its highest junction
+(`FarSidePolishReachPeriods`); the bridge never moves.
 
-- **Budget.** 0.03 ms is a twentieth of a period and 17° of phase at 1.6 kHz, an order of magnitude
-  under interaural blur, so it cannot hop a lobe or smear the image.
+- **Reach.** The leash tightens up the chain, which is the owner's weighting: 45° at the channel's
+  highest junction cannot hop a lobe (a lobe is half a period wide), the midrange keeps its
+  0.04-0.08 ms at a 1.5-3 kHz split, and a midbass under a 200 Hz split gets 0.6 ms, where the image
+  does not localize. It used to be a flat 0.03 ms sized for the top junction, which left the v6 200 Hz
+  split 0.6 ms short on the far side: the owner tuned that junction 8.27 ms on the left and 7.63 on
+  the right, and the stereo branch move is one delta for both sides.
+- **The bridge has no reach.** It IS the scene: the far top stands at the user's delta to its twin, and
+  the chain below it is what gets polished.
+- **No half-band may lose more than the trim gains**, per (junction, half-band) cell, the rule the
+  stereo branch check and the mono co-move already apply. A period-long leash can sell a junction's
+  upper half for its lower one: on the Passat's right 250 Hz split a −0.50 ms trim read +0.38 dB over
+  the midbass's two junctions while 250-500 Hz went from −0.78 to −1.96 dB, and the panel — which
+  windows the upper half tighter, as the ear does — read the junction 0.7 dB worse. The reads are the
+  physical sum (`levelMatch: false`), as in the branch check.
+- **Field effect** of the period-scaled reach with that veto (10 stereo sessions, 58 junctions):
+  junction average +0.120 → +0.124 dB, dip −0.050 → −0.005; totals +0.075 → +0.079, dip −0.803 →
+  −0.763. Without the veto the same reach lost 0.69 dB on the Passat junction above and 0.21 on the v3
+  650 Hz split. On the v6 200 Hz split the far midbass closes +0.21 ms of its 0.6 ms residual: the
+  next 0.28 would cost the sub junction's 70-140 Hz half 0.27 dB for a 0.16 dB gain, and the mono sub,
+  co-moved before this pass, cannot follow.
 - **Gain threshold.** Below the co-move's 0.05 dB, because such a trim only buys fractions of a dB:
   on the v6 cabin the honest gains ran 0.01-0.03 dB, and even 0.02 dB refused them all.
 - **Order.** One pass in band order from the bridge down. Mono channels never move here.

@@ -371,10 +371,11 @@ public sealed class VirtualCrossoverStagedAlignmentTests
             var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
             var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
             var log = new System.Text.StringBuilder();
-            panel.ComputeStereoAlignment(
+            VirtualCrossoverPanel.ComputeStereoAlignment(
                 chainLeft, chainRight, union, twL, twR,
                 bridgeBandLowHz: 2_000, bridgeBandHighHz: 20_000,
                 sceneOffsetMs: 0.0, rightHandDrive,
+                panel.ProcessorSampleRateHz, panel.ProcessorMaxDelayMs,
                 alignment, decisions, log);
 
             Assert.DoesNotContain(centreSide, alignment.Keys);

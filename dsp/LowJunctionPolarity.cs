@@ -89,19 +89,17 @@ internal static class LowJunctionPolarity
             return chosen;
         }
 
+        // The crests only break ties: a branch the summation separates is the summation's to call, and so is any
+        // candidate of the voted branch the summation separates from the pick — the tie-breaks below read the
+        // prior-laden score and would otherwise hand the vote to a lobe the acoustics never tied.
+        double chosenScoreDb = acousticScore(chosen);
         // Best first: the tie-breaks read the head of the list as the score's own pick.
         List<AlignmentCandidate> voted = candidates
-            .Where(item => item.InvertPolarity == votedPolarity)
+            .Where(item => item.InvertPolarity == votedPolarity &&
+                acousticScore(item) >= chosenScoreDb - TieMarginDb)
             .OrderByDescending(item => item.ScoreDb)
             .ToList();
-        if (voted.Count == 0)
-        {
-            return chosen;
-        }
-
-        // The crests only break ties: a branch the summation separates is the summation's to call.
-        double gapDb = acousticScore(chosen) - voted.Max(acousticScore);
-        return gapDb > TieMarginDb
+        return voted.Count == 0
             ? chosen
             : AlignmentSelection.Select(
                 voted, anchorMs, neighborInverted: neighborInverted,

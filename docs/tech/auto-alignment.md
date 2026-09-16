@@ -852,6 +852,16 @@ what the delay does not.
   correlation stands down and never alongside it. Above the bass the crests stop tracking the fronts
   anyway: over the archive the vote matches the matched-split filters on 33 of 38 junctions under
   150 Hz and on 8 of 36 between 150 Hz and 1 kHz.
+- **Broadband, deliberately.** The crests are read off the processed responses as they are, not
+  band-limited to the junction. The objection is fair — a midbass under an 80 Hz split carries its
+  passband up to 300 Hz and its tallest crest need not belong to the corner — but the archive
+  answers it: on the 30 distinct low matched junctions the broadband read matches the filters on 23,
+  the read band-limited to the junction's overlap band on 21; they disagree on 6, and the broadband
+  one is right on 4 of those (both Passat sides, the v2 right side, one negative-control session).
+  Below the corner a filtered channel is one click of its passband, and its crest is that click.
+- **Authority, per candidate.** Only candidates of the voted branch that the prior-free score ties
+  with the pick (within `TieMarginDb`) reach the tie-breaks: those read the prior-laden score and
+  would otherwise hand the vote to a lobe the acoustics never tied.
 - **Decisiveness.** `IsDecisive` requires the losing sign's crest to sit at least a quarter period
   farther than the winner's. A dispersive channel carries both signs at nearly the same distance
   (`FirCrossoverAlignmentTests`' tilted driver: 0.02 ms apart at a 120 Hz split), and then the nearer
@@ -940,9 +950,9 @@ which is why a lone pair co-move cannot express it (the tweeter has to follow th
 - **Finding the candidate** is an analytic scan (`StereoJunctionBranch.Read`, `SumLossEvaluator`
   rotations either way around the half period). The feasible set is searched first: the delta that
   serves the far side most is not always one the reference side can live with. The refinement step
-  is a fixed 0.1 ms: at a 2500 Hz junction that probes 0.15 and 0.25 ms and never the half period
-  itself. The pass was built for the low junctions; the step should follow the period before it is
-  trusted up there.
+  is 0.1 ms or an eighth of the half period, whichever is smaller, so the flip partner itself is
+  always probed: a flat 0.1 ms probed 0.15 and 0.25 ms at a 2500 Hz junction and never 0.20, and
+  a single point at 5 kHz.
 - **Adopting it is decided on a RE-RENDER.** The scan rotates inside a window anchored to the current
   fronts, and half a period is where that approximation is weakest, so the candidate is applied to a
   trial alignment, `reprocess`ed, and measured. Worth the reprocess: on the v6 junction the scan and

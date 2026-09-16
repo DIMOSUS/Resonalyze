@@ -160,4 +160,20 @@ public sealed class LowJunctionPolarityTests
 
         Assert.Equal(near, decided);
     }
+
+    [Fact]
+    public void Decide_OnlyHandsTheVoteToALobeTheSummationTied()
+    {
+        // Two lobes of the voted branch: one the acoustics tie with the pick, one they separate by 1.3 dB but whose
+        // prior-laden score ranks first. The tie-breaks read that score, so the separated lobe must never reach them.
+        var chosen = new AlignmentCandidate(0.2, false, -0.2, LossDb: -0.2);
+        var tied = new AlignmentCandidate(-6.1, true, -0.6, LossDb: -0.4);
+        var separated = new AlignmentCandidate(-5.9, true, -0.3, LossDb: -1.5);
+
+        AlignmentCandidate decided = LowJunctionPolarity.Decide(
+            [chosen, separated, tied], chosen, Score,
+            expectedRelativeInversion: true, anchorMs: -6.0, neighborInverted: false);
+
+        Assert.Equal(tied, decided);
+    }
 }

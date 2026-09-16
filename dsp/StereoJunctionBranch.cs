@@ -46,12 +46,14 @@ internal static class StereoJunctionBranch
         // side most: the feasible set is searched first, and only an empty one falls back to the far side's own best.
         StereoBranchReading? feasible = null;
         StereoBranchReading? best = null;
-        // The flip partner sits half a period either way; the refinement covers a coarse arrival's slack.
+        // The flip partner sits half a period either way; the refinement covers a coarse arrival's slack. The step
+        // never exceeds an eighth of the half period, so the partner itself is always probed, whatever the junction.
+        double stepMs = Math.Min(refineStepMs, halfPeriodMs / 8);
         foreach (double center in new[] { -halfPeriodMs, halfPeriodMs })
         {
             for (double delta = center - halfPeriodMs / 4;
                 delta <= center + halfPeriodMs / 4 + 1e-9;
-                delta += refineStepMs)
+                delta += stepMs)
             {
                 double reference = score(false, delta, true);
                 double far = score(true, delta, true);

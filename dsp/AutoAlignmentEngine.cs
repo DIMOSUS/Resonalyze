@@ -3836,11 +3836,12 @@ public static class AutoAlignmentEngine
             double refusedDelta = 0;
             double refusedScore = baseline;
             string? refusedWhy = null;
-            // DSP's 0.01 ms grid: gains between its points are unrealizable.
-            for (double delta = -reachMs;
-                delta <= reachMs + 1e-9;
-                delta += 0.01)
+            // DSP's 0.01 ms grid, walked in whole ticks so the trim scored is the trim written: gains between its
+            // points are unrealizable.
+            int reachTicks = (int)Math.Floor(reachMs / 0.01 + 1e-9);
+            for (int tick = -reachTicks; tick <= reachTicks; tick++)
             {
+                double delta = tick * 0.01;
                 double trialMs = current.DelayMs + delta;
                 if (trialMs < 0 ||
                     Math.Max(othersMaxMs, trialMs) -

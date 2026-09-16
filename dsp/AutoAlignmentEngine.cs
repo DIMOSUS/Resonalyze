@@ -3472,8 +3472,10 @@ public static class AutoAlignmentEngine
     // A mono lobe/polarity hop must beat in-lobe polish by this. See docs/tech/auto-alignment.md#post-descent-passes.
     private const double MonoComoveLobeHopMarginDb = 0.1;
 
-    // Sub-band deficit that vetoes a mono hop: the true alignment holds in both halves of the band. See docs/tech/auto-alignment.md#post-descent-passes.
-    private const double MonoComoveSubBandVetoMarginDb = 0.1;
+    // A lobe hop (the stereo branch, a mono hop) must hold every observable half-band within this: the true lobe
+    // holds in both halves, an impostor wins one and loses the other. A trim inside the lobe may instead cost a
+    // half what it gains overall. See docs/tech/auto-alignment.md#one-sum-one-veto.
+    private const double LobeHopHalfBandMarginDb = 0.1;
 
     // The dip-penalized junction loss every post-descent pass scores: a plain mean buys a hundredth of a dB with a deep notch.
     private static double PenalizedLoss(
@@ -3544,7 +3546,8 @@ public static class AutoAlignmentEngine
         return cells;
     }
 
-    // The first cell a move costs more than it may, named for the log; null when every half holds.
+    // The first cell a move costs more than it may, named for the log; null when every half holds. The allowance
+    // is the move's own gain for a trim and LobeHopHalfBandMarginDb for a hop. See docs/tech/auto-alignment.md#one-sum-one-veto.
     private static string? HalfBandRefusal(
         IEnumerable<HalfBandCell> cells,
         Func<HalfBandCell, double> lossDb,
@@ -3766,30 +3769,59 @@ public static class AutoAlignmentEngine
             // Keeping the pair is always legal, even if neighbor lobes would exclude zero.
             minDelta = Math.Min(minDelta, 0.0);
             maxDelta = Math.Max(maxDelta, 0.0);
+            List<HalfBandCell> cells = HalfBandCells(referenceAdjacent, link.Left, current);
             double baseline = Score(0);
             double bestDelta = 0;
             double bestScore = baseline;
+            double refusedDelta = 0;
+            double refusedScore = baseline;
+            string? refusedWhy = null;
+            void Consider(double delta)
+            {
+                double score = Score(delta);
+                if (score <= bestScore)
+                {
+                    return;
+                }
+
+                string? why = HalfBandRefusal(
+                    cells,
+                    cell => PenalizedLoss(cell.Sum, 0) - PenalizedLoss(cell.Sum, delta),
+                    score - baseline);
+                if (why != null)
+                {
+                    if (score > refusedScore)
+                    {
+                        refusedScore = score;
+                        refusedDelta = delta;
+                        refusedWhy = why;
+                    }
+
+                    return;
+                }
+
+                bestScore = score;
+                bestDelta = delta;
+            }
+
             double coarseStep = Math.Min(
                 0.1, Math.Max(0.02, (maxDelta - minDelta) / 8.0));
             for (double delta = minDelta; delta <= maxDelta + 1e-9; delta += coarseStep)
             {
-                double score = Score(delta);
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    bestDelta = delta;
-                }
+                Consider(delta);
             }
             for (double delta = Math.Max(minDelta, bestDelta - coarseStep);
                 delta <= Math.Min(maxDelta, bestDelta + coarseStep) + 1e-9;
                 delta += 0.02)
             {
-                double score = Score(delta);
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    bestDelta = delta;
-                }
+                Consider(delta);
+            }
+
+            if (refusedWhy != null && refusedScore > bestScore)
+            {
+                log.AppendLine(
+                    $"Co-move {link.Left.Name}+{link.Right.Name}: {refusedDelta:+0.00;-0.00} ms refused — " +
+                    $"it would gain {refusedScore - baseline:0.00} dB over the reference-side junctions but loses {refusedWhy}");
             }
 
             if (bestDelta != 0 && bestScore > baseline + PairComoveMinimumGainDb)
@@ -4145,14 +4177,13 @@ public static class AutoAlignmentEngine
                 GainOf(reference, reference.BandLowHz, reference.BandHighHz),
                 GainOf(far, far.BandLowHz, far.BandHighHz));
 
-            // A true lobe does not buy the mean by wrecking a half-band: the damage anywhere may not exceed what the
-            // far junction gains, which is the whole justification for disturbing a settled one.
+            // A branch is a lobe hop: the true lobe holds both halves of both junctions.
             string? refusal = HalfBandRefusal(
                 HalfBandCells([reference], reference.Upper.Channel, current)
                     .Concat(HalfBandCells([far], far.Upper.Channel, current)),
                 cell => PenalizedLoss(cell.Sum, 0) -
                     (Rendered(cell.Junction, cell.LowHz, cell.HighHz) ?? PenalizedLoss(cell.Sum, 0)),
-                Math.Max(StereoJunctionBranch.ReferenceLossDb, verified.FarGainDb));
+                LobeHopHalfBandMarginDb);
             if (refusal != null)
             {
                 refusal = "it loses " + refusal;
@@ -4377,14 +4408,14 @@ public static class AutoAlignmentEngine
             }
             else if (hop)
             {
-                // Sub-band veto per (junction, half-band) cell where the delay is observable, against the better of in-lobe polish and the incumbent.
-                // See docs/tech/auto-alignment.md#post-descent-passes.
+                // Per (junction, half-band) cell against the better of in-lobe polish and the incumbent: a hop holds
+                // every observable half. See docs/tech/auto-alignment.md#post-descent-passes.
                 string? veto = HalfBandRefusal(
                     HalfBandCells(junctions, mono, certified),
                     cell => Math.Max(
                         PenalizedLoss(cell.Sum, bestPolishDelta),
                         PenalizedLoss(cell.Sum, 0)) - PenalizedLoss(cell.Sum, bestDelta, bestFlip),
-                    MonoComoveSubBandVetoMarginDb);
+                    LobeHopHalfBandMarginDb);
                 if (veto != null)
                 {
                     log.AppendLine(

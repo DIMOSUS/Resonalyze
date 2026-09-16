@@ -3230,6 +3230,12 @@ public static class AutoAlignmentEngine
             plan, rightByBand, allChannels, reprocess, alignment, log,
             maxDelayMs, decisions);
 
+        // The polish moved the far side under the mono channels' right junctions: they compromise once more. Polishing
+        // first instead cost three archived sessions their mono lobe choice. See docs/tech/auto-alignment.md#post-descent-passes.
+        log.AppendLine("Mono co-move again, after the far-side polish:");
+        ComoveMonoChannels(
+            plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions);
+
         NormalizeAndVerifyFeasibility(allChannels, alignment, log, maxDelayMs);
 
         // Invariant: no driver inverted on one side of a pair alone.

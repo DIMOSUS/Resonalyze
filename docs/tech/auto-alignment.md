@@ -893,6 +893,14 @@ changes. The v4 cabin's sub junction leaves the in-phase branch its score prefer
 one the crests and its saved tune agree on, its B/C dip improves 0.46 dB, and its total average
 improves 0.02 dB. Everywhere else the gate is inert or only reports.
 
+Re-measured with the walk anchored on the top channel and every post-descent pass on the physical
+sum (10 stereo sessions, 58 junctions; 16 mono runs, 88): switching the vote off changes one session
+again, now v3, whose sub would drop to the half-period-plus-inversion twin at −3.78 ms inv instead
+of 1.56 ms in phase; its two sub junctions read 0.02-0.04 dB worse on the average and 0.03-0.13 on
+the dip, the battery +0.113 → +0.111 (dip +0.023 → +0.018). Four junctions carry the unsettled
+report. Removing the vote was on the simplification list and is declined on that measurement: a
+sub inverted against its woofer on a tie is the outcome the owner asked the engine to avoid.
+
 ## Stereo cascade
 
 `ComputeStereo` aligns two sides that never meet at a crossover:
@@ -1219,11 +1227,22 @@ recover its own far-side junctions, by an eighth of the period of its highest ju
   junction average +0.120 → +0.124 dB, dip −0.050 → −0.005; totals +0.075 → +0.079, dip −0.803 →
   −0.763. Without the veto the same reach lost 0.69 dB on the Passat junction above and 0.21 on the v3
   650 Hz split. On the v6 200 Hz split the far midbass closes +0.21 ms of its 0.6 ms residual: the
-  next 0.28 would cost the sub junction's 70-140 Hz half 0.27 dB for a 0.16 dB gain, and the mono sub,
-  co-moved before this pass, cannot follow.
+  next 0.28 would cost the sub junction's 70-140 Hz half 0.27 dB for a 0.16 dB gain.
+
+**Mono co-move again.** The polish moved the far side under the mono channels' right junctions, so
+the mono co-move runs a second time after it. On the v6 cabin the sub follows the polished far
+midbass by +0.34 ms and all four bass junctions improve (the sub junctions' dips by 0.12-0.15 dB);
+10 stereo sessions go +0.113 → +0.115 dB on the junction average and +0.023 → +0.034 on the dip,
+the 16 mono runs +0.082 → +0.083 and +0.055 → +0.058, nothing worse. Polishing before the only mono
+pass instead — the same on the stereo set — cost three v6 mono runs their lobe choice (v6-8's right
+sub junction −0.05 dB and −0.21 on the dip), because the first pass is where the mono's right
+junction votes on the lobe and the polish must not see a sub still parked by the left side alone.
+The 200 Hz residual on that cabin remains 0.44 ms: the polish refuses the last +0.28 for the sub
+junction's half before the sub can follow, which a joint far-side-plus-mono pass would resolve.
 - **Gain threshold.** Below the co-move's 0.05 dB, because such a trim only buys fractions of a dB:
   on the v6 cabin the honest gains ran 0.01-0.03 dB, and even 0.02 dB refused them all.
-- **Order.** One pass in band order from the bridge down. Mono channels never move here.
+- **Order.** One pass in band order from the bridge down. Mono channels never move here; they follow
+  in the second mono co-move below.
 - **Grid.** The DSP's 0.01 ms grid, since gains between its points are unrealizable.
 - **Feasibility.** The pass never makes delays negative, never shifts the field uniformly, and never
   widens the span past the DSP range, checked against both ends of the rest of the field. Being the

@@ -6968,6 +6968,8 @@ public partial class VirtualCrossoverPanel : UserControl
     // The channel as the search sees it: the cropped processed response, the chain that produced it, and the chain-free
     // response at the same crop for the predicted-front probe — all from the render's own snapshot (the render truncates
     // the head from sample 0, so the origins agree), never from the live channel, which may have moved on since.
+    // The chain-free response carries the applied delay: the search reads an undelayed render, this view a delayed one,
+    // and a prediction left at zero delay would be convicted by the delay itself and pin the marker to it.
     private static AlignmentSnapshot SearchSnapshot(
         ProcessedChannel item,
         Complex[] processed,
@@ -6988,7 +6990,7 @@ public partial class VirtualCrossoverPanel : UserControl
             {
                 Array.Copy(transfer, cropStart, source, 0, count);
                 bypassed = VirtualCrossoverAnalysis.ApplyChain(
-                    source, DspChannelChain.Identity, sampleRate,
+                    source, DspChannelChain.Identity with { DelayMs = item.Chain.DelayMs }, sampleRate,
                     item.ProcessorSampleRate, out bypassedRange);
             }
         }

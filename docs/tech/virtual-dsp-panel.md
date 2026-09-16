@@ -636,6 +636,12 @@ term, since a bulk delay wraps the phase into a sawtooth and swamps the filter g
   probes convict a modal latch (`#arrival-honesty-probe`, `#predicted-front-arrival` in auto-alignment.md).
   `SearchSnapshot` gives the engine what it needs — the cropped processed response, the chain that produced it
   and the chain-free response at the same crop, which the render's head truncation from sample 0 makes exact.
+  That chain-free response carries the applied delay. The search reads an undelayed render (its overrides
+  start at zero, so measured and predicted fronts share a frame); this view reads the delayed one, and a
+  prediction left at zero delay was convicted by the delay itself: with 11 ms on a mid, the honesty probe saw
+  twenty allowances, called it a modal latch and pinned the marker to the undelayed prediction, so the marker
+  kept a fixed offset from *current* whatever the delay was set to. Lag 0 is the applied alignment; the
+  marker sits at the remaining front offset and moves against the delay knob, reaching 0 where the fronts meet.
   All three come from the render's own snapshot (`ProcessedChannel.Chain`, `SourceImpulseResponse`,
   `ProcessorSampleRate`, frozen with the response), and so do the rates the engine reads off its channel
   (`FrozenAlignmentChannel` stands in for the block), never from the live channel: the view is built on a

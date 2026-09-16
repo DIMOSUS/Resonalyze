@@ -167,6 +167,36 @@ public sealed class VirtualCrossoverCorrelationViewTests
     }
 
     [Fact]
+    public void BuildCorrelationView_ArrivalMarkerFollowsTheAppliedDelay()
+    {
+        // Two clean fronts; the mid is rendered through a delay block. Lag 0 is the applied alignment, so the marker
+        // must sit at minus that delay and move with it. The predicted front is read from the chain-free response, and
+        // that response must carry the delay too: left at zero, the honesty probe convicts the delay itself as a modal
+        // latch and pins the marker to the undelayed prediction, where it no longer answers the setting at all.
+        var woof = new VirtualCrossoverChannel("B") { SampleRate = SampleRate };
+        var mid = new VirtualCrossoverChannel("C") { SampleRate = SampleRate };
+        Complex[] source = Impulse(FrontSample);
+        Complex[] lowerIr = VirtualCrossoverAnalysis.ApplyChain(
+            source, DspChannelChain.Identity, SampleRate, SampleRate);
+        ProcessedChannel lower = FrozenChannel(woof, lowerIr, source, DspChannelChain.Identity);
+
+        JunctionCorrelationView ViewWith(double delayMs)
+        {
+            var chain = new DspChannelChain(DelayMs: delayMs);
+            Complex[] upperIr = VirtualCrossoverAnalysis.ApplyChain(source, chain, SampleRate, SampleRate);
+            ProcessedChannel upper = FrozenChannel(mid, upperIr, source, chain);
+            return VirtualCrossoverPanel.BuildCorrelationView(
+                new AdjacentPair(lower, upper, 1_000, 500, 2_000), [lower, upper]);
+        }
+
+        JunctionCorrelationView at5 = ViewWith(5.0);
+        JunctionCorrelationView at11 = ViewWith(11.0);
+        Assert.False(at11.ArrivalReAnchored, "a delay is not a modal latch");
+        Assert.InRange(at5.ArrivalLagMs, -5.1, -4.9);
+        Assert.InRange(at11.ArrivalLagMs, -11.1, -10.9);
+    }
+
+    [Fact]
     public void BuildCorrelationView_ReadsTheRenderSnapshotNotTheLiveChannel()
     {
         // The processed response, its chain and its source are frozen with the render; a channel that has moved on

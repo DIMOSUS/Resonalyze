@@ -3472,10 +3472,10 @@ public static class AutoAlignmentEngine
     // A mono lobe/polarity hop must beat in-lobe polish by this. See docs/tech/auto-alignment.md#post-descent-passes.
     private const double MonoComoveLobeHopMarginDb = 0.1;
 
-    // A lobe hop (the stereo branch, a mono hop) must hold every observable half-band within this: the true lobe
-    // holds in both halves, an impostor wins one and loses the other. A trim inside the lobe may instead cost a
-    // half what it gains overall. See docs/tech/auto-alignment.md#one-sum-one-veto.
-    private const double LobeHopHalfBandMarginDb = 0.1;
+    // A mono hop must hold every observable half-band within this: at a sub junction an impostor lobe flattered by a
+    // mode wins the full band and loses the clean half. Every other move may cost a half what it gains (the stereo
+    // branch: what the far side gains). See docs/tech/auto-alignment.md#one-sum-one-veto.
+    private const double MonoHopHalfBandMarginDb = 0.1;
 
     // The dip-penalized junction loss every post-descent pass scores: a plain mean buys a hundredth of a dB with a deep notch.
     private static double PenalizedLoss(
@@ -3546,8 +3546,8 @@ public static class AutoAlignmentEngine
         return cells;
     }
 
-    // The first cell a move costs more than it may, named for the log; null when every half holds. The allowance
-    // is the move's own gain for a trim and LobeHopHalfBandMarginDb for a hop. See docs/tech/auto-alignment.md#one-sum-one-veto.
+    // The first cell a move costs more than it may, named for the log; null when every half holds. The allowance is
+    // the move's own gain, or MonoHopHalfBandMarginDb for a mono hop. See docs/tech/auto-alignment.md#one-sum-one-veto.
     private static string? HalfBandRefusal(
         IEnumerable<HalfBandCell> cells,
         Func<HalfBandCell, double> lossDb,
@@ -4177,13 +4177,14 @@ public static class AutoAlignmentEngine
                 GainOf(reference, reference.BandLowHz, reference.BandHighHz),
                 GainOf(far, far.BandLowHz, far.BandHighHz));
 
-            // A branch is a lobe hop: the true lobe holds both halves of both junctions.
+            // The far gain is the whole justification for disturbing a settled junction, so it is what a half may cost. A
+            // flat margin refused the v6 200 Hz split's right lobe, which costs the left 200-400 Hz half 0.26 dB for 0.53.
             string? refusal = HalfBandRefusal(
                 HalfBandCells([reference], reference.Upper.Channel, current)
                     .Concat(HalfBandCells([far], far.Upper.Channel, current)),
                 cell => PenalizedLoss(cell.Sum, 0) -
                     (Rendered(cell.Junction, cell.LowHz, cell.HighHz) ?? PenalizedLoss(cell.Sum, 0)),
-                LobeHopHalfBandMarginDb);
+                verified.FarGainDb);
             if (refusal != null)
             {
                 refusal = "it loses " + refusal;
@@ -4415,7 +4416,7 @@ public static class AutoAlignmentEngine
                     cell => Math.Max(
                         PenalizedLoss(cell.Sum, bestPolishDelta),
                         PenalizedLoss(cell.Sum, 0)) - PenalizedLoss(cell.Sum, bestDelta, bestFlip),
-                    LobeHopHalfBandMarginDb);
+                    MonoHopHalfBandMarginDb);
                 if (veto != null)
                 {
                     log.AppendLine(

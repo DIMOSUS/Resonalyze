@@ -2977,7 +2977,9 @@ public partial class VirtualCrossoverPanel : UserControl
             (VirtualCrossoverChannel Channel,
                 OxyColor Color,
                 MeasuredBand Band,
-                CalibrationFile? OwnCalibration)>();
+                CalibrationFile? OwnCalibration,
+                VirtualCrossoverSourceSnapshot Source,
+                DspChannelChain Chain)>();
         using (AppProfiler.Zone("VirtualDSP.SnapshotChannels"))
         {
             for (int i = 0; i < channels.Count; i++)
@@ -3007,7 +3009,9 @@ public partial class VirtualCrossoverPanel : UserControl
                     (channel,
                         ChannelColors[i],
                         state.MeasuredBand,
-                        state.MicrophoneCalibrationCurve));
+                        state.MicrophoneCalibrationCurve,
+                        source,
+                        chain));
             }
         }
 
@@ -3025,7 +3029,9 @@ public partial class VirtualCrossoverPanel : UserControl
             (VirtualCrossoverChannel channel,
                 OxyColor color,
                 MeasuredBand band,
-                CalibrationFile? ownCalibration) = bindings[result.Id];
+                CalibrationFile? ownCalibration,
+                VirtualCrossoverSourceSnapshot source,
+                DspChannelChain chain) = bindings[result.Id];
             processed.Add(new ProcessedChannel(
                 channel,
                 result.ImpulseResponse,
@@ -3034,7 +3040,10 @@ public partial class VirtualCrossoverPanel : UserControl
                 color,
                 result.ValidRange,
                 band,
-                ownCalibration));
+                ownCalibration,
+                chain,
+                source.CroppedImpulseResponse,
+                ProcessorSampleRateHz));
         }
         return new ProcessedRender(render.Revision, processed);
     }
@@ -6956,8 +6965,9 @@ public partial class VirtualCrossoverPanel : UserControl
             arrivalReAnchored);
     }
 
-    // The channel as the search sees it: the cropped processed response, its chain, and the chain-free response at the
-    // same crop for the predicted-front probe (the render truncates the head from sample 0, so the origins agree).
+    // The channel as the search sees it: the cropped processed response, the chain that produced it, and the chain-free
+    // response at the same crop for the predicted-front probe — all from the render's own snapshot (the render truncates
+    // the head from sample 0, so the origins agree), never from the live channel, which may have moved on since.
     private static AlignmentSnapshot SearchSnapshot(
         ProcessedChannel item,
         Complex[] processed,
@@ -6965,10 +6975,12 @@ public partial class VirtualCrossoverPanel : UserControl
         int cropStart,
         int sampleRate)
     {
-        VirtualCrossoverChannel channel = item.Channel;
         Complex[]? bypassed = null;
         ValidSampleRange bypassedRange = default;
-        if (channel.TransferImpulseResponse is { } transfer && cropStart >= 0)
+        if (item.Chain != null &&
+            item.SourceImpulseResponse is { } transfer &&
+            item.ProcessorSampleRate > 0 &&
+            cropStart >= 0)
         {
             var source = new Complex[processed.Length];
             int count = Math.Clamp(transfer.Length - cropStart, 0, processed.Length);
@@ -6977,19 +6989,30 @@ public partial class VirtualCrossoverPanel : UserControl
                 Array.Copy(transfer, cropStart, source, 0, count);
                 bypassed = VirtualCrossoverAnalysis.ApplyChain(
                     source, DspChannelChain.Identity, sampleRate,
-                    channel.ProcessorSampleRate, out bypassedRange);
+                    item.ProcessorSampleRate, out bypassedRange);
             }
         }
 
+        // Without the frozen chain there is no predicted front; the upper-half probe still grades the read. The engine
+        // reads the rates off the channel, so the channel it gets is frozen too, not the live block.
         return new AlignmentSnapshot(
-            channel,
+            new FrozenAlignmentChannel(
+                item.Channel.Name,
+                item.SampleRate,
+                item.ProcessorSampleRate > 0 ? item.ProcessorSampleRate : item.SampleRate),
             processed,
             VirtualCrossoverAnalysis.FindPeakIndex(processed),
             range,
-            channel.Pair.ToChain(channel.ActiveRight),
+            bypassed == null ? null : item.Chain,
             bypassed,
             bypassedRange);
     }
+
+    /// <summary>The rates a render was made at, as the engine's channel: the live block may have been rebound since.</summary>
+    private sealed record FrozenAlignmentChannel(
+        string Name,
+        int SampleRate,
+        int ProcessorSampleRate) : IAlignmentChannel;
 
     private static List<SignalPoint> Penalized(
         List<VirtualCrossoverAnalysis.JunctionSweepPoint> sweep) =>

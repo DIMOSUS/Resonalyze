@@ -634,10 +634,16 @@ term, since a bulk delay wraps the phase into a sawtooth and swamps the filter g
 - The arrival marker is `AutoAlignmentEngine.ReadJunctionArrivals`, the read stage 1 anchors on: the
   band-limited envelope fronts, replaced by the predicted fronts or the upper-half reads where the honesty
   probes convict a modal latch (`#arrival-honesty-probe`, `#predicted-front-arrival` in auto-alignment.md).
-  `SearchSnapshot` gives the engine what it needs — the cropped processed response, the side's chain and the
-  chain-free response at the same crop, which the render's head truncation from sample 0 makes exact. A raw
-  envelope marker drew, on the v6 cabin's 200 Hz split, a midbass arrival 9 ms behind the front the search
-  had re-anchored to; the label says *re-anchored* when the read is not the envelope's.
+  `SearchSnapshot` gives the engine what it needs — the cropped processed response, the chain that produced it
+  and the chain-free response at the same crop, which the render's head truncation from sample 0 makes exact.
+  All three come from the render's own snapshot (`ProcessedChannel.Chain`, `SourceImpulseResponse`,
+  `ProcessorSampleRate`, frozen with the response), and so do the rates the engine reads off its channel
+  (`FrozenAlignmentChannel` stands in for the block), never from the live channel: the view is built on a
+  background task and the channel may have been rebound, re-sourced or re-set since the render, and a
+  bypassed block's chain is `Identity` whatever its settings name — grading a raw driver against a prediction
+  through a crossover it does not run would invent a re-anchor. A raw envelope marker drew, on the v6 cabin's
+  200 Hz split, a midbass arrival 9 ms behind the front the search had re-anchored to; the label says
+  *re-anchored* when the read is not the envelope's.
 
 `BuildCoherenceView` hands the same cropped processed pair to `VirtualCrossoverAnalysis.ArrivalCoherenceLadder`.
 

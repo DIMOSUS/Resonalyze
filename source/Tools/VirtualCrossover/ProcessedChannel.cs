@@ -16,7 +16,12 @@ internal sealed record ProcessedChannel(
     // Snapshotted per side: the list can carry the opposite side's responses.
     MeasuredBand MeasuredBand = default,
     // This side's measurement calibration; null when its file named none or the path does not care (panel selection applies).
-    CalibrationFile? MicrophoneCalibration = null);
+    CalibrationFile? MicrophoneCalibration = null,
+    // What produced ImpulseResponse, frozen with it (Identity for a bypassed block): the correlation view's arrival read
+    // must not pair this response with whatever the live channel holds by the time the view is built.
+    DspChannelChain? Chain = null,
+    Complex[]? SourceImpulseResponse = null,
+    int ProcessorSampleRate = 0);
 
 /// <summary><see cref="Unsmoothed"/> is the sum-loss operand; smoothing before the division invents corner dips.</summary>
 internal sealed record GatedMagnitude(AnalysisCurve Display, AnalysisCurve Unsmoothed)

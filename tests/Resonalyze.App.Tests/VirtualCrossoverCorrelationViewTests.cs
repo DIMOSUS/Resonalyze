@@ -106,6 +106,99 @@ public sealed class VirtualCrossoverCorrelationViewTests
         return ir;
     }
 
+    // A soft band-limited front under a late modal build-up: the pair band's envelope latches onto the mode.
+    private static Complex[] ModalLatch(int frontSample)
+    {
+        Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
+            Impulse(frontSample),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 800, 24),
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 80, 24))),
+            SampleRate, SampleRate);
+        int modeStart = frontSample + (int)Math.Round(0.010 * SampleRate);
+        foreach (double modeHz in new[] { 65.0, 72.0, 80.0 })
+        {
+            for (int i = modeStart; i < ir.Length; i++)
+            {
+                double t = (i - modeStart) / (double)SampleRate;
+                ir[i] += 2.0 * (1 - Math.Exp(-t / 0.008)) * Math.Exp(-t / 0.1) *
+                    Math.Sin(2 * Math.PI * modeHz * t);
+            }
+        }
+
+        return ir;
+    }
+
+    private static ProcessedChannel FrozenChannel(
+        VirtualCrossoverChannel channel, Complex[] processed, Complex[] source, DspChannelChain chain) =>
+        new(channel, processed, VirtualCrossoverAnalysis.FindPeakIndex(processed),
+            SampleRate, OxyColors.White, new ValidSampleRange(0, IrLength),
+            Chain: chain, SourceImpulseResponse: source, ProcessorSampleRate: SampleRate);
+
+    [Fact]
+    public void BuildCorrelationView_BypassedBlockDoesNotPredictThroughItsConfiguredCrossover()
+    {
+        // The block is bypassed, so its response is the raw driver; its settings still name a low-pass. The arrival
+        // read must grade that response against a chain-free prediction: whatever the settings say, the marker is
+        // one and the same.
+        Complex[] raw = ModalLatch(FrontSample);
+        var channel = new VirtualCrossoverChannel("B") { SampleRate = SampleRate };
+        channel.Pair.Bypass = true;
+        var mid = new VirtualCrossoverChannel("C") { SampleRate = SampleRate };
+        ProcessedChannel upper = FrozenChannel(
+            mid, Impulse(FrontSample), Impulse(FrontSample), DspChannelChain.Identity);
+
+        double MarkerWith(double lowPassHz)
+        {
+            channel.Settings.CrossoverKind = CrossoverKind.LowPass;
+            channel.Settings.LowPassEdge =
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, lowPassHz, 48);
+            ProcessedChannel lower = FrozenChannel(channel, raw, raw, DspChannelChain.Identity);
+            return VirtualCrossoverPanel.BuildCorrelationView(
+                new AdjacentPair(lower, upper, 180, 90, 360), [lower, upper]).ArrivalLagMs;
+        }
+
+        double at80 = MarkerWith(80);
+        double at200 = MarkerWith(200);
+        double at400 = MarkerWith(400);
+        Assert.Equal(at80, at200, 6);
+        Assert.Equal(at80, at400, 6);
+    }
+
+    [Fact]
+    public void BuildCorrelationView_ReadsTheRenderSnapshotNotTheLiveChannel()
+    {
+        // The processed response, its chain and its source are frozen with the render; a channel that has moved on
+        // (new source, new crossover) by the time the view is built must not change the arrival read.
+        Complex[] source = ModalLatch(FrontSample);
+        var chain = new DspChannelChain(Crossover: new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 200, 24)));
+        Complex[] processed = VirtualCrossoverAnalysis.ApplyChain(source, chain, SampleRate, SampleRate);
+        var channel = new VirtualCrossoverChannel("B") { SampleRate = SampleRate };
+        channel.TransferImpulseResponse = source;
+        channel.Settings.CrossoverKind = CrossoverKind.LowPass;
+        channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 200, 24);
+        var mid = new VirtualCrossoverChannel("C") { SampleRate = SampleRate };
+        ProcessedChannel lower = FrozenChannel(channel, processed, source, chain);
+        ProcessedChannel upper = FrozenChannel(
+            mid, Impulse(FrontSample), Impulse(FrontSample), DspChannelChain.Identity);
+        var pair = new AdjacentPair(lower, upper, 180, 90, 360);
+
+        JunctionCorrelationView before = VirtualCrossoverPanel.BuildCorrelationView(pair, [lower, upper]);
+        channel.TransferImpulseResponse = Impulse(FrontSample + 4_800);
+        channel.Settings.CrossoverKind = CrossoverKind.Off;
+        channel.Pair.Bypass = true;
+        // The engine reads rates off the channel: a rebound block at another rate must not rescale the read either.
+        channel.SampleRate = 96_000;
+        channel.ProcessorSampleRateProvider = () => 192_000;
+        JunctionCorrelationView after = VirtualCrossoverPanel.BuildCorrelationView(pair, [lower, upper]);
+
+        Assert.Equal(before.ArrivalLagMs, after.ArrivalLagMs, 6);
+        Assert.Equal(before.ArrivalReAnchored, after.ArrivalReAnchored);
+    }
+
     [Fact]
     public void DrawCorrelation_AddsEnvelopeGuidesOutsideTheLegend()
     {

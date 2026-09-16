@@ -3226,15 +3226,36 @@ public static class AutoAlignmentEngine
         ComoveMonoChannels(
             plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions);
 
-        PolishFarSideJunctions(
-            plan, rightByBand, allChannels, reprocess, alignment, log,
-            maxDelayMs, decisions);
-
-        // The polish moved the far side under the mono channels' right junctions: they compromise once more. Polishing
-        // first instead cost three archived sessions their mono lobe choice. See docs/tech/auto-alignment.md#post-descent-passes.
-        log.AppendLine("Mono co-move again, after the far-side polish:");
-        ComoveMonoChannels(
-            plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions);
+        // The polish moves the far side under the mono channels' right junctions and the mono channels compromise once
+        // more; a sub that followed may in turn release a trim the polish refused for its sake, so the two alternate
+        // until neither moves. Polishing before the first mono pass cost three archived sessions their mono lobe choice.
+        // See docs/tech/auto-alignment.md#post-descent-passes.
+        double bridgeMs = alignment.GetValueOrDefault(plan.BridgeRight).DelayMs;
+        Dictionary<IAlignmentChannel, double> sceneOffsetsMs = rightByBand.ToDictionary(
+            item => item.Channel,
+            item => alignment.GetValueOrDefault(item.Channel).DelayMs - bridgeMs);
+        for (int round = 1; round <= PolishMonoRounds; round++)
+        {
+            var before = new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
+            if (round > 1)
+            {
+                log.AppendLine($"Far-side polish and mono co-move, round {round}:");
+            }
+            PolishFarSideJunctions(
+                plan, rightByBand, allChannels, reprocess, alignment, log,
+                maxDelayMs, decisions, sceneOffsetsMs);
+            if (round == 1)
+            {
+                log.AppendLine("Mono co-move again, after the far-side polish:");
+            }
+            ComoveMonoChannels(
+                plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions);
+            if (before.Count == alignment.Count &&
+                before.All(entry => alignment.TryGetValue(entry.Key, out AlignmentOverride now) && now == entry.Value))
+            {
+                break;
+            }
+        }
 
         NormalizeAndVerifyFeasibility(allChannels, alignment, log, maxDelayMs);
 
@@ -3470,6 +3491,9 @@ public static class AutoAlignmentEngine
     // tightens up the chain; the bridge has none. See docs/tech/auto-alignment.md#post-descent-passes.
     private const double FarSidePolishReachPeriods = 0.125;
     private const double FarSidePolishMinimumGainDb = 0.01;
+
+    // Far-side polish and mono co-move alternate this many times at most; the archive converges in two.
+    private const int PolishMonoRounds = 3;
 
     // Mono co-move spans a half period each side in both polarities: the walk's lobe choice never heard the right junction.
     private const double MonoComoveSearchHalfPeriods = 1.0;
@@ -3876,7 +3900,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         double maxDelayMs,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions,
+        IReadOnlyDictionary<IAlignmentChannel, double>? sceneOffsetsMs = null)
     {
         foreach (AlignmentSnapshot entry in rightByBand
             .OrderByDescending(item => plan.RightPairs
@@ -3913,6 +3938,12 @@ public static class AutoAlignmentEngine
                 adjacent.Max(junction => junction.CrossoverHz);
 
             AlignmentOverride current = alignment.GetValueOrDefault(channel);
+            // The reach is spent from the scene position, kept as an offset to the bridge so a uniform rebase between
+            // rounds does not move it: a second round otherwise walks a channel twice its leash.
+            double sceneMs = sceneOffsetsMs != null &&
+                sceneOffsetsMs.TryGetValue(channel, out double sceneOffsetMs)
+                ? alignment.GetValueOrDefault(plan.BridgeRight).DelayMs + sceneOffsetMs
+                : current.DelayMs;
             IReadOnlyList<AlignmentSnapshot> snapshots = reprocess(alignment);
             IAlignmentChannel NeighborOf(AlignmentJunction junction) =>
                 junction.Lower.Channel == channel
@@ -3961,10 +3992,11 @@ public static class AutoAlignmentEngine
             // DSP's 0.01 ms grid, walked in whole ticks so the trim scored is the trim written: gains between its
             // points are unrealizable.
             int reachTicks = (int)Math.Floor(reachMs / 0.01 + 1e-9);
-            for (int tick = -reachTicks; tick <= reachTicks; tick++)
+            int sceneTick = (int)Math.Round(sceneMs / 0.01);
+            for (int tick = sceneTick - reachTicks; tick <= sceneTick + reachTicks; tick++)
             {
-                double delta = tick * 0.01;
-                double trialMs = current.DelayMs + delta;
+                double trialMs = tick * 0.01;
+                double delta = Math.Round(trialMs - current.DelayMs, 2);
                 if (trialMs < 0 ||
                     Math.Max(othersMaxMs, trialMs) -
                         Math.Min(othersMinMs, trialMs) > maxDelayMs)
@@ -4009,7 +4041,7 @@ public static class AutoAlignmentEngine
                 };
                 log.AppendLine(
                     $"Far-side polish {channel.Name}: " +
-                    $"{bestDelta:+0.00;-0.00} ms off the scene position " +
+                    $"{current.DelayMs + bestDelta - sceneMs:+0.00;-0.00} ms off the scene position " +
                     $"(own-junction dip-penalized loss " +
                     $"{baseline:0.00} -> {bestScore:0.00} dB)");
                 string amendment = FormattableString.Invariant(

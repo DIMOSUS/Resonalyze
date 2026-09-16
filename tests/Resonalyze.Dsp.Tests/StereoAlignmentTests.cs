@@ -1132,7 +1132,8 @@ public sealed class StereoAlignmentTests
             double baseDelayMs = 1.0,
             bool withFieldFloor = false,
             double fieldChannelMs = 0.0,
-            double junctionHz = 2_500)
+            double junctionHz = 2_500,
+            int rounds = 1)
     {
         var farMid = new TestChannel("R mid", ImpulseAtMs(5.0));
         var farTwr = new TestChannel("R twr", ImpulseAtMs(5.0 + twrLateMs));
@@ -1168,10 +1169,29 @@ public sealed class StereoAlignmentTests
         }
 
         var log = new StringBuilder();
-        AutoAlignmentEngine.PolishFarSideJunctions(
-            plan, snapshots, snapshots, Reprocess, alignment, log,
-            AutoAlignmentEngine.DefaultMaxDelayMs, decisions: null);
+        // Scene offsets to the bridge, as ComputeStereo hands them: the reach is spent from here across rounds.
+        Dictionary<IAlignmentChannel, double> sceneOffsets = alignment.ToDictionary(
+            entry => entry.Key, entry => entry.Value.DelayMs - alignment[farTwr].DelayMs);
+        for (int round = 0; round < rounds; round++)
+        {
+            AutoAlignmentEngine.PolishFarSideJunctions(
+                plan, snapshots, snapshots, Reprocess, alignment, log,
+                AutoAlignmentEngine.DefaultMaxDelayMs, decisions: null, sceneOffsets);
+        }
         return (alignment[farMid].DelayMs, alignment[farTwr].DelayMs, log.ToString());
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_ReachIsATotalBudgetFromTheScenePosition()
+    {
+        // The polish and the mono co-move alternate; a second round must not walk the mid another eighth of a
+        // period, so the leash is spent from the scene position, not from wherever the last round left it.
+        (double once, _, _) = RunFarSidePolish(0.50);
+        (double twice, _, string log) = RunFarSidePolish(0.50, rounds: 2);
+
+        Assert.Equal(once, twice, 9);
+        Assert.InRange(Math.Abs(twice - 1.0), 0, 0.05 + 1e-9);
+        Assert.Contains("Far-side polish R mid: kept", log);
     }
 
     [Fact]

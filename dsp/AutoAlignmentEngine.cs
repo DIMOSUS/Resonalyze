@@ -95,7 +95,8 @@ public delegate IReadOnlyList<AlignmentSnapshot> AlignmentReprocessor(
 
 /// <summary>
 /// Two-stage auto time alignment: band-limited arrivals give coarse delays, then a pairwise summation-loss search walks out from the
-/// latest-arriving (fixed) reference, so delays stay non-negative. See docs/tech/auto-alignment.md.
+/// top channel of the chain, the fixed reference; a later-arriving lower channel shifts the settled stack instead.
+/// See docs/tech/auto-alignment.md#walk-order.
 /// </summary>
 public static class AutoAlignmentEngine
 {
@@ -4033,16 +4034,19 @@ public static class AutoAlignmentEngine
             }
 
             double halfPeriodMs = 500.0 / reference.CrossoverHz;
+            double BranchScore(bool farSide, double deltaMs, bool flip) =>
+                Score(farSide ? farBand : referenceBand, deltaMs, flip);
             StereoBranchReading? reading = StereoJunctionBranch.Read(
-                (farSide, deltaMs, flip) => Score(
-                    farSide ? farBand : referenceBand, deltaMs, flip),
-                halfPeriodMs);
+                BranchScore, halfPeriodMs);
             if (reading == null ||
                 reading.FarGainDb <= StereoJunctionBranch.NoteworthyFarGainDb)
             {
                 continue;
             }
 
+            // The scan's optimum is moved onto the DSP's 0.01 ms grid here, so the re-render judges, the log names
+            // and the alignment carries the delay the processor will actually play.
+            reading = StereoJunctionBranch.Quantize(reading, BranchScore);
             string junctionName =
                 $"{reference.Lower.Channel.Name}/{reference.Upper.Channel.Name}";
             string move = FormattableString.Invariant(

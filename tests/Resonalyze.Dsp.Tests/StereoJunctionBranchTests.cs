@@ -25,6 +25,47 @@ public sealed class StereoJunctionBranchTests
         };
 
     [Fact]
+    public void Quantize_ReReadsTheBetterOfTheTwoNeighbouringDspTicks()
+    {
+        // The scan's grid lands on 0.225 ms; the optimum sits at 0.229, so 0.23 is the tick to play — and the
+        // reading's gains are those of 0.23, not of the point the processor cannot reach.
+        Func<bool, double, bool, double> score = Scorer(
+            referenceBase: -1.0, farBase: -2.0, bestDeltaMs: 0.229,
+            referencePeak: -0.9, farPeak: -1.0);
+        var scanned = new StereoBranchReading(0.225, true, 0.09, 0.99);
+
+        StereoBranchReading quantized = StereoJunctionBranch.Quantize(scanned, score);
+
+        Assert.Equal(0.23, quantized.DeltaMs);
+        Assert.True(quantized.Flip);
+        Assert.Equal(score(true, 0.23, true) - -2.0, quantized.FarGainDb, 9);
+        Assert.Equal(score(false, 0.23, true) - -1.0, quantized.ReferenceGainDb, 9);
+    }
+
+    [Fact]
+    public void Quantize_PrefersTheTickTheReferenceSideCanLiveWith()
+    {
+        // Both ticks straddle the optimum; the lower one costs the reference side more than it may pay, the
+        // upper one does not, and the upper one is taken even though the far side likes the lower one more.
+        static double Score(bool farSide, double deltaMs, bool flip)
+        {
+            if (!flip)
+            {
+                return farSide ? -2.0 : -1.0;
+            }
+
+            return farSide
+                ? -1.0 - 0.5 * Math.Abs(deltaMs - 0.22)
+                : (deltaMs < 0.225 ? -1.3 : -1.05);
+        }
+
+        StereoBranchReading quantized = StereoJunctionBranch.Quantize(
+            new StereoBranchReading(0.225, true, 0, 0), Score);
+
+        Assert.Equal(0.23, quantized.DeltaMs);
+    }
+
+    [Fact]
     public void Read_FindsTheFlipPartnerAndReportsBothSides()
     {
         Func<bool, double, bool, double> score = Scorer(

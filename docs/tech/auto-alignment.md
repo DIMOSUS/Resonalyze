@@ -950,9 +950,12 @@ which is why a lone pair co-move cannot express it (the tweeter has to follow th
 - **Finding the candidate** is an analytic scan (`StereoJunctionBranch.Read`, `SumLossEvaluator`
   rotations either way around the half period). The feasible set is searched first: the delta that
   serves the far side most is not always one the reference side can live with. The refinement step
-  is 0.1 ms or an eighth of the half period, whichever is smaller, so the flip partner itself is
-  always probed: a flat 0.1 ms probed 0.15 and 0.25 ms at a 2500 Hz junction and never 0.20, and
-  a single point at 5 kHz.
+  is 0.1 ms or an eighth of the half period, whichever is smaller: where the eighth is the step the
+  flip partner itself is probed, and under the cap the grid is far finer than the lobe. A flat
+  0.1 ms probed 0.15 and 0.25 ms at a 2500 Hz junction and never 0.20, and a single point at 5 kHz.
+  The optimum is then re-read at the better of the two DSP ticks around it (`Quantize`, the scan's
+  own preference: reference-feasible first, then the far gain) before anything else reads it, so the
+  re-render judges, the log names and the alignment carries a delay the processor can play.
 - **Adopting it is decided on a RE-RENDER.** The scan rotates inside a window anchored to the current
   fronts, and half a period is where that approximation is weakest, so the candidate is applied to a
   trial alignment, `reprocess`ed, and measured. Worth the reprocess: on the v6 junction the scan and

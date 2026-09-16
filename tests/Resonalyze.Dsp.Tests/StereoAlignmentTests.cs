@@ -646,22 +646,40 @@ public sealed class StereoAlignmentTests
     /// carries no junction but bounds the realizable span.</summary>
     private static (TestChannel LeftMid, TestChannel LeftTwr, TestChannel RightMid, TestChannel RightTwr,
         Dictionary<IAlignmentChannel, AlignmentOverride> Alignment, string Log)
-        RunJunctionBranch(double baseDelayMs = 0, bool withFieldFloor = false)
+        RunJunctionBranch(double baseDelayMs = 0, bool withFieldFloor = false, int twinSamples = 12) =>
+        RunJunctionBranch(out _, baseDelayMs, withFieldFloor, twinSamples);
+
+    /// <param name="renderedTwrDelays">Every left-tweeter delay a re-render was asked for, in order.</param>
+    private static (TestChannel LeftMid, TestChannel LeftTwr, TestChannel RightMid, TestChannel RightTwr,
+        Dictionary<IAlignmentChannel, AlignmentOverride> Alignment, string Log)
+        RunJunctionBranch(
+            out List<double> renderedTwrDelays,
+            double baseDelayMs = 0,
+            bool withFieldFloor = false,
+            int twinSamples = 12)
     {
+        List<double> rendered = [];
+        renderedTwrDelays = rendered;
         Complex[] leftMidIr = ImpulseAtMs(0.0);
-        leftMidIr[BasePosition + 12] -= Complex.One;
+        leftMidIr[BasePosition + twinSamples] -= Complex.One;
         var leftMid = new TestChannel("L mid", leftMidIr);
         var leftTwr = new TestChannel("L twr", ImpulseAtMs(0.0));
         var rightMid = new TestChannel("R mid", ImpulseAtMs(0.0));
-        var rightTwr = new TestChannel("R twr", ImpulseAtMs(-0.25, -1.0));
+        Complex[] rightTwrIr = new Complex[IrLength];
+        rightTwrIr[BasePosition - twinSamples] = -1.0;
+        var rightTwr = new TestChannel("R twr", rightTwrIr);
         var floor = new TestChannel("sub", ImpulseAtMs(0.0));
         TestChannel[] all = withFieldFloor
             ? [leftMid, leftTwr, rightMid, rightTwr, floor]
             : [leftMid, leftTwr, rightMid, rightTwr];
         IReadOnlyList<AlignmentSnapshot> Reprocess(
-            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
-            all.Select(channel => Snapshot(channel, overrides.GetValueOrDefault(channel)))
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides)
+        {
+            rendered.Add(overrides.GetValueOrDefault(leftTwr).DelayMs);
+            return all.Select(channel => Snapshot(channel, overrides.GetValueOrDefault(channel)))
                 .ToList();
+        }
+
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
         foreach (TestChannel channel in new[] { leftMid, leftTwr, rightMid, rightTwr })
         {
@@ -709,6 +727,26 @@ public sealed class StereoAlignmentTests
         Assert.False(alignment.GetValueOrDefault(rightMid).InvertPolarity);
         Assert.Equal(0.0, alignment.GetValueOrDefault(leftMid).DelayMs);
         Assert.Equal(0.0, alignment.GetValueOrDefault(rightMid).DelayMs);
+    }
+
+    [Fact]
+    public void RebalanceJunctionBranches_RendersAndWritesTheMoveOnTheDspGrid()
+    {
+        // Eleven samples at 48 kHz is 0.229 ms: the scan's own grid lands on 0.225, which no processor can play.
+        // The move goes onto the grid BEFORE the re-render judges it — every delay a re-render is asked for is a
+        // DSP tick — and what is written is what was judged: 0.23, the tick nearer the twin.
+        (_, TestChannel leftTwr, _, TestChannel rightTwr,
+            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, string log) =
+            RunJunctionBranch(out List<double> renderedTwrDelays, twinSamples: 11);
+
+        Assert.Contains("stereo branch moved at L mid/L twr", log);
+        Assert.Contains("+0.23 ms flipped", log);
+        Assert.All(renderedTwrDelays, delayMs => Assert.Equal(Math.Round(delayMs, 2), delayMs, 9));
+        Assert.Contains(0.23, renderedTwrDelays);
+        foreach (TestChannel tweeter in new[] { leftTwr, rightTwr })
+        {
+            Assert.Equal(0.23, alignment.GetValueOrDefault(tweeter).DelayMs);
+        }
     }
 
     [Fact]

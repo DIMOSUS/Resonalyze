@@ -822,9 +822,8 @@ public static class AutoAlignmentEngine
 
     /// <summary>What stage 1 anchors a junction on: the measured band-limited fronts, replaced by the predicted fronts where
     /// a modal latch is convicted (#predicted-front-arrival) or by the upper-half reads where the upper-half probe catches one
-    /// (#arrival-honesty-probe). The correlation view draws this same read, so its arrival marker is the one the search
-    /// weighed. See docs/tech/auto-alignment.md#arrival-honesty-probe.</summary>
-    public sealed record JunctionArrivalRead(
+    /// (#arrival-honesty-probe). See docs/tech/auto-alignment.md#arrival-honesty-probe.</summary>
+    internal sealed record JunctionArrivalRead(
         double LowerMs,
         double UpperMs,
         double LowerPredictionMs,
@@ -843,7 +842,7 @@ public static class AutoAlignmentEngine
 
     /// <summary>Null where a side's band holds no measurable arrival; the walk refuses such a junction with its reasons.
     /// Public for the Virtual DSP correlation view, whose arrival marker is this read.</summary>
-    public static JunctionArrivalRead? ReadJunctionArrivals(
+    internal static JunctionArrivalRead? ReadJunctionArrivals(
         AlignmentJunction pair,
         StringBuilder log)
     {
@@ -860,7 +859,7 @@ public static class AutoAlignmentEngine
             : null;
     }
 
-    public static JunctionArrivalRead ReadJunctionArrivals(
+    internal static JunctionArrivalRead ReadJunctionArrivals(
         AlignmentJunction pair,
         TimeAlignmentAnalysisResult lowerRead,
         TimeAlignmentAnalysisResult upperRead,

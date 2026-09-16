@@ -279,8 +279,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
                     $"on-lobe r {near.Y:+0.00;-0.00} @ {near.X:+0.00;-0.00} ms; " +
                     $"best r {best.Y:+0.00;-0.00} @ {best.X:+0.00;-0.00} ms; " +
-                    $"arrival marker {view.ArrivalLagMs:+0.00;-0.00} ms" +
-                    (view.ArrivalReAnchored ? " (re-anchored)" : ""));
+                    $"arrival lag {view.ArrivalLagMs:+0.00;-0.00} ms");
             }
         }
 
@@ -523,10 +522,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     chain,
                     state.SampleRate,
                     channel.ProcessorSampleRate,
-                    response.Length),
-                Chain: chain,
-                SourceImpulseResponse: state.ProcessingSource.CroppedImpulseResponse,
-                ProcessorSampleRate: channel.ProcessorSampleRate));
+                    response.Length)));
         }
 
         return processed;

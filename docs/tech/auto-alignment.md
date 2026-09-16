@@ -216,11 +216,11 @@ the correlation window and the fallback diff; a trustworthy PHAT extremum still 
 **Conviction without a comparable replacement changes nothing.** If the other side's probe read
 different physics, the corrupted diff keeps centring the window and the reach veto stays armed.
 
-**One read, two readers.** The whole honesty pass — prediction grading, dead-zone arbitration, the
-upper-half probe and both re-anchors — is `ReadJunctionArrivals`, which stage 1 walks and the Virtual
-DSP correlation view draws as its arrival marker. Before it was shared the view drew the raw envelope
-arrival, which on the v6 cabin's 200 Hz split put the midbass 9 ms behind the front the search had
-re-anchored to: a marker for a number the search had discarded.
+**One read.** The whole honesty pass — prediction grading, dead-zone arbitration, the upper-half probe
+and both re-anchors — is `ReadJunctionArrivals`, which stage 1 walks. The Virtual DSP correlation view
+drew it as its arrival marker for two releases and dropped it: the read is ten band-limited arrival
+analyses and six chain renders, most of the view's build, and the marker told the owner nothing
+(docs/tech/virtual-dsp-panel.md#junction-views).
 Lifting it would trust an extremum measured around the convicted anchor. The prominence exception
 must not undo this either.
 

@@ -26,9 +26,8 @@ internal sealed record JunctionCorrelationView(
     List<SignalPoint> WhitenedDirect,
     List<SignalPoint> ScoreNormal,
     List<SignalPoint> ScoreInverted,
-    double ArrivalLagMs,
-    // The arrival read is the search's own: re-anchored where the honesty probes convicted a modal latch.
-    bool ArrivalReAnchored = false);
+    // Band-limited envelope fronts, lower minus upper: exported to the agent package, not drawn.
+    double ArrivalLagMs);
 
 /// <summary>One junction's arrival-coherence ladder from the same processed pair; lag 0 is the applied alignment.</summary>
 internal sealed record JunctionCoherenceView(
@@ -227,8 +226,7 @@ internal sealed class VirtualCrossoverDspChainPlot
             OxyColor.FromRgb(255, 169, 79), ScoreAxisKey,
             LineStyle.Dash, 1.8);
 
-        // Lag 0 is the applied alignment; the arrival marker is the read the searches anchor on, re-anchored where a
-        // modal latch was convicted, and the label says which.
+        // Lag 0 is the applied alignment.
         model.Annotations.Add(new LineAnnotation
         {
             Type = LineAnnotationType.Vertical,
@@ -238,17 +236,6 @@ internal sealed class VirtualCrossoverDspChainPlot
             StrokeThickness = 1,
             Text = "current",
             TextColor = OxyColor.FromAColor(200, OxyColors.White),
-            Tag = SeriesTag
-        });
-        model.Annotations.Add(new LineAnnotation
-        {
-            Type = LineAnnotationType.Vertical,
-            X = data.ArrivalLagMs,
-            Color = OxyColor.FromAColor(170, OxyColor.FromRgb(240, 200, 90)),
-            LineStyle = LineStyle.Dash,
-            StrokeThickness = 1,
-            Text = data.ArrivalReAnchored ? "arrival (re-anchored)" : "arrival",
-            TextColor = OxyColor.FromAColor(220, OxyColor.FromRgb(240, 200, 90)),
             Tag = SeriesTag
         });
 

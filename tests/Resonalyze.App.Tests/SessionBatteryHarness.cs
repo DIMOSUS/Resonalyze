@@ -523,7 +523,10 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     chain,
                     state.SampleRate,
                     channel.ProcessorSampleRate,
-                    response.Length)));
+                    response.Length),
+                Chain: chain,
+                SourceImpulseResponse: state.ProcessingSource.CroppedImpulseResponse,
+                ProcessorSampleRate: channel.ProcessorSampleRate));
         }
 
         return processed;

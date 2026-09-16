@@ -57,6 +57,13 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     internal static string? RootDirectory =>
         Environment.GetEnvironmentVariable(SessionBatteryFactAttribute.RootVariable);
 
+    /// <summary>Run the panel's STEREO cascade where the session offers a bridge, instead of one side of it.</summary>
+    public const string StereoVariable = "RESONALYZE_SESSION_BATTERY_STEREO";
+
+    private static bool Stereo =>
+        !string.IsNullOrWhiteSpace(
+            Environment.GetEnvironmentVariable(StereoVariable));
+
     private static bool AutoGate =>
         !string.IsNullOrWhiteSpace(
             Environment.GetEnvironmentVariable(AutoGateVariable));
@@ -105,32 +112,83 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     {
         var stopwatch = Stopwatch.StartNew();
         VirtualCrossoverProjectFile project = VirtualCrossoverProjectFile.LoadFrom(sessionPath);
-        bool rightSide = project.ActiveSideRight;
-        List<VirtualCrossoverChannel> channels = LoadChannels(project, out string fingerprint);
+        List<VirtualCrossoverChannel> channels =
+            LoadChannels(project, out string fingerprint, bothSides: Stereo);
         string name = Path.GetFileName(Path.GetDirectoryName(sessionPath)!);
+        report.AppendLine();
+        report.AppendLine($"=== {name}  ({sessionPath})");
         if (seen.TryGetValue(fingerprint, out string? original))
         {
-            report.AppendLine();
-            report.AppendLine($"=== {name}  ({sessionPath})");
             report.AppendLine(
                 $"  skipped: the same measurements and settings as {original}.");
             return [];
         }
 
         seen.Add(fingerprint, name);
+        var log = new StringBuilder();
+        StereoProposal? stereo = Stereo
+            ? ComputeStereoProposal(project, channels, log)
+            : null;
+        if (Stereo && stereo == null)
+        {
+            report.AppendLine(
+                "  stereo declined: no front-chain pair resolves on both sides.");
+        }
+
+        var comparisons = new List<JunctionComparison>();
+        foreach (bool side in stereo != null
+            ? (bool[])[false, true]
+            : [project.ActiveSideRight])
+        {
+            comparisons.AddRange(JudgeSide(
+                project, channels, side, name, report, stereo, log));
+        }
+
+        foreach (string line in log.ToString().Split('\n'))
+        {
+            if (line.Contains("latch") || line.Contains("veto") ||
+                line.Contains("re-anchored") || line.Contains("lobe hop") ||
+                line.Contains("direct coherence") || line.Contains("arbitration") ||
+                line.Contains("low-junction polarity") ||
+                line.Contains("direct lobe") || line.Contains("mono ") ||
+                line.Contains("stereo branch") || line.Contains("[diag]") ||
+                line.Contains("polish") || line.Contains("Co-move") ||
+                line.Contains("Reference:") || line.Contains("Channel ") || line.Contains("Bridge "))
+            {
+                report.AppendLine("    | " + line.Trim());
+            }
+        }
+
+        report.AppendLine($"    ({stopwatch.Elapsed.TotalSeconds:0.0} s)");
+        return comparisons;
+    }
+
+    /// <summary>One side judged: the saved tune against the proposal, by the panel's own metric.</summary>
+    private static List<JunctionComparison> JudgeSide(
+        VirtualCrossoverProjectFile project,
+        List<VirtualCrossoverChannel> channels,
+        bool rightSide,
+        string name,
+        StringBuilder report,
+        StereoProposal? stereo,
+        StringBuilder log)
+    {
+        foreach (VirtualCrossoverChannel member in channels)
+        {
+            member.ActiveRight = rightSide;
+        }
+
         List<VirtualCrossoverChannel> participants = channels
             .Where(channel =>
                 channel.Pair.Enabled &&
                 !channel.Pair.Bypass &&
                 channel.TransferImpulseResponse != null)
             .ToList();
-        report.AppendLine();
-        report.AppendLine($"=== {name}  ({sessionPath})");
         if (participants.Count < 2)
         {
             report.AppendLine(
-                $"  skipped: {participants.Count} participating channel(s) resolved " +
-                "on the active side.");
+                $"  side {(rightSide ? "R" : "L")} skipped: {participants.Count} " +
+                "participating channel(s) resolved.");
             return [];
         }
 
@@ -146,23 +204,43 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
             $"{project.PhaseGateRightMs:0.#} ms, smoothing " +
             $"{OverlaySmoothing.GetLabel(project.SmoothingCode)}");
 
-        var log = new StringBuilder();
-        Dictionary<IAlignmentChannel, AlignmentOverride> proposal =
-            ComputeProposal(participants, log);
+        var singleDecisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
+        Dictionary<IAlignmentChannel, AlignmentOverride>? single =
+            stereo == null ? ComputeProposal(participants, log, singleDecisions) : null;
+        // The same column the panel shows the tuner: which reads carried the run and which are a guess.
+        string ConfidenceOf(VirtualCrossoverChannel channel)
+        {
+            AlignmentDecision? decision = stereo != null
+                ? stereo.DecisionFor(channel, rightSide)
+                : singleDecisions.GetValueOrDefault(channel);
+            return decision == null
+                ? "-"
+                : decision.Kind switch
+                {
+                    AlignmentDecisionKind.Reference => "ref",
+                    AlignmentDecisionKind.Bridge => "bridge",
+                    AlignmentDecisionKind.Locked => "locked",
+                    _ => decision.Confidence?.ToString().ToLowerInvariant() ?? "-"
+                };
+        }
+        AlignmentOverride ProposedFor(VirtualCrossoverChannel channel) =>
+            stereo != null
+                ? stereo.For(channel, rightSide) ?? default
+                : single!.GetValueOrDefault(channel);
 
         List<ProcessedChannel> saved = Process(participants, _ => null);
         List<ProcessedChannel> proposed = Process(
             participants,
-            channel => proposal.GetValueOrDefault(channel));
+            channel => ProposedFor(channel));
         foreach (VirtualCrossoverChannel channel in participants)
         {
-            AlignmentOverride over = proposal.GetValueOrDefault(channel);
+            AlignmentOverride over = ProposedFor(channel);
             report.AppendLine(
                 $"    {channel.Name} {Describe(channel.Settings.DisplayName),-24} " +
                 $"saved {channel.Settings.DelayMs,7:0.00} ms " +
                 $"{(channel.Settings.InvertPolarity ? "INV" : "   ")}    " +
                 $"proposed {over.DelayMs,7:0.00} ms " +
-                $"{(over.InvertPolarity ? "INV" : "   ")}");
+                $"{(over.InvertPolarity ? "INV" : "   ")}  {ConfidenceOf(channel),-6}");
         }
 
         double leftEdgeMs = !AutoGate && gate.OffsetMs is { } pinned
@@ -243,17 +321,6 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
             report.AppendLine(comparison.Row());
         }
 
-        foreach (string line in log.ToString().Split('\n'))
-        {
-            if (line.Contains("latch") || line.Contains("veto") ||
-                line.Contains("re-anchored") || line.Contains("lobe hop") ||
-                line.Contains("direct coherence") || line.Contains("arbitration"))
-            {
-                report.AppendLine("    | " + line.Trim());
-            }
-        }
-
-        report.AppendLine($"    ({stopwatch.Elapsed.TotalSeconds:0.0} s)");
         return comparisons;
     }
 
@@ -271,10 +338,94 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     private static string Format(double? value, string format = "0.00") =>
         value?.ToString(format, CultureInfo.InvariantCulture) ?? "-";
 
+    /// <summary>Mirrors the panel's STEREO Auto delay through the panel's own plan builders, so the battery judges
+    /// the cascade the app runs (bridge, cross-side targets, the mono co-move) and not one side of it.
+    /// Null where the session cannot be a stereo run.</summary>
+    private static StereoProposal? ComputeStereoProposal(
+        VirtualCrossoverProjectFile project,
+        List<VirtualCrossoverChannel> channels,
+        StringBuilder log)
+    {
+        (List<VirtualCrossoverSideAlignmentChannel> leftSide,
+            List<VirtualCrossoverSideAlignmentChannel> rightSide) =
+            VirtualCrossoverPanel.CollectStereoSides(channels);
+        if (VirtualCrossoverPanel.PickStereoBridge(leftSide, rightSide)
+                is not { } bridgeRight ||
+            leftSide.Count(VirtualCrossoverPanel.InFrontChain) < 2)
+        {
+            return null;
+        }
+
+        VirtualCrossoverSideAlignmentChannel bridgeLeft = leftSide.First(
+            item => item.Runtime == bridgeRight.Runtime && !item.RightSide);
+        if (VirtualCrossoverPanel.StereoBridgeBand(bridgeLeft, bridgeRight)
+            is not (double bridgeLowHz, double bridgeHighHz))
+        {
+            return null;
+        }
+
+        List<VirtualCrossoverSideAlignmentChannel> union =
+            [.. leftSide.Concat(rightSide).Distinct()];
+        if (union.Any(item => item.Runtime.Pair.Bypass))
+        {
+            return null;
+        }
+
+        // The panel walks the front chain and places later stages afterwards; the battery judges the chain.
+        List<VirtualCrossoverSideAlignmentChannel> chainLeft =
+            [.. leftSide.Where(VirtualCrossoverPanel.InFrontChain)];
+        List<VirtualCrossoverSideAlignmentChannel> chainRight =
+            [.. rightSide.Where(VirtualCrossoverPanel.InFrontChain)];
+        DspProcessorProfile processor = project.ResolveDspProcessor(
+            union[0].State.SampleRate);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
+        VirtualCrossoverPanel.ComputeStereoAlignment(
+            chainLeft, chainRight, union, bridgeLeft, bridgeRight,
+            bridgeLowHz, bridgeHighHz,
+            project.StereoSceneOffsetMagnitudeMs,
+            project.StereoRightHandDrive,
+            processor.SampleRateHz,
+            processor.MaxDelayMs,
+            alignment,
+            decisions,
+            log);
+        return new StereoProposal(alignment, decisions, leftSide, rightSide);
+    }
+
+    private sealed record StereoProposal(
+        Dictionary<IAlignmentChannel, AlignmentOverride> Alignment,
+        Dictionary<IAlignmentChannel, AlignmentDecision> Decisions,
+        List<VirtualCrossoverSideAlignmentChannel> LeftSide,
+        List<VirtualCrossoverSideAlignmentChannel> RightSide)
+    {
+        /// <summary>A mono pair carries one instance, walked on the left and shared by both sides.</summary>
+        public AlignmentOverride? For(VirtualCrossoverChannel channel, bool rightSide)
+        {
+            List<VirtualCrossoverSideAlignmentChannel> side =
+                rightSide ? RightSide : LeftSide;
+            VirtualCrossoverSideAlignmentChannel? member = side.FirstOrDefault(
+                item => item.Runtime == channel);
+            return member != null && Alignment.TryGetValue(member, out AlignmentOverride over)
+                ? over
+                : null;
+        }
+
+        public AlignmentDecision? DecisionFor(VirtualCrossoverChannel channel, bool rightSide)
+        {
+            List<VirtualCrossoverSideAlignmentChannel> side =
+                rightSide ? RightSide : LeftSide;
+            VirtualCrossoverSideAlignmentChannel? member = side.FirstOrDefault(
+                item => item.Runtime == channel);
+            return member == null ? null : Decisions.GetValueOrDefault(member);
+        }
+    }
+
     // Mirrors the panel's single-side Auto delay; saved delays and polarities are deliberately not fed in.
     private static Dictionary<IAlignmentChannel, AlignmentOverride> ComputeProposal(
         List<VirtualCrossoverChannel> participants,
-        StringBuilder log)
+        StringBuilder log,
+        Dictionary<IAlignmentChannel, AlignmentDecision> decisions)
     {
         List<VirtualCrossoverChannel> ordered = participants
             .OrderBy(channel => VirtualCrossoverJunctions.BandCenterHz(channel.Settings))
@@ -312,7 +463,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
             reprocessor.Reprocess,
             alignment,
             log,
-            new Dictionary<IAlignmentChannel, AlignmentDecision>());
+            decisions);
         return alignment;
     }
 
@@ -423,9 +574,11 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
         return metrics.BuildEntries(processed, loss);
     }
 
+    /// <param name="bothSides">A stereo run needs the far side's measurements too, which a single-side run never loads.</param>
     internal static List<VirtualCrossoverChannel> LoadChannels(
         VirtualCrossoverProjectFile project,
-        out string fingerprint)
+        out string fingerprint,
+        bool bothSides = false)
     {
         var channels = new List<VirtualCrossoverChannel>();
         var identity = new StringBuilder();
@@ -437,25 +590,30 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 ActiveRight = project.ActiveSideRight
             };
             channels.Add(channel);
-            VirtualCrossoverChannelSettings settings =
-                channel.SideSettings(channel.ActiveRight);
-            if (!settings.HasSource ||
-                VirtualCrossoverSourceLocator.Locate(
-                    settings.SourceFilePath,
-                    settings.SourceRelativePath,
-                    project.ProjectDirectory) is not { } path)
+            IEnumerable<bool> sides = bothSides && !channel.Pair.Mono
+                ? [false, true]
+                : [channel.ActiveRight];
+            foreach (bool right in sides)
             {
-                continue;
-            }
+                VirtualCrossoverChannelSettings settings = channel.SideSettings(right);
+                if (!settings.HasSource ||
+                    VirtualCrossoverSourceLocator.Locate(
+                        settings.SourceFilePath,
+                        settings.SourceRelativePath,
+                        project.ProjectDirectory) is not { } path)
+                {
+                    continue;
+                }
 
-            ImpulseResponseFile file = ImpulseResponseFile.LoadAsync(path)
-                .GetAwaiter().GetResult();
-            ResolvedVirtualDspSource.FromSnapshot(
-                MeasurementHistoryService.CreateSnapshot(file))
-                ?.ApplyTo(channel.SideState(channel.ActiveRight));
-            identity.Append(path).Append('|')
-                .Append(settings.DelayMs.ToString("0.000", CultureInfo.InvariantCulture))
-                .Append(settings.InvertPolarity ? "-inv;" : ";");
+                ImpulseResponseFile file = ImpulseResponseFile.LoadAsync(path)
+                    .GetAwaiter().GetResult();
+                ResolvedVirtualDspSource.FromSnapshot(
+                    MeasurementHistoryService.CreateSnapshot(file))
+                    ?.ApplyTo(channel.SideState(right));
+                identity.Append(path).Append('|')
+                    .Append(settings.DelayMs.ToString("0.000", CultureInfo.InvariantCulture))
+                    .Append(settings.InvertPolarity ? "-inv;" : ";");
+            }
         }
 
         fingerprint = identity.ToString();

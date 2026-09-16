@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text;
 using OxyPlot;
 using Resonalyze.Dsp;
@@ -1137,10 +1137,10 @@ public partial class VirtualCrossoverPanel : UserControl
         project.ResolveDspProcessor((int)Math.Round(ProjectSampleRateHz));
 
     /// <summary>The rate simulated filters are designed at, NOT the measurement rate (see <see cref="PreparedDspResponse"/>).</summary>
-    private int ProcessorSampleRateHz => ProcessorProfile.SampleRateHz;
+    internal int ProcessorSampleRateHz => ProcessorProfile.SampleRateHz;
 
     /// <summary>Ceiling for automatic delay proposals; manual delay fields keep a wider range on purpose.</summary>
-    private double ProcessorMaxDelayMs => ProcessorProfile.MaxDelayMs;
+    internal double ProcessorMaxDelayMs => ProcessorProfile.MaxDelayMs;
 
     private bool ProcessorRateFollowsMeasurements =>
         project.DspProcessorRateFollowsMeasurements;
@@ -4214,15 +4214,9 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         // Stereo when some non-mono pair has both sides resolved (the highest becomes the L/R bridge).
         (List<VirtualCrossoverSideAlignmentChannel> leftSide, List<VirtualCrossoverSideAlignmentChannel> rightSide) =
-            CollectStereoSides();
-        // The bridge must be a front-chain pair, or the scene anchors to the rear fill.
-        VirtualCrossoverSideAlignmentChannel? bridgeRight = rightSide
-            .Where(item => item.RightSide &&
-                InFrontChain(item) &&
-                leftSide.Any(left =>
-                    left.Runtime == item.Runtime && !left.RightSide))
-            .OrderBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Settings))
-            .LastOrDefault();
+            CollectStereoSides(channels);
+        VirtualCrossoverSideAlignmentChannel? bridgeRight =
+            PickStereoBridge(leftSide, rightSide);
         if (bridgeRight != null && leftSide.Count(InFrontChain) >= 2)
         {
             return PrepareStereoAutoDelay(leftSide, rightSide, bridgeRight, interactive);
@@ -4354,7 +4348,36 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // A mono block appears once (as its left instance), so a centre is found exactly once.
-    private static bool InFrontChain(VirtualCrossoverSideAlignmentChannel side) =>
+    /// <summary>Top front-chain pair resolved on both sides, or null where the run cannot be a stereo one.
+    /// The bridge must be a front-chain pair, or the scene anchors to the rear fill.</summary>
+    internal static VirtualCrossoverSideAlignmentChannel? PickStereoBridge(
+        List<VirtualCrossoverSideAlignmentChannel> leftSide,
+        List<VirtualCrossoverSideAlignmentChannel> rightSide) =>
+        rightSide
+            .Where(item => item.RightSide &&
+                InFrontChain(item) &&
+                leftSide.Any(left =>
+                    left.Runtime == item.Runtime && !left.RightSide))
+            .OrderBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Settings))
+            .LastOrDefault();
+
+    /// <summary>Bridge band = INTERSECTION of both sides' playing bands; null where they barely overlap.</summary>
+    internal static (double LowHz, double HighHz)? StereoBridgeBand(
+        VirtualCrossoverSideAlignmentChannel bridgeLeft,
+        VirtualCrossoverSideAlignmentChannel bridgeRight)
+    {
+        (double leftLowHz, double leftHighHz) =
+            VirtualCrossoverJunctions.GetChannelBand(bridgeLeft.Settings);
+        (double rightLowHz, double rightHighHz) =
+            VirtualCrossoverJunctions.GetChannelBand(bridgeRight.Settings);
+        double lowHz = Math.Max(leftLowHz, rightLowHz);
+        double highHz = Math.Min(leftHighHz, rightHighHz);
+        return highHz < lowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio
+            ? null
+            : (lowHz, highHz);
+    }
+
+    internal static bool InFrontChain(VirtualCrossoverSideAlignmentChannel side) =>
         VirtualCrossoverAlignmentStages.StageOf(side.Runtime.Pair.Zone) ==
             VirtualCrossoverAlignmentStage.FrontChain;
 
@@ -5313,8 +5336,8 @@ public partial class VirtualCrossoverPanel : UserControl
     }
 
     // A mono pair contributes ONE instance (left), tuned in the left pass and fixed on the right.
-    private (List<VirtualCrossoverSideAlignmentChannel> Left, List<VirtualCrossoverSideAlignmentChannel> Right)
-        CollectStereoSides()
+    internal static (List<VirtualCrossoverSideAlignmentChannel> Left, List<VirtualCrossoverSideAlignmentChannel> Right)
+        CollectStereoSides(IEnumerable<VirtualCrossoverChannel> channels)
     {
         var left = new List<VirtualCrossoverSideAlignmentChannel>();
         var right = new List<VirtualCrossoverSideAlignmentChannel>();
@@ -5409,18 +5432,15 @@ public partial class VirtualCrossoverPanel : UserControl
 
         VirtualCrossoverSideAlignmentChannel bridgeLeft = leftSide.First(
             item => item.Runtime == bridgeRight.Runtime && !item.RightSide);
-        // Bridge band = INTERSECTION of both sides' playing bands; no overlap -> refuse.
-        (double leftBandLowHz, double leftBandHighHz) =
-            VirtualCrossoverJunctions.GetChannelBand(bridgeLeft.Settings);
-        (double rightBandLowHz, double rightBandHighHz) =
-            VirtualCrossoverJunctions.GetChannelBand(bridgeRight.Settings);
-        double bridgeBandLowHz = Math.Max(leftBandLowHz, rightBandLowHz);
-        double bridgeBandHighHz = Math.Min(leftBandHighHz, rightBandHighHz);
-        if (bridgeBandHighHz <
-            bridgeBandLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+        if (StereoBridgeBand(bridgeLeft, bridgeRight) is not
+            (double bridgeBandLowHz, double bridgeBandHighHz))
         {
             if (interactive)
             {
+                (double leftBandLowHz, double leftBandHighHz) =
+                    VirtualCrossoverJunctions.GetChannelBand(bridgeLeft.Settings);
+                (double rightBandLowHz, double rightBandHighHz) =
+                    VirtualCrossoverJunctions.GetChannelBand(bridgeRight.Settings);
                 ShowError(
                     "The stereo bridge has no usable shared band.",
                     $"The top pair's crossover bands barely overlap: " +
@@ -5527,7 +5547,8 @@ public partial class VirtualCrossoverPanel : UserControl
             AlignmentReprocessor reprocessor = ComputeStereoAlignment(
                 chainLeft, chainRight, union, bridgeLeft, bridgeRight,
                 bridgeBandLowHz, bridgeBandHighHz, request.SceneOffsetMs,
-                request.RightHandDrive, engineAlignment, decisions, log);
+                request.RightHandDrive, ProcessorSampleRateHz, ProcessorMaxDelayMs,
+                engineAlignment, decisions, log);
             if (later.Count > 0)
             {
                 // Engine roles, so RHD places groups against the reference the walk settled.
@@ -5606,7 +5627,7 @@ public partial class VirtualCrossoverPanel : UserControl
         return new AutoDelayRunResult(outcomes, Stereo: true, request, report, log);
     }
 
-    internal AlignmentReprocessor ComputeStereoAlignment(
+    internal static AlignmentReprocessor ComputeStereoAlignment(
         List<VirtualCrossoverSideAlignmentChannel> leftSide,
         List<VirtualCrossoverSideAlignmentChannel> rightSide,
         List<VirtualCrossoverSideAlignmentChannel> union,
@@ -5616,6 +5637,8 @@ public partial class VirtualCrossoverPanel : UserControl
         double bridgeBandHighHz,
         double sceneOffsetMs,
         bool rightHandDrive,
+        int processorSampleRateHz,
+        double maxDelayMs,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         Dictionary<IAlignmentChannel, AlignmentDecision> decisions,
         System.Text.StringBuilder log)
@@ -5627,7 +5650,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     side,
                     side.State.TransferImpulseResponse!,
                     side.State.SampleRate,
-                    ProcessorSampleRateHz,
+                    processorSampleRateHz,
                     side.Settings.ToChain(side.Runtime.Pair.Zone))).ToList(),
                 log));
 
@@ -5709,7 +5732,7 @@ public partial class VirtualCrossoverPanel : UserControl
             alignment,
             log,
             decisions,
-            maxDelayMs: ProcessorMaxDelayMs);
+            maxDelayMs);
         return reprocessor;
     }
 

@@ -555,15 +555,15 @@ public sealed class StereoAlignmentTests
 
         Assert.Contains("Co-move L mid+R mid: ", derangedLog.ToString());
 
-        // Relative to the bottom channel: uniform shifts change no relation.
+        // Relative to the bottom channel: uniform shifts change no relation. The far side bounds the co-move's
+        // window (never scores it), and the scan's step follows the window, so one 0.02 ms grid step is allowed.
         for (int i = 1; i < left.Length; i++)
         {
-            Assert.Equal(
-                plain.GetValueOrDefault(left[i]).DelayMs -
-                    plain.GetValueOrDefault(left[0]).DelayMs,
-                deranged.GetValueOrDefault(derangedLeft[i]).DelayMs -
-                    deranged.GetValueOrDefault(derangedLeft[0]).DelayMs,
-                2);
+            double plainMs = plain.GetValueOrDefault(left[i]).DelayMs -
+                plain.GetValueOrDefault(left[0]).DelayMs;
+            double derangedMs = deranged.GetValueOrDefault(derangedLeft[i]).DelayMs -
+                deranged.GetValueOrDefault(derangedLeft[0]).DelayMs;
+            Assert.InRange(derangedMs, plainMs - 0.021, plainMs + 0.021);
             Assert.Equal(
                 plain.GetValueOrDefault(left[i]).InvertPolarity,
                 deranged.GetValueOrDefault(derangedLeft[i]).InvertPolarity);
@@ -609,6 +609,86 @@ public sealed class StereoAlignmentTests
             reprocessCount: count);
 
         Assert.InRange(count[0], 1, 40);
+    }
+
+    [Fact]
+    public void NormalizePolarityPresentation_CountsDriverPositionsAndLeavesTheSubNormal()
+    {
+        // Mono sub plus three pairs: sub and midbasses inverted is 3 of 7 channels but 2 of 4 positions — a tie,
+        // and the tie is broken so the sub reads normal; the whole field flips, both sides alike.
+        var sub = new TestChannel("sub", ImpulseAtMs(0));
+        TestChannel[] left = [new("L woof", ImpulseAtMs(0)), new("L mid", ImpulseAtMs(0)), new("L twr", ImpulseAtMs(0))];
+        TestChannel[] right = [new("R woof", ImpulseAtMs(0)), new("R mid", ImpulseAtMs(0)), new("R twr", ImpulseAtMs(0))];
+        List<AlignmentSnapshot> positions = [Snapshot(sub, default), .. left.Select(c => Snapshot(c, default))];
+        List<AlignmentSnapshot> scope = [.. positions, .. right.Select(c => Snapshot(c, default))];
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [sub] = new(0, true),
+            [left[0]] = new(1, true),
+            [right[0]] = new(1, true)
+        };
+
+        AutoAlignmentEngine.NormalizePolarityPresentation(
+            scope, alignment, new StringBuilder(), positions);
+
+        Assert.False(alignment[sub].InvertPolarity);
+        Assert.False(alignment[left[0]].InvertPolarity);
+        Assert.False(alignment[right[0]].InvertPolarity);
+        foreach (TestChannel stack in new[] { left[1], left[2], right[1], right[2] })
+        {
+            Assert.True(alignment[stack].InvertPolarity, stack.Name);
+        }
+    }
+
+    [Fact]
+    public void RebalanceJunctionBranches_AdoptedMove_DelaysAndFlipsTheStackAbove()
+    {
+        // The reference mid/twr junction ties between its lobes (an inverted twin 12 samples out, about half a period
+        // at 2500 Hz); the far tweeter is wired inverted and sits those 12 samples early, on the alias. The move is
+        // half a period AND a flip of the tweeters on both sides; the delay alone would be the worst of both branches.
+        Complex[] leftMidIr = ImpulseAtMs(0.0);
+        leftMidIr[BasePosition + 12] -= Complex.One;
+        var leftMid = new TestChannel("L mid", leftMidIr);
+        var leftTwr = new TestChannel("L twr", ImpulseAtMs(0.0));
+        var rightMid = new TestChannel("R mid", ImpulseAtMs(0.0));
+        var rightTwr = new TestChannel("R twr", ImpulseAtMs(-0.25, -1.0));
+        TestChannel[] all = [leftMid, leftTwr, rightMid, rightTwr];
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel => Snapshot(channel, overrides.GetValueOrDefault(channel)))
+                .ToList();
+        IReadOnlyList<AlignmentSnapshot> initial =
+            Reprocess(new Dictionary<IAlignmentChannel, AlignmentOverride>());
+        AlignmentSnapshot Of(TestChannel channel) =>
+            initial.First(item => item.Channel == channel);
+        List<AlignmentSnapshot> left = [Of(leftMid), Of(leftTwr)];
+        List<AlignmentSnapshot> right = [Of(rightMid), Of(rightTwr)];
+        var plan = new StereoAlignmentPlan(
+            left, [Junction(left[0], left[1], 2_500)],
+            right, [Junction(right[0], right[1], 2_500)],
+            new HashSet<IAlignmentChannel>(), leftTwr, rightTwr,
+            BridgeBandLowHz: 2_500, BridgeBandHighHz: 12_000, SceneOffsetMs: 0,
+            [
+                new StereoPairLink(leftMid, rightMid, 400, 2_500),
+                new StereoPairLink(leftTwr, rightTwr, 2_500, 12_000)
+            ]);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+        var log = new StringBuilder();
+
+        AutoAlignmentEngine.RebalanceJunctionBranches(
+            plan, left, right, initial, Reprocess, alignment, log);
+
+        Assert.Contains("stereo branch moved at L mid/L twr", log.ToString());
+        foreach (TestChannel tweeter in new[] { leftTwr, rightTwr })
+        {
+            AlignmentOverride over = alignment.GetValueOrDefault(tweeter);
+            Assert.True(over.InvertPolarity, tweeter.Name);
+            Assert.InRange(over.DelayMs, 0.14, 0.26);
+        }
+        Assert.False(alignment.GetValueOrDefault(leftMid).InvertPolarity);
+        Assert.False(alignment.GetValueOrDefault(rightMid).InvertPolarity);
+        Assert.Equal(0.0, alignment.GetValueOrDefault(leftMid).DelayMs);
+        Assert.Equal(0.0, alignment.GetValueOrDefault(rightMid).DelayMs);
     }
 
     [Fact]
@@ -977,7 +1057,8 @@ public sealed class StereoAlignmentTests
             bool midIsMono = false,
             double baseDelayMs = 1.0,
             bool withFieldFloor = false,
-            double fieldChannelMs = 0.0)
+            double fieldChannelMs = 0.0,
+            double junctionHz = 2_500)
     {
         var farMid = new TestChannel("R mid", ImpulseAtMs(5.0));
         var farTwr = new TestChannel("R twr", ImpulseAtMs(5.0 + twrLateMs));
@@ -995,13 +1076,13 @@ public sealed class StereoAlignmentTests
         List<AlignmentSnapshot> snapshots = all
             .Select(channel => Snapshot(channel, default))
             .ToList();
-        AlignmentJunction pair = Junction(snapshots[0], snapshots[1], 2_500);
+        AlignmentJunction pair = Junction(snapshots[0], snapshots[1], junctionHz);
         var plan = new StereoAlignmentPlan(
             snapshots, [pair], snapshots, [pair],
             midIsMono
                 ? new HashSet<IAlignmentChannel> { farMid }
                 : new HashSet<IAlignmentChannel>(),
-            farMid, farTwr, 1_250, 5_000, SceneOffsetMs: 0);
+            farMid, farTwr, junctionHz / 2, junctionHz * 2, SceneOffsetMs: 0);
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
         {
             [farMid] = new(baseDelayMs, false),
@@ -1035,13 +1116,24 @@ public sealed class StereoAlignmentTests
     [Fact]
     public void PolishFarSideJunctions_NeverSpendsMoreThanTheBudgetPerChannel()
     {
-        // Each channel may close at most 0.03 ms: the polish is capped, not a second alignment pass.
-        (double midDelay, double twrDelay, string _) = RunFarSidePolish(0.10);
+        // The mid may close at most an eighth of its 2500 Hz period (0.05 ms): a polish, not a second alignment
+        // pass. The tweeter is the bridge and holds the scene delta exactly.
+        (double midDelay, double twrDelay, string log) = RunFarSidePolish(0.50);
 
-        Assert.InRange(Math.Abs(midDelay - 1.0), 0, 0.03 + 1e-9);
-        Assert.InRange(Math.Abs(twrDelay - 1.0), 0, 0.03 + 1e-9);
+        Assert.InRange(Math.Abs(midDelay - 1.0), 0, 0.05 + 1e-9);
         Assert.True(midDelay > 1.0, $"mid did not move later ({midDelay:0.000})");
-        Assert.True(twrDelay < 1.0, $"twr did not move earlier ({twrDelay:0.000})");
+        Assert.Equal(1.0, twrDelay);
+        Assert.Contains("Far-side polish R twr: none, the bridge holds the scene delta", log);
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_ReachFollowsTheJunctionPeriod()
+    {
+        // The same 0.50 ms skew under a 200 Hz split is inside the mid's reach (an eighth of 5 ms): it closes exactly.
+        (double midDelay, double twrDelay, string _) = RunFarSidePolish(0.50, junctionHz: 200);
+
+        Assert.Equal(1.0, twrDelay);
+        Assert.InRange(midDelay, 1.495, 1.505);
     }
 
     [Fact]
@@ -1065,13 +1157,13 @@ public sealed class StereoAlignmentTests
         Assert.InRange(51.0 - twrDelay, 0, 50.0);
     }
     [Fact]
-    public void PolishFarSideJunctions_NeverMovesAMonoChannel()
+    public void PolishFarSideJunctions_NeverMovesAMonoChannelOrTheBridge()
     {
-        // The mono is shared with the reference side: spend the tweeter's budget instead.
+        // The mono is shared with the reference side and the tweeter is the bridge: the skew stands.
         (double midDelay, double twrDelay, string _) =
             RunFarSidePolish(0.02, midIsMono: true);
 
         Assert.Equal(1.0, midDelay, 3);
-        Assert.InRange(twrDelay, 0.97, 0.99);
+        Assert.Equal(1.0, twrDelay, 3);
     }
 }

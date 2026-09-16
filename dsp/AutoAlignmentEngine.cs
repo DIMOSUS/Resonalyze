@@ -3490,8 +3490,7 @@ public static class AutoAlignmentEngine
         IAlignmentChannel mover,
         IAlignmentChannel neighbor,
         double lowHz,
-        double highHz,
-        bool levelMatch)
+        double highHz)
     {
         AlignmentSnapshot moving = render.First(item => item.Channel == mover);
         AlignmentSnapshot held = render.First(item => item.Channel == neighbor);
@@ -3501,7 +3500,9 @@ public static class AutoAlignmentEngine
             mover.SampleRate,
             lowHz,
             highHz,
-            levelMatch,
+            // The physical sum, as the panel judges it. A level match lifts a member that is tens of dB down in a
+            // half-band it barely reaches and turns its phase into a cancellation that never plays.
+            levelMatch: false,
             requireDelayEvidence: true,
             gateAnchorSample: null,
             moving.ValidRange,
@@ -3520,8 +3521,7 @@ public static class AutoAlignmentEngine
     private static List<HalfBandCell> HalfBandCells(
         IEnumerable<AlignmentJunction> junctions,
         IAlignmentChannel mover,
-        IReadOnlyList<AlignmentSnapshot> render,
-        bool levelMatch)
+        IReadOnlyList<AlignmentSnapshot> render)
     {
         var cells = new List<HalfBandCell>();
         foreach (AlignmentJunction junction in junctions)
@@ -3534,7 +3534,7 @@ public static class AutoAlignmentEngine
                 (double lowHz, double highHz) = upperHalf
                     ? (junction.CrossoverHz, junction.BandHighHz)
                     : (junction.BandLowHz, junction.CrossoverHz);
-                if (JunctionSum(render, mover, neighbor, lowHz, highHz, levelMatch) is { } sum)
+                if (JunctionSum(render, mover, neighbor, lowHz, highHz) is { } sum)
                 {
                     cells.Add(new HalfBandCell(junction, neighbor, lowHz, highHz, sum));
                 }
@@ -3684,8 +3684,7 @@ public static class AutoAlignmentEngine
                     : junction.Lower.Channel;
                 // The window is held fixed across all probed deltas and rebuilt from `current`, whose fronts moved with the cascade.
                 VirtualCrossoverAnalysis.SumLossEvaluator? evaluator = JunctionSum(
-                    current, mover, neighbor, junction.BandLowHz, junction.BandHighHz,
-                    levelMatch: true);
+                    current, mover, neighbor, junction.BandLowHz, junction.BandHighHz);
                 if (evaluator != null)
                 {
                     evaluators.Add(evaluator);
@@ -3882,12 +3881,9 @@ public static class AutoAlignmentEngine
                 junction.Lower.Channel == channel
                     ? junction.Upper.Channel
                     : junction.Lower.Channel;
-            // The physical sum, as the panel judges it (see the stereo branch check): with a period-long leash the
-            // level match's phantom cancellations would steer the trim.
             List<VirtualCrossoverAnalysis.SumLossEvaluator> evaluators = adjacent
                 .Select(junction => JunctionSum(
-                    snapshots, channel, NeighborOf(junction), junction.BandLowHz, junction.BandHighHz,
-                    levelMatch: false))
+                    snapshots, channel, NeighborOf(junction), junction.BandLowHz, junction.BandHighHz))
                 .OfType<VirtualCrossoverAnalysis.SumLossEvaluator>()
                 .ToList();
             if (evaluators.Count == 0)
@@ -3897,7 +3893,7 @@ public static class AutoAlignmentEngine
 
             // Half-band cells: a period-long leash can sell a junction's upper half for its lower one, and the
             // upper half is the one the front is made of. No cell may lose more than the trim gains overall.
-            List<HalfBandCell> cells = HalfBandCells(adjacent, channel, snapshots, levelMatch: false);
+            List<HalfBandCell> cells = HalfBandCells(adjacent, channel, snapshots);
 
             double Score(double deltaMs) =>
                 evaluators.Sum(evaluator => PenalizedLoss(evaluator, deltaMs)) / evaluators.Count;
@@ -4086,13 +4082,10 @@ public static class AutoAlignmentEngine
             }
 
             IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
-            // The physical sum, as the panel judges it: a level match lifts a member that is tens of dB down in
-            // a half-band it barely reaches and turns its phase into a cancellation that never plays.
             VirtualCrossoverAnalysis.SumLossEvaluator? Probe(
                 AlignmentJunction junction, double lowHz, double highHz) =>
                 JunctionSum(
-                    current, junction.Upper.Channel, junction.Lower.Channel, lowHz, highHz,
-                    levelMatch: false);
+                    current, junction.Upper.Channel, junction.Lower.Channel, lowHz, highHz);
 
             if (Probe(reference, reference.BandLowHz, reference.BandHighHz)
                     is not { } referenceBand ||
@@ -4136,8 +4129,7 @@ public static class AutoAlignmentEngine
             IReadOnlyList<AlignmentSnapshot> rendered = reprocess(trial);
             double? Rendered(AlignmentJunction junction, double lowHz, double highHz) =>
                 JunctionSum(
-                    rendered, junction.Upper.Channel, junction.Lower.Channel, lowHz, highHz,
-                    levelMatch: false) is { } sum
+                    rendered, junction.Upper.Channel, junction.Lower.Channel, lowHz, highHz) is { } sum
                     ? PenalizedLoss(sum, 0)
                     : null;
 
@@ -4156,8 +4148,8 @@ public static class AutoAlignmentEngine
             // A true lobe does not buy the mean by wrecking a half-band: the damage anywhere may not exceed what the
             // far junction gains, which is the whole justification for disturbing a settled one.
             string? refusal = HalfBandRefusal(
-                HalfBandCells([reference], reference.Upper.Channel, current, levelMatch: false)
-                    .Concat(HalfBandCells([far], far.Upper.Channel, current, levelMatch: false)),
+                HalfBandCells([reference], reference.Upper.Channel, current)
+                    .Concat(HalfBandCells([far], far.Upper.Channel, current)),
                 cell => PenalizedLoss(cell.Sum, 0) -
                     (Rendered(cell.Junction, cell.LowHz, cell.HighHz) ?? PenalizedLoss(cell.Sum, 0)),
                 Math.Max(StereoJunctionBranch.ReferenceLossDb, verified.FarGainDb));
@@ -4250,8 +4242,7 @@ public static class AutoAlignmentEngine
                     mono,
                     junction.Lower.Channel == mono ? junction.Upper.Channel : junction.Lower.Channel,
                     lowHz,
-                    highHz,
-                    levelMatch: true);
+                    highHz);
 
             var fullBand =
                 new Dictionary<AlignmentJunction,
@@ -4389,7 +4380,7 @@ public static class AutoAlignmentEngine
                 // Sub-band veto per (junction, half-band) cell where the delay is observable, against the better of in-lobe polish and the incumbent.
                 // See docs/tech/auto-alignment.md#post-descent-passes.
                 string? veto = HalfBandRefusal(
-                    HalfBandCells(junctions, mono, certified, levelMatch: true),
+                    HalfBandCells(junctions, mono, certified),
                     cell => Math.Max(
                         PenalizedLoss(cell.Sum, bestPolishDelta),
                         PenalizedLoss(cell.Sum, 0)) - PenalizedLoss(cell.Sum, bestDelta, bestFlip),

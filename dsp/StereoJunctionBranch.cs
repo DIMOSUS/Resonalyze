@@ -1,7 +1,7 @@
 namespace Resonalyze.Dsp;
 
 /// <param name="ReferenceGainDb">What the branch move does to the reference side's junction; negative is a loss.</param>
-public sealed record StereoBranchReading(
+internal sealed record StereoBranchReading(
     double DeltaMs,
     bool Flip,
     double ReferenceGainDb,
@@ -12,7 +12,7 @@ public sealed record StereoBranchReading(
 
 /// <summary>Whether a junction's two sides agree about which lobe it sits on. A reference side that settles a near-tie
 /// commits the far side too, which pays for it. See docs/tech/auto-alignment.md#stereo-branch-check.</summary>
-public static class StereoJunctionBranch
+internal static class StereoJunctionBranch
 {
     /// <summary>The far side must gain at least this for the move to be worth disturbing a settled junction.</summary>
     public const double FarGainDb = 0.30;

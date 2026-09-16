@@ -5,7 +5,7 @@ namespace Resonalyze.Dsp;
 /// <param name="CandidateR">Coherence that candidate attains at its own lobe, signed by its polarity.</param>
 /// <param name="ChosenR">The same figure for the standing pick.</param>
 /// <param name="BestLagMs">Lag of the curve's strongest coherence, whether or not a candidate sits there.</param>
-public sealed record DirectLobeReading(
+internal sealed record DirectLobeReading(
     AlignmentCandidate? Candidate,
     double CandidateR,
     double ChosenR,
@@ -14,7 +14,7 @@ public sealed record DirectLobeReading(
 
 /// <summary>Judges the CHOSEN lobe against the direct sound's whitened correlation over a full period either way:
 /// the tie arbitration two steps earlier only weighs the flip partner. See docs/tech/auto-alignment.md#direct-lobe-check.</summary>
-public static class DirectLobeWitness
+internal static class DirectLobeWitness
 {
     /// <summary>Same floor the tie arbitration trusts: below it the wavefronts are not coherent enough to vote.</summary>
     public const double MinimumR = 0.6;

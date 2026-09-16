@@ -951,9 +951,11 @@ which is why a lone pair co-move cannot express it (the tweeter has to follow th
   more than `ReferenceLossDb` (0.10). This pass is for branches the reference could not tell apart,
   not for trading one side against the other — `RebalancePairsKeepingScene` states the same rule for
   its own polish ("a two-side mean buys the far junction with the near one").
-- **No half-band may lose more than the far side gains.** Scale-free on purpose, so there is no
-  threshold to overfit: the far gain is the whole justification for disturbing a settled junction, and
-  damage beyond it is not paid for.
+- **No half-band may lose more than the far side gains** — both halves of both junctions. Scale-free
+  on purpose, so there is no threshold to overfit: the far gain is the whole justification for
+  disturbing a settled junction, and damage beyond it is not paid for.
+- **The field stays realizable.** The move is optional, so one whose rebased span would pass the
+  device ceiling is declined rather than left for the final feasibility check to refuse the whole run.
 - **Both reads are the PHYSICAL sum** (`levelMatch: false`), the sum the panel judges. A level match
   lifts a member that is tens of dB down in a half-band it barely reaches and turns its phase into a
   cancellation that never plays: on the v6 200 Hz split the level-matched 200-400 Hz half read the

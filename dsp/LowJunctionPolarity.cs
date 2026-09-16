@@ -4,7 +4,7 @@ namespace Resonalyze.Dsp;
 
 /// <param name="SameSignShiftMs">Delay to add to the variable channel to put its same-sign crest under the
 /// neighbour's, in the frame <see cref="AlignmentCandidate.DelayMs"/> lives in.</param>
-public sealed record LowJunctionPolarityVote(
+internal sealed record LowJunctionPolarityVote(
     bool ExpectsRelativeInversion,
     double SameSignShiftMs,
     double OppositeSignShiftMs)
@@ -25,7 +25,7 @@ public sealed record LowJunctionPolarityVote(
 
 /// <summary>Reads a low crossover's relative polarity off the two channels' own crests, where the summation score
 /// cannot tell a lobe from its half-period-plus-inversion twin. See docs/tech/auto-alignment.md#low-junction-polarity.</summary>
-public static class LowJunctionPolarity
+internal static class LowJunctionPolarity
 {
     /// <summary>Score gap inside which the two polarity branches are a tie and the crests decide.</summary>
     public const double TieMarginDb = 0.5;

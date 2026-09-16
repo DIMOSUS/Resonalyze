@@ -3155,7 +3155,7 @@ public static class AutoAlignmentEngine
         // Both sides read the same junction before one side’s near-tie stands for both.
         RebalanceJunctionBranches(
             plan, plan.LeftChannelsByBand, rightByBand, allChannels,
-            reprocess, alignment, log, decisions);
+            reprocess, alignment, log, maxDelayMs, decisions);
 
         // Mono channels are scene-invariant: this is the only pass where their right junction votes.
         ComoveMonoChannels(
@@ -3958,6 +3958,7 @@ public static class AutoAlignmentEngine
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
+        double maxDelayMs = DefaultMaxDelayMs,
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
     {
         if (plan.LeftPairs.Count != plan.RightPairs.Count)
@@ -4101,13 +4102,33 @@ public static class AutoAlignmentEngine
             foreach ((AlignmentJunction junction, bool farSide) in
                 new[] { (reference, false), (far, true) })
             {
-                double halfGainDb = GainOf(
-                    junction, junction.CrossoverHz, junction.BandHighHz);
-                if (halfGainDb < -allowedHalfLossDb)
+                foreach (bool upperHalf in new[] { false, true })
                 {
-                    string sideName = farSide ? "far" : "reference";
+                    (double lowHz, double highHz) = upperHalf
+                        ? (junction.CrossoverHz, junction.BandHighHz)
+                        : (junction.BandLowHz, junction.CrossoverHz);
+                    double halfGainDb = GainOf(junction, lowHz, highHz);
+                    if (halfGainDb < -allowedHalfLossDb)
+                    {
+                        string sideName = farSide ? "far" : "reference";
+                        refusal = FormattableString.Invariant(
+                            $"it loses the {lowHz:0}-{highHz:0} Hz half of the {sideName} junction by {-halfGainDb:0.00} dB");
+                    }
+                }
+            }
+
+            // The move is optional, and the field must stay realizable: a span past the ceiling would make the final
+            // feasibility check refuse the whole run for a branch it could simply have kept.
+            if (refusal == null)
+            {
+                List<double> trialDelays = shiftScope
+                    .Select(item => trial.GetValueOrDefault(item.Channel).DelayMs)
+                    .ToList();
+                double spanMs = trialDelays.Max() - trialDelays.Min();
+                if (spanMs > maxDelayMs)
+                {
                     refusal = FormattableString.Invariant(
-                        $"it loses the {junction.CrossoverHz:0}-{junction.BandHighHz:0} Hz half of the {sideName} junction by {-halfGainDb:0.00} dB");
+                        $"the field would span {spanMs:0.00} ms, past the {maxDelayMs:0} ms ceiling");
                 }
             }
 

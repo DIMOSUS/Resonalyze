@@ -278,7 +278,9 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                     $"    direct-PHAT {label,-8} " +
                     $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
                     $"on-lobe r {near.Y:+0.00;-0.00} @ {near.X:+0.00;-0.00} ms; " +
-                    $"best r {best.Y:+0.00;-0.00} @ {best.X:+0.00;-0.00} ms");
+                    $"best r {best.Y:+0.00;-0.00} @ {best.X:+0.00;-0.00} ms; " +
+                    $"arrival marker {view.ArrivalLagMs:+0.00;-0.00} ms" +
+                    (view.ArrivalReAnchored ? " (re-anchored)" : ""));
             }
         }
 

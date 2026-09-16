@@ -2758,8 +2758,12 @@ whitened cross-correlation together with its **direct twin**, the same comb read
 on the drivers' direct sound alone, plus the junction's **prior-free acoustic
 score** for both polarities. That score is the acoustics alone, while the searches
 also weigh the arrival prior and the lobe/onset/scene locks, so the gap between
-the solid marker (the current alignment) and the dashed one (the envelope-arrival
-estimate) is that trade, drawn. The direct twin is the engine's **polarity
+the solid marker (the current alignment) and the dashed one (the arrival the
+search anchored on) is that trade, drawn. That dashed marker is the search's own
+read, not the raw envelope: where the honesty probes convict a modal latch — a
+midbass whose band envelope rises with the room rather than the driver — the
+marker sits on the front they re-anchored it to, and its label says
+*re-anchored*. The direct twin is the engine's **polarity
 witness**: where the summation score is too close to call between a lag and its
 inverted rival, the wavefronts within a period or two of the front decide it,
 because that is the part of the record the drivers made and the room had not yet

@@ -628,9 +628,16 @@ term, since a bulk delay wraps the phase into a sawtooth and swamps the filter g
   bounds the sweep at about 600 points per polarity.
 - Four independent reads run in parallel: the whitened full-record comb (deliberately untrimmed; reflections
   are its subject, the honest read at bass junctions), the whitened direct-sound twin (the cut the engine's
-  direct-coherence witness reads, answering where the drivers align), and both polarities of the summation
+  direct-coherence witness reads, answering where the drivers align), both polarities of the summation
   score from one bin set with the search's own settings (per-channel windows, search-side level match, whose
-  absence reshapes the lobes when channel gains differ).
+  absence reshapes the lobes when channel gains differ), and the arrival marker.
+- The arrival marker is `AutoAlignmentEngine.ReadJunctionArrivals`, the read stage 1 anchors on: the
+  band-limited envelope fronts, replaced by the predicted fronts or the upper-half reads where the honesty
+  probes convict a modal latch (`#arrival-honesty-probe`, `#predicted-front-arrival` in auto-alignment.md).
+  `SearchSnapshot` gives the engine what it needs — the cropped processed response, the side's chain and the
+  chain-free response at the same crop, which the render's head truncation from sample 0 makes exact. A raw
+  envelope marker drew, on the v6 cabin's 200 Hz split, a midbass arrival 9 ms behind the front the search
+  had re-anchored to; the label says *re-anchored* when the read is not the envelope's.
 
 `BuildCoherenceView` hands the same cropped processed pair to `VirtualCrossoverAnalysis.ArrivalCoherenceLadder`.
 

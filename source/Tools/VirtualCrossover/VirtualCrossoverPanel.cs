@@ -6862,7 +6862,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using var _ = AppProfiler.Zone("VirtualDSP.BuildCorrelationView");
         int sampleRate = pair.Lower.SampleRate;
         (Complex[] lower, Complex[] upper,
-            ValidSampleRange lowerRange, ValidSampleRange upperRange) =
+            ValidSampleRange lowerRange, ValidSampleRange upperRange, int cropStart) =
             CropJunctionPair(pair, scope, sampleRate);
         // No anchor: each channel windowed at its own band-limited front, as Auto delay measures junctions.
 
@@ -6881,6 +6881,7 @@ public partial class VirtualCrossoverPanel : UserControl
         List<SignalPoint> scoreInverted = null!;
         double lowerArrivalMs = 0;
         double upperArrivalMs = 0;
+        bool arrivalReAnchored = false;
         Parallel.Invoke(
             // UNTRIMMED: reflections are this curve's subject (honest at bass junctions).
             () => whitened = VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
@@ -6915,10 +6916,31 @@ public partial class VirtualCrossoverPanel : UserControl
                 scoreNormal = Penalized(normal);
                 scoreInverted = Penalized(inverted);
             },
-            () => lowerArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                lower, sampleRate, pair.BandLowHz, pair.BandHighHz, lowerRange),
-            () => upperArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                upper, sampleRate, pair.BandLowHz, pair.BandHighHz, upperRange));
+            // The arrival marker is the read stage 1 anchors on — the envelope fronts, re-anchored where the honesty
+            // probes convict a modal latch — not the raw envelope the search may have discarded.
+            () =>
+            {
+                AutoAlignmentEngine.JunctionArrivalRead? read =
+                    AutoAlignmentEngine.ReadJunctionArrivals(
+                        new AlignmentJunction(
+                            SearchSnapshot(pair.Lower, lower, lowerRange, cropStart, sampleRate),
+                            SearchSnapshot(pair.Upper, upper, upperRange, cropStart, sampleRate),
+                            pair.CrossoverHz, pair.BandLowHz, pair.BandHighHz),
+                        new System.Text.StringBuilder());
+                if (read != null)
+                {
+                    lowerArrivalMs = read.LowerMs;
+                    upperArrivalMs = read.UpperMs;
+                    arrivalReAnchored = read.ReAnchored;
+                }
+                else
+                {
+                    lowerArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                        lower, sampleRate, pair.BandLowHz, pair.BandHighHz, lowerRange);
+                    upperArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                        upper, sampleRate, pair.BandLowHz, pair.BandHighHz, upperRange);
+                }
+            });
 
         return new JunctionCorrelationView(
             $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
@@ -6930,7 +6952,43 @@ public partial class VirtualCrossoverPanel : UserControl
             whitenedDirect,
             scoreNormal,
             scoreInverted,
-            lowerArrivalMs - upperArrivalMs);
+            lowerArrivalMs - upperArrivalMs,
+            arrivalReAnchored);
+    }
+
+    // The channel as the search sees it: the cropped processed response, its chain, and the chain-free response at the
+    // same crop for the predicted-front probe (the render truncates the head from sample 0, so the origins agree).
+    private static AlignmentSnapshot SearchSnapshot(
+        ProcessedChannel item,
+        Complex[] processed,
+        ValidSampleRange range,
+        int cropStart,
+        int sampleRate)
+    {
+        VirtualCrossoverChannel channel = item.Channel;
+        Complex[]? bypassed = null;
+        ValidSampleRange bypassedRange = default;
+        if (channel.TransferImpulseResponse is { } transfer && cropStart >= 0)
+        {
+            var source = new Complex[processed.Length];
+            int count = Math.Clamp(transfer.Length - cropStart, 0, processed.Length);
+            if (count > 0)
+            {
+                Array.Copy(transfer, cropStart, source, 0, count);
+                bypassed = VirtualCrossoverAnalysis.ApplyChain(
+                    source, DspChannelChain.Identity, sampleRate,
+                    channel.ProcessorSampleRate, out bypassedRange);
+            }
+        }
+
+        return new AlignmentSnapshot(
+            channel,
+            processed,
+            VirtualCrossoverAnalysis.FindPeakIndex(processed),
+            range,
+            channel.Pair.ToChain(channel.ActiveRight),
+            bypassed,
+            bypassedRange);
     }
 
     private static List<SignalPoint> Penalized(
@@ -6950,7 +7008,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using var _ = AppProfiler.Zone("VirtualDSP.BuildCoherenceView");
         int sampleRate = pair.Lower.SampleRate;
         (Complex[] lower, Complex[] upper,
-            ValidSampleRange lowerRange, ValidSampleRange upperRange) =
+            ValidSampleRange lowerRange, ValidSampleRange upperRange, int _cropStart) =
             CropJunctionPair(pair, scope, sampleRate);
         return new JunctionCoherenceView(
             $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
@@ -6966,7 +7024,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // Valid ranges are shifted into the crop frame so front detections match the search's (matters on glitch-headed records).
     private static (Complex[] Lower, Complex[] Upper,
-        ValidSampleRange LowerRange, ValidSampleRange UpperRange)
+        ValidSampleRange LowerRange, ValidSampleRange UpperRange, int CropStart)
         CropJunctionPair(
             AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope, int sampleRate)
     {
@@ -6990,7 +7048,7 @@ public partial class VirtualCrossoverPanel : UserControl
                         croppedIr.Length))
                 : item.ValidRange;
         return (lower, upper,
-            Shifted(pair.Lower, lower), Shifted(pair.Upper, upper));
+            Shifted(pair.Lower, lower), Shifted(pair.Upper, upper), cropStart);
     }
 
     private async Task CaptureSumToOverlayAsync()

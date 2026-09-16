@@ -820,6 +820,239 @@ public static class AutoAlignmentEngine
             : double.NaN;
     }
 
+    /// <summary>What stage 1 anchors a junction on: the measured band-limited fronts, replaced by the predicted fronts where
+    /// a modal latch is convicted (#predicted-front-arrival) or by the upper-half reads where the upper-half probe catches one
+    /// (#arrival-honesty-probe). The correlation view draws this same read, so its arrival marker is the one the search
+    /// weighed. See docs/tech/auto-alignment.md#arrival-honesty-probe.</summary>
+    public sealed record JunctionArrivalRead(
+        double LowerMs,
+        double UpperMs,
+        double LowerPredictionMs,
+        double UpperPredictionMs,
+        bool PairPredictionGradeable,
+        bool LowerLatchedByPrediction,
+        bool UpperLatchedByPrediction,
+        double PredictionDisagreementMs,
+        bool ArrivalReanchored,
+        bool UnreplacedLatch)
+    {
+        /// <summary>A side's measured front was replaced: the read is not what the band-limited envelope says.</summary>
+        public bool ReAnchored =>
+            LowerLatchedByPrediction || UpperLatchedByPrediction || ArrivalReanchored;
+    }
+
+    /// <summary>Null where a side's band holds no measurable arrival; the walk refuses such a junction with its reasons.
+    /// Public for the Virtual DSP correlation view, whose arrival marker is this read.</summary>
+    public static JunctionArrivalRead? ReadJunctionArrivals(
+        AlignmentJunction pair,
+        StringBuilder log)
+    {
+        ArgumentNullException.ThrowIfNull(pair);
+        ArgumentNullException.ThrowIfNull(log);
+        TimeAlignmentAnalysisResult lowerRead =
+            ReadProcessedArrival(pair.Lower, pair.BandLowHz, pair.BandHighHz);
+        TimeAlignmentAnalysisResult upperRead =
+            ReadProcessedArrival(pair.Upper, pair.BandLowHz, pair.BandHighHz);
+        return lowerRead.IsValid && upperRead.IsValid &&
+            lowerRead.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
+            upperRead.SignalToNoiseDecibels >= MinimumArrivalSnrDb
+            ? ReadJunctionArrivals(pair, lowerRead, upperRead, log)
+            : null;
+    }
+
+    public static JunctionArrivalRead ReadJunctionArrivals(
+        AlignmentJunction pair,
+        TimeAlignmentAnalysisResult lowerRead,
+        TimeAlignmentAnalysisResult upperRead,
+        StringBuilder log)
+    {
+        double lowerArrival = lowerRead.FirstArrivalDelayMilliseconds;
+        double upperArrival = upperRead.FirstArrivalDelayMilliseconds;
+
+        // Arrival honesty: the predicted-arrival probe first, then the upper-half probe. See docs/tech/auto-alignment.md#arrival-honesty-probe.
+        // Both sides must be gradeable: prediction and measurement residuals cancel only against their own kind.
+        PredictionState lowerState = GradeAgainstPrediction(
+            pair.Lower, lowerArrival, pair.BandLowHz, pair.BandHighHz,
+            out double lowerPrediction);
+        PredictionState upperState = GradeAgainstPrediction(
+            pair.Upper, upperArrival, pair.BandLowHz, pair.BandHighHz,
+            out double upperPrediction);
+        // Inconsistent is ungradeable: a prediction that cannot explain the read may not replace it.
+        static bool Gradeable(PredictionState state) =>
+            state is PredictionState.Verified or PredictionState.Latched;
+        bool pairGradeable = Gradeable(lowerState) && Gradeable(upperState);
+        bool lowerLatchedByPrediction =
+            pairGradeable && lowerState == PredictionState.Latched;
+        bool upperLatchedByPrediction =
+            pairGradeable && upperState == PredictionState.Latched;
+
+        // Conviction dead zone (see LatchArbitrationMinR): the whitened comb decides between predictions and measured arrivals.
+        bool lowerLateInZone =
+            lowerState == PredictionState.Inconsistent &&
+            lowerArrival > lowerPrediction;
+        bool upperLateInZone =
+            upperState == PredictionState.Inconsistent &&
+            upperArrival > upperPrediction;
+        if (!lowerLatchedByPrediction && !upperLatchedByPrediction &&
+            (lowerLateInZone || upperLateInZone) &&
+            lowerState != PredictionState.Unavailable &&
+            upperState != PredictionState.Unavailable &&
+            (lowerLateInZone || lowerState == PredictionState.Verified) &&
+            (upperLateInZone || upperState == PredictionState.Verified))
+        {
+            double periodMs = 1_000.0 / pair.CrossoverHz;
+            double measuredLagMs = lowerArrival - upperArrival;
+            double predictedLagMs = lowerPrediction - upperPrediction;
+            List<SignalPoint> comb =
+                VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
+                    pair.Lower.ImpulseResponse,
+                    pair.Upper.ImpulseResponse,
+                    pair.Lower.Channel.SampleRate,
+                    pair.CrossoverHz,
+                    Math.Log2(pair.BandHighHz / pair.BandLowHz),
+                    Math.Abs(measuredLagMs - predictedLagMs) / 2.0
+                        + periodMs / 2.0,
+                    (measuredLagMs + predictedLagMs) / 2.0,
+                    phaseTransform: true);
+            double StrongestNear(double lagMs) => comb
+                .Where(point => Math.Abs(point.X - lagMs) <= periodMs / 2.0)
+                .Select(point => Math.Abs(point.Y))
+                .DefaultIfEmpty(0.0)
+                .Max();
+            double nearPredicted = StrongestNear(predictedLagMs);
+            double nearMeasured = StrongestNear(measuredLagMs);
+            if (nearPredicted >= LatchArbitrationMinR &&
+                nearPredicted >= nearMeasured + LatchArbitrationMinAdvantage)
+            {
+                log.AppendLine(
+                    $"  {(lowerLateInZone ? pair.Lower : pair.Upper).Channel.Name}: " +
+                    $"read sits in the conviction dead zone and the " +
+                    $"whitened comb sides with the prediction " +
+                    $"(r {nearPredicted:0.00} at the predicted family vs " +
+                    $"{nearMeasured:0.00} at the measured) — convicted by " +
+                    "arbitration");
+                lowerLatchedByPrediction = lowerLateInZone;
+                upperLatchedByPrediction = upperLateInZone;
+            }
+            else
+            {
+                log.AppendLine(
+                    $"  latch arbitration stood down for " +
+                    $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
+                    $"comb r {nearPredicted:0.00} at the predicted family " +
+                    $"vs {nearMeasured:0.00} at the measured — no second " +
+                    "witness, the pair withdraws from the predictor.");
+            }
+        }
+        if (lowerLatchedByPrediction || upperLatchedByPrediction)
+        {
+            void LogConviction(
+                AlignmentSnapshot side, double measuredMs, double predictedMs)
+            {
+                double allowances = (measuredMs - predictedMs) /
+                    PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz);
+                string basis = allowances >= PredictedArrivalConvictionFactor
+                    ? $"conviction needs {PredictedArrivalConvictionFactor:0.0}"
+                    : $"short of the predictor's own " +
+                      $"{PredictedArrivalConvictionFactor:0.0}, convicted by " +
+                      $"the comb's second witness";
+                log.AppendLine(
+                    $"  {side.Channel.Name}: {measuredMs:0.000} ms in " +
+                    $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but its " +
+                    $"un-crossovered front, read through its own " +
+                    $"chain, predicts {predictedMs:0.000} ms there (modal " +
+                    $"latch behind the crossover; " +
+                    $"{allowances:0.0} allowances, {basis}) — re-anchored");
+            }
+            if (lowerLatchedByPrediction)
+            {
+                LogConviction(pair.Lower, lowerArrival, lowerPrediction);
+            }
+            if (upperLatchedByPrediction)
+            {
+                LogConviction(pair.Upper, upperArrival, upperPrediction);
+            }
+
+            // Both sides move to the prediction (estimators must not mix).
+            lowerArrival = lowerPrediction;
+            upperArrival = upperPrediction;
+        }
+
+        // Disagreement with the prediction, NOT an error bound (shared detector, room and bypassed response hide common bias); only adds restrictions.
+        // A replaced side's residual is unknowable, so the stand-in is 2 × allowance (two sides within A differ by up to 2A).
+        double predictionDisagreementMs =
+            lowerLatchedByPrediction || upperLatchedByPrediction
+                ? 2.0 * PredictedArrivalAllowanceMs(
+                    pair.BandLowHz, pair.BandHighHz)
+                : Math.Abs(
+                    (lowerArrival - lowerPrediction) -
+                    (upperArrival - upperPrediction));
+
+        // Gradeable, not confirmed: every side verified or was replaced.
+        bool pairPredictionGradeable = pairGradeable;
+
+        double probeLowHz = Math.Sqrt(pair.BandLowHz * pair.BandHighHz);
+        bool arrivalReanchored = false;
+        // A convicted latch the upper-half probe could not replace keeps the corrupted diff; the prominence exception must not undo that.
+        bool unreplacedLatch = false;
+        if (!lowerLatchedByPrediction && !upperLatchedByPrediction &&
+            pair.BandHighHz >=
+            probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
+        {
+            TimeAlignmentAnalysisResult lowerProbe =
+                ReadProcessedArrival(pair.Lower, probeLowHz, pair.BandHighHz);
+            TimeAlignmentAnalysisResult upperProbe =
+                ReadProcessedArrival(pair.Upper, probeLowHz, pair.BandHighHz);
+            // Per channel: each side's chain explains a different smear.
+            ArrivalCertificate lowerCertificate = ClassifyArrival(
+                lowerRead, lowerProbe,
+                ArrivalProbeToleranceMs(
+                    pair.Lower, lowerArrival,
+                    lowerProbe.FirstArrivalDelayMilliseconds,
+                    pair.BandLowHz, probeLowHz, pair.BandHighHz));
+            ArrivalCertificate upperCertificate = ClassifyArrival(
+                upperRead, upperProbe,
+                ArrivalProbeToleranceMs(
+                    pair.Upper, upperArrival,
+                    upperProbe.FirstArrivalDelayMilliseconds,
+                    pair.BandLowHz, probeLowHz, pair.BandHighHz));
+            bool lowerLatched =
+                lowerCertificate == ArrivalCertificate.Latched;
+            bool upperLatched =
+                upperCertificate == ArrivalCertificate.Latched;
+            if (lowerLatched || upperLatched)
+            {
+                TimeAlignmentAnalysisResult latchedRead =
+                    lowerLatched ? lowerRead : upperRead;
+                TimeAlignmentAnalysisResult latchedProbe =
+                    lowerLatched ? lowerProbe : upperProbe;
+                log.AppendLine(
+                    $"  {(lowerLatched ? pair.Lower : pair.Upper).Channel.Name}: " +
+                    $"{latchedRead.FirstArrivalDelayMilliseconds:0.000} ms in " +
+                    $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but " +
+                    $"{latchedProbe.FirstArrivalDelayMilliseconds:0.000} ms in its " +
+                    $"{probeLowHz:0}-{pair.BandHighHz:0} Hz half (modal latch)");
+                // Re-anchor only when both certificates are not Unverified; otherwise the corrupted diff stays and the reach veto stays armed.
+                if (lowerCertificate != ArrivalCertificate.Unverified &&
+                    upperCertificate != ArrivalCertificate.Unverified)
+                {
+                    lowerArrival = lowerProbe.FirstArrivalDelayMilliseconds;
+                    upperArrival = upperProbe.FirstArrivalDelayMilliseconds;
+                    arrivalReanchored = true;
+                }
+                else
+                {
+                    unreplacedLatch = true;
+                }
+            }
+        }
+
+        return new JunctionArrivalRead(
+            lowerArrival, upperArrival, lowerPrediction, upperPrediction,
+            pairPredictionGradeable, lowerLatchedByPrediction, upperLatchedByPrediction,
+            predictionDisagreementMs, arrivalReanchored, unreplacedLatch);
+    }
+
     // No default on purpose: a forgotten polarity authority is a compile error, not a walk seeding against its own stage 2.
     private static Dictionary<IAlignmentChannel, double> BuildArrivalTimeline(
         IReadOnlyList<AlignmentSnapshot> byBand,
@@ -875,186 +1108,18 @@ public static class AutoAlignmentEngine
                     "Check the channels' sources and crossover settings.");
             }
 
-            double lowerArrival = lowerRead.FirstArrivalDelayMilliseconds;
-            double upperArrival = upperRead.FirstArrivalDelayMilliseconds;
-
-            // Arrival honesty: the predicted-arrival probe first, then the upper-half probe. See docs/tech/auto-alignment.md#arrival-honesty-probe.
-            // Both sides must be gradeable: prediction and measurement residuals cancel only against their own kind.
-            PredictionState lowerState = GradeAgainstPrediction(
-                pair.Lower, lowerArrival, pair.BandLowHz, pair.BandHighHz,
-                out double lowerPrediction);
-            PredictionState upperState = GradeAgainstPrediction(
-                pair.Upper, upperArrival, pair.BandLowHz, pair.BandHighHz,
-                out double upperPrediction);
-            // Inconsistent is ungradeable: a prediction that cannot explain the read may not replace it.
-            static bool Gradeable(PredictionState state) =>
-                state is PredictionState.Verified or PredictionState.Latched;
-            bool pairGradeable = Gradeable(lowerState) && Gradeable(upperState);
-            bool lowerLatchedByPrediction =
-                pairGradeable && lowerState == PredictionState.Latched;
-            bool upperLatchedByPrediction =
-                pairGradeable && upperState == PredictionState.Latched;
-
-            // Conviction dead zone (see LatchArbitrationMinR): the whitened comb decides between predictions and measured arrivals.
-            bool lowerLateInZone =
-                lowerState == PredictionState.Inconsistent &&
-                lowerArrival > lowerPrediction;
-            bool upperLateInZone =
-                upperState == PredictionState.Inconsistent &&
-                upperArrival > upperPrediction;
-            if (!lowerLatchedByPrediction && !upperLatchedByPrediction &&
-                (lowerLateInZone || upperLateInZone) &&
-                lowerState != PredictionState.Unavailable &&
-                upperState != PredictionState.Unavailable &&
-                (lowerLateInZone || lowerState == PredictionState.Verified) &&
-                (upperLateInZone || upperState == PredictionState.Verified))
-            {
-                double periodMs = 1_000.0 / pair.CrossoverHz;
-                double measuredLagMs = lowerArrival - upperArrival;
-                double predictedLagMs = lowerPrediction - upperPrediction;
-                List<SignalPoint> comb =
-                    VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
-                        pair.Lower.ImpulseResponse,
-                        pair.Upper.ImpulseResponse,
-                        pair.Lower.Channel.SampleRate,
-                        pair.CrossoverHz,
-                        Math.Log2(pair.BandHighHz / pair.BandLowHz),
-                        Math.Abs(measuredLagMs - predictedLagMs) / 2.0
-                            + periodMs / 2.0,
-                        (measuredLagMs + predictedLagMs) / 2.0,
-                        phaseTransform: true);
-                double StrongestNear(double lagMs) => comb
-                    .Where(point => Math.Abs(point.X - lagMs) <= periodMs / 2.0)
-                    .Select(point => Math.Abs(point.Y))
-                    .DefaultIfEmpty(0.0)
-                    .Max();
-                double nearPredicted = StrongestNear(predictedLagMs);
-                double nearMeasured = StrongestNear(measuredLagMs);
-                if (nearPredicted >= LatchArbitrationMinR &&
-                    nearPredicted >= nearMeasured + LatchArbitrationMinAdvantage)
-                {
-                    log.AppendLine(
-                        $"  {(lowerLateInZone ? pair.Lower : pair.Upper).Channel.Name}: " +
-                        $"read sits in the conviction dead zone and the " +
-                        $"whitened comb sides with the prediction " +
-                        $"(r {nearPredicted:0.00} at the predicted family vs " +
-                        $"{nearMeasured:0.00} at the measured) — convicted by " +
-                        "arbitration");
-                    lowerLatchedByPrediction = lowerLateInZone;
-                    upperLatchedByPrediction = upperLateInZone;
-                }
-                else
-                {
-                    log.AppendLine(
-                        $"  latch arbitration stood down for " +
-                        $"{pair.Lower.Channel.Name}/{pair.Upper.Channel.Name}: " +
-                        $"comb r {nearPredicted:0.00} at the predicted family " +
-                        $"vs {nearMeasured:0.00} at the measured — no second " +
-                        "witness, the pair withdraws from the predictor.");
-                }
-            }
-            if (lowerLatchedByPrediction || upperLatchedByPrediction)
-            {
-                void LogConviction(
-                    AlignmentSnapshot side, double measuredMs, double predictedMs)
-                {
-                    double allowances = (measuredMs - predictedMs) /
-                        PredictedArrivalAllowanceMs(pair.BandLowHz, pair.BandHighHz);
-                    string basis = allowances >= PredictedArrivalConvictionFactor
-                        ? $"conviction needs {PredictedArrivalConvictionFactor:0.0}"
-                        : $"short of the predictor's own " +
-                          $"{PredictedArrivalConvictionFactor:0.0}, convicted by " +
-                          $"the comb's second witness";
-                    log.AppendLine(
-                        $"  {side.Channel.Name}: {measuredMs:0.000} ms in " +
-                        $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but its " +
-                        $"un-crossovered front, read through its own " +
-                        $"chain, predicts {predictedMs:0.000} ms there (modal " +
-                        $"latch behind the crossover; " +
-                        $"{allowances:0.0} allowances, {basis}) — re-anchored");
-                }
-                if (lowerLatchedByPrediction)
-                {
-                    LogConviction(pair.Lower, lowerArrival, lowerPrediction);
-                }
-                if (upperLatchedByPrediction)
-                {
-                    LogConviction(pair.Upper, upperArrival, upperPrediction);
-                }
-
-                // Both sides move to the prediction (estimators must not mix).
-                lowerArrival = lowerPrediction;
-                upperArrival = upperPrediction;
-            }
-
-            // Disagreement with the prediction, NOT an error bound (shared detector, room and bypassed response hide common bias); only adds restrictions.
-            // A replaced side's residual is unknowable, so the stand-in is 2 × allowance (two sides within A differ by up to 2A).
-            double predictionDisagreementMs =
-                lowerLatchedByPrediction || upperLatchedByPrediction
-                    ? 2.0 * PredictedArrivalAllowanceMs(
-                        pair.BandLowHz, pair.BandHighHz)
-                    : Math.Abs(
-                        (lowerArrival - lowerPrediction) -
-                        (upperArrival - upperPrediction));
-
-            // Gradeable, not confirmed: every side verified or was replaced.
-            bool pairPredictionGradeable = pairGradeable;
-
-            double probeLowHz = Math.Sqrt(pair.BandLowHz * pair.BandHighHz);
-            bool arrivalReanchored = false;
-            // A convicted latch the upper-half probe could not replace keeps the corrupted diff; the prominence exception must not undo that.
-            bool unreplacedLatch = false;
-            if (!lowerLatchedByPrediction && !upperLatchedByPrediction &&
-                pair.BandHighHz >=
-                probeLowHz * VirtualCrossoverAnalysis.MinimumArrivalBandRatio)
-            {
-                TimeAlignmentAnalysisResult lowerProbe =
-                    ReadProcessedArrival(pair.Lower, probeLowHz, pair.BandHighHz);
-                TimeAlignmentAnalysisResult upperProbe =
-                    ReadProcessedArrival(pair.Upper, probeLowHz, pair.BandHighHz);
-                // Per channel: each side's chain explains a different smear.
-                ArrivalCertificate lowerCertificate = ClassifyArrival(
-                    lowerRead, lowerProbe,
-                    ArrivalProbeToleranceMs(
-                        pair.Lower, lowerArrival,
-                        lowerProbe.FirstArrivalDelayMilliseconds,
-                        pair.BandLowHz, probeLowHz, pair.BandHighHz));
-                ArrivalCertificate upperCertificate = ClassifyArrival(
-                    upperRead, upperProbe,
-                    ArrivalProbeToleranceMs(
-                        pair.Upper, upperArrival,
-                        upperProbe.FirstArrivalDelayMilliseconds,
-                        pair.BandLowHz, probeLowHz, pair.BandHighHz));
-                bool lowerLatched =
-                    lowerCertificate == ArrivalCertificate.Latched;
-                bool upperLatched =
-                    upperCertificate == ArrivalCertificate.Latched;
-                if (lowerLatched || upperLatched)
-                {
-                    TimeAlignmentAnalysisResult latchedRead =
-                        lowerLatched ? lowerRead : upperRead;
-                    TimeAlignmentAnalysisResult latchedProbe =
-                        lowerLatched ? lowerProbe : upperProbe;
-                    log.AppendLine(
-                        $"  {(lowerLatched ? pair.Lower : pair.Upper).Channel.Name}: " +
-                        $"{latchedRead.FirstArrivalDelayMilliseconds:0.000} ms in " +
-                        $"{pair.BandLowHz:0}-{pair.BandHighHz:0} Hz but " +
-                        $"{latchedProbe.FirstArrivalDelayMilliseconds:0.000} ms in its " +
-                        $"{probeLowHz:0}-{pair.BandHighHz:0} Hz half (modal latch)");
-                    // Re-anchor only when both certificates are not Unverified; otherwise the corrupted diff stays and the reach veto stays armed.
-                    if (lowerCertificate != ArrivalCertificate.Unverified &&
-                        upperCertificate != ArrivalCertificate.Unverified)
-                    {
-                        lowerArrival = lowerProbe.FirstArrivalDelayMilliseconds;
-                        upperArrival = upperProbe.FirstArrivalDelayMilliseconds;
-                        arrivalReanchored = true;
-                    }
-                    else
-                    {
-                        unreplacedLatch = true;
-                    }
-                }
-            }
+            JunctionArrivalRead arrivals =
+                ReadJunctionArrivals(pair, lowerRead, upperRead, log);
+            double lowerArrival = arrivals.LowerMs;
+            double upperArrival = arrivals.UpperMs;
+            double lowerPrediction = arrivals.LowerPredictionMs;
+            double upperPrediction = arrivals.UpperPredictionMs;
+            bool pairPredictionGradeable = arrivals.PairPredictionGradeable;
+            bool lowerLatchedByPrediction = arrivals.LowerLatchedByPrediction;
+            bool upperLatchedByPrediction = arrivals.UpperLatchedByPrediction;
+            double predictionDisagreementMs = arrivals.PredictionDisagreementMs;
+            bool arrivalReanchored = arrivals.ArrivalReanchored;
+            bool unreplacedLatch = arrivals.UnreplacedLatch;
 
             // Seed from the dominant GCC-PHAT extremum of either sign (position only). See docs/tech/auto-alignment.md#seed-selection.
             // Timeline stores (upper − lower); the extremum is the delay to add to the upper channel, i.e. that negated.

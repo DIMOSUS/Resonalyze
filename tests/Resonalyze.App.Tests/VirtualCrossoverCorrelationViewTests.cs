@@ -63,6 +63,50 @@ public sealed class VirtualCrossoverCorrelationViewTests
     }
 
     [Fact]
+    public void BuildCorrelationView_ArrivalMarkerIsTheReadTheSearchAnchorsOn()
+    {
+        // A midbass whose 90-360 Hz envelope latches onto a late modal build-up, against a clean mid: the search
+        // re-anchors that side on its upper-half read, and the marker must draw that read, not the latched envelope.
+        Complex[] midbass = VirtualCrossoverAnalysis.ApplyChain(
+            Impulse(FrontSample),
+            new DspChannelChain(Crossover: new CrossoverSpec(
+                CrossoverKind.BandPass,
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 800, 24),
+                new CrossoverEdge(CrossoverFilterFamily.Butterworth, 80, 24))),
+            SampleRate, SampleRate);
+        int modeStart = FrontSample + (int)Math.Round(0.010 * SampleRate);
+        foreach (double modeHz in new[] { 65.0, 72.0, 80.0 })
+        {
+            for (int i = modeStart; i < midbass.Length; i++)
+            {
+                double t = (i - modeStart) / (double)SampleRate;
+                midbass[i] += 2.0 * (1 - Math.Exp(-t / 0.008)) * Math.Exp(-t / 0.1) *
+                    Math.Sin(2 * Math.PI * modeHz * t);
+            }
+        }
+        var wide = new ValidSampleRange(0, IrLength);
+        ProcessedChannel lower = Channel("B", midbass, wide);
+        ProcessedChannel upper = Channel("C", Impulse(FrontSample), wide);
+
+        JunctionCorrelationView view = VirtualCrossoverPanel.BuildCorrelationView(
+            new AdjacentPair(lower, upper, 180, 90, 360), [lower, upper]);
+        double latchedLagMs =
+            VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(midbass, SampleRate, 90, 360, wide) -
+            VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(upper.ImpulseResponse, SampleRate, 90, 360, wide);
+
+        Assert.True(latchedLagMs > 20, $"the fixture's raw envelope should latch late, read {latchedLagMs:0.0} ms");
+        Assert.True(view.ArrivalReAnchored, "the search re-anchors this junction, so must the marker");
+        Assert.InRange(view.ArrivalLagMs, 0, 15);
+    }
+
+    private static Complex[] Impulse(int position)
+    {
+        var ir = new Complex[IrLength];
+        ir[position] = 1.0;
+        return ir;
+    }
+
+    [Fact]
     public void DrawCorrelation_AddsEnvelopeGuidesOutsideTheLegend()
     {
         var ir = new Complex[IrLength];

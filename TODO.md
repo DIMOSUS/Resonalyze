@@ -148,6 +148,71 @@ next field session rather than in a register nobody else can tick.
   its own kept pick. Remaining: derive the threshold from comb statistics of the
   junction. (`MaxInterSideDirectPathMs` is gone — the cross-side work replaced it
   with the donor-corroborated geometry in #47.)
+- [ ] ★ **Two direct-sound witnesses read one curve.** The direct-coherence witness
+  (tie within `DirectCoherenceTieMarginDb` 0.3, flip partner only) and
+  `DirectLobeWitness` (final pick, a period either way, a probe outside the
+  window) both read the whitened direct-sound correlation, each with its own
+  thresholds (0.3 / 0.25 / 0.10, `MinimumR` 0.6 shared). Fold them into one
+  witness with one window (a period). Measure on the session battery and on the
+  v6 session-12 / session-13 anchors; the v6 200 Hz split is the case the second
+  witness exists for.
+- [ ] **Fine-search window that holds both flip partners.** On the v6 200 Hz
+  split the right lobe sat 0.08 ms past the fine window's edge (−8.193 at
+  −8.17) and only the lobe witness's probe reached it. A window of half a period
+  plus a quarter either side of the anchor would hold a lobe and its
+  half-period-plus-inversion twin whole, and may retire the probe.
+- [ ] **Stereo-branch thresholds sit on the data's edge.** `FarGainDb` 0.30: the
+  v3 90 Hz branch is adopted at exactly 0.30 dB after quantization (and the panel
+  reads that side 0.11 dB better WITHOUT it). `ReferenceLossDb` 0.10: the v6
+  reference side reads +0.02. Hundredths decide; give the rule hysteresis or
+  derive it from the comb statistics of the junction.
+- [ ] **The pair and mono co-moves round after they score.** Both scan from an
+  off-grid bound in 0.02 ms steps and round the winner to the DSP's 0.01 ms grid
+  afterwards, so the delay scored is up to 0.005 ms from the one written (about
+  4° at 2.5 kHz). The far-side polish was moved to absolute ticks in #197
+  (`PolishFarSideJunctions_ScoresTheExactMoveToADspTickFromAnOffGridDelay`); give
+  the co-moves the same walk.
+- [ ] **The engine's junction sum and the panel's are not the same read.**
+  `JunctionSum` and `VirtualCrossoverAnalysis.MeasureJunctionSpectrum` share
+  `BuildAlignmentBins`, but the panel (and the battery that judges the engine)
+  measures under the panel's gate, the engine under the alignment gate. "The
+  physical sum the panel reads" is therefore approximate: on v3 the right mono
+  co-move lands at +0.77 ms where the panel prefers +1.13. Either score the
+  post-descent passes under the panel's gate or state the difference where the
+  docs claim equality.
+- [ ] **The v6 right 200 Hz split is still 0.20 ms off the owner's tune** (7.83
+  against 7.63) after the polish/mono rounds closed it from 0.44: the polish
+  refuses the last +0.04 ms for the sub junction's 70-140 Hz half, 0.02 dB
+  against a 0.01 dB gain. A question for the trim veto's scale at gains this
+  small, not for the pass order.
+- [ ] **Saved tunes the engine disagrees with by more than a lobe, unexplained.**
+  v2 left: the mid at 11.2 ms against a saved 5.41 (5.8 ms); v4: the 750 Hz split's
+  polarity against the saved one, a tie by the metric. Nobody has measured which
+  is right; until then those rows are noise in the battery's totals.
+- [ ] **No synthetic for the trim veto.** The half-band veto in the far-side polish
+  and in the pair co-move is proven in the field only (the Passat's right 250 Hz
+  split). The mono hop has `ComoveMonoChannels_SubBandInconsistentHop_IsVetoed`;
+  the trims need a fixture where a trim wins the full band and loses a half by
+  more than it gains.
+- [ ] **`FirConstructorTests.AHandoffOfAnImportedKernel…` failed once in CI**
+  (#195) and passes locally 3/3; unexplained. Look for shared state or a timing
+  assumption before it costs a release.
+- [✗] **One half-band veto rule for every post-descent move** — measured in #197 and
+  declined both ways. "No cell may lose more than the move gains" adopts the
+  impostor the mono veto's synthetic exists for; the mono hop's flat 0.1 dB margin
+  on the stereo branch refuses the v6 200 Hz lobe the owner tuned (0.26 dB on one
+  half for 0.53 on the far side). One helper, one rule per kind of move.
+- [✗] **Re-rendering every co-move pick** — measured in #197: the rotation scan and
+  the re-render agreed within 0.01 dB on every adopted move of the archive and no
+  stereo row changed. Only the stereo branch keeps its re-render (a stack moving
+  half a period and flipping, where the two disagreed by 2.8 dB).
+- [✗] **Removing `LowJunctionPolarity`** — measured in #197: one session changes
+  (v3), whose sub drops to the inverted twin for 0.03-0.13 dB on its two junctions.
+  A sub inverted against its woofer on a tie is what the owner asked to avoid.
+- [✗] **An arrival marker on the correlation view** — the search's re-anchored read
+  cost ~270 ms of a ~320 ms build at 96 kHz and the owner found it uninformative
+  (#197). A marker for "where the sum and the direct sound agreed" would be a new
+  feature, not this one back.
 - [ ] ★ **`AutoAlignmentEngine.ComputeStereo` is 759 lines**, and it nests a
   **348-line local function** (`CrossSideTargetMs`) plus an 88-line `AlignRight`.
   The method has five clear phases (validate → left cascade → bridge fit → right

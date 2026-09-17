@@ -216,11 +216,11 @@ the correlation window and the fallback diff; a trustworthy PHAT extremum still 
 **Conviction without a comparable replacement changes nothing.** If the other side's probe read
 different physics, the corrupted diff keeps centring the window and the reach veto stays armed.
 
-**One read, two readers.** The whole honesty pass — prediction grading, dead-zone arbitration, the
-upper-half probe and both re-anchors — is `ReadJunctionArrivals`, which stage 1 walks and the Virtual
-DSP correlation view draws as its arrival marker. Before it was shared the view drew the raw envelope
-arrival, which on the v6 cabin's 200 Hz split put the midbass 9 ms behind the front the search had
-re-anchored to: a marker for a number the search had discarded.
+**One read.** The whole honesty pass — prediction grading, dead-zone arbitration, the upper-half probe
+and both re-anchors — is `ReadJunctionArrivals`, which stage 1 walks. The Virtual DSP correlation view
+drew it as its arrival marker for two releases and dropped it: the read is ten band-limited arrival
+analyses and six chain renders, most of the view's build, and the marker told the owner nothing
+(docs/tech/virtual-dsp-panel.md#junction-views).
 Lifting it would trust an extremum measured around the convicted anchor. The prominence exception
 must not undo this either.
 
@@ -893,6 +893,14 @@ changes. The v4 cabin's sub junction leaves the in-phase branch its score prefer
 one the crests and its saved tune agree on, its B/C dip improves 0.46 dB, and its total average
 improves 0.02 dB. Everywhere else the gate is inert or only reports.
 
+Re-measured with the walk anchored on the top channel and every post-descent pass on the physical
+sum (10 stereo sessions, 58 junctions; 16 mono runs, 88): switching the vote off changes one session
+again, now v3, whose sub would drop to the half-period-plus-inversion twin at −3.78 ms inv instead
+of 1.56 ms in phase; its two sub junctions read 0.02-0.04 dB worse on the average and 0.03-0.13 on
+the dip, the battery +0.113 → +0.111 (dip +0.023 → +0.018). Four junctions carry the unsettled
+report. Removing the vote was on the simplification list and is declined on that measurement: a
+sub inverted against its woofer on a tie is the outcome the owner asked the engine to avoid.
+
 ## Stereo cascade
 
 `ComputeStereo` aligns two sides that never meet at a crossover:
@@ -975,11 +983,15 @@ which is why a lone pair co-move cannot express it (the tweeter has to follow th
   disturbing a settled junction, and damage beyond it is not paid for.
 - **The field stays realizable.** The move is optional, so one whose rebased span would pass the
   device ceiling is declined rather than left for the final feasibility check to refuse the whole run.
-- **Both reads are the PHYSICAL sum** (`levelMatch: false`), the sum the panel judges. A level match
-  lifts a member that is tens of dB down in a half-band it barely reaches and turns its phase into a
-  cancellation that never plays: on the v6 200 Hz split the level-matched 200-400 Hz half read the
-  owner's tune at a −8.9 dB dip against −2.1 in the physical sum, and vetoed a 0.3 dB difference as
-  3.2 dB.
+- **Both reads are the physical sum**, as in every post-descent pass (see [One sum, one
+  veto](#one-sum-one-veto)). The level-match artefact was found here: on the v6 200 Hz split the
+  level-matched 200-400 Hz half read the owner's tune at a −8.9 dB dip against −2.1 in the physical
+  sum, and vetoed a 0.3 dB difference as 3.2 dB.
+- **The far gain is the allowance, not a flat margin.** The mono hop's 0.1 dB margin was tried here
+  on the archive: it refused the v6 200 Hz branch the owner tuned, whose right lobe costs the left
+  200-400 Hz half 0.26 dB for 0.53 on the far side (v6-11 right B/C went −0.33 → −0.61 dB), and the
+  v4 750 Hz branch with it. A true lobe does not hold every half on this junction; the far gain
+  does the judging.
 
 The trial and the adopted move go through the same `ApplyBranchMove`: a delay without the flip is the
 worst of both branches, which `RebalanceJunctionBranches_AdoptedMove_DelaysAndFlipsTheStackAbove`
@@ -1108,6 +1120,34 @@ A Coarse target pins only the lobe, as for low pairs below.
 
 ## Post-descent passes
 
+### One sum, one veto
+
+Every post-descent pass scores the same thing through the same helpers (`PenalizedLoss`,
+`JunctionSum`, `HalfBandCells`, `HalfBandRefusal`):
+
+- **The physical sum**, dip-penalized, of each junction the move touches: the sum the panel's
+  junction metric reads. The co-moves read a level-matched sum until this was unified. A level
+  match in a half-band where the lower member is on its slope invents cancellations that never
+  play (the v6 200 Hz case under the branch check), and a half-band veto over such a read refuses
+  honest moves. On the archive the unification alone moved the stereo battery from +0.122 to
+  +0.113 dB on the junction average and from +0.082 to +0.023 on the dip (mono: +0.087 → +0.083
+  and +0.070 → +0.058): v2's left stack, 5.8 ms off the saved tune either way, settled on another
+  lobe, and the v3 right mono co-move stopped at +0.77 ms instead of +1.13. The v6-11 yardstick
+  did not move.
+- **The half-band veto.** No observable half of a scored junction may lose more than the move is
+  allowed. The allowance is the move's own gain for a trim (pair co-move, far-side polish) and for
+  the stereo branch (what the far side gains, both sides re-rendered). A mono hop alone must hold
+  every half within `MonoHopHalfBandMarginDb` (0.1 dB), the one flat margin left: at a sub junction
+  an impostor lobe flattered by a mode wins the full band and loses the clean half (the synthetic
+  `ComoveMonoChannels_SubBandInconsistentHop_IsVetoed`, the v3 80 Hz case), and "no cell may lose
+  more than the hop gains" adopted that impostor. The same flat margin on the branch refused the
+  owner's v6 tune, so neither rule serves both.
+- **Scan versus re-render.** The co-moves rotate e^{−jωΔ} inside windows fixed at the pass start
+  and adopt on the scan; the branch re-renders its candidate. Re-rendering every co-move pick was
+  measured on the archive: the scan and the render agreed within 0.01 dB on every adopted move and
+  no stereo row changed, so the extra reprocess per pair and per mono channel was not kept. The
+  branch keeps its re-render, where a whole stack moves half a period and flips.
+
 **Pair co-move** (`RebalancePairsKeepingScene`). Both sides of a linked pair move by one delta,
 which leaves the L−R timing (the scene) untouched. This is the only lever that recovers the junction
 quality the scene mandate cost without touching the image.
@@ -1118,7 +1158,10 @@ quality the scene mandate cost without touching the image.
   junction with the near one, and the reference side's drivers are closest to the listener. Both
   sides' junctions bound the delta. Every evaluator window is held fixed across probes (a shifting
   window would be the size of the change) and rebuilt from the current render. Scores carry the
-  dip-excess penalty, since a plain mean buys a hundredth of a dB with a deep notch.
+  dip-excess penalty, since a plain mean buys a hundredth of a dB with a deep notch. The sum is the
+  physical one, and no half of a scored junction may lose more than the co-move gains (see [One
+  sum, one veto](#one-sum-one-veto)); on the archive that veto only ever refused moves already
+  under the gain threshold.
 - **Bounds.** The range is ±`PairComoveSearchRangeMs` (1.2 ms), intersected, for every adjacent
   junction, with half that junction's period around its neighbour's already-applied co-move delta. A flat window around
   zero let two adjacent pairs drift a full period apart: a 0.1-0.2 dB gain walked a tweeter pair a
@@ -1148,7 +1191,8 @@ preferred the flip partner a third of a period away.
   half a period (~6 ms at 80 Hz). Near-tied co-moves measure 0.01-0.02 dB, and genuine two-sided
   recoveries 0.20 dB (v3 BW36, matching the hand-tuned compromise) and 1.36 dB (v2). In-lobe moves
   use 0.05 dB.
-- **Sub-band veto** (`MonoComoveSubBandVetoMarginDb` 0.1 dB). A full-band mean cannot tell a
+- **Sub-band veto** (`MonoHopHalfBandMarginDb` 0.1 dB, the one flat margin among the passes'
+  vetoes, see [One sum, one veto](#one-sum-one-veto)). A full-band mean cannot tell a
   genuine recovery from a comb impostor flattered by a mode. The check narrowband ranging disciplines
   converge on (sub-band GCC, multi-scale FWI, GPS widelane ambiguity resolution) is consistency
   across sub-bands: the true alignment holds in both halves, and an impostor wins one and loses the
@@ -1170,7 +1214,10 @@ recover its own far-side junctions, by an eighth of the period of its highest ju
   0.04-0.08 ms at a 1.5-3 kHz split, and a midbass under a 200 Hz split gets 0.6 ms, where the image
   does not localize. It used to be a flat 0.03 ms sized for the top junction, which left the v6 200 Hz
   split 0.6 ms short on the far side: the owner tuned that junction 8.27 ms on the left and 7.63 on
-  the right, and the stereo branch move is one delta for both sides.
+  the right, and the stereo branch move is one delta for both sides. The reach is a total budget from
+  the scene position: each channel's spent trim is carried across the rounds below. Spent per round,
+  the second round walked the Passat's mid 0.13 ms at a 0.125 ms leash and its 1 kHz split read
+  0.14 dB worse (0.49 on the dip).
 - **The bridge has no reach.** It IS the scene: the far top stands at the user's delta to its twin, and
   the chain below it is what gets polished.
 - **No half-band may lose more than the trim gains**, per (junction, half-band) cell, the rule the
@@ -1178,17 +1225,37 @@ recover its own far-side junctions, by an eighth of the period of its highest ju
   upper half for its lower one: on the Passat's right 250 Hz split a −0.50 ms trim read +0.38 dB over
   the midbass's two junctions while 250-500 Hz went from −0.78 to −1.96 dB, and the panel — which
   windows the upper half tighter, as the ear does — read the junction 0.7 dB worse. The reads are the
-  physical sum (`levelMatch: false`), as in the branch check.
+  physical sum, as in every pass.
 - **Field effect** of the period-scaled reach with that veto (10 stereo sessions, 58 junctions):
   junction average +0.120 → +0.124 dB, dip −0.050 → −0.005; totals +0.075 → +0.079, dip −0.803 →
   −0.763. Without the veto the same reach lost 0.69 dB on the Passat junction above and 0.21 on the v3
-  650 Hz split. On the v6 200 Hz split the far midbass closes +0.21 ms of its 0.6 ms residual: the
-  next 0.28 would cost the sub junction's 70-140 Hz half 0.27 dB for a 0.16 dB gain, and the mono sub,
-  co-moved before this pass, cannot follow.
+  650 Hz split. On the v6 200 Hz split the far midbass closes +0.20 ms of its 0.6 ms residual: the
+  next 0.28 would cost the sub junction's 70-140 Hz half 0.27 dB for a 0.16 dB gain.
 - **Gain threshold.** Below the co-move's 0.05 dB, because such a trim only buys fractions of a dB:
   on the v6 cabin the honest gains ran 0.01-0.03 dB, and even 0.02 dB refused them all.
-- **Order.** One pass in band order from the bridge down. Mono channels never move here.
-- **Grid.** The DSP's 0.01 ms grid, since gains between its points are unrealizable.
+- **Order.** Band order from the bridge down. Mono channels never move here; they follow in the mono
+  co-move this pass alternates with (below).
+- **Grid.** Absolute ticks of the DSP's 0.01 ms grid, since gains between its points are unrealizable: the
+  exact move to a tick is scored and that tick is written. The channel may stand off the grid when the
+  pass starts (the descent rebases the field by unrounded amounts), and a move rounded to the grid
+  scored one delay and wrote another, or read a tick 0.004 ms away as the incumbent.
 - **Feasibility.** The pass never makes delays negative, never shifts the field uniformly, and never
   widens the span past the DSP range, checked against both ends of the rest of the field. Being the
   last pass, it would otherwise turn a valid proposal into a refusal for a hundredth of a dB.
+
+**Polish and mono co-move alternate** (`PolishMonoRounds`, at most 3; the archive converges in two).
+The polish moves the far side under the mono channels' right junctions, so the mono co-move runs
+again after it; a sub that followed may in turn release a trim the polish had refused for its sake,
+so the polish runs again. The rounds go on only while both keep moving: a polish that kept leaves
+the mono channels where their last pass put them, a system without a mono channel polishes once, and
+a run still moving at the cap says so in the log. A mono trim that follows the polish amends the
+channel's decision and keeps its confidence; only a hop re-decides it. On the v6 cabin the far
+midbass first takes +0.20 ms of its 0.6 ms residual (the next +0.28 would cost the sub junction's
+70-140 Hz half 0.27 dB), the sub then follows by +0.34 ms, and in the second round the midbass
+takes the remaining +0.24: its 200 Hz split goes −0.31 → −0.22 dB (dip −2.09 → −1.55), the sub
+junctions' dips improve 0.10-0.15, and the right 200 Hz split lands 0.20 ms from the owner's hand
+tune instead of 0.44. Ten stereo sessions go +0.113 → +0.118 dB on the junction average and
++0.023 → +0.049 on the dip, the 16 mono runs +0.082 → +0.084 and +0.055 → +0.063, nothing worse.
+Polishing before the only mono pass instead cost three v6 mono runs their lobe choice (v6-8's right
+sub junction −0.05 dB and −0.21 on the dip): the first pass is where the mono's right junction
+votes on the lobe, and the polish must not see a sub still parked by the left side alone.

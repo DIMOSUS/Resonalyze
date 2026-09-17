@@ -822,9 +822,8 @@ public static class AutoAlignmentEngine
 
     /// <summary>What stage 1 anchors a junction on: the measured band-limited fronts, replaced by the predicted fronts where
     /// a modal latch is convicted (#predicted-front-arrival) or by the upper-half reads where the upper-half probe catches one
-    /// (#arrival-honesty-probe). The correlation view draws this same read, so its arrival marker is the one the search
-    /// weighed. See docs/tech/auto-alignment.md#arrival-honesty-probe.</summary>
-    public sealed record JunctionArrivalRead(
+    /// (#arrival-honesty-probe). See docs/tech/auto-alignment.md#arrival-honesty-probe.</summary>
+    internal sealed record JunctionArrivalRead(
         double LowerMs,
         double UpperMs,
         double LowerPredictionMs,
@@ -834,33 +833,9 @@ public static class AutoAlignmentEngine
         bool UpperLatchedByPrediction,
         double PredictionDisagreementMs,
         bool ArrivalReanchored,
-        bool UnreplacedLatch)
-    {
-        /// <summary>A side's measured front was replaced: the read is not what the band-limited envelope says.</summary>
-        public bool ReAnchored =>
-            LowerLatchedByPrediction || UpperLatchedByPrediction || ArrivalReanchored;
-    }
+        bool UnreplacedLatch);
 
-    /// <summary>Null where a side's band holds no measurable arrival; the walk refuses such a junction with its reasons.
-    /// Public for the Virtual DSP correlation view, whose arrival marker is this read.</summary>
-    public static JunctionArrivalRead? ReadJunctionArrivals(
-        AlignmentJunction pair,
-        StringBuilder log)
-    {
-        ArgumentNullException.ThrowIfNull(pair);
-        ArgumentNullException.ThrowIfNull(log);
-        TimeAlignmentAnalysisResult lowerRead =
-            ReadProcessedArrival(pair.Lower, pair.BandLowHz, pair.BandHighHz);
-        TimeAlignmentAnalysisResult upperRead =
-            ReadProcessedArrival(pair.Upper, pair.BandLowHz, pair.BandHighHz);
-        return lowerRead.IsValid && upperRead.IsValid &&
-            lowerRead.SignalToNoiseDecibels >= MinimumArrivalSnrDb &&
-            upperRead.SignalToNoiseDecibels >= MinimumArrivalSnrDb
-            ? ReadJunctionArrivals(pair, lowerRead, upperRead, log)
-            : null;
-    }
-
-    public static JunctionArrivalRead ReadJunctionArrivals(
+    internal static JunctionArrivalRead ReadJunctionArrivals(
         AlignmentJunction pair,
         TimeAlignmentAnalysisResult lowerRead,
         TimeAlignmentAnalysisResult upperRead,
@@ -3223,13 +3198,36 @@ public static class AutoAlignmentEngine
             plan, plan.LeftChannelsByBand, rightByBand, allChannels,
             reprocess, alignment, log, maxDelayMs, decisions);
 
-        // Mono channels are scene-invariant: this is the only pass where their right junction votes.
+        // Mono channels are scene-invariant: this is the first pass where their right junction votes.
         ComoveMonoChannels(
             plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions);
 
-        PolishFarSideJunctions(
-            plan, rightByBand, allChannels, reprocess, alignment, log,
-            maxDelayMs, decisions);
+        // The polish moves the far side under the mono channels' right junctions; a mono channel that followed may release
+        // a trim the polish refused for its sake, so the two alternate while both keep moving.
+        // See docs/tech/auto-alignment.md#post-descent-passes.
+        var polishSpentMs = new Dictionary<IAlignmentChannel, double>();
+        for (int round = 1; round <= PolishMonoRounds; round++)
+        {
+            if (round > 1)
+            {
+                log.AppendLine($"Far-side polish and mono co-move, round {round}:");
+            }
+            bool followed =
+                PolishFarSideJunctions(
+                    plan, rightByBand, allChannels, reprocess, alignment, log,
+                    maxDelayMs, decisions, polishSpentMs) &&
+                ComoveMonoChannels(
+                    plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions, afterPolish: true);
+            if (!followed)
+            {
+                break;
+            }
+            if (round == PolishMonoRounds)
+            {
+                log.AppendLine(
+                    $"Far-side polish and mono co-move: still moving after {PolishMonoRounds} rounds, stopped.");
+            }
+        }
 
         NormalizeAndVerifyFeasibility(allChannels, alignment, log, maxDelayMs);
 
@@ -3466,14 +3464,109 @@ public static class AutoAlignmentEngine
     private const double FarSidePolishReachPeriods = 0.125;
     private const double FarSidePolishMinimumGainDb = 0.01;
 
+    // Far-side polish and mono co-move alternate this many times at most.
+    private const int PolishMonoRounds = 3;
+
     // Mono co-move spans a half period each side in both polarities: the walk's lobe choice never heard the right junction.
     private const double MonoComoveSearchHalfPeriods = 1.0;
 
     // A mono lobe/polarity hop must beat in-lobe polish by this. See docs/tech/auto-alignment.md#post-descent-passes.
     private const double MonoComoveLobeHopMarginDb = 0.1;
 
-    // Sub-band deficit that vetoes a mono hop: the true alignment holds in both halves of the band. See docs/tech/auto-alignment.md#post-descent-passes.
-    private const double MonoComoveSubBandVetoMarginDb = 0.1;
+    // A mono hop must hold every observable half-band within this: at a sub junction an impostor lobe flattered by a
+    // mode wins the full band and loses the clean half. Every other move may cost a half what it gains (the stereo
+    // branch: what the far side gains). See docs/tech/auto-alignment.md#one-sum-one-veto.
+    private const double MonoHopHalfBandMarginDb = 0.1;
+
+    // The dip-penalized junction loss every post-descent pass scores: a plain mean buys a hundredth of a dB with a deep notch.
+    private static double PenalizedLoss(
+        VirtualCrossoverAnalysis.SumLossEvaluator evaluator, double deltaMs, bool flip = false)
+    {
+        (double lossDb, double dipDb) = evaluator.Evaluate(deltaMs, flip);
+        return lossDb +
+            VirtualCrossoverAnalysis.DipExcessPenaltyWeight * (dipDb - lossDb);
+    }
+
+    // A junction's sum over a band from one render, rotated per probe; null where the band holds no delay evidence.
+    private static VirtualCrossoverAnalysis.SumLossEvaluator? JunctionSum(
+        IReadOnlyList<AlignmentSnapshot> render,
+        IAlignmentChannel mover,
+        IAlignmentChannel neighbor,
+        double lowHz,
+        double highHz)
+    {
+        AlignmentSnapshot moving = render.First(item => item.Channel == mover);
+        AlignmentSnapshot held = render.First(item => item.Channel == neighbor);
+        return VirtualCrossoverAnalysis.SumLossEvaluator.Create(
+            moving.ImpulseResponse,
+            [held.ImpulseResponse],
+            mover.SampleRate,
+            lowHz,
+            highHz,
+            // The physical sum, as the panel judges it. A level match lifts a member that is tens of dB down in a
+            // half-band it barely reaches and turns its phase into a cancellation that never plays.
+            levelMatch: false,
+            requireDelayEvidence: true,
+            gateAnchorSample: null,
+            moving.ValidRange,
+            [held.ValidRange]);
+    }
+
+    private static IAlignmentChannel OtherMember(AlignmentJunction junction, IAlignmentChannel member) =>
+        junction.Lower.Channel == member ? junction.Upper.Channel : junction.Lower.Channel;
+
+    // One half of a junction's band where the delay is observable: the cell no post-descent move may wreck.
+    private sealed record HalfBandCell(
+        AlignmentJunction Junction,
+        IAlignmentChannel Neighbor,
+        double LowHz,
+        double HighHz,
+        VirtualCrossoverAnalysis.SumLossEvaluator Sum);
+
+    // Both halves of every junction the mover sits on; halves where one member is a filter tail are left out.
+    private static List<HalfBandCell> HalfBandCells(
+        IEnumerable<AlignmentJunction> junctions,
+        IAlignmentChannel mover,
+        IReadOnlyList<AlignmentSnapshot> render)
+    {
+        var cells = new List<HalfBandCell>();
+        foreach (AlignmentJunction junction in junctions)
+        {
+            IAlignmentChannel neighbor = OtherMember(junction, mover);
+            foreach (bool upperHalf in new[] { false, true })
+            {
+                (double lowHz, double highHz) = upperHalf
+                    ? (junction.CrossoverHz, junction.BandHighHz)
+                    : (junction.BandLowHz, junction.CrossoverHz);
+                if (JunctionSum(render, mover, neighbor, lowHz, highHz) is { } sum)
+                {
+                    cells.Add(new HalfBandCell(junction, neighbor, lowHz, highHz, sum));
+                }
+            }
+        }
+
+        return cells;
+    }
+
+    // The first cell a move costs more than it may, named for the log; null when every half holds. The allowance is
+    // the move's own gain, or MonoHopHalfBandMarginDb for a mono hop. See docs/tech/auto-alignment.md#one-sum-one-veto.
+    private static string? HalfBandRefusal(
+        IEnumerable<HalfBandCell> cells,
+        Func<HalfBandCell, double> lossDb,
+        double allowedLossDb)
+    {
+        foreach (HalfBandCell cell in cells)
+        {
+            double loss = lossDb(cell);
+            if (loss > allowedLossDb + 1e-9)
+            {
+                return FormattableString.Invariant(
+                    $"the {cell.LowHz:0}-{cell.HighHz:0} Hz half vs {cell.Neighbor.Name} by {loss:0.00} dB");
+            }
+        }
+
+        return null;
+    }
 
     // No sum-loss polarity guess for the bridge top: two separated tops comb-filter and would invert one tweeter alone.
     private static void InheritBridgePolarity(
@@ -3582,12 +3675,6 @@ public static class AutoAlignmentEngine
             }
 
             IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
-            AlignmentSnapshot SnapshotOf(IAlignmentChannel channel) =>
-                current.First(item => item.Channel == channel);
-            Complex[] IrOf(IAlignmentChannel channel) =>
-                SnapshotOf(channel).ImpulseResponse;
-                ValidSampleRange RangeOf(IAlignmentChannel channel) =>
-                    current.First(item => item.Channel == channel).ValidRange;
 
             // Only the reference (near-listener) side votes: a two-side mean buys the far junction with the near one.
             var evaluators = new List<VirtualCrossoverAnalysis.SumLossEvaluator>();
@@ -3601,18 +3688,8 @@ public static class AutoAlignmentEngine
                     ? junction.Upper.Channel
                     : junction.Lower.Channel;
                 // The window is held fixed across all probed deltas and rebuilt from `current`, whose fronts moved with the cascade.
-                VirtualCrossoverAnalysis.SumLossEvaluator? evaluator =
-                    VirtualCrossoverAnalysis.SumLossEvaluator.Create(
-                        IrOf(mover),
-                        new List<Complex[]> { IrOf(neighbor) },
-                        mover.SampleRate,
-                        junction.BandLowHz,
-                        junction.BandHighHz,
-                        levelMatch: true,
-                        requireDelayEvidence: true,
-                        gateAnchorSample: null,
-                        RangeOf(mover),
-                        new[] { RangeOf(neighbor) });
+                VirtualCrossoverAnalysis.SumLossEvaluator? evaluator = JunctionSum(
+                    current, mover, neighbor, junction.BandLowHz, junction.BandHighHz);
                 if (evaluator != null)
                 {
                     evaluators.Add(evaluator);
@@ -3629,11 +3706,7 @@ public static class AutoAlignmentEngine
                 foreach (VirtualCrossoverAnalysis.SumLossEvaluator evaluator
                     in evaluators)
                 {
-                    (double lossDb, double dipDb) = evaluator.Evaluate(deltaMs);
-                    // Dip-excess penalty: a mean alone buys a hundredth of a dB with a deep notch.
-                    total += lossDb +
-                        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
-                        (dipDb - lossDb);
+                    total += PenalizedLoss(evaluator, deltaMs);
                 }
 
                 return total / evaluators.Count;
@@ -3698,30 +3771,59 @@ public static class AutoAlignmentEngine
             // Keeping the pair is always legal, even if neighbor lobes would exclude zero.
             minDelta = Math.Min(minDelta, 0.0);
             maxDelta = Math.Max(maxDelta, 0.0);
+            List<HalfBandCell>? cells = null;
             double baseline = Score(0);
             double bestDelta = 0;
             double bestScore = baseline;
+            double refusedDelta = 0;
+            double refusedScore = baseline;
+            string? refusedWhy = null;
+            void Consider(double delta)
+            {
+                double score = Score(delta);
+                if (score <= bestScore)
+                {
+                    return;
+                }
+
+                string? why = HalfBandRefusal(
+                    cells ??= HalfBandCells(referenceAdjacent, link.Left, current),
+                    cell => PenalizedLoss(cell.Sum, 0) - PenalizedLoss(cell.Sum, delta),
+                    score - baseline);
+                if (why != null)
+                {
+                    if (score > refusedScore)
+                    {
+                        refusedScore = score;
+                        refusedDelta = delta;
+                        refusedWhy = why;
+                    }
+
+                    return;
+                }
+
+                bestScore = score;
+                bestDelta = delta;
+            }
+
             double coarseStep = Math.Min(
                 0.1, Math.Max(0.02, (maxDelta - minDelta) / 8.0));
             for (double delta = minDelta; delta <= maxDelta + 1e-9; delta += coarseStep)
             {
-                double score = Score(delta);
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    bestDelta = delta;
-                }
+                Consider(delta);
             }
             for (double delta = Math.Max(minDelta, bestDelta - coarseStep);
                 delta <= Math.Min(maxDelta, bestDelta + coarseStep) + 1e-9;
                 delta += 0.02)
             {
-                double score = Score(delta);
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    bestDelta = delta;
-                }
+                Consider(delta);
+            }
+
+            if (refusedWhy != null && refusedScore > bestScore)
+            {
+                log.AppendLine(
+                    $"Co-move {link.Left.Name}+{link.Right.Name}: {refusedDelta:+0.00;-0.00} ms refused — " +
+                    $"it would gain {refusedScore - baseline:0.00} dB over the reference-side junctions but loses {refusedWhy}");
             }
 
             if (bestDelta != 0 && bestScore > baseline + PairComoveMinimumGainDb)
@@ -3761,9 +3863,10 @@ public static class AutoAlignmentEngine
         }
     }
 
-    // Far-side polish: each far channel may leave its scene position by FarSideJunctionPolishMs to recover its own junctions.
+    // Far-side polish: each far channel may leave its scene position by an eighth of its highest junction's period to
+    // recover its own junctions; spentMs carries each channel's trim across rounds. True when a channel moved.
     // See docs/tech/auto-alignment.md#post-descent-passes.
-    internal static void PolishFarSideJunctions(
+    internal static bool PolishFarSideJunctions(
         StereoAlignmentPlan plan,
         IReadOnlyList<AlignmentSnapshot> rightByBand,
         IReadOnlyList<AlignmentSnapshot> fullScope,
@@ -3771,8 +3874,10 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         double maxDelayMs,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions,
+        Dictionary<IAlignmentChannel, double> spentMs)
     {
+        bool moved = false;
         foreach (AlignmentSnapshot entry in rightByBand
             .OrderByDescending(item => plan.RightPairs
                 .Where(pair => pair.Lower.Channel == item.Channel ||
@@ -3808,39 +3913,13 @@ public static class AutoAlignmentEngine
                 adjacent.Max(junction => junction.CrossoverHz);
 
             AlignmentOverride current = alignment.GetValueOrDefault(channel);
+            // The reach is spent from the scene position: a second round otherwise walks a channel twice its leash.
+            double spent = spentMs.GetValueOrDefault(channel);
+            double sceneMs = current.DelayMs - spent;
             IReadOnlyList<AlignmentSnapshot> snapshots = reprocess(alignment);
-            AlignmentSnapshot SnapshotOf(IAlignmentChannel member) =>
-                snapshots.First(item => item.Channel == member);
-
-            IAlignmentChannel NeighborOf(AlignmentJunction junction) =>
-                junction.Lower.Channel == channel
-                    ? junction.Upper.Channel
-                    : junction.Lower.Channel;
-            VirtualCrossoverAnalysis.SumLossEvaluator? Probe(
-                AlignmentJunction junction, double lowHz, double highHz) =>
-                VirtualCrossoverAnalysis.SumLossEvaluator.Create(
-                    SnapshotOf(channel).ImpulseResponse,
-                    [SnapshotOf(NeighborOf(junction)).ImpulseResponse],
-                    channel.SampleRate,
-                    lowHz,
-                    highHz,
-                    // The physical sum, as the panel judges it (see the stereo branch check): with a period-long
-                    // leash the level match's phantom cancellations would steer the trim.
-                    levelMatch: false,
-                    requireDelayEvidence: true,
-                    gateAnchorSample: null,
-                    SnapshotOf(channel).ValidRange,
-                    [SnapshotOf(NeighborOf(junction)).ValidRange]);
-            double Penalized(
-                VirtualCrossoverAnalysis.SumLossEvaluator evaluator, double deltaMs)
-            {
-                (double lossDb, double dipDb) = evaluator.Evaluate(deltaMs);
-                return lossDb +
-                    VirtualCrossoverAnalysis.DipExcessPenaltyWeight * (dipDb - lossDb);
-            }
-
             List<VirtualCrossoverAnalysis.SumLossEvaluator> evaluators = adjacent
-                .Select(junction => Probe(junction, junction.BandLowHz, junction.BandHighHz))
+                .Select(junction => JunctionSum(
+                    snapshots, channel, OtherMember(junction, channel), junction.BandLowHz, junction.BandHighHz))
                 .OfType<VirtualCrossoverAnalysis.SumLossEvaluator>()
                 .ToList();
             if (evaluators.Count == 0)
@@ -3848,42 +3927,12 @@ public static class AutoAlignmentEngine
                 continue;
             }
 
-            // Half-band cells: a period-long leash can sell a junction's upper half for its lower one, and the
-            // upper half is the one the front is made of. No cell may lose more than the trim gains overall.
-            var cells = new List<(AlignmentJunction Junction, double LowHz, double HighHz,
-                VirtualCrossoverAnalysis.SumLossEvaluator Cell)>();
-            foreach (AlignmentJunction junction in adjacent)
-            {
-                foreach (bool upperHalf in new[] { false, true })
-                {
-                    (double lowHz, double highHz) = upperHalf
-                        ? (junction.CrossoverHz, junction.BandHighHz)
-                        : (junction.BandLowHz, junction.CrossoverHz);
-                    if (Probe(junction, lowHz, highHz) is { } cell)
-                    {
-                        cells.Add((junction, lowHz, highHz, cell));
-                    }
-                }
-            }
+            // Half-band cells, built when a trim first needs them: a period-long leash can sell a junction's upper half
+            // for its lower one, and the upper half is the one the front is made of.
+            List<HalfBandCell>? cells = null;
 
             double Score(double deltaMs) =>
-                evaluators.Sum(evaluator => Penalized(evaluator, deltaMs)) / evaluators.Count;
-
-            string? HalfBandLoss(double deltaMs, double gainDb)
-            {
-                foreach ((AlignmentJunction junction, double lowHz, double highHz,
-                    VirtualCrossoverAnalysis.SumLossEvaluator cell) in cells)
-                {
-                    double lossDb = Penalized(cell, 0) - Penalized(cell, deltaMs);
-                    if (lossDb > gainDb + 1e-9)
-                    {
-                        return FormattableString.Invariant(
-                            $"the {lowHz:0}-{highHz:0} Hz half vs {NeighborOf(junction).Name} by {lossDb:0.00} dB");
-                    }
-                }
-
-                return null;
-            }
+                evaluators.Sum(evaluator => PenalizedLoss(evaluator, deltaMs)) / evaluators.Count;
 
             // Feasibility span is rebased on the earliest channel: check a trial against both ends of the rest of the field.
             List<double> othersMs = fullScope
@@ -3897,19 +3946,23 @@ public static class AutoAlignmentEngine
                 ? othersMs.Max()
                 : double.NegativeInfinity;
             double baseline = Score(0);
-            double bestDelta = 0;
+            double bestTrialMs = current.DelayMs;
             double bestScore = baseline;
             double refusedDelta = 0;
             double refusedScore = baseline;
             string? refusedWhy = null;
-            // DSP's 0.01 ms grid, walked in whole ticks so the trim scored is the trim written: gains between its
-            // points are unrealizable.
-            int reachTicks = (int)Math.Floor(reachMs / 0.01 + 1e-9);
-            for (int tick = -reachTicks; tick <= reachTicks; tick++)
+            // Absolute ticks of the DSP's 0.01 ms grid: the exact move to a tick is scored and that tick is written. The
+            // channel may stand off the grid here (the descent rebases the field by unrounded amounts).
+            // One tick more than fits: from an off-grid scene the far edge holds a tick a floor would drop, and the exact
+            // reach check below discards the surplus.
+            int reachTicks = (int)Math.Ceiling(reachMs / 0.01);
+            int sceneTick = (int)Math.Round(sceneMs / 0.01);
+            for (int tick = sceneTick - reachTicks; tick <= sceneTick + reachTicks; tick++)
             {
-                double delta = tick * 0.01;
-                double trialMs = current.DelayMs + delta;
-                if (trialMs < 0 ||
+                double trialMs = Math.Round(tick * 0.01, 2);
+                double delta = trialMs - current.DelayMs;
+                if (Math.Abs(trialMs - sceneMs) > reachMs + 1e-9 ||
+                    trialMs < 0 ||
                     Math.Max(othersMaxMs, trialMs) -
                         Math.Min(othersMinMs, trialMs) > maxDelayMs)
                 {
@@ -3923,7 +3976,10 @@ public static class AutoAlignmentEngine
                     continue;
                 }
 
-                if (HalfBandLoss(delta, score - baseline) is { } why)
+                if (HalfBandRefusal(
+                        cells ??= HalfBandCells(adjacent, channel, snapshots),
+                        cell => PenalizedLoss(cell.Sum, 0) - PenalizedLoss(cell.Sum, delta),
+                        score - baseline) is { } why)
                 {
                     if (score > refusedScore)
                     {
@@ -3935,7 +3991,7 @@ public static class AutoAlignmentEngine
                 }
 
                 bestScore = score;
-                bestDelta = delta;
+                bestTrialMs = trialMs;
             }
 
             if (refusedWhy != null && refusedScore > bestScore)
@@ -3945,19 +4001,19 @@ public static class AutoAlignmentEngine
                     $"it would gain {refusedScore - baseline:0.00} dB over its junctions but loses {refusedWhy}");
             }
 
-            if (bestDelta != 0 && bestScore > baseline + FarSidePolishMinimumGainDb)
+            if (bestTrialMs != current.DelayMs && bestScore > baseline + FarSidePolishMinimumGainDb)
             {
-                alignment[channel] = current with
-                {
-                    DelayMs = Math.Round(current.DelayMs + bestDelta, 2)
-                };
+                alignment[channel] = current with { DelayMs = bestTrialMs };
+                spent = bestTrialMs - sceneMs;
+                spentMs[channel] = spent;
+                moved = true;
                 log.AppendLine(
                     $"Far-side polish {channel.Name}: " +
-                    $"{bestDelta:+0.00;-0.00} ms off the scene position " +
+                    $"{spent:+0.00;-0.00} ms off the scene position " +
                     $"(own-junction dip-penalized loss " +
                     $"{baseline:0.00} -> {bestScore:0.00} dB)");
                 string amendment = FormattableString.Invariant(
-                    $"far-side polish {bestDelta:+0.00;-0.00} ms (scene spent, <= ") +
+                    $"far-side polish, now {spent:+0.00;-0.00} ms off the scene position (<= ") +
                     FormattableString.Invariant($"{reachMs:0.00} ms)");
                 AmendDecision(decisions, channel, amendment);
             }
@@ -3969,10 +4025,10 @@ public static class AutoAlignmentEngine
                     $"{FarSidePolishMinimumGainDb:0.00} dB threshold)");
             }
         }
+
+        return moved;
     }
 
-    // Mono co-move: sweep the mono channel over both polarities for the best mean over its left and right junctions.
-    // See docs/tech/auto-alignment.md#post-descent-passes.
     /// <summary>Moves the stack above a junction by <paramref name="deltaMs"/> and flips its polarity, on both sides.
     /// A negative move would push the stack below zero, so the rest of the field rises by the same amount instead —
     /// the same relation, and no clamping.</summary>
@@ -4063,44 +4119,20 @@ public static class AutoAlignmentEngine
             }
 
             IReadOnlyList<AlignmentSnapshot> current = reprocess(alignment);
-            Complex[] IrOf(IAlignmentChannel channel) =>
-                current.First(item => item.Channel == channel).ImpulseResponse;
-            ValidSampleRange RangeOf(IAlignmentChannel channel) =>
-                current.First(item => item.Channel == channel).ValidRange;
-            VirtualCrossoverAnalysis.SumLossEvaluator? Probe(
-                AlignmentJunction junction, double lowHz, double highHz) =>
-                VirtualCrossoverAnalysis.SumLossEvaluator.Create(
-                    IrOf(junction.Upper.Channel),
-                    [IrOf(junction.Lower.Channel)],
-                    junction.Upper.Channel.SampleRate,
-                    lowHz,
-                    highHz,
-                    // The physical sum, as the panel judges it: a level match lifts a member that is tens of dB down in
-                    // a half-band it barely reaches and turns its phase into a cancellation that never plays.
-                    levelMatch: false,
-                    requireDelayEvidence: true,
-                    gateAnchorSample: null,
-                    RangeOf(junction.Upper.Channel),
-                    [RangeOf(junction.Lower.Channel)]);
+            VirtualCrossoverAnalysis.SumLossEvaluator? FullBand(AlignmentJunction junction) =>
+                JunctionSum(
+                    current, junction.Upper.Channel, junction.Lower.Channel,
+                    junction.BandLowHz, junction.BandHighHz);
 
-            if (Probe(reference, reference.BandLowHz, reference.BandHighHz)
-                    is not { } referenceBand ||
-                Probe(far, far.BandLowHz, far.BandHighHz) is not { } farBand)
+            if (FullBand(reference) is not { } referenceBand ||
+                FullBand(far) is not { } farBand)
             {
                 continue;
             }
 
-            double Score(VirtualCrossoverAnalysis.SumLossEvaluator evaluator,
-                double deltaMs, bool flip)
-            {
-                (double lossDb, double dipDb) = evaluator.Evaluate(deltaMs, flip);
-                return lossDb +
-                    VirtualCrossoverAnalysis.DipExcessPenaltyWeight * (dipDb - lossDb);
-            }
-
             double halfPeriodMs = 500.0 / reference.CrossoverHz;
             double BranchScore(bool farSide, double deltaMs, bool flip) =>
-                Score(farSide ? farBand : referenceBand, deltaMs, flip);
+                PenalizedLoss(farSide ? farBand : referenceBand, deltaMs, flip);
             StereoBranchReading? reading = StereoJunctionBranch.Read(
                 BranchScore, halfPeriodMs);
             if (reading == null ||
@@ -4131,60 +4163,33 @@ public static class AutoAlignmentEngine
             var trial = new Dictionary<IAlignmentChannel, AlignmentOverride>(alignment);
             ApplyBranchMove(trial, above, shiftScope, reading.DeltaMs);
             IReadOnlyList<AlignmentSnapshot> rendered = reprocess(trial);
-            Complex[] RenderedIrOf(IAlignmentChannel channel) =>
-                rendered.First(item => item.Channel == channel).ImpulseResponse;
-            ValidSampleRange RenderedRangeOf(IAlignmentChannel channel) =>
-                rendered.First(item => item.Channel == channel).ValidRange;
-            double? Rendered(AlignmentJunction junction, double lowHz, double highHz)
-            {
-                VirtualCrossoverAnalysis.SumLossEvaluator? evaluator =
-                    VirtualCrossoverAnalysis.SumLossEvaluator.Create(
-                        RenderedIrOf(junction.Upper.Channel),
-                        [RenderedIrOf(junction.Lower.Channel)],
-                        junction.Upper.Channel.SampleRate,
-                        lowHz,
-                        highHz,
-                        levelMatch: false,
-                        requireDelayEvidence: true,
-                        gateAnchorSample: null,
-                        RenderedRangeOf(junction.Upper.Channel),
-                        [RenderedRangeOf(junction.Lower.Channel)]);
-                return evaluator == null ? null : Score(evaluator, 0, false);
-            }
+            double? Rendered(AlignmentJunction junction, double lowHz, double highHz) =>
+                JunctionSum(
+                    rendered, junction.Upper.Channel, junction.Lower.Channel, lowHz, highHz) is { } sum
+                    ? PenalizedLoss(sum, 0)
+                    : null;
 
-            double GainOf(AlignmentJunction junction, double lowHz, double highHz) =>
-                Probe(junction, lowHz, highHz) is { } before &&
-                Rendered(junction, lowHz, highHz) is { } after
-                    ? after - Score(before, 0, false)
+            double GainOf(AlignmentJunction junction, VirtualCrossoverAnalysis.SumLossEvaluator before) =>
+                Rendered(junction, junction.BandLowHz, junction.BandHighHz) is { } after
+                    ? after - PenalizedLoss(before, 0)
                     : 0;
 
             var verified = new StereoBranchReading(
                 reading.DeltaMs,
                 true,
-                GainOf(reference, reference.BandLowHz, reference.BandHighHz),
-                GainOf(far, far.BandLowHz, far.BandHighHz));
+                GainOf(reference, referenceBand),
+                GainOf(far, farBand));
 
-            // A true lobe does not buy the mean by wrecking a half-band: the damage anywhere may not exceed what the
-            // far junction gains, which is the whole justification for disturbing a settled one.
-            string? refusal = null;
-            double allowedHalfLossDb = Math.Max(
-                StereoJunctionBranch.ReferenceLossDb, verified.FarGainDb);
-            foreach ((AlignmentJunction junction, bool farSide) in
-                new[] { (reference, false), (far, true) })
+            // The far gain is the whole justification for disturbing a settled junction, so it is what a half may cost.
+            string? refusal = HalfBandRefusal(
+                HalfBandCells([reference], reference.Upper.Channel, current)
+                    .Concat(HalfBandCells([far], far.Upper.Channel, current)),
+                cell => PenalizedLoss(cell.Sum, 0) -
+                    (Rendered(cell.Junction, cell.LowHz, cell.HighHz) ?? PenalizedLoss(cell.Sum, 0)),
+                Math.Max(0.0, verified.FarGainDb));
+            if (refusal != null)
             {
-                foreach (bool upperHalf in new[] { false, true })
-                {
-                    (double lowHz, double highHz) = upperHalf
-                        ? (junction.CrossoverHz, junction.BandHighHz)
-                        : (junction.BandLowHz, junction.CrossoverHz);
-                    double halfGainDb = GainOf(junction, lowHz, highHz);
-                    if (halfGainDb < -allowedHalfLossDb)
-                    {
-                        string sideName = farSide ? "far" : "reference";
-                        refusal = FormattableString.Invariant(
-                            $"it loses the {lowHz:0}-{highHz:0} Hz half of the {sideName} junction by {-halfGainDb:0.00} dB");
-                    }
-                }
+                refusal = "it loses " + refusal;
             }
 
             // The move is optional, and the field must stay realizable: a span past the ceiling would make the final
@@ -4238,15 +4243,19 @@ public static class AutoAlignmentEngine
         }
     }
 
-    internal static void ComoveMonoChannels(
+    // Mono co-move: sweep the mono channel over both polarities for the best mean over its left and right junctions.
+    // True when a mono channel moved. See docs/tech/auto-alignment.md#post-descent-passes.
+    internal static bool ComoveMonoChannels(
         StereoAlignmentPlan plan,
         AlignmentReprocessor reprocess,
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
         StringBuilder log,
         IReadOnlyList<AlignmentSnapshot> shiftScope,
         double maxDelayMs = DefaultMaxDelayMs,
-        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null)
+        Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
+        bool afterPolish = false)
     {
+        bool moved = false;
         foreach (IAlignmentChannel mono in plan.MonoChannels)
         {
             // One junction per side; the same-fc twins differ in the neighbor channel.
@@ -4264,37 +4273,15 @@ public static class AutoAlignmentEngine
             // Every junction must hold delay evidence on its own (the descent's combined band can hide an evidence-less sub junction); else abstain.
             // One render, rotation evaluators per junction and half-band: windows travel with their channels.
             IReadOnlyList<AlignmentSnapshot> certified = reprocess(alignment);
-            Complex[] CertifiedIrOf(IAlignmentChannel channel) =>
-                certified.First(item => item.Channel == channel).ImpulseResponse;
-            ValidSampleRange CertifiedRangeOf(IAlignmentChannel channel) =>
-                certified.First(item => item.Channel == channel).ValidRange;
-            VirtualCrossoverAnalysis.SumLossEvaluator? Probe(
-                AlignmentJunction junction, double lowHz, double highHz)
-            {
-                IAlignmentChannel neighbor = junction.Lower.Channel == mono
-                    ? junction.Upper.Channel
-                    : junction.Lower.Channel;
-                return VirtualCrossoverAnalysis.SumLossEvaluator.Create(
-                    CertifiedIrOf(mono),
-                    new List<Complex[]> { CertifiedIrOf(neighbor) },
-                    mono.SampleRate,
-                    lowHz,
-                    highHz,
-                    levelMatch: true,
-                    requireDelayEvidence: true,
-                    gateAnchorSample: null,
-                    CertifiedRangeOf(mono),
-                    new[] { CertifiedRangeOf(neighbor) });
-            }
-
             var fullBand =
                 new Dictionary<AlignmentJunction,
                     VirtualCrossoverAnalysis.SumLossEvaluator>();
             AlignmentJunction? unmeasurable = null;
             foreach (AlignmentJunction junction in junctions)
             {
-                if (Probe(junction, junction.BandLowHz, junction.BandHighHz)
-                    is { } evaluator)
+                if (JunctionSum(
+                        certified, mono, OtherMember(junction, mono),
+                        junction.BandLowHz, junction.BandHighHz) is { } evaluator)
                 {
                     fullBand[junction] = evaluator;
                 }
@@ -4306,10 +4293,7 @@ public static class AutoAlignmentEngine
             }
             if (unmeasurable is { } silent)
             {
-                IAlignmentChannel silentNeighbor =
-                    silent.Lower.Channel == mono
-                        ? silent.Upper.Channel
-                        : silent.Lower.Channel;
+                IAlignmentChannel silentNeighbor = OtherMember(silent, mono);
                 log.AppendLine(
                     $"  mono co-move skipped for {mono.Name}: the junction vs " +
                     $"{silentNeighbor.Name} in " +
@@ -4343,11 +4327,7 @@ public static class AutoAlignmentEngine
                 double total = 0;
                 foreach (AlignmentJunction junction in junctions)
                 {
-                    (double lossDb, double dipDb) =
-                        fullBand[junction].Evaluate(deltaMs, flip);
-                    total += lossDb +
-                        VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
-                        (dipDb - lossDb);
+                    total += PenalizedLoss(fullBand[junction], deltaMs, flip);
                 }
 
                 return total / junctions.Count;
@@ -4424,63 +4404,22 @@ public static class AutoAlignmentEngine
             }
             else if (hop)
             {
-                // Sub-band veto per (junction, half-band) cell where the delay is observable, against the better of in-lobe polish and the incumbent.
-                // See docs/tech/auto-alignment.md#post-descent-passes.
-                bool vetoed = false;
-                foreach (AlignmentJunction junction in junctions)
+                // Per (junction, half-band) cell against the better of in-lobe polish and the incumbent: a hop holds
+                // every observable half. See docs/tech/auto-alignment.md#post-descent-passes.
+                string? veto = HalfBandRefusal(
+                    HalfBandCells(junctions, mono, certified),
+                    cell => Math.Max(
+                        PenalizedLoss(cell.Sum, bestPolishDelta),
+                        PenalizedLoss(cell.Sum, 0)) - PenalizedLoss(cell.Sum, bestDelta, bestFlip),
+                    MonoHopHalfBandMarginDb);
+                if (veto != null)
                 {
-                    foreach (bool upperHalf in new[] { false, true })
-                    {
-                        (double lowHz, double highHz) = upperHalf
-                            ? (junction.CrossoverHz, junction.BandHighHz)
-                            : (junction.BandLowHz, junction.CrossoverHz);
-                        if (Probe(junction, lowHz, highHz) is not { } cell)
-                        {
-                            continue;
-                        }
-
-                        double CellScore(double deltaMs, bool flip)
-                        {
-                            (double lossDb, double dipDb) =
-                                cell.Evaluate(deltaMs, flip);
-                            return lossDb +
-                                VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
-                                (dipDb - lossDb);
-                        }
-
-                        double referenceCellScore = Math.Max(
-                            CellScore(bestPolishDelta, false),
-                            CellScore(0, false));
-                        double hopCellScore = CellScore(bestDelta, bestFlip);
-                        if (hopCellScore >=
-                            referenceCellScore - MonoComoveSubBandVetoMarginDb)
-                        {
-                            continue;
-                        }
-
-                        IAlignmentChannel neighbor =
-                            junction.Lower.Channel == mono
-                                ? junction.Upper.Channel
-                                : junction.Lower.Channel;
-                        log.AppendLine(
-                            $"  mono lobe hop vetoed for {mono.Name}: " +
-                            $"{bestDelta:+0.00;-0.00} ms" +
-                            $"{(bestFlip ? " flipped" : "")} wins the full band " +
-                            $"by {bestScore - bestPolishScore:0.00} dB but loses " +
-                            $"the {lowHz:0}-{highHz:0} Hz half vs " +
-                            $"{neighbor.Name} by " +
-                            $"{referenceCellScore - hopCellScore:0.00} dB " +
-                            "— a true lobe holds every measurable sub-band.");
-                        vetoed = true;
-                        break;
-                    }
-                    if (vetoed)
-                    {
-                        break;
-                    }
-                }
-                if (vetoed)
-                {
+                    log.AppendLine(
+                        $"  mono lobe hop vetoed for {mono.Name}: " +
+                        $"{bestDelta:+0.00;-0.00} ms" +
+                        $"{(bestFlip ? " flipped" : "")} wins the full band " +
+                        $"by {bestScore - bestPolishScore:0.00} dB but loses " +
+                        $"{veto} — a true lobe holds every measurable sub-band.");
                     bestScore = bestPolishScore;
                     bestDelta = bestPolishDelta;
                     bestFlip = false;
@@ -4491,6 +4430,7 @@ public static class AutoAlignmentEngine
                 bestScore > baseline + PairComoveMinimumGainDb)
             {
                 // Out-of-range results rebase the rest of the field, the equivalence the bounds assumed.
+                moved = true;
                 double newDelayMs = Math.Round(over.DelayMs + bestDelta, 2);
                 if (newDelayMs < 0)
                 {
@@ -4513,7 +4453,15 @@ public static class AutoAlignmentEngine
                     $" (mean dip-penalized junction loss over both sides " +
                     $"{baseline:0.00} -> {bestScore:0.00} dB; a mono move " +
                     "cannot touch the scene)");
-                if (decisions != null)
+                if (afterPolish && !bestFlip && Math.Abs(bestDelta) <= polishReachMs + 1e-9)
+                {
+                    // A trim that follows the polished far side amends the decision; only a hop re-decides it.
+                    AmendDecision(
+                        decisions, mono,
+                        FormattableString.Invariant(
+                            $"mono co-move {bestDelta:+0.00;-0.00} ms after the far-side polish"));
+                }
+                else if (decisions != null)
                 {
                     // Re-decided from both sides; confidence maps the gain onto the co-move's calibrated scale (see MonoComoveLobeHopMarginDb).
                     double gainDb = bestScore - baseline;
@@ -4546,6 +4494,8 @@ public static class AutoAlignmentEngine
                     $"{PairComoveMinimumGainDb:0.00} dB threshold)");
             }
         }
+
+        return moved;
     }
 
     // Both sides already final (mono sub vs settled right channel): log the price of sharing one mono channel.

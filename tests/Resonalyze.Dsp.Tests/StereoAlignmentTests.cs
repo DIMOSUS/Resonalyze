@@ -957,6 +957,55 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
+    public void ComoveMonoChannels_AfterThePolish_ATrimAmendsTheDecisionAndKeepsItsConfidence()
+    {
+        // The pass that follows the far-side polish trims the sub inside its lobe: that amends the decision the walk
+        // and the first co-move made. Re-deciding it from a trim's small gain would report a confident sub as Low.
+        var sub = new TestChannel("sub", ImpulseAtMs(9.0));
+        var leftWoof = new TestChannel("L woof", ImpulseAtMs(8.0));
+        var rightWoof = new TestChannel("R woof", ImpulseAtMs(8.0));
+        TestChannel[] all = [sub, leftWoof, rightWoof];
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+        List<AlignmentSnapshot> snapshots = all
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        var plan = new StereoAlignmentPlan(
+            [snapshots[0], snapshots[1]],
+            [Junction(snapshots[0], snapshots[1], 80)],
+            [snapshots[0], snapshots[2]],
+            [Junction(snapshots[0], snapshots[2], 80)],
+            new HashSet<IAlignmentChannel> { sub },
+            leftWoof,
+            rightWoof,
+            40,
+            160,
+            SceneOffsetMs: 0);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [sub] = new(2.0, false),
+            [leftWoof] = new(2.0, false),
+            [rightWoof] = new(2.0, false)
+        };
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>
+        {
+            [sub] = new(AlignmentDecisionKind.Search, AlignmentConfidence.High, "mono co-move -6.00 ms + invert")
+        };
+        var log = new StringBuilder();
+
+        bool moved = AutoAlignmentEngine.ComoveMonoChannels(
+            plan, Reprocess, alignment, log, snapshots, decisions: decisions, afterPolish: true);
+
+        Assert.True(moved, log.ToString());
+        Assert.InRange(alignment[sub].DelayMs - alignment[leftWoof].DelayMs, -1.2, -0.8);
+        Assert.Equal(AlignmentConfidence.High, decisions[sub].Confidence);
+        Assert.StartsWith("mono co-move -6.00 ms + invert; ", decisions[sub].Detail);
+        Assert.Contains("after the far-side polish", decisions[sub].Detail);
+    }
+
+    [Fact]
     public void ComoveMonoChannels_RefreshesTheStaleDecision()
     {
         // Once the co-move moves the sub it is no longer reported as the reference.
@@ -1132,7 +1181,9 @@ public sealed class StereoAlignmentTests
             double baseDelayMs = 1.0,
             bool withFieldFloor = false,
             double fieldChannelMs = 0.0,
-            double junctionHz = 2_500)
+            double junctionHz = 2_500,
+            int rounds = 1,
+            double midOffsetMs = 0.0)
     {
         var farMid = new TestChannel("R mid", ImpulseAtMs(5.0));
         var farTwr = new TestChannel("R twr", ImpulseAtMs(5.0 + twrLateMs));
@@ -1159,7 +1210,7 @@ public sealed class StereoAlignmentTests
             farMid, farTwr, junctionHz / 2, junctionHz * 2, SceneOffsetMs: 0);
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
         {
-            [farMid] = new(baseDelayMs, false),
+            [farMid] = new(baseDelayMs + midOffsetMs, false),
             [farTwr] = new(baseDelayMs, false)
         };
         if (withFieldFloor)
@@ -1168,10 +1219,54 @@ public sealed class StereoAlignmentTests
         }
 
         var log = new StringBuilder();
-        AutoAlignmentEngine.PolishFarSideJunctions(
-            plan, snapshots, snapshots, Reprocess, alignment, log,
-            AutoAlignmentEngine.DefaultMaxDelayMs, decisions: null);
+        var spentMs = new Dictionary<IAlignmentChannel, double>();
+        for (int round = 0; round < rounds; round++)
+        {
+            AutoAlignmentEngine.PolishFarSideJunctions(
+                plan, snapshots, snapshots, Reprocess, alignment, log,
+                AutoAlignmentEngine.DefaultMaxDelayMs, decisions: null, spentMs);
+        }
         return (alignment[farMid].DelayMs, alignment[farTwr].DelayMs, log.ToString());
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_ScoresTheExactMoveToADspTickFromAnOffGridDelay()
+    {
+        // The descent rebases the field by unrounded amounts, so the mid can stand at 1.006 ms. The tick 1.01 is a
+        // +0.004 ms move that aligns it with the tweeter; rounding that move to the grid read it as the incumbent.
+        (double midDelay, double twrDelay, string log) = RunFarSidePolish(
+            0.0, baseDelayMs: 1.01, junctionHz: 10_000, midOffsetMs: -0.004);
+
+        Assert.Equal(1.01, midDelay, 9);
+        Assert.Equal(1.01, twrDelay, 9);
+        Assert.Contains("off the scene position", log);
+    }
+
+    [Theory]
+    [InlineData(1.03, -0.026)]
+    [InlineData(0.98, 0.026)]
+    public void PolishFarSideJunctions_WalksEveryDspTickInsideTheReachOfAnOffGridScene(
+        double bridgeMs, double midOffsetMs)
+    {
+        // 4300 Hz gives a 0.029 ms reach: from a scene at 1.004 or 1.006 ms the ticks 0.98..1.03 are all inside it.
+        // Counting whole ticks around the rounded scene dropped the far edge, which is where the fronts meet here.
+        (double midDelay, double twrDelay, string _) = RunFarSidePolish(
+            0.0, baseDelayMs: bridgeMs, junctionHz: 4_300, midOffsetMs: midOffsetMs);
+
+        Assert.Equal(bridgeMs, midDelay, 9);
+        Assert.Equal(bridgeMs, twrDelay, 9);
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_ReachIsATotalBudgetFromTheScenePosition()
+    {
+        // The polish alternates with the mono co-move: a second round must not walk the mid another eighth of a period.
+        (double once, _, _) = RunFarSidePolish(0.50);
+        (double twice, _, string log) = RunFarSidePolish(0.50, rounds: 2);
+
+        Assert.Equal(once, twice, 9);
+        Assert.InRange(Math.Abs(twice - 1.0), 0, 0.05 + 1e-9);
+        Assert.Contains("Far-side polish R mid: kept", log);
     }
 
     [Fact]

@@ -2977,9 +2977,7 @@ public partial class VirtualCrossoverPanel : UserControl
             (VirtualCrossoverChannel Channel,
                 OxyColor Color,
                 MeasuredBand Band,
-                CalibrationFile? OwnCalibration,
-                VirtualCrossoverSourceSnapshot Source,
-                DspChannelChain Chain)>();
+                CalibrationFile? OwnCalibration)>();
         using (AppProfiler.Zone("VirtualDSP.SnapshotChannels"))
         {
             for (int i = 0; i < channels.Count; i++)
@@ -3009,9 +3007,7 @@ public partial class VirtualCrossoverPanel : UserControl
                     (channel,
                         ChannelColors[i],
                         state.MeasuredBand,
-                        state.MicrophoneCalibrationCurve,
-                        source,
-                        chain));
+                        state.MicrophoneCalibrationCurve));
             }
         }
 
@@ -3029,9 +3025,7 @@ public partial class VirtualCrossoverPanel : UserControl
             (VirtualCrossoverChannel channel,
                 OxyColor color,
                 MeasuredBand band,
-                CalibrationFile? ownCalibration,
-                VirtualCrossoverSourceSnapshot source,
-                DspChannelChain chain) = bindings[result.Id];
+                CalibrationFile? ownCalibration) = bindings[result.Id];
             processed.Add(new ProcessedChannel(
                 channel,
                 result.ImpulseResponse,
@@ -3040,10 +3034,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 color,
                 result.ValidRange,
                 band,
-                ownCalibration,
-                chain,
-                source.CroppedImpulseResponse,
-                ProcessorSampleRateHz));
+                ownCalibration));
         }
         return new ProcessedRender(render.Revision, processed);
     }
@@ -6871,7 +6862,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using var _ = AppProfiler.Zone("VirtualDSP.BuildCorrelationView");
         int sampleRate = pair.Lower.SampleRate;
         (Complex[] lower, Complex[] upper,
-            ValidSampleRange lowerRange, ValidSampleRange upperRange, int cropStart) =
+            ValidSampleRange lowerRange, ValidSampleRange upperRange) =
             CropJunctionPair(pair, scope, sampleRate);
         // No anchor: each channel windowed at its own band-limited front, as Auto delay measures junctions.
 
@@ -6890,7 +6881,6 @@ public partial class VirtualCrossoverPanel : UserControl
         List<SignalPoint> scoreInverted = null!;
         double lowerArrivalMs = 0;
         double upperArrivalMs = 0;
-        bool arrivalReAnchored = false;
         Parallel.Invoke(
             // UNTRIMMED: reflections are this curve's subject (honest at bass junctions).
             () => whitened = VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
@@ -6925,30 +6915,13 @@ public partial class VirtualCrossoverPanel : UserControl
                 scoreNormal = Penalized(normal);
                 scoreInverted = Penalized(inverted);
             },
-            // The arrival marker is the read stage 1 anchors on — the envelope fronts, re-anchored where the honesty
-            // probes convict a modal latch — not the raw envelope the search may have discarded.
+            // The band-limited envelope fronts: the number the agent package exports as arrivalLagMs. Not drawn.
             () =>
             {
-                AutoAlignmentEngine.JunctionArrivalRead? read =
-                    AutoAlignmentEngine.ReadJunctionArrivals(
-                        new AlignmentJunction(
-                            SearchSnapshot(pair.Lower, lower, lowerRange, cropStart, sampleRate),
-                            SearchSnapshot(pair.Upper, upper, upperRange, cropStart, sampleRate),
-                            pair.CrossoverHz, pair.BandLowHz, pair.BandHighHz),
-                        new System.Text.StringBuilder());
-                if (read != null)
-                {
-                    lowerArrivalMs = read.LowerMs;
-                    upperArrivalMs = read.UpperMs;
-                    arrivalReAnchored = read.ReAnchored;
-                }
-                else
-                {
-                    lowerArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                        lower, sampleRate, pair.BandLowHz, pair.BandHighHz, lowerRange);
-                    upperArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                        upper, sampleRate, pair.BandLowHz, pair.BandHighHz, upperRange);
-                }
+                lowerArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                    lower, sampleRate, pair.BandLowHz, pair.BandHighHz, lowerRange);
+                upperArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
+                    upper, sampleRate, pair.BandLowHz, pair.BandHighHz, upperRange);
             });
 
         return new JunctionCorrelationView(
@@ -6961,58 +6934,8 @@ public partial class VirtualCrossoverPanel : UserControl
             whitenedDirect,
             scoreNormal,
             scoreInverted,
-            lowerArrivalMs - upperArrivalMs,
-            arrivalReAnchored);
+            lowerArrivalMs - upperArrivalMs);
     }
-
-    // The channel as the search sees it: the cropped processed response, the chain that produced it, and the chain-free
-    // response at the same crop for the predicted-front probe — all from the render's own snapshot (the render truncates
-    // the head from sample 0, so the origins agree), never from the live channel, which may have moved on since.
-    private static AlignmentSnapshot SearchSnapshot(
-        ProcessedChannel item,
-        Complex[] processed,
-        ValidSampleRange range,
-        int cropStart,
-        int sampleRate)
-    {
-        Complex[]? bypassed = null;
-        ValidSampleRange bypassedRange = default;
-        if (item.Chain != null &&
-            item.SourceImpulseResponse is { } transfer &&
-            item.ProcessorSampleRate > 0 &&
-            cropStart >= 0)
-        {
-            var source = new Complex[processed.Length];
-            int count = Math.Clamp(transfer.Length - cropStart, 0, processed.Length);
-            if (count > 0)
-            {
-                Array.Copy(transfer, cropStart, source, 0, count);
-                bypassed = VirtualCrossoverAnalysis.ApplyChain(
-                    source, DspChannelChain.Identity, sampleRate,
-                    item.ProcessorSampleRate, out bypassedRange);
-            }
-        }
-
-        // Without the frozen chain there is no predicted front; the upper-half probe still grades the read. The engine
-        // reads the rates off the channel, so the channel it gets is frozen too, not the live block.
-        return new AlignmentSnapshot(
-            new FrozenAlignmentChannel(
-                item.Channel.Name,
-                item.SampleRate,
-                item.ProcessorSampleRate > 0 ? item.ProcessorSampleRate : item.SampleRate),
-            processed,
-            VirtualCrossoverAnalysis.FindPeakIndex(processed),
-            range,
-            bypassed == null ? null : item.Chain,
-            bypassed,
-            bypassedRange);
-    }
-
-    /// <summary>The rates a render was made at, as the engine's channel: the live block may have been rebound since.</summary>
-    private sealed record FrozenAlignmentChannel(
-        string Name,
-        int SampleRate,
-        int ProcessorSampleRate) : IAlignmentChannel;
 
     private static List<SignalPoint> Penalized(
         List<VirtualCrossoverAnalysis.JunctionSweepPoint> sweep) =>
@@ -7031,7 +6954,7 @@ public partial class VirtualCrossoverPanel : UserControl
         using var _ = AppProfiler.Zone("VirtualDSP.BuildCoherenceView");
         int sampleRate = pair.Lower.SampleRate;
         (Complex[] lower, Complex[] upper,
-            ValidSampleRange lowerRange, ValidSampleRange upperRange, int _cropStart) =
+            ValidSampleRange lowerRange, ValidSampleRange upperRange) =
             CropJunctionPair(pair, scope, sampleRate);
         return new JunctionCoherenceView(
             $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
@@ -7047,7 +6970,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     // Valid ranges are shifted into the crop frame so front detections match the search's (matters on glitch-headed records).
     private static (Complex[] Lower, Complex[] Upper,
-        ValidSampleRange LowerRange, ValidSampleRange UpperRange, int CropStart)
+        ValidSampleRange LowerRange, ValidSampleRange UpperRange)
         CropJunctionPair(
             AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope, int sampleRate)
     {
@@ -7071,7 +6994,7 @@ public partial class VirtualCrossoverPanel : UserControl
                         croppedIr.Length))
                 : item.ValidRange;
         return (lower, upper,
-            Shifted(pair.Lower, lower), Shifted(pair.Upper, upper), cropStart);
+            Shifted(pair.Lower, lower), Shifted(pair.Upper, upper));
     }
 
     private async Task CaptureSumToOverlayAsync()

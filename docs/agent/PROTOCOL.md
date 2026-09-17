@@ -362,7 +362,8 @@ Every block is the panel's own read-out, unchanged. `id` is what a
   the **upper** channel, aligns it with the lower; a positive peak is a
   normal-polarity alignment, a negative trough the same with the upper channel
   inverted. `fullRecord*` reads the whole capture, `direct*` the direct sound
-  alone. `arrivalLagMs` = lower arrival − upper arrival.
+  alone. `arrivalLagMs` = lower arrival − upper arrival, the band-limited envelope
+  fronts of the processed pair.
 - `coherenceLadder`: per band, `lagMs` is the upper channel's arrival relative to
   the lower at that frequency, `peakR` the best coherence found, `currentR` the
   coherence at the current alignment.

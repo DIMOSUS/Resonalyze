@@ -51,13 +51,16 @@ internal sealed class AppearanceSettingsFile
 
     /// <summary>False when the file still holds the old theme, with <see cref="SaveWarning"/> saying why: a caller
     /// must not then act as if the new one were in force.</summary>
+    /// <remarks>Written through <see cref="AtomicFile"/>, so a write that fails part way — a full disk — leaves the
+    /// previous file, and that promise holds.</remarks>
     public bool TrySave()
     {
+        SaveWarning = null;
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(pathOnDisk)!);
-            using FileStream stream = File.Create(pathOnDisk);
-            JsonSerializer.Serialize(stream, this, SerializerOptions);
+            AtomicFile.Write(
+                pathOnDisk,
+                stream => JsonSerializer.Serialize(stream, this, SerializerOptions));
             return true;
         }
         catch (Exception exception) when (

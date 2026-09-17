@@ -42,12 +42,49 @@ public sealed class AppearanceSettingsFileTests : IDisposable
     public void AnUnwritablePath_AnswersFalseAndSaysWhy()
     {
         // A directory where the file belongs: the write fails without needing a permission fixture.
-        System.IO.Directory.CreateDirectory(Path_);
+        Directory.CreateDirectory(Path_);
         AppearanceSettingsFile settings = AppearanceSettingsFile.LoadOrDefault(Path_);
         settings.Theme = UiTheme.Light;
 
         Assert.False(settings.TrySave());
         Assert.NotNull(settings.SaveWarning);
+        Assert.False(File.Exists(Path_ + ".tmp"));
+    }
+
+    [Fact]
+    public void AFailedSave_LeavesTheFileItCouldNotReplace()
+    {
+        Directory.CreateDirectory(directory);
+        AppearanceSettingsFile first = AppearanceSettingsFile.LoadOrDefault(Path_);
+        first.Theme = UiTheme.Light;
+        Assert.True(first.TrySave());
+        string written = File.ReadAllText(Path_);
+
+        // Hold the file open for exclusive writing: the replace fails, the content must survive it.
+        using (File.Open(Path_, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+        {
+            AppearanceSettingsFile second = AppearanceSettingsFile.LoadOrDefault(Path_);
+            second.Theme = UiTheme.Dark;
+            Assert.False(second.TrySave());
+        }
+
+        Assert.Equal(written, File.ReadAllText(Path_));
+        Assert.Equal(UiTheme.Light, AppearanceSettingsFile.LoadOrDefault(Path_).Theme);
+    }
+
+    [Fact]
+    public void ASuccessfulSave_ClearsTheWarningOfTheOneBefore()
+    {
+        Directory.CreateDirectory(directory);
+        AppearanceSettingsFile settings = AppearanceSettingsFile.LoadOrDefault(Path_);
+        settings.Theme = UiTheme.Light;
+        using (File.Open(Path_, FileMode.Create, FileAccess.ReadWrite, FileShare.Read))
+        {
+            Assert.False(settings.TrySave());
+        }
+
+        Assert.True(settings.TrySave());
+        Assert.Null(settings.SaveWarning);
     }
 
     [Theory]

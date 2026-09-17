@@ -119,3 +119,10 @@ which *can* break at compile time do.
 The annotation coordinates in `Shots.cs` are read off the rendered figure, so they
 belong to a window size and a panel layout. When a panel moves, the boxes move with
 it and those numbers have to be re-read.
+
+Two figures avoid that by MEASURING their regions while the dialog is still on screen —
+`AutoDelayFigure` off the report's character positions, `AutoCrossoverFigure` off the
+controls themselves — and drawing over the file afterwards. Prefer this wherever a
+surface lays itself out at runtime: the Auto crossover dialog sizes both of its tables
+to the channel count and its result card to its own text, so there is no fixed geometry
+to read off any single render.

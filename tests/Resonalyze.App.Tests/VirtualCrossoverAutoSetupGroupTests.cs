@@ -175,11 +175,14 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
         {
             using var dialog = new VirtualCrossoverAutoSetupDialog();
             dialog.Init(SampleRate, SampleRate, channels);
+            // The elevation ceiling comes off the fit, and the fit is off the UI thread now.
+            StaTest.Settle(dialog.PendingPreview);
 
             var field = (ThemedNumericUpDown)typeof(VirtualCrossoverAutoSetupDialog)
                 .GetField("subElevation", BindingFlags.NonPublic | BindingFlags.Instance)!
                 .GetValue(dialog)!;
             Assert.True(field.Maximum <= 1m, $"capped at {field.Maximum} dB to begin with");
+            decimal before = field.Maximum;
 
             var rows = (System.Collections.IList)typeof(VirtualCrossoverAutoSetupDialog)
                 .GetField("rows", BindingFlags.NonPublic | BindingFlags.Instance)!
@@ -187,11 +190,16 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
             typeof(VirtualCrossoverAutoSetupDialog)
                 .GetMethod("MoveInChain", BindingFlags.NonPublic | BindingFlags.Instance)!
                 .Invoke(dialog, [rows[1]!, -1]);
+            StaTest.Settle(dialog.PendingPreview);
 
+            // The cap re-opens by most of the loud sub's 8 dB, not all of it: the elevation is the AVERAGE over the
+            // anchor's assigned passband, and that passband reaches from the measured band edge up to the junction,
+            // so it takes in some of the driver's own roll-off. What this test is about is that the cap follows the
+            // anchor at all, which a fixed threshold stated the long way round.
             Assert.True(
-                field.Maximum >= 7m,
+                field.Maximum >= before + 3m,
                 $"The elevation is still capped at {field.Maximum} dB after the driver " +
-                "carrying it moved to the bottom of the chain.");
+                $"carrying it moved to the bottom of the chain (was {before} dB).");
         });
     }
 

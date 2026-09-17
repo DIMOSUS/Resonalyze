@@ -138,6 +138,48 @@ public sealed class CrossoverRankedProposalTests
         }
     }
 
+    /// <summary>The budget is read at the corner, and a split moves both edges off it — group delay runs as 1/fc,
+    /// so the lower edge carries more of it than the corner does. A guard rather than a reproduction: the band where
+    /// this bites is narrow (a corner between about 9.2 and 10 ms), and no fixture here lands in it.</summary>
+    [Fact]
+    public void ASplitJunction_KeepsBothEdgesWithinTheGroupDelayBudget()
+    {
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 200), DriverType.Subwoofer),
+            new(BandCurve(80, 1_000), DriverType.Woofer)
+        };
+        var options = new CrossoverAutoSetupOptions(
+            [CrossoverFilterFamily.LinkwitzRiley, CrossoverFilterFamily.Butterworth],
+            20,
+            20_000,
+            IndependentSlopes: true,
+            SampleRate,
+            SampleRate,
+            SubElevationDb: null,
+            [new JunctionSearchWindow(AllowSplitCorners: true)]);
+
+        IReadOnlyList<RankedCrossoverProposal> ranked =
+            CrossoverAutoSetup.ProposeRanked(sources, options, candidateCount: 50);
+
+        Assert.NotEmpty(ranked);
+        foreach (RankedCrossoverProposal candidate in ranked)
+        {
+            foreach (CrossoverProposal proposal in candidate.Proposals)
+            {
+                if (proposal.LowPassEdge is { } lp)
+                {
+                    AssertWithinGroupDelayBudget(lp, highPass: false);
+                }
+
+                if (proposal.HighPassEdge is { } hp)
+                {
+                    AssertWithinGroupDelayBudget(hp, highPass: true);
+                }
+            }
+        }
+    }
+
     private static void AssertWithinGroupDelayBudget(CrossoverEdge edge, bool highPass)
     {
         double groupDelay = CrossoverFilter.MaxGroupDelaySeconds(edge, highPass, SampleRate);
@@ -201,9 +243,11 @@ public sealed class CrossoverRankedProposalTests
             "Expected a junction low enough that even the floor slope exceeds the budget.");
     }
 
-    // Independent oracle: flat drivers make the sum a plain amplitude sum of filter magnitudes; a power sum fails by ~3 dB.
+    // Independent oracle: a flat magnitude has zero minimum phase, so flat drivers leave the filters' own phase as
+    // the whole of the sum. That is the model — the old assertion was a plain AMPLITUDE sum, which only matched
+    // because 24 dB/oct happens to put the two sides in phase.
     [Fact]
-    public void SummedResponseDb_IsThePlainAmplitudeSumOfTheFilteredChannels()
+    public void SummedResponseDb_IsTheComplexSumOfTheFilteredChannels()
     {
         var channels = new List<AutoSetupSource>
         {
@@ -212,10 +256,10 @@ public sealed class CrossoverRankedProposalTests
         };
         var lowPass = new CrossoverSpec(
             CrossoverKind.LowPass,
-            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_000, 24));
+            new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_000, 18));
         var highPass = new CrossoverSpec(
             CrossoverKind.HighPass,
-            HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_000, 24));
+            HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_000, 18));
         var proposals = new List<CrossoverProposal>
         {
             new(CrossoverKind.LowPass, null, lowPass.LowPassEdge, GainDb: -2),
@@ -227,12 +271,75 @@ public sealed class CrossoverRankedProposalTests
 
         foreach (SignalPoint point in summed)
         {
-            double expected =
+            Complex expected =
                 Math.Pow(10, -2 / 20.0)
-                    * CrossoverFilter.Response(lowPass, point.X, SampleRate).Magnitude
-                + CrossoverFilter.Response(highPass, point.X, SampleRate).Magnitude;
-            Assert.Equal(20 * Math.Log10(expected), point.Y, precision: 9);
+                    * CrossoverFilter.Response(lowPass, point.X, SampleRate)
+                + CrossoverFilter.Response(highPass, point.X, SampleRate);
+            Assert.Equal(20 * Math.Log10(expected.Magnitude), point.Y, precision: 9);
         }
+    }
+
+    /// <summary>The polarity rule, pinned on the model rather than on a table in the code. For a Butterworth pair of
+    /// order N = slope/6 the ratio HP/LP is (jω/ωc)^N at EVERY frequency, so the two sides are exactly in phase when
+    /// N ≡ 0 (mod 4), exactly anti-phase when N ≡ 2 (mod 4) — 12 and 36 dB/oct — and in quadrature for odd N, where
+    /// polarity cannot move the summed magnitude at all.</summary>
+    [Theory]
+    [InlineData(12, true)]
+    [InlineData(24, false)]
+    [InlineData(36, true)]
+    [InlineData(48, false)]
+    public void TheSummedResponse_NeedsTheInversionTheCrossoverOrderImplies(
+        int slopeDbPerOctave,
+        bool expectInverted)
+    {
+        (double upright, double inverted) = PolarityPair(slopeDbPerOctave);
+        double wanted = expectInverted ? inverted : upright;
+        double other = expectInverted ? upright : inverted;
+        Assert.True(
+            wanted > other + 20,
+            $"{slopeDbPerOctave} dB/oct: upright {upright:0.0} dB against inverted {inverted:0.0} dB " +
+            $"at the corner, which does not choose a polarity.");
+    }
+
+    [Theory]
+    [InlineData(6)]
+    [InlineData(18)]
+    [InlineData(30)]
+    [InlineData(42)]
+    public void AnOddOrderPair_IsInQuadrature_SoPolarityCannotMoveTheSum(int slopeDbPerOctave)
+    {
+        (double upright, double inverted) = PolarityPair(slopeDbPerOctave);
+        Assert.Equal(upright, inverted, precision: 6);
+    }
+
+    // Level at the corner with the upper channel upright and inverted, on flat drivers.
+    private static (double Upright, double Inverted) PolarityPair(int slopeDbPerOctave)
+    {
+        const double cornerHz = 1_000;
+        var channels = new List<AutoSetupSource>
+        {
+            new(FlatCurve(), DriverType.Woofer),
+            new(FlatCurve(), DriverType.Tweeter)
+        };
+        var lowPass = new CrossoverEdge(
+            CrossoverFilterFamily.Butterworth, cornerHz, slopeDbPerOctave);
+        var highPass = new CrossoverEdge(
+            CrossoverFilterFamily.Butterworth, cornerHz, slopeDbPerOctave);
+
+        double At(bool invert)
+        {
+            var proposals = new List<CrossoverProposal>
+            {
+                new(CrossoverKind.LowPass, null, lowPass, GainDb: 0),
+                new(CrossoverKind.HighPass, highPass, null, GainDb: 0, InvertPolarity: invert)
+            };
+            return CrossoverAutoSetup
+                .SummedResponseDb(channels, proposals, SampleRate, SampleRate)
+                .MinBy(point => Math.Abs(Math.Log(point.X / cornerHz)))!
+                .Y;
+        }
+
+        return (At(false), At(true));
     }
 
     [Fact]
@@ -381,7 +488,8 @@ public sealed class CrossoverRankedProposalTests
     [Fact]
     public void Propose_MatchedSlopes_LetDifferentDriversTakeDifferentSlopes()
     {
-        // A sub junction < 300 Hz is capped at 24 dB/oct while the tweeter may go steeper.
+        // Matched slopes bind a CHANNEL's two shoulders, never the whole chain: the sub junction is held by the
+        // group-delay budget where the tweeter junction is not, so the chain must end up with more than one slope.
         var sources = new List<AutoSetupSource>
         {
             new(BandCurve(20, 70), DriverType.Subwoofer),
@@ -407,12 +515,34 @@ public sealed class CrossoverRankedProposalTests
             }
         }
 
+        // The chain does not settle on one slope for everybody.
+        var slopes = proposals
+            .SelectMany(proposal => new[] { proposal.HighPassEdge, proposal.LowPassEdge })
+            .Where(edge => edge is not null)
+            .Select(edge => edge!.Value.SlopeDbPerOctave)
+            .Distinct()
+            .ToList();
+        Assert.True(slopes.Count > 1, $"Every edge took the same slope: {slopes[0]} dB/oct.");
+
+        // What caps the sub is the budget, not the number 24: the old assertion pinned where the amplitude objective
+        // happened to put this junction, and the coherent one places it higher, where a steeper filter still fits.
         CrossoverEdge subLowPass = proposals[0].LowPassEdge!.Value;
         Assert.True(
-            CrossoverFilter.MaxGroupDelaySeconds(
-                subLowPass with { SlopeDbPerOctave = 48 }, highPass: false, SampleRate)
-                > CrossoverAutoSetup.MaxCrossoverGroupDelaySeconds);
-        Assert.True(subLowPass.SlopeDbPerOctave <= 24);
+            CrossoverFilter.MaxGroupDelaySeconds(subLowPass, highPass: false, SampleRate)
+                <= CrossoverAutoSetup.MaxCrossoverGroupDelaySeconds,
+            $"The sub low-pass at {subLowPass.SlopeDbPerOctave} dB/oct is over the group-delay budget.");
+        int? steeper = CrossoverFilter.SupportedSlopes(subLowPass.Family)
+            .Where(slope => slope > subLowPass.SlopeDbPerOctave)
+            .Cast<int?>()
+            .Min();
+        Assert.True(
+            steeper is null ||
+                CrossoverFilter.MaxGroupDelaySeconds(
+                    subLowPass with { SlopeDbPerOctave = steeper.Value },
+                    highPass: false,
+                    SampleRate) > CrossoverAutoSetup.MaxCrossoverGroupDelaySeconds,
+            $"The budget, not the search, should be what stops the sub at " +
+            $"{subLowPass.SlopeDbPerOctave} dB/oct.");
     }
 
     // Fit levels mid and tweeter to each other, keeps the bass raw by default, leaves a sub-target midbass alone (cut-only).

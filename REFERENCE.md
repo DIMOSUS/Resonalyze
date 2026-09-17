@@ -3086,11 +3086,61 @@ was before the field existed.
 
 **Auto crossover...** estimates each channel's usable band and driver type
 (subwoofer, woofer, midbass, midrange, tweeter), asks which filter families to
-allow, the crossover-frequency window, and whether the two sides of a junction
-may take independent slopes, then searches frequency, family and slope to
-flatten each group's summed magnitude — penalizing wide band overlap and keeping
-a practical minimum slope, so it lands on a tight, engineer-sensible split rather
-than shallow filters that only look flat by overlapping widely.
+allow and whether the two sides of a junction may take independent slopes, then
+searches frequency, family, slope and polarity to flatten each group's summed
+response — penalizing wide band overlap and keeping a practical minimum slope, so
+it lands on a tight, engineer-sensible split rather than shallow filters that
+only look flat by overlapping widely.
+
+The channels are summed the way a crossover designer sums them: each driver's
+measured magnitude carrying its own phase, through the filter's own phase, with
+the drivers taken as perfectly aligned in time. So the wizard sees what a
+crossover actually does — an in-phase Butterworth pair bumping the handover, a
+Linkwitz-Riley pair sitting flat — and it states the **polarity** each junction
+needs rather than leaving it to be discovered later. [Auto delay](#auto-delay)
+runs afterwards and is free to flip a channel again; the wizard's answer is the
+starting point, not an instruction.
+
+What that sum does NOT know is how far apart the drivers are or what the car does
+to them. The response it predicts is therefore an ideal, not a forecast of what
+the panel will measure — that is what Auto delay and the summation read-outs are
+for.
+
+#### Narrowing a junction
+
+Each junction gets a row of its own: the frequency window the search may use, the
+slope window, and whether it may **split** its corners. The fields are not blank —
+they show the window the wizard itself arrived at, so a row always states what is
+about to happen, and a field is only yours once you change it.
+
+You may narrow a window; you cannot widen one past what the measurement and the
+driver's safety allow. Where a number of yours cannot be honoured — a tweeter's
+resonance floor, the frequency its distortion says it stops being clean, a class
+bound, the measured band — the row says so under it, with the value it moved to
+and the reason. A window that comes out as a single frequency says that too.
+
+The slope window always keeps 24 dB/oct inside it, widening if you exclude it.
+The score is anchored on the car-audio standard and so is the baseline candidate
+the search compares everything against; a window without it would leave the
+search pulling at a slope it is not allowed to take. Narrowing still works — the
+window bounds what may be CHOSEN — and the group-delay budget can still rule out
+a steep slope the window allows.
+
+**Split** lets a junction hold its low-pass and high-pass at different
+frequencies when that sums flatter. It is off unless you ask for it: a split
+corner is a deliberate choice, and it is the kind of thing that reads as a
+mistake in a tuning sheet a year later. When it is on, the row prints both
+corners.
+
+**System band limit** at the bottom applies to the whole chain rather than to
+one junction, and it was called *Crossover range* while narrowing a single
+handover was all it could do. It adds a protective high-pass under the lowest
+driver and a low-pass over the highest where they still play past it — the two
+ends of the chain, which are not junctions and have no row of their own — and it
+bounds every junction window as well, so raising it to 60 Hz holds every
+handover above 60 whatever the rows say. Left at 20 Hz and 20 kHz it does
+neither. A group holding one driver has no junction at all, so its whole
+crossover comes from here.
 
 #### One chain per group
 

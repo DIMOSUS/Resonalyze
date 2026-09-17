@@ -2706,8 +2706,8 @@ public partial class VirtualCrossoverPanel : UserControl
             "Drop the last channel block, with whatever is loaded in it.");
         toolTip.SetToolTip(
             buttonResetChannels,
-            $"Start over: {DefaultChannelCount} empty default blocks, and the panel's own\r\n" +
-            "settings with them; calibration and the EQ target stay.\r\n" +
+            $"Start over: {DefaultChannelCount} empty default blocks, and the\r\n" +
+            "panel's own settings; calibration and the EQ target stay.\r\n" +
             "Asks first, and copies the session aside so Load session…\r\n" +
             "brings it back.");
         toolTip.SetToolTip(
@@ -2772,10 +2772,10 @@ public partial class VirtualCrossoverPanel : UserControl
             "is offered on the Magnitude view only.");
         toolTip.SetToolTip(
             numericTargetLevel,
-            "The level the target hangs at. These curves are transfer-function\r\n" +
-            "dB with no absolute reference, so the target has no level of its\r\n" +
-            "own here: set it where you read the sum. Stored with the session,\r\n" +
-            "not with the target, so retuning the shape leaves it where it is.");
+            "The level the target hangs at. These are transfer-function\r\n" +
+            "dB with no absolute reference, so the target has no level of\r\n" +
+            "its own here: set it where you read the sum. Stored with the\r\n" +
+            "session, not with the target, so retuning the shape leaves it.");
         toolTip.SetToolTip(
             buttonTargetSettings,
             "Shape the target — a parametric shape or an imported house\r\n" +
@@ -7107,7 +7107,20 @@ public partial class VirtualCrossoverPanel : UserControl
             : null;
     }
 
-    /// <summary>Writes the analytic crossover proposal (LR24, cut-only gains); delay and polarity are Auto delay's job.</summary>
+    /// <summary>FDW cycles for the wizard's driver curves. 8 is the longest the phase bank offers, so it keeps the
+    /// most of the low end while still cutting the room.</summary>
+    private const int WizardFdwCycles = 8;
+
+    /// <summary>Outer gate for those curves, in milliseconds so it means the same thing at 44.1 and 192 kHz. The
+    /// plateau is long enough that FDW-8 is really 8 cycles down to about 45 Hz.</summary>
+    private const double WizardGateLeftMs = 2.0;
+
+    private const double WizardGatePlateauMs = 180.0;
+
+    private const double WizardGateRightMs = 20.0;
+
+    /// <summary>Writes the crossover proposal: corners, families, slopes, cut-only gains and the polarity the
+    /// crossover itself implies. Delay stays Auto delay's job, and Auto delay may flip the polarity again.</summary>
     /// <returns>Null when written; otherwise a refusal phrase an import's summary can quote.</returns>
     private string? OpenAutoSetupWizard()
     {
@@ -7127,8 +7140,27 @@ public partial class VirtualCrossoverPanel : UserControl
             return "the phase gate is misplaced";
         }
 
-        var wizardOptions = new FrequencyResponseOptions { SmoothingInverseOctaves = 3 };
+        // Psychoacoustic smoothing and an 8-cycle FDW: the wizard judges what the ear resolves and cuts most of the
+        // room out of the driver curves before it ever gets to the band read. The window is stated in MILLISECONDS,
+        // not the default 4096 samples — in samples the FDW collapses to a short fixed gate from ~95 Hz up at 96 kHz
+        // and from ~380 Hz at 192 kHz, which is most of the band the wizard cares about.
+        // Scoped to the per-channel curves: the coherent readings (post-check, junction tuner) keep their own gate.
+        // See docs/tech/crossover-auto-setup.md#curve-source.
+        var wizardOptions = new FrequencyResponseOptions
+        {
+            SmoothingInverseOctaves = SpectrumSmoothing.PsychoacousticCode,
+            MagnitudeWindowMode = PhaseWindowMode.FrequencyDependent,
+            MagnitudeFdwCycles = WizardFdwCycles
+        };
+        (wizardOptions.Window, wizardOptions.LeftTukeyWindow, wizardOptions.RightTukeyWindow) =
+            FrequencyResponseOptions.TrimGateToFft(
+                (int)Math.Round(WizardGateLeftMs / 1_000.0 * participating[0].SampleRate),
+                (int)Math.Round(WizardGatePlateauMs / 1_000.0 * participating[0].SampleRate),
+                (int)Math.Round(WizardGateRightMs / 1_000.0 * participating[0].SampleRate));
         var dialogChannels = new List<AutoSetupWizardChannel>();
+        // Building an FDW curve per channel is the one stretch before the dialog appears; without this the button
+        // looks like it did nothing for the best part of a second.
+        UseWaitCursor = true;
         try
         {
             foreach (VirtualCrossoverChannel channel in participating)
@@ -7176,6 +7208,10 @@ public partial class VirtualCrossoverPanel : UserControl
             ShowError("A channel's response has no usable band.", exception.Message);
             return "a channel's response has no usable band";
         }
+        finally
+        {
+            UseWaitCursor = false;
+        }
 
         using var dialog = new VirtualCrossoverAutoSetupDialog();
         dialog.Init(
@@ -7212,6 +7248,10 @@ public partial class VirtualCrossoverPanel : UserControl
                     settings.LowPassEdge = lowPass;
                 }
                 settings.GainDb = proposal.GainDb;
+                // A crossover of a given family and order puts a fixed phase relationship across the junction, so the
+                // polarity that makes it sum is the crossover's to state. Auto delay runs afterwards and composes its
+                // own flip over this one. See docs/tech/crossover-auto-setup.md#polarity.
+                settings.InvertPolarity = proposal.InvertPolarity;
                 // The phase angle is stated AT the crossover, so a wizard rewrite resets rotations (and says so).
                 if (settings.PhaseRotationDegrees != 0)
                 {

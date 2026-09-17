@@ -143,6 +143,18 @@ public static class CrossoverJunctionTuner
     // Thinned to 1/24 octave: each probe costs two chains and two gated FFTs per side.
     private static readonly double MinProbeRatio = Math.Pow(2.0, 1.0 / 24.0);
 
+    /// <summary>Headroom over the ranking band's top that the ranking reads are decimated to. The gate is fixed in
+    /// TIME (about nine periods of the band's low edge), so the FFT length is the measurement rate times that gate —
+    /// and for a sub junction almost all of that rate is bandwidth the read throws away. Four times the band top
+    /// leaves the anti-alias filter a full octave of transition and keeps every junction band inside Nyquist.</summary>
+    private const double DecimationBandHeadroom = 4.0;
+
+    // Below this there is nothing worth the filter: at a tweeter junction the band already fills the rate.
+    private const int MinimumDecimationFactor = 2;
+
+    // Half-length of the windowed-sinc anti-alias kernel, per output sample. 32 puts the stopband below -90 dB.
+    private const int DecimationKernelHalfLength = 32;
+
     public static JunctionTuneResult Tune(
         IReadOnlyList<JunctionTuneSide> sides,
         JunctionTuneOptions options)
@@ -209,9 +221,21 @@ public static class CrossoverJunctionTuner
             cropped[i] = (pair[0], pair[1]);
         }
 
-        var work = new Work(sides, cropped, options, nyquistHz, rankingLowHz, rankingHighHz);
-        JunctionTuneCandidate current = work.Evaluate(
-                currentLowPass, currentHighPass, currentHz, replaceEdges: false, ownBand: true)
+        var detailWork = new Work(sides, cropped, options, nyquistHz, rankingLowHz, rankingHighHz);
+
+        // Ranking runs decimated, the reported reads do not. Every candidate pays two gated FFTs per side whose
+        // length is the measurement rate times a gate fixed in time, so a low junction at 96 kHz spends a 262144-point
+        // transform to read a band that stops at 260 Hz. Own-band reads and the after-delay search stay at the
+        // measured rate: those are a handful of calls, they are what the user reads, and the alignment search resolves
+        // delay in samples. See docs/tech/crossover-auto-setup.md#decimated-ranking.
+        Work rankingWork = BuildRankingWork(
+            sides, cropped, options, nyquistHz, rankingLowHz, rankingHighHz) ?? detailWork;
+
+        JunctionTuneCandidate? ranking = rankingWork.Evaluate(
+            currentLowPass, currentHighPass, currentHz, replaceEdges: false, ownBand: false);
+        JunctionTuneCandidate current = (ranking == null
+                ? null
+                : detailWork.ReadOwnBand(ranking))
             ?? throw new InvalidOperationException(
                 "The junction's current crossover cannot be read: the band holds no usable bins.");
 
@@ -222,7 +246,7 @@ public static class CrossoverJunctionTuner
         Parallel.For(0, probes.Count, index =>
         {
             (CrossoverEdge lowPass, CrossoverEdge highPass) = probes[index];
-            evaluated[index] = work.Evaluate(
+            evaluated[index] = rankingWork.Evaluate(
                 lowPass, highPass, lowPass.FrequencyHz, replaceEdges: true, ownBand: false);
         });
 
@@ -243,7 +267,7 @@ public static class CrossoverJunctionTuner
 
         List<JunctionTuneCandidate> reported = ranked
             .Take(1 + RunnersUpReported)
-            .Select(candidate => work.ReadOwnBand(candidate) ?? candidate)
+            .Select(candidate => detailWork.ReadOwnBand(candidate) ?? candidate)
             .ToList();
 
         // A shared-band win the user's own read-outs would not show is a win on paper.
@@ -253,8 +277,8 @@ public static class CrossoverJunctionTuner
             best.ScoreDb <= current.ScoreDb &&
             !SameEdges(best, current);
 
-        List<JunctionTuneAlignment> currentAfterDelay = work.AfterDelay(current, replaceEdges: false);
-        List<JunctionTuneAlignment> bestAfterDelay = work.AfterDelay(best, replaceEdges: true);
+        List<JunctionTuneAlignment> currentAfterDelay = detailWork.AfterDelay(current, replaceEdges: false);
+        List<JunctionTuneAlignment> bestAfterDelay = detailWork.AfterDelay(best, replaceEdges: true);
         return new JunctionTuneResult(
             current,
             best,
@@ -265,6 +289,117 @@ public static class CrossoverJunctionTuner
             ranked.Count,
             rankingLowHz,
             rankingHighHz);
+    }
+
+    /// <summary>A <see cref="Work"/> reading the same crops at a rate just above the ranking band, or null when the
+    /// band already fills the measured rate and there is nothing to throw away.</summary>
+    private static Work? BuildRankingWork(
+        IReadOnlyList<JunctionTuneSide> sides,
+        (Complex[] Lower, Complex[] Upper)[] cropped,
+        JunctionTuneOptions options,
+        double nyquistHz,
+        double rankingLowHz,
+        double rankingHighHz)
+    {
+        int factor = int.MaxValue;
+        foreach (JunctionTuneSide side in sides)
+        {
+            factor = Math.Min(
+                factor,
+                (int)Math.Floor(side.SampleRate / (DecimationBandHeadroom * rankingHighHz)));
+        }
+
+        if (factor < MinimumDecimationFactor)
+        {
+            return null;
+        }
+
+        var decimatedSides = new List<JunctionTuneSide>(sides.Count);
+        var decimatedCrops = new (Complex[] Lower, Complex[] Upper)[sides.Count];
+        double decimatedNyquist = double.MaxValue;
+        for (int i = 0; i < sides.Count; i++)
+        {
+            int rate = sides[i].SampleRate / factor;
+            if (rate <= 0)
+            {
+                return null;
+            }
+
+            decimatedCrops[i] = (
+                Decimate(cropped[i].Lower, factor),
+                Decimate(cropped[i].Upper, factor));
+            if (decimatedCrops[i].Lower.Length < 8 || decimatedCrops[i].Upper.Length < 8)
+            {
+                return null;
+            }
+
+            decimatedSides.Add(sides[i] with { SampleRate = rate });
+            decimatedNyquist = Math.Min(decimatedNyquist, rate * 0.49);
+        }
+
+        // The junction band never reaches the ranking top, and the headroom keeps that top well under the new
+        // Nyquist, so the bands the reads use are the same ones the undecimated work would have used.
+        return new Work(
+            decimatedSides,
+            decimatedCrops,
+            options,
+            Math.Min(nyquistHz, decimatedNyquist),
+            rankingLowHz,
+            rankingHighHz);
+    }
+
+    /// <summary>Anti-aliased decimation by a whole factor, in double: the repository keeps everything past the
+    /// analysis boundary in double, and the app's rational-ratio converter is a float playback path.</summary>
+    internal static Complex[] Decimate(Complex[] signal, int factor)
+    {
+        ArgumentNullException.ThrowIfNull(signal);
+        if (factor < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(factor));
+        }
+        if (factor == 1)
+        {
+            return signal;
+        }
+
+        int taps = DecimationKernelHalfLength * factor;
+        var kernel = new double[2 * taps + 1];
+        double cutoff = 1.0 / factor;
+        double sum = 0;
+        for (int i = -taps; i <= taps; i++)
+        {
+            double sinc = i == 0 ? cutoff : Math.Sin(Math.PI * cutoff * i) / (Math.PI * i);
+            // Blackman: the stopband has to be under the measurement noise, not merely tidy.
+            double position = (double)(i + taps) / (2 * taps);
+            double window = 0.42
+                - 0.5 * Math.Cos(Math.Tau * position)
+                + 0.08 * Math.Cos(2 * Math.Tau * position);
+            kernel[i + taps] = sinc * window;
+            sum += kernel[i + taps];
+        }
+
+        for (int i = 0; i < kernel.Length; i++)
+        {
+            kernel[i] /= sum;
+        }
+
+        int length = signal.Length / factor;
+        var result = new Complex[length];
+        for (int n = 0; n < length; n++)
+        {
+            int center = n * factor;
+            int from = Math.Max(0, center - taps);
+            int to = Math.Min(signal.Length - 1, center + taps);
+            Complex accumulated = Complex.Zero;
+            for (int m = from; m <= to; m++)
+            {
+                accumulated += kernel[m - center + taps] * signal[m];
+            }
+
+            result[n] = accumulated;
+        }
+
+        return result;
     }
 
     public static (double LowHz, double HighHz) JunctionBand(double cornerHz, double nyquistHz) =>

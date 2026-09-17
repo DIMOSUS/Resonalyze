@@ -52,6 +52,46 @@ next field session rather than in a register nobody else can tick.
 
 ## Virtual DSP / Time Alignment
 
+- [ ] **Parallel driver groups ("Subwoofer group 1..4")** — two drivers covering
+  the SAME band from different places in the car, sharing one crossover but
+  free to take their own delay, gain, PEQ and polarity. The owner has no such
+  car yet (2026-09-17); the SERIES case — an infra-bass under a subwoofer,
+  handing over in frequency — is already handled and is not this. Three things
+  the design has to answer, worked out before it was shelved:
+  - The settings cut is already proven on another axis. `VirtualCrossoverSideLock`
+    links exactly crossover + polarity + FIR across L/R and deliberately leaves
+    gain, delay and PEQ free, and `Copy side…` does the same once with a scope.
+    A group is the standing version of that on a second, named axis.
+  - **Polarity must NOT be linked**, which is where a group differs from the side
+    lock. The wizard derives polarity from the crossover, so "one crossover"
+    drags it along — but the whole point of a separate delay is that the members
+    stand at different distances, and at different distances the right polarity
+    can differ. L and R are symmetric; two subwoofers in one car are not.
+  - The real cost is not the settings link, it is that **everything is a chain**:
+    `CrossoverAutoSetup.Propose` states it in its contract ("channel i hands over
+    to i+1 only"), and the junction rows, Sum loss, the phase read-out and Auto
+    delay's seeds all stand on it. Members of a parallel group have no junction
+    with each other and share one junction with the driver above. The group has
+    to reach the chain as ONE member. The wizard half of that is cheap and
+    principled — a group's acoustic contribution is the sum of its members'
+    curves, and the wizard already works on curves — the read-out half is a
+    re-labelling of a lot of places that say "channel" today.
+- [ ] **Auto delay has no criterion for two radiators covering one band.** It
+  leads every channel from its junction with a neighbour, and parallel members
+  have no junction between them. Aligning both to the same reference makes them
+  coherent only where that reference plays: below the crossover, which is the
+  band two subwoofers are there for, nothing holds them together. This needs its
+  own criterion (maximum mutual sum in the shared band) and its own battery, and
+  must NOT be bundled with the grouping above — the grouping has nothing to
+  calibrate and this has a great deal.
+- [ ] **`CrossoverJunctionTuner` is not reachable from the panel.** The measured
+  junction refinement exists and is exercised by the AI assistant only
+  (MANUAL.md). It belongs in the PANEL on a finished tune rather than in the
+  wizard — the tuner needs the current chains, which the wizard has not built
+  yet — so it is a new dialog plus a re-layout of an already packed button row.
+  Split corners are not searched inside the tuner either; they exist in the
+  wizard only.
+
 - [✗] **Phase-slope (residual group delay) as an Auto delay score prior —
   REFUTED on real measurements** (2026-07-10, do not re-propose). At the true
   alignment the inter-channel phase slope is NOT flat — it carries the honest

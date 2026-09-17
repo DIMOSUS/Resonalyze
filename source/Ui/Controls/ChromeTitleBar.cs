@@ -460,7 +460,7 @@ internal sealed class ChromeTitleBar : Panel
     {
         int legacyRightDistance = form.ClientSize.Width - left - 46;
         int width = Scale(46);
-        Button button = new()
+        ReleaseClickButton button = new()
         {
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
             ForeColor = UiPalette.TitleBarTextActive,
@@ -485,7 +485,8 @@ internal sealed class ChromeTitleBar : Panel
         dialog.ShowDialog(form);
         if (dialog.RestartRequested)
         {
-            Application.Restart();
+            ApplicationRestart.Request();
+            form.Close();
         }
     }
 

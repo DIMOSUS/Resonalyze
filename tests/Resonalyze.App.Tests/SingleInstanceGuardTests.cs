@@ -39,6 +39,21 @@ public sealed class SingleInstanceGuardTests
         Assert.NotNull(second);
     }
 
+    // A restart releases the guard explicitly, and the using declaration in Main then releases it again.
+    [Fact]
+    public void Dispose_Twice_StillFreesTheGuardAndDoesNotThrow()
+    {
+        string directory = Directory();
+        SingleInstanceGuard? first = SingleInstanceGuard.TryAcquire(directory);
+        Assert.NotNull(first);
+
+        first.Dispose();
+        first.Dispose();
+
+        using SingleInstanceGuard? second = SingleInstanceGuard.TryAcquire(directory);
+        Assert.NotNull(second);
+    }
+
     [Fact]
     public void TryAcquire_ADifferentDataDirectory_IsNotBlocked()
     {

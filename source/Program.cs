@@ -56,6 +56,13 @@ internal static class Program
         // Before the first control exists: a designer reads the palette inside InitializeComponent.
         UiPalette.Use(AppearanceSettingsFile.LoadOrDefault().Theme);
         Application.Run(new Form1());
+
+        if (ApplicationRestart.IsRequested)
+        {
+            // The mutex is ours until it is released, and a replacement started any earlier would refuse to run.
+            instance?.Dispose();
+            ApplicationRestart.Launch();
+        }
     }
 
     private static string? TryWriteCrashLog(Exception? exception)

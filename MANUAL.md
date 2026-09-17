@@ -828,10 +828,15 @@ slope window: it is what the search measures everything else against.
 that sums flatter. Leave it off unless you mean it — a split crossover is easy to
 mistake for an error when you come back to the tuning sheet months later.
 
-Then select the filter families your real DSP supports, the overall crossover range
-(this band-limits the whole system, unlike a junction's own window), whether HPF and LPF
-may differ in slope, whether the panel's blocks should be put into the same order, and
-the desired bass level relative to the mid/high range.
+Then select the filter families your real DSP supports, the **system band limit**,
+whether HPF and LPF may differ in slope, whether the panel's blocks should be put into
+the same order, and the desired bass level relative to the mid/high range.
+
+The band limit is not a search range — that is what a junction's own row is for. It is
+the protective filter at the two ends of the chain: a high-pass under the lowest driver
+and a low-pass over the highest, which are not junctions and so have no row of their own.
+Left at 20 Hz and 20 kHz it adds nothing. A group holding a single driver, a rear fill or
+a centre, has no junction at all, so this is the only crossover it gets.
 
 Leave the reordering on: a panel whose blocks read down the spectrum is far easier to
 work in. Blocks are lettered by position, so the ones that move are re-lettered and

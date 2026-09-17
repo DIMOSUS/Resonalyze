@@ -3101,9 +3101,13 @@ corner is a deliberate choice, and it is the kind of thing that reads as a
 mistake in a tuning sheet a year later. When it is on, the row prints both
 corners.
 
-**Crossover range** at the bottom is a different thing from a junction's window:
-it band-limits the whole system, adding a protective high-pass or low-pass to the
-outermost channels where they still play past it.
+**System band limit** at the bottom is a different thing from a junction's
+window, and it was called *Crossover range* while it still was one. It adds a
+protective high-pass under the lowest driver and a low-pass over the highest
+where they still play past it — the two ends of the chain, which are not
+junctions and have no row of their own. Left at 20 Hz and 20 kHz it adds
+nothing. A group holding one driver has no junction at all, so its whole
+crossover comes from here.
 
 #### One chain per group
 

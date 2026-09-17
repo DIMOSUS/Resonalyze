@@ -747,6 +747,18 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
         minCrossover.ValueChanged += (_, _) => SchedulePreview();
         maxCrossover.ValueChanged += (_, _) => SchedulePreview();
+        // Not a search range any more: a junction is narrowed in its own row. What is left is the protective
+        // filter at the two ends of the chain, which no junction row can reach because those ends are not
+        // junctions — and for a group holding one driver it is the only crossover there is.
+        toolTip.SetToolTip(
+            minCrossover,
+            "Protective high-pass under the lowest driver. Not a search range " +
+            "— narrow a junction in its own row. A group holding one driver " +
+            "gets its whole crossover from here.");
+        toolTip.SetToolTip(
+            maxCrossover,
+            "Protective low-pass over the highest driver, the mirror of the " +
+            "field beside it. At 20 kHz it adds nothing.");
         independentSlopes.CheckedChanged += (_, _) => SchedulePreview();
         subElevation.ValueChanged += (_, _) => SchedulePreview();
         toolTip.SetToolTip(

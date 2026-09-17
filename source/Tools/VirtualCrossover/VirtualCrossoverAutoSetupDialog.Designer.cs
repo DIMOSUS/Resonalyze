@@ -169,13 +169,13 @@ namespace Resonalyze
             labelRange.ForeColor = Color.FromArgb(185, 190, 200);
             labelRange.Location = new Point(12, 158);
             labelRange.Name = "labelRange";
-            labelRange.Size = new Size(96, 15);
+            labelRange.Size = new Size(105, 15);
             labelRange.TabIndex = 14;
-            labelRange.Text = "Crossover range:";
+            labelRange.Text = "System band limit:";
             //
             // minCrossover
             //
-            minCrossover.Location = new Point(120, 154);
+            minCrossover.Location = new Point(132, 154);
             minCrossover.Minimum = 20m;
             minCrossover.Maximum = 20000m;
             minCrossover.Increment = 10m;
@@ -191,7 +191,7 @@ namespace Resonalyze
             //
             labelDash.AutoSize = true;
             labelDash.ForeColor = Color.FromArgb(185, 190, 200);
-            labelDash.Location = new Point(200, 158);
+            labelDash.Location = new Point(212, 158);
             labelDash.Name = "labelDash";
             labelDash.Size = new Size(12, 15);
             labelDash.TabIndex = 16;
@@ -199,7 +199,7 @@ namespace Resonalyze
             //
             // maxCrossover
             //
-            maxCrossover.Location = new Point(232, 154);
+            maxCrossover.Location = new Point(244, 154);
             maxCrossover.Minimum = 20m;
             maxCrossover.Maximum = 20000m;
             maxCrossover.Increment = 100m;
@@ -215,7 +215,7 @@ namespace Resonalyze
             //
             labelHz.AutoSize = true;
             labelHz.ForeColor = Color.FromArgb(185, 190, 200);
-            labelHz.Location = new Point(312, 158);
+            labelHz.Location = new Point(324, 158);
             labelHz.Name = "labelHz";
             labelHz.Size = new Size(20, 15);
             labelHz.TabIndex = 18;

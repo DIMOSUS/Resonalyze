@@ -1242,6 +1242,21 @@ public sealed class StereoAlignmentTests
         Assert.Contains("off the scene position", log);
     }
 
+    [Theory]
+    [InlineData(1.03, -0.026)]
+    [InlineData(0.98, 0.026)]
+    public void PolishFarSideJunctions_WalksEveryDspTickInsideTheReachOfAnOffGridScene(
+        double bridgeMs, double midOffsetMs)
+    {
+        // 4300 Hz gives a 0.029 ms reach: from a scene at 1.004 or 1.006 ms the ticks 0.98..1.03 are all inside it.
+        // Counting whole ticks around the rounded scene dropped the far edge, which is where the fronts meet here.
+        (double midDelay, double twrDelay, string _) = RunFarSidePolish(
+            0.0, baseDelayMs: bridgeMs, junctionHz: 4_300, midOffsetMs: midOffsetMs);
+
+        Assert.Equal(bridgeMs, midDelay, 9);
+        Assert.Equal(bridgeMs, twrDelay, 9);
+    }
+
     [Fact]
     public void PolishFarSideJunctions_ReachIsATotalBudgetFromTheScenePosition()
     {

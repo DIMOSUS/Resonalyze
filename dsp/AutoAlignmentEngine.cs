@@ -3953,7 +3953,9 @@ public static class AutoAlignmentEngine
             string? refusedWhy = null;
             // Absolute ticks of the DSP's 0.01 ms grid: the exact move to a tick is scored and that tick is written. The
             // channel may stand off the grid here (the descent rebases the field by unrounded amounts).
-            int reachTicks = (int)Math.Floor(reachMs / 0.01 + 1e-9);
+            // One tick more than fits: from an off-grid scene the far edge holds a tick a floor would drop, and the exact
+            // reach check below discards the surplus.
+            int reachTicks = (int)Math.Ceiling(reachMs / 0.01);
             int sceneTick = (int)Math.Round(sceneMs / 0.01);
             for (int tick = sceneTick - reachTicks; tick <= sceneTick + reachTicks; tick++)
             {

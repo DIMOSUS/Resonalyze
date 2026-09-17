@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -37,6 +37,41 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         IReadOnlyList<Complex[]>? ImpulseResponses,
         bool IsPrimary);
 
+    /// <summary>One junction of one group. The numeric fields carry the WIZARD's window until the user edits one,
+    /// so what the row shows is always the window the search will run on.</summary>
+    private sealed record JunctionRow(
+        VirtualCrossoverAlignmentStage Group,
+        int IndexInGroup,
+        Label NameLabel,
+        DarkNumericUpDown MinHz,
+        Label RangeDash,
+        DarkNumericUpDown MaxHz,
+        DarkComboBox MinSlope,
+        Label SlopeDash,
+        DarkComboBox MaxSlope,
+        CheckBox Split,
+        Label Verdict,
+        Label Notes)
+    {
+        public bool MinHzEdited { get; set; }
+
+        public bool MaxHzEdited { get; set; }
+
+        public bool MinSlopeEdited { get; set; }
+
+        public bool MaxSlopeEdited { get; set; }
+
+        public bool Suppressed { get; set; }
+
+        public JunctionSearchWindow ToWindow() =>
+            new(
+                MinHzEdited ? (double)MinHz.Value : null,
+                MaxHzEdited ? (double)MaxHz.Value : null,
+                MinSlopeEdited ? (int)MinSlope.SelectedItem! : null,
+                MaxSlopeEdited ? (int)MaxSlope.SelectedItem! : null,
+                Split.Checked);
+    }
+
     private sealed record GroupFit(
         GroupPlan Plan,
         IReadOnlyList<CrossoverProposal> Proposals);
@@ -51,6 +86,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
     // Display order: groups as staged, chain order inside each.
     private readonly List<ChannelRow> rows = new();
+    private readonly List<JunctionRow> junctions = new();
     private readonly Dictionary<VirtualCrossoverAlignmentStage, Label> groupHeaders = new();
     private readonly List<(CheckBox Box, CrossoverFilterFamily Family)> familyBoxes = new();
     private double sampleRateHz = 48_000;
@@ -73,11 +109,13 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         // Runtime tooltip and never-parented arrows (group of one) are outside the designer's components.
         Disposed += (_, _) =>
         {
+            CancelPreviewWork();
             toolTip.Dispose();
             foreach (Control control in rows.SelectMany(
                          row => new Control[] { row.PositionLabel, row.NameLabel,
                              row.BandLabel, row.TypeComboBox, row.Up, row.Down })
                      .Concat(groupHeaders.Values)
+                     .Concat(junctions.SelectMany(JunctionControls))
                      .Where(control => control.Parent == null))
             {
                 control.Dispose();
@@ -85,9 +123,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         };
         toolTip.SetToolTip(
             labelPreview,
-            "The proposal that Apply writes into the channels: crossover\r\n" +
-            "frequencies, families and slopes chosen to flatten the summed\r\n" +
-            "magnitude response, plus cut-only gains that level the channels.");
+            "What Apply writes: crossovers, cut-only gains and polarity. It " +
+            "assumes perfect alignment, so it is not what the panel measures.");
     }
 
     public IReadOnlyList<CrossoverProposal>? Result { get; private set; }
@@ -130,13 +167,14 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
 
         PopulateTable();
+        RebuildJunctions();
         subElevationApplies = MembersOf(PrimaryGroup()).Count > 1;
         subElevation.Enabled = subElevationApplies;
         UiStyle.SetTextEnabledLook(labelSubElevation, subElevationApplies);
         UiStyle.SetTextEnabledLook(labelSubElevationUnit, subElevationApplies);
 
         initialized = true;
-        UpdatePreview();
+        SchedulePreview();
         if (IsHandleCreated)
         {
             LayoutBelowChannelTable();
@@ -187,7 +225,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             DriverType.Tweeter
         ]);
         typeComboBox.SelectedItem = channel.Band.SuggestedType;
-        typeComboBox.SelectedIndexChanged += (_, _) => UpdatePreview();
+        // A type change moves the class bounds, so the junction rows are re-resolved, not just re-scored.
+        typeComboBox.SelectedIndexChanged += (_, _) => SchedulePreview();
 
         var row = new ChannelRow(
             initIndex, channel, positionLabel, nameLabel, bandLabel, typeComboBox,
@@ -199,7 +238,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             toolTip.SetToolTip(
                 arrow,
                 "Where this driver sits in its group's chain: the one above hands\r\n" +
-                "over to the one below it. The order starts from what each channel\r\n" +
+                "over to the one below. The order starts from what each channel\r\n" +
                 "measured (narrowed by any crossover corner it already carries) —\r\n" +
                 "move it when two drivers are too alike for that to decide, as a\r\n" +
                 "pair of subwoofers measured full-range will be.");
@@ -246,6 +285,208 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         GroupsInOrder()
             .DefaultIfEmpty(VirtualCrossoverAlignmentStage.FrontChain)
             .First();
+
+    /// <summary>Slopes the window fields offer. 6 dB/oct protects nothing and is excluded from the search anyway.</summary>
+    private static readonly int[] SelectableSlopes = CrossoverFilter
+        .SupportedSlopes(CrossoverFilterFamily.Butterworth)
+        .Where(slope => slope >= 12)
+        .ToArray();
+
+    // One row per adjacent pair of every group, rebuilt whenever the chain order or a driver type changes.
+    private void RebuildJunctions()
+    {
+        foreach (JunctionRow junction in junctions)
+        {
+            foreach (Control control in JunctionControls(junction))
+            {
+                control.Dispose();
+            }
+        }
+
+        junctions.Clear();
+        foreach (VirtualCrossoverAlignmentStage group in GroupsInOrder())
+        {
+            List<ChannelRow> members = MembersOf(group);
+            for (int i = 0; i < members.Count - 1; i++)
+            {
+                junctions.Add(BuildJunctionRow(group, i, members[i], members[i + 1]));
+            }
+        }
+
+        PopulateJunctionTable();
+        RefreshJunctionWindows();
+    }
+
+    private static IEnumerable<Control> JunctionControls(JunctionRow junction) =>
+    [
+        junction.NameLabel, junction.MinHz, junction.RangeDash, junction.MaxHz,
+        junction.MinSlope, junction.SlopeDash, junction.MaxSlope, junction.Split,
+        junction.Verdict, junction.Notes
+    ];
+
+    private JunctionRow BuildJunctionRow(
+        VirtualCrossoverAlignmentStage group,
+        int indexInGroup,
+        ChannelRow lower,
+        ChannelRow upper)
+    {
+        DarkNumericUpDown Frequency() => new()
+        {
+            Anchor = AnchorStyles.Left,
+            BackColor = UiPalette.InputSurface,
+            DecimalPlaces = 0,
+            ForeColor = UiPalette.TextPrimary,
+            Increment = 10m,
+            LogarithmicFrequencyStep = true,
+            Margin = new Padding(0, 1, 2, 1),
+            Maximum = 20_000m,
+            Minimum = 20m,
+            MinimumSize = new Size(36, 19)
+        };
+
+        DarkComboBox Slope()
+        {
+            var box = new DarkComboBox
+            {
+                Anchor = AnchorStyles.Left,
+                BackColor = UiPalette.ControlSurface,
+                ForeColor = UiPalette.TextPrimary,
+                Margin = new Padding(0, 1, 2, 1)
+            };
+            box.Items.AddRange(SelectableSlopes.Cast<object>().ToArray());
+            return box;
+        }
+
+        Label Dash() => new()
+        {
+            Anchor = AnchorStyles.Left,
+            AutoSize = true,
+            ForeColor = UiPalette.TextSecondarySoft,
+            Margin = new Padding(0, 4, 2, 4),
+            Text = "–"
+        };
+
+        var row = new JunctionRow(
+            group,
+            indexInGroup,
+            new Label
+            {
+                Anchor = AnchorStyles.Left,
+                AutoSize = true,
+                ForeColor = UiPalette.TextPrimarySoft,
+                Margin = new Padding(0, 4, 16, 4),
+                Text = $"{lower.Source.Name.Split(' ')[0]} → {upper.Source.Name.Split(' ')[0]}"
+            },
+            Frequency(),
+            Dash(),
+            Frequency(),
+            Slope(),
+            Dash(),
+            Slope(),
+            new ReleaseClickCheckBox
+            {
+                Anchor = AnchorStyles.Left,
+                AutoSize = true,
+                ForeColor = UiPalette.TextPrimary,
+                Margin = new Padding(12, 2, 0, 2),
+                Text = "Split"
+            },
+            new Label
+            {
+                Anchor = AnchorStyles.Left,
+                AutoSize = true,
+                ForeColor = UiPalette.TextSecondary,
+                Margin = new Padding(0, 0, 0, 2),
+                Text = "—"
+            },
+            new Label
+            {
+                Anchor = AnchorStyles.Left,
+                AutoSize = true,
+                ForeColor = UiPalette.AccentBlueSoft,
+                Margin = new Padding(0, 0, 0, 6),
+                Visible = false
+            });
+
+        // Written as sentences: the tooltip wraps its own text at 64 characters, so a hand-broken line longer
+        // than that gets broken a second time and comes out ragged.
+        toolTip.SetToolTip(
+            row.MinHz,
+            "Lowest crossover the search may pick here. A value the drivers " +
+            "cannot take is raised, and the row says why.");
+        toolTip.SetToolTip(
+            row.MaxHz,
+            "Highest crossover the search may pick here. A value the drivers " +
+            "cannot take is lowered, and the row says why.");
+        toolTip.SetToolTip(
+            row.MinSlope,
+            "Gentlest slope the search may use here. 24 dB/oct always stays " +
+            "inside the window.");
+        toolTip.SetToolTip(
+            row.MaxSlope,
+            "Steepest slope the search may use here. The group-delay budget can " +
+            "still rule out a slope this allows.");
+        toolTip.SetToolTip(
+            row.Split,
+            "Lets the low-pass and the high-pass sit at different frequencies. " +
+            "Off unless you ask for it.");
+
+        row.MinHz.ValueChanged += (_, _) => JunctionEdited(row, () => row.MinHzEdited = true);
+        row.MaxHz.ValueChanged += (_, _) => JunctionEdited(row, () => row.MaxHzEdited = true);
+        row.MinSlope.SelectedIndexChanged +=
+            (_, _) => JunctionEdited(row, () => row.MinSlopeEdited = true);
+        row.MaxSlope.SelectedIndexChanged +=
+            (_, _) => JunctionEdited(row, () => row.MaxSlopeEdited = true);
+        row.Split.CheckedChanged += (_, _) => JunctionEdited(row, () => { });
+        return row;
+    }
+
+    // Writing the wizard's own answer back into a field must not read as the user setting it.
+    private void JunctionEdited(JunctionRow row, Action markEdited)
+    {
+        if (row.Suppressed)
+        {
+            return;
+        }
+
+        markEdited();
+        SchedulePreview();
+    }
+
+    private void PopulateJunctionTable()
+    {
+        tableJunctions.SuspendLayout();
+        tableJunctions.Controls.Clear();
+        tableJunctions.RowStyles.Clear();
+        int line = 0;
+        foreach (JunctionRow junction in junctions)
+        {
+            tableJunctions.Controls.Add(junction.NameLabel, 0, line);
+            tableJunctions.Controls.Add(junction.MinHz, 1, line);
+            tableJunctions.Controls.Add(junction.RangeDash, 2, line);
+            tableJunctions.Controls.Add(junction.MaxHz, 3, line);
+            tableJunctions.Controls.Add(junction.MinSlope, 4, line);
+            tableJunctions.Controls.Add(junction.SlopeDash, 5, line);
+            tableJunctions.Controls.Add(junction.MaxSlope, 6, line);
+            tableJunctions.Controls.Add(junction.Split, 7, line);
+            tableJunctions.Controls.Add(junction.Verdict, 8, line);
+            line++;
+            tableJunctions.Controls.Add(junction.Notes, 0, line);
+            tableJunctions.SetColumnSpan(junction.Notes, 9);
+            line++;
+        }
+
+        tableJunctions.RowCount = Math.Max(1, line);
+        UiStyle.SetTextEnabledLook(labelJunctions, junctions.Count > 0);
+        tableJunctions.ResumeLayout();
+    }
+
+    private IReadOnlyList<JunctionSearchWindow> WindowsFor(VirtualCrossoverAlignmentStage group) =>
+        junctions
+            .Where(junction => junction.Group == group)
+            .OrderBy(junction => junction.IndexInGroup)
+            .Select(junction => junction.ToWindow())
+            .ToList();
 
     // Re-run after a reorder with the same controls, so device-unit sizing from LayoutBelowChannelTable survives.
     private void PopulateTable()
@@ -329,7 +570,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         int other = rows.IndexOf(members[to]);
         (rows[one], rows[other]) = (rows[other], rows[one]);
         PopulateTable();
-        UpdatePreview();
+        RebuildJunctions();
+        SchedulePreview();
     }
 
     protected override void OnLoad(EventArgs e)
@@ -358,36 +600,65 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             row.Down.Size = arrowSize;
         }
 
+        Size fieldSize = LogicalToDeviceUnits(new Size(62, 19));
+        Size slopeSize = LogicalToDeviceUnits(new Size(58, 19));
+        foreach (JunctionRow junction in junctions)
+        {
+            junction.MinHz.Size = fieldSize;
+            junction.MaxHz.Size = fieldSize;
+            junction.MinSlope.Size = slopeSize;
+            junction.MaxSlope.Size = slopeSize;
+        }
+
         tableChannels.PerformLayout();
         int outsideMargin = LogicalToDeviceUnits(12);
-        int shift = tableChannels.Bottom + outsideMargin - labelFilters.Top;
+        int shift = tableChannels.Bottom + outsideMargin - labelJunctions.Top;
+        foreach (Control control in new Control[] { labelJunctions, tableJunctions })
+        {
+            control.Top += shift;
+        }
+
+        tableJunctions.PerformLayout();
+        shift = tableJunctions.Bottom + outsideMargin - labelFilters.Top;
         foreach (Control control in new Control[]
                  {
                      labelFilters, checkButterworth, checkLinkwitzRiley, checkBessel,
                      labelRange, minCrossover, labelDash, maxCrossover, labelHz,
                      independentSlopes, reorderBlocks, labelSubElevation, subElevation,
-                     labelSubElevationUnit, labelPreview
+                     labelSubElevationUnit, panelPreview, progressPreview
                  })
         {
             control.Top += shift;
         }
 
-        // The AutoSize table can exceed the designed width even at 100% DPI.
-        int clientWidth = Math.Max(ClientSize.Width, tableChannels.Right + outsideMargin);
-        labelPreview.Width = clientWidth - labelPreview.Left - outsideMargin;
-
-        // Measured as laid out (summaries wrap), floored at the structural line count.
-        labelPreview.Height = Math.Max(
-                PreviewLineCount() * labelPreview.Font.Height,
-                TextRenderer.MeasureText(
-                    labelPreview.Text,
-                    labelPreview.Font,
-                    new Size(labelPreview.Width, int.MaxValue),
-                    TextFormatFlags.WordBreak).Height)
-            + LogicalToDeviceUnits(6);
+        // The AutoSize tables can exceed the designed width even at 100% DPI.
+        int clientWidth = Math.Max(
+            ClientSize.Width,
+            Math.Max(tableChannels.Right, tableJunctions.Right) + outsideMargin);
+        SizePreviewCard(clientWidth, outsideMargin);
         ClientSize = new Size(
             clientWidth,
-            labelPreview.Bottom + outsideMargin + buttonApply.Height + outsideMargin);
+            progressPreview.Bottom + outsideMargin + buttonApply.Height + outsideMargin);
+    }
+
+    /// <summary>Sizes the result card to its text and parks the progress bar under it. Measured as laid out
+    /// (summaries wrap), floored at the structural line count so the card does not jump about between refits.</summary>
+    private void SizePreviewCard(int clientWidth, int outsideMargin)
+    {
+        panelPreview.Width = clientWidth - panelPreview.Left - outsideMargin;
+        labelPreview.Width =
+            panelPreview.Width - panelPreview.Padding.Left - panelPreview.Padding.Right;
+        labelPreview.Height = Math.Max(
+            PreviewLineCount() * labelPreview.Font.Height,
+            TextRenderer.MeasureText(
+                labelPreview.Text,
+                labelPreview.Font,
+                new Size(labelPreview.Width, int.MaxValue),
+                TextFormatFlags.WordBreak).Height);
+        panelPreview.Height =
+            labelPreview.Height + panelPreview.Padding.Top + panelPreview.Padding.Bottom;
+        progressPreview.Top = panelPreview.Bottom + LogicalToDeviceUnits(6);
+        progressPreview.Width = panelPreview.Width;
     }
 
     // From structure, not current text (which may be a one-line error).
@@ -401,18 +672,17 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         familyBoxes.Add((checkBessel, CrossoverFilterFamily.Bessel));
         foreach ((CheckBox box, CrossoverFilterFamily _) in familyBoxes)
         {
-            box.CheckedChanged += (_, _) => UpdatePreview();
+            box.CheckedChanged += (_, _) => SchedulePreview();
         }
 
-        minCrossover.ValueChanged += (_, _) => UpdatePreview();
-        maxCrossover.ValueChanged += (_, _) => UpdatePreview();
-        independentSlopes.CheckedChanged += (_, _) => UpdatePreview();
-        subElevation.ValueChanged += (_, _) => UpdatePreview();
+        minCrossover.ValueChanged += (_, _) => SchedulePreview();
+        maxCrossover.ValueChanged += (_, _) => SchedulePreview();
+        independentSlopes.CheckedChanged += (_, _) => SchedulePreview();
+        subElevation.ValueChanged += (_, _) => SchedulePreview();
         toolTip.SetToolTip(
             independentSlopes,
-            "Let a junction's low-pass and high-pass take different slopes\r\n" +
-            "(one frequency still). Off ties each driver's two shoulders\r\n" +
-            "to one slope — the textbook crossover.");
+            "Lets a junction's two sides take different slopes. Off ties each " +
+            "driver's own two shoulders to one slope.");
         toolTip.SetToolTip(
             reorderBlocks,
             "Put the panel's blocks in this dialog's order: the groups one\r\n" +
@@ -441,7 +711,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         familyBoxes.Where(item => item.Box.Checked).Select(item => item.Family).ToList();
 
     // Sub elevation applies to the primary group only; others keep their balance and are levelled as a whole.
-    private CrossoverAutoSetupOptions OptionsFor(bool primary) =>
+    private CrossoverAutoSetupOptions OptionsFor(GroupPlan group) =>
         new(
             SelectedFamilies(),
             (double)minCrossover.Value,
@@ -449,7 +719,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             independentSlopes.Checked,
             sampleRateHz,
             processorSampleRateHz,
-            primary && subElevationInitialized ? (double)subElevation.Value : null);
+            group.IsPrimary && subElevationInitialized ? (double)subElevation.Value : null,
+            WindowsFor(group.Group));
 
     // Snapshot on the UI thread; the ranked search runs in the background.
     private List<GroupPlan> CurrentPlan(bool withImpulseResponses)
@@ -476,7 +747,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     // Pure, so Apply can run it off the UI thread.
     private static List<GroupFit> Fit(
         IReadOnlyList<GroupPlan> plan,
-        Func<bool, CrossoverAutoSetupOptions> options,
+        Func<GroupPlan, CrossoverAutoSetupOptions> options,
         double sampleRateHz)
     {
         var fitted = new IReadOnlyList<CrossoverProposal>[plan.Count];
@@ -486,7 +757,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                      .OrderByDescending(index => plan[index].IsPrimary))
         {
             GroupPlan group = plan[index];
-            CrossoverAutoSetupOptions groupOptions = options(group.IsPrimary);
+            CrossoverAutoSetupOptions groupOptions = options(group);
             IReadOnlyList<CrossoverProposal> proposals = group.Sources.Count == 1
                 ? [CrossoverAutoSetup.ProposeSingle(group.Sources[0], groupOptions)]
                 : group.ImpulseResponses != null
@@ -542,62 +813,383 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
     }
 
-    /// <summary>Recomputes the ceiling on every fit (reorders and type changes move the bass anchor); sets the value only on the first fit.</summary>
-    private void UpdateSubElevationRange(IReadOnlyList<GroupFit> fits)
-    {
-        GroupFit? primary = fits.FirstOrDefault(fit => fit.Plan.IsPrimary);
-        if (primary == null || primary.Plan.Sources.Count < 2)
-        {
-            return;
-        }
+    /// <summary>Everything the preview needs that costs real time, computed off the UI thread.</summary>
+    private sealed record PreviewComputation(
+        IReadOnlyList<GroupFit> Fits,
+        IReadOnlyList<GroupSummary> Summaries,
+        decimal ElevationCeiling,
+        decimal? ElevationValue);
 
-        double measured = CrossoverAutoSetup.MeasuredSubElevationDb(
-            primary.Plan.Sources, primary.Proposals, sampleRateHz);
-        decimal max = (decimal)Math.Max(0, Math.Round(measured, 1));
-        subElevation.Maximum = Math.Max(max, subElevation.Minimum);
-        if (!subElevationInitialized)
-        {
-            subElevationInitialized = true;
-            subElevation.Value = max;
-        }
-    }
+    /// <summary>The summed span one group is predicted to have, and the band it was read over.</summary>
+    private sealed record GroupSummary(double SpanDb, double LowHz, double HighHz);
 
-    private void UpdatePreview()
+    private int previewGeneration;
+    private CancellationTokenSource? previewWork;
+    private bool suppressPreview;
+
+    // Long enough to swallow a held spinner arrow, short enough that a single click still feels immediate.
+    private const int PreviewDebounceMilliseconds = 120;
+
+    /// <summary>Called by every control that changes the proposal. Junction windows refresh synchronously — a couple
+    /// of milliseconds, and a row must never show a window the search is not using — while the fit itself is hundreds
+    /// of milliseconds on a four-way, so it runs off the UI thread with the progress bar up.</summary>
+    private void SchedulePreview()
     {
-        if (!initialized)
+        if (!initialized || suppressPreview)
         {
             return;
         }
 
         // Before the early exits: a moved row must not keep its old colour.
         MarkChainOrder();
+        RefreshJunctionWindows();
         if (SelectedFamilies().Count == 0)
         {
+            CancelPreviewWork();
+            SetPreviewBusy(false);
             buttonApply.Enabled = false;
             labelPreview.Text = "Enable at least one filter family.";
             return;
         }
 
-        List<GroupFit>? fits = TryFit(withImpulseResponses: false);
-        buttonApply.Enabled = fits != null;
+        CancelPreviewWork();
+        previewWork = new CancellationTokenSource();
+        PendingPreview = RunPreviewAsync(previewWork.Token);
+    }
+
+    /// <summary>The preview run in flight. The dialog itself never waits on it — the point of the rework is that it
+    /// does not — but a test has to know when the late half of the row has landed.</summary>
+    internal Task? PendingPreview { get; private set; }
+
+    private void CancelPreviewWork()
+    {
+        previewWork?.Cancel();
+        previewWork?.Dispose();
+        previewWork = null;
+    }
+
+    private async Task RunPreviewAsync(CancellationToken token)
+    {
+        int generation = ++previewGeneration;
+        SetPreviewBusy(true);
+        buttonApply.Enabled = false;
+        try
+        {
+            await Task.Delay(PreviewDebounceMilliseconds, token);
+            List<GroupPlan> plan = CurrentPlan(withImpulseResponses: false);
+            Dictionary<VirtualCrossoverAlignmentStage, CrossoverAutoSetupOptions> snapshot =
+                plan.ToDictionary(group => group.Group, OptionsFor);
+            double rateHz = sampleRateHz;
+            double processorHz = processorSampleRateHz;
+            bool elevationSet = subElevationInitialized;
+            decimal elevation = subElevation.Value;
+            PreviewComputation? computed = await Task.Run(
+                () => ComputePreview(
+                    plan, snapshot, rateHz, processorHz, elevationSet, elevation),
+                token);
+            if (token.IsCancellationRequested || generation != previewGeneration || IsDisposed)
+            {
+                return;
+            }
+
+            ApplyPreview(computed);
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer change; the newer run owns the UI from here.
+        }
+        finally
+        {
+            if (!IsDisposed && generation == previewGeneration)
+            {
+                SetPreviewBusy(false);
+            }
+        }
+    }
+
+    /// <summary>Pure: touches no control, so it is safe on a worker. A run that moves the elevation ceiling fits a
+    /// second time here rather than bouncing back through the UI to do it.</summary>
+    private static PreviewComputation? ComputePreview(
+        IReadOnlyList<GroupPlan> plan,
+        IReadOnlyDictionary<VirtualCrossoverAlignmentStage, CrossoverAutoSetupOptions> options,
+        double sampleRateHz,
+        double processorSampleRateHz,
+        bool elevationInitialized,
+        decimal elevation)
+    {
+        List<GroupFit>? fits = TryFit(plan, options, sampleRateHz);
         if (fits == null)
+        {
+            return null;
+        }
+
+        decimal ceiling = 0;
+        decimal? value = null;
+        GroupFit? primary = fits.FirstOrDefault(fit => fit.Plan.IsPrimary);
+        if (primary != null && primary.Plan.Sources.Count > 1)
+        {
+            ceiling = (decimal)Math.Max(0, Math.Round(
+                CrossoverAutoSetup.MeasuredSubElevationDb(
+                    primary.Plan.Sources, primary.Proposals, sampleRateHz),
+                1));
+            if (!elevationInitialized && ceiling != elevation)
+            {
+                value = ceiling;
+                // The first fit used a default elevation the user never sees; refit to the one about to be shown.
+                fits = TryFit(
+                    plan,
+                    options.ToDictionary(
+                        entry => entry.Key,
+                        entry => entry.Key == primary.Plan.Group
+                            ? entry.Value with { SubElevationDb = (double)ceiling }
+                            : entry.Value),
+                    sampleRateHz) ?? fits;
+            }
+        }
+
+        var summaries = new List<GroupSummary>(fits.Count);
+        foreach (GroupFit fit in fits)
+        {
+            summaries.Add(Summarize(fit, sampleRateHz, processorSampleRateHz));
+        }
+
+        return new PreviewComputation(fits, summaries, ceiling, value);
+    }
+
+    private static List<GroupFit>? TryFit(
+        IReadOnlyList<GroupPlan> plan,
+        IReadOnlyDictionary<VirtualCrossoverAlignmentStage, CrossoverAutoSetupOptions> options,
+        double sampleRateHz)
+    {
+        try
+        {
+            return Fit(plan, group => options[group.Group], sampleRateHz);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static GroupSummary Summarize(
+        GroupFit fit,
+        double sampleRateHz,
+        double processorSampleRateHz)
+    {
+        IReadOnlyList<AutoSetupSource> sources = fit.Plan.Sources;
+        if (sources.Count < 2)
+        {
+            return new GroupSummary(0, 0, 0);
+        }
+
+        DriverBandEstimate low = CrossoverAutoSetup.EstimateBand(
+            sources[0].MagnitudeDb, sources[0].Coherence);
+        DriverBandEstimate high = CrossoverAutoSetup.EstimateBand(
+            sources[^1].MagnitudeDb, sources[^1].Coherence);
+        double trim = Math.Pow(2.0, 0.5);
+        var window = CrossoverAutoSetup
+            .SummedResponseDb(sources, fit.Proposals, sampleRateHz, processorSampleRateHz)
+            .Where(point => point.X >= low.LowHz * trim && point.X <= high.HighHz / trim)
+            .Select(point => point.Y)
+            .ToList();
+        return new GroupSummary(
+            window.Count > 0 ? window.Max() - window.Min() : 0, low.LowHz, high.HighHz);
+    }
+
+    private void ApplyPreview(PreviewComputation? computed)
+    {
+        buttonApply.Enabled = computed != null;
+        if (computed == null)
         {
             labelPreview.Text = "No proposal fits these channels and settings.";
             return;
         }
 
-        // Re-fit when this run moved the value, or the preview prints an elevation the proposal does not have.
-        decimal before = subElevation.Value;
-        UpdateSubElevationRange(fits);
-        if (subElevation.Value != before)
+        suppressPreview = true;
+        try
         {
-            fits = TryFit(withImpulseResponses: false) ?? fits;
+            subElevation.Maximum = Math.Max(computed.ElevationCeiling, subElevation.Minimum);
+            if (computed.ElevationValue is { } value)
+            {
+                subElevationInitialized = true;
+                subElevation.Value = Math.Clamp(
+                    value, subElevation.Minimum, subElevation.Maximum);
+            }
+        }
+        finally
+        {
+            suppressPreview = false;
         }
 
-        labelPreview.Text = string.Join(Environment.NewLine, PreviewLines(fits));
+        labelPreview.Text = string.Join(
+            Environment.NewLine, PreviewLines(computed.Fits, computed.Summaries));
+        UpdateJunctionVerdicts(computed.Fits);
+        GrowToFitContents();
     }
 
-    private IEnumerable<string> PreviewLines(IReadOnlyList<GroupFit> fits)
+    private void SetPreviewBusy(bool busy)
+    {
+        progressPreview.Visible = busy;
+        UiStyle.SetTextEnabledLook(labelPreview, !busy);
+    }
+
+    /// <summary>Writes the window the search will run on back into every row, with the reason for any bound that
+    /// moved. Cheap enough to run on the UI thread on every keystroke, and it must: a row showing a window the search
+    /// is not using is worse than a row showing nothing. A field the user has touched keeps its own value.</summary>
+    private void RefreshJunctionWindows()
+    {
+        if (!initialized)
+        {
+            return;
+        }
+
+        foreach (VirtualCrossoverAlignmentStage group in GroupsInOrder())
+        {
+            List<ChannelRow> members = MembersOf(group);
+            if (members.Count < 2)
+            {
+                continue;
+            }
+
+            var sources = members.Select(SourceOf).ToList();
+            CrossoverAutoSetupOptions options = OptionsFor(new GroupPlan(
+                group, [], sources, null, group == PrimaryGroup()));
+            List<JunctionRow> rowsInGroup = junctions
+                .Where(junction => junction.Group == group)
+                .OrderBy(junction => junction.IndexInGroup)
+                .ToList();
+            for (int j = 0; j < rowsInGroup.Count; j++)
+            {
+                JunctionRow row = rowsInGroup[j];
+                JunctionWindowResolution window;
+                try
+                {
+                    window = CrossoverAutoSetup.ResolveJunctionWindow(sources, j, options);
+                }
+                catch (ArgumentException)
+                {
+                    continue;
+                }
+
+                row.Suppressed = true;
+                try
+                {
+                    if (!row.MinHzEdited)
+                    {
+                        row.MinHz.Value = Clamp(row.MinHz, window.LowHz);
+                    }
+
+                    if (!row.MaxHzEdited)
+                    {
+                        row.MaxHz.Value = Clamp(row.MaxHz, window.HighHz);
+                    }
+
+                    if (!row.MinSlopeEdited)
+                    {
+                        row.MinSlope.SelectedItem = NearestSlope(window.MinSlopeDbPerOctave);
+                    }
+
+                    if (!row.MaxSlopeEdited)
+                    {
+                        row.MaxSlope.SelectedItem = NearestSlope(window.MaxSlopeDbPerOctave);
+                    }
+                }
+                finally
+                {
+                    row.Suppressed = false;
+                }
+
+                // The fact goes beside the row; the reasoning goes in the tooltip, where it is read only by
+                // someone who wants it.
+                row.Notes.Text = string.Join(
+                    "   ·   ", window.Notes.Select(note => note.Summary));
+                row.Notes.Visible = window.Notes.Count > 0;
+                toolTip.SetToolTip(
+                    row.Notes,
+                    string.Join(
+                        Environment.NewLine + Environment.NewLine,
+                        window.Notes.Select(note => note.Detail)));
+            }
+        }
+    }
+
+    /// <summary>The one part of a row that needs the fit, so the one part that arrives late.</summary>
+    private void UpdateJunctionVerdicts(IReadOnlyList<GroupFit> fits)
+    {
+        foreach (GroupFit fit in fits)
+        {
+            List<JunctionRow> rowsInGroup = junctions
+                .Where(junction => junction.Group == fit.Plan.Group)
+                .OrderBy(junction => junction.IndexInGroup)
+                .ToList();
+            for (int j = 0; j < rowsInGroup.Count && j + 1 < fit.Proposals.Count; j++)
+            {
+                rowsInGroup[j].Verdict.Text =
+                    DescribeJunction(fit.Proposals[j], fit.Proposals[j + 1]);
+            }
+        }
+    }
+
+    /// <summary>The verdict column and the amber notes arrive after the one-shot layout pass has sized the window,
+    /// and both are AutoSize labels, so the dialog has to be allowed to grow around them. It only ever grows: a
+    /// window that shrank back on every refit would twitch.</summary>
+    private void GrowToFitContents()
+    {
+        if (!optionsPositioned)
+        {
+            return;
+        }
+
+        int margin = LogicalToDeviceUnits(12);
+        tableJunctions.PerformLayout();
+        int width = Math.Max(
+            ClientSize.Width,
+            Math.Max(tableChannels.Right, tableJunctions.Right) + margin);
+        SizePreviewCard(width, margin);
+        int height = progressPreview.Bottom + margin + buttonApply.Height + margin;
+        if (width > ClientSize.Width || height > ClientSize.Height)
+        {
+            ClientSize = new Size(width, Math.Max(height, ClientSize.Height));
+        }
+    }
+
+    private static decimal Clamp(DarkNumericUpDown field, double value) =>
+        Math.Clamp((decimal)Math.Round(value), field.Minimum, field.Maximum);
+
+    private static int NearestSlope(int slopeDbPerOctave) =>
+        SelectableSlopes.MinBy(slope => Math.Abs(slope - slopeDbPerOctave));
+
+    /// <summary>What the junction ended up as. Split corners print both, so the row shows the split rather than
+    /// hiding it behind one number.</summary>
+    private static string DescribeJunction(CrossoverProposal lower, CrossoverProposal upper)
+    {
+        if (lower.LowPassEdge is not { } lowPass || upper.HighPassEdge is not { } highPass)
+        {
+            return "—";
+        }
+
+        string family = lowPass.Family == highPass.Family
+            ? FamilyName(lowPass.Family)
+            : $"{FamilyName(lowPass.Family)}/{FamilyName(highPass.Family)}";
+        string corners = Math.Abs(lowPass.FrequencyHz - highPass.FrequencyHz) < 0.5
+            ? FormatHz(lowPass.FrequencyHz)
+            : $"{FormatHz(lowPass.FrequencyHz)} ↓ / {FormatHz(highPass.FrequencyHz)} ↑";
+        string polarity = upper.InvertPolarity == lower.InvertPolarity ? string.Empty : ", inverted";
+        return $"{family} {corners} · " +
+            $"{lowPass.SlopeDbPerOctave}/{highPass.SlopeDbPerOctave} dB/oct{polarity}";
+    }
+
+    private static string FamilyName(CrossoverFilterFamily family) => family switch
+    {
+        CrossoverFilterFamily.LinkwitzRiley => "LR",
+        CrossoverFilterFamily.Butterworth => "BW",
+        CrossoverFilterFamily.Bessel => "Bessel",
+        _ => family.ToString()
+    };
+
+    private IEnumerable<string> PreviewLines(
+        IReadOnlyList<GroupFit> fits,
+        IReadOnlyList<GroupSummary> summaries)
     {
         bool headers = fits.Count > 1;
         VirtualCrossoverAlignmentStage primary =
@@ -606,8 +1198,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         string anchor = primary == VirtualCrossoverAlignmentStage.FrontChain
             ? "front stage"
             : LowerFirst(VirtualCrossoverAlignmentStages.DisplayName(primary));
-        foreach (GroupFit fit in fits)
+        for (int g = 0; g < fits.Count; g++)
         {
+            GroupFit fit = fits[g];
             if (headers)
             {
                 yield return VirtualCrossoverAlignmentStages.DisplayName(fit.Plan.Group) + ":";
@@ -620,7 +1213,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                 yield return FormatProposal(row, fit.Proposals[i], headers);
             }
 
-            yield return FormatSummary(fit, headers, anchor);
+            yield return FormatSummary(fit, summaries[g], headers, anchor);
         }
     }
 
@@ -628,7 +1221,11 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         text.Length == 0 ? text : char.ToLowerInvariant(text[0]) + text[1..];
 
     // Target-curve gains make the sum an intentional downslope, so report its span, not a defect.
-    private string FormatSummary(GroupFit fit, bool indent, string anchor)
+    private string FormatSummary(
+        GroupFit fit,
+        GroupSummary summary,
+        bool indent,
+        string anchor)
     {
         string prefix = indent ? "   " : string.Empty;
         string levelled = fit.Plan.IsPrimary
@@ -641,24 +1238,13 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                 : $"Protective high-pass, levelled to the {anchor} — balance by ear.");
         }
 
-        IReadOnlyList<AutoSetupSource> sources = fit.Plan.Sources;
-        DriverBandEstimate low = CrossoverAutoSetup.EstimateBand(
-            sources[0].MagnitudeDb, sources[0].Coherence);
-        DriverBandEstimate high = CrossoverAutoSetup.EstimateBand(
-            sources[^1].MagnitudeDb, sources[^1].Coherence);
-        double trim = Math.Pow(2.0, 0.5);
-
-        var window = CrossoverAutoSetup
-            .SummedResponseDb(sources, fit.Proposals, sampleRateHz, processorSampleRateHz)
-            .Where(point => point.X >= low.LowHz * trim && point.X <= high.HighHz / trim)
-            .Select(point => point.Y)
-            .ToList();
-        double span = window.Count > 0 ? window.Max() - window.Min() : 0;
+        // The span comes from the worker with the fit: reading it here would mean a second summed response on the
+        // UI thread, which is the bulk of what the preview costs.
         string elevation = fit.Plan.IsPrimary && subElevationInitialized
             ? $"  ·  bass +{(double)subElevation.Value:0.0} dB over mid/treble"
             : string.Empty;
-        return $"{prefix}Predicted sum spans {span:0.0} dB over " +
-            $"{FormatHz(low.LowHz)}–{FormatHz(high.HighHz)}{elevation}{levelled}";
+        return $"{prefix}Predicted sum spans {summary.SpanDb:0.0} dB over " +
+            $"{FormatHz(summary.LowHz)}–{FormatHz(summary.HighHz)}{elevation}{levelled}";
     }
 
     private static string FormatProposal(ChannelRow row, CrossoverProposal proposal, bool indent)
@@ -854,10 +1440,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
         // Ranking takes seconds on a 4-way; the preview shows the magnitude-only proposal until it lands.
         IReadOnlyList<int>? order = RequestedChainOrder();
-        CrossoverAutoSetupOptions primaryOptions = OptionsFor(true);
-        CrossoverAutoSetupOptions otherOptions = OptionsFor(false);
-        CrossoverAutoSetupOptions Options(bool primary) =>
-            primary ? primaryOptions : otherOptions;
+        // Snapshot per group on the UI thread: the ranked search runs off it and must not read the controls.
+        Dictionary<VirtualCrossoverAlignmentStage, CrossoverAutoSetupOptions> snapshot =
+            plan.ToDictionary(group => group.Group, OptionsFor);
+        CrossoverAutoSetupOptions Options(GroupPlan group) => snapshot[group.Group];
         string previousPreview = labelPreview.Text;
         int count = rows.Count;
         buttonApply.Enabled = false;

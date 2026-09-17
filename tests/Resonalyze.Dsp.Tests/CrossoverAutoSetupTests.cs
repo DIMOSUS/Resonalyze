@@ -537,6 +537,97 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    public void Propose_WithoutASplitWindow_HandsEveryJunctionOverAtOneFrequency()
+    {
+        // Split corners are opt-in junction by junction: a window that does not ask for one must not produce one.
+        var woofer = new AutoSetupSource(BandCurve(30, 500, 0), DriverType.Woofer);
+        var midrange = new AutoSetupSource(BandCurve(200, 5_000, 0), DriverType.Midrange);
+        var tweeter = new AutoSetupSource(BandCurve(2_500, 20_000, 0), DriverType.Tweeter);
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            [woofer, midrange, tweeter],
+            Options() with
+            {
+                JunctionWindows = [new JunctionSearchWindow(), new JunctionSearchWindow()]
+            });
+
+        Assert.Equal(
+            proposals[0].LowPassEdge!.Value.FrequencyHz,
+            proposals[1].HighPassEdge!.Value.FrequencyHz);
+        Assert.Equal(
+            proposals[1].LowPassEdge!.Value.FrequencyHz,
+            proposals[2].HighPassEdge!.Value.FrequencyHz);
+    }
+
+    [Fact]
+    public void Propose_ASplitJunction_PartsItsCornersAndIsFlatterForIt()
+    {
+        var woofer = new AutoSetupSource(BandCurve(40, 4_000, 0), DriverType.Woofer);
+        var tweeter = new AutoSetupSource(BandCurve(600, 20_000, 0), DriverType.Tweeter);
+        AutoSetupSource[] channels = [woofer, tweeter];
+
+        IReadOnlyList<CrossoverProposal> matched = CrossoverAutoSetup.Propose(
+            channels, Options());
+        IReadOnlyList<CrossoverProposal> split = CrossoverAutoSetup.Propose(
+            channels,
+            Options() with
+            {
+                JunctionWindows = [new JunctionSearchWindow(AllowSplitCorners: true)]
+            });
+
+        double lowPass = split[0].LowPassEdge!.Value.FrequencyHz;
+        double highPass = split[1].HighPassEdge!.Value.FrequencyHz;
+        double octaves = Math.Log2(highPass / lowPass);
+        Assert.True(
+            Math.Abs(octaves) > 0.01,
+            $"The junction stayed matched at {lowPass} Hz, so nothing about a split is tested here.");
+        // Searched as an offset from the corner, so it can never exceed the widest offset on the list.
+        Assert.True(
+            Math.Abs(octaves) <= 0.3,
+            $"{lowPass}-{highPass} Hz is {octaves:0.000} octaves apart, wider than any offered offset.");
+        Assert.True(
+            JunctionSpanDb(channels, split) <= JunctionSpanDb(channels, matched),
+            $"The split junction spans {JunctionSpanDb(channels, split):0.000} dB against " +
+            $"{JunctionSpanDb(channels, matched):0.000} dB matched, so it bought nothing.");
+    }
+
+    [Fact]
+    public void ASplitOffset_MustBuyMoreThanTheOverlapItSaves()
+    {
+        // Parting the corners shrinks the overlap integral whatever it does to the response. Left uncharged, the
+        // widest offset wins at every junction and the option stops being a search: this fixture must stay matched.
+        var woofer = new AutoSetupSource(BandCurve(40, 4_000, 0), DriverType.Woofer);
+        var tweeter = new AutoSetupSource(BandCurve(600, 20_000, 0), DriverType.Tweeter);
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            [woofer, tweeter],
+            Options(families: CrossoverFilterFamily.Bessel) with
+            {
+                JunctionWindows = [new JunctionSearchWindow(AllowSplitCorners: true)]
+            });
+
+        Assert.Equal(
+            proposals[0].LowPassEdge!.Value.FrequencyHz,
+            proposals[1].HighPassEdge!.Value.FrequencyHz);
+    }
+
+    // An octave either side of the corner: the band JunctionPenalty scores, read off the ideal complex sum.
+    private static double JunctionSpanDb(
+        IReadOnlyList<AutoSetupSource> channels,
+        IReadOnlyList<CrossoverProposal> proposals)
+    {
+        double corner = Math.Sqrt(
+            proposals[0].LowPassEdge!.Value.FrequencyHz *
+            proposals[1].HighPassEdge!.Value.FrequencyHz);
+        var band = CrossoverAutoSetup
+            .SummedResponseDb(channels, proposals, SampleRate, SampleRate)
+            .Where(point => point.X >= corner / 2 && point.X <= corner * 2)
+            .Select(point => point.Y)
+            .ToList();
+        return band.Max() - band.Min();
+    }
+
+    [Fact]
     public void Propose_WalksTheCallersOrder_NotTheDriverTypes()
     {
         // Shuffled input is walked in the given order: with two drivers of one class only the caller knows which plays lower.
@@ -554,9 +645,15 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void Propose_IndependentSlopes_MayDifferAcrossAJunction()
     {
-        var woofer = new AutoSetupSource(BandCurve(40, 900, 0), DriverType.Woofer);
-        var tweeter = new AutoSetupSource(BandCurve(1_500, 20_000, 0), DriverType.Tweeter);
-        var channels = new[] { woofer, tweeter };
+        // Three ways, because the rule binds a CHANNEL's two shoulders and a two-way has no channel with two of them:
+        // there the woofer owns only a low-pass and the tweeter only a high-pass, so they were always free to differ
+        // and the old assertion only held by luck.
+        var channels = new[]
+        {
+            new AutoSetupSource(BandCurve(40, 900, 0), DriverType.Woofer),
+            new AutoSetupSource(BandCurve(200, 6_000, 0), DriverType.Midrange),
+            new AutoSetupSource(BandCurve(1_500, 20_000, 0), DriverType.Tweeter)
+        };
 
         IReadOnlyList<CrossoverProposal> matched = CrossoverAutoSetup.Propose(
             channels,
@@ -566,10 +663,13 @@ public sealed class CrossoverAutoSetupTests
             Options(independentSlopes: true));
 
         Assert.Equal(
-            matched[0].LowPassEdge!.Value.SlopeDbPerOctave,
-            matched[1].HighPassEdge!.Value.SlopeDbPerOctave);
+            matched[1].HighPassEdge!.Value.SlopeDbPerOctave,
+            matched[1].LowPassEdge!.Value.SlopeDbPerOctave);
         Assert.True(
-            SumRippleDb(channels, independent) <= SumRippleDb(channels, matched) + 0.25);
+            SumRippleDb(channels, independent) <= SumRippleDb(channels, matched) + 0.25,
+            $"Freeing the slopes should not cost flatness: " +
+            $"{SumRippleDb(channels, independent):0.00} dB against " +
+            $"{SumRippleDb(channels, matched):0.00} dB.");
     }
 
     [Fact]
@@ -688,9 +788,11 @@ public sealed class CrossoverAutoSetupTests
     {
         // The localization bias answers which CLASS owns a region; between two subs it must not apply.
         // The runs differ only in the upper driver's class and share one search window, so any difference is the bias.
+        // The window has to leave room UNDER the biased answer: a 40 Hz floor put both runs on the window edge, where
+        // no bias can show itself.
         var lower = new AutoSetupSource(BandCurve(20, 100, 0), DriverType.Subwoofer);
         var curve = BandCurve(25, 500, 0);
-        CrossoverAutoSetupOptions options = Options(minHz: 40);
+        CrossoverAutoSetupOptions options = Options();
 
         double Split(DriverType upperType) => CrossoverAutoSetup
             .Propose([lower, new AutoSetupSource(curve, upperType)], options)[0]
@@ -699,10 +801,50 @@ public sealed class CrossoverAutoSetupTests
         double sameClass = Split(DriverType.Subwoofer);
         double acrossClasses = Split(DriverType.Woofer);
 
+        // In octaves, not hertz: 20 Hz is most of an octave at the bottom of a sub band and nothing at the top.
         Assert.True(
-            sameClass < acrossClasses - 20,
+            Math.Log2(acrossClasses / sameClass) > 0.25,
             $"A sub-to-sub split was biased up like a sub-to-woofer one: " +
             $"{sameClass:0} Hz against {acrossClasses:0} Hz.");
+    }
+
+    [Fact]
+    public void JunctionWindow_KeepsTheTweeterFloor_WhereTheClassesDoNotOverlap()
+    {
+        // Field case: a midbass measuring to 736 Hz under a tweeter measuring from 712 Hz. Midbass tops out at
+        // 500 Hz by class and a tweeter starts at 1.7 kHz, so the CLASS bounds cross and are dropped — and the
+        // tweeter's resonance floor used to be dropped with them, leaving a 712-736 Hz window inside the dome's
+        // own resonance. The class bound is a preference; Fs is not.
+        var midbass = new AutoSetupSource(BandCurve(70, 736, 0), DriverType.Midbass);
+        var tweeter = new AutoSetupSource(BandCurve(712, 9_980, 0), DriverType.Tweeter);
+        AutoSetupSource[] channels = [midbass, tweeter];
+
+        JunctionWindowResolution window =
+            CrossoverAutoSetup.ResolveJunctionWindow(channels, 0, Options());
+
+        double floor = CrossoverAutoSetup.TweeterMinCrossoverHz(
+            CrossoverAutoSetup.TweeterResonanceHz(
+                CrossoverAutoSetup.EstimateBand(tweeter.MagnitudeDb).LowHz),
+            48);
+        Assert.True(
+            window.LowHz >= floor - 1e-6,
+            $"The window opens at {window.LowHz:0} Hz, under the {floor:0} Hz resonance floor.");
+        Assert.True(
+            window.HighHz > window.LowHz,
+            $"The window collapsed to {window.LowHz:0} Hz instead of opening upwards.");
+
+        // Opening upward is not opening to the top of the band: nobody searches a mid-to-tweeter handover up to
+        // 20 kHz. Two octaves over the floor covers every slope the resonance rule can ask for and stops there.
+        Assert.True(
+            window.HighHz <= window.LowHz * 4,
+            $"The window runs to {window.HighHz:0} Hz, far past anything that is still a handover.");
+        Assert.NotEmpty(window.Notes);
+
+        // And the search must actually land inside the window rather than be dragged there afterwards.
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose(channels, Options());
+        double corner = proposals[1].HighPassEdge!.Value.FrequencyHz;
+        Assert.InRange(corner, window.LowHz, window.HighHz);
     }
 
     [Fact]
@@ -753,8 +895,11 @@ public sealed class CrossoverAutoSetupTests
         IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
             [lowSub, highSub, midrange, tweeter], Options());
 
-        Assert.Equal(proposals[2].GainDb, proposals[3].GainDb, 1);
-        Assert.Equal(0, proposals[2].GainDb, 1);
+        // Levelled to each other and left at the top, nowhere near the quiet sub's -10 dB. They are not bit-equal:
+        // each level is the average over that channel's assigned passband, and the corners decide those passbands.
+        Assert.InRange(Math.Abs(proposals[2].GainDb - proposals[3].GainDb), 0, 0.25);
+        Assert.InRange(proposals[2].GainDb, -0.5, 0);
+        Assert.InRange(proposals[3].GainDb, -0.5, 0);
     }
 
     [Fact]

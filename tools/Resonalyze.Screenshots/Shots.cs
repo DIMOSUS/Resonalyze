@@ -366,8 +366,18 @@ internal static class Shots
 
         if (wanted("manual/auto-crossover"))
         {
-            session.CaptureModal("manual/auto-crossover",
-                () => Reflect.Field<Button>(panel, "buttonAutoSetup").PerformClick(), 4_000);
+            // Regions are measured while the dialog is on screen: it lays itself out at runtime.
+            AutoCrossoverFigure.Layout? crossover = null;
+            session.CaptureModal(
+                "manual/auto-crossover",
+                () => Reflect.Field<Button>(panel, "buttonAutoSetup").PerformClick(),
+                4_000,
+                dialog => crossover = AutoCrossoverFigure.Measure(dialog));
+            if (crossover != null)
+            {
+                AutoCrossoverFigure.Draw(
+                    crossover, session.Config.Resolve("manual/auto-crossover"));
+            }
         }
 
         if (wanted("manual/auto-delay"))

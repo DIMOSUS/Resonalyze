@@ -32,6 +32,8 @@ namespace Resonalyze
         {
             labelHeader = new Label();
             tableChannels = new TableLayoutPanel();
+            labelJunctions = new Label();
+            tableJunctions = new TableLayoutPanel();
             labelFilters = new Label();
             checkButterworth = new ReleaseClickCheckBox();
             checkLinkwitzRiley = new ReleaseClickCheckBox();
@@ -46,7 +48,9 @@ namespace Resonalyze
             labelSubElevation = new Label();
             subElevation = new DarkNumericUpDown();
             labelSubElevationUnit = new Label();
+            panelPreview = new RoundedPanel();
             labelPreview = new Label();
+            progressPreview = new ProgressBar();
             buttonApply = new ReleaseClickButton();
             buttonCancel = new ReleaseClickButton();
             SuspendLayout();
@@ -80,6 +84,38 @@ namespace Resonalyze
             tableChannels.Name = "tableChannels";
             tableChannels.Size = new Size(0, 0);
             tableChannels.TabIndex = 1;
+            //
+            // labelJunctions
+            //
+            labelJunctions.AutoSize = true;
+            labelJunctions.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelJunctions.ForeColor = Color.FromArgb(210, 214, 222);
+            labelJunctions.Location = new Point(12, 96);
+            labelJunctions.Name = "labelJunctions";
+            labelJunctions.Size = new Size(320, 15);
+            labelJunctions.TabIndex = 4;
+            labelJunctions.Text = "Narrow any junction the wizard should not decide on its own:";
+            //
+            // tableJunctions
+            //
+            tableJunctions.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            tableJunctions.AutoSize = true;
+            tableJunctions.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            tableJunctions.ColumnCount = 9;
+            tableJunctions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableJunctions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableJunctions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableJunctions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableJunctions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableJunctions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableJunctions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableJunctions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableJunctions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableJunctions.GrowStyle = TableLayoutPanelGrowStyle.AddRows;
+            tableJunctions.Location = new Point(12, 112);
+            tableJunctions.Name = "tableJunctions";
+            tableJunctions.Size = new Size(0, 0);
+            tableJunctions.TabIndex = 5;
             //
             // labelFilters
             //
@@ -242,21 +278,44 @@ namespace Resonalyze
             labelSubElevationUnit.TabIndex = 22;
             labelSubElevationUnit.Text = "dB";
             //
+            // panelPreview
+            //
+            panelPreview.BackColor = Color.FromArgb(50, 55, 66);
+            panelPreview.BorderColor = Color.FromArgb(78, 84, 98);
+            panelPreview.Controls.Add(labelPreview);
+            panelPreview.CornerRadius = 8;
+            panelPreview.Location = new Point(12, 266);
+            panelPreview.Name = "panelPreview";
+            panelPreview.Padding = new Padding(12, 9, 12, 9);
+            panelPreview.Size = new Size(444, 80);
+            panelPreview.TabIndex = 23;
+            //
             // labelPreview
             //
             labelPreview.ForeColor = Color.FromArgb(230, 184, 0);
-            labelPreview.Location = new Point(12, 266);
+            labelPreview.Location = new Point(12, 9);
             labelPreview.Name = "labelPreview";
             labelPreview.Size = new Size(444, 62);
             labelPreview.TabIndex = 23;
             labelPreview.Text = "—";
             //
+            // progressPreview
+            //
+            progressPreview.Location = new Point(12, 352);
+            progressPreview.MarqueeAnimationSpeed = 25;
+            progressPreview.Name = "progressPreview";
+            progressPreview.Size = new Size(160, 4);
+            progressPreview.Style = ProgressBarStyle.Marquee;
+            progressPreview.TabIndex = 24;
+            progressPreview.TabStop = false;
+            progressPreview.Visible = false;
+            //
             // buttonApply
             //
             buttonApply.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            buttonApply.BackColor = Color.FromArgb(46, 51, 67);
+            buttonApply.BackColor = Color.FromArgb(36, 86, 210);
             buttonApply.DialogResult = DialogResult.OK;
-            buttonApply.FlatStyle = FlatStyle.Popup;
+            buttonApply.FlatStyle = FlatStyle.Flat;
             buttonApply.ForeColor = Color.White;
             buttonApply.Location = new Point(282, 310);
             buttonApply.Name = "buttonApply";
@@ -291,6 +350,8 @@ namespace Resonalyze
             Controls.Add(checkLinkwitzRiley);
             Controls.Add(checkBessel);
             Controls.Add(labelRange);
+            Controls.Add(labelJunctions);
+            Controls.Add(tableJunctions);
             Controls.Add(minCrossover);
             Controls.Add(labelDash);
             Controls.Add(maxCrossover);
@@ -300,7 +361,8 @@ namespace Resonalyze
             Controls.Add(labelSubElevation);
             Controls.Add(subElevation);
             Controls.Add(labelSubElevationUnit);
-            Controls.Add(labelPreview);
+            Controls.Add(panelPreview);
+            Controls.Add(progressPreview);
             Controls.Add(buttonApply);
             Controls.Add(buttonCancel);
             Font = new Font("Segoe UI", 9F);
@@ -320,6 +382,8 @@ namespace Resonalyze
 
         private Label labelHeader;
         private TableLayoutPanel tableChannels;
+        private Label labelJunctions;
+        private TableLayoutPanel tableJunctions;
         private Label labelFilters;
         private ReleaseClickCheckBox checkButterworth;
         private ReleaseClickCheckBox checkLinkwitzRiley;
@@ -335,6 +399,8 @@ namespace Resonalyze
         private DarkNumericUpDown subElevation;
         private Label labelSubElevationUnit;
         private Label labelPreview;
+        private RoundedPanel panelPreview;
+        private ProgressBar progressPreview;
         private ReleaseClickButton buttonApply;
         private ReleaseClickButton buttonCancel;
     }

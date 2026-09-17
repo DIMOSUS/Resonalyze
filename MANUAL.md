@@ -779,7 +779,17 @@ group delay, which become part of the acoustic crossover that has to be aligned.
 
 Press **Auto crossover...**.
 
-![The crossover auto setup dialog with detected driver types and a proposal](assets/images/manual/auto-crossover.png)
+![The crossover auto setup dialog with its four zones marked](assets/images/manual/auto-crossover.png)
+
+1. **Drivers** — what each channel measured, the type Resonalyze guessed for it, and the
+   order they hand over in. Row 1 plays lowest.
+2. **Junctions** — one row per handover: the frequency window and the slope window the
+   search may use there, and whether it may split the corners. The cyan box is the part
+   the wizard writes back — what it chose for that junction.
+3. **Whole-chain settings** — the filter families your DSP supports, the band limit for
+   the system as a whole, whether a junction's two sides may differ in slope, block
+   reordering, and the bass level.
+4. **The proposal** — exactly what **Apply** writes into the channels.
 
 Resonalyze estimates each channel's usable bandwidth and assigns a likely driver type;
 check the classifications and correct them where needed.
@@ -802,9 +812,26 @@ A group holding a single driver has nothing to cross: it gets a protective high-
 under its usable band and is levelled onto the front stage. Treat that level as a
 starting point; how far a rear fill sits under the front is for your ears.
 
-Then select the filter families your real DSP supports, the crossover search range,
-whether HPF and LPF may differ in slope, whether the panel's blocks should be put into
-the same order, and the desired bass level relative to the mid/high range.
+Under the channels is a row per **junction** — one for each pair that hands over. Each
+row shows the frequency window and the slope window the search will use, and whether
+that junction may split its corners. The fields are filled in with the wizard's own
+answer, so a row always tells you what is about to happen; change one and it becomes
+yours.
+
+You can narrow a window but not widen it past what the drivers allow. If a number of
+yours cannot be honoured — a tweeter's resonance, the point its distortion says it stops
+being clean, the band a driver actually plays — the row prints where it moved the value
+and why, rather than quietly ignoring you. Note that 24 dB/oct always stays inside the
+slope window: it is what the search measures everything else against.
+
+**Split** lets one junction put its low-pass and high-pass at different frequencies when
+that sums flatter. Leave it off unless you mean it — a split crossover is easy to
+mistake for an error when you come back to the tuning sheet months later.
+
+Then select the filter families your real DSP supports, the overall crossover range
+(this band-limits the whole system, unlike a junction's own window), whether HPF and LPF
+may differ in slope, whether the panel's blocks should be put into the same order, and
+the desired bass level relative to the mid/high range.
 
 Leave the reordering on: a panel whose blocks read down the spectrum is far easier to
 work in. Blocks are lettered by position, so the ones that move are re-lettered and
@@ -812,11 +839,24 @@ take a new plot colour, with their sources and settings travelling along; a tuni
 sheet printed earlier names channels by the OLD letters. The **▲▼** buttons on each
 block do the same one step at a time.
 
-The optimizer then searches combinations of frequencies, slopes and families on the
-**actual measured acoustic responses**, weighing bandwidth, overlap, leakage and filter
-group delay, and prints its proposal at the bottom of the dialog. Press **Apply** if the
-result makes physical sense. Auto Crossover does not know your drivers' limits: always
-check the proposal against the datasheets and your own knowledge of the system.
+The optimizer then searches combinations of frequencies, slopes, families and polarity
+on the **actual measured acoustic responses**, weighing bandwidth, overlap, leakage and
+filter group delay, and prints its proposal at the bottom of the dialog.
+
+It adds them up the way a crossover designer does: each driver's measured response
+through its filter's own phase, with the drivers assumed perfectly aligned in time. That
+is what lets it tell you the **polarity** each junction wants — a Linkwitz-Riley 12 or 36
+crossover needs one side inverted, a 24 does not, and a real driver's own roll-off can
+move that answer. Auto Delay runs later and may flip a channel again; the wizard is
+giving you the starting point.
+
+Because the sum assumes perfect alignment, the response it predicts is an ideal. It is
+not what the panel will measure until delays are set — judge the finished result there,
+not here.
+
+Press **Apply** if the result makes physical sense. Auto Crossover does not know your
+drivers' limits: always check the proposal against the datasheets and your own knowledge
+of the system.
 
 ### Manual tuning is always available
 

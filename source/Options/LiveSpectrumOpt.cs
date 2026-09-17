@@ -713,7 +713,10 @@ namespace Resonalyze.Options
                 "Applies fractional-octave smoothing to the displayed Live Spectrum curve.");
             toolTip.SetToolTip(
                 windowComboBox,
-                "Analysis window applied before the FFT. Hann is a good default; Flat Top maximizes amplitude accuracy; Blackman-Harris suppresses spectral leakage; Rectangular leaves the block unwindowed.\r\nForced to Rectangular for periodic pink noise, which is already leakage-free.");
+                "Analysis window applied before the FFT. Hann is a good\r\n" +
+                "default; Flat Top for amplitude accuracy; Blackman-Harris\r\n" +
+                "against leakage; Rectangular leaves the block unwindowed.\r\n" +
+                "Forced to Rectangular for periodic pink noise.");
             toolTip.SetToolTip(
                 averagingComboBox,
                 "Averaging speed. Fast/Medium/Slow set the exponential time constant; Infinite integrates indefinitely until you reset it.");

@@ -2099,21 +2099,30 @@ public static class CrossoverAutoSetup
                 // both crossed, the floor wins: overexcursion is damage and breakup is only a worse sound.
                 string blocked = lowReason;
                 string yielded = highReason;
+                // Two questions, and only the first can make a safety bound give way. The drivers, the classes and
+                // the user are PREFERENCES and yield to safety. One safety bound yields to the other only when the
+                // two cannot both be met — not merely because one of them is what emptied the window.
+                bool safetyConflict = safetyLow > safetyHigh;
                 // Not just "did the floor clear the top of the window": a floor and a cap can each sit inside
                 // the window and still cross EACH OTHER, and that is the case the policy is actually about.
-                bool floorWon = safetyLow > safetyHigh || safetyLow > wantedHigh;
+                bool floorWon = safetyConflict || safetyLow > wantedHigh;
+                double span = Math.Pow(2.0, SafetyOverrideSpanOctaves);
                 if (floorWon)
                 {
                     autoLow = Math.Clamp(
                         Math.Max(safetyLow, wantedLow),
                         options.MinCrossoverHz,
                         options.MaxCrossoverHz);
-                    autoHigh = Math.Clamp(
-                        autoLow * Math.Pow(2.0, SafetyOverrideSpanOctaves),
-                        autoLow,
-                        options.MaxCrossoverHz);
-                    highReason = "the span that bound leaves";
-                    junctionSafety[j] = (safetyLow, double.PositiveInfinity);
+                    double reach = safetyConflict
+                        ? autoLow * span
+                        : Math.Min(autoLow * span, safetyHigh);
+                    autoHigh = Math.Clamp(reach, autoLow, options.MaxCrossoverHz);
+                    highReason = safetyConflict || autoLow * span <= safetyHigh
+                        ? "the span that bound leaves"
+                        : safetyHighReason;
+                    junctionSafety[j] = safetyConflict
+                        ? (safetyLow, double.PositiveInfinity)
+                        : (safetyLow, safetyHigh);
                 }
                 else
                 {
@@ -2121,15 +2130,18 @@ public static class CrossoverAutoSetup
                         Math.Min(safetyHigh, wantedHigh),
                         options.MinCrossoverHz,
                         options.MaxCrossoverHz);
+                    // safetyConflict cannot hold here: it would have made the floor win.
                     autoLow = Math.Clamp(
-                        autoHigh / Math.Pow(2.0, SafetyOverrideSpanOctaves),
+                        Math.Max(autoHigh / span, safetyLow),
                         options.MinCrossoverHz,
                         autoHigh);
                     blocked = highReason;
                     yielded = lowReason;
-                    lowReason = "the span that bound leaves";
+                    lowReason = autoHigh / span >= safetyLow
+                        ? "the span that bound leaves"
+                        : safetyLowReason;
                     highReason = blocked;
-                    junctionSafety[j] = (0, safetyHigh);
+                    junctionSafety[j] = (safetyLow, safetyHigh);
                 }
 
                 notes.Add(new JunctionWindowNote(

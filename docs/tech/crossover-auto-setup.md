@@ -283,6 +283,19 @@ overlap with a 3 kHz floor and a 2.5 kHz cap — and that is precisely the case 
 whether the floor cleared the window sent it down the cap branch and threw the floor away, which put the window
 at 882 Hz under a tweeter whose distortion knee was 3 kHz.
 
+There are two separate questions in the override and only one of them lets a safety bound go. **Who moved the
+window** decides which direction it moves: the floor that overran the drivers opens it upward, the cap that
+undercut them opens it downward. **Whether the two safety bounds can both be met** — `safetyLow > safetyHigh`,
+and only that — decides whether the other one is dropped. A midrange capped at 6 kHz under a tweeter whose knee
+is 4.5 kHz has a perfectly good 4.5–6 kHz to hand over in, even though the knee is what emptied the 1.7–4 kHz
+the classes wanted: the window moves up to the knee and STOPS at the cap. Conflating the two questions let the
+window run to 12.8 kHz and took the cap out of the edge bounds with it.
+
+The mirror case — a cap that undercuts the drivers with a floor below it — is written the same way but is not
+reachable today: the Fs floor lands about 2.3x the tweeter's own measured low edge, so a cap under the window's
+low edge is under the floor as well, which is a conflict and hands it back to the floor. The branch is symmetric
+because the rule is, not because a fixture exercises it.
+
 Both halves of that matter. Collapsing to a single frequency left the descent nothing to search and handed the
 corner to `EnforceTweeterResonanceFloor` afterwards, which puts it at the lowest merely SAFE frequency that
 nothing has optimized. And the span is bounded because the alternative — opening to the system limit — offers a

@@ -127,6 +127,43 @@ public sealed class CrossoverDistortionTests
     }
 
     [Fact]
+    public void AFloorThatOverrulesTheClassWindow_StillLeavesTheCapStanding()
+    {
+        // The floor empties the window on its own, so the window has to move — but the cap it moves past is not in
+        // conflict with the floor at all: 4.5-5.9 kHz satisfies both. Only a safety bound that CANNOT be met
+        // alongside the other may be dropped, and "this bound is what emptied the window" is a different question.
+        List<SignalPoint> midrangeCurve = BandCurve(200, 8_000);
+        List<SignalPoint> tweeterCurve = BandCurve(1_700, 20_000);
+        List<SignalPoint> breakup = DistortionDirtyAbove(6_000);
+        List<SignalPoint> dirty = DistortionDirtyBelow(4_500);
+        var channels = new AutoSetupSource[]
+        {
+            new(midrangeCurve, DriverType.Midrange, DistortionDb: breakup),
+            new(tweeterCurve, DriverType.Tweeter, DistortionDb: dirty)
+        };
+
+        double knee = CrossoverAutoSetup.EstimateBand(
+            tweeterCurve, coherence: null, dirty).DistortionLowHz;
+        double cap = CrossoverAutoSetup.EstimateBand(
+            midrangeCurve, coherence: null, breakup).DistortionHighHz;
+        Assert.True(
+            knee < cap,
+            $"This fixture needs the knee ({knee:0} Hz) UNDER the cap ({cap:0} Hz): the two must be " +
+            "satisfiable together for the test to mean anything.");
+
+        JunctionWindowResolution window = CrossoverAutoSetup.ResolveJunctionWindow(
+            channels, 0, Options());
+
+        Assert.True(
+            window.LowHz >= knee - 1,
+            $"The window starts at {window.LowHz:0} Hz, under the {knee:0} Hz knee.");
+        Assert.True(
+            window.HighHz <= cap + 1,
+            $"The window runs to {window.HighHz:0} Hz, past the {cap:0} Hz breakup onset. The floor " +
+            "moved the window, and the cap was dropped along with it although it never conflicted.");
+    }
+
+    [Fact]
     public void EstimateBand_ReadsTheTweeterDistortionKnee()
     {
         DriverBandEstimate band = CrossoverAutoSetup.EstimateBand(

@@ -293,6 +293,14 @@ geometric middle of the two edges, which is also how `CrossoverJunctionTuner.Pro
 split variant, so every placement prior, separation rule and penalty keeps working on the same number
 as before.
 
+The offset is a coordinate of the descent in its own right (`OptimizeJunctionSplit`, run after
+`OptimizeJunction` has settled frequency, family and slope), NOT a factor inside the junction sweep.
+Crossed with the sweep it multiplied every frequency, family and slope combination by the length of the
+offset list, and the dialog's preview for a four-way with all three junctions split went from 0.3 s to
+10 s — CI caught it as a 30 s timeout in `ASplitVerdict_FitsInsideTheWindow`. As its own coordinate the
+same fit is 1 s, because the offset is tried on one corner rather than on every candidate corner.
+Offset 0 is on the list, so a junction that gains nothing keeps the matched corner the sweep gave it.
+
 Both signs are searched because the junction defect has two signs. Holding the corners apart takes
 level out of the overlap, which is what a bump needs; overlapping them puts level back in, which is
 what a suckout needs. Searching only the first would have left half of "no bumps and no dips"

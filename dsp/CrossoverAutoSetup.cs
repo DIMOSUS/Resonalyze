@@ -1597,6 +1597,7 @@ public static class CrossoverAutoSetup
                 for (int j = 0; j < channelCount - 1; j++)
                 {
                     OptimizeJunction(j);
+                    OptimizeJunctionSplit(j);
                 }
 
                 if (!options.IndependentSlopes)
@@ -2188,6 +2189,35 @@ public static class CrossoverAutoSetup
                 best.SplitOctaves, best.InvertUpper);
         }
 
+        /// <summary>The split offset, refined on the corner the junction sweep just settled. A coordinate of its
+        /// own rather than a factor on every other one: crossed with frequency, family and slope it multiplied the
+        /// sweep by the length of the offset list for a lever that moves one number. Offset 0 is on the list, so a
+        /// junction that gains nothing from a split keeps the matched corner it already had.</summary>
+        private void OptimizeJunctionSplit(int j)
+        {
+            if (!windows[j].AllowSplitCorners)
+            {
+                return;
+            }
+
+            JunctionOption best = new(
+                junctionFamily[j], crossoverHz[j], lowerSlope[j], upperSlope[j],
+                splitOctaves[j], invert[j + 1], Score());
+            foreach (double split in SplitOffsetOctaves)
+            {
+                JunctionOption option = BestPolarity(
+                    j, junctionFamily[j], crossoverHz[j], lowerSlope[j], upperSlope[j], split);
+                if (option.Score < best.Score)
+                {
+                    best = option;
+                }
+            }
+
+            Set(
+                j, best.Family, best.FrequencyHz, best.LowerSlope, best.UpperSlope,
+                best.SplitOctaves, best.InvertUpper);
+        }
+
         private int ChannelSlope(int i) =>
             i < channelCount - 1 ? lowerSlope[i] : upperSlope[i - 1];
 
@@ -2279,9 +2309,9 @@ public static class CrossoverAutoSetup
             int savedUpper = upperSlope[j];
             double savedSplit = splitOctaves[j];
             bool savedInvert = invert[j + 1];
-            IReadOnlyList<double> splits = windows[j].AllowSplitCorners
-                ? SplitOffsetOctaves
-                : [0.0];
+            // The split is NOT crossed with frequency, family and slope here: it is its own coordinate, refined by
+            // OptimizeJunctionSplit once this sweep has settled the rest. Crossed, it multiplied the whole sweep by
+            // the length of the offset list, and a four-way with every junction split took ten seconds.
             try
             {
                 foreach (double fc in LatticePoints(low, high))
@@ -2291,34 +2321,32 @@ public static class CrossoverAutoSetup
                     foreach (CrossoverFilterFamily family in options.Families)
                     {
                         IReadOnlyList<int> slopes = AllowedSlopes(j, family, fc);
-                        foreach (double split in splits)
+                        if (options.IndependentSlopes)
                         {
-                            if (options.IndependentSlopes)
+                            foreach (int lower in slopes)
                             {
-                                foreach (int lower in slopes)
+                                if (lower < lowerFloor)
                                 {
-                                    if (lower < lowerFloor)
+                                    continue;
+                                }
+
+                                foreach (int upper in slopes)
+                                {
+                                    if (upper < upperFloor)
                                     {
                                         continue;
                                     }
 
-                                    foreach (int upper in slopes)
-                                    {
-                                        if (upper < upperFloor)
-                                        {
-                                            continue;
-                                        }
-
-                                        yield return BestPolarity(j, family, fc, lower, upper, split);
-                                    }
+                                    yield return BestPolarity(
+                                        j, family, fc, lower, upper, savedSplit);
                                 }
                             }
-                            else if (slopes.Contains(savedLower) && slopes.Contains(savedUpper) &&
-                                savedLower >= lowerFloor && savedUpper >= upperFloor)
-                            {
-                                yield return BestPolarity(
-                                    j, family, fc, savedLower, savedUpper, split);
-                            }
+                        }
+                        else if (slopes.Contains(savedLower) && slopes.Contains(savedUpper) &&
+                            savedLower >= lowerFloor && savedUpper >= upperFloor)
+                        {
+                            yield return BestPolarity(
+                                j, family, fc, savedLower, savedUpper, savedSplit);
                         }
                     }
                 }

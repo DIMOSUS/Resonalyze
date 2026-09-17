@@ -493,8 +493,17 @@ out-of-band excursion. The score therefore adds penalties that encode engineerin
   overlap is the log-frequency integral of two normalized responses' product — near an octave for a
   clean LR24 handover, several octaves for shallow filters.
 - **Same-class junctions** (two subs, two midbasses) get none of the class-placement priors: those
-  answer which class should own a shared region, which has no meaning here; flatness and the
-  post-check decide.
+  answer which class should own a shared region, which has no meaning between two drivers doing the
+  same job. They get a different prior instead. Two drivers of one class are that class's band split
+  between them, and the split belongs in the middle of what both can produce — the geometric middle of
+  their overlap — so `SharedBandSplitBiasWeightDb` = 1.5 is charged per octave away from it. Left to
+  flatness alone the split lands wherever the cabin is smoothest, which squeezes one of the two into a
+  sliver of its own range: on a field five-way with an infra-bass and a sub in series the lower one came
+  out working 20-35 Hz, and on a clean synthetic pair of the same shape the split ran the other way, up
+  to 70 Hz. It is a pull and not a placement, so flatness still moves the corner off centre where that
+  pays. 1.5 is measured rather than chosen: at 0.6 it failed to move a junction flatness scored as a
+  tie, so it was not a prior at all, and above 1.5 the answer stops moving. On the field session it took
+  the split from 35 Hz to 45 and the bass span from 14.8 dB to 13.4.
 
 ## Target-curve gains
 

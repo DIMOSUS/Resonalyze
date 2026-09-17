@@ -420,6 +420,13 @@ public static class CrossoverAutoSetup
 
     private const double SubHandoverUpBiasWeightDb = 0.6;
 
+    /// <summary>Two drivers of the same class are one class band split between them, and the split belongs in the
+    /// middle of what both can produce. Charged per octave AWAY from that middle, so it is a pull and not a
+    /// placement. 1.5 is measured, not chosen: at 0.6 it failed to move a junction flatness scored as a tie, so it
+    /// was not a prior at all, and above 1.5 the answer stops moving — the middle is an attractor rather than one
+    /// side of a tug of war.</summary>
+    private const double SharedBandSplitBiasWeightDb = 1.5;
+
     private const double WideOverlapLowBiasWeightDb = 0.4;
 
     // Scoped to the midrange handover only; the tweeter junction is governed by the Fs floor.
@@ -2729,9 +2736,21 @@ public static class CrossoverAutoSetup
                 double fc = crossoverHz[j];
                 total += EarSensitivityWeightDb * EarSensitivityBump(fc);
 
-                // Same-class junctions have no class prior; flatness and the post-check decide.
                 if (types[j] == types[j + 1])
                 {
+                    // No CLASS prior here — that one answers which class owns a region and has nothing to say
+                    // between two drivers doing the same job. What it does say is that the two of them divide
+                    // the band they share, and the division belongs in its middle: left to flatness alone the
+                    // lower driver gets squeezed into a sliver at the bottom of its own range.
+                    double sharedLow = bands[j + 1].LowHz;
+                    double sharedHigh = bands[j].HighHz;
+                    if (double.IsFinite(sharedLow) && double.IsFinite(sharedHigh) &&
+                        sharedHigh > sharedLow)
+                    {
+                        total += SharedBandSplitBiasWeightDb
+                            * Math.Abs(Math.Log2(fc / Math.Sqrt(sharedLow * sharedHigh)));
+                    }
+
                     continue;
                 }
 

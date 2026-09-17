@@ -859,14 +859,41 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    public void Propose_TwoDriversOfOneClass_DivideTheBandTheyShare()
+    {
+        // Two subwoofers in series are one class band split between them, and the split belongs in the middle of
+        // what both can produce. Left to flatness alone it lands wherever the cabin happens to be smoothest, which
+        // squeezes one of the two into a sliver of its own range: on the field five-way the lower sub came out
+        // working 20-35 Hz, and on this shape the split ran up to 70 Hz instead.
+        List<SignalPoint> lowerCurve = BandCurve(20, 113, 0);
+        List<SignalPoint> upperCurve = BandCurve(20, 157, 0);
+        var lower = new AutoSetupSource(lowerCurve, DriverType.Subwoofer);
+        var upper = new AutoSetupSource(upperCurve, DriverType.Subwoofer);
+
+        IReadOnlyList<CrossoverProposal> proposals =
+            CrossoverAutoSetup.Propose([lower, upper], Options());
+
+        double split = proposals[0].LowPassEdge!.Value.FrequencyHz;
+        double middle = Math.Sqrt(
+            CrossoverAutoSetup.EstimateBand(upperCurve).LowHz *
+            CrossoverAutoSetup.EstimateBand(lowerCurve).HighHz);
+        Assert.True(
+            Math.Abs(Math.Log2(split / middle)) <= 0.25,
+            $"The two split at {split:0} Hz, {Math.Log2(split / middle):0.00} octaves off the " +
+            $"{middle:0} Hz middle of the band they share.");
+    }
+
+    [Fact]
     public void Propose_SameClassJunction_CarriesNoClassPlacementBias()
     {
         // The localization bias answers which CLASS owns a region; between two subs it must not apply.
         // The runs differ only in the upper driver's class and share one search window, so any difference is the bias.
         // The window has to leave room UNDER the biased answer: a 40 Hz floor put both runs on the window edge, where
-        // no bias can show itself.
-        var lower = new AutoSetupSource(BandCurve(20, 100, 0), DriverType.Subwoofer);
-        var curve = BandCurve(25, 500, 0);
+        // no bias can show itself. It also has to leave room between that answer and the middle of the shared band,
+        // which is where a same-class junction is pulled instead — with a 20-100 Hz lower driver the two landed a
+        // lattice step apart and neither force could be read.
+        var lower = new AutoSetupSource(BandCurve(20, 70, 0), DriverType.Subwoofer);
+        var curve = BandCurve(25, 400, 0);
         CrossoverAutoSetupOptions options = Options();
 
         double Split(DriverType upperType) => CrossoverAutoSetup

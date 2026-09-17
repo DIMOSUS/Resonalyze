@@ -1235,7 +1235,10 @@ recover its own far-side junctions, by an eighth of the period of its highest ju
   on the v6 cabin the honest gains ran 0.01-0.03 dB, and even 0.02 dB refused them all.
 - **Order.** Band order from the bridge down. Mono channels never move here; they follow in the mono
   co-move this pass alternates with (below).
-- **Grid.** The DSP's 0.01 ms grid, since gains between its points are unrealizable.
+- **Grid.** Absolute ticks of the DSP's 0.01 ms grid, since gains between its points are unrealizable: the
+  exact move to a tick is scored and that tick is written. The channel may stand off the grid when the
+  pass starts (the descent rebases the field by unrounded amounts), and a move rounded to the grid
+  scored one delay and wrote another, or read a tick 0.004 ms away as the incumbent.
 - **Feasibility.** The pass never makes delays negative, never shifts the field uniformly, and never
   widens the span past the DSP range, checked against both ends of the rest of the field. Being the
   last pass, it would otherwise turn a valid proposal into a refusal for a hundredth of a dB.

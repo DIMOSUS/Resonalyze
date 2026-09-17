@@ -1182,7 +1182,8 @@ public sealed class StereoAlignmentTests
             bool withFieldFloor = false,
             double fieldChannelMs = 0.0,
             double junctionHz = 2_500,
-            int rounds = 1)
+            int rounds = 1,
+            double midOffsetMs = 0.0)
     {
         var farMid = new TestChannel("R mid", ImpulseAtMs(5.0));
         var farTwr = new TestChannel("R twr", ImpulseAtMs(5.0 + twrLateMs));
@@ -1209,7 +1210,7 @@ public sealed class StereoAlignmentTests
             farMid, farTwr, junctionHz / 2, junctionHz * 2, SceneOffsetMs: 0);
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
         {
-            [farMid] = new(baseDelayMs, false),
+            [farMid] = new(baseDelayMs + midOffsetMs, false),
             [farTwr] = new(baseDelayMs, false)
         };
         if (withFieldFloor)
@@ -1226,6 +1227,19 @@ public sealed class StereoAlignmentTests
                 AutoAlignmentEngine.DefaultMaxDelayMs, decisions: null, spentMs);
         }
         return (alignment[farMid].DelayMs, alignment[farTwr].DelayMs, log.ToString());
+    }
+
+    [Fact]
+    public void PolishFarSideJunctions_ScoresTheExactMoveToADspTickFromAnOffGridDelay()
+    {
+        // The descent rebases the field by unrounded amounts, so the mid can stand at 1.006 ms. The tick 1.01 is a
+        // +0.004 ms move that aligns it with the tweeter; rounding that move to the grid read it as the incumbent.
+        (double midDelay, double twrDelay, string log) = RunFarSidePolish(
+            0.0, baseDelayMs: 1.01, junctionHz: 10_000, midOffsetMs: -0.004);
+
+        Assert.Equal(1.01, midDelay, 9);
+        Assert.Equal(1.01, twrDelay, 9);
+        Assert.Contains("off the scene position", log);
     }
 
     [Fact]

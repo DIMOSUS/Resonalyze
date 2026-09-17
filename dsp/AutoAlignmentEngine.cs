@@ -3198,7 +3198,7 @@ public static class AutoAlignmentEngine
             plan, plan.LeftChannelsByBand, rightByBand, allChannels,
             reprocess, alignment, log, maxDelayMs, decisions);
 
-        // Mono channels are scene-invariant: this is the only pass where their right junction votes.
+        // Mono channels are scene-invariant: this is the first pass where their right junction votes.
         ComoveMonoChannels(
             plan, reprocess, alignment, log, allChannels, maxDelayMs, decisions);
 
@@ -3946,20 +3946,21 @@ public static class AutoAlignmentEngine
                 ? othersMs.Max()
                 : double.NegativeInfinity;
             double baseline = Score(0);
-            double bestDelta = 0;
+            double bestTrialMs = current.DelayMs;
             double bestScore = baseline;
             double refusedDelta = 0;
             double refusedScore = baseline;
             string? refusedWhy = null;
-            // DSP's 0.01 ms grid, walked in whole ticks so the trim scored is the trim written: gains between its
-            // points are unrealizable.
+            // Absolute ticks of the DSP's 0.01 ms grid: the exact move to a tick is scored and that tick is written. The
+            // channel may stand off the grid here (the descent rebases the field by unrounded amounts).
             int reachTicks = (int)Math.Floor(reachMs / 0.01 + 1e-9);
             int sceneTick = (int)Math.Round(sceneMs / 0.01);
             for (int tick = sceneTick - reachTicks; tick <= sceneTick + reachTicks; tick++)
             {
-                double trialMs = tick * 0.01;
-                double delta = Math.Round(trialMs - current.DelayMs, 2);
-                if (trialMs < 0 ||
+                double trialMs = Math.Round(tick * 0.01, 2);
+                double delta = trialMs - current.DelayMs;
+                if (Math.Abs(trialMs - sceneMs) > reachMs + 1e-9 ||
+                    trialMs < 0 ||
                     Math.Max(othersMaxMs, trialMs) -
                         Math.Min(othersMinMs, trialMs) > maxDelayMs)
                 {
@@ -3988,7 +3989,7 @@ public static class AutoAlignmentEngine
                 }
 
                 bestScore = score;
-                bestDelta = delta;
+                bestTrialMs = trialMs;
             }
 
             if (refusedWhy != null && refusedScore > bestScore)
@@ -3998,13 +3999,10 @@ public static class AutoAlignmentEngine
                     $"it would gain {refusedScore - baseline:0.00} dB over its junctions but loses {refusedWhy}");
             }
 
-            if (bestDelta != 0 && bestScore > baseline + FarSidePolishMinimumGainDb)
+            if (bestTrialMs != current.DelayMs && bestScore > baseline + FarSidePolishMinimumGainDb)
             {
-                alignment[channel] = current with
-                {
-                    DelayMs = Math.Round(current.DelayMs + bestDelta, 2)
-                };
-                spent = Math.Round(spent + bestDelta, 2);
+                alignment[channel] = current with { DelayMs = bestTrialMs };
+                spent = bestTrialMs - sceneMs;
                 spentMs[channel] = spent;
                 moved = true;
                 log.AppendLine(

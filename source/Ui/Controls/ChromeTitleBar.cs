@@ -40,6 +40,7 @@ internal sealed class ChromeTitleBar : Panel
     private Button? toolsDropDownButton;
     private ContextMenuStrip? toolsMenu;
     private ModeTab lastToolsTab = ModeTab.ToolsVirtualCrossover;
+    private readonly ToolTip settingsToolTip = new();
     private System.Windows.Forms.Timer? updatePulseTimer;
     private int updatePulseElapsedMs;
     private float dpiScale = 1f;
@@ -114,7 +115,15 @@ internal sealed class ChromeTitleBar : Panel
         versionLabel = CreateVersionLabel();
         Controls.Add(versionLabel);
 
-        AddWindowButton("⚙", form.ClientSize.Width - 184, SettingsClick);
+        Button settingsButton = AddWindowButton(
+            string.Empty, form.ClientSize.Width - 184, SettingsClick);
+        settingsButton.AccessibleName = "Settings";
+        settingsButton.Paint += PaintSettingsGlyph;
+        settingsToolTip.SetToolTip(
+            settingsButton,
+            "Settings: the theme and anything else the whole window obeys." +
+            Environment.NewLine +
+            "Settings for the mode you are in stay behind Mode Settings...");
         AddWindowButton("─", form.ClientSize.Width - 138, MinimizeWindowClick);
         AddWindowButton("☐", form.ClientSize.Width - 92, MaximizeWindowClick);
         AddWindowButton("✕", form.ClientSize.Width - 46, CloseWindowClick);
@@ -399,6 +408,7 @@ internal sealed class ChromeTitleBar : Panel
         if (disposing)
         {
             toolsMenu?.Dispose();
+            settingsToolTip.Dispose();
             DetachUpdatePulse();
         }
 
@@ -453,7 +463,7 @@ internal sealed class ChromeTitleBar : Panel
         e.Graphics.FillPolygon(brush, points);
     }
 
-    private void AddWindowButton(
+    private ReleaseClickButton AddWindowButton(
         string text,
         int left,
         EventHandler clickHandler)
@@ -477,6 +487,41 @@ internal sealed class ChromeTitleBar : Panel
             : UiPalette.AccentFill;
         button.Click += clickHandler;
         Controls.Add(button);
+        return button;
+    }
+
+    // Eight teeth around a hole, filled in the button's own ink so it follows the theme and the hover state.
+    private void PaintSettingsGlyph(object? sender, PaintEventArgs e)
+    {
+        if (sender is not Button button)
+        {
+            return;
+        }
+
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        float centreX = button.Width / 2f;
+        float centreY = button.Height / 2f;
+        float outerRadius = ScaleF(5.9f);
+        float rootRadius = ScaleF(4.3f);
+        float holeRadius = ScaleF(2.0f);
+
+        const int teeth = 8;
+        var points = new PointF[teeth * 4];
+        for (int i = 0; i < points.Length; i++)
+        {
+            double angle = Math.PI * 2 * i / points.Length;
+            float radius = i % 4 is 0 or 1 ? outerRadius : rootRadius;
+            points[i] = new PointF(
+                centreX + (float)(radius * Math.Cos(angle)),
+                centreY + (float)(radius * Math.Sin(angle)));
+        }
+
+        using var path = new System.Drawing.Drawing2D.GraphicsPath();
+        path.AddPolygon(points);
+        path.AddEllipse(
+            centreX - holeRadius, centreY - holeRadius, holeRadius * 2, holeRadius * 2);
+        using var brush = new SolidBrush(button.ForeColor);
+        e.Graphics.FillPath(brush, path);
     }
 
     private void SettingsClick(object? sender, EventArgs e)
@@ -772,6 +817,8 @@ internal sealed class ChromeTitleBar : Panel
             : null;
         ApplicationUpdateService.ShowUpdateChoice(owner, url);
     }
+
+    private float ScaleF(float value) => value * dpiScale;
 
     private int Scale(int value) =>
         (int)Math.Round(value * dpiScale);

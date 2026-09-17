@@ -48,10 +48,11 @@ public sealed class PeriodicNoiseSynthesisTests
     [Fact]
     public void Synthesize_SpreadsEveryFrequencyOverThePeriodRatherThanSweepingIt()
     {
-        // Schroeder's phases reach the same crest as a chirp: it walked from 0.6 to 13.9 kHz across the period, which is audible
-        // and reads each frequency from a different point of a moving microphone's path.
+        // Schroeder's phases reach a similar crest with a chirp, which is audible and reads each frequency from a different point
+        // of a moving microphone's path. Every octave band must keep sounding through the whole period instead.
         const int length = 32_768;
         const int sampleRate = 48_000;
+        const int slices = 8;
         var magnitudes = new double[(length / 2) + 1];
         for (int k = 1; k < magnitudes.Length; k++)
         {
@@ -60,8 +61,12 @@ public sealed class PeriodicNoiseSynthesisTests
 
         double[] period = PeriodicNoiseSynthesis.Synthesize(magnitudes, length);
 
-        double[] centroids = SliceCentroids(period, sampleRate, slices: 8);
-        Assert.InRange(centroids.Max() / centroids.Min(), 1.0, 4.0);
+        foreach (double centre in new[] { 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0 })
+        {
+            double[] shares = BandEnergyPerSlice(period, sampleRate, centre, slices);
+            // An even spread is 1/8; the chirp put 0.71 to 0.97 of a band into one slice, this period 0.14 to 0.25.
+            Assert.InRange(shares.Max(), 1.0 / slices, 0.4);
+        }
     }
 
     [Fact]
@@ -84,11 +89,12 @@ public sealed class PeriodicNoiseSynthesisTests
             () => PeriodicNoiseSynthesis.Synthesize(new double[1024], 2048));
     }
 
-    /// <summary>Spectral centroid of each equal slice of the period: a chirp climbs through them, noise does not.</summary>
-    private static double[] SliceCentroids(double[] period, int sampleRate, int slices)
+    /// <summary>How one octave band's energy divides between equal slices of the period; each share of an even spread is 1/slices.</summary>
+    private static double[] BandEnergyPerSlice(double[] period, int sampleRate, double centre, int slices)
     {
+        double low = centre / Math.Sqrt(2.0), high = centre * Math.Sqrt(2.0);
         int size = period.Length / slices;
-        var centroids = new double[slices];
+        var energies = new double[slices];
         for (int slice = 0; slice < slices; slice++)
         {
             var samples = new Complex[size];
@@ -99,18 +105,18 @@ public sealed class PeriodicNoiseSynthesisTests
             }
 
             Fourier.Forward(samples, FourierOptions.NoScaling);
-            double weighted = 0, total = 0;
             for (int k = 1; k <= size / 2; k++)
             {
-                double power = samples[k].Magnitude * samples[k].Magnitude;
-                weighted += power * k * (double)sampleRate / size;
-                total += power;
+                double frequency = k * (double)sampleRate / size;
+                if (frequency >= low && frequency <= high)
+                {
+                    energies[slice] += samples[k].Magnitude * samples[k].Magnitude;
+                }
             }
-
-            centroids[slice] = weighted / Math.Max(total, 1e-30);
         }
 
-        return centroids;
+        double total = energies.Sum();
+        return energies.Select(energy => energy / Math.Max(total, 1e-30)).ToArray();
     }
 
     private static double[] BinMagnitudes(double[] period)

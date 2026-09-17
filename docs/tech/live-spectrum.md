@@ -53,10 +53,13 @@ of the same length reads every bin leakage-free.
   48 kHz) but the period it produces is a **chirp**: the spectral centroid of successive eighths of the
   period climbed 0.6 → 13.9 kHz. It is audible as a repeating sweep rather than noise, and each
   frequency then sounds at its own instant of the frame, so a moving microphone reads every frequency
-  from a different point of its path — the one thing a spatial average must not do. The random start
-  keeps the centroids flat (2.0–3.6 kHz, no trend), reaches a **lower** crest, and its mic peaks measure
-  1.4–3.7 dB below the chirp's on four of the five cabin impulse responses. `Synthesize_SpreadsEvery…`
-  pins this.
+  from a different point of its path — the one thing a spatial average must not do. Per octave band, the
+  busiest eighth of the chirp's period held 0.71 to 0.97 of that band's energy; the random start holds
+  0.14 to 0.25, against 0.125 for an even spread, and that is what
+  `Synthesize_SpreadsEveryFrequencyOverThePeriodRatherThanSweepingIt` pins (a centroid alone could be
+  held flat by bands that shift in opposite directions). The random start also keeps the centroids flat
+  (2.0–3.6 kHz, no trend), reaches a **lower** crest, and its mic peaks measure 1.4–3.7 dB below the
+  chirp's on four of the five cabin impulse responses.
 - **Level.** The other colours are peak-normalised to 0.5 (−6 dBFS, the sweep's peak); periodic pink to
   `PeriodicPinkPeak` = 0.25 (−12 dBFS). The low crest does not reach the microphone: five cabin impulse
   responses (a tweeter, a midrange and three bass channels) convolved with the period give a 10–13 dB

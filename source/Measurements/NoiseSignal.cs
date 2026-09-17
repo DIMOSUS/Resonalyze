@@ -124,7 +124,7 @@ public sealed class NoiseSignal : IDisposable
     /// <summary>Just above 20 kHz·√2, the widest per-bin read (1/1-octave smoothing at the top grid point).</summary>
     public const double PeriodicPinkHighHz = 28_300.0;
 
-    // Keyed by period and rate: the phase search is ~250 ms at 65536 samples, and a run restarts on every option change.
+    // Keyed by period and rate: the phase search is ~0.7 s at 65536 samples, and a run restarts on every option change.
     private static readonly ConcurrentDictionary<(int Length, int SampleRate), double[]> PinkPeriods = new();
 
     // One FFT-block period with exact 1/sqrt(f) magnitude in the band, tiled: converges without spectral variance.

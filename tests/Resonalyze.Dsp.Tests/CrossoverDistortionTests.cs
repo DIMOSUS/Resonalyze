@@ -45,6 +45,124 @@ public sealed class CrossoverDistortionTests
             .Select(f => new SignalPoint(f, double.NaN))
             .ToList();
 
+    private static CrossoverAutoSetupOptions Options(
+        IReadOnlyList<JunctionSearchWindow>? windows = null) =>
+        new(
+            [CrossoverFilterFamily.LinkwitzRiley, CrossoverFilterFamily.Butterworth],
+            20,
+            20_000,
+            IndependentSlopes: false,
+            SampleRate,
+            SampleRate,
+            SubElevationDb: null,
+            windows);
+
+    [Fact]
+    public void AFloorAndACapThatCrossEachOther_LeaveTheFloorStanding()
+    {
+        // Both bounds sit INSIDE the window the drivers leave, so neither one crosses it on its own — they cross
+        // each other. That is the case the policy is about: overexcursion is damage, breakup is a worse sound.
+        List<SignalPoint> wooferCurve = BandCurve(40, 4_000);
+        List<SignalPoint> tweeterCurve = BandCurve(1_000, 20_000);
+        var channels = new AutoSetupSource[]
+        {
+            new(wooferCurve, DriverType.Woofer, DistortionDb: DistortionDirtyAbove(2_500)),
+            new(tweeterCurve, DriverType.Tweeter, DistortionDb: DistortionDirtyBelow(3_000))
+        };
+
+        double cap = CrossoverAutoSetup.EstimateBand(
+            wooferCurve, coherence: null, DistortionDirtyAbove(2_500)).DistortionHighHz;
+        double knee = CrossoverAutoSetup.EstimateBand(
+            tweeterCurve, coherence: null, DistortionDirtyBelow(3_000)).DistortionLowHz;
+        Assert.True(
+            knee > cap,
+            $"This fixture needs the knee ({knee:0} Hz) above the cap ({cap:0} Hz) to test anything.");
+
+        JunctionWindowResolution window = CrossoverAutoSetup.ResolveJunctionWindow(
+            channels, 0, Options());
+
+        Assert.True(
+            window.LowHz >= knee - 1,
+            $"The window starts at {window.LowHz:0} Hz, under the {knee:0} Hz knee: the cap won and the " +
+            "bound that protects the tweeter was the one thrown away.");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ASplitCorner_StaysInsideTheDistortionCleanBand(bool independentSlopes)
+    {
+        // The window places the CORNER, and the knee and the breakup onset are bounds on it. An offset moves the
+        // edges off the corner — 0.917 of it for the high-pass at the widest, 1.091 for the low-pass — so the
+        // corner can be clean while the edge that actually filters the driver is not.
+        List<SignalPoint> wooferCurve = BandCurve(40, 5_000);
+        List<SignalPoint> tweeterCurve = BandCurve(900, 20_000);
+        List<SignalPoint> breakup = DistortionDirtyAbove(4_000);
+        List<SignalPoint> dirty = DistortionDirtyBelow(2_400);
+        var channels = new AutoSetupSource[]
+        {
+            new(wooferCurve, DriverType.Woofer, DistortionDb: breakup),
+            new(tweeterCurve, DriverType.Tweeter, DistortionDb: dirty)
+        };
+
+        IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
+            channels,
+            Options([new JunctionSearchWindow(AllowSplitCorners: true)]) with
+            {
+                IndependentSlopes = independentSlopes
+            });
+
+        double lowPass = proposals[0].LowPassEdge!.Value.FrequencyHz;
+        double highPass = proposals[1].HighPassEdge!.Value.FrequencyHz;
+        double knee = CrossoverAutoSetup.EstimateBand(
+            tweeterCurve, coherence: null, dirty).DistortionLowHz;
+        double cap = CrossoverAutoSetup.EstimateBand(
+            wooferCurve, coherence: null, breakup).DistortionHighHz;
+        Assert.True(
+            highPass >= knee - 1,
+            $"The tweeter is high-passed at {highPass:0} Hz, below its {knee:0} Hz distortion knee.");
+        Assert.True(
+            lowPass <= cap + 1,
+            $"The woofer is low-passed at {lowPass:0} Hz, past its {cap:0} Hz breakup onset.");
+    }
+
+    [Fact]
+    public void AFloorThatOverrulesTheClassWindow_StillLeavesTheCapStanding()
+    {
+        // The floor empties the window on its own, so the window has to move — but the cap it moves past is not in
+        // conflict with the floor at all: 4.5-5.9 kHz satisfies both. Only a safety bound that CANNOT be met
+        // alongside the other may be dropped, and "this bound is what emptied the window" is a different question.
+        List<SignalPoint> midrangeCurve = BandCurve(200, 8_000);
+        List<SignalPoint> tweeterCurve = BandCurve(1_700, 20_000);
+        List<SignalPoint> breakup = DistortionDirtyAbove(6_000);
+        List<SignalPoint> dirty = DistortionDirtyBelow(4_500);
+        var channels = new AutoSetupSource[]
+        {
+            new(midrangeCurve, DriverType.Midrange, DistortionDb: breakup),
+            new(tweeterCurve, DriverType.Tweeter, DistortionDb: dirty)
+        };
+
+        double knee = CrossoverAutoSetup.EstimateBand(
+            tweeterCurve, coherence: null, dirty).DistortionLowHz;
+        double cap = CrossoverAutoSetup.EstimateBand(
+            midrangeCurve, coherence: null, breakup).DistortionHighHz;
+        Assert.True(
+            knee < cap,
+            $"This fixture needs the knee ({knee:0} Hz) UNDER the cap ({cap:0} Hz): the two must be " +
+            "satisfiable together for the test to mean anything.");
+
+        JunctionWindowResolution window = CrossoverAutoSetup.ResolveJunctionWindow(
+            channels, 0, Options());
+
+        Assert.True(
+            window.LowHz >= knee - 1,
+            $"The window starts at {window.LowHz:0} Hz, under the {knee:0} Hz knee.");
+        Assert.True(
+            window.HighHz <= cap + 1,
+            $"The window runs to {window.HighHz:0} Hz, past the {cap:0} Hz breakup onset. The floor " +
+            "moved the window, and the cap was dropped along with it although it never conflicted.");
+    }
+
     [Fact]
     public void EstimateBand_ReadsTheTweeterDistortionKnee()
     {

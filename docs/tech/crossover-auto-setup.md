@@ -1,9 +1,10 @@
 # Crossover auto setup
 
-The crossover wizard proposes a DSP starting point per channel: crossover frequency, filter family
-and slope per junction, plus a cut-only gain per channel. It works on smoothed magnitude curves only;
-phase is ignored, because delay/polarity alignment is a separate step done later against the complex
-sum.
+The crossover wizard proposes a DSP starting point per channel: crossover frequency, filter family,
+slope and polarity per junction, plus a cut-only gain per channel. It sums the channels as an ideal
+complex sum: measured magnitude carrying its own minimum phase, times the crossover's real phase,
+times polarity, with the drivers taken as perfectly time-aligned. Delay is still a separate step done
+later, and Auto delay may flip a polarity the wizard set.
 
 Code:
 
@@ -15,11 +16,53 @@ Code:
 - `source/Tools/VirtualCrossover/VirtualCrossoverAutoSetupDialog.cs`, `VirtualCrossoverAutoSetupOrder.cs`
   — the UI.
 
-Channels are combined as a plain amplitude sum everywhere. That is the consistent expression of the
-design assumption that the later alignment step brings each junction to zero sum loss. How realistic
-the assumption is for a candidate is judged separately by `ProposeRanked`, which re-ranks the top
-candidates by the loss achievable after the best per-junction delay, measured on impulse responses
+## Ideal complex sum
+
+Channels were combined as a plain amplitude sum until the 2026-09 rethink. An amplitude sum cannot
+null and cannot bump, so it was blind to everything a crossover actually decides: it scored a
+Butterworth pair the same whichever way round it was wired, and it could not see a split corner at
+all, because what a split corner changes is phase.
+
+The sum is now complex, and every term of it is something we know rather than something we measure
+through the car:
+
+- **The driver** contributes its measured magnitude with the minimum phase of that magnitude
+  (`MinimumPhaseOnGrid` over `MinimumPhase.FromMagnitude`). Not a flat-phase driver: junctions sit
+  near a driver's own roll-off — the tweeter Fs region this file already guards is exactly that — and
+  on a roll-off the driver has real phase that takes part in the summation. The cepstrum runs on a
+  fixed 48 kHz circle of 65536 bins rather than the measurement rate, so the driver phase is the same
+  whether the car was measured at 44.1 or 192 kHz, and 0.73 Hz lands under the 20 Hz end of the grid.
+  Unmeasured skirts extend flat (`InterpolateDb` clamps its ends): a NaN mask or a collapse to silence
+  would put a step into the log magnitude and blow the cepstrum up.
+- **The crossover** contributes the phase it really has. `CrossoverFilter.Response` always returned a
+  `Complex`; the old `EdgeMagnitude` threw the phase away with `.Magnitude`.
+- **Polarity** is a sign, chosen per junction. See [Polarity](#polarity).
+
+What the model does NOT contain is the acoustic path difference between drivers, or the room. That is
+deliberate: those are what Auto delay and the achievability post-check are for, and a blank-slate
+proposal cannot know them. It also means the wizard's predicted sum is an idealised number, not what
+the panel's Sum loss will read — the dialog says so, and the measured answer comes from the junction
+tuner and the post-check.
+
+How realistic the ideal is for a candidate is judged separately by `ProposeRanked`, which re-ranks the
+top candidates by the loss achievable after the best per-junction delay, measured on impulse responses
 with the production alignment search.
+
+## Curve source
+
+The panel builds each driver curve with psychoacoustic smoothing (1/3 octave below 100 Hz easing to
+1/6 above 1 kHz) on an 8-cycle FDW, so the wizard reads what the ear resolves and most of the room is
+gone before the band read ever happens. Both the band estimate and the score run on that curve.
+
+The FDW's outer gate is stated in **milliseconds**, not in the default 4096 samples. A window fixed in
+samples is a different window at every rate: 4096 samples is 85 ms at 48 kHz but 21 ms at 192 kHz, and
+an FDW clamped by its outer gate stops being an FDW — at 192 kHz it would collapse to a short fixed
+gate from about 380 Hz up, which is most of the band the wizard cares about.
+
+This is scoped to the per-channel curves. The coherent readings — the achievability post-check and the
+junction tuner — keep their own gate, because FDW cannot hold a summed impulse response whose arrivals
+have not been aligned yet (the window at high frequency is shorter than the spread), which is why
+Virtual DSP magnitude is Fixed everywhere else.
 
 The optimizer evaluates the exact digital biquad cascades the DSP runs, at the processor's sample rate
 (`CrossoverAutoSetupOptions.ProcessorSampleRateHz`), which need not equal the measurement rate
@@ -88,8 +131,10 @@ the ranges bound where a class may hand over, not what a driver is. Deriving the
 the ranges (~423 and ~2283 Hz for the upper two) would class a wide-band midrange reaching 20 kHz
 as a tweeter. The class only seeds the suggestion; the user confirms it.
 
-`SensibleRange` caps each class to musically sane handovers: a woofer measured in-room still shows
-output near 850 Hz, but nobody crosses a woofer there. Notable floors:
+`SensibleRange` states where each class PREFERS to hand over: a woofer measured in-room still shows
+output near 850 Hz, but nobody crosses a woofer there. It is not a cap — a class bound is dropped whole
+where it contradicts the measurement, and widened past both classes where the two only touch (below).
+Notable floors:
 
 - **Midrange 200–4000 Hz**. The 200 Hz floor lets a woofer/midbass hand over
   before its cone-breakup region when the midrange measures headroom down there; a wide overlap higher
@@ -102,6 +147,17 @@ output near 850 Hz, but nobody crosses a woofer there. Notable floors:
 `CrossoverMarginOctaves` = 1 octave keeps the seed crossover (and `ProposeSingle`'s corner) above the
 upper driver's low edge (excursion protection) and below the lower driver's high edge. The search
 window itself reaches the measured band edges.
+
+A junction's class window is the upper class's floor against the lower class's ceiling, and adjacent
+classes ABUT: a subwoofer is sensible to 80 Hz and a midbass from 80 Hz, so that intersection is a
+single frequency. Applied literally it pins the junction with nothing to search, which is what a
+five-way with two subwoofers showed in the field — `Pinned to 80 Hz` over an overlap running
+20-157 Hz. `MinClassWindowOctaves` = 1 is the narrowest a class preference may be: below it the window
+is widened about its own geometric centre, so the subwoofer/midbass junction searches 57-113 Hz. One
+octave because that is the overlap an LR24 pair produces by itself — a class window narrower than the
+crossover's own overlap cannot move the corner by even one crossover width. An EMPTY intersection is
+still returned empty, and the caller then drops the preference altogether: a class bound that
+contradicts the measurement is not a bound at all.
 
 ## Tweeter resonance floor
 
@@ -141,10 +197,201 @@ fine at a 250 Hz woofer/mid handover, ~5 ms, but not at a 75 Hz sub/woofer hando
   the budget, a gentler crossover would break the overlap policy, so that delay is inherent to crossing
   that low. A 24 dB/oct slope over the budget is excluded like any other.
 
+## Polarity
+
+A crossover of a given family and order puts a fixed phase relationship across its junction, so the
+polarity that makes the two sides sum is the crossover's to state. The wizard now states it
+(`CrossoverProposal.InvertPolarity`), and the panel writes it to both sides of the pair with the
+frequencies, families, slopes and gain — a crossover is one electrical filter.
+
+It is **derived by evaluation, not tabulated**. The textbook rule — invert when the order N satisfies
+N ≡ 2 (mod 4), which is 12 and 36 dB/oct — describes a matched-corner Linkwitz-Riley and nothing else:
+
+- odd Butterworth orders (6/18/30/42) put the two sides in quadrature, where |A + B| = |A − B| and
+  polarity cannot change the summed magnitude at all; a table would have to invent an answer;
+- Bessel is defined for flat group delay and its low-pass/high-pass pair is not phase-complementary in
+  the Butterworth/Linkwitz-Riley sense, so the parity rule does not hold for it;
+- independent slopes have no single order, so the rule has no entry;
+- a split corner leaves it with nothing to say at all;
+- and the filters are realized through the bilinear transform at the processor rate, which walks away
+  from the analog prototype as the corner climbs.
+
+`BestPolarity` scores each candidate both ways round and keeps the better, which costs one extra
+evaluation per candidate. Where the table is valid the computation reproduces it, and
+`AutoAlignmentEngineTests.CrossoverSettlesJunctionPolarity_ReadsTheSplitAboveTheFence` already pins
+that for Linkwitz-Riley 24 (upright) and 36 (inverted).
+
+The junction decides a RELATIVE polarity; the absolute one is a global flip, which is acoustically
+free. `NormalizePolarity` settles it once at the end: take the side with fewer inverted channels, and
+on a tie leave the lowest driver upright.
+
+`JunctionOption` therefore carries the RELATION, not the upper channel's absolute sign, and `Set`
+composes it onto the lower channel the pool's ascending loop has already settled. An absolute sign is
+correct only while nothing below the junction moves, which is true in the descent and false in the
+ranked pool: there the cross-product takes a junction option that was scored against one state of the
+channel below it and applies it to another, so a stored absolute sign silently means the opposite
+relation. Every candidate is re-scored, so nothing wrong can ship — but the pool spends its slots on
+combinations nobody measured.
+
+Auto delay runs after the wizard (the documented order is Auto crossover, junction tune, Auto delay)
+and composes its own flip over this one with an XOR, reading the already-inverted response. Nothing
+forces the wizard's answer on it.
+
+## Per-junction windows
+
+`CrossoverAutoSetupOptions.MinCrossoverHz` / `MaxCrossoverHz` are the SYSTEM band limit — they
+band-limit the outermost channels — and are no longer the search window. A junction is narrowed
+through `JunctionSearchWindow`, one entry per junction. Before the split, typing 200 Hz as a lower
+limit because a midrange/tweeter junction should not go below it also hung a 200 Hz high-pass on the
+subwoofer.
+
+`ResolveJunctionWindow` is the one function that resolves a window, used by both the search and the
+dialog, so the row a user reads is the window the search runs on. It returns the effective bounds plus
+a **note for every bound that moved** — the tweeter's Fs floor, the distortion knee, a class bound,
+the measured band, the system limit. A window that collapses to one frequency says so too. The old
+code clamped silently, which is most of why the wizard read as wilful.
+
+A `JunctionWindowNote` carries two strings, and the split is the point. `Summary` is the FACT, short
+enough to sit beside the row — `Estimated tweeter Fs 1.2 kHz`, `1500 → 2100 Hz`, `18 → 24 dB/oct`.
+`Detail` is the reasoning, and it belongs in a tooltip: a row that explains a design rule where a
+number should be is unreadable, which is what `712–736 → 1649–4663 Hz: the tweeter's Fs floor sits
+above the lower driver's breakup onset` proved in the field.
+
+The user may narrow, never widen; where safety disagrees, safety wins and prints why. Neighbour
+separation is NOT part of the window: it moves as the descent moves the junctions either side, so
+`JunctionSearchBounds` applies it on top.
+
+### Three strengths
+
+The bounds that shape a window are not equal, and treating them as one number is what produced two field
+reports at once. Weakest first:
+
+1. **Class bounds** say which class SHOULD own a region. The drivers have already said what they CAN do, so a
+   class bound that empties the window is dropped rather than obeyed, silently: a preference losing to a
+   measurement is not news. A midbass capped at 500 Hz under a driver that only starts at 702 Hz keeps the
+   measured 702-741 Hz overlap.
+2. **Measured bands** are what the drivers actually produce, and they bound the window unless safety disagrees.
+3. **Safety** — the tweeter Fs floor and the distortion knee — always applies, including where the class bounds
+   had to be dropped. It used to be bundled into the same variable as the class bound and went out with it: a
+   midbass measuring to 736 Hz under a tweeter measuring from 712 Hz produced a 712-736 Hz window, inside the
+   dome's own resonance.
+
+Before any of that, the drivers may simply not overlap — the lower one is already down where the upper one has
+not started. That is NOT a safety conflict and must be separated from one, because afterwards the two look
+identical: an empty window. The answer there is the gap itself, which is the only place a handover can sit, so the
+bounds are swapped and the row says so. Treating it as a safety conflict is what would open a window 1.5 octaves
+above a lower driver that stopped playing well below it, and `InterpolateDb` clamps its ends, so the search would
+read a flat invented skirt rather than refuse.
+
+Where safety and the drivers disagree, the floor is the one bound that protects hardware rather than quality —
+a tweeter crossed under its resonance overexcurts, while a lower driver asked to reach past its breakup merely
+sounds worse — so the floor stands and the overlap gives way. The window then opens UPWARD from the floor by
+`SafetyOverrideSpanOctaves` = 1.5 rather than collapsing onto it. A breakup CAP is one-sided the other way, so
+where the cap alone crossed the window the cap stands and the window opens DOWNWARD from it by the same span;
+where both crossed, the floor wins, because overexcursion is damage and breakup is only a worse sound.
+
+"Both crossed" is the case to read carefully, because it is not "the floor cleared the top of the window". A
+floor and a cap can each sit comfortably inside what the drivers leave and still cross EACH OTHER — a 1–4 kHz
+overlap with a 3 kHz floor and a 2.5 kHz cap — and that is precisely the case the rule is about. Testing only
+whether the floor cleared the window sent it down the cap branch and threw the floor away, which put the window
+at 882 Hz under a tweeter whose distortion knee was 3 kHz.
+
+There are two separate questions in the override and only one of them lets a safety bound go. **Who moved the
+window** decides which direction it moves: the floor that overran the drivers opens it upward, the cap that
+undercut them opens it downward. **Whether the two safety bounds can both be met** — `safetyLow > safetyHigh`,
+and only that — decides whether the other one is dropped. A midrange capped at 6 kHz under a tweeter whose knee
+is 4.5 kHz has a perfectly good 4.5–6 kHz to hand over in, even though the knee is what emptied the 1.7–4 kHz
+the classes wanted: the window moves up to the knee and STOPS at the cap. Conflating the two questions let the
+window run to 12.8 kHz and took the cap out of the edge bounds with it.
+
+The mirror case — a cap that undercuts the drivers with a floor below it — is written the same way but is not
+reachable today: the Fs floor lands about 2.3x the tweeter's own measured low edge, so a cap under the window's
+low edge is under the floor as well, which is a conflict and hands it back to the floor. The branch is symmetric
+because the rule is, not because a fixture exercises it.
+
+Both halves of that matter. Collapsing to a single frequency left the descent nothing to search and handed the
+corner to `EnforceTweeterResonanceFloor` afterwards, which puts it at the lowest merely SAFE frequency that
+nothing has optimized. And the span is bounded because the alternative — opening to the system limit — offers a
+mid-to-tweeter search everything up to 20 kHz, which is not a handover anybody would dial. 1.5 octaves is not a
+round number: protecting Fs needs fc >= Fs·2^(22/slope), so covering every admissible slope from 48 down to 12
+is 22/12 − 22/48 = 1.375 octaves.
+
+## Slope window
+
+A junction's slope window is clamped so that it always contains `MandatorySlopeDbPerOctave` = 24, and
+the clamp is reported like any other. This is not a taste call: 24 dB/oct is the anchor of the
+slope-deviation penalty, the seed slope, and the dedicated conventional run that wins ties. A window
+excluding it would leave all three pulling at a slope the search cannot take, and the conventional
+candidate would not exist for the ranked search to prefer.
+
+The window bounds what the search may CHOOSE; the group-delay budget and the tweeter Fs floor still
+filter on top, and can exclude a slope the window allows. Where that leaves nothing,
+`AllowedSlopes(junction, …)` falls back to the unrestricted set rather than stranding the junction.
+
+## Split corners
+
+A junction may hold its two corners apart — the lower channel's low-pass below the upper channel's
+high-pass — or overlap them the other way round, when that sums flatter. It is **off by default and
+enabled per junction**: a split corner is a deliberate choice, not something to discover in a tuning
+sheet.
+
+It is searched as a SIGNED offset from the junction corner (`SplitOffsetOctaves` = 0 and ±1/12, ±1/6,
+±1/4 octave), not as two free frequencies. A free pair squares the lattice, and the coordinate descent
+and the candidate pool are both built around one frequency per junction. The corner stays the
+geometric middle of the two edges, which is also how `CrossoverJunctionTuner.Probe` already described a
+split variant, so every placement prior, separation rule and penalty keeps working on the same number
+as before.
+
+The offset is a coordinate of the descent in its own right (`OptimizeJunctionSplit`, run after
+`OptimizeJunction` has settled frequency, family and slope), NOT a factor inside the junction sweep.
+Crossed with the sweep it multiplied every frequency, family and slope combination by the length of the
+offset list, and the dialog's preview for a four-way with all three junctions split went from 0.3 s to
+10 s — CI caught it as a 30 s timeout in `ASplitVerdict_FitsInsideTheWindow`. As its own coordinate the
+same fit is 1 s, because the offset is tried on one corner rather than on every candidate corner.
+Offset 0 is on the list, so a junction that gains nothing keeps the matched corner the sweep gave it.
+
+Both signs are searched because the junction defect has two signs. Holding the corners apart takes
+level out of the overlap, which is what a bump needs; overlapping them puts level back in, which is
+what a suckout needs. Searching only the first would have left half of "no bumps and no dips"
+unreachable.
+
+An offset is charged for itself at `SplitPenaltyDbPerOctave`, which is `OverlapPenaltyDbPerOctave`.
+Parting the corners shrinks the overlap integral whatever it does to the response, so the overlap term
+hands a split a reward it has not earned. Charged back at the same rate the overlap term pays out, only
+a real flatness gain survives. Measured over a sweep of synthetic two-, three- and four-ways: with the
+charge at zero, five further junctions part, all of them marginally (0.08–0.18 octave); with it, the
+splits that survive are the substantial ones (0.19–0.29 octave) and the rest stay matched.
+
+### Every bound is read where the edge lands
+
+A junction's window, its slope table and its floors are all computed for the CORNER. With matched corners the
+edge IS the corner and that is the same statement. An offset breaks the identity: at the widest offset the
+high-pass sits at 0.917 of the corner and the low-pass at 1.091, so each of the four bounds has to be asked
+again at the frequency its edge really landed on.
+
+- **The tweeter Fs floor.** A negative offset puts the high-pass below the corner, which is 3 dB of the floor's
+  protection at 24 dB/oct and 6 dB at 48, so a slope cleared at the corner can be too gentle where the edge
+  sits. `EnforceTweeterResonanceFloor` is the second line and drops the split outright — Fs is safety and the
+  split is a preference — and it now runs on every pool candidate as well as on the descent winner, because the
+  pool crosses junction options that were each cleared on their own and nothing else re-states the invariant
+  over the composed chain.
+- **The distortion-clean band.** The knee is the lowest frequency a high-pass may cross at and the breakup onset
+  the highest a low-pass may, but the window applies both to the corner. Uncaught, a tweeter with a 2.4 kHz knee
+  was high-passed at 2.3 kHz while the corner stayed clean.
+- **The group-delay budget.** Group delay runs as 1/fc, so the two edges of a split junction do not share one:
+  the lower carries about 9% more than the corner. A slope that measured 9.5 ms at the corner is over budget an
+  eighth of an octave below it. This one is a guard rather than a repair of anything observed — the band where
+  it bites is narrow and no synthetic fixture lands in it.
+
+`EdgesClearSafetyBounds` deliberately asks the window's OWN question rather than a stricter one. Where the floor
+and the cap crossed each other the window gave one of them up on purpose; re-imposing it on the edges would
+leave the sweep with no admissible option at all inside the window it had just opened, which is the stranding
+the override exists to prevent.
+
 ## Optimizer
 
-Coordinate descent over junction frequency, family, slope and channel gain, scoring flatness of the
-summed magnitude on a 24-points-per-octave log grid.
+Coordinate descent over junction frequency, family, slope, split offset, polarity and channel gain,
+scoring flatness of the summed magnitude on a 24-points-per-octave log grid.
 
 - Frequencies are searched directly on the lattice of `RoundToLattice` (5 Hz steps below 100 Hz,
   10 Hz below 1 kHz, 50 Hz above), so the scored frequency is the proposed frequency. The junction
@@ -177,6 +424,34 @@ summed magnitude on a 24-points-per-octave log grid.
   the score rewards it.
 - **Dip penalty**: a narrow suckout is far more audible than the same energy spread as ripple, so the
   deepest dip below the mean is added to the RMS flatness score (weight 0.5).
+- **Psychoacoustic smoothing** is applied to the summed level before mean, RMS and dip are read. A
+  coherent sum can put a single-bin notch anywhere and the ear does not hear one; the kernel is the
+  same 1/3-octave-to-1/6-octave width the curves themselves carry.
+
+### Junction flatness
+
+Flatness across the whole system band is not the same question as flatness AT a junction, which is
+what a crossover decides and the only thing the user asked the wizard for. `JunctionPenalty` scores
+each junction separately over an octave either side of its corner, weighted `JunctionFlatnessWeight` =
+0.5.
+
+Two choices in it are worth stating, because the obvious versions of both are wrong:
+
+- It scores FLATNESS, not the tuner's summation loss |A + B| / (|A| + |B|). The loss asks whether the
+  two sides add coherently, and under ideal alignment they nearly always do once polarity is right — a
+  Butterworth pair in phase scores a perfect zero loss while putting a 3 dB bump on the response.
+  Bumps count as well as dips (`BumpPenaltyWeight` = 0.5); the system-wide term never looked for a
+  bump because an amplitude sum could not make one.
+- It is referenced to the band's own straight trend in log frequency, not to its mean. A mean
+  reference charges the junction for the drivers' tilt through the band, which is largest exactly
+  where a handover is most needed — the term would quietly become a placement force and fight the
+  class priors. A tilt is free; a bump or a suckout is not.
+
+The weight is a judgement call, measured on synthetic fixtures and not in a car: at 1.0 the junction
+term outweighed the overlap penalty and took a 12 dB/oct woofer low-pass where the engineering answer
+is 24; at 0.5 the engineering penalties hold and the term still rejects the Butterworth bump. The
+discriminator for "is this term doing it?" is to set the weight to zero and re-run — that is how the
+placement complaint above was traced to the sum itself rather than to this term.
 
 ## Engineering penalties
 
@@ -220,8 +495,24 @@ out-of-band excursion. The score therefore adds penalties that encode engineerin
   overlap is the log-frequency integral of two normalized responses' product — near an octave for a
   clean LR24 handover, several octaves for shallow filters.
 - **Same-class junctions** (two subs, two midbasses) get none of the class-placement priors: those
-  answer which class should own a shared region, which has no meaning here; flatness and the
-  post-check decide.
+  answer which class should own a shared region, which has no meaning between two drivers doing the
+  same job. They get a different prior instead. Two drivers of one class are that class's band split
+  between them, and the split belongs in the middle of what both can produce — the geometric middle of
+  their overlap — so `SharedBandSplitBiasWeightDb` = 1.5 is charged per octave away from it. Left to
+  flatness alone the split lands wherever the cabin is smoothest, which squeezes one of the two into a
+  sliver of its own range: on a field five-way with an infra-bass and a sub in series the lower one came
+  out working 20-35 Hz, and on a clean synthetic pair of the same shape the split ran the other way, up
+  to 70 Hz. It is a pull and not a placement, so flatness still moves the corner off centre where that
+  pays. 1.5 is measured rather than chosen: at 0.6 it failed to move a junction flatness scored as a
+  tie, so it was not a prior at all, and above 1.5 the answer stops moving. On the field session it took
+  the split from 35 Hz to 45 and the bass span from 14.8 dB to 13.4.
+
+  It is NOT a half-and-half rule: the target is the middle of what the two MEASURE, so it follows an
+  uneven pair. Holding the lower driver at 20-113 Hz and starting the upper one higher moves the split
+  up with it — 55 Hz when both reach 20 Hz, 75 when the upper starts at 40, 80 when it starts at 60 —
+  and a lower driver that stops at 60 instead of 113 pulls it down to 35. What the wizard cannot see is
+  excursion headroom: two drivers that measure alike but differ in Xmax or power handling get the same
+  answer, and choosing which of them carries the bottom is then the user's, through the junction row.
 
 ## Target-curve gains
 
@@ -337,8 +628,30 @@ per-junction delay.
   covering the best-ranked choices first when the product exceeds the cap.
 
 In the dialog the ranked search runs off the UI thread (seconds on a 4-way); the preview shows the
-fast magnitude-only proposal until the ranking lands, and the inputs are frozen meanwhile so the
-applied result matches the visible settings.
+fast proposal until the ranking lands, and the inputs are frozen meanwhile so the applied result
+matches the visible settings.
+
+### Decimated ranking
+
+Every candidate the junction tuner ranks costs two gated FFTs per side, and their length is the
+measurement rate times a gate fixed in TIME (about nine periods of the ranking band's low edge). For a
+sub junction at 96 kHz that is a 262144-point transform to read a band that stops at 260 Hz: almost
+all of that rate is bandwidth the read throws away.
+
+`BuildRankingWork` therefore decimates the crops to just above the ranking band (`Decimate`, a
+double-precision windowed-sinc by a whole factor — the app's rational-ratio converter is a float
+playback path) and ranks there. Measured on the archived cabins, a whole chain at 96 kHz with
+2-octave windows went from 27.3 s to 3.8 s with matched slopes and from 122 s to 7.1 s with free
+slopes, and the marginal cost of one candidate fell from 4-38 ms to 0.07-0.9 ms. The picks were
+unchanged on six junctions across two cabins, with scores within 0.03 dB; one tie moved by a single
+lattice step.
+
+The own-band reads and the after-delay search stay at the MEASURED rate. They are a handful of calls,
+they are the numbers the user reads, and the alignment search resolves delay against the sample grid.
+The headroom (four times the band top) keeps every junction band well inside the decimated Nyquist, so
+the bands the reads use are the ones an undecimated run would have used. At a tweeter junction the
+band already fills the rate and there is nothing to throw away, so the factor falls below two and the
+decimation is skipped; the remaining lever there is caching the gated spectrum per chain.
 
 ## Junction tuner
 

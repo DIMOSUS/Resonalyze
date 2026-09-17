@@ -9,6 +9,25 @@ namespace Resonalyze.App.Tests;
 /// </summary>
 internal static class StaTest
 {
+    /// <summary>Pumps the message loop until <paramref name="task"/> finishes. A plain wait would deadlock: the
+    /// continuation needs the very thread that is waiting.</summary>
+    public static void Settle(Task? task, int timeoutMilliseconds = 30_000)
+    {
+        if (task == null)
+        {
+            return;
+        }
+
+        DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMilliseconds);
+        while (!task.IsCompleted && DateTime.UtcNow < deadline)
+        {
+            Application.DoEvents();
+            Thread.Sleep(5);
+        }
+
+        Assert.True(task.IsCompleted, "The background work did not finish in time.");
+    }
+
     public static void Run(Action body)
     {
         ArgumentNullException.ThrowIfNull(body);

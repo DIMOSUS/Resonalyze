@@ -38,6 +38,10 @@ internal static class StaTest
             try
             {
                 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
+                // Installed here rather than left to WinForms: AutoInstall is process-wide state that a test
+                // running beside this one can turn off, and a continuation that then resumes on the thread pool
+                // reaches a panel's fields and controls while this thread is reading them.
+                SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
                 body();
             }
             catch (Exception exception)

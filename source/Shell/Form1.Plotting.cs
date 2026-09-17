@@ -124,7 +124,7 @@ public partial class Form1
                 Slot = slot,
                 Kind = OverlayKind.Captured,
                 Title = title,
-                ColorArgb = Color.FromArgb(230, 184, 0).ToArgb(),
+                ColorArgb = UiPalette.CurveOverlayDefault.ToArgb(),
                 Points = points
             };
             file.Save();
@@ -296,7 +296,7 @@ public partial class Form1
             TextFlowDirection = TextFlowDirection.TopDown,
             FontSize = 12,
             FontWeight = 700,
-            TextColor = OxyColors.White,
+            TextColor = UiPalette.GraphAxisText.ToOxy(),
             TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left
         });
         model.InvalidatePlot(false);

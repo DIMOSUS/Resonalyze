@@ -433,27 +433,6 @@ next field session rather than in a register nobody else can tick.
   would change appearance everywhere, not just while loading. Owner looked at a
   rendered comparison on 2026-08-24 and chose to leave it; take it as its own
   change with its own visual pass, not as a rider on something else.
-- [ ] **A light theme is wanted eventually, and 650 colour assignments do not go
-  through `UiPalette`** — 504 `Color.FromArgb` literals across the `.Designer.cs`
-  files plus 146 `SystemColors.ControlLight` label foregrounds.
-  The contrast work (#116) named the roles the app paints with — `AccentFill`,
-  `TextDisabled`, the `Graph*` chrome — and put the graph surface and the accent
-  buttons' fill under the palette, so the SEAMS now exist:
-  `PlotModelStyle.ApplyChrome` is the one place a plot's colours are decided,
-  and `UiPaletteContrastTests` re-measures whatever values a second theme
-  brings. What is left for the theme itself is the designer sweep, and it is
-  smaller than the count suggests: only **35 distinct values** appear in those
-  files and four of them cover 329 of the 504, so a dark→light map plus a
-  runtime pass over the control tree covers most of it. The judgment part is
-  not the chrome but the CURVES: `OxyColors.White` sums, white THD traces,
-  light-grey source curves and the user's own overlay slot colours (persisted
-  as `ColorArgb` in overlay files, so they cannot be rewritten) all need a
-  second palette or a luminance-adaptive fallback before a light plot is
-  readable. Do not start this as a colour swap; start it as a curve-palette
-  design. Half the palette also still carries PHYSICAL names (`AccentBlueSoft`,
-  `TextSecondaryAlt`, `SuccessGreenSoft`): rename them to their roles as they
-  are touched rather than in one sweep — `AccentBlueSoft` is the accent MARK
-  (links, focus borders, selection markers), which is the one that matters.
 - [ ] **Do not let the shell re-assign a docked panel's `Padding`.** Both tool
   panels declare `Padding = new Padding(6)` in their OWN designer, where it scales
   with the rest of the arrangement; `Form1.Designer.cs` used to set the same
@@ -466,31 +445,19 @@ next field session rather than in a register nobody else can tick.
   this defect returning. `ItsPadding_ScalesWithTheArrangement` in both layout
   suites pins the panel's own half of it; nothing can pin the shell's.
 
-- [ ] **The app paints plots on FOUR different surfaces, three of them designer
-  literals.** `UiPalette.GraphSurface` (50,55,100) covers the main plot and the
-  EQ wizard; Virtual DSP's two views sit on (40,44,80)
-  (`VirtualCrossoverPanel.Designer.cs`), the option/Time Alignment/history
-  previews on (32,36,46), and the target preview on (55,58,65). Whether that is
-  intentional or drift, nobody decided it recently — and it is not cosmetic:
-  a FIXED chrome colour reads at a different strength on each (the first grid
-  measured 1.33:1 on the main plots and 1.59:1 on Virtual DSP, which is how it
-  looked). The grid and the plot border are white-with-alpha now, so they no
-  longer care; anything else added to a plot has to make the same choice, and a
-  light theme has to reach all four surfaces. Decide the count first: one
-  surface token, or a named few.
-- [ ] **The satellite plots still carry their own chrome literals.** The Time
-  Alignment previews, `AngleCalibrationDialog`, `ImpulseWindowPreview`,
-  `OverlayTargetSettingsDialog` and `MeasurementHistoryWindow` set their own
-  white text and grid colours rather than going through
-  `PlotModelStyle.ApplyChrome`. They are readable as they are, so this is
-  tidiness, not a defect — but they are the reason a plot colour still has more
-  than one home.
-- [ ] **`WarningRed` on a dark surface measures 4.3:1 as text.** It is a FILL
-  today (meter bars, the fader groove), where no text threshold applies, so
-  nothing is wrong now — but it reads as the palette's "red" and the next
-  status line that reaches for it would land under the floor. `ErrorSoft`
-  (already lifted to 4.6:1) is the text-carrying red; keep them apart, or give
-  `WarningRed` a text-safe sibling if it is ever needed for one.
+- [ ] **Five dark curves sit under the 3:1 floor on the plot surface.** The
+  light theme is measured at 3:1 by `UiPaletteContrastTests`; the dark curve set
+  predates that floor and is held where the owner tuned it, so the same test
+  uses 1.55:1 there — only a regression guard. The weakest are `CurveHarmonic3`
+  (1.58), `CurveHarmonic4` (1.70), `CurveArrayMicrophone` (2.52), `CurveMuted`
+  (2.85) and `CurveLiveTransfer` (2.98) against `GraphSurface`. Lifting them is a
+  visual pass on the dark theme with the owner, not a rider on other work.
+- [ ] **`Danger` on a dark surface measures 4.3:1 as text.** It is a FILL today
+  (meter bars, the fader groove), where no text threshold applies, so nothing is
+  wrong now — but it reads as the palette's "red" and the next status line that
+  reaches for it would land under the floor. `Error` (4.6:1) is the
+  text-carrying red; keep them apart, or give `Danger` a text-safe sibling if it
+  is ever needed for one.
 - [ ] **`ChromeTitleBar` caches the DPI scale once at `Initialize`.** No
   `DpiChanged` handling: moving the window to a monitor with different DPI
   (PerMonitorV2) leaves the bar height, button widths and tab layout at the old

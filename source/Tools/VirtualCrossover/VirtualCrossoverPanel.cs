@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using System.Text;
 using OxyPlot;
 using Resonalyze.Dsp;
@@ -25,24 +25,10 @@ public partial class VirtualCrossoverPanel : UserControl
         "Every source needs a loopback transfer IR recorded at the same\n" +
         "microphone position and sample rate.";
 
-    private static readonly OxyColor SumColor = OxyColors.White;
+    private static readonly OxyColor SumColor = UiPalette.CurveNeutral.ToOxy();
     private static readonly OxyColor LossColor = VirtualCrossoverAcousticPlot.LossAxisColor;
     private static readonly OxyColor[] ChannelColors =
-    [
-        OxyColor.FromRgb(86, 156, 255),
-        OxyColor.FromRgb(255, 150, 64),
-        OxyColor.FromRgb(96, 210, 120),
-        OxyColor.FromRgb(200, 130, 255),
-        OxyColor.FromRgb(80, 210, 220),
-        OxyColor.FromRgb(240, 100, 140),
-        OxyColor.FromRgb(210, 200, 90),
-        OxyColor.FromRgb(140, 200, 90),
-        // I–L must stay distinct from A–H on the dark ground; a saturated red would read as a warning.
-        OxyColor.FromRgb(230, 120, 90),
-        OxyColor.FromRgb(150, 175, 215),
-        OxyColor.FromRgb(215, 180, 140),
-        OxyColor.FromRgb(90, 180, 175)
-    ];
+        [.. UiPalette.ChannelCurves.Select(color => color.ToOxy())];
 
     private readonly System.Windows.Forms.Timer saveTimer = new()
     {
@@ -147,8 +133,8 @@ public partial class VirtualCrossoverPanel : UserControl
         InitializeComponent();
         // While controls stand where the designer put them: the layout pass stretches plots by deltas on this.
         CaptureLayoutBaseline();
-        Ui.DarkScrollBars.Apply(channelListPanel);
-        Ui.DarkScrollBars.Apply(this);
+        Ui.ThemedScrollBars.Apply(channelListPanel);
+        Ui.ThemedScrollBars.Apply(this);
         SetChannelCount(DefaultChannelCount);
 
         checkBoxShowSum.ForeColor = Color.FromArgb(SumColor.R, SumColor.G, SumColor.B);
@@ -1015,9 +1001,9 @@ public partial class VirtualCrossoverPanel : UserControl
         // Keep the designer size (DPI-scaled); raw pixels would clip on high DPI.
         var control = new VirtualCrossoverChannelControl
         {
-            BackColor = Color.FromArgb(46, 51, 62),
+            BackColor = UiPalette.PanelSurface,
             Font = new Font("Segoe UI", 9F),
-            ForeColor = Color.White,
+            ForeColor = UiPalette.TextPrimary,
             Margin = new Padding(0, 0, 0, 6),
             ChannelName = ChannelNameFor(index),
             // Before joining the list: the rows change its height and a re-pin makes the list jump.
@@ -3396,10 +3382,10 @@ public partial class VirtualCrossoverPanel : UserControl
     // Semantic: in this view a line IS a zone.
     private static OxyColor GroupColor(VirtualCrossoverZone zone) => zone switch
     {
-        VirtualCrossoverZone.Rear => OxyColor.FromRgb(255, 150, 64),
-        VirtualCrossoverZone.Center => OxyColor.FromRgb(96, 210, 120),
-        VirtualCrossoverZone.Sub => OxyColor.FromRgb(200, 130, 255),
-        _ => OxyColor.FromRgb(86, 156, 255)
+        VirtualCrossoverZone.Rear => UiPalette.CurveZoneRear.ToOxy(),
+        VirtualCrossoverZone.Center => UiPalette.CurveZoneCentre.ToOxy(),
+        VirtualCrossoverZone.Sub => UiPalette.CurveZoneSub.ToOxy(),
+        _ => UiPalette.CurveZoneFront.ToOxy()
     };
 
     // Handed to the host (the EQ Wizard owns the one target). A session without a stored target starts carrying the current one.
@@ -4101,10 +4087,10 @@ public partial class VirtualCrossoverPanel : UserControl
         WarningChanged?.Invoke(string.Empty, string.Empty, CrossoverWarningColor);
 
     // Amber: the view cannot be read yet, not a tuning error.
-    private static readonly Color GateWarningColor = Color.FromArgb(230, 184, 0);
+    private static readonly Color GateWarningColor = UiPalette.Warning;
 
-    private static readonly Color InfoWarningColor = Color.FromArgb(150, 170, 200);
-    private static readonly Color CrossoverWarningColor = Color.FromArgb(235, 110, 95);
+    private static readonly Color InfoWarningColor = UiPalette.TextAccent;
+    private static readonly Color CrossoverWarningColor = UiPalette.Error;
 
     // A steep/narrow LF band-pass arrives so late that Auto delay pushes every driver out by this much.
     private const double CrossoverGroupDelayWarningMs = 15.0;

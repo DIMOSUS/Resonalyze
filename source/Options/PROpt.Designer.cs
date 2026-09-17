@@ -30,17 +30,17 @@ namespace Resonalyze.Options
         {
             labelGateOffset = new Label();
             checkAutoFit = new ReleaseClickCheckBox();
-            numericGateOffset = new DarkNumericUpDown();
+            numericGateOffset = new ThemedNumericUpDown();
             label9 = new Label();
             labelMinFrequency = new Label();
-            comboSmoothingInverseOctaves = new DarkComboBox();
-            numericRightWindow = new DarkNumericUpDown();
-            numericLeftWindow = new DarkNumericUpDown();
+            comboSmoothingInverseOctaves = new ThemedComboBox();
+            numericRightWindow = new ThemedNumericUpDown();
+            numericLeftWindow = new ThemedNumericUpDown();
             label5 = new Label();
             label4 = new Label();
-            numericWindow = new DarkNumericUpDown();
+            numericWindow = new ThemedNumericUpDown();
             label1 = new Label();
-            numericOffset = new DarkNumericUpDown();
+            numericOffset = new ThemedNumericUpDown();
             label11 = new Label();
             buttonTauSlope = new ReleaseClickButton();
             buttonTauPeak = new ReleaseClickButton();
@@ -52,11 +52,11 @@ namespace Resonalyze.Options
             checkBoxShowExcess = new ReleaseClickCheckBox();
             checkBoxShowCoherence = new ReleaseClickCheckBox();
             labelWindowMode = new Label();
-            comboWindowMode = new DarkComboBox();
+            comboWindowMode = new ThemedComboBox();
             labelFdwCycles = new Label();
-            comboFdwCycles = new DarkComboBox();
+            comboFdwCycles = new ThemedComboBox();
             labelDetrendMode = new Label();
-            comboDetrendMode = new DarkComboBox();
+            comboDetrendMode = new ThemedComboBox();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             (numericGateOffset).BeginInit();
             (numericRightWindow).BeginInit();
@@ -68,7 +68,7 @@ namespace Resonalyze.Options
             // labelGateOffset
             // 
             labelGateOffset.AutoSize = true;
-            labelGateOffset.ForeColor = SystemColors.ControlLight;
+            labelGateOffset.ForeColor = UiPalette.TextDefault;
             labelGateOffset.Location = new Point(12, 106);
             labelGateOffset.Name = "labelGateOffset";
             labelGateOffset.Size = new Size(91, 15);
@@ -78,10 +78,10 @@ namespace Resonalyze.Options
             // checkAutoFit
             //
             checkAutoFit.Appearance = Appearance.Button;
-            checkAutoFit.BackColor = Color.FromArgb(55, 60, 72);
-            checkAutoFit.FlatAppearance.CheckedBackColor = Color.FromArgb(80, 100, 140);
+            checkAutoFit.BackColor = UiPalette.ControlSurface;
+            checkAutoFit.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkAutoFit.FlatStyle = FlatStyle.Flat;
-            checkAutoFit.ForeColor = Color.White;
+            checkAutoFit.ForeColor = UiPalette.TextPrimary;
             checkAutoFit.Location = new Point(104, 103);
             checkAutoFit.Name = "checkAutoFit";
             checkAutoFit.Size = new Size(46, 21);
@@ -93,9 +93,9 @@ namespace Resonalyze.Options
             // 
             // numericGateOffset
             // 
-            numericGateOffset.BackColor = Color.FromArgb(55, 60, 72);
+            numericGateOffset.BackColor = UiPalette.ControlSurface;
             numericGateOffset.DecimalPlaces = 3;
-            numericGateOffset.ForeColor = Color.White;
+            numericGateOffset.ForeColor = UiPalette.TextPrimary;
             numericGateOffset.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
             numericGateOffset.Location = new Point(153, 104);
             numericGateOffset.Maximum = new decimal(new int[] { 2000, 0, 0, 0 });
@@ -111,7 +111,7 @@ namespace Resonalyze.Options
             // label9
             // 
             label9.AutoSize = true;
-            label9.ForeColor = SystemColors.ControlLight;
+            label9.ForeColor = UiPalette.TextDefault;
             label9.Location = new Point(12, 281);
             label9.Name = "label9";
             label9.Size = new Size(117, 15);
@@ -121,7 +121,7 @@ namespace Resonalyze.Options
             // labelMinFrequency
             // 
             labelMinFrequency.AutoSize = true;
-            labelMinFrequency.ForeColor = Color.FromArgb(150, 170, 205);
+            labelMinFrequency.ForeColor = UiPalette.TextAccent;
             labelMinFrequency.Location = new Point(12, 203);
             labelMinFrequency.Name = "labelMinFrequency";
             labelMinFrequency.Size = new Size(120, 15);
@@ -130,8 +130,8 @@ namespace Resonalyze.Options
             // 
             // comboSmoothingInverseOctaves
             // 
-            comboSmoothingInverseOctaves.BackColor = Color.FromArgb(55, 60, 72);
-            comboSmoothingInverseOctaves.ForeColor = Color.White;
+            comboSmoothingInverseOctaves.BackColor = UiPalette.ControlSurface;
+            comboSmoothingInverseOctaves.ForeColor = UiPalette.TextPrimary;
             comboSmoothingInverseOctaves.Location = new Point(155, 279);
             comboSmoothingInverseOctaves.MinimumSize = new Size(36, 19);
             comboSmoothingInverseOctaves.Name = "comboSmoothingInverseOctaves";
@@ -140,9 +140,9 @@ namespace Resonalyze.Options
             // 
             // numericRightWindow
             // 
-            numericRightWindow.BackColor = Color.FromArgb(55, 60, 72);
+            numericRightWindow.BackColor = UiPalette.ControlSurface;
             numericRightWindow.DecimalPlaces = 2;
-            numericRightWindow.ForeColor = Color.White;
+            numericRightWindow.ForeColor = UiPalette.TextPrimary;
             numericRightWindow.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
             numericRightWindow.Location = new Point(153, 178);
             numericRightWindow.Maximum = new decimal(new int[] { 680, 0, 0, 0 });
@@ -157,9 +157,9 @@ namespace Resonalyze.Options
             // 
             // numericLeftWindow
             // 
-            numericLeftWindow.BackColor = Color.FromArgb(55, 60, 72);
+            numericLeftWindow.BackColor = UiPalette.ControlSurface;
             numericLeftWindow.DecimalPlaces = 2;
-            numericLeftWindow.ForeColor = Color.White;
+            numericLeftWindow.ForeColor = UiPalette.TextPrimary;
             numericLeftWindow.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
             numericLeftWindow.Location = new Point(153, 153);
             numericLeftWindow.Maximum = new decimal(new int[] { 680, 0, 0, 0 });
@@ -175,7 +175,7 @@ namespace Resonalyze.Options
             // label5
             // 
             label5.AutoSize = true;
-            label5.ForeColor = SystemColors.ControlLight;
+            label5.ForeColor = UiPalette.TextDefault;
             label5.Location = new Point(12, 180);
             label5.Name = "label5";
             label5.Size = new Size(97, 15);
@@ -185,7 +185,7 @@ namespace Resonalyze.Options
             // label4
             // 
             label4.AutoSize = true;
-            label4.ForeColor = SystemColors.ControlLight;
+            label4.ForeColor = UiPalette.TextDefault;
             label4.Location = new Point(12, 155);
             label4.Name = "label4";
             label4.Size = new Size(89, 15);
@@ -194,9 +194,9 @@ namespace Resonalyze.Options
             // 
             // numericWindow
             // 
-            numericWindow.BackColor = Color.FromArgb(55, 60, 72);
+            numericWindow.BackColor = UiPalette.ControlSurface;
             numericWindow.DecimalPlaces = 2;
-            numericWindow.ForeColor = Color.White;
+            numericWindow.ForeColor = UiPalette.TextPrimary;
             numericWindow.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
             numericWindow.Location = new Point(153, 129);
             numericWindow.Maximum = new decimal(new int[] { 680, 0, 0, 0 });
@@ -212,7 +212,7 @@ namespace Resonalyze.Options
             // label1
             // 
             label1.AutoSize = true;
-            label1.ForeColor = SystemColors.ControlLight;
+            label1.ForeColor = UiPalette.TextDefault;
             label1.Location = new Point(12, 131);
             label1.Name = "label1";
             label1.Size = new Size(73, 15);
@@ -221,9 +221,9 @@ namespace Resonalyze.Options
             // 
             // numericOffset
             // 
-            numericOffset.BackColor = Color.FromArgb(55, 60, 72);
+            numericOffset.BackColor = UiPalette.ControlSurface;
             numericOffset.DecimalPlaces = 3;
-            numericOffset.ForeColor = Color.White;
+            numericOffset.ForeColor = UiPalette.TextPrimary;
             numericOffset.Increment = new decimal(new int[] { 5, 0, 0, 196608 });
             numericOffset.Location = new Point(155, 223);
             numericOffset.Maximum = new decimal(new int[] { 2000, 0, 0, 0 });
@@ -239,7 +239,7 @@ namespace Resonalyze.Options
             // label11
             // 
             label11.AutoSize = true;
-            label11.ForeColor = SystemColors.ControlLight;
+            label11.ForeColor = UiPalette.TextDefault;
             label11.Location = new Point(14, 225);
             label11.Name = "label11";
             label11.Size = new Size(40, 15);
@@ -248,9 +248,9 @@ namespace Resonalyze.Options
             // 
             // buttonTauSlope
             // 
-            buttonTauSlope.BackColor = Color.FromArgb(55, 60, 72);
+            buttonTauSlope.BackColor = UiPalette.ControlSurface;
             buttonTauSlope.FlatStyle = FlatStyle.Flat;
-            buttonTauSlope.ForeColor = Color.White;
+            buttonTauSlope.ForeColor = UiPalette.TextPrimary;
             buttonTauSlope.Location = new Point(12, 248);
             buttonTauSlope.Name = "buttonTauSlope";
             buttonTauSlope.Size = new Size(116, 23);
@@ -261,9 +261,9 @@ namespace Resonalyze.Options
             // 
             // buttonTauPeak
             // 
-            buttonTauPeak.BackColor = Color.FromArgb(55, 60, 72);
+            buttonTauPeak.BackColor = UiPalette.ControlSurface;
             buttonTauPeak.FlatStyle = FlatStyle.Flat;
-            buttonTauPeak.ForeColor = Color.White;
+            buttonTauPeak.ForeColor = UiPalette.TextPrimary;
             buttonTauPeak.Location = new Point(139, 248);
             buttonTauPeak.Name = "buttonTauPeak";
             buttonTauPeak.Size = new Size(116, 23);
@@ -275,7 +275,7 @@ namespace Resonalyze.Options
             // checkBoxUnwrap
             // 
             checkBoxUnwrap.AutoSize = true;
-            checkBoxUnwrap.ForeColor = SystemColors.ControlLight;
+            checkBoxUnwrap.ForeColor = UiPalette.TextDefault;
             checkBoxUnwrap.Location = new Point(238, 308);
             checkBoxUnwrap.Name = "checkBoxUnwrap";
             checkBoxUnwrap.Size = new Size(15, 14);
@@ -285,7 +285,7 @@ namespace Resonalyze.Options
             // label2
             // 
             label2.AutoSize = true;
-            label2.ForeColor = SystemColors.ControlLight;
+            label2.ForeColor = UiPalette.TextDefault;
             label2.Location = new Point(12, 307);
             label2.Name = "label2";
             label2.Size = new Size(48, 15);
@@ -295,7 +295,7 @@ namespace Resonalyze.Options
             // labelCurves
             // 
             labelCurves.AutoSize = true;
-            labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
+            labelCurves.ForeColor = UiPalette.TextAccent;
             labelCurves.Location = new Point(12, 331);
             labelCurves.Name = "labelCurves";
             labelCurves.Size = new Size(46, 15);
@@ -305,7 +305,7 @@ namespace Resonalyze.Options
             // checkBoxShowMeasured
             // 
             checkBoxShowMeasured.AutoSize = true;
-            checkBoxShowMeasured.ForeColor = SystemColors.ControlLight;
+            checkBoxShowMeasured.ForeColor = UiPalette.TextDefault;
             checkBoxShowMeasured.Location = new Point(12, 353);
             checkBoxShowMeasured.Name = "checkBoxShowMeasured";
             checkBoxShowMeasured.Size = new Size(144, 19);
@@ -316,7 +316,7 @@ namespace Resonalyze.Options
             // checkBoxShowMinimum
             // 
             checkBoxShowMinimum.AutoSize = true;
-            checkBoxShowMinimum.ForeColor = SystemColors.ControlLight;
+            checkBoxShowMinimum.ForeColor = UiPalette.TextDefault;
             checkBoxShowMinimum.Location = new Point(12, 375);
             checkBoxShowMinimum.Name = "checkBoxShowMinimum";
             checkBoxShowMinimum.Size = new Size(145, 19);
@@ -327,7 +327,7 @@ namespace Resonalyze.Options
             // checkBoxShowExcess
             // 
             checkBoxShowExcess.AutoSize = true;
-            checkBoxShowExcess.ForeColor = SystemColors.ControlLight;
+            checkBoxShowExcess.ForeColor = UiPalette.TextDefault;
             checkBoxShowExcess.Location = new Point(12, 397);
             checkBoxShowExcess.Name = "checkBoxShowExcess";
             checkBoxShowExcess.Size = new Size(125, 19);
@@ -338,7 +338,7 @@ namespace Resonalyze.Options
             // checkBoxShowCoherence
             // 
             checkBoxShowCoherence.AutoSize = true;
-            checkBoxShowCoherence.ForeColor = SystemColors.ControlLight;
+            checkBoxShowCoherence.ForeColor = UiPalette.TextDefault;
             checkBoxShowCoherence.Location = new Point(12, 419);
             checkBoxShowCoherence.Name = "checkBoxShowCoherence";
             checkBoxShowCoherence.Size = new Size(134, 19);
@@ -349,7 +349,7 @@ namespace Resonalyze.Options
             // labelWindowMode
             //
             labelWindowMode.AutoSize = true;
-            labelWindowMode.ForeColor = Color.Gainsboro;
+            labelWindowMode.ForeColor = UiPalette.TextDefault;
             labelWindowMode.Location = new Point(12, 14);
             labelWindowMode.Name = "labelWindowMode";
             labelWindowMode.Size = new Size(52, 15);
@@ -358,9 +358,9 @@ namespace Resonalyze.Options
             //
             // comboWindowMode
             //
-            comboWindowMode.BackColor = Color.FromArgb(55, 60, 72);
+            comboWindowMode.BackColor = UiPalette.ControlSurface;
             comboWindowMode.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboWindowMode.ForeColor = Color.White;
+            comboWindowMode.ForeColor = UiPalette.TextPrimary;
             comboWindowMode.Items.AddRange(new object[] { "Fixed", "FDW" });
             comboWindowMode.Location = new Point(153, 10);
             comboWindowMode.MinimumSize = new Size(36, 19);
@@ -371,7 +371,7 @@ namespace Resonalyze.Options
             // labelFdwCycles
             //
             labelFdwCycles.AutoSize = true;
-            labelFdwCycles.ForeColor = Color.Gainsboro;
+            labelFdwCycles.ForeColor = UiPalette.TextDefault;
             labelFdwCycles.Location = new Point(12, 40);
             labelFdwCycles.Name = "labelFdwCycles";
             labelFdwCycles.Size = new Size(67, 15);
@@ -380,9 +380,9 @@ namespace Resonalyze.Options
             //
             // comboFdwCycles
             //
-            comboFdwCycles.BackColor = Color.FromArgb(55, 60, 72);
+            comboFdwCycles.BackColor = UiPalette.ControlSurface;
             comboFdwCycles.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboFdwCycles.ForeColor = Color.White;
+            comboFdwCycles.ForeColor = UiPalette.TextPrimary;
             comboFdwCycles.Items.AddRange(new object[] { 4, 6, 8 });
             comboFdwCycles.Location = new Point(153, 36);
             comboFdwCycles.MinimumSize = new Size(36, 19);
@@ -393,7 +393,7 @@ namespace Resonalyze.Options
             // labelDetrendMode
             //
             labelDetrendMode.AutoSize = true;
-            labelDetrendMode.ForeColor = Color.Gainsboro;
+            labelDetrendMode.ForeColor = UiPalette.TextDefault;
             labelDetrendMode.Location = new Point(12, 66);
             labelDetrendMode.Name = "labelDetrendMode";
             labelDetrendMode.Size = new Size(49, 15);
@@ -402,9 +402,9 @@ namespace Resonalyze.Options
             //
             // comboDetrendMode
             //
-            comboDetrendMode.BackColor = Color.FromArgb(55, 60, 72);
+            comboDetrendMode.BackColor = UiPalette.ControlSurface;
             comboDetrendMode.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboDetrendMode.ForeColor = Color.White;
+            comboDetrendMode.ForeColor = UiPalette.TextPrimary;
             comboDetrendMode.Items.AddRange(new object[] { "Off", "Auto", "Manual" });
             comboDetrendMode.Location = new Point(153, 62);
             comboDetrendMode.MinimumSize = new Size(36, 19);
@@ -414,7 +414,7 @@ namespace Resonalyze.Options
             //
             // irPlotView
             //
-            irPlotView.BackColor = Color.FromArgb(32, 36, 46);
+            irPlotView.BackColor = UiPalette.GraphSurfaceMuted;
             irPlotView.Location = new Point(12, 445);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
@@ -429,7 +429,7 @@ namespace Resonalyze.Options
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             ClientSize = new Size(265, 752);
             Controls.Add(labelWindowMode);
             Controls.Add(comboWindowMode);
@@ -481,17 +481,17 @@ namespace Resonalyze.Options
 
         private Label labelGateOffset;
         private ReleaseClickCheckBox checkAutoFit;
-        private DarkNumericUpDown numericGateOffset;
+        private ThemedNumericUpDown numericGateOffset;
         private Label label9;
         private Label labelMinFrequency;
-        private DarkComboBox comboSmoothingInverseOctaves;
-        private DarkNumericUpDown numericRightWindow;
-        private DarkNumericUpDown numericLeftWindow;
+        private ThemedComboBox comboSmoothingInverseOctaves;
+        private ThemedNumericUpDown numericRightWindow;
+        private ThemedNumericUpDown numericLeftWindow;
         private Label label5;
         private Label label4;
-        private DarkNumericUpDown numericWindow;
+        private ThemedNumericUpDown numericWindow;
         private Label label1;
-        private DarkNumericUpDown numericOffset;
+        private ThemedNumericUpDown numericOffset;
         private Label label11;
         private ReleaseClickButton buttonTauSlope;
         private ReleaseClickButton buttonTauPeak;
@@ -503,11 +503,11 @@ namespace Resonalyze.Options
         private ReleaseClickCheckBox checkBoxShowExcess;
         private ReleaseClickCheckBox checkBoxShowCoherence;
         private Label labelWindowMode;
-        private DarkComboBox comboWindowMode;
+        private ThemedComboBox comboWindowMode;
         private Label labelFdwCycles;
-        private DarkComboBox comboFdwCycles;
+        private ThemedComboBox comboFdwCycles;
         private Label labelDetrendMode;
-        private DarkComboBox comboDetrendMode;
+        private ThemedComboBox comboDetrendMode;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }
 }

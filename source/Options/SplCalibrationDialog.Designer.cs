@@ -19,7 +19,7 @@ namespace Resonalyze.Options
         {
             labelInstruction = new Label();
             labelReference = new Label();
-            comboBoxReference = new DarkComboBox();
+            comboBoxReference = new ThemedComboBox();
             labelGainWarning = new Label();
             buttonStart = new ReleaseClickButton();
             progressBar = new ProgressBar();
@@ -30,7 +30,7 @@ namespace Resonalyze.Options
             //
             // labelInstruction
             //
-            labelInstruction.ForeColor = SystemColors.ControlLight;
+            labelInstruction.ForeColor = UiPalette.TextDefault;
             labelInstruction.Location = new Point(16, 16);
             labelInstruction.Name = "labelInstruction";
             labelInstruction.Size = new Size(398, 36);
@@ -40,7 +40,7 @@ namespace Resonalyze.Options
             // labelReference
             //
             labelReference.AutoSize = true;
-            labelReference.ForeColor = SystemColors.ControlLight;
+            labelReference.ForeColor = UiPalette.TextDefault;
             labelReference.Location = new Point(16, 64);
             labelReference.Name = "labelReference";
             labelReference.Size = new Size(89, 15);
@@ -49,8 +49,8 @@ namespace Resonalyze.Options
             //
             // comboBoxReference
             //
-            comboBoxReference.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxReference.ForeColor = Color.White;
+            comboBoxReference.BackColor = UiPalette.ControlSurface;
+            comboBoxReference.ForeColor = UiPalette.TextPrimary;
             comboBoxReference.Location = new Point(140, 60);
             comboBoxReference.Margin = new Padding(0);
             comboBoxReference.MinimumSize = new Size(36, 19);
@@ -60,7 +60,7 @@ namespace Resonalyze.Options
             //
             // labelGainWarning
             //
-            labelGainWarning.ForeColor = Color.Gold;
+            labelGainWarning.ForeColor = UiPalette.Warning;
             labelGainWarning.Location = new Point(16, 92);
             labelGainWarning.Name = "labelGainWarning";
             labelGainWarning.Size = new Size(398, 48);
@@ -70,7 +70,7 @@ namespace Resonalyze.Options
             // buttonStart
             //
             buttonStart.FlatStyle = FlatStyle.Popup;
-            buttonStart.ForeColor = Color.White;
+            buttonStart.ForeColor = UiPalette.TextPrimary;
             buttonStart.Location = new Point(16, 150);
             buttonStart.Name = "buttonStart";
             buttonStart.Size = new Size(398, 28);
@@ -90,7 +90,7 @@ namespace Resonalyze.Options
             //
             // labelStatus
             //
-            labelStatus.ForeColor = SystemColors.ControlLight;
+            labelStatus.ForeColor = UiPalette.TextDefault;
             labelStatus.Location = new Point(16, 204);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new Size(398, 64);
@@ -102,7 +102,7 @@ namespace Resonalyze.Options
             buttonSave.DialogResult = DialogResult.OK;
             buttonSave.Enabled = false;
             buttonSave.FlatStyle = FlatStyle.Popup;
-            buttonSave.ForeColor = Color.White;
+            buttonSave.ForeColor = UiPalette.TextPrimary;
             buttonSave.Location = new Point(204, 282);
             buttonSave.Name = "buttonSave";
             buttonSave.Size = new Size(130, 30);
@@ -114,7 +114,7 @@ namespace Resonalyze.Options
             //
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
-            buttonCancel.ForeColor = Color.White;
+            buttonCancel.ForeColor = UiPalette.TextPrimary;
             buttonCancel.Location = new Point(338, 282);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(76, 30);
@@ -127,7 +127,7 @@ namespace Resonalyze.Options
             AcceptButton = buttonSave;
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             CancelButton = buttonCancel;
             ClientSize = new Size(430, 328);
             Controls.Add(labelInstruction);
@@ -155,7 +155,7 @@ namespace Resonalyze.Options
 
         private Label labelInstruction;
         private Label labelReference;
-        private DarkComboBox comboBoxReference;
+        private ThemedComboBox comboBoxReference;
         private Label labelGainWarning;
         private ReleaseClickButton buttonStart;
         private ProgressBar progressBar;

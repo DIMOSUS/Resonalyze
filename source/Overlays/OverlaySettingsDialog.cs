@@ -1,4 +1,4 @@
-﻿namespace Resonalyze;
+namespace Resonalyze;
 
 internal sealed partial class OverlaySettingsDialog : Form
 {
@@ -29,7 +29,7 @@ internal sealed partial class OverlaySettingsDialog : Form
 
         InitializeComponent();
         // Palette value, not a designer literal: the two drifted apart once.
-        Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill);
+        Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill, Ui.UiPalette.TextOnAccent);
         PopulateControls();
         WireEvents();
         InitializeToolTips();
@@ -112,7 +112,7 @@ internal sealed partial class OverlaySettingsDialog : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        DarkNumericUpDown? input = keyData == Keys.Enter
+        ThemedNumericUpDown? input = keyData == Keys.Enter
             ? GetFocusedNumericInput()
             : null;
         if (input != null)
@@ -124,17 +124,17 @@ internal sealed partial class OverlaySettingsDialog : Form
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
-    private DarkNumericUpDown? GetFocusedNumericInput() =>
+    private ThemedNumericUpDown? GetFocusedNumericInput() =>
         NumericInputs().FirstOrDefault(control => control.ContainsFocus);
 
-    private IEnumerable<DarkNumericUpDown> NumericInputs()
+    private IEnumerable<ThemedNumericUpDown> NumericInputs()
     {
         yield return thicknessInput;
     }
 
     private void CommitNumericEditors()
     {
-        foreach (DarkNumericUpDown input in NumericInputs())
+        foreach (ThemedNumericUpDown input in NumericInputs())
         {
             input.CommitText();
         }
@@ -195,7 +195,7 @@ internal sealed partial class OverlaySettingsDialog : Form
         colorButton.BackColor = selectedColor;
         colorButton.Text =
             $"#{selectedColor.R:X2}{selectedColor.G:X2}{selectedColor.B:X2}";
-        colorButton.FlatAppearance.BorderColor = UiPalette.DialogBorder;
+        colorButton.FlatAppearance.BorderColor = UiPalette.Border;
     }
 
     private void UpdateOpacityLabel()

@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class MeasurementOptions
     {
@@ -35,35 +35,35 @@
             sweepPanel = new RoundedPanel();
             buttonSaveSweepFile = new ReleaseClickButton();
             labelActualRangeCaption = new Label();
-            numericUpDownRequestedDuration = new DarkNumericUpDown();
+            numericUpDownRequestedDuration = new ThemedNumericUpDown();
             label4 = new Label();
-            numericUpDownHighFrequency = new DarkNumericUpDown();
+            numericUpDownHighFrequency = new ThemedNumericUpDown();
             labelHighFrequency = new Label();
-            numericUpDownLowFrequency = new DarkNumericUpDown();
+            numericUpDownLowFrequency = new ThemedNumericUpDown();
             labelLowFrequency = new Label();
             labelProtectiveHighPass = new Label();
-            comboBoxProtectiveHighPassKind = new DarkComboBox();
-            numericUpDownProtectiveHighPassFrequency = new DarkNumericUpDown();
-            comboBoxProtectiveHighPassSlope = new DarkComboBox();
-            numericUpDownBits = new DarkNumericUpDown();
+            comboBoxProtectiveHighPassKind = new ThemedComboBox();
+            numericUpDownProtectiveHighPassFrequency = new ThemedNumericUpDown();
+            comboBoxProtectiveHighPassSlope = new ThemedComboBox();
+            numericUpDownBits = new ThemedNumericUpDown();
             label2 = new Label();
-            comboBoxSampleRate = new DarkComboBox();
+            comboBoxSampleRate = new ThemedComboBox();
             label1 = new Label();
-            comboBoxChannel = new DarkComboBox();
+            comboBoxChannel = new ThemedComboBox();
             label3 = new Label();
             audioBackendPanel = new RoundedPanel();
             button1 = new ReleaseClickButton();
             labelAudioBackend = new Label();
-            comboBoxAudioBackend = new DarkComboBox();
+            comboBoxAudioBackend = new ThemedComboBox();
             labelAverageRunCount = new Label();
-            numericUpDownAverageRunCount = new DarkNumericUpDown();
+            numericUpDownAverageRunCount = new ThemedNumericUpDown();
             labelCalibration0 = new Label();
             buttonCalibration0 = new ReleaseClickButton();
             buttonClearCalibration0 = new ReleaseClickButton();
             labelCalibrationExtra = new Label();
             buttonCalibrationExtra = new ReleaseClickButton();
             labelMicrophoneCalibration = new Label();
-            comboBoxMicrophoneCalibration = new DarkComboBox();
+            comboBoxMicrophoneCalibration = new ThemedComboBox();
             labelArrayMicrophones = new Label();
             buttonArrayMicrophones = new ReleaseClickButton();
             labelSplCalibration = new Label();
@@ -83,7 +83,7 @@
             // 
             // sweepPanel
             // 
-            sweepPanel.BackColor = Color.FromArgb(50, 55, 66);
+            sweepPanel.BackColor = UiPalette.PanelSurface;
             sweepPanel.Controls.Add(buttonSaveSweepFile);
             sweepPanel.Controls.Add(comboBoxProtectiveHighPassSlope);
             sweepPanel.Controls.Add(numericUpDownProtectiveHighPassFrequency);
@@ -104,7 +104,7 @@
             // buttonSaveSweepFile
             //
             buttonSaveSweepFile.FlatStyle = FlatStyle.Popup;
-            buttonSaveSweepFile.ForeColor = Color.White;
+            buttonSaveSweepFile.ForeColor = UiPalette.TextPrimary;
             buttonSaveSweepFile.Location = new Point(8, 128);
             buttonSaveSweepFile.Name = "buttonSaveSweepFile";
             buttonSaveSweepFile.Size = new Size(307, 23);
@@ -116,7 +116,7 @@
             // labelActualRangeCaption
             //
             labelActualRangeCaption.AutoSize = true;
-            labelActualRangeCaption.ForeColor = Color.FromArgb(150, 200, 170);
+            labelActualRangeCaption.ForeColor = UiPalette.Success;
             labelActualRangeCaption.Location = new Point(8, 84);
             labelActualRangeCaption.Name = "labelActualRangeCaption";
             labelActualRangeCaption.Size = new Size(74, 15);
@@ -125,9 +125,9 @@
             // 
             // numericUpDownRequestedDuration
             // 
-            numericUpDownRequestedDuration.BackColor = Color.FromArgb(55, 60, 72);
+            numericUpDownRequestedDuration.BackColor = UiPalette.ControlSurface;
             numericUpDownRequestedDuration.DecimalPlaces = 0;
-            numericUpDownRequestedDuration.ForeColor = Color.White;
+            numericUpDownRequestedDuration.ForeColor = UiPalette.TextPrimary;
             numericUpDownRequestedDuration.Increment = new decimal(new int[] { 25, 0, 0, 0 });
             numericUpDownRequestedDuration.Location = new Point(145, 58);
             numericUpDownRequestedDuration.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
@@ -144,7 +144,7 @@
             // label4
             // 
             label4.AutoSize = true;
-            label4.ForeColor = SystemColors.ControlLight;
+            label4.ForeColor = UiPalette.TextDefault;
             label4.Location = new Point(8, 62);
             label4.Name = "label4";
             label4.Size = new Size(89, 15);
@@ -153,9 +153,9 @@
             // 
             // numericUpDownHighFrequency
             // 
-            numericUpDownHighFrequency.BackColor = Color.FromArgb(55, 60, 72);
+            numericUpDownHighFrequency.BackColor = UiPalette.ControlSurface;
             numericUpDownHighFrequency.DecimalPlaces = 0;
-            numericUpDownHighFrequency.ForeColor = Color.White;
+            numericUpDownHighFrequency.ForeColor = UiPalette.TextPrimary;
             numericUpDownHighFrequency.Increment = new decimal(new int[] { 500, 0, 0, 0 });
             numericUpDownHighFrequency.Location = new Point(145, 33);
             numericUpDownHighFrequency.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
@@ -172,7 +172,7 @@
             // labelHighFrequency
             // 
             labelHighFrequency.AutoSize = true;
-            labelHighFrequency.ForeColor = SystemColors.ControlLight;
+            labelHighFrequency.ForeColor = UiPalette.TextDefault;
             labelHighFrequency.Location = new Point(8, 37);
             labelHighFrequency.Name = "labelHighFrequency";
             labelHighFrequency.Size = new Size(114, 15);
@@ -181,9 +181,9 @@
             // 
             // numericUpDownLowFrequency
             // 
-            numericUpDownLowFrequency.BackColor = Color.FromArgb(55, 60, 72);
+            numericUpDownLowFrequency.BackColor = UiPalette.ControlSurface;
             numericUpDownLowFrequency.DecimalPlaces = 0;
-            numericUpDownLowFrequency.ForeColor = Color.White;
+            numericUpDownLowFrequency.ForeColor = UiPalette.TextPrimary;
             numericUpDownLowFrequency.Increment = new decimal(new int[] { 5, 0, 0, 0 });
             numericUpDownLowFrequency.Location = new Point(145, 8);
             numericUpDownLowFrequency.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
@@ -200,7 +200,7 @@
             // labelLowFrequency
             // 
             labelLowFrequency.AutoSize = true;
-            labelLowFrequency.ForeColor = SystemColors.ControlLight;
+            labelLowFrequency.ForeColor = UiPalette.TextDefault;
             labelLowFrequency.Location = new Point(8, 12);
             labelLowFrequency.Name = "labelLowFrequency";
             labelLowFrequency.Size = new Size(110, 15);
@@ -210,7 +210,7 @@
             // labelProtectiveHighPass
             //
             labelProtectiveHighPass.AutoSize = true;
-            labelProtectiveHighPass.ForeColor = SystemColors.ControlLight;
+            labelProtectiveHighPass.ForeColor = UiPalette.TextDefault;
             labelProtectiveHighPass.Location = new Point(8, 108);
             labelProtectiveHighPass.Name = "labelProtectiveHighPass";
             labelProtectiveHighPass.Size = new Size(28, 15);
@@ -219,8 +219,8 @@
             //
             // comboBoxProtectiveHighPassKind
             //
-            comboBoxProtectiveHighPassKind.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxProtectiveHighPassKind.ForeColor = Color.White;
+            comboBoxProtectiveHighPassKind.BackColor = UiPalette.ControlSurface;
+            comboBoxProtectiveHighPassKind.ForeColor = UiPalette.TextPrimary;
             comboBoxProtectiveHighPassKind.Location = new Point(38, 103);
             comboBoxProtectiveHighPassKind.Margin = new Padding(0);
             comboBoxProtectiveHighPassKind.MinimumSize = new Size(36, 19);
@@ -230,9 +230,9 @@
             //
             // numericUpDownProtectiveHighPassFrequency
             //
-            numericUpDownProtectiveHighPassFrequency.BackColor = Color.FromArgb(55, 60, 72);
+            numericUpDownProtectiveHighPassFrequency.BackColor = UiPalette.ControlSurface;
             numericUpDownProtectiveHighPassFrequency.DecimalPlaces = 0;
-            numericUpDownProtectiveHighPassFrequency.ForeColor = Color.White;
+            numericUpDownProtectiveHighPassFrequency.ForeColor = UiPalette.TextPrimary;
             numericUpDownProtectiveHighPassFrequency.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericUpDownProtectiveHighPassFrequency.Location = new Point(161, 105);
             numericUpDownProtectiveHighPassFrequency.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
@@ -247,8 +247,8 @@
             //
             // comboBoxProtectiveHighPassSlope
             //
-            comboBoxProtectiveHighPassSlope.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxProtectiveHighPassSlope.ForeColor = Color.White;
+            comboBoxProtectiveHighPassSlope.BackColor = UiPalette.ControlSurface;
+            comboBoxProtectiveHighPassSlope.ForeColor = UiPalette.TextPrimary;
             comboBoxProtectiveHighPassSlope.Location = new Point(221, 103);
             comboBoxProtectiveHighPassSlope.Margin = new Padding(0);
             comboBoxProtectiveHighPassSlope.MinimumSize = new Size(36, 19);
@@ -258,10 +258,10 @@
             // 
             // numericUpDownBits
             // 
-            numericUpDownBits.BackColor = Color.FromArgb(55, 60, 72);
+            numericUpDownBits.BackColor = UiPalette.ControlSurface;
             numericUpDownBits.DecimalPlaces = 0;
             numericUpDownBits.Enabled = false;
-            numericUpDownBits.ForeColor = Color.White;
+            numericUpDownBits.ForeColor = UiPalette.TextPrimary;
             numericUpDownBits.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericUpDownBits.Location = new Point(145, 37);
             numericUpDownBits.Maximum = new decimal(new int[] { 32, 0, 0, 0 });
@@ -278,7 +278,7 @@
             // label2
             // 
             label2.AutoSize = true;
-            label2.ForeColor = SystemColors.ControlLight;
+            label2.ForeColor = UiPalette.TextDefault;
             label2.Location = new Point(8, 41);
             label2.Name = "label2";
             label2.Size = new Size(26, 15);
@@ -287,8 +287,8 @@
             // 
             // comboBoxSampleRate
             // 
-            comboBoxSampleRate.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxSampleRate.ForeColor = Color.White;
+            comboBoxSampleRate.BackColor = UiPalette.ControlSurface;
+            comboBoxSampleRate.ForeColor = UiPalette.TextPrimary;
             comboBoxSampleRate.Location = new Point(145, 8);
             comboBoxSampleRate.Margin = new Padding(0);
             comboBoxSampleRate.MinimumSize = new Size(36, 19);
@@ -300,7 +300,7 @@
             // label1
             // 
             label1.AutoSize = true;
-            label1.ForeColor = SystemColors.ControlLight;
+            label1.ForeColor = UiPalette.TextDefault;
             label1.Location = new Point(8, 12);
             label1.Name = "label1";
             label1.Size = new Size(72, 15);
@@ -309,8 +309,8 @@
             // 
             // comboBoxChannel
             // 
-            comboBoxChannel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxChannel.ForeColor = Color.White;
+            comboBoxChannel.BackColor = UiPalette.ControlSurface;
+            comboBoxChannel.ForeColor = UiPalette.TextPrimary;
             comboBoxChannel.Location = new Point(154, 173);
             comboBoxChannel.Margin = new Padding(0);
             comboBoxChannel.MinimumSize = new Size(36, 19);
@@ -322,7 +322,7 @@
             // label3
             // 
             label3.AutoSize = true;
-            label3.ForeColor = SystemColors.ControlLight;
+            label3.ForeColor = UiPalette.TextDefault;
             label3.Location = new Point(17, 181);
             label3.Name = "label3";
             label3.Size = new Size(51, 15);
@@ -331,7 +331,7 @@
             //
             // audioBackendPanel
             //
-            audioBackendPanel.BackColor = Color.FromArgb(50, 55, 66);
+            audioBackendPanel.BackColor = UiPalette.PanelSurface;
             audioBackendPanel.Controls.Add(button1);
             audioBackendPanel.Controls.Add(asioAudioBackendPanel);
             audioBackendPanel.Controls.Add(waveAudioBackendPanel);
@@ -354,7 +354,7 @@
             //
             button1.DialogResult = DialogResult.OK;
             button1.FlatStyle = FlatStyle.Popup;
-            button1.ForeColor = Color.White;
+            button1.ForeColor = UiPalette.TextPrimary;
             button1.Location = new Point(8, 314);
             button1.Name = "button1";
             button1.Size = new Size(307, 23);
@@ -365,7 +365,7 @@
             // labelAudioBackend
             //
             labelAudioBackend.AutoSize = true;
-            labelAudioBackend.ForeColor = SystemColors.ControlLight;
+            labelAudioBackend.ForeColor = UiPalette.TextDefault;
             labelAudioBackend.Location = new Point(8, 70);
             labelAudioBackend.Name = "labelAudioBackend";
             labelAudioBackend.Size = new Size(87, 15);
@@ -374,8 +374,8 @@
             //
             // comboBoxAudioBackend
             //
-            comboBoxAudioBackend.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxAudioBackend.ForeColor = Color.White;
+            comboBoxAudioBackend.BackColor = UiPalette.ControlSurface;
+            comboBoxAudioBackend.ForeColor = UiPalette.TextPrimary;
             comboBoxAudioBackend.Location = new Point(145, 62);
             comboBoxAudioBackend.Margin = new Padding(0);
             comboBoxAudioBackend.MinimumSize = new Size(36, 19);
@@ -387,7 +387,7 @@
             // labelAverageRunCount
             // 
             labelAverageRunCount.AutoSize = true;
-            labelAverageRunCount.ForeColor = SystemColors.ControlLight;
+            labelAverageRunCount.ForeColor = UiPalette.TextDefault;
             labelAverageRunCount.Location = new Point(17, 207);
             labelAverageRunCount.Name = "labelAverageRunCount";
             labelAverageRunCount.Size = new Size(85, 15);
@@ -396,9 +396,9 @@
             // 
             // numericUpDownAverageRunCount
             // 
-            numericUpDownAverageRunCount.BackColor = Color.FromArgb(55, 60, 72);
+            numericUpDownAverageRunCount.BackColor = UiPalette.ControlSurface;
             numericUpDownAverageRunCount.DecimalPlaces = 0;
-            numericUpDownAverageRunCount.ForeColor = Color.White;
+            numericUpDownAverageRunCount.ForeColor = UiPalette.TextPrimary;
             numericUpDownAverageRunCount.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericUpDownAverageRunCount.Location = new Point(154, 203);
             numericUpDownAverageRunCount.Maximum = new decimal(new int[] { 64, 0, 0, 0 });
@@ -415,7 +415,7 @@
             // labelCalibration0
             // 
             labelCalibration0.AutoSize = true;
-            labelCalibration0.ForeColor = SystemColors.ControlLight;
+            labelCalibration0.ForeColor = UiPalette.TextDefault;
             labelCalibration0.Location = new Point(17, 232);
             labelCalibration0.Name = "labelCalibration0";
             labelCalibration0.Size = new Size(100, 15);
@@ -425,7 +425,7 @@
             // buttonCalibration0
             // 
             buttonCalibration0.FlatStyle = FlatStyle.Popup;
-            buttonCalibration0.ForeColor = Color.White;
+            buttonCalibration0.ForeColor = UiPalette.TextPrimary;
             buttonCalibration0.Location = new Point(154, 227);
             buttonCalibration0.Name = "buttonCalibration0";
             buttonCalibration0.Size = new Size(143, 23);
@@ -437,7 +437,7 @@
             // buttonClearCalibration0
             // 
             buttonClearCalibration0.FlatStyle = FlatStyle.Popup;
-            buttonClearCalibration0.ForeColor = Color.White;
+            buttonClearCalibration0.ForeColor = UiPalette.TextPrimary;
             buttonClearCalibration0.Location = new Point(300, 227);
             buttonClearCalibration0.Name = "buttonClearCalibration0";
             buttonClearCalibration0.Size = new Size(24, 23);
@@ -449,7 +449,7 @@
             // labelCalibrationExtra
             //
             labelCalibrationExtra.AutoSize = true;
-            labelCalibrationExtra.ForeColor = SystemColors.ControlLight;
+            labelCalibrationExtra.ForeColor = UiPalette.TextDefault;
             labelCalibrationExtra.Location = new Point(17, 257);
             labelCalibrationExtra.Name = "labelCalibrationExtra";
             labelCalibrationExtra.Size = new Size(106, 15);
@@ -459,7 +459,7 @@
             // buttonCalibrationExtra
             //
             buttonCalibrationExtra.FlatStyle = FlatStyle.Popup;
-            buttonCalibrationExtra.ForeColor = Color.White;
+            buttonCalibrationExtra.ForeColor = UiPalette.TextPrimary;
             buttonCalibrationExtra.Location = new Point(154, 252);
             buttonCalibrationExtra.Name = "buttonCalibrationExtra";
             buttonCalibrationExtra.Size = new Size(170, 23);
@@ -471,7 +471,7 @@
             // labelSplCalibration
             // 
             labelSplCalibration.AutoSize = true;
-            labelSplCalibration.ForeColor = SystemColors.ControlLight;
+            labelSplCalibration.ForeColor = UiPalette.TextDefault;
             labelSplCalibration.Location = new Point(17, 282);
             labelSplCalibration.Name = "labelSplCalibration";
             labelSplCalibration.Size = new Size(85, 15);
@@ -481,7 +481,7 @@
             // buttonSplCalibration
             // 
             buttonSplCalibration.FlatStyle = FlatStyle.Popup;
-            buttonSplCalibration.ForeColor = Color.White;
+            buttonSplCalibration.ForeColor = UiPalette.TextPrimary;
             buttonSplCalibration.Location = new Point(154, 277);
             buttonSplCalibration.Name = "buttonSplCalibration";
             buttonSplCalibration.Size = new Size(143, 23);
@@ -493,7 +493,7 @@
             // buttonClearSplCalibration
             // 
             buttonClearSplCalibration.FlatStyle = FlatStyle.Popup;
-            buttonClearSplCalibration.ForeColor = Color.White;
+            buttonClearSplCalibration.ForeColor = UiPalette.TextPrimary;
             buttonClearSplCalibration.Location = new Point(300, 277);
             buttonClearSplCalibration.Name = "buttonClearSplCalibration";
             buttonClearSplCalibration.Size = new Size(24, 23);
@@ -505,7 +505,7 @@
             // labelMicrophoneCalibration
             //
             labelMicrophoneCalibration.AutoSize = true;
-            labelMicrophoneCalibration.ForeColor = SystemColors.ControlLight;
+            labelMicrophoneCalibration.ForeColor = UiPalette.TextDefault;
             labelMicrophoneCalibration.Location = new Point(17, 312);
             labelMicrophoneCalibration.Name = "labelMicrophoneCalibration";
             labelMicrophoneCalibration.Size = new Size(104, 15);
@@ -525,7 +525,7 @@
             // labelArrayMicrophones
             //
             labelArrayMicrophones.AutoSize = true;
-            labelArrayMicrophones.ForeColor = SystemColors.ControlLight;
+            labelArrayMicrophones.ForeColor = UiPalette.TextDefault;
             labelArrayMicrophones.Location = new Point(17, 337);
             labelArrayMicrophones.Name = "labelArrayMicrophones";
             labelArrayMicrophones.Size = new Size(110, 15);
@@ -535,7 +535,7 @@
             // buttonArrayMicrophones
             //
             buttonArrayMicrophones.FlatStyle = FlatStyle.Popup;
-            buttonArrayMicrophones.ForeColor = Color.White;
+            buttonArrayMicrophones.ForeColor = UiPalette.TextPrimary;
             buttonArrayMicrophones.Location = new Point(154, 332);
             buttonArrayMicrophones.Name = "buttonArrayMicrophones";
             buttonArrayMicrophones.Size = new Size(170, 23);
@@ -546,7 +546,7 @@
             // 
             // waveAudioBackendPanel
             //
-            waveAudioBackendPanel.BackColor = Color.FromArgb(50, 55, 66);
+            waveAudioBackendPanel.BackColor = UiPalette.PanelSurface;
             waveAudioBackendPanel.Location = new Point(8, 95);
             waveAudioBackendPanel.Name = "waveAudioBackendPanel";
             waveAudioBackendPanel.Size = new Size(311, 213);
@@ -554,7 +554,7 @@
             //
             // asioAudioBackendPanel
             //
-            asioAudioBackendPanel.BackColor = Color.FromArgb(50, 55, 66);
+            asioAudioBackendPanel.BackColor = UiPalette.PanelSurface;
             asioAudioBackendPanel.Location = new Point(8, 95);
             asioAudioBackendPanel.Name = "asioAudioBackendPanel";
             asioAudioBackendPanel.Size = new Size(311, 217);
@@ -564,7 +564,7 @@
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             ClientSize = new Size(334, 710);
             Controls.Add(audioBackendPanel);
             Controls.Add(buttonArrayMicrophones);
@@ -609,34 +609,34 @@
         private RoundedPanel audioBackendPanel;
         private Label label1;
         private Label label2;
-        private DarkComboBox comboBoxChannel;
+        private ThemedComboBox comboBoxChannel;
         private Label label3;
         private Label label4;
-        private DarkNumericUpDown numericUpDownRequestedDuration;
+        private ThemedNumericUpDown numericUpDownRequestedDuration;
         private ReleaseClickButton button1;
         private Label labelLowFrequency;
-        private DarkComboBox comboBoxSampleRate;
-        private DarkNumericUpDown numericUpDownBits;
-        private DarkNumericUpDown numericUpDownLowFrequency;
-        private DarkNumericUpDown numericUpDownHighFrequency;
+        private ThemedComboBox comboBoxSampleRate;
+        private ThemedNumericUpDown numericUpDownBits;
+        private ThemedNumericUpDown numericUpDownLowFrequency;
+        private ThemedNumericUpDown numericUpDownHighFrequency;
         private Label labelHighFrequency;
         private Label labelActualRangeCaption;
         private ReleaseClickButton buttonSaveSweepFile;
         private Label labelProtectiveHighPass;
-        private DarkComboBox comboBoxProtectiveHighPassKind;
-        private DarkNumericUpDown numericUpDownProtectiveHighPassFrequency;
-        private DarkComboBox comboBoxProtectiveHighPassSlope;
+        private ThemedComboBox comboBoxProtectiveHighPassKind;
+        private ThemedNumericUpDown numericUpDownProtectiveHighPassFrequency;
+        private ThemedComboBox comboBoxProtectiveHighPassSlope;
         private Label labelAudioBackend;
-        private DarkComboBox comboBoxAudioBackend;
+        private ThemedComboBox comboBoxAudioBackend;
         private Label labelAverageRunCount;
-        private DarkNumericUpDown numericUpDownAverageRunCount;
+        private ThemedNumericUpDown numericUpDownAverageRunCount;
         private Label labelCalibration0;
         private ReleaseClickButton buttonCalibration0;
         private ReleaseClickButton buttonClearCalibration0;
         private Label labelCalibrationExtra;
         private ReleaseClickButton buttonCalibrationExtra;
         private Label labelMicrophoneCalibration;
-        private DarkComboBox comboBoxMicrophoneCalibration;
+        private ThemedComboBox comboBoxMicrophoneCalibration;
         private Label labelArrayMicrophones;
         private ReleaseClickButton buttonArrayMicrophones;
         private Label labelSplCalibration;

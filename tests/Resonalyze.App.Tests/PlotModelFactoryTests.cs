@@ -1,8 +1,9 @@
-﻿using System.Numerics;
+using System.Numerics;
 using OxyPlot;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
+using Resonalyze.Ui;
 
 namespace Resonalyze.App.Tests;
 
@@ -1746,7 +1747,7 @@ public sealed class PlotModelFactoryTests
             Assert.Single(model.Annotations.OfType<OverlayTextAnnotation>());
         Assert.Contains("below the measurement noise floor", note.Text);
         Assert.DoesNotContain("overlaps", note.Text);
-        Assert.Equal(OxyColors.Gray, note.TextColor);
+        Assert.Equal(UiPalette.CurveMuted.ToOxy(), note.TextColor);
     }
 
     [Fact]
@@ -1771,11 +1772,11 @@ public sealed class PlotModelFactoryTests
             model.Annotations.OfType<OverlayTextAnnotation>().ToList();
         Assert.Equal(2, notes.Count);
         OverlayTextAnnotation amber =
-            Assert.Single(notes, n => n.TextColor == OxyColors.Goldenrod);
+            Assert.Single(notes, n => n.TextColor == UiPalette.Warning.ToOxy());
         Assert.Contains("HD2", amber.Text);
         Assert.Contains("overlaps its neighbour", amber.Text);
         Assert.DoesNotContain("HD3", amber.Text);
-        OverlayTextAnnotation gray = Assert.Single(notes, n => n.TextColor == OxyColors.Gray);
+        OverlayTextAnnotation gray = Assert.Single(notes, n => n.TextColor == UiPalette.CurveMuted.ToOxy());
         Assert.Contains("HD3", gray.Text);
         Assert.Contains("HD4", gray.Text);
         Assert.Contains("below the measurement noise floor", gray.Text);

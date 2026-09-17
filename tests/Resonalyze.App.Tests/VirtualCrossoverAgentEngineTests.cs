@@ -40,7 +40,7 @@ public sealed class VirtualCrossoverAgentEngineTests
             Hybrid(panel).Checked = false;
             List<VirtualCrossoverChannel> order = Channels(panel).ToList();
             double gain = Channels(panel)[0].SideSettings(rightSide: false).GainDb;
-            var targetLevel = (DarkNumericUpDown)Field(panel, "numericTargetLevel");
+            var targetLevel = (ThemedNumericUpDown)Field(panel, "numericTargetLevel");
             double level = Project(panel).TargetLevelDb;
             Assert.Equal(level, (double)targetLevel.Value);
 
@@ -793,7 +793,7 @@ public sealed class VirtualCrossoverAgentEngineTests
             Moves(() => Project(panel).ActiveSideRight = true);
             dynamic groupView = Field(panel, "comboBoxGroupView");
             Moves(() => groupView.SelectedItem = VirtualCrossoverGroupView.Everything);
-            Moves(() => ((DarkNumericUpDown)Field(panel, "numericTargetLevel")).Value += 1);
+            Moves(() => ((ThemedNumericUpDown)Field(panel, "numericTargetLevel")).Value += 1);
         });
     }
 

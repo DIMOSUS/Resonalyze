@@ -28,20 +28,20 @@ namespace Resonalyze.Options
         /// </summary>
         private void InitializeComponent()
         {
-            numericLength = new DarkNumericUpDown();
+            numericLength = new ThemedNumericUpDown();
             label1 = new Label();
             labelBandWidth = new Label();
-            comboBandWidth = new DarkComboBox();
+            comboBandWidth = new ThemedComboBox();
             labelBandCenter = new Label();
-            comboBandCenter = new DarkComboBox();
+            comboBandCenter = new ThemedComboBox();
             labelAmplitudeScale = new Label();
-            comboAmplitudeScale = new DarkComboBox();
+            comboAmplitudeScale = new ThemedComboBox();
             labelTimeUnit = new Label();
-            comboTimeUnit = new DarkComboBox();
+            comboTimeUnit = new ThemedComboBox();
             labelTimeOrigin = new Label();
-            comboTimeOrigin = new DarkComboBox();
+            comboTimeOrigin = new ThemedComboBox();
             labelEnvelopeSmoothing = new Label();
-            numericEnvelopeSmoothing = new DarkNumericUpDown();
+            numericEnvelopeSmoothing = new ThemedNumericUpDown();
             labelInvert = new Label();
             checkInvert = new ReleaseClickCheckBox();
             labelNormalizeStep = new Label();
@@ -56,9 +56,9 @@ namespace Resonalyze.Options
             //
             // numericLength
             //
-            numericLength.BackColor = Color.FromArgb(55, 60, 72);
+            numericLength.BackColor = UiPalette.ControlSurface;
             numericLength.DecimalPlaces = 0;
-            numericLength.ForeColor = Color.White;
+            numericLength.ForeColor = UiPalette.TextPrimary;
             numericLength.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericLength.Location = new Point(193, 12);
             numericLength.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
@@ -74,7 +74,7 @@ namespace Resonalyze.Options
             // label1
             //
             label1.AutoSize = true;
-            label1.ForeColor = SystemColors.ControlLight;
+            label1.ForeColor = UiPalette.TextDefault;
             label1.Location = new Point(12, 14);
             label1.Name = "label1";
             label1.Size = new Size(98, 15);
@@ -84,7 +84,7 @@ namespace Resonalyze.Options
             // labelBandWidth
             //
             labelBandWidth.AutoSize = true;
-            labelBandWidth.ForeColor = SystemColors.ControlLight;
+            labelBandWidth.ForeColor = UiPalette.TextDefault;
             labelBandWidth.Location = new Point(12, 41);
             labelBandWidth.Name = "labelBandWidth";
             labelBandWidth.Size = new Size(70, 15);
@@ -93,8 +93,8 @@ namespace Resonalyze.Options
             //
             // comboBandWidth
             //
-            comboBandWidth.BackColor = Color.FromArgb(55, 60, 72);
-            comboBandWidth.ForeColor = Color.White;
+            comboBandWidth.BackColor = UiPalette.ControlSurface;
+            comboBandWidth.ForeColor = UiPalette.TextPrimary;
             comboBandWidth.Location = new Point(153, 38);
             comboBandWidth.Margin = new Padding(0);
             comboBandWidth.MinimumSize = new Size(36, 19);
@@ -105,7 +105,7 @@ namespace Resonalyze.Options
             // labelBandCenter
             //
             labelBandCenter.AutoSize = true;
-            labelBandCenter.ForeColor = SystemColors.ControlLight;
+            labelBandCenter.ForeColor = UiPalette.TextDefault;
             labelBandCenter.Location = new Point(12, 68);
             labelBandCenter.Name = "labelBandCenter";
             labelBandCenter.Size = new Size(80, 15);
@@ -114,8 +114,8 @@ namespace Resonalyze.Options
             //
             // comboBandCenter
             //
-            comboBandCenter.BackColor = Color.FromArgb(55, 60, 72);
-            comboBandCenter.ForeColor = Color.White;
+            comboBandCenter.BackColor = UiPalette.ControlSurface;
+            comboBandCenter.ForeColor = UiPalette.TextPrimary;
             comboBandCenter.Location = new Point(153, 65);
             comboBandCenter.Margin = new Padding(0);
             comboBandCenter.MinimumSize = new Size(36, 19);
@@ -126,7 +126,7 @@ namespace Resonalyze.Options
             // labelAmplitudeScale
             //
             labelAmplitudeScale.AutoSize = true;
-            labelAmplitudeScale.ForeColor = SystemColors.ControlLight;
+            labelAmplitudeScale.ForeColor = UiPalette.TextDefault;
             labelAmplitudeScale.Location = new Point(12, 95);
             labelAmplitudeScale.Name = "labelAmplitudeScale";
             labelAmplitudeScale.Size = new Size(90, 15);
@@ -135,8 +135,8 @@ namespace Resonalyze.Options
             //
             // comboAmplitudeScale
             //
-            comboAmplitudeScale.BackColor = Color.FromArgb(55, 60, 72);
-            comboAmplitudeScale.ForeColor = Color.White;
+            comboAmplitudeScale.BackColor = UiPalette.ControlSurface;
+            comboAmplitudeScale.ForeColor = UiPalette.TextPrimary;
             comboAmplitudeScale.Location = new Point(153, 92);
             comboAmplitudeScale.Margin = new Padding(0);
             comboAmplitudeScale.MinimumSize = new Size(36, 19);
@@ -147,7 +147,7 @@ namespace Resonalyze.Options
             // labelTimeUnit
             //
             labelTimeUnit.AutoSize = true;
-            labelTimeUnit.ForeColor = SystemColors.ControlLight;
+            labelTimeUnit.ForeColor = UiPalette.TextDefault;
             labelTimeUnit.Location = new Point(12, 122);
             labelTimeUnit.Name = "labelTimeUnit";
             labelTimeUnit.Size = new Size(57, 15);
@@ -156,8 +156,8 @@ namespace Resonalyze.Options
             //
             // comboTimeUnit
             //
-            comboTimeUnit.BackColor = Color.FromArgb(55, 60, 72);
-            comboTimeUnit.ForeColor = Color.White;
+            comboTimeUnit.BackColor = UiPalette.ControlSurface;
+            comboTimeUnit.ForeColor = UiPalette.TextPrimary;
             comboTimeUnit.Location = new Point(153, 119);
             comboTimeUnit.Margin = new Padding(0);
             comboTimeUnit.MinimumSize = new Size(36, 19);
@@ -168,7 +168,7 @@ namespace Resonalyze.Options
             // labelTimeOrigin
             //
             labelTimeOrigin.AutoSize = true;
-            labelTimeOrigin.ForeColor = SystemColors.ControlLight;
+            labelTimeOrigin.ForeColor = UiPalette.TextDefault;
             labelTimeOrigin.Location = new Point(12, 149);
             labelTimeOrigin.Name = "labelTimeOrigin";
             labelTimeOrigin.Size = new Size(58, 15);
@@ -177,8 +177,8 @@ namespace Resonalyze.Options
             //
             // comboTimeOrigin
             //
-            comboTimeOrigin.BackColor = Color.FromArgb(55, 60, 72);
-            comboTimeOrigin.ForeColor = Color.White;
+            comboTimeOrigin.BackColor = UiPalette.ControlSurface;
+            comboTimeOrigin.ForeColor = UiPalette.TextPrimary;
             comboTimeOrigin.Location = new Point(153, 146);
             comboTimeOrigin.Margin = new Padding(0);
             comboTimeOrigin.MinimumSize = new Size(36, 19);
@@ -189,7 +189,7 @@ namespace Resonalyze.Options
             // labelEnvelopeSmoothing
             //
             labelEnvelopeSmoothing.AutoSize = true;
-            labelEnvelopeSmoothing.ForeColor = SystemColors.ControlLight;
+            labelEnvelopeSmoothing.ForeColor = UiPalette.TextDefault;
             labelEnvelopeSmoothing.Location = new Point(12, 176);
             labelEnvelopeSmoothing.Name = "labelEnvelopeSmoothing";
             labelEnvelopeSmoothing.Size = new Size(120, 15);
@@ -198,9 +198,9 @@ namespace Resonalyze.Options
             //
             // numericEnvelopeSmoothing
             //
-            numericEnvelopeSmoothing.BackColor = Color.FromArgb(55, 60, 72);
+            numericEnvelopeSmoothing.BackColor = UiPalette.ControlSurface;
             numericEnvelopeSmoothing.DecimalPlaces = 2;
-            numericEnvelopeSmoothing.ForeColor = Color.White;
+            numericEnvelopeSmoothing.ForeColor = UiPalette.TextPrimary;
             numericEnvelopeSmoothing.Increment = new decimal(new int[] { 5, 0, 0, 131072 });
             numericEnvelopeSmoothing.Location = new Point(193, 174);
             numericEnvelopeSmoothing.Maximum = new decimal(new int[] { 100, 0, 0, 0 });
@@ -215,7 +215,7 @@ namespace Resonalyze.Options
             // labelInvert
             //
             labelInvert.AutoSize = true;
-            labelInvert.ForeColor = SystemColors.ControlLight;
+            labelInvert.ForeColor = UiPalette.TextDefault;
             labelInvert.Location = new Point(12, 203);
             labelInvert.Name = "labelInvert";
             labelInvert.Size = new Size(88, 15);
@@ -225,7 +225,7 @@ namespace Resonalyze.Options
             // checkInvert
             //
             checkInvert.AutoSize = true;
-            checkInvert.ForeColor = SystemColors.ControlLight;
+            checkInvert.ForeColor = UiPalette.TextDefault;
             checkInvert.Location = new Point(238, 204);
             checkInvert.Name = "checkInvert";
             checkInvert.Size = new Size(15, 14);
@@ -235,7 +235,7 @@ namespace Resonalyze.Options
             // labelNormalizeStep
             //
             labelNormalizeStep.AutoSize = true;
-            labelNormalizeStep.ForeColor = SystemColors.ControlLight;
+            labelNormalizeStep.ForeColor = UiPalette.TextDefault;
             labelNormalizeStep.Location = new Point(12, 230);
             labelNormalizeStep.Name = "labelNormalizeStep";
             labelNormalizeStep.Size = new Size(140, 15);
@@ -245,7 +245,7 @@ namespace Resonalyze.Options
             // checkNormalizeStep
             //
             checkNormalizeStep.AutoSize = true;
-            checkNormalizeStep.ForeColor = SystemColors.ControlLight;
+            checkNormalizeStep.ForeColor = UiPalette.TextDefault;
             checkNormalizeStep.Location = new Point(238, 231);
             checkNormalizeStep.Name = "checkNormalizeStep";
             checkNormalizeStep.Size = new Size(15, 14);
@@ -255,7 +255,7 @@ namespace Resonalyze.Options
             // labelCurves
             //
             labelCurves.AutoSize = true;
-            labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
+            labelCurves.ForeColor = UiPalette.TextAccent;
             labelCurves.Location = new Point(12, 259);
             labelCurves.Name = "labelCurves";
             labelCurves.Size = new Size(48, 15);
@@ -265,7 +265,7 @@ namespace Resonalyze.Options
             // checkBoxShowImpulse
             //
             checkBoxShowImpulse.AutoSize = true;
-            checkBoxShowImpulse.ForeColor = SystemColors.ControlLight;
+            checkBoxShowImpulse.ForeColor = UiPalette.TextDefault;
             checkBoxShowImpulse.Location = new Point(12, 281);
             checkBoxShowImpulse.Name = "checkBoxShowImpulse";
             checkBoxShowImpulse.Size = new Size(149, 19);
@@ -276,7 +276,7 @@ namespace Resonalyze.Options
             // checkBoxShowEnvelope
             //
             checkBoxShowEnvelope.AutoSize = true;
-            checkBoxShowEnvelope.ForeColor = SystemColors.ControlLight;
+            checkBoxShowEnvelope.ForeColor = UiPalette.TextDefault;
             checkBoxShowEnvelope.Location = new Point(12, 306);
             checkBoxShowEnvelope.Name = "checkBoxShowEnvelope";
             checkBoxShowEnvelope.Size = new Size(149, 19);
@@ -287,7 +287,7 @@ namespace Resonalyze.Options
             // checkBoxShowStep
             //
             checkBoxShowStep.AutoSize = true;
-            checkBoxShowStep.ForeColor = SystemColors.ControlLight;
+            checkBoxShowStep.ForeColor = UiPalette.TextDefault;
             checkBoxShowStep.Location = new Point(12, 331);
             checkBoxShowStep.Name = "checkBoxShowStep";
             checkBoxShowStep.Size = new Size(149, 19);
@@ -299,7 +299,7 @@ namespace Resonalyze.Options
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             ClientSize = new Size(265, 362);
             Controls.Add(checkBoxShowStep);
             Controls.Add(checkBoxShowEnvelope);
@@ -338,20 +338,20 @@ namespace Resonalyze.Options
 
         #endregion
 
-        private DarkNumericUpDown numericLength;
+        private ThemedNumericUpDown numericLength;
         private Label label1;
         private Label labelBandWidth;
-        private DarkComboBox comboBandWidth;
+        private ThemedComboBox comboBandWidth;
         private Label labelBandCenter;
-        private DarkComboBox comboBandCenter;
+        private ThemedComboBox comboBandCenter;
         private Label labelAmplitudeScale;
-        private DarkComboBox comboAmplitudeScale;
+        private ThemedComboBox comboAmplitudeScale;
         private Label labelTimeUnit;
-        private DarkComboBox comboTimeUnit;
+        private ThemedComboBox comboTimeUnit;
         private Label labelTimeOrigin;
-        private DarkComboBox comboTimeOrigin;
+        private ThemedComboBox comboTimeOrigin;
         private Label labelEnvelopeSmoothing;
-        private DarkNumericUpDown numericEnvelopeSmoothing;
+        private ThemedNumericUpDown numericEnvelopeSmoothing;
         private Label labelInvert;
         private ReleaseClickCheckBox checkInvert;
         private Label labelNormalizeStep;

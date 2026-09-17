@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class AsioAudioBackendPanel
     {
@@ -29,13 +29,13 @@
         private void InitializeComponent()
         {
             labelAsioDriver = new Label();
-            comboBoxAsioDriver = new DarkComboBox();
+            comboBoxAsioDriver = new ThemedComboBox();
             labelAsioInputChannel = new Label();
-            comboBoxAsioInputChannel = new DarkComboBox();
+            comboBoxAsioInputChannel = new ThemedComboBox();
             labelAsioOutputChannel = new Label();
-            comboBoxAsioOutputChannel = new DarkComboBox();
+            comboBoxAsioOutputChannel = new ThemedComboBox();
             labelAsioLoopbackChannel = new Label();
-            comboBoxAsioLoopbackChannel = new DarkComboBox();
+            comboBoxAsioLoopbackChannel = new ThemedComboBox();
             labelAsioSampleRate = new Label();
             labelAsioSampleRateStatus = new Label();
             labelAsioPlaybackLatency = new Label();
@@ -47,7 +47,7 @@
             // labelAsioDriver
             //
             labelAsioDriver.AutoSize = true;
-            labelAsioDriver.ForeColor = SystemColors.ControlLight;
+            labelAsioDriver.ForeColor = UiPalette.TextDefault;
             labelAsioDriver.Location = new Point(0, 8);
             labelAsioDriver.Name = "labelAsioDriver";
             labelAsioDriver.Size = new Size(66, 15);
@@ -56,8 +56,8 @@
             //
             // comboBoxAsioDriver
             //
-            comboBoxAsioDriver.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxAsioDriver.ForeColor = Color.White;
+            comboBoxAsioDriver.BackColor = UiPalette.ControlSurface;
+            comboBoxAsioDriver.ForeColor = UiPalette.TextPrimary;
             comboBoxAsioDriver.Location = new Point(137, 0);
             comboBoxAsioDriver.Margin = new Padding(0);
             comboBoxAsioDriver.MinimumSize = new Size(36, 19);
@@ -68,7 +68,7 @@
             // labelAsioInputChannel
             //
             labelAsioInputChannel.AutoSize = true;
-            labelAsioInputChannel.ForeColor = SystemColors.ControlLight;
+            labelAsioInputChannel.ForeColor = UiPalette.TextDefault;
             labelAsioInputChannel.Location = new Point(0, 66);
             labelAsioInputChannel.Name = "labelAsioInputChannel";
             labelAsioInputChannel.Size = new Size(109, 15);
@@ -77,8 +77,8 @@
             //
             // comboBoxAsioInputChannel
             //
-            comboBoxAsioInputChannel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxAsioInputChannel.ForeColor = Color.White;
+            comboBoxAsioInputChannel.BackColor = UiPalette.ControlSurface;
+            comboBoxAsioInputChannel.ForeColor = UiPalette.TextPrimary;
             comboBoxAsioInputChannel.Location = new Point(137, 58);
             comboBoxAsioInputChannel.Margin = new Padding(0);
             comboBoxAsioInputChannel.MinimumSize = new Size(36, 19);
@@ -89,7 +89,7 @@
             // labelAsioOutputChannel
             //
             labelAsioOutputChannel.AutoSize = true;
-            labelAsioOutputChannel.ForeColor = SystemColors.ControlLight;
+            labelAsioOutputChannel.ForeColor = UiPalette.TextDefault;
             labelAsioOutputChannel.Location = new Point(0, 37);
             labelAsioOutputChannel.Name = "labelAsioOutputChannel";
             labelAsioOutputChannel.Size = new Size(122, 15);
@@ -98,8 +98,8 @@
             //
             // comboBoxAsioOutputChannel
             //
-            comboBoxAsioOutputChannel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxAsioOutputChannel.ForeColor = Color.White;
+            comboBoxAsioOutputChannel.BackColor = UiPalette.ControlSurface;
+            comboBoxAsioOutputChannel.ForeColor = UiPalette.TextPrimary;
             comboBoxAsioOutputChannel.Location = new Point(137, 29);
             comboBoxAsioOutputChannel.Margin = new Padding(0);
             comboBoxAsioOutputChannel.MinimumSize = new Size(36, 19);
@@ -110,7 +110,7 @@
             // labelAsioLoopbackChannel
             //
             labelAsioLoopbackChannel.AutoSize = true;
-            labelAsioLoopbackChannel.ForeColor = SystemColors.ControlLight;
+            labelAsioLoopbackChannel.ForeColor = UiPalette.TextDefault;
             labelAsioLoopbackChannel.Location = new Point(0, 95);
             labelAsioLoopbackChannel.Name = "labelAsioLoopbackChannel";
             labelAsioLoopbackChannel.Size = new Size(130, 15);
@@ -119,8 +119,8 @@
             //
             // comboBoxAsioLoopbackChannel
             //
-            comboBoxAsioLoopbackChannel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxAsioLoopbackChannel.ForeColor = Color.White;
+            comboBoxAsioLoopbackChannel.BackColor = UiPalette.ControlSurface;
+            comboBoxAsioLoopbackChannel.ForeColor = UiPalette.TextPrimary;
             comboBoxAsioLoopbackChannel.Location = new Point(137, 87);
             comboBoxAsioLoopbackChannel.Margin = new Padding(0);
             comboBoxAsioLoopbackChannel.MinimumSize = new Size(36, 19);
@@ -131,7 +131,7 @@
             // labelAsioSampleRate
             //
             labelAsioSampleRate.AutoSize = true;
-            labelAsioSampleRate.ForeColor = SystemColors.ControlLight;
+            labelAsioSampleRate.ForeColor = UiPalette.TextDefault;
             labelAsioSampleRate.Location = new Point(0, 116);
             labelAsioSampleRate.Name = "labelAsioSampleRate";
             labelAsioSampleRate.Size = new Size(97, 15);
@@ -141,7 +141,7 @@
             // labelAsioSampleRateStatus
             //
             labelAsioSampleRateStatus.AutoSize = true;
-            labelAsioSampleRateStatus.ForeColor = SystemColors.ControlLight;
+            labelAsioSampleRateStatus.ForeColor = UiPalette.TextDefault;
             labelAsioSampleRateStatus.Location = new Point(137, 116);
             labelAsioSampleRateStatus.Name = "labelAsioSampleRateStatus";
             labelAsioSampleRateStatus.Size = new Size(12, 15);
@@ -151,7 +151,7 @@
             // labelAsioPlaybackLatency
             //
             labelAsioPlaybackLatency.AutoSize = true;
-            labelAsioPlaybackLatency.ForeColor = SystemColors.ControlLight;
+            labelAsioPlaybackLatency.ForeColor = UiPalette.TextDefault;
             labelAsioPlaybackLatency.Location = new Point(0, 134);
             labelAsioPlaybackLatency.Name = "labelAsioPlaybackLatency";
             labelAsioPlaybackLatency.Size = new Size(95, 15);
@@ -161,7 +161,7 @@
             // labelAsioPlaybackLatencyValue
             //
             labelAsioPlaybackLatencyValue.AutoSize = true;
-            labelAsioPlaybackLatencyValue.ForeColor = SystemColors.ControlLight;
+            labelAsioPlaybackLatencyValue.ForeColor = UiPalette.TextDefault;
             labelAsioPlaybackLatencyValue.Location = new Point(137, 134);
             labelAsioPlaybackLatencyValue.Name = "labelAsioPlaybackLatencyValue";
             labelAsioPlaybackLatencyValue.Size = new Size(12, 15);
@@ -171,7 +171,7 @@
             // buttonAsioInputProbe
             //
             buttonAsioInputProbe.FlatStyle = FlatStyle.Popup;
-            buttonAsioInputProbe.ForeColor = Color.White;
+            buttonAsioInputProbe.ForeColor = UiPalette.TextPrimary;
             buttonAsioInputProbe.Location = new Point(137, 161);
             buttonAsioInputProbe.Name = "buttonAsioInputProbe";
             buttonAsioInputProbe.Size = new Size(170, 23);
@@ -182,7 +182,7 @@
             // buttonAsioControlPanel
             //
             buttonAsioControlPanel.FlatStyle = FlatStyle.Popup;
-            buttonAsioControlPanel.ForeColor = Color.White;
+            buttonAsioControlPanel.ForeColor = UiPalette.TextPrimary;
             buttonAsioControlPanel.Location = new Point(137, 190);
             buttonAsioControlPanel.Name = "buttonAsioControlPanel";
             buttonAsioControlPanel.Size = new Size(170, 23);
@@ -194,7 +194,7 @@
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             Controls.Add(buttonAsioInputProbe);
             Controls.Add(comboBoxAsioLoopbackChannel);
             Controls.Add(labelAsioLoopbackChannel);
@@ -217,13 +217,13 @@
 
         #endregion
         private Label labelAsioDriver;
-        private DarkComboBox comboBoxAsioDriver;
+        private ThemedComboBox comboBoxAsioDriver;
         private Label labelAsioInputChannel;
-        private DarkComboBox comboBoxAsioInputChannel;
+        private ThemedComboBox comboBoxAsioInputChannel;
         private Label labelAsioOutputChannel;
-        private DarkComboBox comboBoxAsioOutputChannel;
+        private ThemedComboBox comboBoxAsioOutputChannel;
         private Label labelAsioLoopbackChannel;
-        private DarkComboBox comboBoxAsioLoopbackChannel;
+        private ThemedComboBox comboBoxAsioLoopbackChannel;
         private Label labelAsioSampleRate;
         private Label labelAsioSampleRateStatus;
         private Label labelAsioPlaybackLatency;

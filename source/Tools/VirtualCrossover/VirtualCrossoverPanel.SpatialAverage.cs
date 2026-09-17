@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -515,7 +515,7 @@ public partial class VirtualCrossoverPanel
         checkBoxHybrid.ForeColor = !live
             ? UiPalette.TextDisabled
             // Available but unticked: the plot ignores attached captures, so warn in the error colour.
-            : checkBoxHybrid.Checked ? hybridToggleColor : UiPalette.ErrorSoft;
+            : checkBoxHybrid.Checked ? hybridToggleColor : UiPalette.Error;
         checkBoxHybrid.AutoCheck = live;
         checkBoxHybrid.TabStop = live;
         toolTip.SetToolTip(

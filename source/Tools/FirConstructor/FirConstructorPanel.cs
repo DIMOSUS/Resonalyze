@@ -16,9 +16,9 @@ public partial class FirConstructorPanel : UserControl
 {
     private static readonly int[] SampleRates = [44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
 
-    private static readonly OxyColor KernelColor = OxyColor.FromRgb(90, 180, 255);
-    private static readonly OxyColor TargetColor = OxyColor.FromArgb(200, 230, 184, 0);
-    private static readonly OxyColor PhaseColor = OxyColor.FromRgb(210, 140, 255);
+    private static readonly OxyColor KernelColor = UiPalette.CurveKernel.ToOxy();
+    private static readonly OxyColor TargetColor = OxyColor.FromAColor(200, UiPalette.CurveTarget.ToOxy());
+    private static readonly OxyColor PhaseColor = UiPalette.CurvePhase.ToOxy();
 
     private const string MagnitudeAxisKey = "magnitude";
     private const string PhaseAxisKey = "phase";
@@ -66,7 +66,7 @@ public partial class FirConstructorPanel : UserControl
     public FirConstructorPanel()
     {
         InitializeComponent();
-        Ui.DarkScrollBars.Apply(this);
+        Ui.ThemedScrollBars.Apply(this);
 
         responseModel = PlotModelStyle.CreateTitledModel("Magnitude and phase (phase referenced to the kernel's delay)");
         responseModel.TitleFontSize = 12;
@@ -281,7 +281,7 @@ public partial class FirConstructorPanel : UserControl
                 new Choice<FirCrossoverMethod>(FirCrossoverMethod.WindowedSinc, "Windowed sinc")
             ]);
             comboBoxMethod.SelectedIndex = 0;
-            foreach (DarkComboBox family in new[] { comboBoxHighPassFamily, comboBoxLowPassFamily })
+            foreach (ThemedComboBox family in new[] { comboBoxHighPassFamily, comboBoxLowPassFamily })
             {
                 foreach (CrossoverFilterFamily value in FirCrossoverDesign.IirFamilies)
                 {
@@ -314,7 +314,7 @@ public partial class FirConstructorPanel : UserControl
 
     private void WireEvents()
     {
-        foreach (DarkComboBox combo in new[]
+        foreach (ThemedComboBox combo in new[]
                  {
                      comboBoxType, comboBoxMethod, comboBoxHighPassSlope, comboBoxLowPassSlope,
                      comboBoxWindow, comboBoxSampleRate
@@ -327,7 +327,7 @@ public partial class FirConstructorPanel : UserControl
             OnFamilyChanged(comboBoxHighPassFamily, comboBoxHighPassSlope);
         comboBoxLowPassFamily.SelectedIndexChanged += (_, _) =>
             OnFamilyChanged(comboBoxLowPassFamily, comboBoxLowPassSlope);
-        foreach (DarkNumericUpDown numeric in new[] { numericHighPassHz, numericLowPassHz, numericKaiserBeta })
+        foreach (ThemedNumericUpDown numeric in new[] { numericHighPassHz, numericLowPassHz, numericKaiserBeta })
         {
             numeric.ValueChanged += (_, _) => OnDesignEdited();
         }
@@ -354,7 +354,7 @@ public partial class FirConstructorPanel : UserControl
         plotImpulse.Height = available - available / 2;
     }
 
-    private void OnFamilyChanged(DarkComboBox family, DarkComboBox slope)
+    private void OnFamilyChanged(ThemedComboBox family, ThemedComboBox slope)
     {
         if (suppressEdits)
         {
@@ -541,7 +541,7 @@ public partial class FirConstructorPanel : UserControl
     }
 
     private static void WriteEdge(
-        CrossoverEdge edge, DarkNumericUpDown frequency, DarkComboBox family, DarkComboBox slope)
+        CrossoverEdge edge, ThemedNumericUpDown frequency, ThemedComboBox family, ThemedComboBox slope)
     {
         frequency.Value = frequency.ClampValue(edge.FrequencyHz);
         CrossoverFilterFamily offered = FirCrossoverDesign.IirFamilies.Contains(edge.Family)
@@ -561,7 +561,7 @@ public partial class FirConstructorPanel : UserControl
         SelectChoice(comboBoxSampleRate, rate);
     }
 
-    private static void FillSlopes(DarkComboBox slope, CrossoverFilterFamily family, int preferred)
+    private static void FillSlopes(ThemedComboBox slope, CrossoverFilterFamily family, int preferred)
     {
         IReadOnlyList<int> slopes = FirCrossoverDesign.SupportedSlopes(family);
         slope.Items.Clear();
@@ -848,10 +848,10 @@ public partial class FirConstructorPanel : UserControl
         }
     }
 
-    private static T Selected<T>(DarkComboBox combo, T fallback) =>
+    private static T Selected<T>(ThemedComboBox combo, T fallback) =>
         combo.SelectedItem is Choice<T> choice ? choice.Value : fallback;
 
-    private static void SelectChoice<T>(DarkComboBox combo, T value)
+    private static void SelectChoice<T>(ThemedComboBox combo, T value)
     {
         foreach (object? item in combo.Items)
         {

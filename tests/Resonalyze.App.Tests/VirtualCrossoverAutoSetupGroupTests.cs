@@ -178,7 +178,7 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
             // The elevation ceiling comes off the fit, and the fit is off the UI thread now.
             StaTest.Settle(dialog.PendingPreview);
 
-            var field = (DarkNumericUpDown)typeof(VirtualCrossoverAutoSetupDialog)
+            var field = (ThemedNumericUpDown)typeof(VirtualCrossoverAutoSetupDialog)
                 .GetField("subElevation", BindingFlags.NonPublic | BindingFlags.Instance)!
                 .GetValue(dialog)!;
             Assert.True(field.Maximum <= 1m, $"capped at {field.Maximum} dB to begin with");

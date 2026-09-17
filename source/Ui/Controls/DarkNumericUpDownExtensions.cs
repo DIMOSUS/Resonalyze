@@ -1,9 +1,9 @@
 namespace Resonalyze;
 
-internal static class DarkNumericUpDownExtensions
+internal static class ThemedNumericUpDownExtensions
 {
     /// <summary>Non-finite becomes 0; rounded to the control's decimals and clamped into range.</summary>
-    public static decimal ClampValue(this DarkNumericUpDown control, double value)
+    public static decimal ClampValue(this ThemedNumericUpDown control, double value)
     {
         if (!double.IsFinite(value))
         {

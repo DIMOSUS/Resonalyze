@@ -1,4 +1,4 @@
-﻿using OxyPlot;
+using OxyPlot;
 using Resonalyze.Dsp;
 using Resonalyze.History;
 using Resonalyze.Options;
@@ -21,8 +21,8 @@ public partial class EqWizardPanel
         "or a measured curve from an overlay slot or a text file.\n" +
         "Use Target… to shape the goal curve.";
 
-    private static readonly OxyColor SourceCurveColor = OxyColor.FromRgb(180, 190, 205);
-    private static readonly OxyColor SourcePlusEqColor = OxyColor.FromRgb(0, 209, 255);
+    private static readonly OxyColor SourceCurveColor = UiPalette.CurveSource.ToOxy();
+    private static readonly OxyColor SourcePlusEqColor = UiPalette.CurveSourcePlusEq.ToOxy();
 
     private static readonly double[] DefaultTargetGrid =
         EqualizationCurve.LogFrequencyGrid(20, 20_000, 512).ToArray();
@@ -40,7 +40,7 @@ public partial class EqWizardPanel
     private TargetCurveSpec targetSpec = TargetCurveSpec.FromPreset(TargetPreset.Flat);
     private double targetToleranceDb = 3;
     private TargetDeviationMode targetDeviationMode = TargetDeviationMode.Deviation;
-    private Color targetColor = Color.FromArgb(0x37, 0xC8, 0xA0);
+    private Color targetColor = UiPalette.CurveTargetDefault;
     private double targetStrokeThickness = 2;
     private OverlayLineStyle targetLineStyle = OverlayLineStyle.Dash;
     private int targetSmoothingInverseOctaves;

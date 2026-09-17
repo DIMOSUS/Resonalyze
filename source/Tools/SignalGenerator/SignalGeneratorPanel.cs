@@ -31,7 +31,7 @@ public partial class SignalGeneratorPanel : UserControl
     public SignalGeneratorPanel()
     {
         InitializeComponent();
-        Ui.DarkScrollBars.Apply(this);
+        Ui.ThemedScrollBars.Apply(this);
         InitializeOptions();
         UpdateSignalControls();
         VisibleChanged += (_, _) => RefreshAudioSettings();

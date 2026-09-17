@@ -4,7 +4,7 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
-public sealed class DarkNumericUpDownLogarithmicStepTests
+public sealed class ThemedNumericUpDownLogarithmicStepTests
 {
     // 2 ^ (1/96).
     private const double StepRatio = 1.0072464014332754;
@@ -21,7 +21,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [InlineData(20_000, 20_145)]
     public void StepUp_MovesTheValueBy_A96thOfAnOctave(int from, int expected)
     {
-        using DarkNumericUpDown control = NewFrequencyControl();
+        using ThemedNumericUpDown control = NewFrequencyControl();
         control.Value = from;
 
         PressUp(control);
@@ -38,7 +38,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [InlineData(20_145, 20_000)]
     public void StepDown_DividesByTheSameRatio(int from, int expected)
     {
-        using DarkNumericUpDown control = NewFrequencyControl();
+        using ThemedNumericUpDown control = NewFrequencyControl();
         control.Value = from;
 
         PressDown(control);
@@ -58,7 +58,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [InlineData(19_997)]
     public void AStepUpAndStraightBackDown_LandsWhereItStarted(int from)
     {
-        using DarkNumericUpDown control = NewFrequencyControl();
+        using ThemedNumericUpDown control = NewFrequencyControl();
         control.Value = from;
 
         PressUp(control);
@@ -79,7 +79,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [InlineData(1000)]
     public void AStepDownAndStraightBackUp_LandsWhereItStarted(int from)
     {
-        using DarkNumericUpDown control = NewFrequencyControl();
+        using ThemedNumericUpDown control = NewFrequencyControl();
         control.Value = from;
 
         PressDown(control);
@@ -92,7 +92,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     public void EveryWholeHzInTheBand_ReturnsFromAStepAndAStepBack_BothWaysRound()
     {
         // Range opened so clamping does not mask the sweep.
-        using var control = new DarkNumericUpDown
+        using var control = new ThemedNumericUpDown
         {
             DecimalPlaces = 0,
             Minimum = 1,
@@ -129,7 +129,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     public void AStepTheMaximumCutShort_StillStepsBackToWhereItCameFrom()
     {
         // The 20 kHz limit has no rung above 19 997 Hz; the value must still come back off it.
-        using DarkNumericUpDown control = NewWizardRangeControl();
+        using ThemedNumericUpDown control = NewWizardRangeControl();
         control.Value = 19_997;
 
         PressUp(control);
@@ -142,7 +142,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [Fact]
     public void HeldAgainstTheMaximum_TheWayBackIsStillOneStep()
     {
-        using DarkNumericUpDown control = NewWizardRangeControl();
+        using ThemedNumericUpDown control = NewWizardRangeControl();
         control.Value = 19_997;
 
         PressUp(control);
@@ -158,7 +158,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [Fact]
     public void AStepTheMinimumCutShort_StillStepsBackToWhereItCameFrom()
     {
-        using var control = new DarkNumericUpDown
+        using var control = new ThemedNumericUpDown
         {
             DecimalPlaces = 0,
             Minimum = 1000,
@@ -178,7 +178,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [Fact]
     public void TheModeReplacesTheFixedIncrement()
     {
-        using DarkNumericUpDown control = NewFrequencyControl();
+        using ThemedNumericUpDown control = NewFrequencyControl();
         control.Increment = 10;
         control.Value = 100;
 
@@ -190,7 +190,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [Fact]
     public void WithoutTheMode_TheFixedIncrementStillRules()
     {
-        using DarkNumericUpDown control = NewFrequencyControl();
+        using ThemedNumericUpDown control = NewFrequencyControl();
         control.LogarithmicFrequencyStep = false;
         control.Increment = 10;
         control.Value = 100;
@@ -203,7 +203,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [Fact]
     public void TheStepFollowsTypedTextRatherThanTheValueItReplaced()
     {
-        using DarkNumericUpDown control = NewFrequencyControl();
+        using ThemedNumericUpDown control = NewFrequencyControl();
         control.Value = 100;
         // Stepping commits typed text first, so the step is measured off 5000, not the 100 in Value.
         Editor(control).Text = 5000.ToString(CultureInfo.CurrentCulture);
@@ -216,7 +216,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [Fact]
     public void WalkingTheWholeBand_KeepsEveryStepOneRoundingUnitFromA96thOfAnOctave()
     {
-        using DarkNumericUpDown control = NewFrequencyControl();
+        using ThemedNumericUpDown control = NewFrequencyControl();
         control.Value = 20;
         decimal firstStep = 0;
         decimal lastStep = 0;
@@ -250,7 +250,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [Fact]
     public void AFieldWithDecimals_StepsOnItsOwnResolution()
     {
-        using DarkNumericUpDown control = NewFrequencyControl();
+        using ThemedNumericUpDown control = NewFrequencyControl();
         control.DecimalPlaces = 1;
         control.Value = 1000;
 
@@ -262,7 +262,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
     [Fact]
     public void AFieldWithDecimals_StillMovesWhereWholeHzWouldNot()
     {
-        using DarkNumericUpDown control = NewFrequencyControl();
+        using ThemedNumericUpDown control = NewFrequencyControl();
         control.DecimalPlaces = 1;
         control.Value = 20;
 
@@ -271,7 +271,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
         Assert.Equal(20.1m, control.Value);
     }
 
-    private static DarkNumericUpDown NewWizardRangeControl() => new()
+    private static ThemedNumericUpDown NewWizardRangeControl() => new()
     {
         DecimalPlaces = 0,
         Minimum = 20,
@@ -281,7 +281,7 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
         Value = 1000
     };
 
-    private static DarkNumericUpDown NewFrequencyControl() => new()
+    private static ThemedNumericUpDown NewFrequencyControl() => new()
     {
         DecimalPlaces = 0,
         Minimum = 10,
@@ -291,16 +291,16 @@ public sealed class DarkNumericUpDownLogarithmicStepTests
         Value = 1000
     };
 
-    private static TextBox Editor(DarkNumericUpDown control) =>
+    private static TextBox Editor(ThemedNumericUpDown control) =>
         control.Controls.OfType<TextBox>().Single();
 
-    private static void PressUp(DarkNumericUpDown control) => PressKey(control, Keys.Up);
+    private static void PressUp(ThemedNumericUpDown control) => PressKey(control, Keys.Up);
 
-    private static void PressDown(DarkNumericUpDown control) => PressKey(control, Keys.Down);
+    private static void PressDown(ThemedNumericUpDown control) => PressKey(control, Keys.Down);
 
-    private static void PressKey(DarkNumericUpDown control, Keys key)
+    private static void PressKey(ThemedNumericUpDown control, Keys key)
     {
-        MethodInfo method = typeof(DarkNumericUpDown).GetMethod(
+        MethodInfo method = typeof(ThemedNumericUpDown).GetMethod(
             "ProcessCmdKey",
             BindingFlags.Instance | BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("ProcessCmdKey is missing.");

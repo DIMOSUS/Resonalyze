@@ -246,13 +246,13 @@ internal sealed class DockedModeSettingsHost : IDisposable
                 case NumericUpDown numeric:
                     numeric.ValueChanged += (_, _) => ScheduleApply();
                     break;
-                case DarkNumericUpDown numeric:
+                case ThemedNumericUpDown numeric:
                     numeric.ValueChanged += (_, _) => ScheduleApply();
                     break;
                 case ComboBox comboBox:
                     comboBox.SelectionChangeCommitted += (_, _) => ScheduleApply();
                     break;
-                case DarkComboBox comboBox:
+                case ThemedComboBox comboBox:
                     comboBox.SelectionChangeCommitted += (_, _) => ScheduleApply();
                     break;
                 case CheckBox checkBox:

@@ -10,6 +10,9 @@ internal sealed class ChromeTitleBar : Panel
     public const int WmNcHitTest = 0x84;
     public const int HtClient = 1;
 
+    // Settings, minimize, maximize, close: the strip the tab bar and the version label must not run into.
+    private const int WindowButtonCount = 4;
+
     private const int WmNcLeftButtonDown = 0xA1;
     private const int HtTransparent = -1;
     private const int HtCaption = 2;
@@ -37,6 +40,7 @@ internal sealed class ChromeTitleBar : Panel
     private Button? toolsDropDownButton;
     private ContextMenuStrip? toolsMenu;
     private ModeTab lastToolsTab = ModeTab.ToolsVirtualCrossover;
+    private readonly ToolTip settingsToolTip = new();
     private System.Windows.Forms.Timer? updatePulseTimer;
     private int updatePulseElapsedMs;
     private float dpiScale = 1f;
@@ -111,6 +115,15 @@ internal sealed class ChromeTitleBar : Panel
         versionLabel = CreateVersionLabel();
         Controls.Add(versionLabel);
 
+        Button settingsButton = AddWindowButton(
+            string.Empty, form.ClientSize.Width - 184, SettingsClick);
+        settingsButton.AccessibleName = "Settings";
+        settingsButton.Paint += PaintSettingsGlyph;
+        settingsToolTip.SetToolTip(
+            settingsButton,
+            "Settings: the theme and anything else the whole window obeys." +
+            Environment.NewLine +
+            "Settings for the mode you are in stay behind Mode Settings...");
         AddWindowButton("─", form.ClientSize.Width - 138, MinimizeWindowClick);
         AddWindowButton("☐", form.ClientSize.Width - 92, MaximizeWindowClick);
         AddWindowButton("✕", form.ClientSize.Width - 46, CloseWindowClick);
@@ -289,7 +302,7 @@ internal sealed class ChromeTitleBar : Panel
         {
             AutoSize = false,
             Font = new Font(form.Font, FontStyle.Regular),
-            ForeColor = UiPalette.TitleBarTextSoft,
+            ForeColor = UiPalette.TitleBarTextActive,
             Height = Math.Max(Scale(28), TextRenderer.MeasureText(text, form.Font).Height + Scale(8)),
             Margin = new Padding(0, 0, Scale(2), 0),
             Text = text,
@@ -297,7 +310,7 @@ internal sealed class ChromeTitleBar : Panel
             UseCompatibleTextRendering = true,
             Width = GetModeTabWidth(text)
         };
-        UiStyle.ApplySurfaceButton(button, BackColor, UiPalette.TitleBarTextSoft);
+        UiStyle.ApplySurfaceButton(button, BackColor, UiPalette.TitleBarTextActive);
         button.Click += (_, _) => tabActions[tab]();
 
         modeTabButtons.Add(tab, button);
@@ -325,7 +338,7 @@ internal sealed class ChromeTitleBar : Panel
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             AutoSize = false,
             Font = new Font(form.Font, FontStyle.Regular),
-            ForeColor = UiPalette.TitleBarTextSoft,
+            ForeColor = UiPalette.TitleBarTextActive,
             Location = Point.Empty,
             Margin = Padding.Empty,
             Size = new Size(host.Width - Scale(22), height),
@@ -333,7 +346,7 @@ internal sealed class ChromeTitleBar : Panel
             TextAlign = ContentAlignment.MiddleCenter,
             UseCompatibleTextRendering = true
         };
-        UiStyle.ApplySurfaceButton(mainButton, BackColor, UiPalette.TitleBarTextSoft);
+        UiStyle.ApplySurfaceButton(mainButton, BackColor, UiPalette.TitleBarTextActive);
         mainButton.Click += (_, _) => SelectToolsTab(tabActions, lastToolsTab);
 
         toolsDropDownButton = new ReleaseClickButton
@@ -341,7 +354,7 @@ internal sealed class ChromeTitleBar : Panel
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right,
             AutoSize = false,
             Font = new Font(form.Font, FontStyle.Regular),
-            ForeColor = UiPalette.TitleBarTextSoft,
+            ForeColor = UiPalette.TitleBarTextActive,
             Location = new Point(host.Width - Scale(22), 0),
             Margin = Padding.Empty,
             Size = new Size(Scale(22), height),
@@ -349,7 +362,7 @@ internal sealed class ChromeTitleBar : Panel
             TextAlign = ContentAlignment.MiddleCenter,
             UseCompatibleTextRendering = true
         };
-        UiStyle.ApplySurfaceButton(toolsDropDownButton, BackColor, UiPalette.TitleBarTextSoft);
+        UiStyle.ApplySurfaceButton(toolsDropDownButton, BackColor, UiPalette.TitleBarTextActive);
         toolsDropDownButton.Paint += PaintToolsDropDownButton;
         toolsDropDownButton.Click += (_, _) => ShowToolsMenu(tabActions);
 
@@ -380,7 +393,7 @@ internal sealed class ChromeTitleBar : Panel
         var menu = new ContextMenuStrip
         {
             BackColor = UiPalette.ButtonBackground,
-            ForeColor = UiPalette.TitleBarTextBright,
+            ForeColor = UiPalette.TitleBarTextActive,
             ShowImageMargin = false
         };
         AddToolsMenuItem(menu, "Virtual DSP", ModeTab.ToolsVirtualCrossover, tabActions);
@@ -395,6 +408,7 @@ internal sealed class ChromeTitleBar : Panel
         if (disposing)
         {
             toolsMenu?.Dispose();
+            settingsToolTip.Dispose();
             DetachUpdatePulse();
         }
 
@@ -410,7 +424,7 @@ internal sealed class ChromeTitleBar : Panel
         var item = new ToolStripMenuItem(text)
         {
             BackColor = UiPalette.ButtonBackground,
-            ForeColor = UiPalette.TitleBarTextBright
+            ForeColor = UiPalette.TitleBarTextActive
         };
         item.Click += (_, _) => SelectToolsTab(tabActions, tab);
         menu.Items.Add(item);
@@ -432,7 +446,7 @@ internal sealed class ChromeTitleBar : Panel
         }
 
         e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        using var separatorPen = new Pen(Color.FromArgb(82, 90, 108));
+        using var separatorPen = new Pen(UiPalette.BorderMuted);
         e.Graphics.DrawLine(separatorPen, 0, Scale(5), 0, button.Height - Scale(5));
 
         int arrowWidth = Scale(7);
@@ -445,34 +459,80 @@ internal sealed class ChromeTitleBar : Panel
             new(centerX + arrowWidth / 2, centerY - arrowHeight / 2),
             new(centerX, centerY + arrowHeight / 2)
         ];
-        using var brush = new SolidBrush(UiPalette.TitleBarTextBright);
+        using var brush = new SolidBrush(UiPalette.TitleBarTextActive);
         e.Graphics.FillPolygon(brush, points);
     }
 
-    private void AddWindowButton(
+    private ReleaseClickButton AddWindowButton(
         string text,
         int left,
         EventHandler clickHandler)
     {
         int legacyRightDistance = form.ClientSize.Width - left - 46;
         int width = Scale(46);
-        Button button = new()
+        ReleaseClickButton button = new()
         {
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
-            ForeColor = UiPalette.TitleBarTextBright,
+            ForeColor = UiPalette.TitleBarTextActive,
             Location = new Point(form.ClientSize.Width - Scale(legacyRightDistance) - width, 0),
             Size = new Size(width, titleBarHeight),
             Text = text,
         };
-        UiStyle.ApplySurfaceButton(button, BackColor, UiPalette.TitleBarTextBright);
+        UiStyle.ApplySurfaceButton(button, BackColor, UiPalette.TitleBarTextActive);
         button.FlatAppearance.MouseOverBackColor = text == "✕"
-            ? UiPalette.AccentBlueWarning
-            : UiPalette.AccentBlueMuted;
+            ? UiPalette.UpdateBadgeFill
+            : UiPalette.TitleBarButtonFill;
         button.FlatAppearance.MouseDownBackColor = text == "✕"
-            ? UiPalette.AccentBlueMutedAlt
+            ? UiPalette.UpdateBadgeFillDim
             : UiPalette.AccentFill;
         button.Click += clickHandler;
         Controls.Add(button);
+        return button;
+    }
+
+    // Eight teeth around a hole, filled in the button's own ink so it follows the theme and the hover state.
+    private void PaintSettingsGlyph(object? sender, PaintEventArgs e)
+    {
+        if (sender is not Button button)
+        {
+            return;
+        }
+
+        e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        float centreX = button.Width / 2f;
+        float centreY = button.Height / 2f;
+        float outerRadius = ScaleF(5.9f);
+        float rootRadius = ScaleF(4.3f);
+        float holeRadius = ScaleF(2.0f);
+
+        const int teeth = 8;
+        var points = new PointF[teeth * 4];
+        for (int i = 0; i < points.Length; i++)
+        {
+            double angle = Math.PI * 2 * i / points.Length;
+            float radius = i % 4 is 0 or 1 ? outerRadius : rootRadius;
+            points[i] = new PointF(
+                centreX + (float)(radius * Math.Cos(angle)),
+                centreY + (float)(radius * Math.Sin(angle)));
+        }
+
+        using var path = new System.Drawing.Drawing2D.GraphicsPath();
+        path.AddPolygon(points);
+        path.AddEllipse(
+            centreX - holeRadius, centreY - holeRadius, holeRadius * 2, holeRadius * 2);
+        using var brush = new SolidBrush(button.ForeColor);
+        e.Graphics.FillPath(brush, path);
+    }
+
+    private void SettingsClick(object? sender, EventArgs e)
+    {
+        using var dialog = new ApplicationSettingsDialog(AppearanceSettingsFile.LoadOrDefault());
+        dialog.ShowDialog(form);
+        if (dialog.RestartRequested)
+        {
+            ApplicationRestart.Request();
+            form.Close();
+        }
     }
 
     private void TitleBarMouseDown(object? sender, MouseEventArgs e)
@@ -611,8 +671,8 @@ internal sealed class ChromeTitleBar : Panel
     {
         versionLabel.Text = text;
         versionLabel.LinkBehavior = LinkBehavior.HoverUnderline;
-        versionLabel.LinkColor = UiPalette.AccentBlueSoft;
-        versionLabel.ActiveLinkColor = UiPalette.AccentBlueSoftHover;
+        versionLabel.LinkColor = UiPalette.AccentMark;
+        versionLabel.ActiveLinkColor = UiPalette.AccentMarkHover;
         versionLabel.VisitedLinkColor = versionLabel.LinkColor;
         versionLabel.Links.Clear();
         versionLabel.Links.Add(0, text.Length, releaseUrl);
@@ -646,7 +706,7 @@ internal sealed class ChromeTitleBar : Panel
         }
         else
         {
-            SetUpdateLinkColor(UiPalette.AccentBlueSoft);
+            SetUpdateLinkColor(UiPalette.AccentMark);
         }
     }
 
@@ -663,7 +723,7 @@ internal sealed class ChromeTitleBar : Panel
         }
 
         updatePulseTimer.Stop();
-        SetUpdateLinkColor(UiPalette.AccentBlueSoft);
+        SetUpdateLinkColor(UiPalette.AccentMark);
     }
 
     private void UpdatePulseTick(object? sender, EventArgs e)
@@ -674,7 +734,7 @@ internal sealed class ChromeTitleBar : Panel
         double amount = 0.5 - 0.5 * Math.Cos(
             2 * Math.PI * updatePulseElapsedMs / UpdatePulsePeriodMs);
         SetUpdateLinkColor(Blend(
-            UiPalette.AccentBlueGlow, UiPalette.TitleBarText, amount));
+            UiPalette.AccentGlow, UiPalette.TitleBarText, amount));
     }
 
     private void StopUpdatePulse()
@@ -685,7 +745,7 @@ internal sealed class ChromeTitleBar : Panel
         }
 
         DetachUpdatePulse();
-        SetUpdateLinkColor(UiPalette.AccentBlueSoft);
+        SetUpdateLinkColor(UiPalette.AccentMark);
     }
 
     private void DetachUpdatePulse()
@@ -733,11 +793,12 @@ internal sealed class ChromeTitleBar : Panel
             TextRenderer.MeasureText(versionText, form.Font).Width + Scale(18));
 
     private Point GetVersionLabelLocation() =>
-        new(form.ClientSize.Width - windowButtonWidth * 3 - versionLabelWidth - Scale(6), 0);
+        new(form.ClientSize.Width - windowButtonWidth * WindowButtonCount - versionLabelWidth - Scale(6), 0);
 
     private void UpdateTabBarLayout(FlowLayoutPanel targetTabBar)
     {
-        int rightReservedWidth = windowButtonWidth * 3 + versionLabelWidth + Scale(12);
+        int rightReservedWidth =
+            windowButtonWidth * WindowButtonCount + versionLabelWidth + Scale(12);
         targetTabBar.Size = new Size(
             Math.Max(Scale(200), form.ClientSize.Width - Scale(8) - rightReservedWidth),
             titleBarHeight - Scale(5));
@@ -756,6 +817,8 @@ internal sealed class ChromeTitleBar : Panel
             : null;
         ApplicationUpdateService.ShowUpdateChoice(owner, url);
     }
+
+    private float ScaleF(float value) => value * dpiScale;
 
     private int Scale(int value) =>
         (int)Math.Round(value * dpiScale);
@@ -778,6 +841,9 @@ internal sealed class ChromeTitleBar : Panel
         button.BackColor = active
             ? UiPalette.AccentFill
             : UiPalette.ButtonBackground;
+        button.ForeColor = active
+            ? UiPalette.TextOnAccent
+            : UiPalette.TitleBarTextActive;
         button.FlatAppearance.MouseOverBackColor = active
             ? UiPalette.AccentFill
             : UiPalette.ButtonHoverBackground;

@@ -91,16 +91,16 @@ public sealed class ImportedTargetShapeDialogTests
 
     private static void SelectImported(OverlayTargetSettingsDialog dialog)
     {
-        DarkComboBox combo = Combo(dialog);
+        ThemedComboBox combo = Combo(dialog);
         combo.SelectedItem = combo.Items.Cast<object>()
             .First(item => item is not TargetPreset);
     }
 
-    private static DarkComboBox Combo(OverlayTargetSettingsDialog dialog) =>
-        (DarkComboBox)Field(dialog, "presetComboBox");
+    private static ThemedComboBox Combo(OverlayTargetSettingsDialog dialog) =>
+        (ThemedComboBox)Field(dialog, "presetComboBox");
 
-    private static DarkNumericUpDown Input(OverlayTargetSettingsDialog dialog, string name) =>
-        (DarkNumericUpDown)Field(dialog, name);
+    private static ThemedNumericUpDown Input(OverlayTargetSettingsDialog dialog, string name) =>
+        (ThemedNumericUpDown)Field(dialog, name);
 
     private static object Field(OverlayTargetSettingsDialog dialog, string name) =>
         dialog.GetType()

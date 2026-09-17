@@ -9,6 +9,8 @@ internal sealed class SingleInstanceGuard : IDisposable
 {
     private readonly Mutex mutex;
 
+    private bool released;
+
     private SingleInstanceGuard(Mutex mutex) => this.mutex = mutex;
 
     public static SingleInstanceGuard? TryAcquire(string dataDirectory)
@@ -28,6 +30,13 @@ internal sealed class SingleInstanceGuard : IDisposable
 
     public void Dispose()
     {
+        // Released explicitly before a restart, then again by the using declaration in Main.
+        if (released)
+        {
+            return;
+        }
+
+        released = true;
         try
         {
             mutex.ReleaseMutex();

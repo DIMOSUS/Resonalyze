@@ -24,11 +24,11 @@ namespace Resonalyze
             colorLabel = new Label();
             colorButton = new ReleaseClickButton();
             thicknessLabel = new Label();
-            thicknessInput = new DarkNumericUpDown();
+            thicknessInput = new ThemedNumericUpDown();
             styleLabel = new Label();
-            styleComboBox = new DarkComboBox();
+            styleComboBox = new ThemedComboBox();
             smoothingLabel = new Label();
-            smoothingComboBox = new DarkComboBox();
+            smoothingComboBox = new ThemedComboBox();
             opacityLabel = new Label();
             opacityTrackBar = new TrackBar();
             opacityValueLabel = new Label();
@@ -44,7 +44,7 @@ namespace Resonalyze
             //
             titleLabel.AutoSize = true;
             titleLabel.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
-            titleLabel.ForeColor = Color.FromArgb(235, 237, 240);
+            titleLabel.ForeColor = UiPalette.TextBright;
             titleLabel.Location = new Point(20, 18);
             titleLabel.Name = "titleLabel";
             titleLabel.Text = "Overlay";
@@ -52,15 +52,15 @@ namespace Resonalyze
             // nameLabel
             //
             nameLabel.AutoSize = true;
-            nameLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            nameLabel.ForeColor = UiPalette.TextSecondary;
             nameLabel.Location = new Point(20, 52);
             nameLabel.Name = "nameLabel";
             nameLabel.Text = "Name";
             //
             // nameTextBox
             //
-            nameTextBox.BackColor = Color.FromArgb(55, 58, 65);
-            nameTextBox.ForeColor = Color.White;
+            nameTextBox.BackColor = UiPalette.InputSurface;
+            nameTextBox.ForeColor = UiPalette.TextPrimary;
             nameTextBox.Location = new Point(20, 72);
             nameTextBox.MaxLength = 80;
             nameTextBox.Name = "nameTextBox";
@@ -70,16 +70,16 @@ namespace Resonalyze
             // colorLabel
             //
             colorLabel.AutoSize = true;
-            colorLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            colorLabel.ForeColor = UiPalette.TextSecondary;
             colorLabel.Location = new Point(20, 112);
             colorLabel.Name = "colorLabel";
             colorLabel.Text = "Color";
             //
             // colorButton
             //
-            colorButton.BackColor = Color.FromArgb(62, 65, 73);
+            colorButton.BackColor = UiPalette.ButtonBackground;
             colorButton.FlatStyle = FlatStyle.Flat;
-            colorButton.ForeColor = Color.White;
+            colorButton.ForeColor = UiPalette.TextPrimary;
             colorButton.Location = new Point(20, 132);
             colorButton.Name = "colorButton";
             colorButton.Size = new Size(122, 24);
@@ -90,16 +90,16 @@ namespace Resonalyze
             // thicknessLabel
             //
             thicknessLabel.AutoSize = true;
-            thicknessLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            thicknessLabel.ForeColor = UiPalette.TextSecondary;
             thicknessLabel.Location = new Point(162, 112);
             thicknessLabel.Name = "thicknessLabel";
             thicknessLabel.Text = "Thickness";
             //
             // thicknessInput
             //
-            thicknessInput.BackColor = Color.FromArgb(55, 58, 65);
+            thicknessInput.BackColor = UiPalette.InputSurface;
             thicknessInput.DecimalPlaces = 1;
-            thicknessInput.ForeColor = Color.White;
+            thicknessInput.ForeColor = UiPalette.TextPrimary;
             thicknessInput.Increment = 0.5m;
             thicknessInput.Location = new Point(162, 132);
             thicknessInput.Maximum = 10m;
@@ -111,16 +111,16 @@ namespace Resonalyze
             // styleLabel
             //
             styleLabel.AutoSize = true;
-            styleLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            styleLabel.ForeColor = UiPalette.TextSecondary;
             styleLabel.Location = new Point(272, 112);
             styleLabel.Name = "styleLabel";
             styleLabel.Text = "Style";
             //
             // styleComboBox
             //
-            styleComboBox.BackColor = Color.FromArgb(55, 58, 65);
+            styleComboBox.BackColor = UiPalette.InputSurface;
             styleComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            styleComboBox.ForeColor = Color.White;
+            styleComboBox.ForeColor = UiPalette.TextPrimary;
             styleComboBox.Location = new Point(272, 132);
             styleComboBox.Name = "styleComboBox";
             styleComboBox.Size = new Size(148, 24);
@@ -129,16 +129,16 @@ namespace Resonalyze
             // smoothingLabel
             //
             smoothingLabel.AutoSize = true;
-            smoothingLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            smoothingLabel.ForeColor = UiPalette.TextSecondary;
             smoothingLabel.Location = new Point(20, 178);
             smoothingLabel.Name = "smoothingLabel";
             smoothingLabel.Text = "Smoothing";
             //
             // smoothingComboBox
             //
-            smoothingComboBox.BackColor = Color.FromArgb(55, 58, 65);
+            smoothingComboBox.BackColor = UiPalette.InputSurface;
             smoothingComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            smoothingComboBox.ForeColor = Color.White;
+            smoothingComboBox.ForeColor = UiPalette.TextPrimary;
             smoothingComboBox.FormattingEnabled = true;
             smoothingComboBox.Location = new Point(20, 198);
             smoothingComboBox.Name = "smoothingComboBox";
@@ -148,7 +148,7 @@ namespace Resonalyze
             // opacityLabel
             //
             opacityLabel.AutoSize = true;
-            opacityLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            opacityLabel.ForeColor = UiPalette.TextSecondary;
             opacityLabel.Location = new Point(20, 238);
             opacityLabel.Name = "opacityLabel";
             opacityLabel.Text = "Opacity";
@@ -167,17 +167,17 @@ namespace Resonalyze
             // opacityValueLabel
             //
             opacityValueLabel.AutoSize = true;
-            opacityValueLabel.ForeColor = Color.FromArgb(235, 237, 240);
+            opacityValueLabel.ForeColor = UiPalette.TextBright;
             opacityValueLabel.Location = new Point(370, 265);
             opacityValueLabel.Name = "opacityValueLabel";
             opacityValueLabel.Text = "100%";
             //
             // clearButton
             //
-            clearButton.BackColor = Color.FromArgb(62, 65, 73);
+            clearButton.BackColor = UiPalette.ButtonBackground;
             clearButton.DialogResult = DialogResult.OK;
             clearButton.FlatStyle = FlatStyle.Flat;
-            clearButton.ForeColor = Color.White;
+            clearButton.ForeColor = UiPalette.TextPrimary;
             clearButton.Location = new Point(20, 315);
             clearButton.Name = "clearButton";
             clearButton.Size = new Size(94, 30);
@@ -188,10 +188,10 @@ namespace Resonalyze
             //
             // cancelButton
             //
-            cancelButton.BackColor = Color.FromArgb(62, 65, 73);
+            cancelButton.BackColor = UiPalette.ButtonBackground;
             cancelButton.DialogResult = DialogResult.Cancel;
             cancelButton.FlatStyle = FlatStyle.Flat;
-            cancelButton.ForeColor = Color.White;
+            cancelButton.ForeColor = UiPalette.TextPrimary;
             cancelButton.Location = new Point(226, 315);
             cancelButton.Name = "cancelButton";
             cancelButton.Size = new Size(94, 30);
@@ -204,7 +204,7 @@ namespace Resonalyze
             //
             saveButton.DialogResult = DialogResult.OK;
             saveButton.FlatStyle = FlatStyle.Flat;
-            saveButton.ForeColor = Color.White;
+            saveButton.ForeColor = UiPalette.TextPrimary;
             saveButton.Location = new Point(326, 315);
             saveButton.Name = "saveButton";
             saveButton.Size = new Size(94, 30);
@@ -217,7 +217,7 @@ namespace Resonalyze
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(40, 42, 48);
+            BackColor = UiPalette.DialogBackground;
             ClientSize = new Size(440, 360);
             Controls.Add(titleLabel);
             Controls.Add(nameLabel);
@@ -237,7 +237,7 @@ namespace Resonalyze
             Controls.Add(cancelButton);
             Controls.Add(saveButton);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.FromArgb(235, 237, 240);
+            ForeColor = UiPalette.TextBright;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -261,11 +261,11 @@ namespace Resonalyze
         private Label colorLabel;
         private ReleaseClickButton colorButton;
         private Label thicknessLabel;
-        private DarkNumericUpDown thicknessInput;
+        private ThemedNumericUpDown thicknessInput;
         private Label styleLabel;
-        private DarkComboBox styleComboBox;
+        private ThemedComboBox styleComboBox;
         private Label smoothingLabel;
-        private DarkComboBox smoothingComboBox;
+        private ThemedComboBox smoothingComboBox;
         private Label opacityLabel;
         private TrackBar opacityTrackBar;
         private Label opacityValueLabel;

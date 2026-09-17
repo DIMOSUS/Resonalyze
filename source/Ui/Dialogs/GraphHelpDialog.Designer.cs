@@ -56,7 +56,7 @@ namespace Resonalyze.Ui.Dialogs
             //
             buttonClose.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             buttonClose.FlatStyle = FlatStyle.Popup;
-            buttonClose.ForeColor = Color.White;
+            buttonClose.ForeColor = UiPalette.TextPrimary;
             buttonClose.Location = new Point(532, 10);
             buttonClose.Name = "buttonClose";
             buttonClose.Size = new Size(96, 26);
@@ -68,7 +68,7 @@ namespace Resonalyze.Ui.Dialogs
             //
             labelIntroduction.AutoSize = true;
             labelIntroduction.Dock = DockStyle.Top;
-            labelIntroduction.ForeColor = Color.FromArgb(185, 190, 200);
+            labelIntroduction.ForeColor = UiPalette.TextSecondary;
             labelIntroduction.Location = new Point(16, 16);
             labelIntroduction.MaximumSize = new Size(620, 0);
             labelIntroduction.Name = "labelIntroduction";
@@ -80,7 +80,7 @@ namespace Resonalyze.Ui.Dialogs
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             ClientSize = new Size(660, 660);
             // Docked in the reverse of the order they are added: WinForms lays out the
             // LAST child first, so the note and the buttons claim their bands and the
@@ -89,7 +89,7 @@ namespace Resonalyze.Ui.Dialogs
             Controls.Add(panelButtons);
             Controls.Add(labelIntroduction);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             FormBorderStyle = FormBorderStyle.Sizable;
             MinimizeBox = false;
             Name = "GraphHelpDialog";

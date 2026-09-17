@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class ArrayMicrophonesDialog
     {
@@ -22,9 +22,9 @@
             columnHeaderCalibration = new ColumnHeader();
             columnHeaderNote = new ColumnHeader();
             labelInput = new Label();
-            comboBoxInput = new DarkComboBox();
+            comboBoxInput = new ThemedComboBox();
             labelCalibration = new Label();
-            comboBoxCalibration = new DarkComboBox();
+            comboBoxCalibration = new ThemedComboBox();
             labelNote = new Label();
             textBoxNote = new TextBox();
             buttonAdd = new ReleaseClickButton();
@@ -38,7 +38,7 @@
             //
             // listViewMicrophones
             //
-            listViewMicrophones.BackColor = Color.FromArgb(55, 60, 72);
+            listViewMicrophones.BackColor = UiPalette.ControlSurface;
             listViewMicrophones.BorderStyle = BorderStyle.FixedSingle;
             listViewMicrophones.Columns.AddRange(new ColumnHeader[]
             {
@@ -46,7 +46,7 @@
                 columnHeaderCalibration,
                 columnHeaderNote
             });
-            listViewMicrophones.ForeColor = Color.White;
+            listViewMicrophones.ForeColor = UiPalette.TextPrimary;
             listViewMicrophones.FullRowSelect = true;
             listViewMicrophones.Location = new Point(16, 16);
             listViewMicrophones.MultiSelect = false;
@@ -74,7 +74,7 @@
             // labelInput
             //
             labelInput.AutoSize = true;
-            labelInput.ForeColor = Color.White;
+            labelInput.ForeColor = UiPalette.TextPrimary;
             labelInput.Location = new Point(16, 220);
             labelInput.Name = "labelInput";
             labelInput.Size = new Size(40, 15);
@@ -92,7 +92,7 @@
             // labelCalibration
             //
             labelCalibration.AutoSize = true;
-            labelCalibration.ForeColor = Color.White;
+            labelCalibration.ForeColor = UiPalette.TextPrimary;
             labelCalibration.Location = new Point(136, 220);
             labelCalibration.Name = "labelCalibration";
             labelCalibration.Size = new Size(70, 15);
@@ -110,7 +110,7 @@
             // labelNote
             //
             labelNote.AutoSize = true;
-            labelNote.ForeColor = Color.White;
+            labelNote.ForeColor = UiPalette.TextPrimary;
             labelNote.Location = new Point(356, 220);
             labelNote.Name = "labelNote";
             labelNote.Size = new Size(52, 15);
@@ -119,9 +119,9 @@
             //
             // textBoxNote
             //
-            textBoxNote.BackColor = Color.FromArgb(55, 60, 72);
+            textBoxNote.BackColor = UiPalette.ControlSurface;
             textBoxNote.BorderStyle = BorderStyle.FixedSingle;
-            textBoxNote.ForeColor = Color.White;
+            textBoxNote.ForeColor = UiPalette.TextPrimary;
             textBoxNote.Location = new Point(356, 238);
             textBoxNote.Name = "textBoxNote";
             textBoxNote.Size = new Size(180, 23);
@@ -130,7 +130,7 @@
             // buttonAdd
             //
             buttonAdd.FlatStyle = FlatStyle.Popup;
-            buttonAdd.ForeColor = Color.White;
+            buttonAdd.ForeColor = UiPalette.TextPrimary;
             buttonAdd.Location = new Point(548, 16);
             buttonAdd.Name = "buttonAdd";
             buttonAdd.Size = new Size(126, 28);
@@ -141,7 +141,7 @@
             // buttonUpdate
             //
             buttonUpdate.FlatStyle = FlatStyle.Popup;
-            buttonUpdate.ForeColor = Color.White;
+            buttonUpdate.ForeColor = UiPalette.TextPrimary;
             buttonUpdate.Location = new Point(548, 50);
             buttonUpdate.Name = "buttonUpdate";
             buttonUpdate.Size = new Size(126, 28);
@@ -152,7 +152,7 @@
             // buttonRemove
             //
             buttonRemove.FlatStyle = FlatStyle.Popup;
-            buttonRemove.ForeColor = Color.White;
+            buttonRemove.ForeColor = UiPalette.TextPrimary;
             buttonRemove.Location = new Point(548, 84);
             buttonRemove.Name = "buttonRemove";
             buttonRemove.Size = new Size(126, 28);
@@ -162,7 +162,7 @@
             //
             // labelStatus
             //
-            labelStatus.ForeColor = SystemColors.ControlLight;
+            labelStatus.ForeColor = UiPalette.TextDefault;
             labelStatus.Location = new Point(16, 270);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new Size(520, 20);
@@ -170,7 +170,7 @@
             //
             // labelHint
             //
-            labelHint.ForeColor = SystemColors.ControlLight;
+            labelHint.ForeColor = UiPalette.TextDefault;
             labelHint.Location = new Point(16, 294);
             labelHint.Name = "labelHint";
             labelHint.Size = new Size(520, 68);
@@ -181,7 +181,7 @@
             //
             buttonOk.DialogResult = DialogResult.OK;
             buttonOk.FlatStyle = FlatStyle.Popup;
-            buttonOk.ForeColor = Color.White;
+            buttonOk.ForeColor = UiPalette.TextPrimary;
             buttonOk.Location = new Point(548, 300);
             buttonOk.Name = "buttonOk";
             buttonOk.Size = new Size(126, 28);
@@ -193,7 +193,7 @@
             //
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
-            buttonCancel.ForeColor = Color.White;
+            buttonCancel.ForeColor = UiPalette.TextPrimary;
             buttonCancel.Location = new Point(548, 334);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(126, 28);
@@ -206,7 +206,7 @@
             AcceptButton = buttonOk;
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             CancelButton = buttonCancel;
             ClientSize = new Size(690, 378);
             Controls.Add(listViewMicrophones);
@@ -241,9 +241,9 @@
         private ColumnHeader columnHeaderCalibration;
         private ColumnHeader columnHeaderNote;
         private Label labelInput;
-        private DarkComboBox comboBoxInput;
+        private ThemedComboBox comboBoxInput;
         private Label labelCalibration;
-        private DarkComboBox comboBoxCalibration;
+        private ThemedComboBox comboBoxCalibration;
         private Label labelNote;
         private TextBox textBoxNote;
         private ReleaseClickButton buttonAdd;

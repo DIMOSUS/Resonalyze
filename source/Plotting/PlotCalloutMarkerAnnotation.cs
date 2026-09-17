@@ -17,7 +17,7 @@ internal sealed class PlotCalloutMarkerAnnotation : Annotation
 
     public string Text { get; init; } = string.Empty;
 
-    public OxyColor Color { get; init; } = OxyColors.White;
+    public OxyColor Color { get; init; } = UiPalette.CurveNeutral.ToOxy();
 
     public PlotCalloutDirection Direction { get; init; } = PlotCalloutDirection.RightUp;
 

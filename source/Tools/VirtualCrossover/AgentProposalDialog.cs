@@ -5,11 +5,11 @@ namespace Resonalyze;
 /// <summary>Review of a reply; changes nothing, only answers which rows were ticked. A warning is a word in Status, never only a colour.</summary>
 internal sealed partial class AgentProposalDialog : Form
 {
-    private static readonly Color RejectedText = Color.FromArgb(140, 146, 158);
+    private static readonly Color RejectedText = UiPalette.TextMuted;
 
     private const string NoSummaryText = "(the reply gave no summary)";
     private const string NoReasonText = "(no reason given)";
-    private static readonly Color WarningText = Color.FromArgb(230, 184, 0);
+    private static readonly Color WarningText = UiPalette.Warning;
 
     private readonly AgentProposalReview review;
 
@@ -88,7 +88,7 @@ internal sealed partial class AgentProposalDialog : Form
     private void StyleGrid()
     {
         gridView.EnableHeadersVisualStyles = false;
-        gridView.GridColor = UiPalette.DialogBorder;
+        gridView.GridColor = UiPalette.Border;
         gridView.DefaultCellStyle.BackColor = UiPalette.DialogBackground;
         gridView.DefaultCellStyle.ForeColor = UiPalette.TextPrimary;
         gridView.DefaultCellStyle.SelectionBackColor = UiPalette.ButtonPressedBackground;

@@ -42,7 +42,7 @@ namespace Resonalyze
             // labelCaption
             //
             labelCaption.AutoSize = true;
-            labelCaption.ForeColor = Color.FromArgb(210, 214, 222);
+            labelCaption.ForeColor = UiPalette.TextDefault;
             labelCaption.Location = new Point(12, 12);
             labelCaption.MaximumSize = new Size(496, 0);
             labelCaption.Name = "labelCaption";
@@ -55,7 +55,7 @@ namespace Resonalyze
             //
             radioRbj.AutoSize = true;
             radioRbj.FlatStyle = FlatStyle.Flat;
-            radioRbj.ForeColor = Color.White;
+            radioRbj.ForeColor = UiPalette.TextPrimary;
             radioRbj.Location = new Point(16, 54);
             radioRbj.Name = "radioRbj";
             radioRbj.Size = new Size(200, 19);
@@ -66,7 +66,7 @@ namespace Resonalyze
             //
             radioSymmetric.AutoSize = true;
             radioSymmetric.FlatStyle = FlatStyle.Flat;
-            radioSymmetric.ForeColor = Color.White;
+            radioSymmetric.ForeColor = UiPalette.TextPrimary;
             radioSymmetric.Location = new Point(16, 82);
             radioSymmetric.Name = "radioSymmetric";
             radioSymmetric.Size = new Size(200, 19);
@@ -77,7 +77,7 @@ namespace Resonalyze
             //
             radioClassic.AutoSize = true;
             radioClassic.FlatStyle = FlatStyle.Flat;
-            radioClassic.ForeColor = Color.White;
+            radioClassic.ForeColor = UiPalette.TextPrimary;
             radioClassic.Location = new Point(16, 110);
             radioClassic.Name = "radioClassic";
             radioClassic.Size = new Size(200, 19);
@@ -86,9 +86,9 @@ namespace Resonalyze
             //
             // textCheatSheet
             //
-            textCheatSheet.BackColor = Color.FromArgb(32, 36, 46);
+            textCheatSheet.BackColor = UiPalette.GraphSurfaceMuted;
             textCheatSheet.BorderStyle = BorderStyle.FixedSingle;
-            textCheatSheet.ForeColor = Color.FromArgb(210, 214, 222);
+            textCheatSheet.ForeColor = UiPalette.TextDefault;
             textCheatSheet.Location = new Point(12, 142);
             textCheatSheet.Multiline = true;
             textCheatSheet.Name = "textCheatSheet";
@@ -101,7 +101,7 @@ namespace Resonalyze
             // labelHint
             //
             labelHint.AutoSize = true;
-            labelHint.ForeColor = Color.FromArgb(150, 156, 168);
+            labelHint.ForeColor = UiPalette.TextMuted;
             labelHint.Location = new Point(12, 278);
             labelHint.MaximumSize = new Size(496, 0);
             labelHint.Name = "labelHint";
@@ -114,10 +114,10 @@ namespace Resonalyze
             //
             // buttonExport
             //
-            buttonExport.BackColor = Color.FromArgb(46, 51, 67);
+            buttonExport.BackColor = UiPalette.ButtonBackground;
             buttonExport.DialogResult = DialogResult.OK;
             buttonExport.FlatStyle = FlatStyle.Popup;
-            buttonExport.ForeColor = Color.White;
+            buttonExport.ForeColor = UiPalette.TextPrimary;
             buttonExport.Location = new Point(332, 332);
             buttonExport.Name = "buttonExport";
             buttonExport.Size = new Size(84, 26);
@@ -129,7 +129,7 @@ namespace Resonalyze
             //
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
-            buttonCancel.ForeColor = Color.White;
+            buttonCancel.ForeColor = UiPalette.TextPrimary;
             buttonCancel.Location = new Point(424, 332);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
@@ -141,7 +141,7 @@ namespace Resonalyze
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             ClientSize = new Size(520, 370);
             Controls.Add(labelCaption);
             Controls.Add(radioRbj);
@@ -152,7 +152,7 @@ namespace Resonalyze
             Controls.Add(buttonExport);
             Controls.Add(buttonCancel);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;

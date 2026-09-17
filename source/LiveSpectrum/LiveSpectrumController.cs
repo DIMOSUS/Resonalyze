@@ -720,7 +720,7 @@ internal sealed class LiveSpectrumController : IDisposable
             TextFlowDirection = TextFlowDirection.TopDown,
             FontSize = 12,
             FontWeight = 700,
-            TextColor = OxyColor.FromRgb(255, 170, 0),
+            TextColor = UiPalette.Warning.ToOxy(),
             TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
         });
     }
@@ -799,7 +799,7 @@ internal sealed class LiveSpectrumController : IDisposable
                 TextPosition = new DataPoint(0.01, 0),
                 TextFlowDirection = TextFlowDirection.TopDown,
                 FontSize = 12,
-                TextColor = OxyColor.FromRgb(150, 165, 190),
+                TextColor = UiPalette.TextSecondary.ToOxy(),
                 TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left
             };
             captureProgressOwner = model;
@@ -815,8 +815,8 @@ internal sealed class LiveSpectrumController : IDisposable
                 ? $"{state} — {seconds:0} s, {frames} frames, {clipped} clipped"
                 : $"{state} — {seconds:0} s, {frames} frames";
             captureProgressAnnotation.TextColor = clipped > 0
-                ? OxyColor.FromRgb(255, 190, 80)
-                : OxyColor.FromRgb(150, 165, 190);
+                ? UiPalette.Warning.ToOxy()
+                : UiPalette.TextSecondary.ToOxy();
         }
 
         model.Annotations.Add(captureProgressAnnotation);

@@ -24,7 +24,7 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         ArgumentNullException.ThrowIfNull(channelLabels);
 
         SuspendLayout();
-        UiStyle.ApplyDarkDialog(
+        UiStyle.ApplyDialogChrome(
             this,
             new Size(340, 300),
             fromRightToLeft ? "Copy R → L" : "Copy L → R");
@@ -42,7 +42,7 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         layout.Controls.Add(new Label
         {
             AutoSize = true,
-            ForeColor = UiPalette.TextHighlight,
+            ForeColor = UiPalette.TextDefault,
             Margin = new Padding(0, 0, 0, 12),
             Text = "Pick the channels, then the parts of the chain to copy.\n" +
                 "Sources always stay with their side; gain, delay, polarity and\n" +

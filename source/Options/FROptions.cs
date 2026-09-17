@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -152,7 +152,7 @@ namespace Resonalyze.Options
             bool measurementOnScreen = Measurement is { HasImpulseResponse: true };
             bool viewOnlyConflict = !available && measurementOnScreen;
             radioMagnitudeSpl.ForeColor = viewOnlyConflict
-                ? UiPalette.WarningAmber
+                ? UiPalette.Warning
                 : splChoiceReadyForeColor;
             toolTip.SetToolTip(radioMagnitudeSpl, DescribeSplChoice(available, viewOnlyConflict));
         }

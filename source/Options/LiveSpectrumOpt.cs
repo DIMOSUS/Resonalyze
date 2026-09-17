@@ -197,7 +197,7 @@ namespace Resonalyze.Options
             labelSpl.ForeColor = !rta
                 ? UiPalette.TextDisabled
                 : splViewOnlyConflict
-                    ? UiPalette.WarningAmber
+                    ? UiPalette.Warning
                     : splChoiceReadyForeColor;
             UiStyle.SetTextEnabledLook(checkSpl, rta, interactive: true);
         }
@@ -207,7 +207,7 @@ namespace Resonalyze.Options
         {
             radioModeTransfer.ForeColor =
                 radioModeTransfer.Checked && !hasTransferReference
-                    ? UiPalette.WarningAmber
+                    ? UiPalette.Warning
                     : transferChoiceReadyForeColor;
             toolTip.SetToolTip(
                 radioModeTransfer, DescribeTransferChoice(hasTransferReference));

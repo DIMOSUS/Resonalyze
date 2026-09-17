@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using OxyPlot;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
@@ -163,8 +163,8 @@ public sealed class OverlayCollection
             .FirstOrDefault(button => button.Name == "buttonSaveOverlay")
             ?? throw new InvalidOperationException(
                 "Overlay template capture button is missing.");
-        DarkNumericUpDown templateOffset = templatePanel.Controls
-            .OfType<DarkNumericUpDown>()
+        ThemedNumericUpDown templateOffset = templatePanel.Controls
+            .OfType<ThemedNumericUpDown>()
             .FirstOrDefault()
             ?? throw new InvalidOperationException(
                 "Overlay template offset control is missing.");
@@ -192,12 +192,11 @@ public sealed class OverlayCollection
         form.SuspendLayout();
         container.SuspendLayout();
 
-        var random = new Random(3);
         for (int index = 2; index <= OverlayFile.MaximumSlotCount; index++)
         {
-            RoundedPanel panel = CreatePanel(templatePanel, index, random);
+            RoundedPanel panel = CreatePanel(templatePanel, index);
             CheckBox checkBox = CreateCheckBox(templateCheckBox, index);
-            DarkNumericUpDown offset = CreateOffset(templateOffset, index);
+            ThemedNumericUpDown offset = CreateOffset(templateOffset, index);
             Button captureButton = CreateCaptureButton(templateCaptureButton, index);
             Label nameLabel = CreateNameLabel(templateNameLabel, index);
 
@@ -224,6 +223,10 @@ public sealed class OverlayCollection
         container.ResumeLayout(false);
         form.ResumeLayout(false);
     }
+
+    /// <summary>The colour a slot shows before it holds a capture; a captured slot carries its own.</summary>
+    internal static Color SlotDefaultColor(int slot) =>
+        UiPalette.OverlaySlotDefaults[(slot - 1) % UiPalette.OverlaySlotDefaults.Count];
 
     public OxyPlot.WindowsForms.PlotView PlotView { get; }
     public Form1 Form { get; }
@@ -499,17 +502,11 @@ public sealed class OverlayCollection
         };
     }
 
-    private static RoundedPanel CreatePanel(
-        RoundedPanel template,
-        int index,
-        Random random)
+    private static RoundedPanel CreatePanel(RoundedPanel template, int index)
     {
         return new RoundedPanel
         {
-            BackColor = Color.FromArgb(
-                random.Next(255),
-                random.Next(255),
-                random.Next(255)),
+            BackColor = SlotDefaultColor(index),
             BorderColor = template.BorderColor,
             CornerRadius = template.CornerRadius,
             Location = new Point(
@@ -534,11 +531,11 @@ public sealed class OverlayCollection
         };
     }
 
-    private static DarkNumericUpDown CreateOffset(
-        DarkNumericUpDown template,
+    private static ThemedNumericUpDown CreateOffset(
+        ThemedNumericUpDown template,
         int index)
     {
-        return new DarkNumericUpDown
+        return new ThemedNumericUpDown
         {
             BackColor = template.BackColor,
             DecimalPlaces = template.DecimalPlaces,
@@ -597,7 +594,7 @@ public sealed class Overlay
     private readonly OverlayCollection collection;
     private readonly Panel panel;
     private readonly Button captureButton;
-    private readonly DarkNumericUpDown offsetControl;
+    private readonly ThemedNumericUpDown offsetControl;
     private readonly CheckBox checkBox;
     private readonly Label nameLabel;
     private readonly WrappingToolTip toolTip;
@@ -682,7 +679,7 @@ public sealed class Overlay
     public Overlay(
         Panel panel,
         Button captureButton,
-        DarkNumericUpDown offsetControl,
+        ThemedNumericUpDown offsetControl,
         CheckBox checkBox,
         Label nameLabel,
         int index,

@@ -3,7 +3,7 @@ using System.Drawing.Drawing2D;
 
 namespace Resonalyze;
 
-/// <summary>Console-style gain fader for EQ Wizard PEQ strips; the strip's <see cref="DarkNumericUpDown"/> stays the source of truth.</summary>
+/// <summary>Console-style gain fader for EQ Wizard PEQ strips; the strip's <see cref="ThemedNumericUpDown"/> stays the source of truth.</summary>
 internal sealed class GainFader : Control
 {
     private const float TrackCenterFraction = 0.62f;
@@ -30,7 +30,7 @@ internal sealed class GainFader : Control
 
         // Reached by clicking; the tab order runs through the numeric fields.
         TabStop = false;
-        BackColor = Color.FromArgb(44, 50, 60);
+        BackColor = UiPalette.AppBackground;
         ForeColor = UiPalette.TextSecondary;
         Font = new Font("Segoe UI", 7.5f, FontStyle.Regular, GraphicsUnit.Point);
     }
@@ -124,9 +124,9 @@ internal sealed class GainFader : Control
 
         using (GraphicsPath groove = RoundedRectangle(trackRect, track.Width / 2f))
         {
-            using var grooveBrush = new SolidBrush(UiPalette.PlotTrack);
+            using var grooveBrush = new SolidBrush(UiPalette.MeterTrack);
             graphics.FillPath(grooveBrush, groove);
-            using var groovePen = new Pen(UiPalette.DialogBorderSoft);
+            using var groovePen = new Pen(UiPalette.BorderSoft);
             graphics.DrawPath(groovePen, groove);
         }
 
@@ -139,7 +139,7 @@ internal sealed class GainFader : Control
         if (fillBottom - fillTop > 0.5f)
         {
             Color fillColor = enabled
-                ? value >= 0 ? UiPalette.SuccessGreen : UiPalette.WarningRed
+                ? value >= 0 ? UiPalette.Success : UiPalette.Danger
                 : UiPalette.MeterDimFill;
             var fillRect = new RectangleF(
                 trackLeft + 1f, fillTop, track.Width - 2f, fillBottom - fillTop);
@@ -156,7 +156,7 @@ internal sealed class GainFader : Control
     {
         float tickRight = trackLeft - ScaleF(2);
         float tickLeft = tickRight - ScaleF(4);
-        using (var tickPen = new Pen(Color.FromArgb(110, 150, 160, 175), 1f))
+        using (var tickPen = new Pen(UiPalette.FaderTick, 1f))
         {
             double firstTick = Math.Ceiling(minimum / 3.0) * 3.0;
             for (double db = firstTick; db <= maximum + 1e-6; db += 3.0)
@@ -167,9 +167,9 @@ internal sealed class GainFader : Control
         }
 
         float labelRight = tickLeft - ScaleF(2);
-        Color maxColor = enabled ? UiPalette.SuccessGreenSoft : UiPalette.TextDisabled;
+        Color maxColor = enabled ? UiPalette.Success : UiPalette.TextDisabled;
         Color zeroColor = enabled ? UiPalette.TextSecondary : UiPalette.TextDisabled;
-        Color minColor = enabled ? UiPalette.ErrorSoft : UiPalette.TextDisabled;
+        Color minColor = enabled ? UiPalette.Error : UiPalette.TextDisabled;
         DrawScaleLabel(graphics, FormatDb(maximum), track.Top, labelRight, maxColor);
         DrawScaleLabel(graphics, "0", zeroY, labelRight, zeroColor);
         DrawScaleLabel(graphics, FormatDb(minimum), track.Bottom, labelRight, minColor);
@@ -200,18 +200,18 @@ internal sealed class GainFader : Control
         Color faceBottom;
         if (!enabled)
         {
-            faceTop = Color.FromArgb(48, 52, 62);
-            faceBottom = Color.FromArgb(34, 37, 45);
+            faceTop = UiPalette.FaderCapTop;
+            faceBottom = UiPalette.FaderCapBottom;
         }
         else if (active)
         {
-            faceTop = Color.FromArgb(72, 80, 112);
-            faceBottom = Color.FromArgb(44, 50, 74);
+            faceTop = UiPalette.FaderCapHoverTop;
+            faceBottom = UiPalette.FaderCapHoverBottom;
         }
         else
         {
-            faceTop = Color.FromArgb(58, 64, 84);
-            faceBottom = Color.FromArgb(36, 40, 54);
+            faceTop = UiPalette.FaderCapPressedTop;
+            faceBottom = UiPalette.FaderCapPressedBottom;
         }
 
         using (GraphicsPath capPath = RoundedRectangle(cap, ScaleF(3)))
@@ -223,14 +223,14 @@ internal sealed class GainFader : Control
             }
 
             Color borderColor = !enabled
-                ? UiPalette.DialogBorderSoft
-                : active || Focused ? UiPalette.AccentBlueSoft : UiPalette.DialogBorder;
+                ? UiPalette.BorderSoft
+                : active || Focused ? UiPalette.AccentMark : UiPalette.Border;
             using var capPen = new Pen(borderColor);
             graphics.DrawPath(capPen, capPath);
         }
 
         Color gripColor = enabled
-            ? Color.FromArgb(220, UiPalette.TextPrimarySoft)
+            ? Color.FromArgb(220, UiPalette.TextDefault)
             : Color.FromArgb(120, UiPalette.TextDisabled);
         using var gripPen = new Pen(gripColor, Math.Max(1f, ScaleF(1.4f)));
         graphics.DrawLine(gripPen, cap.Left + ScaleF(2), thumbY, cap.Right - ScaleF(2), thumbY);

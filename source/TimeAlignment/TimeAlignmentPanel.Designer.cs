@@ -37,11 +37,11 @@ namespace Resonalyze
             autoBandLabel = new Label();
             bandModeManualRadio = new ReleaseClickRadioButton();
             bandpassCenterLabel = new Label();
-            bandpassCenterNumeric = new DarkNumericUpDown();
+            bandpassCenterNumeric = new ThemedNumericUpDown();
             bandpassPassOctavesLabel = new Label();
-            bandpassPassOctavesNumeric = new DarkNumericUpDown();
+            bandpassPassOctavesNumeric = new ThemedNumericUpDown();
             bandpassFadeOctavesLabel = new Label();
-            bandpassFadeOctavesNumeric = new DarkNumericUpDown();
+            bandpassFadeOctavesNumeric = new ThemedNumericUpDown();
             bandpassPlotView = new OxyPlot.WindowsForms.PlotView();
             envelopePlotView = new OxyPlot.WindowsForms.PlotView();
             statusTextBox = new StatusRichTextBox();
@@ -53,7 +53,7 @@ namespace Resonalyze
             // 
             // helpLabel
             // 
-            helpLabel.ForeColor = Color.FromArgb(205, 210, 220);
+            helpLabel.ForeColor = UiPalette.TextDefault;
             helpLabel.Location = new Point(18, 64);
             helpLabel.Name = "helpLabel";
             helpLabel.Size = new Size(500, 166);
@@ -63,7 +63,7 @@ namespace Resonalyze
             // sourceSummaryLabel
             // 
             sourceSummaryLabel.Font = new Font("Segoe UI Semibold", 11.25F, FontStyle.Bold, GraphicsUnit.Point, 204);
-            sourceSummaryLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            sourceSummaryLabel.ForeColor = UiPalette.TextDefault;
             sourceSummaryLabel.Location = new Point(18, 18);
             sourceSummaryLabel.Name = "sourceSummaryLabel";
             sourceSummaryLabel.Size = new Size(500, 20);
@@ -74,7 +74,7 @@ namespace Resonalyze
             //
             bandModeFullRadio.AutoSize = true;
             bandModeFullRadio.BackColor = Color.Transparent;
-            bandModeFullRadio.ForeColor = Color.FromArgb(210, 214, 222);
+            bandModeFullRadio.ForeColor = UiPalette.TextDefault;
             bandModeFullRadio.Location = new Point(18, 234);
             bandModeFullRadio.Name = "bandModeFullRadio";
             bandModeFullRadio.Size = new Size(129, 19);
@@ -87,7 +87,7 @@ namespace Resonalyze
             //
             bandModeAutoRadio.AutoSize = true;
             bandModeAutoRadio.BackColor = Color.Transparent;
-            bandModeAutoRadio.ForeColor = Color.FromArgb(210, 214, 222);
+            bandModeAutoRadio.ForeColor = UiPalette.TextDefault;
             bandModeAutoRadio.Location = new Point(18, 256);
             bandModeAutoRadio.Name = "bandModeAutoRadio";
             bandModeAutoRadio.Size = new Size(233, 19);
@@ -98,7 +98,7 @@ namespace Resonalyze
             //
             // autoBandLabel
             //
-            autoBandLabel.ForeColor = Color.FromArgb(150, 156, 168);
+            autoBandLabel.ForeColor = UiPalette.TextMuted;
             autoBandLabel.Location = new Point(38, 277);
             autoBandLabel.Name = "autoBandLabel";
             autoBandLabel.Size = new Size(280, 15);
@@ -109,7 +109,7 @@ namespace Resonalyze
             //
             bandModeManualRadio.AutoSize = true;
             bandModeManualRadio.BackColor = Color.Transparent;
-            bandModeManualRadio.ForeColor = Color.FromArgb(210, 214, 222);
+            bandModeManualRadio.ForeColor = UiPalette.TextDefault;
             bandModeManualRadio.Location = new Point(18, 298);
             bandModeManualRadio.Name = "bandModeManualRadio";
             bandModeManualRadio.Size = new Size(165, 19);
@@ -121,7 +121,7 @@ namespace Resonalyze
             // bandpassCenterLabel
             //
             bandpassCenterLabel.AutoSize = true;
-            bandpassCenterLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            bandpassCenterLabel.ForeColor = UiPalette.TextDefault;
             bandpassCenterLabel.Location = new Point(18, 330);
             bandpassCenterLabel.Name = "bandpassCenterLabel";
             bandpassCenterLabel.Size = new Size(118, 15);
@@ -130,9 +130,9 @@ namespace Resonalyze
             // 
             // bandpassCenterNumeric
             // 
-            bandpassCenterNumeric.BackColor = Color.FromArgb(55, 60, 72);
+            bandpassCenterNumeric.BackColor = UiPalette.ControlSurface;
             bandpassCenterNumeric.DecimalPlaces = 0;
-            bandpassCenterNumeric.ForeColor = Color.White;
+            bandpassCenterNumeric.ForeColor = UiPalette.TextPrimary;
             bandpassCenterNumeric.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             bandpassCenterNumeric.Location = new Point(180, 326);
             bandpassCenterNumeric.Maximum = new decimal(new int[] { 20000, 0, 0, 0 });
@@ -148,7 +148,7 @@ namespace Resonalyze
             // bandpassPassOctavesLabel
             // 
             bandpassPassOctavesLabel.AutoSize = true;
-            bandpassPassOctavesLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            bandpassPassOctavesLabel.ForeColor = UiPalette.TextDefault;
             bandpassPassOctavesLabel.Location = new Point(18, 364);
             bandpassPassOctavesLabel.Name = "bandpassPassOctavesLabel";
             bandpassPassOctavesLabel.Size = new Size(86, 15);
@@ -157,9 +157,9 @@ namespace Resonalyze
             // 
             // bandpassPassOctavesNumeric
             // 
-            bandpassPassOctavesNumeric.BackColor = Color.FromArgb(55, 60, 72);
+            bandpassPassOctavesNumeric.BackColor = UiPalette.ControlSurface;
             bandpassPassOctavesNumeric.DecimalPlaces = 1;
-            bandpassPassOctavesNumeric.ForeColor = Color.White;
+            bandpassPassOctavesNumeric.ForeColor = UiPalette.TextPrimary;
             bandpassPassOctavesNumeric.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             bandpassPassOctavesNumeric.Location = new Point(180, 360);
             bandpassPassOctavesNumeric.Maximum = new decimal(new int[] { 8, 0, 0, 0 });
@@ -175,7 +175,7 @@ namespace Resonalyze
             // bandpassFadeOctavesLabel
             // 
             bandpassFadeOctavesLabel.AutoSize = true;
-            bandpassFadeOctavesLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            bandpassFadeOctavesLabel.ForeColor = UiPalette.TextDefault;
             bandpassFadeOctavesLabel.Location = new Point(18, 398);
             bandpassFadeOctavesLabel.Name = "bandpassFadeOctavesLabel";
             bandpassFadeOctavesLabel.Size = new Size(88, 15);
@@ -184,9 +184,9 @@ namespace Resonalyze
             // 
             // bandpassFadeOctavesNumeric
             // 
-            bandpassFadeOctavesNumeric.BackColor = Color.FromArgb(55, 60, 72);
+            bandpassFadeOctavesNumeric.BackColor = UiPalette.ControlSurface;
             bandpassFadeOctavesNumeric.DecimalPlaces = 1;
-            bandpassFadeOctavesNumeric.ForeColor = Color.White;
+            bandpassFadeOctavesNumeric.ForeColor = UiPalette.TextPrimary;
             bandpassFadeOctavesNumeric.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             bandpassFadeOctavesNumeric.Location = new Point(180, 394);
             bandpassFadeOctavesNumeric.Maximum = new decimal(new int[] { 8, 0, 0, 0 });
@@ -201,7 +201,7 @@ namespace Resonalyze
             // 
             // bandpassPlotView
             // 
-            bandpassPlotView.BackColor = Color.FromArgb(32, 36, 46);
+            bandpassPlotView.BackColor = UiPalette.GraphSurfaceMuted;
             bandpassPlotView.Location = new Point(18, 436);
             bandpassPlotView.Name = "bandpassPlotView";
             bandpassPlotView.PanCursor = Cursors.Hand;
@@ -214,7 +214,7 @@ namespace Resonalyze
             // 
             // envelopePlotView
             // 
-            envelopePlotView.BackColor = Color.FromArgb(32, 36, 46);
+            envelopePlotView.BackColor = UiPalette.GraphSurfaceMuted;
             envelopePlotView.Location = new Point(580, 436);
             envelopePlotView.MinimumSize = new Size(320, 240);
             envelopePlotView.Name = "envelopePlotView";
@@ -228,11 +228,11 @@ namespace Resonalyze
             // 
             // statusTextBox
             // 
-            statusTextBox.BackColor = Color.FromArgb(40, 44, 54);
+            statusTextBox.BackColor = UiPalette.ShellSurface;
             statusTextBox.BorderStyle = BorderStyle.None;
             statusTextBox.DetectUrls = false;
             statusTextBox.Font = new Font("Segoe UI", 10F, FontStyle.Bold, GraphicsUnit.Point, 204);
-            statusTextBox.ForeColor = Color.FromArgb(190, 195, 205);
+            statusTextBox.ForeColor = UiPalette.TextSecondary;
             statusTextBox.Location = new Point(580, 18);
             statusTextBox.Name = "statusTextBox";
             statusTextBox.ReadOnly = true;
@@ -244,7 +244,7 @@ namespace Resonalyze
             // compareLabel
             // 
             compareLabel.Font = new Font("Segoe UI Semibold", 11.25F, FontStyle.Bold, GraphicsUnit.Point, 204);
-            compareLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            compareLabel.ForeColor = UiPalette.TextDefault;
             compareLabel.Location = new Point(18, 38);
             compareLabel.Name = "compareLabel";
             compareLabel.Size = new Size(500, 20);
@@ -256,7 +256,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             AutoScroll = true;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(compareLabel);
             Controls.Add(statusTextBox);
@@ -275,7 +275,7 @@ namespace Resonalyze
             Controls.Add(sourceSummaryLabel);
             Controls.Add(helpLabel);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             Name = "TimeAlignmentPanel";
             Size = new Size(1246, 770);
             (bandpassCenterNumeric).EndInit();
@@ -293,11 +293,11 @@ namespace Resonalyze
         private Label autoBandLabel;
         private ReleaseClickRadioButton bandModeManualRadio;
         private Label bandpassCenterLabel;
-        private DarkNumericUpDown bandpassCenterNumeric;
+        private ThemedNumericUpDown bandpassCenterNumeric;
         private Label bandpassPassOctavesLabel;
-        private DarkNumericUpDown bandpassPassOctavesNumeric;
+        private ThemedNumericUpDown bandpassPassOctavesNumeric;
         private Label bandpassFadeOctavesLabel;
-        private DarkNumericUpDown bandpassFadeOctavesNumeric;
+        private ThemedNumericUpDown bandpassFadeOctavesNumeric;
         private OxyPlot.WindowsForms.PlotView bandpassPlotView;
         private OxyPlot.WindowsForms.PlotView envelopePlotView;
         private StatusRichTextBox statusTextBox;

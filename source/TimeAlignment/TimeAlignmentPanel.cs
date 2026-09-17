@@ -7,7 +7,7 @@ public partial class TimeAlignmentPanel : UserControl
     public TimeAlignmentPanel()
     {
         InitializeComponent();
-        Ui.DarkScrollBars.Apply(this);
+        Ui.ThemedScrollBars.Apply(this);
     }
 
     internal Label SourceSummaryLabel => sourceSummaryLabel;
@@ -22,11 +22,11 @@ public partial class TimeAlignmentPanel : UserControl
 
     internal Label AutoBandLabel => autoBandLabel;
 
-    internal DarkNumericUpDown BandpassCenterNumeric => bandpassCenterNumeric;
+    internal ThemedNumericUpDown BandpassCenterNumeric => bandpassCenterNumeric;
 
-    internal DarkNumericUpDown BandpassPassOctavesNumeric => bandpassPassOctavesNumeric;
+    internal ThemedNumericUpDown BandpassPassOctavesNumeric => bandpassPassOctavesNumeric;
 
-    internal DarkNumericUpDown BandpassFadeOctavesNumeric => bandpassFadeOctavesNumeric;
+    internal ThemedNumericUpDown BandpassFadeOctavesNumeric => bandpassFadeOctavesNumeric;
 
     internal PlotView BandpassPlotView => bandpassPlotView;
 

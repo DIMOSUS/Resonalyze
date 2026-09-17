@@ -29,22 +29,22 @@ namespace Resonalyze.Options
         private void InitializeComponent()
         {
             label9 = new Label();
-            comboSmoothingInverseOctaves = new DarkComboBox();
-            numericDbRange = new DarkNumericUpDown();
+            comboSmoothingInverseOctaves = new ThemedComboBox();
+            numericDbRange = new ThemedNumericUpDown();
             label8 = new Label();
-            numericCaptureTime = new DarkNumericUpDown();
+            numericCaptureTime = new ThemedNumericUpDown();
             label7 = new Label();
-            numericWindow = new DarkNumericUpDown();
-            numericSampleRate = new DarkNumericUpDown();
-            numericRightWindow = new DarkNumericUpDown();
-            numericLeftWindow = new DarkNumericUpDown();
+            numericWindow = new ThemedNumericUpDown();
+            numericSampleRate = new ThemedNumericUpDown();
+            numericRightWindow = new ThemedNumericUpDown();
+            numericLeftWindow = new ThemedNumericUpDown();
             label5 = new Label();
             label4 = new Label();
             label2 = new Label();
             label1 = new Label();
-            numericOffset = new DarkNumericUpDown();
+            numericOffset = new ThemedNumericUpDown();
             label11 = new Label();
-            numericPeriods = new DarkNumericUpDown();
+            numericPeriods = new ThemedNumericUpDown();
             label3 = new Label();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             (numericDbRange).BeginInit();
@@ -60,7 +60,7 @@ namespace Resonalyze.Options
             // label9
             // 
             label9.AutoSize = true;
-            label9.ForeColor = SystemColors.ControlLight;
+            label9.ForeColor = UiPalette.TextDefault;
             label9.Location = new Point(12, 160);
             label9.Name = "label9";
             label9.Size = new Size(161, 15);
@@ -69,8 +69,8 @@ namespace Resonalyze.Options
             // 
             // comboSmoothingInverseOctaves
             // 
-            comboSmoothingInverseOctaves.BackColor = Color.FromArgb(55, 60, 72);
-            comboSmoothingInverseOctaves.ForeColor = Color.White;
+            comboSmoothingInverseOctaves.BackColor = UiPalette.ControlSurface;
+            comboSmoothingInverseOctaves.ForeColor = UiPalette.TextPrimary;
             comboSmoothingInverseOctaves.Location = new Point(193, 159);
             comboSmoothingInverseOctaves.Margin = new Padding(0);
             comboSmoothingInverseOctaves.MinimumSize = new Size(36, 19);
@@ -80,9 +80,9 @@ namespace Resonalyze.Options
             // 
             // numericDbRange
             // 
-            numericDbRange.BackColor = Color.FromArgb(55, 60, 72);
+            numericDbRange.BackColor = UiPalette.ControlSurface;
             numericDbRange.DecimalPlaces = 0;
-            numericDbRange.ForeColor = Color.White;
+            numericDbRange.ForeColor = UiPalette.TextPrimary;
             numericDbRange.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericDbRange.Location = new Point(193, 136);
             numericDbRange.Maximum = new decimal(new int[] { 10, 0, 0, int.MinValue });
@@ -98,7 +98,7 @@ namespace Resonalyze.Options
             // label8
             // 
             label8.AutoSize = true;
-            label8.ForeColor = SystemColors.ControlLight;
+            label8.ForeColor = UiPalette.TextDefault;
             label8.Location = new Point(12, 135);
             label8.Name = "label8";
             label8.Size = new Size(57, 15);
@@ -107,10 +107,10 @@ namespace Resonalyze.Options
             // 
             // numericCaptureTime
             // 
-            numericCaptureTime.BackColor = Color.FromArgb(55, 60, 72);
+            numericCaptureTime.BackColor = UiPalette.ControlSurface;
             numericCaptureTime.DecimalPlaces = 2;
             numericCaptureTime.Enabled = false;
-            numericCaptureTime.ForeColor = Color.White;
+            numericCaptureTime.ForeColor = UiPalette.TextPrimary;
             numericCaptureTime.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericCaptureTime.Location = new Point(193, 61);
             numericCaptureTime.Maximum = new decimal(new int[] { 999999999, 0, 0, 0 });
@@ -126,7 +126,7 @@ namespace Resonalyze.Options
             // label7
             // 
             label7.AutoSize = true;
-            label7.ForeColor = SystemColors.ControlLight;
+            label7.ForeColor = UiPalette.TextDefault;
             label7.Location = new Point(12, 60);
             label7.Name = "label7";
             label7.Size = new Size(106, 15);
@@ -135,9 +135,9 @@ namespace Resonalyze.Options
             // 
             // numericWindow
             // 
-            numericWindow.BackColor = Color.FromArgb(55, 60, 72);
+            numericWindow.BackColor = UiPalette.ControlSurface;
             numericWindow.DecimalPlaces = 0;
-            numericWindow.ForeColor = Color.White;
+            numericWindow.ForeColor = UiPalette.TextPrimary;
             numericWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericWindow.Location = new Point(193, 36);
             numericWindow.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
@@ -152,10 +152,10 @@ namespace Resonalyze.Options
             // 
             // numericSampleRate
             // 
-            numericSampleRate.BackColor = Color.FromArgb(55, 60, 72);
+            numericSampleRate.BackColor = UiPalette.ControlSurface;
             numericSampleRate.DecimalPlaces = 0;
             numericSampleRate.Enabled = false;
-            numericSampleRate.ForeColor = Color.White;
+            numericSampleRate.ForeColor = UiPalette.TextPrimary;
             numericSampleRate.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericSampleRate.Location = new Point(193, 11);
             numericSampleRate.Maximum = new decimal(new int[] { 192000, 0, 0, 0 });
@@ -171,9 +171,9 @@ namespace Resonalyze.Options
             // 
             // numericRightWindow
             // 
-            numericRightWindow.BackColor = Color.FromArgb(55, 60, 72);
+            numericRightWindow.BackColor = UiPalette.ControlSurface;
             numericRightWindow.DecimalPlaces = 0;
-            numericRightWindow.ForeColor = Color.White;
+            numericRightWindow.ForeColor = UiPalette.TextPrimary;
             numericRightWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericRightWindow.Location = new Point(193, 111);
             numericRightWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
@@ -188,9 +188,9 @@ namespace Resonalyze.Options
             // 
             // numericLeftWindow
             // 
-            numericLeftWindow.BackColor = Color.FromArgb(55, 60, 72);
+            numericLeftWindow.BackColor = UiPalette.ControlSurface;
             numericLeftWindow.DecimalPlaces = 0;
-            numericLeftWindow.ForeColor = Color.White;
+            numericLeftWindow.ForeColor = UiPalette.TextPrimary;
             numericLeftWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericLeftWindow.Location = new Point(193, 86);
             numericLeftWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
@@ -206,7 +206,7 @@ namespace Resonalyze.Options
             // label5
             // 
             label5.AutoSize = true;
-            label5.ForeColor = SystemColors.ControlLight;
+            label5.ForeColor = UiPalette.TextDefault;
             label5.Location = new Point(12, 110);
             label5.Name = "label5";
             label5.Size = new Size(117, 15);
@@ -216,7 +216,7 @@ namespace Resonalyze.Options
             // label4
             // 
             label4.AutoSize = true;
-            label4.ForeColor = SystemColors.ControlLight;
+            label4.ForeColor = UiPalette.TextDefault;
             label4.Location = new Point(12, 85);
             label4.Name = "label4";
             label4.Size = new Size(109, 15);
@@ -226,7 +226,7 @@ namespace Resonalyze.Options
             // label2
             // 
             label2.AutoSize = true;
-            label2.ForeColor = SystemColors.ControlLight;
+            label2.ForeColor = UiPalette.TextDefault;
             label2.Location = new Point(12, 35);
             label2.Name = "label2";
             label2.Size = new Size(98, 15);
@@ -236,7 +236,7 @@ namespace Resonalyze.Options
             // label1
             // 
             label1.AutoSize = true;
-            label1.ForeColor = SystemColors.ControlLight;
+            label1.ForeColor = UiPalette.TextDefault;
             label1.Location = new Point(12, 10);
             label1.Name = "label1";
             label1.Size = new Size(72, 15);
@@ -245,9 +245,9 @@ namespace Resonalyze.Options
             // 
             // numericOffset
             // 
-            numericOffset.BackColor = Color.FromArgb(55, 60, 72);
+            numericOffset.BackColor = UiPalette.ControlSurface;
             numericOffset.DecimalPlaces = 0;
-            numericOffset.ForeColor = Color.White;
+            numericOffset.ForeColor = UiPalette.TextPrimary;
             numericOffset.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericOffset.Location = new Point(193, 186);
             numericOffset.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
@@ -263,7 +263,7 @@ namespace Resonalyze.Options
             // label11
             // 
             label11.AutoSize = true;
-            label11.ForeColor = SystemColors.ControlLight;
+            label11.ForeColor = UiPalette.TextDefault;
             label11.Location = new Point(12, 185);
             label11.Name = "label11";
             label11.Size = new Size(39, 15);
@@ -272,9 +272,9 @@ namespace Resonalyze.Options
             // 
             // numericPeriods
             // 
-            numericPeriods.BackColor = Color.FromArgb(55, 60, 72);
+            numericPeriods.BackColor = UiPalette.ControlSurface;
             numericPeriods.DecimalPlaces = 0;
-            numericPeriods.ForeColor = Color.White;
+            numericPeriods.ForeColor = UiPalette.TextPrimary;
             numericPeriods.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericPeriods.Location = new Point(192, 211);
             numericPeriods.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
@@ -290,7 +290,7 @@ namespace Resonalyze.Options
             // label3
             // 
             label3.AutoSize = true;
-            label3.ForeColor = SystemColors.ControlLight;
+            label3.ForeColor = UiPalette.TextDefault;
             label3.Location = new Point(12, 210);
             label3.Name = "label3";
             label3.Size = new Size(46, 15);
@@ -299,7 +299,7 @@ namespace Resonalyze.Options
             // 
             // irPlotView
             // 
-            irPlotView.BackColor = Color.FromArgb(32, 36, 46);
+            irPlotView.BackColor = UiPalette.GraphSurfaceMuted;
             irPlotView.Location = new Point(12, 236);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
@@ -314,7 +314,7 @@ namespace Resonalyze.Options
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             ClientSize = new Size(264, 542);
             Controls.Add(irPlotView);
             Controls.Add(numericPeriods);
@@ -357,22 +357,22 @@ namespace Resonalyze.Options
         #endregion
 
         private Label label9;
-        private DarkComboBox comboSmoothingInverseOctaves;
-        private DarkNumericUpDown numericDbRange;
+        private ThemedComboBox comboSmoothingInverseOctaves;
+        private ThemedNumericUpDown numericDbRange;
         private Label label8;
-        private DarkNumericUpDown numericCaptureTime;
+        private ThemedNumericUpDown numericCaptureTime;
         private Label label7;
-        private DarkNumericUpDown numericWindow;
-        private DarkNumericUpDown numericSampleRate;
-        private DarkNumericUpDown numericRightWindow;
-        private DarkNumericUpDown numericLeftWindow;
+        private ThemedNumericUpDown numericWindow;
+        private ThemedNumericUpDown numericSampleRate;
+        private ThemedNumericUpDown numericRightWindow;
+        private ThemedNumericUpDown numericLeftWindow;
         private Label label5;
         private Label label4;
         private Label label2;
         private Label label1;
-        private DarkNumericUpDown numericOffset;
+        private ThemedNumericUpDown numericOffset;
         private Label label11;
-        private DarkNumericUpDown numericPeriods;
+        private ThemedNumericUpDown numericPeriods;
         private Label label3;
         private OxyPlot.WindowsForms.PlotView irPlotView;
     }

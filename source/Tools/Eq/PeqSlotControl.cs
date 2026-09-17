@@ -21,7 +21,7 @@ public partial class PeqSlotControl : UserControl
     /// <inheritdoc cref="MinimumQ"/>
     internal const double MaximumQ = 20;
 
-    private static readonly Color DraggingBackColor = Color.FromArgb(32, 36, 45);
+    private static readonly Color DraggingBackColor = UiPalette.SunkenSurface;
 
     private int slotNumber = 1;
     private PeqBandType bandType = PeqBandType.Peaking;
@@ -307,11 +307,11 @@ public partial class PeqSlotControl : UserControl
 
     internal Control SlotLabel => slotLabel;
 
-    internal DarkNumericUpDown FrequencyInput => frequencyInput;
+    internal ThemedNumericUpDown FrequencyInput => frequencyInput;
 
-    internal DarkNumericUpDown QInput => qInput;
+    internal ThemedNumericUpDown QInput => qInput;
 
-    internal DarkNumericUpDown GainInput => gainInput;
+    internal ThemedNumericUpDown GainInput => gainInput;
 
     internal Control GroupDelayReadout => groupDelayLabel;
 }

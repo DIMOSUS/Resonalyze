@@ -106,13 +106,13 @@ namespace Resonalyze.Options
 
             if (cancelled)
             {
-                SetStatus("Calibration cancelled.", SystemColors.ControlLight);
+                SetStatus("Calibration cancelled.", UiPalette.TextDefault);
             }
             else if (error != null)
             {
                 SetStatus(
                     $"Could not open the input for calibration:\r\n{error}",
-                    Color.LightSalmon);
+                    UiPalette.Error);
             }
             else if (capture is { } result)
             {
@@ -135,7 +135,7 @@ namespace Resonalyze.Options
             buttonStart.Text = "Stop";
             progressBar.Value = 0;
             progressBar.Visible = true;
-            SetStatus("Listening for the calibrator tone…", SystemColors.ControlLight);
+            SetStatus("Listening for the calibrator tone…", UiPalette.TextDefault);
         }
 
         private void EndRunningState()
@@ -165,7 +165,7 @@ namespace Resonalyze.Options
                 $"Listening…   input peak {progress.InputPeakDbFs:0.0} dBFS\r\n" +
                 $"Loudest tone: {tone}\r\n" +
                 $"Prominence: {progress.Reading.ProminenceDb:0.0} dB{clip}",
-                progress.Clipped ? Color.LightSalmon : SystemColors.ControlLight);
+                progress.Clipped ? UiPalette.Error : UiPalette.TextDefault);
         }
 
         private void ApplyResult(SplCalibrationCaptureResult result, double reference)
@@ -175,7 +175,7 @@ namespace Resonalyze.Options
             {
                 Result = null;
                 buttonSave.Enabled = false;
-                SetStatus(DescribeFailure(failure, result), Color.LightSalmon);
+                SetStatus(DescribeFailure(failure, result), UiPalette.Error);
                 return;
             }
 
@@ -202,7 +202,7 @@ namespace Resonalyze.Options
                 $"Calibration successful.\r\n" +
                 $"{result.Reading.PeakFrequencyHz:0} Hz measured at {result.Reading.LevelDbFs:0.0} dBFS.\r\n" +
                 $"Offset {Result.OffsetDb:+0.0;-0.0;0.0} dB at {reference:0} dB SPL reference.",
-                Color.LightGreen);
+                UiPalette.Success);
         }
 
         private static string DescribeFailure(

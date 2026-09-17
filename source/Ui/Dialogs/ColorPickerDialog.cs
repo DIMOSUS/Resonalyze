@@ -26,9 +26,9 @@ internal sealed class ColorPickerDialog : Form
     private readonly HueSlider hueSlider = new();
     private readonly Panel preview = new();
     private readonly TextBox hexTextBox = new();
-    private readonly DarkNumericUpDown redInput = CreateChannelInput();
-    private readonly DarkNumericUpDown greenInput = CreateChannelInput();
-    private readonly DarkNumericUpDown blueInput = CreateChannelInput();
+    private readonly ThemedNumericUpDown redInput = CreateChannelInput();
+    private readonly ThemedNumericUpDown greenInput = CreateChannelInput();
+    private readonly ThemedNumericUpDown blueInput = CreateChannelInput();
     private bool updatingControls;
 
     public ColorPickerDialog(Color initialColor)
@@ -44,7 +44,7 @@ internal sealed class ColorPickerDialog : Form
     {
         SuspendLayout();
 
-        UiStyle.ApplyDarkDialog(this, new Size(452, 448), title: "Select overlay color");
+        UiStyle.ApplyDialogChrome(this, new Size(452, 448), title: "Select overlay color");
 
         var title = UiStyle.CreateLabel(
             "Overlay color",
@@ -147,12 +147,12 @@ internal sealed class ColorPickerDialog : Form
             TabStop = false,
             UseVisualStyleBackColor = false
         };
-        UiStyle.ApplyBorderedSwatch(button, UiPalette.DialogBorderSoft);
+        UiStyle.ApplyBorderedSwatch(button, UiPalette.BorderSoft);
         button.Click += (_, _) => SetSelectedColor(color);
         return button;
     }
 
-    private void AddChannelControl(string labelText, DarkNumericUpDown input, int x)
+    private void AddChannelControl(string labelText, ThemedNumericUpDown input, int x)
     {
         AddLabel(labelText, x, 330);
         input.Location = new Point(x, 350);
@@ -170,9 +170,9 @@ internal sealed class ColorPickerDialog : Form
         });
     }
 
-    private static DarkNumericUpDown CreateChannelInput()
+    private static ThemedNumericUpDown CreateChannelInput()
     {
-        var input = new DarkNumericUpDown
+        var input = new ThemedNumericUpDown
         {
             Maximum = 255,
             TextAlign = HorizontalAlignment.Center
@@ -242,7 +242,7 @@ internal sealed class ColorPickerDialog : Form
     {
         using var brush = new SolidBrush(SelectedColor);
         args.Graphics.FillRectangle(brush, preview.ClientRectangle);
-        using var pen = new Pen(UiPalette.DialogBorder);
+        using var pen = new Pen(UiPalette.Border);
         args.Graphics.DrawRectangle(
             pen,
             0,

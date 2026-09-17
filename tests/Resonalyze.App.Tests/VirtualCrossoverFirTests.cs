@@ -447,13 +447,13 @@ public sealed class VirtualCrossoverFirTests
         Assert.StartsWith("left mid.wav: ", control.FirInfoLabel.Text);
         Assert.Contains("4096 taps", control.FirInfoLabel.Text);
         Assert.Contains("21", control.FirInfoLabel.Text);
-        Assert.NotEqual(Resonalyze.Ui.UiPalette.WarningAmber, control.FirInfoLabel.ForeColor);
+        Assert.NotEqual(Resonalyze.Ui.UiPalette.Warning, control.FirInfoLabel.ForeColor);
 
         control.SetFir(new FirFilter(taps, 48_000), "left mid.wav");
 
         Assert.Contains("48 kHz", control.FirInfoLabel.Text);
         Assert.Contains("96 kHz", control.FirInfoLabel.Text);
-        Assert.Equal(Resonalyze.Ui.UiPalette.WarningAmber, control.FirInfoLabel.ForeColor);
+        Assert.Equal(Resonalyze.Ui.UiPalette.Warning, control.FirInfoLabel.ForeColor);
 
         control.SetFir(new FirFilter(taps), null);
 

@@ -205,7 +205,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        DarkNumericUpDown? input = keyData == Keys.Enter
+        ThemedNumericUpDown? input = keyData == Keys.Enter
             ? GetFocusedGateInput()
             : null;
         if (input != null)
@@ -217,10 +217,10 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
-    private DarkNumericUpDown? GetFocusedGateInput() =>
+    private ThemedNumericUpDown? GetFocusedGateInput() =>
         GateInputs().FirstOrDefault(control => control.ContainsFocus);
 
-    private IEnumerable<DarkNumericUpDown> GateInputs()
+    private IEnumerable<ThemedNumericUpDown> GateInputs()
     {
         yield return numericGateOffset;
         yield return numericLeft;
@@ -231,7 +231,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
 
     private void CommitGateEditors()
     {
-        foreach (DarkNumericUpDown input in GateInputs())
+        foreach (ThemedNumericUpDown input in GateInputs())
         {
             input.CommitText();
         }

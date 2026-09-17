@@ -3,14 +3,24 @@ using System.Windows.Forms;
 
 namespace Resonalyze.Ui;
 
-/// <summary>OS dark theme for native scrollbars; best-effort no-op on builds without it.</summary>
-internal static class DarkScrollBars
+/// <summary>The OS theme for native scrollbars, following the palette in force; best-effort no-op on builds without it.</summary>
+internal static class ThemedScrollBars
 {
     // Windows 10 1809: first build with DarkMode_Explorer and the undocumented uxtheme app-mode ordinals.
     private const int FirstDarkModeBuild = 17763;
 
-    // ForceDark: the app is dark even when the OS is light.
+    // 1903 replaced ordinal 135 AllowDarkModeForApp(bool) with SetPreferredAppMode(PreferredAppMode),
+    // so the same export takes a BOOL below this build and an enum from it on.
+    private const int FirstPreferredAppModeBuild = 18362;
+
+    // PreferredAppMode: Default 0, AllowDark 1, ForceDark 2, ForceLight 3. Force* keeps the app on its own
+    // theme whatever Windows is set to; AllowDark would leave a light app dark on a dark desktop.
     private const int ForceDarkAppMode = 2;
+    private const int ForceLightAppMode = 3;
+
+    // AllowDarkModeForApp on 1809 takes a bool in the same argument.
+    private const int AllowDarkModeForApp = 1;
+    private const int DenyDarkModeForApp = 0;
 
     [DllImport("uxtheme.dll", EntryPoint = "#135", SetLastError = true)]
     private static extern int SetPreferredAppMode(int mode);
@@ -33,7 +43,7 @@ internal static class DarkScrollBars
             return;
         }
 
-        EnsureDarkAppMode();
+        EnsureAppMode();
         // Always subscribe: RecreateHandle would silently revert the theme.
         control.HandleCreated += (_, _) => ApplyTheme(control);
         if (control.IsHandleCreated)
@@ -46,14 +56,17 @@ internal static class DarkScrollBars
     {
         try
         {
-            SetWindowTheme(control.Handle, "DarkMode_Explorer", null);
+            SetWindowTheme(
+                control.Handle,
+                UiPalette.Theme == UiTheme.Light ? "Explorer" : "DarkMode_Explorer",
+                null);
         }
         catch
         {
         }
     }
 
-    private static void EnsureDarkAppMode()
+    private static void EnsureAppMode()
     {
         if (appModeInitialized)
         {
@@ -63,12 +76,23 @@ internal static class DarkScrollBars
         appModeInitialized = true;
         try
         {
-            SetPreferredAppMode(ForceDarkAppMode);
+            SetPreferredAppMode(PreferredAppModeArgument());
             FlushMenuThemes();
         }
         catch
         {
         }
+    }
+
+    private static int PreferredAppModeArgument()
+    {
+        bool light = UiPalette.Theme == UiTheme.Light;
+        if (Environment.OSVersion.Version.Build < FirstPreferredAppModeBuild)
+        {
+            return light ? DenyDarkModeForApp : AllowDarkModeForApp;
+        }
+
+        return light ? ForceLightAppMode : ForceDarkAppMode;
     }
 
     private static bool IsSupported =>

@@ -7,7 +7,7 @@ namespace Resonalyze;
 
 [DefaultEvent(nameof(SelectedIndexChanged))]
 [DesignerCategory("Code")]
-public sealed class DarkComboBox : UserControl
+public sealed class ThemedComboBox : UserControl
 {
     private const int LogicalButtonWidth = 18;
     private const int LogicalArrowHalfWidth = 4;
@@ -32,7 +32,7 @@ public sealed class DarkComboBox : UserControl
     private object? defaultSelectedItem;
     private long suppressToggleUntilTick;
 
-    public DarkComboBox()
+    public ThemedComboBox()
     {
         SetStyle(
             ControlStyles.AllPaintingInWmPaint |
@@ -556,19 +556,19 @@ public sealed class DarkComboBox : UserControl
             return;
         }
 
-        using var background = new SolidBrush(Enabled ? BackColor : UiPalette.DialogSurface);
+        using var background = new SolidBrush(Enabled ? BackColor : UiPalette.InputSurface);
         e.Graphics.FillRectangle(background, bounds);
 
         Color borderColor = dropDownVisible || ContainsFocus
-            ? UiPalette.AccentBlueSoft
-            : UiPalette.DialogBorder;
+            ? UiPalette.AccentMark
+            : UiPalette.Border;
         using var borderPen = new Pen(borderColor, ScaleLogical(LogicalBorderThickness));
         e.Graphics.DrawRectangle(borderPen, 0, 0, bounds.Width - 1, bounds.Height - 1);
 
         int buttonWidth = GetButtonWidth();
         int resetWidth = ShowResetButton ? buttonWidth : 0;
         int separatorX = Math.Max(0, bounds.Width - buttonWidth - resetWidth - 1);
-        using var separatorPen = new Pen(UiPalette.DialogBorderSoft);
+        using var separatorPen = new Pen(UiPalette.BorderSoft);
         e.Graphics.DrawLine(separatorPen, separatorX, 1, separatorX, bounds.Height - 2);
         if (ShowResetButton)
         {
@@ -603,7 +603,7 @@ public sealed class DarkComboBox : UserControl
     {
         Rectangle bounds = buttonPanel.ClientRectangle;
         Color buttonColor = !Enabled
-            ? UiPalette.DialogSurfaceMuted
+            ? UiPalette.ButtonBackground
             : buttonPressed || dropDownVisible
                 ? UiPalette.ButtonPressedBackground
                 : buttonHovered
@@ -631,7 +631,7 @@ public sealed class DarkComboBox : UserControl
     {
         Rectangle bounds = resetPanel.ClientRectangle;
         Color buttonColor = !Enabled
-            ? UiPalette.DialogSurfaceMuted
+            ? UiPalette.ButtonBackground
             : resetPressed
                 ? UiPalette.ButtonPressedBackground
                 : resetHovered
@@ -664,16 +664,16 @@ public sealed class DarkComboBox : UserControl
         Color backgroundColor = selected
             ? UiPalette.AccentFill
             : UiPalette.ControlSurface;
-        Color textColor = Enabled
-            ? UiPalette.TextPrimary
-            : UiPalette.TextDisabled;
+        Color textColor = !Enabled
+            ? UiPalette.TextDisabled
+            : selected ? UiPalette.TextOnAccent : UiPalette.TextPrimary;
 
         using var backgroundBrush = new SolidBrush(backgroundColor);
         e.Graphics.FillRectangle(backgroundBrush, e.Bounds);
 
         if (selected)
         {
-            using var markerBrush = new SolidBrush(UiPalette.AccentBlueSoft);
+            using var markerBrush = new SolidBrush(UiPalette.AccentMark);
             e.Graphics.FillRectangle(
                 markerBrush,
                 new Rectangle(
@@ -682,7 +682,7 @@ public sealed class DarkComboBox : UserControl
                     ScaleLogical(3),
                     e.Bounds.Height));
 
-            using var selectionPen = new Pen(UiPalette.AccentBlueSoft);
+            using var selectionPen = new Pen(UiPalette.AccentMark);
             Rectangle selectionBounds = Rectangle.Inflate(e.Bounds, -1, -1);
             e.Graphics.DrawRectangle(
                 selectionPen,
@@ -792,7 +792,7 @@ public sealed class DarkComboBox : UserControl
         };
         popupPanel.Paint += (_, e) =>
         {
-            using var borderPen = new Pen(UiPalette.AccentBlueSoft);
+            using var borderPen = new Pen(UiPalette.AccentMark);
             e.Graphics.DrawRectangle(
                 borderPen,
                 0,

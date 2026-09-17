@@ -886,7 +886,7 @@ public sealed class AgentProposalValidatorTests
     private static void AssertField(
         Control owner, string name, double minimum, double maximum, double step)
     {
-        var field = (DarkNumericUpDown)owner.GetType()
+        var field = (ThemedNumericUpDown)owner.GetType()
             .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
             .GetValue(owner)!;
         Assert.Equal((decimal)minimum, field.Minimum);

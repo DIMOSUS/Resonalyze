@@ -36,9 +36,9 @@ namespace Resonalyze
             buttonChooseTarget = new ReleaseClickButton();
             labelTargetFile = new Label();
             labelCalibration = new Label();
-            comboBoxCalibration = new DarkComboBox();
+            comboBoxCalibration = new ThemedComboBox();
             labelCabin = new Label();
-            comboBoxCabin = new DarkComboBox();
+            comboBoxCabin = new ThemedComboBox();
             labelSpatialAverage = new Label();
             checkBoxSpatialAverage = new ReleaseClickCheckBox();
             buttonRender = new ReleaseClickButton();
@@ -51,7 +51,7 @@ namespace Resonalyze
             // labelTrack
             // 
             labelTrack.AutoSize = true;
-            labelTrack.ForeColor = Color.FromArgb(185, 190, 200);
+            labelTrack.ForeColor = UiPalette.TextSecondary;
             labelTrack.Location = new Point(12, 19);
             labelTrack.Name = "labelTrack";
             labelTrack.Size = new Size(38, 15);
@@ -60,9 +60,9 @@ namespace Resonalyze
             // 
             // buttonChooseSource
             // 
-            buttonChooseSource.BackColor = Color.FromArgb(46, 51, 67);
+            buttonChooseSource.BackColor = UiPalette.ButtonBackground;
             buttonChooseSource.FlatStyle = FlatStyle.Popup;
-            buttonChooseSource.ForeColor = Color.White;
+            buttonChooseSource.ForeColor = UiPalette.TextPrimary;
             buttonChooseSource.Location = new Point(104, 14);
             buttonChooseSource.Name = "buttonChooseSource";
             buttonChooseSource.Size = new Size(110, 26);
@@ -74,7 +74,7 @@ namespace Resonalyze
             // 
             labelSourceFile.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             labelSourceFile.AutoEllipsis = true;
-            labelSourceFile.ForeColor = Color.FromArgb(185, 190, 200);
+            labelSourceFile.ForeColor = UiPalette.TextSecondary;
             labelSourceFile.Location = new Point(224, 17);
             labelSourceFile.Name = "labelSourceFile";
             labelSourceFile.Size = new Size(360, 19);
@@ -84,7 +84,7 @@ namespace Resonalyze
             // labelOutput
             // 
             labelOutput.AutoSize = true;
-            labelOutput.ForeColor = Color.FromArgb(185, 190, 200);
+            labelOutput.ForeColor = UiPalette.TextSecondary;
             labelOutput.Location = new Point(12, 51);
             labelOutput.Name = "labelOutput";
             labelOutput.Size = new Size(48, 15);
@@ -93,9 +93,9 @@ namespace Resonalyze
             // 
             // buttonChooseTarget
             // 
-            buttonChooseTarget.BackColor = Color.FromArgb(46, 51, 67);
+            buttonChooseTarget.BackColor = UiPalette.ButtonBackground;
             buttonChooseTarget.FlatStyle = FlatStyle.Popup;
-            buttonChooseTarget.ForeColor = Color.White;
+            buttonChooseTarget.ForeColor = UiPalette.TextPrimary;
             buttonChooseTarget.Location = new Point(104, 46);
             buttonChooseTarget.Name = "buttonChooseTarget";
             buttonChooseTarget.Size = new Size(110, 26);
@@ -107,7 +107,7 @@ namespace Resonalyze
             // 
             labelTargetFile.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             labelTargetFile.AutoEllipsis = true;
-            labelTargetFile.ForeColor = Color.FromArgb(185, 190, 200);
+            labelTargetFile.ForeColor = UiPalette.TextSecondary;
             labelTargetFile.Location = new Point(224, 49);
             labelTargetFile.Name = "labelTargetFile";
             labelTargetFile.Size = new Size(360, 19);
@@ -117,7 +117,7 @@ namespace Resonalyze
             // labelCalibration
             // 
             labelCalibration.AutoSize = true;
-            labelCalibration.ForeColor = Color.FromArgb(185, 190, 200);
+            labelCalibration.ForeColor = UiPalette.TextSecondary;
             labelCalibration.Location = new Point(12, 83);
             labelCalibration.Name = "labelCalibration";
             labelCalibration.Size = new Size(89, 15);
@@ -126,8 +126,8 @@ namespace Resonalyze
             // 
             // comboBoxCalibration
             // 
-            comboBoxCalibration.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxCalibration.ForeColor = Color.White;
+            comboBoxCalibration.BackColor = UiPalette.ControlSurface;
+            comboBoxCalibration.ForeColor = UiPalette.TextPrimary;
             comboBoxCalibration.Location = new Point(104, 81);
             comboBoxCalibration.MinimumSize = new Size(36, 19);
             comboBoxCalibration.Name = "comboBoxCalibration";
@@ -137,7 +137,7 @@ namespace Resonalyze
             // labelCabin
             // 
             labelCabin.AutoSize = true;
-            labelCabin.ForeColor = Color.FromArgb(185, 190, 200);
+            labelCabin.ForeColor = UiPalette.TextSecondary;
             labelCabin.Location = new Point(12, 115);
             labelCabin.Name = "labelCabin";
             labelCabin.Size = new Size(86, 15);
@@ -146,8 +146,8 @@ namespace Resonalyze
             // 
             // comboBoxCabin
             // 
-            comboBoxCabin.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxCabin.ForeColor = Color.White;
+            comboBoxCabin.BackColor = UiPalette.ControlSurface;
+            comboBoxCabin.ForeColor = UiPalette.TextPrimary;
             comboBoxCabin.Location = new Point(104, 113);
             comboBoxCabin.MinimumSize = new Size(36, 19);
             comboBoxCabin.Name = "comboBoxCabin";
@@ -157,7 +157,7 @@ namespace Resonalyze
             // labelSpatialAverage
             // 
             labelSpatialAverage.AutoSize = true;
-            labelSpatialAverage.ForeColor = Color.FromArgb(185, 190, 200);
+            labelSpatialAverage.ForeColor = UiPalette.TextSecondary;
             labelSpatialAverage.Location = new Point(12, 147);
             labelSpatialAverage.Name = "labelSpatialAverage";
             labelSpatialAverage.Size = new Size(76, 15);
@@ -167,7 +167,7 @@ namespace Resonalyze
             // checkBoxSpatialAverage
             // 
             checkBoxSpatialAverage.AutoSize = true;
-            checkBoxSpatialAverage.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxSpatialAverage.ForeColor = UiPalette.TextDefault;
             checkBoxSpatialAverage.Location = new Point(104, 146);
             checkBoxSpatialAverage.Name = "checkBoxSpatialAverage";
             checkBoxSpatialAverage.Size = new Size(240, 19);
@@ -177,9 +177,9 @@ namespace Resonalyze
             // 
             // buttonRender
             // 
-            buttonRender.BackColor = Color.FromArgb(46, 51, 67);
+            buttonRender.BackColor = UiPalette.ButtonBackground;
             buttonRender.FlatStyle = FlatStyle.Popup;
-            buttonRender.ForeColor = Color.White;
+            buttonRender.ForeColor = UiPalette.TextPrimary;
             buttonRender.Location = new Point(12, 176);
             buttonRender.Name = "buttonRender";
             buttonRender.Size = new Size(120, 26);
@@ -200,7 +200,7 @@ namespace Resonalyze
             // labelStatus
             // 
             labelStatus.AutoSize = true;
-            labelStatus.ForeColor = Color.FromArgb(185, 190, 200);
+            labelStatus.ForeColor = UiPalette.TextSecondary;
             labelStatus.Location = new Point(12, 210);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new Size(0, 15);
@@ -209,10 +209,10 @@ namespace Resonalyze
             // textBoxReport
             // 
             textBoxReport.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            textBoxReport.BackColor = Color.FromArgb(33, 36, 45);
+            textBoxReport.BackColor = UiPalette.SunkenSurface;
             textBoxReport.BorderStyle = BorderStyle.FixedSingle;
             textBoxReport.Font = new Font("Consolas", 9F);
-            textBoxReport.ForeColor = Color.FromArgb(210, 214, 222);
+            textBoxReport.ForeColor = UiPalette.TextDefault;
             textBoxReport.Location = new Point(12, 232);
             textBoxReport.Multiline = true;
             textBoxReport.Name = "textBoxReport";
@@ -226,7 +226,7 @@ namespace Resonalyze
             buttonClose.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonClose.DialogResult = DialogResult.Cancel;
             buttonClose.FlatStyle = FlatStyle.Popup;
-            buttonClose.ForeColor = Color.White;
+            buttonClose.ForeColor = UiPalette.TextPrimary;
             buttonClose.Location = new Point(492, 544);
             buttonClose.Name = "buttonClose";
             buttonClose.Size = new Size(92, 26);
@@ -238,7 +238,7 @@ namespace Resonalyze
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             CancelButton = buttonClose;
             ClientSize = new Size(596, 582);
             Controls.Add(labelTrack);
@@ -259,7 +259,7 @@ namespace Resonalyze
             Controls.Add(textBoxReport);
             Controls.Add(buttonClose);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             MinimizeBox = false;
             MinimumSize = new Size(560, 484);
             Name = "VirtualCrossoverAuditionDialog";
@@ -279,9 +279,9 @@ namespace Resonalyze
         private ReleaseClickButton buttonChooseTarget;
         private Label labelTargetFile;
         private Label labelCalibration;
-        private DarkComboBox comboBoxCalibration;
+        private ThemedComboBox comboBoxCalibration;
         private Label labelCabin;
-        private DarkComboBox comboBoxCabin;
+        private ThemedComboBox comboBoxCabin;
         private Label labelSpatialAverage;
         private ReleaseClickCheckBox checkBoxSpatialAverage;
         private ReleaseClickButton buttonRender;

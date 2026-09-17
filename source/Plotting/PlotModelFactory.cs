@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.Axes;
@@ -727,7 +727,7 @@ internal sealed class PlotModelFactory
         {
             var waterfall = new WaterfallSeries()
             {
-                BackgroundColor = OxyColor.FromRgb(30, 0, 50),
+                BackgroundColor = UiPalette.WaterfallSurface.ToOxy(),
                 GenerateOptions = waterfallGenOptions,
             };
 
@@ -920,7 +920,7 @@ internal sealed class PlotModelFactory
         {
             var waterfall = new WaterfallSeries()
             {
-                BackgroundColor = OxyColor.FromRgb(30, 0, 50),
+                BackgroundColor = UiPalette.WaterfallSurface.ToOxy(),
                 GenerateOptions = burstDecayGenOptions,
             };
 
@@ -1218,7 +1218,7 @@ internal sealed class PlotModelFactory
                 model,
                 ToAxis(startMs * measurement.SampleRate / 1000.0),
                 "arrival",
-                OxyColor.FromRgb(130, 220, 90),
+                UiPalette.CurveExcessPhase.ToOxy(),
                 ArrivalLabelPosition,
                 valueAxisKey);
         }
@@ -1239,7 +1239,7 @@ internal sealed class PlotModelFactory
             model,
             ToAxis(set.PeakSample),
             peakLabel,
-            OxyColor.FromRgb(150, 170, 205),
+            UiPalette.MarkerPeak.ToOxy(),
             PeakLabelPosition,
             valueAxisKey);
     }
@@ -1434,7 +1434,7 @@ internal sealed class PlotModelFactory
     {
         var series = new LineSeries
         {
-            Color = OxyColor.FromRgb(255, 0, 127),
+            Color = UiPalette.CurveLiveTransfer.ToOxy(),
             Title = "Live Transfer Function",
             TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
         };
@@ -1452,7 +1452,7 @@ internal sealed class PlotModelFactory
         ArgumentNullException.ThrowIfNull(document);
         var series = new LineSeries
         {
-            Color = OxyColor.FromRgb(80, 170, 255),
+            Color = UiPalette.CurveLiveInput.ToOxy(),
             Title = string.IsNullOrWhiteSpace(document.Title)
                 ? "Loaded capture"
                 : document.Title,
@@ -1471,7 +1471,7 @@ internal sealed class PlotModelFactory
     {
         var series = new LineSeries
         {
-            Color = OxyColor.FromRgb(80, 170, 255),
+            Color = UiPalette.CurveLiveInput.ToOxy(),
             Title = "Input Spectrum (RTA)"
         };
         UpdateInputMagnitudeSeries(series, inputMagnitude);
@@ -1495,7 +1495,7 @@ internal sealed class PlotModelFactory
     {
         var series = new LineSeries
         {
-            Color = OxyColor.FromAColor(170, OxyColor.FromRgb(255, 196, 0)),
+            Color = OxyColor.FromAColor(170, UiPalette.CurvePeakHold.ToOxy()),
             LineStyle = LineStyle.Solid,
             StrokeThickness = 1.0,
             Title = "Peak Hold"
@@ -1712,7 +1712,7 @@ internal sealed class PlotModelFactory
     {
         var series = new LineSeries
         {
-            Color = OxyColor.FromAColor(150, OxyColor.FromRgb(90, 200, 140)),
+            Color = OxyColor.FromAColor(150, UiPalette.CurveCoherence.ToOxy()),
             Title = "Coherence",
             XAxisKey = FrequencyAxisKey,
             YAxisKey = CoherenceAxisKey,
@@ -1736,13 +1736,13 @@ internal sealed class PlotModelFactory
     {
         var trusted = new LineSeries
         {
-            Color = OxyColor.FromRgb(255, 0, 127),
+            Color = UiPalette.CurveLiveTransfer.ToOxy(),
             Title = "Live Transfer Function",
             TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
         };
         var untrusted = new LineSeries
         {
-            Color = OxyColor.FromAColor(140, OxyColor.FromRgb(170, 170, 170)),
+            Color = OxyColor.FromAColor(140, UiPalette.CurveMuted.ToOxy()),
             LineStyle = LineStyle.Dash,
             StrokeThickness = 1.0,
             Title = "Low coherence",
@@ -2390,7 +2390,7 @@ internal sealed class PlotModelFactory
                 TextPosition = new DataPoint(0.5, 0),
                 TextFlowDirection = TextFlowDirection.TopDown,
                 FontSize = 12,
-                TextColor = OxyColors.Goldenrod,
+                TextColor = UiPalette.Warning.ToOxy(),
                 TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
             });
             nextLine = text.Split('\n').Length;
@@ -2405,7 +2405,7 @@ internal sealed class PlotModelFactory
                 TextPosition = new DataPoint(0.5, nextLine),
                 TextFlowDirection = TextFlowDirection.TopDown,
                 FontSize = 12,
-                TextColor = OxyColors.Gray,
+                TextColor = UiPalette.CurveMuted.ToOxy(),
                 TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
             });
         }
@@ -2419,7 +2419,7 @@ internal sealed class PlotModelFactory
             TextPosition = new DataPoint(0.5, 3),
             TextFlowDirection = TextFlowDirection.TopDown,
             FontSize = 13,
-            TextColor = OxyColors.Gray,
+            TextColor = UiPalette.CurveMuted.ToOxy(),
             TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
         });
     }
@@ -2437,7 +2437,7 @@ internal sealed class PlotModelFactory
         TextPosition = new DataPoint(0.5, 3),
         TextFlowDirection = TextFlowDirection.TopDown,
         FontSize = 12,
-        TextColor = OxyColor.FromRgb(255, 170, 0),
+        TextColor = UiPalette.Warning.ToOxy(),
         TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
     };
 }

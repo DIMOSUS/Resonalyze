@@ -39,14 +39,14 @@ namespace Resonalyze
             checkLinkwitzRiley = new ReleaseClickCheckBox();
             checkBessel = new ReleaseClickCheckBox();
             labelRange = new Label();
-            minCrossover = new DarkNumericUpDown();
+            minCrossover = new ThemedNumericUpDown();
             labelDash = new Label();
-            maxCrossover = new DarkNumericUpDown();
+            maxCrossover = new ThemedNumericUpDown();
             labelHz = new Label();
             independentSlopes = new ReleaseClickCheckBox();
             reorderBlocks = new ReleaseClickCheckBox();
             labelSubElevation = new Label();
-            subElevation = new DarkNumericUpDown();
+            subElevation = new ThemedNumericUpDown();
             labelSubElevationUnit = new Label();
             panelPreview = new RoundedPanel();
             labelPreview = new Label();
@@ -59,7 +59,7 @@ namespace Resonalyze
             //
             labelHeader.AutoSize = true;
             labelHeader.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelHeader.ForeColor = Color.FromArgb(210, 214, 222);
+            labelHeader.ForeColor = UiPalette.TextDefault;
             labelHeader.Location = new Point(12, 12);
             labelHeader.Name = "labelHeader";
             labelHeader.Size = new Size(320, 15);
@@ -89,7 +89,7 @@ namespace Resonalyze
             //
             labelJunctions.AutoSize = true;
             labelJunctions.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelJunctions.ForeColor = Color.FromArgb(210, 214, 222);
+            labelJunctions.ForeColor = UiPalette.TextDefault;
             labelJunctions.Location = new Point(12, 96);
             labelJunctions.Name = "labelJunctions";
             labelJunctions.Size = new Size(320, 15);
@@ -120,7 +120,7 @@ namespace Resonalyze
             // labelFilters
             //
             labelFilters.AutoSize = true;
-            labelFilters.ForeColor = Color.FromArgb(185, 190, 200);
+            labelFilters.ForeColor = UiPalette.TextSecondary;
             labelFilters.Location = new Point(12, 128);
             labelFilters.Name = "labelFilters";
             labelFilters.Size = new Size(42, 15);
@@ -132,7 +132,7 @@ namespace Resonalyze
             checkButterworth.AutoSize = true;
             checkButterworth.Checked = true;
             checkButterworth.CheckState = CheckState.Checked;
-            checkButterworth.ForeColor = Color.White;
+            checkButterworth.ForeColor = UiPalette.TextPrimary;
             checkButterworth.Location = new Point(66, 126);
             checkButterworth.Name = "checkButterworth";
             checkButterworth.Size = new Size(88, 19);
@@ -144,7 +144,7 @@ namespace Resonalyze
             checkLinkwitzRiley.AutoSize = true;
             checkLinkwitzRiley.Checked = true;
             checkLinkwitzRiley.CheckState = CheckState.Checked;
-            checkLinkwitzRiley.ForeColor = Color.White;
+            checkLinkwitzRiley.ForeColor = UiPalette.TextPrimary;
             checkLinkwitzRiley.Location = new Point(168, 126);
             checkLinkwitzRiley.Name = "checkLinkwitzRiley";
             checkLinkwitzRiley.Size = new Size(104, 19);
@@ -156,7 +156,7 @@ namespace Resonalyze
             checkBessel.AutoSize = true;
             checkBessel.Checked = true;
             checkBessel.CheckState = CheckState.Checked;
-            checkBessel.ForeColor = Color.White;
+            checkBessel.ForeColor = UiPalette.TextPrimary;
             checkBessel.Location = new Point(288, 126);
             checkBessel.Name = "checkBessel";
             checkBessel.Size = new Size(58, 19);
@@ -166,7 +166,7 @@ namespace Resonalyze
             // labelRange
             //
             labelRange.AutoSize = true;
-            labelRange.ForeColor = Color.FromArgb(185, 190, 200);
+            labelRange.ForeColor = UiPalette.TextSecondary;
             labelRange.Location = new Point(12, 158);
             labelRange.Name = "labelRange";
             labelRange.Size = new Size(105, 15);
@@ -190,7 +190,7 @@ namespace Resonalyze
             // labelDash
             //
             labelDash.AutoSize = true;
-            labelDash.ForeColor = Color.FromArgb(185, 190, 200);
+            labelDash.ForeColor = UiPalette.TextSecondary;
             labelDash.Location = new Point(212, 158);
             labelDash.Name = "labelDash";
             labelDash.Size = new Size(12, 15);
@@ -214,7 +214,7 @@ namespace Resonalyze
             // labelHz
             //
             labelHz.AutoSize = true;
-            labelHz.ForeColor = Color.FromArgb(185, 190, 200);
+            labelHz.ForeColor = UiPalette.TextSecondary;
             labelHz.Location = new Point(324, 158);
             labelHz.Name = "labelHz";
             labelHz.Size = new Size(20, 15);
@@ -226,7 +226,7 @@ namespace Resonalyze
             independentSlopes.AutoSize = true;
             independentSlopes.Checked = true;
             independentSlopes.CheckState = CheckState.Checked;
-            independentSlopes.ForeColor = Color.White;
+            independentSlopes.ForeColor = UiPalette.TextPrimary;
             independentSlopes.Location = new Point(12, 184);
             independentSlopes.Name = "independentSlopes";
             independentSlopes.Size = new Size(172, 19);
@@ -238,7 +238,7 @@ namespace Resonalyze
             reorderBlocks.AutoSize = true;
             reorderBlocks.Checked = true;
             reorderBlocks.CheckState = CheckState.Checked;
-            reorderBlocks.ForeColor = Color.White;
+            reorderBlocks.ForeColor = UiPalette.TextPrimary;
             reorderBlocks.Location = new Point(12, 210);
             reorderBlocks.Name = "reorderBlocks";
             reorderBlocks.Size = new Size(232, 19);
@@ -248,7 +248,7 @@ namespace Resonalyze
             // labelSubElevation
             //
             labelSubElevation.AutoSize = true;
-            labelSubElevation.ForeColor = Color.FromArgb(185, 190, 200);
+            labelSubElevation.ForeColor = UiPalette.TextSecondary;
             labelSubElevation.Location = new Point(12, 240);
             labelSubElevation.Name = "labelSubElevation";
             labelSubElevation.Size = new Size(160, 15);
@@ -271,7 +271,7 @@ namespace Resonalyze
             // labelSubElevationUnit
             //
             labelSubElevationUnit.AutoSize = true;
-            labelSubElevationUnit.ForeColor = Color.FromArgb(185, 190, 200);
+            labelSubElevationUnit.ForeColor = UiPalette.TextSecondary;
             labelSubElevationUnit.Location = new Point(276, 240);
             labelSubElevationUnit.Name = "labelSubElevationUnit";
             labelSubElevationUnit.Size = new Size(20, 15);
@@ -280,8 +280,8 @@ namespace Resonalyze
             //
             // panelPreview
             //
-            panelPreview.BackColor = Color.FromArgb(50, 55, 66);
-            panelPreview.BorderColor = Color.FromArgb(78, 84, 98);
+            panelPreview.BackColor = UiPalette.PanelSurface;
+            panelPreview.BorderColor = UiPalette.BorderSoft;
             panelPreview.Controls.Add(labelPreview);
             panelPreview.CornerRadius = 8;
             panelPreview.Location = new Point(12, 266);
@@ -292,7 +292,7 @@ namespace Resonalyze
             //
             // labelPreview
             //
-            labelPreview.ForeColor = Color.FromArgb(230, 184, 0);
+            labelPreview.ForeColor = UiPalette.Warning;
             labelPreview.Location = new Point(12, 9);
             labelPreview.Name = "labelPreview";
             labelPreview.Size = new Size(444, 62);
@@ -313,10 +313,10 @@ namespace Resonalyze
             // buttonApply
             //
             buttonApply.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            buttonApply.BackColor = Color.FromArgb(36, 86, 210);
+            buttonApply.BackColor = UiPalette.AccentFill;
             buttonApply.DialogResult = DialogResult.OK;
             buttonApply.FlatStyle = FlatStyle.Flat;
-            buttonApply.ForeColor = Color.White;
+            buttonApply.ForeColor = UiPalette.TextOnAccent;
             buttonApply.Location = new Point(282, 310);
             buttonApply.Name = "buttonApply";
             buttonApply.Size = new Size(84, 26);
@@ -329,7 +329,7 @@ namespace Resonalyze
             buttonCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
-            buttonCancel.ForeColor = Color.White;
+            buttonCancel.ForeColor = UiPalette.TextPrimary;
             buttonCancel.Location = new Point(372, 310);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
@@ -341,7 +341,7 @@ namespace Resonalyze
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             ClientSize = new Size(468, 348);
             Controls.Add(labelHeader);
             Controls.Add(tableChannels);
@@ -366,7 +366,7 @@ namespace Resonalyze
             Controls.Add(buttonApply);
             Controls.Add(buttonCancel);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -389,14 +389,14 @@ namespace Resonalyze
         private ReleaseClickCheckBox checkLinkwitzRiley;
         private ReleaseClickCheckBox checkBessel;
         private Label labelRange;
-        private DarkNumericUpDown minCrossover;
+        private ThemedNumericUpDown minCrossover;
         private Label labelDash;
-        private DarkNumericUpDown maxCrossover;
+        private ThemedNumericUpDown maxCrossover;
         private Label labelHz;
         private ReleaseClickCheckBox independentSlopes;
         private ReleaseClickCheckBox reorderBlocks;
         private Label labelSubElevation;
-        private DarkNumericUpDown subElevation;
+        private ThemedNumericUpDown subElevation;
         private Label labelSubElevationUnit;
         private Label labelPreview;
         private RoundedPanel panelPreview;

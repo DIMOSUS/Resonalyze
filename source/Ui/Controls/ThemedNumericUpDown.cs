@@ -5,7 +5,7 @@ using System.Drawing.Drawing2D;
 namespace Resonalyze;
 
 [DefaultEvent(nameof(ValueChanged))]
-public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
+public sealed class ThemedNumericUpDown : UserControl, ISupportInitialize
 {
     private const int LogicalButtonColumnWidth = 18;
     private const int LogicalTextHorizontalPadding = 6;
@@ -40,7 +40,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
     private decimal logarithmicRung;
     private int logarithmicPosition;
 
-    public DarkNumericUpDown()
+    public ThemedNumericUpDown()
     {
         SetStyle(
             ControlStyles.UserPaint |
@@ -534,8 +534,8 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
             ? BackColor
             : UiPalette.ButtonDisabledBackground);
         using var borderPen = new Pen(ContainsFocus
-            ? UiPalette.AccentBlueSoft
-            : UiPalette.DialogBorderSoft);
+            ? UiPalette.AccentMark
+            : UiPalette.BorderSoft);
         e.Graphics.FillRectangle(backgroundBrush, bounds);
         if (borderStyle != BorderStyle.None || ContainsFocus)
         {
@@ -556,7 +556,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
         DrawButtonState(e.Graphics, upBounds, upHovered, upPressed);
         DrawButtonState(e.Graphics, downBounds, downHovered, downPressed);
 
-        using var separatorPen = new Pen(UiPalette.DialogBorder);
+        using var separatorPen = new Pen(UiPalette.Border);
         e.Graphics.DrawLine(
             separatorPen,
             buttonColumn.Left,
@@ -584,7 +584,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
                 resetBounds.Left,
                 Height - 2);
 
-            Color glyphColor = Enabled ? UiPalette.TextPrimarySoft : UiPalette.TextDisabled;
+            Color glyphColor = Enabled ? UiPalette.TextDefault : UiPalette.TextDisabled;
             TextRenderer.DrawText(
                 e.Graphics,
                 "R",
@@ -962,7 +962,7 @@ public sealed class DarkNumericUpDown : UserControl, ISupportInitialize
 
     private void DrawArrow(Graphics graphics, Rectangle bounds, bool up)
     {
-        Color color = Enabled ? UiPalette.TextPrimarySoft : UiPalette.TextDisabled;
+        Color color = Enabled ? UiPalette.TextDefault : UiPalette.TextDisabled;
         float centerX = bounds.Left + bounds.Width / 2f;
         float centerY = bounds.Top + bounds.Height / 2f;
         float halfWidth = Math.Min(

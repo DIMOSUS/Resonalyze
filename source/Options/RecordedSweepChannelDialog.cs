@@ -42,7 +42,7 @@ internal sealed partial class RecordedSweepChannelDialog : Form
     private void StyleGrid()
     {
         channelGridView.EnableHeadersVisualStyles = false;
-        channelGridView.GridColor = UiPalette.DialogBorder;
+        channelGridView.GridColor = UiPalette.Border;
         channelGridView.DefaultCellStyle.BackColor = UiPalette.DialogBackground;
         channelGridView.DefaultCellStyle.ForeColor = UiPalette.TextPrimary;
         channelGridView.DefaultCellStyle.SelectionBackColor = UiPalette.ButtonPressedBackground;

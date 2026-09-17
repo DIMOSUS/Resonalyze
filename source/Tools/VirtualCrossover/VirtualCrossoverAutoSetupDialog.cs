@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -26,7 +26,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         Label PositionLabel,
         Label NameLabel,
         Label BandLabel,
-        DarkComboBox TypeComboBox,
+        ThemedComboBox TypeComboBox,
         Button Up,
         Button Down);
 
@@ -58,12 +58,12 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         AutoSetupWizardChannel Lower,
         AutoSetupWizardChannel Upper,
         Label NameLabel,
-        DarkNumericUpDown MinHz,
+        ThemedNumericUpDown MinHz,
         Label RangeDash,
-        DarkNumericUpDown MaxHz,
-        DarkComboBox MinSlope,
+        ThemedNumericUpDown MaxHz,
+        ThemedComboBox MinSlope,
         Label SlopeDash,
-        DarkComboBox MaxSlope,
+        ThemedComboBox MaxSlope,
         CheckBox Split,
         Label Verdict,
         Label Notes)
@@ -228,12 +228,12 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         {
             Anchor = AnchorStyles.Left,
             AutoSize = true,
-            ForeColor = UiPalette.TextSecondarySoft,
+            ForeColor = UiPalette.TextSecondary,
             Margin = new Padding(0, 4, 24, 4),
             Text = $"{FormatHz(channel.Band.LowHz)} – {FormatHz(channel.Band.HighHz)}"
         };
         toolTip.SetToolTip(bandLabel, BandTooltip(channel));
-        var typeComboBox = new DarkComboBox
+        var typeComboBox = new ThemedComboBox
         {
             Anchor = AnchorStyles.Left,
             BackColor = UiPalette.ControlSurface,
@@ -290,7 +290,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         new ReleaseClickButton
         {
             Anchor = AnchorStyles.Left,
-            BackColor = UiPalette.DialogSurface,
+            BackColor = UiPalette.InputSurface,
             FlatStyle = FlatStyle.Popup,
             ForeColor = UiPalette.TextPrimary,
             Margin = new Padding(2, 1, 0, 1),
@@ -368,7 +368,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         ChannelRow lower,
         ChannelRow upper)
     {
-        DarkNumericUpDown Frequency() => new()
+        ThemedNumericUpDown Frequency() => new()
         {
             Anchor = AnchorStyles.Left,
             BackColor = UiPalette.InputSurface,
@@ -382,9 +382,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             MinimumSize = new Size(36, 19)
         };
 
-        DarkComboBox Slope()
+        ThemedComboBox Slope()
         {
-            var box = new DarkComboBox
+            var box = new ThemedComboBox
             {
                 Anchor = AnchorStyles.Left,
                 BackColor = UiPalette.ControlSurface,
@@ -399,7 +399,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         {
             Anchor = AnchorStyles.Left,
             AutoSize = true,
-            ForeColor = UiPalette.TextSecondarySoft,
+            ForeColor = UiPalette.TextSecondary,
             Margin = new Padding(0, 4, 2, 4),
             Text = "–"
         };
@@ -413,7 +413,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             {
                 Anchor = AnchorStyles.Left,
                 AutoSize = true,
-                ForeColor = UiPalette.TextPrimarySoft,
+                ForeColor = UiPalette.TextDefault,
                 Margin = new Padding(0, 4, 16, 4),
                 Text = $"{lower.Source.Name.Split(' ')[0]} → {upper.Source.Name.Split(' ')[0]}"
             },
@@ -443,7 +443,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             {
                 Anchor = AnchorStyles.Left,
                 AutoSize = true,
-                ForeColor = UiPalette.AccentBlueSoft,
+                ForeColor = UiPalette.AccentMark,
                 Margin = new Padding(0, 0, 0, 6),
                 Visible = false
             });
@@ -616,7 +616,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                 AutoSize = true,
                 Font = new Font(
                     "Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204),
-                ForeColor = UiPalette.TextHighlight,
+                ForeColor = UiPalette.TextDefault,
                 Margin = new Padding(0, 8, 0, 2)
             };
             groupHeaders[group] = header;
@@ -1240,7 +1240,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
     }
 
-    private static decimal Clamp(DarkNumericUpDown field, double value) =>
+    private static decimal Clamp(ThemedNumericUpDown field, double value) =>
         Math.Clamp((decimal)Math.Round(value), field.Minimum, field.Maximum);
 
     private static int NearestSlope(int slopeDbPerOctave) =>
@@ -1394,12 +1394,12 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                  in JudgedPairs())
         {
             Color color = verdict == VirtualCrossoverChainOrder.Reversed
-                ? UiPalette.WarningRed
-                : UiPalette.WarningAmber;
+                ? UiPalette.Danger
+                : UiPalette.Warning;
             foreach (ChannelRow row in new[] { earlier, later })
             {
                 if (!doubtful.TryGetValue(row, out Color existing) ||
-                    existing != UiPalette.WarningRed)
+                    existing != UiPalette.Danger)
                 {
                     doubtful[row] = color;
                 }
@@ -1410,7 +1410,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         {
             row.BandLabel.ForeColor = doubtful.TryGetValue(row, out Color color)
                 ? color
-                : UiPalette.TextSecondarySoft;
+                : UiPalette.TextSecondary;
         }
     }
 

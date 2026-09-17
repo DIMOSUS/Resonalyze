@@ -49,7 +49,7 @@ namespace Resonalyze
             // tableLayout
             // 
             tableLayout.AutoSize = true;
-            tableLayout.BackColor = Color.FromArgb(20, 22, 30);
+            tableLayout.BackColor = UiPalette.PanelSurfaceDeep;
             tableLayout.ColumnCount = 2;
             tableLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52.173912F));
             tableLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 47.826088F));
@@ -85,7 +85,7 @@ namespace Resonalyze
             headerLabel.AutoSize = true;
             tableLayout.SetColumnSpan(headerLabel, 2);
             headerLabel.Font = new Font("Segoe UI Semibold", 10F, FontStyle.Bold);
-            headerLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            headerLabel.ForeColor = UiPalette.TextDefault;
             headerLabel.Location = new Point(3, 3);
             headerLabel.Margin = new Padding(3, 3, 3, 10);
             headerLabel.Name = "headerLabel";
@@ -97,7 +97,7 @@ namespace Resonalyze
             // 
             rmsCaption.Anchor = AnchorStyles.Left;
             rmsCaption.AutoSize = true;
-            rmsCaption.ForeColor = Color.FromArgb(170, 176, 190);
+            rmsCaption.ForeColor = UiPalette.TextMuted;
             rmsCaption.Location = new Point(3, 35);
             rmsCaption.Margin = new Padding(3, 3, 3, 4);
             rmsCaption.Name = "rmsCaption";
@@ -110,7 +110,7 @@ namespace Resonalyze
             rmsValue.Anchor = AnchorStyles.Right;
             rmsValue.AutoSize = true;
             rmsValue.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold);
-            rmsValue.ForeColor = Color.FromArgb(225, 228, 235);
+            rmsValue.ForeColor = UiPalette.TextValue;
             rmsValue.Location = new Point(123, 35);
             rmsValue.Margin = new Padding(3, 3, 3, 4);
             rmsValue.Name = "rmsValue";
@@ -122,7 +122,7 @@ namespace Resonalyze
             // 
             maxCaption.Anchor = AnchorStyles.Left;
             maxCaption.AutoSize = true;
-            maxCaption.ForeColor = Color.FromArgb(170, 176, 190);
+            maxCaption.ForeColor = UiPalette.TextMuted;
             maxCaption.Location = new Point(3, 57);
             maxCaption.Margin = new Padding(3, 3, 3, 4);
             maxCaption.Name = "maxCaption";
@@ -135,7 +135,7 @@ namespace Resonalyze
             maxValue.Anchor = AnchorStyles.Right;
             maxValue.AutoSize = true;
             maxValue.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold);
-            maxValue.ForeColor = Color.FromArgb(225, 228, 235);
+            maxValue.ForeColor = UiPalette.TextValue;
             maxValue.Location = new Point(123, 57);
             maxValue.Margin = new Padding(3, 3, 3, 4);
             maxValue.Name = "maxValue";
@@ -147,7 +147,7 @@ namespace Resonalyze
             // 
             filtersCaption.Anchor = AnchorStyles.Left;
             filtersCaption.AutoSize = true;
-            filtersCaption.ForeColor = Color.FromArgb(170, 176, 190);
+            filtersCaption.ForeColor = UiPalette.TextMuted;
             filtersCaption.Location = new Point(3, 79);
             filtersCaption.Margin = new Padding(3, 3, 3, 4);
             filtersCaption.Name = "filtersCaption";
@@ -160,7 +160,7 @@ namespace Resonalyze
             filtersValue.Anchor = AnchorStyles.Right;
             filtersValue.AutoSize = true;
             filtersValue.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold);
-            filtersValue.ForeColor = Color.FromArgb(225, 228, 235);
+            filtersValue.ForeColor = UiPalette.TextValue;
             filtersValue.Location = new Point(123, 79);
             filtersValue.Margin = new Padding(3, 3, 3, 4);
             filtersValue.Name = "filtersValue";
@@ -172,7 +172,7 @@ namespace Resonalyze
             // 
             boostCaption.Anchor = AnchorStyles.Left;
             boostCaption.AutoSize = true;
-            boostCaption.ForeColor = Color.FromArgb(170, 176, 190);
+            boostCaption.ForeColor = UiPalette.TextMuted;
             boostCaption.Location = new Point(3, 101);
             boostCaption.Margin = new Padding(3, 3, 3, 4);
             boostCaption.Name = "boostCaption";
@@ -185,7 +185,7 @@ namespace Resonalyze
             boostValue.Anchor = AnchorStyles.Right;
             boostValue.AutoSize = true;
             boostValue.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold);
-            boostValue.ForeColor = Color.FromArgb(225, 228, 235);
+            boostValue.ForeColor = UiPalette.TextValue;
             boostValue.Location = new Point(123, 101);
             boostValue.Margin = new Padding(3, 3, 3, 4);
             boostValue.Name = "boostValue";
@@ -197,7 +197,7 @@ namespace Resonalyze
             // 
             cutCaption.Anchor = AnchorStyles.Left;
             cutCaption.AutoSize = true;
-            cutCaption.ForeColor = Color.FromArgb(170, 176, 190);
+            cutCaption.ForeColor = UiPalette.TextMuted;
             cutCaption.Location = new Point(3, 123);
             cutCaption.Margin = new Padding(3, 3, 3, 4);
             cutCaption.Name = "cutCaption";
@@ -210,7 +210,7 @@ namespace Resonalyze
             cutValue.Anchor = AnchorStyles.Right;
             cutValue.AutoSize = true;
             cutValue.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold);
-            cutValue.ForeColor = Color.FromArgb(225, 228, 235);
+            cutValue.ForeColor = UiPalette.TextValue;
             cutValue.Location = new Point(123, 123);
             cutValue.Margin = new Padding(3, 3, 3, 4);
             cutValue.Name = "cutValue";
@@ -222,7 +222,7 @@ namespace Resonalyze
             // 
             headroomCaption.Anchor = AnchorStyles.Left;
             headroomCaption.AutoSize = true;
-            headroomCaption.ForeColor = Color.FromArgb(170, 176, 190);
+            headroomCaption.ForeColor = UiPalette.TextMuted;
             headroomCaption.Location = new Point(3, 145);
             headroomCaption.Margin = new Padding(3, 3, 3, 4);
             headroomCaption.Name = "headroomCaption";
@@ -235,7 +235,7 @@ namespace Resonalyze
             headroomValue.Anchor = AnchorStyles.Right;
             headroomValue.AutoSize = true;
             headroomValue.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold);
-            headroomValue.ForeColor = Color.FromArgb(225, 228, 235);
+            headroomValue.ForeColor = UiPalette.TextValue;
             headroomValue.Location = new Point(123, 145);
             headroomValue.Margin = new Padding(3, 3, 3, 4);
             headroomValue.Name = "headroomValue";
@@ -247,11 +247,11 @@ namespace Resonalyze
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(20, 22, 30);
+            BackColor = UiPalette.PanelSurfaceDeep;
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(tableLayout);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.FromArgb(225, 228, 235);
+            ForeColor = UiPalette.TextValue;
             Name = "EqResultsPanel";
             Padding = new Padding(8);
             Size = new Size(154, 341);

@@ -1,12 +1,12 @@
 namespace Resonalyze.App.Tests;
 
 /// <summary>Panels assign settings without pre-clamping; NumericUpDown throws, this control must clamp.</summary>
-public sealed class DarkNumericUpDownRangeTests
+public sealed class ThemedNumericUpDownRangeTests
 {
     [Fact]
     public void AValueBelowTheMinimum_ClampsInsteadOfThrowing()
     {
-        using var control = new DarkNumericUpDown
+        using var control = new ThemedNumericUpDown
         {
             Minimum = 2,
             Maximum = 64,
@@ -21,7 +21,7 @@ public sealed class DarkNumericUpDownRangeTests
     [Fact]
     public void AValueAboveTheMaximum_ClampsInsteadOfThrowing()
     {
-        using var control = new DarkNumericUpDown
+        using var control = new ThemedNumericUpDown
         {
             Minimum = 2,
             Maximum = 64,
@@ -36,7 +36,7 @@ public sealed class DarkNumericUpDownRangeTests
     [Fact]
     public void ClampingReportsTheValueThatWasKept()
     {
-        using var control = new DarkNumericUpDown
+        using var control = new ThemedNumericUpDown
         {
             Minimum = 20,
             Maximum = 20_000,

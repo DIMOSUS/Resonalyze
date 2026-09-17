@@ -32,26 +32,26 @@ namespace Resonalyze.Options
             radioModeTransfer = new ReleaseClickRadioButton();
             radioModeRta = new ReleaseClickRadioButton();
             radioModeMmm = new ReleaseClickRadioButton();
-            comboCalibration = new DarkComboBox();
+            comboCalibration = new ThemedComboBox();
             label2 = new Label();
             labelSignalType = new Label();
-            signalTypeComboBox = new DarkComboBox();
+            signalTypeComboBox = new ThemedComboBox();
             label3 = new Label();
-            sequenceLengthComboBox = new DarkComboBox();
+            sequenceLengthComboBox = new ThemedComboBox();
             label4 = new Label();
-            overlapComboBox = new DarkComboBox();
+            overlapComboBox = new ThemedComboBox();
             label5 = new Label();
-            comboSmoothingInverseOctaves = new DarkComboBox();
+            comboSmoothingInverseOctaves = new ThemedComboBox();
             label6 = new Label();
-            windowComboBox = new DarkComboBox();
+            windowComboBox = new ThemedComboBox();
             label7 = new Label();
-            averagingComboBox = new DarkComboBox();
+            averagingComboBox = new ThemedComboBox();
             label8 = new Label();
             checkPeakHold = new ReleaseClickCheckBox();
             label9 = new Label();
             checkCoherence = new ReleaseClickCheckBox();
             label10 = new Label();
-            coherenceLimitComboBox = new DarkComboBox();
+            coherenceLimitComboBox = new ThemedComboBox();
             buttonResetAverage = new ReleaseClickButton();
             labelSpl = new Label();
             checkSpl = new ReleaseClickCheckBox();
@@ -67,7 +67,7 @@ namespace Resonalyze.Options
             // labelAnalysisMode
             //
             labelAnalysisMode.AutoSize = true;
-            labelAnalysisMode.ForeColor = SystemColors.ControlLight;
+            labelAnalysisMode.ForeColor = UiPalette.TextDefault;
             labelAnalysisMode.Location = new Point(12, 13);
             labelAnalysisMode.Name = "labelAnalysisMode";
             labelAnalysisMode.Size = new Size(38, 15);
@@ -78,7 +78,7 @@ namespace Resonalyze.Options
             //
             radioModeTransfer.AutoSize = true;
             radioModeTransfer.Checked = true;
-            radioModeTransfer.ForeColor = SystemColors.ControlLight;
+            radioModeTransfer.ForeColor = UiPalette.TextDefault;
             radioModeTransfer.Location = new Point(56, 11);
             radioModeTransfer.Name = "radioModeTransfer";
             radioModeTransfer.Size = new Size(67, 19);
@@ -90,7 +90,7 @@ namespace Resonalyze.Options
             // radioModeRta
             //
             radioModeRta.AutoSize = true;
-            radioModeRta.ForeColor = SystemColors.ControlLight;
+            radioModeRta.ForeColor = UiPalette.TextDefault;
             radioModeRta.Location = new Point(129, 11);
             radioModeRta.Name = "radioModeRta";
             radioModeRta.Size = new Size(46, 19);
@@ -101,7 +101,7 @@ namespace Resonalyze.Options
             // radioModeMmm
             //
             radioModeMmm.AutoSize = true;
-            radioModeMmm.ForeColor = SystemColors.ControlLight;
+            radioModeMmm.ForeColor = UiPalette.TextDefault;
             radioModeMmm.Location = new Point(181, 11);
             radioModeMmm.Name = "radioModeMmm";
             radioModeMmm.Size = new Size(53, 19);
@@ -112,7 +112,7 @@ namespace Resonalyze.Options
             // labelSignalType
             //
             labelSignalType.AutoSize = true;
-            labelSignalType.ForeColor = SystemColors.ControlLight;
+            labelSignalType.ForeColor = UiPalette.TextDefault;
             labelSignalType.Location = new Point(12, 43);
             labelSignalType.Name = "labelSignalType";
             labelSignalType.Size = new Size(64, 15);
@@ -121,8 +121,8 @@ namespace Resonalyze.Options
             //
             // signalTypeComboBox
             //
-            signalTypeComboBox.BackColor = Color.FromArgb(55, 60, 72);
-            signalTypeComboBox.ForeColor = Color.White;
+            signalTypeComboBox.BackColor = UiPalette.ControlSurface;
+            signalTypeComboBox.ForeColor = UiPalette.TextPrimary;
             signalTypeComboBox.Location = new Point(132, 40);
             signalTypeComboBox.Margin = new Padding(0);
             signalTypeComboBox.MinimumSize = new Size(36, 19);
@@ -133,7 +133,7 @@ namespace Resonalyze.Options
             // label6
             //
             label6.AutoSize = true;
-            label6.ForeColor = SystemColors.ControlLight;
+            label6.ForeColor = UiPalette.TextDefault;
             label6.Location = new Point(12, 72);
             label6.Name = "label6";
             label6.Size = new Size(48, 15);
@@ -142,8 +142,8 @@ namespace Resonalyze.Options
             //
             // windowComboBox
             //
-            windowComboBox.BackColor = Color.FromArgb(55, 60, 72);
-            windowComboBox.ForeColor = Color.White;
+            windowComboBox.BackColor = UiPalette.ControlSurface;
+            windowComboBox.ForeColor = UiPalette.TextPrimary;
             windowComboBox.Location = new Point(132, 69);
             windowComboBox.Margin = new Padding(0);
             windowComboBox.MinimumSize = new Size(36, 19);
@@ -154,7 +154,7 @@ namespace Resonalyze.Options
             // label3
             //
             label3.AutoSize = true;
-            label3.ForeColor = SystemColors.ControlLight;
+            label3.ForeColor = UiPalette.TextDefault;
             label3.Location = new Point(12, 101);
             label3.Name = "label3";
             label3.Size = new Size(98, 15);
@@ -163,8 +163,8 @@ namespace Resonalyze.Options
             //
             // sequenceLengthComboBox
             //
-            sequenceLengthComboBox.BackColor = Color.FromArgb(55, 60, 72);
-            sequenceLengthComboBox.ForeColor = Color.White;
+            sequenceLengthComboBox.BackColor = UiPalette.ControlSurface;
+            sequenceLengthComboBox.ForeColor = UiPalette.TextPrimary;
             sequenceLengthComboBox.Location = new Point(132, 98);
             sequenceLengthComboBox.Margin = new Padding(0);
             sequenceLengthComboBox.MinimumSize = new Size(36, 19);
@@ -175,7 +175,7 @@ namespace Resonalyze.Options
             // label4
             //
             label4.AutoSize = true;
-            label4.ForeColor = SystemColors.ControlLight;
+            label4.ForeColor = UiPalette.TextDefault;
             label4.Location = new Point(12, 130);
             label4.Name = "label4";
             label4.Size = new Size(48, 15);
@@ -184,8 +184,8 @@ namespace Resonalyze.Options
             //
             // overlapComboBox
             //
-            overlapComboBox.BackColor = Color.FromArgb(55, 60, 72);
-            overlapComboBox.ForeColor = Color.White;
+            overlapComboBox.BackColor = UiPalette.ControlSurface;
+            overlapComboBox.ForeColor = UiPalette.TextPrimary;
             overlapComboBox.Location = new Point(132, 127);
             overlapComboBox.Margin = new Padding(0);
             overlapComboBox.MinimumSize = new Size(36, 19);
@@ -196,7 +196,7 @@ namespace Resonalyze.Options
             // label5
             //
             label5.AutoSize = true;
-            label5.ForeColor = SystemColors.ControlLight;
+            label5.ForeColor = UiPalette.TextDefault;
             label5.Location = new Point(12, 159);
             label5.Name = "label5";
             label5.Size = new Size(62, 15);
@@ -205,8 +205,8 @@ namespace Resonalyze.Options
             //
             // comboSmoothingInverseOctaves
             //
-            comboSmoothingInverseOctaves.BackColor = Color.FromArgb(55, 60, 72);
-            comboSmoothingInverseOctaves.ForeColor = Color.White;
+            comboSmoothingInverseOctaves.BackColor = UiPalette.ControlSurface;
+            comboSmoothingInverseOctaves.ForeColor = UiPalette.TextPrimary;
             comboSmoothingInverseOctaves.Location = new Point(132, 156);
             comboSmoothingInverseOctaves.Margin = new Padding(0);
             comboSmoothingInverseOctaves.MinimumSize = new Size(36, 19);
@@ -217,7 +217,7 @@ namespace Resonalyze.Options
             // label7
             //
             label7.AutoSize = true;
-            label7.ForeColor = SystemColors.ControlLight;
+            label7.ForeColor = UiPalette.TextDefault;
             label7.Location = new Point(12, 188);
             label7.Name = "label7";
             label7.Size = new Size(60, 15);
@@ -226,8 +226,8 @@ namespace Resonalyze.Options
             //
             // averagingComboBox
             //
-            averagingComboBox.BackColor = Color.FromArgb(55, 60, 72);
-            averagingComboBox.ForeColor = Color.White;
+            averagingComboBox.BackColor = UiPalette.ControlSurface;
+            averagingComboBox.ForeColor = UiPalette.TextPrimary;
             averagingComboBox.Location = new Point(132, 185);
             averagingComboBox.Margin = new Padding(0);
             averagingComboBox.MinimumSize = new Size(36, 19);
@@ -238,7 +238,7 @@ namespace Resonalyze.Options
             // label10
             //
             label10.AutoSize = true;
-            label10.ForeColor = SystemColors.ControlLight;
+            label10.ForeColor = UiPalette.TextDefault;
             label10.Location = new Point(12, 217);
             label10.Name = "label10";
             label10.Size = new Size(95, 15);
@@ -247,8 +247,8 @@ namespace Resonalyze.Options
             //
             // coherenceLimitComboBox
             //
-            coherenceLimitComboBox.BackColor = Color.FromArgb(55, 60, 72);
-            coherenceLimitComboBox.ForeColor = Color.White;
+            coherenceLimitComboBox.BackColor = UiPalette.ControlSurface;
+            coherenceLimitComboBox.ForeColor = UiPalette.TextPrimary;
             coherenceLimitComboBox.Location = new Point(132, 214);
             coherenceLimitComboBox.Margin = new Padding(0);
             coherenceLimitComboBox.MinimumSize = new Size(36, 19);
@@ -259,7 +259,7 @@ namespace Resonalyze.Options
             // label2
             //
             label2.AutoSize = true;
-            label2.ForeColor = SystemColors.ControlLight;
+            label2.ForeColor = UiPalette.TextDefault;
             label2.Location = new Point(12, 246);
             label2.Name = "label2";
             label2.Size = new Size(65, 15);
@@ -268,8 +268,8 @@ namespace Resonalyze.Options
             //
             // comboCalibration
             //
-            comboCalibration.BackColor = Color.FromArgb(55, 60, 72);
-            comboCalibration.ForeColor = Color.White;
+            comboCalibration.BackColor = UiPalette.ControlSurface;
+            comboCalibration.ForeColor = UiPalette.TextPrimary;
             comboCalibration.Location = new Point(132, 243);
             comboCalibration.Margin = new Padding(0);
             comboCalibration.MinimumSize = new Size(36, 19);
@@ -280,7 +280,7 @@ namespace Resonalyze.Options
             // labelSpl
             //
             labelSpl.AutoSize = true;
-            labelSpl.ForeColor = SystemColors.ControlLight;
+            labelSpl.ForeColor = UiPalette.TextDefault;
             labelSpl.Location = new Point(12, 275);
             labelSpl.Name = "labelSpl";
             labelSpl.Size = new Size(43, 15);
@@ -290,7 +290,7 @@ namespace Resonalyze.Options
             // checkSpl
             //
             checkSpl.AutoSize = true;
-            checkSpl.ForeColor = SystemColors.ControlLight;
+            checkSpl.ForeColor = UiPalette.TextDefault;
             checkSpl.Location = new Point(238, 275);
             checkSpl.Name = "checkSpl";
             checkSpl.Size = new Size(15, 14);
@@ -300,7 +300,7 @@ namespace Resonalyze.Options
             // labelTilt
             //
             labelTilt.AutoSize = true;
-            labelTilt.ForeColor = SystemColors.ControlLight;
+            labelTilt.ForeColor = UiPalette.TextDefault;
             labelTilt.Location = new Point(12, 298);
             labelTilt.Name = "labelTilt";
             labelTilt.Size = new Size(110, 15);
@@ -310,7 +310,7 @@ namespace Resonalyze.Options
             // checkTilt
             //
             checkTilt.AutoSize = true;
-            checkTilt.ForeColor = SystemColors.ControlLight;
+            checkTilt.ForeColor = UiPalette.TextDefault;
             checkTilt.Location = new Point(238, 298);
             checkTilt.Name = "checkTilt";
             checkTilt.Size = new Size(15, 14);
@@ -320,7 +320,7 @@ namespace Resonalyze.Options
             // labelCurves
             //
             labelCurves.AutoSize = true;
-            labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
+            labelCurves.ForeColor = UiPalette.TextAccent;
             labelCurves.Location = new Point(12, 321);
             labelCurves.Name = "labelCurves";
             labelCurves.Size = new Size(48, 15);
@@ -330,7 +330,7 @@ namespace Resonalyze.Options
             // labelMainCurve
             //
             labelMainCurve.AutoSize = true;
-            labelMainCurve.ForeColor = SystemColors.ControlLight;
+            labelMainCurve.ForeColor = UiPalette.TextDefault;
             labelMainCurve.Location = new Point(12, 344);
             labelMainCurve.Name = "labelMainCurve";
             labelMainCurve.Size = new Size(67, 15);
@@ -340,7 +340,7 @@ namespace Resonalyze.Options
             // checkMainCurve
             //
             checkMainCurve.AutoSize = true;
-            checkMainCurve.ForeColor = SystemColors.ControlLight;
+            checkMainCurve.ForeColor = UiPalette.TextDefault;
             checkMainCurve.Location = new Point(238, 344);
             checkMainCurve.Name = "checkMainCurve";
             checkMainCurve.Size = new Size(15, 14);
@@ -350,7 +350,7 @@ namespace Resonalyze.Options
             // labelInputMagnitude
             //
             labelInputMagnitude.AutoSize = true;
-            labelInputMagnitude.ForeColor = SystemColors.ControlLight;
+            labelInputMagnitude.ForeColor = UiPalette.TextDefault;
             labelInputMagnitude.Location = new Point(12, 367);
             labelInputMagnitude.Name = "labelInputMagnitude";
             labelInputMagnitude.Size = new Size(67, 15);
@@ -360,7 +360,7 @@ namespace Resonalyze.Options
             // checkInputMagnitude
             //
             checkInputMagnitude.AutoSize = true;
-            checkInputMagnitude.ForeColor = SystemColors.ControlLight;
+            checkInputMagnitude.ForeColor = UiPalette.TextDefault;
             checkInputMagnitude.Location = new Point(238, 367);
             checkInputMagnitude.Name = "checkInputMagnitude";
             checkInputMagnitude.Size = new Size(15, 14);
@@ -370,7 +370,7 @@ namespace Resonalyze.Options
             // label9
             //
             label9.AutoSize = true;
-            label9.ForeColor = SystemColors.ControlLight;
+            label9.ForeColor = UiPalette.TextDefault;
             label9.Location = new Point(12, 390);
             label9.Name = "label9";
             label9.Size = new Size(64, 15);
@@ -380,7 +380,7 @@ namespace Resonalyze.Options
             // checkCoherence
             //
             checkCoherence.AutoSize = true;
-            checkCoherence.ForeColor = SystemColors.ControlLight;
+            checkCoherence.ForeColor = UiPalette.TextDefault;
             checkCoherence.Location = new Point(238, 390);
             checkCoherence.Name = "checkCoherence";
             checkCoherence.Size = new Size(15, 14);
@@ -390,7 +390,7 @@ namespace Resonalyze.Options
             // label8
             //
             label8.AutoSize = true;
-            label8.ForeColor = SystemColors.ControlLight;
+            label8.ForeColor = UiPalette.TextDefault;
             label8.Location = new Point(12, 413);
             label8.Name = "label8";
             label8.Size = new Size(60, 15);
@@ -400,7 +400,7 @@ namespace Resonalyze.Options
             // checkPeakHold
             //
             checkPeakHold.AutoSize = true;
-            checkPeakHold.ForeColor = SystemColors.ControlLight;
+            checkPeakHold.ForeColor = UiPalette.TextDefault;
             checkPeakHold.Location = new Point(238, 413);
             checkPeakHold.Name = "checkPeakHold";
             checkPeakHold.Size = new Size(15, 14);
@@ -409,9 +409,9 @@ namespace Resonalyze.Options
             //
             // buttonResetAverage
             //
-            buttonResetAverage.BackColor = Color.FromArgb(50, 55, 80);
+            buttonResetAverage.BackColor = UiPalette.ButtonBackground;
             buttonResetAverage.FlatStyle = FlatStyle.Popup;
-            buttonResetAverage.ForeColor = Color.White;
+            buttonResetAverage.ForeColor = UiPalette.TextPrimary;
             buttonResetAverage.Location = new Point(12, 439);
             buttonResetAverage.Name = "buttonResetAverage";
             buttonResetAverage.Size = new Size(241, 23);
@@ -423,7 +423,7 @@ namespace Resonalyze.Options
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             ClientSize = new Size(265, 474);
             Controls.Add(labelAnalysisMode);
             Controls.Add(radioModeTransfer);
@@ -475,26 +475,26 @@ namespace Resonalyze.Options
         private ReleaseClickRadioButton radioModeTransfer;
         private ReleaseClickRadioButton radioModeRta;
         private ReleaseClickRadioButton radioModeMmm;
-        private DarkComboBox comboCalibration;
+        private ThemedComboBox comboCalibration;
         private Label label2;
         private Label labelSignalType;
-        private DarkComboBox signalTypeComboBox;
+        private ThemedComboBox signalTypeComboBox;
         private Label label3;
-        private DarkComboBox sequenceLengthComboBox;
+        private ThemedComboBox sequenceLengthComboBox;
         private Label label4;
-        private DarkComboBox overlapComboBox;
+        private ThemedComboBox overlapComboBox;
         private Label label5;
-        private DarkComboBox comboSmoothingInverseOctaves;
+        private ThemedComboBox comboSmoothingInverseOctaves;
         private Label label6;
-        private DarkComboBox windowComboBox;
+        private ThemedComboBox windowComboBox;
         private Label label7;
-        private DarkComboBox averagingComboBox;
+        private ThemedComboBox averagingComboBox;
         private Label label8;
         private ReleaseClickCheckBox checkPeakHold;
         private Label label9;
         private ReleaseClickCheckBox checkCoherence;
         private Label label10;
-        private DarkComboBox coherenceLimitComboBox;
+        private ThemedComboBox coherenceLimitComboBox;
         private ReleaseClickButton buttonResetAverage;
         private Label labelSpl;
         private ReleaseClickCheckBox checkSpl;

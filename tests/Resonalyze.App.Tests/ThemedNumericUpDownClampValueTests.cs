@@ -1,8 +1,8 @@
 namespace Resonalyze.App.Tests;
 
-public sealed class DarkNumericUpDownClampValueTests
+public sealed class ThemedNumericUpDownClampValueTests
 {
-    private static DarkNumericUpDown Control(
+    private static ThemedNumericUpDown Control(
         decimal minimum = 2,
         decimal maximum = 64,
         int decimalPlaces = 0) =>
@@ -20,7 +20,7 @@ public sealed class DarkNumericUpDownClampValueTests
     [InlineData(double.NegativeInfinity)]
     public void ANonFiniteValue_BecomesZeroClampedIntoRange_RatherThanThrowing(double value)
     {
-        using DarkNumericUpDown control = Control();
+        using ThemedNumericUpDown control = Control();
 
         // Non-finite values become zero before clamping, so +infinity lands on the minimum.
         Assert.Equal(2m, control.ClampValue(value));
@@ -29,7 +29,7 @@ public sealed class DarkNumericUpDownClampValueTests
     [Fact]
     public void ANonFiniteValue_ClampsToZeroWhenZeroIsInRange()
     {
-        using DarkNumericUpDown control = Control(minimum: -10, maximum: 10, decimalPlaces: 2);
+        using ThemedNumericUpDown control = Control(minimum: -10, maximum: 10, decimalPlaces: 2);
 
         Assert.Equal(0m, control.ClampValue(double.NaN));
         Assert.Equal(0m, control.ClampValue(double.PositiveInfinity));
@@ -44,7 +44,7 @@ public sealed class DarkNumericUpDownClampValueTests
         double value,
         int expected)
     {
-        using DarkNumericUpDown control = Control();
+        using ThemedNumericUpDown control = Control();
 
         // Pre-clamped in double: double.MaxValue does not fit in a decimal.
         Assert.Equal(expected, control.ClampValue(value));
@@ -57,7 +57,7 @@ public sealed class DarkNumericUpDownClampValueTests
     [InlineData(30.0, 30.0)]
     public void AValueOutsideTheRange_ClampsToTheNearestBound(double value, double expected)
     {
-        using DarkNumericUpDown control = Control();
+        using ThemedNumericUpDown control = Control();
 
         Assert.Equal((decimal)expected, control.ClampValue(value));
     }
@@ -67,7 +67,7 @@ public sealed class DarkNumericUpDownClampValueTests
     [InlineData(64.0, 64.0)]
     public void TheBoundsThemselves_SurviveUnchanged(double value, double expected)
     {
-        using DarkNumericUpDown control = Control();
+        using ThemedNumericUpDown control = Control();
 
         Assert.Equal((decimal)expected, control.ClampValue(value));
     }
@@ -80,7 +80,7 @@ public sealed class DarkNumericUpDownClampValueTests
     [InlineData(1.875, 1.88)]
     public void AMidpoint_RoundsToEvenAtTheControlsDecimalPlaces(double value, double expected)
     {
-        using DarkNumericUpDown control = Control(minimum: 0, maximum: 10, decimalPlaces: 2);
+        using ThemedNumericUpDown control = Control(minimum: 0, maximum: 10, decimalPlaces: 2);
 
         Assert.Equal((decimal)expected, control.ClampValue(value));
     }
@@ -88,7 +88,7 @@ public sealed class DarkNumericUpDownClampValueTests
     [Fact]
     public void TheResultCarriesNoPrecisionTheControlCannotDisplay()
     {
-        using DarkNumericUpDown control = Control(minimum: 0, maximum: 10, decimalPlaces: 3);
+        using ThemedNumericUpDown control = Control(minimum: 0, maximum: 10, decimalPlaces: 3);
 
         Assert.Equal(1.235m, control.ClampValue(1.2345678));
     }
@@ -96,7 +96,7 @@ public sealed class DarkNumericUpDownClampValueTests
     [Fact]
     public void AWholeNumberControl_DropsTheFraction()
     {
-        using DarkNumericUpDown control = Control(minimum: 2, maximum: 64, decimalPlaces: 0);
+        using ThemedNumericUpDown control = Control(minimum: 2, maximum: 64, decimalPlaces: 0);
 
         Assert.Equal(7m, control.ClampValue(6.7));
         Assert.Equal(6m, control.ClampValue(6.4));

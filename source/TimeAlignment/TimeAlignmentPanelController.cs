@@ -25,9 +25,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly RadioButton bandModeAutoRadio;
     private readonly RadioButton bandModeManualRadio;
     private readonly Label autoBandLabel;
-    private readonly DarkNumericUpDown bandpassCenterNumeric;
-    private readonly DarkNumericUpDown bandpassPassOctavesNumeric;
-    private readonly DarkNumericUpDown bandpassFadeOctavesNumeric;
+    private readonly ThemedNumericUpDown bandpassCenterNumeric;
+    private readonly ThemedNumericUpDown bandpassPassOctavesNumeric;
+    private readonly ThemedNumericUpDown bandpassFadeOctavesNumeric;
     private readonly PlotView bandpassPlotView;
     private readonly PlotView envelopePlotView;
     // Previews are rebuilt on every configuration change; without these a zoom would not survive the next edit.
@@ -740,7 +740,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         var series = new LineSeries
         {
-            Color = OxyColor.FromRgb(255, 210, 80),
+            Color = UiPalette.CurveEnvelope.ToOxy(),
             StrokeThickness = 2
         };
         (double f1, double f2, double f3, double f4) =
@@ -891,7 +891,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             radius,
             step,
             xOffsetMilliseconds: 0.0,
-            OxyColor.FromRgb(255, 210, 80),
+            UiPalette.CurveEnvelope.ToOxy(),
             strokeThickness: 2,
             out double maxDb,
             out double minDb);
@@ -913,7 +913,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 radius,
                 step,
                 compareOffsetMilliseconds,
-                OxyColor.FromArgb(155, 80, 210, 255),
+                OxyColor.FromAColor(155, UiPalette.CurveCompare.ToOxy()),
                 strokeThickness: 1.75,
                 out double compareMaxDb,
                 out double compareMinDb);
@@ -1043,7 +1043,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             "M First",
             0.0,
             GetPeakMarkerDecibels(mainResult, referenceAmplitude, mainResult.EnvelopePeakIndex),
-            OxyColor.FromRgb(255, 96, 96),
+            UiPalette.MarkerFirstArrival.ToOxy(),
             PlotCalloutDirection.LeftUp);
         if (Math.Abs(strongestMilliseconds) > 0.001)
         {
@@ -1052,7 +1052,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 "M Peak",
                 strongestMilliseconds,
                 GetPeakMarkerDecibels(mainResult, referenceAmplitude, mainResult.StrongestEnvelopePeakIndex),
-                OxyColor.FromRgb(140, 170, 255),
+                UiPalette.MarkerStrongestPeak.ToOxy(),
                 PlotCalloutDirection.RightUp);
         }
 
@@ -1061,7 +1061,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             "M Onset",
             mainResult.EnergyOnsetDelayMilliseconds - mainResult.FirstArrivalDelayMilliseconds,
             GetPeakMarkerDecibels(mainResult, referenceAmplitude, GetEnergyOnsetIndex(mainResult)),
-            OxyColor.FromRgb(96, 200, 120),
+            UiPalette.MarkerEnergyOnset.ToOxy(),
             PlotCalloutDirection.LeftDown);
     }
 
@@ -1105,7 +1105,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             "M First",
             0.0,
             mainFirstArrivalDecibels,
-            OxyColor.FromRgb(255, 96, 96),
+            UiPalette.MarkerFirstArrival.ToOxy(),
             mainFirstArrivalDecibels >= compareFirstArrivalDecibels
                 ? PlotCalloutDirection.LeftUp
                 : PlotCalloutDirection.LeftDown);
@@ -1114,7 +1114,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             "C First",
             compareFirstArrivalMilliseconds,
             compareFirstArrivalDecibels,
-            OxyColor.FromArgb(145, 255, 96, 96),
+            OxyColor.FromAColor(145, UiPalette.MarkerFirstArrival.ToOxy()),
             compareFirstArrivalDecibels > mainFirstArrivalDecibels
                 ? PlotCalloutDirection.LeftUp
                 : PlotCalloutDirection.LeftDown);
@@ -1126,7 +1126,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 "M Peak",
                 mainStrongestMilliseconds,
                 mainStrongestDecibels,
-                OxyColor.FromRgb(140, 170, 255),
+                UiPalette.MarkerStrongestPeak.ToOxy(),
                 mainStrongestDecibels >= compareStrongestDecibels
                     ? PlotCalloutDirection.RightUp
                     : PlotCalloutDirection.RightDown);
@@ -1139,7 +1139,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 "C Peak",
                 compareStrongestMilliseconds,
                 compareStrongestDecibels,
-                OxyColor.FromArgb(145, 140, 170, 255),
+                OxyColor.FromAColor(145, UiPalette.MarkerStrongestPeak.ToOxy()),
                 compareStrongestDecibels > mainStrongestDecibels
                     ? PlotCalloutDirection.RightUp
                     : PlotCalloutDirection.RightDown);
@@ -1154,7 +1154,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             "M Onset",
             mainResult.EnergyOnsetDelayMilliseconds - mainResult.FirstArrivalDelayMilliseconds,
             mainOnsetDecibels,
-            OxyColor.FromRgb(96, 200, 120),
+            UiPalette.MarkerEnergyOnset.ToOxy(),
             mainOnsetDecibels >= compareOnsetDecibels
                 ? PlotCalloutDirection.LeftUp
                 : PlotCalloutDirection.LeftDown);
@@ -1163,7 +1163,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             "C Onset",
             compareResult.EnergyOnsetDelayMilliseconds - mainResult.FirstArrivalDelayMilliseconds,
             compareOnsetDecibels,
-            OxyColor.FromArgb(145, 96, 200, 120),
+            OxyColor.FromAColor(145, UiPalette.MarkerEnergyOnset.ToOxy()),
             compareOnsetDecibels > mainOnsetDecibels
                 ? PlotCalloutDirection.LeftUp
                 : PlotCalloutDirection.LeftDown);
@@ -1232,7 +1232,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         try
         {
             statusTextBox.Clear();
-            AppendStatusText(text, UiPalette.TextSecondarySoft);
+            AppendStatusText(text, UiPalette.TextSecondary);
         }
         finally
         {
@@ -1288,12 +1288,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         if (warning != null)
         {
-            AppendStatusText("\r\nCompare: ", UiPalette.TextPrimarySoft, resultTableFont);
-            AppendStatusText(warning + "\r\n", UiPalette.WarningAmber);
+            AppendStatusText("\r\nCompare: ", UiPalette.TextDefault, resultTableFont);
+            AppendStatusText(warning + "\r\n", UiPalette.Warning);
             return;
         }
 
-        AppendStatusText("\r\n", UiPalette.TextPrimarySoft);
+        AppendStatusText("\r\n", UiPalette.TextDefault);
         AppendMeasurementResult(
             bandMode,
             "Compare",
@@ -1324,8 +1324,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendDelayTable(result, reference, recommended);
         if (recommended is { } row)
         {
-            AppendStatusText("Recommended for alignment: ", UiPalette.TextPrimarySoft);
-            AppendStatusText(RowLabel(row) + "\r\n", UiPalette.SuccessGreen);
+            AppendStatusText("Recommended for alignment: ", UiPalette.TextDefault);
+            AppendStatusText(RowLabel(row) + "\r\n", UiPalette.Success);
             AppendStrongestPeakHint(result);
         }
     }
@@ -1383,14 +1383,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 $"({gate.BurstPeakDbReMax:0.0} dB re max) — an electrical copy of\r\n" +
                 "the playback, not the driver's sound; the full-band First Arrival\r\n" +
                 "may be timing it. Switch to Auto band (analyzed with it removed).\r\n",
-                UiPalette.ErrorSoft);
+                UiPalette.Error);
             return;
         }
 
         AppendStatusText(
             $"⚠ Playback crosstalk at {gate.BurstTimeMs:0.00} ms " +
             $"({gate.BurstPeakDbReMax:0.0} dB re max) removed from this analysis\r\n",
-            UiPalette.WarningAmber);
+            UiPalette.Warning);
     }
 
     // Engine's arrival honesty probe: a full-band arrival far LATER than its upper half is a modal latch (times a room mode, not the front).
@@ -1404,12 +1404,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return;
         }
 
-        AppendStatusText("Arrival probe: ", UiPalette.TextPrimarySoft);
+        AppendStatusText("Arrival probe: ", UiPalette.TextDefault);
         if (probe == null)
         {
             AppendStatusText(
                 "pass band too narrow for the upper-half check\r\n",
-                UiPalette.TextSecondarySoft);
+                UiPalette.TextSecondary);
             return;
         }
 
@@ -1421,25 +1421,25 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                     $"verified — the {probeValue.ProbeLowHz:0}-{probeValue.ProbeHighHz:0} Hz " +
                     "upper half agrees " +
                     $"({probeValue.ProbeResult.FirstArrivalDelayMilliseconds:0.000} ms)\r\n",
-                    UiPalette.SuccessGreenSoft);
+                    UiPalette.Success);
                 break;
             case AutoAlignmentEngine.ArrivalCertificate.Latched:
                 // Upper-half figure is diagnostic only: in the engine's field case it walked a woofer 6 ms off.
                 AppendStatusText(
                     $"MODAL LATCH — full band {result.FirstArrivalDelayMilliseconds:0.000} ms " +
                     $"vs upper half {probeValue.ProbeResult.FirstArrivalDelayMilliseconds:0.000} ms\r\n",
-                    UiPalette.ErrorSoft);
+                    UiPalette.Error);
                 AppendStatusText(
                     "⚠ Not the direct front (modal build-up) — do not align " +
                     "from this arrival;\r\nchange the analysis band or check " +
                     "the measurement.\r\n",
-                    UiPalette.ErrorSoft);
+                    UiPalette.Error);
                 break;
             default:
                 AppendStatusText(
                     "not certified — the upper half is unmeasurable or does not " +
                     "show the front\r\n",
-                    UiPalette.TextSecondarySoft);
+                    UiPalette.TextSecondary);
                 break;
         }
     }
@@ -1454,13 +1454,13 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendStatusText(
             $"⚠ Strongest peak is ~{result.StrongestPeakSeparationMilliseconds:0.0} ms " +
             "after first arrival — likely a room mode or reflection.\r\n",
-            UiPalette.WarningAmber);
+            UiPalette.Warning);
     }
 
     // SNR grades the recording, prominence grades the pick; kept apart because a woofer's broad edge gives low prominence on a good recording.
     private void AppendSignalQuality(string title, TimeAlignmentAnalysisResult result)
     {
-        AppendStatusText($"{title} Signal: ", UiPalette.TextPrimarySoft);
+        AppendStatusText($"{title} Signal: ", UiPalette.TextDefault);
 
         // Below the engine's SNR floor the arrival is a noise bump (independent noise reads ~8 dB): shown, but graded not-evidence.
         if (result.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
@@ -1468,11 +1468,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             AppendStatusText(
                 $"Unmeasurable ({result.SignalToNoiseDecibels:0.0} dB SNR, below " +
                 $"the {AutoAlignmentEngine.MinimumArrivalSnrDb:0} dB floor)\r\n",
-                UiPalette.ErrorSoft);
+                UiPalette.Error);
             AppendStatusText(
                 "⚠ The arrival is not distinguishable from the record's noise\r\n" +
                 "floor — the delay figures below are noise, not measurements.\r\n",
-                UiPalette.ErrorSoft);
+                UiPalette.Error);
             return;
         }
 
@@ -1482,12 +1482,12 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             GetConfidenceColor(signalGrade));
 
         double prominence = result.FirstArrivalProminenceDecibels;
-        AppendStatusText("First arrival: ", UiPalette.TextPrimarySoft);
+        AppendStatusText("First arrival: ", UiPalette.TextDefault);
         if (prominence >= -1.0)
         {
             AppendStatusText(
                 "coincides with the strongest peak\r\n",
-                UiPalette.SuccessGreen);
+                UiPalette.Success);
             return;
         }
 
@@ -1495,8 +1495,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             ? " — broad rise, normal for low-frequency drivers"
             : string.Empty;
         Color color = prominence >= BroadRiseProminenceDb
-            ? UiPalette.SuccessGreenSoft
-            : UiPalette.TextSecondarySoft;
+            ? UiPalette.Success
+            : UiPalette.TextSecondary;
         AppendStatusText(
             $"{prominence:0.0} dB re strongest peak{hint}\r\n",
             color);
@@ -1520,13 +1520,13 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             ? "GCC-PHAT"
             : "envelope fallback";
         Color color = !result.FirstArrivalRefinedByPhat
-            ? UiPalette.TextSecondarySoft
+            ? UiPalette.TextSecondary
             : result.FirstArrivalConfidence >= 0.6
-                ? UiPalette.SuccessGreen
+                ? UiPalette.Success
                 : result.FirstArrivalConfidence >= 0.4
-                    ? UiPalette.SuccessGreenSoft
-                    : UiPalette.WarningAmber;
-        AppendStatusText("Alignment: ", UiPalette.TextPrimarySoft);
+                    ? UiPalette.Success
+                    : UiPalette.Warning;
+        AppendStatusText("Alignment: ", UiPalette.TextDefault);
         AppendStatusText($"{percent}% ({method})\r\n", color);
     }
 
@@ -1534,7 +1534,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     {
         AppendStatusText(
             new string('_', 54) + "\r\n",
-            UiPalette.TextSecondarySoft,
+            UiPalette.TextSecondary,
             resultTableFont);
     }
 
@@ -1546,11 +1546,11 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     {
         AppendStatusText(
             DelayTableText.FormatHeader() + "\r\n",
-            UiPalette.TextPrimarySoft,
+            UiPalette.TextDefault,
             resultTableFont);
         AppendDelayRow(
             DelayRow.FirstArrival,
-            UiPalette.TimeAlignmentFirstArrival,
+            UiPalette.MarkerFirstArrival,
             result.FirstArrivalDelayMilliseconds,
             result.FirstArrivalPeakSample,
             reference?.FirstArrivalDelayMilliseconds,
@@ -1558,7 +1558,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             recommended);
         AppendDelayRow(
             DelayRow.StrongestPeak,
-            UiPalette.TimeAlignmentStrongestPeak,
+            UiPalette.MarkerStrongestPeak,
             result.StrongestDelayMilliseconds,
             result.StrongestPeakSample,
             reference?.StrongestDelayMilliseconds,
@@ -1566,7 +1566,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             recommended);
         AppendDelayRow(
             DelayRow.EnergyOnset,
-            UiPalette.TimeAlignmentEnergyOnset,
+            UiPalette.MarkerEnergyOnset,
             result.EnergyOnsetDelayMilliseconds,
             result.EnergyOnsetSample,
             reference?.EnergyOnsetDelayMilliseconds,
@@ -1597,17 +1597,17 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                     DelayMeters(milliseconds),
                     referenceMilliseconds is { } referenceMs ? DelayMeters(referenceMs) : null,
                     "0.000")),
-            isRecommended ? UiPalette.TextPrimarySoft : UiPalette.TextSecondarySoft,
+            isRecommended ? UiPalette.TextDefault : UiPalette.TextSecondary,
             resultTableFont);
         if (isRecommended)
         {
             AppendStatusText(
                 DelayTableText.RecommendedMarker,
-                UiPalette.SuccessGreen,
+                UiPalette.Success,
                 resultTableFont);
         }
 
-        AppendStatusText("\r\n", UiPalette.TextPrimarySoft, resultTableFont);
+        AppendStatusText("\r\n", UiPalette.TextDefault, resultTableFont);
     }
 
     private static double DelayMeters(double delayMilliseconds) =>
@@ -1621,31 +1621,31 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private void AppendLevelsLine(InputLevelMeterSnapshot levels)
     {
-        AppendStatusText("Levels (peak/RMS dBFS): ", UiPalette.TextPrimarySoft);
+        AppendStatusText("Levels (peak/RMS dBFS): ", UiPalette.TextDefault);
         AppendLevelSegment("mic", levels.Microphone);
-        AppendStatusText(", ", UiPalette.TextPrimarySoft);
+        AppendStatusText(", ", UiPalette.TextDefault);
         AppendLevelSegment("loop", levels.Loopback);
-        AppendStatusText("\r\n", UiPalette.TextPrimarySoft);
+        AppendStatusText("\r\n", UiPalette.TextDefault);
     }
 
     private void AppendLevelSegment(string label, InputLevelMeterEntry entry)
     {
         if (!entry.Available)
         {
-            AppendStatusText($"{label} unavailable", UiPalette.TextSecondarySoft);
+            AppendStatusText($"{label} unavailable", UiPalette.TextSecondary);
             return;
         }
 
         AppendStatusText(
             $"{label} {entry.PeakDbFs:0.0}/{entry.RmsDbFs:0.0}",
-            UiPalette.TextPrimarySoft);
+            UiPalette.TextDefault);
         if (entry.Clipped)
         {
-            AppendStatusText(" CLIP", UiPalette.ErrorSoft);
+            AppendStatusText(" CLIP", UiPalette.Error);
         }
         else if (entry.FullScaleReference)
         {
-            AppendStatusText(" FULL SCALE", UiPalette.TextSecondarySoft);
+            AppendStatusText(" FULL SCALE", UiPalette.TextSecondary);
         }
     }
 
@@ -1730,22 +1730,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private static Color GetConfidenceColor(string confidence) =>
         confidence switch
         {
-            "Excellent" => UiPalette.SuccessGreen,
-            "Good" => UiPalette.SuccessGreenSoft,
-            "Fair" => UiPalette.WarningAmber,
-            _ => UiPalette.ErrorSoft
+            "Excellent" => UiPalette.Success,
+            "Good" => UiPalette.Success,
+            "Fair" => UiPalette.Warning,
+            _ => UiPalette.Error
         };
 
     private static PlotModel CreatePreviewPlotModel(string title) =>
-        new()
-        {
-            Background = OxyColor.FromRgb(32, 36, 46),
-            PlotAreaBackground = OxyColor.FromRgb(32, 36, 46),
-            TextColor = OxyColors.White,
-            Title = title,
-            TitleColor = OxyColors.White,
-            TitleFontSize = 10
-        };
+        PlotModelStyle.CreatePreviewModel(title);
 
     private static LinearAxis CreateDecibelAxis()
     {
@@ -1779,12 +1771,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private static void ApplyPreviewAxisStyle(Axis axis)
     {
-        axis.MajorGridlineColor = OxyColor.FromRgb(55, 62, 78);
         axis.MajorGridlineStyle = LineStyle.Solid;
-        axis.MinorGridlineColor = OxyColor.FromRgb(48, 54, 70);
         axis.MinorGridlineStyle = LineStyle.Dot;
-        axis.TextColor = OxyColors.White;
-        axis.TicklineColor = OxyColors.White;
+        PlotModelStyle.StyleAxis(axis);
     }
 
 }

@@ -42,21 +42,21 @@ internal static class TrashCursor
         handle.AddLine(13f, 6f, 19f, 6f);
         handle.AddLine(19f, 6f, 19f, 9.5f);
 
-        using (var contour = RoundedPen(Color.FromArgb(170, 8, 10, 14), 3.4f))
+        using (var contour = RoundedPen(Color.FromArgb(170, UiPalette.CursorOutline), 3.4f))
         {
             graphics.DrawPath(contour, body);
             graphics.DrawPath(contour, lid);
             graphics.DrawPath(contour, handle);
         }
 
-        using (var stroke = RoundedPen(UiPalette.ErrorSoft, 1.9f))
+        using (var stroke = RoundedPen(UiPalette.Error, 1.9f))
         {
             graphics.DrawPath(stroke, body);
             graphics.DrawPath(stroke, lid);
             graphics.DrawPath(stroke, handle);
         }
 
-        using var ribs = RoundedPen(Color.FromArgb(190, UiPalette.ErrorSoft), 1.4f);
+        using var ribs = RoundedPen(Color.FromArgb(190, UiPalette.Error), 1.4f);
         graphics.DrawLine(ribs, 13.5f, 15f, 13.5f, 23f);
         graphics.DrawLine(ribs, 18.5f, 15f, 18.5f, 23f);
     }

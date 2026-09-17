@@ -10,11 +10,11 @@ internal sealed record EqTuneStats(
 
 public sealed partial class EqResultsPanel : UserControl
 {
-    private static readonly Color NeutralColor = Color.FromArgb(225, 228, 235);
-    private static readonly Color GoodColor = Color.FromArgb(120, 200, 130);
-    private static readonly Color WarnColor = Color.FromArgb(235, 196, 90);
-    private static readonly Color BadColor = Color.FromArgb(232, 86, 76);
-    private static readonly Color InfoColor = Color.FromArgb(0, 209, 255);
+    private static readonly Color NeutralColor = UiPalette.TextValue;
+    private static readonly Color GoodColor = UiPalette.Success;
+    private static readonly Color WarnColor = UiPalette.Warning;
+    private static readonly Color BadColor = UiPalette.Error;
+    private static readonly Color InfoColor = UiPalette.AccentMark;
 
     private readonly WrappingToolTip toolTip = new()
     {

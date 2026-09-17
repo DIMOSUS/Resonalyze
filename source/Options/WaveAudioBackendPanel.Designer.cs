@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class WaveAudioBackendPanel
     {
@@ -29,13 +29,13 @@
         private void InitializeComponent()
         {
             labelPlaybackDevice = new Label();
-            comboBoxPlaybackDevice = new DarkComboBox();
+            comboBoxPlaybackDevice = new ThemedComboBox();
             labelRecordingDevice = new Label();
-            comboBoxRecordingDevice = new DarkComboBox();
+            comboBoxRecordingDevice = new ThemedComboBox();
             labelWaveInputChannel = new Label();
-            comboBoxWaveInputChannel = new DarkComboBox();
+            comboBoxWaveInputChannel = new ThemedComboBox();
             labelWaveLoopbackChannel = new Label();
-            comboBoxWaveLoopbackChannel = new DarkComboBox();
+            comboBoxWaveLoopbackChannel = new ThemedComboBox();
             labelWaveLoopbackStatus = new Label();
             labelDeviceSettings = new Label();
             buttonDeviceSettings = new ReleaseClickButton();
@@ -44,7 +44,7 @@
             // labelPlaybackDevice
             //
             labelPlaybackDevice.AutoSize = true;
-            labelPlaybackDevice.ForeColor = SystemColors.ControlLight;
+            labelPlaybackDevice.ForeColor = UiPalette.TextDefault;
             labelPlaybackDevice.Location = new Point(0, 8);
             labelPlaybackDevice.Name = "labelPlaybackDevice";
             labelPlaybackDevice.Size = new Size(91, 15);
@@ -53,8 +53,8 @@
             //
             // comboBoxPlaybackDevice
             //
-            comboBoxPlaybackDevice.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxPlaybackDevice.ForeColor = Color.White;
+            comboBoxPlaybackDevice.BackColor = UiPalette.ControlSurface;
+            comboBoxPlaybackDevice.ForeColor = UiPalette.TextPrimary;
             comboBoxPlaybackDevice.Location = new Point(137, 0);
             comboBoxPlaybackDevice.Margin = new Padding(0);
             comboBoxPlaybackDevice.MinimumSize = new Size(36, 19);
@@ -65,7 +65,7 @@
             // labelRecordingDevice
             //
             labelRecordingDevice.AutoSize = true;
-            labelRecordingDevice.ForeColor = SystemColors.ControlLight;
+            labelRecordingDevice.ForeColor = UiPalette.TextDefault;
             labelRecordingDevice.Location = new Point(0, 37);
             labelRecordingDevice.Name = "labelRecordingDevice";
             labelRecordingDevice.Size = new Size(98, 15);
@@ -74,8 +74,8 @@
             //
             // comboBoxRecordingDevice
             //
-            comboBoxRecordingDevice.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxRecordingDevice.ForeColor = Color.White;
+            comboBoxRecordingDevice.BackColor = UiPalette.ControlSurface;
+            comboBoxRecordingDevice.ForeColor = UiPalette.TextPrimary;
             comboBoxRecordingDevice.Location = new Point(137, 29);
             comboBoxRecordingDevice.Margin = new Padding(0);
             comboBoxRecordingDevice.MinimumSize = new Size(36, 19);
@@ -86,7 +86,7 @@
             // labelWaveInputChannel
             //
             labelWaveInputChannel.AutoSize = true;
-            labelWaveInputChannel.ForeColor = SystemColors.ControlLight;
+            labelWaveInputChannel.ForeColor = UiPalette.TextDefault;
             labelWaveInputChannel.Location = new Point(0, 66);
             labelWaveInputChannel.Name = "labelWaveInputChannel";
             labelWaveInputChannel.Size = new Size(112, 15);
@@ -95,8 +95,8 @@
             //
             // comboBoxWaveInputChannel
             //
-            comboBoxWaveInputChannel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxWaveInputChannel.ForeColor = Color.White;
+            comboBoxWaveInputChannel.BackColor = UiPalette.ControlSurface;
+            comboBoxWaveInputChannel.ForeColor = UiPalette.TextPrimary;
             comboBoxWaveInputChannel.Location = new Point(137, 58);
             comboBoxWaveInputChannel.Margin = new Padding(0);
             comboBoxWaveInputChannel.MinimumSize = new Size(36, 19);
@@ -107,7 +107,7 @@
             // labelWaveLoopbackChannel
             //
             labelWaveLoopbackChannel.AutoSize = true;
-            labelWaveLoopbackChannel.ForeColor = SystemColors.ControlLight;
+            labelWaveLoopbackChannel.ForeColor = UiPalette.TextDefault;
             labelWaveLoopbackChannel.Location = new Point(0, 95);
             labelWaveLoopbackChannel.Name = "labelWaveLoopbackChannel";
             labelWaveLoopbackChannel.Size = new Size(133, 15);
@@ -116,8 +116,8 @@
             //
             // comboBoxWaveLoopbackChannel
             //
-            comboBoxWaveLoopbackChannel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxWaveLoopbackChannel.ForeColor = Color.White;
+            comboBoxWaveLoopbackChannel.BackColor = UiPalette.ControlSurface;
+            comboBoxWaveLoopbackChannel.ForeColor = UiPalette.TextPrimary;
             comboBoxWaveLoopbackChannel.Location = new Point(137, 87);
             comboBoxWaveLoopbackChannel.Margin = new Padding(0);
             comboBoxWaveLoopbackChannel.MinimumSize = new Size(36, 19);
@@ -127,7 +127,7 @@
             //
             // labelWaveLoopbackStatus
             //
-            labelWaveLoopbackStatus.ForeColor = SystemColors.ControlLight;
+            labelWaveLoopbackStatus.ForeColor = UiPalette.TextDefault;
             labelWaveLoopbackStatus.Location = new Point(0, 117);
             labelWaveLoopbackStatus.Name = "labelWaveLoopbackStatus";
             labelWaveLoopbackStatus.Size = new Size(311, 60);
@@ -137,7 +137,7 @@
             // labelDeviceSettings
             //
             labelDeviceSettings.AutoSize = true;
-            labelDeviceSettings.ForeColor = SystemColors.ControlLight;
+            labelDeviceSettings.ForeColor = UiPalette.TextDefault;
             labelDeviceSettings.Location = new Point(0, 184);
             labelDeviceSettings.Name = "labelDeviceSettings";
             labelDeviceSettings.Size = new Size(91, 15);
@@ -157,7 +157,7 @@
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             Controls.Add(buttonDeviceSettings);
             Controls.Add(labelDeviceSettings);
             Controls.Add(labelWaveLoopbackStatus);
@@ -177,13 +177,13 @@
 
         #endregion
         private Label labelPlaybackDevice;
-        private DarkComboBox comboBoxPlaybackDevice;
+        private ThemedComboBox comboBoxPlaybackDevice;
         private Label labelRecordingDevice;
-        private DarkComboBox comboBoxRecordingDevice;
+        private ThemedComboBox comboBoxRecordingDevice;
         private Label labelWaveInputChannel;
-        private DarkComboBox comboBoxWaveInputChannel;
+        private ThemedComboBox comboBoxWaveInputChannel;
         private Label labelWaveLoopbackChannel;
-        private DarkComboBox comboBoxWaveLoopbackChannel;
+        private ThemedComboBox comboBoxWaveLoopbackChannel;
         private Label labelWaveLoopbackStatus;
         private Label labelDeviceSettings;
         private ReleaseClickButton buttonDeviceSettings;

@@ -11,19 +11,19 @@ namespace Resonalyze.Options
 
         internal Label LabelAsioDriver => labelAsioDriver;
 
-        internal DarkComboBox ComboBoxAsioDriver => comboBoxAsioDriver;
+        internal ThemedComboBox ComboBoxAsioDriver => comboBoxAsioDriver;
 
         internal Label LabelAsioInputChannel => labelAsioInputChannel;
 
-        internal DarkComboBox ComboBoxAsioInputChannel => comboBoxAsioInputChannel;
+        internal ThemedComboBox ComboBoxAsioInputChannel => comboBoxAsioInputChannel;
 
         internal Label LabelAsioOutputChannel => labelAsioOutputChannel;
 
-        internal DarkComboBox ComboBoxAsioOutputChannel => comboBoxAsioOutputChannel;
+        internal ThemedComboBox ComboBoxAsioOutputChannel => comboBoxAsioOutputChannel;
 
         internal Label LabelAsioLoopbackChannel => labelAsioLoopbackChannel;
 
-        internal DarkComboBox ComboBoxAsioLoopbackChannel => comboBoxAsioLoopbackChannel;
+        internal ThemedComboBox ComboBoxAsioLoopbackChannel => comboBoxAsioLoopbackChannel;
 
         internal Label LabelAsioSampleRate => labelAsioSampleRate;
 

@@ -1,4 +1,4 @@
-﻿namespace Resonalyze
+namespace Resonalyze
 {
     partial class EqWizardPanel
     {
@@ -44,23 +44,23 @@
             panelPEQ = new Panel();
             labelBands = new Label();
             buttonSource = new ReleaseClickButton();
-            darkComboBoxBands = new DarkComboBox();
-            NumericTargetOffset = new DarkNumericUpDown();
+            darkComboBoxBands = new ThemedComboBox();
+            NumericTargetOffset = new ThemedNumericUpDown();
             labelTargetOffset = new Label();
-            NumericGain = new DarkNumericUpDown();
+            NumericGain = new ThemedNumericUpDown();
             labelGain = new Label();
             buttonAutoTune = new ReleaseClickButton();
-            comboBoxBandsLimit = new DarkComboBox();
+            comboBoxBandsLimit = new ThemedComboBox();
             labelBandsLimit = new Label();
-            numericToHz = new DarkNumericUpDown();
-            numericFromHz = new DarkNumericUpDown();
+            numericToHz = new ThemedNumericUpDown();
+            numericFromHz = new ThemedNumericUpDown();
             labelFromHz = new Label();
             labelToHz = new Label();
-            numericGainMin = new DarkNumericUpDown();
+            numericGainMin = new ThemedNumericUpDown();
             labelGainMin = new Label();
-            numericGainMax = new DarkNumericUpDown();
+            numericGainMax = new ThemedNumericUpDown();
             labelGainMax = new Label();
-            numericQMax = new DarkNumericUpDown();
+            numericQMax = new ThemedNumericUpDown();
             labelQMax = new Label();
             checkBoxBypass = new ReleaseClickCheckBox();
             checkBoxEqPhase = new ReleaseClickCheckBox();
@@ -69,11 +69,11 @@
             checkBoxShelves = new ReleaseClickCheckBox();
             panelAutoTune = new RoundedPanel();
             buttonOverlaySettings = new ReleaseClickButton();
-            comboBoxCalibration = new DarkComboBox();
+            comboBoxCalibration = new ThemedComboBox();
             labelCalibration = new Label();
-            comboBoxSmooth = new DarkComboBox();
+            comboBoxSmooth = new ThemedComboBox();
             labelSmooth = new Label();
-            comboBoxSampleRate = new DarkComboBox();
+            comboBoxSampleRate = new ThemedComboBox();
             labelSampleRate = new Label();
             buttonPhaseGate = new ReleaseClickButton();
             buttonImport = new ReleaseClickButton();
@@ -81,7 +81,7 @@
             buttonResetBands = new ReleaseClickButton();
             buttonUndo = new ReleaseClickButton();
             buttonRedo = new ReleaseClickButton();
-            comboBoxQConvention = new DarkComboBox();
+            comboBoxQConvention = new ThemedComboBox();
             labelQConvention = new Label();
             buttonReturnToDsp = new ReleaseClickButton();
             buttonBackToDsp = new ReleaseClickButton();
@@ -97,7 +97,7 @@
             // 
             // plotWizard
             // 
-            plotWizard.BackColor = Color.FromArgb(50, 55, 100);
+            plotWizard.BackColor = UiPalette.GraphSurface;
             plotWizard.Location = new Point(197, 14);
             plotWizard.Margin = new Padding(6);
             plotWizard.Name = "plotWizard";
@@ -111,7 +111,7 @@
             // 
             // panelPEQ
             // 
-            panelPEQ.BackColor = Color.FromArgb(20, 22, 30);
+            panelPEQ.BackColor = UiPalette.PanelSurfaceDeep;
             panelPEQ.BorderStyle = BorderStyle.FixedSingle;
             panelPEQ.Location = new Point(197, 371);
             panelPEQ.Name = "panelPEQ";
@@ -122,7 +122,7 @@
             // 
             labelBands.AutoSize = true;
             labelBands.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelBands.ForeColor = Color.FromArgb(210, 214, 222);
+            labelBands.ForeColor = UiPalette.TextDefault;
             labelBands.Location = new Point(9, 172);
             labelBands.Margin = new Padding(3);
             labelBands.Name = "labelBands";
@@ -133,7 +133,7 @@
             // buttonSource
             // 
             buttonSource.FlatStyle = FlatStyle.Popup;
-            buttonSource.ForeColor = Color.White;
+            buttonSource.ForeColor = UiPalette.TextPrimary;
             buttonSource.Location = new Point(6, 12);
             buttonSource.Name = "buttonSource";
             buttonSource.Size = new Size(182, 24);
@@ -143,8 +143,8 @@
             // 
             // darkComboBoxBands
             // 
-            darkComboBoxBands.BackColor = Color.FromArgb(55, 60, 72);
-            darkComboBoxBands.ForeColor = Color.White;
+            darkComboBoxBands.BackColor = UiPalette.ControlSurface;
+            darkComboBoxBands.ForeColor = UiPalette.TextPrimary;
             darkComboBoxBands.Location = new Point(108, 170);
             darkComboBoxBands.MinimumSize = new Size(36, 19);
             darkComboBoxBands.Name = "darkComboBoxBands";
@@ -153,9 +153,9 @@
             // 
             // NumericTargetOffset
             // 
-            NumericTargetOffset.BackColor = Color.FromArgb(55, 60, 72);
+            NumericTargetOffset.BackColor = UiPalette.ControlSurface;
             NumericTargetOffset.DecimalPlaces = 0;
-            NumericTargetOffset.ForeColor = Color.White;
+            NumericTargetOffset.ForeColor = UiPalette.TextPrimary;
             NumericTargetOffset.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             NumericTargetOffset.Location = new Point(108, 95);
             NumericTargetOffset.Maximum = new decimal(new int[] { 180, 0, 0, 0 });
@@ -173,7 +173,7 @@
             // 
             labelTargetOffset.AutoSize = true;
             labelTargetOffset.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelTargetOffset.ForeColor = Color.FromArgb(210, 214, 222);
+            labelTargetOffset.ForeColor = UiPalette.TextDefault;
             labelTargetOffset.Location = new Point(9, 97);
             labelTargetOffset.Margin = new Padding(3);
             labelTargetOffset.Name = "labelTargetOffset";
@@ -183,9 +183,9 @@
             // 
             // NumericGain
             // 
-            NumericGain.BackColor = Color.FromArgb(55, 60, 72);
+            NumericGain.BackColor = UiPalette.ControlSurface;
             NumericGain.DecimalPlaces = 1;
-            NumericGain.ForeColor = Color.White;
+            NumericGain.ForeColor = UiPalette.TextPrimary;
             NumericGain.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             NumericGain.Location = new Point(108, 195);
             NumericGain.Maximum = new decimal(new int[] { 80, 0, 0, 0 });
@@ -203,7 +203,7 @@
             // 
             labelGain.AutoSize = true;
             labelGain.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelGain.ForeColor = Color.FromArgb(210, 214, 222);
+            labelGain.ForeColor = UiPalette.TextDefault;
             labelGain.Location = new Point(9, 197);
             labelGain.Margin = new Padding(3);
             labelGain.Name = "labelGain";
@@ -213,9 +213,9 @@
             // 
             // buttonAutoTune
             // 
-            buttonAutoTune.BackColor = Color.FromArgb(46, 51, 67);
+            buttonAutoTune.BackColor = UiPalette.ButtonBackground;
             buttonAutoTune.FlatStyle = FlatStyle.Popup;
-            buttonAutoTune.ForeColor = Color.White;
+            buttonAutoTune.ForeColor = UiPalette.TextPrimary;
             buttonAutoTune.Location = new Point(6, 181);
             buttonAutoTune.Name = "buttonAutoTune";
             buttonAutoTune.Size = new Size(173, 24);
@@ -225,8 +225,8 @@
             // 
             // comboBoxBandsLimit
             // 
-            comboBoxBandsLimit.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxBandsLimit.ForeColor = Color.White;
+            comboBoxBandsLimit.BackColor = UiPalette.ControlSurface;
+            comboBoxBandsLimit.ForeColor = UiPalette.TextPrimary;
             comboBoxBandsLimit.Location = new Point(93, 131);
             comboBoxBandsLimit.MinimumSize = new Size(36, 19);
             comboBoxBandsLimit.Name = "comboBoxBandsLimit";
@@ -237,7 +237,7 @@
             // 
             labelBandsLimit.AutoSize = true;
             labelBandsLimit.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelBandsLimit.ForeColor = Color.FromArgb(210, 214, 222);
+            labelBandsLimit.ForeColor = UiPalette.TextDefault;
             labelBandsLimit.Location = new Point(6, 133);
             labelBandsLimit.Margin = new Padding(3);
             labelBandsLimit.Name = "labelBandsLimit";
@@ -247,10 +247,10 @@
             // 
             // numericToHz
             // 
-            numericToHz.BackColor = Color.FromArgb(55, 60, 72);
+            numericToHz.BackColor = UiPalette.ControlSurface;
             numericToHz.DecimalPlaces = 0;
             numericToHz.Font = new Font("Segoe UI", 9F);
-            numericToHz.ForeColor = Color.White;
+            numericToHz.ForeColor = UiPalette.TextPrimary;
             numericToHz.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericToHz.Location = new Point(93, 106);
             numericToHz.LogarithmicFrequencyStep = true;
@@ -267,10 +267,10 @@
             // 
             // numericFromHz
             // 
-            numericFromHz.BackColor = Color.FromArgb(55, 60, 72);
+            numericFromHz.BackColor = UiPalette.ControlSurface;
             numericFromHz.DecimalPlaces = 0;
             numericFromHz.Font = new Font("Segoe UI", 9F);
-            numericFromHz.ForeColor = Color.White;
+            numericFromHz.ForeColor = UiPalette.TextPrimary;
             numericFromHz.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericFromHz.Location = new Point(93, 81);
             numericFromHz.LogarithmicFrequencyStep = true;
@@ -289,7 +289,7 @@
             // 
             labelFromHz.AutoSize = true;
             labelFromHz.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelFromHz.ForeColor = Color.FromArgb(210, 214, 222);
+            labelFromHz.ForeColor = UiPalette.TextDefault;
             labelFromHz.Location = new Point(6, 83);
             labelFromHz.Margin = new Padding(3);
             labelFromHz.Name = "labelFromHz";
@@ -301,7 +301,7 @@
             // 
             labelToHz.AutoSize = true;
             labelToHz.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelToHz.ForeColor = Color.FromArgb(210, 214, 222);
+            labelToHz.ForeColor = UiPalette.TextDefault;
             labelToHz.Location = new Point(6, 108);
             labelToHz.Margin = new Padding(3);
             labelToHz.Name = "labelToHz";
@@ -311,10 +311,10 @@
             // 
             // numericGainMin
             // 
-            numericGainMin.BackColor = Color.FromArgb(55, 60, 72);
+            numericGainMin.BackColor = UiPalette.ControlSurface;
             numericGainMin.DecimalPlaces = 0;
             numericGainMin.Font = new Font("Segoe UI", 9F);
-            numericGainMin.ForeColor = Color.White;
+            numericGainMin.ForeColor = UiPalette.TextPrimary;
             numericGainMin.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericGainMin.Location = new Point(93, 31);
             numericGainMin.Maximum = new decimal(new int[] { 0, 0, 0, 0 });
@@ -332,7 +332,7 @@
             // 
             labelGainMin.AutoSize = true;
             labelGainMin.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelGainMin.ForeColor = Color.FromArgb(210, 214, 222);
+            labelGainMin.ForeColor = UiPalette.TextDefault;
             labelGainMin.Location = new Point(6, 33);
             labelGainMin.Margin = new Padding(3);
             labelGainMin.Name = "labelGainMin";
@@ -342,10 +342,10 @@
             // 
             // numericGainMax
             // 
-            numericGainMax.BackColor = Color.FromArgb(55, 60, 72);
+            numericGainMax.BackColor = UiPalette.ControlSurface;
             numericGainMax.DecimalPlaces = 0;
             numericGainMax.Font = new Font("Segoe UI", 9F);
-            numericGainMax.ForeColor = Color.White;
+            numericGainMax.ForeColor = UiPalette.TextPrimary;
             numericGainMax.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericGainMax.Location = new Point(93, 6);
             numericGainMax.Maximum = new decimal(new int[] { 24, 0, 0, 0 });
@@ -363,7 +363,7 @@
             // 
             labelGainMax.AutoSize = true;
             labelGainMax.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelGainMax.ForeColor = Color.FromArgb(210, 214, 222);
+            labelGainMax.ForeColor = UiPalette.TextDefault;
             labelGainMax.Location = new Point(6, 8);
             labelGainMax.Margin = new Padding(3);
             labelGainMax.Name = "labelGainMax";
@@ -373,10 +373,10 @@
             // 
             // numericQMax
             // 
-            numericQMax.BackColor = Color.FromArgb(55, 60, 72);
+            numericQMax.BackColor = UiPalette.ControlSurface;
             numericQMax.DecimalPlaces = 1;
             numericQMax.Font = new Font("Segoe UI", 9F);
-            numericQMax.ForeColor = Color.White;
+            numericQMax.ForeColor = UiPalette.TextPrimary;
             numericQMax.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             numericQMax.Location = new Point(93, 56);
             numericQMax.Maximum = new decimal(new int[] { 20, 0, 0, 0 });
@@ -393,7 +393,7 @@
             // 
             labelQMax.AutoSize = true;
             labelQMax.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelQMax.ForeColor = Color.FromArgb(210, 214, 222);
+            labelQMax.ForeColor = UiPalette.TextDefault;
             labelQMax.Location = new Point(6, 58);
             labelQMax.Margin = new Padding(3);
             labelQMax.Name = "labelQMax";
@@ -405,7 +405,7 @@
             //
             checkBoxBypass.AutoSize = true;
             checkBoxBypass.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            checkBoxBypass.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxBypass.ForeColor = UiPalette.TextDefault;
             checkBoxBypass.Location = new Point(13, 220);
             checkBoxBypass.Name = "checkBoxBypass";
             checkBoxBypass.Size = new Size(62, 19);
@@ -417,7 +417,7 @@
             //
             checkBoxEqPhase.AutoSize = true;
             checkBoxEqPhase.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            checkBoxEqPhase.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxEqPhase.ForeColor = UiPalette.TextDefault;
             checkBoxEqPhase.Location = new Point(108, 220);
             checkBoxEqPhase.Name = "checkBoxEqPhase";
             checkBoxEqPhase.Size = new Size(75, 19);
@@ -431,7 +431,7 @@
             checkBoxEqCurve.Checked = true;
             checkBoxEqCurve.CheckState = CheckState.Checked;
             checkBoxEqCurve.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            checkBoxEqCurve.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxEqCurve.ForeColor = UiPalette.TextDefault;
             checkBoxEqCurve.Location = new Point(13, 246);
             checkBoxEqCurve.Name = "checkBoxEqCurve";
             checkBoxEqCurve.Size = new Size(78, 19);
@@ -445,7 +445,7 @@
             checkBoxCutsOnly.Checked = true;
             checkBoxCutsOnly.CheckState = CheckState.Checked;
             checkBoxCutsOnly.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            checkBoxCutsOnly.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxCutsOnly.ForeColor = UiPalette.TextDefault;
             checkBoxCutsOnly.Location = new Point(6, 157);
             checkBoxCutsOnly.Name = "checkBoxCutsOnly";
             checkBoxCutsOnly.Size = new Size(75, 19);
@@ -457,7 +457,7 @@
             // 
             checkBoxShelves.AutoSize = true;
             checkBoxShelves.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            checkBoxShelves.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxShelves.ForeColor = UiPalette.TextDefault;
             checkBoxShelves.Location = new Point(95, 157);
             checkBoxShelves.Name = "checkBoxShelves";
             checkBoxShelves.Size = new Size(66, 19);
@@ -467,7 +467,7 @@
             // 
             // panelAutoTune
             // 
-            panelAutoTune.BackColor = Color.FromArgb(46, 51, 62);
+            panelAutoTune.BackColor = UiPalette.PanelSurface;
             panelAutoTune.Controls.Add(labelGainMin);
             panelAutoTune.Controls.Add(numericGainMin);
             panelAutoTune.Controls.Add(labelGainMax);
@@ -491,7 +491,7 @@
             // buttonOverlaySettings
             // 
             buttonOverlaySettings.FlatStyle = FlatStyle.Popup;
-            buttonOverlaySettings.ForeColor = Color.White;
+            buttonOverlaySettings.ForeColor = UiPalette.TextPrimary;
             buttonOverlaySettings.Location = new Point(6, 40);
             buttonOverlaySettings.Name = "buttonOverlaySettings";
             buttonOverlaySettings.Size = new Size(182, 24);
@@ -501,8 +501,8 @@
             // 
             // comboBoxCalibration
             // 
-            comboBoxCalibration.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxCalibration.ForeColor = Color.White;
+            comboBoxCalibration.BackColor = UiPalette.ControlSurface;
+            comboBoxCalibration.ForeColor = UiPalette.TextPrimary;
             comboBoxCalibration.Location = new Point(108, 70);
             comboBoxCalibration.MinimumSize = new Size(36, 19);
             comboBoxCalibration.Name = "comboBoxCalibration";
@@ -513,7 +513,7 @@
             // 
             labelCalibration.AutoSize = true;
             labelCalibration.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelCalibration.ForeColor = Color.FromArgb(210, 214, 222);
+            labelCalibration.ForeColor = UiPalette.TextDefault;
             labelCalibration.Location = new Point(9, 72);
             labelCalibration.Margin = new Padding(3);
             labelCalibration.Name = "labelCalibration";
@@ -523,8 +523,8 @@
             // 
             // comboBoxSmooth
             // 
-            comboBoxSmooth.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxSmooth.ForeColor = Color.White;
+            comboBoxSmooth.BackColor = UiPalette.ControlSurface;
+            comboBoxSmooth.ForeColor = UiPalette.TextPrimary;
             comboBoxSmooth.Location = new Point(108, 120);
             comboBoxSmooth.MinimumSize = new Size(36, 19);
             comboBoxSmooth.Name = "comboBoxSmooth";
@@ -535,7 +535,7 @@
             // 
             labelSmooth.AutoSize = true;
             labelSmooth.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelSmooth.ForeColor = Color.FromArgb(210, 214, 222);
+            labelSmooth.ForeColor = UiPalette.TextDefault;
             labelSmooth.Location = new Point(9, 122);
             labelSmooth.Margin = new Padding(3);
             labelSmooth.Name = "labelSmooth";
@@ -545,8 +545,8 @@
             //
             // comboBoxSampleRate
             //
-            comboBoxSampleRate.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxSampleRate.ForeColor = Color.White;
+            comboBoxSampleRate.BackColor = UiPalette.ControlSurface;
+            comboBoxSampleRate.ForeColor = UiPalette.TextPrimary;
             comboBoxSampleRate.Location = new Point(108, 145);
             comboBoxSampleRate.MinimumSize = new Size(36, 19);
             comboBoxSampleRate.Name = "comboBoxSampleRate";
@@ -557,7 +557,7 @@
             //
             labelSampleRate.AutoSize = true;
             labelSampleRate.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelSampleRate.ForeColor = Color.FromArgb(210, 214, 222);
+            labelSampleRate.ForeColor = UiPalette.TextDefault;
             labelSampleRate.Location = new Point(9, 147);
             labelSampleRate.Margin = new Padding(3);
             labelSampleRate.Name = "labelSampleRate";
@@ -569,7 +569,7 @@
             //
             buttonPhaseGate.Enabled = false;
             buttonPhaseGate.FlatStyle = FlatStyle.Popup;
-            buttonPhaseGate.ForeColor = Color.White;
+            buttonPhaseGate.ForeColor = UiPalette.TextPrimary;
             buttonPhaseGate.Location = new Point(2, 271);
             buttonPhaseGate.Name = "buttonPhaseGate";
             buttonPhaseGate.Size = new Size(186, 24);
@@ -580,7 +580,7 @@
             // buttonImport
             //
             buttonImport.FlatStyle = FlatStyle.Popup;
-            buttonImport.ForeColor = Color.White;
+            buttonImport.ForeColor = UiPalette.TextPrimary;
             buttonImport.Location = new Point(2, 300);
             buttonImport.Name = "buttonImport";
             buttonImport.Size = new Size(87, 24);
@@ -591,7 +591,7 @@
             // buttonExport
             // 
             buttonExport.FlatStyle = FlatStyle.Popup;
-            buttonExport.ForeColor = Color.White;
+            buttonExport.ForeColor = UiPalette.TextPrimary;
             buttonExport.Location = new Point(101, 300);
             buttonExport.Name = "buttonExport";
             buttonExport.Size = new Size(87, 24);
@@ -602,7 +602,7 @@
             // buttonResetBands
             //
             buttonResetBands.FlatStyle = FlatStyle.Popup;
-            buttonResetBands.ForeColor = Color.White;
+            buttonResetBands.ForeColor = UiPalette.TextPrimary;
             buttonResetBands.Location = new Point(2, 329);
             buttonResetBands.Name = "buttonResetBands";
             buttonResetBands.Size = new Size(186, 24);
@@ -614,7 +614,7 @@
             //
             buttonUndo.Enabled = false;
             buttonUndo.FlatStyle = FlatStyle.Popup;
-            buttonUndo.ForeColor = Color.White;
+            buttonUndo.ForeColor = UiPalette.TextPrimary;
             buttonUndo.Location = new Point(2, 389);
             buttonUndo.Name = "buttonUndo";
             buttonUndo.Size = new Size(87, 24);
@@ -626,7 +626,7 @@
             //
             buttonRedo.Enabled = false;
             buttonRedo.FlatStyle = FlatStyle.Popup;
-            buttonRedo.ForeColor = Color.White;
+            buttonRedo.ForeColor = UiPalette.TextPrimary;
             buttonRedo.Location = new Point(101, 389);
             buttonRedo.Name = "buttonRedo";
             buttonRedo.Size = new Size(87, 24);
@@ -636,9 +636,9 @@
             //
             // buttonReturnToDsp
             //
-            buttonReturnToDsp.BackColor = Color.FromArgb(46, 51, 67);
+            buttonReturnToDsp.BackColor = UiPalette.ButtonBackground;
             buttonReturnToDsp.FlatStyle = FlatStyle.Popup;
-            buttonReturnToDsp.ForeColor = Color.White;
+            buttonReturnToDsp.ForeColor = UiPalette.TextPrimary;
             buttonReturnToDsp.Location = new Point(2, 425);
             buttonReturnToDsp.Name = "buttonReturnToDsp";
             buttonReturnToDsp.Size = new Size(186, 26);
@@ -650,7 +650,7 @@
             // buttonBackToDsp
             //
             buttonBackToDsp.FlatStyle = FlatStyle.Popup;
-            buttonBackToDsp.ForeColor = Color.White;
+            buttonBackToDsp.ForeColor = UiPalette.TextPrimary;
             buttonBackToDsp.Location = new Point(2, 455);
             buttonBackToDsp.Name = "buttonBackToDsp";
             buttonBackToDsp.Size = new Size(186, 24);
@@ -661,8 +661,8 @@
             //
             // comboBoxQConvention
             //
-            comboBoxQConvention.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxQConvention.ForeColor = Color.White;
+            comboBoxQConvention.BackColor = UiPalette.ControlSurface;
+            comboBoxQConvention.ForeColor = UiPalette.TextPrimary;
             comboBoxQConvention.Location = new Point(108, 361);
             comboBoxQConvention.MinimumSize = new Size(36, 19);
             comboBoxQConvention.Name = "comboBoxQConvention";
@@ -673,7 +673,7 @@
             //
             labelQConvention.AutoSize = true;
             labelQConvention.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelQConvention.ForeColor = Color.FromArgb(210, 214, 222);
+            labelQConvention.ForeColor = UiPalette.TextDefault;
             labelQConvention.Location = new Point(9, 363);
             labelQConvention.Margin = new Padding(3);
             labelQConvention.Name = "labelQConvention";
@@ -686,7 +686,7 @@
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             AutoScroll = true;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(labelQConvention);
             Controls.Add(comboBoxQConvention);
@@ -719,7 +719,7 @@
             Controls.Add(panelPEQ);
             Controls.Add(plotWizard);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             Name = "EqWizardPanel";
             Padding = new Padding(6);
             Size = new Size(1246, 770);
@@ -741,23 +741,23 @@
         private Panel panelPEQ;
         private Label labelBands;
         private ReleaseClickButton buttonSource;
-        private DarkComboBox darkComboBoxBands;
-        private DarkNumericUpDown NumericTargetOffset;
+        private ThemedComboBox darkComboBoxBands;
+        private ThemedNumericUpDown NumericTargetOffset;
         private Label labelTargetOffset;
-        private DarkNumericUpDown NumericGain;
+        private ThemedNumericUpDown NumericGain;
         private Label labelGain;
         private ReleaseClickButton buttonAutoTune;
-        private DarkComboBox comboBoxBandsLimit;
+        private ThemedComboBox comboBoxBandsLimit;
         private Label labelBandsLimit;
-        private DarkNumericUpDown numericToHz;
-        private DarkNumericUpDown numericFromHz;
+        private ThemedNumericUpDown numericToHz;
+        private ThemedNumericUpDown numericFromHz;
         private Label labelFromHz;
         private Label labelToHz;
-        private DarkNumericUpDown numericGainMin;
+        private ThemedNumericUpDown numericGainMin;
         private Label labelGainMin;
-        private DarkNumericUpDown numericGainMax;
+        private ThemedNumericUpDown numericGainMax;
         private Label labelGainMax;
-        private DarkNumericUpDown numericQMax;
+        private ThemedNumericUpDown numericQMax;
         private Label labelQMax;
         private ReleaseClickCheckBox checkBoxBypass;
         private ReleaseClickCheckBox checkBoxEqPhase;
@@ -766,11 +766,11 @@
         private ReleaseClickCheckBox checkBoxShelves;
         private RoundedPanel panelAutoTune;
         private ReleaseClickButton buttonOverlaySettings;
-        private DarkComboBox comboBoxCalibration;
+        private ThemedComboBox comboBoxCalibration;
         private Label labelCalibration;
-        private DarkComboBox comboBoxSampleRate;
+        private ThemedComboBox comboBoxSampleRate;
         private Label labelSampleRate;
-        private DarkComboBox comboBoxSmooth;
+        private ThemedComboBox comboBoxSmooth;
         private Label labelSmooth;
         private ReleaseClickButton buttonPhaseGate;
         private ReleaseClickButton buttonImport;
@@ -778,7 +778,7 @@
         private ReleaseClickButton buttonResetBands;
         private ReleaseClickButton buttonUndo;
         private ReleaseClickButton buttonRedo;
-        private DarkComboBox comboBoxQConvention;
+        private ThemedComboBox comboBoxQConvention;
         private Label labelQConvention;
         private ReleaseClickButton buttonReturnToDsp;
         private ReleaseClickButton buttonBackToDsp;

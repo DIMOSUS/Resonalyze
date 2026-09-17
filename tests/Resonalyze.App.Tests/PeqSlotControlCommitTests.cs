@@ -51,8 +51,8 @@ public sealed class PeqSlotControlCommitTests
         Assert.Equal(-3m, slot.GainInput.Value);
     }
 
-    private static TextBox Editor(DarkNumericUpDown control) =>
-        (TextBox)typeof(DarkNumericUpDown)
+    private static TextBox Editor(ThemedNumericUpDown control) =>
+        (TextBox)typeof(ThemedNumericUpDown)
             .GetField("editor", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(control)!;
 

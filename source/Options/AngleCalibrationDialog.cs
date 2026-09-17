@@ -170,39 +170,23 @@ internal sealed partial class AngleCalibrationDialog : Form
         List<DataPoint> lower,
         List<DataPoint> upper)
     {
-        var model = new PlotModel
-        {
-            Background = OxyColor.FromRgb(32, 36, 46),
-            PlotAreaBackground = OxyColor.FromRgb(32, 36, 46),
-            TextColor = OxyColors.White,
-            Title = "Angular correction",
-            TitleColor = OxyColors.White,
-            TitleFontSize = 10
-        };
-        model.Axes.Add(new LogarithmicAxis
+        PlotModel model = PlotModelStyle.CreatePreviewModel("Angular correction");
+        PlotModelStyle.AddAxis(model, new LogarithmicAxis
         {
             Position = AxisPosition.Bottom,
             Minimum = PreviewMinimumHz,
             Maximum = PreviewMaximumHz,
-            MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
             MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
             MinorGridlineStyle = LineStyle.Dot,
-            TextColor = OxyColors.White,
-            TicklineColor = OxyColors.White,
             Title = "Hz",
             IsPanEnabled = false,
             IsZoomEnabled = false
         });
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Position = AxisPosition.Left,
-            MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
             MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
             MinorGridlineStyle = LineStyle.Dot,
-            TextColor = OxyColors.White,
-            TicklineColor = OxyColors.White,
             Title = "dB",
             IsPanEnabled = false,
             IsZoomEnabled = false
@@ -211,14 +195,14 @@ internal sealed partial class AngleCalibrationDialog : Form
         {
             Color = OxyColors.Transparent,
             Color2 = OxyColors.Transparent,
-            Fill = OxyColor.FromAColor(110, OxyColor.FromRgb(0x37, 0xC8, 0xA0))
+            Fill = OxyColor.FromAColor(110, UiPalette.CurveTargetDefault.ToOxy())
         };
         uncertainty.Points.AddRange(lower);
         uncertainty.Points2.AddRange(upper);
         model.Series.Add(uncertainty);
         var line = new LineSeries
         {
-            Color = OxyColor.FromRgb(0x37, 0xC8, 0xA0),
+            Color = UiPalette.CurveTargetDefault.ToOxy(),
             StrokeThickness = 2
         };
         line.Points.AddRange(center);

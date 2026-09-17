@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Reflection;
 using System.Windows.Forms;
 using Resonalyze;
@@ -92,9 +92,9 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
             foreach (object? junction in junctions)
             {
                 ranges.Add((
-                    ((DarkNumericUpDown)junction!.GetType().GetProperty("MinHz")!
+                    ((ThemedNumericUpDown)junction!.GetType().GetProperty("MinHz")!
                         .GetValue(junction)!).Value,
-                    ((DarkNumericUpDown)junction.GetType().GetProperty("MaxHz")!
+                    ((ThemedNumericUpDown)junction.GetType().GetProperty("MaxHz")!
                         .GetValue(junction)!).Value));
             }
 
@@ -117,7 +117,7 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
             dialog.Init(SampleRate, SampleRate, FourWay());
 
             var boxes = Field<TableLayoutPanel>(dialog, "tableJunctions")
-                .Controls.OfType<DarkComboBox>()
+                .Controls.OfType<ThemedComboBox>()
                 .ToList();
             Assert.Equal(6, boxes.Count);
             for (int i = 0; i < boxes.Count; i += 2)
@@ -144,9 +144,9 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
 
             var junctions = (System.Collections.IList)Field<object>(dialog, "junctions");
             object top = junctions[2]!;
-            var minHz = (DarkNumericUpDown)top.GetType()
+            var minHz = (ThemedNumericUpDown)top.GetType()
                 .GetProperty("MinHz")!.GetValue(top)!;
-            var maxHz = (DarkNumericUpDown)top.GetType()
+            var maxHz = (ThemedNumericUpDown)top.GetType()
                 .GetProperty("MaxHz")!.GetValue(top)!;
             decimal before = minHz.Value;
 
@@ -263,8 +263,8 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
 
             var junctions = (System.Collections.IList)Field<object>(dialog, "junctions");
             object top = junctions[2]!;
-            var minHz = (DarkNumericUpDown)top.GetType().GetProperty("MinHz")!.GetValue(top)!;
-            var maxHz = (DarkNumericUpDown)top.GetType().GetProperty("MaxHz")!.GetValue(top)!;
+            var minHz = (ThemedNumericUpDown)top.GetType().GetProperty("MinHz")!.GetValue(top)!;
+            var maxHz = (ThemedNumericUpDown)top.GetType().GetProperty("MaxHz")!.GetValue(top)!;
             ((CheckBox)top.GetType().GetProperty("Split")!.GetValue(top)!).Checked = true;
             minHz.Value = 4_000m;
             maxHz.Value = 6_000m;
@@ -281,10 +281,10 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
             object again = rebuilt[2]!;
             Assert.Equal(
                 4_000m,
-                ((DarkNumericUpDown)again.GetType().GetProperty("MinHz")!.GetValue(again)!).Value);
+                ((ThemedNumericUpDown)again.GetType().GetProperty("MinHz")!.GetValue(again)!).Value);
             Assert.Equal(
                 6_000m,
-                ((DarkNumericUpDown)again.GetType().GetProperty("MaxHz")!.GetValue(again)!).Value);
+                ((ThemedNumericUpDown)again.GetType().GetProperty("MaxHz")!.GetValue(again)!).Value);
             Assert.True(
                 ((CheckBox)again.GetType().GetProperty("Split")!.GetValue(again)!).Checked,
                 "The Split the user asked for was lost with the rebuild.");

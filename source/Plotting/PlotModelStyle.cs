@@ -7,10 +7,25 @@ namespace Resonalyze;
 
 internal static class PlotModelStyle
 {
-    // OxyPlot's defaults are a light theme (black ticks, grid, border, text), unreadable on the dark surface.
+    // OxyPlot's own defaults (black ticks, grid, border, text) are what an untouched axis still carries:
+    // StyleAxis replaces exactly those, and leaves a colour a caller set on purpose alone.
     private static readonly OxyColor DefaultTicklineColor = OxyColors.Black;
     private static readonly OxyColor DefaultMajorGridlineColor = OxyColor.FromArgb(0x40, 0, 0, 0);
     private static readonly OxyColor DefaultMinorGridlineColor = OxyColor.FromArgb(0x20, 0, 0, 0);
+
+    /// <summary>A preview plot: the muted surface, the shared chrome, no interaction of its own.</summary>
+    public static PlotModel CreatePreviewModel(string? title = null)
+    {
+        var model = new PlotModel
+        {
+            Background = ToOxyColor(Ui.UiPalette.GraphSurfaceMuted),
+            PlotAreaBackground = ToOxyColor(Ui.UiPalette.GraphSurfaceMuted),
+            Title = title,
+            TitleFontSize = 10
+        };
+        ApplyChrome(model);
+        return model;
+    }
 
     public static PlotModel CreateTitledModel(string title)
     {

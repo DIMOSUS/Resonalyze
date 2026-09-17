@@ -120,7 +120,7 @@ public sealed class VirtualCrossoverOwnCalibrationTests
 
         object panel = Panel(own: false);
         SetField(panel, "project", project);
-        SetField(panel, "comboBoxCalibration", new DarkComboBox());
+        SetField(panel, "comboBoxCalibration", new ThemedComboBox());
         IReadOnlyList<ProcessedChannel> drawn = [Channel("left", CapsuleA) with
         {
             Channel = channel
@@ -132,7 +132,7 @@ public sealed class VirtualCrossoverOwnCalibrationTests
 
         object own = Panel(own: true);
         SetField(own, "project", project);
-        SetField(own, "comboBoxCalibration", new DarkComboBox());
+        SetField(own, "comboBoxCalibration", new ThemedComboBox());
         Assert.Null(Invoke<string?>(own, "DescribeUnappliedCalibration", drawn));
 
         channel.SideState(false).SpatialAverage!.CalibrationIsAggregate = false;

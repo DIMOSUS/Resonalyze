@@ -108,7 +108,7 @@ public sealed class LiveSpectrumOptLayoutTests
         StaTest.Run(() =>
         {
             using LiveSpectrumOpt panel = CreatePanel();
-            var combo = (DarkComboBox)Find(panel, "comboCalibration");
+            var combo = (ThemedComboBox)Find(panel, "comboCalibration");
             Assert.False(combo.Enabled);
 
             panel.ShowCalibration("90° capsule 2");

@@ -55,7 +55,7 @@ internal static class EqWizardPhaseRender
 {
     public const string EditedChannelTitle = "This channel";
     public const double EditedChannelThickness = 2.2;
-    public static readonly OxyColor EditedChannelColor = OxyColor.FromRgb(0, 209, 255);
+    public static readonly OxyColor EditedChannelColor = UiPalette.CurveSourcePlusEq.ToOxy();
 
     /// <summary>Dashed in the channel's colour, not grey: a grey curve would compete with the bank's white phase.</summary>
     public const string BareChannelTitle = "Without EQ";

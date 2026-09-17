@@ -34,7 +34,7 @@ namespace Resonalyze.Options
             //
             // listViewCalibrations
             //
-            listViewCalibrations.BackColor = Color.FromArgb(55, 60, 72);
+            listViewCalibrations.BackColor = UiPalette.ControlSurface;
             listViewCalibrations.BorderStyle = BorderStyle.FixedSingle;
             listViewCalibrations.Columns.AddRange(new ColumnHeader[]
             {
@@ -43,7 +43,7 @@ namespace Resonalyze.Options
                 columnHeaderDetails,
                 columnHeaderStatus
             });
-            listViewCalibrations.ForeColor = Color.White;
+            listViewCalibrations.ForeColor = UiPalette.TextPrimary;
             listViewCalibrations.FullRowSelect = true;
             listViewCalibrations.LabelEdit = true;
             listViewCalibrations.Location = new Point(16, 16);
@@ -77,7 +77,7 @@ namespace Resonalyze.Options
             // buttonAddFile
             //
             buttonAddFile.FlatStyle = FlatStyle.Popup;
-            buttonAddFile.ForeColor = Color.White;
+            buttonAddFile.ForeColor = UiPalette.TextPrimary;
             buttonAddFile.Location = new Point(548, 16);
             buttonAddFile.Name = "buttonAddFile";
             buttonAddFile.Size = new Size(126, 28);
@@ -88,7 +88,7 @@ namespace Resonalyze.Options
             // buttonAddAngle
             //
             buttonAddAngle.FlatStyle = FlatStyle.Popup;
-            buttonAddAngle.ForeColor = Color.White;
+            buttonAddAngle.ForeColor = UiPalette.TextPrimary;
             buttonAddAngle.Location = new Point(548, 50);
             buttonAddAngle.Name = "buttonAddAngle";
             buttonAddAngle.Size = new Size(126, 28);
@@ -99,7 +99,7 @@ namespace Resonalyze.Options
             // buttonEdit
             //
             buttonEdit.FlatStyle = FlatStyle.Popup;
-            buttonEdit.ForeColor = Color.White;
+            buttonEdit.ForeColor = UiPalette.TextPrimary;
             buttonEdit.Location = new Point(548, 92);
             buttonEdit.Name = "buttonEdit";
             buttonEdit.Size = new Size(126, 28);
@@ -110,7 +110,7 @@ namespace Resonalyze.Options
             // buttonRename
             //
             buttonRename.FlatStyle = FlatStyle.Popup;
-            buttonRename.ForeColor = Color.White;
+            buttonRename.ForeColor = UiPalette.TextPrimary;
             buttonRename.Location = new Point(548, 126);
             buttonRename.Name = "buttonRename";
             buttonRename.Size = new Size(126, 28);
@@ -121,7 +121,7 @@ namespace Resonalyze.Options
             // buttonRemove
             //
             buttonRemove.FlatStyle = FlatStyle.Popup;
-            buttonRemove.ForeColor = Color.White;
+            buttonRemove.ForeColor = UiPalette.TextPrimary;
             buttonRemove.Location = new Point(548, 160);
             buttonRemove.Name = "buttonRemove";
             buttonRemove.Size = new Size(126, 28);
@@ -131,7 +131,7 @@ namespace Resonalyze.Options
             //
             // labelHint
             //
-            labelHint.ForeColor = SystemColors.ControlLight;
+            labelHint.ForeColor = UiPalette.TextDefault;
             labelHint.Location = new Point(16, 284);
             labelHint.Name = "labelHint";
             labelHint.Size = new Size(520, 52);
@@ -142,7 +142,7 @@ namespace Resonalyze.Options
             //
             buttonOk.DialogResult = DialogResult.OK;
             buttonOk.FlatStyle = FlatStyle.Popup;
-            buttonOk.ForeColor = Color.White;
+            buttonOk.ForeColor = UiPalette.TextPrimary;
             buttonOk.Location = new Point(548, 274);
             buttonOk.Name = "buttonOk";
             buttonOk.Size = new Size(126, 28);
@@ -154,7 +154,7 @@ namespace Resonalyze.Options
             //
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
-            buttonCancel.ForeColor = Color.White;
+            buttonCancel.ForeColor = UiPalette.TextPrimary;
             buttonCancel.Location = new Point(548, 308);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(126, 28);
@@ -167,7 +167,7 @@ namespace Resonalyze.Options
             AcceptButton = buttonOk;
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             CancelButton = buttonCancel;
             ClientSize = new Size(690, 352);
             Controls.Add(listViewCalibrations);

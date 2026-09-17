@@ -87,7 +87,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.Annotations.Add(new PlotWatermarkAnnotation
         {
             Text = "DSP chains",
-            TextColor = OxyColor.FromAColor(10, OxyColors.White),
+            TextColor = OxyColor.FromAColor(10, UiPalette.GraphAxisText.ToOxy()),
             FontSize = 40,
             FontWeight = FontWeights.Bold
         });
@@ -115,8 +115,8 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.Legends.Add(new OxyPlot.Legends.Legend
         {
             LegendPosition = OxyPlot.Legends.LegendPosition.TopRight,
-            LegendTextColor = OxyColor.FromRgb(210, 214, 222),
-            LegendBackground = OxyColor.FromAColor(120, OxyColor.FromRgb(40, 44, 54))
+            LegendTextColor = UiPalette.TextDefault.ToOxy(),
+            LegendBackground = UiPalette.PlotLegendBackground.ToOxy()
         });
         PlotModelStyle.AddAxis(model, new LinearAxis
         {
@@ -148,7 +148,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.Annotations.Add(new PlotWatermarkAnnotation
         {
             Text = "Junction",
-            TextColor = OxyColor.FromAColor(10, OxyColors.White),
+            TextColor = OxyColor.FromAColor(10, UiPalette.GraphAxisText.ToOxy()),
             FontSize = 40,
             FontWeight = FontWeights.Bold
         });
@@ -179,7 +179,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.Title = $"{data.PairTitle}  ·  fc {data.CrossoverHz:0} Hz  ·  " +
             $"{data.BandLowHz:0}-{data.BandHighHz:0} Hz";
         model.TitleFontSize = 11;
-        model.TitleColor = OxyColor.FromRgb(210, 214, 222);
+        model.TitleColor = UiPalette.TextDefault.ToOxy();
 
         double windowMs = data.Whitened.Count > 0
             ? Math.Abs(data.Whitened[^1].X)
@@ -202,28 +202,28 @@ internal sealed class VirtualCrossoverDspChainPlot
         // Envelope guides: the packet centre a lobe-skip is read against; the carrier answers which lobe.
         AddEnvelopeGuides(
             model, "PHAT envelope", data.Whitened,
-            OxyColor.FromRgb(79, 195, 247));
+            UiPalette.CurveChainA.ToOxy());
         AddEnvelopeGuides(
             model, "PHAT direct envelope", data.WhitenedDirect,
-            OxyColor.FromRgb(200, 130, 255));
+            UiPalette.CurveChainB.ToOxy());
 
         // PHAT: full-record comb; PHAT direct: driver wavefronts (polarity witness); scores: the searched surface.
         // No raw amplitude-weighted correlation: it follows whatever the cabin plays loudest.
         AddCorrelationSeries(
             model, "PHAT", data.Whitened,
-            OxyColor.FromRgb(79, 195, 247), CoefficientAxisKey,
+            UiPalette.CurveChainA.ToOxy(), CoefficientAxisKey,
             LineStyle.Solid, 1.8);
         AddCorrelationSeries(
             model, "PHAT direct", data.WhitenedDirect,
-            OxyColor.FromRgb(200, 130, 255), CoefficientAxisKey,
+            UiPalette.CurveChainB.ToOxy(), CoefficientAxisKey,
             LineStyle.Solid, 1.4);
         AddCorrelationSeries(
             model, "score", data.ScoreNormal,
-            OxyColor.FromRgb(124, 213, 124), ScoreAxisKey,
+            UiPalette.CurveChainC.ToOxy(), ScoreAxisKey,
             LineStyle.Solid, 1.8);
         AddCorrelationSeries(
             model, "score inv", data.ScoreInverted,
-            OxyColor.FromRgb(255, 169, 79), ScoreAxisKey,
+            UiPalette.CurveChainD.ToOxy(), ScoreAxisKey,
             LineStyle.Dash, 1.8);
 
         // Lag 0 is the applied alignment.
@@ -231,11 +231,11 @@ internal sealed class VirtualCrossoverDspChainPlot
         {
             Type = LineAnnotationType.Vertical,
             X = 0,
-            Color = OxyColor.FromAColor(160, OxyColors.White),
+            Color = OxyColor.FromAColor(160, UiPalette.CurveNeutral.ToOxy()),
             LineStyle = LineStyle.Solid,
             StrokeThickness = 1,
             Text = "current",
-            TextColor = OxyColor.FromAColor(200, OxyColors.White),
+            TextColor = OxyColor.FromAColor(200, UiPalette.CurveNeutral.ToOxy()),
             Tag = SeriesTag
         });
 
@@ -316,8 +316,8 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.Legends.Add(new OxyPlot.Legends.Legend
         {
             LegendPosition = OxyPlot.Legends.LegendPosition.TopRight,
-            LegendTextColor = OxyColor.FromRgb(210, 214, 222),
-            LegendBackground = OxyColor.FromAColor(120, OxyColor.FromRgb(40, 44, 54))
+            LegendTextColor = UiPalette.TextDefault.ToOxy(),
+            LegendBackground = UiPalette.PlotLegendBackground.ToOxy()
         });
         PlotModelStyle.AddFrequencyAxis(model);
         PlotModelStyle.AddAxis(model, new LinearAxis
@@ -342,7 +342,7 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.Annotations.Add(new PlotWatermarkAnnotation
         {
             Text = "Coherence",
-            TextColor = OxyColor.FromAColor(10, OxyColors.White),
+            TextColor = OxyColor.FromAColor(10, UiPalette.GraphAxisText.ToOxy()),
             FontSize = 40,
             FontWeight = FontWeights.Bold
         });
@@ -374,12 +374,12 @@ internal sealed class VirtualCrossoverDspChainPlot
         model.Title = $"{data.PairTitle}  ·  fc {data.CrossoverHz:0} Hz  ·  " +
             $"{data.BandLowHz:0}-{data.BandHighHz:0} Hz";
         model.TitleFontSize = 11;
-        model.TitleColor = OxyColor.FromRgb(210, 214, 222);
+        model.TitleColor = UiPalette.TextDefault.ToOxy();
         model.Subtitle = data.CrossoverHz < 120
             ? "low junction: cabin modes can dominate this read"
             : null;
         model.SubtitleFontSize = 9;
-        model.SubtitleColor = OxyColor.FromAColor(170, OxyColor.FromRgb(240, 200, 90));
+        model.SubtitleColor = OxyColor.FromAColor(170, UiPalette.Warning.ToOxy());
 
         List<VirtualCrossoverAnalysis.ArrivalCoherencePoint> ladder = data.Ladder;
         double needed = Math.Max(
@@ -414,10 +414,10 @@ internal sealed class VirtualCrossoverDspChainPlot
 
         // Past half a period the optimum belongs to the next lobe.
         var corridorUpper = NewCoherenceLine(
-            "±T/2 (next lobe)", OxyColor.FromAColor(150, OxyColors.Gray),
+            "±T/2 (next lobe)", OxyColor.FromAColor(150, UiPalette.CurveMuted.ToOxy()),
             CoherenceLagAxisKey, LineStyle.Dash, 1.0);
         var corridorLower = NewCoherenceLine(
-            null, OxyColor.FromAColor(150, OxyColors.Gray),
+            null, OxyColor.FromAColor(150, UiPalette.CurveMuted.ToOxy()),
             CoherenceLagAxisKey, LineStyle.Dash, 1.0);
         // Gap between envelope at the optimum and at lag 0: coherence the applied tune leaves unused.
         var gap = new AreaSeries
@@ -426,16 +426,16 @@ internal sealed class VirtualCrossoverDspChainPlot
             Tag = SeriesTag,
             Color = OxyColors.Transparent,
             Color2 = OxyColors.Transparent,
-            Fill = OxyColor.FromAColor(50, OxyColor.FromRgb(124, 213, 124)),
+            Fill = OxyColor.FromAColor(50, UiPalette.CurveChainC.ToOxy()),
             XAxisKey = PlotModelFactory.FrequencyAxisKey,
             YAxisKey = CoherenceCoefficientAxisKey,
             TrackerFormatString = CoherenceTrackerFormat
         };
         var currentR = NewCoherenceLine(
-            "r current", OxyColor.FromRgb(124, 213, 124),
+            "r current", UiPalette.CurveChainC.ToOxy(),
             CoherenceCoefficientAxisKey, LineStyle.Dot, 1.8);
         var lagLine = NewCoherenceLine(
-            "Δt to optimum", OxyColor.FromAColor(200, OxyColors.White),
+            "Δt to optimum", OxyColor.FromAColor(200, UiPalette.CurveNeutral.ToOxy()),
             CoherenceLagAxisKey, LineStyle.Solid, 1.2);
         // No polarity marker: the 2/3-octave probe cannot read polarity (see ArrivalCoherencePoint).
         var optimum = new ScatterSeries
@@ -444,7 +444,7 @@ internal sealed class VirtualCrossoverDspChainPlot
             Tag = SeriesTag,
             MarkerType = MarkerType.Circle,
             MarkerSize = 3.5,
-            MarkerFill = OxyColor.FromRgb(79, 195, 247),
+            MarkerFill = UiPalette.CurveChainA.ToOxy(),
             XAxisKey = PlotModelFactory.FrequencyAxisKey,
             YAxisKey = CoherenceLagAxisKey,
             TrackerFormatString = CoherenceTrackerFormat
@@ -477,7 +477,7 @@ internal sealed class VirtualCrossoverDspChainPlot
             Y = 0,
             YAxisKey = CoherenceLagAxisKey,
             XAxisKey = PlotModelFactory.FrequencyAxisKey,
-            Color = OxyColor.FromAColor(160, OxyColors.White),
+            Color = OxyColor.FromAColor(160, UiPalette.CurveNeutral.ToOxy()),
             StrokeThickness = 1,
             Tag = SeriesTag
         });
@@ -487,11 +487,11 @@ internal sealed class VirtualCrossoverDspChainPlot
             X = data.CrossoverHz,
             XAxisKey = PlotModelFactory.FrequencyAxisKey,
             YAxisKey = CoherenceLagAxisKey,
-            Color = OxyColor.FromAColor(120, OxyColors.Gray),
+            Color = OxyColor.FromAColor(120, UiPalette.CurveMuted.ToOxy()),
             LineStyle = LineStyle.Dot,
             StrokeThickness = 1,
             Text = "fc",
-            TextColor = OxyColor.FromAColor(170, OxyColors.Gray),
+            TextColor = OxyColor.FromAColor(170, UiPalette.CurveMuted.ToOxy()),
             Tag = SeriesTag
         });
 

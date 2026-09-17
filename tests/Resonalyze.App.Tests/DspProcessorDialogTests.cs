@@ -271,7 +271,7 @@ public sealed class DspProcessorDialogTests
 
     private static void Select(Form dialog, string field, Func<object?, bool> match)
     {
-        var combo = (DarkComboBox)dialog.GetType()
+        var combo = (ThemedComboBox)dialog.GetType()
             .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(dialog)!;
         foreach (object? item in combo.Items)

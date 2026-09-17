@@ -554,6 +554,15 @@ public sealed class CrossoverAutoSetupTests
         Assert.InRange(80, window.LowHz, window.HighHz);
         Assert.DoesNotContain(
             window.Notes, note => note.Summary.StartsWith("Pinned", StringComparison.Ordinal));
+
+        // Deliberate, and the reason this is pinned rather than left implicit: the two classes touch at 80 Hz, so
+        // a window with room on both sides of it is a window OUTSIDE both of their ranges. A class bound is a
+        // preference about where a handover belongs, and a preference that admits exactly one frequency is not
+        // one — the measured band and the safety bounds are what actually hold the window in.
+        Assert.True(
+            window.LowHz < 80 && window.HighHz > 80,
+            $"The window {window.LowHz:0}-{window.HighHz:0} Hz stayed inside a class range: at a junction " +
+            "where the classes only touch there is no inside to stay in.");
     }
 
     [Fact]

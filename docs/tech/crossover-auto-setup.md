@@ -131,8 +131,10 @@ the ranges bound where a class may hand over, not what a driver is. Deriving the
 the ranges (~423 and ~2283 Hz for the upper two) would class a wide-band midrange reaching 20 kHz
 as a tweeter. The class only seeds the suggestion; the user confirms it.
 
-`SensibleRange` caps each class to musically sane handovers: a woofer measured in-room still shows
-output near 850 Hz, but nobody crosses a woofer there. Notable floors:
+`SensibleRange` states where each class PREFERS to hand over: a woofer measured in-room still shows
+output near 850 Hz, but nobody crosses a woofer there. It is not a cap — a class bound is dropped whole
+where it contradicts the measurement, and widened past both classes where the two only touch (below).
+Notable floors:
 
 - **Midrange 200–4000 Hz**. The 200 Hz floor lets a woofer/midbass hand over
   before its cone-breakup region when the midrange measures headroom down there; a wide overlap higher
@@ -504,6 +506,13 @@ out-of-band excursion. The score therefore adds penalties that encode engineerin
   pays. 1.5 is measured rather than chosen: at 0.6 it failed to move a junction flatness scored as a
   tie, so it was not a prior at all, and above 1.5 the answer stops moving. On the field session it took
   the split from 35 Hz to 45 and the bass span from 14.8 dB to 13.4.
+
+  It is NOT a half-and-half rule: the target is the middle of what the two MEASURE, so it follows an
+  uneven pair. Holding the lower driver at 20-113 Hz and starting the upper one higher moves the split
+  up with it — 55 Hz when both reach 20 Hz, 75 when the upper starts at 40, 80 when it starts at 60 —
+  and a lower driver that stops at 60 instead of 113 pulls it down to 35. What the wizard cannot see is
+  excursion headroom: two drivers that measure alike but differ in Xmax or power handling get the same
+  answer, and choosing which of them carries the bottom is then the user's, through the junction row.
 
 ## Target-curve gains
 

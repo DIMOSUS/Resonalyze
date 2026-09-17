@@ -277,6 +277,12 @@ sounds worse — so the floor stands and the overlap gives way. The window then 
 where the cap alone crossed the window the cap stands and the window opens DOWNWARD from it by the same span;
 where both crossed, the floor wins, because overexcursion is damage and breakup is only a worse sound.
 
+"Both crossed" is the case to read carefully, because it is not "the floor cleared the top of the window". A
+floor and a cap can each sit comfortably inside what the drivers leave and still cross EACH OTHER — a 1–4 kHz
+overlap with a 3 kHz floor and a 2.5 kHz cap — and that is precisely the case the rule is about. Testing only
+whether the floor cleared the window sent it down the cap branch and threw the floor away, which put the window
+at 882 Hz under a tweeter whose distortion knee was 3 kHz.
+
 Both halves of that matter. Collapsing to a single frequency left the descent nothing to search and handed the
 corner to `EnforceTweeterResonanceFloor` afterwards, which puts it at the lowest merely SAFE frequency that
 nothing has optimized. And the span is bounded because the alternative — opening to the system limit — offers a
@@ -330,13 +336,31 @@ a real flatness gain survives. Measured over a sweep of synthetic two-, three- a
 charge at zero, five further junctions part, all of them marginally (0.08–0.18 octave); with it, the
 splits that survive are the substantial ones (0.19–0.29 octave) and the rest stay matched.
 
-The safety floors are read at the corner the edge really lands on, not at the junction's own frequency.
-A negative offset puts the high-pass BELOW the corner — an eighth of an octave at the widest, which is
-3 dB of the Fs floor's protection at 24 dB/oct and 6 dB at 48 — so a slope cleared at the corner can be
-too gentle where the edge actually sits. `EnforceTweeterResonanceFloor` is the second line and drops the
-split outright: Fs is safety and the split is a preference. It now runs on every pool candidate as well
-as on the descent winner, because the pool crosses junction options that were each cleared on their own
-and nothing else re-states the invariant over the composed chain.
+### Every bound is read where the edge lands
+
+A junction's window, its slope table and its floors are all computed for the CORNER. With matched corners the
+edge IS the corner and that is the same statement. An offset breaks the identity: at the widest offset the
+high-pass sits at 0.917 of the corner and the low-pass at 1.091, so each of the four bounds has to be asked
+again at the frequency its edge really landed on.
+
+- **The tweeter Fs floor.** A negative offset puts the high-pass below the corner, which is 3 dB of the floor's
+  protection at 24 dB/oct and 6 dB at 48, so a slope cleared at the corner can be too gentle where the edge
+  sits. `EnforceTweeterResonanceFloor` is the second line and drops the split outright — Fs is safety and the
+  split is a preference — and it now runs on every pool candidate as well as on the descent winner, because the
+  pool crosses junction options that were each cleared on their own and nothing else re-states the invariant
+  over the composed chain.
+- **The distortion-clean band.** The knee is the lowest frequency a high-pass may cross at and the breakup onset
+  the highest a low-pass may, but the window applies both to the corner. Uncaught, a tweeter with a 2.4 kHz knee
+  was high-passed at 2.3 kHz while the corner stayed clean.
+- **The group-delay budget.** Group delay runs as 1/fc, so the two edges of a split junction do not share one:
+  the lower carries about 9% more than the corner. A slope that measured 9.5 ms at the corner is over budget an
+  eighth of an octave below it. This one is a guard rather than a repair of anything observed — the band where
+  it bites is narrow and no synthetic fixture lands in it.
+
+`EdgesClearSafetyBounds` deliberately asks the window's OWN question rather than a stricter one. Where the floor
+and the cap crossed each other the window gave one of them up on purpose; re-imposing it on the edges would
+leave the sweep with no admissible option at all inside the window it had just opened, which is the stranding
+the override exists to prevent.
 
 ## Optimizer
 

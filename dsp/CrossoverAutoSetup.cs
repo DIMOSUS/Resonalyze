@@ -1454,6 +1454,9 @@ public static class CrossoverAutoSetup
 
         private readonly int? forcedSlope;
         private readonly JunctionWindowResolution[] windows;
+        // The bounds that protect the drivers, before the class priors and the user's own narrowing. The window
+        // holds them for the CORNER; an offset moves the edges off it, and they have to clear them where they land.
+        private readonly (double Low, double High)[] junctionSafety;
 
         private readonly Dictionary<(CrossoverFilterFamily, int, long, bool), Complex[]> edgeCache =
             new();
@@ -1559,6 +1562,7 @@ public static class CrossoverAutoSetup
             scratchJunctionLevels = new double[grid.Length];
             scratchSmoothSource = new double[grid.Length];
             windows = new JunctionWindowResolution[channelCount - 1];
+            junctionSafety = new (double, double)[channelCount - 1];
             for (int j = 0; j < channelCount - 1; j++)
             {
                 windows[j] = BuildWindow(j);
@@ -1833,6 +1837,19 @@ public static class CrossoverAutoSetup
         private CrossoverFilterFamily PreferredFamily() =>
             CrossoverAutoSetup.PreferredFamily(options.Families);
 
+        /// <summary>Whether a junction's REAL edges clear the bounds that protect the drivers: the tweeter's
+        /// distortion knee below the high-pass, the lower driver's breakup onset above the low-pass. The window
+        /// enforces both, but it enforces them on the CORNER, and an offset moves the edges off it — at the widest
+        /// offset the high-pass sits at 0.917 of the corner and the low-pass at 1.091. With matched corners the
+        /// edges ARE the corner, so this can only agree with the window that already placed it.</summary>
+        private bool EdgesClearSafetyBounds(int j, double lowPassHz, double highPassHz)
+        {
+            // Whichever bound the window had to give up is not in here: this asks the window's own question again
+            // at the frequency the edge landed on, not a stricter one the corner was never held to.
+            (double low, double high) = junctionSafety[j];
+            return highPassHz >= low - 1e-9 && lowPassHz <= high + 1e-9;
+        }
+
         /// <summary>The family's admissible slopes narrowed to the junction's slope window. The window always holds
         /// 24 dB/oct, but the group-delay budget may still exclude everything in it, so an empty intersection falls
         /// back to the unrestricted set rather than stranding the search.</summary>
@@ -2065,6 +2082,7 @@ public static class CrossoverAutoSetup
                     "reading on this chain."));
             }
 
+            junctionSafety[j] = (safetyLow, safetyHigh);
             double wantedLow = autoLow;
             double wantedHigh = autoHigh;
             RaiseLow(safetyLow, safetyLowReason);
@@ -2081,7 +2099,9 @@ public static class CrossoverAutoSetup
                 // both crossed, the floor wins: overexcursion is damage and breakup is only a worse sound.
                 string blocked = lowReason;
                 string yielded = highReason;
-                bool floorWon = safetyLow > wantedHigh;
+                // Not just "did the floor clear the top of the window": a floor and a cap can each sit inside
+                // the window and still cross EACH OTHER, and that is the case the policy is actually about.
+                bool floorWon = safetyLow > safetyHigh || safetyLow > wantedHigh;
                 if (floorWon)
                 {
                     autoLow = Math.Clamp(
@@ -2093,6 +2113,7 @@ public static class CrossoverAutoSetup
                         autoLow,
                         options.MaxCrossoverHz);
                     highReason = "the span that bound leaves";
+                    junctionSafety[j] = (safetyLow, double.PositiveInfinity);
                 }
                 else
                 {
@@ -2108,6 +2129,7 @@ public static class CrossoverAutoSetup
                     yielded = lowReason;
                     lowReason = "the span that bound leaves";
                     highReason = blocked;
+                    junctionSafety[j] = (0, safetyHigh);
                 }
 
                 notes.Add(new JunctionWindowNote(
@@ -2248,9 +2270,16 @@ public static class CrossoverAutoSetup
                 splitOctaves[j], invert[j] ^ invert[j + 1], Score());
             foreach (double split in SplitOffsetOctaves)
             {
-                // An offset moves the edges off the corner the sweep cleared, so the floors are read again there.
-                if (lowerSlope[j] < SlopeFloor(j, SplitCornerOf(crossoverHz[j], split, -1)) ||
-                    upperSlope[j] < SlopeFloor(j + 1, SplitCornerOf(crossoverHz[j], split, +1)))
+                // An offset moves the edges off the corner the sweep cleared, so everything that made the
+                // corner admissible — the safety bounds, the Fs floor, the group-delay budget — is asked again
+                // at the two frequencies the edges really land on.
+                double lowPassHz = SplitCornerOf(crossoverHz[j], split, -1);
+                double highPassHz = SplitCornerOf(crossoverHz[j], split, +1);
+                if (!EdgesClearSafetyBounds(j, lowPassHz, highPassHz) ||
+                    lowerSlope[j] < SlopeFloor(j, lowPassHz) ||
+                    upperSlope[j] < SlopeFloor(j + 1, highPassHz) ||
+                    !AllowedSlopes(j, junctionFamily[j], lowPassHz).Contains(lowerSlope[j]) ||
+                    !AllowedSlopes(j, junctionFamily[j], highPassHz).Contains(upperSlope[j]))
                 {
                     continue;
                 }
@@ -2291,9 +2320,9 @@ public static class CrossoverAutoSetup
             void Intersect(int junction)
             {
                 // The channel's OWN edge at that junction: its low-pass below it, its high-pass above it.
-                int floor = SlopeFloor(
-                    i, junction == i ? LowPassHz(junction) : HighPassHz(junction));
-                List<int> slopes = AllowedSlopes(junction, junctionFamily[junction], crossoverHz[junction])
+                double cornerHz = junction == i ? LowPassHz(junction) : HighPassHz(junction);
+                int floor = SlopeFloor(i, cornerHz);
+                List<int> slopes = AllowedSlopes(junction, junctionFamily[junction], cornerHz)
                     .Where(slope => slope >= floor)
                     .ToList();
                 allowed = allowed == null
@@ -2371,21 +2400,33 @@ public static class CrossoverAutoSetup
             {
                 foreach (double fc in LatticePoints(low, high))
                 {
-                    int lowerFloor = SlopeFloor(j, SplitCornerOf(fc, savedSplit, -1));
-                    int upperFloor = SlopeFloor(j + 1, SplitCornerOf(fc, savedSplit, +1));
+                    double lowPassHz = SplitCornerOf(fc, savedSplit, -1);
+                    double highPassHz = SplitCornerOf(fc, savedSplit, +1);
+                    if (!EdgesClearSafetyBounds(j, lowPassHz, highPassHz))
+                    {
+                        continue;
+                    }
+
+                    int lowerFloor = SlopeFloor(j, lowPassHz);
+                    int upperFloor = SlopeFloor(j + 1, highPassHz);
                     foreach (CrossoverFilterFamily family in options.Families)
                     {
-                        IReadOnlyList<int> slopes = AllowedSlopes(j, family, fc);
+                        // Group delay runs as 1/fc, so the two edges of a split junction do not share a budget:
+                        // the lower one carries more of it than the corner the window was drawn around.
+                        IReadOnlyList<int> lowerSlopes = AllowedSlopes(j, family, lowPassHz);
+                        IReadOnlyList<int> upperSlopes = savedSplit == 0
+                            ? lowerSlopes
+                            : AllowedSlopes(j, family, highPassHz);
                         if (options.IndependentSlopes)
                         {
-                            foreach (int lower in slopes)
+                            foreach (int lower in lowerSlopes)
                             {
                                 if (lower < lowerFloor)
                                 {
                                     continue;
                                 }
 
-                                foreach (int upper in slopes)
+                                foreach (int upper in upperSlopes)
                                 {
                                     if (upper < upperFloor)
                                     {
@@ -2397,7 +2438,8 @@ public static class CrossoverAutoSetup
                                 }
                             }
                         }
-                        else if (slopes.Contains(savedLower) && slopes.Contains(savedUpper) &&
+                        else if (lowerSlopes.Contains(savedLower) &&
+                            upperSlopes.Contains(savedUpper) &&
                             savedLower >= lowerFloor && savedUpper >= upperFloor)
                         {
                             yield return BestPolarity(

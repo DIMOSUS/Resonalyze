@@ -138,6 +138,48 @@ public sealed class CrossoverRankedProposalTests
         }
     }
 
+    /// <summary>The budget is read at the corner, and a split moves both edges off it — group delay runs as 1/fc,
+    /// so the lower edge carries more of it than the corner does. A guard rather than a reproduction: the band where
+    /// this bites is narrow (a corner between about 9.2 and 10 ms), and no fixture here lands in it.</summary>
+    [Fact]
+    public void ASplitJunction_KeepsBothEdgesWithinTheGroupDelayBudget()
+    {
+        var sources = new List<AutoSetupSource>
+        {
+            new(BandCurve(20, 200), DriverType.Subwoofer),
+            new(BandCurve(80, 1_000), DriverType.Woofer)
+        };
+        var options = new CrossoverAutoSetupOptions(
+            [CrossoverFilterFamily.LinkwitzRiley, CrossoverFilterFamily.Butterworth],
+            20,
+            20_000,
+            IndependentSlopes: true,
+            SampleRate,
+            SampleRate,
+            SubElevationDb: null,
+            [new JunctionSearchWindow(AllowSplitCorners: true)]);
+
+        IReadOnlyList<RankedCrossoverProposal> ranked =
+            CrossoverAutoSetup.ProposeRanked(sources, options, candidateCount: 50);
+
+        Assert.NotEmpty(ranked);
+        foreach (RankedCrossoverProposal candidate in ranked)
+        {
+            foreach (CrossoverProposal proposal in candidate.Proposals)
+            {
+                if (proposal.LowPassEdge is { } lp)
+                {
+                    AssertWithinGroupDelayBudget(lp, highPass: false);
+                }
+
+                if (proposal.HighPassEdge is { } hp)
+                {
+                    AssertWithinGroupDelayBudget(hp, highPass: true);
+                }
+            }
+        }
+    }
+
     private static void AssertWithinGroupDelayBudget(CrossoverEdge edge, bool highPass)
     {
         double groupDelay = CrossoverFilter.MaxGroupDelaySeconds(edge, highPass, SampleRate);

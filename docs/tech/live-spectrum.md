@@ -36,27 +36,35 @@ Where the code lives (`source/LiveSpectrum/`):
 elsewhere; `Dsp.PeriodicNoiseSynthesis` chooses the phases. The period is tiled, so a rectangular frame
 of the same length reads every bin leakage-free.
 
-- **Phases.** Random phases (the generator before this one) give a noise-like waveform: 13.0 dB crest
-  factor at 32768 samples, 13.3 dB at 65536 (48 kHz). The synthesis starts from Schroeder's phases for
-  the requested power spectrum, then runs 60 passes of clip to a shrinking ceiling, take the phases the
-  clipped period implies, restore the exact magnitudes, keeping the lowest-crest period. Measured crest:
+- **Phases.** Plain random phases (the generator before this one) give 13.0 dB of crest factor at 32768
+  samples and 13.3 dB at 65536 (48 kHz). The synthesis starts from random phases at a fixed seed, then
+  runs 150 passes of clip to a shrinking ceiling, take the phases the clipped period implies, restore the
+  exact magnitudes, keeping the lowest-crest period. Measured crest:
 
   | Length @ rate | 2048 @ 48k | 8192 @ 48k | 32768 @ 48k | 65536 @ 48k | 65536 @ 96k | 65536 @ 192k |
   | --- | --- | --- | --- | --- | --- | --- |
-  | Crest factor | 2.38 dB | 2.54 dB | 2.55 dB | 2.57 dB | 3.55 dB | 4.15 dB |
+  | Crest factor | 1.98 dB | 2.13 dB | 2.25 dB | 2.32 dB | 3.05 dB | 3.57 dB |
 
   Magnitudes stay exact to 1e-14 in the synthesis (the float playback buffer then rounds them at ~1e-7),
   so nothing the analyzer reads changes: H1 divides the excitation out, the RTA reads power, and the
   slope-compensation model is the same `1/sqrt(f)`. REW's periodic noise is
   optimised to a crest of 6 dB or less.
+- **Not Schroeder's phases.** Their closed form reaches a similar crest in one step (2.4–2.6 dB at
+  48 kHz) but the period it produces is a **chirp**: the spectral centroid of successive eighths of the
+  period climbed 0.6 → 13.9 kHz. It is audible as a repeating sweep rather than noise, and each
+  frequency then sounds at its own instant of the frame, so a moving microphone reads every frequency
+  from a different point of its path — the one thing a spatial average must not do. The random start
+  keeps the centroids flat (2.0–3.6 kHz, no trend), reaches a **lower** crest, and its mic peaks measure
+  1.4–3.7 dB below the chirp's on four of the five cabin impulse responses. `Synthesize_SpreadsEvery…`
+  pins this.
 - **Level.** The other colours are peak-normalised to 0.5 (−6 dBFS, the sweep's peak); periodic pink to
   `PeriodicPinkPeak` = 0.25 (−12 dBFS). The low crest does not reach the microphone: five cabin impulse
-  responses (a tweeter, a midrange and three bass channels) convolved with the period give a 12–16 dB crest at
-  the mic, against 9–13 dB for the random-phase period. So at 0.5 the new period's mic peaks came within
-  −0.9 to +1.2 dB of a 10 s sweep's (the random-phase one sat 12–16 dB under), a microphone gain set on
-  the sweeps had no margin left for a walk that passes closer to the driver, and a tweeter took roughly
-  the sweep's power continuously. At 0.25 the mic peaks sit 5–7 dB under the sweep's, the mic RMS is
-  5–6 dB above the random-phase period's, and the electrical RMS is about 6 dB under the sweep's. The
+  responses (a tweeter, a midrange and three bass channels) convolved with the period give a 10–13 dB
+  crest at the mic, against 9–13 dB for the unoptimised period. So at 0.5 the optimised period's mic
+  peaks came within a dB or two of a 10 s sweep's (the unoptimised one sat 12–16 dB under), a microphone
+  gain set on the sweeps had no margin left for a walk that passes closer to the driver, and a tweeter
+  took roughly the sweep's power continuously. At 0.25 the mic peaks sit 6–9 dB under the sweep's, the
+  mic RMS is 5–6 dB above the unoptimised period's, and the electrical RMS is about 6 dB under the sweep's. The
   Signal Generator's periodic pink is the same signal, so its `Level, %` of 50 plays −12 dBFS peak.
 - **Low edge.** A `1/sqrt(k)` spectrum has equal power per octave, and a long frame resolves many
   octaves under 20 Hz: below 20 Hz sat 31% of the power at 32768 samples and 36% at 65536 (48 kHz),
@@ -68,8 +76,9 @@ of the same length reads every bin leakage-free.
   1/1-octave smoothing, and a 22.4 kHz edge read that point up to 0.97 dB low (0.38 dB at 24 kHz); at
   28.3 kHz no point moves. At 44.1 and 48 kHz the edge is Nyquist; at 96 and 192 kHz it removes 6% and
   13% of the power, all ultrasonic.
-- **Cost.** The phase search takes about 250 ms at 65536 samples and 50 ms at 2048, so periods are cached
-  per length and rate for the life of the process.
+- **Cost.** The phase search takes about 0.7 s at 65536 samples and 90 ms at 2048, so periods are cached
+  per length and rate for the life of the process. More passes keep paying (300 reach 1.8 dB at 65536)
+  but cost the wait at the first run of a length.
 - **Clocks.** REW's RTA can monitor whether the input and output clocks match; Resonalyze does not. With
   two clocks the period drifts against the frame and each tone spreads into neighbouring bins. The
   banded display integrates 1/12-octave bands that hold several bins except at the lowest frequencies of

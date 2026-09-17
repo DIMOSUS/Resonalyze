@@ -819,8 +819,8 @@ Two checkboxes belong to RTA and are muted in Transfer:
 one FFT-length period of exactly pink noise, looped; being periodic with the
 analysis block it is measured **leakage-free** with a rectangular window and
 converges almost instantly, so **Window** is forced to `Rectangular` and
-**Overlap** to `Off`. Its phases are chosen for a crest factor of about 2.5 dB
-against some 13 dB for random phases, and it plays at −12 dBFS peak rather than
+**Overlap** to `Off`. Its phases are chosen for a crest factor of about 2 dB
+against some 13 dB for plain random phases, and it plays at −12 dBFS peak rather than
 the other signals' −6 dBFS: the cabin scatters those phases again, so at the
 microphone it peaks like noise, and at −6 dBFS its peaks there would match the
 sweep's and leave a gain set on the sweeps no headroom. At −12 dBFS it still

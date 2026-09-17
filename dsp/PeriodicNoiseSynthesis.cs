@@ -7,7 +7,9 @@ namespace Resonalyze.Dsp;
 /// See docs/tech/live-spectrum.md#periodic-pink-excitation.</summary>
 public static class PeriodicNoiseSynthesis
 {
-    private const int DefaultIterations = 60;
+    private const int DefaultIterations = 150;
+
+    private const int PhaseSeed = 42;
 
     /// <param name="magnitudes">Bin k's magnitude for k = 0..length/2; bin 0 is ignored (no DC).</param>
     /// <returns>The period, unnormalised; its spectrum has exactly <paramref name="magnitudes"/>.</returns>
@@ -19,7 +21,7 @@ public static class PeriodicNoiseSynthesis
             throw new ArgumentException("There must be one magnitude per bin from 0 to length/2.", nameof(magnitudes));
         }
 
-        double[] phases = SchroederPhases(magnitudes, length);
+        double[] phases = RandomPhases(length);
         double[] best = Render(magnitudes, phases, length);
         double bestCrest = CrestFactor(best);
         var spectrum = new Complex[length];
@@ -60,30 +62,15 @@ public static class PeriodicNoiseSynthesis
         return 20.0 * Math.Log10(CrestFactor(period));
     }
 
-    /// <summary>Schroeder's low-crest phases for an arbitrary power spectrum: a chirp that visits each bin once per period.</summary>
-    private static double[] SchroederPhases(IReadOnlyList<double> magnitudes, int length)
+    /// <summary>Noise-like start, fixed seed. Schroeder's closed form reaches a similar crest but is a chirp: it sweeps the band once
+    /// per period, which is audible and, on a moving microphone, reads each frequency from a different point of the path.</summary>
+    private static double[] RandomPhases(int length)
     {
-        int half = length / 2;
-        double total = 0;
-        for (int k = 1; k <= half; k++)
+        var random = new Random(PhaseSeed);
+        var phases = new double[(length / 2) + 1];
+        for (int k = 1; k < phases.Length; k++)
         {
-            total += magnitudes[k] * magnitudes[k];
-        }
-
-        var phases = new double[half + 1];
-        if (!(total > 0))
-        {
-            return phases;
-        }
-
-        // phi_k = -2π Σ_{l<k} (k - l)·p_l, with p the power fractions, carried as two running sums.
-        double sumP = 0, sumLP = 0;
-        for (int k = 1; k <= half; k++)
-        {
-            phases[k] = -2.0 * Math.PI * ((k * sumP) - sumLP);
-            double p = magnitudes[k] * magnitudes[k] / total;
-            sumP += p;
-            sumLP += k * p;
+            phases[k] = random.NextDouble() * 2.0 * Math.PI;
         }
 
         return phases;

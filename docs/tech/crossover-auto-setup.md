@@ -146,6 +146,17 @@ output near 850 Hz, but nobody crosses a woofer there. Notable floors:
 upper driver's low edge (excursion protection) and below the lower driver's high edge. The search
 window itself reaches the measured band edges.
 
+A junction's class window is the upper class's floor against the lower class's ceiling, and adjacent
+classes ABUT: a subwoofer is sensible to 80 Hz and a midbass from 80 Hz, so that intersection is a
+single frequency. Applied literally it pins the junction with nothing to search, which is what a
+five-way with two subwoofers showed in the field — `Pinned to 80 Hz` over an overlap running
+20-157 Hz. `MinClassWindowOctaves` = 1 is the narrowest a class preference may be: below it the window
+is widened about its own geometric centre, so the subwoofer/midbass junction searches 57-113 Hz. One
+octave because that is the overlap an LR24 pair produces by itself — a class window narrower than the
+crossover's own overlap cannot move the corner by even one crossover width. An EMPTY intersection is
+still returned empty, and the caller then drops the preference altogether: a class bound that
+contradicts the measurement is not a bound at all.
+
 ## Tweeter resonance floor
 
 A dome's excursion for a given SPL rises 12 dB/oct as frequency falls and peaks at Fs, so crossing at

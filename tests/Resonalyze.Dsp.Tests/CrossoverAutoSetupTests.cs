@@ -537,6 +537,26 @@ public sealed class CrossoverAutoSetupTests
     }
 
     [Fact]
+    public void TwoClassesThatOnlyTouch_StillLeaveTheJunctionSomethingToSearch()
+    {
+        // A subwoofer is sensible to 80 Hz and a midbass from 80 Hz, so their intersection is the single point
+        // where the two ranges abut. Applied literally that pins the junction with nothing to decide, which is
+        // what a five-way with two subwoofers showed in the field: "Pinned to 80 Hz" over a 20-157 Hz overlap.
+        var subwoofer = new AutoSetupSource(BandCurve(20, 150, 0), DriverType.Subwoofer);
+        var midbass = new AutoSetupSource(BandCurve(20, 1_500, 0), DriverType.Midbass);
+
+        JunctionWindowResolution window = CrossoverAutoSetup.ResolveJunctionWindow(
+            [subwoofer, midbass], 0, Options());
+
+        Assert.True(
+            window.HighHz > window.LowHz,
+            $"The junction is pinned to {window.LowHz:0} Hz, where the two classes happen to meet.");
+        Assert.InRange(80, window.LowHz, window.HighHz);
+        Assert.DoesNotContain(
+            window.Notes, note => note.Summary.StartsWith("Pinned", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Propose_WithoutASplitWindow_HandsEveryJunctionOverAtOneFrequency()
     {
         // Split corners are opt-in junction by junction: a window that does not ask for one must not produce one.

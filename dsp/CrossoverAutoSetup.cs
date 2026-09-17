@@ -634,10 +634,30 @@ public static class CrossoverAutoSetup
     };
 
     // When the classes do not overlap (e.g. 2-way woofer + tweeter) low exceeds high: no class band, the measured overlap stands.
+    /// <summary>The narrowest a class preference is allowed to be. Adjacent classes ABUT — a subwoofer ends at
+    /// 80 Hz exactly where a midbass begins — so their intersection can be a single frequency, and a window of one
+    /// frequency is not a preference, it is a pin with nothing for the search to do. One octave is the overlap an
+    /// LR24 pair produces by itself: a class window narrower than the crossover's own overlap cannot move the
+    /// corner by even one crossover width.</summary>
+    private const double MinClassWindowOctaves = 1.0;
+
+    /// <summary>Where the two classes say a junction belongs, widened about its own centre when the two ranges
+    /// only touch. An empty intersection is returned as it is: the caller drops the preference entirely.</summary>
     private static (double LowHz, double HighHz) JunctionTypeBounds(
         DriverType lower,
-        DriverType upper) =>
-        (SensibleRange(upper).LowHz, SensibleRange(lower).HighHz);
+        DriverType upper)
+    {
+        double low = SensibleRange(upper).LowHz;
+        double high = SensibleRange(lower).HighHz;
+        if (low > high || high >= low * Math.Pow(2.0, MinClassWindowOctaves))
+        {
+            return (low, high);
+        }
+
+        double centre = Math.Sqrt(low * high);
+        double half = Math.Pow(2.0, MinClassWindowOctaves / 2.0);
+        return (centre / half, centre * half);
+    }
 
     /// <summary>Estimated from the measured band low edge, floored at <see cref="TweeterFsFloorHz"/>.</summary>
     public static double TweeterResonanceHz(double measuredBandLowHz) =>

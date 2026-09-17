@@ -1,4 +1,4 @@
-﻿using Resonalyze.Dsp;
+using Resonalyze.Dsp;
 using Resonalyze.Ui;
 
 namespace Resonalyze;
@@ -46,7 +46,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
         InitializeComponent();
         // Palette value, not a designer literal: the two drifted apart once.
-        Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill);
+        Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill, Ui.UiPalette.TextOnAccent);
         PopulateControls(availableSources, availableLiveCurves);
         WireEvents();
         InitializeToolTips();
@@ -410,7 +410,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        DarkNumericUpDown? input = keyData == Keys.Enter
+        ThemedNumericUpDown? input = keyData == Keys.Enter
             ? GetFocusedNumericInput()
             : null;
         if (input != null)
@@ -422,10 +422,10 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
-    private DarkNumericUpDown? GetFocusedNumericInput() =>
+    private ThemedNumericUpDown? GetFocusedNumericInput() =>
         NumericInputs().FirstOrDefault(control => control.ContainsFocus);
 
-    private IEnumerable<DarkNumericUpDown> NumericInputs()
+    private IEnumerable<ThemedNumericUpDown> NumericInputs()
     {
         yield return blendFrequencyInput;
         yield return tiltPivotInput;
@@ -436,7 +436,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
 
     private void CommitNumericEditors()
     {
-        foreach (DarkNumericUpDown input in NumericInputs())
+        foreach (ThemedNumericUpDown input in NumericInputs())
         {
             input.CommitText();
         }
@@ -493,7 +493,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
         colorButton.Text =
             $"#{selectedColor.R:X2}{selectedColor.G:X2}{selectedColor.B:X2}";
         colorButton.FlatAppearance.BorderColor =
-            UiPalette.DialogBorder;
+            UiPalette.Border;
     }
 
     private void UpdateOpacityLabel()
@@ -502,7 +502,7 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
     }
 
     private static void SelectOperand(
-        DarkComboBox comboBox,
+        ThemedComboBox comboBox,
         int slot,
         string? curveKey,
         int fallbackIndex)
@@ -521,10 +521,10 @@ internal sealed partial class OverlayOperationSettingsDialog : Form
             : Math.Min(fallbackIndex, comboBox.Items.Count - 1);
     }
 
-    private static OverlayOperandOption? OperandOf(DarkComboBox comboBox) =>
+    private static OverlayOperandOption? OperandOf(ThemedComboBox comboBox) =>
         comboBox.SelectedItem as OverlayOperandOption;
 
-    private static int SlotOf(DarkComboBox comboBox) =>
+    private static int SlotOf(ThemedComboBox comboBox) =>
         OperandOf(comboBox) is { IsLiveCurve: false } operand ? operand.Slot : 0;
 
     private static bool SameOperand(OverlayOperandOption a, OverlayOperandOption b) =>

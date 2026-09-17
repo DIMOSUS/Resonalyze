@@ -6,14 +6,14 @@ using Resonalyze.Ui.Dialogs;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>Code-built dialogs lay out in 96-DPI pixels and must be scaled exactly once (<see cref="UiStyle.ApplyDarkDialog"/>).</summary>
+/// <summary>Code-built dialogs lay out in 96-DPI pixels and must be scaled exactly once (<see cref="UiStyle.ApplyDialogChrome"/>).</summary>
 public sealed class CodeBuiltDialogScalingTests
 {
     [Fact]
-    public void ApplyDarkDialog_DeclaresTheDpiItScalesFrom()
+    public void ApplyDialogChrome_DeclaresTheDpiItScalesFrom()
     {
         using var form = new Form();
-        UiStyle.ApplyDarkDialog(form, new Size(300, 200));
+        UiStyle.ApplyDialogChrome(form, new Size(300, 200));
 
         // Without declared dimensions the first auto-scale adopts the current ones and never scales.
         Assert.Equal(AutoScaleMode.Dpi, form.AutoScaleMode);

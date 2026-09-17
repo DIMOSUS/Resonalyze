@@ -1,4 +1,4 @@
-﻿using System.Drawing.Drawing2D;
+using System.Drawing.Drawing2D;
 
 namespace Resonalyze;
 
@@ -9,9 +9,9 @@ internal sealed class InputLevelMeterPanel : Control
         TextFormatFlags.EndEllipsis |
         TextFormatFlags.SingleLine |
         TextFormatFlags.VerticalCenter;
-    private static readonly Color SurfaceColor = UiPalette.PlotSurfaceDark;
-    private static readonly Color BorderColor = UiPalette.PlotBorder;
-    private static readonly Color TrackColor = UiPalette.PlotTrack;
+    private static readonly Color SurfaceColor = UiPalette.MeterSurface;
+    private static readonly Color BorderColor = UiPalette.MeterBorder;
+    private static readonly Color TrackColor = UiPalette.MeterTrack;
     private static readonly Color TextColor = UiPalette.MeterText;
     private static readonly Color MutedTextColor = UiPalette.MeterMutedText;
     private static readonly Color PeakHoldColor = UiPalette.MeterPeakHold;
@@ -217,21 +217,21 @@ internal sealed class InputLevelMeterPanel : Control
     {
         if (state.IsAlarming)
         {
-            return UiPalette.WarningRed;
+            return UiPalette.Danger;
         }
         if (state.HoldPeakDbFs >= HotDecibels)
         {
-            return UiPalette.WarningOrange;
+            return UiPalette.Warning;
         }
 
         return state.HoldPeakDbFs >= LoudDecibels
-            ? UiPalette.SuccessGreenAlt
-            : UiPalette.MeterLowAccent;
+            ? UiPalette.Success
+            : UiPalette.AccentMark;
     }
 
     private static Color GetPeakMarkerColor(InputLevelMeterState state) =>
         state.IsAlarming
-            ? UiPalette.ErrorSoftTint
+            ? UiPalette.ErrorTint
             : PeakHoldColor;
 
     private static double Normalize(double valueDbFs)

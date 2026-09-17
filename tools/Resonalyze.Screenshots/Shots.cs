@@ -161,10 +161,10 @@ internal static class Shots
     {
         session.SelectTab("ToolsFirConstructor");
         var panel = Reflect.Field<FirConstructorPanel>(session.Shell, "firConstructorPanel");
-        Reflect.Field<DarkComboBox>(panel, "comboBoxType").SelectedIndex = 2;
-        Reflect.Field<DarkNumericUpDown>(panel, "numericHighPassHz").Value = 250;
-        Reflect.Field<DarkNumericUpDown>(panel, "numericLowPassHz").Value = 3_000;
-        Reflect.Field<DarkNumericUpDown>(panel, "numericTaps").Value = 4_095;
+        Reflect.Field<ThemedComboBox>(panel, "comboBoxType").SelectedIndex = 2;
+        Reflect.Field<ThemedNumericUpDown>(panel, "numericHighPassHz").Value = 250;
+        Reflect.Field<ThemedNumericUpDown>(panel, "numericLowPassHz").Value = 3_000;
+        Reflect.Field<ThemedNumericUpDown>(panel, "numericTaps").Value = 4_095;
         session.Pump(3_000);
         session.CaptureScreen("fir_constructor");
     }

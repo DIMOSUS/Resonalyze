@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
 
@@ -120,8 +120,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
             ? label
             : !present ? label : resolved ? $"{label} ✓" : $"{label} ⚠";
         buttonSpatialAverage.ForeColor = !present
-            ? Color.White
-            : resolved ? Color.FromArgb(140, 220, 160) : Color.FromArgb(230, 184, 0);
+            ? UiPalette.TextPrimary
+            : resolved ? UiPalette.Success : UiPalette.Warning;
         string newLine = Environment.NewLine;
         spatialAverageTooltip = !present
             ? mode switch
@@ -158,23 +158,23 @@ public partial class VirtualCrossoverChannelControl : UserControl
                 "Click to attach it again, or to detach it.";
         tooltipHost?.SetToolTip(buttonSpatialAverage, spatialAverageTooltip);
     }
-    internal DarkNumericUpDown GainInput => numericGain;
-    internal DarkNumericUpDown DelayInput => numericDelay;
+    internal ThemedNumericUpDown GainInput => numericGain;
+    internal ThemedNumericUpDown DelayInput => numericDelay;
     internal CheckBox InvertCheckBox => checkBoxInvert;
     internal CheckBox MonoCheckBox => checkBoxMono;
-    internal DarkComboBox ZoneComboBox => comboBoxZone;
-    internal DarkComboBox CrossoverKindComboBox => comboBoxCrossoverKind;
-    internal DarkNumericUpDown HighPassFrequencyInput => numericHighPassHz;
-    internal DarkComboBox HighPassFamilyComboBox => comboBoxHighPassFamily;
-    internal DarkComboBox HighPassSlopeComboBox => comboBoxHighPassSlope;
-    internal DarkNumericUpDown LowPassFrequencyInput => numericLowPassHz;
-    internal DarkComboBox LowPassFamilyComboBox => comboBoxLowPassFamily;
-    internal DarkComboBox LowPassSlopeComboBox => comboBoxLowPassSlope;
-    internal DarkNumericUpDown HighPassRippleInput => numericHighPassRipple;
-    internal DarkNumericUpDown LowPassRippleInput => numericLowPassRipple;
+    internal ThemedComboBox ZoneComboBox => comboBoxZone;
+    internal ThemedComboBox CrossoverKindComboBox => comboBoxCrossoverKind;
+    internal ThemedNumericUpDown HighPassFrequencyInput => numericHighPassHz;
+    internal ThemedComboBox HighPassFamilyComboBox => comboBoxHighPassFamily;
+    internal ThemedComboBox HighPassSlopeComboBox => comboBoxHighPassSlope;
+    internal ThemedNumericUpDown LowPassFrequencyInput => numericLowPassHz;
+    internal ThemedComboBox LowPassFamilyComboBox => comboBoxLowPassFamily;
+    internal ThemedComboBox LowPassSlopeComboBox => comboBoxLowPassSlope;
+    internal ThemedNumericUpDown HighPassRippleInput => numericHighPassRipple;
+    internal ThemedNumericUpDown LowPassRippleInput => numericLowPassRipple;
     internal Button MuteButton => buttonMute;
     internal Button CollapseButton => buttonCollapse;
-    internal DarkNumericUpDown PhaseInput => numericPhase;
+    internal ThemedNumericUpDown PhaseInput => numericPhase;
     internal Label PhaseLabel => labelPhase;
     internal Label PhaseInfoLabel => labelPhaseInfo;
     internal Button FirButton => buttonFir;
@@ -319,8 +319,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
             muted = value;
             buttonMute.Text = value ? "🔇" : "🔈";
             buttonMute.ForeColor = value
-                ? Color.FromArgb(255, 120, 120)
-                : Color.White;
+                ? UiPalette.Error
+                : UiPalette.TextPrimary;
         }
     }
 
@@ -433,7 +433,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             this,
             e.Graphics,
             RoundedSurface.DefaultCornerRadius,
-            UiPalette.DialogBorder);
+            UiPalette.Border);
 
         base.OnPaint(e);
     }
@@ -443,9 +443,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
     {
         (labelMeasuredPolarity.Text, labelMeasuredPolarity.ForeColor) = polarity switch
         {
-            PolarityEstimate.Positive => ("IR: Normal", Color.FromArgb(96, 210, 120)),
-            PolarityEstimate.Negative => ("IR: Inverted", Color.FromArgb(255, 120, 120)),
-            _ => ("IR: Unknown", Color.FromArgb(170, 176, 190))
+            PolarityEstimate.Positive => ("IR: Normal", UiPalette.Success),
+            PolarityEstimate.Negative => ("IR: Inverted", UiPalette.Error),
+            _ => ("IR: Unknown", UiPalette.TextMuted)
         };
     }
 
@@ -660,7 +660,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         InitializeFamilyCombo(comboBoxLowPassFamily, comboBoxLowPassSlope);
     }
 
-    private void InitializeFamilyCombo(DarkComboBox familyComboBox, DarkComboBox slopeComboBox)
+    private void InitializeFamilyCombo(ThemedComboBox familyComboBox, ThemedComboBox slopeComboBox)
     {
         familyComboBox.Items.AddRange(
         [
@@ -694,7 +694,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     // LR exists only in 12/24/36/48; the current slope is kept when the new family supports it.
-    private static void PopulateSlopes(DarkComboBox familyComboBox, DarkComboBox slopeComboBox)
+    private static void PopulateSlopes(ThemedComboBox familyComboBox, ThemedComboBox slopeComboBox)
     {
         CrossoverFilterFamily family =
             familyComboBox.SelectedItem is CrossoverFilterFamily selected
@@ -786,10 +786,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     private void WireEdgeEvents(
-        DarkNumericUpDown frequencyInput,
-        DarkComboBox familyComboBox,
-        DarkComboBox slopeComboBox,
-        DarkNumericUpDown rippleInput)
+        ThemedNumericUpDown frequencyInput,
+        ThemedComboBox familyComboBox,
+        ThemedComboBox slopeComboBox,
+        ThemedNumericUpDown rippleInput)
     {
         frequencyInput.ValueChanged += (_, _) =>
         {
@@ -849,8 +849,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     private static void UpdateRippleAvailability(
-        DarkNumericUpDown rippleInput,
-        DarkComboBox familyComboBox,
+        ThemedNumericUpDown rippleInput,
+        ThemedComboBox familyComboBox,
         bool edgeActive)
     {
         bool chebyshev = familyComboBox.SelectedItem is CrossoverFilterFamily.Chebyshev;
@@ -907,7 +907,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             info = rateMismatch
                 ? $"{firKernel.Length} taps · file {FormatRate(firKernel.DeclaredSampleRateHz!.Value)} ≠ {FormatRate(processorSampleRateHz)}"
                 : $"{firKernel.Length} taps · {peakMs:0.0} ms";
-            infoColor = rateMismatch ? UiPalette.WarningAmber : UiPalette.TextSecondary;
+            infoColor = rateMismatch ? UiPalette.Warning : UiPalette.TextSecondary;
             infoTip =
                 $"{firKernel.Length} taps, {lengthMs:0.0} ms at {FormatRate(processorSampleRateHz)}; " +
                 $"peak at {peakMs:0.00} ms — roughly the bulk delay of a linear-phase kernel," +
@@ -944,9 +944,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
         string? conflict = FirConflict;
         buttonFir.Text = buttonText;
-        buttonFir.ForeColor = conflict != null ? UiPalette.WarningRed : Color.White;
+        buttonFir.ForeColor = conflict != null ? UiPalette.Danger : UiPalette.TextPrimary;
         labelFirInfo.Text = info;
-        labelFirInfo.ForeColor = conflict != null ? UiPalette.ErrorSoft : infoColor;
+        labelFirInfo.ForeColor = conflict != null ? UiPalette.Error : infoColor;
         if (tooltipHost is { } host)
         {
             host.SetToolTip(
@@ -987,7 +987,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             text = capped
                 ? $"ref {FormatHz(reference)} → {delivered:0.0}° min"
                 : $"ref {FormatHz(reference)} → AP2 {FormatHz(realized.FrequencyHz)}";
-            color = capped ? UiPalette.WarningAmber : UiPalette.TextSecondary;
+            color = capped ? UiPalette.Warning : UiPalette.TextSecondary;
         }
 
         labelPhaseInfo.Text = text;
@@ -1060,10 +1060,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
         "of path — the ruler check.";
 
     private static CrossoverEdge ReadEdge(
-        DarkNumericUpDown frequencyInput,
-        DarkComboBox familyComboBox,
-        DarkComboBox slopeComboBox,
-        DarkNumericUpDown rippleInput)
+        ThemedNumericUpDown frequencyInput,
+        ThemedComboBox familyComboBox,
+        ThemedComboBox slopeComboBox,
+        ThemedNumericUpDown rippleInput)
     {
         CrossoverFilterFamily family =
             familyComboBox.SelectedItem is CrossoverFilterFamily selected

@@ -118,7 +118,7 @@ internal sealed class MainCommandController
         else
         {
             button.BackColor = UiPalette.ButtonBackground;
-            button.ForeColor = Color.White;
+            button.ForeColor = UiPalette.TextPrimary;
             button.Enabled = true;
         }
     }
@@ -129,7 +129,7 @@ internal sealed class MainCommandController
         button.BackColor = pressed
             ? UiPalette.ButtonPressedBackground
             : UiPalette.ButtonBackground;
-        button.ForeColor = Color.White;
+        button.ForeColor = UiPalette.TextPrimary;
         button.Padding = pressed ? new Padding(1, 1, 0, 0) : Padding.Empty;
     }
 }

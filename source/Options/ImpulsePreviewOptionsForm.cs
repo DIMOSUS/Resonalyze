@@ -12,8 +12,8 @@ public class ImpulsePreviewOptionsForm : Form
     protected readonly WrappingToolTip toolTip = new();
     private bool initializingControls;
 
-    private (DarkNumericUpDown Window, DarkNumericUpDown Left, DarkNumericUpDown Right)? lengths;
-    private (DarkNumericUpDown Offset, CheckBox AutoFit, Label MinFrequency)? gate;
+    private (ThemedNumericUpDown Window, ThemedNumericUpDown Left, ThemedNumericUpDown Right)? lengths;
+    private (ThemedNumericUpDown Offset, CheckBox AutoFit, Label MinFrequency)? gate;
 
     public ImpulsePreviewOptionsForm()
     {
@@ -70,9 +70,9 @@ public class ImpulsePreviewOptionsForm : Form
 
     /// <summary>Call once from the constructor. <paramref name="afterWindowChanged"/>: extra work a window edit implies.</summary>
     protected void BindTukeyWindowControls(
-        DarkNumericUpDown window,
-        DarkNumericUpDown left,
-        DarkNumericUpDown right,
+        ThemedNumericUpDown window,
+        ThemedNumericUpDown left,
+        ThemedNumericUpDown right,
         Action? afterWindowChanged = null)
     {
         lengths = (window, left, right);
@@ -95,11 +95,11 @@ public class ImpulsePreviewOptionsForm : Form
     }
 
     protected void BindGateControls(
-        DarkNumericUpDown offset,
+        ThemedNumericUpDown offset,
         CheckBox autoFit,
-        DarkNumericUpDown left,
-        DarkNumericUpDown window,
-        DarkNumericUpDown right,
+        ThemedNumericUpDown left,
+        ThemedNumericUpDown window,
+        ThemedNumericUpDown right,
         Label minFrequency)
     {
         gate = (offset, autoFit, minFrequency);

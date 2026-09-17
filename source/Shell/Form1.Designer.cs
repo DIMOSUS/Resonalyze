@@ -1,4 +1,4 @@
-﻿namespace Resonalyze
+namespace Resonalyze
 {
     partial class Form1
     {
@@ -37,7 +37,7 @@
             overlayPanel1 = new RoundedPanel();
             buttonSaveOverlay = new ReleaseClickButton();
             labelOverlay1 = new Label();
-            numericUpDown1 = new DarkNumericUpDown();
+            numericUpDown1 = new ThemedNumericUpDown();
             checkBox1 = new ReleaseClickCheckBox();
             buttonRecordOpt = new ReleaseClickButton();
             buttonSave = new ReleaseClickButton();
@@ -70,10 +70,10 @@
             // buttonRecord
             // 
             buttonRecord.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonRecord.BackColor = Color.FromArgb(50, 55, 80);
+            buttonRecord.BackColor = UiPalette.ButtonBackground;
             buttonRecord.FlatStyle = FlatStyle.Popup;
             buttonRecord.Font = new Font("Segoe UI", 10F);
-            buttonRecord.ForeColor = Color.White;
+            buttonRecord.ForeColor = UiPalette.TextPrimary;
             buttonRecord.Location = new Point(3, 3);
             buttonRecord.Name = "buttonRecord";
             buttonRecord.Size = new Size(210, 23);
@@ -121,9 +121,9 @@
             // 
             // buttonSaveOverlay
             // 
-            buttonSaveOverlay.BackColor = Color.FromArgb(50, 55, 100);
+            buttonSaveOverlay.BackColor = UiPalette.ButtonBackground;
             buttonSaveOverlay.FlatStyle = FlatStyle.Popup;
-            buttonSaveOverlay.ForeColor = Color.White;
+            buttonSaveOverlay.ForeColor = UiPalette.TextPrimary;
             buttonSaveOverlay.Location = new Point(23, 3);
             buttonSaveOverlay.Name = "buttonSaveOverlay";
             buttonSaveOverlay.Size = new Size(38, 19);
@@ -148,9 +148,9 @@
             //
             // numericUpDown1
             // 
-            numericUpDown1.BackColor = Color.FromArgb(50, 55, 80);
+            numericUpDown1.BackColor = UiPalette.ButtonBackground;
             numericUpDown1.DecimalPlaces = 0;
-            numericUpDown1.ForeColor = Color.White;
+            numericUpDown1.ForeColor = UiPalette.TextPrimary;
             numericUpDown1.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericUpDown1.Location = new Point(145, 3);
             numericUpDown1.Maximum = new decimal(new int[] { 180, 0, 0, 0 });
@@ -177,10 +177,10 @@
             // buttonRecordOpt
             // 
             buttonRecordOpt.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonRecordOpt.BackColor = Color.FromArgb(50, 55, 80);
+            buttonRecordOpt.BackColor = UiPalette.ButtonBackground;
             buttonRecordOpt.FlatStyle = FlatStyle.Popup;
             buttonRecordOpt.Font = new Font("Segoe UI Emoji", 10F);
-            buttonRecordOpt.ForeColor = Color.White;
+            buttonRecordOpt.ForeColor = UiPalette.TextPrimary;
             buttonRecordOpt.Location = new Point(3, 32);
             buttonRecordOpt.Name = "buttonRecordOpt";
             buttonRecordOpt.Size = new Size(210, 24);
@@ -193,10 +193,10 @@
             // buttonSave
             // 
             buttonSave.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonSave.BackColor = Color.FromArgb(50, 55, 80);
+            buttonSave.BackColor = UiPalette.ButtonBackground;
             buttonSave.FlatStyle = FlatStyle.Popup;
             buttonSave.Font = new Font("Segoe UI", 10F);
-            buttonSave.ForeColor = Color.White;
+            buttonSave.ForeColor = UiPalette.TextPrimary;
             buttonSave.Location = new Point(3, 62);
             buttonSave.Name = "buttonSave";
             buttonSave.Size = new Size(102, 23);
@@ -210,10 +210,10 @@
             // buttonLoad
             // 
             buttonLoad.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonLoad.BackColor = Color.FromArgb(50, 55, 80);
+            buttonLoad.BackColor = UiPalette.ButtonBackground;
             buttonLoad.FlatStyle = FlatStyle.Popup;
             buttonLoad.Font = new Font("Segoe UI", 10F);
-            buttonLoad.ForeColor = Color.White;
+            buttonLoad.ForeColor = UiPalette.TextPrimary;
             buttonLoad.Location = new Point(111, 62);
             buttonLoad.Name = "buttonLoad";
             buttonLoad.Size = new Size(102, 23);
@@ -227,10 +227,10 @@
             // buttonOverlayShowAll
             // 
             buttonOverlayShowAll.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            buttonOverlayShowAll.BackColor = Color.FromArgb(50, 55, 80);
+            buttonOverlayShowAll.BackColor = UiPalette.ButtonBackground;
             buttonOverlayShowAll.FlatStyle = FlatStyle.Popup;
             buttonOverlayShowAll.Font = new Font("Segoe UI", 10F);
-            buttonOverlayShowAll.ForeColor = Color.White;
+            buttonOverlayShowAll.ForeColor = UiPalette.TextPrimary;
             buttonOverlayShowAll.Location = new Point(1264, 453);
             buttonOverlayShowAll.Name = "buttonOverlayShowAll";
             buttonOverlayShowAll.Size = new Size(106, 23);
@@ -244,10 +244,10 @@
             // buttonOverlayHideAll
             // 
             buttonOverlayHideAll.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            buttonOverlayHideAll.BackColor = Color.FromArgb(50, 55, 80);
+            buttonOverlayHideAll.BackColor = UiPalette.ButtonBackground;
             buttonOverlayHideAll.FlatStyle = FlatStyle.Popup;
             buttonOverlayHideAll.Font = new Font("Segoe UI", 10F);
-            buttonOverlayHideAll.ForeColor = Color.White;
+            buttonOverlayHideAll.ForeColor = UiPalette.TextPrimary;
             buttonOverlayHideAll.Location = new Point(1376, 453);
             buttonOverlayHideAll.Name = "buttonOverlayHideAll";
             buttonOverlayHideAll.Size = new Size(106, 23);
@@ -261,10 +261,10 @@
             // buttonCurrentModeSettings
             // 
             buttonCurrentModeSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonCurrentModeSettings.BackColor = Color.FromArgb(50, 55, 80);
+            buttonCurrentModeSettings.BackColor = UiPalette.ButtonBackground;
             buttonCurrentModeSettings.FlatStyle = FlatStyle.Popup;
             buttonCurrentModeSettings.Font = new Font("Segoe UI Emoji", 10F);
-            buttonCurrentModeSettings.ForeColor = Color.White;
+            buttonCurrentModeSettings.ForeColor = UiPalette.TextPrimary;
             buttonCurrentModeSettings.Location = new Point(1268, 338);
             buttonCurrentModeSettings.Name = "buttonCurrentModeSettings";
             buttonCurrentModeSettings.Size = new Size(210, 23);
@@ -292,10 +292,10 @@
             // buttonCompare
             // 
             buttonCompare.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonCompare.BackColor = Color.FromArgb(50, 55, 80);
+            buttonCompare.BackColor = UiPalette.ButtonBackground;
             buttonCompare.FlatStyle = FlatStyle.Popup;
             buttonCompare.Font = new Font("Segoe UI Emoji", 9.75F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            buttonCompare.ForeColor = Color.White;
+            buttonCompare.ForeColor = UiPalette.TextPrimary;
             buttonCompare.Location = new Point(3, 91);
             buttonCompare.Name = "buttonCompare";
             buttonCompare.Size = new Size(210, 23);
@@ -307,10 +307,10 @@
             // buttonRewExport
             // 
             buttonRewExport.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonRewExport.BackColor = Color.FromArgb(50, 55, 80);
+            buttonRewExport.BackColor = UiPalette.ButtonBackground;
             buttonRewExport.FlatStyle = FlatStyle.Popup;
             buttonRewExport.Font = new Font("Segoe UI", 10F);
-            buttonRewExport.ForeColor = Color.White;
+            buttonRewExport.ForeColor = UiPalette.TextPrimary;
             buttonRewExport.Location = new Point(3, 120);
             buttonRewExport.Name = "buttonRewExport";
             buttonRewExport.Size = new Size(102, 23);
@@ -324,10 +324,10 @@
             // buttonRewImport
             //
             buttonRewImport.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonRewImport.BackColor = Color.FromArgb(50, 55, 80);
+            buttonRewImport.BackColor = UiPalette.ButtonBackground;
             buttonRewImport.FlatStyle = FlatStyle.Popup;
             buttonRewImport.Font = new Font("Segoe UI", 10F);
-            buttonRewImport.ForeColor = Color.White;
+            buttonRewImport.ForeColor = UiPalette.TextPrimary;
             buttonRewImport.Location = new Point(111, 120);
             buttonRewImport.Name = "buttonRewImport";
             buttonRewImport.Size = new Size(102, 23);
@@ -341,9 +341,9 @@
             // inputLevelMeterPanel
             // 
             inputLevelMeterPanel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            inputLevelMeterPanel.BackColor = Color.FromArgb(38, 42, 52);
+            inputLevelMeterPanel.BackColor = UiPalette.MeterSurface;
             inputLevelMeterPanel.Font = new Font("Segoe UI", 8.75F, FontStyle.Bold);
-            inputLevelMeterPanel.ForeColor = Color.FromArgb(225, 230, 240);
+            inputLevelMeterPanel.ForeColor = UiPalette.MeterText;
             inputLevelMeterPanel.Location = new Point(1264, 52);
             inputLevelMeterPanel.Name = "inputLevelMeterPanel";
             inputLevelMeterPanel.Size = new Size(218, 88);
@@ -352,10 +352,10 @@
             // buttonHistory
             // 
             buttonHistory.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            buttonHistory.BackColor = Color.FromArgb(50, 55, 80);
+            buttonHistory.BackColor = UiPalette.ButtonBackground;
             buttonHistory.FlatStyle = FlatStyle.Popup;
             buttonHistory.Font = new Font("Segoe UI Emoji", 10F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            buttonHistory.ForeColor = Color.White;
+            buttonHistory.ForeColor = UiPalette.TextPrimary;
             buttonHistory.Location = new Point(1268, 309);
             buttonHistory.Name = "buttonHistory";
             buttonHistory.Size = new Size(210, 23);
@@ -368,7 +368,7 @@
             // chromeTitleBar
             // 
             chromeTitleBar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            chromeTitleBar.BackColor = Color.FromArgb(28, 30, 36);
+            chromeTitleBar.BackColor = UiPalette.TitleBarBackground;
             chromeTitleBar.Location = new Point(0, 0);
             chromeTitleBar.Name = "chromeTitleBar";
             chromeTitleBar.Size = new Size(1494, 40);
@@ -378,10 +378,10 @@
             // 
             timeAlignmentPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             timeAlignmentPanel.AutoScroll = true;
-            timeAlignmentPanel.BackColor = Color.FromArgb(40, 44, 54);
+            timeAlignmentPanel.BackColor = UiPalette.ShellSurface;
             timeAlignmentPanel.BorderStyle = BorderStyle.FixedSingle;
             timeAlignmentPanel.Font = new Font("Segoe UI", 9F);
-            timeAlignmentPanel.ForeColor = Color.White;
+            timeAlignmentPanel.ForeColor = UiPalette.TextPrimary;
             timeAlignmentPanel.Location = new Point(12, 52);
             timeAlignmentPanel.Name = "timeAlignmentPanel";
             timeAlignmentPanel.Size = new Size(1246, 768);
@@ -392,10 +392,10 @@
             // 
             eqWizardPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             eqWizardPanel.AutoScroll = true;
-            eqWizardPanel.BackColor = Color.FromArgb(40, 44, 54);
+            eqWizardPanel.BackColor = UiPalette.ShellSurface;
             eqWizardPanel.BorderStyle = BorderStyle.FixedSingle;
             eqWizardPanel.Font = new Font("Segoe UI", 9F);
-            eqWizardPanel.ForeColor = Color.White;
+            eqWizardPanel.ForeColor = UiPalette.TextPrimary;
             eqWizardPanel.Location = new Point(12, 52);
             eqWizardPanel.Name = "eqWizardPanel";
             eqWizardPanel.Size = new Size(1246, 768);
@@ -406,10 +406,10 @@
             // 
             signalGeneratorPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             signalGeneratorPanel.AutoScroll = true;
-            signalGeneratorPanel.BackColor = Color.FromArgb(40, 44, 54);
+            signalGeneratorPanel.BackColor = UiPalette.ShellSurface;
             signalGeneratorPanel.BorderStyle = BorderStyle.FixedSingle;
             signalGeneratorPanel.Font = new Font("Segoe UI", 9F);
-            signalGeneratorPanel.ForeColor = Color.White;
+            signalGeneratorPanel.ForeColor = UiPalette.TextPrimary;
             signalGeneratorPanel.Location = new Point(12, 52);
             signalGeneratorPanel.Name = "signalGeneratorPanel";
             signalGeneratorPanel.Size = new Size(1246, 768);
@@ -420,10 +420,10 @@
             // 
             virtualCrossoverPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             virtualCrossoverPanel.AutoScroll = true;
-            virtualCrossoverPanel.BackColor = Color.FromArgb(40, 44, 54);
+            virtualCrossoverPanel.BackColor = UiPalette.ShellSurface;
             virtualCrossoverPanel.BorderStyle = BorderStyle.FixedSingle;
             virtualCrossoverPanel.Font = new Font("Segoe UI", 9F);
-            virtualCrossoverPanel.ForeColor = Color.White;
+            virtualCrossoverPanel.ForeColor = UiPalette.TextPrimary;
             virtualCrossoverPanel.Location = new Point(12, 52);
             virtualCrossoverPanel.Name = "virtualCrossoverPanel";
             virtualCrossoverPanel.Size = new Size(1246, 768);
@@ -434,10 +434,10 @@
             //
             firConstructorPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             firConstructorPanel.AutoScroll = true;
-            firConstructorPanel.BackColor = Color.FromArgb(40, 44, 54);
+            firConstructorPanel.BackColor = UiPalette.ShellSurface;
             firConstructorPanel.BorderStyle = BorderStyle.FixedSingle;
             firConstructorPanel.Font = new Font("Segoe UI", 9F);
-            firConstructorPanel.ForeColor = Color.White;
+            firConstructorPanel.ForeColor = UiPalette.TextPrimary;
             firConstructorPanel.Location = new Point(12, 52);
             firConstructorPanel.Name = "firConstructorPanel";
             firConstructorPanel.Size = new Size(1246, 768);
@@ -447,10 +447,10 @@
             // eqResultsPanel
             // 
             eqResultsPanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            eqResultsPanel.BackColor = Color.FromArgb(20, 22, 30);
+            eqResultsPanel.BackColor = UiPalette.PanelSurfaceDeep;
             eqResultsPanel.BorderStyle = BorderStyle.FixedSingle;
             eqResultsPanel.Font = new Font("Segoe UI", 9F);
-            eqResultsPanel.ForeColor = Color.FromArgb(225, 228, 235);
+            eqResultsPanel.ForeColor = UiPalette.TextValue;
             eqResultsPanel.Location = new Point(1268, 479);
             eqResultsPanel.Name = "eqResultsPanel";
             eqResultsPanel.Padding = new Padding(8);
@@ -461,10 +461,10 @@
             // virtualDspMetricLabel
             // 
             virtualDspMetricLabel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            virtualDspMetricLabel.BackColor = Color.FromArgb(20, 22, 30);
+            virtualDspMetricLabel.BackColor = UiPalette.PanelSurfaceDeep;
             virtualDspMetricLabel.BorderStyle = BorderStyle.FixedSingle;
             virtualDspMetricLabel.Font = new Font("Consolas", 9F);
-            virtualDspMetricLabel.ForeColor = Color.FromArgb(230, 184, 0);
+            virtualDspMetricLabel.ForeColor = UiPalette.Warning;
             // High in the column, not beside the plot: Virtual DSP hides the whole
             // capture block (meters, History, Mode Settings), so everything from the
             // warning box down is this read-out's to use — and it needs the room. The
@@ -483,10 +483,10 @@
             // 
             virtualDspWarningLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             virtualDspWarningLabel.AutoSize = true;
-            virtualDspWarningLabel.BackColor = Color.FromArgb(20, 22, 30);
+            virtualDspWarningLabel.BackColor = UiPalette.PanelSurfaceDeep;
             virtualDspWarningLabel.BorderStyle = BorderStyle.FixedSingle;
             virtualDspWarningLabel.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            virtualDspWarningLabel.ForeColor = Color.FromArgb(235, 110, 95);
+            virtualDspWarningLabel.ForeColor = UiPalette.Error;
             virtualDspWarningLabel.Location = new Point(1268, 52);
             virtualDspWarningLabel.MaximumSize = new Size(214, 0);
             virtualDspWarningLabel.MinimumSize = new Size(214, 0);
@@ -499,7 +499,7 @@
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             ClientSize = new Size(1494, 832);
             Controls.Add(overlays);
             Controls.Add(chromeTitleBar);
@@ -551,7 +551,7 @@
         private ReleaseClickButton buttonOverlayHideAll;
         private RoundedPanel panel1;
         private InputLevelMeterPanel inputLevelMeterPanel;
-        private DarkNumericUpDown numericUpDown1;
+        private ThemedNumericUpDown numericUpDown1;
         private ReleaseClickButton buttonHistory;
         private ChromeTitleBar chromeTitleBar;
         private TimeAlignmentPanel timeAlignmentPanel;

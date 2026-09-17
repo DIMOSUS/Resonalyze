@@ -21,38 +21,38 @@ namespace Resonalyze
             nameLabel = new Label();
             nameTextBox = new TextBox();
             sourceLabel = new Label();
-            sourceComboBox = new DarkComboBox();
+            sourceComboBox = new ThemedComboBox();
             presetLabel = new Label();
-            presetComboBox = new DarkComboBox();
+            presetComboBox = new ThemedComboBox();
             toleranceLabel = new Label();
-            toleranceInput = new DarkNumericUpDown();
+            toleranceInput = new ThemedNumericUpDown();
             tiltLabel = new Label();
-            tiltInput = new DarkNumericUpDown();
+            tiltInput = new ThemedNumericUpDown();
             deviationLabel = new Label();
-            deviationModeComboBox = new DarkComboBox();
+            deviationModeComboBox = new ThemedComboBox();
             gainHeaderLabel = new Label();
             freqHeaderLabel = new Label();
             widthHeaderLabel = new Label();
             bassLabel = new Label();
-            bassGainInput = new DarkNumericUpDown();
-            bassFrequencyInput = new DarkNumericUpDown();
-            bassWidthInput = new DarkNumericUpDown();
+            bassGainInput = new ThemedNumericUpDown();
+            bassFrequencyInput = new ThemedNumericUpDown();
+            bassWidthInput = new ThemedNumericUpDown();
             trebleLabel = new Label();
-            trebleGainInput = new DarkNumericUpDown();
-            trebleFrequencyInput = new DarkNumericUpDown();
-            trebleWidthInput = new DarkNumericUpDown();
+            trebleGainInput = new ThemedNumericUpDown();
+            trebleFrequencyInput = new ThemedNumericUpDown();
+            trebleWidthInput = new ThemedNumericUpDown();
             presenceLabel = new Label();
-            presenceGainInput = new DarkNumericUpDown();
-            presenceFrequencyInput = new DarkNumericUpDown();
-            presenceWidthInput = new DarkNumericUpDown();
+            presenceGainInput = new ThemedNumericUpDown();
+            presenceFrequencyInput = new ThemedNumericUpDown();
+            presenceWidthInput = new ThemedNumericUpDown();
             colorLabel = new Label();
             colorButton = new ReleaseClickButton();
             thicknessLabel = new Label();
-            thicknessInput = new DarkNumericUpDown();
+            thicknessInput = new ThemedNumericUpDown();
             styleLabel = new Label();
-            styleComboBox = new DarkComboBox();
+            styleComboBox = new ThemedComboBox();
             smoothingLabel = new Label();
-            smoothingComboBox = new DarkComboBox();
+            smoothingComboBox = new ThemedComboBox();
             opacityLabel = new Label();
             opacityTrackBar = new TrackBar();
             opacityValueLabel = new Label();
@@ -79,7 +79,7 @@ namespace Resonalyze
             // nameLabel
             // 
             nameLabel.AutoSize = true;
-            nameLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            nameLabel.ForeColor = UiPalette.TextSecondary;
             nameLabel.Location = new Point(20, 16);
             nameLabel.Name = "nameLabel";
             nameLabel.Size = new Size(39, 15);
@@ -88,8 +88,8 @@ namespace Resonalyze
             // 
             // nameTextBox
             // 
-            nameTextBox.BackColor = Color.FromArgb(55, 58, 65);
-            nameTextBox.ForeColor = Color.White;
+            nameTextBox.BackColor = UiPalette.InputSurface;
+            nameTextBox.ForeColor = UiPalette.TextPrimary;
             nameTextBox.Location = new Point(20, 36);
             nameTextBox.MaxLength = 80;
             nameTextBox.Name = "nameTextBox";
@@ -99,7 +99,7 @@ namespace Resonalyze
             // sourceLabel
             // 
             sourceLabel.AutoSize = true;
-            sourceLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            sourceLabel.ForeColor = UiPalette.TextSecondary;
             sourceLabel.Location = new Point(20, 68);
             sourceLabel.Name = "sourceLabel";
             sourceLabel.Size = new Size(43, 15);
@@ -108,8 +108,8 @@ namespace Resonalyze
             // 
             // sourceComboBox
             // 
-            sourceComboBox.BackColor = Color.FromArgb(55, 58, 65);
-            sourceComboBox.ForeColor = Color.White;
+            sourceComboBox.BackColor = UiPalette.InputSurface;
+            sourceComboBox.ForeColor = UiPalette.TextPrimary;
             sourceComboBox.Location = new Point(20, 88);
             sourceComboBox.Margin = new Padding(0);
             sourceComboBox.MinimumSize = new Size(36, 19);
@@ -120,7 +120,7 @@ namespace Resonalyze
             // presetLabel
             // 
             presetLabel.AutoSize = true;
-            presetLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            presetLabel.ForeColor = UiPalette.TextSecondary;
             presetLabel.Location = new Point(20, 120);
             presetLabel.Name = "presetLabel";
             presetLabel.Size = new Size(39, 15);
@@ -129,8 +129,8 @@ namespace Resonalyze
             // 
             // presetComboBox
             // 
-            presetComboBox.BackColor = Color.FromArgb(55, 58, 65);
-            presetComboBox.ForeColor = Color.White;
+            presetComboBox.BackColor = UiPalette.InputSurface;
+            presetComboBox.ForeColor = UiPalette.TextPrimary;
             presetComboBox.Location = new Point(20, 140);
             presetComboBox.Margin = new Padding(0);
             presetComboBox.MinimumSize = new Size(36, 19);
@@ -141,7 +141,7 @@ namespace Resonalyze
             // toleranceLabel
             // 
             toleranceLabel.AutoSize = true;
-            toleranceLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            toleranceLabel.ForeColor = UiPalette.TextSecondary;
             toleranceLabel.Location = new Point(260, 120);
             toleranceLabel.Name = "toleranceLabel";
             toleranceLabel.Size = new Size(83, 15);
@@ -150,9 +150,9 @@ namespace Resonalyze
             // 
             // toleranceInput
             // 
-            toleranceInput.BackColor = Color.FromArgb(55, 58, 65);
+            toleranceInput.BackColor = UiPalette.InputSurface;
             toleranceInput.DecimalPlaces = 1;
-            toleranceInput.ForeColor = Color.White;
+            toleranceInput.ForeColor = UiPalette.TextPrimary;
             toleranceInput.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             toleranceInput.Location = new Point(260, 140);
             toleranceInput.Maximum = new decimal(new int[] { 12, 0, 0, 0 });
@@ -168,7 +168,7 @@ namespace Resonalyze
             // tiltLabel
             // 
             tiltLabel.AutoSize = true;
-            tiltLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            tiltLabel.ForeColor = UiPalette.TextSecondary;
             tiltLabel.Location = new Point(20, 176);
             tiltLabel.Name = "tiltLabel";
             tiltLabel.Size = new Size(63, 15);
@@ -177,9 +177,9 @@ namespace Resonalyze
             // 
             // tiltInput
             // 
-            tiltInput.BackColor = Color.FromArgb(55, 58, 65);
+            tiltInput.BackColor = UiPalette.InputSurface;
             tiltInput.DecimalPlaces = 1;
-            tiltInput.ForeColor = Color.White;
+            tiltInput.ForeColor = UiPalette.TextPrimary;
             tiltInput.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             tiltInput.Location = new Point(20, 196);
             tiltInput.Maximum = new decimal(new int[] { 6, 0, 0, 0 });
@@ -195,7 +195,7 @@ namespace Resonalyze
             // deviationLabel
             // 
             deviationLabel.AutoSize = true;
-            deviationLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            deviationLabel.ForeColor = UiPalette.TextSecondary;
             deviationLabel.Location = new Point(260, 176);
             deviationLabel.Name = "deviationLabel";
             deviationLabel.Size = new Size(57, 15);
@@ -204,8 +204,8 @@ namespace Resonalyze
             // 
             // deviationModeComboBox
             // 
-            deviationModeComboBox.BackColor = Color.FromArgb(55, 58, 65);
-            deviationModeComboBox.ForeColor = Color.White;
+            deviationModeComboBox.BackColor = UiPalette.InputSurface;
+            deviationModeComboBox.ForeColor = UiPalette.TextPrimary;
             deviationModeComboBox.Location = new Point(260, 196);
             deviationModeComboBox.Margin = new Padding(0);
             deviationModeComboBox.MinimumSize = new Size(36, 19);
@@ -216,7 +216,7 @@ namespace Resonalyze
             // gainHeaderLabel
             // 
             gainHeaderLabel.AutoSize = true;
-            gainHeaderLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            gainHeaderLabel.ForeColor = UiPalette.TextSecondary;
             gainHeaderLabel.Location = new Point(150, 234);
             gainHeaderLabel.Name = "gainHeaderLabel";
             gainHeaderLabel.Size = new Size(48, 15);
@@ -226,7 +226,7 @@ namespace Resonalyze
             // freqHeaderLabel
             // 
             freqHeaderLabel.AutoSize = true;
-            freqHeaderLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            freqHeaderLabel.ForeColor = UiPalette.TextSecondary;
             freqHeaderLabel.Location = new Point(260, 234);
             freqHeaderLabel.Name = "freqHeaderLabel";
             freqHeaderLabel.Size = new Size(47, 15);
@@ -236,7 +236,7 @@ namespace Resonalyze
             // widthHeaderLabel
             // 
             widthHeaderLabel.AutoSize = true;
-            widthHeaderLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            widthHeaderLabel.ForeColor = UiPalette.TextSecondary;
             widthHeaderLabel.Location = new Point(370, 234);
             widthHeaderLabel.Name = "widthHeaderLabel";
             widthHeaderLabel.Size = new Size(59, 15);
@@ -246,7 +246,7 @@ namespace Resonalyze
             // bassLabel
             // 
             bassLabel.AutoSize = true;
-            bassLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            bassLabel.ForeColor = UiPalette.TextSecondary;
             bassLabel.Location = new Point(20, 256);
             bassLabel.Name = "bassLabel";
             bassLabel.Size = new Size(58, 15);
@@ -255,9 +255,9 @@ namespace Resonalyze
             // 
             // bassGainInput
             // 
-            bassGainInput.BackColor = Color.FromArgb(55, 58, 65);
+            bassGainInput.BackColor = UiPalette.InputSurface;
             bassGainInput.DecimalPlaces = 1;
-            bassGainInput.ForeColor = Color.White;
+            bassGainInput.ForeColor = UiPalette.TextPrimary;
             bassGainInput.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             bassGainInput.Location = new Point(150, 254);
             bassGainInput.Maximum = new decimal(new int[] { 30, 0, 0, 0 });
@@ -272,9 +272,9 @@ namespace Resonalyze
             // 
             // bassFrequencyInput
             // 
-            bassFrequencyInput.BackColor = Color.FromArgb(55, 58, 65);
+            bassFrequencyInput.BackColor = UiPalette.InputSurface;
             bassFrequencyInput.DecimalPlaces = 0;
-            bassFrequencyInput.ForeColor = Color.White;
+            bassFrequencyInput.ForeColor = UiPalette.TextPrimary;
             bassFrequencyInput.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             bassFrequencyInput.Location = new Point(260, 254);
             bassFrequencyInput.Maximum = new decimal(new int[] { 500, 0, 0, 0 });
@@ -289,9 +289,9 @@ namespace Resonalyze
             // 
             // bassWidthInput
             // 
-            bassWidthInput.BackColor = Color.FromArgb(55, 58, 65);
+            bassWidthInput.BackColor = UiPalette.InputSurface;
             bassWidthInput.DecimalPlaces = 1;
-            bassWidthInput.ForeColor = Color.White;
+            bassWidthInput.ForeColor = UiPalette.TextPrimary;
             bassWidthInput.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             bassWidthInput.Location = new Point(370, 254);
             bassWidthInput.Maximum = new decimal(new int[] { 4, 0, 0, 0 });
@@ -307,7 +307,7 @@ namespace Resonalyze
             // trebleLabel
             // 
             trebleLabel.AutoSize = true;
-            trebleLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            trebleLabel.ForeColor = UiPalette.TextSecondary;
             trebleLabel.Location = new Point(20, 288);
             trebleLabel.Name = "trebleLabel";
             trebleLabel.Size = new Size(67, 15);
@@ -316,9 +316,9 @@ namespace Resonalyze
             // 
             // trebleGainInput
             // 
-            trebleGainInput.BackColor = Color.FromArgb(55, 58, 65);
+            trebleGainInput.BackColor = UiPalette.InputSurface;
             trebleGainInput.DecimalPlaces = 1;
-            trebleGainInput.ForeColor = Color.White;
+            trebleGainInput.ForeColor = UiPalette.TextPrimary;
             trebleGainInput.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             trebleGainInput.Location = new Point(150, 286);
             trebleGainInput.Maximum = new decimal(new int[] { 12, 0, 0, 0 });
@@ -333,9 +333,9 @@ namespace Resonalyze
             // 
             // trebleFrequencyInput
             // 
-            trebleFrequencyInput.BackColor = Color.FromArgb(55, 58, 65);
+            trebleFrequencyInput.BackColor = UiPalette.InputSurface;
             trebleFrequencyInput.DecimalPlaces = 0;
-            trebleFrequencyInput.ForeColor = Color.White;
+            trebleFrequencyInput.ForeColor = UiPalette.TextPrimary;
             trebleFrequencyInput.Increment = new decimal(new int[] { 100, 0, 0, 0 });
             trebleFrequencyInput.Location = new Point(260, 286);
             trebleFrequencyInput.Maximum = new decimal(new int[] { 16000, 0, 0, 0 });
@@ -350,9 +350,9 @@ namespace Resonalyze
             // 
             // trebleWidthInput
             // 
-            trebleWidthInput.BackColor = Color.FromArgb(55, 58, 65);
+            trebleWidthInput.BackColor = UiPalette.InputSurface;
             trebleWidthInput.DecimalPlaces = 1;
-            trebleWidthInput.ForeColor = Color.White;
+            trebleWidthInput.ForeColor = UiPalette.TextPrimary;
             trebleWidthInput.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             trebleWidthInput.Location = new Point(370, 286);
             trebleWidthInput.Maximum = new decimal(new int[] { 4, 0, 0, 0 });
@@ -368,7 +368,7 @@ namespace Resonalyze
             // presenceLabel
             // 
             presenceLabel.AutoSize = true;
-            presenceLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            presenceLabel.ForeColor = UiPalette.TextSecondary;
             presenceLabel.Location = new Point(20, 320);
             presenceLabel.Name = "presenceLabel";
             presenceLabel.Size = new Size(54, 15);
@@ -377,9 +377,9 @@ namespace Resonalyze
             // 
             // presenceGainInput
             // 
-            presenceGainInput.BackColor = Color.FromArgb(55, 58, 65);
+            presenceGainInput.BackColor = UiPalette.InputSurface;
             presenceGainInput.DecimalPlaces = 1;
-            presenceGainInput.ForeColor = Color.White;
+            presenceGainInput.ForeColor = UiPalette.TextPrimary;
             presenceGainInput.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             presenceGainInput.Location = new Point(150, 318);
             presenceGainInput.Maximum = new decimal(new int[] { 12, 0, 0, 0 });
@@ -394,9 +394,9 @@ namespace Resonalyze
             // 
             // presenceFrequencyInput
             // 
-            presenceFrequencyInput.BackColor = Color.FromArgb(55, 58, 65);
+            presenceFrequencyInput.BackColor = UiPalette.InputSurface;
             presenceFrequencyInput.DecimalPlaces = 0;
-            presenceFrequencyInput.ForeColor = Color.White;
+            presenceFrequencyInput.ForeColor = UiPalette.TextPrimary;
             presenceFrequencyInput.Increment = new decimal(new int[] { 50, 0, 0, 0 });
             presenceFrequencyInput.Location = new Point(260, 318);
             presenceFrequencyInput.Maximum = new decimal(new int[] { 8000, 0, 0, 0 });
@@ -411,9 +411,9 @@ namespace Resonalyze
             // 
             // presenceWidthInput
             // 
-            presenceWidthInput.BackColor = Color.FromArgb(55, 58, 65);
+            presenceWidthInput.BackColor = UiPalette.InputSurface;
             presenceWidthInput.DecimalPlaces = 1;
-            presenceWidthInput.ForeColor = Color.White;
+            presenceWidthInput.ForeColor = UiPalette.TextPrimary;
             presenceWidthInput.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             presenceWidthInput.Location = new Point(370, 318);
             presenceWidthInput.Maximum = new decimal(new int[] { 3, 0, 0, 0 });
@@ -429,7 +429,7 @@ namespace Resonalyze
             // colorLabel
             // 
             colorLabel.AutoSize = true;
-            colorLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            colorLabel.ForeColor = UiPalette.TextSecondary;
             colorLabel.Location = new Point(20, 360);
             colorLabel.Name = "colorLabel";
             colorLabel.Size = new Size(36, 15);
@@ -438,10 +438,10 @@ namespace Resonalyze
             // 
             // colorButton
             // 
-            colorButton.BackColor = Color.FromArgb(62, 65, 73);
+            colorButton.BackColor = UiPalette.ButtonBackground;
             colorButton.FlatAppearance.BorderSize = 0;
             colorButton.FlatStyle = FlatStyle.Flat;
-            colorButton.ForeColor = Color.White;
+            colorButton.ForeColor = UiPalette.TextPrimary;
             colorButton.Location = new Point(20, 380);
             colorButton.Name = "colorButton";
             colorButton.Size = new Size(122, 24);
@@ -451,7 +451,7 @@ namespace Resonalyze
             // thicknessLabel
             // 
             thicknessLabel.AutoSize = true;
-            thicknessLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            thicknessLabel.ForeColor = UiPalette.TextSecondary;
             thicknessLabel.Location = new Point(162, 360);
             thicknessLabel.Name = "thicknessLabel";
             thicknessLabel.Size = new Size(59, 15);
@@ -460,9 +460,9 @@ namespace Resonalyze
             // 
             // thicknessInput
             // 
-            thicknessInput.BackColor = Color.FromArgb(55, 58, 65);
+            thicknessInput.BackColor = UiPalette.InputSurface;
             thicknessInput.DecimalPlaces = 1;
-            thicknessInput.ForeColor = Color.White;
+            thicknessInput.ForeColor = UiPalette.TextPrimary;
             thicknessInput.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             thicknessInput.Location = new Point(162, 380);
             thicknessInput.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
@@ -478,7 +478,7 @@ namespace Resonalyze
             // styleLabel
             // 
             styleLabel.AutoSize = true;
-            styleLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            styleLabel.ForeColor = UiPalette.TextSecondary;
             styleLabel.Location = new Point(262, 360);
             styleLabel.Name = "styleLabel";
             styleLabel.Size = new Size(32, 15);
@@ -487,8 +487,8 @@ namespace Resonalyze
             // 
             // styleComboBox
             // 
-            styleComboBox.BackColor = Color.FromArgb(55, 58, 65);
-            styleComboBox.ForeColor = Color.White;
+            styleComboBox.BackColor = UiPalette.InputSurface;
+            styleComboBox.ForeColor = UiPalette.TextPrimary;
             styleComboBox.Location = new Point(262, 380);
             styleComboBox.Margin = new Padding(0);
             styleComboBox.MinimumSize = new Size(36, 19);
@@ -499,7 +499,7 @@ namespace Resonalyze
             // smoothingLabel
             // 
             smoothingLabel.AutoSize = true;
-            smoothingLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            smoothingLabel.ForeColor = UiPalette.TextSecondary;
             smoothingLabel.Location = new Point(20, 418);
             smoothingLabel.Name = "smoothingLabel";
             smoothingLabel.Size = new Size(66, 15);
@@ -508,8 +508,8 @@ namespace Resonalyze
             // 
             // smoothingComboBox
             // 
-            smoothingComboBox.BackColor = Color.FromArgb(55, 58, 65);
-            smoothingComboBox.ForeColor = Color.White;
+            smoothingComboBox.BackColor = UiPalette.InputSurface;
+            smoothingComboBox.ForeColor = UiPalette.TextPrimary;
             smoothingComboBox.Location = new Point(20, 438);
             smoothingComboBox.Margin = new Padding(0);
             smoothingComboBox.MinimumSize = new Size(36, 19);
@@ -520,7 +520,7 @@ namespace Resonalyze
             // opacityLabel
             // 
             opacityLabel.AutoSize = true;
-            opacityLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            opacityLabel.ForeColor = UiPalette.TextSecondary;
             opacityLabel.Location = new Point(20, 474);
             opacityLabel.Name = "opacityLabel";
             opacityLabel.Size = new Size(48, 15);
@@ -541,7 +541,7 @@ namespace Resonalyze
             // opacityValueLabel
             // 
             opacityValueLabel.AutoSize = true;
-            opacityValueLabel.ForeColor = Color.FromArgb(235, 237, 240);
+            opacityValueLabel.ForeColor = UiPalette.TextBright;
             opacityValueLabel.Location = new Point(410, 501);
             opacityValueLabel.Name = "opacityValueLabel";
             opacityValueLabel.Size = new Size(35, 15);
@@ -551,7 +551,7 @@ namespace Resonalyze
             // previewLabel
             // 
             previewLabel.AutoSize = true;
-            previewLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            previewLabel.ForeColor = UiPalette.TextSecondary;
             previewLabel.Location = new Point(20, 544);
             previewLabel.Name = "previewLabel";
             previewLabel.Size = new Size(84, 15);
@@ -560,7 +560,7 @@ namespace Resonalyze
             // 
             // previewPlot
             // 
-            previewPlot.BackColor = Color.FromArgb(55, 58, 65);
+            previewPlot.BackColor = UiPalette.GraphSurfaceMuted;
             previewPlot.Location = new Point(20, 564);
             previewPlot.Name = "previewPlot";
             previewPlot.PanCursor = Cursors.Hand;
@@ -572,11 +572,11 @@ namespace Resonalyze
             // 
             // cancelButton
             // 
-            cancelButton.BackColor = Color.FromArgb(62, 65, 73);
+            cancelButton.BackColor = UiPalette.ButtonBackground;
             cancelButton.DialogResult = DialogResult.Cancel;
             cancelButton.FlatAppearance.BorderSize = 0;
             cancelButton.FlatStyle = FlatStyle.Flat;
-            cancelButton.ForeColor = Color.White;
+            cancelButton.ForeColor = UiPalette.TextPrimary;
             cancelButton.Location = new Point(286, 740);
             cancelButton.Name = "cancelButton";
             cancelButton.Size = new Size(94, 30);
@@ -589,7 +589,7 @@ namespace Resonalyze
             saveButton.DialogResult = DialogResult.OK;
             saveButton.FlatAppearance.BorderSize = 0;
             saveButton.FlatStyle = FlatStyle.Flat;
-            saveButton.ForeColor = Color.White;
+            saveButton.ForeColor = UiPalette.TextPrimary;
             saveButton.Location = new Point(386, 740);
             saveButton.Name = "saveButton";
             saveButton.Size = new Size(94, 30);
@@ -601,7 +601,7 @@ namespace Resonalyze
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(40, 42, 48);
+            BackColor = UiPalette.DialogBackground;
             ClientSize = new Size(500, 781);
             Controls.Add(nameLabel);
             Controls.Add(nameTextBox);
@@ -646,7 +646,7 @@ namespace Resonalyze
             Controls.Add(cancelButton);
             Controls.Add(saveButton);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.FromArgb(235, 237, 240);
+            ForeColor = UiPalette.TextBright;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -678,38 +678,38 @@ namespace Resonalyze
         private Label nameLabel;
         private TextBox nameTextBox;
         private Label sourceLabel;
-        private DarkComboBox sourceComboBox;
+        private ThemedComboBox sourceComboBox;
         private Label presetLabel;
-        private DarkComboBox presetComboBox;
+        private ThemedComboBox presetComboBox;
         private Label toleranceLabel;
-        private DarkNumericUpDown toleranceInput;
+        private ThemedNumericUpDown toleranceInput;
         private Label tiltLabel;
-        private DarkNumericUpDown tiltInput;
+        private ThemedNumericUpDown tiltInput;
         private Label deviationLabel;
-        private DarkComboBox deviationModeComboBox;
+        private ThemedComboBox deviationModeComboBox;
         private Label gainHeaderLabel;
         private Label freqHeaderLabel;
         private Label widthHeaderLabel;
         private Label bassLabel;
-        private DarkNumericUpDown bassGainInput;
-        private DarkNumericUpDown bassFrequencyInput;
-        private DarkNumericUpDown bassWidthInput;
+        private ThemedNumericUpDown bassGainInput;
+        private ThemedNumericUpDown bassFrequencyInput;
+        private ThemedNumericUpDown bassWidthInput;
         private Label trebleLabel;
-        private DarkNumericUpDown trebleGainInput;
-        private DarkNumericUpDown trebleFrequencyInput;
-        private DarkNumericUpDown trebleWidthInput;
+        private ThemedNumericUpDown trebleGainInput;
+        private ThemedNumericUpDown trebleFrequencyInput;
+        private ThemedNumericUpDown trebleWidthInput;
         private Label presenceLabel;
-        private DarkNumericUpDown presenceGainInput;
-        private DarkNumericUpDown presenceFrequencyInput;
-        private DarkNumericUpDown presenceWidthInput;
+        private ThemedNumericUpDown presenceGainInput;
+        private ThemedNumericUpDown presenceFrequencyInput;
+        private ThemedNumericUpDown presenceWidthInput;
         private Label colorLabel;
         private ReleaseClickButton colorButton;
         private Label thicknessLabel;
-        private DarkNumericUpDown thicknessInput;
+        private ThemedNumericUpDown thicknessInput;
         private Label styleLabel;
-        private DarkComboBox styleComboBox;
+        private ThemedComboBox styleComboBox;
         private Label smoothingLabel;
-        private DarkComboBox smoothingComboBox;
+        private ThemedComboBox smoothingComboBox;
         private Label opacityLabel;
         private TrackBar opacityTrackBar;
         private Label opacityValueLabel;

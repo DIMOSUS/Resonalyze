@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Numerics;
 using OxyPlot;
 using OxyPlot.Annotations;
@@ -77,16 +77,16 @@ public partial class EqWizardPanel : UserControl
 
     private const decimal MinGainGapDb = 1m;
 
-    private static readonly OxyColor BandCurveColor = OxyColor.FromArgb(150, 255, 170, 40);
+    private static readonly OxyColor BandCurveColor = OxyColor.FromAColor(150, UiPalette.CurveBandOverlay.ToOxy());
 
-    private static readonly OxyColor EqAxisColor = OxyColor.FromRgb(205, 205, 205);
+    private static readonly OxyColor EqAxisColor = UiPalette.GraphAxisText.ToOxy();
 
     public EqWizardPanel()
     {
         InitializeComponent();
         // Before layout: the layout pass stretches the plot by deltas from the designed positions.
         CaptureLayoutBaseline();
-        Ui.DarkScrollBars.Apply(this);
+        Ui.ThemedScrollBars.Apply(this);
         InitializePlotWizard();
         InitializePeqSlotTable();
         InitializeBandsComboBox();
@@ -397,7 +397,7 @@ public partial class EqWizardPanel : UserControl
         SetTip(control, text);
     }
 
-    // Applied to children too, so composite controls (DarkComboBox, DarkNumericUpDown) show it.
+    // Applied to children too, so composite controls (ThemedComboBox, ThemedNumericUpDown) show it.
     private void SetTip(Control control, string text)
     {
         toolTip.SetToolTip(control, text);
@@ -447,7 +447,7 @@ public partial class EqWizardPanel : UserControl
             TitleColor = EqAxisColor,
             TicklineColor = EqAxisColor,
             ExtraGridlines = new[] { 0.0 },
-            ExtraGridlineColor = OxyColor.FromAColor(60, OxyColors.White),
+            ExtraGridlineColor = UiPalette.GraphAreaBorder.ToOxy(),
             ExtraGridlineStyle = LineStyle.Solid,
             Title = "EQ (dB)"
         });
@@ -455,7 +455,7 @@ public partial class EqWizardPanel : UserControl
         model.Annotations.Add(new PlotWatermarkAnnotation
         {
             Text = "EQ Wizard",
-            TextColor = OxyColor.FromAColor(10, OxyColors.White),
+            TextColor = OxyColor.FromAColor(10, UiPalette.GraphAxisText.ToOxy()),
             FontSize = 80,
             FontWeight = FontWeights.Bold
         });
@@ -464,7 +464,7 @@ public partial class EqWizardPanel : UserControl
         {
             Text = string.Empty,
             VerticalPosition = 0.66,
-            TextColor = OxyColor.FromRgb(230, 184, 0),
+            TextColor = UiPalette.CurveTarget.ToOxy(),
             FontSize = 15,
             FontWeight = FontWeights.Bold
         };
@@ -472,7 +472,7 @@ public partial class EqWizardPanel : UserControl
 
         rangeFill = new RectangleAnnotation
         {
-            Fill = OxyColor.FromArgb(10, 90, 210, 120),
+            Fill = OxyColor.FromAColor(10, UiPalette.CurveWindowFill.ToOxy()),
             StrokeThickness = 0,
             Layer = AnnotationLayer.BelowSeries
         };
@@ -507,7 +507,7 @@ public partial class EqWizardPanel : UserControl
     private static LineAnnotation CreateRangeMarker() => new()
     {
         Type = LineAnnotationType.Vertical,
-        Color = OxyColor.FromArgb(100, 90, 210, 120),
+        Color = OxyColor.FromAColor(100, UiPalette.CurveWindowFill.ToOxy()),
         StrokeThickness = 1,
         LineStyle = LineStyle.Dash,
         Layer = AnnotationLayer.AboveSeries
@@ -1070,7 +1070,7 @@ public partial class EqWizardPanel : UserControl
                     model,
                     new EqWizardCurve(
                         "EQ phase",
-                        OxyColors.White,
+                        UiPalette.CurveNeutral.ToOxy(),
                         1.5,
                         LineStyle.Solid,
                         PhasePoints(eq.Bands, baseline)),
@@ -1098,7 +1098,7 @@ public partial class EqWizardPanel : UserControl
             .ToArray();
         AddWizardSeries(
             model,
-            new EqWizardCurve("EQ", OxyColors.White, 1.5, LineStyle.Solid, points),
+            new EqWizardCurve("EQ", UiPalette.CurveNeutral.ToOxy(), 1.5, LineStyle.Solid, points),
             EqGainAxisKey);
 
         double curveMin = 0;
@@ -1214,8 +1214,8 @@ public partial class EqWizardPanel : UserControl
         model.Annotations.Add(bandMarker);
     }
 
-    private static readonly OxyColor AboveTargetFill = OxyColor.FromArgb(72, 232, 80, 80);
-    private static readonly OxyColor BelowTargetFill = OxyColor.FromArgb(104, 64, 176, 255);
+    private static readonly OxyColor AboveTargetFill = OxyColor.FromAColor(72, UiPalette.CurveAboveTarget.ToOxy());
+    private static readonly OxyColor BelowTargetFill = OxyColor.FromAColor(104, UiPalette.CurveBelowTarget.ToOxy());
 
     // TwoColorAreaSeries splits only on a horizontal limit, so two AreaSeries clamp to the target (curves index-aligned),
     // with exact crossings inserted so neither colour bleeds past the target.

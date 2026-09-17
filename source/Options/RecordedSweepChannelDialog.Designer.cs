@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class RecordedSweepChannelDialog
     {
@@ -30,7 +30,7 @@
             //
             // labelInstruction
             //
-            labelInstruction.ForeColor = SystemColors.ControlLight;
+            labelInstruction.ForeColor = UiPalette.TextDefault;
             labelInstruction.Location = new Point(16, 16);
             labelInstruction.Name = "labelInstruction";
             labelInstruction.Size = new Size(430, 72);
@@ -43,7 +43,7 @@
             channelGridView.AllowUserToDeleteRows = false;
             channelGridView.AllowUserToResizeColumns = false;
             channelGridView.AllowUserToResizeRows = false;
-            channelGridView.BackgroundColor = Color.FromArgb(40, 42, 48);
+            channelGridView.BackgroundColor = UiPalette.DialogBackground;
             channelGridView.BorderStyle = BorderStyle.None;
             channelGridView.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             channelGridView.Columns.AddRange(new DataGridViewColumn[] { ColumnChannel, ColumnMatch, ColumnRms, ColumnPeak });
@@ -90,7 +90,7 @@
             //
             buttonMeasure.DialogResult = DialogResult.OK;
             buttonMeasure.FlatStyle = FlatStyle.Popup;
-            buttonMeasure.ForeColor = Color.White;
+            buttonMeasure.ForeColor = UiPalette.TextPrimary;
             buttonMeasure.Location = new Point(266, 258);
             buttonMeasure.Name = "buttonMeasure";
             buttonMeasure.Size = new Size(104, 30);
@@ -102,7 +102,7 @@
             //
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
-            buttonCancel.ForeColor = Color.White;
+            buttonCancel.ForeColor = UiPalette.TextPrimary;
             buttonCancel.Location = new Point(376, 258);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(70, 30);
@@ -115,7 +115,7 @@
             AcceptButton = buttonMeasure;
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             CancelButton = buttonCancel;
             ClientSize = new Size(462, 302);
             Controls.Add(labelInstruction);

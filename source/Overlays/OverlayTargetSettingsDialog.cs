@@ -1,4 +1,4 @@
-﻿using OxyPlot;
+using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
 
@@ -43,7 +43,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
 
         InitializeComponent();
         // Palette value, not a designer literal: the two drifted apart once.
-        Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill);
+        Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill, Ui.UiPalette.TextOnAccent);
         PopulateControls(availableSources);
         WireEvents();
         InitializeToolTips();
@@ -205,7 +205,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     {
         presetComboBox.SelectedIndexChanged += PresetChanged;
 
-        foreach (DarkNumericUpDown shape in ShapeInputs)
+        foreach (ThemedNumericUpDown shape in ShapeInputs)
         {
             shape.ValueChanged += ParameterChanged;
         }
@@ -296,13 +296,13 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     private void UpdateShapeInputs()
     {
         bool parametric = SelectedImportedCurve == null;
-        foreach (DarkNumericUpDown input in ShapeInputs)
+        foreach (ThemedNumericUpDown input in ShapeInputs)
         {
             input.Enabled = parametric;
         }
     }
 
-    private DarkNumericUpDown[] ShapeInputs =>
+    private ThemedNumericUpDown[] ShapeInputs =>
     [
         tiltInput,
         bassGainInput, bassFrequencyInput, bassWidthInput,
@@ -359,35 +359,21 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     private void UpdatePreview()
     {
         TargetCurveSpec spec = Spec;
-        var model = new PlotModel
-        {
-            PlotAreaBorderColor = OxyColors.Gray,
-            TextColor = OxyColors.Gainsboro
-        };
-        OxyColor majorGrid = OxyColor.FromAColor(90, OxyColors.Gray);
-        OxyColor minorGrid = OxyColor.FromAColor(40, OxyColors.Gray);
-        model.Axes.Add(new LogarithmicAxis
+        PlotModel model = PlotModelStyle.CreatePreviewModel();
+        PlotModelStyle.AddAxis(model, new LogarithmicAxis
         {
             Position = AxisPosition.Bottom,
             Minimum = 20,
             Maximum = 20_000,
-            TextColor = OxyColors.Gainsboro,
-            TicklineColor = OxyColors.Gray,
             MajorGridlineStyle = OxyPlot.LineStyle.Solid,
-            MajorGridlineColor = majorGrid,
-            MinorGridlineStyle = OxyPlot.LineStyle.Dot,
-            MinorGridlineColor = minorGrid
+            MinorGridlineStyle = OxyPlot.LineStyle.Dot
         });
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Position = AxisPosition.Left,
-            TextColor = OxyColors.Gainsboro,
-            TicklineColor = OxyColors.Gray,
             Title = "dB",
             MajorGridlineStyle = OxyPlot.LineStyle.Solid,
-            MajorGridlineColor = majorGrid,
-            MinorGridlineStyle = OxyPlot.LineStyle.Dot,
-            MinorGridlineColor = minorGrid
+            MinorGridlineStyle = OxyPlot.LineStyle.Dot
         });
 
         var series = new LineSeries
@@ -458,7 +444,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        DarkNumericUpDown? input = keyData == Keys.Enter
+        ThemedNumericUpDown? input = keyData == Keys.Enter
             ? GetFocusedNumericInput()
             : null;
         if (input != null)
@@ -470,10 +456,10 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         return base.ProcessCmdKey(ref msg, keyData);
     }
 
-    private DarkNumericUpDown? GetFocusedNumericInput() =>
+    private ThemedNumericUpDown? GetFocusedNumericInput() =>
         NumericInputs().FirstOrDefault(control => control.ContainsFocus);
 
-    private IEnumerable<DarkNumericUpDown> NumericInputs()
+    private IEnumerable<ThemedNumericUpDown> NumericInputs()
     {
         yield return toleranceInput;
         yield return tiltInput;
@@ -491,7 +477,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
 
     private void CommitNumericEditors()
     {
-        foreach (DarkNumericUpDown input in NumericInputs())
+        foreach (ThemedNumericUpDown input in NumericInputs())
         {
             input.CommitText();
         }
@@ -525,7 +511,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         colorButton.BackColor = selectedColor;
         colorButton.Text =
             $"#{selectedColor.R:X2}{selectedColor.G:X2}{selectedColor.B:X2}";
-        colorButton.FlatAppearance.BorderColor = UiPalette.DialogBorder;
+        colorButton.FlatAppearance.BorderColor = UiPalette.Border;
     }
 
     private void UpdateOpacityLabel()
@@ -533,7 +519,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         opacityValueLabel.Text = $"{opacityTrackBar.Value}%";
     }
 
-    private static decimal ClampToRange(DarkNumericUpDown input, double value)
+    private static decimal ClampToRange(ThemedNumericUpDown input, double value)
     {
         return (decimal)Math.Clamp(
             value,

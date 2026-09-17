@@ -278,6 +278,8 @@ is set to show no animations (Settings → Accessibility → Visual effects).
 - **Signal Generator**, **Measurement History** with per-entry working state, a
   compact Mic/Loop level meter, and four audio backends (MME Compatibility, ASIO,
   WASAPI Shared and Exclusive) with backend-specific channel routing
+- **Dark and light themes** — the gear button in the title bar opens Settings;
+  the theme colours every panel, dialog, graph and curve
 
 ## Gallery
 

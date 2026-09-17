@@ -47,23 +47,23 @@ namespace Resonalyze
             checkBoxSideLock = new ReleaseClickCheckBox();
             labelView = new Label();
             labelGroupView = new Label();
-            comboBoxGroupView = new DarkComboBox();
+            comboBoxGroupView = new ThemedComboBox();
             labelCurves = new Label();
             checkBoxShowTarget = new ReleaseClickCheckBox();
-            numericTargetLevel = new DarkNumericUpDown();
+            numericTargetLevel = new ThemedNumericUpDown();
             buttonTargetSettings = new ReleaseClickButton();
             labelCalibration = new Label();
             checkBoxShowSum = new ReleaseClickCheckBox();
             checkBoxHybrid = new ReleaseClickCheckBox();
             labelSumLoss = new Label();
-            comboBoxSumLoss = new DarkComboBox();
+            comboBoxSumLoss = new ThemedComboBox();
             radioViewMagnitude = new ReleaseClickRadioButton();
             radioViewPhase = new ReleaseClickRadioButton();
             radioViewImpulse = new ReleaseClickRadioButton();
             radioViewGroupDelay = new ReleaseClickRadioButton();
             radioViewStep = new ReleaseClickRadioButton();
             labelSmoothing = new Label();
-            comboBoxSmoothing = new DarkComboBox();
+            comboBoxSmoothing = new ThemedComboBox();
             buttonAutoDelay = new ReleaseClickButton();
             buttonAi = new ReleaseClickButton();
             buttonAutoSetup = new ReleaseClickButton();
@@ -71,7 +71,7 @@ namespace Resonalyze
             buttonCaptureOverlay = new ReleaseClickButton();
             buttonExport = new ReleaseClickButton();
             buttonPhaseGate = new ReleaseClickButton();
-            comboBoxCalibration = new DarkComboBox();
+            comboBoxCalibration = new ThemedComboBox();
             buttonSessionImport = new ReleaseClickButton();
             buttonSessionExport = new ReleaseClickButton();
             buttonAudition = new ReleaseClickButton();
@@ -82,7 +82,7 @@ namespace Resonalyze
             radioDspGroupDelay = new ReleaseClickRadioButton();
             radioDspCorrelation = new ReleaseClickRadioButton();
             radioDspCoherence = new ReleaseClickRadioButton();
-            comboBoxCorrelationPair = new DarkComboBox();
+            comboBoxCorrelationPair = new ThemedComboBox();
             panel1 = new RoundedPanel();
             panel2 = new RoundedPanel();
             curvesPanel = new RoundedPanel();
@@ -100,7 +100,7 @@ namespace Resonalyze
             // 
             // mainPlotView
             // 
-            mainPlotView.BackColor = Color.FromArgb(40, 44, 80);
+            mainPlotView.BackColor = UiPalette.GraphSurface;
             mainPlotView.Location = new Point(358, 9);
             mainPlotView.Name = "mainPlotView";
             mainPlotView.PanCursor = Cursors.Hand;
@@ -113,7 +113,7 @@ namespace Resonalyze
             // 
             // dspPlotView
             // 
-            dspPlotView.BackColor = Color.FromArgb(40, 44, 80);
+            dspPlotView.BackColor = UiPalette.GraphSurface;
             dspPlotView.Location = new Point(490, 470);
             dspPlotView.Name = "dspPlotView";
             dspPlotView.PanCursor = Cursors.Hand;
@@ -128,7 +128,7 @@ namespace Resonalyze
             // 
             channelListPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
             channelListPanel.AutoScroll = true;
-            channelListPanel.BackColor = Color.FromArgb(40, 44, 54);
+            channelListPanel.BackColor = UiPalette.ShellSurface;
             channelListPanel.FlowDirection = FlowDirection.TopDown;
             channelListPanel.Location = new Point(6, 6);
             channelListPanel.Name = "channelListPanel";
@@ -139,9 +139,9 @@ namespace Resonalyze
             // buttonAddChannel
             // 
             buttonAddChannel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            buttonAddChannel.BackColor = Color.FromArgb(46, 51, 67);
+            buttonAddChannel.BackColor = UiPalette.ButtonBackground;
             buttonAddChannel.FlatStyle = FlatStyle.Popup;
-            buttonAddChannel.ForeColor = Color.White;
+            buttonAddChannel.ForeColor = UiPalette.TextPrimary;
             buttonAddChannel.Location = new Point(6, 700);
             buttonAddChannel.Name = "buttonAddChannel";
             buttonAddChannel.Size = new Size(112, 24);
@@ -152,9 +152,9 @@ namespace Resonalyze
             // buttonRemoveChannel
             // 
             buttonRemoveChannel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            buttonRemoveChannel.BackColor = Color.FromArgb(46, 51, 67);
+            buttonRemoveChannel.BackColor = UiPalette.ButtonBackground;
             buttonRemoveChannel.FlatStyle = FlatStyle.Popup;
-            buttonRemoveChannel.ForeColor = Color.White;
+            buttonRemoveChannel.ForeColor = UiPalette.TextPrimary;
             buttonRemoveChannel.Location = new Point(123, 700);
             buttonRemoveChannel.Name = "buttonRemoveChannel";
             buttonRemoveChannel.Size = new Size(112, 24);
@@ -165,9 +165,9 @@ namespace Resonalyze
             // buttonResetChannels
             // 
             buttonResetChannels.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            buttonResetChannels.BackColor = Color.FromArgb(46, 51, 67);
+            buttonResetChannels.BackColor = UiPalette.ButtonBackground;
             buttonResetChannels.FlatStyle = FlatStyle.Popup;
-            buttonResetChannels.ForeColor = Color.White;
+            buttonResetChannels.ForeColor = UiPalette.TextPrimary;
             buttonResetChannels.Location = new Point(240, 700);
             buttonResetChannels.Name = "buttonResetChannels";
             buttonResetChannels.Size = new Size(113, 24);
@@ -178,7 +178,7 @@ namespace Resonalyze
             // sideSelectorPanel
             // 
             sideSelectorPanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            sideSelectorPanel.BackColor = Color.FromArgb(40, 44, 54);
+            sideSelectorPanel.BackColor = UiPalette.ShellSurface;
             sideSelectorPanel.Controls.Add(radioSideLeft);
             sideSelectorPanel.Controls.Add(radioSideRight);
             sideSelectorPanel.Controls.Add(buttonCopyLeftToRight);
@@ -194,7 +194,7 @@ namespace Resonalyze
             radioSideLeft.AutoSize = true;
             radioSideLeft.Checked = true;
             radioSideLeft.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioSideLeft.ForeColor = Color.FromArgb(210, 214, 222);
+            radioSideLeft.ForeColor = UiPalette.TextDefault;
             radioSideLeft.Location = new Point(0, 2);
             radioSideLeft.Name = "radioSideLeft";
             radioSideLeft.Size = new Size(31, 19);
@@ -207,7 +207,7 @@ namespace Resonalyze
             // 
             radioSideRight.AutoSize = true;
             radioSideRight.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioSideRight.ForeColor = Color.FromArgb(210, 214, 222);
+            radioSideRight.ForeColor = UiPalette.TextDefault;
             radioSideRight.Location = new Point(52, 2);
             radioSideRight.Name = "radioSideRight";
             radioSideRight.Size = new Size(32, 19);
@@ -217,9 +217,9 @@ namespace Resonalyze
             // 
             // buttonCopyLeftToRight
             // 
-            buttonCopyLeftToRight.BackColor = Color.FromArgb(46, 51, 67);
+            buttonCopyLeftToRight.BackColor = UiPalette.ButtonBackground;
             buttonCopyLeftToRight.FlatStyle = FlatStyle.Popup;
-            buttonCopyLeftToRight.ForeColor = Color.White;
+            buttonCopyLeftToRight.ForeColor = UiPalette.TextPrimary;
             buttonCopyLeftToRight.Location = new Point(115, 0);
             buttonCopyLeftToRight.Name = "buttonCopyLeftToRight";
             buttonCopyLeftToRight.Size = new Size(56, 23);
@@ -229,9 +229,9 @@ namespace Resonalyze
             // 
             // buttonCopyRightToLeft
             // 
-            buttonCopyRightToLeft.BackColor = Color.FromArgb(46, 51, 67);
+            buttonCopyRightToLeft.BackColor = UiPalette.ButtonBackground;
             buttonCopyRightToLeft.FlatStyle = FlatStyle.Popup;
-            buttonCopyRightToLeft.ForeColor = Color.White;
+            buttonCopyRightToLeft.ForeColor = UiPalette.TextPrimary;
             buttonCopyRightToLeft.Location = new Point(177, 0);
             buttonCopyRightToLeft.Name = "buttonCopyRightToLeft";
             buttonCopyRightToLeft.Size = new Size(56, 23);
@@ -242,12 +242,12 @@ namespace Resonalyze
             // checkBoxSideLock
             //
             checkBoxSideLock.Appearance = Appearance.Button;
-            checkBoxSideLock.BackColor = Color.FromArgb(46, 51, 67);
+            checkBoxSideLock.BackColor = UiPalette.ButtonBackground;
             checkBoxSideLock.Checked = true;
             checkBoxSideLock.CheckState = CheckState.Checked;
-            checkBoxSideLock.FlatAppearance.CheckedBackColor = Color.FromArgb(80, 100, 140);
+            checkBoxSideLock.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxSideLock.FlatStyle = FlatStyle.Flat;
-            checkBoxSideLock.ForeColor = Color.White;
+            checkBoxSideLock.ForeColor = UiPalette.TextPrimary;
             checkBoxSideLock.Location = new Point(239, 0);
             checkBoxSideLock.Name = "checkBoxSideLock";
             checkBoxSideLock.Size = new Size(56, 23);
@@ -261,7 +261,7 @@ namespace Resonalyze
             // 
             labelView.AutoSize = true;
             labelView.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelView.ForeColor = Color.FromArgb(210, 214, 222);
+            labelView.ForeColor = UiPalette.TextDefault;
             labelView.Location = new Point(358, 447);
             labelView.Name = "labelView";
             labelView.Size = new Size(36, 15);
@@ -272,7 +272,7 @@ namespace Resonalyze
             // 
             labelGroupView.AutoSize = true;
             labelGroupView.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelGroupView.ForeColor = Color.FromArgb(210, 214, 222);
+            labelGroupView.ForeColor = UiPalette.TextDefault;
             labelGroupView.Location = new Point(1007, 447);
             labelGroupView.Name = "labelGroupView";
             labelGroupView.Size = new Size(40, 15);
@@ -281,8 +281,8 @@ namespace Resonalyze
             // 
             // comboBoxGroupView
             // 
-            comboBoxGroupView.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxGroupView.ForeColor = Color.White;
+            comboBoxGroupView.BackColor = UiPalette.ControlSurface;
+            comboBoxGroupView.ForeColor = UiPalette.TextPrimary;
             comboBoxGroupView.Location = new Point(1050, 445);
             comboBoxGroupView.MinimumSize = new Size(36, 19);
             comboBoxGroupView.Name = "comboBoxGroupView";
@@ -293,7 +293,7 @@ namespace Resonalyze
             // 
             labelCurves.AutoSize = true;
             labelCurves.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelCurves.ForeColor = Color.FromArgb(210, 214, 222);
+            labelCurves.ForeColor = UiPalette.TextDefault;
             labelCurves.Location = new Point(358, 413);
             labelCurves.Name = "labelCurves";
             labelCurves.Size = new Size(45, 15);
@@ -304,7 +304,7 @@ namespace Resonalyze
             // 
             checkBoxShowTarget.AutoSize = true;
             checkBoxShowTarget.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            checkBoxShowTarget.ForeColor = Color.FromArgb(55, 200, 160);
+            checkBoxShowTarget.ForeColor = UiPalette.Success;
             checkBoxShowTarget.Location = new Point(6, 4);
             checkBoxShowTarget.Name = "checkBoxShowTarget";
             checkBoxShowTarget.Size = new Size(59, 19);
@@ -314,9 +314,9 @@ namespace Resonalyze
             // 
             // numericTargetLevel
             // 
-            numericTargetLevel.BackColor = Color.FromArgb(55, 60, 72);
+            numericTargetLevel.BackColor = UiPalette.ControlSurface;
             numericTargetLevel.DecimalPlaces = 0;
-            numericTargetLevel.ForeColor = Color.White;
+            numericTargetLevel.ForeColor = UiPalette.TextPrimary;
             numericTargetLevel.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericTargetLevel.Location = new Point(71, 4);
             numericTargetLevel.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
@@ -333,7 +333,7 @@ namespace Resonalyze
             // buttonTargetSettings
             // 
             buttonTargetSettings.FlatStyle = FlatStyle.Popup;
-            buttonTargetSettings.ForeColor = Color.White;
+            buttonTargetSettings.ForeColor = UiPalette.TextPrimary;
             buttonTargetSettings.Location = new Point(149, 2);
             buttonTargetSettings.Name = "buttonTargetSettings";
             buttonTargetSettings.Size = new Size(80, 22);
@@ -345,7 +345,7 @@ namespace Resonalyze
             // 
             labelCalibration.AutoSize = true;
             labelCalibration.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelCalibration.ForeColor = Color.FromArgb(210, 214, 222);
+            labelCalibration.ForeColor = UiPalette.TextDefault;
             labelCalibration.Location = new Point(878, 413);
             labelCalibration.Name = "labelCalibration";
             labelCalibration.Size = new Size(48, 15);
@@ -358,7 +358,7 @@ namespace Resonalyze
             checkBoxShowSum.Checked = true;
             checkBoxShowSum.CheckState = CheckState.Checked;
             checkBoxShowSum.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            checkBoxShowSum.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxShowSum.ForeColor = UiPalette.TextDefault;
             checkBoxShowSum.Location = new Point(6, 7);
             checkBoxShowSum.Name = "checkBoxShowSum";
             checkBoxShowSum.Size = new Size(51, 19);
@@ -370,7 +370,7 @@ namespace Resonalyze
             // 
             checkBoxHybrid.AutoSize = true;
             checkBoxHybrid.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            checkBoxHybrid.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxHybrid.ForeColor = UiPalette.TextDefault;
             checkBoxHybrid.Location = new Point(1058, 411);
             checkBoxHybrid.Name = "checkBoxHybrid";
             checkBoxHybrid.Size = new Size(62, 19);
@@ -382,7 +382,7 @@ namespace Resonalyze
             // 
             labelSumLoss.AutoSize = true;
             labelSumLoss.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelSumLoss.ForeColor = Color.FromArgb(210, 214, 222);
+            labelSumLoss.ForeColor = UiPalette.TextDefault;
             labelSumLoss.Location = new Point(6, 6);
             labelSumLoss.Name = "labelSumLoss";
             labelSumLoss.Size = new Size(55, 15);
@@ -391,8 +391,8 @@ namespace Resonalyze
             // 
             // comboBoxSumLoss
             // 
-            comboBoxSumLoss.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxSumLoss.ForeColor = Color.White;
+            comboBoxSumLoss.BackColor = UiPalette.ControlSurface;
+            comboBoxSumLoss.ForeColor = UiPalette.TextPrimary;
             comboBoxSumLoss.Location = new Point(65, 4);
             comboBoxSumLoss.MinimumSize = new Size(36, 19);
             comboBoxSumLoss.Name = "comboBoxSumLoss";
@@ -404,7 +404,7 @@ namespace Resonalyze
             radioViewMagnitude.AutoSize = true;
             radioViewMagnitude.Checked = true;
             radioViewMagnitude.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioViewMagnitude.ForeColor = Color.FromArgb(210, 214, 222);
+            radioViewMagnitude.ForeColor = UiPalette.TextDefault;
             radioViewMagnitude.Location = new Point(5, 2);
             radioViewMagnitude.Name = "radioViewMagnitude";
             radioViewMagnitude.Size = new Size(83, 19);
@@ -417,7 +417,7 @@ namespace Resonalyze
             // 
             radioViewPhase.AutoSize = true;
             radioViewPhase.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioViewPhase.ForeColor = Color.FromArgb(210, 214, 222);
+            radioViewPhase.ForeColor = UiPalette.TextDefault;
             radioViewPhase.Location = new Point(97, 2);
             radioViewPhase.Name = "radioViewPhase";
             radioViewPhase.Size = new Size(56, 19);
@@ -429,7 +429,7 @@ namespace Resonalyze
             // 
             radioViewImpulse.AutoSize = true;
             radioViewImpulse.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioViewImpulse.ForeColor = Color.FromArgb(210, 214, 222);
+            radioViewImpulse.ForeColor = UiPalette.TextDefault;
             radioViewImpulse.Location = new Point(162, 2);
             radioViewImpulse.Name = "radioViewImpulse";
             radioViewImpulse.Size = new Size(68, 19);
@@ -441,7 +441,7 @@ namespace Resonalyze
             //
             radioViewGroupDelay.AutoSize = true;
             radioViewGroupDelay.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioViewGroupDelay.ForeColor = Color.FromArgb(210, 214, 222);
+            radioViewGroupDelay.ForeColor = UiPalette.TextDefault;
             radioViewGroupDelay.Location = new Point(236, 2);
             radioViewGroupDelay.Name = "radioViewGroupDelay";
             radioViewGroupDelay.Size = new Size(89, 19);
@@ -453,7 +453,7 @@ namespace Resonalyze
             // 
             radioViewStep.AutoSize = true;
             radioViewStep.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioViewStep.ForeColor = Color.FromArgb(210, 214, 222);
+            radioViewStep.ForeColor = UiPalette.TextDefault;
             radioViewStep.Location = new Point(331, 2);
             radioViewStep.Name = "radioViewStep";
             radioViewStep.Size = new Size(50, 19);
@@ -465,7 +465,7 @@ namespace Resonalyze
             // 
             labelSmoothing.AutoSize = true;
             labelSmoothing.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelSmoothing.ForeColor = Color.FromArgb(210, 214, 222);
+            labelSmoothing.ForeColor = UiPalette.TextDefault;
             labelSmoothing.Location = new Point(810, 447);
             labelSmoothing.Name = "labelSmoothing";
             labelSmoothing.Size = new Size(70, 15);
@@ -474,8 +474,8 @@ namespace Resonalyze
             // 
             // comboBoxSmoothing
             // 
-            comboBoxSmoothing.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxSmoothing.ForeColor = Color.White;
+            comboBoxSmoothing.BackColor = UiPalette.ControlSurface;
+            comboBoxSmoothing.ForeColor = UiPalette.TextPrimary;
             comboBoxSmoothing.Location = new Point(884, 445);
             comboBoxSmoothing.MinimumSize = new Size(36, 19);
             comboBoxSmoothing.Name = "comboBoxSmoothing";
@@ -484,9 +484,9 @@ namespace Resonalyze
             // 
             // buttonAutoDelay
             // 
-            buttonAutoDelay.BackColor = Color.FromArgb(46, 51, 67);
+            buttonAutoDelay.BackColor = UiPalette.ButtonBackground;
             buttonAutoDelay.FlatStyle = FlatStyle.Popup;
-            buttonAutoDelay.ForeColor = Color.White;
+            buttonAutoDelay.ForeColor = UiPalette.TextPrimary;
             buttonAutoDelay.Location = new Point(359, 530);
             buttonAutoDelay.Name = "buttonAutoDelay";
             buttonAutoDelay.Size = new Size(125, 24);
@@ -496,9 +496,9 @@ namespace Resonalyze
             // 
             // buttonAi
             // 
-            buttonAi.BackColor = Color.FromArgb(46, 51, 67);
+            buttonAi.BackColor = UiPalette.ButtonBackground;
             buttonAi.FlatStyle = FlatStyle.Popup;
-            buttonAi.ForeColor = Color.White;
+            buttonAi.ForeColor = UiPalette.TextPrimary;
             buttonAi.Location = new Point(359, 560);
             buttonAi.Name = "buttonAi";
             buttonAi.Size = new Size(125, 24);
@@ -508,9 +508,9 @@ namespace Resonalyze
             // 
             // buttonAutoSetup
             // 
-            buttonAutoSetup.BackColor = Color.FromArgb(46, 51, 67);
+            buttonAutoSetup.BackColor = UiPalette.ButtonBackground;
             buttonAutoSetup.FlatStyle = FlatStyle.Popup;
-            buttonAutoSetup.ForeColor = Color.White;
+            buttonAutoSetup.ForeColor = UiPalette.TextPrimary;
             buttonAutoSetup.Location = new Point(359, 500);
             buttonAutoSetup.Name = "buttonAutoSetup";
             buttonAutoSetup.Size = new Size(125, 24);
@@ -520,9 +520,9 @@ namespace Resonalyze
             // 
             // buttonDspProcessor
             // 
-            buttonDspProcessor.BackColor = Color.FromArgb(46, 51, 67);
+            buttonDspProcessor.BackColor = UiPalette.ButtonBackground;
             buttonDspProcessor.FlatStyle = FlatStyle.Popup;
-            buttonDspProcessor.ForeColor = Color.White;
+            buttonDspProcessor.ForeColor = UiPalette.TextPrimary;
             buttonDspProcessor.Location = new Point(359, 470);
             buttonDspProcessor.Name = "buttonDspProcessor";
             buttonDspProcessor.Size = new Size(125, 24);
@@ -534,7 +534,7 @@ namespace Resonalyze
             // 
             buttonCaptureOverlay.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonCaptureOverlay.FlatStyle = FlatStyle.Popup;
-            buttonCaptureOverlay.ForeColor = Color.White;
+            buttonCaptureOverlay.ForeColor = UiPalette.TextPrimary;
             buttonCaptureOverlay.Location = new Point(358, 702);
             buttonCaptureOverlay.Name = "buttonCaptureOverlay";
             buttonCaptureOverlay.Size = new Size(125, 24);
@@ -546,7 +546,7 @@ namespace Resonalyze
             // 
             buttonExport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonExport.FlatStyle = FlatStyle.Popup;
-            buttonExport.ForeColor = Color.White;
+            buttonExport.ForeColor = UiPalette.TextPrimary;
             buttonExport.Location = new Point(358, 732);
             buttonExport.Name = "buttonExport";
             buttonExport.Size = new Size(125, 24);
@@ -557,7 +557,7 @@ namespace Resonalyze
             // buttonPhaseGate
             // 
             buttonPhaseGate.FlatStyle = FlatStyle.Popup;
-            buttonPhaseGate.ForeColor = Color.White;
+            buttonPhaseGate.ForeColor = UiPalette.TextPrimary;
             buttonPhaseGate.Location = new Point(1132, 409);
             buttonPhaseGate.Name = "buttonPhaseGate";
             buttonPhaseGate.Size = new Size(80, 24);
@@ -567,8 +567,8 @@ namespace Resonalyze
             // 
             // comboBoxCalibration
             // 
-            comboBoxCalibration.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxCalibration.ForeColor = Color.White;
+            comboBoxCalibration.BackColor = UiPalette.ControlSurface;
+            comboBoxCalibration.ForeColor = UiPalette.TextPrimary;
             comboBoxCalibration.Location = new Point(931, 411);
             comboBoxCalibration.MinimumSize = new Size(36, 19);
             comboBoxCalibration.Name = "comboBoxCalibration";
@@ -579,7 +579,7 @@ namespace Resonalyze
             // 
             buttonSessionImport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonSessionImport.FlatStyle = FlatStyle.Popup;
-            buttonSessionImport.ForeColor = Color.White;
+            buttonSessionImport.ForeColor = UiPalette.TextPrimary;
             buttonSessionImport.Location = new Point(358, 672);
             buttonSessionImport.Name = "buttonSessionImport";
             buttonSessionImport.Size = new Size(125, 24);
@@ -591,7 +591,7 @@ namespace Resonalyze
             // 
             buttonSessionExport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonSessionExport.FlatStyle = FlatStyle.Popup;
-            buttonSessionExport.ForeColor = Color.White;
+            buttonSessionExport.ForeColor = UiPalette.TextPrimary;
             buttonSessionExport.Location = new Point(358, 642);
             buttonSessionExport.Name = "buttonSessionExport";
             buttonSessionExport.Size = new Size(125, 24);
@@ -603,7 +603,7 @@ namespace Resonalyze
             // 
             buttonAudition.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonAudition.FlatStyle = FlatStyle.Popup;
-            buttonAudition.ForeColor = Color.White;
+            buttonAudition.ForeColor = UiPalette.TextPrimary;
             buttonAudition.Location = new Point(358, 612);
             buttonAudition.Name = "buttonAudition";
             buttonAudition.Size = new Size(125, 24);
@@ -614,7 +614,7 @@ namespace Resonalyze
             // dspModePanel
             // 
             dspModePanel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            dspModePanel.BackColor = Color.FromArgb(46, 50, 62);
+            dspModePanel.BackColor = UiPalette.PanelSurface;
             dspModePanel.Controls.Add(labelDspMode);
             dspModePanel.Controls.Add(radioDspMagnitude);
             dspModePanel.Controls.Add(radioDspPhase);
@@ -629,7 +629,7 @@ namespace Resonalyze
             // 
             labelDspMode.AutoSize = true;
             labelDspMode.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelDspMode.ForeColor = Color.FromArgb(210, 214, 222);
+            labelDspMode.ForeColor = UiPalette.TextDefault;
             labelDspMode.Location = new Point(2, 4);
             labelDspMode.Name = "labelDspMode";
             labelDspMode.Size = new Size(30, 15);
@@ -641,7 +641,7 @@ namespace Resonalyze
             radioDspMagnitude.AutoSize = true;
             radioDspMagnitude.Checked = true;
             radioDspMagnitude.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioDspMagnitude.ForeColor = Color.FromArgb(210, 214, 222);
+            radioDspMagnitude.ForeColor = UiPalette.TextDefault;
             radioDspMagnitude.Location = new Point(42, 2);
             radioDspMagnitude.Name = "radioDspMagnitude";
             radioDspMagnitude.Size = new Size(83, 19);
@@ -654,7 +654,7 @@ namespace Resonalyze
             // 
             radioDspPhase.AutoSize = true;
             radioDspPhase.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioDspPhase.ForeColor = Color.FromArgb(210, 214, 222);
+            radioDspPhase.ForeColor = UiPalette.TextDefault;
             radioDspPhase.Location = new Point(131, 2);
             radioDspPhase.Name = "radioDspPhase";
             radioDspPhase.Size = new Size(56, 19);
@@ -666,7 +666,7 @@ namespace Resonalyze
             // 
             radioDspGroupDelay.AutoSize = true;
             radioDspGroupDelay.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioDspGroupDelay.ForeColor = Color.FromArgb(210, 214, 222);
+            radioDspGroupDelay.ForeColor = UiPalette.TextDefault;
             radioDspGroupDelay.Location = new Point(193, 2);
             radioDspGroupDelay.Name = "radioDspGroupDelay";
             radioDspGroupDelay.Size = new Size(89, 19);
@@ -678,7 +678,7 @@ namespace Resonalyze
             // 
             radioDspCorrelation.AutoSize = true;
             radioDspCorrelation.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioDspCorrelation.ForeColor = Color.FromArgb(210, 214, 222);
+            radioDspCorrelation.ForeColor = UiPalette.TextDefault;
             radioDspCorrelation.Location = new Point(5, 2);
             radioDspCorrelation.Name = "radioDspCorrelation";
             radioDspCorrelation.Size = new Size(83, 19);
@@ -690,7 +690,7 @@ namespace Resonalyze
             // 
             radioDspCoherence.AutoSize = true;
             radioDspCoherence.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioDspCoherence.ForeColor = Color.FromArgb(210, 214, 222);
+            radioDspCoherence.ForeColor = UiPalette.TextDefault;
             radioDspCoherence.Location = new Point(88, 2);
             radioDspCoherence.Name = "radioDspCoherence";
             radioDspCoherence.Size = new Size(81, 19);
@@ -700,9 +700,9 @@ namespace Resonalyze
             // 
             // comboBoxCorrelationPair
             // 
-            comboBoxCorrelationPair.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxCorrelationPair.BackColor = UiPalette.ControlSurface;
             comboBoxCorrelationPair.Enabled = false;
-            comboBoxCorrelationPair.ForeColor = Color.White;
+            comboBoxCorrelationPair.ForeColor = UiPalette.TextPrimary;
             comboBoxCorrelationPair.Location = new Point(178, 2);
             comboBoxCorrelationPair.MinimumSize = new Size(36, 19);
             comboBoxCorrelationPair.Name = "comboBoxCorrelationPair";
@@ -711,7 +711,7 @@ namespace Resonalyze
             // 
             // panel1
             // 
-            panel1.BackColor = Color.FromArgb(46, 50, 62);
+            panel1.BackColor = UiPalette.PanelSurface;
             panel1.Controls.Add(radioViewMagnitude);
             panel1.Controls.Add(radioViewImpulse);
             panel1.Controls.Add(radioViewGroupDelay);
@@ -726,7 +726,7 @@ namespace Resonalyze
             // panel2
             // 
             panel2.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            panel2.BackColor = Color.FromArgb(46, 50, 62);
+            panel2.BackColor = UiPalette.PanelSurface;
             panel2.Controls.Add(radioDspCorrelation);
             panel2.Controls.Add(radioDspCoherence);
             panel2.Controls.Add(comboBoxCorrelationPair);
@@ -749,7 +749,7 @@ namespace Resonalyze
             // 
             // sumLossPanel
             // 
-            sumLossPanel.BackColor = Color.FromArgb(46, 50, 62);
+            sumLossPanel.BackColor = UiPalette.PanelSurface;
             sumLossPanel.Controls.Add(labelSumLoss);
             sumLossPanel.Controls.Add(comboBoxSumLoss);
             sumLossPanel.CornerRadius = 4;
@@ -760,7 +760,7 @@ namespace Resonalyze
             // 
             // targetPanel
             // 
-            targetPanel.BackColor = Color.FromArgb(46, 50, 62);
+            targetPanel.BackColor = UiPalette.PanelSurface;
             targetPanel.Controls.Add(checkBoxShowTarget);
             targetPanel.Controls.Add(numericTargetLevel);
             targetPanel.Controls.Add(buttonTargetSettings);
@@ -775,7 +775,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             AutoScroll = true;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(panel2);
             Controls.Add(panel1);
@@ -808,7 +808,7 @@ namespace Resonalyze
             Controls.Add(dspPlotView);
             Controls.Add(mainPlotView);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             Name = "VirtualCrossoverPanel";
             Padding = new Padding(6);
             Size = new Size(1246, 770);
@@ -846,16 +846,16 @@ namespace Resonalyze
         private ReleaseClickCheckBox checkBoxSideLock;
         private Label labelView;
         private Label labelGroupView;
-        private DarkComboBox comboBoxGroupView;
+        private ThemedComboBox comboBoxGroupView;
         private Label labelCurves;
         private ReleaseClickCheckBox checkBoxShowTarget;
-        private DarkNumericUpDown numericTargetLevel;
+        private ThemedNumericUpDown numericTargetLevel;
         private ReleaseClickButton buttonTargetSettings;
         private Label labelCalibration;
         private ReleaseClickCheckBox checkBoxShowSum;
         private ReleaseClickCheckBox checkBoxHybrid;
         private Label labelSumLoss;
-        private DarkComboBox comboBoxSumLoss;
+        private ThemedComboBox comboBoxSumLoss;
         private RoundedPanel curvesPanel;
         private RoundedPanel sumLossPanel;
         private RoundedPanel targetPanel;
@@ -865,7 +865,7 @@ namespace Resonalyze
         private ReleaseClickRadioButton radioViewGroupDelay;
         private ReleaseClickRadioButton radioViewStep;
         private Label labelSmoothing;
-        private DarkComboBox comboBoxSmoothing;
+        private ThemedComboBox comboBoxSmoothing;
         private ReleaseClickButton buttonAutoDelay;
         private ReleaseClickButton buttonAi;
         private ReleaseClickButton buttonAutoSetup;
@@ -873,7 +873,7 @@ namespace Resonalyze
         private ReleaseClickButton buttonCaptureOverlay;
         private ReleaseClickButton buttonExport;
         private ReleaseClickButton buttonPhaseGate;
-        private DarkComboBox comboBoxCalibration;
+        private ThemedComboBox comboBoxCalibration;
         private ReleaseClickButton buttonSessionImport;
         private ReleaseClickButton buttonSessionExport;
         private ReleaseClickButton buttonAudition;
@@ -884,7 +884,7 @@ namespace Resonalyze
         private ReleaseClickRadioButton radioDspGroupDelay;
         private ReleaseClickRadioButton radioDspCorrelation;
         private ReleaseClickRadioButton radioDspCoherence;
-        private DarkComboBox comboBoxCorrelationPair;
+        private ThemedComboBox comboBoxCorrelationPair;
         private RoundedPanel panel1;
         private RoundedPanel panel2;
     }

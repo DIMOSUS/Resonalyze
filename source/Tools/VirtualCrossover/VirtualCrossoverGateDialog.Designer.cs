@@ -31,25 +31,25 @@ namespace Resonalyze
         private void InitializeComponent()
         {
             labelGateOffset = new Label();
-            numericGateOffset = new DarkNumericUpDown();
+            numericGateOffset = new ThemedNumericUpDown();
             checkAutoOffset = new ReleaseClickCheckBox();
             labelLeft = new Label();
-            numericLeft = new DarkNumericUpDown();
+            numericLeft = new ThemedNumericUpDown();
             labelPlateau = new Label();
-            numericPlateau = new DarkNumericUpDown();
+            numericPlateau = new ThemedNumericUpDown();
             labelRight = new Label();
-            numericRight = new DarkNumericUpDown();
+            numericRight = new ThemedNumericUpDown();
             labelMinFrequency = new Label();
             labelTau = new Label();
-            numericTau = new DarkNumericUpDown();
+            numericTau = new ThemedNumericUpDown();
             buttonTauSlope = new ReleaseClickButton();
             buttonTauPeak = new ReleaseClickButton();
             labelWindowMode = new Label();
-            comboWindowMode = new DarkComboBox();
+            comboWindowMode = new ThemedComboBox();
             labelFdwCycles = new Label();
-            comboFdwCycles = new DarkComboBox();
+            comboFdwCycles = new ThemedComboBox();
             labelDetrendMode = new Label();
-            comboDetrendMode = new DarkComboBox();
+            comboDetrendMode = new ThemedComboBox();
             labelAutoDetrend = new Label();
             irPlotView = new OxyPlot.WindowsForms.PlotView();
             buttonSave = new ReleaseClickButton();
@@ -65,7 +65,7 @@ namespace Resonalyze
             // 
             labelGateOffset.AutoSize = true;
             labelGateOffset.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelGateOffset.ForeColor = Color.FromArgb(210, 214, 222);
+            labelGateOffset.ForeColor = UiPalette.TextDefault;
             labelGateOffset.Location = new Point(12, 14);
             labelGateOffset.Name = "labelGateOffset";
             labelGateOffset.Size = new Size(83, 15);
@@ -74,9 +74,9 @@ namespace Resonalyze
             // 
             // numericGateOffset
             // 
-            numericGateOffset.BackColor = Color.FromArgb(55, 60, 72);
+            numericGateOffset.BackColor = UiPalette.ControlSurface;
             numericGateOffset.DecimalPlaces = 2;
-            numericGateOffset.ForeColor = Color.White;
+            numericGateOffset.ForeColor = UiPalette.TextPrimary;
             numericGateOffset.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             numericGateOffset.Location = new Point(112, 12);
             numericGateOffset.Maximum = new decimal(new int[] { 10000, 0, 0, 0 });
@@ -92,10 +92,10 @@ namespace Resonalyze
             // checkAutoOffset
             //
             checkAutoOffset.Appearance = Appearance.Button;
-            checkAutoOffset.BackColor = Color.FromArgb(55, 60, 72);
-            checkAutoOffset.FlatAppearance.CheckedBackColor = Color.FromArgb(80, 100, 140);
+            checkAutoOffset.BackColor = UiPalette.ControlSurface;
+            checkAutoOffset.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkAutoOffset.FlatStyle = FlatStyle.Flat;
-            checkAutoOffset.ForeColor = Color.White;
+            checkAutoOffset.ForeColor = UiPalette.TextPrimary;
             checkAutoOffset.Location = new Point(198, 10);
             checkAutoOffset.Name = "checkAutoOffset";
             checkAutoOffset.Size = new Size(44, 23);
@@ -109,7 +109,7 @@ namespace Resonalyze
             // 
             labelLeft.AutoSize = true;
             labelLeft.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelLeft.ForeColor = Color.FromArgb(210, 214, 222);
+            labelLeft.ForeColor = UiPalette.TextDefault;
             labelLeft.Location = new Point(262, 14);
             labelLeft.Name = "labelLeft";
             labelLeft.Size = new Size(46, 15);
@@ -118,9 +118,9 @@ namespace Resonalyze
             // 
             // numericLeft
             // 
-            numericLeft.BackColor = Color.FromArgb(55, 60, 72);
+            numericLeft.BackColor = UiPalette.ControlSurface;
             numericLeft.DecimalPlaces = 2;
-            numericLeft.ForeColor = Color.White;
+            numericLeft.ForeColor = UiPalette.TextPrimary;
             numericLeft.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             numericLeft.Location = new Point(322, 12);
             numericLeft.Maximum = new decimal(new int[] { 1000, 0, 0, 0 });
@@ -137,7 +137,7 @@ namespace Resonalyze
             // 
             labelPlateau.AutoSize = true;
             labelPlateau.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelPlateau.ForeColor = Color.FromArgb(210, 214, 222);
+            labelPlateau.ForeColor = UiPalette.TextDefault;
             labelPlateau.Location = new Point(12, 44);
             labelPlateau.Name = "labelPlateau";
             labelPlateau.Size = new Size(65, 15);
@@ -146,9 +146,9 @@ namespace Resonalyze
             // 
             // numericPlateau
             // 
-            numericPlateau.BackColor = Color.FromArgb(55, 60, 72);
+            numericPlateau.BackColor = UiPalette.ControlSurface;
             numericPlateau.DecimalPlaces = 2;
-            numericPlateau.ForeColor = Color.White;
+            numericPlateau.ForeColor = UiPalette.TextPrimary;
             numericPlateau.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             numericPlateau.Location = new Point(112, 42);
             numericPlateau.Maximum = new decimal(new int[] { 1000, 0, 0, 0 });
@@ -165,7 +165,7 @@ namespace Resonalyze
             // 
             labelRight.AutoSize = true;
             labelRight.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelRight.ForeColor = Color.FromArgb(210, 214, 222);
+            labelRight.ForeColor = UiPalette.TextDefault;
             labelRight.Location = new Point(262, 44);
             labelRight.Name = "labelRight";
             labelRight.Size = new Size(54, 15);
@@ -174,9 +174,9 @@ namespace Resonalyze
             // 
             // numericRight
             // 
-            numericRight.BackColor = Color.FromArgb(55, 60, 72);
+            numericRight.BackColor = UiPalette.ControlSurface;
             numericRight.DecimalPlaces = 2;
-            numericRight.ForeColor = Color.White;
+            numericRight.ForeColor = UiPalette.TextPrimary;
             numericRight.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             numericRight.Location = new Point(322, 42);
             numericRight.Maximum = new decimal(new int[] { 1000, 0, 0, 0 });
@@ -192,7 +192,7 @@ namespace Resonalyze
             // labelMinFrequency
             // 
             labelMinFrequency.AutoSize = true;
-            labelMinFrequency.ForeColor = Color.FromArgb(230, 184, 0);
+            labelMinFrequency.ForeColor = UiPalette.Warning;
             labelMinFrequency.Location = new Point(414, 44);
             labelMinFrequency.Name = "labelMinFrequency";
             labelMinFrequency.Size = new Size(120, 15);
@@ -203,7 +203,7 @@ namespace Resonalyze
             //
             labelTau.AutoSize = true;
             labelTau.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelTau.ForeColor = Color.FromArgb(210, 214, 222);
+            labelTau.ForeColor = UiPalette.TextDefault;
             labelTau.Location = new Point(12, 74);
             labelTau.Name = "labelTau";
             labelTau.Size = new Size(34, 15);
@@ -212,9 +212,9 @@ namespace Resonalyze
             //
             // numericTau
             //
-            numericTau.BackColor = Color.FromArgb(55, 60, 72);
+            numericTau.BackColor = UiPalette.ControlSurface;
             numericTau.DecimalPlaces = 2;
-            numericTau.ForeColor = Color.White;
+            numericTau.ForeColor = UiPalette.TextPrimary;
             numericTau.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
             numericTau.Location = new Point(112, 72);
             numericTau.Maximum = new decimal(new int[] { 10000, 0, 0, 0 });
@@ -230,7 +230,7 @@ namespace Resonalyze
             // buttonTauSlope
             //
             buttonTauSlope.FlatStyle = FlatStyle.Popup;
-            buttonTauSlope.ForeColor = Color.White;
+            buttonTauSlope.ForeColor = UiPalette.TextPrimary;
             buttonTauSlope.Location = new Point(198, 70);
             buttonTauSlope.Name = "buttonTauSlope";
             buttonTauSlope.Size = new Size(56, 23);
@@ -241,7 +241,7 @@ namespace Resonalyze
             // buttonTauPeak
             //
             buttonTauPeak.FlatStyle = FlatStyle.Popup;
-            buttonTauPeak.ForeColor = Color.White;
+            buttonTauPeak.ForeColor = UiPalette.TextPrimary;
             buttonTauPeak.Location = new Point(260, 70);
             buttonTauPeak.Name = "buttonTauPeak";
             buttonTauPeak.Size = new Size(56, 23);
@@ -252,7 +252,7 @@ namespace Resonalyze
             // labelWindowMode
             //
             labelWindowMode.AutoSize = true;
-            labelWindowMode.ForeColor = Color.FromArgb(210, 214, 222);
+            labelWindowMode.ForeColor = UiPalette.TextDefault;
             labelWindowMode.Location = new Point(12, 104);
             labelWindowMode.Name = "labelWindowMode";
             labelWindowMode.Size = new Size(52, 15);
@@ -261,9 +261,9 @@ namespace Resonalyze
             //
             // comboWindowMode
             //
-            comboWindowMode.BackColor = Color.FromArgb(55, 60, 72);
+            comboWindowMode.BackColor = UiPalette.ControlSurface;
             comboWindowMode.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboWindowMode.ForeColor = Color.White;
+            comboWindowMode.ForeColor = UiPalette.TextPrimary;
             comboWindowMode.Items.AddRange(new object[] { "Fixed", "FDW" });
             comboWindowMode.Location = new Point(112, 102);
             comboWindowMode.MinimumSize = new Size(36, 19);
@@ -274,7 +274,7 @@ namespace Resonalyze
             // labelFdwCycles
             //
             labelFdwCycles.AutoSize = true;
-            labelFdwCycles.ForeColor = Color.FromArgb(210, 214, 222);
+            labelFdwCycles.ForeColor = UiPalette.TextDefault;
             labelFdwCycles.Location = new Point(262, 104);
             labelFdwCycles.Name = "labelFdwCycles";
             labelFdwCycles.Size = new Size(67, 15);
@@ -283,9 +283,9 @@ namespace Resonalyze
             //
             // comboFdwCycles
             //
-            comboFdwCycles.BackColor = Color.FromArgb(55, 60, 72);
+            comboFdwCycles.BackColor = UiPalette.ControlSurface;
             comboFdwCycles.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboFdwCycles.ForeColor = Color.White;
+            comboFdwCycles.ForeColor = UiPalette.TextPrimary;
             comboFdwCycles.Items.AddRange(new object[] { 4, 6, 8 });
             comboFdwCycles.Location = new Point(342, 102);
             comboFdwCycles.MinimumSize = new Size(36, 19);
@@ -296,7 +296,7 @@ namespace Resonalyze
             // labelDetrendMode
             //
             labelDetrendMode.AutoSize = true;
-            labelDetrendMode.ForeColor = Color.FromArgb(210, 214, 222);
+            labelDetrendMode.ForeColor = UiPalette.TextDefault;
             labelDetrendMode.Location = new Point(12, 134);
             labelDetrendMode.Name = "labelDetrendMode";
             labelDetrendMode.Size = new Size(49, 15);
@@ -305,9 +305,9 @@ namespace Resonalyze
             //
             // comboDetrendMode
             //
-            comboDetrendMode.BackColor = Color.FromArgb(55, 60, 72);
+            comboDetrendMode.BackColor = UiPalette.ControlSurface;
             comboDetrendMode.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboDetrendMode.ForeColor = Color.White;
+            comboDetrendMode.ForeColor = UiPalette.TextPrimary;
             comboDetrendMode.Items.AddRange(new object[] { "Off", "Auto", "Manual" });
             comboDetrendMode.Location = new Point(112, 132);
             comboDetrendMode.MinimumSize = new Size(36, 19);
@@ -318,7 +318,7 @@ namespace Resonalyze
             // labelAutoDetrend
             //
             labelAutoDetrend.AutoSize = true;
-            labelAutoDetrend.ForeColor = Color.FromArgb(210, 214, 222);
+            labelAutoDetrend.ForeColor = UiPalette.TextDefault;
             labelAutoDetrend.Location = new Point(262, 134);
             labelAutoDetrend.Name = "labelAutoDetrend";
             labelAutoDetrend.Size = new Size(0, 15);
@@ -327,7 +327,7 @@ namespace Resonalyze
             // irPlotView
             //
             irPlotView.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            irPlotView.BackColor = Color.FromArgb(32, 36, 46);
+            irPlotView.BackColor = UiPalette.GraphSurfaceMuted;
             irPlotView.Location = new Point(12, 164);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
@@ -340,10 +340,10 @@ namespace Resonalyze
             // buttonSave
             // 
             buttonSave.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            buttonSave.BackColor = Color.FromArgb(46, 51, 67);
+            buttonSave.BackColor = UiPalette.ButtonBackground;
             buttonSave.DialogResult = DialogResult.OK;
             buttonSave.FlatStyle = FlatStyle.Popup;
-            buttonSave.ForeColor = Color.White;
+            buttonSave.ForeColor = UiPalette.TextPrimary;
             buttonSave.Location = new Point(434, 474);
             buttonSave.Name = "buttonSave";
             buttonSave.Size = new Size(84, 26);
@@ -356,7 +356,7 @@ namespace Resonalyze
             buttonCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
-            buttonCancel.ForeColor = Color.White;
+            buttonCancel.ForeColor = UiPalette.TextPrimary;
             buttonCancel.Location = new Point(524, 474);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
@@ -368,7 +368,7 @@ namespace Resonalyze
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             ClientSize = new Size(620, 512);
             Controls.Add(labelGateOffset);
             Controls.Add(numericGateOffset);
@@ -395,7 +395,7 @@ namespace Resonalyze
             Controls.Add(buttonSave);
             Controls.Add(buttonCancel);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -415,25 +415,25 @@ namespace Resonalyze
         #endregion
 
         private Label labelGateOffset;
-        private DarkNumericUpDown numericGateOffset;
+        private ThemedNumericUpDown numericGateOffset;
         private ReleaseClickCheckBox checkAutoOffset;
         private Label labelLeft;
-        private DarkNumericUpDown numericLeft;
+        private ThemedNumericUpDown numericLeft;
         private Label labelPlateau;
-        private DarkNumericUpDown numericPlateau;
+        private ThemedNumericUpDown numericPlateau;
         private Label labelRight;
-        private DarkNumericUpDown numericRight;
+        private ThemedNumericUpDown numericRight;
         private Label labelMinFrequency;
         private Label labelTau;
-        private DarkNumericUpDown numericTau;
+        private ThemedNumericUpDown numericTau;
         private ReleaseClickButton buttonTauSlope;
         private ReleaseClickButton buttonTauPeak;
         private Label labelWindowMode;
-        private DarkComboBox comboWindowMode;
+        private ThemedComboBox comboWindowMode;
         private Label labelFdwCycles;
-        private DarkComboBox comboFdwCycles;
+        private ThemedComboBox comboFdwCycles;
         private Label labelDetrendMode;
-        private DarkComboBox comboDetrendMode;
+        private ThemedComboBox comboDetrendMode;
         private Label labelAutoDetrend;
         private OxyPlot.WindowsForms.PlotView irPlotView;
         private ReleaseClickButton buttonSave;

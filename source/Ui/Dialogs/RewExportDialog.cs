@@ -29,7 +29,7 @@ internal sealed class RewExportDialog : Form
     {
         SuspendLayout();
 
-        UiStyle.ApplyDarkDialog(
+        UiStyle.ApplyDialogChrome(
             this,
             new Size(560, 348),
             title: "Send to REW",
@@ -49,7 +49,7 @@ internal sealed class RewExportDialog : Form
             DescribeLevel(splOffsetDb) + "\r\n\r\n" +
             DescribeTiming(timingReference),
             new Point(20, 58),
-            UiPalette.TextHighlight,
+            UiPalette.TextDefault,
             new Font("Segoe UI", 9.5F),
             autoSize: false);
         bodyLabel.Size = new Size(520, 112);
@@ -57,7 +57,7 @@ internal sealed class RewExportDialog : Form
         var nameLabel = UiStyle.CreateLabel(
             "Name in REW:",
             new Point(20, 184),
-            UiPalette.TextSecondaryAlt,
+            UiPalette.TextDefault,
             new Font("Segoe UI", 9.5F));
 
         nameInput.Text = suggestedName;
@@ -66,7 +66,7 @@ internal sealed class RewExportDialog : Form
         var addressLabel = UiStyle.CreateLabel(
             "REW address:",
             new Point(20, 220),
-            UiPalette.TextSecondaryAlt,
+            UiPalette.TextDefault,
             new Font("Segoe UI", 9.5F));
 
         addressInput.Text = baseUrl;
@@ -77,7 +77,7 @@ internal sealed class RewExportDialog : Form
                 ? $"Answering: REW {version}"
                 : "Not answering. Start REW and enable its API server in Preferences -> API.",
             new Point(140, 247),
-            rewVersion == null ? UiPalette.WarningAmber : UiPalette.TextSecondary,
+            rewVersion == null ? UiPalette.Warning : UiPalette.TextSecondary,
             new Font("Segoe UI", 9F),
             autoSize: false);
         statusLabel.Size = new Size(380, 32);

@@ -15,7 +15,7 @@ internal enum RewTimingOffsetChoice
 /// <summary>Asks the timing offset REW's text export cannot carry; "I do not know" is a valid outcome, not a cancel.</summary>
 internal sealed class RewTimingOffsetDialog : Form
 {
-    private readonly DarkNumericUpDown offsetInput = new();
+    private readonly ThemedNumericUpDown offsetInput = new();
 
     public RewTimingOffsetDialog(double impliedArrivalMs)
     {
@@ -38,7 +38,7 @@ internal sealed class RewTimingOffsetDialog : Form
     {
         SuspendLayout();
 
-        UiStyle.ApplyDarkDialog(
+        UiStyle.ApplyDialogChrome(
             this,
             new Size(560, 300),
             title: "REW timing offset",
@@ -58,7 +58,7 @@ internal sealed class RewTimingOffsetDialog : Form
             "arrival can be compared with every other measurement.\r\n\r\n" +
             "Most measurements were taken with no offset: leave it at 0.",
             new Point(20, 58),
-            UiPalette.TextHighlight,
+            UiPalette.TextDefault,
             new Font("Segoe UI", 9.5F),
             autoSize: false);
         bodyLabel.Size = new Size(520, 82);
@@ -66,7 +66,7 @@ internal sealed class RewTimingOffsetDialog : Form
         var offsetLabel = UiStyle.CreateLabel(
             "Timing offset (ms):",
             new Point(20, 152),
-            UiPalette.TextSecondaryAlt,
+            UiPalette.TextDefault,
             new Font("Segoe UI", 9.5F));
 
         offsetInput.BeginInit();

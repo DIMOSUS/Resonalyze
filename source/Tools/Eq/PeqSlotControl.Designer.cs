@@ -31,12 +31,12 @@ namespace Resonalyze
         {
             slotLayout = new TableLayoutPanel();
             slotLabel = new Label();
-            gainInput = new DarkNumericUpDown();
+            gainInput = new ThemedNumericUpDown();
             faderHost = new Panel();
             fader = new GainFader();
             groupDelayLabel = new Label();
-            qInput = new DarkNumericUpDown();
-            frequencyInput = new DarkNumericUpDown();
+            qInput = new ThemedNumericUpDown();
+            frequencyInput = new ThemedNumericUpDown();
             slotLayout.SuspendLayout();
             faderHost.SuspendLayout();
             (gainInput).BeginInit();
@@ -46,7 +46,7 @@ namespace Resonalyze
             //
             // slotLayout
             //
-            slotLayout.BackColor = Color.FromArgb(44, 50, 60);
+            slotLayout.BackColor = UiPalette.AppBackground;
             slotLayout.ColumnCount = 1;
             slotLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             slotLayout.Controls.Add(slotLabel, 0, 0);
@@ -71,7 +71,7 @@ namespace Resonalyze
             //
             slotLabel.Dock = DockStyle.Fill;
             slotLabel.Font = new Font("Segoe UI Semibold", 8F, FontStyle.Bold);
-            slotLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            slotLabel.ForeColor = UiPalette.TextDefault;
             slotLabel.Location = new Point(0, 0);
             slotLabel.Margin = new Padding(0);
             slotLabel.Name = "slotLabel";
@@ -83,11 +83,11 @@ namespace Resonalyze
             //
             // gainInput
             //
-            gainInput.BackColor = Color.FromArgb(55, 60, 72);
+            gainInput.BackColor = UiPalette.ControlSurface;
             gainInput.DecimalPlaces = 1;
             gainInput.Dock = DockStyle.Fill;
             gainInput.Font = new Font("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            gainInput.ForeColor = Color.White;
+            gainInput.ForeColor = UiPalette.TextPrimary;
             gainInput.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             gainInput.InlineLabel = "G";
             gainInput.Location = new Point(1, 16);
@@ -116,10 +116,10 @@ namespace Resonalyze
             //
             // fader
             //
-            fader.BackColor = Color.FromArgb(44, 50, 60);
+            fader.BackColor = UiPalette.AppBackground;
             fader.Dock = DockStyle.Fill;
             fader.Font = new Font("Segoe UI", 7.5F);
-            fader.ForeColor = Color.FromArgb(185, 190, 200);
+            fader.ForeColor = UiPalette.TextSecondary;
             fader.Location = new Point(0, 0);
             fader.Margin = new Padding(0);
             fader.Name = "fader";
@@ -131,7 +131,7 @@ namespace Resonalyze
             //
             groupDelayLabel.Dock = DockStyle.Fill;
             groupDelayLabel.Font = new Font("Segoe UI Semibold", 8.25F, FontStyle.Bold);
-            groupDelayLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            groupDelayLabel.ForeColor = UiPalette.TextDefault;
             groupDelayLabel.Location = new Point(0, 0);
             groupDelayLabel.Margin = new Padding(0);
             groupDelayLabel.Name = "groupDelayLabel";
@@ -144,11 +144,11 @@ namespace Resonalyze
             //
             // qInput
             //
-            qInput.BackColor = Color.FromArgb(55, 60, 72);
+            qInput.BackColor = UiPalette.ControlSurface;
             qInput.DecimalPlaces = 1;
             qInput.Dock = DockStyle.Fill;
             qInput.Font = new Font("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            qInput.ForeColor = Color.White;
+            qInput.ForeColor = UiPalette.TextPrimary;
             qInput.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
             qInput.InlineLabel = "Q";
             qInput.Location = new Point(1, 149);
@@ -165,11 +165,11 @@ namespace Resonalyze
             //
             // frequencyInput
             //
-            frequencyInput.BackColor = Color.FromArgb(55, 60, 72);
+            frequencyInput.BackColor = UiPalette.ControlSurface;
             frequencyInput.DecimalPlaces = 0;
             frequencyInput.Dock = DockStyle.Fill;
             frequencyInput.Font = new Font("Segoe UI", 8.25F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            frequencyInput.ForeColor = Color.White;
+            frequencyInput.ForeColor = UiPalette.TextPrimary;
             frequencyInput.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             frequencyInput.InlineLabel = "F";
             frequencyInput.Location = new Point(1, 171);
@@ -189,10 +189,10 @@ namespace Resonalyze
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(44, 50, 60);
+            BackColor = UiPalette.AppBackground;
             Controls.Add(slotLayout);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             MinimumSize = new Size(56, 120);
             Name = "PeqSlotControl";
             Size = new Size(64, 192);
@@ -208,11 +208,11 @@ namespace Resonalyze
 
         private TableLayoutPanel slotLayout;
         private Label slotLabel;
-        private DarkNumericUpDown gainInput;
+        private ThemedNumericUpDown gainInput;
         private Panel faderHost;
         private GainFader fader;
         private Label groupDelayLabel;
-        private DarkNumericUpDown qInput;
-        private DarkNumericUpDown frequencyInput;
+        private ThemedNumericUpDown qInput;
+        private ThemedNumericUpDown frequencyInput;
     }
 }

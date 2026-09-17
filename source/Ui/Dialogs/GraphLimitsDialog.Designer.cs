@@ -24,14 +24,14 @@ namespace Resonalyze
         {
             labelVerticalAxis = new Label();
             labelTop = new Label();
-            numericTop = new DarkNumericUpDown();
+            numericTop = new ThemedNumericUpDown();
             labelBottom = new Label();
-            numericBottom = new DarkNumericUpDown();
+            numericBottom = new ThemedNumericUpDown();
             labelHorizontalAxis = new Label();
             labelLeft = new Label();
-            numericLeft = new DarkNumericUpDown();
+            numericLeft = new ThemedNumericUpDown();
             labelRight = new Label();
-            numericRight = new DarkNumericUpDown();
+            numericRight = new ThemedNumericUpDown();
             buttonFit = new ReleaseClickButton();
             buttonDefaults = new ReleaseClickButton();
             buttonFitY = new ReleaseClickButton();
@@ -47,7 +47,7 @@ namespace Resonalyze
             //
             labelVerticalAxis.AutoSize = true;
             labelVerticalAxis.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelVerticalAxis.ForeColor = Color.FromArgb(210, 214, 222);
+            labelVerticalAxis.ForeColor = UiPalette.TextDefault;
             labelVerticalAxis.Location = new Point(12, 12);
             labelVerticalAxis.Name = "labelVerticalAxis";
             labelVerticalAxis.Size = new Size(84, 15);
@@ -57,7 +57,7 @@ namespace Resonalyze
             // labelTop
             //
             labelTop.AutoSize = true;
-            labelTop.ForeColor = Color.FromArgb(210, 214, 222);
+            labelTop.ForeColor = UiPalette.TextDefault;
             labelTop.Location = new Point(28, 40);
             labelTop.Name = "labelTop";
             labelTop.Size = new Size(28, 15);
@@ -66,9 +66,9 @@ namespace Resonalyze
             //
             // numericTop
             //
-            numericTop.BackColor = Color.FromArgb(55, 60, 72);
+            numericTop.BackColor = UiPalette.ControlSurface;
             numericTop.DecimalPlaces = 2;
-            numericTop.ForeColor = Color.White;
+            numericTop.ForeColor = UiPalette.TextPrimary;
             numericTop.Location = new Point(150, 36);
             numericTop.Name = "numericTop";
             numericTop.Size = new Size(166, 23);
@@ -78,7 +78,7 @@ namespace Resonalyze
             // labelBottom
             //
             labelBottom.AutoSize = true;
-            labelBottom.ForeColor = Color.FromArgb(210, 214, 222);
+            labelBottom.ForeColor = UiPalette.TextDefault;
             labelBottom.Location = new Point(28, 70);
             labelBottom.Name = "labelBottom";
             labelBottom.Size = new Size(48, 15);
@@ -87,9 +87,9 @@ namespace Resonalyze
             //
             // numericBottom
             //
-            numericBottom.BackColor = Color.FromArgb(55, 60, 72);
+            numericBottom.BackColor = UiPalette.ControlSurface;
             numericBottom.DecimalPlaces = 2;
-            numericBottom.ForeColor = Color.White;
+            numericBottom.ForeColor = UiPalette.TextPrimary;
             numericBottom.Location = new Point(150, 66);
             numericBottom.Name = "numericBottom";
             numericBottom.Size = new Size(166, 23);
@@ -100,7 +100,7 @@ namespace Resonalyze
             //
             labelHorizontalAxis.AutoSize = true;
             labelHorizontalAxis.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            labelHorizontalAxis.ForeColor = Color.FromArgb(210, 214, 222);
+            labelHorizontalAxis.ForeColor = UiPalette.TextDefault;
             labelHorizontalAxis.Location = new Point(12, 104);
             labelHorizontalAxis.Name = "labelHorizontalAxis";
             labelHorizontalAxis.Size = new Size(97, 15);
@@ -110,7 +110,7 @@ namespace Resonalyze
             // labelLeft
             //
             labelLeft.AutoSize = true;
-            labelLeft.ForeColor = Color.FromArgb(210, 214, 222);
+            labelLeft.ForeColor = UiPalette.TextDefault;
             labelLeft.Location = new Point(28, 132);
             labelLeft.Name = "labelLeft";
             labelLeft.Size = new Size(28, 15);
@@ -119,9 +119,9 @@ namespace Resonalyze
             //
             // numericLeft
             //
-            numericLeft.BackColor = Color.FromArgb(55, 60, 72);
+            numericLeft.BackColor = UiPalette.ControlSurface;
             numericLeft.DecimalPlaces = 2;
-            numericLeft.ForeColor = Color.White;
+            numericLeft.ForeColor = UiPalette.TextPrimary;
             numericLeft.Location = new Point(150, 128);
             numericLeft.Name = "numericLeft";
             numericLeft.Size = new Size(166, 23);
@@ -131,7 +131,7 @@ namespace Resonalyze
             // labelRight
             //
             labelRight.AutoSize = true;
-            labelRight.ForeColor = Color.FromArgb(210, 214, 222);
+            labelRight.ForeColor = UiPalette.TextDefault;
             labelRight.Location = new Point(28, 162);
             labelRight.Name = "labelRight";
             labelRight.Size = new Size(38, 15);
@@ -140,9 +140,9 @@ namespace Resonalyze
             //
             // numericRight
             //
-            numericRight.BackColor = Color.FromArgb(55, 60, 72);
+            numericRight.BackColor = UiPalette.ControlSurface;
             numericRight.DecimalPlaces = 2;
-            numericRight.ForeColor = Color.White;
+            numericRight.ForeColor = UiPalette.TextPrimary;
             numericRight.Location = new Point(150, 158);
             numericRight.Name = "numericRight";
             numericRight.Size = new Size(166, 23);
@@ -151,9 +151,9 @@ namespace Resonalyze
             //
             // buttonFit
             //
-            buttonFit.BackColor = Color.FromArgb(46, 51, 67);
+            buttonFit.BackColor = UiPalette.ButtonBackground;
             buttonFit.FlatStyle = FlatStyle.Popup;
-            buttonFit.ForeColor = Color.White;
+            buttonFit.ForeColor = UiPalette.TextPrimary;
             buttonFit.Location = new Point(12, 196);
             buttonFit.Name = "buttonFit";
             buttonFit.Size = new Size(96, 26);
@@ -163,9 +163,9 @@ namespace Resonalyze
             //
             // buttonFitY
             //
-            buttonFitY.BackColor = Color.FromArgb(46, 51, 67);
+            buttonFitY.BackColor = UiPalette.ButtonBackground;
             buttonFitY.FlatStyle = FlatStyle.Popup;
-            buttonFitY.ForeColor = Color.White;
+            buttonFitY.ForeColor = UiPalette.TextPrimary;
             buttonFitY.Location = new Point(116, 196);
             buttonFitY.Name = "buttonFitY";
             buttonFitY.Size = new Size(96, 26);
@@ -175,9 +175,9 @@ namespace Resonalyze
             //
             // buttonDefaults
             //
-            buttonDefaults.BackColor = Color.FromArgb(46, 51, 67);
+            buttonDefaults.BackColor = UiPalette.ButtonBackground;
             buttonDefaults.FlatStyle = FlatStyle.Popup;
-            buttonDefaults.ForeColor = Color.White;
+            buttonDefaults.ForeColor = UiPalette.TextPrimary;
             buttonDefaults.Location = new Point(220, 196);
             buttonDefaults.Name = "buttonDefaults";
             buttonDefaults.Size = new Size(96, 26);
@@ -187,9 +187,9 @@ namespace Resonalyze
             //
             // buttonApply
             //
-            buttonApply.BackColor = Color.FromArgb(46, 51, 67);
+            buttonApply.BackColor = UiPalette.ButtonBackground;
             buttonApply.FlatStyle = FlatStyle.Popup;
-            buttonApply.ForeColor = Color.White;
+            buttonApply.ForeColor = UiPalette.TextPrimary;
             buttonApply.Location = new Point(116, 232);
             buttonApply.Name = "buttonApply";
             buttonApply.Size = new Size(96, 26);
@@ -201,7 +201,7 @@ namespace Resonalyze
             //
             buttonClose.DialogResult = DialogResult.Cancel;
             buttonClose.FlatStyle = FlatStyle.Popup;
-            buttonClose.ForeColor = Color.White;
+            buttonClose.ForeColor = UiPalette.TextPrimary;
             buttonClose.Location = new Point(220, 232);
             buttonClose.Name = "buttonClose";
             buttonClose.Size = new Size(96, 26);
@@ -213,7 +213,7 @@ namespace Resonalyze
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             CancelButton = buttonClose;
             ClientSize = new Size(328, 270);
             Controls.Add(labelVerticalAxis);
@@ -232,7 +232,7 @@ namespace Resonalyze
             Controls.Add(buttonApply);
             Controls.Add(buttonClose);
             FormBorderStyle = FormBorderStyle.FixedDialog;
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             MaximizeBox = false;
             MinimizeBox = false;
             Name = "GraphLimitsDialog";
@@ -251,14 +251,14 @@ namespace Resonalyze
 
         private Label labelVerticalAxis;
         private Label labelTop;
-        private DarkNumericUpDown numericTop;
+        private ThemedNumericUpDown numericTop;
         private Label labelBottom;
-        private DarkNumericUpDown numericBottom;
+        private ThemedNumericUpDown numericBottom;
         private Label labelHorizontalAxis;
         private Label labelLeft;
-        private DarkNumericUpDown numericLeft;
+        private ThemedNumericUpDown numericLeft;
         private Label labelRight;
-        private DarkNumericUpDown numericRight;
+        private ThemedNumericUpDown numericRight;
         private ReleaseClickButton buttonFit;
         private ReleaseClickButton buttonDefaults;
         private ReleaseClickButton buttonFitY;

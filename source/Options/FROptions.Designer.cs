@@ -1,4 +1,4 @@
-﻿namespace Resonalyze.Options
+namespace Resonalyze.Options
 {
     partial class FROptions
     {
@@ -29,18 +29,18 @@
         private void InitializeComponent()
         {
             labelWindowMode = new Label();
-            comboWindowMode = new DarkComboBox();
+            comboWindowMode = new ThemedComboBox();
             labelFdwCycles = new Label();
-            comboFdwCycles = new DarkComboBox();
+            comboFdwCycles = new ThemedComboBox();
             label1 = new Label();
-            numericWindow = new DarkNumericUpDown();
-            numericRightWindow = new DarkNumericUpDown();
-            numericLeftWindow = new DarkNumericUpDown();
+            numericWindow = new ThemedNumericUpDown();
+            numericRightWindow = new ThemedNumericUpDown();
+            numericLeftWindow = new ThemedNumericUpDown();
             label5 = new Label();
             label4 = new Label();
             label9 = new Label();
-            comboSmoothingInverseOctaves = new DarkComboBox();
-            comboCalibration = new DarkComboBox();
+            comboSmoothingInverseOctaves = new ThemedComboBox();
+            comboCalibration = new ThemedComboBox();
             label2 = new Label();
             labelScale = new Label();
             radioMagnitudeRelative = new ReleaseClickRadioButton();
@@ -65,7 +65,7 @@
             // labelWindowMode
             //
             labelWindowMode.AutoSize = true;
-            labelWindowMode.ForeColor = SystemColors.ControlLight;
+            labelWindowMode.ForeColor = UiPalette.TextDefault;
             labelWindowMode.Location = new Point(12, 14);
             labelWindowMode.Name = "labelWindowMode";
             labelWindowMode.Size = new Size(83, 15);
@@ -74,9 +74,9 @@
             //
             // comboWindowMode
             //
-            comboWindowMode.BackColor = Color.FromArgb(55, 60, 72);
+            comboWindowMode.BackColor = UiPalette.ControlSurface;
             comboWindowMode.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboWindowMode.ForeColor = Color.White;
+            comboWindowMode.ForeColor = UiPalette.TextPrimary;
             comboWindowMode.Items.AddRange(new object[] { "Fixed", "FDW" });
             comboWindowMode.Location = new Point(153, 13);
             comboWindowMode.MinimumSize = new Size(36, 19);
@@ -87,7 +87,7 @@
             // labelFdwCycles
             //
             labelFdwCycles.AutoSize = true;
-            labelFdwCycles.ForeColor = SystemColors.ControlLight;
+            labelFdwCycles.ForeColor = UiPalette.TextDefault;
             labelFdwCycles.Location = new Point(12, 39);
             labelFdwCycles.Name = "labelFdwCycles";
             labelFdwCycles.Size = new Size(67, 15);
@@ -96,9 +96,9 @@
             //
             // comboFdwCycles
             //
-            comboFdwCycles.BackColor = Color.FromArgb(55, 60, 72);
+            comboFdwCycles.BackColor = UiPalette.ControlSurface;
             comboFdwCycles.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboFdwCycles.ForeColor = Color.White;
+            comboFdwCycles.ForeColor = UiPalette.TextPrimary;
             comboFdwCycles.Items.AddRange(new object[] { 4, 6, 8 });
             comboFdwCycles.Location = new Point(153, 38);
             comboFdwCycles.MinimumSize = new Size(36, 19);
@@ -109,7 +109,7 @@
             // label1
             //
             label1.AutoSize = true;
-            label1.ForeColor = SystemColors.ControlLight;
+            label1.ForeColor = UiPalette.TextDefault;
             label1.Location = new Point(12, 64);
             label1.Name = "label1";
             label1.Size = new Size(51, 15);
@@ -118,9 +118,9 @@
             //
             // numericWindow
             //
-            numericWindow.BackColor = Color.FromArgb(55, 60, 72);
+            numericWindow.BackColor = UiPalette.ControlSurface;
             numericWindow.DecimalPlaces = 0;
-            numericWindow.ForeColor = Color.White;
+            numericWindow.ForeColor = UiPalette.TextPrimary;
             numericWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericWindow.Location = new Point(153, 62);
             numericWindow.Maximum = new decimal(new int[] { 32768, 0, 0, 0 });
@@ -135,9 +135,9 @@
             //
             // numericRightWindow
             //
-            numericRightWindow.BackColor = Color.FromArgb(55, 60, 72);
+            numericRightWindow.BackColor = UiPalette.ControlSurface;
             numericRightWindow.DecimalPlaces = 0;
-            numericRightWindow.ForeColor = Color.White;
+            numericRightWindow.ForeColor = UiPalette.TextPrimary;
             numericRightWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericRightWindow.Location = new Point(153, 111);
             numericRightWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
@@ -152,9 +152,9 @@
             //
             // numericLeftWindow
             //
-            numericLeftWindow.BackColor = Color.FromArgb(55, 60, 72);
+            numericLeftWindow.BackColor = UiPalette.ControlSurface;
             numericLeftWindow.DecimalPlaces = 0;
-            numericLeftWindow.ForeColor = Color.White;
+            numericLeftWindow.ForeColor = UiPalette.TextPrimary;
             numericLeftWindow.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericLeftWindow.Location = new Point(153, 86);
             numericLeftWindow.Maximum = new decimal(new int[] { 16384, 0, 0, 0 });
@@ -170,7 +170,7 @@
             // label5
             //
             label5.AutoSize = true;
-            label5.ForeColor = SystemColors.ControlLight;
+            label5.ForeColor = UiPalette.TextDefault;
             label5.Location = new Point(12, 110);
             label5.Name = "label5";
             label5.Size = new Size(117, 15);
@@ -180,7 +180,7 @@
             // label4
             //
             label4.AutoSize = true;
-            label4.ForeColor = SystemColors.ControlLight;
+            label4.ForeColor = UiPalette.TextDefault;
             label4.Location = new Point(12, 85);
             label4.Name = "label4";
             label4.Size = new Size(109, 15);
@@ -190,7 +190,7 @@
             // label9
             //
             label9.AutoSize = true;
-            label9.ForeColor = SystemColors.ControlLight;
+            label9.ForeColor = UiPalette.TextDefault;
             label9.Location = new Point(12, 135);
             label9.Name = "label9";
             label9.Size = new Size(117, 15);
@@ -199,8 +199,8 @@
             //
             // comboSmoothingInverseOctaves
             //
-            comboSmoothingInverseOctaves.BackColor = Color.FromArgb(55, 60, 72);
-            comboSmoothingInverseOctaves.ForeColor = Color.White;
+            comboSmoothingInverseOctaves.BackColor = UiPalette.ControlSurface;
+            comboSmoothingInverseOctaves.ForeColor = UiPalette.TextPrimary;
             comboSmoothingInverseOctaves.Location = new Point(153, 134);
             comboSmoothingInverseOctaves.Margin = new Padding(0);
             comboSmoothingInverseOctaves.MinimumSize = new Size(36, 19);
@@ -210,8 +210,8 @@
             //
             // comboCalibration
             //
-            comboCalibration.BackColor = Color.FromArgb(55, 60, 72);
-            comboCalibration.ForeColor = Color.White;
+            comboCalibration.BackColor = UiPalette.ControlSurface;
+            comboCalibration.ForeColor = UiPalette.TextPrimary;
             comboCalibration.Location = new Point(153, 158);
             comboCalibration.Margin = new Padding(0);
             comboCalibration.MinimumSize = new Size(36, 19);
@@ -222,7 +222,7 @@
             // label2
             //
             label2.AutoSize = true;
-            label2.ForeColor = SystemColors.ControlLight;
+            label2.ForeColor = UiPalette.TextDefault;
             label2.Location = new Point(12, 160);
             label2.Name = "label2";
             label2.Size = new Size(65, 15);
@@ -232,7 +232,7 @@
             // labelScale
             //
             labelScale.AutoSize = true;
-            labelScale.ForeColor = SystemColors.ControlLight;
+            labelScale.ForeColor = UiPalette.TextDefault;
             labelScale.Location = new Point(12, 187);
             labelScale.Name = "labelScale";
             labelScale.Size = new Size(35, 15);
@@ -243,7 +243,7 @@
             //
             radioMagnitudeRelative.AutoSize = true;
             radioMagnitudeRelative.Checked = true;
-            radioMagnitudeRelative.ForeColor = SystemColors.ControlLight;
+            radioMagnitudeRelative.ForeColor = UiPalette.TextDefault;
             radioMagnitudeRelative.Location = new Point(72, 185);
             radioMagnitudeRelative.Name = "radioMagnitudeRelative";
             radioMagnitudeRelative.Size = new Size(72, 19);
@@ -255,7 +255,7 @@
             // radioMagnitudeSpl
             //
             radioMagnitudeSpl.AutoSize = true;
-            radioMagnitudeSpl.ForeColor = SystemColors.ControlLight;
+            radioMagnitudeSpl.ForeColor = UiPalette.TextDefault;
             radioMagnitudeSpl.Location = new Point(153, 185);
             radioMagnitudeSpl.Name = "radioMagnitudeSpl";
             radioMagnitudeSpl.Size = new Size(66, 19);
@@ -266,7 +266,7 @@
             // labelCurves
             //
             labelCurves.AutoSize = true;
-            labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
+            labelCurves.ForeColor = UiPalette.TextAccent;
             labelCurves.Location = new Point(12, 215);
             labelCurves.Name = "labelCurves";
             labelCurves.Size = new Size(46, 15);
@@ -276,7 +276,7 @@
             // checkBoxShowPrimary
             //
             checkBoxShowPrimary.AutoSize = true;
-            checkBoxShowPrimary.ForeColor = SystemColors.ControlLight;
+            checkBoxShowPrimary.ForeColor = UiPalette.TextDefault;
             checkBoxShowPrimary.Location = new Point(12, 237);
             checkBoxShowPrimary.Name = "checkBoxShowPrimary";
             checkBoxShowPrimary.Size = new Size(161, 19);
@@ -287,7 +287,7 @@
             // checkBoxShowCoherence
             //
             checkBoxShowCoherence.AutoSize = true;
-            checkBoxShowCoherence.ForeColor = SystemColors.ControlLight;
+            checkBoxShowCoherence.ForeColor = UiPalette.TextDefault;
             checkBoxShowCoherence.Location = new Point(12, 369);
             checkBoxShowCoherence.Name = "checkBoxShowCoherence";
             checkBoxShowCoherence.Size = new Size(134, 19);
@@ -298,7 +298,7 @@
             // checkBoxShowHd2
             //
             checkBoxShowHd2.AutoSize = true;
-            checkBoxShowHd2.ForeColor = SystemColors.ControlLight;
+            checkBoxShowHd2.ForeColor = UiPalette.TextDefault;
             checkBoxShowHd2.Location = new Point(12, 259);
             checkBoxShowHd2.Name = "checkBoxShowHd2";
             checkBoxShowHd2.Size = new Size(81, 19);
@@ -309,7 +309,7 @@
             // checkBoxShowHd3
             //
             checkBoxShowHd3.AutoSize = true;
-            checkBoxShowHd3.ForeColor = SystemColors.ControlLight;
+            checkBoxShowHd3.ForeColor = UiPalette.TextDefault;
             checkBoxShowHd3.Location = new Point(12, 281);
             checkBoxShowHd3.Name = "checkBoxShowHd3";
             checkBoxShowHd3.Size = new Size(81, 19);
@@ -320,7 +320,7 @@
             // checkBoxShowHd4
             //
             checkBoxShowHd4.AutoSize = true;
-            checkBoxShowHd4.ForeColor = SystemColors.ControlLight;
+            checkBoxShowHd4.ForeColor = UiPalette.TextDefault;
             checkBoxShowHd4.Location = new Point(12, 303);
             checkBoxShowHd4.Name = "checkBoxShowHd4";
             checkBoxShowHd4.Size = new Size(81, 19);
@@ -331,7 +331,7 @@
             // checkBoxShowThdPlusNoise
             //
             checkBoxShowThdPlusNoise.AutoSize = true;
-            checkBoxShowThdPlusNoise.ForeColor = SystemColors.ControlLight;
+            checkBoxShowThdPlusNoise.ForeColor = UiPalette.TextDefault;
             checkBoxShowThdPlusNoise.Location = new Point(12, 325);
             checkBoxShowThdPlusNoise.Name = "checkBoxShowThdPlusNoise";
             checkBoxShowThdPlusNoise.Size = new Size(82, 19);
@@ -342,7 +342,7 @@
             // checkBoxShowNoiseFloor
             //
             checkBoxShowNoiseFloor.AutoSize = true;
-            checkBoxShowNoiseFloor.ForeColor = SystemColors.ControlLight;
+            checkBoxShowNoiseFloor.ForeColor = UiPalette.TextDefault;
             checkBoxShowNoiseFloor.Location = new Point(12, 347);
             checkBoxShowNoiseFloor.Name = "checkBoxShowNoiseFloor";
             checkBoxShowNoiseFloor.Size = new Size(114, 19);
@@ -353,7 +353,7 @@
             // checkBoxShowArrayAverage
             //
             checkBoxShowArrayAverage.AutoSize = true;
-            checkBoxShowArrayAverage.ForeColor = SystemColors.ControlLight;
+            checkBoxShowArrayAverage.ForeColor = UiPalette.TextDefault;
             checkBoxShowArrayAverage.Location = new Point(12, 391);
             checkBoxShowArrayAverage.Name = "checkBoxShowArrayAverage";
             checkBoxShowArrayAverage.Size = new Size(140, 19);
@@ -364,7 +364,7 @@
             // checkBoxShowArrayMicrophones
             //
             checkBoxShowArrayMicrophones.AutoSize = true;
-            checkBoxShowArrayMicrophones.ForeColor = SystemColors.ControlLight;
+            checkBoxShowArrayMicrophones.ForeColor = UiPalette.TextDefault;
             checkBoxShowArrayMicrophones.Location = new Point(12, 413);
             checkBoxShowArrayMicrophones.Name = "checkBoxShowArrayMicrophones";
             checkBoxShowArrayMicrophones.Size = new Size(165, 19);
@@ -375,7 +375,7 @@
             // checkBoxShowArraySpread
             //
             checkBoxShowArraySpread.AutoSize = true;
-            checkBoxShowArraySpread.ForeColor = SystemColors.ControlLight;
+            checkBoxShowArraySpread.ForeColor = UiPalette.TextDefault;
             checkBoxShowArraySpread.Location = new Point(12, 435);
             checkBoxShowArraySpread.Name = "checkBoxShowArraySpread";
             checkBoxShowArraySpread.Size = new Size(135, 19);
@@ -385,7 +385,7 @@
             //
             // irPlotView
             //
-            irPlotView.BackColor = Color.FromArgb(32, 36, 46);
+            irPlotView.BackColor = UiPalette.GraphSurfaceMuted;
             irPlotView.Location = new Point(12, 461);
             irPlotView.Name = "irPlotView";
             irPlotView.PanCursor = Cursors.Hand;
@@ -400,7 +400,7 @@
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             ClientSize = new Size(265, 768);
             Controls.Add(labelWindowMode);
             Controls.Add(comboWindowMode);
@@ -447,18 +447,18 @@
 
         #endregion
         private Label labelWindowMode;
-        private DarkComboBox comboWindowMode;
+        private ThemedComboBox comboWindowMode;
         private Label labelFdwCycles;
-        private DarkComboBox comboFdwCycles;
+        private ThemedComboBox comboFdwCycles;
         private Label label1;
-        private DarkNumericUpDown numericWindow;
-        private DarkNumericUpDown numericRightWindow;
-        private DarkNumericUpDown numericLeftWindow;
+        private ThemedNumericUpDown numericWindow;
+        private ThemedNumericUpDown numericRightWindow;
+        private ThemedNumericUpDown numericLeftWindow;
         private Label label5;
         private Label label4;
         private Label label9;
-        private DarkComboBox comboSmoothingInverseOctaves;
-        private DarkComboBox comboCalibration;
+        private ThemedComboBox comboSmoothingInverseOctaves;
+        private ThemedComboBox comboCalibration;
         private Label label2;
         private Label labelScale;
         private ReleaseClickRadioButton radioMagnitudeRelative;

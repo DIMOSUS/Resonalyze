@@ -35,7 +35,7 @@ namespace Resonalyze.Options
             // labelCurves
             //
             labelCurves.AutoSize = true;
-            labelCurves.ForeColor = Color.FromArgb(150, 170, 205);
+            labelCurves.ForeColor = UiPalette.TextAccent;
             labelCurves.Location = new Point(12, 14);
             labelCurves.Name = "labelCurves";
             labelCurves.Size = new Size(48, 15);
@@ -45,7 +45,7 @@ namespace Resonalyze.Options
             // checkBoxShowAutocorrelation
             //
             checkBoxShowAutocorrelation.AutoSize = true;
-            checkBoxShowAutocorrelation.ForeColor = SystemColors.ControlLight;
+            checkBoxShowAutocorrelation.ForeColor = UiPalette.TextDefault;
             checkBoxShowAutocorrelation.Location = new Point(12, 36);
             checkBoxShowAutocorrelation.Name = "checkBoxShowAutocorrelation";
             checkBoxShowAutocorrelation.Size = new Size(149, 19);
@@ -57,7 +57,7 @@ namespace Resonalyze.Options
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             ClientSize = new Size(265, 66);
             Controls.Add(checkBoxShowAutocorrelation);
             Controls.Add(labelCurves);

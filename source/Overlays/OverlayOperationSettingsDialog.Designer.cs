@@ -1,4 +1,4 @@
-﻿namespace Resonalyze
+namespace Resonalyze
 {
     partial class OverlayOperationSettingsDialog
     {
@@ -22,27 +22,27 @@
             nameTextBox = new TextBox();
             curveALabel = new Label();
             curveBLabel = new Label();
-            sourceAComboBox = new DarkComboBox();
-            sourceBComboBox = new DarkComboBox();
+            sourceAComboBox = new ThemedComboBox();
+            sourceBComboBox = new ThemedComboBox();
             operationLabel = new Label();
-            operationComboBox = new DarkComboBox();
+            operationComboBox = new ThemedComboBox();
             colorLabel = new Label();
             colorButton = new ReleaseClickButton();
             thicknessLabel = new Label();
-            thicknessInput = new DarkNumericUpDown();
+            thicknessInput = new ThemedNumericUpDown();
             styleLabel = new Label();
-            styleComboBox = new DarkComboBox();
+            styleComboBox = new ThemedComboBox();
             blendFrequencyLabel = new Label();
-            blendFrequencyInput = new DarkNumericUpDown();
+            blendFrequencyInput = new ThemedNumericUpDown();
             blendWidthLabel = new Label();
-            blendWidthInput = new DarkComboBox();
+            blendWidthInput = new ThemedComboBox();
             tiltCheckBox = new ReleaseClickCheckBox();
             tiltPivotLabel = new Label();
-            tiltPivotInput = new DarkNumericUpDown();
+            tiltPivotInput = new ThemedNumericUpDown();
             tiltSlopeLabel = new Label();
-            tiltSlopeInput = new DarkNumericUpDown();
+            tiltSlopeInput = new ThemedNumericUpDown();
             smoothingLabel = new Label();
-            smoothingComboBox = new DarkComboBox();
+            smoothingComboBox = new ThemedComboBox();
             amplitudeSpaceCheckBox = new ReleaseClickCheckBox();
             opacityLabel = new Label();
             opacityTrackBar = new TrackBar();
@@ -50,7 +50,7 @@
             cancelButton = new ReleaseClickButton();
             saveButton = new ReleaseClickButton();
             toolTip = new WrappingToolTip(components);
-            numericTimeOffset = new DarkNumericUpDown();
+            numericTimeOffset = new ThemedNumericUpDown();
             labelTimeOffset = new Label();
             checkBoxInvPhase = new ReleaseClickCheckBox();
             panel1 = new RoundedPanel();
@@ -66,7 +66,7 @@
             // nameLabel
             // 
             nameLabel.AutoSize = true;
-            nameLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            nameLabel.ForeColor = UiPalette.TextSecondary;
             nameLabel.Location = new Point(20, 22);
             nameLabel.Name = "nameLabel";
             nameLabel.Size = new Size(39, 15);
@@ -75,8 +75,8 @@
             // 
             // nameTextBox
             // 
-            nameTextBox.BackColor = Color.FromArgb(55, 58, 65);
-            nameTextBox.ForeColor = Color.White;
+            nameTextBox.BackColor = UiPalette.InputSurface;
+            nameTextBox.ForeColor = UiPalette.TextPrimary;
             nameTextBox.Location = new Point(20, 42);
             nameTextBox.MaxLength = 80;
             nameTextBox.Name = "nameTextBox";
@@ -86,7 +86,7 @@
             // curveALabel
             // 
             curveALabel.AutoSize = true;
-            curveALabel.ForeColor = Color.FromArgb(185, 190, 200);
+            curveALabel.ForeColor = UiPalette.TextSecondary;
             curveALabel.Location = new Point(20, 82);
             curveALabel.Name = "curveALabel";
             curveALabel.Size = new Size(49, 15);
@@ -96,7 +96,7 @@
             // curveBLabel
             // 
             curveBLabel.AutoSize = true;
-            curveBLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            curveBLabel.ForeColor = UiPalette.TextSecondary;
             curveBLabel.Location = new Point(3, 4);
             curveBLabel.Name = "curveBLabel";
             curveBLabel.Size = new Size(48, 15);
@@ -105,8 +105,8 @@
             // 
             // sourceAComboBox
             // 
-            sourceAComboBox.BackColor = Color.FromArgb(55, 58, 65);
-            sourceAComboBox.ForeColor = Color.White;
+            sourceAComboBox.BackColor = UiPalette.InputSurface;
+            sourceAComboBox.ForeColor = UiPalette.TextPrimary;
             sourceAComboBox.Location = new Point(20, 102);
             sourceAComboBox.Margin = new Padding(0);
             sourceAComboBox.MinimumSize = new Size(36, 19);
@@ -116,8 +116,8 @@
             // 
             // sourceBComboBox
             // 
-            sourceBComboBox.BackColor = Color.FromArgb(55, 58, 65);
-            sourceBComboBox.ForeColor = Color.White;
+            sourceBComboBox.BackColor = UiPalette.InputSurface;
+            sourceBComboBox.ForeColor = UiPalette.TextPrimary;
             sourceBComboBox.Location = new Point(6, 24);
             sourceBComboBox.Margin = new Padding(0);
             sourceBComboBox.MinimumSize = new Size(36, 19);
@@ -128,7 +128,7 @@
             // operationLabel
             // 
             operationLabel.AutoSize = true;
-            operationLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            operationLabel.ForeColor = UiPalette.TextSecondary;
             operationLabel.Location = new Point(20, 142);
             operationLabel.Name = "operationLabel";
             operationLabel.Size = new Size(60, 15);
@@ -137,8 +137,8 @@
             // 
             // operationComboBox
             // 
-            operationComboBox.BackColor = Color.FromArgb(55, 58, 65);
-            operationComboBox.ForeColor = Color.White;
+            operationComboBox.BackColor = UiPalette.InputSurface;
+            operationComboBox.ForeColor = UiPalette.TextPrimary;
             operationComboBox.Location = new Point(20, 162);
             operationComboBox.Margin = new Padding(0);
             operationComboBox.MinimumSize = new Size(36, 19);
@@ -149,7 +149,7 @@
             // colorLabel
             // 
             colorLabel.AutoSize = true;
-            colorLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            colorLabel.ForeColor = UiPalette.TextSecondary;
             colorLabel.Location = new Point(23, 240);
             colorLabel.Name = "colorLabel";
             colorLabel.Size = new Size(36, 15);
@@ -158,10 +158,10 @@
             // 
             // colorButton
             // 
-            colorButton.BackColor = Color.FromArgb(62, 65, 73);
+            colorButton.BackColor = UiPalette.ButtonBackground;
             colorButton.FlatAppearance.BorderSize = 0;
             colorButton.FlatStyle = FlatStyle.Flat;
-            colorButton.ForeColor = Color.White;
+            colorButton.ForeColor = UiPalette.TextPrimary;
             colorButton.Location = new Point(23, 260);
             colorButton.Name = "colorButton";
             colorButton.Size = new Size(122, 24);
@@ -171,7 +171,7 @@
             // thicknessLabel
             // 
             thicknessLabel.AutoSize = true;
-            thicknessLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            thicknessLabel.ForeColor = UiPalette.TextSecondary;
             thicknessLabel.Location = new Point(165, 240);
             thicknessLabel.Name = "thicknessLabel";
             thicknessLabel.Size = new Size(59, 15);
@@ -180,9 +180,9 @@
             // 
             // thicknessInput
             // 
-            thicknessInput.BackColor = Color.FromArgb(55, 58, 65);
+            thicknessInput.BackColor = UiPalette.InputSurface;
             thicknessInput.DecimalPlaces = 1;
-            thicknessInput.ForeColor = Color.White;
+            thicknessInput.ForeColor = UiPalette.TextPrimary;
             thicknessInput.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             thicknessInput.Location = new Point(165, 260);
             thicknessInput.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
@@ -198,7 +198,7 @@
             // styleLabel
             // 
             styleLabel.AutoSize = true;
-            styleLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            styleLabel.ForeColor = UiPalette.TextSecondary;
             styleLabel.Location = new Point(275, 240);
             styleLabel.Name = "styleLabel";
             styleLabel.Size = new Size(32, 15);
@@ -207,8 +207,8 @@
             // 
             // styleComboBox
             // 
-            styleComboBox.BackColor = Color.FromArgb(55, 58, 65);
-            styleComboBox.ForeColor = Color.White;
+            styleComboBox.BackColor = UiPalette.InputSurface;
+            styleComboBox.ForeColor = UiPalette.TextPrimary;
             styleComboBox.Location = new Point(275, 260);
             styleComboBox.Margin = new Padding(0);
             styleComboBox.MinimumSize = new Size(36, 19);
@@ -219,7 +219,7 @@
             // blendFrequencyLabel
             // 
             blendFrequencyLabel.AutoSize = true;
-            blendFrequencyLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            blendFrequencyLabel.ForeColor = UiPalette.TextSecondary;
             blendFrequencyLabel.Location = new Point(23, 300);
             blendFrequencyLabel.Name = "blendFrequencyLabel";
             blendFrequencyLabel.Size = new Size(93, 15);
@@ -228,9 +228,9 @@
             // 
             // blendFrequencyInput
             // 
-            blendFrequencyInput.BackColor = Color.FromArgb(55, 58, 65);
+            blendFrequencyInput.BackColor = UiPalette.InputSurface;
             blendFrequencyInput.DecimalPlaces = 1;
-            blendFrequencyInput.ForeColor = Color.White;
+            blendFrequencyInput.ForeColor = UiPalette.TextPrimary;
             blendFrequencyInput.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             blendFrequencyInput.Location = new Point(23, 320);
             blendFrequencyInput.Maximum = new decimal(new int[] { 1000000, 0, 0, 0 });
@@ -246,7 +246,7 @@
             // blendWidthLabel
             // 
             blendWidthLabel.AutoSize = true;
-            blendWidthLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            blendWidthLabel.ForeColor = UiPalette.TextSecondary;
             blendWidthLabel.Location = new Point(233, 300);
             blendWidthLabel.Name = "blendWidthLabel";
             blendWidthLabel.Size = new Size(92, 15);
@@ -255,8 +255,8 @@
             // 
             // blendWidthInput
             // 
-            blendWidthInput.BackColor = Color.FromArgb(55, 58, 65);
-            blendWidthInput.ForeColor = Color.White;
+            blendWidthInput.BackColor = UiPalette.InputSurface;
+            blendWidthInput.ForeColor = UiPalette.TextPrimary;
             blendWidthInput.Location = new Point(233, 320);
             blendWidthInput.Margin = new Padding(0);
             blendWidthInput.MinimumSize = new Size(36, 19);
@@ -267,7 +267,7 @@
             // tiltCheckBox
             // 
             tiltCheckBox.AutoSize = true;
-            tiltCheckBox.ForeColor = Color.FromArgb(235, 237, 240);
+            tiltCheckBox.ForeColor = UiPalette.TextBright;
             tiltCheckBox.Location = new Point(23, 383);
             tiltCheckBox.Name = "tiltCheckBox";
             tiltCheckBox.Size = new Size(46, 19);
@@ -277,7 +277,7 @@
             // tiltPivotLabel
             // 
             tiltPivotLabel.AutoSize = true;
-            tiltPivotLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            tiltPivotLabel.ForeColor = UiPalette.TextSecondary;
             tiltPivotLabel.Location = new Point(85, 360);
             tiltPivotLabel.Name = "tiltPivotLabel";
             tiltPivotLabel.Size = new Size(85, 15);
@@ -286,9 +286,9 @@
             // 
             // tiltPivotInput
             // 
-            tiltPivotInput.BackColor = Color.FromArgb(55, 58, 65);
+            tiltPivotInput.BackColor = UiPalette.InputSurface;
             tiltPivotInput.DecimalPlaces = 1;
-            tiltPivotInput.ForeColor = Color.White;
+            tiltPivotInput.ForeColor = UiPalette.TextPrimary;
             tiltPivotInput.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             tiltPivotInput.Location = new Point(85, 380);
             tiltPivotInput.Maximum = new decimal(new int[] { 1000000, 0, 0, 0 });
@@ -304,7 +304,7 @@
             // tiltSlopeLabel
             // 
             tiltSlopeLabel.AutoSize = true;
-            tiltSlopeLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            tiltSlopeLabel.ForeColor = UiPalette.TextSecondary;
             tiltSlopeLabel.Location = new Point(250, 360);
             tiltSlopeLabel.Name = "tiltSlopeLabel";
             tiltSlopeLabel.Size = new Size(94, 15);
@@ -313,9 +313,9 @@
             // 
             // tiltSlopeInput
             // 
-            tiltSlopeInput.BackColor = Color.FromArgb(55, 58, 65);
+            tiltSlopeInput.BackColor = UiPalette.InputSurface;
             tiltSlopeInput.DecimalPlaces = 2;
-            tiltSlopeInput.ForeColor = Color.White;
+            tiltSlopeInput.ForeColor = UiPalette.TextPrimary;
             tiltSlopeInput.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             tiltSlopeInput.Location = new Point(250, 380);
             tiltSlopeInput.Maximum = new decimal(new int[] { 24, 0, 0, 0 });
@@ -331,7 +331,7 @@
             // smoothingLabel
             // 
             smoothingLabel.AutoSize = true;
-            smoothingLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            smoothingLabel.ForeColor = UiPalette.TextSecondary;
             smoothingLabel.Location = new Point(23, 420);
             smoothingLabel.Name = "smoothingLabel";
             smoothingLabel.Size = new Size(66, 15);
@@ -340,8 +340,8 @@
             // 
             // smoothingComboBox
             // 
-            smoothingComboBox.BackColor = Color.FromArgb(55, 58, 65);
-            smoothingComboBox.ForeColor = Color.White;
+            smoothingComboBox.BackColor = UiPalette.InputSurface;
+            smoothingComboBox.ForeColor = UiPalette.TextPrimary;
             smoothingComboBox.Location = new Point(23, 440);
             smoothingComboBox.Margin = new Padding(0);
             smoothingComboBox.MinimumSize = new Size(36, 19);
@@ -354,7 +354,7 @@
             amplitudeSpaceCheckBox.AutoSize = true;
             amplitudeSpaceCheckBox.Checked = true;
             amplitudeSpaceCheckBox.CheckState = CheckState.Checked;
-            amplitudeSpaceCheckBox.ForeColor = Color.FromArgb(235, 237, 240);
+            amplitudeSpaceCheckBox.ForeColor = UiPalette.TextBright;
             amplitudeSpaceCheckBox.Location = new Point(20, 200);
             amplitudeSpaceCheckBox.Name = "amplitudeSpaceCheckBox";
             amplitudeSpaceCheckBox.Size = new Size(171, 19);
@@ -364,7 +364,7 @@
             // opacityLabel
             // 
             opacityLabel.AutoSize = true;
-            opacityLabel.ForeColor = Color.FromArgb(185, 190, 200);
+            opacityLabel.ForeColor = UiPalette.TextSecondary;
             opacityLabel.Location = new Point(20, 480);
             opacityLabel.Name = "opacityLabel";
             opacityLabel.Size = new Size(48, 15);
@@ -385,7 +385,7 @@
             // opacityValueLabel
             // 
             opacityValueLabel.AutoSize = true;
-            opacityValueLabel.ForeColor = Color.FromArgb(235, 237, 240);
+            opacityValueLabel.ForeColor = UiPalette.TextBright;
             opacityValueLabel.Location = new Point(370, 507);
             opacityValueLabel.Name = "opacityValueLabel";
             opacityValueLabel.Size = new Size(35, 15);
@@ -394,11 +394,11 @@
             // 
             // cancelButton
             // 
-            cancelButton.BackColor = Color.FromArgb(62, 65, 73);
+            cancelButton.BackColor = UiPalette.ButtonBackground;
             cancelButton.DialogResult = DialogResult.Cancel;
             cancelButton.FlatAppearance.BorderSize = 0;
             cancelButton.FlatStyle = FlatStyle.Flat;
-            cancelButton.ForeColor = Color.White;
+            cancelButton.ForeColor = UiPalette.TextPrimary;
             cancelButton.Location = new Point(232, 551);
             cancelButton.Name = "cancelButton";
             cancelButton.Size = new Size(94, 30);
@@ -411,7 +411,7 @@
             saveButton.DialogResult = DialogResult.OK;
             saveButton.FlatAppearance.BorderSize = 0;
             saveButton.FlatStyle = FlatStyle.Flat;
-            saveButton.ForeColor = Color.White;
+            saveButton.ForeColor = UiPalette.TextPrimary;
             saveButton.Location = new Point(332, 551);
             saveButton.Name = "saveButton";
             saveButton.Size = new Size(94, 30);
@@ -421,9 +421,9 @@
             // 
             // numericTimeOffset
             // 
-            numericTimeOffset.BackColor = Color.FromArgb(55, 58, 65);
+            numericTimeOffset.BackColor = UiPalette.InputSurface;
             numericTimeOffset.DecimalPlaces = 3;
-            numericTimeOffset.ForeColor = Color.White;
+            numericTimeOffset.ForeColor = UiPalette.TextPrimary;
             numericTimeOffset.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
             numericTimeOffset.Location = new Point(6, 84);
             numericTimeOffset.Maximum = new decimal(new int[] { 10, 0, 0, 0 });
@@ -439,7 +439,7 @@
             // labelTimeOffset
             // 
             labelTimeOffset.AutoSize = true;
-            labelTimeOffset.ForeColor = Color.FromArgb(185, 190, 200);
+            labelTimeOffset.ForeColor = UiPalette.TextSecondary;
             labelTimeOffset.Location = new Point(6, 64);
             labelTimeOffset.Name = "labelTimeOffset";
             labelTimeOffset.Size = new Size(69, 15);
@@ -449,7 +449,7 @@
             // checkBoxInvPhase
             // 
             checkBoxInvPhase.AutoSize = true;
-            checkBoxInvPhase.ForeColor = Color.FromArgb(235, 237, 240);
+            checkBoxInvPhase.ForeColor = UiPalette.TextBright;
             checkBoxInvPhase.Location = new Point(117, 87);
             checkBoxInvPhase.Name = "checkBoxInvPhase";
             checkBoxInvPhase.Size = new Size(79, 19);
@@ -472,7 +472,7 @@
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(40, 42, 48);
+            BackColor = UiPalette.DialogBackground;
             ClientSize = new Size(440, 594);
             Controls.Add(panel1);
             Controls.Add(nameLabel);
@@ -505,7 +505,7 @@
             Controls.Add(cancelButton);
             Controls.Add(saveButton);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.FromArgb(235, 237, 240);
+            ForeColor = UiPalette.TextBright;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -533,27 +533,27 @@
         private TextBox nameTextBox;
         private Label curveALabel;
         private Label curveBLabel;
-        private DarkComboBox sourceAComboBox;
-        private DarkComboBox sourceBComboBox;
+        private ThemedComboBox sourceAComboBox;
+        private ThemedComboBox sourceBComboBox;
         private Label operationLabel;
-        private DarkComboBox operationComboBox;
+        private ThemedComboBox operationComboBox;
         private Label colorLabel;
         private ReleaseClickButton colorButton;
         private Label thicknessLabel;
-        private DarkNumericUpDown thicknessInput;
+        private ThemedNumericUpDown thicknessInput;
         private Label styleLabel;
-        private DarkComboBox styleComboBox;
+        private ThemedComboBox styleComboBox;
         private Label blendFrequencyLabel;
-        private DarkNumericUpDown blendFrequencyInput;
+        private ThemedNumericUpDown blendFrequencyInput;
         private Label blendWidthLabel;
-        private DarkComboBox blendWidthInput;
+        private ThemedComboBox blendWidthInput;
         private ReleaseClickCheckBox tiltCheckBox;
         private Label tiltPivotLabel;
-        private DarkNumericUpDown tiltPivotInput;
+        private ThemedNumericUpDown tiltPivotInput;
         private Label tiltSlopeLabel;
-        private DarkNumericUpDown tiltSlopeInput;
+        private ThemedNumericUpDown tiltSlopeInput;
         private Label smoothingLabel;
-        private DarkComboBox smoothingComboBox;
+        private ThemedComboBox smoothingComboBox;
         private ReleaseClickCheckBox amplitudeSpaceCheckBox;
         private Label opacityLabel;
         private TrackBar opacityTrackBar;
@@ -561,7 +561,7 @@
         private ReleaseClickButton cancelButton;
         private ReleaseClickButton saveButton;
         private WrappingToolTip toolTip;
-        private DarkNumericUpDown numericTimeOffset;
+        private ThemedNumericUpDown numericTimeOffset;
         private Label labelTimeOffset;
         private ReleaseClickCheckBox checkBoxInvPhase;
         private RoundedPanel panel1;

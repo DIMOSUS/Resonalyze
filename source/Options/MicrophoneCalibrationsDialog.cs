@@ -282,9 +282,9 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
 
     private void DrawColumnHeader(object? sender, DrawListViewColumnHeaderEventArgs e)
     {
-        using var background = new SolidBrush(Color.FromArgb(45, 50, 60));
+        using var background = new SolidBrush(UiPalette.AppBackground);
         e.Graphics.FillRectangle(background, e.Bounds);
-        using var separator = new Pen(Color.FromArgb(70, 76, 92));
+        using var separator = new Pen(UiPalette.BorderMuted);
         e.Graphics.DrawLine(
             separator,
             e.Bounds.Right - 1,
@@ -296,7 +296,7 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
             e.Header?.Text ?? string.Empty,
             e.Font ?? listViewCalibrations.Font,
             Rectangle.Inflate(e.Bounds, -6, 0),
-            Color.White,
+            UiPalette.TextPrimary,
             TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
     }
 

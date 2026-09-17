@@ -112,11 +112,11 @@ public partial class EqWizardPanel
             darkComboBoxBands.Items.Add(count);
         }
 
-        darkComboBoxBands.SelectedIndexChanged += DarkComboBoxBandsSelectedIndexChanged;
+        darkComboBoxBands.SelectedIndexChanged += ThemedComboBoxBandsSelectedIndexChanged;
         SyncBandCountCombo();
     }
 
-    private void DarkComboBoxBandsSelectedIndexChanged(object? sender, EventArgs e)
+    private void ThemedComboBoxBandsSelectedIndexChanged(object? sender, EventArgs e)
     {
         if (suppressBandCountSync)
         {

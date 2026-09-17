@@ -21,8 +21,8 @@ public sealed class AngleCalibrationDialogTests
         using var dialog = new AngleCalibrationDialog(definition, []);
 
         TextBox name = Control<TextBox>(dialog, "textBoxName");
-        DarkNumericUpDown angle = Control<DarkNumericUpDown>(dialog, "numericAngle");
-        DarkNumericUpDown diameter = Control<DarkNumericUpDown>(dialog, "numericDiameter");
+        ThemedNumericUpDown angle = Control<ThemedNumericUpDown>(dialog, "numericAngle");
+        ThemedNumericUpDown diameter = Control<ThemedNumericUpDown>(dialog, "numericDiameter");
         name.Text = "Passenger seat";
         angle.Value = 30m;
         diameter.Value = 9m;
@@ -47,7 +47,7 @@ public sealed class AngleCalibrationDialogTests
         };
         using var dialog = new AngleCalibrationDialog(definition, []);
 
-        Control<DarkNumericUpDown>(dialog, "numericAngle").Value = 15m;
+        Control<ThemedNumericUpDown>(dialog, "numericAngle").Value = 15m;
         Click(dialog, "buttonCancel");
 
         Assert.Equal("90°", definition.Name);
@@ -66,8 +66,8 @@ public sealed class AngleCalibrationDialogTests
         };
         using var dialog = new AngleCalibrationDialog(definition, []);
 
-        Assert.False(Control<DarkNumericUpDown>(dialog, "numericDiameter").Enabled);
-        Assert.False(Control<DarkComboBox>(dialog, "comboBoxGrid").Enabled);
+        Assert.False(Control<ThemedNumericUpDown>(dialog, "numericDiameter").Enabled);
+        Assert.False(Control<ThemedComboBox>(dialog, "comboBoxGrid").Enabled);
     }
 
     // PerformClick refuses on a never-shown form, so the click is raised as the framework does.

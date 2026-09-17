@@ -123,7 +123,7 @@ internal partial class MeasurementHistoryWindow : Form
 
     private void ConfigureNewSessionButton()
     {
-        buttonNewSession.FlatAppearance.BorderColor = UiPalette.DialogBorder;
+        buttonNewSession.FlatAppearance.BorderColor = UiPalette.Border;
         buttonNewSession.BackColor = UiPalette.ControlSurface;
         buttonNewSession.ForeColor = UiPalette.TextPrimary;
         buttonNewSession.FlatAppearance.MouseOverBackColor = UiPalette.ButtonPressedBackground;
@@ -142,7 +142,7 @@ internal partial class MeasurementHistoryWindow : Form
     {
         historyDataGridView.EnableHeadersVisualStyles = false;
         historyDataGridView.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-        historyDataGridView.GridColor = UiPalette.DialogBorder;
+        historyDataGridView.GridColor = UiPalette.Border;
         historyDataGridView.DefaultCellStyle.BackColor = UiPalette.DialogBackground;
         historyDataGridView.DefaultCellStyle.ForeColor = UiPalette.TextPrimary;
         historyDataGridView.DefaultCellStyle.SelectionBackColor = UiPalette.ButtonPressedBackground;
@@ -258,7 +258,7 @@ internal partial class MeasurementHistoryWindow : Form
 
         var series = new LineSeries
         {
-            Color = OxyColor.FromRgb(255, 155, 0),
+            Color = UiPalette.CurveFallback.ToOxy(),
             TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
         };
 
@@ -284,7 +284,7 @@ internal partial class MeasurementHistoryWindow : Form
 
             bool isActive = activeEntryId.HasValue && rowEntryIds[i] == activeEntryId.Value;
             row.DefaultCellStyle.BackColor = isActive
-                ? UiPalette.AccentBlueMuted
+                ? UiPalette.TitleBarButtonFill
                 : UiPalette.DialogBackground;
             row.DefaultCellStyle.ForeColor = isActive
                 ? UiPalette.TextBright
@@ -292,12 +292,14 @@ internal partial class MeasurementHistoryWindow : Form
             row.DefaultCellStyle.SelectionBackColor = isActive
                 ? UiPalette.AccentFill
                 : UiPalette.ButtonPressedBackground;
-            row.DefaultCellStyle.SelectionForeColor = UiPalette.TextPrimary;
+            row.DefaultCellStyle.SelectionForeColor = isActive
+                ? UiPalette.TextOnAccent
+                : UiPalette.TextPrimary;
             row.DefaultCellStyle.Font = isActive ? activeEntryFont : Font;
 
             row.Cells[0].Style.ForeColor = entry.IsFileBacked
-                ? UiPalette.SuccessGreenAlt
-                : UiPalette.WarningAmber;
+                ? UiPalette.Success
+                : UiPalette.Warning;
             row.Cells[0].Style.SelectionForeColor = row.Cells[0].Style.ForeColor;
         }
     }
@@ -311,16 +313,11 @@ internal partial class MeasurementHistoryWindow : Form
     }
 
     private static PlotModel CreatePreviewPlotModel() =>
-        new()
-        {
-            Background = OxyColor.FromRgb(32, 36, 46),
-            PlotAreaBackground = OxyColor.FromRgb(32, 36, 46),
-            TextColor = OxyColors.White
-        };
+        PlotModelStyle.CreatePreviewModel();
 
     private static void AddFrequencyAxis(PlotModel model)
     {
-        model.Axes.Add(new LogarithmicAxis
+        PlotModelStyle.AddAxis(model, new LogarithmicAxis
         {
             Position = AxisPosition.Bottom,
             AbsoluteMinimum = 20,
@@ -329,18 +326,14 @@ internal partial class MeasurementHistoryWindow : Form
             Maximum = 20000,
             IsPanEnabled = false,
             IsZoomEnabled = false,
-            MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
             MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
-            MinorGridlineStyle = LineStyle.Dot,
-            TextColor = OxyColors.White,
-            TicklineColor = OxyColors.White
+            MinorGridlineStyle = LineStyle.Dot
         });
     }
 
     private static void AddDecibelAxis(PlotModel model)
     {
-        model.Axes.Add(new LinearAxis
+        PlotModelStyle.AddAxis(model, new LinearAxis
         {
             Position = AxisPosition.Left,
             AbsoluteMinimum = -120,
@@ -348,12 +341,8 @@ internal partial class MeasurementHistoryWindow : Form
             MajorStep = 10,
             Minimum = -90,
             Maximum = 0,
-            MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
             MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
             MinorGridlineStyle = LineStyle.Dot,
-            TextColor = OxyColors.White,
-            TicklineColor = OxyColors.White,
             Title = "dB",
             IsPanEnabled = false,
             IsZoomEnabled = false

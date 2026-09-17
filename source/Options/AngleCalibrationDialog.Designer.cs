@@ -20,17 +20,17 @@ namespace Resonalyze.Options
             labelName = new Label();
             textBoxName = new TextBox();
             labelBase = new Label();
-            comboBoxBase = new DarkComboBox();
+            comboBoxBase = new ThemedComboBox();
             labelAngle = new Label();
-            numericAngle = new DarkNumericUpDown();
+            numericAngle = new ThemedNumericUpDown();
             labelAngleUnit = new Label();
             labelDiameter = new Label();
-            numericDiameter = new DarkNumericUpDown();
+            numericDiameter = new ThemedNumericUpDown();
             labelDiameterUnit = new Label();
             labelGrid = new Label();
-            comboBoxGrid = new DarkComboBox();
+            comboBoxGrid = new ThemedComboBox();
             labelReference = new Label();
-            comboBoxReference = new DarkComboBox();
+            comboBoxReference = new ThemedComboBox();
             plotViewPreview = new OxyPlot.WindowsForms.PlotView();
             labelSummary = new Label();
             buttonOk = new ReleaseClickButton();
@@ -40,7 +40,7 @@ namespace Resonalyze.Options
             // labelName
             //
             labelName.AutoSize = true;
-            labelName.ForeColor = SystemColors.ControlLight;
+            labelName.ForeColor = UiPalette.TextDefault;
             labelName.Location = new Point(16, 20);
             labelName.Name = "labelName";
             labelName.Size = new Size(39, 15);
@@ -49,9 +49,9 @@ namespace Resonalyze.Options
             //
             // textBoxName
             //
-            textBoxName.BackColor = Color.FromArgb(55, 60, 72);
+            textBoxName.BackColor = UiPalette.ControlSurface;
             textBoxName.BorderStyle = BorderStyle.FixedSingle;
-            textBoxName.ForeColor = Color.White;
+            textBoxName.ForeColor = UiPalette.TextPrimary;
             textBoxName.Location = new Point(150, 16);
             textBoxName.Name = "textBoxName";
             textBoxName.Size = new Size(290, 23);
@@ -60,7 +60,7 @@ namespace Resonalyze.Options
             // labelBase
             //
             labelBase.AutoSize = true;
-            labelBase.ForeColor = SystemColors.ControlLight;
+            labelBase.ForeColor = UiPalette.TextDefault;
             labelBase.Location = new Point(16, 52);
             labelBase.Name = "labelBase";
             labelBase.Size = new Size(88, 15);
@@ -69,8 +69,8 @@ namespace Resonalyze.Options
             //
             // comboBoxBase
             //
-            comboBoxBase.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxBase.ForeColor = Color.White;
+            comboBoxBase.BackColor = UiPalette.ControlSurface;
+            comboBoxBase.ForeColor = UiPalette.TextPrimary;
             comboBoxBase.Location = new Point(150, 48);
             comboBoxBase.Margin = new Padding(0);
             comboBoxBase.MinimumSize = new Size(36, 19);
@@ -81,7 +81,7 @@ namespace Resonalyze.Options
             // labelAngle
             //
             labelAngle.AutoSize = true;
-            labelAngle.ForeColor = SystemColors.ControlLight;
+            labelAngle.ForeColor = UiPalette.TextDefault;
             labelAngle.Location = new Point(16, 84);
             labelAngle.Name = "labelAngle";
             labelAngle.Size = new Size(115, 15);
@@ -90,9 +90,9 @@ namespace Resonalyze.Options
             //
             // numericAngle
             //
-            numericAngle.BackColor = Color.FromArgb(55, 60, 72);
+            numericAngle.BackColor = UiPalette.ControlSurface;
             numericAngle.DecimalPlaces = 1;
-            numericAngle.ForeColor = Color.White;
+            numericAngle.ForeColor = UiPalette.TextPrimary;
             numericAngle.Increment = new decimal(new int[] { 5, 0, 0, 0 });
             numericAngle.Location = new Point(150, 80);
             numericAngle.Maximum = new decimal(new int[] { 90, 0, 0, 0 });
@@ -105,7 +105,7 @@ namespace Resonalyze.Options
             // labelAngleUnit
             //
             labelAngleUnit.AutoSize = true;
-            labelAngleUnit.ForeColor = SystemColors.ControlLight;
+            labelAngleUnit.ForeColor = UiPalette.TextDefault;
             labelAngleUnit.Location = new Point(248, 84);
             labelAngleUnit.Name = "labelAngleUnit";
             labelAngleUnit.Size = new Size(160, 15);
@@ -115,7 +115,7 @@ namespace Resonalyze.Options
             // labelDiameter
             //
             labelDiameter.AutoSize = true;
-            labelDiameter.ForeColor = SystemColors.ControlLight;
+            labelDiameter.ForeColor = UiPalette.TextDefault;
             labelDiameter.Location = new Point(16, 116);
             labelDiameter.Name = "labelDiameter";
             labelDiameter.Size = new Size(97, 15);
@@ -124,9 +124,9 @@ namespace Resonalyze.Options
             //
             // numericDiameter
             //
-            numericDiameter.BackColor = Color.FromArgb(55, 60, 72);
+            numericDiameter.BackColor = UiPalette.ControlSurface;
             numericDiameter.DecimalPlaces = 2;
-            numericDiameter.ForeColor = Color.White;
+            numericDiameter.ForeColor = UiPalette.TextPrimary;
             numericDiameter.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             numericDiameter.Location = new Point(150, 112);
             numericDiameter.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
@@ -141,7 +141,7 @@ namespace Resonalyze.Options
             // labelDiameterUnit
             //
             labelDiameterUnit.AutoSize = true;
-            labelDiameterUnit.ForeColor = SystemColors.ControlLight;
+            labelDiameterUnit.ForeColor = UiPalette.TextDefault;
             labelDiameterUnit.Location = new Point(248, 116);
             labelDiameterUnit.Name = "labelDiameterUnit";
             labelDiameterUnit.Size = new Size(180, 15);
@@ -151,7 +151,7 @@ namespace Resonalyze.Options
             // labelGrid
             //
             labelGrid.AutoSize = true;
-            labelGrid.ForeColor = SystemColors.ControlLight;
+            labelGrid.ForeColor = UiPalette.TextDefault;
             labelGrid.Location = new Point(16, 148);
             labelGrid.Name = "labelGrid";
             labelGrid.Size = new Size(92, 15);
@@ -160,8 +160,8 @@ namespace Resonalyze.Options
             //
             // comboBoxGrid
             //
-            comboBoxGrid.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxGrid.ForeColor = Color.White;
+            comboBoxGrid.BackColor = UiPalette.ControlSurface;
+            comboBoxGrid.ForeColor = UiPalette.TextPrimary;
             comboBoxGrid.Location = new Point(150, 144);
             comboBoxGrid.Margin = new Padding(0);
             comboBoxGrid.MinimumSize = new Size(36, 19);
@@ -172,7 +172,7 @@ namespace Resonalyze.Options
             // labelReference
             //
             labelReference.AutoSize = true;
-            labelReference.ForeColor = SystemColors.ControlLight;
+            labelReference.ForeColor = UiPalette.TextDefault;
             labelReference.Location = new Point(16, 180);
             labelReference.Name = "labelReference";
             labelReference.Size = new Size(60, 15);
@@ -181,8 +181,8 @@ namespace Resonalyze.Options
             //
             // comboBoxReference
             //
-            comboBoxReference.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxReference.ForeColor = Color.White;
+            comboBoxReference.BackColor = UiPalette.ControlSurface;
+            comboBoxReference.ForeColor = UiPalette.TextPrimary;
             comboBoxReference.Location = new Point(150, 176);
             comboBoxReference.Margin = new Padding(0);
             comboBoxReference.MinimumSize = new Size(36, 19);
@@ -192,7 +192,7 @@ namespace Resonalyze.Options
             //
             // plotViewPreview
             //
-            plotViewPreview.BackColor = Color.FromArgb(32, 36, 46);
+            plotViewPreview.BackColor = UiPalette.GraphSurfaceMuted;
             plotViewPreview.Location = new Point(16, 210);
             plotViewPreview.Name = "plotViewPreview";
             plotViewPreview.PanCursor = Cursors.Hand;
@@ -205,7 +205,7 @@ namespace Resonalyze.Options
             //
             // labelSummary
             //
-            labelSummary.ForeColor = SystemColors.ControlLight;
+            labelSummary.ForeColor = UiPalette.TextDefault;
             labelSummary.Location = new Point(16, 428);
             labelSummary.Name = "labelSummary";
             labelSummary.Size = new Size(424, 72);
@@ -216,7 +216,7 @@ namespace Resonalyze.Options
             //
             buttonOk.DialogResult = DialogResult.OK;
             buttonOk.FlatStyle = FlatStyle.Popup;
-            buttonOk.ForeColor = Color.White;
+            buttonOk.ForeColor = UiPalette.TextPrimary;
             buttonOk.Location = new Point(268, 508);
             buttonOk.Name = "buttonOk";
             buttonOk.Size = new Size(84, 28);
@@ -228,7 +228,7 @@ namespace Resonalyze.Options
             //
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
-            buttonCancel.ForeColor = Color.White;
+            buttonCancel.ForeColor = UiPalette.TextPrimary;
             buttonCancel.Location = new Point(356, 508);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 28);
@@ -241,7 +241,7 @@ namespace Resonalyze.Options
             AcceptButton = buttonOk;
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(45, 50, 60);
+            BackColor = UiPalette.AppBackground;
             CancelButton = buttonCancel;
             ClientSize = new Size(456, 548);
             Controls.Add(labelName);
@@ -278,17 +278,17 @@ namespace Resonalyze.Options
         private Label labelName;
         private TextBox textBoxName;
         private Label labelBase;
-        private DarkComboBox comboBoxBase;
+        private ThemedComboBox comboBoxBase;
         private Label labelAngle;
-        private DarkNumericUpDown numericAngle;
+        private ThemedNumericUpDown numericAngle;
         private Label labelAngleUnit;
         private Label labelDiameter;
-        private DarkNumericUpDown numericDiameter;
+        private ThemedNumericUpDown numericDiameter;
         private Label labelDiameterUnit;
         private Label labelGrid;
-        private DarkComboBox comboBoxGrid;
+        private ThemedComboBox comboBoxGrid;
         private Label labelReference;
-        private DarkComboBox comboBoxReference;
+        private ThemedComboBox comboBoxReference;
         private OxyPlot.WindowsForms.PlotView plotViewPreview;
         private Label labelSummary;
         private ReleaseClickButton buttonOk;

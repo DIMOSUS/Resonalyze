@@ -38,7 +38,7 @@ internal sealed class ApplicationUpdateDialog : Form
     {
         SuspendLayout();
 
-        UiStyle.ApplyDarkDialog(
+        UiStyle.ApplyDialogChrome(
             this,
             new Size(500, supportsAutomaticUpdate ? 235 : 215),
             title: "Update available",
@@ -57,7 +57,7 @@ internal sealed class ApplicationUpdateDialog : Form
         var versionLabel = UiStyle.CreateLabel(
             versionLine,
             new Point(20, 58),
-            UiPalette.TextSecondaryAlt,
+            UiPalette.TextDefault,
             new Font("Segoe UI", 9.5F));
 
         string bodyText = supportsAutomaticUpdate
@@ -66,7 +66,7 @@ internal sealed class ApplicationUpdateDialog : Form
         var bodyLabel = UiStyle.CreateLabel(
             bodyText,
             new Point(20, 108),
-            UiPalette.TextHighlight,
+            UiPalette.TextDefault,
             new Font("Segoe UI", 9.5F),
             autoSize: false);
         bodyLabel.Size = new Size(460, supportsAutomaticUpdate ? 46 : 56);

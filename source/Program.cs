@@ -52,6 +52,9 @@ internal static class Program
                 MessageBoxIcon.Warning);
         }
         AppProfiler.SetThreadName("UI");
+
+        // Before the first control exists: a designer reads the palette inside InitializeComponent.
+        UiPalette.Use(AppearanceSettingsFile.LoadOrDefault().Theme);
         Application.Run(new Form1());
     }
 

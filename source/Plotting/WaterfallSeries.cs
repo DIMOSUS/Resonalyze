@@ -131,7 +131,7 @@ namespace Resonalyze
             double h = (int)(p0.Y - p1.Y);
 
             double thickness = 3;
-            var pen = new OxyPen(OxyColor.FromRgb(0, 127, 32), thickness, LineStyle.Solid);
+            var pen = new OxyPen(UiPalette.WaterfallMarker.ToOxy(), thickness, LineStyle.Solid);
 
             void boundLine(ScreenPoint p0_, ScreenPoint p1_, double offsetX = 0, double offsetY = 0)
             {
@@ -188,7 +188,7 @@ namespace Resonalyze
                     pointSeries.Add(new PointSeries(points, colors, corner, slice.SliceOffset));
                 }
 
-                var lPen = new OxyPen(OxyColor.FromRgb(0, 0, 0), 1, LineStyle.Solid);
+                var lPen = new OxyPen(UiPalette.WaterfallOutline.ToOxy(), 1, LineStyle.Solid);
 
                 const double labelCount = 5.0;
                 double labelStep = pointSeries.Count / labelCount;
@@ -222,7 +222,7 @@ namespace Resonalyze
                         rc.DrawText(
                             new ScreenPoint(corner.X + width, corner.Y),
                             (pointSeries[i].TimeOffset * 1000).ToString("0.##", CultureInfo.InvariantCulture) + "ms",
-                            OxyColors.Aqua);
+                            UiPalette.WaterfallLabel.ToOxy());
                     }
                 }
             }
@@ -232,7 +232,7 @@ namespace Resonalyze
                 int width = (int)Math.Round(p4.X - p0.X);
                 Resample(minFrequency, maxFrequency, width);
 
-                var lPen = new OxyPen(OxyColor.FromRgb(0, 0, 0), 2, LineStyle.Solid);
+                var lPen = new OxyPen(UiPalette.WaterfallOutline.ToOxy(), 2, LineStyle.Solid);
 
                 for (int slice = 0; slice < ResampleSlices.Count; slice++)
                 {
@@ -310,7 +310,7 @@ namespace Resonalyze
                     rc.DrawText(
                         pos,
                         Math.Round(label).ToString(CultureInfo.InvariantCulture) + " periods",
-                        OxyColors.Aqua);
+                        UiPalette.WaterfallLabel.ToOxy());
                 }
             }
 

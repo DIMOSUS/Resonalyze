@@ -260,10 +260,10 @@ internal static class PlotZoomRectangleReadout
 /// (a VDSP view switch re-arms axes without a mouse event).</summary>
 internal sealed class PlotZoomRectangleAnnotation : Annotation
 {
-    private static readonly OxyColor Fill = OxyColor.FromAColor(60, OxyColors.Gold);
-    private static readonly OxyColor Stroke = OxyColor.FromAColor(220, OxyColors.Gold);
-    private static readonly OxyColor LabelFill = OxyColor.FromAColor(220, OxyColors.Black);
-    private static readonly OxyColor LabelStroke = OxyColor.FromAColor(140, OxyColors.White);
+    private static readonly OxyColor Fill = UiPalette.PlotZoomBoxFill.ToOxy();
+    private static readonly OxyColor Stroke = UiPalette.PlotZoomBoxStroke.ToOxy();
+    private static readonly OxyColor LabelFill = UiPalette.PlotZoomLabelFill.ToOxy();
+    private static readonly OxyColor LabelStroke = UiPalette.PlotZoomLabelStroke.ToOxy();
 
     private const double LineGap = 2;
 

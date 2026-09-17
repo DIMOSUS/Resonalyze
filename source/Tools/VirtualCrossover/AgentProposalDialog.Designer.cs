@@ -43,7 +43,7 @@ namespace Resonalyze
             // labelSummary
             //
             labelSummary.AutoSize = true;
-            labelSummary.ForeColor = Color.FromArgb(210, 214, 222);
+            labelSummary.ForeColor = UiPalette.TextDefault;
             labelSummary.Location = new Point(12, 12);
             labelSummary.MaximumSize = new Size(876, 60);
             labelSummary.Name = "labelSummary";
@@ -54,7 +54,7 @@ namespace Resonalyze
             // labelWarnings
             //
             labelWarnings.AutoSize = true;
-            labelWarnings.ForeColor = Color.FromArgb(230, 184, 0);
+            labelWarnings.ForeColor = UiPalette.Warning;
             labelWarnings.Location = new Point(12, 76);
             labelWarnings.MaximumSize = new Size(876, 30);
             labelWarnings.Name = "labelWarnings";
@@ -66,7 +66,7 @@ namespace Resonalyze
             gridView.AllowUserToAddRows = false;
             gridView.AllowUserToDeleteRows = false;
             gridView.AllowUserToResizeRows = false;
-            gridView.BackgroundColor = Color.FromArgb(40, 42, 48);
+            gridView.BackgroundColor = UiPalette.DialogBackground;
             gridView.BorderStyle = BorderStyle.None;
             gridView.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             gridView.Columns.AddRange(new DataGridViewColumn[] { ColumnApply, ColumnChannel, ColumnParameter, ColumnCurrent, ColumnProposed, ColumnStatus, ColumnReason });
@@ -130,7 +130,7 @@ namespace Resonalyze
             // labelDetail
             //
             labelDetail.AutoSize = true;
-            labelDetail.ForeColor = Color.FromArgb(185, 190, 200);
+            labelDetail.ForeColor = UiPalette.TextSecondary;
             labelDetail.Location = new Point(12, 360);
             labelDetail.Name = "labelDetail";
             labelDetail.Size = new Size(120, 15);
@@ -139,9 +139,9 @@ namespace Resonalyze
             //
             // textBoxDetail
             //
-            textBoxDetail.BackColor = Color.FromArgb(33, 36, 45);
+            textBoxDetail.BackColor = UiPalette.SunkenSurface;
             textBoxDetail.BorderStyle = BorderStyle.FixedSingle;
-            textBoxDetail.ForeColor = Color.FromArgb(210, 214, 222);
+            textBoxDetail.ForeColor = UiPalette.TextDefault;
             textBoxDetail.Location = new Point(12, 380);
             textBoxDetail.Multiline = true;
             textBoxDetail.Name = "textBoxDetail";
@@ -153,7 +153,7 @@ namespace Resonalyze
             // labelFootnote
             //
             labelFootnote.AutoSize = true;
-            labelFootnote.ForeColor = Color.FromArgb(150, 156, 168);
+            labelFootnote.ForeColor = UiPalette.TextMuted;
             labelFootnote.Location = new Point(12, 512);
             labelFootnote.MaximumSize = new Size(640, 30);
             labelFootnote.Name = "labelFootnote";
@@ -164,10 +164,10 @@ namespace Resonalyze
             //
             // buttonApply
             //
-            buttonApply.BackColor = Color.FromArgb(46, 51, 67);
+            buttonApply.BackColor = UiPalette.ButtonBackground;
             buttonApply.DialogResult = DialogResult.OK;
             buttonApply.FlatStyle = FlatStyle.Popup;
-            buttonApply.ForeColor = Color.White;
+            buttonApply.ForeColor = UiPalette.TextPrimary;
             buttonApply.Location = new Point(688, 514);
             buttonApply.Name = "buttonApply";
             buttonApply.Size = new Size(108, 26);
@@ -179,7 +179,7 @@ namespace Resonalyze
             //
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
-            buttonCancel.ForeColor = Color.White;
+            buttonCancel.ForeColor = UiPalette.TextPrimary;
             buttonCancel.Location = new Point(804, 514);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
@@ -191,7 +191,7 @@ namespace Resonalyze
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             CancelButton = buttonCancel;
             ClientSize = new Size(900, 552);
             Controls.Add(labelSummary);
@@ -203,7 +203,7 @@ namespace Resonalyze
             Controls.Add(buttonApply);
             Controls.Add(buttonCancel);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;

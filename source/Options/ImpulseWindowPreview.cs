@@ -279,7 +279,7 @@ internal static class ImpulseWindowPreview
     {
         var windowSeries = new LineSeries
         {
-            Color = OxyColor.FromArgb(127, 50, 210, 120),
+            Color = OxyColor.FromAColor(127, UiPalette.CurveWindowFill.ToOxy()),
             StrokeThickness = 1.0,
             LineStyle = LineStyle.Dash,
             Tag = seriesTag,
@@ -298,7 +298,7 @@ internal static class ImpulseWindowPreview
         {
             Type = LineAnnotationType.Vertical,
             X = gateOffsetMs,
-            Color = OxyColor.FromArgb(127, 80, 150, 255),
+            Color = OxyColor.FromAColor(127, UiPalette.CurveWindowGuide.ToOxy()),
             LineStyle = LineStyle.Dot,
             StrokeThickness = 1.0,
             Tag = seriesTag
@@ -407,7 +407,7 @@ internal static class ImpulseWindowPreview
 
         var impulseSeries = new LineSeries
         {
-            Color = OxyColor.FromRgb(255, 210, 70),
+            Color = UiPalette.CurveWindowMarker.ToOxy(),
             StrokeThickness = 1.5,
             TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
         };
@@ -416,7 +416,7 @@ internal static class ImpulseWindowPreview
 
         var windowSeries = new LineSeries
         {
-            Color = OxyColor.FromRgb(50, 210, 120),
+            Color = UiPalette.CurveWindowFill.ToOxy(),
             StrokeThickness = 1.5,
             TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
         };
@@ -429,7 +429,7 @@ internal static class ImpulseWindowPreview
         {
             Type = LineAnnotationType.Vertical,
             X = gateOffsetMs,
-            Color = OxyColor.FromArgb(127, 80, 150, 255),
+            Color = OxyColor.FromAColor(127, UiPalette.CurveWindowGuide.ToOxy()),
             LineStyle = LineStyle.Dot,
             StrokeThickness = 1.0
         });
@@ -469,7 +469,7 @@ internal static class ImpulseWindowPreview
 
         var compareSeries = new LineSeries
         {
-            Color = OxyColor.FromArgb(180, 120, 200, 255),
+            Color = OxyColor.FromAColor(180, UiPalette.CurveStep.ToOxy()),
             StrokeThickness = 1.5,
             LineStyle = LineStyle.Dash,
             Title = source.DisplayName,
@@ -511,7 +511,7 @@ internal static class ImpulseWindowPreview
 
         var impulseSeries = new LineSeries
         {
-            Color = OxyColor.FromRgb(255, 210, 70),
+            Color = UiPalette.CurveWindowMarker.ToOxy(),
             StrokeThickness = 1.5,
             TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
         };
@@ -520,7 +520,7 @@ internal static class ImpulseWindowPreview
 
         var windowSeries = new LineSeries
         {
-            Color = OxyColor.FromRgb(50, 210, 120),
+            Color = UiPalette.CurveWindowFill.ToOxy(),
             StrokeThickness = 1.5,
             TrackerFormatString = "{0}\n{2:0.000} ms\n{4:0.000}"
         };
@@ -637,26 +637,15 @@ internal static class ImpulseWindowPreview
     }
 
     private static PlotModel CreatePreviewPlotModel(string title) =>
-        new()
-        {
-            Background = OxyColor.FromRgb(32, 36, 46),
-            PlotAreaBackground = OxyColor.FromRgb(32, 36, 46),
-            TextColor = OxyColors.White,
-            Title = title,
-            TitleColor = OxyColors.White,
-            TitleFontSize = 10
-        };
+        PlotModelStyle.CreatePreviewModel(title);
 
-    private static LinearAxis CreateTimeAxis(double timeMin, double timeMax) =>
-        new()
+    private static LinearAxis CreateTimeAxis(double timeMin, double timeMax)
+    {
+        var axis = new LinearAxis
         {
             Position = AxisPosition.Bottom,
-            MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
             MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
             MinorGridlineStyle = LineStyle.Dot,
-            TextColor = OxyColors.White,
-            TicklineColor = OxyColors.White,
             Title = "ms",
             IsPanEnabled = false,
             IsZoomEnabled = false,
@@ -665,23 +654,26 @@ internal static class ImpulseWindowPreview
             Maximum = timeMax,
             Minimum = timeMin
         };
+        PlotModelStyle.StyleAxis(axis);
+        return axis;
+    }
 
-    private static LinearAxis CreateAmplitudeAxis() =>
-        new()
+    private static LinearAxis CreateAmplitudeAxis()
+    {
+        var axis = new LinearAxis
         {
             Position = AxisPosition.Left,
             Minimum = -1.05,
             Maximum = 1.05,
             MajorStep = 0.5,
-            MajorGridlineColor = OxyColor.FromRgb(55, 62, 78),
             MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineColor = OxyColor.FromRgb(48, 54, 70),
             MinorGridlineStyle = LineStyle.Dot,
-            TextColor = OxyColors.White,
-            TicklineColor = OxyColors.White,
             IsPanEnabled = false,
             IsZoomEnabled = false
         };
+        PlotModelStyle.StyleAxis(axis);
+        return axis;
+    }
 
     private sealed record IrSource(
         Complex[] Samples,

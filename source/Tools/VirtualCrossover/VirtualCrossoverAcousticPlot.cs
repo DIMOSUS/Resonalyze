@@ -55,7 +55,7 @@ internal sealed class VirtualCrossoverAcousticPlot
     private const double LossAxisNominalBottomDb = -24;
     private const double LossAxisFloorDb = -60;
 
-    public static readonly OxyColor LossAxisColor = OxyColor.FromRgb(230, 184, 0);
+    public static readonly OxyColor LossAxisColor = UiPalette.CurveTarget.ToOxy();
 
     private readonly PlotView view;
     private readonly PlotLabelsPanelController plotLabels;
@@ -119,7 +119,7 @@ internal sealed class VirtualCrossoverAcousticPlot
         model.Annotations.Add(new PlotWatermarkAnnotation
         {
             Text = "Virtual DSP",
-            TextColor = OxyColor.FromAColor(10, OxyColors.White),
+            TextColor = OxyColor.FromAColor(10, UiPalette.GraphAxisText.ToOxy()),
             FontSize = 70,
             FontWeight = FontWeights.Bold
         });
@@ -127,7 +127,7 @@ internal sealed class VirtualCrossoverAcousticPlot
         {
             Text = hint,
             VerticalPosition = 0.66,
-            TextColor = OxyColor.FromRgb(230, 184, 0),
+            TextColor = UiPalette.CurveTarget.ToOxy(),
             FontSize = 15,
             FontWeight = FontWeights.Bold
         };

@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using OxyPlot;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
@@ -163,8 +163,8 @@ public sealed class OverlayCollection
             .FirstOrDefault(button => button.Name == "buttonSaveOverlay")
             ?? throw new InvalidOperationException(
                 "Overlay template capture button is missing.");
-        DarkNumericUpDown templateOffset = templatePanel.Controls
-            .OfType<DarkNumericUpDown>()
+        ThemedNumericUpDown templateOffset = templatePanel.Controls
+            .OfType<ThemedNumericUpDown>()
             .FirstOrDefault()
             ?? throw new InvalidOperationException(
                 "Overlay template offset control is missing.");
@@ -197,7 +197,7 @@ public sealed class OverlayCollection
         {
             RoundedPanel panel = CreatePanel(templatePanel, index, random);
             CheckBox checkBox = CreateCheckBox(templateCheckBox, index);
-            DarkNumericUpDown offset = CreateOffset(templateOffset, index);
+            ThemedNumericUpDown offset = CreateOffset(templateOffset, index);
             Button captureButton = CreateCaptureButton(templateCaptureButton, index);
             Label nameLabel = CreateNameLabel(templateNameLabel, index);
 
@@ -534,11 +534,11 @@ public sealed class OverlayCollection
         };
     }
 
-    private static DarkNumericUpDown CreateOffset(
-        DarkNumericUpDown template,
+    private static ThemedNumericUpDown CreateOffset(
+        ThemedNumericUpDown template,
         int index)
     {
-        return new DarkNumericUpDown
+        return new ThemedNumericUpDown
         {
             BackColor = template.BackColor,
             DecimalPlaces = template.DecimalPlaces,
@@ -597,7 +597,7 @@ public sealed class Overlay
     private readonly OverlayCollection collection;
     private readonly Panel panel;
     private readonly Button captureButton;
-    private readonly DarkNumericUpDown offsetControl;
+    private readonly ThemedNumericUpDown offsetControl;
     private readonly CheckBox checkBox;
     private readonly Label nameLabel;
     private readonly WrappingToolTip toolTip;
@@ -682,7 +682,7 @@ public sealed class Overlay
     public Overlay(
         Panel panel,
         Button captureButton,
-        DarkNumericUpDown offsetControl,
+        ThemedNumericUpDown offsetControl,
         CheckBox checkBox,
         Label nameLabel,
         int index,

@@ -98,7 +98,7 @@ internal sealed partial class GraphHelpDialog : Form
         {
             AutoSize = true,
             Font = new Font(Font, FontStyle.Bold),
-            ForeColor = UiPalette.AccentBlueSoft,
+            ForeColor = UiPalette.AccentMark,
             Margin = new Padding(0, first ? 0 : 14, 0, 4),
             Text = title,
         };

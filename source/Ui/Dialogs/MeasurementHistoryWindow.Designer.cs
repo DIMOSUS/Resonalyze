@@ -56,7 +56,7 @@ partial class MeasurementHistoryWindow
         historyDataGridView.AllowUserToDeleteRows = false;
         historyDataGridView.AllowUserToResizeColumns = false;
         historyDataGridView.AllowUserToResizeRows = false;
-        historyDataGridView.BackgroundColor = Color.FromArgb(40, 42, 48);
+        historyDataGridView.BackgroundColor = UiPalette.DialogBackground;
         historyDataGridView.BorderStyle = BorderStyle.None;
         historyDataGridView.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
         historyDataGridView.Columns.AddRange(new DataGridViewColumn[] { Column1, Column2, Column3, Column4 });
@@ -97,7 +97,7 @@ partial class MeasurementHistoryWindow
         // 
         // FRPlotView
         // 
-        FRPlotView.BackColor = Color.FromArgb(32, 36, 46);
+        FRPlotView.BackColor = UiPalette.GraphSurfaceMuted;
         FRPlotView.Location = new Point(0, 500);
         FRPlotView.Margin = new Padding(0);
         FRPlotView.Name = "FRPlotView";
@@ -113,12 +113,12 @@ partial class MeasurementHistoryWindow
         // 
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
-        BackColor = Color.FromArgb(40, 42, 48);
+        BackColor = UiPalette.DialogBackground;
         ClientSize = new Size(350, 700);
         Controls.Add(FRPlotView);
         Controls.Add(historyDataGridView);
         Controls.Add(buttonNewSession);
-        ForeColor = Color.FromArgb(235, 237, 240);
+        ForeColor = UiPalette.TextBright;
         FormBorderStyle = FormBorderStyle.None;
         MinimumSize = new Size(350, 700);
         Name = "MeasurementHistoryWindow";

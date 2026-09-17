@@ -30,7 +30,7 @@ public sealed class VirtualCrossoverAutoDelayDialogTests
         Button apply = Field<Button>(dialog, "buttonApply");
         Assert.True(apply.Enabled);
 
-        Field<DarkNumericUpDown>(dialog, "numericRearFill").Value = 10m;
+        Field<ThemedNumericUpDown>(dialog, "numericRearFill").Value = 10m;
 
         Assert.Null(dialog.Result);
         Assert.False(apply.Enabled);

@@ -176,7 +176,7 @@ public sealed class VirtualCrossoverAutoSetupGroupTests
             using var dialog = new VirtualCrossoverAutoSetupDialog();
             dialog.Init(SampleRate, SampleRate, channels);
 
-            var field = (DarkNumericUpDown)typeof(VirtualCrossoverAutoSetupDialog)
+            var field = (ThemedNumericUpDown)typeof(VirtualCrossoverAutoSetupDialog)
                 .GetField("subElevation", BindingFlags.NonPublic | BindingFlags.Instance)!
                 .GetValue(dialog)!;
             Assert.True(field.Maximum <= 1m, $"capped at {field.Maximum} dB to begin with");

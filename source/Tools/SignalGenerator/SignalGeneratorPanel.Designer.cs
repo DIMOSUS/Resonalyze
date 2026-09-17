@@ -31,13 +31,13 @@ namespace Resonalyze
         {
             titleLabel = new Label();
             labelSignalType = new Label();
-            comboBoxSignalType = new DarkComboBox();
+            comboBoxSignalType = new ThemedComboBox();
             labelFrequency = new Label();
-            numericFrequency = new DarkNumericUpDown();
+            numericFrequency = new ThemedNumericUpDown();
             labelDuration = new Label();
-            numericDuration = new DarkNumericUpDown();
+            numericDuration = new ThemedNumericUpDown();
             labelLevel = new Label();
-            numericLevel = new DarkNumericUpDown();
+            numericLevel = new ThemedNumericUpDown();
             labelAudioSettingsTitle = new Label();
             labelAudioSettings = new Label();
             buttonPlay = new ReleaseClickButton();
@@ -53,7 +53,7 @@ namespace Resonalyze
             // 
             titleLabel.AutoSize = true;
             titleLabel.Font = new Font("Segoe UI Semibold", 12F, FontStyle.Bold, GraphicsUnit.Point, 204);
-            titleLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            titleLabel.ForeColor = UiPalette.TextDefault;
             titleLabel.Location = new Point(18, 18);
             titleLabel.Name = "titleLabel";
             titleLabel.Size = new Size(132, 21);
@@ -63,7 +63,7 @@ namespace Resonalyze
             // labelSignalType
             // 
             labelSignalType.AutoSize = true;
-            labelSignalType.ForeColor = Color.FromArgb(210, 214, 222);
+            labelSignalType.ForeColor = UiPalette.TextDefault;
             labelSignalType.Location = new Point(18, 64);
             labelSignalType.Name = "labelSignalType";
             labelSignalType.Size = new Size(65, 15);
@@ -72,9 +72,9 @@ namespace Resonalyze
             // 
             // comboBoxSignalType
             // 
-            comboBoxSignalType.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxSignalType.BackColor = UiPalette.ControlSurface;
             comboBoxSignalType.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBoxSignalType.ForeColor = Color.White;
+            comboBoxSignalType.ForeColor = UiPalette.TextPrimary;
             comboBoxSignalType.FormattingEnabled = true;
             comboBoxSignalType.Location = new Point(150, 60);
             comboBoxSignalType.MinimumSize = new Size(36, 19);
@@ -85,7 +85,7 @@ namespace Resonalyze
             // labelFrequency
             // 
             labelFrequency.AutoSize = true;
-            labelFrequency.ForeColor = Color.FromArgb(210, 214, 222);
+            labelFrequency.ForeColor = UiPalette.TextDefault;
             labelFrequency.Location = new Point(18, 94);
             labelFrequency.Name = "labelFrequency";
             labelFrequency.Size = new Size(83, 15);
@@ -94,9 +94,9 @@ namespace Resonalyze
             // 
             // numericFrequency
             // 
-            numericFrequency.BackColor = Color.FromArgb(55, 60, 72);
+            numericFrequency.BackColor = UiPalette.ControlSurface;
             numericFrequency.DecimalPlaces = 1;
-            numericFrequency.ForeColor = Color.White;
+            numericFrequency.ForeColor = UiPalette.TextPrimary;
             numericFrequency.Increment = new decimal(new int[] { 10, 0, 0, 0 });
             numericFrequency.Location = new Point(150, 90);
             numericFrequency.Maximum = new decimal(new int[] { 96000, 0, 0, 0 });
@@ -111,7 +111,7 @@ namespace Resonalyze
             // labelDuration
             // 
             labelDuration.AutoSize = true;
-            labelDuration.ForeColor = Color.FromArgb(210, 214, 222);
+            labelDuration.ForeColor = UiPalette.TextDefault;
             labelDuration.Location = new Point(18, 124);
             labelDuration.Name = "labelDuration";
             labelDuration.Size = new Size(65, 15);
@@ -120,8 +120,8 @@ namespace Resonalyze
             // 
             // numericDuration
             // 
-            numericDuration.BackColor = Color.FromArgb(55, 60, 72);
-            numericDuration.ForeColor = Color.White;
+            numericDuration.BackColor = UiPalette.ControlSurface;
+            numericDuration.ForeColor = UiPalette.TextPrimary;
             numericDuration.Location = new Point(150, 120);
             numericDuration.Maximum = new decimal(new int[] { 600, 0, 0, 0 });
             numericDuration.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
@@ -135,7 +135,7 @@ namespace Resonalyze
             // labelLevel
             // 
             labelLevel.AutoSize = true;
-            labelLevel.ForeColor = Color.FromArgb(210, 214, 222);
+            labelLevel.ForeColor = UiPalette.TextDefault;
             labelLevel.Location = new Point(18, 154);
             labelLevel.Name = "labelLevel";
             labelLevel.Size = new Size(47, 15);
@@ -144,8 +144,8 @@ namespace Resonalyze
             // 
             // numericLevel
             // 
-            numericLevel.BackColor = Color.FromArgb(55, 60, 72);
-            numericLevel.ForeColor = Color.White;
+            numericLevel.BackColor = UiPalette.ControlSurface;
+            numericLevel.ForeColor = UiPalette.TextPrimary;
             numericLevel.Location = new Point(150, 150);
             numericLevel.MinimumSize = new Size(36, 19);
             numericLevel.Name = "numericLevel";
@@ -157,7 +157,7 @@ namespace Resonalyze
             // labelAudioSettingsTitle
             // 
             labelAudioSettingsTitle.AutoSize = true;
-            labelAudioSettingsTitle.ForeColor = Color.FromArgb(210, 214, 222);
+            labelAudioSettingsTitle.ForeColor = UiPalette.TextDefault;
             labelAudioSettingsTitle.Location = new Point(18, 190);
             labelAudioSettingsTitle.Name = "labelAudioSettingsTitle";
             labelAudioSettingsTitle.Size = new Size(83, 15);
@@ -167,7 +167,7 @@ namespace Resonalyze
             // labelAudioSettings
             // 
             labelAudioSettings.AutoEllipsis = true;
-            labelAudioSettings.ForeColor = Color.FromArgb(190, 220, 255);
+            labelAudioSettings.ForeColor = UiPalette.TextAccent;
             labelAudioSettings.Location = new Point(150, 190);
             labelAudioSettings.Name = "labelAudioSettings";
             labelAudioSettings.Size = new Size(520, 20);
@@ -176,9 +176,9 @@ namespace Resonalyze
             // 
             // buttonPlay
             // 
-            buttonPlay.BackColor = Color.FromArgb(50, 55, 80);
+            buttonPlay.BackColor = UiPalette.ButtonBackground;
             buttonPlay.FlatStyle = FlatStyle.Popup;
-            buttonPlay.ForeColor = Color.White;
+            buttonPlay.ForeColor = UiPalette.TextPrimary;
             buttonPlay.Location = new Point(150, 226);
             buttonPlay.Name = "buttonPlay";
             buttonPlay.Size = new Size(100, 25);
@@ -188,10 +188,10 @@ namespace Resonalyze
             // 
             // buttonStop
             // 
-            buttonStop.BackColor = Color.FromArgb(50, 55, 80);
+            buttonStop.BackColor = UiPalette.ButtonBackground;
             buttonStop.Enabled = false;
             buttonStop.FlatStyle = FlatStyle.Popup;
-            buttonStop.ForeColor = Color.White;
+            buttonStop.ForeColor = UiPalette.TextPrimary;
             buttonStop.Location = new Point(260, 226);
             buttonStop.Name = "buttonStop";
             buttonStop.Size = new Size(100, 25);
@@ -202,7 +202,7 @@ namespace Resonalyze
             // labelStatusTitle
             // 
             labelStatusTitle.AutoSize = true;
-            labelStatusTitle.ForeColor = Color.FromArgb(210, 214, 222);
+            labelStatusTitle.ForeColor = UiPalette.TextDefault;
             labelStatusTitle.Location = new Point(18, 264);
             labelStatusTitle.Name = "labelStatusTitle";
             labelStatusTitle.Size = new Size(39, 15);
@@ -212,7 +212,7 @@ namespace Resonalyze
             // labelStatus
             // 
             labelStatus.AutoSize = true;
-            labelStatus.ForeColor = Color.FromArgb(140, 255, 160);
+            labelStatus.ForeColor = UiPalette.Success;
             labelStatus.Location = new Point(150, 264);
             labelStatus.Name = "labelStatus";
             labelStatus.Size = new Size(39, 15);
@@ -224,7 +224,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             AutoScroll = true;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(labelStatus);
             Controls.Add(labelStatusTitle);
@@ -242,7 +242,7 @@ namespace Resonalyze
             Controls.Add(labelSignalType);
             Controls.Add(titleLabel);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             Name = "SignalGeneratorPanel";
             Size = new Size(1182, 706);
             ((System.ComponentModel.ISupportInitialize)numericFrequency).EndInit();
@@ -256,13 +256,13 @@ namespace Resonalyze
 
         private Label titleLabel;
         private Label labelSignalType;
-        private DarkComboBox comboBoxSignalType;
+        private ThemedComboBox comboBoxSignalType;
         private Label labelFrequency;
-        private DarkNumericUpDown numericFrequency;
+        private ThemedNumericUpDown numericFrequency;
         private Label labelDuration;
-        private DarkNumericUpDown numericDuration;
+        private ThemedNumericUpDown numericDuration;
         private Label labelLevel;
-        private DarkNumericUpDown numericLevel;
+        private ThemedNumericUpDown numericLevel;
         private Label labelAudioSettingsTitle;
         private Label labelAudioSettings;
         private ReleaseClickButton buttonPlay;

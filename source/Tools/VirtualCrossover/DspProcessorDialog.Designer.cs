@@ -24,11 +24,11 @@ namespace Resonalyze
         {
             labelCaption = new Label();
             labelModel = new Label();
-            comboBoxModel = new DarkComboBox();
+            comboBoxModel = new ThemedComboBox();
             labelSampleRate = new Label();
-            comboBoxSampleRate = new DarkComboBox();
+            comboBoxSampleRate = new ThemedComboBox();
             labelQConvention = new Label();
-            comboBoxQConvention = new DarkComboBox();
+            comboBoxQConvention = new ThemedComboBox();
             labelStatus = new Label();
             checkBoxPhaseControl = new ReleaseClickCheckBox();
             checkBoxFirFilters = new ReleaseClickCheckBox();
@@ -43,7 +43,7 @@ namespace Resonalyze
             // labelCaption
             //
             labelCaption.AutoSize = true;
-            labelCaption.ForeColor = Color.FromArgb(210, 214, 222);
+            labelCaption.ForeColor = UiPalette.TextDefault;
             labelCaption.Location = new Point(12, 12);
             labelCaption.MaximumSize = new Size(456, 0);
             labelCaption.Name = "labelCaption";
@@ -55,7 +55,7 @@ namespace Resonalyze
             // labelModel
             //
             labelModel.AutoSize = true;
-            labelModel.ForeColor = Color.FromArgb(185, 190, 200);
+            labelModel.ForeColor = UiPalette.TextSecondary;
             labelModel.Location = new Point(12, 60);
             labelModel.Name = "labelModel";
             labelModel.Size = new Size(43, 15);
@@ -64,8 +64,8 @@ namespace Resonalyze
             //
             // comboBoxModel
             //
-            comboBoxModel.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxModel.ForeColor = Color.White;
+            comboBoxModel.BackColor = UiPalette.ControlSurface;
+            comboBoxModel.ForeColor = UiPalette.TextPrimary;
             comboBoxModel.Location = new Point(148, 56);
             comboBoxModel.MaxDropDownItems = 14;
             comboBoxModel.MinimumSize = new Size(36, 19);
@@ -76,7 +76,7 @@ namespace Resonalyze
             // labelSampleRate
             //
             labelSampleRate.AutoSize = true;
-            labelSampleRate.ForeColor = Color.FromArgb(185, 190, 200);
+            labelSampleRate.ForeColor = UiPalette.TextSecondary;
             labelSampleRate.Location = new Point(12, 94);
             labelSampleRate.Name = "labelSampleRate";
             labelSampleRate.Size = new Size(95, 15);
@@ -85,8 +85,8 @@ namespace Resonalyze
             //
             // comboBoxSampleRate
             //
-            comboBoxSampleRate.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxSampleRate.ForeColor = Color.White;
+            comboBoxSampleRate.BackColor = UiPalette.ControlSurface;
+            comboBoxSampleRate.ForeColor = UiPalette.TextPrimary;
             comboBoxSampleRate.Location = new Point(148, 90);
             comboBoxSampleRate.MinimumSize = new Size(36, 19);
             comboBoxSampleRate.Name = "comboBoxSampleRate";
@@ -96,7 +96,7 @@ namespace Resonalyze
             // labelQConvention
             //
             labelQConvention.AutoSize = true;
-            labelQConvention.ForeColor = Color.FromArgb(185, 190, 200);
+            labelQConvention.ForeColor = UiPalette.TextSecondary;
             labelQConvention.Location = new Point(12, 128);
             labelQConvention.Name = "labelQConvention";
             labelQConvention.Size = new Size(80, 15);
@@ -105,8 +105,8 @@ namespace Resonalyze
             //
             // comboBoxQConvention
             //
-            comboBoxQConvention.BackColor = Color.FromArgb(55, 60, 72);
-            comboBoxQConvention.ForeColor = Color.White;
+            comboBoxQConvention.BackColor = UiPalette.ControlSurface;
+            comboBoxQConvention.ForeColor = UiPalette.TextPrimary;
             comboBoxQConvention.Location = new Point(148, 124);
             comboBoxQConvention.MinimumSize = new Size(36, 19);
             comboBoxQConvention.Name = "comboBoxQConvention";
@@ -116,7 +116,7 @@ namespace Resonalyze
             // checkBoxPhaseControl
             //
             checkBoxPhaseControl.AutoSize = true;
-            checkBoxPhaseControl.ForeColor = Color.White;
+            checkBoxPhaseControl.ForeColor = UiPalette.TextPrimary;
             checkBoxPhaseControl.Location = new Point(148, 156);
             checkBoxPhaseControl.Name = "checkBoxPhaseControl";
             checkBoxPhaseControl.Size = new Size(320, 19);
@@ -127,7 +127,7 @@ namespace Resonalyze
             // checkBoxFirFilters
             //
             checkBoxFirFilters.AutoSize = true;
-            checkBoxFirFilters.ForeColor = Color.White;
+            checkBoxFirFilters.ForeColor = UiPalette.TextPrimary;
             checkBoxFirFilters.Location = new Point(148, 178);
             checkBoxFirFilters.Name = "checkBoxFirFilters";
             checkBoxFirFilters.Size = new Size(320, 19);
@@ -138,7 +138,7 @@ namespace Resonalyze
             // labelStatus
             //
             labelStatus.AutoSize = true;
-            labelStatus.ForeColor = Color.FromArgb(185, 190, 200);
+            labelStatus.ForeColor = UiPalette.TextSecondary;
             labelStatus.Location = new Point(12, 216);
             labelStatus.MaximumSize = new Size(456, 0);
             labelStatus.Name = "labelStatus";
@@ -149,7 +149,7 @@ namespace Resonalyze
             // labelHint
             //
             labelHint.AutoSize = true;
-            labelHint.ForeColor = Color.FromArgb(150, 156, 168);
+            labelHint.ForeColor = UiPalette.TextMuted;
             labelHint.Location = new Point(12, 345);
             labelHint.MaximumSize = new Size(456, 0);
             labelHint.Name = "labelHint";
@@ -161,7 +161,7 @@ namespace Resonalyze
             // labelNotes
             //
             labelNotes.AutoSize = true;
-            labelNotes.ForeColor = Color.FromArgb(185, 190, 200);
+            labelNotes.ForeColor = UiPalette.TextSecondary;
             labelNotes.Location = new Point(12, 389);
             labelNotes.Name = "labelNotes";
             labelNotes.Size = new Size(78, 15);
@@ -171,7 +171,7 @@ namespace Resonalyze
             // labelNotesHint
             //
             labelNotesHint.AutoSize = true;
-            labelNotesHint.ForeColor = Color.FromArgb(150, 156, 168);
+            labelNotesHint.ForeColor = UiPalette.TextMuted;
             labelNotesHint.Location = new Point(12, 407);
             labelNotesHint.MaximumSize = new Size(456, 0);
             labelNotesHint.Name = "labelNotesHint";
@@ -184,9 +184,9 @@ namespace Resonalyze
             // textBoxNotes
             //
             textBoxNotes.AcceptsReturn = true;
-            textBoxNotes.BackColor = Color.FromArgb(33, 36, 45);
+            textBoxNotes.BackColor = UiPalette.SunkenSurface;
             textBoxNotes.BorderStyle = BorderStyle.FixedSingle;
-            textBoxNotes.ForeColor = Color.FromArgb(210, 214, 222);
+            textBoxNotes.ForeColor = UiPalette.TextDefault;
             textBoxNotes.Location = new Point(12, 459);
             textBoxNotes.MaxLength = MaximumNotesLength;
             textBoxNotes.Multiline = true;
@@ -197,10 +197,10 @@ namespace Resonalyze
             //
             // buttonOk
             //
-            buttonOk.BackColor = Color.FromArgb(46, 51, 67);
+            buttonOk.BackColor = UiPalette.ButtonBackground;
             buttonOk.DialogResult = DialogResult.OK;
             buttonOk.FlatStyle = FlatStyle.Popup;
-            buttonOk.ForeColor = Color.White;
+            buttonOk.ForeColor = UiPalette.TextPrimary;
             buttonOk.Location = new Point(292, 573);
             buttonOk.Name = "buttonOk";
             buttonOk.Size = new Size(84, 26);
@@ -212,7 +212,7 @@ namespace Resonalyze
             //
             buttonCancel.DialogResult = DialogResult.Cancel;
             buttonCancel.FlatStyle = FlatStyle.Popup;
-            buttonCancel.ForeColor = Color.White;
+            buttonCancel.ForeColor = UiPalette.TextPrimary;
             buttonCancel.Location = new Point(384, 573);
             buttonCancel.Name = "buttonCancel";
             buttonCancel.Size = new Size(84, 26);
@@ -224,7 +224,7 @@ namespace Resonalyze
             //
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             ClientSize = new Size(480, 611);
             Controls.Add(labelCaption);
             Controls.Add(labelModel);
@@ -243,7 +243,7 @@ namespace Resonalyze
             Controls.Add(buttonOk);
             Controls.Add(buttonCancel);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -259,11 +259,11 @@ namespace Resonalyze
 
         private Label labelCaption;
         private Label labelModel;
-        private DarkComboBox comboBoxModel;
+        private ThemedComboBox comboBoxModel;
         private Label labelSampleRate;
-        private DarkComboBox comboBoxSampleRate;
+        private ThemedComboBox comboBoxSampleRate;
         private Label labelQConvention;
-        private DarkComboBox comboBoxQConvention;
+        private ThemedComboBox comboBoxQConvention;
         private Label labelStatus;
         private ReleaseClickCheckBox checkBoxPhaseControl;
         private ReleaseClickCheckBox checkBoxFirFilters;

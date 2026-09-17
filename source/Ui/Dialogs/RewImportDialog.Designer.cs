@@ -30,10 +30,10 @@ partial class RewImportDialog
         ColumnRate = new DataGridViewTextBoxColumn();
         ColumnPeak = new DataGridViewTextBoxColumn();
         labelOffset = new Label();
-        numericOffset = new DarkNumericUpDown();
+        numericOffset = new ThemedNumericUpDown();
         checkOffsetUnknown = new ReleaseClickCheckBox();
         labelLevel = new Label();
-        numericLevel = new DarkNumericUpDown();
+        numericLevel = new ThemedNumericUpDown();
         labelLevelSource = new Label();
         labelOffsetHelp = new Label();
         labelSelection = new Label();
@@ -47,7 +47,7 @@ partial class RewImportDialog
         //
         // labelInstruction
         //
-        labelInstruction.ForeColor = Color.FromArgb(210, 214, 222);
+        labelInstruction.ForeColor = UiPalette.TextDefault;
         labelInstruction.Location = new Point(16, 14);
         labelInstruction.Name = "labelInstruction";
         labelInstruction.Size = new Size(608, 36);
@@ -57,7 +57,7 @@ partial class RewImportDialog
         // labelAddress
         //
         labelAddress.AutoSize = true;
-        labelAddress.ForeColor = Color.FromArgb(210, 214, 222);
+        labelAddress.ForeColor = UiPalette.TextDefault;
         labelAddress.Location = new Point(16, 62);
         labelAddress.Name = "labelAddress";
         labelAddress.Size = new Size(72, 15);
@@ -66,9 +66,9 @@ partial class RewImportDialog
         //
         // textAddress
         //
-        textAddress.BackColor = Color.FromArgb(55, 58, 65);
+        textAddress.BackColor = UiPalette.InputSurface;
         textAddress.BorderStyle = BorderStyle.FixedSingle;
-        textAddress.ForeColor = Color.White;
+        textAddress.ForeColor = UiPalette.TextPrimary;
         textAddress.Location = new Point(104, 59);
         textAddress.Name = "textAddress";
         textAddress.Size = new Size(406, 23);
@@ -76,9 +76,9 @@ partial class RewImportDialog
         //
         // buttonRefresh
         //
-        buttonRefresh.BackColor = Color.FromArgb(50, 55, 80);
+        buttonRefresh.BackColor = UiPalette.ButtonBackground;
         buttonRefresh.FlatStyle = FlatStyle.Popup;
-        buttonRefresh.ForeColor = Color.White;
+        buttonRefresh.ForeColor = UiPalette.TextPrimary;
         buttonRefresh.Location = new Point(520, 58);
         buttonRefresh.Name = "buttonRefresh";
         buttonRefresh.Size = new Size(104, 25);
@@ -88,7 +88,7 @@ partial class RewImportDialog
         //
         // labelStatus
         //
-        labelStatus.ForeColor = Color.FromArgb(185, 190, 200);
+        labelStatus.ForeColor = UiPalette.TextSecondary;
         labelStatus.Location = new Point(104, 86);
         labelStatus.Name = "labelStatus";
         labelStatus.Size = new Size(520, 18);
@@ -99,7 +99,7 @@ partial class RewImportDialog
         measurementGridView.AllowUserToAddRows = false;
         measurementGridView.AllowUserToDeleteRows = false;
         measurementGridView.AllowUserToResizeRows = false;
-        measurementGridView.BackgroundColor = Color.FromArgb(40, 42, 48);
+        measurementGridView.BackgroundColor = UiPalette.DialogBackground;
         measurementGridView.BorderStyle = BorderStyle.None;
         measurementGridView.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
         measurementGridView.Columns.AddRange(new DataGridViewColumn[] { ColumnName, ColumnDate, ColumnRate, ColumnPeak });
@@ -144,7 +144,7 @@ partial class RewImportDialog
         // labelOffset
         //
         labelOffset.AutoSize = true;
-        labelOffset.ForeColor = Color.FromArgb(210, 214, 222);
+        labelOffset.ForeColor = UiPalette.TextDefault;
         labelOffset.Location = new Point(16, 277);
         labelOffset.Name = "labelOffset";
         labelOffset.Size = new Size(147, 15);
@@ -153,9 +153,9 @@ partial class RewImportDialog
         //
         // numericOffset
         //
-        numericOffset.BackColor = Color.FromArgb(55, 60, 72);
+        numericOffset.BackColor = UiPalette.ControlSurface;
         numericOffset.DecimalPlaces = 4;
-        numericOffset.ForeColor = Color.White;
+        numericOffset.ForeColor = UiPalette.TextPrimary;
         numericOffset.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
         numericOffset.Location = new Point(176, 274);
         numericOffset.Maximum = new decimal(new int[] { 1000, 0, 0, 0 });
@@ -171,7 +171,7 @@ partial class RewImportDialog
         // checkOffsetUnknown
         //
         checkOffsetUnknown.AutoSize = true;
-        checkOffsetUnknown.ForeColor = Color.FromArgb(210, 214, 222);
+        checkOffsetUnknown.ForeColor = UiPalette.TextDefault;
         checkOffsetUnknown.Location = new Point(288, 276);
         checkOffsetUnknown.Name = "checkOffsetUnknown";
         checkOffsetUnknown.Size = new Size(92, 19);
@@ -182,7 +182,7 @@ partial class RewImportDialog
         // labelLevel
         //
         labelLevel.AutoSize = true;
-        labelLevel.ForeColor = Color.FromArgb(210, 214, 222);
+        labelLevel.ForeColor = UiPalette.TextDefault;
         labelLevel.Location = new Point(16, 307);
         labelLevel.Name = "labelLevel";
         labelLevel.Size = new Size(126, 15);
@@ -191,9 +191,9 @@ partial class RewImportDialog
         //
         // numericLevel
         //
-        numericLevel.BackColor = Color.FromArgb(55, 60, 72);
+        numericLevel.BackColor = UiPalette.ControlSurface;
         numericLevel.DecimalPlaces = 1;
-        numericLevel.ForeColor = Color.White;
+        numericLevel.ForeColor = UiPalette.TextPrimary;
         numericLevel.Increment = new decimal(new int[] { 1, 0, 0, 0 });
         numericLevel.Location = new Point(176, 304);
         numericLevel.Maximum = new decimal(new int[] { 0, 0, 0, 0 });
@@ -209,7 +209,7 @@ partial class RewImportDialog
         // labelLevelSource
         //
         labelLevelSource.AutoSize = true;
-        labelLevelSource.ForeColor = Color.FromArgb(185, 190, 200);
+        labelLevelSource.ForeColor = UiPalette.TextSecondary;
         labelLevelSource.Location = new Point(288, 307);
         labelLevelSource.Name = "labelLevelSource";
         labelLevelSource.Size = new Size(0, 15);
@@ -217,7 +217,7 @@ partial class RewImportDialog
         //
         // labelOffsetHelp
         //
-        labelOffsetHelp.ForeColor = Color.FromArgb(185, 190, 200);
+        labelOffsetHelp.ForeColor = UiPalette.TextSecondary;
         labelOffsetHelp.Location = new Point(16, 334);
         labelOffsetHelp.Name = "labelOffsetHelp";
         labelOffsetHelp.Size = new Size(608, 70);
@@ -226,7 +226,7 @@ partial class RewImportDialog
         //
         // labelSelection
         //
-        labelSelection.ForeColor = Color.FromArgb(185, 190, 200);
+        labelSelection.ForeColor = UiPalette.TextSecondary;
         labelSelection.Location = new Point(16, 406);
         labelSelection.Name = "labelSelection";
         labelSelection.Size = new Size(608, 52);
@@ -234,7 +234,7 @@ partial class RewImportDialog
         //
         // labelProblem
         //
-        labelProblem.ForeColor = Color.FromArgb(255, 190, 80);
+        labelProblem.ForeColor = UiPalette.Warning;
         labelProblem.Location = new Point(16, 460);
         labelProblem.Name = "labelProblem";
         labelProblem.Size = new Size(608, 68);
@@ -242,9 +242,9 @@ partial class RewImportDialog
         //
         // buttonImport
         //
-        buttonImport.BackColor = Color.FromArgb(50, 55, 80);
+        buttonImport.BackColor = UiPalette.ButtonBackground;
         buttonImport.FlatStyle = FlatStyle.Popup;
-        buttonImport.ForeColor = Color.White;
+        buttonImport.ForeColor = UiPalette.TextPrimary;
         buttonImport.Location = new Point(430, 534);
         buttonImport.Name = "buttonImport";
         buttonImport.Size = new Size(94, 30);
@@ -254,10 +254,10 @@ partial class RewImportDialog
         //
         // buttonCancel
         //
-        buttonCancel.BackColor = Color.FromArgb(50, 55, 80);
+        buttonCancel.BackColor = UiPalette.ButtonBackground;
         buttonCancel.DialogResult = DialogResult.Cancel;
         buttonCancel.FlatStyle = FlatStyle.Popup;
-        buttonCancel.ForeColor = Color.White;
+        buttonCancel.ForeColor = UiPalette.TextPrimary;
         buttonCancel.Location = new Point(530, 534);
         buttonCancel.Name = "buttonCancel";
         buttonCancel.Size = new Size(94, 30);
@@ -269,7 +269,7 @@ partial class RewImportDialog
         //
         AutoScaleDimensions = new SizeF(96F, 96F);
         AutoScaleMode = AutoScaleMode.Dpi;
-        BackColor = Color.FromArgb(40, 42, 48);
+        BackColor = UiPalette.DialogBackground;
         CancelButton = buttonCancel;
         ClientSize = new Size(640, 576);
         Controls.Add(labelInstruction);
@@ -290,7 +290,7 @@ partial class RewImportDialog
         Controls.Add(buttonImport);
         Controls.Add(buttonCancel);
         Font = new Font("Segoe UI", 9F);
-        ForeColor = Color.White;
+        ForeColor = UiPalette.TextPrimary;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
@@ -319,10 +319,10 @@ partial class RewImportDialog
     private DataGridViewTextBoxColumn ColumnRate;
     private DataGridViewTextBoxColumn ColumnPeak;
     private Label labelOffset;
-    private DarkNumericUpDown numericOffset;
+    private ThemedNumericUpDown numericOffset;
     private ReleaseClickCheckBox checkOffsetUnknown;
     private Label labelLevel;
-    private DarkNumericUpDown numericLevel;
+    private ThemedNumericUpDown numericLevel;
     private Label labelLevelSource;
     private Label labelOffsetHelp;
     private Label labelSelection;

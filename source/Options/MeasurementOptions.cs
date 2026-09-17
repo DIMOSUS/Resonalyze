@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -63,13 +63,13 @@ namespace Resonalyze.Options
         private int preferredWavePlaybackDeviceNumber = -1;
         private int preferredWaveRecordingDeviceNumber = -1;
 
-        private DarkComboBox comboBoxPlaybackDevice => waveAudioBackendPanel.ComboBoxPlaybackDevice;
+        private ThemedComboBox comboBoxPlaybackDevice => waveAudioBackendPanel.ComboBoxPlaybackDevice;
 
-        private DarkComboBox comboBoxRecordingDevice => waveAudioBackendPanel.ComboBoxRecordingDevice;
+        private ThemedComboBox comboBoxRecordingDevice => waveAudioBackendPanel.ComboBoxRecordingDevice;
 
-        private DarkComboBox comboBoxWaveInputChannel => waveAudioBackendPanel.ComboBoxWaveInputChannel;
+        private ThemedComboBox comboBoxWaveInputChannel => waveAudioBackendPanel.ComboBoxWaveInputChannel;
 
-        private DarkComboBox comboBoxWaveLoopbackChannel => waveAudioBackendPanel.ComboBoxWaveLoopbackChannel;
+        private ThemedComboBox comboBoxWaveLoopbackChannel => waveAudioBackendPanel.ComboBoxWaveLoopbackChannel;
 
         private Label labelPlaybackDevice => waveAudioBackendPanel.LabelPlaybackDevice;
 
@@ -85,13 +85,13 @@ namespace Resonalyze.Options
 
         private Button buttonDeviceSettings => waveAudioBackendPanel.ButtonDeviceSettings;
 
-        private DarkComboBox comboBoxAsioDriver => asioAudioBackendPanel.ComboBoxAsioDriver;
+        private ThemedComboBox comboBoxAsioDriver => asioAudioBackendPanel.ComboBoxAsioDriver;
 
-        private DarkComboBox comboBoxAsioInputChannel => asioAudioBackendPanel.ComboBoxAsioInputChannel;
+        private ThemedComboBox comboBoxAsioInputChannel => asioAudioBackendPanel.ComboBoxAsioInputChannel;
 
-        private DarkComboBox comboBoxAsioOutputChannel => asioAudioBackendPanel.ComboBoxAsioOutputChannel;
+        private ThemedComboBox comboBoxAsioOutputChannel => asioAudioBackendPanel.ComboBoxAsioOutputChannel;
 
-        private DarkComboBox comboBoxAsioLoopbackChannel => asioAudioBackendPanel.ComboBoxAsioLoopbackChannel;
+        private ThemedComboBox comboBoxAsioLoopbackChannel => asioAudioBackendPanel.ComboBoxAsioLoopbackChannel;
 
         private Button buttonAsioInputProbe => asioAudioBackendPanel.ButtonAsioInputProbe;
 
@@ -1019,7 +1019,7 @@ namespace Resonalyze.Options
             if (splCalibration == null)
             {
                 buttonSplCalibration.Text = "Calibrate...";
-                buttonSplCalibration.ForeColor = Color.White;
+                buttonSplCalibration.ForeColor = UiPalette.TextPrimary;
                 deviceToolTip.SetToolTip(
                     buttonSplCalibration,
                     audioSessionFactory != null
@@ -1033,7 +1033,7 @@ namespace Resonalyze.Options
             buttonSplCalibration.Text =
                 $"{splCalibration.ReferenceLevelDbSpl:0} dB · {splCalibration.OffsetDb:+0.0;-0.0;0.0} dB";
             bool stale = !CurrentInputMatches(splCalibration);
-            buttonSplCalibration.ForeColor = stale ? Color.Gold : Color.White;
+            buttonSplCalibration.ForeColor = stale ? UiPalette.Warning : UiPalette.TextPrimary;
             string detail =
                 $"Measured {splCalibration.MeasuredLevelDbFs:0.0} dBFS at " +
                 $"{splCalibration.MeasuredFrequencyHz:0} Hz " +
@@ -1147,7 +1147,7 @@ namespace Resonalyze.Options
             selectButton.Text = normalized == null
                 ? "Select file..."
                 : Path.GetFileName(normalized);
-            selectButton.ForeColor = problem != null ? Color.LightSalmon : Color.White;
+            selectButton.ForeColor = problem != null ? UiPalette.Error : UiPalette.TextPrimary;
             clearButton.Enabled = normalized != null;
             deviceToolTip.SetToolTip(
                 selectButton,
@@ -1225,7 +1225,7 @@ namespace Resonalyze.Options
             {
                 // No rate opens: GetSelectedSampleRate's 44.1 kHz fallback would describe an unrunnable sweep.
                 labelActualRangeCaption.Text = "—";
-                labelActualRangeCaption.ForeColor = Color.Gold;
+                labelActualRangeCaption.ForeColor = UiPalette.Warning;
                 deviceToolTip.SetToolTip(
                     labelActualRangeCaption,
                     "No sample rate opens for the current configuration, so there is " +
@@ -1247,8 +1247,8 @@ namespace Resonalyze.Options
                 : "—";
             string? warning = DescribeSweepShortfall(spec, lowHz, highHz, totalSeconds);
             labelActualRangeCaption.ForeColor = warning == null
-                ? Color.FromArgb(150, 200, 170)
-                : Color.Gold;
+                ? UiPalette.Success
+                : UiPalette.Warning;
             deviceToolTip.SetToolTip(
                 labelActualRangeCaption,
                 warning ??
@@ -1560,7 +1560,7 @@ namespace Resonalyze.Options
                 $"No active WASAPI {direction} endpoint is available.");
         }
 
-        private void ConfigureDropDownWidth(DarkComboBox comboBox)
+        private void ConfigureDropDownWidth(ThemedComboBox comboBox)
         {
             int maxWidth = comboBox.Width;
             Font font = comboBox.Font ?? Font;
@@ -1575,7 +1575,7 @@ namespace Resonalyze.Options
             comboBox.DropDownWidth = maxWidth;
         }
 
-        private void UpdateComboBoxToolTip(DarkComboBox comboBox)
+        private void UpdateComboBoxToolTip(ThemedComboBox comboBox)
         {
             string text = comboBox.SelectedItem != null
                 ? comboBox.GetItemText(comboBox.SelectedItem) ?? string.Empty
@@ -1698,7 +1698,7 @@ namespace Resonalyze.Options
             if (!string.IsNullOrWhiteSpace(asioDriverInfo.ErrorMessage))
             {
                 labelAsioSampleRateStatus.Text = asioDriverInfo.ErrorMessage;
-                labelAsioSampleRateStatus.ForeColor = Color.LightSalmon;
+                labelAsioSampleRateStatus.ForeColor = UiPalette.Error;
                 labelAsioPlaybackLatencyValue.Text = "-";
                 return;
             }
@@ -1709,13 +1709,13 @@ namespace Resonalyze.Options
                 // The last probe said nothing, so do not claim support for an untested rate.
                 labelAsioSampleRateStatus.Text =
                     $"{sampleRate} Hz kept — the driver did not report its rates";
-                labelAsioSampleRateStatus.ForeColor = Color.Khaki;
+                labelAsioSampleRateStatus.ForeColor = UiPalette.Warning;
             }
             else if (sampleRateFellBackFrom is int previous)
             {
                 labelAsioSampleRateStatus.Text =
                     $"{previous} Hz is not offered by this driver — changed to {sampleRate} Hz";
-                labelAsioSampleRateStatus.ForeColor = Color.LightSalmon;
+                labelAsioSampleRateStatus.ForeColor = UiPalette.Error;
             }
             else
             {
@@ -1723,8 +1723,8 @@ namespace Resonalyze.Options
                     ? $"{sampleRate} Hz supported"
                     : $"{sampleRate} Hz not supported";
                 labelAsioSampleRateStatus.ForeColor = asioDriverInfo.SupportsSampleRate
-                    ? Color.LightGreen
-                    : Color.LightSalmon;
+                    ? UiPalette.Success
+                    : UiPalette.Error;
             }
             labelAsioPlaybackLatencyValue.Text =
                 asioDriverInfo.PlaybackLatency > 0
@@ -1815,7 +1815,7 @@ namespace Resonalyze.Options
         }
 
         private static void PopulateWasapiEndpointCombo(
-            DarkComboBox comboBox,
+            ThemedComboBox comboBox,
             IReadOnlyList<AudioEndpointDescriptor> endpoints,
             string? preferredId,
             string? preferredName,
@@ -1942,7 +1942,7 @@ namespace Resonalyze.Options
                 {
                     labelWaveLoopbackStatus.Text =
                         "⚠ A saved endpoint is unavailable. Reconnect it or select a replacement.";
-                    labelWaveLoopbackStatus.ForeColor = Color.Gold;
+                    labelWaveLoopbackStatus.ForeColor = UiPalette.Warning;
                     return;
                 }
                 if (GetSelectedWaveLoopbackChannelOffset() == null)
@@ -1951,7 +1951,7 @@ namespace Resonalyze.Options
                     labelWaveLoopbackStatus.Text =
                         "⚠ Loopback channel is REQUIRED. Select the physical input carrying " +
                         "the playback reference.";
-                    labelWaveLoopbackStatus.ForeColor = Color.Gold;
+                    labelWaveLoopbackStatus.ForeColor = UiPalette.Warning;
                     return;
                 }
                 if (comboBoxAudioBackend.SelectedIndex == (int)AudioBackend.WasapiExclusive)
@@ -1971,7 +1971,7 @@ namespace Resonalyze.Options
                                 ? "Mono asks for a one-channel format most endpoints " +
                                     "refuse — try Stereo."
                                 : "Try another endpoint pair, or Shared.");
-                        labelWaveLoopbackStatus.ForeColor = Color.LightSalmon;
+                        labelWaveLoopbackStatus.ForeColor = UiPalette.Error;
                         return;
                     }
                     bool supported = IsExclusiveFormatSupported(
@@ -1986,8 +1986,8 @@ namespace Resonalyze.Options
                             "on both endpoints."
                         : $"⚠ Exclusive format {selectedRate:N0} Hz / {bits}-bit is not supported by both endpoints.";
                     labelWaveLoopbackStatus.ForeColor = supported
-                        ? Color.LightGray
-                        : Color.LightSalmon;
+                        ? UiPalette.TextSecondary
+                        : UiPalette.Error;
                     return;
                 }
                 string compatibility = capture.PreferredFormat.SampleRate == render.PreferredFormat.SampleRate
@@ -1999,8 +1999,8 @@ namespace Resonalyze.Options
                     $"{render.PreferredFormat.BitsPerSample}-bit render{compatibility}. " +
                     "Windows may convert render audio; timing remains loopback-referenced.";
                 labelWaveLoopbackStatus.ForeColor = compatibility.Length == 0
-                    ? Color.LightGray
-                    : Color.LightSalmon;
+                    ? UiPalette.TextSecondary
+                    : UiPalette.Error;
                 return;
             }
 
@@ -2037,7 +2037,7 @@ namespace Resonalyze.Options
                         "loopback reference; measurements cannot run without it."
                     : "⚠ Loopback channel is REQUIRED. Select a stereo recording device, " +
                         "then choose its channel.";
-                labelWaveLoopbackStatus.ForeColor = Color.Gold;
+                labelWaveLoopbackStatus.ForeColor = UiPalette.Warning;
                 return;
             }
 
@@ -2046,8 +2046,8 @@ namespace Resonalyze.Options
                 ? "Stereo input available for Wave loopback."
                 : "Select a stereo recording device.";
             labelWaveLoopbackStatus.ForeColor = supportsLoopback
-                ? Color.LightGray
-                : Color.LightSalmon;
+                ? UiPalette.TextSecondary
+                : UiPalette.Error;
         }
 
         private void SetWaveLoopbackSelection(int index)
@@ -2112,7 +2112,7 @@ namespace Resonalyze.Options
                 "Wave devices");
 
         private static int FindInputChannelOptionIndex(
-            DarkComboBox comboBox,
+            ThemedComboBox comboBox,
             int? offset)
         {
             for (int i = 0; i < comboBox.Items.Count; i++)
@@ -2129,7 +2129,7 @@ namespace Resonalyze.Options
 
         // A missing persisted device stays as "(missing)" so Apply cannot silently re-target another device.
         private static void SelectDeviceOrShowMissing(
-            DarkComboBox comboBox,
+            ThemedComboBox comboBox,
             IReadOnlyList<AudioDeviceInfo> devices,
             int deviceNumber)
         {
@@ -2146,7 +2146,7 @@ namespace Resonalyze.Options
 
         // An offset the driver does not report now (fewer channels, busy driver) must survive the round-trip.
         private static int SelectAsioChannelIndex(
-            DarkComboBox comboBox,
+            ThemedComboBox comboBox,
             IReadOnlyList<AsioChannelInfo> channels,
             int preferredOffset,
             bool preserveMissingOffset)

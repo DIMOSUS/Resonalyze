@@ -25,7 +25,7 @@ internal static class SmoothingPresetOptions
 
     /// <summary>Phase and GD combos stay width-only: cubic averaging is defined for amplitudes, not signed values.</summary>
     public static void Configure(
-        DarkComboBox comboBox, bool includePsychoacoustic = false)
+        ThemedComboBox comboBox, bool includePsychoacoustic = false)
     {
         comboBox.Items.Clear();
         comboBox.FormattingEnabled = true;

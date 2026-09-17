@@ -74,10 +74,10 @@ internal static class PlotZoomButtons
 
 internal sealed class PlotZoomButtonsAnnotation : Annotation
 {
-    private static readonly OxyColor Fill = OxyColor.FromAColor(70, OxyColors.Black);
-    private static readonly OxyColor Stroke = OxyColor.FromAColor(120, OxyColors.White);
-    private static readonly OxyColor HoveredFill = OxyColor.FromAColor(150, OxyColors.Black);
-    private static readonly OxyColor HoveredStroke = OxyColor.FromAColor(230, OxyColors.White);
+    private static readonly OxyColor Fill = UiPalette.PlotOverlayFill.ToOxy();
+    private static readonly OxyColor Stroke = UiPalette.PlotOverlayStroke.ToOxy();
+    private static readonly OxyColor HoveredFill = UiPalette.PlotOverlayFillHovered.ToOxy();
+    private static readonly OxyColor HoveredStroke = UiPalette.PlotOverlayStrokeHovered.ToOxy();
 
     public PlotZoomButtonsAnnotation()
     {

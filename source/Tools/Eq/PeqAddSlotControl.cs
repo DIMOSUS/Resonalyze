@@ -19,10 +19,10 @@ internal sealed class PeqAddBandEventArgs : EventArgs
 /// </summary>
 internal sealed class PeqAddSlotControl : Control
 {
-    private static readonly Color OutlineColor = Color.FromArgb(70, 78, 94);
-    private static readonly Color OutlineHoverColor = UiPalette.AccentBlueSoft;
-    private static readonly Color GlyphColor = Color.FromArgb(120, 130, 148);
-    private static readonly Color GlyphHoverColor = UiPalette.TextPrimarySoft;
+    private static readonly Color OutlineColor = UiPalette.BorderMuted;
+    private static readonly Color OutlineHoverColor = UiPalette.AccentMark;
+    private static readonly Color GlyphColor = UiPalette.TextMuted;
+    private static readonly Color GlyphHoverColor = UiPalette.TextDefault;
 
     // Bell first (most used), shelves high above low, then all-pass first order above second.
     private static readonly (PeqBandType Type, string Label)[] Zones =
@@ -45,7 +45,7 @@ internal sealed class PeqAddSlotControl : Control
             ControlStyles.ResizeRedraw,
             true);
 
-        BackColor = Color.FromArgb(20, 22, 30);
+        BackColor = UiPalette.PanelSurfaceDeep;
         Cursor = Cursors.Hand;
         TabStop = false;
     }

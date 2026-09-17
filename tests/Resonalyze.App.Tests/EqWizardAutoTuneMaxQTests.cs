@@ -81,8 +81,8 @@ public sealed class EqWizardAutoTuneMaxQTests : IDisposable
         Assert.Equal((double)MaxQBox(panel).Minimum, Options(panel).QMax);
     }
 
-    private static DarkNumericUpDown MaxQBox(EqWizardPanel panel) =>
-        (DarkNumericUpDown)typeof(EqWizardPanel)
+    private static ThemedNumericUpDown MaxQBox(EqWizardPanel panel) =>
+        (ThemedNumericUpDown)typeof(EqWizardPanel)
             .GetField("numericQMax", BindingFlags.NonPublic | BindingFlags.Instance)!
             .GetValue(panel)!;
 

@@ -112,12 +112,12 @@ public sealed class VirtualCrossoverChannelControlPhaseTests
         Assert.Contains("29", control.PhaseInfoLabel.Text);
         Assert.Contains("min", control.PhaseInfoLabel.Text);
         Assert.DoesNotContain("AP2", control.PhaseInfoLabel.Text);
-        Assert.Equal(Resonalyze.Ui.UiPalette.WarningAmber, control.PhaseInfoLabel.ForeColor);
+        Assert.Equal(Resonalyze.Ui.UiPalette.Warning, control.PhaseInfoLabel.ForeColor);
 
         control.HighPassFrequencyInput.Value = 500;
 
         Assert.DoesNotContain("min", control.PhaseInfoLabel.Text);
-        Assert.NotEqual(Resonalyze.Ui.UiPalette.WarningAmber, control.PhaseInfoLabel.ForeColor);
+        Assert.NotEqual(Resonalyze.Ui.UiPalette.Warning, control.PhaseInfoLabel.ForeColor);
     }
 
     [Fact]

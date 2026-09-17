@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
@@ -58,7 +58,7 @@ namespace Resonalyze.Options
             opt.ShowStep = checkBoxShowStep.Checked;
         }
 
-        private static T Selected<T>(DarkComboBox comboBox, T fallback)
+        private static T Selected<T>(ThemedComboBox comboBox, T fallback)
             where T : struct, Enum =>
             comboBox.SelectedItem is T value ? value : fallback;
 
@@ -170,7 +170,7 @@ namespace Resonalyze.Options
 
         // Format handler attached once; the list is refilled on width change and handlers would stack.
         private static void FillNumeric(
-            DarkComboBox comboBox,
+            ThemedComboBox comboBox,
             Func<double, string> label,
             params double[] values)
         {
@@ -186,7 +186,7 @@ namespace Resonalyze.Options
             SetItems(comboBox, values);
         }
 
-        private static void SetItems(DarkComboBox comboBox, IReadOnlyList<double> values)
+        private static void SetItems(ThemedComboBox comboBox, IReadOnlyList<double> values)
         {
             comboBox.Items.Clear();
             foreach (double value in values)
@@ -196,7 +196,7 @@ namespace Resonalyze.Options
         }
 
         private static void Fill<T>(
-            DarkComboBox comboBox,
+            ThemedComboBox comboBox,
             Func<T, string> label,
             params T[] values)
             where T : struct, Enum

@@ -7,7 +7,7 @@ namespace Resonalyze;
 internal sealed class RoundedPanel : Panel
 {
     private int cornerRadius = RoundedSurface.DefaultCornerRadius;
-    private Color borderColor = UiPalette.DialogBorder;
+    private Color borderColor = UiPalette.Border;
 
     public RoundedPanel()
     {
@@ -56,9 +56,9 @@ internal sealed class RoundedPanel : Panel
     }
 
     // Palette default cannot be a [DefaultValue]; keeps the theme border out of .Designer.cs.
-    private bool ShouldSerializeBorderColor() => borderColor != UiPalette.DialogBorder;
+    private bool ShouldSerializeBorderColor() => borderColor != UiPalette.Border;
 
-    private void ResetBorderColor() => BorderColor = UiPalette.DialogBorder;
+    private void ResetBorderColor() => BorderColor = UiPalette.Border;
 
     [Browsable(false)]
     [EditorBrowsable(EditorBrowsableState.Never)]

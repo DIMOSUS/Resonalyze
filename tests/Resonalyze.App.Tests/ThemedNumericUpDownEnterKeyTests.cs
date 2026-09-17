@@ -5,7 +5,7 @@ using System.Windows.Forms;
 namespace Resonalyze.App.Tests;
 
 /// <summary>Enter that lands an edit is kept, so it does not also fire the dialog's AcceptButton.</summary>
-public sealed class DarkNumericUpDownEnterKeyTests
+public sealed class ThemedNumericUpDownEnterKeyTests
 {
     [Fact]
     public void Enter_CommitsTypedTextAndIsNotPassedOnToTheAcceptButton()
@@ -56,7 +56,7 @@ public sealed class DarkNumericUpDownEnterKeyTests
         Assert.Equal(FormatLocal(6m), Editor(control).Text);
     }
 
-    private static DarkNumericUpDown NewControl() => new()
+    private static ThemedNumericUpDown NewControl() => new()
     {
         DecimalPlaces = 1,
         Minimum = 0,
@@ -65,15 +65,15 @@ public sealed class DarkNumericUpDownEnterKeyTests
         Value = 0
     };
 
-    private static TextBox Editor(DarkNumericUpDown control) =>
+    private static TextBox Editor(ThemedNumericUpDown control) =>
         control.Controls.OfType<TextBox>().Single();
 
     private static string FormatLocal(decimal value) =>
         value.ToString("F1", CultureInfo.CurrentCulture);
 
-    private static bool PressEnter(DarkNumericUpDown control)
+    private static bool PressEnter(ThemedNumericUpDown control)
     {
-        MethodInfo method = typeof(DarkNumericUpDown).GetMethod(
+        MethodInfo method = typeof(ThemedNumericUpDown).GetMethod(
             "ProcessCmdKey",
             BindingFlags.Instance | BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("ProcessCmdKey is missing.");

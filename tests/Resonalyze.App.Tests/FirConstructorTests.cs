@@ -384,23 +384,23 @@ public sealed class FirConstructorTests
         control.SetFir(design.Build(), null, design);
         Assert.StartsWith("HP 80 Hz: ", control.FirInfoLabel.Text);
         Assert.Null(control.FirConflict);
-        Assert.NotEqual(Resonalyze.Ui.UiPalette.WarningRed, control.FirButton.ForeColor);
+        Assert.NotEqual(Resonalyze.Ui.UiPalette.Danger, control.FirButton.ForeColor);
 
         Assert.Contains($"{511 * 1_000.0 / 48_000:0.0} ms", control.FirInfoLabel.Text);
 
         control.ProcessorSampleRateHz = 96_000;
         Assert.Contains("rebuild", control.FirConflict);
-        Assert.Equal(Resonalyze.Ui.UiPalette.WarningRed, control.FirButton.ForeColor);
+        Assert.Equal(Resonalyze.Ui.UiPalette.Danger, control.FirButton.ForeColor);
         Assert.Contains($"{511 * 1_000.0 / 96_000:0.0} ms", control.FirInfoLabel.Text);
 
         control.ProcessorSampleRateHz = 48_000;
         control.CrossoverKindComboBox.SelectedItem = CrossoverKind.LowPass;
         Assert.Contains("IIR crossover", control.FirConflict);
-        Assert.Equal(Resonalyze.Ui.UiPalette.WarningRed, control.FirButton.ForeColor);
+        Assert.Equal(Resonalyze.Ui.UiPalette.Danger, control.FirButton.ForeColor);
 
         control.SetFir(new FirFilter([1.0], 48_000), "room.wav");
         Assert.Null(control.FirConflict);
-        Assert.NotEqual(Resonalyze.Ui.UiPalette.WarningRed, control.FirButton.ForeColor);
+        Assert.NotEqual(Resonalyze.Ui.UiPalette.Danger, control.FirButton.ForeColor);
     }
 
     [Fact]
@@ -426,14 +426,14 @@ public sealed class FirConstructorTests
             Assert.Equal(4_095, panel.CurrentKernel!.Length);
             Assert.False(panel.InVirtualDspHandoff);
 
-            Field<DarkNumericUpDown>(panel, "numericTaps").Value = 2_000;
+            Field<ThemedNumericUpDown>(panel, "numericTaps").Value = 2_000;
             Settle(panel);
 
             Assert.Equal(2_001, panel.CurrentDesign!.TapCount);
             Assert.Equal(2_001, panel.CurrentKernel!.Length);
 
-            Select(Field<DarkComboBox>(panel, "comboBoxType"), 2);
-            Field<DarkNumericUpDown>(panel, "numericHighPassHz").Value = 3_000;
+            Select(Field<ThemedComboBox>(panel, "comboBoxType"), 2);
+            Field<ThemedNumericUpDown>(panel, "numericHighPassHz").Value = 3_000;
             Settle(panel);
             Assert.Null(panel.CurrentKernel);
             Assert.Contains("band-pass", Field<Label>(panel, "labelProblem").Text);
@@ -448,7 +448,7 @@ public sealed class FirConstructorTests
             using var panel = new FirConstructorPanel();
             Settle(panel);
             Button export = Field<Button>(panel, "buttonExport");
-            DarkNumericUpDown taps = Field<DarkNumericUpDown>(panel, "numericTaps");
+            ThemedNumericUpDown taps = Field<ThemedNumericUpDown>(panel, "numericTaps");
 
             // Wheel steps inside one settle: the edit returns at once and the previous kernel stays.
             taps.Value = 8_191;
@@ -484,7 +484,7 @@ public sealed class FirConstructorTests
 
             Assert.True(panel.InVirtualDspHandoff);
             Assert.Equal(HighPassDesign(rate: 48_000, taps: 2_047), panel.CurrentDesign);
-            Assert.False(Field<DarkComboBox>(panel, "comboBoxSampleRate").Enabled);
+            Assert.False(Field<ThemedComboBox>(panel, "comboBoxSampleRate").Enabled);
             Assert.Contains("rebuilt", Field<Label>(panel, "labelSession").Text);
 
             Field<Button>(panel, "buttonReturnToDsp").PerformClick();
@@ -493,7 +493,7 @@ public sealed class FirConstructorTests
             panel.EndVirtualDspHandoff();
             Settle(panel);
             Assert.False(panel.InVirtualDspHandoff);
-            Assert.True(Field<DarkComboBox>(panel, "comboBoxSampleRate").Enabled);
+            Assert.True(Field<ThemedComboBox>(panel, "comboBoxSampleRate").Enabled);
         });
     }
 
@@ -503,11 +503,11 @@ public sealed class FirConstructorTests
         StaTest.Run(() =>
         {
             using var panel = new FirConstructorPanel();
-            Select(Field<DarkComboBox>(panel, "comboBoxType"), 2);
-            Field<DarkNumericUpDown>(panel, "numericHighPassHz").Value = 250;
-            Field<DarkNumericUpDown>(panel, "numericLowPassHz").Value = 3_000;
-            Field<DarkNumericUpDown>(panel, "numericTaps").Value = 2_047;
-            Select(Field<DarkComboBox>(panel, "comboBoxSampleRate"), 3);
+            Select(Field<ThemedComboBox>(panel, "comboBoxType"), 2);
+            Field<ThemedNumericUpDown>(panel, "numericHighPassHz").Value = 250;
+            Field<ThemedNumericUpDown>(panel, "numericLowPassHz").Value = 3_000;
+            Field<ThemedNumericUpDown>(panel, "numericTaps").Value = 2_047;
+            Select(Field<ThemedComboBox>(panel, "comboBoxSampleRate"), 3);
             Settle(panel);
             FirCrossoverDesign standalone = panel.CurrentDesign!;
             Assert.Equal(96_000, standalone.SampleRateHz);
@@ -557,7 +557,7 @@ public sealed class FirConstructorTests
             Button returnButton = Field<Button>(panel, "buttonReturnToDsp");
             Assert.False(returnButton.Enabled);
 
-            Field<DarkNumericUpDown>(panel, "numericTaps").Value = 511;
+            Field<ThemedNumericUpDown>(panel, "numericTaps").Value = 511;
             Settle(panel);
 
             Assert.NotNull(panel.CurrentDesign);
@@ -611,7 +611,7 @@ public sealed class FirConstructorTests
             .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(owner)!;
 
-    private static void Select(DarkComboBox combo, int index) => combo.SelectedIndex = index;
+    private static void Select(ThemedComboBox combo, int index) => combo.SelectedIndex = index;
 
     private static string CreateTemporaryDirectory()
     {

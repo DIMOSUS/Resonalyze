@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Reflection;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
@@ -43,7 +43,7 @@ public sealed class ArrayMicrophonesDialogTests
     private static string Offered(Form dialog) =>
         string.Join(
             ", ",
-            Control<DarkComboBox>(dialog, "comboBoxInput")
+            Control<ThemedComboBox>(dialog, "comboBoxInput")
                 .Items
                 .Cast<object>()
                 .Select(item => item.ToString()));
@@ -85,8 +85,8 @@ public sealed class ArrayMicrophonesDialogTests
     public void AddingTakesTheEditorsInputCalibrationAndNote() => StaTest.Run(() =>
     {
         using ArrayMicrophonesDialog dialog = CreateDialog([], [0, 1, 2, 3]);
-        Control<DarkComboBox>(dialog, "comboBoxInput").SelectedIndex = 1;
-        Control<DarkComboBox>(dialog, "comboBoxCalibration").SelectedIndex = 2;
+        Control<ThemedComboBox>(dialog, "comboBoxInput").SelectedIndex = 1;
+        Control<ThemedComboBox>(dialog, "comboBoxCalibration").SelectedIndex = 2;
         Control<TextBox>(dialog, "textBoxNote").Text = "  left ear  ";
 
         Click(dialog, "buttonAdd");

@@ -54,7 +54,7 @@ public sealed class RewImportDialogTests
         {
             var source = (Label)dialog.Controls["labelLevelSource"]!;
 
-            Assert.Equal(warns, source.ForeColor == UiPalette.WarningAmber);
+            Assert.Equal(warns, source.ForeColor == UiPalette.Warning);
             Assert.Equal(warns, source.Text.Contains("enter the dBFS", StringComparison.Ordinal));
         }));
 
@@ -87,7 +87,7 @@ public sealed class RewImportDialogTests
         grid.CurrentCell = grid.Rows[row].Cells[0];
     }
 
-    private static DarkNumericUpDown Offset(RewImportDialog dialog) => (DarkNumericUpDown)dialog.Controls["numericOffset"]!;
+    private static ThemedNumericUpDown Offset(RewImportDialog dialog) => (ThemedNumericUpDown)dialog.Controls["numericOffset"]!;
 
     private static CheckBox Unknown(RewImportDialog dialog) => (CheckBox)dialog.Controls["checkOffsetUnknown"]!;
 }

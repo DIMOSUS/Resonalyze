@@ -6,7 +6,7 @@ namespace Resonalyze.Options;
 internal static class MicrophoneCalibrationComboHelper
 {
     public static void Configure(
-        DarkComboBox comboBox,
+        ThemedComboBox comboBox,
         string? selectedCalibrationId,
         IReadOnlyList<MicrophoneCalibrationEntry> entries)
     {
@@ -24,7 +24,7 @@ internal static class MicrophoneCalibrationComboHelper
         comboBox.Enabled = options.Count > 1;
     }
 
-    public static string? GetSelectedCalibrationId(DarkComboBox comboBox) =>
+    public static string? GetSelectedCalibrationId(ThemedComboBox comboBox) =>
         comboBox.SelectedItem is MicrophoneCalibrationOption option
             ? option.CalibrationId
             : null;

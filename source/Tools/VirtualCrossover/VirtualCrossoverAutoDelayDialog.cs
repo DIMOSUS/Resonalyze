@@ -1,4 +1,4 @@
-﻿namespace Resonalyze;
+namespace Resonalyze;
 
 /// <summary>Auto delay dialog: Run computes a proposal without touching channels; nothing is written until Apply. The panel supplies the runner.</summary>
 internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
@@ -12,10 +12,10 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
     };
 
     // Colors follow meaning: an always-amber label read as a warning even for good news.
-    private static readonly Color StatusNeutral = Color.FromArgb(185, 190, 200);
-    private static readonly Color StatusSuccess = Color.FromArgb(96, 210, 120);
-    private static readonly Color StatusWarning = Color.FromArgb(230, 184, 0);
-    private static readonly Color StatusError = Color.FromArgb(240, 100, 110);
+    private static readonly Color StatusNeutral = UiPalette.TextSecondary;
+    private static readonly Color StatusSuccess = UiPalette.Success;
+    private static readonly Color StatusWarning = UiPalette.Warning;
+    private static readonly Color StatusError = UiPalette.Error;
 
     private Func<AutoDelayRunRequest, Task<AutoDelayRunResult>>? runner;
     private bool stereo;

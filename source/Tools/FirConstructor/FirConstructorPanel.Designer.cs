@@ -32,28 +32,28 @@ namespace Resonalyze
             titleLabel = new Label();
             labelSession = new Label();
             labelType = new Label();
-            comboBoxType = new DarkComboBox();
+            comboBoxType = new ThemedComboBox();
             labelMethod = new Label();
-            comboBoxMethod = new DarkComboBox();
+            comboBoxMethod = new ThemedComboBox();
             cardHighPass = new RoundedPanel();
             labelHighPass = new Label();
-            numericHighPassHz = new DarkNumericUpDown();
-            comboBoxHighPassFamily = new DarkComboBox();
-            comboBoxHighPassSlope = new DarkComboBox();
+            numericHighPassHz = new ThemedNumericUpDown();
+            comboBoxHighPassFamily = new ThemedComboBox();
+            comboBoxHighPassSlope = new ThemedComboBox();
             cardLowPass = new RoundedPanel();
             labelLowPass = new Label();
-            numericLowPassHz = new DarkNumericUpDown();
-            comboBoxLowPassFamily = new DarkComboBox();
-            comboBoxLowPassSlope = new DarkComboBox();
+            numericLowPassHz = new ThemedNumericUpDown();
+            comboBoxLowPassFamily = new ThemedComboBox();
+            comboBoxLowPassSlope = new ThemedComboBox();
             labelWindow = new Label();
-            comboBoxWindow = new DarkComboBox();
+            comboBoxWindow = new ThemedComboBox();
             labelKaiserBeta = new Label();
-            numericKaiserBeta = new DarkNumericUpDown();
+            numericKaiserBeta = new ThemedNumericUpDown();
             labelTaps = new Label();
-            numericTaps = new DarkNumericUpDown();
+            numericTaps = new ThemedNumericUpDown();
             labelTapsHint = new Label();
             labelSampleRate = new Label();
-            comboBoxSampleRate = new DarkComboBox();
+            comboBoxSampleRate = new ThemedComboBox();
             labelImpulseScale = new Label();
             checkBoxImpulseDb = new ReleaseClickCheckBox();
             labelLatency = new Label();
@@ -76,7 +76,7 @@ namespace Resonalyze
             // titleLabel
             // 
             titleLabel.AutoSize = true;
-            titleLabel.ForeColor = Color.FromArgb(210, 214, 222);
+            titleLabel.ForeColor = UiPalette.TextDefault;
             titleLabel.Location = new Point(18, 18);
             titleLabel.Name = "titleLabel";
             titleLabel.Size = new Size(128, 21);
@@ -87,7 +87,7 @@ namespace Resonalyze
             // labelSession
             // 
             labelSession.AutoEllipsis = true;
-            labelSession.ForeColor = Color.FromArgb(190, 220, 255);
+            labelSession.ForeColor = UiPalette.TextAccent;
             labelSession.Location = new Point(18, 46);
             labelSession.Name = "labelSession";
             labelSession.Size = new Size(314, 48);
@@ -97,7 +97,7 @@ namespace Resonalyze
             // labelType
             // 
             labelType.AutoSize = true;
-            labelType.ForeColor = Color.FromArgb(210, 214, 222);
+            labelType.ForeColor = UiPalette.TextDefault;
             labelType.Location = new Point(18, 108);
             labelType.Name = "labelType";
             labelType.Size = new Size(31, 15);
@@ -106,9 +106,9 @@ namespace Resonalyze
             // 
             // comboBoxType
             // 
-            comboBoxType.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxType.BackColor = UiPalette.ControlSurface;
             comboBoxType.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBoxType.ForeColor = Color.White;
+            comboBoxType.ForeColor = UiPalette.TextPrimary;
             comboBoxType.FormattingEnabled = true;
             comboBoxType.Location = new Point(118, 104);
             comboBoxType.MinimumSize = new Size(36, 19);
@@ -119,7 +119,7 @@ namespace Resonalyze
             // labelMethod
             // 
             labelMethod.AutoSize = true;
-            labelMethod.ForeColor = Color.FromArgb(210, 214, 222);
+            labelMethod.ForeColor = UiPalette.TextDefault;
             labelMethod.Location = new Point(18, 138);
             labelMethod.Name = "labelMethod";
             labelMethod.Size = new Size(49, 15);
@@ -128,9 +128,9 @@ namespace Resonalyze
             // 
             // comboBoxMethod
             // 
-            comboBoxMethod.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxMethod.BackColor = UiPalette.ControlSurface;
             comboBoxMethod.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBoxMethod.ForeColor = Color.White;
+            comboBoxMethod.ForeColor = UiPalette.TextPrimary;
             comboBoxMethod.FormattingEnabled = true;
             comboBoxMethod.Location = new Point(118, 134);
             comboBoxMethod.MinimumSize = new Size(36, 19);
@@ -140,7 +140,7 @@ namespace Resonalyze
             // 
             // cardHighPass
             // 
-            cardHighPass.BackColor = Color.FromArgb(50, 55, 66);
+            cardHighPass.BackColor = UiPalette.PanelSurface;
             cardHighPass.Location = new Point(18, 166);
             cardHighPass.Name = "cardHighPass";
             cardHighPass.Size = new Size(314, 64);
@@ -153,7 +153,7 @@ namespace Resonalyze
             // labelHighPass
             // 
             labelHighPass.AutoSize = true;
-            labelHighPass.ForeColor = Color.FromArgb(210, 214, 222);
+            labelHighPass.ForeColor = UiPalette.TextDefault;
             labelHighPass.Location = new Point(10, 10);
             labelHighPass.Name = "labelHighPass";
             labelHighPass.Size = new Size(56, 15);
@@ -162,9 +162,9 @@ namespace Resonalyze
             // 
             // numericHighPassHz
             // 
-            numericHighPassHz.BackColor = Color.FromArgb(55, 60, 72);
+            numericHighPassHz.BackColor = UiPalette.ControlSurface;
             numericHighPassHz.DecimalPlaces = 0;
-            numericHighPassHz.ForeColor = Color.White;
+            numericHighPassHz.ForeColor = UiPalette.TextPrimary;
             numericHighPassHz.LogarithmicFrequencyStep = true;
             numericHighPassHz.Location = new Point(100, 6);
             numericHighPassHz.Maximum = new decimal(new int[] { 24000, 0, 0, 0 });
@@ -180,9 +180,9 @@ namespace Resonalyze
             // 
             // comboBoxHighPassFamily
             // 
-            comboBoxHighPassFamily.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxHighPassFamily.BackColor = UiPalette.ControlSurface;
             comboBoxHighPassFamily.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBoxHighPassFamily.ForeColor = Color.White;
+            comboBoxHighPassFamily.ForeColor = UiPalette.TextPrimary;
             comboBoxHighPassFamily.FormattingEnabled = true;
             comboBoxHighPassFamily.Location = new Point(100, 35);
             comboBoxHighPassFamily.MinimumSize = new Size(36, 19);
@@ -192,9 +192,9 @@ namespace Resonalyze
             // 
             // comboBoxHighPassSlope
             // 
-            comboBoxHighPassSlope.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxHighPassSlope.BackColor = UiPalette.ControlSurface;
             comboBoxHighPassSlope.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBoxHighPassSlope.ForeColor = Color.White;
+            comboBoxHighPassSlope.ForeColor = UiPalette.TextPrimary;
             comboBoxHighPassSlope.FormattingEnabled = true;
             comboBoxHighPassSlope.Location = new Point(216, 35);
             comboBoxHighPassSlope.MinimumSize = new Size(36, 19);
@@ -204,7 +204,7 @@ namespace Resonalyze
             // 
             // cardLowPass
             // 
-            cardLowPass.BackColor = Color.FromArgb(50, 55, 66);
+            cardLowPass.BackColor = UiPalette.PanelSurface;
             cardLowPass.Location = new Point(18, 238);
             cardLowPass.Name = "cardLowPass";
             cardLowPass.Size = new Size(314, 64);
@@ -217,7 +217,7 @@ namespace Resonalyze
             // labelLowPass
             // 
             labelLowPass.AutoSize = true;
-            labelLowPass.ForeColor = Color.FromArgb(210, 214, 222);
+            labelLowPass.ForeColor = UiPalette.TextDefault;
             labelLowPass.Location = new Point(10, 10);
             labelLowPass.Name = "labelLowPass";
             labelLowPass.Size = new Size(53, 15);
@@ -226,9 +226,9 @@ namespace Resonalyze
             // 
             // numericLowPassHz
             // 
-            numericLowPassHz.BackColor = Color.FromArgb(55, 60, 72);
+            numericLowPassHz.BackColor = UiPalette.ControlSurface;
             numericLowPassHz.DecimalPlaces = 0;
-            numericLowPassHz.ForeColor = Color.White;
+            numericLowPassHz.ForeColor = UiPalette.TextPrimary;
             numericLowPassHz.LogarithmicFrequencyStep = true;
             numericLowPassHz.Location = new Point(100, 6);
             numericLowPassHz.Maximum = new decimal(new int[] { 24000, 0, 0, 0 });
@@ -244,9 +244,9 @@ namespace Resonalyze
             // 
             // comboBoxLowPassFamily
             // 
-            comboBoxLowPassFamily.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxLowPassFamily.BackColor = UiPalette.ControlSurface;
             comboBoxLowPassFamily.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBoxLowPassFamily.ForeColor = Color.White;
+            comboBoxLowPassFamily.ForeColor = UiPalette.TextPrimary;
             comboBoxLowPassFamily.FormattingEnabled = true;
             comboBoxLowPassFamily.Location = new Point(100, 35);
             comboBoxLowPassFamily.MinimumSize = new Size(36, 19);
@@ -256,9 +256,9 @@ namespace Resonalyze
             // 
             // comboBoxLowPassSlope
             // 
-            comboBoxLowPassSlope.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxLowPassSlope.BackColor = UiPalette.ControlSurface;
             comboBoxLowPassSlope.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBoxLowPassSlope.ForeColor = Color.White;
+            comboBoxLowPassSlope.ForeColor = UiPalette.TextPrimary;
             comboBoxLowPassSlope.FormattingEnabled = true;
             comboBoxLowPassSlope.Location = new Point(216, 35);
             comboBoxLowPassSlope.MinimumSize = new Size(36, 19);
@@ -269,7 +269,7 @@ namespace Resonalyze
             // labelWindow
             // 
             labelWindow.AutoSize = true;
-            labelWindow.ForeColor = Color.FromArgb(210, 214, 222);
+            labelWindow.ForeColor = UiPalette.TextDefault;
             labelWindow.Location = new Point(18, 318);
             labelWindow.Name = "labelWindow";
             labelWindow.Size = new Size(51, 15);
@@ -278,9 +278,9 @@ namespace Resonalyze
             // 
             // comboBoxWindow
             // 
-            comboBoxWindow.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxWindow.BackColor = UiPalette.ControlSurface;
             comboBoxWindow.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBoxWindow.ForeColor = Color.White;
+            comboBoxWindow.ForeColor = UiPalette.TextPrimary;
             comboBoxWindow.FormattingEnabled = true;
             comboBoxWindow.Location = new Point(118, 314);
             comboBoxWindow.MinimumSize = new Size(36, 19);
@@ -291,7 +291,7 @@ namespace Resonalyze
             // labelKaiserBeta
             // 
             labelKaiserBeta.AutoSize = true;
-            labelKaiserBeta.ForeColor = Color.FromArgb(210, 214, 222);
+            labelKaiserBeta.ForeColor = UiPalette.TextDefault;
             labelKaiserBeta.Location = new Point(240, 318);
             labelKaiserBeta.Name = "labelKaiserBeta";
             labelKaiserBeta.Size = new Size(12, 15);
@@ -300,9 +300,9 @@ namespace Resonalyze
             // 
             // numericKaiserBeta
             // 
-            numericKaiserBeta.BackColor = Color.FromArgb(55, 60, 72);
+            numericKaiserBeta.BackColor = UiPalette.ControlSurface;
             numericKaiserBeta.DecimalPlaces = 1;
-            numericKaiserBeta.ForeColor = Color.White;
+            numericKaiserBeta.ForeColor = UiPalette.TextPrimary;
             numericKaiserBeta.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             numericKaiserBeta.Location = new Point(258, 314);
             numericKaiserBeta.Maximum = new decimal(new int[] { 20, 0, 0, 0 });
@@ -318,7 +318,7 @@ namespace Resonalyze
             // labelTaps
             // 
             labelTaps.AutoSize = true;
-            labelTaps.ForeColor = Color.FromArgb(210, 214, 222);
+            labelTaps.ForeColor = UiPalette.TextDefault;
             labelTaps.Location = new Point(18, 348);
             labelTaps.Name = "labelTaps";
             labelTaps.Size = new Size(30, 15);
@@ -327,9 +327,9 @@ namespace Resonalyze
             // 
             // numericTaps
             // 
-            numericTaps.BackColor = Color.FromArgb(55, 60, 72);
+            numericTaps.BackColor = UiPalette.ControlSurface;
             numericTaps.DecimalPlaces = 0;
-            numericTaps.ForeColor = Color.White;
+            numericTaps.ForeColor = UiPalette.TextPrimary;
             numericTaps.Increment = new decimal(new int[] { 2, 0, 0, 0 });
             numericTaps.Location = new Point(118, 344);
             numericTaps.Maximum = new decimal(new int[] { 16383, 0, 0, 0 });
@@ -345,7 +345,7 @@ namespace Resonalyze
             // labelTapsHint
             // 
             labelTapsHint.AutoSize = true;
-            labelTapsHint.ForeColor = Color.FromArgb(150, 156, 170);
+            labelTapsHint.ForeColor = UiPalette.TextMuted;
             labelTapsHint.Location = new Point(214, 348);
             labelTapsHint.Name = "labelTapsHint";
             labelTapsHint.Size = new Size(96, 15);
@@ -355,7 +355,7 @@ namespace Resonalyze
             // labelSampleRate
             // 
             labelSampleRate.AutoSize = true;
-            labelSampleRate.ForeColor = Color.FromArgb(210, 214, 222);
+            labelSampleRate.ForeColor = UiPalette.TextDefault;
             labelSampleRate.Location = new Point(18, 378);
             labelSampleRate.Name = "labelSampleRate";
             labelSampleRate.Size = new Size(69, 15);
@@ -364,9 +364,9 @@ namespace Resonalyze
             // 
             // comboBoxSampleRate
             // 
-            comboBoxSampleRate.BackColor = Color.FromArgb(55, 60, 72);
+            comboBoxSampleRate.BackColor = UiPalette.ControlSurface;
             comboBoxSampleRate.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboBoxSampleRate.ForeColor = Color.White;
+            comboBoxSampleRate.ForeColor = UiPalette.TextPrimary;
             comboBoxSampleRate.FormattingEnabled = true;
             comboBoxSampleRate.Location = new Point(118, 374);
             comboBoxSampleRate.MinimumSize = new Size(36, 19);
@@ -377,7 +377,7 @@ namespace Resonalyze
             // labelImpulseScale
             // 
             labelImpulseScale.AutoSize = true;
-            labelImpulseScale.ForeColor = Color.FromArgb(210, 214, 222);
+            labelImpulseScale.ForeColor = UiPalette.TextDefault;
             labelImpulseScale.Location = new Point(18, 408);
             labelImpulseScale.Name = "labelImpulseScale";
             labelImpulseScale.Size = new Size(47, 15);
@@ -387,7 +387,7 @@ namespace Resonalyze
             // checkBoxImpulseDb
             // 
             checkBoxImpulseDb.AutoSize = true;
-            checkBoxImpulseDb.ForeColor = Color.FromArgb(210, 214, 222);
+            checkBoxImpulseDb.ForeColor = UiPalette.TextDefault;
             checkBoxImpulseDb.Location = new Point(118, 406);
             checkBoxImpulseDb.Name = "checkBoxImpulseDb";
             checkBoxImpulseDb.Size = new Size(55, 19);
@@ -398,7 +398,7 @@ namespace Resonalyze
             // labelLatency
             // 
             labelLatency.AutoEllipsis = true;
-            labelLatency.ForeColor = Color.FromArgb(210, 214, 222);
+            labelLatency.ForeColor = UiPalette.TextDefault;
             labelLatency.Location = new Point(18, 444);
             labelLatency.Name = "labelLatency";
             labelLatency.Size = new Size(314, 32);
@@ -408,7 +408,7 @@ namespace Resonalyze
             // labelDeviation
             // 
             labelDeviation.AutoEllipsis = true;
-            labelDeviation.ForeColor = Color.FromArgb(210, 214, 222);
+            labelDeviation.ForeColor = UiPalette.TextDefault;
             labelDeviation.Location = new Point(18, 478);
             labelDeviation.Name = "labelDeviation";
             labelDeviation.Size = new Size(314, 32);
@@ -418,7 +418,7 @@ namespace Resonalyze
             // labelProblem
             // 
             labelProblem.AutoEllipsis = true;
-            labelProblem.ForeColor = Color.FromArgb(255, 130, 130);
+            labelProblem.ForeColor = UiPalette.Error;
             labelProblem.Location = new Point(18, 512);
             labelProblem.Name = "labelProblem";
             labelProblem.Size = new Size(314, 34);
@@ -427,9 +427,9 @@ namespace Resonalyze
             // 
             // buttonImport
             // 
-            buttonImport.BackColor = Color.FromArgb(50, 55, 80);
+            buttonImport.BackColor = UiPalette.ButtonBackground;
             buttonImport.FlatStyle = FlatStyle.Popup;
-            buttonImport.ForeColor = Color.White;
+            buttonImport.ForeColor = UiPalette.TextPrimary;
             buttonImport.Location = new Point(18, 554);
             buttonImport.Name = "buttonImport";
             buttonImport.Size = new Size(120, 26);
@@ -439,9 +439,9 @@ namespace Resonalyze
             // 
             // buttonExport
             // 
-            buttonExport.BackColor = Color.FromArgb(50, 55, 80);
+            buttonExport.BackColor = UiPalette.ButtonBackground;
             buttonExport.FlatStyle = FlatStyle.Popup;
-            buttonExport.ForeColor = Color.White;
+            buttonExport.ForeColor = UiPalette.TextPrimary;
             buttonExport.Location = new Point(144, 554);
             buttonExport.Name = "buttonExport";
             buttonExport.Size = new Size(120, 26);
@@ -451,9 +451,9 @@ namespace Resonalyze
             // 
             // buttonReturnToDsp
             // 
-            buttonReturnToDsp.BackColor = Color.FromArgb(50, 55, 80);
+            buttonReturnToDsp.BackColor = UiPalette.ButtonBackground;
             buttonReturnToDsp.FlatStyle = FlatStyle.Popup;
-            buttonReturnToDsp.ForeColor = Color.White;
+            buttonReturnToDsp.ForeColor = UiPalette.TextPrimary;
             buttonReturnToDsp.Location = new Point(18, 592);
             buttonReturnToDsp.Name = "buttonReturnToDsp";
             buttonReturnToDsp.Size = new Size(246, 26);
@@ -464,9 +464,9 @@ namespace Resonalyze
             // 
             // buttonBackToDsp
             // 
-            buttonBackToDsp.BackColor = Color.FromArgb(50, 55, 80);
+            buttonBackToDsp.BackColor = UiPalette.ButtonBackground;
             buttonBackToDsp.FlatStyle = FlatStyle.Popup;
-            buttonBackToDsp.ForeColor = Color.White;
+            buttonBackToDsp.ForeColor = UiPalette.TextPrimary;
             buttonBackToDsp.Location = new Point(18, 622);
             buttonBackToDsp.Name = "buttonBackToDsp";
             buttonBackToDsp.Size = new Size(246, 24);
@@ -478,7 +478,7 @@ namespace Resonalyze
             // plotResponse
             // 
             plotResponse.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            plotResponse.BackColor = Color.FromArgb(32, 36, 46);
+            plotResponse.BackColor = UiPalette.GraphSurfaceMuted;
             plotResponse.Location = new Point(350, 14);
             plotResponse.Name = "plotResponse";
             plotResponse.PanCursor = Cursors.Hand;
@@ -491,7 +491,7 @@ namespace Resonalyze
             // plotImpulse
             // 
             plotImpulse.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            plotImpulse.BackColor = Color.FromArgb(32, 36, 46);
+            plotImpulse.BackColor = UiPalette.GraphSurfaceMuted;
             plotImpulse.Location = new Point(350, 390);
             plotImpulse.Name = "plotImpulse";
             plotImpulse.PanCursor = Cursors.Hand;
@@ -506,7 +506,7 @@ namespace Resonalyze
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             AutoScroll = true;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(plotImpulse);
             Controls.Add(plotResponse);
@@ -537,7 +537,7 @@ namespace Resonalyze
             Controls.Add(labelSession);
             Controls.Add(titleLabel);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             Name = "FirConstructorPanel";
             Size = new Size(1244, 768);
             ((System.ComponentModel.ISupportInitialize)numericHighPassHz).EndInit();
@@ -557,28 +557,28 @@ namespace Resonalyze
         private Label titleLabel;
         private Label labelSession;
         private Label labelType;
-        private DarkComboBox comboBoxType;
+        private ThemedComboBox comboBoxType;
         private Label labelMethod;
-        private DarkComboBox comboBoxMethod;
+        private ThemedComboBox comboBoxMethod;
         private RoundedPanel cardHighPass;
         private Label labelHighPass;
-        private DarkNumericUpDown numericHighPassHz;
-        private DarkComboBox comboBoxHighPassFamily;
-        private DarkComboBox comboBoxHighPassSlope;
+        private ThemedNumericUpDown numericHighPassHz;
+        private ThemedComboBox comboBoxHighPassFamily;
+        private ThemedComboBox comboBoxHighPassSlope;
         private RoundedPanel cardLowPass;
         private Label labelLowPass;
-        private DarkNumericUpDown numericLowPassHz;
-        private DarkComboBox comboBoxLowPassFamily;
-        private DarkComboBox comboBoxLowPassSlope;
+        private ThemedNumericUpDown numericLowPassHz;
+        private ThemedComboBox comboBoxLowPassFamily;
+        private ThemedComboBox comboBoxLowPassSlope;
         private Label labelWindow;
-        private DarkComboBox comboBoxWindow;
+        private ThemedComboBox comboBoxWindow;
         private Label labelKaiserBeta;
-        private DarkNumericUpDown numericKaiserBeta;
+        private ThemedNumericUpDown numericKaiserBeta;
         private Label labelTaps;
-        private DarkNumericUpDown numericTaps;
+        private ThemedNumericUpDown numericTaps;
         private Label labelTapsHint;
         private Label labelSampleRate;
-        private DarkComboBox comboBoxSampleRate;
+        private ThemedComboBox comboBoxSampleRate;
         private Label labelImpulseScale;
         private ReleaseClickCheckBox checkBoxImpulseDb;
         private Label labelLatency;

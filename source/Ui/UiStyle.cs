@@ -6,8 +6,8 @@ internal static class UiStyle
 {
     private static readonly ConditionalWeakTable<Control, object> enabledForeColors = new();
 
-    // WinForms paints disabled Label/CheckBox/RadioButton text near-black on the dark theme, so they stay Enabled with muted text.
-    // interactive:true also stops toggling and focus.
+    // WinForms paints disabled Label/CheckBox/RadioButton text in a system grey that ignores the palette,
+    // so they stay Enabled with muted text instead. interactive:true also stops toggling and focus.
     public static void SetTextEnabledLook(Control control, bool enabled, bool interactive = false)
     {
         if (enabled)
@@ -45,7 +45,7 @@ internal static class UiStyle
         }
     }
 
-    public static void ApplyDarkDialog(
+    public static void ApplyDialogChrome(
         Form form,
         Size clientSize,
         string? title = null,
@@ -103,10 +103,10 @@ internal static class UiStyle
         {
             BackColor = accent
                 ? UiPalette.AccentFill
-                : UiPalette.DialogSurfaceMuted,
+                : UiPalette.ButtonBackground,
             DialogResult = result,
             FlatStyle = FlatStyle.Flat,
-            ForeColor = UiPalette.TextPrimary,
+            ForeColor = accent ? UiPalette.TextOnAccent : UiPalette.TextPrimary,
             Size = size ?? new Size(94, 30),
             Text = text,
             UseVisualStyleBackColor = false
@@ -153,7 +153,7 @@ internal static class UiStyle
         textBox.BorderStyle = BorderStyle.FixedSingle;
     }
 
-    public static void ApplyNumericUpDown(DarkNumericUpDown input, Point location, Size size)
+    public static void ApplyNumericUpDown(ThemedNumericUpDown input, Point location, Size size)
     {
         ApplySurfaceInput(input, location, size);
     }

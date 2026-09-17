@@ -1,4 +1,4 @@
-﻿using OxyPlot;
+using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.WindowsForms;
 
@@ -75,9 +75,9 @@ internal sealed partial class GraphLimitsDialog : Form
         string fallbackHeader,
         Label header,
         Label maximumLabel,
-        DarkNumericUpDown maximumEditor,
+        ThemedNumericUpDown maximumEditor,
         Label minimumLabel,
-        DarkNumericUpDown minimumEditor)
+        ThemedNumericUpDown minimumEditor)
     {
         header.Text = axis == null ? fallbackHeader : $"{fallbackHeader} — {PlotAxisZoom.DescribeAxis(axis)}";
         bool enabled = axis != null;
@@ -92,7 +92,7 @@ internal sealed partial class GraphLimitsDialog : Form
         }
 
         bool logarithmic = axis is LogarithmicAxis;
-        foreach (DarkNumericUpDown editor in new[] { maximumEditor, minimumEditor })
+        foreach (ThemedNumericUpDown editor in new[] { maximumEditor, minimumEditor })
         {
             editor.DecimalPlaces = logarithmic ? 0 : 2;
             editor.Increment = logarithmic ? 10 : 1;

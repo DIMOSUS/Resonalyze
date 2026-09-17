@@ -30,7 +30,7 @@ namespace Resonalyze
             // labelStep
             //
             labelStep.AutoEllipsis = true;
-            labelStep.ForeColor = Color.FromArgb(210, 214, 222);
+            labelStep.ForeColor = UiPalette.TextDefault;
             labelStep.Location = new Point(12, 12);
             labelStep.Name = "labelStep";
             labelStep.Size = new Size(400, 30);
@@ -40,7 +40,7 @@ namespace Resonalyze
             // labelDone
             //
             labelDone.AutoEllipsis = true;
-            labelDone.ForeColor = Color.FromArgb(150, 156, 168);
+            labelDone.ForeColor = UiPalette.TextMuted;
             labelDone.Location = new Point(12, 76);
             labelDone.Name = "labelDone";
             labelDone.Size = new Size(400, 48);
@@ -60,7 +60,7 @@ namespace Resonalyze
             //
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            BackColor = Color.FromArgb(40, 44, 54);
+            BackColor = UiPalette.ShellSurface;
             ClientSize = new Size(424, 145);
             // No close box: the work cannot be interrupted, and a window that
             // can be dismissed while it runs would leave the user watching
@@ -70,7 +70,7 @@ namespace Resonalyze
             Controls.Add(progressBar);
             Controls.Add(labelStep);
             Font = new Font("Segoe UI", 9F);
-            ForeColor = Color.White;
+            ForeColor = UiPalette.TextPrimary;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;

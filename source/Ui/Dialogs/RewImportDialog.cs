@@ -311,7 +311,7 @@ internal sealed partial class RewImportDialog : Form
             _ => ("REW's level could not be read: enter the dBFS it played at", true)
         };
         labelLevelSource.Text = text;
-        labelLevelSource.ForeColor = warning ? UiPalette.WarningAmber : UiPalette.TextSecondary;
+        labelLevelSource.ForeColor = warning ? UiPalette.Warning : UiPalette.TextSecondary;
     }
 
     private void SetBusy(bool value, string status)
@@ -330,7 +330,7 @@ internal sealed partial class RewImportDialog : Form
         }
 
         labelStatus.Text = text;
-        labelStatus.ForeColor = warning ? UiPalette.WarningAmber : UiPalette.TextSecondary;
+        labelStatus.ForeColor = warning ? UiPalette.Warning : UiPalette.TextSecondary;
     }
 
     private void UpdateControls()
@@ -351,7 +351,7 @@ internal sealed partial class RewImportDialog : Form
     private void StyleGrid()
     {
         measurementGridView.EnableHeadersVisualStyles = false;
-        measurementGridView.GridColor = UiPalette.DialogBorder;
+        measurementGridView.GridColor = UiPalette.Border;
         measurementGridView.DefaultCellStyle.BackColor = UiPalette.DialogBackground;
         measurementGridView.DefaultCellStyle.ForeColor = UiPalette.TextPrimary;
         measurementGridView.DefaultCellStyle.SelectionBackColor = UiPalette.ButtonPressedBackground;

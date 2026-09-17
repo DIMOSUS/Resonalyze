@@ -11,6 +11,7 @@ read-out refuses rather than guesses, what a number was measured against.
 
 ## Contents
 
+- [Application Settings](#application-settings)
 - [Graph Zoom and Limits](#graph-zoom-and-limits)
 - [Mode Settings](#mode-settings)
 - [Phase and Group Delay](#phase-and-group-delay)
@@ -59,6 +60,33 @@ read-out refuses rather than guesses, what a number was measured against.
 
 
 ---
+
+## Application Settings
+
+The gear button in the title bar, beside minimize/maximize/close, opens the
+settings that belong to the whole application rather than to one mode (a mode
+keeps its own settings behind **Mode Settings...**).
+
+**Theme** — **Dark** (the default) or **Light**. The theme decides every colour
+the program paints: panels, dialogs, the plot surface, the axes and grid, the
+curves, the level meter and the faders. Both themes are held to the same
+contrast floors, so a curve stays as separable on a white plot as on the dark
+one.
+
+The theme is read once, when Resonalyze starts, because every control takes its
+colours as it is built. Changing it therefore offers a restart; decline it and
+the new theme simply appears the next time you open the program. The choice is
+stored in `appearance.json` next to the rest of your settings.
+
+Three things the theme deliberately does **not** touch:
+
+- **Colours you chose yourself** — an overlay slot's colour, a Virtual DSP
+  channel's colour in a saved session, the EQ Wizard target colour. They live in
+  your files and stay exactly as you set them. What does follow the theme is the
+  colour a NEW overlay or target starts from, so a curve created in the light
+  theme is born readable on white.
+- **Tuning sheets** — a PDF is printed on paper, which has no theme.
+- **The figures in this documentation**, which were taken in the dark theme.
 
 ## Graph Zoom and Limits
 

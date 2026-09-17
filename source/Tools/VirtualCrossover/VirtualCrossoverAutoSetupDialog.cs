@@ -39,9 +39,24 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
     /// <summary>One junction of one group. The numeric fields carry the WIZARD's window until the user edits one,
     /// so what the row shows is always the window the search will run on.</summary>
+    /// <summary>What the user typed into one junction, kept away from the controls that display it: a reorder
+    /// disposes every row, and an edit to a junction the reorder did not touch must survive that.</summary>
+    private sealed record JunctionEdits(
+        decimal? MinHz,
+        decimal? MaxHz,
+        int? MinSlope,
+        int? MaxSlope,
+        bool Split)
+    {
+        public bool IsEmpty =>
+            MinHz == null && MaxHz == null && MinSlope == null && MaxSlope == null && !Split;
+    }
+
     private sealed record JunctionRow(
         VirtualCrossoverAlignmentStage Group,
         int IndexInGroup,
+        AutoSetupWizardChannel Lower,
+        AutoSetupWizardChannel Upper,
         Label NameLabel,
         DarkNumericUpDown MinHz,
         Label RangeDash,
@@ -62,6 +77,14 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         public bool MaxSlopeEdited { get; set; }
 
         public bool Suppressed { get; set; }
+
+        public JunctionEdits Edits() =>
+            new(
+                MinHzEdited ? MinHz.Value : null,
+                MaxHzEdited ? MaxHz.Value : null,
+                MinSlopeEdited ? (int)MinSlope.SelectedItem! : null,
+                MaxSlopeEdited ? (int)MaxSlope.SelectedItem! : null,
+                Split.Checked);
 
         public JunctionSearchWindow ToWindow() =>
             new(
@@ -87,6 +110,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     // Display order: groups as staged, chain order inside each.
     private readonly List<ChannelRow> rows = new();
     private readonly List<JunctionRow> junctions = new();
+    private readonly Dictionary<(AutoSetupWizardChannel, AutoSetupWizardChannel), JunctionEdits>
+        junctionEdits = new();
     private readonly Dictionary<VirtualCrossoverAlignmentStage, Label> groupHeaders = new();
     private readonly List<(CheckBox Box, CrossoverFilterFamily Family)> familyBoxes = new();
     private double sampleRateHz = 48_000;
@@ -297,6 +322,19 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     {
         foreach (JunctionRow junction in junctions)
         {
+            JunctionEdits edits = junction.Edits();
+            if (edits.IsEmpty)
+            {
+                junctionEdits.Remove((junction.Lower, junction.Upper));
+            }
+            else
+            {
+                junctionEdits[(junction.Lower, junction.Upper)] = edits;
+            }
+        }
+
+        foreach (JunctionRow junction in junctions)
+        {
             foreach (Control control in JunctionControls(junction))
             {
                 control.Dispose();
@@ -369,6 +407,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         var row = new JunctionRow(
             group,
             indexInGroup,
+            lower.Source,
+            upper.Source,
             new Label
             {
                 Anchor = AnchorStyles.Left,
@@ -430,6 +470,36 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             row.Split,
             "Lets the low-pass and the high-pass sit at different frequencies. " +
             "Off unless you ask for it.");
+
+        // Before the handlers: a restore is not an edit, and this pair may be one the reorder never touched.
+        if (junctionEdits.TryGetValue((lower.Source, upper.Source), out JunctionEdits? kept))
+        {
+            if (kept.MinHz is { } minHz)
+            {
+                row.MinHz.Value = Math.Clamp(minHz, row.MinHz.Minimum, row.MinHz.Maximum);
+                row.MinHzEdited = true;
+            }
+
+            if (kept.MaxHz is { } maxHz)
+            {
+                row.MaxHz.Value = Math.Clamp(maxHz, row.MaxHz.Minimum, row.MaxHz.Maximum);
+                row.MaxHzEdited = true;
+            }
+
+            if (kept.MinSlope is { } minSlope)
+            {
+                row.MinSlope.SelectedItem = minSlope;
+                row.MinSlopeEdited = true;
+            }
+
+            if (kept.MaxSlope is { } maxSlope)
+            {
+                row.MaxSlope.SelectedItem = maxSlope;
+                row.MaxSlopeEdited = true;
+            }
+
+            row.Split.Checked = kept.Split;
+        }
 
         row.MinHz.ValueChanged += (_, _) => JunctionEdited(row, () => row.MinHzEdited = true);
         row.MaxHz.ValueChanged += (_, _) => JunctionEdited(row, () => row.MaxHzEdited = true);
@@ -827,6 +897,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private CancellationTokenSource? previewWork;
     private bool suppressPreview;
 
+    // The ranked run owns Apply and the inputs from the moment it snapshots them. A preview already in flight when
+    // Apply was pressed lands afterwards and would otherwise hand the button back mid-ranking.
+    private bool rankingInProgress;
+
     // Long enough to swallow a held spinner arrow, short enough that a single click still feels immediate.
     private const int PreviewDebounceMilliseconds = 120;
 
@@ -835,7 +909,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     /// of milliseconds on a four-way, so it runs off the UI thread with the progress bar up.</summary>
     private void SchedulePreview()
     {
-        if (!initialized || suppressPreview)
+        if (!initialized || suppressPreview || rankingInProgress)
         {
             return;
         }
@@ -998,7 +1072,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
     private void ApplyPreview(PreviewComputation? computed)
     {
-        buttonApply.Enabled = computed != null;
+        buttonApply.Enabled = computed != null && !rankingInProgress;
         if (computed == null)
         {
             labelPreview.Text = "No proposal fits these channels and settings.";
@@ -1389,6 +1463,17 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             yield return row.Down;
         }
 
+        // The ranked run takes its options snapshot before it starts; a junction edited after that would show one
+        // window while Apply wrote a proposal built from another.
+        foreach (JunctionRow junction in junctions)
+        {
+            yield return junction.MinHz;
+            yield return junction.MaxHz;
+            yield return junction.MinSlope;
+            yield return junction.MaxSlope;
+            yield return junction.Split;
+        }
+
         foreach ((CheckBox box, CrossoverFilterFamily _) in familyBoxes)
         {
             yield return box;
@@ -1446,6 +1531,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         CrossoverAutoSetupOptions Options(GroupPlan group) => snapshot[group.Group];
         string previousPreview = labelPreview.Text;
         int count = rows.Count;
+        rankingInProgress = true;
+        CancelPreviewWork();
         buttonApply.Enabled = false;
         SetRankingInputsEnabled(false);
         labelPreview.Text = "Ranking candidates against the measured responses…";
@@ -1470,6 +1557,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             }
 
             labelPreview.Text = previousPreview;
+            rankingInProgress = false;
             buttonApply.Enabled = true;
             SetRankingInputsEnabled(true);
             System.Media.SystemSounds.Beep.Play();
@@ -1483,6 +1571,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             }
 
             labelPreview.Text = previousPreview;
+            rankingInProgress = false;
             buttonApply.Enabled = true;
             SetRankingInputsEnabled(true);
             MessageBox.Show(

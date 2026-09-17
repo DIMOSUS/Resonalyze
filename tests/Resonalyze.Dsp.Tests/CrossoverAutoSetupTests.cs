@@ -594,14 +594,16 @@ public sealed class CrossoverAutoSetupTests
     [Fact]
     public void ASplitOffset_MustBuyMoreThanTheOverlapItSaves()
     {
-        // Parting the corners shrinks the overlap integral whatever it does to the response. Left uncharged, the
-        // widest offset wins at every junction and the option stops being a search: this fixture must stay matched.
+        // Parting the corners shrinks the overlap integral whatever it does to the response, so an offset that
+        // changes nothing else would still score better and the option would stop being a search. Charged back at
+        // the overlap term's own rate, this junction stays matched; with the charge at zero it parts by a quarter
+        // octave for nothing.
         var woofer = new AutoSetupSource(BandCurve(40, 4_000, 0), DriverType.Woofer);
         var tweeter = new AutoSetupSource(BandCurve(600, 20_000, 0), DriverType.Tweeter);
 
         IReadOnlyList<CrossoverProposal> proposals = CrossoverAutoSetup.Propose(
             [woofer, tweeter],
-            Options(families: CrossoverFilterFamily.Bessel) with
+            Options(independentSlopes: true) with
             {
                 JunctionWindows = [new JunctionSearchWindow(AllowSplitCorners: true)]
             });
@@ -609,6 +611,59 @@ public sealed class CrossoverAutoSetupTests
         Assert.Equal(
             proposals[0].LowPassEdge!.Value.FrequencyHz,
             proposals[1].HighPassEdge!.Value.FrequencyHz);
+    }
+
+    /// <summary>The Fs floor is read at the corner the search is standing on, but a negative offset puts the
+    /// high-pass BELOW that corner — an eighth of an octave at the widest, which is 3 dB of the floor's protection
+    /// at 24 dB/oct and 6 dB at 48. The ranked pool crosses junction options and never re-runs the descent, so this
+    /// covers both paths.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ASplitCorner_NeverPutsATweeterHighPassUnderItsResonanceFloor(bool ranked)
+    {
+        // Pinned just above the floor and Linkwitz-Riley only, which is where the search does reach for a
+        // negative offset: without it this reads a junction that never splits and asserts nothing.
+        List<SignalPoint> tweeterCurve = BandCurve(1_100, 20_000, 0);
+        var channels = new AutoSetupSource[]
+        {
+            new(BandCurve(30, 500, 0), DriverType.Woofer),
+            new(BandCurve(200, 5_000, 0), DriverType.Midrange),
+            new(tweeterCurve, DriverType.Tweeter)
+        };
+        CrossoverAutoSetupOptions options =
+            Options(families: CrossoverFilterFamily.LinkwitzRiley) with
+            {
+                JunctionWindows =
+                [
+                    new JunctionSearchWindow(AllowSplitCorners: true),
+                    new JunctionSearchWindow(1_700, 1_750, AllowSplitCorners: true)
+                ]
+            };
+
+        IReadOnlyList<CrossoverProposal> proposals = ranked
+            ? CrossoverAutoSetup.ProposeRanked(channels, options, candidateCount: 50)[0].Proposals
+            : CrossoverAutoSetup.Propose(channels, options);
+
+        CrossoverEdge highPass = proposals[2].HighPassEdge!.Value;
+        if (!ranked)
+        {
+            // The descent does reach for a negative offset here, which is what puts the floor at risk at all.
+            // The pool refuses it — the floors it enumerates against are the same ones — so only assert it where
+            // the overlap is the point rather than pinning what the ranking happens to prefer.
+            Assert.True(
+                highPass.FrequencyHz < proposals[1].LowPassEdge!.Value.FrequencyHz,
+                "This fixture is meant to overlap its corners; without that the floor is never at risk.");
+        }
+        double resonance = CrossoverAutoSetup.TweeterResonanceHz(
+            CrossoverAutoSetup.EstimateBand(tweeterCurve).LowHz);
+        double floor = CrossoverAutoSetup.TweeterMinCrossoverHz(
+            resonance, highPass.SlopeDbPerOctave);
+        Assert.True(
+            highPass.FrequencyHz >= floor - 1,
+            $"The tweeter high-pass landed at {highPass.FrequencyHz:0} Hz with " +
+            $"{highPass.SlopeDbPerOctave} dB/oct, under the {floor:0} Hz its estimated " +
+            $"{resonance:0} Hz resonance needs.");
     }
 
     // An octave either side of the corner: the band JunctionPenalty scores, read off the ideal complex sum.

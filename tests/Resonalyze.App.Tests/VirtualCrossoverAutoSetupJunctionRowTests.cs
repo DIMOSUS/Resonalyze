@@ -251,6 +251,71 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
         });
     }
 
+    [Fact]
+    public void AJunctionNarrowedByHand_SurvivesAReorderElsewhere()
+    {
+        // A reorder disposes and rebuilds every row. A window the user typed into a pair the reorder never touched
+        // must come back, or Apply quietly runs on automatic bounds instead of the ones on screen.
+        StaTest.Run(() =>
+        {
+            using var dialog = new VirtualCrossoverAutoSetupDialog();
+            dialog.Init(SampleRate, SampleRate, FourWay());
+
+            var junctions = (System.Collections.IList)Field<object>(dialog, "junctions");
+            object top = junctions[2]!;
+            var minHz = (DarkNumericUpDown)top.GetType().GetProperty("MinHz")!.GetValue(top)!;
+            var maxHz = (DarkNumericUpDown)top.GetType().GetProperty("MaxHz")!.GetValue(top)!;
+            ((CheckBox)top.GetType().GetProperty("Split")!.GetValue(top)!).Checked = true;
+            minHz.Value = 4_000m;
+            maxHz.Value = 6_000m;
+
+            // Move the two lowest drivers past each other: the mid/tweeter pair is not involved. Driven through
+            // MoveInChain rather than the arrow, because Button.PerformClick needs a shown window to select.
+            var rows = (System.Collections.IList)Field<object>(dialog, "rows");
+            typeof(VirtualCrossoverAutoSetupDialog)
+                .GetMethod("MoveInChain", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(dialog, [rows[0], 1]);
+            Assert.NotSame(top, ((System.Collections.IList)Field<object>(dialog, "junctions"))[2]);
+
+            var rebuilt = (System.Collections.IList)Field<object>(dialog, "junctions");
+            object again = rebuilt[2]!;
+            Assert.Equal(
+                4_000m,
+                ((DarkNumericUpDown)again.GetType().GetProperty("MinHz")!.GetValue(again)!).Value);
+            Assert.Equal(
+                6_000m,
+                ((DarkNumericUpDown)again.GetType().GetProperty("MaxHz")!.GetValue(again)!).Value);
+            Assert.True(
+                ((CheckBox)again.GetType().GetProperty("Split")!.GetValue(again)!).Checked,
+                "The Split the user asked for was lost with the rebuild.");
+        });
+    }
+
+    [Fact]
+    public void TheJunctionFields_FreezeWhileTheRankedRunOwnsTheSnapshot()
+    {
+        // Apply snapshots the options and ranks off the UI thread for seconds. A junction edited in that window
+        // would show one thing and apply another, and its preview would hand the Apply button back mid-ranking.
+        StaTest.Run(() =>
+        {
+            using var dialog = new VirtualCrossoverAutoSetupDialog();
+            dialog.Init(SampleRate, SampleRate, FourWay());
+            typeof(VirtualCrossoverAutoSetupDialog)
+                .GetMethod("SetRankingInputsEnabled", BindingFlags.NonPublic | BindingFlags.Instance)!
+                .Invoke(dialog, [false]);
+
+            var junctions = (System.Collections.IList)Field<object>(dialog, "junctions");
+            foreach (object? junction in junctions)
+            {
+                foreach (string name in new[] { "MinHz", "MaxHz", "MinSlope", "MaxSlope", "Split" })
+                {
+                    var control = (Control)junction!.GetType().GetProperty(name)!.GetValue(junction)!;
+                    Assert.False(control.Enabled, $"{name} stayed live during the ranked run.");
+                }
+            }
+        });
+    }
+
     private static IReadOnlyList<CrossoverProposal> Apply(VirtualCrossoverAutoSetupDialog dialog)
     {
         typeof(VirtualCrossoverAutoSetupDialog)

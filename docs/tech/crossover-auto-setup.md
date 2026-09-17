@@ -212,6 +212,14 @@ The junction decides a RELATIVE polarity; the absolute one is a global flip, whi
 free. `NormalizePolarity` settles it once at the end: take the side with fewer inverted channels, and
 on a tie leave the lowest driver upright.
 
+`JunctionOption` therefore carries the RELATION, not the upper channel's absolute sign, and `Set`
+composes it onto the lower channel the pool's ascending loop has already settled. An absolute sign is
+correct only while nothing below the junction moves, which is true in the descent and false in the
+ranked pool: there the cross-product takes a junction option that was scored against one state of the
+channel below it and applies it to another, so a stored absolute sign silently means the opposite
+relation. Every candidate is re-scored, so nothing wrong can ship — but the pool spends its slots on
+combinations nobody measured.
+
 Auto delay runs after the wizard (the documented order is Auto crossover, junction tune, Auto delay)
 and composes its own flip over this one with an XOR, reading the already-inverted response. Nothing
 forces the wizard's answer on it.
@@ -255,10 +263,19 @@ reports at once. Weakest first:
    midbass measuring to 736 Hz under a tweeter measuring from 712 Hz produced a 712-736 Hz window, inside the
    dome's own resonance.
 
+Before any of that, the drivers may simply not overlap — the lower one is already down where the upper one has
+not started. That is NOT a safety conflict and must be separated from one, because afterwards the two look
+identical: an empty window. The answer there is the gap itself, which is the only place a handover can sit, so the
+bounds are swapped and the row says so. Treating it as a safety conflict is what would open a window 1.5 octaves
+above a lower driver that stopped playing well below it, and `InterpolateDb` clamps its ends, so the search would
+read a flat invented skirt rather than refuse.
+
 Where safety and the drivers disagree, the floor is the one bound that protects hardware rather than quality —
 a tweeter crossed under its resonance overexcurts, while a lower driver asked to reach past its breakup merely
 sounds worse — so the floor stands and the overlap gives way. The window then opens UPWARD from the floor by
-`SafetyOverrideSpanOctaves` = 1.5 rather than collapsing onto it.
+`SafetyOverrideSpanOctaves` = 1.5 rather than collapsing onto it. A breakup CAP is one-sided the other way, so
+where the cap alone crossed the window the cap stands and the window opens DOWNWARD from it by the same span;
+where both crossed, the floor wins, because overexcursion is damage and breakup is only a worse sound.
 
 Both halves of that matter. Collapsing to a single frequency left the descent nothing to search and handed the
 corner to `EnforceTweeterResonanceFloor` afterwards, which puts it at the lowest merely SAFE frequency that
@@ -308,14 +325,18 @@ unreachable.
 
 An offset is charged for itself at `SplitPenaltyDbPerOctave`, which is `OverlapPenaltyDbPerOctave`.
 Parting the corners shrinks the overlap integral whatever it does to the response, so the overlap term
-hands a split a reward it has not earned: uncharged, the widest offset on the list won at every
-junction that was not pinned, and the option was not a search but a constant +1/4 octave. Charged back
-at the same rate the overlap term pays out, only a real flatness gain survives — on the synthetic
-fixtures, a wide-overlap two-way still parts by 1/4 octave and takes 0.04 dB off the junction, while a
-Bessel pair over the same drivers stays matched.
+hands a split a reward it has not earned. Charged back at the same rate the overlap term pays out, only
+a real flatness gain survives. Measured over a sweep of synthetic two-, three- and four-ways: with the
+charge at zero, five further junctions part, all of them marginally (0.08–0.18 octave); with it, the
+splits that survive are the substantial ones (0.19–0.29 octave) and the rest stay matched.
 
-Where the tweeter Fs floor and a split disagree, `EnforceTweeterResonanceFloor` drops the split: Fs is
-safety and the split is a preference.
+The safety floors are read at the corner the edge really lands on, not at the junction's own frequency.
+A negative offset puts the high-pass BELOW the corner — an eighth of an octave at the widest, which is
+3 dB of the Fs floor's protection at 24 dB/oct and 6 dB at 48 — so a slope cleared at the corner can be
+too gentle where the edge actually sits. `EnforceTweeterResonanceFloor` is the second line and drops the
+split outright: Fs is safety and the split is a preference. It now runs on every pool candidate as well
+as on the descent winner, because the pool crosses junction options that were each cleared on their own
+and nothing else re-states the invariant over the composed chain.
 
 ## Optimizer
 

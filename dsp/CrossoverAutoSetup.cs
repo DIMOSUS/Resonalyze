@@ -1669,6 +1669,9 @@ public static class CrossoverAutoSetup
             var seen = new HashSet<string>();
             void Capture()
             {
+                // The combination loop composes junction choices that were each cleared on their own; only this
+                // states the invariant over the whole chain, and nothing else re-runs it after the crossing.
+                EnforceTweeterResonanceFloor();
                 NormalizeGainsCutOnly();
                 NormalizePolarity();
                 IReadOnlyList<CrossoverProposal> proposals = BuildProposals();
@@ -1704,7 +1707,7 @@ public static class CrossoverAutoSetup
                     [
                         new JunctionOption(
                             junctionFamily[j], crossoverHz[j], lowerSlope[j], upperSlope[j],
-                            splitOctaves[j], invert[j + 1], 0)
+                            splitOctaves[j], invert[j] ^ invert[j + 1], 0)
                     ];
                 }
             }
@@ -1753,7 +1756,7 @@ public static class CrossoverAutoSetup
                     JunctionOption choice = junctionChoices[j][indices[j]];
                     Set(
                         j, choice.Family, choice.FrequencyHz, choice.LowerSlope, choice.UpperSlope,
-                        choice.SplitOctaves, choice.InvertUpper);
+                        choice.SplitOctaves, choice.InvertRelative);
                 }
 
                 bool separated = true;
@@ -2046,6 +2049,22 @@ public static class CrossoverAutoSetup
                 safetyHighReason = "the lower driver's breakup onset";
             }
 
+            // The drivers may not overlap at all, and that is NOT a safety conflict: the window is then the gap
+            // between them, which is where a handover has to sit anyway. Deciding this before safety is applied is
+            // the point — afterwards the two are indistinguishable, and the safety branch would open a window
+            // 1.5 octaves above a lower driver that stopped playing long before it.
+            if (autoHigh < autoLow)
+            {
+                (autoLow, autoHigh) = (autoHigh, autoLow);
+                (lowReason, highReason) = ("the lower driver's measured band", lowReason);
+                notes.Add(new JunctionWindowNote(
+                    $"Gap {NoteHz(autoLow)}–{NoteHz(autoHigh)}",
+                    $"The two drivers do not overlap: the lower one is down by {NoteHz(autoLow)} and the " +
+                    $"upper one does not reach {NoteHz(autoHigh)}. The handover can only sit in the gap " +
+                    "between them, so that is the window — and the sum through it is the one number worth " +
+                    "reading on this chain."));
+            }
+
             double wantedLow = autoLow;
             double wantedHigh = autoHigh;
             RaiseLow(safetyLow, safetyLowReason);
@@ -2054,26 +2073,50 @@ public static class CrossoverAutoSetup
             bool overridden = false;
             if (autoHigh < autoLow)
             {
-                // Safety and the drivers disagree. The floor is the one bound that protects hardware rather than
-                // quality, so it is the one that stands: a tweeter crossed under its resonance overexcurts, while a
-                // lower driver asked to reach past its breakup merely sounds worse. Everything else gives way, and
-                // the window opens UPWARD from the floor rather than collapsing onto it — collapsing is what left
-                // the search nothing to do and handed the corner to the after-the-fact floor instead.
+                // Safety and the drivers disagree, and after the gap swap above it can only be safety that did it.
+                // A floor protects hardware — a tweeter crossed under its resonance overexcurts — so it stands and
+                // the window opens UPWARD from it; collapsing onto it is what left the search nothing to do and
+                // handed the corner to the after-the-fact floor instead. A cap protects the lower driver from its
+                // own breakup, which is one-sided the other way, so the window opens DOWNWARD from the cap. Where
+                // both crossed, the floor wins: overexcursion is damage and breakup is only a worse sound.
                 string blocked = lowReason;
                 string yielded = highReason;
-                autoLow = Math.Clamp(
-                    Math.Max(safetyLow, wantedLow), options.MinCrossoverHz, options.MaxCrossoverHz);
-                autoHigh = Math.Clamp(
-                    autoLow * Math.Pow(2.0, SafetyOverrideSpanOctaves),
-                    autoLow,
-                    options.MaxCrossoverHz);
-                lowReason = blocked;
-                highReason = "the span that bound leaves";
+                bool floorWon = safetyLow > wantedHigh;
+                if (floorWon)
+                {
+                    autoLow = Math.Clamp(
+                        Math.Max(safetyLow, wantedLow),
+                        options.MinCrossoverHz,
+                        options.MaxCrossoverHz);
+                    autoHigh = Math.Clamp(
+                        autoLow * Math.Pow(2.0, SafetyOverrideSpanOctaves),
+                        autoLow,
+                        options.MaxCrossoverHz);
+                    highReason = "the span that bound leaves";
+                }
+                else
+                {
+                    autoHigh = Math.Clamp(
+                        Math.Min(safetyHigh, wantedHigh),
+                        options.MinCrossoverHz,
+                        options.MaxCrossoverHz);
+                    autoLow = Math.Clamp(
+                        autoHigh / Math.Pow(2.0, SafetyOverrideSpanOctaves),
+                        options.MinCrossoverHz,
+                        autoHigh);
+                    blocked = highReason;
+                    yielded = lowReason;
+                    lowReason = "the span that bound leaves";
+                    highReason = blocked;
+                }
+
                 notes.Add(new JunctionWindowNote(
-                    types[j + 1] == DriverType.Tweeter
+                    floorWon && types[j + 1] == DriverType.Tweeter
                         ? $"Estimated tweeter Fs {NoteHz(TweeterResonanceHz(bands[j + 1].LowHz))}"
-                        : $"Moved up to {NoteHz(autoLow)}",
-                    $"The drivers only overlap at {NoteHz(wantedLow)}–{NoteHz(wantedHigh)}, on the " +
+                        : floorWon
+                            ? $"Moved up to {NoteHz(autoLow)}"
+                            : $"Moved down to {NoteHz(autoHigh)}",
+                    $"The drivers only meet at {NoteHz(wantedLow)}–{NoteHz(wantedHigh)}, on the " +
                     $"wrong side of {blocked}. Protecting the driver outranks {yielded}, so the " +
                     $"window moved to {NoteHz(autoLow)}–{NoteHz(autoHigh)} and the search runs " +
                     "there instead of being dragged there afterwards."));
@@ -2175,7 +2218,7 @@ public static class CrossoverAutoSetup
 
             JunctionOption best = new(
                 junctionFamily[j], crossoverHz[j], lowerSlope[j], upperSlope[j],
-                splitOctaves[j], invert[j + 1], Score());
+                splitOctaves[j], invert[j] ^ invert[j + 1], Score());
             foreach (JunctionOption option in EnumerateJunctionOptions(j, low, high))
             {
                 if (option.Score < best.Score)
@@ -2186,7 +2229,7 @@ public static class CrossoverAutoSetup
 
             Set(
                 j, best.Family, best.FrequencyHz, best.LowerSlope, best.UpperSlope,
-                best.SplitOctaves, best.InvertUpper);
+                best.SplitOctaves, best.InvertRelative);
         }
 
         /// <summary>The split offset, refined on the corner the junction sweep just settled. A coordinate of its
@@ -2202,9 +2245,16 @@ public static class CrossoverAutoSetup
 
             JunctionOption best = new(
                 junctionFamily[j], crossoverHz[j], lowerSlope[j], upperSlope[j],
-                splitOctaves[j], invert[j + 1], Score());
+                splitOctaves[j], invert[j] ^ invert[j + 1], Score());
             foreach (double split in SplitOffsetOctaves)
             {
+                // An offset moves the edges off the corner the sweep cleared, so the floors are read again there.
+                if (lowerSlope[j] < SlopeFloor(j, SplitCornerOf(crossoverHz[j], split, -1)) ||
+                    upperSlope[j] < SlopeFloor(j + 1, SplitCornerOf(crossoverHz[j], split, +1)))
+                {
+                    continue;
+                }
+
                 JunctionOption option = BestPolarity(
                     j, junctionFamily[j], crossoverHz[j], lowerSlope[j], upperSlope[j], split);
                 if (option.Score < best.Score)
@@ -2215,7 +2265,7 @@ public static class CrossoverAutoSetup
 
             Set(
                 j, best.Family, best.FrequencyHz, best.LowerSlope, best.UpperSlope,
-                best.SplitOctaves, best.InvertUpper);
+                best.SplitOctaves, best.InvertRelative);
         }
 
         private int ChannelSlope(int i) =>
@@ -2240,7 +2290,9 @@ public static class CrossoverAutoSetup
             List<int>? allowed = null;
             void Intersect(int junction)
             {
-                int floor = SlopeFloor(i, crossoverHz[junction]);
+                // The channel's OWN edge at that junction: its low-pass below it, its high-pass above it.
+                int floor = SlopeFloor(
+                    i, junction == i ? LowPassHz(junction) : HighPassHz(junction));
                 List<int> slopes = AllowedSlopes(junction, junctionFamily[junction], crossoverHz[junction])
                     .Where(slope => slope >= floor)
                     .ToList();
@@ -2294,7 +2346,10 @@ public static class CrossoverAutoSetup
             int LowerSlope,
             int UpperSlope,
             double SplitOctaves,
-            bool InvertUpper,
+            // The RELATION across the junction, not the upper channel's absolute sign. The pool crosses junction
+            // options that were each scored against a different upper-channel state, so an absolute sign composed
+            // into a combination means a different relative polarity than the one that was measured.
+            bool InvertRelative,
             double Score);
 
         // With independent slopes off the slope belongs to the channel (OptimizeChannelSlope); here only frequency and family vary.
@@ -2308,7 +2363,7 @@ public static class CrossoverAutoSetup
             int savedLower = lowerSlope[j];
             int savedUpper = upperSlope[j];
             double savedSplit = splitOctaves[j];
-            bool savedInvert = invert[j + 1];
+            bool savedInvert = invert[j] ^ invert[j + 1];
             // The split is NOT crossed with frequency, family and slope here: it is its own coordinate, refined by
             // OptimizeJunctionSplit once this sweep has settled the rest. Crossed, it multiplied the whole sweep by
             // the length of the offset list, and a four-way with every junction split took ten seconds.
@@ -2316,8 +2371,8 @@ public static class CrossoverAutoSetup
             {
                 foreach (double fc in LatticePoints(low, high))
                 {
-                    int lowerFloor = SlopeFloor(j, fc);
-                    int upperFloor = SlopeFloor(j + 1, fc);
+                    int lowerFloor = SlopeFloor(j, SplitCornerOf(fc, savedSplit, -1));
+                    int upperFloor = SlopeFloor(j + 1, SplitCornerOf(fc, savedSplit, +1));
                     foreach (CrossoverFilterFamily family in options.Families)
                     {
                         IReadOnlyList<int> slopes = AllowedSlopes(j, family, fc);
@@ -2369,9 +2424,9 @@ public static class CrossoverAutoSetup
             int upper,
             double split)
         {
-            Set(j, family, fc, lower, upper, split, invertUpper: false);
+            Set(j, family, fc, lower, upper, split, invertRelative: false);
             double upright = Score();
-            Set(j, family, fc, lower, upper, split, invertUpper: true);
+            Set(j, family, fc, lower, upper, split, invertRelative: true);
             double flipped = Score();
             return flipped < upright
                 ? new JunctionOption(family, fc, lower, upper, split, true, flipped)
@@ -2385,14 +2440,15 @@ public static class CrossoverAutoSetup
             int lower,
             int upper,
             double split,
-            bool invertUpper)
+            bool invertRelative)
         {
             junctionFamily[j] = family;
             crossoverHz[j] = fc;
             lowerSlope[j] = lower;
             upperSlope[j] = upper;
             splitOctaves[j] = split;
-            invert[j + 1] = invertUpper;
+            // Composed onto the lower channel, which the pool's ascending loop has already settled.
+            invert[j + 1] = invert[j] ^ invertRelative;
         }
 
         private void OptimizeGains()
@@ -2758,10 +2814,16 @@ public static class CrossoverAutoSetup
         }
 
         private double SplitCorner(int j, int direction) =>
-            splitOctaves[j] == 0
-                ? crossoverHz[j]
-                : RoundToLattice(
-                    crossoverHz[j] * Math.Pow(2.0, direction * splitOctaves[j] / 2.0));
+            SplitCornerOf(crossoverHz[j], splitOctaves[j], direction);
+
+        /// <summary>Where an edge really lands for a corner and an offset. Taken as a pure function because the
+        /// safety floors have to be read for a candidate the junction has not been Set to yet: reading them at the
+        /// CORNER while a negative offset puts the high-pass an eighth of an octave below it is how a tweeter ends
+        /// up crossed 3 dB (24 dB/oct) or 6 dB (48) further into its resonance than the floor believes.</summary>
+        private static double SplitCornerOf(double fcHz, double splitOctaves, int direction) =>
+            splitOctaves == 0
+                ? fcHz
+                : RoundToLattice(fcHz * Math.Pow(2.0, direction * splitOctaves / 2.0));
 
         // Polarity is NOT folded in here: it belongs to the channel, and keeping it out leaves the cache key on the edges alone.
         private Complex[] ChannelUnitResponse(int i)

@@ -121,6 +121,10 @@ internal sealed class UiThemePalette
     public required Color CurveZoneRear { get; init; }
     public required Color CurveZoneCentre { get; init; }
     public required Color CurveZoneSub { get; init; }
+    /// <summary>The colour a free overlay slot starts in, one per slot. A slot that has been captured carries its
+    /// own colour in its file and is not touched by the theme.</summary>
+    public required IReadOnlyList<Color> OverlaySlotDefaults { get; init; }
+
     /// <summary>One entry per Virtual DSP channel, in the order the channels are created.</summary>
     public required IReadOnlyList<Color> ChannelCurves { get; init; }
 
@@ -306,6 +310,22 @@ internal sealed class UiThemePalette
             Color.FromArgb(90, 180, 175)
         ],
 
+        OverlaySlotDefaults =
+        [
+            Color.FromArgb(255, 130, 70),
+            Color.FromArgb(95, 190, 255),
+            Color.FromArgb(120, 220, 120),
+            Color.FromArgb(235, 150, 235),
+            Color.FromArgb(245, 215, 90),
+            Color.FromArgb(255, 115, 115),
+            Color.FromArgb(120, 230, 220),
+            Color.FromArgb(190, 165, 255),
+            Color.FromArgb(205, 230, 125),
+            Color.FromArgb(255, 175, 205),
+            Color.FromArgb(175, 200, 235),
+            Color.FromArgb(228, 192, 145)
+        ],
+
         MarkerArrival = Color.FromArgb(130, 220, 90),
         MarkerPeak = Color.FromArgb(150, 170, 205),
 
@@ -478,6 +498,22 @@ internal sealed class UiThemePalette
             Color.FromArgb(60, 84, 140),
             Color.FromArgb(140, 96, 44),
             Color.FromArgb(16, 110, 104)
+        ],
+
+        OverlaySlotDefaults =
+        [
+            Color.FromArgb(188, 70, 0),
+            Color.FromArgb(20, 95, 180),
+            Color.FromArgb(16, 118, 52),
+            Color.FromArgb(148, 45, 148),
+            Color.FromArgb(128, 98, 0),
+            Color.FromArgb(188, 30, 45),
+            Color.FromArgb(0, 112, 112),
+            Color.FromArgb(92, 58, 188),
+            Color.FromArgb(92, 112, 0),
+            Color.FromArgb(172, 40, 98),
+            Color.FromArgb(58, 84, 140),
+            Color.FromArgb(136, 84, 28)
         ],
 
         MarkerArrival = Color.FromArgb(46, 118, 28),

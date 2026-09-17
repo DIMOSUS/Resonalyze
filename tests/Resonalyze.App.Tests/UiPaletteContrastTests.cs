@@ -156,6 +156,24 @@ public sealed class UiPaletteContrastTests
         }
     }
 
+    // The colour a free overlay slot starts in is a curve colour the moment the slot is captured into.
+    [Theory]
+    [InlineData(nameof(UiTheme.Dark))]
+    [InlineData(nameof(UiTheme.Light))]
+    public void EveryOverlaySlotDefault_SeparatesFromThePlotSurface(string theme)
+    {
+        UiThemePalette palette = Palette(theme);
+
+        Assert.Equal(OverlayFile.MaximumSlotCount, palette.OverlaySlotDefaults.Count);
+        for (int i = 0; i < palette.OverlaySlotDefaults.Count; i++)
+        {
+            double ratio = ContrastRatio(palette.OverlaySlotDefaults[i], palette.GraphSurface);
+            Assert.True(
+                ratio >= CurveFloor,
+                $"{theme}: overlay slot {i + 1} is {ratio:0.00}:1 on the plot surface.");
+        }
+    }
+
     [Theory]
     [InlineData(nameof(UiTheme.Dark))]
     [InlineData(nameof(UiTheme.Light))]

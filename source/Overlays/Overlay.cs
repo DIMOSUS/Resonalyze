@@ -192,10 +192,9 @@ public sealed class OverlayCollection
         form.SuspendLayout();
         container.SuspendLayout();
 
-        var random = new Random(3);
         for (int index = 2; index <= OverlayFile.MaximumSlotCount; index++)
         {
-            RoundedPanel panel = CreatePanel(templatePanel, index, random);
+            RoundedPanel panel = CreatePanel(templatePanel, index);
             CheckBox checkBox = CreateCheckBox(templateCheckBox, index);
             ThemedNumericUpDown offset = CreateOffset(templateOffset, index);
             Button captureButton = CreateCaptureButton(templateCaptureButton, index);
@@ -224,6 +223,10 @@ public sealed class OverlayCollection
         container.ResumeLayout(false);
         form.ResumeLayout(false);
     }
+
+    /// <summary>The colour a slot shows before it holds a capture; a captured slot carries its own.</summary>
+    internal static Color SlotDefaultColor(int slot) =>
+        UiPalette.OverlaySlotDefaults[(slot - 1) % UiPalette.OverlaySlotDefaults.Count];
 
     public OxyPlot.WindowsForms.PlotView PlotView { get; }
     public Form1 Form { get; }
@@ -499,17 +502,11 @@ public sealed class OverlayCollection
         };
     }
 
-    private static RoundedPanel CreatePanel(
-        RoundedPanel template,
-        int index,
-        Random random)
+    private static RoundedPanel CreatePanel(RoundedPanel template, int index)
     {
         return new RoundedPanel
         {
-            BackColor = Color.FromArgb(
-                random.Next(255),
-                random.Next(255),
-                random.Next(255)),
+            BackColor = SlotDefaultColor(index),
             BorderColor = template.BorderColor,
             CornerRadius = template.CornerRadius,
             Location = new Point(

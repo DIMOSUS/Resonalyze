@@ -69,9 +69,11 @@ keeps its own settings behind **Mode Settings...**).
 
 **Theme** — **Dark** (the default) or **Light**. The theme decides every colour
 the program paints: panels, dialogs, the plot surface, the axes and grid, the
-curves, the level meter and the faders. Both themes are held to the same
-contrast floors, so a curve stays as separable on a white plot as on the dark
-one.
+curves, the level meter and the faders. Text and panels are held to the same
+contrast floors in both themes. The light theme also holds every curve at the
+3:1 floor for a graphical object; a few of the dark analysis curves (the third
+and fourth harmonic above all) have sat under it since long before the light
+theme existed, and they are left as they are rather than retuned here.
 
 The theme is read once, when Resonalyze starts, because every control takes its
 colours as it is built. Changing it therefore offers a restart; decline it and
@@ -80,11 +82,12 @@ stored in `appearance.json` next to the rest of your settings.
 
 Three things the theme deliberately does **not** touch:
 
-- **Colours you chose yourself** — an overlay slot's colour, a Virtual DSP
+- **Colours you chose yourself** — a captured overlay slot's colour, a Virtual DSP
   channel's colour in a saved session, the EQ Wizard target colour. They live in
   your files and stay exactly as you set them. What does follow the theme is the
-  colour a NEW overlay or target starts from, so a curve created in the light
-  theme is born readable on white.
+  colour a slot or a target STARTS in: each of the twelve overlay slots has its
+  own, picked per theme and held apart from its neighbours, so a curve captured
+  in the light theme is born readable on white.
 - **Tuning sheets** — a PDF is printed on paper, which has no theme.
 - **The figures in this documentation**, which were taken in the dark theme.
 

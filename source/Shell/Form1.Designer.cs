@@ -107,7 +107,7 @@ namespace Resonalyze
             // 
             // overlayPanel1
             // 
-            overlayPanel1.BackColor = Color.OrangeRed;
+            overlayPanel1.BackColor = OverlayCollection.SlotDefaultColor(1);
             overlayPanel1.BorderColor = Color.Transparent;
             overlayPanel1.Controls.Add(buttonSaveOverlay);
             overlayPanel1.Controls.Add(labelOverlay1);

@@ -16,6 +16,10 @@ internal sealed class AppearanceSettingsFile
 
     public UiTheme Theme { get; set; } = UiTheme.Dark;
 
+    /// <summary>Why the last <see cref="TrySave"/> failed; telling the user is the caller's job, not this layer's.</summary>
+    [JsonIgnore]
+    public string? SaveWarning { get; private set; }
+
     [JsonIgnore]
     private string pathOnDisk = ApplicationDataPaths.Current.AppearanceFile;
 
@@ -45,22 +49,23 @@ internal sealed class AppearanceSettingsFile
         return new AppearanceSettingsFile { pathOnDisk = path };
     }
 
-    public void Save()
+    /// <summary>False when the file still holds the old theme, with <see cref="SaveWarning"/> saying why: a caller
+    /// must not then act as if the new one were in force.</summary>
+    public bool TrySave()
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(pathOnDisk)!);
             using FileStream stream = File.Create(pathOnDisk);
             JsonSerializer.Serialize(stream, this, SerializerOptions);
+            return true;
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show(
-                $"The appearance settings could not be saved to '{pathOnDisk}':\r\n\r\n{exception.Message}",
-                "Resonalyze",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+            SaveWarning =
+                $"The appearance settings could not be saved to '{pathOnDisk}':\r\n\r\n{exception.Message}";
+            return false;
         }
     }
 }

@@ -4,7 +4,7 @@ namespace Resonalyze;
 /// settings panel; this is for what the whole window obeys.</summary>
 internal sealed partial class ApplicationSettingsDialog : Form
 {
-    private readonly UiTheme themeOnOpen;
+    private readonly UiTheme persistedTheme;
 
     public ApplicationSettingsDialog(AppearanceSettingsFile appearance)
     {
@@ -13,7 +13,7 @@ internal sealed partial class ApplicationSettingsDialog : Form
         InitializeComponent();
 
         Appearance = appearance;
-        themeOnOpen = appearance.Theme;
+        persistedTheme = appearance.Theme;
         radioThemeLight.Checked = appearance.Theme == UiTheme.Light;
         radioThemeDark.Checked = !radioThemeLight.Checked;
 
@@ -32,16 +32,35 @@ internal sealed partial class ApplicationSettingsDialog : Form
 
         if (DialogResult == DialogResult.OK)
         {
-            UiTheme chosen = radioThemeLight.Checked ? UiTheme.Light : UiTheme.Dark;
-            if (chosen != themeOnOpen)
-            {
-                Appearance.Theme = chosen;
-                Appearance.Save();
-                RestartRequested = AskToRestart();
-            }
+            Apply(radioThemeLight.Checked ? UiTheme.Light : UiTheme.Dark);
         }
 
         base.OnFormClosing(e);
+    }
+
+    // What is on disk and what is running can differ: a theme chosen and then not restarted into leaves the file
+    // ahead of the window. Saving answers the first, offering a restart answers the second.
+    private void Apply(UiTheme chosen)
+    {
+        if (chosen != persistedTheme)
+        {
+            Appearance.Theme = chosen;
+            if (!Appearance.TrySave())
+            {
+                // The file still holds the old theme, so a restart would land back in it.
+                MessageBox.Show(
+                    Appearance.SaveWarning,
+                    "Resonalyze",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+        }
+
+        if (chosen != UiPalette.Theme)
+        {
+            RestartRequested = AskToRestart();
+        }
     }
 
     // The palette is read while every control is built, so the theme in force is decided once, at startup.

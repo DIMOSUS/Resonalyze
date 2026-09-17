@@ -22,7 +22,7 @@ public sealed class AppearanceSettingsFileTests : IDisposable
         Directory.CreateDirectory(directory);
         AppearanceSettingsFile saved = AppearanceSettingsFile.LoadOrDefault(Path_);
         saved.Theme = UiTheme.Light;
-        saved.Save();
+        Assert.True(saved.TrySave());
 
         Assert.Equal(UiTheme.Light, AppearanceSettingsFile.LoadOrDefault(Path_).Theme);
     }
@@ -33,9 +33,21 @@ public sealed class AppearanceSettingsFileTests : IDisposable
         Directory.CreateDirectory(directory);
         AppearanceSettingsFile saved = AppearanceSettingsFile.LoadOrDefault(Path_);
         saved.Theme = UiTheme.Light;
-        saved.Save();
+        Assert.True(saved.TrySave());
 
         Assert.Contains("\"Light\"", File.ReadAllText(Path_), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnUnwritablePath_AnswersFalseAndSaysWhy()
+    {
+        // A directory where the file belongs: the write fails without needing a permission fixture.
+        System.IO.Directory.CreateDirectory(Path_);
+        AppearanceSettingsFile settings = AppearanceSettingsFile.LoadOrDefault(Path_);
+        settings.Theme = UiTheme.Light;
+
+        Assert.False(settings.TrySave());
+        Assert.NotNull(settings.SaveWarning);
     }
 
     [Theory]

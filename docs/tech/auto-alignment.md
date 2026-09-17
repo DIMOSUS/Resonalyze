@@ -1215,9 +1215,9 @@ recover its own far-side junctions, by an eighth of the period of its highest ju
   does not localize. It used to be a flat 0.03 ms sized for the top junction, which left the v6 200 Hz
   split 0.6 ms short on the far side: the owner tuned that junction 8.27 ms on the left and 7.63 on
   the right, and the stereo branch move is one delta for both sides. The reach is a total budget from
-  the scene position, kept as an offset to the bridge so a uniform rebase between rounds does not move
-  it: spent per round, the second round walked the Passat's mid 0.13 ms at a 0.125 ms leash and its
-  1 kHz split read 0.14 dB worse (0.49 on the dip).
+  the scene position: each channel's spent trim is carried across the rounds below. Spent per round,
+  the second round walked the Passat's mid 0.13 ms at a 0.125 ms leash and its 1 kHz split read
+  0.14 dB worse (0.49 on the dip).
 - **The bridge has no reach.** It IS the scene: the far top stands at the user's delta to its twin, and
   the chain below it is what gets polished.
 - **No half-band may lose more than the trim gains**, per (junction, half-band) cell, the rule the
@@ -1229,27 +1229,30 @@ recover its own far-side junctions, by an eighth of the period of its highest ju
 - **Field effect** of the period-scaled reach with that veto (10 stereo sessions, 58 junctions):
   junction average +0.120 → +0.124 dB, dip −0.050 → −0.005; totals +0.075 → +0.079, dip −0.803 →
   −0.763. Without the veto the same reach lost 0.69 dB on the Passat junction above and 0.21 on the v3
-  650 Hz split. On the v6 200 Hz split the far midbass closes +0.21 ms of its 0.6 ms residual: the
+  650 Hz split. On the v6 200 Hz split the far midbass closes +0.20 ms of its 0.6 ms residual: the
   next 0.28 would cost the sub junction's 70-140 Hz half 0.27 dB for a 0.16 dB gain.
-
-**Polish and mono co-move alternate** (`PolishMonoRounds`, at most 3; the archive converges in two).
-The polish moves the far side under the mono channels' right junctions, so the mono co-move runs
-again after it; a sub that followed may in turn release a trim the polish had refused for its sake,
-so the polish runs again, until neither moves. On the v6 cabin the far midbass first takes +0.20 ms
-of its 0.6 ms residual (the next +0.28 would cost the sub junction's 70-140 Hz half 0.27 dB), the
-sub then follows by +0.34 ms, and in the second round the midbass takes the remaining +0.24: its
-200 Hz split goes −0.31 → −0.22 dB (dip −2.09 → −1.55), the sub junctions' dips improve 0.10-0.15,
-and the right 200 Hz split lands 0.20 ms from the owner's hand tune instead of 0.44. Ten stereo
-sessions go +0.113 → +0.118 dB on the junction average and +0.023 → +0.049 on the dip, the 16 mono
-runs +0.082 → +0.084 and +0.055 → +0.063, nothing worse. Polishing before the only mono pass
-instead cost three v6 mono runs their lobe choice (v6-8's right sub junction −0.05 dB and −0.21 on
-the dip): the first pass is where the mono's right junction votes on the lobe, and the polish must
-not see a sub still parked by the left side alone.
 - **Gain threshold.** Below the co-move's 0.05 dB, because such a trim only buys fractions of a dB:
   on the v6 cabin the honest gains ran 0.01-0.03 dB, and even 0.02 dB refused them all.
-- **Order.** One pass in band order from the bridge down. Mono channels never move here; they follow
-  in the second mono co-move below.
+- **Order.** Band order from the bridge down. Mono channels never move here; they follow in the mono
+  co-move this pass alternates with (below).
 - **Grid.** The DSP's 0.01 ms grid, since gains between its points are unrealizable.
 - **Feasibility.** The pass never makes delays negative, never shifts the field uniformly, and never
   widens the span past the DSP range, checked against both ends of the rest of the field. Being the
   last pass, it would otherwise turn a valid proposal into a refusal for a hundredth of a dB.
+
+**Polish and mono co-move alternate** (`PolishMonoRounds`, at most 3; the archive converges in two).
+The polish moves the far side under the mono channels' right junctions, so the mono co-move runs
+again after it; a sub that followed may in turn release a trim the polish had refused for its sake,
+so the polish runs again. The rounds go on only while both keep moving: a polish that kept leaves
+the mono channels where their last pass put them, a system without a mono channel polishes once, and
+a run still moving at the cap says so in the log. A mono trim that follows the polish amends the
+channel's decision and keeps its confidence; only a hop re-decides it. On the v6 cabin the far
+midbass first takes +0.20 ms of its 0.6 ms residual (the next +0.28 would cost the sub junction's
+70-140 Hz half 0.27 dB), the sub then follows by +0.34 ms, and in the second round the midbass
+takes the remaining +0.24: its 200 Hz split goes −0.31 → −0.22 dB (dip −2.09 → −1.55), the sub
+junctions' dips improve 0.10-0.15, and the right 200 Hz split lands 0.20 ms from the owner's hand
+tune instead of 0.44. Ten stereo sessions go +0.113 → +0.118 dB on the junction average and
++0.023 → +0.049 on the dip, the 16 mono runs +0.082 → +0.084 and +0.055 → +0.063, nothing worse.
+Polishing before the only mono pass instead cost three v6 mono runs their lobe choice (v6-8's right
+sub junction −0.05 dB and −0.21 on the dip): the first pass is where the mono's right junction
+votes on the lobe, and the polish must not see a sub still parked by the left side alone.

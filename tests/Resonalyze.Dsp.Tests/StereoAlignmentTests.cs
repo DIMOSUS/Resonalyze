@@ -957,6 +957,55 @@ public sealed class StereoAlignmentTests
     }
 
     [Fact]
+    public void ComoveMonoChannels_AfterThePolish_ATrimAmendsTheDecisionAndKeepsItsConfidence()
+    {
+        // The pass that follows the far-side polish trims the sub inside its lobe: that amends the decision the walk
+        // and the first co-move made. Re-deciding it from a trim's small gain would report a confident sub as Low.
+        var sub = new TestChannel("sub", ImpulseAtMs(9.0));
+        var leftWoof = new TestChannel("L woof", ImpulseAtMs(8.0));
+        var rightWoof = new TestChannel("R woof", ImpulseAtMs(8.0));
+        TestChannel[] all = [sub, leftWoof, rightWoof];
+        IReadOnlyList<AlignmentSnapshot> Reprocess(
+            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+            all.Select(channel =>
+                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+        List<AlignmentSnapshot> snapshots = all
+            .Select(channel => Snapshot(channel, default))
+            .ToList();
+        var plan = new StereoAlignmentPlan(
+            [snapshots[0], snapshots[1]],
+            [Junction(snapshots[0], snapshots[1], 80)],
+            [snapshots[0], snapshots[2]],
+            [Junction(snapshots[0], snapshots[2], 80)],
+            new HashSet<IAlignmentChannel> { sub },
+            leftWoof,
+            rightWoof,
+            40,
+            160,
+            SceneOffsetMs: 0);
+        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>
+        {
+            [sub] = new(2.0, false),
+            [leftWoof] = new(2.0, false),
+            [rightWoof] = new(2.0, false)
+        };
+        var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>
+        {
+            [sub] = new(AlignmentDecisionKind.Search, AlignmentConfidence.High, "mono co-move -6.00 ms + invert")
+        };
+        var log = new StringBuilder();
+
+        bool moved = AutoAlignmentEngine.ComoveMonoChannels(
+            plan, Reprocess, alignment, log, snapshots, decisions: decisions, afterPolish: true);
+
+        Assert.True(moved, log.ToString());
+        Assert.InRange(alignment[sub].DelayMs - alignment[leftWoof].DelayMs, -1.2, -0.8);
+        Assert.Equal(AlignmentConfidence.High, decisions[sub].Confidence);
+        Assert.StartsWith("mono co-move -6.00 ms + invert; ", decisions[sub].Detail);
+        Assert.Contains("after the far-side polish", decisions[sub].Detail);
+    }
+
+    [Fact]
     public void ComoveMonoChannels_RefreshesTheStaleDecision()
     {
         // Once the co-move moves the sub it is no longer reported as the reference.
@@ -1169,14 +1218,12 @@ public sealed class StereoAlignmentTests
         }
 
         var log = new StringBuilder();
-        // Scene offsets to the bridge, as ComputeStereo hands them: the reach is spent from here across rounds.
-        Dictionary<IAlignmentChannel, double> sceneOffsets = alignment.ToDictionary(
-            entry => entry.Key, entry => entry.Value.DelayMs - alignment[farTwr].DelayMs);
+        var spentMs = new Dictionary<IAlignmentChannel, double>();
         for (int round = 0; round < rounds; round++)
         {
             AutoAlignmentEngine.PolishFarSideJunctions(
                 plan, snapshots, snapshots, Reprocess, alignment, log,
-                AutoAlignmentEngine.DefaultMaxDelayMs, decisions: null, sceneOffsets);
+                AutoAlignmentEngine.DefaultMaxDelayMs, decisions: null, spentMs);
         }
         return (alignment[farMid].DelayMs, alignment[farTwr].DelayMs, log.ToString());
     }
@@ -1184,8 +1231,7 @@ public sealed class StereoAlignmentTests
     [Fact]
     public void PolishFarSideJunctions_ReachIsATotalBudgetFromTheScenePosition()
     {
-        // The polish and the mono co-move alternate; a second round must not walk the mid another eighth of a
-        // period, so the leash is spent from the scene position, not from wherever the last round left it.
+        // The polish alternates with the mono co-move: a second round must not walk the mid another eighth of a period.
         (double once, _, _) = RunFarSidePolish(0.50);
         (double twice, _, string log) = RunFarSidePolish(0.50, rounds: 2);
 

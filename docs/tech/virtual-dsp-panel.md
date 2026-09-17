@@ -630,7 +630,7 @@ term, since a bulk delay wraps the phase into a sawtooth and swamps the filter g
   are its subject, the honest read at bass junctions), the whitened direct-sound twin (the cut the engine's
   direct-coherence witness reads, answering where the drivers align), both polarities of the summation
   score from one bin set with the search's own settings (per-channel windows, search-side level match, whose
-  absence reshapes the lobes when channel gains differ), and the arrival marker.
+  absence reshapes the lobes when channel gains differ), and the band-limited arrival lag.
 - `arrivalLagMs` for the agent package — lower arrival minus upper, the band-limited envelope fronts of the
   processed pair — is computed here as well; the plot does not draw it. A dashed *arrival* marker that stood
   for the search's re-anchored read (`AutoAlignmentEngine.ReadJunctionArrivals` on a frozen render snapshot)

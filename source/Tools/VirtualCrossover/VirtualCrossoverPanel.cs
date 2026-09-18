@@ -6972,12 +6972,14 @@ public partial class VirtualCrossoverPanel : UserControl
         Complex[] upper = cropped[all.IndexOf(pair.Upper)];
         ValidSampleRange Shifted(ProcessedChannel item, Complex[] croppedIr) =>
             item.ValidRange.IsKnown
-                ? new ValidSampleRange(
-                    Math.Max(0, item.ValidRange.StartSample - cropStart),
-                    Math.Clamp(
+                ? item.ValidRange with
+                {
+                    StartSample = Math.Max(0, item.ValidRange.StartSample - cropStart),
+                    EndSample = Math.Clamp(
                         item.ValidRange.EndSample - cropStart,
                         0,
-                        croppedIr.Length))
+                        croppedIr.Length)
+                }
                 : item.ValidRange;
         return (lower, upper,
             Shifted(pair.Lower, lower), Shifted(pair.Upper, upper));

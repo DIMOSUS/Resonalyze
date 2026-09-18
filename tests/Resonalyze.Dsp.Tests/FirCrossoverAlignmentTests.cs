@@ -284,6 +284,59 @@ public sealed class FirCrossoverAlignmentTests
         Assert.False(new FirFilter([0.3, 1.0, 0.3 + 1e-6]).IsSymmetric);
     }
 
+    [Theory]
+    [InlineData(80.0, 4_095)]
+    [InlineData(80.0, 8_191)]
+    [InlineData(150.0, 2_047)]
+    public void TheJunctionSurface_ThroughEachChannelsOwnWindow_ReadsTheWholePreRing(double cornerHz, int taps)
+    {
+        // Field case (v6 FIR session): windows opened a fade before a linear-phase channel's front cut its pre-ring
+        // and moved the score optimum 11 ms. With the pre-ring kept, the surface is the one an early shared window reads.
+        int length = RecordLength(2_880, taps);
+        Complex[] Driver(CrossoverKind kind, double cornerOfDriverHz) =>
+            VirtualCrossoverAnalysis.ApplyChain(
+                Impulse(length, 2_880),
+                new DspChannelChain(Crossover: kind == CrossoverKind.LowPass
+                    ? new CrossoverSpec(kind, LowPassEdge: new CrossoverEdge(
+                        CrossoverFilterFamily.Butterworth, cornerOfDriverHz, 12))
+                    : new CrossoverSpec(kind, HighPassEdge: new CrossoverEdge(
+                        CrossoverFilterFamily.Butterworth, cornerOfDriverHz, 12))),
+                SampleRate,
+                SampleRate)[..length];
+        Complex[] lower = VirtualCrossoverAnalysis.ApplyChain(
+            Driver(CrossoverKind.LowPass, 2.5 * cornerHz),
+            new DspChannelChain(Fir: Design(CrossoverKind.LowPass, cornerHz, cornerHz, taps).Build()),
+            SampleRate, SampleRate, out ValidSampleRange lowerRange);
+        Complex[] upper = VirtualCrossoverAnalysis.ApplyChain(
+            Driver(CrossoverKind.HighPass, 0.7 * cornerHz),
+            new DspChannelChain(
+                DelayMs: 1.0, Fir: Design(CrossoverKind.HighPass, cornerHz, cornerHz, taps).Build()),
+            SampleRate, SampleRate, out ValidSampleRange upperRange);
+        Assert.True(lowerRange.LeadSamples > taps / 3 && upperRange.LeadSamples > taps / 3);
+
+        double periodMs = 1_000.0 / cornerHz;
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> Sweep(int? anchor) =>
+            VirtualCrossoverAnalysis.JunctionLossSweep(
+                upper, lower, SampleRate, cornerHz / 2, cornerHz * 2,
+                -1.5 * periodMs, 1.5 * periodMs, periodMs / 40, invertVariable: false,
+                gateAnchorSample: anchor, levelMatch: true,
+                variableValidRange: upperRange, fixedValidRange: lowerRange);
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> own = Sweep(null);
+        int earliestPeak = Math.Min(
+            VirtualCrossoverAnalysis.FindPeakIndex(lower), VirtualCrossoverAnalysis.FindPeakIndex(upper));
+        // Opened a period ahead of the kernels' pre-ring; the band-sized window still reaches well past both peaks here.
+        List<VirtualCrossoverAnalysis.JunctionSweepPoint> shared = Sweep(
+            earliestPeak - taps / 2 - (int)(SampleRate / cornerHz));
+
+        double worst = own.Zip(shared, (a, b) => Math.Abs(a.LossDb - b.LossDb)).Max();
+        double ownBest = own.MaxBy(point => point.LossDb)!.DelayMs;
+        double sharedBest = shared.MaxBy(point => point.LossDb)!.DelayMs;
+        Assert.True(
+            worst <= 0.1 && Math.Abs(ownBest - sharedBest) <= periodMs / 20,
+            $"own windows best {ownBest:0.00} ms, shared early window {sharedBest:0.00} ms; " +
+            $"surfaces differ by up to {worst:0.00} dB");
+    }
+
     // Stage-2 resolution: a few tenths of a ms at 40 Hz (0.43 ms measured), not pre-ringing.
     private static double Tolerance(double cornerHz) => Math.Max(0.15, 1_000.0 / cornerHz / 48);
 

@@ -52,6 +52,10 @@ array does not have to re-run the chain:
   what the convolution writes after the input's end is filter output, i.e. content. The kernel
   is stated at the processor rate, so both figures are scaled by recordRate / processorRate
   (the tail end is rounded up).
+- `LeadSamples`: the kernel's span from its first non-zero tap to its largest (≈ 0 for a
+  minimum-phase kernel, half the length for a linear-phase one), same scaling. A length, not a
+  position: crops and slides keep it (`with`, never a fresh range). Front-anchored windows open
+  this much earlier (see Window anchors).
 - The measurement's own quiet regions (leading silence, an anechoic tail inside the input) stay
   in the range: they are recorded silence, not padding.
 - A delay that pushes the whole input out of the record yields an unknown range.
@@ -121,6 +125,20 @@ front and its fade-in attenuates one member's rise more than the other's.
   to never be later than the peak (a latched read on a room mode is a late one), so it can only
   move a window earlier than the old peak anchor. The front is floored to a sample: half a
   sample early costs nothing (covered by the fade), half late puts the plateau inside the front.
+  The result then moves earlier by the range's `LeadSamples` (not before the range start), and
+  the windows opened there lengthen by the same amount so their reach past the front is
+  unchanged: the junction alignment gate and the direct-sound cuts (plateau 2T + lead).
+
+  Why: a linear-phase FIR's envelope rises symmetrically into its peak, so its band-limited
+  front lands on the peak (v6 FIR session, 4095 taps at 96 kHz: A's front equal to its peak,
+  B's 0.55 ms ahead) while ~21 ms of pre-ring precedes it. A window opened one fade (13.5 ms)
+  before that cut the pre-ring of each branch — the half that makes a complementary pair sum —
+  and the junction score optimum moved 11 ms (A 2 / B 0 read −0.17 dB where Full and Direct read
+  −0.97 / −0.99; the true B 9 ms read −1.40 against −0.05 / −0.04). "PHAT direct" put its
+  extremum 9.4 ms off the same way. With the lead the score equals that of one shared window
+  opened before both pre-rings, and IIR chains (lead 0) read bit-for-bit as before. The Direct
+  and Full loss windows were never affected: FDW-8 and the steady-state window reach the
+  pre-ring on their own.
 
 ## Magnitude curves and the shared window
 
@@ -405,7 +423,8 @@ together in the noise floor still read as overlap. A confidence read-out, not a 
 ## Direct-sound cuts
 
 `CutDirectSound` zeroes everything outside [front − T/2, front + 2T + T/2] (T = one crossover
-period) with half-period raised-cosine fades, front from `FindGateAnchor`. Two periods reads the
+period) with half-period raised-cosine fades, front from `FindGateAnchor` (a FIR lead moves the
+front earlier and lengthens the plateau by the same amount). Two periods reads the
 drivers: on the archived mid/tweeter junctions the whitened correlation peaks at the drivers'
 timing one period behind the front (r ≈ 0.85 on the reference car); from two-and-some periods
 the cabin's early reflections take the extremum over and carry it whole periods away (−2.5 ms,

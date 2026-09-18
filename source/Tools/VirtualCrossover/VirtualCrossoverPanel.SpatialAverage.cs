@@ -182,22 +182,6 @@ public partial class VirtualCrossoverPanel
         }
     }
 
-    /// <summary>Δ L−R level source in hybrid mode (spatial averages through chains), or null for point levels.</summary>
-    /// <remarks>Follows hybrid intent, not the current view, so the basis does not flip on a view glance. See docs/tech/spatial-average.md#level-read-outs.</remarks>
-    private Func<VirtualCrossoverChannel, double, double, double?>?
-        HybridStereoLevelReader() =>
-        checkBoxHybrid.Checked && hybridAvailable &&
-        hybridReader.CanDrawOppositeSum(!session.Project.ActiveSideRight)
-            ? hybridReader.StereoLevelDeltaDb
-            : null;
-
-    /// <summary>"vs Front" level source in hybrid mode, or null for point levels. Active side only, so the set offset cancels.</summary>
-    private Func<IReadOnlyList<ProcessedChannel>, IReadOnlyList<ProcessedChannel>,
-        double, double, double?>? HybridGroupLevelReader() =>
-        checkBoxHybrid.Checked && hybridAvailable
-            ? hybridReader.GroupLevelDeltaDb
-            : null;
-
     // Cached set verdict; the toggle is muted by hand, so its Enabled state cannot stand in for this.
     private bool hybridAvailable;
 

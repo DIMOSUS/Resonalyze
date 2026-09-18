@@ -101,6 +101,10 @@ internal sealed class VirtualCrossoverSession
     /// <summary>Ceiling for automatic delay proposals; manual delay fields keep a wider range on purpose.</summary>
     public double ProcessorMaxDelayMs => ProcessorProfile.MaxDelayMs;
 
+    /// <summary>The block with this letter; null once the blocks moved under whatever named it.</summary>
+    public VirtualCrossoverChannel? Block(string name) =>
+        Channels.FirstOrDefault(channel => string.Equals(channel.Name, name, StringComparison.Ordinal));
+
     /// <summary>Every side a block exposes: both of a stereo pair, the left alone of a mono one.</summary>
     public IEnumerable<(VirtualCrossoverChannel Channel, bool RightSide)> Sides()
     {

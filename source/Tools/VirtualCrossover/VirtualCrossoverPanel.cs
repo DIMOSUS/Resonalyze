@@ -30,6 +30,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private readonly VirtualCrossoverHybrid hybridReader;
     private readonly VirtualCrossoverWarnings warnings;
     private readonly AcousticViewBuilder viewBuilder;
+    private readonly AgentSessionReader agentReader;
     private readonly VirtualCrossoverSideLock sideLock = new();
 
     private readonly EqWizardImportExportCoordinator peqExport = new();
@@ -101,6 +102,7 @@ public partial class VirtualCrossoverPanel : UserControl
             () => session.MagnitudeGate,
             oppositeSide: false,
             channel => session.Calibration.For(channel));
+        agentReader = new AgentSessionReader(session, processingCoordinator, metrics, hybridReader);
         acousticPlot = new VirtualCrossoverAcousticPlot(
             mainPlotView, AcousticViewBuilder.NoSourcesHint, CurrentAcousticView());
         dspChainPlot = new VirtualCrossoverDspChainPlot(dspPlotView, CurrentDspPlotMode());
@@ -2951,12 +2953,12 @@ public partial class VirtualCrossoverPanel : UserControl
                 revision,
                 includePair: pair =>
                     VirtualCrossoverGroupViews.IsShown(groupView, pair.Zone),
-                hybridLevelDeltaDb: HybridStereoLevelReader());
+                hybridLevelDeltaDb: hybridReader.StereoLevelReader(HybridRequested));
         // Quoted by cross-group views instead of a loss; adds only arrival FFTs.
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas =
             await metrics.ComputeGroupDeltasAsync(
                 frame.Shown, groupView, revision,
-                hybridGroupLevelDeltaDb: HybridGroupLevelReader());
+                hybridGroupLevelDeltaDb: hybridReader.GroupLevelReader(HybridRequested));
         // The curve windows through the OPPOSITE side's gate placement; both sides must be drawn by the same method.
         VirtualCrossoverSideSum? oppositeSide = null;
         if (view.ShowSum && view.View is AcousticView.Magnitude or AcousticView.Step)
@@ -3927,7 +3929,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 // Discount frequencies the measurement's coherence did not trust.
                 IReadOnlyList<double>? coherence =
                     channel.TransferCoherence is { Length: > 1 } linear
-                        ? CoherencePerPoint(linear, curve.Points, channel.SampleRate)
+                        ? CoherenceCurves.PerPoint(linear, curve.Points, channel.SampleRate)
                         : null;
                 IReadOnlyList<SignalPoint>? distortion = channel.DistortionCurve;
 
@@ -4055,37 +4057,6 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         return result;
-    }
-
-    // γ² on a linear grid (bin k -> k·rate/(2·(len−1))) averaged per 1/3-octave point to match the wizard's magnitude curve.
-    private static IReadOnlyList<double> CoherencePerPoint(
-        double[] coherence,
-        IReadOnlyList<SignalPoint> points,
-        int sampleRate)
-    {
-        int fftLength = 2 * (coherence.Length - 1);
-        double lowFactor = Math.Pow(2.0, -1.0 / 6.0);
-        double highFactor = Math.Pow(2.0, 1.0 / 6.0);
-        var values = new double[points.Count];
-        for (int i = 0; i < points.Count; i++)
-        {
-            double frequency = points[i].X;
-            int lo = Math.Max(0, (int)Math.Floor(frequency * lowFactor * fftLength / sampleRate));
-            int hi = Math.Min(
-                coherence.Length - 1,
-                (int)Math.Ceiling(frequency * highFactor * fftLength / sampleRate));
-            double sum = 0;
-            int count = 0;
-            for (int bin = lo; bin <= hi; bin++)
-            {
-                sum += coherence[bin];
-                count++;
-            }
-
-            values[i] = count > 0 ? sum / count : 1.0;
-        }
-
-        return values;
     }
 
     private void ExportSession()

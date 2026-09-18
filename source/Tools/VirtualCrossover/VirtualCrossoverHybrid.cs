@@ -146,6 +146,20 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
                 "offset cannot level them both. " + verdict.Reason);
     }
 
+    /// <summary>The Δ L−R level source while the hybrid is requested and both sides' captures form one set, else null for
+    /// point levels. Follows hybrid intent, not the current view, so the basis does not flip on a view glance.
+    /// See docs/tech/spatial-average.md#level-read-outs.</summary>
+    public Func<VirtualCrossoverChannel, double, double, double?>? StereoLevelReader(bool hybridRequested) =>
+        hybridRequested && CanDrawOppositeSum(!session.ActiveSideRight)
+            ? StereoLevelDeltaDb
+            : null;
+
+    /// <summary>The "vs Front" level source while the hybrid is requested, else null for point levels. Active side only, so
+    /// the set offset cancels.</summary>
+    public Func<IReadOnlyList<ProcessedChannel>, IReadOnlyList<ProcessedChannel>, double, double, double?>?
+        GroupLevelReader(bool hybridRequested) =>
+        hybridRequested ? GroupLevelDeltaDb : null;
+
     /// <summary>Δ L−R level of one block off the spatial averages through the chains; null when a side has no capture or the
     /// captures do not overlap the band, and the read-out then falls back to point levels.</summary>
     public double? StereoLevelDeltaDb(

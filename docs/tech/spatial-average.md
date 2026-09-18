@@ -21,9 +21,9 @@ Where the code lives:
 | Hybrid arithmetic (shared with the EQ Wizard) | `SpatialAverageHybrid` (`source/LiveSpectrum/SpatialAverageHybrid.cs`) |
 | Calibration modes | `SpatialAverageCalibration`, `SpatialAverageCalibrationMode` |
 | Datum and median rule | `SpatialAverageOffsets` (`source/Tools/VirtualCrossover/`) |
-| Panel integration | `VirtualCrossoverPanel.SpatialAverage.cs` (`HybridMagnitudes`, `SetDatum`) |
+| Hybrid view | `VirtualCrossoverHybrid` (`HybridMagnitudes`, `SetDatum`); the MMM button and the toggle in `VirtualCrossoverPanel.SpatialAverage.cs` |
 | Audition correction | `SpatialAverageAudition` |
-| Audition flow and dialog | `VirtualCrossoverPanel.Audition.cs`, `VirtualCrossoverAuditionDialog` |
+| Audition flow and dialog | `VirtualCrossoverAudition`, `VirtualCrossoverAuditionDialog` |
 
 The stored capture format itself is described in [live-spectrum.md](live-spectrum.md#capture-document).
 
@@ -46,7 +46,7 @@ set that can never disagree with itself and a diagnostic that is identically zer
 
 ## Mode selection
 
-The project's method (`VirtualCrossoverPanel.SpatialAverageMode`) is the stored choice, or a fallback
+The project's method (`VirtualCrossoverSession.SpatialAverageMode`) is the stored choice, or a fallback
 (array if any channel carries an array capture, else moving mic). `SettleSpatialAverageMode` stores
 the fallback **once**, the first time there is anything to guess from, and from then on the mode is
 the project's own.
@@ -78,7 +78,7 @@ by path, so only moving-microphone captures can go missing.
 ## Coverage and set verdict
 
 The hybrid toggle is offered only when the playing channels (enabled, with a measurement) form a
-valid set (`JudgeSideSpatialAverages`). Coverage alone is not enough: seven captures taken at three
+valid set (`VirtualCrossoverHybrid.JudgeSide`). Coverage alone is not enough: seven captures taken at three
 frame lengths and two scales cover every channel while putting curves compensated by different
 amounts under one offset that fits none of them. The spread warning is a heuristic backstop reading a
 median over the working band; the **recipe** is the fact and decides.
@@ -113,7 +113,7 @@ case.
 levelling sides separately would erase the L/R difference it exists to show. Judging each side on its
 own leaves that borrowing unchecked (two relative capture runs are each self-consistent but say
 nothing about each other; a gain change between them would draw as an L/R imbalance), so
-`CanDrawOppositeHybridSum` / `JudgeSidesShareAnOffset` judge the union of both sides as one set. The
+`CanDrawOppositeSum` / `JudgeSidesShareAnOffset` judge the union of both sides as one set. The
 Δ L−R read-out and the audition render use the same check.
 
 ## Set offset and spread
@@ -138,8 +138,8 @@ the same amount in every channel.
   the right driver; a packed list shifted names onto the wrong drivers when one channel had nothing to
   say.
 
-**Read on the raw pair.** `ResolveRawHybridOffsetsDb` reads each datum on the capture with no chain
-against the channel's *bypass* response, built on canonical terms (`BuildCanonicalRawCurve`: own
+**Read on the raw pair.** `VirtualCrossoverHybrid.ResolveRawOffsetsDb` reads each datum on the capture with no chain
+against the channel's *bypass* response, built on canonical terms (`MagnitudeGateSnapshot.CanonicalRaw`: own
 onset, fixed steady-state window, no calibration, no display smoothing). Reading it on the processed
 curves did not cancel the DSP: the impulse response is filtered then gated while the capture is
 filtered analytically (a gate does not commute with a filter), and the median band is set by the
@@ -201,13 +201,13 @@ capture always looks like), so "as measured" collapsed into "uncalibrated".
   equality compares the curve by reference, and a calibration re-read from its file would spuriously
   refuse a returning tune.
 
-In the panel, `SpatialAverageCalibrationFor` returns *Own* under "Own (as measured)" (the capture's own
+In Virtual DSP, `VirtualCrossoverCalibrationPolicy.SpatialAverageFor` returns *Own* under "Own (as measured)" (the capture's own
 correction, not the side's measurement file) and otherwise *Specific* with the panel's curve; for a
 single-file capture that swap is exact.
 
 ## Hybrid sum
 
-`BuildHybridSumCurve` sums the channels as **phasors**: each channel's gated spectrum is rescaled bin by
+`VirtualCrossoverHybrid.Sum` sums the channels as **phasors**: each channel's gated spectrum is rescaled bin by
 bin to its spatial-average level (`DataHelper.GetGatedSubstitutedMagnitudeSum`) and the phasors added.
 A spatial average carries no phase, so the phase must come from the impulse response.
 
@@ -231,20 +231,20 @@ neighbours' means (`SmoothBandLevels` passes NaN through and excludes it).
 
 **Dropout mask.** `MaskMissingContributors` breaks the sum where a channel has no capture while its
 impulse response says it is still playing. A missing capture is ignored only more than
-`HybridDropoutFloorDb` = 25 dB below the loudest channel at that frequency, where its own crossover
+`DropoutFloorDb` = 25 dB below the loudest channel at that frequency, where its own crossover
 has removed it. Captures normally stop below the protective high-pass, far under the crossover, so the
 floor is rarely reached; when it is, a break is honest, while continuing would sum one set of sources
 and present it as the whole.
 
-`BuildHybridMagnitudes` is all-or-nothing per redraw for a moving-microphone set: a channel failing to
+`VirtualCrossoverHybrid.Build` is all-or-nothing per redraw for a moving-microphone set: a channel failing to
 yield a curve would sum a spatial average against a point measurement. In an array set such a channel
 falls back to its point response and is flagged in `PointMeasuredChannels`. For efficiency each channel is built unsmoothed once and
 smoothed locally, since the shared builder's last step is that same smoothing.
 
 ## Level read-outs
 
-In hybrid mode the Δ L−R read-out (`HybridStereoLevelReader`) and the "vs Front" rows
-(`HybridGroupLevelReader`) read levels from the spatial averages through their chains. Both follow
+In hybrid mode the Δ L−R read-out (`VirtualCrossoverHybrid.StereoLevelReader`) and the "vs Front" rows
+(`GroupLevelReader`) read levels from the spatial averages through their chains. Both follow
 the hybrid **intent plus coverage** (the tick and the set verdict), not the current Show view: a level that
 changed basis when the user glanced at the phase view would read as two imbalances in one tune.
 
@@ -258,10 +258,10 @@ changed basis when the user glanced at the phase view would read as two imbalanc
 - **Band level** (`SpatialAverageHybrid.BandLevelDeltaDb`) is the mean of point powers over indices
   finite on both curves, converted to dB once — the energy-mean rule of
   `VirtualCrossoverAnalysis.MeasureBandLevelDb`, which tracks loudness and shrugs off narrow dips.
-  Both curves are built on one log grid (`HybridLevelGrid`, finer than the captures' ~1/48 octave);
+  Both curves are built on one log grid (`LevelGrid`, finer than the captures' ~1/48 octave);
   uniform weights on a log grid reproduce the impulse-response band level's 1/f weighting. Pairing
   points means a gap on either side removes that frequency from both.
-- **Power sum.** Each member's curve carries its expected band (`HybridGroupMemberBand`). Outside it a
+- **Power sum.** Each member's curve carries its expected band (`GroupMemberBand`). Outside it a
   NaN is absence (the crossover removed the driver); inside it the capture has nothing to say about a
   playing driver and the group point becomes a gap, since summing the rest would quote part of the
   group as all of it. A finite value counts wherever it sits (a skirt is a real contribution). A
@@ -335,7 +335,7 @@ the same honest limit as the hybrid sum.
 
 ## Audition render
 
-The "Audition track" command (`VirtualCrossoverPanel.Audition.cs`) produces a headphone-only stereo
+The "Audition track" command (`VirtualCrossoverAudition`) produces a headphone-only stereo
 auralization of the measured left and right paths at the microphone position (drivers, cabin and
 capsule included; not a binaural simulation, and played through the car it would convolve the car
 twice).
@@ -351,7 +351,7 @@ twice).
   before borrowing so a borrowed ear does not enter the spatial-average set twice.
 - The corrected pair is built eagerly (UI-thread snapshot, worker compute) so the dialog can say what
   it would do before the user renders. Both ears are judged as one set
-  (`JudgeAuditionSpatialAverages`), because per-side levelling would put an L/R imbalance into the
+  (`JudgeSpatialAverages`), because per-side levelling would put an L/R imbalance into the
   track. A coherent set that still yields nothing is reported as a measurement mismatch, not as a
   missing file.
 

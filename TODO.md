@@ -19,9 +19,9 @@ handoff). Everything else was re-checked against the code and stands.
 
 What HAD drifted is the figures, and they are corrected in place. TWO of the
 three structural items nearly doubled while they sat still, which raises the
-price of the split rather than lowering it: `VirtualCrossoverPanel.cs` is 7061
-lines against the ~3900 last recorded — larger than it was BEFORE its
-decomposition — and `PlotModelFactoryTests` 2560 against ~1035. The third moved
+price of the split rather than lowering it: `VirtualCrossoverPanel.cs` was 7061
+lines against the ~3900 last recorded (split since; see its item below) and
+`PlotModelFactoryTests` 2560 against ~1035. The third moved
 far less: the `Overlay` CLASS is 2541 lines against ~2230. This audit first gave
 it 3219, which is the FILE, `OverlayCollection` and two small types included —
 measure the class when the item is about splitting a class, and say which when
@@ -265,21 +265,17 @@ next field session rather than in a register nobody else can tick.
   (`TimeAlignmentPanelController`) recomputes Hilbert + GCC-PHAT on every tab
   show even when inputs are unchanged. Needs a live-app check to avoid stale
   display.
-- [ ] **`VirtualCrossoverPanel` decomposition — residual boundaries.** The bulk
-  is done: the UI-free runtime session model (`VirtualCrossoverChannel`/`State`),
-  the source-loading pipeline (`ResolvedVirtualDspSource` + `TryAssignSource`),
-  both OxyPlot presenters (`VirtualCrossoverAcousticPlot` / `DspChainPlot`), the
-  metric computation (`VirtualCrossoverMetrics` + shared `ProcessedChannels`) and
-  the shared Auto delay `AlignmentReprocessor` are extracted; the panel dropped
-  ~4250 → ~3060 lines, and everything since has grown it to **7061** — Auto delay
-  (#43–#50), then the spatial-average attachment and the hybrid view (#124, #130),
-  the calibration selector (#112, #135) and the audition (#139). It is bigger now
-  than it was BEFORE the decomposition, so the boundaries below are worth more
-  than they have ever been. Remaining, lower-value slices: a full source
-  resolver/assignment
-  boundary (the panel still orchestrates the file/History/
-  restore flow around the shared core), splitting `VirtualCrossoverMetrics` into
-  curve building vs side-processing orchestration, and moving `ProcessedChannel`'s
+- [ ] **Virtual DSP — residual boundaries.** The tune lives in a UI-free
+  `VirtualCrossoverSession` and whatever reads it takes the session
+  (docs/tech/virtual-dsp-panel.md#code-map); the panel is binding code in
+  partials named for what they bind, the largest the Agent Bridge's import flow
+  (~1000 lines) and the blocks (~600). Remaining, lower-value slices: the EQ
+  Wizard handoff request (`BuildPeqHandoffRequest`, `CapturePhaseContext`,
+  `HandoffSpatialAverage`) still reads the last render and the target level off
+  the panel, so the AI import's Auto-tune runs in the panel too; a full source
+  resolver/assignment boundary (the panel still orchestrates the file/History/
+  restore flow around the shared core); splitting `VirtualCrossoverMetrics` into
+  curve building vs side-processing orchestration; and moving `ProcessedChannel`'s
   `OxyColor` out into the render binding. Persistence, calibration and control
   binding are inherently UI-bound — leave them.
 - [ ] **The audition's "Own (as measured)" refuses more than the render needs.**

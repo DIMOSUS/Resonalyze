@@ -29,6 +29,12 @@ internal sealed class VirtualCrossoverChannel : IVirtualCrossoverAlignmentChanne
     public VirtualCrossoverChannelSettings SideSettings(bool rightSide) =>
         Pair.SideFor(rightSide);
 
+    /// <summary>"A L", "A R", or "A (mono)" for a block with one side.</summary>
+    public string SideLabel(bool rightSide) =>
+        Pair.Mono
+            ? $"{Name} (mono)"
+            : $"{Name} {(rightSide ? "R" : "L")}";
+
     // Clear() bumps SourceRevision, so an in-flight load for a removed channel can no longer land.
     public void Invalidate()
     {

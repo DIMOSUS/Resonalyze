@@ -188,8 +188,7 @@ public partial class VirtualCrossoverPanel
                         review.Verdicts.Count, summary, progress);
                 });
 
-            ScheduleSave();
-            RedrawAll();
+            SaveAndRedraw();
             MessageBox.Show(
                 FindForm(),
                 string.Join(Environment.NewLine, summary) + Environment.NewLine +
@@ -227,18 +226,18 @@ public partial class VirtualCrossoverPanel
     {
         bool ran = false;
         // One target level for every fit of this import: the stated one (the review made them agree), else the project's.
-        double importTargetLevelDb = ImportTargetLevelDb(toApply, (double)numericTargetLevel.Value);
+        double importTargetLevelDb = AgentEngineRequests.TargetLevelDb(toApply, (double)numericTargetLevel.Value);
         EqAutoTunePolicy policy = AutoTunePolicyProvider?.Invoke() ?? EqAutoTunePolicy.Default;
         // Iterate verdicts: the snapshot's settings object still names the channel after the crossover wizard re-letters blocks.
         foreach (AgentOperationVerdict verdict in toApply
             .Where(verdict => verdict.Applicable)
             .Where(verdict => verdict.Operation is not AgentSettingsOperation)
-            .OrderBy(verdict => AgentEngineOrder(verdict.Operation!)))
+            .OrderBy(verdict => AgentEngineRequests.Order(verdict.Operation!)))
         {
             AgentOperation operation = verdict.Operation!;
             if (operation is not ProbeOperation)
             {
-                progress?.Report(AgentStepText(operation, verdict));
+                progress?.Report(AgentEngineRequests.StepText(operation, verdict));
             }
 
             switch (operation)
@@ -288,28 +287,6 @@ public partial class VirtualCrossoverPanel
         return ran;
     }
 
-    private static string AgentStepText(AgentOperation operation, AgentOperationVerdict verdict) =>
-        operation switch
-        {
-            UseSpatialAverageOperation spatial => $"Spatial average: {spatial.Mode}…",
-            RunAutoCrossoverOperation => "Auto crossover: the wizard is opening…",
-            TuneJunctionOperation junction =>
-                $"Junction tune {verdict.ChannelLabel}: searching the crossover…",
-            RunAutoDelayOperation => "Auto delay: searching delays and polarities…",
-            AutoTunePeqOperation => $"Auto-tune {verdict.ChannelLabel}: fitting the bank…",
-            _ => $"{operation.Parameter}…"
-        };
-
-    private static int AgentEngineOrder(AgentOperation operation) => operation switch
-    {
-        UseSpatialAverageOperation => 0,
-        RunAutoCrossoverOperation => 1,
-        // After the wizard, before Auto delay, which realigns whatever the crossover became.
-        TuneJunctionOperation => 2,
-        RunAutoDelayOperation => 3,
-        _ => 4
-    };
-
     // Mode and tick together: either alone leaves the point measurement in charge. Project events are suppressed so the import saves and redraws once.
     private bool ApplyAgentSpatialAverage(UseSpatialAverageOperation operation)
     {
@@ -338,16 +315,6 @@ public partial class VirtualCrossoverPanel
         return true;
     }
 
-    /// <summary>Request inputs: stated values, dialog defaults for the rest. UI-free so the rule can be pinned.</summary>
-    internal static AutoDelayRunRequest BuildAutoDelayRequest(
-        RunAutoDelayOperation operation, AgentAutoDelaySettings defaults) =>
-        new(
-            operation.SceneOffsetMs ?? defaults.SceneOffsetMs,
-            operation.RightHandDrive ?? defaults.RightHandDrive,
-            operation.AdjustGains ?? defaults.AdjustGains,
-            operation.NearSideCutDb ?? defaults.NearSideCutDb,
-            operation.RearFillOffsetMs ?? defaults.RearFillOffsetMs);
-
     // Auto delay without its dialog: the button's checks (headless), the dialog's compute and its Apply commit.
     // The panel is disabled during compute: the dialog's modality is what kept the chain still.
     private async Task<bool> RunAgentAutoDelayAsync(
@@ -361,7 +328,7 @@ public partial class VirtualCrossoverPanel
             return false;
         }
 
-        AutoDelayRunRequest request = BuildAutoDelayRequest(operation, agentReader.AutoDelayDefaults());
+        AutoDelayRunRequest request = AgentEngineRequests.AutoDelayRequest(operation, agentReader.AutoDelayDefaults());
         AutoDelayRunResult result;
         bool wasEnabled = Enabled;
         Enabled = false;
@@ -600,23 +567,11 @@ public partial class VirtualCrossoverPanel
             ApplySettingsToControl(plan.Upper);
             // Remember the result as it stands: read as a difference, a hidden side already holding the new edge would look untouched and get the shown side's whole crossover.
             sideLock.Remember(session.Channels.Select(channel => channel.Pair));
-            ScheduleSave();
-            RedrawAll();
+            SaveAndRedraw();
         }
         AgentJunctionTune.Describe(summary, plan, result);
         return result.Changed;
     }
-
-    /// <summary>The target level every Auto-tune of one import fits to: the first stated level, else the project's. UI-free so it can be pinned.</summary>
-    internal static double ImportTargetLevelDb(
-        IReadOnlyList<AgentOperationVerdict> toApply, double currentTargetLevelDb) =>
-        toApply
-            .Where(verdict => verdict.Status != AgentVerdictStatus.Rejected)
-            .Select(verdict => verdict.Operation)
-            .OfType<AutoTunePeqOperation>()
-            .Select(tune => tune.TargetLevelDb)
-            .FirstOrDefault(level => level != null)
-            ?? currentTargetLevelDb;
 
     private async Task<bool> RunAgentAutoTuneAsync(
         AutoTunePeqOperation operation,
@@ -849,8 +804,7 @@ public partial class VirtualCrossoverPanel
         RefreshHybridAvailability();
         // Remember the restored state as it stands: a difference could carry a side where it never was (L=A,R=B; import wrote L=B; undo restores L=A and would carry A onto R).
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     // Auto crossover can reorder blocks; restored by identity, since the list holds the same objects.

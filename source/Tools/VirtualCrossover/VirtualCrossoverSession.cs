@@ -130,6 +130,30 @@ internal sealed class VirtualCrossoverSession
             !string.IsNullOrWhiteSpace(side.Channel.SideSettings(side.RightSide).SourceFilePath) &&
             side.Channel.SideState(side.RightSide).TransferImpulseResponse == null);
 
+    /// <summary>Brings a bound project's sources back. BOTH slots of EVERY block are wiped before any side resolves: the rate
+    /// guard votes over the resolved sides. See docs/tech/virtual-dsp-panel.md#project-restore-order.</summary>
+    public async Task RestoreSourcesAsync(
+        Func<VirtualCrossoverChannel, bool, Task> resolveSide,
+        Action<VirtualCrossoverChannel> channelRestored)
+    {
+        foreach (VirtualCrossoverChannel channel in Channels)
+        {
+            channel.PhysicalSideState(false).Clear();
+            channel.PhysicalSideState(true).Clear();
+        }
+
+        foreach (VirtualCrossoverChannel channel in Channels)
+        {
+            await resolveSide(channel, false);
+            if (!channel.Pair.Mono)
+            {
+                await resolveSide(channel, true);
+            }
+
+            channelRestored(channel);
+        }
+    }
+
     /// <summary>The stored path, else beside the project, else beside the relinked folder; null when none exists.</summary>
     public string? Locate(string? storedPath, string? relativePath) =>
         VirtualCrossoverSourceLocator.Locate(storedPath, relativePath, Project.ProjectDirectory)

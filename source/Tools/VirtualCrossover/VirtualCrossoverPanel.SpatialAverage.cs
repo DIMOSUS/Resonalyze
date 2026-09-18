@@ -240,5 +240,4 @@ public partial class VirtualCrossoverPanel
                     "small in the bass, largest at a crossover high up.");
     }
 
-
 }

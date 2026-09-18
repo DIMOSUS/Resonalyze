@@ -24,9 +24,7 @@ internal sealed class VirtualCrossoverSideAlignmentChannel : IVirtualCrossoverAl
     public VirtualCrossoverChannelSettings Settings =>
         Runtime.SideSettings(RightSide);
     public VirtualCrossoverChannelState State => Runtime.SideState(RightSide);
-    public string Name => Runtime.Pair.Mono
-        ? $"{Runtime.Name} (mono)"
-        : $"{Runtime.Name} {(RightSide ? "R" : "L")}";
+    public string Name => Runtime.SideLabel(RightSide);
     public int SampleRate => State.SampleRate;
 
     public int ProcessorSampleRate =>

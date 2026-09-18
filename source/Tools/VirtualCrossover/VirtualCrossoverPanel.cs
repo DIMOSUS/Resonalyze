@@ -20,7 +20,6 @@ public partial class VirtualCrossoverPanel : UserControl
     private const int MaxChannelCount = VirtualCrossoverProjectFile.MaximumChannelCount;
     private const int DefaultChannelCount = 3;
 
-
     private readonly System.Windows.Forms.Timer saveTimer = new()
     {
         Interval = SaveDebounceMilliseconds
@@ -31,6 +30,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private readonly VirtualCrossoverWarnings warnings;
     private readonly AcousticViewBuilder viewBuilder;
     private readonly AgentSessionReader agentReader;
+    private readonly VirtualCrossoverAudition audition;
     private readonly VirtualCrossoverSideLock sideLock = new();
 
     private readonly EqWizardImportExportCoordinator peqExport = new();
@@ -103,6 +103,7 @@ public partial class VirtualCrossoverPanel : UserControl
             oppositeSide: false,
             channel => session.Calibration.For(channel));
         agentReader = new AgentSessionReader(session, processingCoordinator, metrics, hybridReader);
+        audition = new VirtualCrossoverAudition(session, processingCoordinator, metrics, hybridReader);
         acousticPlot = new VirtualCrossoverAcousticPlot(
             mainPlotView, AcousticViewBuilder.NoSourcesHint, CurrentAcousticView());
         dspChainPlot = new VirtualCrossoverDspChainPlot(dspPlotView, CurrentDspPlotMode());
@@ -293,7 +294,6 @@ public partial class VirtualCrossoverPanel : UserControl
             MessageBoxIcon.Information);
     }
 
-
     // Re-resolving sources takes seconds. The whole tree is disabled because a load rebuilds the blocks.
     private void SetProjectLoading(bool loading)
     {
@@ -414,16 +414,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
         BindCalibrationSelection(imported, previousCalibrationId, previousSession);
 
-        await RestoreProjectSourcesAsync(
-            session.Channels,
-            channel => channel.Pair.Mono,
-            channel =>
-            {
-                channel.PhysicalSideState(false).Clear();
-                channel.PhysicalSideState(true).Clear();
-            },
-            (channel, rightSide) =>
-                ResolveSourceAsync(channel, rightSide, showErrors: false),
+        await session.RestoreSourcesAsync(
+            (channel, rightSide) => ResolveSourceAsync(channel, rightSide, showErrors: false),
             UpdateSourceButton);
 
         // After sources (an array brings one): settle the averaging method once and redraw the buttons drawn earlier.
@@ -443,34 +435,11 @@ public partial class VirtualCrossoverPanel : UserControl
         RefreshProcessorRowAvailability();
     }
 
-    // Wipe BOTH slots of EVERY channel before any source resolves: TryAssignSource's rate guard votes over
-    // the resolved sides. See docs/tech/virtual-dsp-panel.md#project-restore-order.
-    internal static async Task RestoreProjectSourcesAsync<TChannel>(
-        IReadOnlyList<TChannel> channels,
-        Func<TChannel, bool> isMono,
-        Action<TChannel> clearBothSlots,
-        Func<TChannel, bool, Task> resolveSide,
-        Action<TChannel> channelRestored)
+    // The door every edit of the tune leaves by.
+    private void SaveAndRedraw()
     {
-        foreach (TChannel channel in channels)
-        {
-            clearBothSlots(channel);
-        }
-
-        foreach (TChannel channel in channels)
-        {
-            foreach (bool rightSide in new[] { false, true })
-            {
-                if (isMono(channel) && rightSide)
-                {
-                    continue;
-                }
-
-                await resolveSide(channel, rightSide);
-            }
-
-            channelRestored(channel);
-        }
+        ScheduleSave();
+        RedrawAll();
     }
 
     private void ScheduleSave()
@@ -659,8 +628,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         PersistCalibrationSelection();
         ResolveCalibration();
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     private void WirePanelEvents()
@@ -775,8 +743,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         UpdateSideRadioTexts();
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     // The source is never copied (each side has its own measurement); mono pairs are not offered.
@@ -813,18 +780,14 @@ public partial class VirtualCrossoverPanel : UserControl
         foreach (int index in dialog.SelectedIndices)
         {
             VirtualCrossoverChannel channel = candidates[index];
-            CopyChainSettings(
-                channel.SideSettings(fromRight),
-                channel.SideSettings(!fromRight),
-                scope);
+            scope.Copy(channel.SideSettings(fromRight), channel.SideSettings(!fromRight));
             if (targetSideShown)
             {
                 ApplySettingsToControl(channel);
             }
         }
 
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     // Engaging copies nothing; see docs/tech/virtual-dsp-panel.md#side-lock. On by default, not stored.
@@ -837,82 +800,6 @@ public partial class VirtualCrossoverPanel : UserControl
         else
         {
             sideLock.Release();
-        }
-    }
-
-    // Defaults tick crossover and PEQ (driver shape); gain, delay, polarity and all-pass are opt-in because
-    // they align against one side's geometry. See docs/tech/virtual-dsp-panel.md#copying-between-sides.
-    private static void CopyChainSettings(
-        VirtualCrossoverChannelSettings from,
-        VirtualCrossoverChannelSettings to,
-        VirtualCrossoverCopyScope scope)
-    {
-        if (scope.Gain)
-        {
-            to.GainDb = from.GainDb;
-        }
-
-        if (scope.Delay)
-        {
-            to.DelayMs = from.DelayMs;
-        }
-
-        if (scope.InvertPolarity)
-        {
-            to.InvertPolarity = from.InvertPolarity;
-        }
-
-        if (scope.Crossover)
-        {
-            to.CrossoverKind = from.CrossoverKind;
-            to.HighPassEdge = from.HighPassEdge;
-            to.LowPassEdge = from.LowPassEdge;
-        }
-
-        // A timing decision like the delay, so its own tick; copied as the number, the reference follows the target's crossover.
-        if (scope.Phase)
-        {
-            to.PhaseRotationDegrees = from.PhaseRotationDegrees;
-        }
-
-        // Immutable kernel, shared by reference.
-        if (scope.Fir)
-        {
-            to.Fir = from.Fir;
-            to.FirSourceName = from.FirSourceName;
-            to.FirDesign = from.FirDesign;
-        }
-
-        // All-pass filters live in the PEQ bank; Peq and AllPass split that one list by band type.
-        if (scope.Peq || scope.AllPass)
-        {
-            List<PeqBand> tonal = (scope.Peq ? from : to)
-                .PeqBands.Where(band => !band.Type.IsAllPass()).ToList();
-            List<PeqBand> allPass = (scope.AllPass ? from : to)
-                .PeqBands.Where(band => band.Type.IsAllPass()).ToList();
-            // Over the slot budget the COPIED kind gives way (an unticked scope promised the target's bands stay);
-            // with both copied the all-pass stays.
-            int overflow =
-                tonal.Count + allPass.Count - EqualizationCurve.MaxBandCount;
-            if (overflow > 0)
-            {
-                if (scope.Peq)
-                {
-                    tonal = tonal.Take(Math.Max(0, tonal.Count - overflow)).ToList();
-                }
-                else
-                {
-                    allPass = allPass.Take(Math.Max(0, allPass.Count - overflow)).ToList();
-                }
-            }
-
-            to.PeqBands = tonal.Concat(allPass).ToList();
-        }
-
-        if (scope.Peq)
-        {
-            to.PeqPreampDb = from.PeqPreampDb;
-            to.PeqSourceName = from.PeqSourceName;
         }
     }
 
@@ -979,8 +866,7 @@ public partial class VirtualCrossoverPanel : UserControl
         var order = Enumerable.Range(0, session.Channels.Count).ToList();
         (order[at], order[to]) = (order[to], order[at]);
         ApplyChannelOrder(order);
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     /// <summary><c>order[newIndex]</c> is the block's current position.</summary>
@@ -1075,8 +961,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         RefreshProcessorRowAvailability();
 
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
         var notices = new List<string>();
         if (clearedRotations > 0)
         {
@@ -1167,8 +1052,7 @@ public partial class VirtualCrossoverPanel : UserControl
         added.ActiveRight = session.Project.ActiveSideRight;
         ApplySettingsToControl(added);
 
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     private void RemoveChannel()
@@ -1185,8 +1069,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 session.Channels.Count, session.Project.Pairs.Count - session.Channels.Count);
         }
 
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     /// <summary>Resets to first-run defaults by binding a fresh project (one definition of "default").</summary>
@@ -1306,8 +1189,7 @@ public partial class VirtualCrossoverPanel : UserControl
             UpdateSideRadioTexts();
         }
 
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     // Guarded async void: called from a synchronous handler.
@@ -1438,8 +1320,7 @@ public partial class VirtualCrossoverPanel : UserControl
             ? value
             : 12);
         session.Project.GroupView = SelectedGroupView;
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     private void ApplySettingsToControl(VirtualCrossoverChannel channel)
@@ -1586,7 +1467,7 @@ public partial class VirtualCrossoverPanel : UserControl
             settings.HistoryEntryId is { } id && HistoryService?.FindById(id) != null
                 ? id
                 : null;
-        return (entryId, LocateSource(settings));
+        return (entryId, session.Locate(settings.SourceFilePath, settings.SourceRelativePath));
     }
 
     private void PopulateHistoryMenu(ToolStripMenuItem historyItem, VirtualCrossoverChannel channel)
@@ -1629,7 +1510,7 @@ public partial class VirtualCrossoverPanel : UserControl
             Filter = "Resonalyze impulse response (*.json)|*.json|All files (*.*)|*.*",
             Multiselect = false,
             RestoreDirectory = true,
-            Title = $"Choose channel {SideLabel(channel, rightSide)} impulse response"
+            Title = $"Choose channel {channel.SideLabel(rightSide)} impulse response"
         };
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
@@ -1748,7 +1629,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         // One sample rate per project: mixed rates are refused, checked against every resolved side.
         List<(VirtualCrossoverChannel Channel, bool RightSide, VirtualCrossoverChannelState State)> others =
-            ResolvedSidesExcept(targetState).ToList();
+            session.ResolvedSidesExcept(targetState).ToList();
         VirtualCrossoverSourceRules.Decision decision = VirtualCrossoverSourceRules.Evaluate(
             hasTransferIr: true,
             candidateSampleRate: resolved.SampleRate,
@@ -1783,42 +1664,13 @@ public partial class VirtualCrossoverPanel : UserControl
         session.SettleSpatialAverageMode();
         UpdateSourceButton(channel);
         UpdateSideRadioTexts();
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
-
-    // Mono pairs expose only their left slot.
-    private IEnumerable<(VirtualCrossoverChannel Channel, bool RightSide, VirtualCrossoverChannelState State)>
-        ResolvedSidesExcept(VirtualCrossoverChannelState? except)
-    {
-        foreach (VirtualCrossoverChannel channel in session.Channels)
-        {
-            foreach (bool rightSide in new[] { false, true })
-            {
-                if (channel.Pair.Mono && rightSide)
-                {
-                    continue;
-                }
-
-                VirtualCrossoverChannelState state = channel.SideState(rightSide);
-                if (state != except && state.TransferImpulseResponse != null)
-                {
-                    yield return (channel, rightSide, state);
-                }
-            }
-        }
-    }
-
-    private static string SideLabel(VirtualCrossoverChannel channel, bool rightSide) =>
-        channel.Pair.Mono
-            ? $"{channel.Name} (mono)"
-            : $"{channel.Name} {(rightSide ? "R" : "L")}";
 
     private void ClearSource(VirtualCrossoverChannel channel)
     {
         ClearSourceCore(channel, channel.ActiveRight);
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     private void ClearSourceCore(VirtualCrossoverChannel channel, bool rightSide)
@@ -1891,7 +1743,7 @@ public partial class VirtualCrossoverPanel : UserControl
             }
         }
 
-        if (LocateSource(settings) is { } path)
+        if (session.Locate(settings.SourceFilePath, settings.SourceRelativePath) is { } path)
         {
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
             return (
@@ -1903,16 +1755,6 @@ public partial class VirtualCrossoverPanel : UserControl
 
         return (null, null);
     }
-
-    private string? LocateSource(VirtualCrossoverChannelSettings settings) =>
-        VirtualCrossoverSourceLocator.Locate(
-            settings.SourceFilePath,
-            settings.SourceRelativePath,
-            session.Project.ProjectDirectory)
-        ?? VirtualCrossoverSourceLocator.Locate(
-            settings.SourceFilePath,
-            settings.SourceRelativePath,
-            session.RelinkDirectory);
 
     private void UpdateSourceButton(VirtualCrossoverChannel channel)
     {
@@ -2155,8 +1997,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         UpdatePeqReadouts(token.Channel);
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
         return true;
     }
 
@@ -2259,8 +2100,7 @@ public partial class VirtualCrossoverPanel : UserControl
         channel.Settings.PeqPreampDb = curve.PreampDb;
         channel.Settings.PeqSourceName = Path.GetFileName(dialog.FileName);
         UpdatePeqReadouts(channel);
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     private void ClearPeq(VirtualCrossoverChannel channel)
@@ -2269,8 +2109,7 @@ public partial class VirtualCrossoverPanel : UserControl
         channel.Settings.PeqPreampDb = 0;
         channel.Settings.PeqSourceName = null;
         UpdatePeqReadouts(channel);
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     // Rebuilt per click like the PEQ menu. The kernel lives in the session; constructor and files are its ways in and out.
@@ -2343,8 +2182,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // A file is taps only, not a designed crossover.
         settings.FirDesign = null;
         UpdateFirReadout(channel);
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     private void ExportFir(VirtualCrossoverChannel channel)
@@ -2396,8 +2234,7 @@ public partial class VirtualCrossoverPanel : UserControl
         settings.FirSourceName = null;
         settings.FirDesign = null;
         UpdateFirReadout(channel);
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
     }
 
     private void UpdateFirReadout(VirtualCrossoverChannel channel)
@@ -2436,8 +2273,7 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         UpdateFirReadout(token.Channel);
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
         return true;
     }
 
@@ -3383,8 +3219,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         // "Keep the hidden side's polarity" is invisible to the lock as a difference, so re-remember the result.
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
         VirtualCrossoverAutoDelay.WriteLog(result.Log.ToString());
     }
 
@@ -3854,27 +3689,11 @@ public partial class VirtualCrossoverPanel : UserControl
             : null;
     }
 
-    /// <summary>FDW cycles for the wizard's driver curves. 8 is the longest the phase bank offers, so it keeps the
-    /// most of the low end while still cutting the room.</summary>
-    private const int WizardFdwCycles = 8;
-
-    /// <summary>Outer gate for those curves, in milliseconds so it means the same thing at 44.1 and 192 kHz. The
-    /// plateau is long enough that FDW-8 is really 8 cycles down to about 45 Hz.</summary>
-    private const double WizardGateLeftMs = 2.0;
-
-    private const double WizardGatePlateauMs = 180.0;
-
-    private const double WizardGateRightMs = 20.0;
-
-    /// <summary>Writes the crossover proposal: corners, families, slopes, cut-only gains and the polarity the
-    /// crossover itself implies. Delay stays Auto delay's job, and Auto delay may flip the polarity again.</summary>
+    /// <summary>Opens the crossover wizard and writes what it proposes (<see cref="VirtualCrossoverAutoSetup"/>).</summary>
     /// <returns>Null when written; otherwise a refusal phrase an import's summary can quote.</returns>
     private string? OpenAutoSetupWizard()
     {
-        var participating = session.Channels
-            .Where(channel => channel.Pair.Enabled &&
-                channel.TransferImpulseResponse != null)
-            .ToList();
+        List<VirtualCrossoverChannel> participating = VirtualCrossoverAutoSetup.Participants(session);
         if (participating.Count < 2)
         {
             System.Media.SystemSounds.Beep.Play();
@@ -3887,68 +3706,13 @@ public partial class VirtualCrossoverPanel : UserControl
             return "the phase gate is misplaced";
         }
 
-        // Psychoacoustic smoothing and an 8-cycle FDW: the wizard judges what the ear resolves and cuts most of the
-        // room out of the driver curves before it ever gets to the band read. The window is stated in MILLISECONDS,
-        // not the default 4096 samples — in samples the FDW collapses to a short fixed gate from ~95 Hz up at 96 kHz
-        // and from ~380 Hz at 192 kHz, which is most of the band the wizard cares about.
-        // Scoped to the per-channel curves: the coherent readings (post-check, junction tuner) keep their own gate.
-        // See docs/tech/crossover-auto-setup.md#curve-source.
-        var wizardOptions = new FrequencyResponseOptions
-        {
-            SmoothingInverseOctaves = SpectrumSmoothing.PsychoacousticCode,
-            MagnitudeWindowMode = PhaseWindowMode.FrequencyDependent,
-            MagnitudeFdwCycles = WizardFdwCycles
-        };
-        (wizardOptions.Window, wizardOptions.LeftTukeyWindow, wizardOptions.RightTukeyWindow) =
-            FrequencyResponseOptions.TrimGateToFft(
-                (int)Math.Round(WizardGateLeftMs / 1_000.0 * participating[0].SampleRate),
-                (int)Math.Round(WizardGatePlateauMs / 1_000.0 * participating[0].SampleRate),
-                (int)Math.Round(WizardGateRightMs / 1_000.0 * participating[0].SampleRate));
-        var dialogChannels = new List<AutoSetupWizardChannel>();
+        List<AutoSetupWizardChannel> dialogChannels;
         // Building an FDW curve per channel is the one stretch before the dialog appears; without this the button
         // looks like it did nothing for the best part of a second.
         UseWaitCursor = true;
         try
         {
-            foreach (VirtualCrossoverChannel channel in participating)
-            {
-                AnalysisCurve curve = DataHelper.GetPrimarySpectrum(
-                    new ImpulseMeasurementView(
-                        channel.TransferImpulseResponse!,
-                        channel.TransferPeakIndex,
-                        channel.SampleRate)
-                    {
-                        // Or the band read runs down the window's leakage an octave below the real low corner.
-                        LowestMeasuredFrequencyHz = channel
-                            .SideState(session.Project.ActiveSideRight).MeasuredBand.LowEdgeHz,
-                        HighestMeasuredFrequencyHz = channel
-                            .SideState(session.Project.ActiveSideRight).MeasuredBand.HighEdgeHz
-                    },
-                    wizardOptions,
-                    session.Calibration.For(channel.SideState(session.Project.ActiveSideRight)));
-                // Discount frequencies the measurement's coherence did not trust.
-                IReadOnlyList<double>? coherence =
-                    channel.TransferCoherence is { Length: > 1 } linear
-                        ? CoherenceCurves.PerPoint(linear, curve.Points, channel.SampleRate)
-                        : null;
-                IReadOnlyList<SignalPoint>? distortion = channel.DistortionCurve;
-
-                // With two similar drivers, existing corners decide which plays lower.
-                VirtualCrossoverChannelSettings settings =
-                    channel.SideSettings(session.Project.ActiveSideRight);
-                dialogChannels.Add(new AutoSetupWizardChannel(
-                    $"{channel.Name} — {channel.Settings.DisplayName}",
-                    VirtualCrossoverColors.ChannelAccent(session.Channels.IndexOf(channel)),
-                    VirtualCrossoverAlignmentStages.StageOf(channel.Pair.Zone),
-                    curve.Points,
-                    coherence,
-                    distortion,
-                    CrossoverAutoSetup.EstimateBand(curve.Points, coherence, distortion),
-                    // FIR corners stand in where the IIR crossover is off.
-                    settings.EffectiveHighPassHz,
-                    settings.EffectiveLowPassHz,
-                    channel.TransferImpulseResponse));
-            }
+            dialogChannels = VirtualCrossoverAutoSetup.ReadChannels(session, participating);
         }
         catch (ArgumentException exception)
         {
@@ -3971,58 +3735,20 @@ public partial class VirtualCrossoverPanel : UserControl
             return "cancelled in the wizard";
         }
 
-        int clearedRotations = 0;
-        for (int i = 0; i < participating.Count; i++)
+        int clearedRotations = VirtualCrossoverAutoSetup.Write(participating, proposals);
+        foreach (VirtualCrossoverChannel channel in participating)
         {
-            VirtualCrossoverChannel channel = participating[i];
-            CrossoverProposal proposal = proposals[i];
-            // A crossover is one electrical filter: both sides get the same frequencies, families, slopes and gain.
-            foreach (bool rightSide in new[] { false, true })
-            {
-                if (channel.Pair.Mono && rightSide)
-                {
-                    continue;
-                }
-
-                VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
-                settings.CrossoverKind = proposal.Kind;
-                if (proposal.HighPassEdge is { } highPass)
-                {
-                    settings.HighPassEdge = highPass;
-                }
-                if (proposal.LowPassEdge is { } lowPass)
-                {
-                    settings.LowPassEdge = lowPass;
-                }
-                settings.GainDb = proposal.GainDb;
-                // A crossover of a given family and order puts a fixed phase relationship across the junction, so the
-                // polarity that makes it sum is the crossover's to state. Auto delay runs afterwards and composes its
-                // own flip over this one. See docs/tech/crossover-auto-setup.md#polarity.
-                settings.InvertPolarity = proposal.InvertPolarity;
-                // The phase angle is stated AT the crossover, so a wizard rewrite resets rotations (and says so).
-                if (settings.PhaseRotationDegrees != 0)
-                {
-                    settings.PhaseRotationDegrees = 0;
-                    clearedRotations++;
-                }
-            }
-
             ApplySettingsToControl(channel);
         }
 
         if (dialog.ChainOrder is { } chainOrder)
         {
-            IReadOnlyList<VirtualCrossoverChannel> sorted = ReorderIntoSlots(
-                session.Channels,
-                chainOrder.Select(index => participating[index]).ToList());
-            ApplyChannelOrder(
-                sorted.Select(channel => session.Channels.IndexOf(channel)).ToList());
+            ApplyChannelOrder(VirtualCrossoverAutoSetup.Reorder(session.Channels, participating, chainOrder));
         }
 
         // The wizard wrote both sides; the lock must not carry the shown side's other edge over.
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
-        ScheduleSave();
-        RedrawAll();
+        SaveAndRedraw();
         if (clearedRotations > 0)
         {
             MessageBox.Show(
@@ -4040,23 +3766,6 @@ public partial class VirtualCrossoverPanel : UserControl
         }
 
         return null;
-    }
-
-    /// <summary>Only the reordered members' slots are reused; blocks the wizard did not look at keep theirs.</summary>
-    internal static IReadOnlyList<T> ReorderIntoSlots<T>(
-        IReadOnlyList<T> all,
-        IReadOnlyList<T> reordered)
-        where T : class
-    {
-        var slots = new HashSet<T>(reordered);
-        var result = new List<T>(all.Count);
-        int next = 0;
-        foreach (T item in all)
-        {
-            result.Add(slots.Contains(item) ? reordered[next++] : item);
-        }
-
-        return result;
     }
 
     private void ExportSession()
@@ -4129,7 +3838,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private async Task RelinkMissingSourcesAsync()
     {
         List<(VirtualCrossoverChannel Channel, bool RightSide)> missing =
-            MissingSourceSides().ToList();
+            session.MissingSourceSides().ToList();
         if (missing.Count == 0 || IsDisposed)
         {
             return;
@@ -4184,7 +3893,7 @@ public partial class VirtualCrossoverPanel : UserControl
         ScheduleSave();
 
         List<(VirtualCrossoverChannel Channel, bool RightSide)> remaining =
-            MissingSourceSides().ToList();
+            session.MissingSourceSides().ToList();
         if (remaining.Count > 0 && !IsDisposed)
         {
             MessageBox.Show(
@@ -4199,35 +3908,12 @@ public partial class VirtualCrossoverPanel : UserControl
         }
     }
 
-    // Only sides naming a FILE: a history-only reference from another machine is not fixable by a folder.
-    private IEnumerable<(VirtualCrossoverChannel Channel, bool RightSide)>
-        MissingSourceSides()
-    {
-        foreach (VirtualCrossoverChannel channel in session.Channels)
-        {
-            foreach (bool rightSide in new[] { false, true })
-            {
-                if (channel.Pair.Mono && rightSide)
-                {
-                    continue;
-                }
-
-                if (!string.IsNullOrWhiteSpace(
-                        channel.SideSettings(rightSide).SourceFilePath) &&
-                    channel.SideState(rightSide).TransferImpulseResponse == null)
-                {
-                    yield return (channel, rightSide);
-                }
-            }
-        }
-    }
-
     private static string DescribeMissingSources(
         IReadOnlyList<(VirtualCrossoverChannel Channel, bool RightSide)> missing)
     {
         string sides = string.Join(
             ", ",
-            missing.Select(item => SideLabel(item.Channel, item.RightSide)));
+            missing.Select(item => item.Channel.SideLabel(item.RightSide)));
         return missing.Count == 1
             ? $"The measurement of channel {sides} was not found."
             : $"{missing.Count} measurements were not found: {sides}.";

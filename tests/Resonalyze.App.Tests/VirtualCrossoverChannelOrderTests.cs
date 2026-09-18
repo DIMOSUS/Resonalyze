@@ -194,7 +194,7 @@ public sealed class VirtualCrossoverChannelOrderTests
         string[] all = ["a", "b", "skipped", "c", "d"];
         string[] sorted = ["d", "c", "b", "a"];
 
-        IReadOnlyList<string> result = VirtualCrossoverPanel.ReorderIntoSlots(all, sorted);
+        IReadOnlyList<string> result = VirtualCrossoverAutoSetup.ReorderIntoSlots(all, sorted);
 
         Assert.Equal(["d", "c", "skipped", "b", "a"], result);
     }
@@ -204,6 +204,6 @@ public sealed class VirtualCrossoverChannelOrderTests
     {
         string[] all = ["a", "b", "c"];
 
-        Assert.Equal(all, VirtualCrossoverPanel.ReorderIntoSlots(all, all));
+        Assert.Equal(all, VirtualCrossoverAutoSetup.ReorderIntoSlots(all, all));
     }
 }

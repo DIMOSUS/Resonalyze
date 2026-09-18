@@ -2535,8 +2535,11 @@ public static class AutoAlignmentEngine
     private static ValidSampleRange SlideBySamples(
         ValidSampleRange range, int samples) =>
         range.IsKnown && samples > 0
-            ? new ValidSampleRange(
-                range.StartSample + samples, range.EndSample + samples)
+            ? range with
+            {
+                StartSample = range.StartSample + samples,
+                EndSample = range.EndSample + samples
+            }
             : range;
     private static void ShiftAllExcept(
         IReadOnlyList<AlignmentSnapshot> scope,

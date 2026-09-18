@@ -6963,21 +6963,26 @@ public partial class VirtualCrossoverPanel : UserControl
         List<ProcessedChannel> all = scope.Contains(pair.Lower)
             ? scope.ToList()
             : [pair.Lower, pair.Upper];
+        // These records are already processed: a FIR's pre-ring sits ahead of its peak, so the crop keeps all of it and as
+        // much after the peak as without one (the engine crops before the chain and needs none of this).
+        int leadSamples = all.Max(item => item.ValidRange.LeadSamples);
         Complex[][] cropped = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
             all.Select(item => item.ImpulseResponse).ToList(),
-            AlignmentReprocessor.SearchCropLength(sampleRate),
-            AlignmentReprocessor.SearchCropPrePeakSamples(sampleRate),
+            AlignmentReprocessor.SearchCropLength(sampleRate) + leadSamples,
+            AlignmentReprocessor.SearchCropPrePeakSamples(sampleRate) + leadSamples,
             out int cropStart);
         Complex[] lower = cropped[all.IndexOf(pair.Lower)];
         Complex[] upper = cropped[all.IndexOf(pair.Upper)];
         ValidSampleRange Shifted(ProcessedChannel item, Complex[] croppedIr) =>
             item.ValidRange.IsKnown
-                ? new ValidSampleRange(
-                    Math.Max(0, item.ValidRange.StartSample - cropStart),
-                    Math.Clamp(
+                ? item.ValidRange with
+                {
+                    StartSample = Math.Max(0, item.ValidRange.StartSample - cropStart),
+                    EndSample = Math.Clamp(
                         item.ValidRange.EndSample - cropStart,
                         0,
-                        croppedIr.Length))
+                        croppedIr.Length)
+                }
                 : item.ValidRange;
         return (lower, upper,
             Shifted(pair.Lower, lower), Shifted(pair.Upper, upper));

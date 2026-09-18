@@ -318,6 +318,12 @@ so the time origin is kept) and adds `LinearPhaseDelaySamples` at the processor'
 filter has zero group delay, so nothing honest is lost. Asymmetric (minimum-phase) kernels are read
 normally.
 
+The arrival is not the window. The score's junction windows and the direct-sound cuts open at a
+front, and a linear-phase branch's front sits on its peak with the pre-ring ahead of it; cutting
+that pre-ring broke the complementary sum and moved the score optimum 11 ms on a real
+FIR session. Those windows open earlier by the chain's `ValidSampleRange.LeadSamples` (see
+virtual-dsp-analysis.md#window-anchors).
+
 ## Latch arbitration
 
 Conviction needs two allowances, but at a bass junction the allowance is about half the crossover

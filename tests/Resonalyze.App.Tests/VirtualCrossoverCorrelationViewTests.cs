@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using OxyPlot;
 using Resonalyze.Dsp;
 
@@ -60,6 +60,71 @@ public sealed class VirtualCrossoverCorrelationViewTests
             $"with the artifact anchoring the cut no strong lobe should " +
             $"survive in view, got r {blind.Y:0.00} at {blind.X:0.00} ms");
         Assert.InRange(blindView.ArrivalLagMs, 9.0, 11.0);
+    }
+
+    [Fact]
+    public void BuildCorrelationView_CropKeepsAPreRingLongerThanItsPrePeakBudget()
+    {
+        // The designer's longest kernel at a 48 kHz processor on a 96 kHz record: 171 ms of pre-ring against the crop's 85.
+        const int Taps = 16_383;
+        const int Record = 96_000;
+        const int Processor = 48_000;
+        const double CornerHz = 80;
+        const int DriverSample = 12_000;
+        int length = DspMath.NextPowerOfTwo(DriverSample + 2 * Taps + 65_536);
+        (ProcessedChannel Channel, Complex[] Ir, ValidSampleRange Range) Branch(
+            string name, CrossoverKind kind, double driverCornerHz, double delayMs, int? reflectionSample = null)
+        {
+            var driverEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, driverCornerHz, 12);
+            var impulse = new Complex[length];
+            impulse[DriverSample] = 1.0;
+            if (reflectionSample is { } reflection)
+            {
+                impulse[reflection] = 0.7;
+            }
+            Complex[] driver = VirtualCrossoverAnalysis.ApplyChain(
+                impulse,
+                new DspChannelChain(Crossover: kind == CrossoverKind.LowPass
+                    ? new CrossoverSpec(kind, LowPassEdge: driverEdge)
+                    : new CrossoverSpec(kind, HighPassEdge: driverEdge)),
+                Record, Processor)[..length];
+            var edge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, CornerHz, 24);
+            FirFilter fir = new FirCrossoverDesign(
+                kind, edge, edge, FirCrossoverMethod.IirMagnitude, FirWindow.Kaiser, 8, Taps, Processor).Build();
+            Complex[] ir = VirtualCrossoverAnalysis.ApplyChain(
+                driver, new DspChannelChain(DelayMs: delayMs, Fir: fir), Record, Processor,
+                out ValidSampleRange range);
+            var channel = new VirtualCrossoverChannel(name) { SampleRate = Record };
+            return (new ProcessedChannel(
+                channel, ir, VirtualCrossoverAnalysis.FindPeakIndex(ir), Record, OxyColors.White, range), ir, range);
+        }
+
+        var lower = Branch("C", CrossoverKind.LowPass, 2.5 * CornerHz, 0);
+        // A reflection peaking past the window's reach from the pre-ring start, inside it from a crop that lost 85 ms of pre-ring.
+        var upper = Branch("D", CrossoverKind.HighPass, 0.7 * CornerHz, 1.0, DriverSample + 23_500);
+        Assert.True(lower.Range.LeadSamples > AlignmentReprocessor.SearchCropPrePeakSamples(Record));
+
+        var pair = new AdjacentPair(lower.Channel, upper.Channel, CornerHz, CornerHz / 2, CornerHz * 2);
+        JunctionCorrelationView view = VirtualCrossoverPanel.BuildCorrelationView(
+            pair, [lower.Channel, upper.Channel]);
+
+        // The whole records through the same own-front windows: the crop must change nothing.
+        double firstMs = view.ScoreNormal[0].X;
+        double stepMs = view.ScoreNormal[1].X - firstMs;
+        (List<VirtualCrossoverAnalysis.JunctionSweepPoint> normal,
+            List<VirtualCrossoverAnalysis.JunctionSweepPoint> inverted) =
+            VirtualCrossoverAnalysis.JunctionLossSweepBothPolarities(
+                upper.Ir, lower.Ir, Record, pair.BandLowHz, pair.BandHighHz,
+                firstMs, view.ScoreNormal[^1].X, stepMs, gateAnchorSample: null, levelMatch: true,
+                variableValidRange: upper.Range, fixedValidRange: lower.Range);
+        double Score(VirtualCrossoverAnalysis.JunctionSweepPoint point) =>
+            point.LossDb + VirtualCrossoverAnalysis.DipExcessPenaltyWeight * (point.DipDb - point.LossDb);
+        double worst = view.ScoreNormal.Zip(normal, (drawn, whole) => Math.Abs(drawn.Y - Score(whole)))
+            .Concat(view.ScoreInverted.Zip(inverted, (drawn, whole) => Math.Abs(drawn.Y - Score(whole))))
+            .Max();
+
+        Assert.Equal(view.ScoreNormal.Count, normal.Count);
+        Assert.True(worst <= 0.02, $"the cropped surface departs from the whole records' by up to {worst:0.00} dB");
     }
 
     [Fact]

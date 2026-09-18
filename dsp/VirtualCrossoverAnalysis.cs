@@ -69,7 +69,9 @@ public enum PolarityEstimate
 
 /// <summary>Where measured content sits in a processed record (chain-delay prefix and FFT tail excluded); default = unknown.
 /// See docs/tech/virtual-dsp-analysis.md#chain-application-and-the-valid-sample-range.</summary>
-public readonly record struct ValidSampleRange(int StartSample, int EndSample)
+/// <param name="LeadSamples">Content the chain puts ahead of its main tap (a linear-phase FIR's pre-ring): windows opened
+/// at a front open this much earlier. A length, not a position — crops and slides keep it.</param>
+public readonly record struct ValidSampleRange(int StartSample, int EndSample, int LeadSamples = 0)
 {
     public bool IsKnown => EndSample > StartSample;
 }
@@ -107,11 +109,14 @@ public static class VirtualCrossoverAnalysis
         // converted from processor to record samples.
         double firShiftSamples = 0;
         double firTailSamples = 0;
+        double firLeadSamples = 0;
         if (chain.Fir is { } fir && processorSampleRate > 0)
         {
             double perProcessorSample = (double)sampleRate / processorSampleRate;
             firShiftSamples = fir.LeadingZeroCount * perProcessorSample;
             firTailSamples = (fir.Length - 1) * perProcessorSample;
+            // Pre-ring: from the first non-zero tap to the largest (≈0 for a minimum-phase kernel).
+            firLeadSamples = Math.Max(0, fir.PeakIndex - fir.LeadingZeroCount) * perProcessorSample;
         }
 
         int startSample = Math.Clamp(
@@ -122,7 +127,8 @@ public static class VirtualCrossoverAnalysis
             outputLength,
             inputLength + (int)Math.Ceiling(delaySamplesExact + firTailSamples));
         return endSample > startSample
-            ? new ValidSampleRange(startSample, endSample)
+            ? new ValidSampleRange(
+                startSample, endSample, (int)Math.Ceiling(firLeadSamples))
             : default;
     }
 
@@ -455,16 +461,25 @@ public static class VirtualCrossoverAnalysis
         int peak = Math.Clamp(peakIndex, 0, impulseResponse.Length - 1);
         TimeAlignmentAnalysisResult arrival = AnalyzeBandLimitedArrival(
             impulseResponse, sampleRate, bandLowHz, bandHighHz, validRange);
-        if (!arrival.IsValid ||
-            arrival.SignalToNoiseDecibels < AutoAlignmentEngine.MinimumArrivalSnrDb)
+        int anchor = peak;
+        if (arrival.IsValid &&
+            arrival.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb)
         {
-            return peak;
+            // Floored: half a sample early is covered by the fade; half late would put the plateau inside the front.
+            int front = (int)Math.Floor(
+                arrival.FirstArrivalDelayMilliseconds / 1_000.0 * sampleRate);
+            anchor = Math.Min(front, peak);
         }
 
-        // Floored: half a sample early is covered by the fade; half late would put the plateau inside the front.
-        int front = (int)Math.Floor(
-            arrival.FirstArrivalDelayMilliseconds / 1_000.0 * sampleRate);
-        return Math.Clamp(Math.Min(front, peak), 0, impulseResponse.Length - 1);
+        // A linear-phase FIR's pre-ring reads as no front (its envelope rises symmetrically into the peak), yet a cut
+        // through it breaks the pair's complementary sum. See docs/tech/virtual-dsp-analysis.md#window-anchors.
+        if (validRange.LeadSamples > 0)
+        {
+            int floor = validRange.IsKnown ? validRange.StartSample : 0;
+            anchor = Math.Min(anchor, Math.Max(floor, anchor - validRange.LeadSamples));
+        }
+
+        return Math.Clamp(anchor, 0, impulseResponse.Length - 1);
     }
 
     /// <summary>Direct sound cut to [front − T/2, front + 2.5T] with half-period fades (T = crossover period); past two
@@ -501,19 +516,20 @@ public static class VirtualCrossoverAnalysis
             validRange);
         var cut = new Complex[impulseResponse.Length];
         WriteDirectSoundWindow(
-            impulseResponse, front, sampleRate, crossoverHz, cut,
+            impulseResponse, front, validRange.LeadSamples, sampleRate, crossoverHz, cut,
             destinationOffset: 0);
         return cut;
     }
 
-    /// <summary>One span definition for CutDirectSound and the ladder's per-band cuts.</summary>
+    /// <summary>One span definition for CutDirectSound and the ladder's per-band cuts. <paramref name="leadSamples"/>
+    /// lengthens the plateau by the pre-ring the front was moved over, so the cut still holds two periods past it.</summary>
     private static (int Start, int End, int Fade, int Plateau)
         DirectSoundWindowBounds(
-            int front, int sampleRate, double crossoverHz, int length)
+            int front, int leadSamples, int sampleRate, double crossoverHz, int length)
     {
         double periodSamples = sampleRate / crossoverHz;
         int fade = Math.Max(8, (int)Math.Round(0.5 * periodSamples));
-        int plateau = (int)Math.Round(2.0 * periodSamples);
+        int plateau = (int)Math.Round(2.0 * periodSamples) + Math.Max(0, leadSamples);
         return (
             Math.Max(0, front - fade),
             Math.Min(length, front + plateau + fade),
@@ -557,7 +573,8 @@ public static class VirtualCrossoverAnalysis
             sampleRate, bandLowHz, bandHighHz, upperValidRange);
         return TrimmedDirectSoundPair(
             lowerImpulseResponse, upperImpulseResponse, sampleRate,
-            crossoverHz, lowerFront, upperFront, searchRangeMs);
+            crossoverHz, lowerFront, upperFront,
+            lowerValidRange.LeadSamples, upperValidRange.LeadSamples, searchRangeMs);
     }
 
     // Buffers must cover content + searched lag, or the circular correlation aliases lobes into far lags.
@@ -568,12 +585,14 @@ public static class VirtualCrossoverAnalysis
         double crossoverHz,
         int lowerFront,
         int upperFront,
+        int lowerLeadSamples,
+        int upperLeadSamples,
         double searchRangeMs)
     {
         (int lowerStart, int lowerEnd, _, _) = DirectSoundWindowBounds(
-            lowerFront, sampleRate, crossoverHz, lowerImpulseResponse.Length);
+            lowerFront, lowerLeadSamples, sampleRate, crossoverHz, lowerImpulseResponse.Length);
         (int upperStart, int upperEnd, _, _) = DirectSoundWindowBounds(
-            upperFront, sampleRate, crossoverHz, upperImpulseResponse.Length);
+            upperFront, upperLeadSamples, sampleRate, crossoverHz, upperImpulseResponse.Length);
         int spanStart = Math.Min(lowerStart, upperStart);
         int spanEnd = Math.Max(lowerEnd, upperEnd);
         int rangeSamples =
@@ -584,10 +603,10 @@ public static class VirtualCrossoverAnalysis
         if (spanEnd > spanStart)
         {
             WriteDirectSoundWindow(
-                lowerImpulseResponse, lowerFront, sampleRate, crossoverHz,
+                lowerImpulseResponse, lowerFront, lowerLeadSamples, sampleRate, crossoverHz,
                 cutLower, spanStart);
             WriteDirectSoundWindow(
-                upperImpulseResponse, upperFront, sampleRate, crossoverHz,
+                upperImpulseResponse, upperFront, upperLeadSamples, sampleRate, crossoverHz,
                 cutUpper, spanStart);
         }
 
@@ -597,13 +616,14 @@ public static class VirtualCrossoverAnalysis
     private static void WriteDirectSoundWindow(
         Complex[] impulseResponse,
         int front,
+        int leadSamples,
         int sampleRate,
         double crossoverHz,
         Complex[] destination,
         int destinationOffset)
     {
         (int start, int end, int fade, int plateau) = DirectSoundWindowBounds(
-            front, sampleRate, crossoverHz, impulseResponse.Length);
+            front, leadSamples, sampleRate, crossoverHz, impulseResponse.Length);
         for (int i = start; i < end; i++)
         {
             double weight =
@@ -1102,7 +1122,8 @@ public static class VirtualCrossoverAnalysis
             .AsOrdered()
             .Select(frequency => ProbeArrivalCoherenceBand(
                 lowerImpulseResponse, upperImpulseResponse, sampleRate,
-                frequency, lowerFront, upperFront))
+                frequency, lowerFront, upperFront,
+                lowerValidRange.LeadSamples, upperValidRange.LeadSamples))
             .Where(point => point != null)
             .Select(point => point!)
             .ToList();
@@ -1115,12 +1136,15 @@ public static class VirtualCrossoverAnalysis
         int sampleRate,
         double frequency,
         int lowerFront,
-        int upperFront)
+        int upperFront,
+        int lowerLeadSamples,
+        int upperLeadSamples)
     {
         double displayMs = Math.Max(3.0, 1.5 * 1000.0 / frequency);
         (Complex[] cutLower, Complex[] cutUpper) = TrimmedDirectSoundPair(
             lowerImpulseResponse, upperImpulseResponse, sampleRate, frequency,
-            lowerFront, upperFront, searchRangeMs: 2.0 * displayMs);
+            lowerFront, upperFront, lowerLeadSamples, upperLeadSamples,
+            searchRangeMs: 2.0 * displayMs);
         if (!ArrivalCoherenceBandBalanced(
             cutLower, cutUpper, sampleRate, frequency))
         {
@@ -1737,17 +1761,29 @@ public static class VirtualCrossoverAnalysis
         int gateSamples = AlignmentGateSamples(sampleRate, minFrequencyHz);
         int fadeSamples = AlignmentGateFadeSamples(sampleRate, minFrequencyHz);
         int length = AlignmentFftLength(sampleRate, minFrequencyHz);
+        // A pre-ring lead (FIR) lengthens that response's window by the lead, so its reach past the front is unchanged.
+        int maxLeadSamples = gateAnchorSample.HasValue
+            ? 0
+            : Math.Max(
+                variableValidRange.LeadSamples,
+                fixedValidRanges?.Max(range => (int?)range.LeadSamples) ?? 0);
+        if (maxLeadSamples > 0)
+        {
+            length = DspMath.NextPowerOfTwo(
+                (gateSamples + maxLeadSamples) * AlignmentFftInterpolationFactor);
+        }
 
         // Restored to absolute time by the window start's linear phase.
-        Complex[] CutSpectrum(Complex[] impulseResponse, int anchor)
+        Complex[] CutSpectrum(Complex[] impulseResponse, int anchor, int leadSamples)
         {
             int clamped = Math.Clamp(anchor, 0, impulseResponse.Length - 1);
             int leftFadeSamples = Math.Min(fadeSamples, clamped);
             int gateStart = clamped - leftFadeSamples;
+            int windowSamples = gateSamples + Math.Max(0, leadSamples);
             double[] gate = Windowing.TukeyWindow(
-                gateSamples,
-                2.0 * leftFadeSamples / gateSamples,
-                2.0 * fadeSamples / gateSamples);
+                windowSamples,
+                2.0 * leftFadeSamples / windowSamples,
+                2.0 * fadeSamples / windowSamples);
             Complex[] spectrum = ForwardSpectrum(
                 GateDirectSound(impulseResponse, gateStart, gate), length);
             if (gateStart > 0)
@@ -1805,19 +1841,21 @@ public static class VirtualCrossoverAnalysis
                     sampleRate,
                     minFrequencyHz,
                     maxFrequencyHz,
-                    variableValidRange));
+                    variableValidRange),
+                variableValidRange.LeadSamples);
             for (int index = 0; index < fixedImpulseResponses.Count; index++)
             {
                 Complex[] ir = fixedImpulseResponses[index];
+                ValidSampleRange fixedRange = fixedValidRanges != null &&
+                    index < fixedValidRanges.Count
+                        ? fixedValidRanges[index]
+                        : default;
                 Complex[] spectrum = CutSpectrum(
                     ir,
                     FindGateAnchor(
                         ir, FindPeakIndex(ir), sampleRate,
-                        minFrequencyHz, maxFrequencyHz,
-                        fixedValidRanges != null &&
-                        index < fixedValidRanges.Count
-                            ? fixedValidRanges[index]
-                            : default));
+                        minFrequencyHz, maxFrequencyHz, fixedRange),
+                    fixedRange.LeadSamples);
                 for (int i = 0; i < length; i++)
                 {
                     fixedSpectrum[i] += spectrum[i];
@@ -2548,6 +2586,11 @@ public static class VirtualCrossoverAnalysis
 
     public const double SumLossLevelGateReferenceOctaves = 1.0;
 
+    /// <summary>Points where every channel sits more than this below its own peak read NaN: all of them are in their stop
+    /// bands, where a FIR's floor pairs with its partner's at comparable level. Same depth as the Group Delay mode's gate.
+    /// See docs/tech/virtual-dsp-analysis.md#sum-loss-curve-and-level-gate.</summary>
+    public const double SumLossChannelPresenceDb = 40;
+
     /// <summary>Per-point sum loss (dB, ≤ 0), the single definition behind the drawn curve and read-outs. Operands must be
     /// UNSMOOTHED; smoothing applies to the ratio (smoothing first invents a dip at every steep corner).
     /// See docs/tech/virtual-dsp-analysis.md#sum-loss-curve-and-level-gate.</summary>
@@ -2582,13 +2625,43 @@ public static class VirtualCrossoverAnalysis
             magnitudeSums[i] = magnitudeSum;
         }
 
+        var presenceFloorsDb = new double[channelCurves.Count];
+        for (int channel = 0; channel < channelCurves.Count; channel++)
+        {
+            double peakDb = double.NegativeInfinity;
+            for (int i = 0; i < count; i++)
+            {
+                if (double.IsFinite(channelCurves[channel][i].Y))
+                {
+                    peakDb = Math.Max(peakDb, channelCurves[channel][i].Y);
+                }
+            }
+
+            presenceFloorsDb[channel] = peakDb - SumLossChannelPresenceDb;
+        }
+
+        bool SomeChannelPlays(int i)
+        {
+            for (int channel = 0; channel < channelCurves.Count; channel++)
+            {
+                double levelDb = channelCurves[channel][i].Y;
+                if (double.IsFinite(levelDb) && levelDb >= presenceFloorsDb[channel])
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         double[] localPeaks = LocalMagnitudePeaks(sumCurve, magnitudeSums, count);
         double gate = DataHelper.DecibelsToAmplitude(-SumLossLevelGateDb);
         var points = new List<SignalPoint>(count);
         for (int i = 0; i < count; i++)
         {
             double gateFloor = localPeaks[i] * gate;
-            bool measurable = localPeaks[i] > 0 && magnitudeSums[i] >= gateFloor;
+            bool measurable = localPeaks[i] > 0 && magnitudeSums[i] >= gateFloor &&
+                SomeChannelPlays(i);
             points.Add(new SignalPoint(
                 sumCurve[i].X,
                 measurable

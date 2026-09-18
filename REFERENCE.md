@@ -2422,7 +2422,11 @@ curve. The loss is a dB gap, not a
 level, so it is drawn against its own amber **Sum loss (dB)** axis on the right
 (0 dB near the top, 6 dB steps, deepening to hold a notch) that appears only
 while the curve is shown; it zooms and pans on its own, separately from the
-left dB scale. A hand check that uses it: invert one channel of a junction and
+left dB scale. It breaks where there is nothing to sum: where the combined
+level falls 25 dB below the loudest point within an octave, and where every
+summed channel sits more than 40 dB below its own peak — all of them in their
+stop bands, where a FIR crossover's floors would otherwise draw noise across
+the rest of the range. A hand check that uses it: invert one channel of a junction and
 tune its delay for the deepest null, then flip the polarity back — the deepest
 null is the best summation.
 

@@ -4,7 +4,7 @@ using Resonalyze.Dsp;
 namespace Resonalyze;
 
 /// <summary>Runtime state of one L/R channel block; members delegate to the active side, a mono pair routes both to the left. UI-free.</summary>
-internal sealed class VirtualCrossoverChannel : IAlignmentChannel
+internal sealed class VirtualCrossoverChannel : IVirtualCrossoverAlignmentChannel
 {
     private readonly VirtualCrossoverChannelState leftState = new();
     private readonly VirtualCrossoverChannelState rightState = new();
@@ -18,7 +18,28 @@ internal sealed class VirtualCrossoverChannel : IAlignmentChannel
     public string Name { get; set; }
 
     public VirtualCrossoverChannelPairSettings Pair { get; set; } = new();
-    public bool ActiveRight { get; set; }
+
+    private bool activeRight;
+
+    /// <summary>The side the shorthand members (<see cref="Settings"/>, <see cref="TransferImpulseResponse"/>, ...) read.
+    /// A block in a session follows its shown side through <see cref="ActiveRightProvider"/> and cannot be set apart
+    /// from it; a standalone block keeps its own.</summary>
+    public bool ActiveRight
+    {
+        get => ActiveRightProvider?.Invoke() ?? activeRight;
+        set
+        {
+            if (ActiveRightProvider != null)
+            {
+                throw new InvalidOperationException(
+                    $"Block {Name} shows its session's side; move the session's side instead.");
+            }
+
+            activeRight = value;
+        }
+    }
+
+    public Func<bool>? ActiveRightProvider { get; set; }
 
     public VirtualCrossoverChannelState SideState(bool rightSide) =>
         Pair.Mono || !rightSide ? leftState : rightState;
@@ -29,6 +50,12 @@ internal sealed class VirtualCrossoverChannel : IAlignmentChannel
     public VirtualCrossoverChannelSettings SideSettings(bool rightSide) =>
         Pair.SideFor(rightSide);
 
+    /// <summary>"A L", "A R", or "A (mono)" for a block with one side.</summary>
+    public string SideLabel(bool rightSide) =>
+        Pair.Mono
+            ? $"{Name} (mono)"
+            : $"{Name} {(rightSide ? "R" : "L")}";
+
     // Clear() bumps SourceRevision, so an in-flight load for a removed channel can no longer land.
     public void Invalidate()
     {
@@ -38,6 +65,8 @@ internal sealed class VirtualCrossoverChannel : IAlignmentChannel
     private VirtualCrossoverChannelState Active => SideState(ActiveRight);
 
     public VirtualCrossoverChannelSettings Settings => Pair.SideFor(ActiveRight);
+
+    VirtualCrossoverChannel IVirtualCrossoverAlignmentChannel.Runtime => this;
     public LiveCaptureDocument? SpatialAverage
     {
         get => Active.SpatialAverage;

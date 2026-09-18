@@ -6,6 +6,13 @@ public sealed class ApplicationDataPathsTests : IDisposable
         Path.GetTempPath(),
         $"resonalyze-paths-{Guid.NewGuid():N}");
 
+    // The test project writes portable.flag; without it a disposed panel autosaves over the developer's own session.
+    [Fact]
+    public void TheTestHost_KeepsItsDataBesideItself()
+    {
+        Assert.True(ApplicationDataPaths.Current.IsPortable);
+    }
+
     [Fact]
     public void InstalledMode_UsesLocalApplicationData()
     {

@@ -1,25 +1,16 @@
-using System.Globalization;
-using System.Numerics;
-using System.Text;
 using Resonalyze.Dsp;
 using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze;
 
-/// <summary>Panel side of the Agent Bridge: the review snapshot and package gathering, which reuses the screen's own computations so package numbers match the screen. See docs/tech/agent-bridge.md#package-gathering.</summary>
+/// <summary>Panel side of the Agent Bridge: the menu, the import flow and its undo. What the bridge reads off the session
+/// lives in <see cref="AgentSessionReader"/> and <see cref="AgentProbeReader"/>. See docs/tech/agent-bridge.md.</summary>
 public partial class VirtualCrossoverPanel
 {
-    // Id and fingerprint of the last copied package; a reply naming another package or a changed session is warned and its engine requests refused. Not persisted.
-    private string? lastAgentPackageId;
-    private string? lastAgentPackageFingerprint;
-
     // One bridge operation at a time: a concurrent Copy or import would race the coordinator or move the settings being read.
     private bool agentBusy;
 
     private ContextMenuStrip? agentMenu;
-
-    // The package grid is 12 points/octave: the nearest a grid gets to the hybrid view's Off smoothing.
-    private const int AgentHybridSmoothingInverseOctaves = 12;
 
     /// <summary>EQ Wizard Auto Tune settings an import fits a bank with; the wizard's opening values when unwired.</summary>
     [System.ComponentModel.Browsable(false)]
@@ -27,99 +18,19 @@ public partial class VirtualCrossoverPanel
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Func<EqAutoTunePolicy>? AutoTunePolicyProvider { get; set; }
 
-    internal void RememberAgentPackage(string packageId, string fingerprint)
-    {
-        lastAgentPackageId = packageId;
-        lastAgentPackageFingerprint = fingerprint;
-    }
+    // The view the bridge's readings follow, off the controls.
+    private AgentViewInputs AgentView() => new(
+        SelectedGroupView,
+        checkBoxHybrid.Checked,
+        HybridRequested,
+        (double)numericTargetLevel.Value,
+        targetCurve);
 
     /// <summary>The session as one hash for the review's staleness check. See docs/tech/agent-bridge.md#session-fingerprint.</summary>
-    internal string ComputeAgentFingerprint()
-    {
-        var lines = new List<string>
-        {
-            $"processor;{ProcessorProfile.ModelId};{ProcessorSampleRateHz}",
-            $"average;{SpatialAverageMode};{checkBoxHybrid.Checked}",
-            // Engines read the shown side and the view (Auto crossover, single-sided Auto delay, Auto-tune's source).
-            $"view;{project.ActiveSideRight};{SelectedGroupView}",
-            $"phase;{project.PhaseWindowMode};{project.PhaseFdwCycles};{project.PhaseDetrendMode};" +
-                $"{Number(project.PhaseGateLeftMs)};{Number(project.PhaseGatePlateauMs)};" +
-                $"{Number(project.PhaseGateRightMs)};" +
-                $"{Number(project.PhaseGateLeft.OffsetMs)};{Number(project.PhaseGateLeft.DetrendMs)};" +
-                $"{Number(project.PhaseGateRight.OffsetMs)};{Number(project.PhaseGateRight.DetrendMs)}",
-            $"stereo;{Number(project.StereoSceneOffsetMagnitudeMs)};{project.StereoRightHandDrive};" +
-                $"{Number(project.StereoLevelDifferenceDb)};{Number(project.RearFillOffsetMs)}",
-            // By id AND points: a curve re-read under the same id is a different correction.
-            $"calibration;{project.CalibrationId};{ownCalibrationSelected};{Curve(Calibration)}",
-            $"target;{Number((double)numericTargetLevel.Value)};{TargetShape(project.Target)}",
-            $"notes;{project.AiNotes}"
-        };
-        foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
-            in AgentChannelSlots())
-        {
-            VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
-            VirtualCrossoverChannelState state = channel.SideState(rightSide);
-            lines.Add(string.Join(';',
-                block, AgentChannelIds.SideName(side), channel.Pair.Zone,
-                channel.Pair.Enabled, channel.Pair.Bypass,
-                // Content digest, not just the reference: a file re-measured over its own name keeps reference, length and rate.
-                settings.HistoryEntryId, settings.SourceFilePath, settings.DisplayName,
-                Digest(state.TransferImpulseResponse), state.SampleRate, state.TransferPeakIndex,
-                Number(state.MeasuredBand.LowestHz), Number(state.MeasuredBand.HighestHz),
-                Digest(state.TransferCoherence),
-                Curve(CalibrationFor(state)),
-                // A re-recorded pass is a new capture session id.
-                settings.SpatialAveragePath, Capture(state.SpatialAverage), Capture(state.ArrayCapture),
-                Number(settings.GainDb), Number(settings.DelayMs), settings.InvertPolarity,
-                settings.CrossoverKind, Edge(settings.HighPassEdge), Edge(settings.LowPassEdge),
-                Number(settings.PhaseRotationDegrees),
-                AgentPeqHash.Compute(settings.PeqPreampDb, settings.PeqBands),
-                // Kernel by content; the imported name is only a label.
-                Digest(settings.Fir?.Taps.ToArray()),
-                FirDesign(settings.FirDesign)));
-        }
+    internal string ComputeAgentFingerprint() => agentReader.Fingerprint(AgentView());
 
-        return AgentSessionFingerprint.Compute(lines);
-
-        static string Number(double? value) => AgentSessionFingerprint.Number(value);
-
-        static string Digest<T>(T[]? values) where T : unmanaged =>
-            AgentSessionFingerprint.ContentDigest(values);
-
-        static string Curve(CalibrationFile? calibration) =>
-            calibration == null
-                ? string.Empty
-                : AgentSessionFingerprint.ContentDigest(
-                    calibration.Points.SelectMany(point => new[] { point.FrequencyHz, point.Decibels }));
-
-        static string Capture(LiveCaptureDocument? document) =>
-            document == null
-                ? string.Empty
-                : $"{document.CaptureSessionId:D}/{document.SavedAtUtc.UtcTicks}/{document.Method}";
-
-        static string Edge(CrossoverEdge edge) =>
-            $"{edge.Family}/{Number(edge.FrequencyHz)}/{edge.SlopeDbPerOctave}/{Number(edge.RippleDb)}";
-
-        static string FirDesign(FirCrossoverDesign? design) =>
-            design == null
-                ? string.Empty
-                : $"{design.Kind}/{Edge(design.HighPassEdge)}/{Edge(design.LowPassEdge)}/" +
-                  $"{design.Method}/{design.Window}/{Number(design.KaiserBeta)}/" +
-                  $"{design.TapCount}/{design.SampleRateHz}";
-
-        static string TargetShape(VirtualCrossoverTargetSettings? target) =>
-            target == null
-                ? string.Empty
-                : string.Join('/',
-                    target.Preset, Number(target.TiltDbPerOctave),
-                    Number(target.BassShelfGainDb), Number(target.BassShelfFrequencyHz),
-                    Number(target.BassShelfWidthOctaves),
-                    Number(target.TrebleShelfGainDb), Number(target.TrebleShelfFrequencyHz),
-                    Number(target.TrebleShelfWidthOctaves),
-                    Number(target.PresenceGainDb), Number(target.PresenceFrequencyHz),
-                    Number(target.PresenceWidthOctaves),
-                    Number(target.ToleranceDb), target.ImportedName, Digest(target.ImportedCurve));
-    }
+    /// <summary>The channels as the bridge names them, with live settings, plus the project figures engine requests are judged against.</summary>
+    internal AgentSessionSnapshot BuildAgentSessionSnapshot() => agentReader.Snapshot(AgentView());
 
     // Same two-state toggle as the Target menu; rebuilt per click so enabled states are current.
     private void ShowAgentMenu()
@@ -277,8 +188,7 @@ public partial class VirtualCrossoverPanel
                         review.Verdicts.Count, summary, progress);
                 });
 
-            ScheduleSave();
-            RedrawAll();
+            SaveAndRedraw();
             MessageBox.Show(
                 FindForm(),
                 string.Join(Environment.NewLine, summary) + Environment.NewLine +
@@ -316,18 +226,18 @@ public partial class VirtualCrossoverPanel
     {
         bool ran = false;
         // One target level for every fit of this import: the stated one (the review made them agree), else the project's.
-        double importTargetLevelDb = ImportTargetLevelDb(toApply, (double)numericTargetLevel.Value);
+        double importTargetLevelDb = AgentEngineRequests.TargetLevelDb(toApply, (double)numericTargetLevel.Value);
         EqAutoTunePolicy policy = AutoTunePolicyProvider?.Invoke() ?? EqAutoTunePolicy.Default;
         // Iterate verdicts: the snapshot's settings object still names the channel after the crossover wizard re-letters blocks.
         foreach (AgentOperationVerdict verdict in toApply
             .Where(verdict => verdict.Applicable)
             .Where(verdict => verdict.Operation is not AgentSettingsOperation)
-            .OrderBy(verdict => AgentEngineOrder(verdict.Operation!)))
+            .OrderBy(verdict => AgentEngineRequests.Order(verdict.Operation!)))
         {
             AgentOperation operation = verdict.Operation!;
             if (operation is not ProbeOperation)
             {
-                progress?.Report(AgentStepText(operation, verdict));
+                progress?.Report(AgentEngineRequests.StepText(operation, verdict));
             }
 
             switch (operation)
@@ -377,28 +287,6 @@ public partial class VirtualCrossoverPanel
         return ran;
     }
 
-    private static string AgentStepText(AgentOperation operation, AgentOperationVerdict verdict) =>
-        operation switch
-        {
-            UseSpatialAverageOperation spatial => $"Spatial average: {spatial.Mode}…",
-            RunAutoCrossoverOperation => "Auto crossover: the wizard is opening…",
-            TuneJunctionOperation junction =>
-                $"Junction tune {verdict.ChannelLabel}: searching the crossover…",
-            RunAutoDelayOperation => "Auto delay: searching delays and polarities…",
-            AutoTunePeqOperation => $"Auto-tune {verdict.ChannelLabel}: fitting the bank…",
-            _ => $"{operation.Parameter}…"
-        };
-
-    private static int AgentEngineOrder(AgentOperation operation) => operation switch
-    {
-        UseSpatialAverageOperation => 0,
-        RunAutoCrossoverOperation => 1,
-        // After the wizard, before Auto delay, which realigns whatever the crossover became.
-        TuneJunctionOperation => 2,
-        RunAutoDelayOperation => 3,
-        _ => 4
-    };
-
     // Mode and tick together: either alone leaves the point measurement in charge. Project events are suppressed so the import saves and redraws once.
     private bool ApplyAgentSpatialAverage(UseSpatialAverageOperation operation)
     {
@@ -415,7 +303,7 @@ public partial class VirtualCrossoverPanel
         {
             SetSpatialAverageMode(mode);
             checkBoxHybrid.Checked = true;
-            project.ShowHybridCurves = true;
+            session.Project.ShowHybridCurves = true;
         }
         finally
         {
@@ -427,45 +315,27 @@ public partial class VirtualCrossoverPanel
         return true;
     }
 
-    // The dialog's opening inputs (also the package's Current column): layout-neutral magnitudes, since the layout toggle owns signs; gain balance unticked, since the project stores the tilt, not the opt-in.
-    private AgentAutoDelaySettings AgentAutoDelayDefaults() =>
-        new(
-            project.StereoSceneOffsetMagnitudeMs,
-            project.StereoRightHandDrive,
-            AdjustGains: false,
-            Math.Abs(project.StereoLevelDifferenceDb),
-            project.RearFillOffsetMs);
-
-    /// <summary>Request inputs: stated values, dialog defaults for the rest. UI-free so the rule can be pinned.</summary>
-    internal static AutoDelayRunRequest BuildAutoDelayRequest(
-        RunAutoDelayOperation operation, AgentAutoDelaySettings defaults) =>
-        new(
-            operation.SceneOffsetMs ?? defaults.SceneOffsetMs,
-            operation.RightHandDrive ?? defaults.RightHandDrive,
-            operation.AdjustGains ?? defaults.AdjustGains,
-            operation.NearSideCutDb ?? defaults.NearSideCutDb,
-            operation.RearFillOffsetMs ?? defaults.RearFillOffsetMs);
-
     // Auto delay without its dialog: the button's checks (headless), the dialog's compute and its Apply commit.
     // The panel is disabled during compute: the dialog's modality is what kept the chain still.
     private async Task<bool> RunAgentAutoDelayAsync(
         RunAutoDelayOperation operation, List<string> summary)
     {
-        (AutoDelayLaunch? launch, string? refusal) = PrepareAutoDelay(interactive: false);
+        (AutoDelayPlan? launch, AutoDelayRefusal? refusal) = VirtualCrossoverAutoDelay.Prepare(
+            session, gatePlacement, consentToBroadWindow: null);
         if (launch == null)
         {
-            summary.Add($"Auto delay: skipped ({refusal}).");
+            summary.Add($"Auto delay: skipped ({refusal!.Summary}).");
             return false;
         }
 
-        AutoDelayRunRequest request = BuildAutoDelayRequest(operation, AgentAutoDelayDefaults());
+        AutoDelayRunRequest request = AgentEngineRequests.AutoDelayRequest(operation, agentReader.AutoDelayDefaults());
         AutoDelayRunResult result;
         bool wasEnabled = Enabled;
         Enabled = false;
         UseWaitCursor = true;
         try
         {
-            result = await launch.Runner(request);
+            result = await launch.Run(request);
         }
         finally
         {
@@ -535,7 +405,7 @@ public partial class VirtualCrossoverPanel
             summary.Add(
                 $"Applied {rows} of {proposedRows} proposed change{(proposedRows == 1 ? "" : "s")}.");
             // The rows name their sides: the side lock takes them as written. Before the engines, whose junction-tune save would read the rows as a hand edit.
-            sideLock.Remember(channels.Select(channel => channel.Pair));
+            sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         }
 
         bool engines = await RunAgentEngineRequests(toApply, summary, progress);
@@ -546,48 +416,6 @@ public partial class VirtualCrossoverPanel
         }
 
         return engines;
-    }
-
-    /// <summary>A junction's two blocks as the tuner reads them: every side carrying both measurements with its own chain, or the one side asked for. A mono block is routed to both sides; two mono blocks are read once, as the right side would repeat the left.</summary>
-    private static (List<JunctionTuneSide> Sides, string? Refusal) BuildJunctionTuneSides(
-        VirtualCrossoverChannel lower, VirtualCrossoverChannel upper, bool? rightSideOnly)
-    {
-        var sides = new List<JunctionTuneSide>();
-        foreach (bool rightSide in new[] { false, true })
-        {
-            if (rightSideOnly is { } only && only != rightSide)
-            {
-                continue;
-            }
-            if (rightSide && lower.Pair.Mono && upper.Pair.Mono && rightSideOnly == null)
-            {
-                continue;
-            }
-
-            VirtualCrossoverChannelState lowerState = lower.SideState(rightSide && !lower.Pair.Mono);
-            VirtualCrossoverChannelState upperState = upper.SideState(rightSide && !upper.Pair.Mono);
-            if (lowerState.TransferImpulseResponse == null || upperState.TransferImpulseResponse == null)
-            {
-                continue;
-            }
-            if (lowerState.SampleRate != upperState.SampleRate)
-            {
-                return ([], "the two measurements on the " +
-                    $"{(rightSide ? "right" : "left")} side have different sample rates");
-            }
-
-            sides.Add(new JunctionTuneSide(
-                rightSide ? "right" : "left",
-                lowerState.TransferImpulseResponse,
-                lower.SideSettings(rightSide && !lower.Pair.Mono).ToChain(lower.Pair.Zone),
-                upperState.TransferImpulseResponse,
-                upper.SideSettings(rightSide && !upper.Pair.Mono).ToChain(upper.Pair.Zone),
-                lowerState.SampleRate));
-        }
-
-        return sides.Count == 0
-            ? ([], "no side has both blocks measured")
-            : (sides, null);
     }
 
     /// <summary>Runs an import's probes on the tune as it stands, writing nothing; all probes go into one clipboard document, and a failing probe reports in its own entry. Returns whether a document reached the clipboard.</summary>
@@ -624,7 +452,8 @@ public partial class VirtualCrossoverPanel
                 // One failing reading must not take the other probes or the import down.
                 try
                 {
-                    reports.Add(await BuildAgentProbeReportAsync(probe));
+                    reports.Add(await AgentProbeReader.ReadAsync(
+                        probe, agentReader, AgentView(), GateIsMisplaced));
                 }
                 catch (Exception exception) when (exception is not OutOfMemoryException)
                 {
@@ -651,10 +480,10 @@ public partial class VirtualCrossoverPanel
         }
 
         // Same rule as the diagnostic: link to the package only while this is the session it was copied from.
-        bool matches = lastAgentPackageFingerprint != null &&
-            lastAgentPackageFingerprint == state;
+        bool matches = agentReader.LastPackageFingerprint != null &&
+            agentReader.LastPackageFingerprint == state;
         AgentProbeBuildResult result = AgentProbeBuilder.Build(
-            reports, matches ? lastAgentPackageId : null, matches, steady, DateTimeOffset.UtcNow);
+            reports, matches ? agentReader.LastPackageId : null, matches, steady, DateTimeOffset.UtcNow);
         // Series probes are not thinned for chat, but an untrusted reply must not grow the clipboard unboundedly.
         if (result.JsonBytes > AgentProtocol.MaxProbeDocumentBytes)
         {
@@ -689,321 +518,17 @@ public partial class VirtualCrossoverPanel
         return true;
     }
 
-    // Readings come off snapshots, so the compute runs off the UI thread and the tune is never touched.
-    private async Task<AgentProbeReport> BuildAgentProbeReportAsync(ProbeOperation probe)
-    {
-        if (probe.Probe == AgentProtocol.ExcessGroupDelayProbe)
-        {
-            IReadOnlyList<AgentDiagnosticSeries> channels = await BuildAgentExcessGroupDelaySeriesAsync();
-            return new AgentProbeReport(
-                probe.Id, probe.Probe, null, null, null,
-                channels.Count == 0 ? "no channel has a measurement to read" : null,
-                null, null, null, channels.Count == 0 ? null : channels);
-        }
-
-        AgentProbeReport Unavailable(string reason) => new(
-            probe.Id, probe.Probe, probe.JunctionId, null, null, reason, null, null, null, null);
-
-        if (probe.Probe == AgentProtocol.SeriesProbe)
-        {
-            // The package's own gather at the reply's density, so rows line up with the package by channel and junction id.
-            AgentPackageInputs? inputs = await CaptureAgentPackageInputsAsync();
-            return inputs == null
-                ? Unavailable("the session changed while the reading was taken")
-                : AgentSeriesProbe.Build(probe, inputs);
-        }
-
-        string? problem = AgentProposalValidator.ResolveJunction(
-            BuildAgentSessionSnapshot(), probe.JunctionId ?? string.Empty,
-            out AgentChannelSnapshot? lowerSnapshot, out AgentChannelSnapshot? upperSnapshot);
-        if (problem != null)
-        {
-            return Unavailable(problem.TrimEnd('.'));
-        }
-        if (GateIsMisplaced)
-        {
-            return Unavailable("the phase gate is misplaced");
-        }
-
-        VirtualCrossoverChannel? lower = channels.FirstOrDefault(channel =>
-            string.Equals(channel.Name, lowerSnapshot!.Block, StringComparison.Ordinal));
-        VirtualCrossoverChannel? upper = channels.FirstOrDefault(channel =>
-            string.Equals(channel.Name, upperSnapshot!.Block, StringComparison.Ordinal));
-        if (lower == null || upper == null)
-        {
-            return Unavailable("the blocks changed while the import ran");
-        }
-
-        // A probe reads the side its junction id names: variant changes are that side's settings.
-        AgentChannelSide namedSide = AgentJunctionIds.TryParse(
-            probe.JunctionId, out AgentChannelSide side, out _, out _)
-            ? side
-            : AgentChannelSide.Left;
-        (List<JunctionTuneSide> sides, string? refusal) = BuildJunctionTuneSides(
-            lower, upper, namedSide == AgentChannelSide.Right);
-        if (refusal != null)
-        {
-            return Unavailable(refusal);
-        }
-
-        int processorRate = ProcessorSampleRateHz;
-        if (probe.Probe == AgentProtocol.JunctionDelayProbe)
-        {
-            IReadOnlyList<JunctionDelayProbeSide> read = await Task.Run(
-                () => CrossoverJunctionTuner.ProbeAlignment(sides, processorRate));
-            return new AgentProbeReport(
-                probe.Id, probe.Probe, probe.JunctionId, lowerSnapshot!.Id, upperSnapshot!.Id,
-                null, null, null,
-                read.Select(item => new AgentProbeDelaySide(
-                    item.Side,
-                    [AgentCurveSampling.Frequency(item.BandLowHz), AgentCurveSampling.Frequency(item.BandHighHz)],
-                    AgentCurveSampling.Round(item.SearchHalfWindowMs, 2),
-                    item.Unavailable,
-                    item.Candidates.Select(candidate => new AgentProbeDelayCandidate(
-                        AgentCurveSampling.Round(candidate.ExtraDelayMs, 3),
-                        candidate.InvertUpper,
-                        AgentCurveSampling.Round(candidate.ScoreDb, 2),
-                        AgentCurveSampling.Round(candidate.LossDb, 2),
-                        AgentCurveSampling.Round(candidate.DipDb, 2),
-                        candidate.Chosen)).ToList())).ToList(),
-                null);
-        }
-
-        (List<JunctionProbeVariant> variants, string? variantProblem) = BuildAgentProbeVariants(
-            probe, sides, lowerSnapshot!, upperSnapshot!, BuildAgentSessionSnapshot());
-        if (variantProblem != null)
-        {
-            return Unavailable(variantProblem);
-        }
-
-        JunctionProbeResult probed;
-        try
-        {
-            probed = await Task.Run(() => CrossoverJunctionTuner.Probe(sides, processorRate, variants));
-        }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
-        {
-            return Unavailable(exception.Message.TrimEnd('.'));
-        }
-
-        // Per-entry affected junctions, not pooled over the probe: pooled lists would point at junctions the winning variant never touched. Entries follow BuildAgentProbeVariants order, baseline first.
-        AgentSessionSnapshot session = BuildAgentSessionSnapshot();
-        IReadOnlyList<AgentProbeVariant> asked = probe.Variants ?? [];
-        return new AgentProbeReport(
-            probe.Id, probe.Probe, probe.JunctionId, lowerSnapshot!.Id, upperSnapshot!.Id, null,
-            [
-                AgentCurveSampling.Frequency(probed.SharedBandLowHz),
-                AgentCurveSampling.Frequency(probed.SharedBandHighHz)
-            ],
-            probed.Entries.Select((entry, index) => AgentProbeEntryOf(
-                entry, index,
-                index == 0 || index > asked.Count
-                    ? null
-                    : AgentProposalValidator.NeighbourJunctionIds(
-                        session, probe.JunctionId ?? string.Empty,
-                        asked[index - 1].Changes
-                            .Select(change => change.ChannelId)
-                            .Distinct(StringComparer.Ordinal)
-                            .ToList()))).ToList(),
-            null,
-            null);
-    }
-
-    // The baseline is identified by position, never by label: the reply's own labels may say "current" too.
-    private static AgentProbeEntry AgentProbeEntryOf(
-        JunctionProbeEntry entry, int index, IReadOnlyList<string>? affected) =>
-        new(
-            entry.Label,
-            index == 0,
-            affected is { Count: > 0 } ? affected : null,
-            entry.LowerLowPass is { } low ? Edge(low) : null,
-            entry.UpperHighPass is { } high ? Edge(high) : null,
-            [
-                AgentCurveSampling.Frequency(entry.BandLowHz),
-                AgentCurveSampling.Frequency(entry.BandHighHz)
-            ],
-            entry.Unavailable,
-            entry.Sides.Select((reading, index) => new AgentProbeSide(
-                reading.Side,
-                AgentCurveSampling.Round(reading.LossDb, 2),
-                AgentCurveSampling.Round(reading.DipDb, 2),
-                AgentCurveSampling.Round(reading.RippleDb, 2),
-                index < entry.SharedBandSides.Count
-                    ? new AgentProbeBandReading(
-                        AgentCurveSampling.Round(entry.SharedBandSides[index].LossDb, 2),
-                        AgentCurveSampling.Round(entry.SharedBandSides[index].DipDb, 2),
-                        AgentCurveSampling.Round(entry.SharedBandSides[index].RippleDb, 2))
-                    : null,
-                entry.AfterDelay.FirstOrDefault(item => item.Side == reading.Side) is { } alignment
-                    ? new AgentProbeAfterDelay(
-                        AgentCurveSampling.Round(alignment.ExtraDelayMs, 3),
-                        alignment.InvertUpper,
-                        AgentCurveSampling.Round(alignment.LossDb, 2),
-                        AgentCurveSampling.Round(alignment.DipDb, 2))
-                    : null,
-                entry.Phase.FirstOrDefault(item => item.Side == reading.Side)?.Result is { } phase
-                    ? new AgentProbePhaseReading(
-                        AgentCurveSampling.Round(phase.PhaseAtCrossoverDeg, 1),
-                        AgentCurveSampling.Round(phase.PhaseConsistency, 2),
-                        AgentCurveSampling.Round(phase.CurrentScore, 2),
-                        AgentCurveSampling.Round(phase.BestScore, 2),
-                        AgentCurveSampling.Round(phase.BestExtraDelayMs, 3),
-                        phase.BestInvert,
-                        AgentCurveSampling.Round(phase.FitRmsDeg, 1))
-                    : null)).ToList());
-
-    private static AgentPackageEdge Edge(CrossoverEdge edge) =>
-        new(edge.Family.ToString(), AgentCurveSampling.Frequency(edge.FrequencyHz),
-            edge.SlopeDbPerOctave, edge.RippleDb);
-
-    /// <summary>Label of a probe's baseline entry; the baseline is marked by position, not by this text.</summary>
-    internal const string AgentProbeCurrentLabel = "current";
-
-    // Variant changes go onto copies of the two channels' settings, validated through the validator's path; no live setting is touched.
-    private static (List<JunctionProbeVariant> Variants, string? Problem) BuildAgentProbeVariants(
-        ProbeOperation probe,
-        IReadOnlyList<JunctionTuneSide> sides,
-        AgentChannelSnapshot lower,
-        AgentChannelSnapshot upper,
-        AgentSessionSnapshot session)
-    {
-        var variants = new List<JunctionProbeVariant>
-        {
-            new(AgentProbeCurrentLabel,
-                sides.Select(side => new JunctionProbeChains(side.LowerChain, side.UpperChain)).ToList())
-        };
-        int index = 1;
-        foreach (AgentProbeVariant variant in probe.Variants ?? [])
-        {
-            VirtualCrossoverChannelSettings lowerCopy = AgentOperations.CloneEditable(lower.Settings);
-            VirtualCrossoverChannelSettings upperCopy = AgentOperations.CloneEditable(upper.Settings);
-            foreach (AgentProbeChange change in variant.Changes)
-            {
-                bool isLower = string.Equals(change.ChannelId, lower.Id, StringComparison.Ordinal);
-                if (!isLower && !string.Equals(change.ChannelId, upper.Id, StringComparison.Ordinal))
-                {
-                    return ([], $"'{change.ChannelId}' is not one of the junction's channels");
-                }
-
-                string? problem = AgentProposalValidator.ApplyProbeChange(
-                    change, session, isLower ? lowerCopy : upperCopy);
-                if (problem != null)
-                {
-                    return ([], problem.TrimEnd('.'));
-                }
-            }
-
-            // One side, and the snapshot's settings are that side's: nothing to merge.
-            var chains = new JunctionProbeChains(
-                lowerCopy.ToChain(lower.Zone),
-                upperCopy.ToChain(upper.Zone));
-            variants.Add(new JunctionProbeVariant(
-                string.IsNullOrWhiteSpace(variant.Label) ? $"variant {index}" : variant.Label,
-                sides.Select(_ => chains).ToList()));
-            index++;
-        }
-
-        return (variants, null);
-    }
-
-    // The excess-group-delay menu item's reading, for a probe that asks for it by name.
-    private async Task<IReadOnlyList<AgentDiagnosticSeries>> BuildAgentExcessGroupDelaySeriesAsync()
-    {
-        var measured = new List<(string Id, Complex[] Response, int PeakIndex, int SampleRate, MeasuredBand Band)>();
-        foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
-            in AgentChannelSlots())
-        {
-            VirtualCrossoverChannelState state = channel.SideState(rightSide);
-            if (state.TransferImpulseResponse is { } impulseResponse)
-            {
-                measured.Add((
-                    AgentChannelIds.Format(block, side), impulseResponse,
-                    state.TransferPeakIndex, state.SampleRate, state.MeasuredBand));
-            }
-        }
-        if (measured.Count == 0)
-        {
-            return [];
-        }
-
-        PhaseAnalysisSettings gate = AgentGroupDelayWindow();
-        return await Task.Run(() =>
-        {
-            var curves = new List<AgentDiagnosticChannel>(measured.Count);
-            foreach ((string id, Complex[] response, int peakIndex, int sampleRate, MeasuredBand band) in measured)
-            {
-                IReadOnlyList<SignalPoint>? curve = BuildExcessGroupDelayCurve(
-                    response, peakIndex, sampleRate, band, gate);
-                if (curve != null)
-                {
-                    curves.Add(new AgentDiagnosticChannel(id, curve));
-                }
-            }
-
-            return AgentDiagnosticBuilder.ExcessGroupDelaySeries(curves);
-        });
-    }
-
-    // Junction tune without a dialog: the tuner's one crossover is written to both sides of both blocks, as the wizard writes and Undo AI import restores.
+    // What the tune writes and says lives in AgentJunctionTune; the panel runs it off the UI thread and repaints.
     private async Task<bool> RunAgentTuneJunctionAsync(
         TuneJunctionOperation operation, List<string> summary)
     {
-        string? problem = AgentProposalValidator.ResolveJunction(
-            BuildAgentSessionSnapshot(), operation.JunctionId,
-            out AgentChannelSnapshot? lowerSnapshot, out AgentChannelSnapshot? upperSnapshot);
-        if (problem != null)
+        (JunctionTunePlan? plan, string? skipped) = AgentJunctionTune.Prepare(
+            operation, BuildAgentSessionSnapshot(), session, GateIsMisplaced);
+        if (plan == null)
         {
-            summary.Add($"Junction tune {operation.JunctionId}: skipped ({problem.TrimEnd('.')}).");
+            summary.Add(skipped!);
             return false;
         }
-
-        string label = $"Junction tune {lowerSnapshot!.Block}/{upperSnapshot!.Block}";
-        VirtualCrossoverChannel? lower = channels.FirstOrDefault(channel =>
-            string.Equals(channel.Name, lowerSnapshot.Block, StringComparison.Ordinal));
-        VirtualCrossoverChannel? upper = channels.FirstOrDefault(channel =>
-            string.Equals(channel.Name, upperSnapshot.Block, StringComparison.Ordinal));
-        if (lower == null || upper == null)
-        {
-            summary.Add($"{label}: skipped (the blocks changed while the import ran).");
-            return false;
-        }
-        if (GateIsMisplaced)
-        {
-            summary.Add($"{label}: skipped (the phase gate is misplaced).");
-            return false;
-        }
-
-        (List<JunctionTuneSide> sides, string? sideRefusal) = BuildJunctionTuneSides(lower, upper, null);
-        if (sideRefusal != null)
-        {
-            summary.Add($"{label}: skipped ({sideRefusal}).");
-            return false;
-        }
-
-        double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
-            lowerSnapshot.Settings, upperSnapshot.Settings);
-        (double defaultMinHz, double defaultMaxHz) = AgentProposalValidator.DefaultJunctionWindow(currentHz);
-        var families = new List<CrossoverFilterFamily>();
-        foreach (string name in operation.Families ?? [])
-        {
-            if (AgentOperations.TryParseName(name, out CrossoverFilterFamily family))
-            {
-                families.Add(family);
-            }
-        }
-        if (families.Count == 0)
-        {
-            families.AddRange(AgentProposalValidator.CurrentFamilies(
-                lowerSnapshot.Settings, upperSnapshot.Settings));
-        }
-        var options = new JunctionTuneOptions(
-            families,
-            operation.Slopes,
-            operation.MinHz ?? defaultMinHz,
-            operation.MaxHz ?? defaultMaxHz,
-            // One slope for both edges unless the reply frees them: the free search costs slopes² per corner.
-            operation.IndependentSlopes ?? false,
-            ProcessorSampleRateHz);
 
         // Fingerprinted around the compute instead of disabling the panel: disable/enable repaints every plot twice, costing seconds with spatial averages. A moved fingerprint drops the result.
         string fingerprintBefore = ComputeAgentFingerprint();
@@ -1011,11 +536,11 @@ public partial class VirtualCrossoverPanel
         UseWaitCursor = true;
         try
         {
-            result = await Task.Run(() => CrossoverJunctionTuner.Tune(sides, options));
+            result = await Task.Run(() => CrossoverJunctionTuner.Tune(plan.Sides, plan.Options));
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
-            summary.Add($"{label}: skipped ({exception.Message.TrimEnd('.')}).");
+            summary.Add($"{plan.Label}: skipped ({exception.Message.TrimEnd('.')}).");
             return false;
         }
         finally
@@ -1031,123 +556,22 @@ public partial class VirtualCrossoverPanel
         }
         if (!string.Equals(fingerprintBefore, ComputeAgentFingerprint(), StringComparison.Ordinal))
         {
-            summary.Add($"{label}: skipped (the session changed while the tune ran; nothing was written).");
+            summary.Add($"{plan.Label}: skipped (the session changed while the tune ran; nothing was written).");
             return false;
         }
 
-        string before = JunctionText(result.Current, lower.Name, upper.Name);
-        string after = JunctionText(result.Best, lower.Name, upper.Name);
-        string window = $"{result.CandidatesEvaluated} candidates over {Hz(options.MinCrossoverHz)}–" +
-            $"{Hz(options.MaxCrossoverHz)}, ranked on {Hz(result.RankingBandLowHz)}–{Hz(result.RankingBandHighHz)}";
-        string scoreDelta = (result.Best.RankingScoreDb - result.Current.RankingScoreDb)
-            .ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + " dB on the score";
-        if (!result.Changed)
+        if (result.Changed)
         {
-            summary.Add(
-                $"{label}: kept — {before} stands; the best of {window} ({after}, {scoreDelta}) is not " +
-                $"{options.KeepMarginDb.ToString("0.00", CultureInfo.InvariantCulture)} dB better on the score" +
-                (result.Best.ScoreDb > result.Current.ScoreDb
-                    ? ", or reads worse on its own junction band."
-                    : "."));
-            AppendJunctionReadings(summary, result, best: false);
-            return false;
+            AgentJunctionTune.Write(result, plan.Lower, plan.Upper);
+            ApplySettingsToControl(plan.Lower);
+            ApplySettingsToControl(plan.Upper);
+            // Remember the result as it stands: read as a difference, a hidden side already holding the new edge would look untouched and get the shown side's whole crossover.
+            sideLock.Remember(session.Channels.Select(channel => channel.Pair));
+            SaveAndRedraw();
         }
-
-        CrossoverEdge lowPass = result.Best.LowerLowPass!.Value;
-        CrossoverEdge highPass = result.Best.UpperHighPass!.Value;
-        foreach (bool rightSide in new[] { false, true })
-        {
-            if (!lower.Pair.Mono || !rightSide)
-            {
-                VirtualCrossoverChannelSettings settings = lower.SideSettings(rightSide);
-                settings.LowPassEdge = lowPass;
-                settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
-                    ? CrossoverKind.BandPass
-                    : CrossoverKind.LowPass;
-            }
-            if (!upper.Pair.Mono || !rightSide)
-            {
-                VirtualCrossoverChannelSettings settings = upper.SideSettings(rightSide);
-                settings.HighPassEdge = highPass;
-                settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
-                    ? CrossoverKind.BandPass
-                    : CrossoverKind.HighPass;
-            }
-        }
-        ApplySettingsToControl(lower);
-        ApplySettingsToControl(upper);
-        // Remember the result as it stands: read as a difference, a hidden side already holding the new edge would look untouched and get the shown side's whole crossover.
-        sideLock.Remember(channels.Select(channel => channel.Pair));
-        ScheduleSave();
-        RedrawAll();
-
-        summary.Add($"{label}: applied — {before} → {after} ({window}, {scoreDelta}).");
-        AppendJunctionReadings(summary, result, best: true);
-        return true;
+        AgentJunctionTune.Describe(summary, plan, result);
+        return result.Changed;
     }
-
-    // Readings on the package's octave-each-side junction band, so they compare with what the assistant read.
-    private static void AppendJunctionReadings(List<string> summary, JunctionTuneResult result, bool best)
-    {
-        foreach (JunctionTuneReading current in result.Current.Sides)
-        {
-            JunctionTuneReading? tuned = best
-                ? result.Best.Sides.FirstOrDefault(side => side.Side == current.Side)
-                : null;
-            string Pair(double was, double now) => tuned == null
-                ? Db(was)
-                : $"{Db(was)} → {Db(now)}";
-            var line = new StringBuilder();
-            line.Append("  ").Append(current.Side).Append(": sum loss ")
-                .Append(Pair(current.LossDb, tuned?.LossDb ?? 0))
-                .Append(", dip ").Append(Pair(current.DipDb, tuned?.DipDb ?? 0))
-                .Append(", ripple ").Append(Pair(current.RippleDb, tuned?.RippleDb ?? 0));
-            JunctionTuneAlignment? alignment = (best ? result.BestAfterDelay : result.CurrentAfterDelay)
-                .FirstOrDefault(item => item.Side == current.Side);
-            if (alignment != null)
-            {
-                line.Append("; after the best delay ").Append(Db(alignment.LossDb))
-                    .Append(" at ").Append(alignment.ExtraDelayMs >= 0 ? "+" : string.Empty)
-                    .Append(alignment.ExtraDelayMs.ToString("0.00", CultureInfo.InvariantCulture))
-                    .Append(" ms on the upper block")
-                    .Append(alignment.InvertUpper ? ", with it inverted" : string.Empty);
-            }
-            summary.Add(line.Append('.').ToString());
-        }
-
-        static string Db(double value) =>
-            (value + 0).ToString("0.0", CultureInfo.InvariantCulture) + " dB";
-    }
-
-    private static string JunctionText(JunctionTuneCandidate candidate, string lowerBlock, string upperBlock) =>
-        $"{lowerBlock} {(candidate.LowerLowPass is { } low ? "LP " + AgentEdgeText(low) : "no low-pass")} + " +
-        $"{upperBlock} {(candidate.UpperHighPass is { } high ? "HP " + AgentEdgeText(high) : "no high-pass")}";
-
-    private static string AgentEdgeText(CrossoverEdge edge)
-    {
-        string family = edge.Family switch
-        {
-            CrossoverFilterFamily.LinkwitzRiley => "LR",
-            CrossoverFilterFamily.Butterworth => "BW",
-            CrossoverFilterFamily.Bessel => "Bessel",
-            _ => "Cheb"
-        };
-        return $"{family}{edge.SlopeDbPerOctave} {Hz(edge.FrequencyHz)}";
-    }
-
-    private static string Hz(double value) =>
-        value.ToString("0.###", CultureInfo.InvariantCulture) + " Hz";
-
-    /// <summary>The target level every Auto-tune of one import fits to: the first stated level, else the project's. UI-free so it can be pinned.</summary>
-    internal static double ImportTargetLevelDb(
-        IReadOnlyList<AgentOperationVerdict> toApply, double currentTargetLevelDb) =>
-        toApply
-            .Where(verdict => verdict.Status != AgentVerdictStatus.Rejected)
-            .Select(verdict => verdict.Operation)
-            .OfType<AutoTunePeqOperation>()
-            .Select(tune => tune.TargetLevelDb)
-            .FirstOrDefault(level => level != null)
-            ?? currentTargetLevelDb;
 
     private async Task<bool> RunAgentAutoTuneAsync(
         AutoTunePeqOperation operation,
@@ -1158,7 +582,7 @@ public partial class VirtualCrossoverPanel
     {
         string label = $"Auto-tune {operation.ChannelId}";
         // By the settings object, not the id: the crossover wizard earlier in this import may have re-lettered the blocks.
-        (VirtualCrossoverChannel Channel, bool RightSide)? slot = AgentChannelSlots()
+        (VirtualCrossoverChannel Channel, bool RightSide)? slot = agentReader.Slots()
             .Where(item => ReferenceEquals(item.Channel.SideSettings(item.RightSide), target.Settings))
             .Select(item => ((VirtualCrossoverChannel, bool)?)(item.Channel, item.RightSide))
             .FirstOrDefault();
@@ -1203,7 +627,7 @@ public partial class VirtualCrossoverPanel
         }
 
         VirtualCrossoverTargetSettings targetSettings =
-            project.Target ?? new VirtualCrossoverTargetSettings();
+            session.Project.Target ?? new VirtualCrossoverTargetSettings();
         TargetCurveSpec spec = (targetCurve ?? targetSettings.ToCurve()).Normalized().Spec;
         // The wizard's own refusal: kept all-pass bands filling Max Filters leave the fit no room.
         int room = EqAutoTuneHeadless.RoomUnderMaxFilters(request, policy);
@@ -1284,19 +708,19 @@ public partial class VirtualCrossoverPanel
         }
 
         VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
-        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
         if (!VirtualDspEqHandoff.TryApplyReturn(
-                channels,
+                session.Channels,
                 request.Token,
                 fitted,
                 projectGeneration,
-                CalibrationFor(state),
-                SpatialAverageCalibrationFor(state),
+                session.Calibration.For(state),
+                session.Calibration.SpatialAverageFor(),
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
                 (double)numericTargetLevel.Value,
                 average.Capture,
-                ProcessorSampleRateHz))
+                session.ProcessorSampleRateHz))
         {
             numericTargetLevel.Value = previousTargetLevel;
             summary.Add($"{label}: skipped (the channel changed while the fit ran).");
@@ -1320,18 +744,18 @@ public partial class VirtualCrossoverPanel
 
     private AgentImportUndo CaptureAgentUndo() =>
         new(
-            AgentChannelSlots()
+            agentReader.Slots()
                 .Select(slot => slot.Channel.SideSettings(slot.RightSide))
                 .Select(settings => new AgentUndoEntry(
                     settings, AgentOperations.CloneEditable(settings)))
                 .ToList(),
-            project.SpatialAverageMode,
+            session.Project.SpatialAverageMode,
             checkBoxHybrid.Checked,
-            channels.ToList(),
-            project.StereoSceneOffsetMagnitudeMs,
-            project.StereoRightHandDrive,
-            project.StereoLevelDifferenceDb,
-            project.RearFillOffsetMs,
+            session.Channels.ToList(),
+            session.Project.StereoSceneOffsetMagnitudeMs,
+            session.Project.StereoRightHandDrive,
+            session.Project.StereoLevelDifferenceDb,
+            session.Project.RearFillOffsetMs,
             (double)numericTargetLevel.Value);
 
     private void UndoAiImport()
@@ -1357,42 +781,41 @@ public partial class VirtualCrossoverPanel
         suppressProjectEvents = true;
         try
         {
-            project.SpatialAverageMode = undo.SpatialAverageMode;
+            session.Project.SpatialAverageMode = undo.SpatialAverageMode;
             checkBoxHybrid.Checked = undo.HybridTicked;
-            project.ShowHybridCurves = undo.HybridTicked;
-            project.SetStereoScene(undo.SceneOffsetMagnitudeMs, undo.RightHandDrive);
-            project.StereoLevelDifferenceDb = undo.StereoLevelDifferenceDb;
-            project.RearFillOffsetMs = undo.RearFillOffsetMs;
+            session.Project.ShowHybridCurves = undo.HybridTicked;
+            session.Project.SetStereoScene(undo.SceneOffsetMagnitudeMs, undo.RightHandDrive);
+            session.Project.StereoLevelDifferenceDb = undo.StereoLevelDifferenceDb;
+            session.Project.RearFillOffsetMs = undo.RearFillOffsetMs;
             numericTargetLevel.Value = numericTargetLevel.ClampValue(undo.TargetLevelDb);
             // ValueChanged's project write is suppressed above, so the datum the package and session read is written by hand.
-            project.TargetLevelDb = (double)numericTargetLevel.Value;
+            session.Project.TargetLevelDb = (double)numericTargetLevel.Value;
         }
         finally
         {
             suppressProjectEvents = suppressed;
         }
 
-        foreach (VirtualCrossoverChannel channel in channels)
+        foreach (VirtualCrossoverChannel channel in session.Channels)
         {
             RefreshSpatialAverageStatus(channel);
         }
 
         RefreshHybridAvailability();
         // Remember the restored state as it stands: a difference could carry a side where it never was (L=A,R=B; import wrote L=B; undo restores L=A and would carry A onto R).
-        sideLock.Remember(channels.Select(channel => channel.Pair));
-        ScheduleSave();
-        RedrawAll();
+        sideLock.Remember(session.Channels.Select(channel => channel.Pair));
+        SaveAndRedraw();
     }
 
     // Auto crossover can reorder blocks; restored by identity, since the list holds the same objects.
     private void RestoreAgentChannelOrder(IReadOnlyList<VirtualCrossoverChannel> order)
     {
-        if (order.Count != channels.Count || order.SequenceEqual(channels))
+        if (order.Count != session.Channels.Count || order.SequenceEqual(session.Channels))
         {
             return;
         }
 
-        List<int> indices = order.Select(channel => channels.IndexOf(channel)).ToList();
+        List<int> indices = order.Select(channel => session.Channels.IndexOf(channel)).ToList();
         if (indices.All(index => index >= 0))
         {
             ApplyChannelOrder(indices);
@@ -1404,7 +827,7 @@ public partial class VirtualCrossoverPanel
     {
         foreach (AgentUndoEntry entry in entries)
         {
-            foreach ((_, _, VirtualCrossoverChannel channel, bool rightSide) in AgentChannelSlots())
+            foreach ((_, _, VirtualCrossoverChannel channel, bool rightSide) in agentReader.Slots())
             {
                 if (ReferenceEquals(channel.SideSettings(rightSide), entry.Target))
                 {
@@ -1429,29 +852,16 @@ public partial class VirtualCrossoverPanel
         try
         {
             // Snapshot on the UI thread; the gated FFT and minimum-phase reconstruction per channel run off it.
-            var measured = new List<(string Id, Complex[] Response, int PeakIndex, int SampleRate, MeasuredBand Band)>();
-            foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
-                in AgentChannelSlots())
-            {
-                VirtualCrossoverChannelState state = channel.SideState(rightSide);
-                if (state.TransferImpulseResponse is { } impulseResponse)
-                {
-                    measured.Add((
-                        AgentChannelIds.Format(block, side), impulseResponse,
-                        state.TransferPeakIndex, state.SampleRate, state.MeasuredBand));
-                }
-            }
+            List<MeasuredChannel> measured = agentReader.MeasuredChannels();
             if (measured.Count == 0)
             {
                 ShowError("The diagnostic was not copied.", "No channel has a measurement to read.");
                 return;
             }
 
-            PhaseAnalysisSettings gate = AgentGroupDelayWindow();
+            PhaseAnalysisSettings gate = agentReader.GroupDelayWindow();
             // Tie to the package only while this is the session it was copied from.
-            string? packageId = lastAgentPackageFingerprint == ComputeAgentFingerprint()
-                ? lastAgentPackageId
-                : null;
+            string? packageId = agentReader.PackageIdFor(ComputeAgentFingerprint());
             DateTimeOffset now = DateTimeOffset.UtcNow;
             (AgentDiagnosticBuildResult result, int count) = await AgentProgressDialog.RunAsync(
                 FindForm(),
@@ -1460,14 +870,12 @@ public partial class VirtualCrossoverPanel
                 progress => Task.Run(() =>
                 {
                     var channels = new List<AgentDiagnosticChannel>(measured.Count);
-                    foreach ((string id, Complex[] response, int peakIndex, int sampleRate, MeasuredBand band) in measured)
+                    foreach (MeasuredChannel channel in measured)
                     {
-                        progress.Report($"Excess group delay: {id}…");
-                        IReadOnlyList<SignalPoint>? curve = BuildExcessGroupDelayCurve(
-                            response, peakIndex, sampleRate, band, gate);
-                        if (curve != null)
+                        progress.Report($"Excess group delay: {channel.Id}…");
+                        if (AgentSessionReader.ExcessGroupDelayCurve(channel, gate) is { } curve)
                         {
-                            channels.Add(new AgentDiagnosticChannel(id, curve));
+                            channels.Add(new AgentDiagnosticChannel(channel.Id, curve));
                         }
                     }
 
@@ -1566,7 +974,7 @@ public partial class VirtualCrossoverPanel
                 return;
             }
 
-            RememberAgentPackage(packageId.ToString("D"), fingerprint);
+            agentReader.RememberPackage(packageId.ToString("D"), fingerprint);
             string omitted = result.Omitted.Count > 0
                 ? Environment.NewLine + "Left out to fit the size limit: " +
                     string.Join(", ", result.Omitted) + "."
@@ -1594,7 +1002,7 @@ public partial class VirtualCrossoverPanel
     private async Task<(AgentPackageInputs Inputs, string Fingerprint)?> GatherAgentPackageAsync()
     {
         string before = ComputeAgentFingerprint();
-        AgentPackageInputs? inputs = await CaptureAgentPackageInputsAsync();
+        AgentPackageInputs? inputs = await agentReader.CaptureInputsAsync(AgentView());
         if (inputs == null || IsDisposed || ComputeAgentFingerprint() != before)
         {
             return null;
@@ -1602,498 +1010,4 @@ public partial class VirtualCrossoverPanel
 
         return (inputs, before);
     }
-
-    /// <summary>The channels as the bridge names them, with live settings, plus the project figures engine requests are judged against.</summary>
-    internal AgentSessionSnapshot BuildAgentSessionSnapshot() =>
-        new(
-            AgentChannelSlots()
-                .Select(slot => new AgentChannelSnapshot(
-                    slot.Block,
-                    slot.Side,
-                    slot.Channel.SideSettings(slot.RightSide),
-                    slot.Channel.SideState(slot.RightSide).TransferImpulseResponse != null,
-                    AgentSpatialAverageCaptures(slot.Channel.SideState(slot.RightSide)),
-                    slot.Channel.Pair.Zone,
-                    slot.Channel.Pair.Enabled,
-                    slot.Channel.Pair.Bypass))
-                .ToList(),
-            ProcessorSampleRateHz,
-            ProcessorProfile.MaxDelayMs,
-            lastAgentPackageId,
-            AgentAutoDelayDefaults(),
-            SpatialAverageMode,
-            checkBoxHybrid.Checked,
-            project.ActiveSideRight,
-            lastAgentPackageFingerprint,
-            ComputeAgentFingerprint());
-
-    // A mono block yields one slot, routed to the left as everywhere in the panel.
-    private IEnumerable<(string Block, AgentChannelSide Side, VirtualCrossoverChannel Channel, bool RightSide)>
-        AgentChannelSlots()
-    {
-        for (int index = 0; index < channels.Count; index++)
-        {
-            VirtualCrossoverChannel channel = channels[index];
-            string block = ChannelNameFor(index);
-            if (channel.Pair.Mono)
-            {
-                yield return (block, AgentChannelSide.Mono, channel, false);
-            }
-            else
-            {
-                yield return (block, AgentChannelSide.Left, channel, false);
-                yield return (block, AgentChannelSide.Right, channel, true);
-            }
-        }
-    }
-
-    /// <summary>Everything a package is built from, read off the current session. Null when the session changed underneath; the caller retries once. See docs/tech/agent-bridge.md#package-gathering.</summary>
-    internal async Task<AgentPackageInputs?> CaptureAgentPackageInputsAsync()
-    {
-        long revision = processingCoordinator.CurrentRevision;
-        VirtualCrossoverGroupView groupView = SelectedGroupView;
-        bool activeRight = project.ActiveSideRight;
-        // One smoothing for every package, independent of the display. See docs/tech/agent-bridge.md#package-smoothing.
-        int smoothing = SpectrumSmoothing.PsychoacousticCode;
-        MagnitudeGateSnapshot packageGate = magnitudeGate with { SmoothingInverseOctaves = smoothing };
-        // Hybrid curves and their sum go at 1/12 octave, the grid's width (the manual reads them unsmoothed).
-        MagnitudeGateSnapshot hybridGate =
-            magnitudeGate with { SmoothingInverseOctaves = AgentHybridSmoothingInverseOctaves };
-
-        var sides = new List<AgentSideInputs>();
-        var curves = new Dictionary<
-            (VirtualCrossoverChannel Channel, bool RightSide),
-            (ProcessedChannel Item, IReadOnlyList<SignalPoint>? Processed,
-                IReadOnlyList<SignalPoint>? HybridPreDsp, IReadOnlyList<SignalPoint>? HybridProcessed)>();
-        List<ProcessedChannel> activeShown = [];
-        foreach (bool rightSide in new[] { false, true })
-        {
-            AgentChannelSide sideName = rightSide ? AgentChannelSide.Right : AgentChannelSide.Left;
-            VirtualCrossoverSideSum? sideSum = await metrics.ComputeSideSumAsync(
-                channels, rightSide, revision, minimumChannels: 1);
-            if (!processingCoordinator.IsCurrent(revision))
-            {
-                return null;
-            }
-            if (sideSum == null)
-            {
-                sides.Add(new AgentSideInputs(
-                    sideName, [], null, null, null, [], [], [], "no channel with a source on this side"));
-                continue;
-            }
-
-            // The frame's own filtering (see RedrawMainPlotAsync); channels outside the view get their own curves below.
-            List<ProcessedChannel> all = sideSum.Channels.ToList();
-            List<ProcessedChannel> shown = ChannelsShownBy(all, groupView);
-            List<ProcessedChannel> summed = ChannelsSummedBy(shown, groupView);
-            List<ProcessedChannel> others = all.Except(shown).ToList();
-            if (rightSide == activeRight)
-            {
-                activeShown = shown;
-            }
-
-            // The panel's `metrics` smooths at the display's width; these delegates window through the package gate, the opposite side through its own gate placement. See docs/tech/agent-bridge.md#package-smoothing.
-            bool oppositeSide = rightSide != activeRight;
-            VirtualCrossoverMetrics MetricsThrough(MagnitudeGateSnapshot gate) =>
-                new(
-                    processingCoordinator,
-                    (impulseResponse, anchorIndex, sampleRate, band, calibration) =>
-                        BuildGatedMagnitudeCurve(
-                            gate,
-                            impulseResponse,
-                            anchorIndex,
-                            sampleRate,
-                            gate.ResolveGateOffsetMs(oppositeSide, anchorIndex, sampleRate),
-                            band,
-                            calibration),
-                    CalibrationFor,
-                    (members, anchorIndex) =>
-                        BuildMeasuredSumCurve(
-                            gate,
-                            members,
-                            anchorIndex,
-                            gate.ResolveGateOffsetMs(
-                                oppositeSide, anchorIndex, members.Count > 0 ? members[0].SampleRate : 0)));
-            VirtualCrossoverMetrics sideMetrics = MetricsThrough(packageGate);
-
-            List<AnalysisCurve>? magnitudes = null;
-            AnalysisCurve? sumCurve = null;
-            List<SignalPoint>? loss = null;
-            // At the hybrid's width so a point-measurement fallback is not smoothed twice; built only when the hybrid is asked for (a second gated pass).
-            List<AnalysisCurve>? hybridReferences = null;
-            if (shown.Count > 0)
-            {
-                (magnitudes, sumCurve, loss) = sideMetrics.BuildCurves(shown, smoothing, summed);
-                if (HybridRequested)
-                {
-                    (hybridReferences, _, _) = MetricsThrough(hybridGate)
-                        .BuildCurves(shown, AgentHybridSmoothingInverseOctaves, summed);
-                }
-            }
-
-            bool quotesJunctions =
-                VirtualCrossoverGroupViews.LossChainZone(groupView) != null &&
-                ProcessedChannels.HasJunction(summed);
-            if (!quotesJunctions)
-            {
-                loss = null;
-            }
-            // Rows from the SUMMING channels, as UpdateMetric does: a drawn-but-unsummed centre would invent junctions (see VirtualCrossoverMetricsTests.BuildEntries_ReadsJunctionsOffTheSummingSet).
-            List<VirtualCrossoverMetric.Entry> entries = sideMetrics.BuildEntries(summed, loss);
-            // Phase gate over the summing channels with this side's pin, as RedrawMainPlotAsync does for the active side.
-            List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
-            // The direct-sound loss travels whatever the Sum loss selector shows (PROTOCOL §1.8), off the junction phase spectra.
-            List<SignalPoint>? directLoss = null;
-            List<VirtualCrossoverMetric.Entry> directEntries = [];
-            if (quotesJunctions)
-            {
-                int phaseRate = summed[0].SampleRate;
-                double? pinnedOffsetMs = project.PhaseGateFor(rightSide).OffsetMs;
-                double gateLeftMs = gatePreview?.LeftMs ?? project.PhaseGateLeftMs;
-                double gatePlateauMs = gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs;
-                double gateRightMs = gatePreview?.RightMs ?? project.PhaseGateRightMs;
-                (phaseEntries, directLoss) = await Task.Run(() =>
-                {
-                    IReadOnlyList<ProcessedChannel>? orderedSet = null;
-                    IReadOnlyList<Complex[]>? spectra = null;
-                    List<VirtualCrossoverMetric.PhaseEntry> built = sideMetrics.BuildPhaseEntries(
-                        summed,
-                        ordered =>
-                        {
-                            orderedSet = ordered;
-                            spectra = JunctionPhaseSpectra.Build(
-                                ordered, phaseRate, pinnedOffsetMs,
-                                gateLeftMs, gatePlateauMs, gateRightMs);
-                            return spectra;
-                        });
-                    List<SignalPoint>? direct = spectra != null
-                        ? sideMetrics.BuildDirectLossCurve(orderedSet!, spectra, smoothing)
-                        : null;
-                    return (built, direct);
-                });
-                directEntries = sideMetrics.BuildEntries(summed, directLoss);
-            }
-            HybridMagnitudes? hybrid = hybridReferences != null
-                ? BuildHybridMagnitudes(shown, hybridReferences, rightSide, AgentHybridSmoothingInverseOctaves)
-                : null;
-            // The hybrid view's sum (see RedrawMainPlotAsync); null, as on screen, when the sides cannot share one offset.
-            IReadOnlyList<SignalPoint>? hybridSum = hybrid == null || hybridReferences == null
-                ? null
-                : rightSide == activeRight
-                    ? BuildActiveHybridSumCurve(shown, hybridReferences, hybrid, hybridGate)
-                    : BuildOppositeHybridSumCurve(sideSum, hybrid.OffsetDb, hybridGate)?.Points;
-
-            for (int index = 0; index < shown.Count; index++)
-            {
-                // Hybrid curves are carried shifted by the set's datum onto the impulse responses' axis, as drawn (see BuildMagnitudeCurves).
-                IReadOnlyList<SignalPoint>? hybridProcessed = null;
-                IReadOnlyList<SignalPoint>? hybridPreDsp = null;
-                if (hybrid != null && hybridReferences != null && !hybrid.PointMeasuredChannels[index])
-                {
-                    hybridProcessed = ShiftedBy(hybrid.Channels[index], hybrid.OffsetDb);
-                    hybridPreDsp = BuildHybridPreDspCurve(
-                        shown[index].Channel, rightSide, hybridReferences[index].Points,
-                        AgentHybridSmoothingInverseOctaves, hybrid.OffsetDb);
-                }
-
-                curves[(shown[index].Channel, rightSide)] = (
-                    shown[index],
-                    magnitudes?[index].Points,
-                    hybridPreDsp,
-                    hybridProcessed);
-            }
-            if (others.Count > 0)
-            {
-                (List<AnalysisCurve>? otherMagnitudes, _, _) =
-                    sideMetrics.BuildCurves(others, smoothing);
-                for (int index = 0; index < others.Count; index++)
-                {
-                    curves[(others[index].Channel, rightSide)] =
-                        (others[index], otherMagnitudes?[index].Points, null, null);
-                }
-            }
-
-            var junctions = new List<AgentJunctionInputs>();
-            if (quotesJunctions)
-            {
-                List<AdjacentPair> pairs = ProcessedChannels.GetAdjacentPairs(
-                    ProcessedChannels.OrderByBand(summed));
-                List<(JunctionCorrelationView? Correlation, JunctionCoherenceView? Coherence)> views =
-                    await Task.Run(() => pairs.Select(pair => BuildJunctionViews(pair, all)).ToList());
-                for (int index = 0; index < pairs.Count; index++)
-                {
-                    AdjacentPair pair = pairs[index];
-                    junctions.Add(new AgentJunctionInputs(
-                        pair.Lower.Channel.Name,
-                        pair.Upper.Channel.Name,
-                        pair.CrossoverHz,
-                        pair.BandLowHz,
-                        pair.BandHighHz,
-                        MagnitudeOf(pair.Lower),
-                        MagnitudeOf(pair.Upper),
-                        views[index].Correlation,
-                        views[index].Coherence));
-                }
-            }
-
-            sides.Add(new AgentSideInputs(
-                sideName,
-                shown.Select(item => AgentChannelIds.Format(
-                    item.Channel.Name,
-                    item.Channel.Pair.Mono ? AgentChannelSide.Mono : sideName)).ToList(),
-                sumCurve?.Points,
-                hybridSum,
-                loss,
-                entries,
-                phaseEntries,
-                junctions,
-                shown.Count == 0
-                    ? $"no channels in {VirtualCrossoverGroupViews.DisplayName(groupView)} on this side"
-                    : null,
-                directLoss,
-                directEntries));
-
-            IReadOnlyList<SignalPoint>? MagnitudeOf(ProcessedChannel item) =>
-                curves.TryGetValue((item.Channel, rightSide), out var found) ? found.Processed : null;
-        }
-
-        List<VirtualCrossoverMetric.StereoDelta> stereo = await metrics.ComputeStereoDeltasAsync(
-            channels,
-            revision,
-            includePair: pair => VirtualCrossoverGroupViews.IsShown(groupView, pair.Zone),
-            hybridLevelDeltaDb: HybridStereoLevelReader());
-        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groups = activeShown.Count > 0
-            ? await metrics.ComputeGroupDeltasAsync(
-                activeShown, groupView, revision,
-                hybridGroupLevelDeltaDb: HybridGroupLevelReader())
-            : [];
-        if (!processingCoordinator.IsCurrent(revision))
-        {
-            return null;
-        }
-
-        var channelInputs = new List<AgentChannelInputs>();
-        foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
-            in AgentChannelSlots())
-        {
-            VirtualCrossoverChannelState state = channel.SideState(rightSide);
-            VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
-            AgentSourceInputs? source = null;
-            if (state.ProcessingSource != null)
-            {
-                bool processed = curves.TryGetValue((channel, rightSide), out var found);
-                IReadOnlyList<SignalPoint>? raw = null;
-                IReadOnlyList<SignalPoint>? coherence = null;
-                if (processed)
-                {
-                    if (state.TransferImpulseResponse is { } impulseResponse)
-                    {
-                        raw = BuildRawMagnitudeCurve(
-                            impulseResponse,
-                            state.TransferPeakIndex,
-                            state.SampleRate,
-                            found.Item.MeasuredBand,
-                            CalibrationFor(found.Item),
-                            packageGate).Points;
-                    }
-                    if (found.Processed != null && state.TransferCoherence is { Length: > 1 } linear)
-                    {
-                        IReadOnlyList<double> perPoint =
-                            CoherencePerPoint(linear, found.Processed, state.SampleRate);
-                        coherence = found.Processed
-                            .Select((point, index) => new SignalPoint(point.X, perPoint[index]))
-                            .ToList();
-                    }
-                }
-
-                source = new AgentSourceInputs(
-                    state.SampleRate,
-                    state.MeasuredBand,
-                    // The selected mode's family, not whichever capture the side holds.
-                    state.SpatialAverageFor(SpatialAverageMode) != null ? SpatialAverageMode.ToString() : null,
-                    // Every family held: distinguishes "no average" from "one the view is not using".
-                    AgentSpatialAverageCaptures(state),
-                    raw,
-                    processed ? found.Processed : null,
-                    processed ? found.HybridPreDsp : null,
-                    processed ? found.HybridProcessed : null,
-                    coherence,
-                    processed ? null : channel.Pair.Enabled ? "not processed" : "channel muted");
-            }
-
-            channelInputs.Add(new AgentChannelInputs(
-                block,
-                side,
-                channel.Pair.Zone,
-                settings.DisplayName,
-                channel.Pair.Enabled,
-                channel.Pair.Bypass,
-                // A copy: the builder runs off the UI thread and the live object may be edited meanwhile.
-                AgentOperations.CloneEditable(settings),
-                ProcessorSampleRateHz,
-                source));
-        }
-
-        DspProcessorProfile profile = ProcessorProfile;
-        var processor = new AgentProcessorInputs(
-            profile.ModelId ?? "custom",
-            profile.DisplayName,
-            profile.IsCustom,
-            profile.SampleRateHz,
-            ProcessorRateFollowsMeasurements,
-            profile.QConvention,
-            profile.MaxDelayMs,
-            DspProcessorCatalog.Preset(profile.ModelId)?.MaxDelayMs != null);
-
-        var analysis = new AgentAnalysisInputs(
-            groupView,
-            activeRight,
-            // The package's smoothing, not the display's.
-            SpectrumSmoothing.PsychoacousticBaseInverseOctaves,
-            true,
-            project.SpatialAverageMode,
-            checkBoxHybrid.Checked,
-            HybridRequested,
-            AgentHybridSmoothingInverseOctaves,
-            project.PhaseWindowMode,
-            project.PhaseFdwCycles,
-            project.PhaseDetrendMode,
-            project.PhaseGateLeftMs,
-            project.PhaseGatePlateauMs,
-            project.PhaseGateRightMs,
-            project.PhaseGateLeft.OffsetMs,
-            project.PhaseGateLeft.DetrendMs,
-            project.PhaseGateRight.OffsetMs,
-            project.PhaseGateRight.DetrendMs,
-            project.Calibration?.Name,
-            project.StereoSceneOffsetMagnitudeMs,
-            project.StereoRightHandDrive,
-            project.StereoLevelDifferenceDb,
-            project.RearFillOffsetMs);
-
-        VirtualCrossoverTargetSettings targetSettings =
-            project.Target ?? new VirtualCrossoverTargetSettings();
-        EqTargetCurve target = (targetCurve ?? targetSettings.ToCurve()).Normalized();
-        var targetInputs = new AgentTargetInputs(
-            project.TargetLevelDb,
-            target.Preset,
-            target.Spec,
-            target.ToleranceDb,
-            targetSettings.ImportedName);
-
-        return new AgentPackageInputs(
-            ApplicationVersionInfo.GetDisplayVersion(),
-            project.AiNotes,
-            processor,
-            analysis,
-            targetInputs,
-            channelInputs,
-            sides,
-            stereo,
-            groups);
-    }
-
-    // The project's phase gate, window mode and cycles, with the offset left for the channel's own arrival.
-    private PhaseAnalysisSettings AgentGroupDelayWindow() => new(
-        project.PhaseWindowMode,
-        project.PhaseFdwCycles,
-        PhaseDetrendMode.Off,
-        ManualDetrendMilliseconds: 0.0,
-        GateOffsetMs: 0.0,
-        project.PhaseGateLeftMs,
-        project.PhaseGatePlateauMs,
-        project.PhaseGateRightMs,
-        Unwrap: false,
-        SmoothingInverseOctaves: 0.0);
-
-    // Excess group delay at the channel's own arrival: minimum-phase part removed, leaving arrivals and reflections. Pure, runs off the UI thread. See docs/tech/agent-bridge.md#excess-group-delay-diagnostic.
-    private static IReadOnlyList<SignalPoint>? BuildExcessGroupDelayCurve(
-        Complex[] impulseResponse, int peakIndex, int sampleRate, MeasuredBand band,
-        PhaseAnalysisSettings window)
-    {
-        int anchorIndex = ProcessedChannels.StartAnchorIndex(impulseResponse, peakIndex, sampleRate);
-        GroupDelaySpectra spectra = DataHelper.GetGroupDelayAnalysisSpectra(
-            new ImpulseMeasurementView(impulseResponse, anchorIndex, sampleRate),
-            window with { GateOffsetMs = anchorIndex * 1_000.0 / sampleRate },
-            out int extractionStart);
-        GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
-            spectra,
-            extractionStart,
-            sampleRate,
-            window,
-            // Group-delay default (1/12 octave), not psychoacoustic: that is a hearing model for levels, not time.
-            FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves,
-            includeMinimumPhase: true,
-            lowestMeasuredFrequencyHz: band.LowEdgeHz,
-            highestMeasuredFrequencyHz: band.HighEdgeHz);
-        return curves.Excess?.Points;
-    }
-
-    // Mode enum names, so the per-channel list and analysis.spatialAverage.mode agree.
-    private static IReadOnlyList<string> AgentSpatialAverageCaptures(VirtualCrossoverChannelState state)
-    {
-        var captures = new List<string>(2);
-        if (state.SpatialAverage != null)
-        {
-            captures.Add(VirtualCrossoverSpatialAverageMode.MovingMic.ToString());
-        }
-
-        if (state.ArrayCapture != null)
-        {
-            captures.Add(VirtualCrossoverSpatialAverageMode.MicArray.ToString());
-        }
-
-        return captures;
-    }
-
-    // The spatial average through no chain, on the impulse responses' level axis; null without a capture of the selected family.
-    private IReadOnlyList<SignalPoint>? BuildHybridPreDspCurve(
-        VirtualCrossoverChannel channel,
-        bool rightSide,
-        IReadOnlyList<SignalPoint> grid,
-        int smoothingCode,
-        double offsetDb)
-    {
-        VirtualCrossoverChannelState state = channel.SideState(rightSide);
-        if (state.SpatialAverageFor(SpatialAverageMode) is not { } document || grid.Count == 0)
-        {
-            return null;
-        }
-
-        IReadOnlyList<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
-            document,
-            DspChannelChain.Identity,
-            channel.ProcessorSampleRateFor(rightSide),
-            SpatialAverageCalibrationFor(state),
-            grid.Select(point => point.X).ToList(),
-            smoothingCode);
-        return curve == null ? null : ShiftedBy(curve, offsetDb);
-    }
-
-    // A failing view is reported missing rather than failing the package, as the lower plot's redraw does.
-    private static (JunctionCorrelationView?, JunctionCoherenceView?) BuildJunctionViews(
-        AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
-    {
-        JunctionCorrelationView? correlation = null;
-        JunctionCoherenceView? coherence = null;
-        try
-        {
-            correlation = BuildCorrelationView(pair, scope);
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            System.Diagnostics.Debug.WriteLine($"Agent package correlation view failed: {exception}");
-        }
-        try
-        {
-            coherence = BuildCoherenceView(pair, scope);
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            System.Diagnostics.Debug.WriteLine($"Agent package coherence view failed: {exception}");
-        }
-
-        return (correlation, coherence);
-    }
-
 }

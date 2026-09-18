@@ -259,13 +259,13 @@ public sealed class VirtualCrossoverAutoDelayReportTests
     [Fact]
     public void FormatPolarityMismatchWarning_NoMismatchGivesNoWarning()
     {
-        Assert.Null(VirtualCrossoverPanel.FormatPolarityMismatchWarning([]));
+        Assert.Null(VirtualCrossoverAutoDelay.FormatPolarityMismatchWarning([]));
     }
 
     [Fact]
     public void FormatPolarityMismatchWarning_NamesTheDriversAndFlagsInversion()
     {
-        string? warning = VirtualCrossoverPanel.FormatPolarityMismatchWarning(
+        string? warning = VirtualCrossoverAutoDelay.FormatPolarityMismatchWarning(
             ["Midbass", "Tweeter"]);
 
         Assert.NotNull(warning);

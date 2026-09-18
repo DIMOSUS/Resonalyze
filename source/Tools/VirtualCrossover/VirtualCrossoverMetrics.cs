@@ -38,6 +38,38 @@ internal sealed class VirtualCrossoverMetrics
         this.buildSumCurve = buildSumCurve;
     }
 
+    /// <summary>Curves windowed through <paramref name="gate"/>, read once per curve so one frame reads one snapshot.</summary>
+    /// <param name="oppositeSide">Places the window by the opposite side's pin: never the shown side's.</param>
+    public static VirtualCrossoverMetrics Through(
+        VirtualCrossoverProcessingCoordinator coordinator,
+        Func<MagnitudeGateSnapshot> gate,
+        bool oppositeSide,
+        Func<ProcessedChannel, CalibrationFile?> channelCalibration) =>
+        new(
+            coordinator,
+            (impulseResponse, anchorIndex, sampleRate, band, calibration) =>
+            {
+                MagnitudeGateSnapshot snapshot = gate();
+                return snapshot.Channel(
+                    impulseResponse,
+                    anchorIndex,
+                    sampleRate,
+                    snapshot.ResolveGateOffsetMs(oppositeSide, anchorIndex, sampleRate),
+                    band,
+                    calibration);
+            },
+            channelCalibration,
+            (members, anchorIndex) =>
+            {
+                MagnitudeGateSnapshot snapshot = gate();
+                return snapshot.MeasuredSum(
+                    members,
+                    anchorIndex,
+                    snapshot.ResolveGateOffsetMs(
+                        oppositeSide, anchorIndex, members.Count > 0 ? members[0].SampleRate : 0),
+                    channelCalibration);
+            });
+
     // The loss is divided out of the UNSMOOTHED pair (see VirtualCrossoverAnalysis.SumLossCurve), hence both widths.
     // Per-channel magnitudes come back even for one channel; only the metric needs two.
     /// <param name="summed">Subset entering the SUM (null = all drawn). Both share one window anchor from the drawn set.</param>

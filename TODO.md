@@ -19,9 +19,9 @@ handoff). Everything else was re-checked against the code and stands.
 
 What HAD drifted is the figures, and they are corrected in place. TWO of the
 three structural items nearly doubled while they sat still, which raises the
-price of the split rather than lowering it: `VirtualCrossoverPanel.cs` is 7061
-lines against the ~3900 last recorded — larger than it was BEFORE its
-decomposition — and `PlotModelFactoryTests` 2560 against ~1035. The third moved
+price of the split rather than lowering it: `VirtualCrossoverPanel.cs` was 7061
+lines against the ~3900 last recorded (split since; see its item below) and
+`PlotModelFactoryTests` 2560 against ~1035. The third moved
 far less: the `Overlay` CLASS is 2541 lines against ~2230. This audit first gave
 it 3219, which is the FILE, `OverlayCollection` and two small types included —
 measure the class when the item is about splitting a class, and say which when
@@ -265,23 +265,30 @@ next field session rather than in a register nobody else can tick.
   (`TimeAlignmentPanelController`) recomputes Hilbert + GCC-PHAT on every tab
   show even when inputs are unchanged. Needs a live-app check to avoid stale
   display.
-- [ ] **`VirtualCrossoverPanel` decomposition — residual boundaries.** The bulk
-  is done: the UI-free runtime session model (`VirtualCrossoverChannel`/`State`),
-  the source-loading pipeline (`ResolvedVirtualDspSource` + `TryAssignSource`),
-  both OxyPlot presenters (`VirtualCrossoverAcousticPlot` / `DspChainPlot`), the
-  metric computation (`VirtualCrossoverMetrics` + shared `ProcessedChannels`) and
-  the shared Auto delay `AlignmentReprocessor` are extracted; the panel dropped
-  ~4250 → ~3060 lines, and everything since has grown it to **7061** — Auto delay
-  (#43–#50), then the spatial-average attachment and the hybrid view (#124, #130),
-  the calibration selector (#112, #135) and the audition (#139). It is bigger now
-  than it was BEFORE the decomposition, so the boundaries below are worth more
-  than they have ever been. Remaining, lower-value slices: a full source
-  resolver/assignment
-  boundary (the panel still orchestrates the file/History/
-  restore flow around the shared core), splitting `VirtualCrossoverMetrics` into
-  curve building vs side-processing orchestration, and moving `ProcessedChannel`'s
+- [ ] **Virtual DSP — residual boundaries.** The tune lives in a UI-free
+  `VirtualCrossoverSession` and whatever reads it takes the session
+  (docs/tech/virtual-dsp-panel.md#code-map); the panel is binding code in
+  partials named for what they bind, the largest the Agent Bridge's import flow
+  (~1000 lines) and the blocks (~600). Remaining, lower-value slices: the EQ
+  Wizard handoff request (`BuildPeqHandoffRequest`, `CapturePhaseContext`,
+  `HandoffSpatialAverage`) still reads the last render and the target level off
+  the panel, so the AI import's Auto-tune runs in the panel too; a full source
+  resolver/assignment boundary (the panel still orchestrates the file/History/
+  restore flow around the shared core); splitting `VirtualCrossoverMetrics` into
+  curve building vs side-processing orchestration; and moving `ProcessedChannel`'s
   `OxyColor` out into the render binding. Persistence, calibration and control
   binding are inherently UI-bound — leave them.
+- [ ] ★ **The Virtual DSP autosave trusts whoever built the panel.** `ScheduleSave`
+  and `FlushProject` have no guard and `Dispose` flushes, so any host that builds
+  a panel it never shows replaces the stored session with the panel's empty
+  three-block project. Until #203 the App test host did exactly that on every run,
+  which is why sessions kept resetting to default; it now runs portable, but a
+  scratchpad harness without `portable.flag` still would. Only two call sites
+  check `initialized` (`ReconcileCalibrationSelection`, `StoreTargetInProject`).
+  Guard the save itself: write only once `OnPanelShown` has started the stored
+  load. Nothing real saves earlier: a dropped session file shows the tool before
+  importing (`Form1.OpenDroppedFileAsync`), and Load lives on the panel. Pin it
+  with a test that builds, edits and disposes a panel that was never shown.
 - [ ] **The audition's "Own (as measured)" refuses more than the render needs.**
   A car whose two SIDES were measured through different microphones is refused
   along with one whose own channels disagree, though only the second is
@@ -566,6 +573,12 @@ tool has set crossovers, delays and polarity — so crossovers, phase/time and
 convolution are deliberately out of its scope (see the note at the end). The
 items below are what a car DSP tune actually needs, roughly in priority order.
 
+- [ ] **`EqWizardPanel` shows the signals the Virtual DSP panel had before #203.**
+  4,209 lines over six partials, and 12 test files reach it through reflection
+  (`ApplySource`, `GetSourceCurve`, `ComputeSourceCurve`, `BeginVirtualDspHandoff`,
+  `ApplyPhaseGate` and private fields). Apply AGENTS.md › Where logic lives: a
+  UI-free owner for the wizard's source, bank and target, the rules as types
+  that take it, and tests against those types.
 - [ ] **The boostability mask has no notion of a driver band.** The mask itself
   is in (`EqBoostabilityMask`: boosts refused in low-coherence bins and narrow
   deep nulls, cuts always allowed, Auto Tune cuts-only by default), but the
@@ -634,6 +647,12 @@ shows it as flat by construction.
 
 ## Time Alignment / unwrap
 
+- [ ] **`TimeAlignmentPanelController` holds its rules as `internal static`
+  members** (ten of them, 1,856 lines): band detection (`TryDetectDominantBand`,
+  `SharedBand`), the onset (`GetEnergyOnsetIndex`), the recommendation
+  (`RecommendedRow`, `IsArrivalRecommendable`, `RowLabel`) and plot markers. They
+  are static only so tests can reach them; move the rules to a type of their own
+  (AGENTS.md › Where logic lives) and leave the controller the binding.
 - [ ] ★ **The panel reads the WHOLE record to answer a question about its first
   80 ms.** A transfer IR is `NextPow2(2 x capture)` — a 2.2 s sweep at 96 kHz
   reads a 10.9 s buffer — and every transform is sized by it, so one read costs
@@ -669,6 +688,11 @@ shows it as flat by construction.
 
 ## Live Spectrum / coherence
 
+- [ ] **`LiveSpectrumControllerTests` build the controller with
+  `GetUninitializedObject`** (six tests, each setting its private `measurement`
+  field), the signal the Virtual DSP panel's tests showed before #203: logic the
+  tests need lives on the controller. Move it to a type the tests can construct
+  (AGENTS.md › Where logic lives).
 - [✗] **RTA tone level is only accurate with a Flat Top window — RESOLVED for
   the general case; the periodic-pink residual is conditional.**
   Flat Top is a selectable Live Spectrum window and reads a tone at its true,

@@ -262,7 +262,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 ProcessedChannels.OrderByBand(set)))
             {
                 JunctionCorrelationView view =
-                    VirtualCrossoverPanel.BuildCorrelationView(pair, set);
+                    JunctionViews.BuildCorrelationView(pair, set);
                 if (view.WhitenedDirect.Count == 0)
                 {
                     continue;
@@ -349,17 +349,17 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
     {
         (List<VirtualCrossoverSideAlignmentChannel> leftSide,
             List<VirtualCrossoverSideAlignmentChannel> rightSide) =
-            VirtualCrossoverPanel.CollectStereoSides(channels);
-        if (VirtualCrossoverPanel.PickStereoBridge(leftSide, rightSide)
+            VirtualCrossoverAutoDelay.CollectStereoSides(channels);
+        if (VirtualCrossoverAutoDelay.PickStereoBridge(leftSide, rightSide)
                 is not { } bridgeRight ||
-            leftSide.Count(VirtualCrossoverPanel.InFrontChain) < 2)
+            leftSide.Count(VirtualCrossoverAutoDelay.InFrontChain) < 2)
         {
             return null;
         }
 
         VirtualCrossoverSideAlignmentChannel bridgeLeft = leftSide.First(
             item => item.Runtime == bridgeRight.Runtime && !item.RightSide);
-        if (VirtualCrossoverPanel.StereoBridgeBand(bridgeLeft, bridgeRight)
+        if (VirtualCrossoverAutoDelay.StereoBridgeBand(bridgeLeft, bridgeRight)
             is not (double bridgeLowHz, double bridgeHighHz))
         {
             return null;
@@ -374,14 +374,14 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
 
         // The panel walks the front chain and places later stages afterwards; the battery judges the chain.
         List<VirtualCrossoverSideAlignmentChannel> chainLeft =
-            [.. leftSide.Where(VirtualCrossoverPanel.InFrontChain)];
+            [.. leftSide.Where(VirtualCrossoverAutoDelay.InFrontChain)];
         List<VirtualCrossoverSideAlignmentChannel> chainRight =
-            [.. rightSide.Where(VirtualCrossoverPanel.InFrontChain)];
+            [.. rightSide.Where(VirtualCrossoverAutoDelay.InFrontChain)];
         DspProcessorProfile processor = project.ResolveDspProcessor(
             union[0].State.SampleRate);
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
         var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
-        VirtualCrossoverPanel.ComputeStereoAlignment(
+        VirtualCrossoverAutoDelay.ComputeStereoAlignment(
             chainLeft, chainRight, union, bridgeLeft, bridgeRight,
             bridgeLowHz, bridgeHighHz,
             project.StereoSceneOffsetMagnitudeMs,

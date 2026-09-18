@@ -1,6 +1,3 @@
-using System.Reflection;
-using System.Runtime.CompilerServices;
-
 namespace Resonalyze.App.Tests;
 
 /// <summary>Array sets are levelled by the loopback, so this warning is the only check on composition; it reads the whole project.</summary>
@@ -48,21 +45,15 @@ public sealed class ArrayCompositionWarningTests
 
     private static string? Describe(params VirtualCrossoverChannel[] channels)
     {
-        object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
-        typeof(VirtualCrossoverPanel)
-            .GetField("project", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(panel, new VirtualCrossoverProjectFile
+        var session = new VirtualCrossoverSession
+        {
+            Project = new VirtualCrossoverProjectFile
             {
                 SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MicArray
-            });
-        typeof(VirtualCrossoverPanel)
-            .GetField("channels", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(panel, channels.ToList());
-        return (string?)typeof(VirtualCrossoverPanel)
-            .GetMethod(
-                "DescribeArrayCompositionMismatch",
-                BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, []);
+            }
+        };
+        session.Channels.AddRange(channels);
+        return new VirtualCrossoverWarnings(session).DescribeArrayCompositionMismatch();
     }
 
     [Fact]

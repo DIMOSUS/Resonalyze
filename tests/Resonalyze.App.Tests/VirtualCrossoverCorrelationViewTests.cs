@@ -37,7 +37,7 @@ public sealed class VirtualCrossoverCorrelationViewTests
         {
             ProcessedChannel lower = Channel("C", lowerIr, wide);
             ProcessedChannel upper = Channel("D", upperIr, upperRange);
-            return VirtualCrossoverPanel.BuildCorrelationView(
+            return JunctionViews.BuildCorrelationView(
                 new AdjacentPair(lower, upper, 1_500, 750, 3_000),
                 [lower, upper]);
         }
@@ -105,7 +105,7 @@ public sealed class VirtualCrossoverCorrelationViewTests
         Assert.True(lower.Range.LeadSamples > AlignmentReprocessor.SearchCropPrePeakSamples(Record));
 
         var pair = new AdjacentPair(lower.Channel, upper.Channel, CornerHz, CornerHz / 2, CornerHz * 2);
-        JunctionCorrelationView view = VirtualCrossoverPanel.BuildCorrelationView(
+        JunctionCorrelationView view = JunctionViews.BuildCorrelationView(
             pair, [lower.Channel, upper.Channel]);
 
         // The whole records through the same own-front windows: the crop must change nothing.
@@ -135,7 +135,7 @@ public sealed class VirtualCrossoverCorrelationViewTests
         var range = new ValidSampleRange(FrontSample - 96, IrLength);
         ProcessedChannel lower = Channel("C", ir, range);
         ProcessedChannel upper = Channel("D", (Complex[])ir.Clone(), range);
-        JunctionCorrelationView view = VirtualCrossoverPanel.BuildCorrelationView(
+        JunctionCorrelationView view = JunctionViews.BuildCorrelationView(
             new AdjacentPair(lower, upper, 1_500, 750, 3_000),
             [lower, upper]);
 
@@ -230,7 +230,7 @@ public sealed class VirtualCrossoverCorrelationViewTests
         ProcessedChannel lower = Channel("C", ir, range);
         ProcessedChannel upper = Channel("D", (Complex[])ir.Clone(), range);
 
-        JunctionCoherenceView view = VirtualCrossoverPanel.BuildCoherenceView(
+        JunctionCoherenceView view = JunctionViews.BuildCoherenceView(
             new AdjacentPair(lower, upper, 1_500, 750, 3_000),
             [lower, upper]);
 

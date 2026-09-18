@@ -8,12 +8,40 @@ delay, impulse, step); the lower plot shows each chain's own response or a junct
 (correlation, coherence). The whole state persists as a project file (autosave) and can be exported as a
 session.
 
-Code: `source/Tools/VirtualCrossover/VirtualCrossoverPanel.cs` (with partials such as
-`VirtualCrossoverPanel.AgentBridge.cs` and the Layout partial). Models are UI-free
-(`VirtualCrossoverChannel`, `VirtualCrossoverProjectFile`, `VirtualCrossoverChannelSettings`); the panel
-owns the mapping from a channel to its `VirtualCrossoverChannelControl`, and only the binding methods look
-controls up. The heavy processing lives in the processing coordinator and in `Resonalyze.Dsp`
-(`AutoAlignmentEngine`, `AlignmentSelection`, `GainBalanceEngine`).
+The heavy processing lives in the processing coordinator and in `Resonalyze.Dsp` (`AutoAlignmentEngine`,
+`AlignmentSelection`, `GainBalanceEngine`).
+
+## Code map
+
+Code: `source/Tools/VirtualCrossover/`. The tune lives in a UI-free `VirtualCrossoverSession`: the project, the
+blocks (`VirtualCrossoverChannel`, one per L/R pair, with `VirtualCrossoverChannelSettings` per side), the
+calibration policy, the Gate dialog's preview and the magnitude gate snapshot. Whatever reads the tune takes the
+session. `VirtualCrossoverPanel` is its only writer: it binds the controls to it and presents what the readers
+return, and only its binding methods look a block's `VirtualCrossoverChannelControl` up. Its partials are named
+for what they bind (`.Project`, `.Calibration`, `.Channels`, `.Sources`, `.Peq`, `.Fir`, `.Views`, `.DspPlot`,
+`.Target`, `.SpatialAverage`, `.AutoDelay`, `.AutoCrossover`, `.Audition`, `.AgentBridge`, `.Export`,
+`.ToolTips`, `.Layout`); the main file holds the constructor, the host's API and the redraw loop.
+
+| Reads the session | For |
+| --- | --- |
+| `VirtualCrossoverPhaseGate`, `MagnitudeGateSnapshot` | the phase gate in effect and the magnitude window the workers read |
+| `AcousticViewBuilder`, `VirtualCrossoverFrame`, `JunctionViews` | the upper plot's curves and the junction views |
+| `VirtualCrossoverHybrid` | the hybrid view: captures, set offset, level read-outs |
+| `GatePlacementVerdict`, `VirtualCrossoverWarnings` | the warning line |
+| `VirtualCrossoverAutoDelay`, `StagedGroupPlacement` | Auto delay |
+| `VirtualCrossoverAutoSetup` | what the crossover wizard reads and writes |
+| `VirtualCrossoverAudition` | the audition render |
+| `AgentSessionReader`, `AgentProbeReader`, `AgentJunctionTune`, `AgentEngineRequests` | the Agent Bridge |
+
+The shown side has one owner, the project's `ActiveSideRight`. A block's shorthand members (`Settings`,
+`TransferImpulseResponse`, ...) read the side it shows; a block the panel creates reads that side from the session
+(`ActiveRightProvider`) and refuses to be set apart from it, so the two cannot disagree. Readers that have the session
+name the side explicitly.
+
+Tests of a rule build a session directly or read a panel's through `panel.Session`. The wiring between the controls
+and the readers, which only the panel path exercises, is pinned by `VirtualCrossoverPanelWiringTests`: a live panel on
+synthetic measurements (the right side 6 dB below the left, so every reading names its side), driven through its
+controls and read by what it draws and reports.
 
 ## Redraw scheduling
 
@@ -51,15 +79,15 @@ controls up. The heavy processing lives in the processing coordinator and in `Re
 `MagnitudeGateSnapshot` is an immutable record carrying the gate template, the active and opposite
 side's pinned offsets and the smoothing. `RequestRedraw` refreshes it on the UI thread (every redraw path
 funnels through there); PLINQ magnitude builds on worker threads read it by reference, never live controls,
-the project or the gate-preview tuple. The template's offset is a placeholder: each build stamps its own
-(`BuildMagnitudeCurve`).
+the project or the gate preview. The template's offset is a placeholder: each build stamps its own
+(`MagnitudeGateSnapshot.Channel`).
 
 `ResolveGateOffsetMs` is the single place the pinned-vs-anchor choice is made. Each side stores its own
 pinned offset because the two sides' drivers arrive at different times; the active side's pin must never
 window the opposite side's sum (that uses its own pin, or its own anchor when unpinned). It is internal so a
 unit test pins the rule without a panel.
 
-While the gate dialog is open, `gatePreview` holds its candidate values so all gated plots track it live;
+While the gate dialog is open, the session's `GatePreview` holds its candidate values so all gated plots track it live;
 Save commits them, Cancel just drops them. `AutoOffset` makes the preview gate per curve exactly as Save
 will, while `OffsetMs` still says where the dialog's window is drawn. Only the placement is per side; window
 lengths and analysis modes are project-wide so both sides read phase at the same resolution.
@@ -92,7 +120,7 @@ began and octave bands read 10+ dB off the same IR read from the front.
 
 ## Measured sum
 
-`BuildMeasuredSumCurve` builds the gated magnitude of the SUM of the channels, each contributing only where
+`MagnitudeGateSnapshot.MeasuredSum` builds the gated magnitude of the SUM of the channels, each contributing only where
 it measured anything (`GatedMagnitude.MeasuredBySomeChannel`). One gated build yields both widths: the
 smoothed curve the plot draws and the unsmoothed one the sum loss divides (one gate, one FFT, two
 resamples).
@@ -128,7 +156,7 @@ block's windows and labelled "Sum loss (direct)".
 One shared absolute τ (the earliest arrival) keeps the curves' relative phase, which is what the view is
 for. Windows may still follow each channel's own arrival: `BuildMeasuredPhase` re-references every
 extraction to the common τ, which is exact as long as no window cuts into its own channel, the condition
-`ResolvePhaseGateOffsets` enforces before handing out per-curve placements. The placement arithmetic itself
+`VirtualCrossoverPhaseGate.PerCurveOffsets` enforces before handing out per-curve placements. The placement arithmetic itself
 lives in `PhaseGatePlacement`, which the EQ Wizard's phase view uses too, so a tune made in one holds in the
 other. In Auto the phase curves follow their arrival START so FDW's short high-frequency windows land on
 the right channel's first cycles.
@@ -148,14 +176,14 @@ the right channel's first cycles.
 
 ## Group delay view
 
-`BuildGroupDelayCurves` draws each drawn channel's processed group delay and the Sum's, through the SAME
-window the phase view reads (project gate, Fixed or FDW with its cycles, pinned or per-curve placement,
-previewed by the open Gate dialog), so the two views are one window. It is absolute (ms from the record's
-start, the impulse view's clock) with no detrend; a common τ would only shift every curve equally. Under
-FDW the curve reads the arrival of the energy inside the window at each frequency, i.e. the direct sound at
-mid and high frequencies, which cut the seat-to-seat scatter of this curve by three to five times on the
-reference car. Only the plain group delay and the Sum are drawn; the minimum/excess split stays the AI
-probe's.
+`AcousticViewBuilder.GroupDelayCurves` draws each drawn channel's processed group delay and the Sum's,
+through the SAME window the phase view reads (project gate, Fixed or FDW with its cycles, pinned or
+per-curve placement, previewed by the open Gate dialog), so the two views are one window. It is absolute (ms
+from the record's start, the impulse view's clock) with no detrend; a common τ would only shift every curve
+equally. Under FDW the curve reads the arrival of the energy inside the window at each frequency, i.e. the
+direct sound at mid and high frequencies, which cut the seat-to-seat scatter of this curve by three to five
+times on the reference car. Only the plain group delay and the Sum are drawn; the minimum/excess split stays
+the AI probe's.
 
 - Smoothing follows the plot selector, but psychoacoustic smoothing is a hearing model for levels, not
   time, so it reads as 1/12 octave (the Group Delay mode's default and what the AI diagnostic reads at).
@@ -187,15 +215,15 @@ compare on one clock; it must use the shown side's sample rate or its samples la
 
 The gate offset is an ABSOLUTE time. A placement that belonged to one set of measurements windows the
 reverberant tail of the next set, and nothing in a curve says so because a tail has a magnitude too.
-`JudgeGatePlacement` judges the magnitude view's window against every processed channel and stores a
-`GatePlacementVerdict` (offset, plateau start and end, pinned or Auto, failed channels). The magnitude
+`GatePlacementVerdict.Judge` judges the magnitude view's window against every processed channel and the
+panel keeps the verdict (offset, plateau start and end, pinned or Auto, failed channels). The magnitude
 placement is the one judged because the curves, the Sum and the loss read-out are built from it, and the
 magnitude and phase shared placements both open at the earliest estimated START, so one verdict answers for
 both. (It once anchored on the earliest peak, which is never earlier and so also answered; the rules were
 unified when the junction gate moved to fronts.) Per-curve phase placements have their own guard in
-`ResolvePhaseGateOffsets`.
+`VirtualCrossoverPhaseGate.PerCurveOffsets`.
 
-`JudgeGateCut` distinguishes two failures (`GateCutKind`):
+`JudgeCut` distinguishes two failures (`GateCutKind`):
 
 - `ClosesBeforeArrival`, judged by geometry. The leading-edge figure (`DataHelper.GateLeadingEdgeLossDb`, the
   ratio of what the window discards ahead of its plateau to what it keeps) cannot detect it: a channel that
@@ -206,7 +234,7 @@ unified when the junction gate moved to fronts.) Per-curve phase placements have
   unity and a front just past the plateau is attenuated, not missing. How deep into the fade a front may land
   is a continuum with no measured line, so only the window's end is judged.
 - `OpensAfterArrival`, judged on the leading-edge loss: over the ceiling AND worse by
-  `GateMisplacementMarginDb` (3 dB, twice the discarded energy that moving the window would give) than the
+  `MisplacementMarginDb` (3 dB, twice the discarded energy that moving the window would give) than the
   same gate placed on the channel's own arrival. The comparison keeps a merely short gate from reading as
   misplaced: the project default cannot hold one period of a 55 Hz subwoofer anywhere, and the field
   session read −19.4 dB at the channel's own arrival and −19.4 dB at the shared one; a gate the user cannot
@@ -216,7 +244,7 @@ unified when the junction gate moved to fronts.) Per-curve phase placements have
   the shared window; here the penalty is an amber note and two refused commands.
 
 The one-line warning says which miss the reader is looking at (the response's tail, or none of it);
-`FormatGateCutDetail` is both the tooltip and the body of the refusals, so they cannot disagree. A misplaced
+`FormatDetail` is both the tooltip and the body of the refusals, so they cannot disagree. A misplaced
 gate refuses Auto crossover and Auto delay (`GateIsMisplaced`, `RefuseOnMisplacedGate`): neither search reads
 the gate, but both are verified on what it produces (curves, loss read-out, the outcome metric in the
 alignment log). An AI import quotes the refusal phrase instead of showing a dialog. The verdict describes
@@ -283,7 +311,7 @@ warning reads the applied delays directly rather than a group-delay proxy, becau
 peaks late in its own band and only its arrival across the overlap tells the truth. Bypassed channels are
 excluded.
 
-Only the front chain counts (`SplitAlignmentStages`): only its junctions are searched, so only its members
+Only the front chain counts (`VirtualCrossoverAlignmentStages.Split`): only its junctions are searched, so only its members
 drag each other. Later stages are placed against the settled chain; a rear fill deliberately sits the rear
 fill offset behind (default 15 ms, the threshold itself) and a centre carries its own path, so counting them
 would make Auto delay's own output trip the warning. A rear-only project is walked as its own chain and
@@ -304,7 +332,7 @@ use the summed set (pairing a drawn-only centre with a front driver would invent
 - The same silence applies where a single-group chain holds no junction: Rear + Sub on the reference car is
   subwoofers to 110 Hz and a rear fill from 290 Hz with nothing crossing. `GetAdjacentPairs` declines that
   pair, but the loss total would still be computed over a crossover that is not in the car.
-- `quotesJunctions` is decided before the frame's awaits because the junction phase block is withheld under
+- `VirtualCrossoverFrame.QuotesJunctions` is decided before the frame's awaits because the junction phase block is withheld under
   the same condition.
 - An empty view (a rear view of a front-only car) says so; with nothing resolved at all the no-sources hint
   is shown instead.
@@ -313,13 +341,13 @@ use the summed set (pairing a drawn-only centre with a front driver would invent
 
 ### Groups view
 
-`BuildGroupSumCurves` draws one summed line per zone and nothing else: a dozen driver traces would bury the
+`AcousticViewBuilder.GroupSumCurves` draws one summed line per zone and nothing else: a dozen driver traces would bury the
 only relation this view is for, and that relation is between the groups' sums. All lines are gated on ONE
 anchor across all shown channels; per-group anchors would each hide their own group's delay. With the hybrid
-on, a group line is built like the Sum (`BuildHybridSumCurve`) over the group's members; a group that cannot
-produce one falls back to its measured sum rather than disappearing. `HybridSubset` narrows the per-channel
+on, a group line is built like the Sum (`VirtualCrossoverHybrid.Sum`) over the group's members; a group that cannot
+produce one falls back to its measured sum rather than disappearing. `HybridMagnitudes.Subset` narrows the per-channel
 lists positionally but keeps the set offset and datums, which describe the capture set and keep every line
-on one axis; it is pure and internal because an off-by-one slice would draw a plausible wrong curve. Colours
+on one axis; it is pure and pinned by tests because an off-by-one slice would draw a plausible wrong curve. Colours
 are semantic per zone. The target is drawn here too (a rear fill's level against the house curve). Picking
 Groups moves the view radio to Magnitude visibly (there is no group phase or impulse), and the
 phase, group delay, impulse and step radios are muted while it is selected.
@@ -337,18 +365,18 @@ the same block's spectra summed, so it is built in the same task from the same w
 
 ## Opposite-side sum
 
-The opposite side's sum comes from the metrics (shared coordinator cache), but its curve is built in the
-panel so it windows through the OPPOSITE side's own gate placement. Both sides must be drawn by the same
-method, or the comparison is between methods rather than tunes; with the hybrid on and the opposite side
-short of a capture, the curve is dropped.
+The opposite side's sum comes from the metrics (shared coordinator cache), but its curve is built by
+`MagnitudeGateSnapshot.OppositeSum` so it windows through the OPPOSITE side's own gate placement. Both sides
+must be drawn by the same method, or the comparison is between methods rather than tunes; with the hybrid on
+and the opposite side short of a capture, the curve is dropped.
 
 ### Opposite-side hybrid sum
 
-`BuildOppositeHybridSumCurve` uses that side's own channels, captures, loss and gate placement, but the
+`VirtualCrossoverHybrid.OppositeSum` uses that side's own channels, captures, loss and gate placement, but the
 ACTIVE side's offset. Separate offsets would erase exactly the L/R level difference the captures measured;
 sharing one costs only an absolute shift when the side selector flips, while the gap between curves stays
 the same. Borrowing an offset holds only if both sides' captures are one set, which
-`CanDrawOppositeHybridSum` checks (per-side checks cannot: two relative capture runs are each consistent
+`CanDrawOppositeSum` checks (per-side checks cannot: two relative capture runs are each consistent
 but say nothing about their relative level). One anchor and offset serve that side's channels and its sum,
 and the loss is smoothed only at the end of the reconstruction.
 
@@ -405,7 +433,8 @@ then refuses the bank if the panel meanwhile draws a hybrid.
 
 ## Project restore order
 
-`RestoreProjectSourcesAsync` is static and delegate-fed so the order is unit-testable:
+`VirtualCrossoverSession.RestoreSourcesAsync` takes the resolve as a delegate, so the order is unit-testable
+without a panel:
 
 1. Wipe BOTH physical slots of EVERY channel before the first source resolves. Per slot, because through the
    effective accessor a mono pair's right slot is unreachable, and a stale measurement from the previous
@@ -519,7 +548,7 @@ The alignment stages, tuning constants and tie-breaks live in `AutoAlignmentEngi
 (unit-tested in `Resonalyze.Dsp`). Each run is an absolute proposal from sources, crossovers, gains and PEQ;
 previous delays and polarities are ignored.
 
-- `PrepareAutoDelay` returns a launch or a refusal. Interactively refusals are shown and the broad-window
+- `VirtualCrossoverAutoDelay.Prepare` returns a launch or a refusal. Interactively refusals are shown and the broad-window
   question (no crossovers configured, so the search falls back to a broad midband window) is asked; headless
   (AI import) that question is a refusal quoted in the summary.
 - Stereo runs whenever some non-mono pair has both sides resolved (the highest such front-chain pair is the

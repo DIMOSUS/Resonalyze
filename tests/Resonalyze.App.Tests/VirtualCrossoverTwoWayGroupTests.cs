@@ -56,9 +56,8 @@ public sealed class VirtualCrossoverTwoWayGroupTests
             .ToDictionary(item => (IAlignmentChannel)item.member, item => item.snapshot);
 
         Dictionary<IAlignmentChannel, AlignmentOverride> inner =
-            VirtualCrossoverPanel.SettleWithinGroup(
-                [.. members.Cast<IAlignmentChannel>()],
-                member => ((VirtualCrossoverChannel)member).Settings,
+            StagedGroupPlacement.SettleWithinGroup(
+                members,
                 snapshots,
                 reprocessor,
                 new System.Text.StringBuilder());
@@ -69,7 +68,7 @@ public sealed class VirtualCrossoverTwoWayGroupTests
             "the engine's map is expected to omit the group's own reference");
 
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
-        VirtualCrossoverPanel.ApplyInnerSettlement(members, inner, alignment);
+        StagedGroupPlacement.ApplyInnerSettlement(members, inner, alignment);
 
         Assert.Equal(2, alignment.Count);
         Assert.All(members, member => Assert.True(alignment.ContainsKey(member)));
@@ -94,7 +93,7 @@ public sealed class VirtualCrossoverTwoWayGroupTests
         };
         var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
 
-        VirtualCrossoverPanel.ApplyInnerSettlement([reference, other], inner, alignment);
+        StagedGroupPlacement.ApplyInnerSettlement([reference, other], inner, alignment);
 
         Assert.Equal(0.0, alignment[reference].DelayMs, 6);
         Assert.False(alignment[reference].InvertPolarity);

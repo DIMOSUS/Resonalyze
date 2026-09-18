@@ -1,4 +1,3 @@
-using System.Reflection;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -161,9 +160,5 @@ public sealed class VirtualCrossoverCopySideTests
         VirtualCrossoverChannelSettings from,
         VirtualCrossoverChannelSettings to,
         VirtualCrossoverCopyScope scope) =>
-        typeof(VirtualCrossoverPanel)
-            .GetMethod(
-                "CopyChainSettings",
-                BindingFlags.NonPublic | BindingFlags.Static)!
-            .Invoke(null, [from, to, scope]);
+        scope.Copy(from, to);
 }

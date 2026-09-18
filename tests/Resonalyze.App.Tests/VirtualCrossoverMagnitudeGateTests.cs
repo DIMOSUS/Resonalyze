@@ -5,7 +5,7 @@ namespace Resonalyze.App.Tests;
 /// <summary>Field case: L pinned at 10 ms, R at 14 ms, viewing L - the dashed Sum R must be gated at 14 ms.</summary>
 public sealed class VirtualCrossoverMagnitudeGateTests
 {
-    private static VirtualCrossoverPanel.MagnitudeGateSnapshot Snapshot(
+    private static MagnitudeGateSnapshot Snapshot(
         double? pinnedOffsetMs,
         double? oppositePinnedOffsetMs) => new(
             new PhaseAnalysisSettings(
@@ -26,7 +26,7 @@ public sealed class VirtualCrossoverMagnitudeGateTests
     [Fact]
     public void EachSideUsesItsOwnPinnedOffset()
     {
-        VirtualCrossoverPanel.MagnitudeGateSnapshot snapshot = Snapshot(
+        MagnitudeGateSnapshot snapshot = Snapshot(
             pinnedOffsetMs: 10.0, oppositePinnedOffsetMs: 14.0);
 
         Assert.Equal(10.0, snapshot.ResolveGateOffsetMs(
@@ -38,7 +38,7 @@ public sealed class VirtualCrossoverMagnitudeGateTests
     [Fact]
     public void AnUnpinnedSideAnchorsAtTheGivenPeak_EvenWhenTheOtherIsPinned()
     {
-        VirtualCrossoverPanel.MagnitudeGateSnapshot snapshot = Snapshot(
+        MagnitudeGateSnapshot snapshot = Snapshot(
             pinnedOffsetMs: 10.0, oppositePinnedOffsetMs: null);
 
         Assert.Equal(10.0, snapshot.ResolveGateOffsetMs(

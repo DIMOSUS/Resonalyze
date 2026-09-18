@@ -37,6 +37,31 @@ internal sealed record VirtualCrossoverCalibrationDecision(
     VirtualCrossoverSessionCalibration? Session,
     VirtualCrossoverCalibrationNotice Notice);
 
+/// <summary>The selector's answer as the curves read it. Under "Own (as measured)" <see cref="Selected"/> is null: one field
+/// cannot hold a per-channel answer, so each curve takes its measurement's file.</summary>
+internal sealed record VirtualCrossoverCalibrationPolicy(
+    bool Own,
+    CalibrationFile? Selected,
+    string? SelectedName)
+{
+    public static VirtualCrossoverCalibrationPolicy None { get; } = new(false, null, null);
+
+    /// <summary>Under Own, null for a measurement naming no calibration: never substitute the panel's.</summary>
+    public CalibrationFile? For(ProcessedChannel channel) =>
+        Own ? channel.MicrophoneCalibration : Selected;
+
+    public CalibrationFile? For(VirtualCrossoverChannelState state) =>
+        Own ? state.MicrophoneCalibrationCurve : Selected;
+
+    /// <summary>Under Own, the capture's own correction (a moving-mic pass or array has its own), not this side's file.</summary>
+    public SpatialAverageCalibration SpatialAverageFor() =>
+        Own ? SpatialAverageCalibration.Own : SpatialAverageCalibration.Specific(Selected);
+
+    /// <summary>Under Own the name follows the file's own curve: the wizard's disabled selector shows it.</summary>
+    public string? NameFor(VirtualCrossoverChannelState state) =>
+        Own ? state.MicrophoneCalibration?.Name : SelectedName;
+}
+
 /// <summary>Maps a project's stored calibration to the selector. The curve, not the machine-local id, decides identity. See docs/tech/virtual-dsp-session-file.md#calibration.</summary>
 internal static class VirtualCrossoverCalibrationSelection
 {
@@ -204,6 +229,16 @@ internal static class VirtualCrossoverCalibrationSelection
             VirtualCrossoverCalibrationSettings.From(
                 curve, entry?.Name ?? id, entry?.FileName));
     }
+
+    /// <summary>Whether two stored forms are one calibration: same name, same file, same curve.</summary>
+    public static bool SameStored(
+        VirtualCrossoverCalibrationSettings? left,
+        VirtualCrossoverCalibrationSettings? right) =>
+        ReferenceEquals(left, right) ||
+        (left != null && right != null &&
+            string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+            string.Equals(left.FileName, right.FileName, StringComparison.Ordinal) &&
+            CalibrationFile.SameCurve(left.ToCalibrationFile(), right.ToCalibrationFile()));
 
     private static MicrophoneCalibrationEntry? Find(
         IReadOnlyList<MicrophoneCalibrationEntry> entries,

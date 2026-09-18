@@ -22,6 +22,12 @@
     <Using Include="Resonalyze.Audio" />
   </ItemGroup>
 
+  <!-- Portable mode for the test host: without the flag ApplicationDataPaths roots at %LocalAppData%\Resonalyze, and
+       a panel a test builds autosaves over the developer's own Virtual DSP session when it is disposed. -->
+  <Target Name="WritePortableFlag" AfterTargets="Build">
+    <Touch Files="$(OutDir)portable.flag" AlwaysCreate="true" />
+  </Target>
+
   <ItemGroup>
     <!-- Shared by both hardware suites; see the file for why it exists. -->
     <Compile Include="..\HardwareFact.cs" Link="HardwareFact.cs" />

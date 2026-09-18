@@ -456,4 +456,50 @@ internal static class VirtualCrossoverMetric
               "read; the two are not comparable."
             : string.Empty);
     }
+
+    /// <summary>The panel's read-out column (compact) and its tooltip (detail), block by block in reading order.</summary>
+    /// <param name="hybridOffsetDb">The spatial-average set's offset while the hybrid is drawn, else null.</param>
+    public static (string Compact, string Detail) FormatReadOut(
+        IReadOnlyList<Entry> entries,
+        bool direct,
+        IReadOnlyList<PhaseEntry> phaseEntries,
+        IReadOnlyList<GroupDelta> groupDeltas,
+        IReadOnlyList<StereoDelta> stereoDeltas,
+        double? hybridOffsetDb)
+    {
+        string compact = FormatCompact(entries, direct);
+        string detail = entries.Count > 0 ? FormatDetail(entries, direct) : string.Empty;
+        string DetailBreak() => detail.Length > 0 ? "\r\n\r\n" : string.Empty;
+        if (phaseEntries.Count > 0)
+        {
+            compact += "\r\n\r\n" + FormatPhaseCompact(phaseEntries);
+            detail += DetailBreak() + FormatPhaseDetail(phaseEntries);
+        }
+
+        // Under the loss column: in a cross-group view it stands in for the withheld loss.
+        if (groupDeltas.Count > 0)
+        {
+            compact += (compact.Length > 0 ? "\r\n\r\n" : string.Empty) +
+                FormatGroupDeltasCompact(groupDeltas);
+            detail += DetailBreak() + FormatGroupDeltasDetail(groupDeltas);
+        }
+
+        if (stereoDeltas.Count > 0)
+        {
+            compact += "\r\n\r\n" + FormatStereoDeltasCompact(stereoDeltas);
+            detail += DetailBreak() + FormatStereoDeltasDetail(stereoDeltas);
+        }
+
+        if (hybridOffsetDb is { } offsetDb)
+        {
+            // A health reading: an array shares the IRs' loopback, so a large offset means a different input, calibration or driver.
+            compact += "\r\n\r\n" + $"Spatial average {offsetDb:+0.0;-0.0} dB";
+            detail += DetailBreak() +
+                $"The spatial averages sit {offsetDb:+0.0;-0.0} dB from the " +
+                "impulse responses, and the whole set is drawn shifted by that one " +
+                "figure.";
+        }
+
+        return (compact, detail);
+    }
 }

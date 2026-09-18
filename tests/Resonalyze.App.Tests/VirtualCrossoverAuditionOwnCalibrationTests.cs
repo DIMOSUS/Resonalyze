@@ -61,7 +61,7 @@ public sealed class VirtualCrossoverAuditionOwnCalibrationTests
     [InlineData(false, true, new[] { true })]
     public void TheMeasuredSidesAreTheSidesThatHaveSources(
         bool hasLeft, bool hasRight, bool[] expected) =>
-        Assert.Equal(expected, VirtualCrossoverPanel.MeasuredSides(hasLeft, hasRight));
+        Assert.Equal(expected, VirtualCrossoverAudition.MeasuredSides(hasLeft, hasRight));
 
     private static VirtualCrossoverAuditionOwnCalibration Resolve(
         IReadOnlyList<(string Name, CalibrationFile? Curve, string? CalibrationName)> channels)
@@ -78,7 +78,7 @@ public sealed class VirtualCrossoverAuditionOwnCalibrationTests
         }
 
         var side = new VirtualCrossoverSideSum([Complex.One], 0, 48_000, processed);
-        return VirtualCrossoverPanel.ResolveOwnCalibration(side, side, [false]);
+        return VirtualCrossoverAudition.ResolveOwnCalibration(side, side, [false]);
     }
 
     private static CalibrationFile Curve(double db) =>

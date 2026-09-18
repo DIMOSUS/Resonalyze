@@ -1,6 +1,4 @@
-﻿using System.Reflection;
-using System.Runtime.CompilerServices;
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
@@ -88,20 +86,15 @@ public sealed class VirtualCrossoverHybridSideTests
         IReadOnlyList<SignalPoint> reference,
         int smoothingCode = 0)
     {
-        MethodInfo method = typeof(VirtualCrossoverPanel).GetMethod(
-            "BuildHybridChannelCurve",
-            BindingFlags.NonPublic | BindingFlags.Instance)
-            ?? throw new InvalidOperationException("BuildHybridChannelCurve is gone.");
-        // Uninitialized panel: the method is set explicitly, since resolving it reaches for the constructor-built channel list.
-        object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
-        typeof(VirtualCrossoverPanel)
-            .GetField("project", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(panel, new VirtualCrossoverProjectFile
+        var reader = new VirtualCrossoverHybrid(new VirtualCrossoverSession
+        {
+            Project = new VirtualCrossoverProjectFile
             {
                 SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic
-            });
-        object? result = method.Invoke(
-            panel, [channel, rightSide, reference, smoothingCode]);
+            }
+        });
+        IReadOnlyList<SignalPoint>? result =
+            reader.ChannelCurve(channel, rightSide, reference, smoothingCode);
         return Assert.IsAssignableFrom<IReadOnlyList<SignalPoint>>(result);
     }
 

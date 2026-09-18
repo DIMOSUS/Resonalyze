@@ -10,9 +10,12 @@ validates and executes that exchange.
 
 Where the code lives:
 
-- `source/Tools/VirtualCrossover/VirtualCrossoverPanel.AgentBridge.cs` - the panel side: gathering
-  package inputs, the session snapshot and fingerprint, the import flow, headless engine runs,
-  probes and undo.
+- `source/Tools/VirtualCrossover/` - what the bridge reads off the Virtual DSP session:
+  `AgentSessionReader` (package inputs, the session snapshot and fingerprint, the excess group
+  delay), `AgentProbeReader` (probes), `AgentJunctionTune` (the junction tune's search, write and
+  summary) and `AgentEngineRequests` (the engines' order and the inputs a reply leaves out).
+- `source/Tools/VirtualCrossover/VirtualCrossoverPanel.AgentBridge.cs` - the panel side: the menu,
+  the import flow, headless engine runs and undo.
 - `source/Integration/AgentBridge/` - UI-free pieces: `AgentProtocol` (words and limits),
   `AgentPackageBuilder` / `AgentPackageModels` / `AgentPackageInputs` / `AgentCurveSampling`
   (package), `AgentProposalParser` / `AgentProposal` (reply), `AgentProposalValidator` /
@@ -24,10 +27,10 @@ Where the code lives:
 
 ## Package gathering
 
-`CaptureAgentPackageInputsAsync` reads everything a package is built from, and it runs the same
+`AgentSessionReader.CaptureInputsAsync` reads everything a package is built from, and it runs the same
 computations the screen runs: the coordinator's processed responses for both sides (its cache makes
 the shown side free), the metric block's curves and read-outs per side, the lower plot's junction
-views per adjacent pair, and the stereo and group deltas. The panel does no formatting; the builder
+views per adjacent pair, and the stereo and group deltas. The reader does no formatting; the builder
 (`AgentPackageBuilder`) reads no control, project or coordinator - `AgentPackageInputs` is its whole
 input. That split keeps the builder testable on synthetic curves and keeps a package number equal to
 the on-screen number.
@@ -66,7 +69,7 @@ Hybrid (spatial-average) curves and their sum are the exception. The manual read
 smoothing **off**: the average has already removed position-dependent wiggles, and a
 fractional-octave window straddling a crossover skirt pulls the level toward the passband exactly
 where slopes are judged. Off cannot travel on a 12-points-per-octave grid, so they go at the grid's
-width, 1/12 octave (`AgentHybridSmoothingInverseOctaves`). Point-measurement fallbacks entering the
+width, 1/12 octave (`AgentSessionReader.HybridSmoothingInverseOctaves`). Point-measurement fallbacks entering the
 hybrid sum are built at the hybrid width too, so nothing is smoothed twice at two widths.
 
 The package states the spatial-average status as one word (`none`, `capturedNotShown`, `partial`,
@@ -316,31 +319,32 @@ Headless engine runs:
   charge), with project events suppressed so the import saves and redraws once.
 - **Auto delay** (`RunAgentAutoDelayAsync`) runs the button's checks headless (a refusal becomes a
   summary phrase), the dialog's compute delegate and its Apply commit, including report, log and
-  outcome metric. Inputs a request omits come from `AgentAutoDelayDefaults`: layout-neutral
+  outcome metric. Inputs a request omits come from `AgentSessionReader.AutoDelayDefaults`: layout-neutral
   magnitudes (the layout toggle owns signs) and gain balance unticked (the project stores the tilt,
   not the opt-in). The panel is disabled during compute, because the dialog's modality is what kept
   the chain still. The summary shows only the report's head, since a message box does not scroll.
-- **Junction tune** (`RunAgentTuneJunctionAsync`) reads the two blocks off live channels, passes every
-  side the pair is measured on with its raw responses and current chains, and writes the one
-  crossover the tuner settles on to both sides of both blocks, as the wizard writes. One slope for
-  both edges unless freed (the free search costs slopes squared per corner). The panel is not disabled:
-  disable/enable repaints every plot twice, which with spatial averages costs seconds more than the
-  tune. Instead the fingerprint is taken around the compute and a moved fingerprint drops the result.
-  The side lock remembers the result as it stands; as a difference, a hidden side already holding the
-  new edge would look untouched and receive the shown side's whole crossover. Readings are reported on
-  the package's octave-each-side junction band so they compare with what the assistant read.
+- **Junction tune** (`AgentJunctionTune`, run by `RunAgentTuneJunctionAsync`) reads the two blocks off
+  live channels, passes every side the pair is measured on with its raw responses and current chains,
+  and writes the one crossover the tuner settles on to both sides of both blocks, as the wizard writes.
+  One slope for both edges unless freed (the free search costs slopes squared per corner). The panel is
+  not disabled: disable/enable repaints every plot twice, which with spatial averages costs seconds
+  more than the tune. Instead the fingerprint is taken around the compute and a moved fingerprint drops
+  the result. The side lock remembers the result as it stands; as a difference, a hidden side already
+  holding the new edge would look untouched and receive the shown side's whole crossover. Readings are
+  reported on the package's octave-each-side junction band so they compare with what the assistant
+  read.
 - **Auto-tune** (`RunAgentAutoTuneAsync`) builds the PEQ menu's handoff for the channel (only the shown
   side: gate pin, render anchor and hybrid datum are the shown side's), fits with `EqAutoTuneHeadless`
   (pinned against the wizard's render) and lands the way the wizard's Return lands, guards included,
   so a channel that moved during the fit is refused. The wizard's target-level question becomes a
-  refusal. All fits of one import use one target level decided up front (`ImportTargetLevelDb`): the
-  first stated level, else the project's; read per operation, a row stating none would fit at the old
-  datum and the next row would move it. The level travels in the request token and reaches the panel
+  refusal. All fits of one import use one target level decided up front
+  (`AgentEngineRequests.TargetLevelDb`): the first stated level, else the project's; read per operation,
+  a row stating none would fit at the old datum and the next row would move it. The level travels in the request token and reaches the panel
   only when the fit lands, so a skipped run leaves nothing behind.
 
 ## Excess group delay diagnostic
 
-`BuildExcessGroupDelayCurve` (panel) and `AgentDiagnosticBuilder.BuildExcessGroupDelay` produce each
+`AgentSessionReader.ExcessGroupDelayCurve` and `AgentDiagnosticBuilder.BuildExcessGroupDelay` produce each
 measured channel's excess group delay: the group delay minus its minimum-phase part (what the
 magnitude dictates, and what a minimum-phase PEQ straightens along with it). What remains is arrivals
 and reflections - the question a junction that will not sum asks - plus, at a band edge, possibly the

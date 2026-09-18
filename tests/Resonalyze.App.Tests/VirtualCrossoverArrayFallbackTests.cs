@@ -1,6 +1,4 @@
-﻿using System.Reflection;
-using System.Runtime.CompilerServices;
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
@@ -32,44 +30,17 @@ public sealed class VirtualCrossoverArrayFallbackTests
         };
     }
 
-    private static object Panel(VirtualCrossoverSpatialAverageMode mode)
-    {
-        object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
-        SetField(panel, "project", new VirtualCrossoverProjectFile { SpatialAverageMode = mode });
-        SetField(panel, "magnitudeGate", new VirtualCrossoverPanel.MagnitudeGateSnapshot(
-            new PhaseAnalysisSettings(
-                PhaseWindowMode.Fixed,
-                PhaseAnalysisSettings.DefaultFdwCycles,
-                PhaseDetrendMode.Off,
-                ManualDetrendMilliseconds: 0.0,
-                GateOffsetMs: 0.0,
-                LeftMs: FrequencyResponseOptions.SteadyStateLeftMs,
-                PlateauMs: FrequencyResponseOptions.SteadyStatePlateauMs,
-                RightMs: FrequencyResponseOptions.SteadyStateRightMs,
-                Unwrap: false,
-                SmoothingInverseOctaves: 0.0),
-            PinnedOffsetMs: null,
-            OppositePinnedOffsetMs: null,
-            SmoothingInverseOctaves: 12));
-        return panel;
-    }
-
-    private static void SetField(object target, string name, object value)
-    {
-        typeof(VirtualCrossoverPanel)
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(target, value);
-    }
+    private static VirtualCrossoverHybrid Reader(VirtualCrossoverSpatialAverageMode mode) =>
+        new(new VirtualCrossoverSession
+        {
+            Project = new VirtualCrossoverProjectFile { SpatialAverageMode = mode }
+        });
 
     private static HybridMagnitudes? Build(
-        object panel,
+        VirtualCrossoverHybrid reader,
         IReadOnlyList<VirtualCrossoverChannel> channels,
         IReadOnlyList<AnalysisCurve> references)
     {
-        MethodInfo method = typeof(VirtualCrossoverPanel).GetMethod(
-            "BuildHybridMagnitudes",
-            BindingFlags.NonPublic | BindingFlags.Instance)
-            ?? throw new InvalidOperationException("BuildHybridMagnitudes is gone.");
         List<ProcessedChannel> processed = channels
             .Select(channel => new ProcessedChannel(
                 channel,
@@ -78,7 +49,7 @@ public sealed class VirtualCrossoverArrayFallbackTests
                 SampleRate: 48_000,
                 OxyPlot.OxyColors.White))
             .ToList();
-        return method.Invoke(panel, [processed, references, false, 0]) as HybridMagnitudes;
+        return reader.Build(processed, references, rightSide: false, smoothingCode: 0);
     }
 
     private static VirtualCrossoverChannel Channel(string name, LiveCaptureDocument? array)
@@ -102,7 +73,7 @@ public sealed class VirtualCrossoverArrayFallbackTests
     [Fact]
     public void AChannelWithoutAnArrayIsDrawnFromItsOwnMeasurementAndMarked()
     {
-        object panel = Panel(VirtualCrossoverSpatialAverageMode.MicArray);
+        VirtualCrossoverHybrid reader = Reader(VirtualCrossoverSpatialAverageMode.MicArray);
         var channels = new[]
         {
             Channel("mid", Capture(-20, SpatialAverageMethod.MicArray)),
@@ -110,7 +81,7 @@ public sealed class VirtualCrossoverArrayFallbackTests
         };
         AnalysisCurve[] references = [Reference(-24), Reference(-30)];
 
-        HybridMagnitudes? hybrid = Build(panel, channels, references);
+        HybridMagnitudes? hybrid = Build(reader, channels, references);
 
         Assert.NotNull(hybrid);
         Assert.Equal([false, true], hybrid!.PointMeasuredChannels);
@@ -124,7 +95,7 @@ public sealed class VirtualCrossoverArrayFallbackTests
     [Fact]
     public void AChannelWithoutAnArrayContributesNoOffsetDatum()
     {
-        object panel = Panel(VirtualCrossoverSpatialAverageMode.MicArray);
+        VirtualCrossoverHybrid reader = Reader(VirtualCrossoverSpatialAverageMode.MicArray);
         var channels = new[]
         {
             Channel("mid", Capture(-20, SpatialAverageMethod.MicArray)),
@@ -132,7 +103,7 @@ public sealed class VirtualCrossoverArrayFallbackTests
         };
         AnalysisCurve[] references = [Reference(-24), Reference(-30)];
 
-        HybridMagnitudes? hybrid = Build(panel, channels, references);
+        HybridMagnitudes? hybrid = Build(reader, channels, references);
 
         Assert.NotNull(hybrid!.ChannelOffsetsDb[0]);
         Assert.Null(hybrid.ChannelOffsetsDb[1]);
@@ -141,7 +112,7 @@ public sealed class VirtualCrossoverArrayFallbackTests
     [Fact]
     public void AMovingMicSetStillRefusesAChannelWithoutOne()
     {
-        object panel = Panel(VirtualCrossoverSpatialAverageMode.MovingMic);
+        VirtualCrossoverHybrid reader = Reader(VirtualCrossoverSpatialAverageMode.MovingMic);
         var channels = new[]
         {
             Channel("mid", array: null),
@@ -151,13 +122,13 @@ public sealed class VirtualCrossoverArrayFallbackTests
             Capture(-20, SpatialAverageMethod.MovingMic);
         AnalysisCurve[] references = [Reference(-24), Reference(-30)];
 
-        Assert.Null(Build(panel, channels, references));
+        Assert.Null(Build(reader, channels, references));
     }
 
     [Fact]
     public void EveryChannelWithAnArrayIsMarkedAsMeasured()
     {
-        object panel = Panel(VirtualCrossoverSpatialAverageMode.MicArray);
+        VirtualCrossoverHybrid reader = Reader(VirtualCrossoverSpatialAverageMode.MicArray);
         var channels = new[]
         {
             Channel("mid", Capture(-20, SpatialAverageMethod.MicArray)),
@@ -165,7 +136,7 @@ public sealed class VirtualCrossoverArrayFallbackTests
         };
         AnalysisCurve[] references = [Reference(-24), Reference(-26)];
 
-        HybridMagnitudes? hybrid = Build(panel, channels, references);
+        HybridMagnitudes? hybrid = Build(reader, channels, references);
 
         Assert.NotNull(hybrid);
         Assert.Equal(0, hybrid!.PointMeasuredCount);

@@ -28,7 +28,7 @@ public sealed class VirtualCrossoverDelaySpreadWarningTests
             Block("G", VirtualCrossoverZone.Center, 4.19)
         ];
 
-        Assert.Null(VirtualCrossoverPanel.CrossoverSpreadWarning(channels));
+        Assert.Null(VirtualCrossoverWarnings.CrossoverSpreadWarning(channels));
     }
 
     [Fact]
@@ -43,10 +43,10 @@ public sealed class VirtualCrossoverDelaySpreadWarningTests
         ];
 
         (string Name, double SpreadMs, IReadOnlyList<VirtualCrossoverZone> Placed)? warning =
-            VirtualCrossoverPanel.CrossoverSpreadWarning(channels);
+            VirtualCrossoverWarnings.CrossoverSpreadWarning(channels);
 
         Assert.NotNull(warning);
-        string note = VirtualCrossoverPanel.ExcludedGroupsNote(warning!.Value.Placed);
+        string note = VirtualCrossoverWarnings.ExcludedGroupsNote(warning!.Value.Placed);
         Assert.Equal("A", warning.Value.Name);
         Assert.Equal(18.0, warning.Value.SpreadMs, 3);
         Assert.Equal([VirtualCrossoverZone.Rear], warning.Value.Placed);
@@ -65,10 +65,10 @@ public sealed class VirtualCrossoverDelaySpreadWarningTests
         ];
 
         (string Name, double SpreadMs, IReadOnlyList<VirtualCrossoverZone> Placed)? warning =
-            VirtualCrossoverPanel.CrossoverSpreadWarning(channels);
+            VirtualCrossoverWarnings.CrossoverSpreadWarning(channels);
 
         Assert.NotNull(warning);
-        string note = VirtualCrossoverPanel.ExcludedGroupsNote(warning!.Value.Placed);
+        string note = VirtualCrossoverWarnings.ExcludedGroupsNote(warning!.Value.Placed);
         Assert.Contains("The centre is not counted", note);
         Assert.DoesNotContain("rear", note);
         Assert.DoesNotContain("fill offset", note);
@@ -85,14 +85,14 @@ public sealed class VirtualCrossoverDelaySpreadWarningTests
         ];
 
         (string Name, double SpreadMs, IReadOnlyList<VirtualCrossoverZone> Placed)? warning =
-            VirtualCrossoverPanel.CrossoverSpreadWarning(channels);
+            VirtualCrossoverWarnings.CrossoverSpreadWarning(channels);
 
         Assert.NotNull(warning);
         Assert.Equal("A", warning!.Value.Name);
         Assert.Empty(warning.Value.Placed);
         Assert.Equal(
             string.Empty,
-            VirtualCrossoverPanel.ExcludedGroupsNote(warning.Value.Placed));
+            VirtualCrossoverWarnings.ExcludedGroupsNote(warning.Value.Placed));
     }
 
     [Fact]
@@ -106,7 +106,7 @@ public sealed class VirtualCrossoverDelaySpreadWarningTests
             Block("C", VirtualCrossoverZone.Center, 25.0)
         ];
 
-        Assert.Null(VirtualCrossoverPanel.CrossoverSpreadWarning(channels));
+        Assert.Null(VirtualCrossoverWarnings.CrossoverSpreadWarning(channels));
     }
 
     [Fact]
@@ -120,6 +120,6 @@ public sealed class VirtualCrossoverDelaySpreadWarningTests
         ];
         channels[2].Pair.Bypass = true;
 
-        Assert.Null(VirtualCrossoverPanel.CrossoverSpreadWarning(channels));
+        Assert.Null(VirtualCrossoverWarnings.CrossoverSpreadWarning(channels));
     }
 }

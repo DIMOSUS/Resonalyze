@@ -169,18 +169,3 @@ internal sealed class VirtualCrossoverCopySideDialog : Form
         copyButton.Enabled = channelBoxes.Exists(box => box.Checked) && !Scope.IsEmpty;
     }
 }
-
-/// <summary>Unticked parts are left as the target side had them.</summary>
-internal readonly record struct VirtualCrossoverCopyScope(
-    bool Gain,
-    bool Delay,
-    bool InvertPolarity,
-    bool Crossover,
-    bool AllPass,
-    bool Phase,
-    bool Peq,
-    bool Fir = false)
-{
-    public bool IsEmpty =>
-        !Gain && !Delay && !InvertPolarity && !Crossover && !AllPass && !Phase && !Peq && !Fir;
-}

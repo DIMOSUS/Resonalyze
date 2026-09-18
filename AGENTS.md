@@ -45,9 +45,47 @@ Key structural points:
 - **`Shell/Form1` is the hub**, split into partial classes by concern (`Form1.Measurement.cs`, `Form1.Plotting.cs`, `Form1.History.cs`, `Form1.Compare.cs`, etc.). The `Mode` enum in `Form1.cs` defines all analysis modes (frequency/phase/group delay/waterfall/burst decay/live spectrum/time alignment/EQ wizard/signal generator/virtual crossover); `ModeSwitching/ModeController` orchestrates tab switches.
 - **`Options/`** holds one settings panel per mode (`FROptions`, `IROpt`, `GDOpt`, ...), docked into the shell via `Shell/DockedModeSettingsHost`.
 - **`Tools/`** contains the larger feature panels: EQ Wizard, Signal Generator, Virtual DSP (`VirtualCrossoverPanel` + project file persistence), and PDF tuning-sheet export (PDFsharp/MigraDoc). `EqWizardPanel` is self-contained: it owns its source, uses a mode-local target curve and persists through `MeasurementSettingsFile.EqWizard`. It picks that source itself — an impulse response (file or history), a captured overlay slot, or a text curve — through `EqWizardSourceResolver`, which reads overlay slot FILES and history snapshots as one-time imports. Keep it that way: the panel must not reach into the live `OverlayCollection` or the current measurement, and an imported curve is a snapshot with no link back to what it came from.
+- **Virtual DSP keeps its tune in a UI-free `VirtualCrossoverSession`.** Whatever reads the tune (curves, warnings, Auto delay, the crossover wizard's inputs, the audition, the Agent Bridge) is a class that takes the session; `VirtualCrossoverPanel` is its only writer and holds binding code only, in partials named for what they bind. A new Virtual DSP feature brings its own session-reading class and, if it has controls, a partial, never logic in the panel; a test of a rule builds a session, not a panel. `VirtualCrossoverPanelBoundaryTests` keeps non-private statics out of the panel. See `docs/tech/virtual-dsp-panel.md#code-map`.
 - **`Plotting/` owns the plot INTERACTION as well as the models.** `PlotInteraction.Enable` installs `PlotGestureController` on every `PlotView` in the app, and that controller is the single place the mouse/keyboard map lives — it is shaped after REW's graph panel (wheel zooms both axes, Shift/Ctrl or the pointer over an axis restricts it, the end of an axis moves one limit, middle-drag is a variable zoom, double click opens `Ui/Dialogs/GraphLimitsDialog`), and the `REFERENCE.md` table under "Graph Zoom and Limits" is the user-facing copy of it. Keep new gestures there rather than on individual views. `PlotViewportMemory` carries a plot's zoom across the constant model rebuilds — the main plot keyed per `Mode`, the two Time Alignment previews one memory each — by asking the axes which ranges a user forced on them (`PlotAxisViewport.CaptureOverrides` resets an axis, reads what the model computes on its own, and puts the override back). Do NOT replace that with a baseline captured when a model is shown: overlays join a plot afterwards — a mode switch restores its slots after `ModeController` has drawn, Show All later still — and on an auto-scaled axis they widen the range through the data, which a baseline comparison reads as a zoom. An axis the user moved is restored; an untouched one is left to the new model, so `RaiseDecibelViewCeiling` and the group-delay auto-fit still work. A setting that changes what an axis MEANS calls `Forget`.
 - **`Overlays/`** manages persistent overlay slots and calculated (math) overlays; **`History/`** persists measurement snapshots with per-entry working state.
 - Update checking uses NetSparkle + `Settings/GitHubReleaseChecker`.
+
+### Where logic lives
+
+A panel that is the only holder of its tool's state collects every computation on that state. The Virtual DSP panel
+reached 11,091 lines over five files that way, each piece readable and the whole not; taking it apart needed a UI-free
+session and about twenty classes that read it (#203). These rules keep the other parts from repeating it.
+
+- **State gets a UI-free owner before features are written against it.** Once a second feature reads a tool's data,
+  the data moves into a plain type (`VirtualCrossoverSession`); the UI writes it and presents what readers return.
+- **A feature is a type that takes the model, plus a partial if it has controls.** Computations, verdicts, report text
+  and write-back rules take the model and return values; the UI reads controls into the model, calls the feature and
+  shows the result. Logic never calls back into the UI.
+- **One owner per fact.** A value kept in two places and synchronised by hand drifts the first time someone writes one
+  of them. Derive the copy from the owner (a Virtual DSP block reads its shown side from the session through a
+  provider) or delete it.
+- **Read the UI once per operation.** Async work captures the control values it needs into an immutable record before
+  its first await (`VirtualCrossoverViewState`); workers read snapshots, never controls or a mutable model.
+- **Extract before the second copy.** When a second path needs a computation (one side and stereo, the screen and an
+  export), move it out first. Virtual DSP's group placement had two copies that had already drifted apart, and the AI
+  package rebuilt the screen's frame on its own.
+- **The tests are the early warning.** A test that reaches a UI class through reflection into private members or
+  `GetUninitializedObject`, or an `internal static` put on a UI class so a test can call it, is testing logic that
+  lives in the wrong place: move the logic and test its type. Where a boundary matters, a test pins it
+  (`VirtualCrossoverPanelBoundaryTests`).
+- **Partials hold binding code.** Splitting a UI class by concern, as `Form1` is, helps once the logic has left; a
+  partial full of computation is the same monolith in more files.
+- **Size is a signal.** A UI file past about 1,500 lines, or one that grows with every feature, has its rules extracted
+  before the next feature rather than after. The boundary is a type in the same assembly; a new project is neither
+  needed nor wanted.
+
+**Refactoring a part that has grown.** Keep behaviour identical and name each deliberate difference in the PR. Before
+moving code, build a characterization harness outside the repo that drives the real UI on real sessions and dumps
+everything the part produces (curves, read-outs, reports, exported documents); build it against `main` and against the
+branch and require a byte-identical diff. A harness that builds panels runs portable (see User data paths). Keep a
+synthetic version in the repo that drives the live UI through its controls (`VirtualCrossoverPanelWiringTests`), and
+prove it catches wiring mistakes by putting some in on purpose. Work in stages, a commit each: the state owner, the
+features one by one, then the partial split as a pure move checked line by line.
 
 ### Accessibility is not an external contract
 
@@ -261,4 +299,7 @@ Implicit user data (settings, history, overlays, Virtual DSP state and crash
 logs) is rooted by `ApplicationDataPaths`. Installed mode uses
 `%LocalAppData%\Resonalyze`; a `portable.flag` file beside the executable opts
 into portable storage beside the app. Do not introduce new direct
-`AppContext.BaseDirectory` persistence paths.
+`AppContext.BaseDirectory` persistence paths. The App test project writes
+`portable.flag` into its own output, so the test host is portable: a panel a test
+builds autosaves beside the test assembly, never over the developer's session
+(`ApplicationDataPathsTests.TheTestHost_KeepsItsDataBesideItself` fails without it).

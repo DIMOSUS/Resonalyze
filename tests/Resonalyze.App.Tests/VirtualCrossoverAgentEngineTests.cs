@@ -124,7 +124,7 @@ public sealed class VirtualCrossoverAgentEngineTests
     {
         var defaults = new AgentAutoDelaySettings(0.25, false, false, 1.0, 15.0);
 
-        AutoDelayRunRequest partial = VirtualCrossoverPanel.BuildAutoDelayRequest(
+        AutoDelayRunRequest partial = AgentEngineRequests.AutoDelayRequest(
             new RunAutoDelayOperation("op-1", "", 0.35, null, null, null, null), defaults);
         Assert.Equal(0.35, partial.SceneOffsetMs);
         Assert.False(partial.RightHandDrive);
@@ -132,7 +132,7 @@ public sealed class VirtualCrossoverAgentEngineTests
         Assert.Equal(1.0, partial.NearSideCutDb);
         Assert.Equal(15.0, partial.RearFillOffsetMs);
 
-        AutoDelayRunRequest full = VirtualCrossoverPanel.BuildAutoDelayRequest(
+        AutoDelayRunRequest full = AgentEngineRequests.AutoDelayRequest(
             new RunAutoDelayOperation("op-1", "", null, true, true, 2.0, 12.5), defaults);
         Assert.Equal(0.25, full.SceneOffsetMs);
         Assert.True(full.RightHandDrive);
@@ -154,10 +154,10 @@ public sealed class VirtualCrossoverAgentEngineTests
             new AutoTunePeqOperation("op-3", "C:mono", "", -9, null, null, null, null, null), "Auto-tune")
             with { Status = AgentVerdictStatus.Rejected };
 
-        Assert.Equal(-6, VirtualCrossoverPanel.ImportTargetLevelDb([omitted, stated], -4));
-        Assert.Equal(-4, VirtualCrossoverPanel.ImportTargetLevelDb([omitted], -4));
-        Assert.Equal(-4, VirtualCrossoverPanel.ImportTargetLevelDb([rejected, omitted], -4));
-        Assert.Equal(-4, VirtualCrossoverPanel.ImportTargetLevelDb([], -4));
+        Assert.Equal(-6, AgentEngineRequests.TargetLevelDb([omitted, stated], -4));
+        Assert.Equal(-4, AgentEngineRequests.TargetLevelDb([omitted], -4));
+        Assert.Equal(-4, AgentEngineRequests.TargetLevelDb([rejected, omitted], -4));
+        Assert.Equal(-4, AgentEngineRequests.TargetLevelDb([], -4));
     }
 
     [Fact]
@@ -771,7 +771,7 @@ public sealed class VirtualCrossoverAgentEngineTests
             Moves(() => leftState.TransferCoherence = [0.9, 0.8]);
             Moves(() => leftState.MeasuredBand = new MeasuredBand(40, 8000));
             Moves(() => leftState.TransferPeakIndex += 1);
-            Set(panel, "ownCalibrationSelected", true);
+            panel.Session.Calibration = panel.Session.Calibration with { Own = true };
             Moves(() => leftState.MicrophoneCalibration =
                 new VirtualCrossoverCalibrationSettings { Name = "mic", Points = [[1000, 0.5], [2000, 1.0]] });
             Moves(() => leftState.MicrophoneCalibration =
@@ -908,10 +908,10 @@ public sealed class VirtualCrossoverAgentEngineTests
         target.GetType().GetMethod(name, Hidden)!.Invoke(target, arguments);
 
     private static List<VirtualCrossoverChannel> Channels(VirtualCrossoverPanel panel) =>
-        (List<VirtualCrossoverChannel>)Field(panel, "channels");
+        panel.Session.Channels;
 
     private static VirtualCrossoverProjectFile Project(VirtualCrossoverPanel panel) =>
-        (VirtualCrossoverProjectFile)Field(panel, "project");
+        panel.Session.Project;
 
     private static CheckBox Hybrid(VirtualCrossoverPanel panel) =>
         (CheckBox)Field(panel, "checkBoxHybrid");

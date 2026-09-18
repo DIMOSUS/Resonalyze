@@ -17,7 +17,7 @@ public sealed class VirtualCrossoverHybridSumTests
         List<SignalPoint> quietReference = Flat(-12);
         quietReference[3] = new SignalPoint(quietReference[3].X, -52);
 
-        List<SignalPoint> masked = VirtualCrossoverPanel.MaskMissingContributors(
+        List<SignalPoint> masked = VirtualCrossoverHybrid.MaskMissingContributors(
             sum, [Flat(-12), quiet], [Flat(-12), quietReference], offsetDb: 0);
 
         Assert.Equal(-10, masked[3].Y, 10);
@@ -30,7 +30,7 @@ public sealed class VirtualCrossoverHybridSumTests
         List<SignalPoint> quiet = Flat(-12);
         quiet[3] = new SignalPoint(quiet[3].X, double.NaN);
 
-        List<SignalPoint> masked = VirtualCrossoverPanel.MaskMissingContributors(
+        List<SignalPoint> masked = VirtualCrossoverHybrid.MaskMissingContributors(
             sum, [Flat(-12), quiet], [Flat(-12), Flat(-12)], offsetDb: 0);
 
         Assert.True(double.IsNaN(masked[3].Y));
@@ -43,9 +43,9 @@ public sealed class VirtualCrossoverHybridSumTests
     {
         List<SignalPoint> sum = Flat(-10);
 
-        List<SignalPoint> at0 = VirtualCrossoverPanel.MaskMissingContributors(
+        List<SignalPoint> at0 = VirtualCrossoverHybrid.MaskMissingContributors(
             sum, [Flat(-12)], [Flat(-12)], offsetDb: 0);
-        List<SignalPoint> at7 = VirtualCrossoverPanel.MaskMissingContributors(
+        List<SignalPoint> at7 = VirtualCrossoverHybrid.MaskMissingContributors(
             sum, [Flat(-12)], [Flat(-12)], offsetDb: 7.5);
 
         for (int i = 0; i < at0.Count; i++)
@@ -68,7 +68,7 @@ public sealed class VirtualCrossoverHybridSumTests
         Assert.True(LiveCaptureDocument.JudgeSet(opposite).Coherent);
 
         Assert.False(
-            VirtualCrossoverPanel.JudgeSidesShareAnOffset(active, opposite).Coherent);
+            VirtualCrossoverHybrid.JudgeSidesShareAnOffset(active, opposite).Coherent);
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public sealed class VirtualCrossoverHybridSumTests
             [SideCapture(Guid.NewGuid(), 94.0), SideCapture(Guid.NewGuid(), 94.0)];
 
         Assert.True(
-            VirtualCrossoverPanel.JudgeSidesShareAnOffset(active, opposite).Coherent);
+            VirtualCrossoverHybrid.JudgeSidesShareAnOffset(active, opposite).Coherent);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class VirtualCrossoverHybridSumTests
         odd.Recipe.SequenceLength *= 2;
 
         LiveCaptureSetVerdict verdict =
-            VirtualCrossoverPanel.JudgeSidesShareAnOffset(active, [odd]);
+            VirtualCrossoverHybrid.JudgeSidesShareAnOffset(active, [odd]);
 
         Assert.False(verdict.Coherent);
         Assert.Contains("frame length", verdict.Reason);
@@ -111,7 +111,7 @@ public sealed class VirtualCrossoverHybridSumTests
 
     /// <summary>Sliced by position: an off-by-one draws a zone from another zone's captures, plausibly.</summary>
     [Fact]
-    public void HybridSubset_TakesEachListAtTheSamePositions()
+    public void Subset_TakesEachListAtTheSamePositions()
     {
         var whole = new HybridMagnitudes(
             [Flat(-1), Flat(-2), Flat(-3), Flat(-4)],
@@ -123,7 +123,7 @@ public sealed class VirtualCrossoverHybridSumTests
             SetDatumsDb = []
         };
 
-        HybridMagnitudes slice = VirtualCrossoverPanel.HybridSubset(whole, [1, 3]);
+        HybridMagnitudes slice = whole.Subset([1, 3]);
 
         Assert.Equal([-2.0, -4.0], slice.Channels.Select(curve => curve[0].Y));
         Assert.Equal(
@@ -133,21 +133,21 @@ public sealed class VirtualCrossoverHybridSumTests
     }
 
     [Fact]
-    public void HybridSubset_KeepsTheSetsOwnOffset()
+    public void Subset_KeepsTheSetsOwnOffset()
     {
         var whole = new HybridMagnitudes(
             [Flat(-1), Flat(-2)], [Flat(-1), Flat(-2)], [null, 2.0], OffsetDb: -3.25);
 
-        Assert.Equal(-3.25, VirtualCrossoverPanel.HybridSubset(whole, [0]).OffsetDb);
+        Assert.Equal(-3.25, whole.Subset([0]).OffsetDb);
     }
 
     [Fact]
-    public void HybridSubset_LeavesAnEmptyFallbackListEmpty()
+    public void Subset_LeavesAnEmptyFallbackListEmpty()
     {
         var whole = new HybridMagnitudes(
             [Flat(-1), Flat(-2)], [Flat(-1), Flat(-2)], [1.0, 2.0], OffsetDb: 0);
 
-        Assert.Empty(VirtualCrossoverPanel.HybridSubset(whole, [1]).PointMeasuredChannels);
+        Assert.Empty(whole.Subset([1]).PointMeasuredChannels);
     }
 
     private static LiveCaptureDocument SideCapture(

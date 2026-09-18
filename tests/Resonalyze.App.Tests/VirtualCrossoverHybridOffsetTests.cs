@@ -1,4 +1,4 @@
-using System.Reflection;
+using OxyPlot;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -22,9 +22,7 @@ public sealed class VirtualCrossoverHybridOffsetTests
             hybrid.Add(new SignalPoint(hz, analytic));
         }
 
-        double offset = ResolveOffset([hybrid], [reference]);
-
-        Assert.Equal(7, offset, 6);
+        Assert.Equal(7, SpatialAverageOffsets.ChannelDatumDb(hybrid, reference)!.Value, 6);
     }
 
     /// <summary>One offset for the set: captures from one session at fixed gain have honest relative levels.</summary>
@@ -32,60 +30,55 @@ public sealed class VirtualCrossoverHybridOffsetTests
     public void TheSetsOffset_IsTheMedianAcrossChannelsAndDoesNotLevelThemSeparately()
     {
         List<SignalPoint> reference = Flat(0);
-        List<List<SignalPoint>> hybrids = [Flat(-4), Flat(-5), Flat(-30)];
 
-        double offset = ResolveOffset(
-            hybrids.Cast<IReadOnlyList<SignalPoint>>().ToList(),
-            [reference, reference, reference]);
+        List<double> datums =
+        [
+            .. new[] { Flat(-4), Flat(-5), Flat(-30) }
+                .Select(hybrid => SpatialAverageOffsets.ChannelDatumDb(hybrid, reference)!.Value)
+        ];
 
-        Assert.Equal(5, offset, 6);
+        Assert.Equal(5, SpatialAverageOffsets.Median(datums), 6);
     }
 
     [Fact]
-    public void AChannelWithNothingToCompare_IsSkipped()
+    public void AChannelWithNothingToCompare_HasNoDatum()
     {
-        List<SignalPoint> reference = Flat(0);
-        List<SignalPoint> missing = Flat(double.NaN);
-
-        (List<double> perChannel, double offset) = Resolve(
-            [missing, Flat(-9)], [reference, reference]);
-
-        Assert.Equal(9, offset, 6);
-        Assert.Equal([9.0], perChannel);
+        Assert.Null(SpatialAverageOffsets.ChannelDatumDb(Flat(double.NaN), Flat(0)));
     }
 
     [Fact]
     public void TheSpread_IsTheDisagreementBetweenChannelsAndNotTheirDistanceFromTheIrs()
     {
-        List<SignalPoint> reference = Flat(0);
-
-        (List<double> agreeing, _) = Resolve(
-            [Flat(-90), Flat(-90), Flat(-90)], [reference, reference, reference]);
-        Assert.Equal(0.0, Spread(agreeing), 6);
-
-        (List<double> mixed, _) = Resolve(
-            [Flat(-90), Flat(-90), Flat(-82)], [reference, reference, reference]);
-        Assert.Equal(8.0, Spread(mixed), 6);
+        Assert.Equal(0.0, Spread(90, 90, 90), 6);
+        Assert.Equal(8.0, Spread(90, 90, 82), 6);
     }
 
     /// <summary>Offsets stay in channel order with holes; packed, the spread read-out blamed the wrong driver.</summary>
     [Fact]
-    public void AChannelWithNothingToCompare_LeavesAHoleInPlaceAndDoesNotShiftTheRest()
+    public void AChannelWithNothingToCompare_LeavesAHoleInTheSpreadReadOut()
     {
-        List<SignalPoint> reference = Flat(0);
-        List<SignalPoint> nothing = Flat(double.NaN);
+        var hybrid = new HybridMagnitudes([], [], [90.0, null, 82.0], 0);
+        List<ProcessedChannel> processed =
+        [
+            .. new[] { "A", "B", "C" }.Select(name => new ProcessedChannel(
+                new VirtualCrossoverChannel(name),
+                new System.Numerics.Complex[8],
+                PeakIndex: 0,
+                SampleRate: 48_000,
+                OxyColors.White))
+        ];
 
-        (double?[] offsets, _) = ResolvePositional(
-            [Flat(-90), nothing, Flat(-82)],
-            [reference, reference, reference]);
+        VirtualCrossoverWarning? warning =
+            new VirtualCrossoverWarnings(new VirtualCrossoverSession())
+                .Judge(processed, hybrid, gatePlacement: null);
 
-        Assert.Equal(3, offsets.Length);
-        Assert.Equal(90.0, offsets[0]!.Value, 6);
-        Assert.Null(offsets[1]);
-        Assert.Equal(82.0, offsets[2]!.Value, 6);
+        Assert.NotNull(warning);
+        Assert.Contains($"    A     {90.0:+0.0;-0.0} dB", warning!.Detail);
+        Assert.Contains("    B     no overlap to compare", warning.Detail);
+        Assert.Contains($"    C     {82.0:+0.0;-0.0} dB", warning.Detail);
     }
 
-    private static double Spread(List<double> offsets) =>
+    private static double Spread(params double[] offsets) =>
         new HybridMagnitudes(
             [], [], offsets.Select(offset => (double?)offset).ToList(), 0).SpreadDb;
 
@@ -98,53 +91,5 @@ public sealed class VirtualCrossoverHybridOffsetTests
         }
 
         return points;
-    }
-
-    private static double ResolveOffset(
-        IReadOnlyList<IReadOnlyList<SignalPoint>> hybrids,
-        IReadOnlyList<IReadOnlyList<SignalPoint>> references) =>
-        Resolve(hybrids, references).SetOffsetDb;
-
-    private static (List<double> PerChannel, double SetOffsetDb) Resolve(
-        IReadOnlyList<IReadOnlyList<SignalPoint>> hybrids,
-        IReadOnlyList<IReadOnlyList<SignalPoint>> references)
-    {
-        MethodInfo method = typeof(VirtualCrossoverPanel).GetMethod(
-            "ResolveHybridOffsetsDb",
-            BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("ResolveHybridOffsetsDb is gone.");
-        object? result = method.Invoke(
-            null,
-            [
-                hybrids,
-                references
-                    .Select(points => new AnalysisCurve("channel", points))
-                    .ToList()
-            ]);
-        (double?[] positional, double setOffset) = ((double?[], double))result!;
-        return (
-            positional.Where(offset => offset.HasValue)
-                .Select(offset => offset!.Value)
-                .ToList(),
-            setOffset);
-    }
-
-    private static (double?[] PerChannel, double SetOffsetDb) ResolvePositional(
-        IReadOnlyList<IReadOnlyList<SignalPoint>> hybrids,
-        IReadOnlyList<IReadOnlyList<SignalPoint>> references)
-    {
-        MethodInfo method = typeof(VirtualCrossoverPanel).GetMethod(
-            "ResolveHybridOffsetsDb",
-            BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("ResolveHybridOffsetsDb is gone.");
-        object? result = method.Invoke(
-            null,
-            [
-                hybrids,
-                references
-                    .Select(points => new AnalysisCurve("channel", points))
-                    .ToList()
-            ]);
-        return ((double?[], double))result!;
     }
 }

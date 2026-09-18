@@ -2586,6 +2586,11 @@ public static class VirtualCrossoverAnalysis
 
     public const double SumLossLevelGateReferenceOctaves = 1.0;
 
+    /// <summary>Points where every channel sits more than this below its own peak read NaN: all of them are in their stop
+    /// bands, where a FIR's floor pairs with its partner's at comparable level. Same depth as the Group Delay mode's gate.
+    /// See docs/tech/virtual-dsp-analysis.md#sum-loss-curve-and-level-gate.</summary>
+    public const double SumLossChannelPresenceDb = 40;
+
     /// <summary>Per-point sum loss (dB, ≤ 0), the single definition behind the drawn curve and read-outs. Operands must be
     /// UNSMOOTHED; smoothing applies to the ratio (smoothing first invents a dip at every steep corner).
     /// See docs/tech/virtual-dsp-analysis.md#sum-loss-curve-and-level-gate.</summary>
@@ -2620,13 +2625,43 @@ public static class VirtualCrossoverAnalysis
             magnitudeSums[i] = magnitudeSum;
         }
 
+        var presenceFloorsDb = new double[channelCurves.Count];
+        for (int channel = 0; channel < channelCurves.Count; channel++)
+        {
+            double peakDb = double.NegativeInfinity;
+            for (int i = 0; i < count; i++)
+            {
+                if (double.IsFinite(channelCurves[channel][i].Y))
+                {
+                    peakDb = Math.Max(peakDb, channelCurves[channel][i].Y);
+                }
+            }
+
+            presenceFloorsDb[channel] = peakDb - SumLossChannelPresenceDb;
+        }
+
+        bool SomeChannelPlays(int i)
+        {
+            for (int channel = 0; channel < channelCurves.Count; channel++)
+            {
+                double levelDb = channelCurves[channel][i].Y;
+                if (double.IsFinite(levelDb) && levelDb >= presenceFloorsDb[channel])
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         double[] localPeaks = LocalMagnitudePeaks(sumCurve, magnitudeSums, count);
         double gate = DataHelper.DecibelsToAmplitude(-SumLossLevelGateDb);
         var points = new List<SignalPoint>(count);
         for (int i = 0; i < count; i++)
         {
             double gateFloor = localPeaks[i] * gate;
-            bool measurable = localPeaks[i] > 0 && magnitudeSums[i] >= gateFloor;
+            bool measurable = localPeaks[i] > 0 && magnitudeSums[i] >= gateFloor &&
+                SomeChannelPlays(i);
             points.Add(new SignalPoint(
                 sumCurve[i].X,
                 measurable

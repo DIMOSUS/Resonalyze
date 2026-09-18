@@ -206,6 +206,15 @@ the "loss" is the phase arithmetic of two noise floors, producing deep fake dips
 driver's band. A local reference keeps a tilted in-room response (loud bass, quiet treble)
 measured across its range. `LocalMagnitudePeaks` computes it in O(n) with a monotonic deque.
 
+Presence gate: points where every channel sits more than `SumLossChannelPresenceDb` (40 dB,
+the Group Delay mode's gate depth) below its own peak become NaN. The level gate is local, so it
+cannot see a region where the whole sum is stop band: an IIR crossover keeps falling there and one
+channel dominates (loss near 0), but a FIR kernel flattens into its window's side-lobe floor. On
+the v6 FIR session both kernels sit at −106 to −142 dB from about 800 Hz up, at comparable level,
+and the loss drew noise from 600 Hz to 20 kHz; with the gate it ends at 255 Hz and the A/B
+read-out is unchanged. Per-channel peaks, not a global one, so a loud subwoofer does not hide a
+quiet tweeter.
+
 `MinimumSumLossDb` complements the average: a sharp audible notch barely moves the average.
 
 `PredictedAverageSumLossDb` quotes before/after figures for Auto delay proposals without UI

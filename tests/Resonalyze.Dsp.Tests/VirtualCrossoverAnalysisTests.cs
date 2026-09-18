@@ -657,6 +657,30 @@ public sealed class VirtualCrossoverAnalysisTests
     }
 
     [Fact]
+    public void SumLossCurve_IsNotDrawnWhereEveryChannelIsInItsStopBand()
+    {
+        // Two FIR stop-band floors at comparable level: their phasor sum is noise, however loud locally.
+        double[] frequencies = [60, 120, 250, 1_000, 4_000];
+        var sub = new List<SignalPoint>();
+        var woofer = new List<SignalPoint>();
+        var sum = new List<SignalPoint>();
+        double[] subDb = [0, -6, -60, -110, -112];
+        double[] wooferDb = [-30, -6, -20, -111, -110];
+        for (int i = 0; i < frequencies.Length; i++)
+        {
+            sub.Add(new SignalPoint(frequencies[i], subDb[i]));
+            woofer.Add(new SignalPoint(frequencies[i], wooferDb[i]));
+            // Cancelling at 1 and 4 kHz, where only the floors remain.
+            sum.Add(new SignalPoint(frequencies[i], i >= 3 ? -130 : Math.Max(subDb[i], wooferDb[i])));
+        }
+
+        List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(sum, [sub, woofer]);
+
+        Assert.All(loss.Take(3), point => Assert.True(double.IsFinite(point.Y)));
+        Assert.All(loss.Skip(3), point => Assert.True(double.IsNaN(point.Y)));
+    }
+
+    [Fact]
     public void SumLossCurve_ReadsAChannelThatMeasuredNothingAsContributingNothing()
     {
         // NaN below a divided-out protective high-pass must not poison the sum.

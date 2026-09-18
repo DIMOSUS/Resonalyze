@@ -1,6 +1,4 @@
 using System.Numerics;
-using System.Reflection;
-using System.Windows.Forms;
 using OxyPlot;
 using OxyPlot.Series;
 using Resonalyze.Options;
@@ -10,7 +8,6 @@ namespace Resonalyze.App.Tests;
 /// <summary>Steps share ONE scale (unlike the per-trace normalized impulse view); the Sum includes hidden summing channels.</summary>
 public sealed class VirtualCrossoverStepViewTests
 {
-    private const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
     private const int SampleRate = 48_000;
     private const int FirstArrival = 480;
     private const int SecondArrival = 960;
@@ -19,11 +16,10 @@ public sealed class VirtualCrossoverStepViewTests
     [Fact]
     public void ShownChannels_AndTheSum_GoIn_AsStepTraces()
     {
-        using VirtualCrossoverPanel panel = Loaded();
-        ((CheckBox)Field(panel, "checkBoxShowSum")).Checked = true;
-        List<ProcessedChannel> processed = Processed(panel);
+        VirtualCrossoverSession session = new();
+        List<ProcessedChannel> processed = Processed(session);
 
-        AcousticImpulseRender render = Build(panel, processed, processed)!;
+        AcousticImpulseRender render = Build(session, processed, processed, showSum: true)!;
 
         Assert.True(render.Step);
         Assert.Equal(SampleRate, render.SampleRate);
@@ -41,12 +37,11 @@ public sealed class VirtualCrossoverStepViewTests
     [Fact]
     public void AHiddenChannel_LeavesTheTraces_ButStaysInTheSum()
     {
-        using VirtualCrossoverPanel panel = Loaded();
-        ((CheckBox)Field(panel, "checkBoxShowSum")).Checked = true;
-        List<ProcessedChannel> processed = Processed(panel);
+        VirtualCrossoverSession session = new();
+        List<ProcessedChannel> processed = Processed(session);
         processed[1].Channel.Pair.ShowProcessedCurve = false;
 
-        AcousticImpulseRender render = Build(panel, processed, processed)!;
+        AcousticImpulseRender render = Build(session, processed, processed, showSum: true)!;
 
         Assert.Equal(2, render.Traces.Count);
         Assert.Equal(processed[0].Channel.Name, render.Traces[0].Title);
@@ -57,27 +52,22 @@ public sealed class VirtualCrossoverStepViewTests
     [Fact]
     public void TheSum_NeedsTheToggle_AndTwoSummingChannels()
     {
-        using VirtualCrossoverPanel panel = Loaded();
-        var showSum = (CheckBox)Field(panel, "checkBoxShowSum");
-        List<ProcessedChannel> processed = Processed(panel);
+        VirtualCrossoverSession session = new();
+        List<ProcessedChannel> processed = Processed(session);
 
-        showSum.Checked = false;
-        Assert.Equal(2, Build(panel, processed, processed)!.Traces.Count);
-
-        showSum.Checked = true;
-        Assert.Equal(2, Build(panel, processed, [processed[0]])!.Traces.Count);
+        Assert.Equal(2, Build(session, processed, processed, showSum: false)!.Traces.Count);
+        Assert.Equal(2, Build(session, processed, [processed[0]], showSum: true)!.Traces.Count);
     }
 
     [Fact]
     public void NothingShown_DrawsNothing()
     {
-        using VirtualCrossoverPanel panel = Loaded();
-        ((CheckBox)Field(panel, "checkBoxShowSum")).Checked = true;
-        List<ProcessedChannel> processed = Processed(panel);
+        VirtualCrossoverSession session = new();
+        List<ProcessedChannel> processed = Processed(session);
         processed[0].Channel.Pair.ShowProcessedCurve = false;
         processed[1].Channel.Pair.ShowProcessedCurve = false;
 
-        Assert.Null(Build(panel, processed, processed));
+        Assert.Null(Build(session, processed, processed, showSum: true));
     }
 
     [Fact]
@@ -161,15 +151,13 @@ public sealed class VirtualCrossoverStepViewTests
     [Fact]
     public void TheOppositeSidesSum_RidesAlong_ThinDashedTranslucent_OnTheSameClock()
     {
-        using VirtualCrossoverPanel panel = Loaded();
-        var showSum = (CheckBox)Field(panel, "checkBoxShowSum");
-        List<ProcessedChannel> processed = Processed(panel);
+        VirtualCrossoverSession session = new();
+        List<ProcessedChannel> processed = Processed(session);
         VirtualCrossoverSideSum opposite = new(
             Delta(SecondArrival + 48, 1.5), SecondArrival + 48, SampleRate, processed);
 
-        showSum.Checked = true;
-        Project(panel).ActiveSideRight = true;
-        AcousticImpulseRender render = Build(panel, processed, processed, opposite)!;
+        session.Project.ActiveSideRight = true;
+        AcousticImpulseRender render = Build(session, processed, processed, showSum: true, opposite)!;
         Assert.Equal(4, render.Traces.Count);
         IrPreviewTrace trace = render.Traces[3];
         Assert.Equal("Sum L", trace.Title);
@@ -179,25 +167,24 @@ public sealed class VirtualCrossoverStepViewTests
         Assert.Equal(110, trace.Color.A);
         Assert.Equal(OxyColors.White.R, trace.Color.R);
 
-        showSum.Checked = false;
-        Assert.Equal(2, Build(panel, processed, processed, opposite)!.Traces.Count);
-        showSum.Checked = true;
+        Assert.Equal(2, Build(session, processed, processed, showSum: false, opposite)!.Traces.Count);
         VirtualCrossoverSideSum otherRate = opposite with { SampleRate = 96_000 };
-        Assert.Equal(3, Build(panel, processed, processed, otherRate)!.Traces.Count);
+        Assert.Equal(3, Build(session, processed, processed, showSum: true, otherRate)!.Traces.Count);
     }
 
     private static AcousticImpulseRender? Build(
-        VirtualCrossoverPanel panel,
+        VirtualCrossoverSession session,
         List<ProcessedChannel> processed,
         IReadOnlyList<ProcessedChannel> summed,
+        bool showSum,
         VirtualCrossoverSideSum? opposite = null) =>
-        (AcousticImpulseRender?)panel.GetType()
-            .GetMethod("BuildStepRender", Hidden)!
-            .Invoke(panel, [processed, summed, opposite]);
+        new AcousticViewBuilder(session, new VirtualCrossoverHybrid(session))
+            .TraceRender(processed, step: true, summed, opposite, showSum);
 
-    private static List<ProcessedChannel> Processed(VirtualCrossoverPanel panel)
+    private static List<ProcessedChannel> Processed(VirtualCrossoverSession session)
     {
-        List<VirtualCrossoverChannel> channels = Channels(panel);
+        session.Channels.AddRange([new VirtualCrossoverChannel("A"), new VirtualCrossoverChannel("B")]);
+        List<VirtualCrossoverChannel> channels = session.Channels;
         channels[0].Pair.ShowProcessedCurve = true;
         channels[1].Pair.ShowProcessedCurve = true;
         return
@@ -216,25 +203,4 @@ public sealed class VirtualCrossoverStepViewTests
         impulse[sample] = new Complex(amplitude, 0.0);
         return impulse;
     }
-
-    private static VirtualCrossoverPanel Loaded()
-    {
-        var panel = new VirtualCrossoverPanel();
-        List<VirtualCrossoverChannel> channels = Channels(panel);
-        for (int index = 0; index < channels.Count; index++)
-        {
-            channels[index].Pair = Project(panel).Pairs[index];
-        }
-
-        return panel;
-    }
-
-    private static object Field(object target, string name) =>
-        target.GetType().GetField(name, Hidden)!.GetValue(target)!;
-
-    private static List<VirtualCrossoverChannel> Channels(VirtualCrossoverPanel panel) =>
-        panel.Session.Channels;
-
-    private static VirtualCrossoverProjectFile Project(VirtualCrossoverPanel panel) =>
-        panel.Session.Project;
 }

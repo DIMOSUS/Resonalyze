@@ -262,7 +262,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
                 ProcessedChannels.OrderByBand(set)))
             {
                 JunctionCorrelationView view =
-                    VirtualCrossoverPanel.BuildCorrelationView(pair, set);
+                    JunctionViews.BuildCorrelationView(pair, set);
                 if (view.WhitenedDirect.Count == 0)
                 {
                     continue;

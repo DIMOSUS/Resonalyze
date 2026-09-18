@@ -20,15 +20,6 @@ public partial class VirtualCrossoverPanel : UserControl
     private const int MaxChannelCount = VirtualCrossoverProjectFile.MaximumChannelCount;
     private const int DefaultChannelCount = 3;
 
-    private const string NoSourcesHint =
-        "Pick a measurement for at least one channel (Source...).\n" +
-        "Every source needs a loopback transfer IR recorded at the same\n" +
-        "microphone position and sample rate.";
-
-    private static readonly OxyColor SumColor = UiPalette.CurveNeutral.ToOxy();
-    private static readonly OxyColor LossColor = VirtualCrossoverAcousticPlot.LossAxisColor;
-    private static readonly OxyColor[] ChannelColors =
-        [.. UiPalette.ChannelCurves.Select(color => color.ToOxy())];
 
     private readonly System.Windows.Forms.Timer saveTimer = new()
     {
@@ -38,6 +29,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private readonly VirtualCrossoverSession session = new();
     private readonly VirtualCrossoverHybrid hybridReader;
     private readonly VirtualCrossoverWarnings warnings;
+    private readonly AcousticViewBuilder viewBuilder;
     private readonly VirtualCrossoverSideLock sideLock = new();
 
     private readonly EqWizardImportExportCoordinator peqExport = new();
@@ -92,14 +84,15 @@ public partial class VirtualCrossoverPanel : UserControl
         InitializeComponent();
         hybridReader = new VirtualCrossoverHybrid(session);
         warnings = new VirtualCrossoverWarnings(session);
+        viewBuilder = new AcousticViewBuilder(session, hybridReader);
         // While controls stand where the designer put them: the layout pass stretches plots by deltas on this.
         CaptureLayoutBaseline();
         Ui.ThemedScrollBars.Apply(channelListPanel);
         Ui.ThemedScrollBars.Apply(this);
         SetChannelCount(DefaultChannelCount);
 
-        checkBoxShowSum.ForeColor = Color.FromArgb(SumColor.R, SumColor.G, SumColor.B);
-        labelSumLoss.ForeColor = Color.FromArgb(LossColor.R, LossColor.G, LossColor.B);
+        checkBoxShowSum.ForeColor = UiPalette.CurveNeutral;
+        labelSumLoss.ForeColor = UiPalette.CurveTarget;
         targetToggleColor = checkBoxShowTarget.ForeColor;
         hybridToggleColor = checkBoxHybrid.ForeColor;
 
@@ -109,7 +102,7 @@ public partial class VirtualCrossoverPanel : UserControl
             oppositeSide: false,
             channel => session.Calibration.For(channel));
         acousticPlot = new VirtualCrossoverAcousticPlot(
-            mainPlotView, NoSourcesHint, CurrentAcousticView());
+            mainPlotView, AcousticViewBuilder.NoSourcesHint, CurrentAcousticView());
         dspChainPlot = new VirtualCrossoverDspChainPlot(dspPlotView, CurrentDspPlotMode());
         mainPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-main");
         dspPlotView.Paint += (_, _) => AppProfiler.FrameMark("vdsp-dsp");
@@ -298,7 +291,6 @@ public partial class VirtualCrossoverPanel : UserControl
             MessageBoxIcon.Information);
     }
 
-    private const string LoadingHint = "Loading the previous session…";
 
     // Re-resolving sources takes seconds. The whole tree is disabled because a load rebuilds the blocks.
     private void SetProjectLoading(bool loading)
@@ -313,7 +305,7 @@ public partial class VirtualCrossoverPanel : UserControl
         Enabled = !loading;
         if (loading)
         {
-            acousticPlot.ShowHint(LoadingHint);
+            acousticPlot.ShowHint(AcousticViewBuilder.LoadingHint);
             MetricChanged?.Invoke("Loading\r\nsession…", string.Empty);
         }
     }
@@ -950,8 +942,7 @@ public partial class VirtualCrossoverPanel : UserControl
             ProcessorSampleRateHz = session.ProcessorSampleRateHz
         };
 
-        OxyColor color = ChannelColors[index];
-        control.SetAccentColor(Color.FromArgb(color.R, color.G, color.B));
+        control.SetAccentColor(VirtualCrossoverColors.ChannelAccent(index));
 
         // Per block, not in the constructor: blocks added later need tooltips too.
         control.ApplyTooltips(toolTip);
@@ -1014,8 +1005,7 @@ public partial class VirtualCrossoverPanel : UserControl
             VirtualCrossoverChannelControl control = ControlFor(channel);
             channel.Name = ChannelNameFor(i);
             control.ChannelName = channel.Name;
-            OxyColor color = ChannelColors[i];
-            control.SetAccentColor(Color.FromArgb(color.R, color.G, color.B));
+            control.SetAccentColor(VirtualCrossoverColors.ChannelAccent(i));
             channelListPanel.Controls.SetChildIndex(control, i);
         }
 
@@ -2872,7 +2862,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 bindings.Add(
                     i,
                     (channel,
-                        ChannelColors[i],
+                        VirtualCrossoverColors.Channel(i),
                         state.MeasuredBand,
                         state.MicrophoneCalibrationCurve));
             }
@@ -2924,15 +2914,18 @@ public partial class VirtualCrossoverPanel : UserControl
         // The whole set is kept: the junction views and opposite-side read-outs need channels this view does not draw.
         lastProcessedRender = render;
 
-        // Filter by group view once, so curves, sum, loss and read-out describe the same channels.
-        VirtualCrossoverGroupView groupView = SelectedGroupView;
-        List<ProcessedChannel> shown = ChannelsShownBy(processed, groupView);
-        List<ProcessedChannel> summedChannels = ChannelsSummedBy(shown, groupView);
-        if (shown.Count == 0)
+        // Read once: a control changed during the awaits below requests the next frame. Filtered by group view once, so
+        // curves, sum, loss and read-out describe the same channels.
+        VirtualCrossoverViewState view = CaptureViewState();
+        VirtualCrossoverGroupView groupView = view.GroupView;
+        var frame = VirtualCrossoverFrame.Of(processed, groupView);
+        if (frame.Shown.Count == 0)
         {
             // With nothing resolved at all the zone hint would mislead, so show the no-sources hint.
             acousticPlot.Draw(new AcousticRender(
-                processed.Count == 0 ? NoSourcesHint : EmptyViewHint(groupView),
+                processed.Count == 0
+                    ? AcousticViewBuilder.NoSourcesHint
+                    : AcousticViewBuilder.EmptyViewHint(groupView),
                 [],
                 null));
             MetricChanged?.Invoke(string.Empty, string.Empty);
@@ -2941,49 +2934,15 @@ public partial class VirtualCrossoverPanel : UserControl
             return;
         }
 
-        // No loss (curve or figure) across groups or where the chain has no junction.
-        // See docs/tech/virtual-dsp-panel.md#sum-loss-and-group-views.
-        bool quotesJunctions =
-            VirtualCrossoverGroupViews.LossChainZone(groupView) != null &&
-            ProcessedChannels.HasJunction(summedChannels);
-
-        // Off the UI thread: the FDW gate is 50–100 ms per new response set. Reads the SUMMING channels.
-        // See docs/tech/virtual-dsp-panel.md#junction-phase-read-out.
-        List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
-        // Direct loss (FDW-8) sums the same block's spectra, so built in the same task from the same windows.
-        List<SignalPoint>? directLoss = null;
-        SumLossWindow lossWindow = SelectedSumLossWindow;
-        int lossSmoothing = session.MagnitudeGate.SmoothingInverseOctaves;
-        if (quotesJunctions)
-        {
-            int phaseRate = summedChannels[0].SampleRate;
-            double? pinnedOffsetMs = session.Gate.PinnedOffsetMs;
-            double gateLeftMs = session.Gate.LeftMs;
-            double gatePlateauMs = session.Gate.PlateauMs;
-            double gateRightMs = session.Gate.RightMs;
-            (phaseEntries, directLoss) = await Task.Run(() =>
-            {
-                // Zone inside the task: Tracy zones are per-thread LIFO.
-                using var _ = AppProfiler.Zone("VirtualDSP.BuildPhaseEntries");
-                IReadOnlyList<ProcessedChannel>? orderedSet = null;
-                IReadOnlyList<Complex[]>? spectra = null;
-                List<VirtualCrossoverMetric.PhaseEntry> entries = metrics.BuildPhaseEntries(
-                    summedChannels,
-                    ordered =>
-                    {
-                        orderedSet = ordered;
-                        spectra = JunctionPhaseSpectra.Build(
-                            ordered, phaseRate, pinnedOffsetMs,
-                            gateLeftMs, gatePlateauMs, gateRightMs);
-                        return spectra;
-                    });
-                List<SignalPoint>? direct =
-                    lossWindow == SumLossWindow.Direct && spectra != null
-                        ? metrics.BuildDirectLossCurve(orderedSet!, spectra, lossSmoothing)
-                        : null;
-                return (entries, direct);
-            });
-        }
+        // Direct loss (FDW-8) sums the junction read-out's own gated spectra, so it is built with it.
+        VirtualCrossoverPhaseGate gate = session.Gate;
+        (List<VirtualCrossoverMetric.PhaseEntry> phaseEntries, List<SignalPoint>? directLoss) =
+            await frame.ReadJunctionsAsync(
+                metrics,
+                gate,
+                gate.PinnedOffsetMs,
+                session.MagnitudeGate.SmoothingInverseOctaves,
+                withDirectLoss: view.LossWindow == SumLossWindow.Direct);
 
         // Narrowed by the Show filter, never a shortened list: a block's list position is its cache identity.
         List<VirtualCrossoverMetric.StereoDelta> stereoDeltas =
@@ -2996,12 +2955,11 @@ public partial class VirtualCrossoverPanel : UserControl
         // Quoted by cross-group views instead of a loss; adds only arrival FFTs.
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas =
             await metrics.ComputeGroupDeltasAsync(
-                shown, groupView, revision,
+                frame.Shown, groupView, revision,
                 hybridGroupLevelDeltaDb: HybridGroupLevelReader());
         // The curve windows through the OPPOSITE side's gate placement; both sides must be drawn by the same method.
         VirtualCrossoverSideSum? oppositeSide = null;
-        if (checkBoxShowSum.Checked &&
-            (radioViewMagnitude.Checked || radioViewStep.Checked))
+        if (view.ShowSum && view.View is AcousticView.Magnitude or AcousticView.Step)
         {
             oppositeSide = await metrics.ComputeSideSumAsync(
                 session.Channels, !session.Project.ActiveSideRight, revision, minimumChannels: 2,
@@ -3012,10 +2970,10 @@ public partial class VirtualCrossoverPanel : UserControl
 
         // Envelopes (Hilbert over the whole record, 2^17+ samples) are warmed off the UI thread: a drag hands
         // each frame a new array. Memoized per array.
-        if (radioViewImpulse.Checked)
+        if (view.View == AcousticView.Impulse)
         {
             Complex[][] drawnResponses =
-                [.. shown
+                [.. frame.Shown
                     .Where(item => item.Channel.Pair.ShowProcessedCurve)
                     .Select(item => item.ImpulseResponse)];
             await Task.Run(() =>
@@ -3038,28 +2996,28 @@ public partial class VirtualCrossoverPanel : UserControl
         using (AppProfiler.Zone("VirtualDSP.BuildCurves"))
         {
             (magnitudes, sumCurve, lossCurve) = metrics.BuildCurves(
-                shown, session.MagnitudeGate.SmoothingInverseOctaves, summedChannels);
+                frame.Shown, session.MagnitudeGate.SmoothingInverseOctaves, frame.Summed);
         }
 
         // Decided before the awaits, where the junction phase block uses it.
-        if (!quotesJunctions)
+        if (!frame.QuotesJunctions)
         {
             lossCurve = null;
         }
 
         // Disable draws no curve but the column keeps the full read.
-        bool lossDirect = lossWindow == SumLossWindow.Direct;
+        bool lossDirect = view.LossWindow == SumLossWindow.Direct;
         List<SignalPoint>? shownLoss = lossDirect ? directLoss : lossCurve;
-        List<SignalPoint>? drawnLoss = lossWindow == SumLossWindow.Off ? null : shownLoss;
+        List<SignalPoint>? drawnLoss = view.LossWindow == SumLossWindow.Off ? null : shownLoss;
 
         // Before warnings and render: both read it.
         HybridMagnitudes? hybrid = null;
-        if (HybridRequested && magnitudes != null && radioViewMagnitude.Checked)
+        if (view.HybridRequested && magnitudes != null && view.View == AcousticView.Magnitude)
         {
             using (AppProfiler.Zone("VirtualDSP.BuildHybrid"))
             {
                 hybrid = hybridReader.Build(
-                    shown,
+                    frame.Shown,
                     magnitudes,
                     session.Project.ActiveSideRight,
                     session.MagnitudeGate.SmoothingInverseOctaves);
@@ -3085,9 +3043,8 @@ public partial class VirtualCrossoverPanel : UserControl
 
         using (AppProfiler.Zone("VirtualDSP.UpdateMetric"))
         {
-            // Junction read-outs use the SUMMED channels: a drawn-only centre would invent a crossover.
             UpdateMetric(
-                summedChannels, shownLoss, phaseEntries, stereoDeltas, hybrid,
+                frame.Summed, shownLoss, phaseEntries, stereoDeltas, hybrid,
                 groupDeltas, lossDirect);
         }
 
@@ -3100,9 +3057,12 @@ public partial class VirtualCrossoverPanel : UserControl
         AcousticRender acousticRender;
         using (AppProfiler.Zone("VirtualDSP.BuildAcousticRender"))
         {
-            acousticRender = BuildAcousticRender(
-                shown, summedChannels, groupView, magnitudes, sumCurve, drawnLoss,
-                oppositeSum, oppositeSide, hybrid, lossDirect);
+            acousticRender = viewBuilder.Build(
+                view,
+                frame,
+                new AcousticFrameCurves(
+                    magnitudes, sumCurve, drawnLoss, lossDirect, oppositeSum, oppositeSide, hybrid),
+                loadingProject);
         }
 
         using (AppProfiler.Zone("VirtualDSP.AcousticPlotDraw"))
@@ -3110,151 +3070,6 @@ public partial class VirtualCrossoverPanel : UserControl
             acousticPlot.Draw(acousticRender);
         }
     }
-
-    private static List<ProcessedChannel> ChannelsShownBy(
-        IReadOnlyList<ProcessedChannel> processed,
-        VirtualCrossoverGroupView view) =>
-        [.. processed.Where(item =>
-            VirtualCrossoverGroupViews.IsShown(view, item.Channel.Pair.Zone))];
-
-    // Drawn and summed differ where a centre is shown: compared, not added.
-    private static List<ProcessedChannel> ChannelsSummedBy(
-        IReadOnlyList<ProcessedChannel> shown,
-        VirtualCrossoverGroupView view) =>
-        [.. shown.Where(item =>
-            VirtualCrossoverGroupViews.ParticipatesInTotalSum(view, item.Channel.Pair.Zone))];
-
-    private static string EmptyViewHint(VirtualCrossoverGroupView view) =>
-        $"No channels in {VirtualCrossoverGroupViews.DisplayName(view)}." +
-        Environment.NewLine +
-        "Set a block's Zone to bring it into this view.";
-
-    // While a session loads, processed is empty; keep the loading note instead of the no-sources hint.
-    private AcousticRender BuildAcousticRender(
-        List<ProcessedChannel> processed,
-        IReadOnlyList<ProcessedChannel> summed,
-        VirtualCrossoverGroupView view,
-        List<AnalysisCurve>? magnitudes,
-        AnalysisCurve? sumCurve,
-        List<SignalPoint>? lossCurve,
-        AnalysisCurve? oppositeSum,
-        VirtualCrossoverSideSum? oppositeSide,
-        HybridMagnitudes? hybrid,
-        bool lossDirect = false)
-    {
-        string hint = loadingProject
-            ? LoadingHint
-            : processed.Count == 0 ? NoSourcesHint : string.Empty;
-        if (processed.Count == 0)
-        {
-            return new AcousticRender(hint, [], null);
-        }
-        if (radioViewPhase.Checked)
-        {
-            // Drawn set for traces, summed subset for the Sum, matching the magnitude view.
-            return new AcousticRender(hint, BuildPhaseCurves(processed, summed), null);
-        }
-        if (radioViewGroupDelay.Checked)
-        {
-            return new AcousticRender(hint, BuildGroupDelayCurves(processed, summed), null);
-        }
-        if (radioViewImpulse.Checked)
-        {
-            return new AcousticRender(hint, [], BuildImpulseRender(processed));
-        }
-        if (radioViewStep.Checked)
-        {
-            return new AcousticRender(
-                hint, [], BuildStepRender(processed, summed, oppositeSide));
-        }
-
-        if (VirtualCrossoverGroupViews.DrawsGroupSums(view))
-        {
-            return new AcousticRender(
-                hint, BuildGroupSumCurves(processed, magnitudes, hybrid), null);
-        }
-
-        return new AcousticRender(
-            hint,
-            BuildMagnitudeCurves(
-                processed, magnitudes, sumCurve, lossCurve, oppositeSum, hybrid,
-                lossDirect),
-            null);
-    }
-
-    // One summed line per zone, all gated on ONE anchor across the shown channels.
-    // See docs/tech/virtual-dsp-panel.md#groups-view.
-    private List<AcousticCurve> BuildGroupSumCurves(
-        List<ProcessedChannel> shown,
-        IReadOnlyList<AnalysisCurve>? magnitudes,
-        HybridMagnitudes? hybrid)
-    {
-        using var _ = AppProfiler.Zone("VirtualDSP.BuildGroupSumCurves");
-        int anchor = ProcessedChannels.SharedStartAnchorIndex(shown);
-        MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
-        double gateOffsetMs = snapshot.ResolveGateOffsetMs(
-            oppositeSide: false, anchor, shown[0].SampleRate);
-        // Check every list the slice indexes: the slice runs before VirtualCrossoverHybrid.Sum's own guard.
-        bool drawHybrid = hybrid != null && magnitudes != null &&
-            magnitudes.Count >= shown.Count &&
-            hybrid.Channels.Count >= shown.Count &&
-            hybrid.UnsmoothedChannels.Count >= shown.Count &&
-            hybrid.ChannelOffsetsDb.Count >= shown.Count;
-        var curves = new List<AcousticCurve>();
-        foreach (VirtualCrossoverZone zone in VirtualCrossoverZones.All)
-        {
-            // By position: hybrid curves and magnitudes are indexed against the shown set.
-            List<int> positions =
-            [
-                .. Enumerable.Range(0, shown.Count)
-                    .Where(index => shown[index].Channel.Pair.Zone == zone)
-            ];
-            if (positions.Count == 0)
-            {
-                continue;
-            }
-
-            List<ProcessedChannel> members = [.. positions.Select(index => shown[index])];
-            List<SignalPoint>? points = drawHybrid
-                ? VirtualCrossoverHybrid.Sum(
-                    hybrid!.Subset(positions),
-                    members,
-                    anchor,
-                    snapshot,
-                    gateOffsetMs,
-                    [
-                        .. positions.Select(index =>
-                            (IReadOnlyList<SignalPoint>)magnitudes![index].Points)
-                    ])
-                : null;
-            curves.Add(new AcousticCurve(
-                VirtualCrossoverZones.DisplayName(zone),
-                points ?? snapshot.MeasuredSum(
-                    members,
-                    anchor,
-                    snapshot.ResolveGateOffsetMs(oppositeSide: false, anchor, members[0].SampleRate),
-                    session.Calibration.For).Display.Points,
-                GroupColor(zone),
-                2.0,
-                LineStyle.Solid));
-        }
-
-        if (BuildTargetCurve() is { } target)
-        {
-            curves.Insert(0, target);
-        }
-
-        return curves;
-    }
-
-    // Semantic: in this view a line IS a zone.
-    private static OxyColor GroupColor(VirtualCrossoverZone zone) => zone switch
-    {
-        VirtualCrossoverZone.Rear => UiPalette.CurveZoneRear.ToOxy(),
-        VirtualCrossoverZone.Center => UiPalette.CurveZoneCentre.ToOxy(),
-        VirtualCrossoverZone.Sub => UiPalette.CurveZoneSub.ToOxy(),
-        _ => UiPalette.CurveZoneFront.ToOxy()
-    };
 
     // Handed to the host (the EQ Wizard owns the one target). A session without a stored target starts carrying the current one.
     private void ApplyProjectTarget()
@@ -3269,38 +3084,6 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             session.Project.Target = VirtualCrossoverTargetSettings.FromCurve(current);
         }
-    }
-
-    // A target is parametric, so it spans the audio band on its own grid.
-    private const double TargetGridLowHz = 20;
-    private const double TargetGridHighHz = 20_000;
-    private const int TargetGridPoints = 512;
-
-    // Hung at the user's level, not fitted: transfer-function dB has no absolute reference to fit.
-    private AcousticCurve? BuildTargetCurve()
-    {
-        if (!checkBoxShowTarget.Checked || targetCurve is not { } target)
-        {
-            return null;
-        }
-
-        double level = (double)numericTargetLevel.Value;
-        IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(
-            TargetGridLowHz, TargetGridHighHz, TargetGridPoints);
-        var points = new SignalPoint[grid.Count];
-        for (int i = 0; i < grid.Count; i++)
-        {
-            points[i] = new SignalPoint(
-                grid[i], level + target.Spec.Evaluate(grid[i]));
-        }
-
-        return new AcousticCurve(
-            "Target",
-            points,
-            OxyColor.FromArgb(
-                target.Color.A, target.Color.R, target.Color.G, target.Color.B),
-            target.StrokeThickness,
-            OverlayLineStyles.ToOxy(target.LineStyle));
     }
 
     // Same menu as the EQ Wizard's Target button; rebuilt per click.
@@ -3434,148 +3217,37 @@ public partial class VirtualCrossoverPanel : UserControl
         ScheduleSave();
     }
 
-    private List<AcousticCurve> BuildMagnitudeCurves(
-        List<ProcessedChannel> processed,
-        List<AnalysisCurve>? magnitudes,
-        AnalysisCurve? sumCurve,
-        List<SignalPoint>? lossCurve,
-        AnalysisCurve? oppositeSumCurve,
-        HybridMagnitudes? hybrid,
-        bool lossDirect = false)
-    {
-        // A shown RAW curve is built here per channel; processed ones arrive prebuilt.
-        using var _ = AppProfiler.Zone("VirtualDSP.BuildMagnitudeCurves");
-        var curves = new List<AcousticCurve>();
-        // First, so the curves draw on top of it.
-        if (BuildTargetCurve() is { } target)
-        {
-            curves.Add(target);
-        }
-
-        for (int i = 0; i < processed.Count; i++)
-        {
-            ProcessedChannel item = processed[i];
-            if (item.Channel.Pair.ShowRawCurve)
-            {
-                AnalysisCurve raw = session.MagnitudeGate.Raw(
-                    item.Channel.TransferImpulseResponse!,
-                    item.Channel.TransferPeakIndex,
-                    item.Channel.SampleRate,
-                    item.MeasuredBand,
-                    session.Calibration.For(item));
-                curves.Add(new AcousticCurve(
-                    $"{item.Channel.Name} raw",
-                    raw.Points,
-                    OxyColor.FromAColor(90, item.Color),
-                    1.2,
-                    LineStyle.Solid));
-            }
-
-            if (item.Channel.Pair.ShowProcessedCurve)
-            {
-                // Non-null here: magnitudes are withheld only for an empty set.
-                AnalysisCurve curve = magnitudes![i];
-                IReadOnlyList<SignalPoint> points = hybrid != null
-                    ? VirtualCrossoverHybrid.ShiftedBy(hybrid.Channels[i], hybrid.OffsetDb)
-                    : curve.Points;
-                curves.Add(new AcousticCurve(
-                    item.Channel.Name, points, item.Color, 1.8, LineStyle.Solid));
-            }
-        }
-
-        if (magnitudes == null || sumCurve == null)
-        {
-            return curves;
-        }
-
-        if (checkBoxShowSum.Checked)
-        {
-            // Hybrid: averages hold no phase, so cancellation comes from the IR loss curve (VirtualCrossoverHybrid.Sum).
-            IReadOnlyList<SignalPoint> sumPoints =
-                (hybrid != null ? hybridReader.ActiveSum(processed, magnitudes, hybrid) : null)
-                ?? sumCurve.Points;
-            curves.Add(new AcousticCurve(
-                "Sum", sumPoints, SumColor, 2.4, LineStyle.Solid));
-            if (oppositeSumCurve != null)
-            {
-                curves.Add(new AcousticCurve(
-                    $"Sum {(session.Project.ActiveSideRight ? "L" : "R")}",
-                    oppositeSumCurve.Points,
-                    OxyColor.FromAColor(110, SumColor),
-                    1.8,
-                    LineStyle.Dash));
-            }
-        }
-
-        if (lossCurve != null)
-        {
-            // Complex sum vs phase-blind magnitude sum (<= 0), from UNSMOOTHED magnitudes, smoothed as a ratio; the same list
-            // the read-out averages. On the loss axis. Null under Disable; under FDW-8 the direct-sound loss.
-            curves.Add(new AcousticCurve(
-                lossDirect ? "Sum loss (direct)" : "Sum loss",
-                lossCurve, LossColor, 1.8, LineStyle.Dash, OnLossAxis: true));
-        }
-
-        return curves;
-    }
-
+    // Junction read-outs use the SUMMED channels: a drawn-only centre would invent a crossover.
     private void UpdateMetric(
-        List<ProcessedChannel> processed,
+        List<ProcessedChannel> summed,
         List<SignalPoint>? lossCurve,
         IReadOnlyList<VirtualCrossoverMetric.PhaseEntry> phaseEntries,
-        IReadOnlyList<VirtualCrossoverMetric.StereoDelta>? stereoDeltas = null,
-        HybridMagnitudes? hybrid = null,
-        IReadOnlyList<VirtualCrossoverMetric.GroupDelta>? crossGroup = null,
-        bool lossDirect = false)
+        IReadOnlyList<VirtualCrossoverMetric.StereoDelta> stereoDeltas,
+        HybridMagnitudes? hybrid,
+        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas,
+        bool lossDirect)
     {
-        IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas = crossGroup ?? [];
         // Zoned apart from formatting: the per-junction banded analysis is the real work.
         List<VirtualCrossoverMetric.Entry> entries;
         using (AppProfiler.Zone("VirtualDSP.BuildEntries"))
         {
-            entries = metrics.BuildEntries(processed, lossCurve);
+            entries = metrics.BuildEntries(summed, lossCurve);
         }
 
-        // Built off the UI thread by the caller, which also decides whether junctions are quoted.
-        string compact = VirtualCrossoverMetric.FormatCompact(entries, lossDirect);
-        string detail = entries.Count > 0
-            ? VirtualCrossoverMetric.FormatDetail(entries, lossDirect)
-            : string.Empty;
-        if (phaseEntries.Count > 0)
-        {
-            compact += "\r\n\r\n" +
-                VirtualCrossoverMetric.FormatPhaseCompact(phaseEntries);
-            detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
-                VirtualCrossoverMetric.FormatPhaseDetail(phaseEntries);
-        }
-        // Under the loss column: in a cross-group view it stands in for the withheld loss.
-        if (groupDeltas.Count > 0)
-        {
-            compact += (compact.Length > 0 ? "\r\n\r\n" : string.Empty) +
-                VirtualCrossoverMetric.FormatGroupDeltasCompact(groupDeltas);
-            detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
-                VirtualCrossoverMetric.FormatGroupDeltasDetail(groupDeltas);
-        }
-        if (stereoDeltas is { Count: > 0 })
-        {
-            compact += "\r\n\r\n" +
-                VirtualCrossoverMetric.FormatStereoDeltasCompact(stereoDeltas);
-            detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
-                VirtualCrossoverMetric.FormatStereoDeltasDetail(stereoDeltas);
-        }
-        if (hybrid != null)
-        {
-            // A health reading: an array shares the IRs' loopback, so a large offset means a different input, calibration or driver.
-            compact += "\r\n\r\n" +
-                $"Spatial average {hybrid.OffsetDb:+0.0;-0.0} dB";
-            detail += (detail.Length > 0 ? "\r\n\r\n" : string.Empty) +
-                $"The spatial averages sit {hybrid.OffsetDb:+0.0;-0.0} dB from the " +
-                "impulse responses, and the whole set is drawn shifted by that one " +
-                "figure.";
-        }
-
+        (string compact, string detail) = VirtualCrossoverMetric.FormatReadOut(
+            entries, lossDirect, phaseEntries, groupDeltas, stereoDeltas, hybrid?.OffsetDb);
         MetricChanged?.Invoke(compact, detail);
     }
+
+    // Read once per frame; the Target curve travels only when it is shown.
+    private VirtualCrossoverViewState CaptureViewState() => new(
+        CurrentAcousticView(),
+        SelectedGroupView,
+        checkBoxShowSum.Checked,
+        SelectedSumLossWindow,
+        HybridRequested,
+        checkBoxShowTarget.Checked ? targetCurve : null,
+        (double)numericTargetLevel.Value);
 
     private void UpdateWarnings(
         List<ProcessedChannel> processed, HybridMagnitudes? hybrid)
@@ -3739,305 +3411,6 @@ public partial class VirtualCrossoverPanel : UserControl
             snapshot.ResolveGateOffsetMs(
                 oppositeSide: true, side.AnchorIndex, side.SampleRate),
             session.Calibration.For).Display;
-    }
-
-    private List<AcousticCurve> BuildPhaseCurves(
-        List<ProcessedChannel> processed,
-        IReadOnlyList<ProcessedChannel>? summed = null)
-    {
-        summed ??= processed;
-        using var _ = AppProfiler.Zone("VirtualDSP.BuildPhaseCurves");
-        // One shared absolute τ keeps relative phase; windows may follow each channel's arrival because BuildMeasuredPhase
-        // re-references to τ (exact while no window cuts its own channel, enforced by VirtualCrossoverPhaseGate.PerCurveOffsets).
-        int sampleRate = processed[0].SampleRate;
-        double referenceOffsetMs = session.Gate.ReferenceOffsetMs(processed, sampleRate);
-        double detrendMs = session.Gate.CommonDetrendMs(
-            processed, referenceOffsetMs, sampleRate);
-
-        // Spectra built ONCE per redraw for curves and Sum (the cache does not serialize bank computation).
-        // The Sum uses every SUMMING channel, hidden or not, matching the magnitude Sum.
-        bool includeSum = summed.Count >= 2 && checkBoxShowSum.Checked;
-        List<ProcessedChannel> gatedChannels = processed
-            .Where(item => (includeSum && summed.Contains(item)) ||
-                item.Channel.Pair.ShowProcessedCurve)
-            .ToList();
-
-        // Read gate and project state once on the UI thread; placements over the gated set only.
-        List<double> offsets = session.Gate.PerCurveOffsets(
-            gatedChannels, referenceOffsetMs, sampleRate);
-        double referenceSamples = detrendMs * sampleRate / 1_000.0;
-
-        List<(ProcessedChannel Item, Complex[] Spectrum, int ExtractionStart)> gated =
-            gatedChannels
-                .Select((item, index) => (item, Settings: session.Gate.Settings(
-                    offsets[index], PhaseDetrendMode.Manual, detrendMs)))
-                .AsParallel()
-                .AsOrdered()
-                .Select(input =>
-                {
-                    Complex[] spectrum = DataHelper.GetPhaseAnalysisSpectrum(
-                        new ImpulseMeasurementView(
-                            input.item.ImpulseResponse, 0, sampleRate),
-                        input.Settings,
-                        out int extractionStart);
-                    return (input.item, spectrum, extractionStart);
-                })
-                .ToList();
-
-        var jobs = new List<(string Title, OxyColor Color, double Thickness,
-            Complex[] Spectrum, int ExtractionStart)>();
-        foreach ((ProcessedChannel item, Complex[] spectrum, int extractionStart)
-            in gated)
-        {
-            if (item.Channel.Pair.ShowProcessedCurve)
-            {
-                jobs.Add((
-                    item.Channel.Name, item.Color, 1.8, spectrum, extractionStart));
-            }
-        }
-
-        if (includeSum)
-        {
-            // Vector sum of individually gated SPECTRA, not a gate over the summed IR (FDW HF windows < arrival spread).
-            List<(ProcessedChannel Item, Complex[] Spectrum, int ExtractionStart)>
-                summedParts = [.. gated.Where(part => summed.Contains(part.Item))];
-            if (summedParts.Count >= 2)
-            {
-                int targetExtractionStart =
-                    summedParts.Min(part => part.ExtractionStart);
-                Complex[] combined = DataHelper.SumGatedSpectra(
-                    [.. summedParts.Select(part => (part.Spectrum, part.ExtractionStart))],
-                    targetExtractionStart);
-                jobs.Add(("Sum", SumColor, 2.4, combined, targetExtractionStart));
-            }
-        }
-
-        return jobs
-            .AsParallel()
-            .AsOrdered()
-            .SelectMany(job =>
-            {
-                GatedPhaseCurve curve = GatedPhaseCurves.Read(
-                    job.Spectrum,
-                    job.ExtractionStart,
-                    referenceSamples,
-                    sampleRate,
-                    job.Title,
-                    job.Color,
-                    job.Thickness);
-                var curves = new List<AcousticCurve>(2);
-                // Wrap verticals: faded, dashed, drawn under the curve; empty title keeps them out of plot labels.
-                if (curve.WrapSegments.Count > 0)
-                {
-                    curves.Add(new AcousticCurve(
-                        string.Empty,
-                        curve.WrapSegments,
-                        OxyColor.FromAColor(110, job.Color),
-                        job.Thickness * 0.4,
-                        LineStyle.Dash));
-                }
-                curves.Add(new AcousticCurve(
-                    curve.Title,
-                    curve.Points,
-                    job.Color,
-                    job.Thickness,
-                    LineStyle.Solid));
-                return curves;
-            })
-            .ToList();
-    }
-
-    // Same window and placement as the phase view; absolute ms, no detrend. Plain GD and the Sum only.
-    // See docs/tech/virtual-dsp-panel.md#group-delay-view.
-    private List<AcousticCurve> BuildGroupDelayCurves(
-        List<ProcessedChannel> processed,
-        IReadOnlyList<ProcessedChannel>? summed = null)
-    {
-        summed ??= processed;
-        using var _ = AppProfiler.Zone("VirtualDSP.BuildGroupDelayCurves");
-        int sampleRate = processed[0].SampleRate;
-        double referenceOffsetMs = session.Gate.ReferenceOffsetMs(processed, sampleRate);
-
-        bool includeSum = summed.Count >= 2 && checkBoxShowSum.Checked;
-        List<ProcessedChannel> gatedChannels = processed
-            .Where(item => (includeSum && summed.Contains(item)) ||
-                item.Channel.Pair.ShowProcessedCurve)
-            .ToList();
-        if (gatedChannels.Count == 0)
-        {
-            return [];
-        }
-
-        // Psychoacoustic smoothing is a level model: it reads as 1/12 octave here (what the AI diagnostic reads).
-        List<double> offsets = session.Gate.PerCurveOffsets(
-            gatedChannels, referenceOffsetMs, sampleRate);
-        // The code, not the stored width: the project stores psychoacoustic as base width plus a flag.
-        double smoothingInverseOctaves =
-            SpectrumSmoothing.IsPsychoacoustic(session.Project.SmoothingCode)
-                ? FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves
-                : session.Project.SmoothingCode;
-        List<(ProcessedChannel Item, PhaseAnalysisSettings Settings)> inputs = gatedChannels
-            .Select((item, index) => (item, session.Gate.Settings(
-                offsets[index], PhaseDetrendMode.Off, manualDetrendMilliseconds: 0.0)))
-            .ToList();
-
-        List<(ProcessedChannel Item, PhaseAnalysisSettings Settings,
-            GroupDelaySpectra Spectra, int ExtractionStart)> gated = inputs
-            .AsParallel()
-            .AsOrdered()
-            .Select(input =>
-            {
-                GroupDelaySpectra spectra = DataHelper.GetGroupDelayAnalysisSpectra(
-                    new ImpulseMeasurementView(input.Item.ImpulseResponse, 0, sampleRate),
-                    input.Settings,
-                    out int extractionStart);
-                return (input.Item, input.Settings, spectra, extractionStart);
-            })
-            .ToList();
-
-        var jobs = new List<(string Title, OxyColor Color, double Thickness,
-            GroupDelaySpectra Spectra, int ExtractionStart, PhaseAnalysisSettings Settings,
-            MeasuredBand Band, IReadOnlyList<ProcessedChannel>? MaskBy)>();
-        foreach ((ProcessedChannel item, PhaseAnalysisSettings settings,
-            GroupDelaySpectra spectra, int extractionStart) in gated)
-        {
-            if (item.Channel.Pair.ShowProcessedCurve)
-            {
-                jobs.Add((item.Channel.Name, item.Color, 1.8, spectra, extractionStart,
-                    settings, item.MeasuredBand, null));
-            }
-        }
-
-        if (includeSum)
-        {
-            // Sum of individually gated operand pairs re-referenced to one extraction start (as in the phase view).
-            List<(ProcessedChannel Item, PhaseAnalysisSettings Settings,
-                GroupDelaySpectra Spectra, int ExtractionStart)> summedParts =
-                [.. gated.Where(part => summed.Contains(part.Item))];
-            if (summedParts.Count >= 2)
-            {
-                int targetExtractionStart =
-                    summedParts.Min(part => part.ExtractionStart);
-                GroupDelaySpectra combined = DataHelper.SumGatedSpectraPairs(
-                    [.. summedParts.Select(part => (part.Spectra, part.ExtractionStart))],
-                    targetExtractionStart,
-                    sampleRate);
-                // Masked where no channel measured, like the magnitude Sum.
-                jobs.Add(("Sum", SumColor, 2.4, combined, targetExtractionStart,
-                    summedParts[0].Settings, MeasuredBand.Everything,
-                    [.. summedParts.Select(part => part.Item)]));
-            }
-        }
-
-        // The Group Delay mode's validity gate blanks a crossover's stop band on purpose.
-        return jobs
-            .AsParallel()
-            .AsOrdered()
-            .Select(job =>
-            {
-                GroupDelayCurveSet curves = DataHelper.GetGroupDelayCurves(
-                    job.Spectra,
-                    job.ExtractionStart,
-                    sampleRate,
-                    job.Settings,
-                    smoothingInverseOctaves,
-                    PlotModelFactory.GroupDelayMagnitudeGateDb,
-                    includeMinimumPhase: false,
-                    job.Band.LowEdgeHz,
-                    job.Band.HighEdgeHz);
-                IReadOnlyList<SignalPoint> points = job.MaskBy == null
-                    ? curves.Measured.Points
-                    : ProcessedChannels.MeasuredBySomeChannel(curves.Measured.Points, job.MaskBy);
-                return new AcousticCurve(
-                    job.Title, points, job.Color, job.Thickness, LineStyle.Solid);
-            })
-            .ToList();
-    }
-
-    // The gate dialog's IR preview promoted to the main plot; each trace normalized to its envelope's in-window peak.
-    private AcousticImpulseRender? BuildImpulseRender(List<ProcessedChannel> processed)
-    {
-        using var _ = AppProfiler.Zone("VirtualDSP.BuildImpulseRender");
-        // Only shown traces set the gate offset and axis window.
-        List<ProcessedChannel> shown = processed
-            .Where(item => item.Channel.Pair.ShowProcessedCurve)
-            .ToList();
-        if (shown.Count == 0)
-        {
-            return null;
-        }
-
-        int sampleRate = shown[0].SampleRate;
-        double gateOffsetMs = session.Gate.ReferenceOffsetMs(shown, sampleRate);
-
-        var traces = shown
-            .Select(item => new IrPreviewTrace(
-                item.ImpulseResponse,
-                item.Channel.Name,
-                item.Color))
-            .ToList();
-
-        return new AcousticImpulseRender(
-            traces,
-            sampleRate,
-            gateOffsetMs,
-            session.Gate.LeftMs,
-            session.Gate.PlateauMs,
-            session.Gate.RightMs);
-    }
-
-    // Sum = sample-wise sum of the SUMMING channels' IRs (hidden too), so its step is the sum of steps.
-    // One common scale; the opposite Sum needs the shown side's rate. See docs/tech/virtual-dsp-panel.md#step-view.
-    private AcousticImpulseRender? BuildStepRender(
-        List<ProcessedChannel> processed,
-        IReadOnlyList<ProcessedChannel> summed,
-        VirtualCrossoverSideSum? oppositeSide)
-    {
-        using var _ = AppProfiler.Zone("VirtualDSP.BuildStepRender");
-        List<ProcessedChannel> shown = processed
-            .Where(item => item.Channel.Pair.ShowProcessedCurve)
-            .ToList();
-        if (shown.Count == 0)
-        {
-            return null;
-        }
-
-        int sampleRate = shown[0].SampleRate;
-        double gateOffsetMs = session.Gate.ReferenceOffsetMs(shown, sampleRate);
-
-        var traces = shown
-            .Select(item => new IrPreviewTrace(
-                item.ImpulseResponse,
-                item.Channel.Name,
-                item.Color))
-            .ToList();
-        if (summed.Count >= 2 && checkBoxShowSum.Checked)
-        {
-            traces.Add(new IrPreviewTrace(
-                VirtualCrossoverAnalysis.SumImpulseResponses(
-                    [.. summed.Select(item => item.ImpulseResponse)]),
-                "Sum",
-                SumColor,
-                2.4));
-            if (oppositeSide != null && oppositeSide.SampleRate == sampleRate)
-            {
-                traces.Add(new IrPreviewTrace(
-                    oppositeSide.ImpulseResponse,
-                    $"Sum {(session.Project.ActiveSideRight ? "L" : "R")}",
-                    OxyColor.FromAColor(110, SumColor),
-                    1.0,
-                    LineStyle.Dash));
-            }
-        }
-
-        return new AcousticImpulseRender(
-            traces,
-            sampleRate,
-            gateOffsetMs,
-            session.Gate.LeftMs,
-            session.Gate.PlateauMs,
-            session.Gate.RightMs,
-            Step: true);
     }
 
     // Both automatic commands are verified on the gated view, so a misplaced gate refuses them.
@@ -4211,7 +3584,7 @@ public partial class VirtualCrossoverPanel : UserControl
                 ? DspChannelChain.Identity
                 : channel.Settings.ToChain(channel.Pair.Zone) with { DelayMs = 0 };
             curves.Add(new DspChainCurve(
-                $"{channel.Name} filter", chain, session.ProcessorSampleRateHz, ChannelColors[i]));
+                $"{channel.Name} filter", chain, session.ProcessorSampleRateHz, VirtualCrossoverColors.Channel(i)));
         }
 
         dspChainPlot.Draw(CurrentDspPlotMode(), curves);
@@ -4322,11 +3695,11 @@ public partial class VirtualCrossoverPanel : UserControl
                 : [pair.Lower, pair.Upper];
             if (mode == DspPlotMode.Coherence)
             {
-                coherence = await Task.Run(() => BuildCoherenceView(pair, scope));
+                coherence = await Task.Run(() => JunctionViews.BuildCoherenceView(pair, scope));
             }
             else
             {
-                correlation = await Task.Run(() => BuildCorrelationView(pair, scope));
+                correlation = await Task.Run(() => JunctionViews.BuildCorrelationView(pair, scope));
             }
         }
         catch (Exception exception)
@@ -4353,154 +3726,6 @@ public partial class VirtualCrossoverPanel : UserControl
         {
             dspChainPlot.DrawCorrelation(correlation);
         }
-    }
-
-    // Both channels PROCESSED, so lag 0 is the current alignment; the score is the surface Auto delay searches.
-    // See docs/tech/virtual-dsp-panel.md#junction-views. Internal for the correlation-view harness.
-    internal static JunctionCorrelationView BuildCorrelationView(
-        AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
-    {
-        using var _ = AppProfiler.Zone("VirtualDSP.BuildCorrelationView");
-        int sampleRate = pair.Lower.SampleRate;
-        (Complex[] lower, Complex[] upper,
-            ValidSampleRange lowerRange, ValidSampleRange upperRange) =
-            CropJunctionPair(pair, scope, sampleRate);
-        // No anchor: each channel windowed at its own band-limited front, as Auto delay measures junctions.
-
-        // 1.5 crossover periods each side (floor 3 ms) keeps neighbouring comb lobes in view at 80 Hz.
-        double windowMs = Math.Max(3.0, 1.5 * 1000.0 / pair.CrossoverHz);
-        double passOctaves = Math.Log2(pair.BandHighHz / pair.BandLowHz);
-
-        // The comb repeats per period: a tenth of a period avoids aliasing at high junctions; window/300 bounds the sweep.
-        double stepMs = Math.Max(
-            Math.Min(windowMs / 60.0, 100.0 / pair.CrossoverHz),
-            Math.Max(0.005, windowMs / 300.0));
-
-        List<SignalPoint> whitened = null!;
-        List<SignalPoint> whitenedDirect = null!;
-        List<SignalPoint> scoreNormal = null!;
-        List<SignalPoint> scoreInverted = null!;
-        double lowerArrivalMs = 0;
-        double upperArrivalMs = 0;
-        Parallel.Invoke(
-            // UNTRIMMED: reflections are this curve's subject (honest at bass junctions).
-            () => whitened = VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
-                lower, upper, sampleRate, pair.CrossoverHz, passOctaves,
-                windowMs, centerLagMs: 0, phaseTransform: true),
-            // Direct sound only: the cut the engine's direct-coherence witness reads.
-            () =>
-            {
-                (Complex[] directLower, Complex[] directUpper) =
-                    VirtualCrossoverAnalysis.CutDirectSoundPair(
-                        lower, upper, sampleRate,
-                        pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz,
-                        searchRangeMs: windowMs, lowerRange, upperRange);
-                whitenedDirect = VirtualCrossoverAnalysis.BandLimitedCorrelationCurve(
-                    directLower, directUpper, sampleRate,
-                    pair.CrossoverHz, passOctaves,
-                    windowMs, centerLagMs: 0, phaseTransform: true);
-            },
-            // The search's own settings (null anchor, level match), or the drawn surface is not the searched one.
-            () =>
-            {
-                (List<VirtualCrossoverAnalysis.JunctionSweepPoint> normal,
-                    List<VirtualCrossoverAnalysis.JunctionSweepPoint> inverted) =
-                    VirtualCrossoverAnalysis.JunctionLossSweepBothPolarities(
-                        upper, lower, sampleRate,
-                        pair.BandLowHz, pair.BandHighHz,
-                        -windowMs, windowMs, stepMs,
-                        gateAnchorSample: null,
-                        levelMatch: true,
-                        variableValidRange: upperRange,
-                        fixedValidRange: lowerRange);
-                scoreNormal = Penalized(normal);
-                scoreInverted = Penalized(inverted);
-            },
-            // The band-limited envelope fronts: the number the agent package exports as arrivalLagMs. Not drawn.
-            () =>
-            {
-                lowerArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                    lower, sampleRate, pair.BandLowHz, pair.BandHighHz, lowerRange);
-                upperArrivalMs = VirtualCrossoverAnalysis.FindBandLimitedArrivalMs(
-                    upper, sampleRate, pair.BandLowHz, pair.BandHighHz, upperRange);
-            });
-
-        return new JunctionCorrelationView(
-            $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
-            pair.Upper.Channel.Name,
-            pair.CrossoverHz,
-            pair.BandLowHz,
-            pair.BandHighHz,
-            whitened,
-            whitenedDirect,
-            scoreNormal,
-            scoreInverted,
-            lowerArrivalMs - upperArrivalMs);
-    }
-
-    private static List<SignalPoint> Penalized(
-        List<VirtualCrossoverAnalysis.JunctionSweepPoint> sweep) =>
-        sweep
-            .Select(point => new SignalPoint(
-                point.DelayMs,
-                point.LossDb +
-                    VirtualCrossoverAnalysis.DipExcessPenaltyWeight *
-                    (point.DipDb - point.LossDb)))
-            .ToList();
-
-    // See VirtualCrossoverAnalysis.ArrivalCoherenceLadder. Internal for the harness.
-    internal static JunctionCoherenceView BuildCoherenceView(
-        AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
-    {
-        using var _ = AppProfiler.Zone("VirtualDSP.BuildCoherenceView");
-        int sampleRate = pair.Lower.SampleRate;
-        (Complex[] lower, Complex[] upper,
-            ValidSampleRange lowerRange, ValidSampleRange upperRange) =
-            CropJunctionPair(pair, scope, sampleRate);
-        return new JunctionCoherenceView(
-            $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}",
-            pair.Upper.Channel.Name,
-            pair.CrossoverHz,
-            pair.BandLowHz,
-            pair.BandHighHz,
-            VirtualCrossoverAnalysis.ArrivalCoherenceLadder(
-                lower, upper, sampleRate,
-                pair.BandLowHz, pair.BandHighHz, pair.CrossoverHz,
-                lowerRange, upperRange));
-    }
-
-    // Valid ranges are shifted into the crop frame so front detections match the search's (matters on glitch-headed records).
-    private static (Complex[] Lower, Complex[] Upper,
-        ValidSampleRange LowerRange, ValidSampleRange UpperRange)
-        CropJunctionPair(
-            AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope, int sampleRate)
-    {
-        List<ProcessedChannel> all = scope.Contains(pair.Lower)
-            ? scope.ToList()
-            : [pair.Lower, pair.Upper];
-        // These records are already processed: a FIR's pre-ring sits ahead of its peak, so the crop keeps all of it and as
-        // much after the peak as without one (the engine crops before the chain and needs none of this).
-        int leadSamples = all.Max(item => item.ValidRange.LeadSamples);
-        Complex[][] cropped = VirtualCrossoverAnalysis.CropSharedDirectSoundWindow(
-            all.Select(item => item.ImpulseResponse).ToList(),
-            AlignmentReprocessor.SearchCropLength(sampleRate) + leadSamples,
-            AlignmentReprocessor.SearchCropPrePeakSamples(sampleRate) + leadSamples,
-            out int cropStart);
-        Complex[] lower = cropped[all.IndexOf(pair.Lower)];
-        Complex[] upper = cropped[all.IndexOf(pair.Upper)];
-        ValidSampleRange Shifted(ProcessedChannel item, Complex[] croppedIr) =>
-            item.ValidRange.IsKnown
-                ? item.ValidRange with
-                {
-                    StartSample = Math.Max(0, item.ValidRange.StartSample - cropStart),
-                    EndSample = Math.Clamp(
-                        item.ValidRange.EndSample - cropStart,
-                        0,
-                        croppedIr.Length)
-                }
-                : item.ValidRange;
-        return (lower, upper,
-            Shifted(pair.Lower, lower), Shifted(pair.Upper, upper));
     }
 
     private async Task CaptureSumToOverlayAsync()
@@ -4705,13 +3930,13 @@ public partial class VirtualCrossoverPanel : UserControl
                         ? CoherencePerPoint(linear, curve.Points, channel.SampleRate)
                         : null;
                 IReadOnlyList<SignalPoint>? distortion = channel.DistortionCurve;
-                OxyColor accent = ChannelColors[session.Channels.IndexOf(channel)];
+
                 // With two similar drivers, existing corners decide which plays lower.
                 VirtualCrossoverChannelSettings settings =
                     channel.SideSettings(session.Project.ActiveSideRight);
                 dialogChannels.Add(new AutoSetupWizardChannel(
                     $"{channel.Name} — {channel.Settings.DisplayName}",
-                    Color.FromArgb(accent.R, accent.G, accent.B),
+                    VirtualCrossoverColors.ChannelAccent(session.Channels.IndexOf(channel)),
                     VirtualCrossoverAlignmentStages.StageOf(channel.Pair.Zone),
                     curve.Points,
                     coherence,

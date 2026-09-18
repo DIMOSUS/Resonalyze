@@ -1,6 +1,4 @@
 using System.Numerics;
-using System.Reflection;
-using System.Windows.Forms;
 using OxyPlot;
 using Resonalyze.Dsp;
 
@@ -8,7 +6,6 @@ namespace Resonalyze.App.Tests;
 
 public sealed class VirtualCrossoverGroupDelayViewTests
 {
-    private const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
     private const int SampleRate = 48_000;
     private const int FirstArrival = 480;
     private const int SecondArrival = 960;
@@ -17,14 +14,13 @@ public sealed class VirtualCrossoverGroupDelayViewTests
     [Fact]
     public void TwoDelays_ReadTheirArrivals_AndTheSumSitsBetweenThemByEnergy()
     {
-        using VirtualCrossoverPanel panel = Loaded();
-        VirtualCrossoverProjectFile project = Project(panel);
+        VirtualCrossoverSession session = new();
+        VirtualCrossoverProjectFile project = session.Project;
         project.PhaseWindowMode = PhaseWindowMode.FrequencyDependent;
         project.PhaseFdwCycles = 8;
-        ((CheckBox)Field(panel, "checkBoxShowSum")).Checked = true;
-        List<ProcessedChannel> processed = Processed(panel);
+        List<ProcessedChannel> processed = Processed(session);
 
-        List<AcousticCurve> curves = Build(panel, processed);
+        List<AcousticCurve> curves = Build(session, processed, showSum: true);
 
         Assert.Equal(3, curves.Count);
         AcousticCurve first = curves[0];
@@ -48,27 +44,25 @@ public sealed class VirtualCrossoverGroupDelayViewTests
     public void PsychoacousticSmoothing_ReadsAsTheGroupDelayModesDefault()
     {
         // Psycho width on a time curve means GD mode's 1/12 oct, not Normalize's 1/6; set via the project setter since the stored width is 1/6.
-        using VirtualCrossoverPanel panel = Loaded();
-        VirtualCrossoverProjectFile project = Project(panel);
+        VirtualCrossoverSession session = new();
+        VirtualCrossoverProjectFile project = session.Project;
         project.PhaseWindowMode = PhaseWindowMode.Fixed;
-        ((CheckBox)Field(panel, "checkBoxShowSum")).Checked = false;
-        List<VirtualCrossoverChannel> channels = Channels(panel);
-        channels[0].Pair.ShowProcessedCurve = true;
-        channels[1].Pair.ShowProcessedCurve = false;
+        var channel = new VirtualCrossoverChannel("A");
+        channel.Pair.ShowProcessedCurve = true;
         Complex[] reflected = Delta(FirstArrival, 1.0);
         reflected[FirstArrival + 144] = new Complex(0.5, 0.0);
         List<ProcessedChannel> processed =
         [
-            new ProcessedChannel(channels[0], reflected, FirstArrival, SampleRate, OxyColors.Red)
+            new ProcessedChannel(channel, reflected, FirstArrival, SampleRate, OxyColors.Red)
         ];
 
         project.SetSmoothingCode(SpectrumSmoothing.PsychoacousticCode);
         Assert.Equal(SpectrumSmoothing.PsychoacousticBaseInverseOctaves, project.SmoothingInverseOctaves);
-        List<AcousticCurve> psychoacoustic = Build(panel, processed);
+        List<AcousticCurve> psychoacoustic = Build(session, processed, showSum: false);
         project.SetSmoothingCode(12);
-        List<AcousticCurve> twelfth = Build(panel, processed);
+        List<AcousticCurve> twelfth = Build(session, processed, showSum: false);
         project.SetSmoothingCode(SpectrumSmoothing.PsychoacousticBaseInverseOctaves);
-        List<AcousticCurve> sixth = Build(panel, processed);
+        List<AcousticCurve> sixth = Build(session, processed, showSum: false);
 
         Assert.Equal(twelfth[0].Points, psychoacoustic[0].Points);
         Assert.NotEqual(sixth[0].Points, psychoacoustic[0].Points);
@@ -77,18 +71,17 @@ public sealed class VirtualCrossoverGroupDelayViewTests
     [Fact]
     public void HidingAChannel_LeavesTheOthersWindowWhereItWas()
     {
-        using VirtualCrossoverPanel panel = Loaded();
-        VirtualCrossoverProjectFile project = Project(panel);
+        VirtualCrossoverSession session = new();
+        VirtualCrossoverProjectFile project = session.Project;
         project.PhaseWindowMode = PhaseWindowMode.FrequencyDependent;
         project.PhaseFdwCycles = 8;
-        ((CheckBox)Field(panel, "checkBoxShowSum")).Checked = false;
-        List<ProcessedChannel> processed = Processed(panel);
+        List<ProcessedChannel> processed = Processed(session);
 
-        List<AcousticCurve> both = Build(panel, processed);
+        List<AcousticCurve> both = Build(session, processed, showSum: false);
         Assert.Equal(2, both.Count);
 
         processed[1].Channel.Pair.ShowProcessedCurve = false;
-        List<AcousticCurve> alone = Build(panel, processed);
+        List<AcousticCurve> alone = Build(session, processed, showSum: false);
         Assert.Single(alone);
 
         Assert.Equal(both[0].Points.Count, alone[0].Points.Count);
@@ -111,14 +104,14 @@ public sealed class VirtualCrossoverGroupDelayViewTests
     }
 
     private static List<AcousticCurve> Build(
-        VirtualCrossoverPanel panel, List<ProcessedChannel> processed) =>
-        (List<AcousticCurve>)panel.GetType()
-            .GetMethod("BuildGroupDelayCurves", Hidden)!
-            .Invoke(panel, [processed, null])!;
+        VirtualCrossoverSession session, List<ProcessedChannel> processed, bool showSum) =>
+        new AcousticViewBuilder(session, new VirtualCrossoverHybrid(session))
+            .GroupDelayCurves(processed, processed, showSum);
 
-    private static List<ProcessedChannel> Processed(VirtualCrossoverPanel panel)
+    private static List<ProcessedChannel> Processed(VirtualCrossoverSession session)
     {
-        List<VirtualCrossoverChannel> channels = Channels(panel);
+        session.Channels.AddRange([new VirtualCrossoverChannel("A"), new VirtualCrossoverChannel("B")]);
+        List<VirtualCrossoverChannel> channels = session.Channels;
         channels[0].Pair.ShowProcessedCurve = true;
         channels[1].Pair.ShowProcessedCurve = true;
         return
@@ -137,25 +130,4 @@ public sealed class VirtualCrossoverGroupDelayViewTests
         impulse[sample] = new Complex(amplitude, 0.0);
         return impulse;
     }
-
-    private static VirtualCrossoverPanel Loaded()
-    {
-        var panel = new VirtualCrossoverPanel();
-        List<VirtualCrossoverChannel> channels = Channels(panel);
-        for (int index = 0; index < channels.Count; index++)
-        {
-            channels[index].Pair = Project(panel).Pairs[index];
-        }
-
-        return panel;
-    }
-
-    private static object Field(object target, string name) =>
-        target.GetType().GetField(name, Hidden)!.GetValue(target)!;
-
-    private static List<VirtualCrossoverChannel> Channels(VirtualCrossoverPanel panel) =>
-        panel.Session.Channels;
-
-    private static VirtualCrossoverProjectFile Project(VirtualCrossoverPanel panel) =>
-        panel.Session.Project;
 }

@@ -1683,10 +1683,11 @@ public partial class VirtualCrossoverPanel
                 continue;
             }
 
-            // The frame's own filtering (see RedrawMainPlotAsync); channels outside the view get their own curves below.
-            List<ProcessedChannel> all = sideSum.Channels.ToList();
-            List<ProcessedChannel> shown = ChannelsShownBy(all, groupView);
-            List<ProcessedChannel> summed = ChannelsSummedBy(shown, groupView);
+            // The screen's own frame; channels outside the view get their own curves below.
+            var frame = VirtualCrossoverFrame.Of(sideSum.Channels, groupView);
+            List<ProcessedChannel> all = [.. frame.All];
+            List<ProcessedChannel> shown = frame.Shown;
+            List<ProcessedChannel> summed = frame.Summed;
             List<ProcessedChannel> others = all.Except(shown).ToList();
             if (rightSide == activeRight)
             {
@@ -1718,52 +1719,24 @@ public partial class VirtualCrossoverPanel
                 }
             }
 
-            bool quotesJunctions =
-                VirtualCrossoverGroupViews.LossChainZone(groupView) != null &&
-                ProcessedChannels.HasJunction(summed);
-            if (!quotesJunctions)
+            if (!frame.QuotesJunctions)
             {
                 loss = null;
             }
-            // Rows from the SUMMING channels, as UpdateMetric does: a drawn-but-unsummed centre would invent junctions (see VirtualCrossoverMetricsTests.BuildEntries_ReadsJunctionsOffTheSummingSet).
+            // Rows from the SUMMING channels, as the screen's read-out: a drawn-but-unsummed centre would invent junctions (see VirtualCrossoverMetricsTests.BuildEntries_ReadsJunctionsOffTheSummingSet).
             List<VirtualCrossoverMetric.Entry> entries = sideMetrics.BuildEntries(summed, loss);
-            // Phase gate over the summing channels with this side's pin, as RedrawMainPlotAsync does for the active side.
-            List<VirtualCrossoverMetric.PhaseEntry> phaseEntries = [];
-            // The direct-sound loss travels whatever the Sum loss selector shows (PROTOCOL §1.8), off the junction phase spectra.
-            List<SignalPoint>? directLoss = null;
-            List<VirtualCrossoverMetric.Entry> directEntries = [];
-            if (quotesJunctions)
-            {
-                int phaseRate = summed[0].SampleRate;
-                double? pinnedOffsetMs = session.Project.PhaseGateFor(rightSide).OffsetMs;
-                double gateLeftMs = session.Gate.LeftMs;
-                double gatePlateauMs = session.Gate.PlateauMs;
-                double gateRightMs = session.Gate.RightMs;
-                (phaseEntries, directLoss) = await Task.Run(() =>
-                {
-                    IReadOnlyList<ProcessedChannel>? orderedSet = null;
-                    IReadOnlyList<Complex[]>? spectra = null;
-                    List<VirtualCrossoverMetric.PhaseEntry> built = sideMetrics.BuildPhaseEntries(
-                        summed,
-                        ordered =>
-                        {
-                            orderedSet = ordered;
-                            spectra = JunctionPhaseSpectra.Build(
-                                ordered, phaseRate, pinnedOffsetMs,
-                                gateLeftMs, gatePlateauMs, gateRightMs);
-                            return spectra;
-                        });
-                    List<SignalPoint>? direct = spectra != null
-                        ? sideMetrics.BuildDirectLossCurve(orderedSet!, spectra, smoothing)
-                        : null;
-                    return (built, direct);
-                });
-                directEntries = sideMetrics.BuildEntries(summed, directLoss);
-            }
+            // Phase gate with this side's own pin; the direct-sound loss travels whatever the Sum loss selector shows (PROTOCOL §1.8).
+            VirtualCrossoverPhaseGate sideGate = session.GateFor(rightSide);
+            (List<VirtualCrossoverMetric.PhaseEntry> phaseEntries, List<SignalPoint>? directLoss) =
+                await frame.ReadJunctionsAsync(
+                    sideMetrics, sideGate, sideGate.StoredOffsetMs, smoothing, withDirectLoss: true);
+            List<VirtualCrossoverMetric.Entry> directEntries = frame.QuotesJunctions
+                ? sideMetrics.BuildEntries(summed, directLoss)
+                : [];
             HybridMagnitudes? hybrid = hybridReferences != null
                 ? hybridReader.Build(shown, hybridReferences, rightSide, AgentHybridSmoothingInverseOctaves)
                 : null;
-            // The hybrid view's sum (see RedrawMainPlotAsync); null, as on screen, when the sides cannot share one offset.
+            // The hybrid view's sum; null, as on screen, when the sides cannot share one offset.
             IReadOnlyList<SignalPoint>? hybridSum = hybrid == null || hybridReferences == null
                 ? null
                 : rightSide == activeRight
@@ -1772,7 +1745,7 @@ public partial class VirtualCrossoverPanel
 
             for (int index = 0; index < shown.Count; index++)
             {
-                // Hybrid curves are carried shifted by the set's datum onto the impulse responses' axis, as drawn (see BuildMagnitudeCurves).
+                // Hybrid curves are carried shifted by the set's datum onto the impulse responses' axis, as drawn.
                 IReadOnlyList<SignalPoint>? hybridProcessed = null;
                 IReadOnlyList<SignalPoint>? hybridPreDsp = null;
                 if (hybrid != null && hybridReferences != null && !hybrid.PointMeasuredChannels[index])
@@ -1801,12 +1774,12 @@ public partial class VirtualCrossoverPanel
             }
 
             var junctions = new List<AgentJunctionInputs>();
-            if (quotesJunctions)
+            if (frame.QuotesJunctions)
             {
                 List<AdjacentPair> pairs = ProcessedChannels.GetAdjacentPairs(
                     ProcessedChannels.OrderByBand(summed));
                 List<(JunctionCorrelationView? Correlation, JunctionCoherenceView? Coherence)> views =
-                    await Task.Run(() => pairs.Select(pair => BuildJunctionViews(pair, all)).ToList());
+                    await Task.Run(() => pairs.Select(pair => JunctionViews.BuildBoth(pair, all)).ToList());
                 for (int index = 0; index < pairs.Count; index++)
                 {
                     AdjacentPair pair = pairs[index];
@@ -2031,31 +2004,4 @@ public partial class VirtualCrossoverPanel
 
         return captures;
     }
-
-    // A failing view is reported missing rather than failing the package, as the lower plot's redraw does.
-    private static (JunctionCorrelationView?, JunctionCoherenceView?) BuildJunctionViews(
-        AdjacentPair pair, IReadOnlyList<ProcessedChannel> scope)
-    {
-        JunctionCorrelationView? correlation = null;
-        JunctionCoherenceView? coherence = null;
-        try
-        {
-            correlation = BuildCorrelationView(pair, scope);
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            System.Diagnostics.Debug.WriteLine($"Agent package correlation view failed: {exception}");
-        }
-        try
-        {
-            coherence = BuildCoherenceView(pair, scope);
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            System.Diagnostics.Debug.WriteLine($"Agent package coherence view failed: {exception}");
-        }
-
-        return (correlation, coherence);
-    }
-
 }

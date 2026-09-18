@@ -183,7 +183,7 @@ public sealed class JunctionPhaseWindowHarness(ITestOutputHelper output)
                 $"band {pair.BandLowHz:0.#}-{pair.BandHighHz:0.#} Hz");
             // PHAT lags correct the UPPER channel, so the junction fix (delay on the LOWER one) compares to the negated lag.
             JunctionCorrelationView correlation =
-                VirtualCrossoverPanel.BuildCorrelationView(pair, ordered);
+                JunctionViews.BuildCorrelationView(pair, ordered);
             if (correlation.WhitenedDirect.Count > 0)
             {
                 SignalPoint best = correlation.WhitenedDirect

@@ -357,10 +357,10 @@ the same block's spectra summed, so it is built in the same task from the same w
 
 ## Opposite-side sum
 
-The opposite side's sum comes from the metrics (shared coordinator cache), but its curve is built in the
-panel so it windows through the OPPOSITE side's own gate placement. Both sides must be drawn by the same
-method, or the comparison is between methods rather than tunes; with the hybrid on and the opposite side
-short of a capture, the curve is dropped.
+The opposite side's sum comes from the metrics (shared coordinator cache), but its curve is built by
+`MagnitudeGateSnapshot.OppositeSum` so it windows through the OPPOSITE side's own gate placement. Both sides
+must be drawn by the same method, or the comparison is between methods rather than tunes; with the hybrid on
+and the opposite side short of a capture, the curve is dropped.
 
 ### Opposite-side hybrid sum
 

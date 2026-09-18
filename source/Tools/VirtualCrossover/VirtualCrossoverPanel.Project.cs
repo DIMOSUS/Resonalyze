@@ -156,8 +156,8 @@ public partial class VirtualCrossoverPanel
             // After the radios: the Sum toggle is remembered per view.
             ApplySumToggleForView();
             ApplyProjectTarget();
-            radioSideRight.Checked = session.Project.ActiveSideRight;
-            radioSideLeft.Checked = !session.Project.ActiveSideRight;
+            radioSideRight.Checked = session.ActiveSideRight;
+            radioSideLeft.Checked = !session.ActiveSideRight;
             acousticPlot.ConfigureForView(CurrentAcousticView());
             comboBoxSmoothing.SelectedItem =
                 OverlaySmoothing.IsValid(session.Project.SmoothingCode)
@@ -186,7 +186,7 @@ public partial class VirtualCrossoverPanel
             for (int i = 0; i < session.Channels.Count; i++)
             {
                 session.Channels[i].Pair = session.Project.Pairs[i];
-                session.Channels[i].ActiveRight = session.Project.ActiveSideRight;
+                session.Channels[i].ActiveRight = session.ActiveSideRight;
                 ApplySettingsToControl(session.Channels[i]);
             }
         }

@@ -88,6 +88,16 @@ internal sealed record MagnitudeGateSnapshot(
         return new GatedMagnitude(display, unsmoothed).MeasuredBySomeChannel(channels);
     }
 
+    /// <summary>The opposite side's window: its own pin, else its own anchor; never the shown side's.</summary>
+    public double OppositeOffsetMs(VirtualCrossoverSideSum side) =>
+        ResolveGateOffsetMs(oppositeSide: true, side.AnchorIndex, side.SampleRate);
+
+    /// <summary>The opposite side's Sum through its own window, drawn beside the shown side's.</summary>
+    public GatedMagnitude OppositeSum(
+        VirtualCrossoverSideSum side,
+        Func<ProcessedChannel, CalibrationFile?> calibrationFor) =>
+        MeasuredSum(side.Channels, side.AnchorIndex, OppositeOffsetMs(side), calibrationFor);
+
     // Raw curves anchor on their own START; see docs/tech/virtual-dsp-panel.md#raw-curve-anchor.
     public AnalysisCurve Raw(
         Complex[] impulseResponse,

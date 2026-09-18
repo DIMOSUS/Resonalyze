@@ -167,19 +167,20 @@ public partial class VirtualCrossoverPanel
 
         // Off the snapshot: a concurrent import rebinds channels and the live rate reads zero.
         int sampleRate = drawn[0].SampleRate;
-        double referenceOffsetMs = session.Gate.ReferenceOffsetMs(drawn, sampleRate);
-        double detrendMs = session.Gate.CommonDetrendMs(drawn, referenceOffsetMs, sampleRate);
-        List<double> offsets = session.Gate.PerCurveOffsets(drawn, referenceOffsetMs, sampleRate);
+        VirtualCrossoverPhaseGate gate = session.Gate;
+        double referenceOffsetMs = gate.ReferenceOffsetMs(drawn, sampleRate);
+        double detrendMs = gate.CommonDetrendMs(drawn, referenceOffsetMs, sampleRate);
+        List<double> offsets = gate.PerCurveOffsets(drawn, referenceOffsetMs, sampleRate);
 
         return new EqWizardPhaseContext(
             // Curves render as Manual against one τ for the whole set, but the user's detrend mode must arrive intact.
-            session.Gate.Settings(
+            gate.Settings(
                 referenceOffsetMs,
-                session.Gate.DetrendMode,
+                gate.DetrendMode,
                 detrendMs),
             offsets[index],
             detrendMs,
-            session.Gate.PinnedOffsetMs is not null,
+            gate.PinnedOffsetMs is not null,
             // The source responses travel too, so the wizard re-resolves placements the same way when its window changes.
             PlacementChannel.From(drawn[index]),
             sampleRate,

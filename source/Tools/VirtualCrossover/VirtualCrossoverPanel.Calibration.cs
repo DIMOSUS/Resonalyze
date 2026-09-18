@@ -140,20 +140,11 @@ public partial class VirtualCrossoverPanel
                 session.Project.Calibration);
         bool changed =
             !string.Equals(id, session.Project.CalibrationId, StringComparison.OrdinalIgnoreCase) ||
-            !SameStoredCurve(calibration, session.Project.Calibration);
+            !VirtualCrossoverCalibrationSelection.SameStored(calibration, session.Project.Calibration);
         session.Project.CalibrationId = id;
         session.Project.Calibration = calibration;
         return changed;
     }
-
-    private static bool SameStoredCurve(
-        VirtualCrossoverCalibrationSettings? left,
-        VirtualCrossoverCalibrationSettings? right) =>
-        ReferenceEquals(left, right) ||
-        (left != null && right != null &&
-            string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
-            string.Equals(left.FileName, right.FileName, StringComparison.Ordinal) &&
-            CalibrationFile.SameCurve(left.ToCalibrationFile(), right.ToCalibrationFile()));
 
     private void OnCalibrationChanged()
     {

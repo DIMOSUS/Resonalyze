@@ -73,7 +73,7 @@ public partial class VirtualCrossoverPanel
         }
 
         VirtualCrossoverCopyScope scope = dialog.Scope;
-        bool targetSideShown = session.Project.ActiveSideRight == !fromRight;
+        bool targetSideShown = session.ActiveSideRight == !fromRight;
         foreach (int index in dialog.SelectedIndices)
         {
             VirtualCrossoverChannel channel = candidates[index];
@@ -346,7 +346,7 @@ public partial class VirtualCrossoverPanel
         SetChannelCount(session.Channels.Count + 1);
         VirtualCrossoverChannel added = session.Channels[^1];
         added.Pair = pair;
-        added.ActiveRight = session.Project.ActiveSideRight;
+        added.ActiveRight = session.ActiveSideRight;
         ApplySettingsToControl(added);
 
         SaveAndRedraw();

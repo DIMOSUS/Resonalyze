@@ -102,7 +102,7 @@ internal static class AgentProbeReader
             return Unavailable(exception.Message.TrimEnd('.'));
         }
 
-        // Per-entry affected junctions, not pooled over the probe: pooled lists would point at junctions the winning variant never touched. Entries follow BuildAgentProbeVariants order, baseline first.
+        // Per-entry affected junctions, not pooled over the probe: pooled lists would point at junctions the winning variant never touched. Entries follow ProbeVariants order, baseline first.
         AgentSessionSnapshot current = reader.Snapshot(view);
         IReadOnlyList<AgentProbeVariant> asked = probe.Variants ?? [];
         return new AgentProbeReport(

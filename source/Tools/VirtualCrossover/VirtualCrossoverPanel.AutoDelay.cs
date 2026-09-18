@@ -120,7 +120,7 @@ public partial class VirtualCrossoverPanel
     private async Task AppendOutcomeMetricAsync(AutoDelayRunResult result)
     {
         // RedrawAll pushes the read-out asynchronously, so recompute here; capture the side before the await.
-        bool metricSideRight = session.Project.ActiveSideRight;
+        bool metricSideRight = session.ActiveSideRight;
         ProcessedRender? render = await ProcessChannelsAsync();
         List<ProcessedChannel> outcomeChannels = render?.Channels ?? [];
         (_, _, List<SignalPoint>? outcomeLoss) =
@@ -173,7 +173,7 @@ public partial class VirtualCrossoverPanel
             .ToList();
 
         VirtualCrossoverPhaseGate stored = VirtualCrossoverPhaseGate.For(
-            session.Project, session.Project.ActiveSideRight, preview: null);
+            session.Project, session.ActiveSideRight, preview: null);
         using var dialog = new VirtualCrossoverGateDialog();
         dialog.Init(
             traces,
@@ -205,7 +205,7 @@ public partial class VirtualCrossoverPanel
             {
                 // Only the placement is per side; lengths and modes are project-wide.
                 VirtualCrossoverPhaseGateSettings gate =
-                    session.Project.PhaseGateFor(session.Project.ActiveSideRight);
+                    session.Project.PhaseGateFor(session.ActiveSideRight);
                 // Auto = null: keeps following the earliest channel IR start.
                 gate.OffsetMs = dialog.AutoOffset ? null : dialog.GateOffsetMs;
                 gate.DetrendMs = dialog.DetrendMs;

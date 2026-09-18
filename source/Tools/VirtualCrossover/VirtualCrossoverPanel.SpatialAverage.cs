@@ -191,7 +191,7 @@ public partial class VirtualCrossoverPanel
     private void RefreshHybridAvailability()
     {
         // The tick is intent and outlives coverage (like a pinned gate outlives its sources).
-        LiveCaptureSetVerdict verdict = hybridReader.JudgeSide(session.Project.ActiveSideRight);
+        LiveCaptureSetVerdict verdict = hybridReader.JudgeSide(session.ActiveSideRight);
         hybridAvailable = verdict.Coherent;
 
         // Muted, not unticked or disabled: UiStyle.SetTextEnabledLook would memorize the reminder colour, and WinForms' disabled grey is unreadable here.

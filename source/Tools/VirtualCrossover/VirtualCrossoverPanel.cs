@@ -177,7 +177,7 @@ public partial class VirtualCrossoverPanel : UserControl
     private void ScheduleSave()
     {
         // Every change passes through here, so the side lock reads here, ahead of the redraw and the save.
-        sideLock.Follow(session.Channels.Select(channel => channel.Pair), session.Project.ActiveSideRight);
+        sideLock.Follow(session.Channels.Select(channel => channel.Pair), session.ActiveSideRight);
         savePending = true;
         saveTimer.Stop();
         saveTimer.Start();
@@ -318,7 +318,7 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         // The one UI-thread place to refresh the snapshot the worker builds read.
         session.MagnitudeGate = session.Gate.MagnitudeGate(
-            session.GateFor(!session.Project.ActiveSideRight).StoredOffsetMs,
+            session.GateFor(!session.ActiveSideRight).StoredOffsetMs,
             comboBoxSmoothing.SelectedItem is int smoothing ? smoothing : 12);
 
         // A running FFT may finish, but the coordinator will neither cache nor publish it.

@@ -236,7 +236,7 @@ public partial class VirtualCrossoverPanel
         if (view.ShowSum && view.View is AcousticView.Magnitude or AcousticView.Step)
         {
             oppositeSide = await metrics.ComputeSideSumAsync(
-                session.Channels, !session.Project.ActiveSideRight, revision, minimumChannels: 2,
+                session.Channels, !session.ActiveSideRight, revision, minimumChannels: 2,
                 includePair: pair =>
                     VirtualCrossoverGroupViews.ParticipatesInTotalSum(
                         groupView, pair.Zone));
@@ -293,7 +293,7 @@ public partial class VirtualCrossoverPanel
                 hybrid = hybridReader.Build(
                     frame.Shown,
                     magnitudes,
-                    session.Project.ActiveSideRight,
+                    session.ActiveSideRight,
                     session.MagnitudeGate.SmoothingInverseOctaves);
             }
 
@@ -310,7 +310,7 @@ public partial class VirtualCrossoverPanel
             using (AppProfiler.Zone("VirtualDSP.BuildOppositeSum"))
             {
                 oppositeSum = hybrid == null
-                    ? BuildOppositeMagnitudeCurve(oppositeSide)
+                    ? session.MagnitudeGate.OppositeSum(oppositeSide, session.Calibration.For).Display
                     : hybridReader.OppositeSum(oppositeSide, hybrid.OffsetDb);
             }
         }
@@ -343,18 +343,6 @@ public partial class VirtualCrossoverPanel
         {
             acousticPlot.Draw(acousticRender);
         }
-    }
-
-    // Its own pin or anchor, never the active side's.
-    private AnalysisCurve BuildOppositeMagnitudeCurve(VirtualCrossoverSideSum side)
-    {
-        MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
-        return snapshot.MeasuredSum(
-            side.Channels,
-            side.AnchorIndex,
-            snapshot.ResolveGateOffsetMs(
-                oppositeSide: true, side.AnchorIndex, side.SampleRate),
-            session.Calibration.For).Display;
     }
 
     // Junction read-outs use the SUMMED channels: a drawn-only centre would invent a crossover.

@@ -78,7 +78,7 @@ internal sealed class AgentSessionReader(
             $"processor;{session.ProcessorProfile.ModelId};{session.ProcessorSampleRateHz}",
             $"average;{session.SpatialAverageMode};{view.HybridTicked}",
             // Engines read the shown side and the view (Auto crossover, single-sided Auto delay, Auto-tune's source).
-            $"view;{session.Project.ActiveSideRight};{view.GroupView}",
+            $"view;{session.ActiveSideRight};{view.GroupView}",
             $"phase;{session.Project.PhaseWindowMode};{session.Project.PhaseFdwCycles};{session.Project.PhaseDetrendMode};" +
                 $"{Number(session.Project.PhaseGateLeftMs)};{Number(session.Project.PhaseGatePlateauMs)};" +
                 $"{Number(session.Project.PhaseGateRightMs)};" +
@@ -178,7 +178,7 @@ internal sealed class AgentSessionReader(
             AutoDelayDefaults(),
             session.SpatialAverageMode,
             view.HybridTicked,
-            session.Project.ActiveSideRight,
+            session.ActiveSideRight,
             LastPackageFingerprint,
             Fingerprint(view));
 
@@ -196,7 +196,7 @@ internal sealed class AgentSessionReader(
     {
         long revision = coordinator.CurrentRevision;
         VirtualCrossoverGroupView groupView = view.GroupView;
-        bool activeRight = session.Project.ActiveSideRight;
+        bool activeRight = session.ActiveSideRight;
         // One smoothing for every package, independent of the display. See docs/tech/agent-bridge.md#package-smoothing.
         int smoothing = SpectrumSmoothing.PsychoacousticCode;
         MagnitudeGateSnapshot packageGate = session.MagnitudeGate with { SmoothingInverseOctaves = smoothing };

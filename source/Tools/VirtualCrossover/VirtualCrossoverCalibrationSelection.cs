@@ -230,6 +230,16 @@ internal static class VirtualCrossoverCalibrationSelection
                 curve, entry?.Name ?? id, entry?.FileName));
     }
 
+    /// <summary>Whether two stored forms are one calibration: same name, same file, same curve.</summary>
+    public static bool SameStored(
+        VirtualCrossoverCalibrationSettings? left,
+        VirtualCrossoverCalibrationSettings? right) =>
+        ReferenceEquals(left, right) ||
+        (left != null && right != null &&
+            string.Equals(left.Name, right.Name, StringComparison.Ordinal) &&
+            string.Equals(left.FileName, right.FileName, StringComparison.Ordinal) &&
+            CalibrationFile.SameCurve(left.ToCalibrationFile(), right.ToCalibrationFile()));
+
     private static MicrophoneCalibrationEntry? Find(
         IReadOnlyList<MicrophoneCalibrationEntry> entries,
         string? id) =>

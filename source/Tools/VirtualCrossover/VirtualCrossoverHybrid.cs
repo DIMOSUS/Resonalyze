@@ -499,10 +499,8 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
 
         // One anchor and offset for channels AND sum, as on the active side.
         snapshot ??= session.MagnitudeGate;
-        double gateOffsetMs = snapshot.ResolveGateOffsetMs(
-            oppositeSide: true, side.AnchorIndex, side.SampleRate);
-        GatedMagnitude sum = snapshot.MeasuredSum(
-            side.Channels, side.AnchorIndex, gateOffsetMs, session.Calibration.For);
+        double gateOffsetMs = snapshot.OppositeOffsetMs(side);
+        GatedMagnitude sum = snapshot.OppositeSum(side, session.Calibration.For);
         var channelMagnitudes = new List<GatedMagnitude>(side.Channels.Count);
         foreach (ProcessedChannel item in side.Channels)
         {

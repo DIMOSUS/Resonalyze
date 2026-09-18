@@ -179,7 +179,7 @@ public sealed class VirtualCrossoverStepViewTests
         bool showSum,
         VirtualCrossoverSideSum? opposite = null) =>
         new AcousticViewBuilder(session, new VirtualCrossoverHybrid(session))
-            .TraceRender(processed, step: true, summed, opposite, showSum);
+            .TraceRender(processed, step: true, summed, opposite, showSum, session.ActiveSideRight);
 
     private static List<ProcessedChannel> Processed(VirtualCrossoverSession session)
     {

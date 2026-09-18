@@ -18,7 +18,28 @@ internal sealed class VirtualCrossoverChannel : IVirtualCrossoverAlignmentChanne
     public string Name { get; set; }
 
     public VirtualCrossoverChannelPairSettings Pair { get; set; } = new();
-    public bool ActiveRight { get; set; }
+
+    private bool activeRight;
+
+    /// <summary>The side the shorthand members (<see cref="Settings"/>, <see cref="TransferImpulseResponse"/>, ...) read.
+    /// A block in a session follows its shown side through <see cref="ActiveRightProvider"/> and cannot be set apart
+    /// from it; a standalone block keeps its own.</summary>
+    public bool ActiveRight
+    {
+        get => ActiveRightProvider?.Invoke() ?? activeRight;
+        set
+        {
+            if (ActiveRightProvider != null)
+            {
+                throw new InvalidOperationException(
+                    $"Block {Name} shows its session's side; move the session's side instead.");
+            }
+
+            activeRight = value;
+        }
+    }
+
+    public Func<bool>? ActiveRightProvider { get; set; }
 
     public VirtualCrossoverChannelState SideState(bool rightSide) =>
         Pair.Mono || !rightSide ? leftState : rightState;

@@ -186,7 +186,6 @@ public partial class VirtualCrossoverPanel
             for (int i = 0; i < session.Channels.Count; i++)
             {
                 session.Channels[i].Pair = session.Project.Pairs[i];
-                session.Channels[i].ActiveRight = session.ActiveSideRight;
                 ApplySettingsToControl(session.Channels[i]);
             }
         }

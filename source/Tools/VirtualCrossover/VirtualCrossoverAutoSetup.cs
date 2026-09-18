@@ -18,11 +18,11 @@ internal static class VirtualCrossoverAutoSetup
 
     private const double GateRightMs = 20.0;
 
-    /// <summary>The enabled blocks holding a measurement, in chain order.</summary>
+    /// <summary>The enabled blocks holding a measurement on the shown side, in chain order.</summary>
     public static List<VirtualCrossoverChannel> Participants(VirtualCrossoverSession session) =>
         session.Channels
             .Where(channel => channel.Pair.Enabled &&
-                channel.TransferImpulseResponse != null)
+                channel.SideState(session.ActiveSideRight).TransferImpulseResponse != null)
             .ToList();
 
     /// <summary>Each participant's driver curve, band and corners as the wizard reads them, off the shown side.</summary>
@@ -42,23 +42,23 @@ internal static class VirtualCrossoverAutoSetup
             MagnitudeWindowMode = PhaseWindowMode.FrequencyDependent,
             MagnitudeFdwCycles = FdwCycles
         };
-        int sampleRate = participating[0].SampleRate;
+        bool rightSide = session.ActiveSideRight;
+        int sampleRate = participating[0].SideState(rightSide).SampleRate;
         (options.Window, options.LeftTukeyWindow, options.RightTukeyWindow) =
             FrequencyResponseOptions.TrimGateToFft(
                 (int)Math.Round(GateLeftMs / 1_000.0 * sampleRate),
                 (int)Math.Round(GatePlateauMs / 1_000.0 * sampleRate),
                 (int)Math.Round(GateRightMs / 1_000.0 * sampleRate));
 
-        bool rightSide = session.ActiveSideRight;
         var channels = new List<AutoSetupWizardChannel>(participating.Count);
         foreach (VirtualCrossoverChannel channel in participating)
         {
             VirtualCrossoverChannelState state = channel.SideState(rightSide);
             AnalysisCurve curve = DataHelper.GetPrimarySpectrum(
                 new ImpulseMeasurementView(
-                    channel.TransferImpulseResponse!,
-                    channel.TransferPeakIndex,
-                    channel.SampleRate)
+                    state.TransferImpulseResponse!,
+                    state.TransferPeakIndex,
+                    state.SampleRate)
                 {
                     // Or the band read runs down the window's leakage an octave below the real low corner.
                     LowestMeasuredFrequencyHz = state.MeasuredBand.LowEdgeHz,
@@ -68,15 +68,15 @@ internal static class VirtualCrossoverAutoSetup
                 session.Calibration.For(state));
             // Discount frequencies the measurement's coherence did not trust.
             IReadOnlyList<double>? coherence =
-                channel.TransferCoherence is { Length: > 1 } linear
-                    ? CoherenceCurves.PerPoint(linear, curve.Points, channel.SampleRate)
+                state.TransferCoherence is { Length: > 1 } linear
+                    ? CoherenceCurves.PerPoint(linear, curve.Points, state.SampleRate)
                     : null;
-            IReadOnlyList<SignalPoint>? distortion = channel.DistortionCurve;
+            IReadOnlyList<SignalPoint>? distortion = state.DistortionCurve;
 
             // With two similar drivers, existing corners decide which plays lower.
             VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
             channels.Add(new AutoSetupWizardChannel(
-                $"{channel.Name} — {channel.Settings.DisplayName}",
+                $"{channel.Name} — {settings.DisplayName}",
                 VirtualCrossoverColors.ChannelAccent(session.Channels.IndexOf(channel)),
                 VirtualCrossoverAlignmentStages.StageOf(channel.Pair.Zone),
                 curve.Points,
@@ -86,7 +86,7 @@ internal static class VirtualCrossoverAutoSetup
                 // FIR corners stand in where the IIR crossover is off.
                 settings.EffectiveHighPassHz,
                 settings.EffectiveLowPassHz,
-                channel.TransferImpulseResponse));
+                state.TransferImpulseResponse));
         }
 
         return channels;

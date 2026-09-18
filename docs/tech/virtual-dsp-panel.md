@@ -33,7 +33,15 @@ for what they bind (`.Project`, `.Calibration`, `.Channels`, `.Sources`, `.Peq`,
 | `VirtualCrossoverAudition` | the audition render |
 | `AgentSessionReader`, `AgentProbeReader`, `AgentJunctionTune`, `AgentEngineRequests` | the Agent Bridge |
 
-Tests build a session directly or read a panel's through `panel.Session`.
+The shown side has one owner, the project's `ActiveSideRight`. A block's shorthand members (`Settings`,
+`TransferImpulseResponse`, ...) read the side it shows; a block the panel creates reads that side from the session
+(`ActiveRightProvider`) and refuses to be set apart from it, so the two cannot disagree. Readers that have the session
+name the side explicitly.
+
+Tests of a rule build a session directly or read a panel's through `panel.Session`. The wiring between the controls
+and the readers, which only the panel path exercises, is pinned by `VirtualCrossoverPanelWiringTests`: a live panel on
+synthetic measurements (the right side 6 dB below the left, so every reading names its side), driven through its
+controls and read by what it draws and reports.
 
 ## Redraw scheduling
 

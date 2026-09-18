@@ -225,18 +225,18 @@ public partial class VirtualCrossoverPanel
                 revision,
                 includePair: pair =>
                     VirtualCrossoverGroupViews.IsShown(groupView, pair.Zone),
-                hybridLevelDeltaDb: hybridReader.StereoLevelReader(HybridRequested));
+                hybridLevelDeltaDb: hybridReader.StereoLevelReader(view.HybridRequested));
         // Quoted by cross-group views instead of a loss; adds only arrival FFTs.
         IReadOnlyList<VirtualCrossoverMetric.GroupDelta> groupDeltas =
             await metrics.ComputeGroupDeltasAsync(
                 frame.Shown, groupView, revision,
-                hybridGroupLevelDeltaDb: hybridReader.GroupLevelReader(HybridRequested));
+                hybridGroupLevelDeltaDb: hybridReader.GroupLevelReader(view.HybridRequested));
         // The curve windows through the OPPOSITE side's gate placement; both sides must be drawn by the same method.
         VirtualCrossoverSideSum? oppositeSide = null;
         if (view.ShowSum && view.View is AcousticView.Magnitude or AcousticView.Step)
         {
             oppositeSide = await metrics.ComputeSideSumAsync(
-                session.Channels, !session.ActiveSideRight, revision, minimumChannels: 2,
+                session.Channels, !view.RightSide, revision, minimumChannels: 2,
                 includePair: pair =>
                     VirtualCrossoverGroupViews.ParticipatesInTotalSum(
                         groupView, pair.Zone));
@@ -293,7 +293,7 @@ public partial class VirtualCrossoverPanel
                 hybrid = hybridReader.Build(
                     frame.Shown,
                     magnitudes,
-                    session.ActiveSideRight,
+                    view.RightSide,
                     session.MagnitudeGate.SmoothingInverseOctaves);
             }
 
@@ -324,7 +324,7 @@ public partial class VirtualCrossoverPanel
 
         using (AppProfiler.Zone("VirtualDSP.UpdateWarnings"))
         {
-            UpdateWarnings(processed, hybrid);
+            UpdateWarnings(processed, hybrid, view.RightSide);
         }
 
         // Split from the draw so the profiler separates curve building from OxyPlot.
@@ -371,6 +371,7 @@ public partial class VirtualCrossoverPanel
     private VirtualCrossoverViewState CaptureViewState() => new(
         CurrentAcousticView(),
         SelectedGroupView,
+        session.ActiveSideRight,
         checkBoxShowSum.Checked,
         SelectedSumLossWindow,
         HybridRequested,
@@ -378,10 +379,9 @@ public partial class VirtualCrossoverPanel
         (double)numericTargetLevel.Value);
 
     private void UpdateWarnings(
-        List<ProcessedChannel> processed, HybridMagnitudes? hybrid)
+        List<ProcessedChannel> processed, HybridMagnitudes? hybrid, bool rightSide)
     {
-        gatePlacement = GatePlacementVerdict.Judge(
-            processed, session.MagnitudeGate, session.ActiveSideRight);
+        gatePlacement = GatePlacementVerdict.Judge(processed, session.MagnitudeGate, rightSide);
         if (warnings.Judge(processed, hybrid, gatePlacement) is not { } warning)
         {
             HideWarning();

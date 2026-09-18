@@ -10,6 +10,7 @@ namespace Resonalyze;
 internal sealed record VirtualCrossoverViewState(
     AcousticView View,
     VirtualCrossoverGroupView GroupView,
+    bool RightSide,
     bool ShowSum,
     SumLossWindow LossWindow,
     bool HybridRequested,
@@ -71,9 +72,10 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
             AcousticView.GroupDelay => new AcousticRender(
                 hint, GroupDelayCurves(shown, frame.Summed, view.ShowSum), null),
             AcousticView.Impulse => new AcousticRender(
-                hint, [], TraceRender(shown, step: false, frame.Summed, null, view.ShowSum)),
+                hint, [], TraceRender(shown, step: false, frame.Summed, null, view.ShowSum, view.RightSide)),
             AcousticView.Step => new AcousticRender(
-                hint, [], TraceRender(shown, step: true, frame.Summed, curves.OppositeSide, view.ShowSum)),
+                hint, [], TraceRender(
+                    shown, step: true, frame.Summed, curves.OppositeSide, view.ShowSum, view.RightSide)),
             _ when VirtualCrossoverGroupViews.DrawsGroupSums(view.GroupView) => new AcousticRender(
                 hint, GroupSumCurves(shown, curves.Magnitudes, curves.Hybrid, view), null),
             _ => new AcousticRender(hint, MagnitudeCurves(shown, curves, view), null)
@@ -143,7 +145,7 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
             if (frame.OppositeSum != null)
             {
                 curves.Add(new AcousticCurve(
-                    OppositeSumTitle,
+                    OppositeSumTitle(view.RightSide),
                     frame.OppositeSum.Points,
                     OxyColor.FromAColor(110, VirtualCrossoverColors.Sum),
                     1.8,
@@ -480,7 +482,8 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
         bool step,
         IReadOnlyList<ProcessedChannel> summed,
         VirtualCrossoverSideSum? oppositeSide,
-        bool showSum)
+        bool showSum,
+        bool rightSide)
     {
         using var _ = AppProfiler.Zone(step ? "VirtualDSP.BuildStepRender" : "VirtualDSP.BuildImpulseRender");
         // Only shown traces set the gate offset and axis window.
@@ -512,7 +515,7 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
             {
                 traces.Add(new IrPreviewTrace(
                     oppositeSide.ImpulseResponse,
-                    OppositeSumTitle,
+                    OppositeSumTitle(rightSide),
                     OxyColor.FromAColor(110, VirtualCrossoverColors.Sum),
                     1.0,
                     LineStyle.Dash));
@@ -529,5 +532,5 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
             Step: step);
     }
 
-    private string OppositeSumTitle => $"Sum {(session.ActiveSideRight ? "L" : "R")}";
+    private static string OppositeSumTitle(bool rightSide) => $"Sum {(rightSide ? "L" : "R")}";
 }

@@ -30,7 +30,6 @@ public partial class VirtualCrossoverPanel
         {
             foreach (VirtualCrossoverChannel channel in session.Channels)
             {
-                channel.ActiveRight = rightSide;
                 ApplySettingsToControl(channel);
             }
         }
@@ -136,7 +135,8 @@ public partial class VirtualCrossoverPanel
         var channel = new VirtualCrossoverChannel(ChannelNameFor(index))
         {
             // Read on demand: the processor can change at any time.
-            ProcessorSampleRateProvider = () => session.ProcessorSampleRateHz
+            ProcessorSampleRateProvider = () => session.ProcessorSampleRateHz,
+            ActiveRightProvider = () => session.ActiveSideRight
         };
         channelControls[channel] = control;
         control.SettingsChanged += (_, _) => OnChannelSettingsChanged(channel);
@@ -346,7 +346,6 @@ public partial class VirtualCrossoverPanel
         SetChannelCount(session.Channels.Count + 1);
         VirtualCrossoverChannel added = session.Channels[^1];
         added.Pair = pair;
-        added.ActiveRight = session.ActiveSideRight;
         ApplySettingsToControl(added);
 
         SaveAndRedraw();

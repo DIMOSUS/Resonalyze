@@ -140,6 +140,15 @@ front and its fade-in attenuates one member's rise more than the other's.
   and Full loss windows were never affected: FDW-8 and the steady-state window reach the
   pre-ring on their own.
 
+  The lead only helps where the pre-ring survived the crop. The engine, the crossover wizard
+  and the junction tuner crop the measurement before the chain, so the kernel writes its
+  whole pre-ring after the crop start. The panel's junction views (score, PHAT, coherence
+  ladder) crop records that are already processed, so that crop reserves the set's largest
+  lead ahead of the peak and after it. Without that, a kernel whose pre-ring outran the
+  crop's pre-peak budget (85 ms at 96 kHz: the designer's 16383 taps at a 48 kHz processor
+  already do) opened at sample 0 with its full extension, reaching 85 ms further into the
+  cabin than the uncropped window. A reflection there moved the drawn surface 6.7 dB.
+
 ## Magnitude curves and the shared window
 
 `VirtualCrossoverMetrics.BuildCurves` gates every channel and the sum with one anchor (the

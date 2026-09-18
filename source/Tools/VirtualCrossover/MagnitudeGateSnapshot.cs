@@ -1,6 +1,5 @@
 using System.Numerics;
 using Resonalyze.Dsp;
-using Resonalyze.Options;
 
 namespace Resonalyze;
 

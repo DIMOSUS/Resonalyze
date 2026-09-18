@@ -1,5 +1,3 @@
-using Resonalyze.Dsp;
-
 namespace Resonalyze;
 
 // Hybrid magnitude view: spatial averages refine the drawn magnitude only; timing, polarity and loss still read the IRs.

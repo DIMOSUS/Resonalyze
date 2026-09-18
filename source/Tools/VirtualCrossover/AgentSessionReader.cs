@@ -1,7 +1,6 @@
 using System.Numerics;
 using Resonalyze.Dsp;
 using Resonalyze.Integration.AgentBridge;
-using Resonalyze.Options;
 
 namespace Resonalyze;
 

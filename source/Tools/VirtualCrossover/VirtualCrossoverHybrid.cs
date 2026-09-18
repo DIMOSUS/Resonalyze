@@ -1,4 +1,3 @@
-using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;

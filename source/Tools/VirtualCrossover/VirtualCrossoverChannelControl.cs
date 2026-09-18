@@ -1054,10 +1054,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     private static string DelayTooltipText(double millimeters) =>
-        "Channel delay (ms) — the value you would dial into\r\n" +
-        "this DSP channel.\r\n" +
-        $"In air that is {millimeters:0.#} mm ({millimeters / MillimetersPerInch:0.#} in) " +
-        "of path — the ruler check.";
+        $"= {millimeters:0.#} mm\r\n({millimeters / MillimetersPerInch:0.#} in)\r\nin air";
 
     private static CrossoverEdge ReadEdge(
         ThemedNumericUpDown frequencyInput,

@@ -262,4 +262,7 @@ Implicit user data (settings, history, overlays, Virtual DSP state and crash
 logs) is rooted by `ApplicationDataPaths`. Installed mode uses
 `%LocalAppData%\Resonalyze`; a `portable.flag` file beside the executable opts
 into portable storage beside the app. Do not introduce new direct
-`AppContext.BaseDirectory` persistence paths.
+`AppContext.BaseDirectory` persistence paths. The App test project writes
+`portable.flag` into its own output, so the test host is portable: a panel a test
+builds autosaves beside the test assembly, never over the developer's session
+(`ApplicationDataPathsTests.TheTestHost_KeepsItsDataBesideItself` fails without it).

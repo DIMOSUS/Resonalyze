@@ -50,6 +50,43 @@ Key structural points:
 - **`Overlays/`** manages persistent overlay slots and calculated (math) overlays; **`History/`** persists measurement snapshots with per-entry working state.
 - Update checking uses NetSparkle + `Settings/GitHubReleaseChecker`.
 
+### Where logic lives
+
+A panel that is the only holder of its tool's state collects every computation on that state. The Virtual DSP panel
+reached 11,091 lines over five files that way, each piece readable and the whole not; taking it apart needed a UI-free
+session and about twenty classes that read it (#203). These rules keep the other parts from repeating it.
+
+- **State gets a UI-free owner before features are written against it.** Once a second feature reads a tool's data,
+  the data moves into a plain type (`VirtualCrossoverSession`); the UI writes it and presents what readers return.
+- **A feature is a type that takes the model, plus a partial if it has controls.** Computations, verdicts, report text
+  and write-back rules take the model and return values; the UI reads controls into the model, calls the feature and
+  shows the result. Logic never calls back into the UI.
+- **One owner per fact.** A value kept in two places and synchronised by hand drifts the first time someone writes one
+  of them. Derive the copy from the owner (a Virtual DSP block reads its shown side from the session through a
+  provider) or delete it.
+- **Read the UI once per operation.** Async work captures the control values it needs into an immutable record before
+  its first await (`VirtualCrossoverViewState`); workers read snapshots, never controls or a mutable model.
+- **Extract before the second copy.** When a second path needs a computation (one side and stereo, the screen and an
+  export), move it out first. Virtual DSP's group placement had two copies that had already drifted apart, and the AI
+  package rebuilt the screen's frame on its own.
+- **The tests are the early warning.** A test that reaches a UI class through reflection into private members or
+  `GetUninitializedObject`, or an `internal static` put on a UI class so a test can call it, is testing logic that
+  lives in the wrong place: move the logic and test its type. Where a boundary matters, a test pins it
+  (`VirtualCrossoverPanelBoundaryTests`).
+- **Partials hold binding code.** Splitting a UI class by concern, as `Form1` is, helps once the logic has left; a
+  partial full of computation is the same monolith in more files.
+- **Size is a signal.** A UI file past about 1,500 lines, or one that grows with every feature, has its rules extracted
+  before the next feature rather than after. The boundary is a type in the same assembly; a new project is neither
+  needed nor wanted.
+
+**Refactoring a part that has grown.** Keep behaviour identical and name each deliberate difference in the PR. Before
+moving code, build a characterization harness outside the repo that drives the real UI on real sessions and dumps
+everything the part produces (curves, read-outs, reports, exported documents); build it against `main` and against the
+branch and require a byte-identical diff. A harness that builds panels runs portable (see User data paths). Keep a
+synthetic version in the repo that drives the live UI through its controls (`VirtualCrossoverPanelWiringTests`), and
+prove it catches wiring mistakes by putting some in on purpose. Work in stages, a commit each: the state owner, the
+features one by one, then the partial split as a pure move checked line by line.
+
 ### Accessibility is not an external contract
 
 `Resonalyze.Dsp` and `Resonalyze.Audio` are separate assemblies for the sake of

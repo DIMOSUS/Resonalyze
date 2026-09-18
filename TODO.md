@@ -278,6 +278,17 @@ next field session rather than in a register nobody else can tick.
   curve building vs side-processing orchestration; and moving `ProcessedChannel`'s
   `OxyColor` out into the render binding. Persistence, calibration and control
   binding are inherently UI-bound — leave them.
+- [ ] ★ **The Virtual DSP autosave trusts whoever built the panel.** `ScheduleSave`
+  and `FlushProject` have no guard and `Dispose` flushes, so any host that builds
+  a panel it never shows replaces the stored session with the panel's empty
+  three-block project. Until #203 the App test host did exactly that on every run,
+  which is why sessions kept resetting to default; it now runs portable, but a
+  scratchpad harness without `portable.flag` still would. Only two call sites
+  check `initialized` (`ReconcileCalibrationSelection`, `StoreTargetInProject`).
+  Guard the save itself: write only once `OnPanelShown` has started the stored
+  load. Nothing real saves earlier: a dropped session file shows the tool before
+  importing (`Form1.OpenDroppedFileAsync`), and Load lives on the panel. Pin it
+  with a test that builds, edits and disposes a panel that was never shown.
 - [ ] **The audition's "Own (as measured)" refuses more than the render needs.**
   A car whose two SIDES were measured through different microphones is refused
   along with one whose own channels disagree, though only the second is
@@ -562,6 +573,12 @@ tool has set crossovers, delays and polarity — so crossovers, phase/time and
 convolution are deliberately out of its scope (see the note at the end). The
 items below are what a car DSP tune actually needs, roughly in priority order.
 
+- [ ] **`EqWizardPanel` shows the signals the Virtual DSP panel had before #203.**
+  4,209 lines over six partials, and 12 test files reach it through reflection
+  (`ApplySource`, `GetSourceCurve`, `ComputeSourceCurve`, `BeginVirtualDspHandoff`,
+  `ApplyPhaseGate` and private fields). Apply AGENTS.md › Where logic lives: a
+  UI-free owner for the wizard's source, bank and target, the rules as types
+  that take it, and tests against those types.
 - [ ] **The boostability mask has no notion of a driver band.** The mask itself
   is in (`EqBoostabilityMask`: boosts refused in low-coherence bins and narrow
   deep nulls, cuts always allowed, Auto Tune cuts-only by default), but the
@@ -630,6 +647,12 @@ shows it as flat by construction.
 
 ## Time Alignment / unwrap
 
+- [ ] **`TimeAlignmentPanelController` holds its rules as `internal static`
+  members** (ten of them, 1,856 lines): band detection (`TryDetectDominantBand`,
+  `SharedBand`), the onset (`GetEnergyOnsetIndex`), the recommendation
+  (`RecommendedRow`, `IsArrivalRecommendable`, `RowLabel`) and plot markers. They
+  are static only so tests can reach them; move the rules to a type of their own
+  (AGENTS.md › Where logic lives) and leave the controller the binding.
 - [ ] ★ **The panel reads the WHOLE record to answer a question about its first
   80 ms.** A transfer IR is `NextPow2(2 x capture)` — a 2.2 s sweep at 96 kHz
   reads a 10.9 s buffer — and every transform is sized by it, so one read costs
@@ -665,6 +688,11 @@ shows it as flat by construction.
 
 ## Live Spectrum / coherence
 
+- [ ] **`LiveSpectrumControllerTests` build the controller with
+  `GetUninitializedObject`** (six tests, each setting its private `measurement`
+  field), the signal the Virtual DSP panel's tests showed before #203: logic the
+  tests need lives on the controller. Move it to a type the tests can construct
+  (AGENTS.md › Where logic lives).
 - [✗] **RTA tone level is only accurate with a Flat Top window — RESOLVED for
   the general case; the periodic-pink residual is conditional.**
   Flat Top is a selectable Live Spectrum window and reads a tone at its true,

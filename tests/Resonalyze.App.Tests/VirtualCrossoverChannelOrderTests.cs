@@ -16,10 +16,10 @@ public sealed class VirtualCrossoverChannelOrderTests
         target.GetType().GetMethod(name, Hidden)!.Invoke(target, arguments);
 
     private static List<VirtualCrossoverChannel> Channels(VirtualCrossoverPanel panel) =>
-        (List<VirtualCrossoverChannel>)Field(panel, "channels");
+        panel.Session.Channels;
 
     private static VirtualCrossoverProjectFile Project(VirtualCrossoverPanel panel) =>
-        (VirtualCrossoverProjectFile)Field(panel, "project");
+        panel.Session.Project;
 
     private static FlowLayoutPanel ChannelList(VirtualCrossoverPanel panel) =>
         (FlowLayoutPanel)Field(panel, "channelListPanel");

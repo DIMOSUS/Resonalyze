@@ -12,7 +12,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
     }
 
     [Fact]
-    public void SplitAlignmentStages_LeavesAFrontOnlyProjectUnstaged()
+    public void Split_LeavesAFrontOnlyProjectUnstaged()
     {
         // All-chain projects pass a null walk set (the single-stage engine call), which keeps the session battery from drifting.
         VirtualCrossoverChannel sub = Block("A", VirtualCrossoverZone.Sub);
@@ -20,14 +20,14 @@ public sealed class VirtualCrossoverStagedAlignmentTests
         VirtualCrossoverChannel tweeter = Block("C", VirtualCrossoverZone.Front);
 
         (List<VirtualCrossoverChannel> chain, List<VirtualCrossoverChannel> later) =
-            VirtualCrossoverPanel.SplitAlignmentStages([sub, mid, tweeter]);
+            VirtualCrossoverAlignmentStages.Split([sub, mid, tweeter]);
 
         Assert.Equal(3, chain.Count);
         Assert.Empty(later);
     }
 
     [Fact]
-    public void SplitAlignmentStages_HoldsTheRearAndCentreBackForTheirOwnStages()
+    public void Split_HoldsTheRearAndCentreBackForTheirOwnStages()
     {
         VirtualCrossoverChannel sub = Block("A", VirtualCrossoverZone.Sub);
         VirtualCrossoverChannel front = Block("B", VirtualCrossoverZone.Front);
@@ -35,20 +35,20 @@ public sealed class VirtualCrossoverStagedAlignmentTests
         VirtualCrossoverChannel centre = Block("D", VirtualCrossoverZone.Center);
 
         (List<VirtualCrossoverChannel> chain, List<VirtualCrossoverChannel> later) =
-            VirtualCrossoverPanel.SplitAlignmentStages([sub, front, rear, centre]);
+            VirtualCrossoverAlignmentStages.Split([sub, front, rear, centre]);
 
         Assert.Equal(["A", "B"], chain.Select(item => item.Name));
         Assert.Equal(["C", "D"], later.Select(item => item.Name));
     }
 
     [Fact]
-    public void SplitAlignmentStages_WalksARearOnlyProjectAsItsOwnChain()
+    public void Split_WalksARearOnlyProjectAsItsOwnChain()
     {
         VirtualCrossoverChannel low = Block("A", VirtualCrossoverZone.Rear);
         VirtualCrossoverChannel high = Block("B", VirtualCrossoverZone.Rear);
 
         (List<VirtualCrossoverChannel> chain, List<VirtualCrossoverChannel> later) =
-            VirtualCrossoverPanel.SplitAlignmentStages([low, high]);
+            VirtualCrossoverAlignmentStages.Split([low, high]);
 
         Assert.Equal(2, chain.Count);
         Assert.Empty(later);
@@ -74,7 +74,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
             new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 290, 24);
 
         (List<VirtualCrossoverChannel> chain, List<VirtualCrossoverChannel> later) =
-            VirtualCrossoverPanel.SplitAlignmentStages([mid, tweeter, rear]);
+            VirtualCrossoverAlignmentStages.Split([mid, tweeter, rear]);
 
         Assert.Equal(["A", "B"], chain.Select(item => item.Name));
         Assert.Equal(["C"], later.Select(item => item.Name));
@@ -375,7 +375,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
                 chainLeft, chainRight, union, twL, twR,
                 bridgeBandLowHz: 2_000, bridgeBandHighHz: 20_000,
                 sceneOffsetMs: 0.0, rightHandDrive,
-                panel.ProcessorSampleRateHz, panel.ProcessorMaxDelayMs,
+                panel.Session.ProcessorSampleRateHz, panel.Session.ProcessorMaxDelayMs,
                 alignment, decisions, log);
 
             Assert.DoesNotContain(centreSide, alignment.Keys);

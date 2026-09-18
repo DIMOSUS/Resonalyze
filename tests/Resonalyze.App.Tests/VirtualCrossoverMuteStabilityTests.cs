@@ -1,6 +1,4 @@
 using System.Numerics;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using OxyPlot;
 using Resonalyze.Dsp;
 
@@ -48,41 +46,26 @@ public sealed class VirtualCrossoverMuteStabilityTests
         return channel;
     }
 
-    private static object Panel(IReadOnlyList<VirtualCrossoverChannel> channels)
+    private static VirtualCrossoverHybrid Reader(IReadOnlyList<VirtualCrossoverChannel> channels)
     {
-        object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
-        Set(panel, "project", new VirtualCrossoverProjectFile
+        var session = new VirtualCrossoverSession
         {
-            SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic
-        });
-        Set(panel, "channels", channels.ToList());
-        Set(panel, "magnitudeGate", new VirtualCrossoverPanel.MagnitudeGateSnapshot(
-            new PhaseAnalysisSettings(
-                PhaseWindowMode.Fixed,
-                PhaseAnalysisSettings.DefaultFdwCycles,
-                PhaseDetrendMode.Off,
-                ManualDetrendMilliseconds: 0.0,
-                GateOffsetMs: 0.0,
-                FrequencyResponseOptions.SteadyStateLeftMs,
-                FrequencyResponseOptions.SteadyStatePlateauMs,
-                FrequencyResponseOptions.SteadyStateRightMs,
-                Unwrap: false,
-                SmoothingInverseOctaves: 0.0),
-            PinnedOffsetMs: null,
-            OppositePinnedOffsetMs: null,
-            SmoothingInverseOctaves: 0));
-        return panel;
+            Project = new VirtualCrossoverProjectFile
+            {
+                SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic
+            },
+            MagnitudeGate = MagnitudeGateSnapshot.Initial with { SmoothingInverseOctaves = 0 }
+        };
+        session.Channels.AddRange(channels);
+        return new VirtualCrossoverHybrid(session);
     }
 
-    private static void Set(object target, string name, object? value) =>
-        typeof(VirtualCrossoverPanel)
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(target, value);
-
     private static double SetOffsetDb(
-        object panel, IReadOnlyList<VirtualCrossoverChannel> drawn)
-    {
-        List<ProcessedChannel> processed = drawn
+        VirtualCrossoverHybrid reader, IReadOnlyList<VirtualCrossoverChannel> drawn) =>
+        reader.ResolveRawOffsetsDb(Processed(drawn), rightSide: false).SetOffsetDb;
+
+    private static List<ProcessedChannel> Processed(IEnumerable<VirtualCrossoverChannel> drawn) =>
+        drawn
             .Select(channel => new ProcessedChannel(
                 channel,
                 channel.SideState(false).TransferImpulseResponse!,
@@ -90,12 +73,6 @@ public sealed class VirtualCrossoverMuteStabilityTests
                 SampleRate,
                 OxyColors.White))
             .ToList();
-        object result = typeof(VirtualCrossoverPanel)
-            .GetMethod("ResolveRawHybridOffsetsDb", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [processed, false])!;
-        // ValueTuple element names do not survive to runtime; the fields are Item1..Item3.
-        return (double)result.GetType().GetField("Item2")!.GetValue(result)!;
-    }
 
     [Fact]
     public void TheSetOffsetIsTheSameWhicheverChannelsAreDrawn()
@@ -106,12 +83,12 @@ public sealed class VirtualCrossoverMuteStabilityTests
             Channel("B", -34.0),
             Channel("C", -41.0)
         ];
-        object panel = Panel(channels);
+        VirtualCrossoverHybrid reader = Reader(channels);
 
-        double all = SetOffsetDb(panel, channels);
-        Assert.Equal(all, SetOffsetDb(panel, [channels[0], channels[1]]), 9);
-        Assert.Equal(all, SetOffsetDb(panel, [channels[2]]), 9);
-        Assert.Equal(all, SetOffsetDb(panel, [channels[1]]), 9);
+        double all = SetOffsetDb(reader, channels);
+        Assert.Equal(all, SetOffsetDb(reader, [channels[0], channels[1]]), 9);
+        Assert.Equal(all, SetOffsetDb(reader, [channels[2]]), 9);
+        Assert.Equal(all, SetOffsetDb(reader, [channels[1]]), 9);
     }
 
     [Fact]
@@ -123,22 +100,10 @@ public sealed class VirtualCrossoverMuteStabilityTests
             Channel("B", -34.0),
             Channel("C", -41.0)
         ];
-        object panel = Panel(channels);
+        VirtualCrossoverHybrid reader = Reader(channels);
 
-        object result = typeof(VirtualCrossoverPanel)
-            .GetMethod("ResolveRawHybridOffsetsDb", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [
-                new List<ProcessedChannel>
-                {
-                    new(
-                        channels[2],
-                        channels[2].SideState(false).TransferImpulseResponse!,
-                        64,
-                        SampleRate,
-                        OxyColors.White)
-                },
-                false])!;
-        var set = (IReadOnlyList<SetDatum>)result.GetType().GetField("Item3")!.GetValue(result)!;
+        IReadOnlyList<SetDatum> set =
+            reader.ResolveRawOffsetsDb(Processed([channels[2]]), rightSide: false).SetDatums;
 
         Assert.Equal(3, set.Count);
         Assert.Equal(["A", "B", "C"], set.Select(entry => entry.Channel.Name));
@@ -155,19 +120,10 @@ public sealed class VirtualCrossoverMuteStabilityTests
             Channel("B", -34.0),
             Channel("C", -41.0)
         ];
-        object panel = Panel(channels);
+        VirtualCrossoverHybrid reader = Reader(channels);
 
-        object result = typeof(VirtualCrossoverPanel)
-            .GetMethod("ResolveRawHybridOffsetsDb", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [
-                channels.Select(channel => new ProcessedChannel(
-                    channel,
-                    channel.SideState(false).TransferImpulseResponse!,
-                    64,
-                    SampleRate,
-                    OxyColors.White)).ToList(),
-                false])!;
-        double?[] datums = (double?[])result.GetType().GetField("Item1")!.GetValue(result)!;
+        double?[] datums =
+            reader.ResolveRawOffsetsDb(Processed(channels), rightSide: false).PerChannel;
 
         Assert.All(datums, datum => Assert.True(datum.HasValue));
         // Datum = reference - capture, so a quieter capture reads HIGHER.

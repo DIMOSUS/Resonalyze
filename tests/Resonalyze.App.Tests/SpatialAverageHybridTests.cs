@@ -272,13 +272,13 @@ public sealed class SpatialAverageHybridTests
         tweeter.Pair.Bypass = true;
 
         (double LowHz, double HighHz) band =
-            VirtualCrossoverPanel.HybridGroupMemberBand(tweeter, rightSide: false);
+            VirtualCrossoverHybrid.GroupMemberBand(tweeter, rightSide: false);
 
         Assert.Equal((20.0, 20_000.0), band);
         tweeter.Pair.Bypass = false;
         Assert.Equal(
             (2_000.0, 8_000.0),
-            VirtualCrossoverPanel.HybridGroupMemberBand(tweeter, rightSide: false));
+            VirtualCrossoverHybrid.GroupMemberBand(tweeter, rightSide: false));
 
         List<SignalPoint> mid = Flat(-20, count: 8);
         List<SignalPoint> bypassed = Flat(-20, count: 8);

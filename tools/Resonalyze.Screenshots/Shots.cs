@@ -454,10 +454,8 @@ internal static class Shots
     private static EqWizardPanel HandOff(ShotSession session, string channelName)
     {
         var panel = Reflect.Field<VirtualCrossoverPanel>(session.Shell, "virtualCrossoverPanel");
-        object[] channels = ((System.Collections.IEnumerable)Reflect.Field(panel, "channels"))
-            .Cast<object>().ToArray();
-        object channel = channels.FirstOrDefault(
-            candidate => (string)Reflect.Property(candidate, "Name") == channelName)
+        VirtualCrossoverChannel channel = panel.Session.Channels.FirstOrDefault(
+            candidate => candidate.Name == channelName)
             ?? throw new InvalidOperationException(
                 $"The session has no channel {channelName}.");
 

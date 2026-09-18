@@ -38,21 +38,21 @@ public partial class VirtualCrossoverPanel
     {
         var lines = new List<string>
         {
-            $"processor;{ProcessorProfile.ModelId};{ProcessorSampleRateHz}",
-            $"average;{SpatialAverageMode};{checkBoxHybrid.Checked}",
+            $"processor;{session.ProcessorProfile.ModelId};{session.ProcessorSampleRateHz}",
+            $"average;{session.SpatialAverageMode};{checkBoxHybrid.Checked}",
             // Engines read the shown side and the view (Auto crossover, single-sided Auto delay, Auto-tune's source).
-            $"view;{project.ActiveSideRight};{SelectedGroupView}",
-            $"phase;{project.PhaseWindowMode};{project.PhaseFdwCycles};{project.PhaseDetrendMode};" +
-                $"{Number(project.PhaseGateLeftMs)};{Number(project.PhaseGatePlateauMs)};" +
-                $"{Number(project.PhaseGateRightMs)};" +
-                $"{Number(project.PhaseGateLeft.OffsetMs)};{Number(project.PhaseGateLeft.DetrendMs)};" +
-                $"{Number(project.PhaseGateRight.OffsetMs)};{Number(project.PhaseGateRight.DetrendMs)}",
-            $"stereo;{Number(project.StereoSceneOffsetMagnitudeMs)};{project.StereoRightHandDrive};" +
-                $"{Number(project.StereoLevelDifferenceDb)};{Number(project.RearFillOffsetMs)}",
+            $"view;{session.Project.ActiveSideRight};{SelectedGroupView}",
+            $"phase;{session.Project.PhaseWindowMode};{session.Project.PhaseFdwCycles};{session.Project.PhaseDetrendMode};" +
+                $"{Number(session.Project.PhaseGateLeftMs)};{Number(session.Project.PhaseGatePlateauMs)};" +
+                $"{Number(session.Project.PhaseGateRightMs)};" +
+                $"{Number(session.Project.PhaseGateLeft.OffsetMs)};{Number(session.Project.PhaseGateLeft.DetrendMs)};" +
+                $"{Number(session.Project.PhaseGateRight.OffsetMs)};{Number(session.Project.PhaseGateRight.DetrendMs)}",
+            $"stereo;{Number(session.Project.StereoSceneOffsetMagnitudeMs)};{session.Project.StereoRightHandDrive};" +
+                $"{Number(session.Project.StereoLevelDifferenceDb)};{Number(session.Project.RearFillOffsetMs)}",
             // By id AND points: a curve re-read under the same id is a different correction.
-            $"calibration;{project.CalibrationId};{ownCalibrationSelected};{Curve(Calibration)}",
-            $"target;{Number((double)numericTargetLevel.Value)};{TargetShape(project.Target)}",
-            $"notes;{project.AiNotes}"
+            $"calibration;{session.Project.CalibrationId};{session.Calibration.Own};{Curve(session.Calibration.Selected)}",
+            $"target;{Number((double)numericTargetLevel.Value)};{TargetShape(session.Project.Target)}",
+            $"notes;{session.Project.AiNotes}"
         };
         foreach ((string block, AgentChannelSide side, VirtualCrossoverChannel channel, bool rightSide)
             in AgentChannelSlots())
@@ -67,7 +67,7 @@ public partial class VirtualCrossoverPanel
                 Digest(state.TransferImpulseResponse), state.SampleRate, state.TransferPeakIndex,
                 Number(state.MeasuredBand.LowestHz), Number(state.MeasuredBand.HighestHz),
                 Digest(state.TransferCoherence),
-                Curve(CalibrationFor(state)),
+                Curve(session.Calibration.For(state)),
                 // A re-recorded pass is a new capture session id.
                 settings.SpatialAveragePath, Capture(state.SpatialAverage), Capture(state.ArrayCapture),
                 Number(settings.GainDb), Number(settings.DelayMs), settings.InvertPolarity,
@@ -415,7 +415,7 @@ public partial class VirtualCrossoverPanel
         {
             SetSpatialAverageMode(mode);
             checkBoxHybrid.Checked = true;
-            project.ShowHybridCurves = true;
+            session.Project.ShowHybridCurves = true;
         }
         finally
         {
@@ -430,11 +430,11 @@ public partial class VirtualCrossoverPanel
     // The dialog's opening inputs (also the package's Current column): layout-neutral magnitudes, since the layout toggle owns signs; gain balance unticked, since the project stores the tilt, not the opt-in.
     private AgentAutoDelaySettings AgentAutoDelayDefaults() =>
         new(
-            project.StereoSceneOffsetMagnitudeMs,
-            project.StereoRightHandDrive,
+            session.Project.StereoSceneOffsetMagnitudeMs,
+            session.Project.StereoRightHandDrive,
             AdjustGains: false,
-            Math.Abs(project.StereoLevelDifferenceDb),
-            project.RearFillOffsetMs);
+            Math.Abs(session.Project.StereoLevelDifferenceDb),
+            session.Project.RearFillOffsetMs);
 
     /// <summary>Request inputs: stated values, dialog defaults for the rest. UI-free so the rule can be pinned.</summary>
     internal static AutoDelayRunRequest BuildAutoDelayRequest(
@@ -535,7 +535,7 @@ public partial class VirtualCrossoverPanel
             summary.Add(
                 $"Applied {rows} of {proposedRows} proposed change{(proposedRows == 1 ? "" : "s")}.");
             // The rows name their sides: the side lock takes them as written. Before the engines, whose junction-tune save would read the rows as a hand edit.
-            sideLock.Remember(channels.Select(channel => channel.Pair));
+            sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         }
 
         bool engines = await RunAgentEngineRequests(toApply, summary, progress);
@@ -725,9 +725,9 @@ public partial class VirtualCrossoverPanel
             return Unavailable("the phase gate is misplaced");
         }
 
-        VirtualCrossoverChannel? lower = channels.FirstOrDefault(channel =>
+        VirtualCrossoverChannel? lower = session.Channels.FirstOrDefault(channel =>
             string.Equals(channel.Name, lowerSnapshot!.Block, StringComparison.Ordinal));
-        VirtualCrossoverChannel? upper = channels.FirstOrDefault(channel =>
+        VirtualCrossoverChannel? upper = session.Channels.FirstOrDefault(channel =>
             string.Equals(channel.Name, upperSnapshot!.Block, StringComparison.Ordinal));
         if (lower == null || upper == null)
         {
@@ -746,7 +746,7 @@ public partial class VirtualCrossoverPanel
             return Unavailable(refusal);
         }
 
-        int processorRate = ProcessorSampleRateHz;
+        int processorRate = session.ProcessorSampleRateHz;
         if (probe.Probe == AgentProtocol.JunctionDelayProbe)
         {
             IReadOnlyList<JunctionDelayProbeSide> read = await Task.Run(
@@ -787,7 +787,7 @@ public partial class VirtualCrossoverPanel
         }
 
         // Per-entry affected junctions, not pooled over the probe: pooled lists would point at junctions the winning variant never touched. Entries follow BuildAgentProbeVariants order, baseline first.
-        AgentSessionSnapshot session = BuildAgentSessionSnapshot();
+        AgentSessionSnapshot current = BuildAgentSessionSnapshot();
         IReadOnlyList<AgentProbeVariant> asked = probe.Variants ?? [];
         return new AgentProbeReport(
             probe.Id, probe.Probe, probe.JunctionId, lowerSnapshot!.Id, upperSnapshot!.Id, null,
@@ -800,7 +800,7 @@ public partial class VirtualCrossoverPanel
                 index == 0 || index > asked.Count
                     ? null
                     : AgentProposalValidator.NeighbourJunctionIds(
-                        session, probe.JunctionId ?? string.Empty,
+                        current, probe.JunctionId ?? string.Empty,
                         asked[index - 1].Changes
                             .Select(change => change.ChannelId)
                             .Distinct(StringComparer.Ordinal)
@@ -958,9 +958,9 @@ public partial class VirtualCrossoverPanel
         }
 
         string label = $"Junction tune {lowerSnapshot!.Block}/{upperSnapshot!.Block}";
-        VirtualCrossoverChannel? lower = channels.FirstOrDefault(channel =>
+        VirtualCrossoverChannel? lower = session.Channels.FirstOrDefault(channel =>
             string.Equals(channel.Name, lowerSnapshot.Block, StringComparison.Ordinal));
-        VirtualCrossoverChannel? upper = channels.FirstOrDefault(channel =>
+        VirtualCrossoverChannel? upper = session.Channels.FirstOrDefault(channel =>
             string.Equals(channel.Name, upperSnapshot.Block, StringComparison.Ordinal));
         if (lower == null || upper == null)
         {
@@ -1003,7 +1003,7 @@ public partial class VirtualCrossoverPanel
             operation.MaxHz ?? defaultMaxHz,
             // One slope for both edges unless the reply frees them: the free search costs slopes² per corner.
             operation.IndependentSlopes ?? false,
-            ProcessorSampleRateHz);
+            session.ProcessorSampleRateHz);
 
         // Fingerprinted around the compute instead of disabling the panel: disable/enable repaints every plot twice, costing seconds with spatial averages. A moved fingerprint drops the result.
         string fingerprintBefore = ComputeAgentFingerprint();
@@ -1077,7 +1077,7 @@ public partial class VirtualCrossoverPanel
         ApplySettingsToControl(lower);
         ApplySettingsToControl(upper);
         // Remember the result as it stands: read as a difference, a hidden side already holding the new edge would look untouched and get the shown side's whole crossover.
-        sideLock.Remember(channels.Select(channel => channel.Pair));
+        sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         ScheduleSave();
         RedrawAll();
 
@@ -1203,7 +1203,7 @@ public partial class VirtualCrossoverPanel
         }
 
         VirtualCrossoverTargetSettings targetSettings =
-            project.Target ?? new VirtualCrossoverTargetSettings();
+            session.Project.Target ?? new VirtualCrossoverTargetSettings();
         TargetCurveSpec spec = (targetCurve ?? targetSettings.ToCurve()).Normalized().Spec;
         // The wizard's own refusal: kept all-pass bands filling Max Filters leave the fit no room.
         int room = EqAutoTuneHeadless.RoomUnderMaxFilters(request, policy);
@@ -1284,19 +1284,19 @@ public partial class VirtualCrossoverPanel
         }
 
         VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
-        MagnitudeGateSnapshot snapshot = magnitudeGate;
+        MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
         if (!VirtualDspEqHandoff.TryApplyReturn(
-                channels,
+                session.Channels,
                 request.Token,
                 fitted,
                 projectGeneration,
-                CalibrationFor(state),
-                SpatialAverageCalibrationFor(state),
+                session.Calibration.For(state),
+                session.Calibration.SpatialAverageFor(),
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
                 (double)numericTargetLevel.Value,
                 average.Capture,
-                ProcessorSampleRateHz))
+                session.ProcessorSampleRateHz))
         {
             numericTargetLevel.Value = previousTargetLevel;
             summary.Add($"{label}: skipped (the channel changed while the fit ran).");
@@ -1325,13 +1325,13 @@ public partial class VirtualCrossoverPanel
                 .Select(settings => new AgentUndoEntry(
                     settings, AgentOperations.CloneEditable(settings)))
                 .ToList(),
-            project.SpatialAverageMode,
+            session.Project.SpatialAverageMode,
             checkBoxHybrid.Checked,
-            channels.ToList(),
-            project.StereoSceneOffsetMagnitudeMs,
-            project.StereoRightHandDrive,
-            project.StereoLevelDifferenceDb,
-            project.RearFillOffsetMs,
+            session.Channels.ToList(),
+            session.Project.StereoSceneOffsetMagnitudeMs,
+            session.Project.StereoRightHandDrive,
+            session.Project.StereoLevelDifferenceDb,
+            session.Project.RearFillOffsetMs,
             (double)numericTargetLevel.Value);
 
     private void UndoAiImport()
@@ -1357,29 +1357,29 @@ public partial class VirtualCrossoverPanel
         suppressProjectEvents = true;
         try
         {
-            project.SpatialAverageMode = undo.SpatialAverageMode;
+            session.Project.SpatialAverageMode = undo.SpatialAverageMode;
             checkBoxHybrid.Checked = undo.HybridTicked;
-            project.ShowHybridCurves = undo.HybridTicked;
-            project.SetStereoScene(undo.SceneOffsetMagnitudeMs, undo.RightHandDrive);
-            project.StereoLevelDifferenceDb = undo.StereoLevelDifferenceDb;
-            project.RearFillOffsetMs = undo.RearFillOffsetMs;
+            session.Project.ShowHybridCurves = undo.HybridTicked;
+            session.Project.SetStereoScene(undo.SceneOffsetMagnitudeMs, undo.RightHandDrive);
+            session.Project.StereoLevelDifferenceDb = undo.StereoLevelDifferenceDb;
+            session.Project.RearFillOffsetMs = undo.RearFillOffsetMs;
             numericTargetLevel.Value = numericTargetLevel.ClampValue(undo.TargetLevelDb);
             // ValueChanged's project write is suppressed above, so the datum the package and session read is written by hand.
-            project.TargetLevelDb = (double)numericTargetLevel.Value;
+            session.Project.TargetLevelDb = (double)numericTargetLevel.Value;
         }
         finally
         {
             suppressProjectEvents = suppressed;
         }
 
-        foreach (VirtualCrossoverChannel channel in channels)
+        foreach (VirtualCrossoverChannel channel in session.Channels)
         {
             RefreshSpatialAverageStatus(channel);
         }
 
         RefreshHybridAvailability();
         // Remember the restored state as it stands: a difference could carry a side where it never was (L=A,R=B; import wrote L=B; undo restores L=A and would carry A onto R).
-        sideLock.Remember(channels.Select(channel => channel.Pair));
+        sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         ScheduleSave();
         RedrawAll();
     }
@@ -1387,12 +1387,12 @@ public partial class VirtualCrossoverPanel
     // Auto crossover can reorder blocks; restored by identity, since the list holds the same objects.
     private void RestoreAgentChannelOrder(IReadOnlyList<VirtualCrossoverChannel> order)
     {
-        if (order.Count != channels.Count || order.SequenceEqual(channels))
+        if (order.Count != session.Channels.Count || order.SequenceEqual(session.Channels))
         {
             return;
         }
 
-        List<int> indices = order.Select(channel => channels.IndexOf(channel)).ToList();
+        List<int> indices = order.Select(channel => session.Channels.IndexOf(channel)).ToList();
         if (indices.All(index => index >= 0))
         {
             ApplyChannelOrder(indices);
@@ -1617,13 +1617,13 @@ public partial class VirtualCrossoverPanel
                     slot.Channel.Pair.Enabled,
                     slot.Channel.Pair.Bypass))
                 .ToList(),
-            ProcessorSampleRateHz,
-            ProcessorProfile.MaxDelayMs,
+            session.ProcessorSampleRateHz,
+            session.ProcessorProfile.MaxDelayMs,
             lastAgentPackageId,
             AgentAutoDelayDefaults(),
-            SpatialAverageMode,
+            session.SpatialAverageMode,
             checkBoxHybrid.Checked,
-            project.ActiveSideRight,
+            session.Project.ActiveSideRight,
             lastAgentPackageFingerprint,
             ComputeAgentFingerprint());
 
@@ -1631,9 +1631,9 @@ public partial class VirtualCrossoverPanel
     private IEnumerable<(string Block, AgentChannelSide Side, VirtualCrossoverChannel Channel, bool RightSide)>
         AgentChannelSlots()
     {
-        for (int index = 0; index < channels.Count; index++)
+        for (int index = 0; index < session.Channels.Count; index++)
         {
-            VirtualCrossoverChannel channel = channels[index];
+            VirtualCrossoverChannel channel = session.Channels[index];
             string block = ChannelNameFor(index);
             if (channel.Pair.Mono)
             {
@@ -1652,13 +1652,13 @@ public partial class VirtualCrossoverPanel
     {
         long revision = processingCoordinator.CurrentRevision;
         VirtualCrossoverGroupView groupView = SelectedGroupView;
-        bool activeRight = project.ActiveSideRight;
+        bool activeRight = session.Project.ActiveSideRight;
         // One smoothing for every package, independent of the display. See docs/tech/agent-bridge.md#package-smoothing.
         int smoothing = SpectrumSmoothing.PsychoacousticCode;
-        MagnitudeGateSnapshot packageGate = magnitudeGate with { SmoothingInverseOctaves = smoothing };
+        MagnitudeGateSnapshot packageGate = session.MagnitudeGate with { SmoothingInverseOctaves = smoothing };
         // Hybrid curves and their sum go at 1/12 octave, the grid's width (the manual reads them unsmoothed).
         MagnitudeGateSnapshot hybridGate =
-            magnitudeGate with { SmoothingInverseOctaves = AgentHybridSmoothingInverseOctaves };
+            session.MagnitudeGate with { SmoothingInverseOctaves = AgentHybridSmoothingInverseOctaves };
 
         var sides = new List<AgentSideInputs>();
         var curves = new Dictionary<
@@ -1670,7 +1670,7 @@ public partial class VirtualCrossoverPanel
         {
             AgentChannelSide sideName = rightSide ? AgentChannelSide.Right : AgentChannelSide.Left;
             VirtualCrossoverSideSum? sideSum = await metrics.ComputeSideSumAsync(
-                channels, rightSide, revision, minimumChannels: 1);
+                session.Channels, rightSide, revision, minimumChannels: 1);
             if (!processingCoordinator.IsCurrent(revision))
             {
                 return null;
@@ -1695,25 +1695,11 @@ public partial class VirtualCrossoverPanel
             // The panel's `metrics` smooths at the display's width; these delegates window through the package gate, the opposite side through its own gate placement. See docs/tech/agent-bridge.md#package-smoothing.
             bool oppositeSide = rightSide != activeRight;
             VirtualCrossoverMetrics MetricsThrough(MagnitudeGateSnapshot gate) =>
-                new(
+                VirtualCrossoverMetrics.Through(
                     processingCoordinator,
-                    (impulseResponse, anchorIndex, sampleRate, band, calibration) =>
-                        BuildGatedMagnitudeCurve(
-                            gate,
-                            impulseResponse,
-                            anchorIndex,
-                            sampleRate,
-                            gate.ResolveGateOffsetMs(oppositeSide, anchorIndex, sampleRate),
-                            band,
-                            calibration),
-                    CalibrationFor,
-                    (members, anchorIndex) =>
-                        BuildMeasuredSumCurve(
-                            gate,
-                            members,
-                            anchorIndex,
-                            gate.ResolveGateOffsetMs(
-                                oppositeSide, anchorIndex, members.Count > 0 ? members[0].SampleRate : 0)));
+                    () => gate,
+                    oppositeSide,
+                    channel => session.Calibration.For(channel));
             VirtualCrossoverMetrics sideMetrics = MetricsThrough(packageGate);
 
             List<AnalysisCurve>? magnitudes = null;
@@ -1748,10 +1734,10 @@ public partial class VirtualCrossoverPanel
             if (quotesJunctions)
             {
                 int phaseRate = summed[0].SampleRate;
-                double? pinnedOffsetMs = project.PhaseGateFor(rightSide).OffsetMs;
-                double gateLeftMs = gatePreview?.LeftMs ?? project.PhaseGateLeftMs;
-                double gatePlateauMs = gatePreview?.PlateauMs ?? project.PhaseGatePlateauMs;
-                double gateRightMs = gatePreview?.RightMs ?? project.PhaseGateRightMs;
+                double? pinnedOffsetMs = session.Project.PhaseGateFor(rightSide).OffsetMs;
+                double gateLeftMs = session.Gate.LeftMs;
+                double gatePlateauMs = session.Gate.PlateauMs;
+                double gateRightMs = session.Gate.RightMs;
                 (phaseEntries, directLoss) = await Task.Run(() =>
                 {
                     IReadOnlyList<ProcessedChannel>? orderedSet = null;
@@ -1774,14 +1760,14 @@ public partial class VirtualCrossoverPanel
                 directEntries = sideMetrics.BuildEntries(summed, directLoss);
             }
             HybridMagnitudes? hybrid = hybridReferences != null
-                ? BuildHybridMagnitudes(shown, hybridReferences, rightSide, AgentHybridSmoothingInverseOctaves)
+                ? hybridReader.Build(shown, hybridReferences, rightSide, AgentHybridSmoothingInverseOctaves)
                 : null;
             // The hybrid view's sum (see RedrawMainPlotAsync); null, as on screen, when the sides cannot share one offset.
             IReadOnlyList<SignalPoint>? hybridSum = hybrid == null || hybridReferences == null
                 ? null
                 : rightSide == activeRight
-                    ? BuildActiveHybridSumCurve(shown, hybridReferences, hybrid, hybridGate)
-                    : BuildOppositeHybridSumCurve(sideSum, hybrid.OffsetDb, hybridGate)?.Points;
+                    ? hybridReader.ActiveSum(shown, hybridReferences, hybrid, hybridGate)
+                    : hybridReader.OppositeSum(sideSum, hybrid.OffsetDb, hybridGate)?.Points;
 
             for (int index = 0; index < shown.Count; index++)
             {
@@ -1790,8 +1776,8 @@ public partial class VirtualCrossoverPanel
                 IReadOnlyList<SignalPoint>? hybridPreDsp = null;
                 if (hybrid != null && hybridReferences != null && !hybrid.PointMeasuredChannels[index])
                 {
-                    hybridProcessed = ShiftedBy(hybrid.Channels[index], hybrid.OffsetDb);
-                    hybridPreDsp = BuildHybridPreDspCurve(
+                    hybridProcessed = VirtualCrossoverHybrid.ShiftedBy(hybrid.Channels[index], hybrid.OffsetDb);
+                    hybridPreDsp = hybridReader.PreDspCurve(
                         shown[index].Channel, rightSide, hybridReferences[index].Points,
                         AgentHybridSmoothingInverseOctaves, hybrid.OffsetDb);
                 }
@@ -1858,7 +1844,7 @@ public partial class VirtualCrossoverPanel
         }
 
         List<VirtualCrossoverMetric.StereoDelta> stereo = await metrics.ComputeStereoDeltasAsync(
-            channels,
+            session.Channels,
             revision,
             includePair: pair => VirtualCrossoverGroupViews.IsShown(groupView, pair.Zone),
             hybridLevelDeltaDb: HybridStereoLevelReader());
@@ -1888,13 +1874,12 @@ public partial class VirtualCrossoverPanel
                 {
                     if (state.TransferImpulseResponse is { } impulseResponse)
                     {
-                        raw = BuildRawMagnitudeCurve(
+                        raw = packageGate.Raw(
                             impulseResponse,
                             state.TransferPeakIndex,
                             state.SampleRate,
                             found.Item.MeasuredBand,
-                            CalibrationFor(found.Item),
-                            packageGate).Points;
+                            session.Calibration.For(found.Item)).Points;
                     }
                     if (found.Processed != null && state.TransferCoherence is { Length: > 1 } linear)
                     {
@@ -1910,7 +1895,7 @@ public partial class VirtualCrossoverPanel
                     state.SampleRate,
                     state.MeasuredBand,
                     // The selected mode's family, not whichever capture the side holds.
-                    state.SpatialAverageFor(SpatialAverageMode) != null ? SpatialAverageMode.ToString() : null,
+                    state.SpatialAverageFor(session.SpatialAverageMode) != null ? session.SpatialAverageMode.ToString() : null,
                     // Every family held: distinguishes "no average" from "one the view is not using".
                     AgentSpatialAverageCaptures(state),
                     raw,
@@ -1930,17 +1915,17 @@ public partial class VirtualCrossoverPanel
                 channel.Pair.Bypass,
                 // A copy: the builder runs off the UI thread and the live object may be edited meanwhile.
                 AgentOperations.CloneEditable(settings),
-                ProcessorSampleRateHz,
+                session.ProcessorSampleRateHz,
                 source));
         }
 
-        DspProcessorProfile profile = ProcessorProfile;
+        DspProcessorProfile profile = session.ProcessorProfile;
         var processor = new AgentProcessorInputs(
             profile.ModelId ?? "custom",
             profile.DisplayName,
             profile.IsCustom,
             profile.SampleRateHz,
-            ProcessorRateFollowsMeasurements,
+            session.Project.DspProcessorRateFollowsMeasurements,
             profile.QConvention,
             profile.MaxDelayMs,
             DspProcessorCatalog.Preset(profile.ModelId)?.MaxDelayMs != null);
@@ -1951,31 +1936,31 @@ public partial class VirtualCrossoverPanel
             // The package's smoothing, not the display's.
             SpectrumSmoothing.PsychoacousticBaseInverseOctaves,
             true,
-            project.SpatialAverageMode,
+            session.Project.SpatialAverageMode,
             checkBoxHybrid.Checked,
             HybridRequested,
             AgentHybridSmoothingInverseOctaves,
-            project.PhaseWindowMode,
-            project.PhaseFdwCycles,
-            project.PhaseDetrendMode,
-            project.PhaseGateLeftMs,
-            project.PhaseGatePlateauMs,
-            project.PhaseGateRightMs,
-            project.PhaseGateLeft.OffsetMs,
-            project.PhaseGateLeft.DetrendMs,
-            project.PhaseGateRight.OffsetMs,
-            project.PhaseGateRight.DetrendMs,
-            project.Calibration?.Name,
-            project.StereoSceneOffsetMagnitudeMs,
-            project.StereoRightHandDrive,
-            project.StereoLevelDifferenceDb,
-            project.RearFillOffsetMs);
+            session.Project.PhaseWindowMode,
+            session.Project.PhaseFdwCycles,
+            session.Project.PhaseDetrendMode,
+            session.Project.PhaseGateLeftMs,
+            session.Project.PhaseGatePlateauMs,
+            session.Project.PhaseGateRightMs,
+            session.Project.PhaseGateLeft.OffsetMs,
+            session.Project.PhaseGateLeft.DetrendMs,
+            session.Project.PhaseGateRight.OffsetMs,
+            session.Project.PhaseGateRight.DetrendMs,
+            session.Project.Calibration?.Name,
+            session.Project.StereoSceneOffsetMagnitudeMs,
+            session.Project.StereoRightHandDrive,
+            session.Project.StereoLevelDifferenceDb,
+            session.Project.RearFillOffsetMs);
 
         VirtualCrossoverTargetSettings targetSettings =
-            project.Target ?? new VirtualCrossoverTargetSettings();
+            session.Project.Target ?? new VirtualCrossoverTargetSettings();
         EqTargetCurve target = (targetCurve ?? targetSettings.ToCurve()).Normalized();
         var targetInputs = new AgentTargetInputs(
-            project.TargetLevelDb,
+            session.Project.TargetLevelDb,
             target.Preset,
             target.Spec,
             target.ToleranceDb,
@@ -1983,7 +1968,7 @@ public partial class VirtualCrossoverPanel
 
         return new AgentPackageInputs(
             ApplicationVersionInfo.GetDisplayVersion(),
-            project.AiNotes,
+            session.Project.AiNotes,
             processor,
             analysis,
             targetInputs,
@@ -1995,14 +1980,14 @@ public partial class VirtualCrossoverPanel
 
     // The project's phase gate, window mode and cycles, with the offset left for the channel's own arrival.
     private PhaseAnalysisSettings AgentGroupDelayWindow() => new(
-        project.PhaseWindowMode,
-        project.PhaseFdwCycles,
+        session.Project.PhaseWindowMode,
+        session.Project.PhaseFdwCycles,
         PhaseDetrendMode.Off,
         ManualDetrendMilliseconds: 0.0,
         GateOffsetMs: 0.0,
-        project.PhaseGateLeftMs,
-        project.PhaseGatePlateauMs,
-        project.PhaseGateRightMs,
+        session.Project.PhaseGateLeftMs,
+        session.Project.PhaseGatePlateauMs,
+        session.Project.PhaseGateRightMs,
         Unwrap: false,
         SmoothingInverseOctaves: 0.0);
 
@@ -2044,30 +2029,6 @@ public partial class VirtualCrossoverPanel
         }
 
         return captures;
-    }
-
-    // The spatial average through no chain, on the impulse responses' level axis; null without a capture of the selected family.
-    private IReadOnlyList<SignalPoint>? BuildHybridPreDspCurve(
-        VirtualCrossoverChannel channel,
-        bool rightSide,
-        IReadOnlyList<SignalPoint> grid,
-        int smoothingCode,
-        double offsetDb)
-    {
-        VirtualCrossoverChannelState state = channel.SideState(rightSide);
-        if (state.SpatialAverageFor(SpatialAverageMode) is not { } document || grid.Count == 0)
-        {
-            return null;
-        }
-
-        IReadOnlyList<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
-            document,
-            DspChannelChain.Identity,
-            channel.ProcessorSampleRateFor(rightSide),
-            SpatialAverageCalibrationFor(state),
-            grid.Select(point => point.X).ToList(),
-            smoothingCode);
-        return curve == null ? null : ShiftedBy(curve, offsetDb);
     }
 
     // A failing view is reported missing rather than failing the package, as the lower plot's redraw does.

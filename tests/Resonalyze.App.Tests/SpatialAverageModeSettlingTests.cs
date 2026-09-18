@@ -1,6 +1,3 @@
-using System.Reflection;
-using System.Runtime.CompilerServices;
-
 namespace Resonalyze.App.Tests;
 
 /// <remarks>Recomputed live, one new array measurement flipped a legacy attachments project onto the array method.</remarks>
@@ -38,16 +35,9 @@ public sealed class SpatialAverageModeSettlingTests
         VirtualCrossoverProjectFile project,
         params VirtualCrossoverChannel[] channels)
     {
-        object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
-        typeof(VirtualCrossoverPanel)
-            .GetField("project", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(panel, project);
-        typeof(VirtualCrossoverPanel)
-            .GetField("channels", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(panel, channels.ToList());
-        typeof(VirtualCrossoverPanel)
-            .GetMethod("SettleSpatialAverageMode", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, []);
+        var session = new VirtualCrossoverSession { Project = project };
+        session.Channels.AddRange(channels);
+        session.SettleSpatialAverageMode();
         return project.SpatialAverageMode;
     }
 

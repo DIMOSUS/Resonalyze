@@ -8,7 +8,7 @@ using Xunit.Abstractions;
 namespace Resonalyze.App.Tests;
 
 /// <summary>
-/// Measures the raw-pair datum on archived cabins to calibrate <c>VirtualCrossoverPanel.HybridSpreadWarningDb</c>.
+/// Measures the raw-pair datum on archived cabins to calibrate <c>VirtualCrossoverWarnings.HybridSpreadWarningDb</c>.
 /// Reports rather than asserts: the number is evidence for a constant.
 /// </summary>
 public sealed class HybridOffsetDatumMeasurement(ITestOutputHelper output)

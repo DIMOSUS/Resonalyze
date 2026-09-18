@@ -55,9 +55,9 @@ public partial class VirtualCrossoverPanel
         // Both sides from one coordinator revision, so both ears share one tune state.
         long revision = processingCoordinator.CurrentRevision;
         VirtualCrossoverSideSum? leftSide = await metrics.ComputeSideSumAsync(
-            channels, rightSide: false, revision, minimumChannels: 1);
+            session.Channels, rightSide: false, revision, minimumChannels: 1);
         VirtualCrossoverSideSum? rightSide = await metrics.ComputeSideSumAsync(
-            channels, rightSide: true, revision, minimumChannels: 1);
+            session.Channels, rightSide: true, revision, minimumChannels: 1);
         // Staleness first: a mid-flight change nulls the second sum, which must not read as a missing side.
         if (!processingCoordinator.IsCurrent(revision))
         {
@@ -206,7 +206,7 @@ public partial class VirtualCrossoverPanel
     /// <summary>Whether the rendered sides may be corrected onto spatial averages: the recipe decides, and both ears are judged as one set.</summary>
     private LiveCaptureSetVerdict JudgeAuditionSpatialAverages(IReadOnlyList<bool> sides)
     {
-        if (SpatialAverageMode == VirtualCrossoverSpatialAverageMode.Off)
+        if (session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.Off)
         {
             return LiveCaptureSetVerdict.No(
                 "This project is set to use no spatial average (MMM button).");
@@ -216,7 +216,7 @@ public partial class VirtualCrossoverPanel
         foreach (bool rightSide in sides)
         {
             LiveCaptureSetVerdict gathered =
-                TryCollectSideCaptures(rightSide, out List<LiveCaptureDocument> captures);
+                hybridReader.CollectSideCaptures(rightSide, out List<LiveCaptureDocument> captures);
             if (!gathered.Coherent)
             {
                 return gathered;
@@ -226,7 +226,7 @@ public partial class VirtualCrossoverPanel
         }
 
         return collected.Count > 1
-            ? JudgeSidesShareAnOffset(collected[0], collected[1])
+            ? VirtualCrossoverHybrid.JudgeSidesShareAnOffset(collected[0], collected[1])
             : collected.Count == 1
                 ? LiveCaptureDocument.JudgeSet(collected[0])
                 : LiveCaptureSetVerdict.No("No side has a spatial average.");
@@ -261,7 +261,7 @@ public partial class VirtualCrossoverPanel
                         processed.SampleRate,
                         processed.MeasuredBand,
                         state.MicrophoneCalibrationCurve,
-                        state.SpatialAverageFor(SpatialAverageMode)));
+                        state.SpatialAverageFor(session.SpatialAverageMode)));
                     names.Add(
                         bothSides && !processed.Channel.Pair.Mono
                             ? $"{processed.Channel.Name} {(rightSide ? "R" : "L")}"

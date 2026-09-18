@@ -42,4 +42,17 @@ public static class VirtualCrossoverAlignmentStages
     /// <summary>False for front-only projects, which take the single-stage path (not a one-stage staged run), so their results match the unstaged engine by construction.</summary>
     public static bool NeedsStaging(IEnumerable<VirtualCrossoverZone> zones) =>
         zones.Any(zone => StageOf(zone) != VirtualCrossoverAlignmentStage.FrontChain);
+
+    /// <summary>The searched front chain and the groups placed against it. A project without rear fill or centre gets
+    /// everything in the chain and takes the unstaged path; a rear-only project is its own chain.</summary>
+    internal static (List<VirtualCrossoverChannel> Chain, List<VirtualCrossoverChannel> Later)
+        Split(IReadOnlyList<VirtualCrossoverChannel> participants)
+    {
+        List<VirtualCrossoverChannel> chain = [.. participants.Where(channel =>
+            StageOf(channel.Pair.Zone) == VirtualCrossoverAlignmentStage.FrontChain)];
+        List<VirtualCrossoverChannel> later = [.. participants.Except(chain)];
+        return chain.Count == 0 || later.Count == 0
+            ? ([.. participants], [])
+            : (chain, later);
+    }
 }

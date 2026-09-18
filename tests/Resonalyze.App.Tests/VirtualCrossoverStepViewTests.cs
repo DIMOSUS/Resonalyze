@@ -233,8 +233,8 @@ public sealed class VirtualCrossoverStepViewTests
         target.GetType().GetField(name, Hidden)!.GetValue(target)!;
 
     private static List<VirtualCrossoverChannel> Channels(VirtualCrossoverPanel panel) =>
-        (List<VirtualCrossoverChannel>)Field(panel, "channels");
+        panel.Session.Channels;
 
     private static VirtualCrossoverProjectFile Project(VirtualCrossoverPanel panel) =>
-        (VirtualCrossoverProjectFile)Field(panel, "project");
+        panel.Session.Project;
 }

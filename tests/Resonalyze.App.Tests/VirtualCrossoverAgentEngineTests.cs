@@ -771,7 +771,7 @@ public sealed class VirtualCrossoverAgentEngineTests
             Moves(() => leftState.TransferCoherence = [0.9, 0.8]);
             Moves(() => leftState.MeasuredBand = new MeasuredBand(40, 8000));
             Moves(() => leftState.TransferPeakIndex += 1);
-            Set(panel, "ownCalibrationSelected", true);
+            panel.Session.Calibration = panel.Session.Calibration with { Own = true };
             Moves(() => leftState.MicrophoneCalibration =
                 new VirtualCrossoverCalibrationSettings { Name = "mic", Points = [[1000, 0.5], [2000, 1.0]] });
             Moves(() => leftState.MicrophoneCalibration =
@@ -908,10 +908,10 @@ public sealed class VirtualCrossoverAgentEngineTests
         target.GetType().GetMethod(name, Hidden)!.Invoke(target, arguments);
 
     private static List<VirtualCrossoverChannel> Channels(VirtualCrossoverPanel panel) =>
-        (List<VirtualCrossoverChannel>)Field(panel, "channels");
+        panel.Session.Channels;
 
     private static VirtualCrossoverProjectFile Project(VirtualCrossoverPanel panel) =>
-        (VirtualCrossoverProjectFile)Field(panel, "project");
+        panel.Session.Project;
 
     private static CheckBox Hybrid(VirtualCrossoverPanel panel) =>
         (CheckBox)Field(panel, "checkBoxHybrid");

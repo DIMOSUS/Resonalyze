@@ -1,6 +1,4 @@
 using System.Numerics;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text;
 using Resonalyze.Dsp;
 using Resonalyze.History;
@@ -91,7 +89,7 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
         report.AppendLine();
         report.AppendLine("--- Virtual DSP, reading the project as a microphone array");
 
-        object panel = ArrayPanel();
+        VirtualCrossoverHybrid reader = ArrayReader();
         var processed = new List<ProcessedChannel>(channels.Count);
         var references = new List<AnalysisCurve>(channels.Count);
         foreach (VirtualCrossoverChannel channel in channels)
@@ -119,7 +117,7 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
                 PreviewSmoothing));
         }
 
-        HybridMagnitudes? hybrid = BuildHybrid(panel, processed, references);
+        HybridMagnitudes? hybrid = reader.Build(processed, references, rightSide: false, PreviewSmoothing);
         Assert.NotNull(hybrid);
 
         report.AppendLine(
@@ -228,20 +226,19 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
             SampleRateHz = 96_000
         };
 
-    private static object ArrayPanel()
-    {
-        object panel = RuntimeHelpers.GetUninitializedObject(typeof(VirtualCrossoverPanel));
-        SetField(panel, "project", new VirtualCrossoverProjectFile
+    private static VirtualCrossoverHybrid ArrayReader() =>
+        new(new VirtualCrossoverSession
         {
-            SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MicArray
+            Project = new VirtualCrossoverProjectFile
+            {
+                SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MicArray
+            },
+            MagnitudeGate = new MagnitudeGateSnapshot(
+                SteadyStateGate(anchorIndex: 0, sampleRate: 96_000),
+                PinnedOffsetMs: null,
+                OppositePinnedOffsetMs: null,
+                SmoothingInverseOctaves: PreviewSmoothing)
         });
-        SetField(panel, "magnitudeGate", new VirtualCrossoverPanel.MagnitudeGateSnapshot(
-            SteadyStateGate(anchorIndex: 0, sampleRate: 96_000),
-            PinnedOffsetMs: null,
-            OppositePinnedOffsetMs: null,
-            SmoothingInverseOctaves: PreviewSmoothing));
-        return panel;
-    }
 
     private static PhaseAnalysisSettings SteadyStateGate(int anchorIndex, int sampleRate) =>
         new(
@@ -255,20 +252,6 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
             RightMs: FrequencyResponseOptions.SteadyStateRightMs,
             Unwrap: false,
             SmoothingInverseOctaves: 0.0);
-
-    private static void SetField(object target, string name, object value) =>
-        typeof(VirtualCrossoverPanel)
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(target, value);
-
-    private static HybridMagnitudes? BuildHybrid(
-        object panel,
-        IReadOnlyList<ProcessedChannel> processed,
-        IReadOnlyList<AnalysisCurve> references) =>
-        typeof(VirtualCrossoverPanel)
-            .GetMethod("BuildHybridMagnitudes", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [processed, references, false, PreviewSmoothing])
-            as HybridMagnitudes;
 }
 
 public sealed class ArrayHarnessFactAttribute : FactAttribute

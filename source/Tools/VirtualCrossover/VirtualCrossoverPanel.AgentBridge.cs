@@ -451,10 +451,11 @@ public partial class VirtualCrossoverPanel
     private async Task<bool> RunAgentAutoDelayAsync(
         RunAutoDelayOperation operation, List<string> summary)
     {
-        (AutoDelayLaunch? launch, string? refusal) = PrepareAutoDelay(interactive: false);
+        (AutoDelayPlan? launch, AutoDelayRefusal? refusal) = VirtualCrossoverAutoDelay.Prepare(
+            session, gatePlacement, consentToBroadWindow: null);
         if (launch == null)
         {
-            summary.Add($"Auto delay: skipped ({refusal}).");
+            summary.Add($"Auto delay: skipped ({refusal!.Summary}).");
             return false;
         }
 
@@ -465,7 +466,7 @@ public partial class VirtualCrossoverPanel
         UseWaitCursor = true;
         try
         {
-            result = await launch.Runner(request);
+            result = await launch.Run(request);
         }
         finally
         {

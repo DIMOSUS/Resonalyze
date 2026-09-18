@@ -143,6 +143,9 @@ internal sealed record GatePlacementVerdict(
             $"{(one ? "that curve is" : "those curves are")} not the response.";
     }
 
+    public string FormatRefusal(string command) =>
+        $"{command} cannot run while the {SideLabel} side's gate is misplaced.";
+
     // Shared by the tooltip and the refusals so they cannot describe a placement differently.
     public string FormatDetail()
     {

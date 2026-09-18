@@ -96,7 +96,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
         bool rightSide,
         bool rightHandDrive,
         bool far) =>
-        Assert.Equal(far, VirtualCrossoverPanel.IsFarSide(rightSide, rightHandDrive));
+        Assert.Equal(far, StagedGroupPlacement.IsFarSide(rightSide, rightHandDrive));
 
     [Fact]
     public void NormalizeStagedDelays_SlidesEveryChannelAndKeepsEveryRelation()
@@ -112,7 +112,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
         };
         var log = new System.Text.StringBuilder();
 
-        VirtualCrossoverPanel.NormalizeStagedDelays([front, sub, rear], alignment, log);
+        StagedGroupPlacement.NormalizeStagedDelays([front, sub, rear], alignment, log);
 
         Assert.Equal(0.0, alignment[front].DelayMs, 6);
         Assert.Equal(2.5, alignment[sub].DelayMs, 6);
@@ -136,7 +136,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
             [rear] = new AlignmentOverride(-3.0, false)
         };
 
-        VirtualCrossoverPanel.NormalizeStagedDelays(
+        StagedGroupPlacement.NormalizeStagedDelays(
             [anchor, sibling, rear], alignment, new System.Text.StringBuilder());
 
         Assert.Equal(3.0, alignment[anchor].DelayMs, 6);
@@ -158,7 +158,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
             [rear] = new AlignmentOverride(12.0, false)
         };
 
-        VirtualCrossoverPanel.NormalizeStagedDelays(
+        StagedGroupPlacement.NormalizeStagedDelays(
             [anchor, rear], alignment, new System.Text.StringBuilder());
 
         Assert.Equal(12.0, alignment[rear].DelayMs, 6);
@@ -176,7 +176,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
             [rear] = new AlignmentOverride(16.0, false)
         };
 
-        VirtualCrossoverPanel.NormalizeStagedDelays(
+        StagedGroupPlacement.NormalizeStagedDelays(
             [front, rear], alignment, new System.Text.StringBuilder());
 
         Assert.Equal(1.0, alignment[front].DelayMs, 6);
@@ -196,7 +196,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
         };
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
-            () => VirtualCrossoverPanel.NormalizeStagedDelays(
+            () => StagedGroupPlacement.NormalizeStagedDelays(
                 [front, rear], alignment, new System.Text.StringBuilder(),
                 maxDelayMs: 20.0, rearFillOffsetMs: 15.0, rearFillCarriers: [rear]));
 
@@ -220,7 +220,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
         };
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
-            () => VirtualCrossoverPanel.NormalizeStagedDelays(
+            () => StagedGroupPlacement.NormalizeStagedDelays(
                 [front, rear], alignment, new System.Text.StringBuilder(),
                 maxDelayMs: 10.0, rearFillOffsetMs: 15.0, rearFillCarriers: [rear]));
 
@@ -240,7 +240,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
         };
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
-            () => VirtualCrossoverPanel.NormalizeStagedDelays(
+            () => StagedGroupPlacement.NormalizeStagedDelays(
                 [front, centre], alignment, new System.Text.StringBuilder(),
                 maxDelayMs: 20.0));
 
@@ -260,7 +260,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
             [rear] = new AlignmentOverride(18.0, false)
         };
 
-        VirtualCrossoverPanel.NormalizeStagedDelays(
+        StagedGroupPlacement.NormalizeStagedDelays(
             [front, rear], alignment, new System.Text.StringBuilder(),
             maxDelayMs: 18.0, rearFillOffsetMs: 15.0, rearFillCarriers: [rear]);
 
@@ -371,7 +371,7 @@ public sealed class VirtualCrossoverStagedAlignmentTests
             var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
             var decisions = new Dictionary<IAlignmentChannel, AlignmentDecision>();
             var log = new System.Text.StringBuilder();
-            VirtualCrossoverPanel.ComputeStereoAlignment(
+            VirtualCrossoverAutoDelay.ComputeStereoAlignment(
                 chainLeft, chainRight, union, twL, twR,
                 bridgeBandLowHz: 2_000, bridgeBandHighHz: 20_000,
                 sceneOffsetMs: 0.0, rightHandDrive,

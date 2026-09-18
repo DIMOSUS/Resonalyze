@@ -4,7 +4,7 @@ using Resonalyze.Dsp;
 namespace Resonalyze;
 
 /// <summary>Runtime state of one L/R channel block; members delegate to the active side, a mono pair routes both to the left. UI-free.</summary>
-internal sealed class VirtualCrossoverChannel : IAlignmentChannel
+internal sealed class VirtualCrossoverChannel : IVirtualCrossoverAlignmentChannel
 {
     private readonly VirtualCrossoverChannelState leftState = new();
     private readonly VirtualCrossoverChannelState rightState = new();
@@ -38,6 +38,8 @@ internal sealed class VirtualCrossoverChannel : IAlignmentChannel
     private VirtualCrossoverChannelState Active => SideState(ActiveRight);
 
     public VirtualCrossoverChannelSettings Settings => Pair.SideFor(ActiveRight);
+
+    VirtualCrossoverChannel IVirtualCrossoverAlignmentChannel.Runtime => this;
     public LiveCaptureDocument? SpatialAverage
     {
         get => Active.SpatialAverage;

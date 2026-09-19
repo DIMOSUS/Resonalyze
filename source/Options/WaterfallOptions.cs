@@ -22,12 +22,15 @@ namespace Resonalyze.Options
             InitializeToolTips();
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement, WaterfallGenerateOptions waterfallGenerateOptions)
+        internal void Init(
+            AnalyzerDocument document,
+            int configuredSampleRate,
+            WaterfallGenerateOptions waterfallGenerateOptions)
         {
-            AttachMeasurement(expSweepMeasurement);
+            AttachMeasurement(document, configuredSampleRate);
             InitializeControls(() =>
             {
-                numericSampleRate.Value = numericSampleRate.ClampValue(expSweepMeasurement.SampleRate);
+                numericSampleRate.Value = numericSampleRate.ClampValue(SampleRate);
 
                 // The settings file clamps wider than the controls; an out-of-range value must not throw.
                 numericWindow.Value = numericWindow.ClampValue(waterfallGenerateOptions.Window);
@@ -74,7 +77,7 @@ namespace Resonalyze.Options
         {
             get
             {
-                int sampleRate = Measurement?.SampleRate ?? 0;
+                int sampleRate = Document == null ? 0 : SampleRate;
                 return sampleRate > 0
                     ? (double)numericSlices.Value * (double)numericStep.Value / sampleRate * 1000.0
                     : 0;
@@ -100,7 +103,7 @@ namespace Resonalyze.Options
 
         protected override void RenderIrPreview()
         {
-            if (Measurement == null)
+            if (Document == null)
             {
                 return;
             }

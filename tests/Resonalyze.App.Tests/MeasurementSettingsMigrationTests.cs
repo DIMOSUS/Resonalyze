@@ -88,9 +88,8 @@ public sealed class MeasurementSettingsMigrationTests
     public void MeasurementTime_SurvivesASaveAndIsNotRestamped()
     {
         // The measurement time, not the save stamp, is the only evidence two array channels came from one sitting.
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
         var measured = new DateTimeOffset(2026, 3, 4, 9, 30, 0, TimeSpan.Zero);
-        measurement.RestoreImpulseResponse(
+        MeasurementResult restored = TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
             sampleRate: 48_000,
@@ -101,9 +100,9 @@ public sealed class MeasurementSettingsMigrationTests
             sweepDeconvolutionPeakIndex: 0,
             measuredAtUtc: measured);
 
-        Assert.Equal(measured, measurement.MeasuredAtUtc);
+        Assert.Equal(measured, restored.MeasuredAtUtc);
 
-        ImpulseResponseFile saved = ImpulseResponseFile.Capture(measurement);
+        ImpulseResponseFile saved = ImpulseResponseFile.From(restored);
         Assert.Equal(measured, saved.MeasuredAtUtc);
         Assert.NotEqual(measured, saved.SavedAtUtc);
     }
@@ -153,80 +152,6 @@ public sealed class MeasurementSettingsMigrationTests
         Assert.Equal(ProtectiveHighPassKind.LinkwitzRiley, protectiveHighPass.Kind);
         Assert.Equal(2_500, protectiveHighPass.FrequencyHz);
         Assert.Equal(24, protectiveHighPass.SlopeDbPerOctave);
-    }
-
-    [Fact]
-    public void RestoreImpulseResponse_PreservesCurrentWasapiConfiguration()
-    {
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.Init(new SweepMeasurementConfiguration(
-            new SweepSignalConfiguration(
-                20,
-                20_000,
-                48_000,
-                24,
-                1.0,
-                PlaybackChannel.Mono),
-            new SweepAudioConfiguration(
-                Backend: AudioBackend.WasapiShared,
-                WaveInputChannelOffset: 0,
-                WaveLoopbackInputChannelOffset: 1,
-                WasapiCaptureEndpointId: "capture-id",
-                WasapiRenderEndpointId: "render-id",
-                WasapiBufferMilliseconds: 40,
-                WasapiCaptureEndpointName: "USB Input",
-                WasapiRenderEndpointName: "USB Output"),
-            new SweepAveragingConfiguration()));
-
-        measurement.RestoreImpulseResponse(
-            20,
-            20_000,
-            48_000,
-            24,
-            1.0,
-            PlaybackChannel.Mono,
-            [System.Numerics.Complex.Zero, System.Numerics.Complex.One],
-            1);
-
-        Assert.Equal(AudioBackend.WasapiShared, measurement.AudioBackend);
-        Assert.Equal("capture-id", measurement.WasapiCaptureEndpointId);
-        Assert.Equal("render-id", measurement.WasapiRenderEndpointId);
-        Assert.Equal(40, measurement.WasapiBufferMilliseconds);
-        Assert.Equal("USB Input", measurement.WasapiCaptureEndpointName);
-        Assert.Equal("USB Output", measurement.WasapiRenderEndpointName);
-    }
-
-    [Fact]
-    public void RestoreImpulseResponse_PreservesCurrentProtectiveHighPassConfiguration()
-    {
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        var protectiveHighPass = new ProtectiveHighPassConfiguration(
-            ProtectiveHighPassKind.LinkwitzRiley,
-            2_000,
-            48);
-        measurement.Init(new SweepMeasurementConfiguration(
-            new SweepSignalConfiguration(
-                20,
-                20_000,
-                48_000,
-                24,
-                1.0,
-                PlaybackChannel.Mono),
-            new SweepAudioConfiguration(),
-            new SweepAveragingConfiguration(),
-            protectiveHighPass));
-
-        measurement.RestoreImpulseResponse(
-            20,
-            20_000,
-            48_000,
-            24,
-            1.0,
-            PlaybackChannel.Mono,
-            [System.Numerics.Complex.Zero, System.Numerics.Complex.One],
-            1);
-
-        Assert.Equal(protectiveHighPass, measurement.ProtectiveHighPass);
     }
 
     [Fact]

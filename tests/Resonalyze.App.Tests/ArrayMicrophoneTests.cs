@@ -63,17 +63,19 @@ public sealed class ArrayMicrophoneTests
                     SyntheticCapture.WithArray(s, tail, 0.25f, 0.125f))));
         using ExpSweepMeasurement measurement = CreateSweep(factory, arrayChannels: [2, 3]);
 
-        bool success = await measurement.RunAsync();
+        MeasurementResult? result = await measurement.RunAsync();
+
+        bool success = result != null;
 
         Assert.True(success, measurement.LastError?.ToString());
-        Assert.Equal(3, measurement.ArrayMicrophones.Count);
+        Assert.Equal(3, result!.ArrayMicrophones.Count);
 
-        Assert.True(measurement.ArrayMicrophones[0].IsMeasurementMicrophone);
-        Assert.Equal(0, measurement.ArrayMicrophones[0].ChannelOffset);
+        Assert.True(result!.ArrayMicrophones[0].IsMeasurementMicrophone);
+        Assert.Equal(0, result!.ArrayMicrophones[0].ChannelOffset);
         Assert.All(
-            measurement.ArrayMicrophones.Skip(1),
+            result!.ArrayMicrophones.Skip(1),
             microphone => Assert.False(microphone.IsMeasurementMicrophone));
-        Assert.Equal([2, 3], measurement.ArrayMicrophones.Skip(1).Select(m => m.ChannelOffset));
+        Assert.Equal([2, 3], result!.ArrayMicrophones.Skip(1).Select(m => m.ChannelOffset));
     }
 
     [Fact]
@@ -85,7 +87,9 @@ public sealed class ArrayMicrophoneTests
                 (_, s, tail, _) => Task.FromResult(SyntheticCapture.WithArray(s, tail, 0.25f))));
         using ExpSweepMeasurement measurement = CreateSweep(factory, arrayChannels: [2]);
 
-        Assert.True(await measurement.RunAsync(), measurement.LastError?.ToString());
+        MeasurementResult? result = await measurement.RunAsync();
+
+        Assert.True(result != null, measurement.LastError?.ToString());
 
         Assert.NotNull(factory.LastRequest);
         Assert.Equal([2], factory.LastRequest!.Routing.ArrayChannels);
@@ -102,11 +106,13 @@ public sealed class ArrayMicrophoneTests
                     SyntheticCapture.WithArray(s, tail, 0.125f, 0.0625f))));
         using ExpSweepMeasurement measurement = CreateSweep(factory, arrayChannels: [2, 3]);
 
-        Assert.True(await measurement.RunAsync(), measurement.LastError?.ToString());
+        MeasurementResult? result = await measurement.RunAsync();
 
-        Assert.Equal(6.02, MidBandDb(measurement.ArrayMicrophones[0]), 1);
-        Assert.Equal(-6.02, MidBandDb(measurement.ArrayMicrophones[1]), 1);
-        Assert.Equal(-12.04, MidBandDb(measurement.ArrayMicrophones[2]), 1);
+        Assert.True(result != null, measurement.LastError?.ToString());
+
+        Assert.Equal(6.02, MidBandDb(result!.ArrayMicrophones[0]), 1);
+        Assert.Equal(-6.02, MidBandDb(result!.ArrayMicrophones[1]), 1);
+        Assert.Equal(-12.04, MidBandDb(result!.ArrayMicrophones[2]), 1);
     }
 
     [Fact]
@@ -127,10 +133,12 @@ public sealed class ArrayMicrophoneTests
                 200.0,
                 24));
 
-        bool success = await measurement.RunAsync();
+        MeasurementResult? result = await measurement.RunAsync();
+
+        bool success = result != null;
 
         Assert.True(success, measurement.LastError?.ToString());
-        ArrayMicrophoneCurve arrayMicrophone = measurement.ArrayMicrophones[1];
+        ArrayMicrophoneCurve arrayMicrophone = result!.ArrayMicrophones[1];
         Assert.Equal(-6.02, MidBandDb(arrayMicrophone), 1);
 
         Assert.Equal(-6.02, arrayMicrophone.LevelsDb[BandOf(100)], 0);
@@ -154,7 +162,7 @@ public sealed class ArrayMicrophoneTests
         using ExpSweepMeasurement measurement = CreateSweep(
             factory, runs: 2, arrayChannels: [2]);
 
-        Assert.False(await measurement.RunAsync());
+        Assert.Null(await measurement.RunAsync());
         Assert.Contains("array microphone on input 3", measurement.LastError!.Message);
         Assert.Contains("clipped", measurement.LastError.Message);
 
@@ -180,7 +188,7 @@ public sealed class ArrayMicrophoneTests
         using ExpSweepMeasurement measurement = CreateSweep(
             factory, runs: 4, arrayChannels: [2]);
 
-        Assert.False(await measurement.RunAsync());
+        Assert.Null(await measurement.RunAsync());
         SweepRunQualityReport report = Assert.IsType<SweepRunQualityReport>(
             measurement.QualityReport);
         Assert.Equal(2, report.AcceptedRuns);
@@ -238,7 +246,7 @@ public sealed class ArrayMicrophoneTests
                         s, tail, noisy: capture == 3))));
         using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 4);
 
-        Assert.False(await measurement.RunAsync());
+        Assert.Null(await measurement.RunAsync());
         SweepRunQualityReport report = Assert.IsType<SweepRunQualityReport>(
             measurement.QualityReport);
         Assert.Equal(2, report.AcceptedRuns);
@@ -260,7 +268,7 @@ public sealed class ArrayMicrophoneTests
                     SyntheticCapture.WithNoisyMeasurementMicrophone(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory, arrayChannels: [2]);
 
-        Assert.False(await measurement.RunAsync());
+        Assert.Null(await measurement.RunAsync());
         Assert.NotNull(measurement.LastError);
         string message = measurement.LastError!.Message;
         Assert.Contains("The transfer function did not form a credible impulse", message);
@@ -278,7 +286,7 @@ public sealed class ArrayMicrophoneTests
                     SyntheticCapture.WithNoisyArrayMicrophone(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory, arrayChannels: [2]);
 
-        Assert.False(await measurement.RunAsync());
+        Assert.Null(await measurement.RunAsync());
         Assert.NotNull(measurement.LastError);
         string message = measurement.LastError!.Message;
         Assert.Contains("array microphone on input 3", message);
@@ -296,7 +304,7 @@ public sealed class ArrayMicrophoneTests
         using ExpSweepMeasurement measurement = CreateSweep(
             factory, arrayChannels: [2, 3]);
 
-        Assert.False(await measurement.RunAsync());
+        Assert.Null(await measurement.RunAsync());
         Assert.NotNull(measurement.LastError);
         string message = measurement.LastError!.Message;
         Assert.Contains("array microphone on input 4", message);
@@ -311,9 +319,11 @@ public sealed class ArrayMicrophoneTests
                 signal, (_, s, tail, _) => Task.FromResult(SyntheticCapture.Good(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        Assert.True(await measurement.RunAsync(), measurement.LastError?.ToString());
+        MeasurementResult? result = await measurement.RunAsync();
 
-        Assert.Empty(measurement.ArrayMicrophones);
+        Assert.True(result != null, measurement.LastError?.ToString());
+
+        Assert.Empty(result!.ArrayMicrophones);
         Assert.NotNull(factory.LastRequest);
         Assert.Empty(factory.LastRequest!.Routing.ArrayChannels);
     }

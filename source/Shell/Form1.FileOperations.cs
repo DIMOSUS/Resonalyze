@@ -1,5 +1,4 @@
-﻿using System.Numerics;
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 using Resonalyze.Integration.Rew;
 using Resonalyze.Ui.Dialogs;
 
@@ -7,11 +6,6 @@ namespace Resonalyze;
 
 public partial class Form1
 {
-    private void SetImpulseResponseSourceFile(string? path)
-    {
-        plotModelFactory.SetImpulseResponseFileName(path);
-    }
-
     private string GetImpulseResponseDialogDirectory()
     {
         if (!string.IsNullOrWhiteSpace(measurementSettings.LastImpulseResponseDirectory) &&
@@ -43,7 +37,7 @@ public partial class Form1
             return;
         }
 
-        if (expSweepMeasurement.HasImpulseResponse && !expSweepMeasurement.InProgress)
+        if (analyzerDocument.Result is { } result && !analyzerDocument.IsBusy)
         {
             await StopLiveCaptureAsync();
 
@@ -65,11 +59,10 @@ public partial class Form1
             commandController.FreezeSaveLoad();
             try
             {
-                ImpulseResponseFile file =
-                    ImpulseResponseFile.Capture(expSweepMeasurement);
+                ImpulseResponseFile file = ImpulseResponseFile.From(result);
                 await file.SaveAsync(dialog.FileName);
-                sessionTracker.MarkSavedFile(dialog.FileName, file);
-                SetImpulseResponseSourceFile(dialog.FileName);
+                sessionTracker.MarkSavedFile(dialog.FileName, file, result);
+                analyzerDocument.Rename(dialog.FileName);
                 UpdateLastImpulseResponseDirectory(dialog.FileName);
                 RefreshCurrentModePlot();
             }
@@ -98,7 +91,7 @@ public partial class Form1
             return;
         }
 
-        if (!expSweepMeasurement.InProgress)
+        if (!analyzerDocument.IsBusy)
         {
             await StopLiveCaptureAsync();
 
@@ -192,23 +185,21 @@ public partial class Form1
         }
         finally
         {
-            commandController.SetSaveAvailable(
-                expSweepMeasurement.HasImpulseResponse);
+            commandController.SetSaveAvailable(analyzerDocument.HasResult);
             FinalizeMeasurementCommandState();
         }
     }
 
-    // Takes the shared revision and checks it between read and install: a disabled Load button does not stop a VDSP Open in analyzers landing first.
+    // Takes its request before the read: a disabled Load button does not stop a VDSP Open in analyzers landing first.
     private async Task LoadImpulseResponseFileAsync(string path)
     {
-        long revision = ++measurementActivationRevision;
-        ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
-        if (revision != measurementActivationRevision)
+        if (analyzerDocument.TryBegin() is not { } request)
         {
             return;
         }
 
-        ApplyImpulseResponseFile(file, path);
+        ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
+        ApplyImpulseResponseFile(request, file, path);
     }
 
     private void SelectFrequencyResponseCalibration(string? calibrationId)
@@ -219,45 +210,15 @@ public partial class Form1
             panel => panel.SelectCalibration(calibrationId, entries));
     }
 
-    // Split from the read so callers can check their guard in between.
-    private void ApplyImpulseResponseFile(ImpulseResponseFile file, string path)
+    private void ApplyImpulseResponseFile(AnalyzerDocument.Request request, ImpulseResponseFile file, string path)
     {
-        (double restoredLowHz, double restoredHighHz) = file.ResolveSweepBand();
-        (double achievedLowHz, double achievedHighHz) = file.ResolveAchievedSweepBand();
-        expSweepMeasurement.RestoreImpulseResponse(
-            restoredLowHz,
-            restoredHighHz,
-            file.SampleRate,
-            file.Bits,
-            file.SweepDurationSeconds,
-            file.PlayChannel,
-            file.GetSweepDeconvolutionImpulseResponse(),
-            file.SweepDeconvolutionPeakIndex,
-            file.MeasurementMode,
-            file.GetTransferImpulseResponse(),
-            file.TransferPeakIndex,
-            file.TransferCoherence,
-            file.AverageRunCount,
-            file.AcceptedAverageRunCount,
-            achievedLowHz,
-            achievedHighHz,
-            file.TimingReference,
-            file.MeasuredLowFrequencyHz,
-            file.MeasuredHighFrequencyHz,
-            file.MeasuredAtUtc > DateTimeOffset.UnixEpoch
-                ? file.MeasuredAtUtc
-                : file.SavedAtUtc);
-        expSweepMeasurement.RestoreLevelSnapshot(file.GetMeterSnapshot());
-        AdoptRestoredResult(
-            file.SplCalibration,
-            file.MicrophoneCalibration,
-            file.ArrayMicrophones?.ToCurves() ?? [],
-            file.ProtectiveHighPass is { } entry
-                ? new ProtectiveHighPassConfiguration(
-                    entry.Kind, entry.FrequencyHz, entry.SlopeDbPerOctave)
-                : null);
-        ApplyLoadedImpulseResponseState(path);
-        sessionTracker.MarkLoadedFile(path, file);
+        MeasurementResult result = file.ToResult();
+        if (!ShowLoadedMeasurement(request, result, path, fromFile: true))
+        {
+            return;
+        }
+
+        sessionTracker.MarkLoadedFile(path, file, result);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
     }
@@ -267,18 +228,16 @@ public partial class Form1
     private async Task OpenVirtualDspSourceInAnalyzersAsync(
         Guid? historyEntryId, string? filePath)
     {
-        if (expSweepMeasurement.InProgress)
+        if (analyzerDocument.TryBegin() is not { } request)
         {
             return;
         }
-
-        long revision = ++measurementActivationRevision;
 
         // The entry is tried, not trusted: its file may be gone while VDSP handed a relocated path; fall through on Unavailable.
         if (historyEntryId is { } entryId &&
             measurementHistoryService.FindById(entryId) != null)
         {
-            switch (await ActivateHistoryEntryAsync(entryId, revision))
+            switch (await ActivateHistoryEntryAsync(entryId, request))
             {
                 case HistoryActivation.Landed:
                     await SelectModeAsync(ModeTab.Frequency);
@@ -302,14 +261,9 @@ public partial class Form1
         commandController.SetLoadAvailable(false);
         try
         {
-            // Read, check, install: a later jump may have landed meanwhile.
+            // A later jump may have landed meanwhile; the request then installs nothing.
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(filePath);
-            if (revision != measurementActivationRevision)
-            {
-                return;
-            }
-
-            ApplyImpulseResponseFile(file, filePath);
+            ApplyImpulseResponseFile(request, file, filePath);
         }
         catch (Exception exception)
         {
@@ -322,7 +276,7 @@ public partial class Form1
         }
         finally
         {
-            commandController.SetSaveAvailable(expSweepMeasurement.HasImpulseResponse);
+            commandController.SetSaveAvailable(analyzerDocument.HasResult);
             FinalizeMeasurementCommandState();
         }
     }
@@ -334,8 +288,14 @@ public partial class Form1
         RewImpulseResponseTextFile file;
         RewImportTimingPlan plan;
         EssSweepRateEstimate? sweepRate;
-        // Claimed before the read so a sweep cannot start meanwhile; released before the redraw (busy draws nothing) and the modal notice.
-        using (expSweepMeasurement.Claim())
+        MeasurementResult result;
+        if (analyzerDocument.TryAcquire() is not { } hold)
+        {
+            return;
+        }
+
+        // Held from the read so a sweep cannot start meanwhile; Install releases it before the redraw (busy draws nothing).
+        using (hold)
         {
             string text = await File.ReadAllTextAsync(path);
             file = await Task.Run(
@@ -364,7 +324,7 @@ public partial class Form1
                     "Measure it in REW with a loopback as the timing reference to import it.");
             }
 
-            // Asked while the claim is held, so no sweep starts during the dialog.
+            // Asked while the document is held, so no sweep starts during the dialog.
             if (!TryPlanRewImportTiming(file, out plan))
             {
                 return;
@@ -381,9 +341,9 @@ public partial class Form1
                 RewMeasurementImport.TakeLevelOut(referenced, levelDbfs);
             }
 
-            double lowHz = file.LowFrequencyHz ?? DefaultImportedLowFrequencyHz;
+            double lowHz = file.LowFrequencyHz ?? RewMeasurementImport.FallbackLowFrequencyHz;
             double highHz = Math.Min(file.HighFrequencyHz ?? double.MaxValue, file.SampleRate / 2.0);
-            RestoreRewImpulseResponse(
+            result = RewMeasurementImport.ToResult(
                 samples,
                 referenced,
                 file.SampleRate,
@@ -395,50 +355,25 @@ public partial class Form1
                 plan.Reference);
         }
 
-        FinishRewImport(path, sourceName: null);
-        NotifyRewImportDecisions(file, plan, sweepRate);
-    }
-
-    // Shared by both REW routes, inside the caller's claim. A missing band falls back to 20 Hz..Nyquist; callers report it.
-    private void RestoreRewImpulseResponse(
-        double[] samples,
-        double[] referenced,
-        int sampleRate,
-        double? lowHz,
-        double? highHz,
-        int sweepLengthSamples,
-        int sweepCount,
-        TimingReference timingReference)
-    {
-        double low = lowHz ?? DefaultImportedLowFrequencyHz;
-        double high = highHz ?? (sampleRate / 2.0);
-        expSweepMeasurement.RestoreImpulseResponse(
-            low,
-            high,
-            sampleRate,
-            ImportedBitDepth,
-            sweepLengthSamples / (double)sampleRate,
-            PlaybackChannel.Mono,
-            ToComplex(samples),
-            RewMeasurementImport.PeakIndexOf(samples),
-            SweepMeasurementMode.LoopbackTransfer,
-            ToComplex(referenced),
-            RewMeasurementImport.PeakIndexOf(referenced),
-            transferCoherence: null,
-            averageRunCount: sweepCount,
-            acceptedAverageRunCount: sweepCount,
-            achievedLowFrequencyHz: low,
-            achievedHighFrequencyHz: high,
-            timingReference: timingReference);
+        if (FinishRewImport(hold, result, path, fromFile: true))
+        {
+            NotifyImportDecisions("REW impulse response imported", RewImportNotes.Describe(file, plan, sweepRate));
+        }
     }
 
     // Enters as a measurement, not a file that could be saved back over its source.
-    private void FinishRewImport(string? path, string? sourceName)
+    private bool FinishRewImport(
+        AnalyzerDocument.Request request, MeasurementResult result, string sourceName, bool fromFile)
     {
-        ApplyLoadedImpulseResponseState(path, sourceName);
-        sessionTracker.MarkMeasurementCompleted(expSweepMeasurement);
+        if (!ShowLoadedMeasurement(request, result, sourceName, fromFile))
+        {
+            return false;
+        }
+
+        sessionTracker.MarkMeasurementCompleted(result);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
+        return true;
     }
 
     // False means cancelled: not an error, no notice.
@@ -475,111 +410,34 @@ public partial class Form1
         return true;
     }
 
-    // An imported measurement looks like a measured one; these notes say how it differs.
-    private void NotifyRewImportDecisions(
-        RewImpulseResponseTextFile file,
-        RewImportTimingPlan plan,
-        EssSweepRateEstimate? sweepRate)
+    // An imported measurement looks like a measured one; the notes say how it differs. Silent when nothing was decided.
+    private void NotifyImportDecisions(string title, IReadOnlyList<string> notes)
     {
-        if (closingInProgress)
+        if (closingInProgress || notes.Count == 0)
         {
             return;
         }
 
-        var notes = new List<string>
-        {
-            FormattableString.Invariant(
-                $"Imported {file.Samples.Length} samples at {file.SampleRate} Hz. The loopback reference sits at sample {file.TimeZeroIndex:0.###} of REW's buffer and is now sample 0 of the transfer response; the fractional part was shifted, not rounded."),
-            RewImportCarriesNoCalibrationNote,
-            FormattableString.Invariant(
-                $"The export states no bit depth and no playback channel: {ImportedBitDepth}-bit and Mono were assumed. Neither changes the samples — they describe the sweep this result is filed under."),
-            DescribeImportedTiming(file.SampleRate, plan, RewExportCannotWitnessOffset),
-            file.SweepLevelDbfs is { } levelDbfs && levelDbfs <= 0
-                ? FormattableString.Invariant(
-                    $"The export states a {levelDbfs:0.#} dBFS sweep. REW scales an impulse response to digital full scale and a transfer function here is divided by the loopback, so that level was taken back out; an analog loopback's gain is not in it.")
-                : "The export states no sweep level, so none was taken out: REW scales to digital full scale, and this " +
-                    "measurement sits lower than one taken here by the level its loopback ran at."
-        };
-        if (file.WasNormalised)
-        {
-            notes.Add(FormattableString.Invariant(
-                $"The export was normalised; its samples were multiplied back by the peak value REW states it had before normalisation ({file.PeakValueBeforeNormalisation:G6}), which restores the level."));
-        }
-
-        if (file.LowFrequencyHz == null || file.HighFrequencyHz == null)
-        {
-            notes.Add(FormattableString.Invariant(
-                $"The header did not state the swept band, so {DefaultImportedLowFrequencyHz:0.#} Hz to Nyquist was assumed; set it right if the sweep was narrower."));
-        }
-
-        notes.Add(sweepRate is { } rate
-            ? FormattableString.Invariant(
-                $"The sweep's rate was read from where its harmonics landed ({string.Join(", ", rate.Orders.Select(order => $"H{order}"))}; the second harmonic sits {rate.SecondsPerNeper * Math.Log(2) * 1000.0:0.#} ms before the arrival): the band and length REW's header states do not give its sweep's rate, and would misplace the distortion view's harmonic windows.")
-            : file.SweepLengthSamples == null
-                ? "No harmonic stood above the noise to read the sweep's rate from, and the header did not state the " +
-                    "sweep's length, so the impulse response's own length stands in: harmonics may not be drawn."
-                : "No harmonic stood above the noise to read the sweep's rate from, so the header's band and sweep " +
-                    "length place the harmonic windows; harmonics may not be drawn.");
-
         MessageBox.Show(
             this,
             string.Join("\r\n\r\n", notes),
-            "REW impulse response imported",
+            title,
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
-    }
-
-    private const string RewImportCarriesNoCalibrationNote =
-        "REW's impulse responses carry no coherence, no level meters and no SPL calibration, " +
-        "and REW applies a microphone calibration to its own curves rather than to the " +
-        "impulse response — so this measurement is uncalibrated here, whatever REW showed.";
-
-    /// <param name="witness">Who vouches for the stated offset, as the sentence's last clause.</param>
-    private static string DescribeImportedTiming(
-        int sampleRate,
-        RewImportTimingPlan plan,
-        string witness)
-    {
-        double arrivalMs = plan.ArrivalSamples / sampleRate * 1000.0;
-        if (plan.Reference == TimingReference.RecordedSweep)
-        {
-            return FormattableString.Invariant(
-                $"The timing offset was left unstated, so this is filed as a recorded sweep: its shape is real and its position is not. Delays within it still mean what they say — a reflection 8 ms after the direct sound is 8 ms — but its arrival cannot be compared with another measurement's. Re-import it with the offset REW was running to place it on this session's time base.");
-        }
-
-        string statedAs = plan.OffsetSeconds == 0
-            ? "You stated no timing offset"
-            : FormattableString.Invariant(
-                $"You stated a {plan.OffsetSeconds * 1000.0:0.####} ms timing offset, which was taken back out");
-        return FormattableString.Invariant(
-            $"{statedAs}, so this measurement is on the session's time base with an arrival of {arrivalMs:0.###} ms. {witness}");
-    }
-
-    private const string RewExportCannotWitnessOffset =
-        "The export itself cannot confirm that: REW folds the offset into the start time and writes it nowhere in the export, so the arrival is true on your word rather than on the file's.";
-
-    // REW's export states no bit depth; this only describes the sweep configuration.
-    private const int ImportedBitDepth = 24;
-
-    private const double DefaultImportedLowFrequencyHz = 20.0;
-
-    private static Complex[] ToComplex(double[] samples)
-    {
-        var values = new Complex[samples.Length];
-        for (int i = 0; i < samples.Length; i++)
-        {
-            values[i] = new Complex(samples[i], 0.0);
-        }
-
-        return values;
     }
 
     // Analyzed against the sweep the current settings describe; enters history like a finished sweep.
     private async Task ImportRecordedSweepAsync(string path)
     {
         AudioFileContent recording;
-        // Claimed before a decode that can take seconds; released before the redraw.
-        using (expSweepMeasurement.Claim())
+        RecordedSweepImport import;
+        if (analyzerDocument.TryAcquire() is not { } hold)
+        {
+            return;
+        }
+
+        // Held before a decode that can take seconds; Install releases it before the redraw.
+        using (hold)
         {
             recording = await Task.Run(() => RecordedSweepFile.Load(path));
             // Handed over rather than applied first, so a rejected recording leaves the screen alone.
@@ -604,53 +462,23 @@ public partial class Form1
                 channel = dialog.SelectedChannel;
             }
 
-            await Task.Run(() => expSweepMeasurement.ImportRecordedSweep(
+            import = await Task.Run(() => ExpSweepMeasurement.ImportRecordedSweep(
                 configuration,
                 recording.Channels,
                 recording.SampleRate,
                 channel));
         }
 
-        ApplyLoadedImpulseResponseState(path);
-        sessionTracker.MarkMeasurementCompleted(expSweepMeasurement);
+        // New session during the decode supersedes it.
+        if (!ShowLoadedMeasurement(hold, import.Result, path, fromFile: true))
+        {
+            return;
+        }
+
+        sessionTracker.MarkMeasurementCompleted(import.Result);
         // An import has no SPL anchor; re-evaluate availability downward.
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
-        NotifyImportDecisions(recording);
-    }
-
-    // Silent when nothing was decided (mono, no stretch).
-    private void NotifyImportDecisions(AudioFileContent recording)
-    {
-        if (closingInProgress)
-        {
-            return;
-        }
-
-        var notes = new List<string>();
-        if (recording.ChannelCount > 1)
-        {
-            int chosen = expSweepMeasurement.ImportedChannelIndex;
-            AudioChannelLevel level = RecordedLevelMetering.MeasureSamples(
-                recording.Channels[chosen]);
-            notes.Add(FormattableString.Invariant(
-                $"The recording has {recording.ChannelCount} channels; {RecordedSweepFile.DescribeChannel(chosen, recording.ChannelCount)} was measured — {level.RmsDbFs:0.0} dBFS RMS, peak {level.PeakDbFs:0.0} dBFS."));
-        }
-        if (expSweepMeasurement.ImportedTimeScalePpm is { } scalePpm)
-        {
-            notes.Add(FormattableString.Invariant(
-                $"The recording ran {Math.Abs(scalePpm):0} ppm {(scalePpm > 0 ? "slower" : "faster")} than the configured sweep, and the reference was rebuilt to match. That is what two devices with their own clocks do — and what a per-octave time in whole milliseconds cannot always express. Left uncorrected it smears the arrival and the phase at the top of the band."));
-        }
-        if (notes.Count == 0)
-        {
-            return;
-        }
-
-        MessageBox.Show(
-            this,
-            string.Join("\r\n\r\n", notes),
-            "Recorded sweep",
-            MessageBoxButtons.OK,
-            MessageBoxIcon.Information);
+        NotifyImportDecisions("Recorded sweep", RecordedSweepFile.DescribeImport(recording, import));
     }
 }

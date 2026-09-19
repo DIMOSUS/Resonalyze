@@ -1,5 +1,4 @@
 using System.Numerics;
-using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
 
@@ -118,7 +117,7 @@ public sealed class CompareSelectionTests
         Assert.Null(selection.GetTimeAlignmentMeasurement());
     }
 
-    private static MeasurementHistorySnapshot CreateSnapshot(
+    private static MeasurementResult CreateSnapshot(
         Complex[]? sweepIr = null,
         Complex[]? transferIr = null,
         int? transferPeakIndex = null,
@@ -129,14 +128,14 @@ public sealed class CompareSelectionTests
         new()
         {
             SampleRate = 48_000,
+            Bits = 24,
             TimingReference = timingReference,
-            SweepDeconvolutionImpulseResponse = sweepIr ?? [new(1, 0)],
-            SweepDeconvolutionPeakIndex = 3,
-            TransferImpulseResponse = transferIr,
-            TransferPeakIndex = transferPeakIndex,
+            SweepDeconvolution = new MeasurementImpulseResponse(sweepIr ?? [new(1, 0)], 3),
+            Transfer = transferIr == null
+                ? null
+                : new MeasurementImpulseResponse(transferIr, transferPeakIndex ?? 0),
             TransferCoherence = coherence,
-            MeterSnapshot = meterSnapshot ?? InputLevelMeterSnapshot.Empty,
-            SplCalibration = calibration,
-            Preview = new MeasurementHistoryPreview()
+            Levels = meterSnapshot ?? InputLevelMeterSnapshot.Empty,
+            SplCalibration = calibration
         };
 }

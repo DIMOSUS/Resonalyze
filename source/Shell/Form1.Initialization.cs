@@ -32,6 +32,7 @@ public partial class Form1
             plotView1,
             () => CurrentMode);
         PlotModelFactory createdPlotModelFactory = new(
+            analyzerDocument,
             expSweepMeasurement,
             noiseMeasurement,
             ResolveCalibration,
@@ -86,7 +87,7 @@ public partial class Form1
             this,
             timeAlignmentPanel,
             timeAlignmentOptions,
-            expSweepMeasurement,
+            analyzerDocument,
             () => SaveMeasurementSettings(),
             () => plotModelFactory.ImpulseResponseFileName,
             compareSelection.GetTimeAlignmentMeasurement);
@@ -282,25 +283,29 @@ public partial class Form1
         EnableFileDrop();
     }
 
-    private void HandleMeasurementCompleted(bool success)
+    private void HandleMeasurementCompleted(MeasurementResult? result)
     {
         TryBeginInvokeOnUiThread(() =>
         {
-            if (success)
+            AnalyzerDocument.Request? run = runRequest;
+            runRequest = null;
+            run?.Dispose();
+            // New session aborts a run, but one finishing meanwhile still completes: it is dropped like an aborted one.
+            MeasurementResult? landed =
+                result != null && run?.Install(result, sourceName: null) == true ? result : null;
+            bool success = landed != null;
+            if (landed != null)
             {
-                // A finished sweep supersedes any in-flight read.
-                measurementActivationRevision++;
                 buttonRecord.Text = "Ready";
-                plotModelFactory.SetImpulseResponseFileName(null);
-                SetImpulseResponseAvailability(true);
-                sessionTracker.MarkMeasurementCompleted(expSweepMeasurement);
+                RefreshMeasurementCommands();
+                sessionTracker.MarkMeasurementCompleted(landed);
                 // Move the view to the run's frozen calibration even from a user entry, or the response is drawn through the wrong mic.
                 SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
             }
             else
             {
                 buttonRecord.Text = expSweepMeasurement.LastError == null ? "Aborted" : "Error";
-                SetImpulseResponseAvailability(false);
+                RefreshMeasurementCommands();
                 ShowMeasurementError("The measurement failed.", expSweepMeasurement.LastError);
             }
 

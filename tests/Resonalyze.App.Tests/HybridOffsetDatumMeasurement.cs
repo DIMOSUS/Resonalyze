@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Numerics;
 using System.Text;
 using Resonalyze.Dsp;
-using Resonalyze.History;
 using Xunit.Abstractions;
 
 namespace Resonalyze.App.Tests;
@@ -92,8 +91,7 @@ public sealed class HybridOffsetDatumMeasurement(ITestOutputHelper output)
             ImpulseResponseFile file = ImpulseResponseFile.LoadAsync(irPath)
                 .GetAwaiter().GetResult();
             var channel = new VirtualCrossoverChannel(VirtualCrossoverSheet.ChannelName(i));
-            ResolvedVirtualDspSource.FromSnapshot(
-                MeasurementHistoryService.CreateSnapshot(file))
+            ResolvedVirtualDspSource.FromResult(file.ToResult())
                 ?.ApplyTo(channel.SideState(rightSide));
             VirtualCrossoverChannelState state = channel.SideState(rightSide);
             if (state.TransferImpulseResponse is not { } ir || state.SampleRate <= 0)

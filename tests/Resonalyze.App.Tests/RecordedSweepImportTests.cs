@@ -47,6 +47,9 @@ public sealed class RecordedSweepImportTests
         return recording;
     }
 
+    private static RecordedSweepImport Import(float[] recording) =>
+        ExpSweepMeasurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
+
     private static float[] Noise(ExpSweepMeasurement measurement)
     {
         var noise = new float[measurement.Sweep!.SweepSamples + 4_096];
@@ -67,13 +70,12 @@ public sealed class RecordedSweepImportTests
         using ExpSweepMeasurement measurement = CreateMeasurement();
         float[] recording = RecordSweep(measurement, startOffset);
 
-        measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
+        MeasurementResult result = Import(recording).Result;
 
-        Assert.True(measurement.HasImpulseResponse);
-        Assert.Equal(SweepMeasurementMode.LoopbackTransfer, measurement.MeasurementMode);
-        Assert.NotNull(measurement.Transfer);
-        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
-        Assert.Equal(1, measurement.AcceptedAverageRunCount);
+        Assert.Equal(SweepMeasurementMode.LoopbackTransfer, result.MeasurementMode);
+        Assert.NotNull(result.Transfer);
+        Assert.Equal(Arrival, result.Transfer!.PeakIndex);
+        Assert.Equal(1, result.AcceptedAverageRunCount);
     }
 
     [Fact]
@@ -92,16 +94,16 @@ public sealed class RecordedSweepImportTests
         float[] recording = RecordSweep(measurement, startOffset: 2_400);
         ApplyHighPass(recording, protectiveHighPass.ToEdge());
 
-        measurement.ImportRecordedSweep(configuration, recording, SampleRate);
+        MeasurementResult result =
+            ExpSweepMeasurement.ImportRecordedSweep(configuration, recording, SampleRate).Result;
 
-        Assert.Equal(TimingReference.RecordedSweep, measurement.TimingReference);
-        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
+        Assert.Equal(TimingReference.RecordedSweep, result.TimingReference);
+        Assert.Equal(Arrival, result.Transfer!.PeakIndex);
         Assert.Equal(
             Arrival,
             Array.IndexOf(
-                measurement.TransferImpulseResponse!,
-                measurement.TransferImpulseResponse!
-                    .MaxBy(sample => sample.Magnitude)));
+                result.Transfer.ImpulseResponse,
+                result.Transfer.ImpulseResponse.MaxBy(sample => sample.Magnitude)));
     }
 
     // A dead input is rarely silent: hum on it can out-measure a quiet microphone.
@@ -116,12 +118,11 @@ public sealed class RecordedSweepImportTests
             humChannel[i] = (float)(0.5 * Math.Sin(2.0 * Math.PI * 50.0 * i / SampleRate));
         }
 
-        measurement.ImportRecordedSweep(
+        RecordedSweepImport import = ExpSweepMeasurement.ImportRecordedSweep(
             Configuration(), [humChannel, sweepChannel], SampleRate);
 
-        Assert.Equal(1, measurement.ImportedChannelIndex);
-        Assert.True(measurement.HasImpulseResponse);
-        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
+        Assert.Equal(1, import.Channel);
+        Assert.Equal(Arrival, import.Result.Transfer!.PeakIndex);
     }
 
     [Fact]
@@ -174,10 +175,10 @@ public sealed class RecordedSweepImportTests
         Assert.True(
             RecordedSweepChannels.IsAmbiguous(qualities),
             $"reference {qualities[0]:0.000} against the microphone {qualities[1]:0.000}");
-        measurement.ImportRecordedSweep(
+        RecordedSweepImport import = ExpSweepMeasurement.ImportRecordedSweep(
             Configuration(), [reference, microphone], SampleRate, channel: 1);
-        Assert.Equal(1, measurement.ImportedChannelIndex);
-        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
+        Assert.Equal(1, import.Channel);
+        Assert.Equal(Arrival, import.Result.Transfer!.PeakIndex);
     }
 
     [Fact]
@@ -199,10 +200,10 @@ public sealed class RecordedSweepImportTests
             recording[i] += echoed[i] * reflectionGain;
         }
 
-        measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
+        MeasurementImpulseResponse imported = Import(recording).Result.Transfer!;
 
-        Complex[] transfer = measurement.TransferImpulseResponse!;
-        int peak = measurement.Transfer!.PeakIndex;
+        Complex[] transfer = imported.ImpulseResponse;
+        int peak = imported.PeakIndex;
         Assert.Equal(Arrival, peak);
         double directLevel = Math.Abs(transfer[peak].Real);
         double reflectionLevel = Math.Abs(transfer[peak + reflectionDelay].Real);
@@ -236,10 +237,10 @@ public sealed class RecordedSweepImportTests
             recording[second + secondReflection + i] += sweep[i] * reflectionGain;
         }
 
-        measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
+        MeasurementImpulseResponse imported = Import(recording).Result.Transfer!;
 
-        Complex[] transfer = measurement.TransferImpulseResponse!;
-        int peak = measurement.Transfer!.PeakIndex;
+        Complex[] transfer = imported.ImpulseResponse;
+        int peak = imported.PeakIndex;
         Assert.Equal(Arrival, peak);
         double direct = Math.Abs(transfer[peak].Real);
         Assert.Equal(
@@ -257,16 +258,14 @@ public sealed class RecordedSweepImportTests
     {
         const int lead = 45 * SampleRate;
         using ExpSweepMeasurement measurement = CreateMeasurement();
-        int sweepSamples = measurement.Sweep!.SweepSamples;
         float[] recording = RecordSweep(measurement, lead, tail: 45 * SampleRate);
 
-        measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
+        MeasurementResult result = Import(recording).Result;
 
-        // Sweep plus the kept 0.5 s lead-in and 2 s tail.
-        Assert.True(
-            measurement.MicrophoneRecordedSamples!.Length <= sweepSamples + (int)(2.5 * SampleRate),
-            $"analyzed {measurement.MicrophoneRecordedSamples.Length} samples of {recording.Length}");
-        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
+        // The analyzed span is the sweep plus a 0.5 s lead-in and a 2 s tail; the stored IRs are sized by it.
+        int stored = result.SweepDeconvolution.ImpulseResponse.Length;
+        Assert.True(stored < 10 * SampleRate, $"stored {stored} samples of a {recording.Length}-sample take");
+        Assert.Equal(Arrival, result.Transfer!.PeakIndex);
     }
 
     // The interference is longer than the sweep, so it ranks first; the import must fall through to the next candidate.
@@ -282,50 +281,24 @@ public sealed class RecordedSweepImportTests
             recording[SampleRate + i] += (float)((random.NextDouble() - 0.5) * 0.6);
         }
 
-        measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
+        MeasurementResult result = Import(recording).Result;
 
-        Assert.True(measurement.HasImpulseResponse);
-        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
+        Assert.Equal(Arrival, result.Transfer!.PeakIndex);
     }
 
-    // The claim spans the decode, which precedes any samples.
+    // The configuration describes the sweep in the file; the engine keeps describing the next run.
     [Fact]
-    public void AClaimCoversTheDecodeAndTheImportTogether()
+    public void AnImportLeavesTheEngineAsItWas()
     {
         using ExpSweepMeasurement measurement = CreateMeasurement();
-        float[] recording = RecordSweep(measurement, 900);
+        ExponentialSineSweep configured = measurement.Sweep!;
+        float[] recording = RecordSweep(measurement, 800);
 
-        using (measurement.Claim())
-        {
-            Assert.True(measurement.InProgress);
-            // A run does not consult InProgress, so it must be refused by name.
-            Assert.Throws<InvalidOperationException>(() => measurement.Init(Configuration()));
-            Assert.Throws<InvalidOperationException>(() => { _ = measurement.RunAsync(); });
-            Assert.True(measurement.InProgress);
-            measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
-            Assert.True(measurement.HasImpulseResponse);
-            Assert.True(measurement.InProgress);
-        }
+        Assert.Throws<InvalidOperationException>(() => Import(Noise(measurement)));
+        _ = ExpSweepMeasurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
 
-        Assert.False(measurement.InProgress);
-        Assert.Throws<InvalidOperationException>(() =>
-        {
-            using IDisposable first = measurement.Claim();
-            using IDisposable second = measurement.Claim();
-        });
-    }
-
-    [Fact]
-    public void ImportHoldsTheMeasurementBusyAndReleasesIt()
-    {
-        using ExpSweepMeasurement measurement = CreateMeasurement();
-
-        measurement.ImportRecordedSweep(
-            Configuration(), RecordSweep(measurement, 800), SampleRate);
-        Assert.False(measurement.InProgress);
-
-        Assert.Throws<InvalidOperationException>(() =>
-            measurement.ImportRecordedSweep(Configuration(), Noise(measurement), SampleRate));
+        Assert.Same(configured, measurement.Sweep);
+        Assert.Equal(200, measurement.LowFrequencyHz);
         Assert.False(measurement.InProgress);
     }
 
@@ -351,15 +324,14 @@ public sealed class RecordedSweepImportTests
             recording[SampleRate / 2 + i] = excitation[i] * 0.35f;
         }
 
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.Init(configuration);
-        measurement.ImportRecordedSweep(configuration, recording, SampleRate);
+        RecordedSweepImport import =
+            ExpSweepMeasurement.ImportRecordedSweep(configuration, recording, SampleRate);
 
-        Assert.NotNull(measurement.ImportedTimeScalePpm);
+        Assert.NotNull(import.TimeScalePpm);
         // The lattice is 12.5 ppm but the objective is flat near the optimum; measured accuracy is +-40 ppm.
-        Assert.Equal(ppm, measurement.ImportedTimeScalePpm!.Value, tolerance: 50.0);
+        Assert.Equal(ppm, import.TimeScalePpm!.Value, tolerance: 50.0);
         double sharpness = TransferIrDiagnostics.MeasureArrivalSharpnessDb(
-            measurement.TransferImpulseResponse!, SampleRate) ?? double.NaN;
+            import.Result.Transfer!.ImpulseResponse, SampleRate) ?? double.NaN;
         Assert.True(sharpness >= 20.0, $"sharpness after correction was {sharpness:0.0} dB");
     }
 
@@ -383,12 +355,11 @@ public sealed class RecordedSweepImportTests
             recording[SampleRate / 2 + i] = excitation[i] * 0.35f;
         }
 
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.Init(configuration);
-        measurement.ImportRecordedSweep(configuration, recording, SampleRate);
+        RecordedSweepImport import =
+            ExpSweepMeasurement.ImportRecordedSweep(configuration, recording, SampleRate);
 
-        Assert.NotNull(measurement.ImportedTimeScalePpm);
-        Assert.Equal(ppm, measurement.ImportedTimeScalePpm!.Value, tolerance: 50.0);
+        Assert.NotNull(import.TimeScalePpm);
+        Assert.Equal(ppm, import.TimeScalePpm!.Value, tolerance: 50.0);
     }
 
     private static float[] Resample(float[] source, double scale)
@@ -457,9 +428,7 @@ public sealed class RecordedSweepImportTests
         measurement.Init(configuration);
         float[] recording = RecordSweep(measurement, SampleRate / 2);
 
-        measurement.ImportRecordedSweep(configuration, recording, SampleRate);
-
-        Assert.Null(measurement.ImportedTimeScalePpm);
+        Assert.Null(ExpSweepMeasurement.ImportRecordedSweep(configuration, recording, SampleRate).TimeScalePpm);
     }
 
     private static SweepMeasurementConfiguration LongConfiguration() =>
@@ -474,24 +443,18 @@ public sealed class RecordedSweepImportTests
         using ExpSweepMeasurement measurement = CreateMeasurement();
         float[] exported = measurement.Sweep!.SweepData.ToArray();
 
-        measurement.ImportRecordedSweep(Configuration(), exported, SampleRate);
-
-        Assert.True(measurement.HasImpulseResponse);
-        Assert.Equal(Arrival, measurement.Transfer!.PeakIndex);
+        Assert.Equal(Arrival, Import(exported).Result.Transfer!.PeakIndex);
     }
 
     [Fact]
-    public void ImportKeepsTheRecordingButClaimsNoLoopback()
+    public void ImportMetersTheRecordingButClaimsNoLoopback()
     {
         using ExpSweepMeasurement measurement = CreateMeasurement();
-        float[] recording = RecordSweep(measurement, 1_000);
 
-        measurement.ImportRecordedSweep(Configuration(), recording, SampleRate);
+        MeasurementResult result = Import(RecordSweep(measurement, 1_000)).Result;
 
-        Assert.Equal(recording, measurement.MicrophoneRecordedSamples);
-        Assert.Null(measurement.LoopbackRecordedSamples);
-        Assert.True(measurement.CurrentLevels.Microphone.Available);
-        Assert.False(measurement.CurrentLevels.Loopback.Available);
+        Assert.True(result.Levels.Microphone.Available);
+        Assert.False(result.Levels.Loopback.Available);
     }
 
     // The reference is generated, so the recording gain multiplies the whole transfer (unlike live H1).
@@ -501,12 +464,12 @@ public sealed class RecordedSweepImportTests
         using ExpSweepMeasurement loud = CreateMeasurement();
         using ExpSweepMeasurement quiet = CreateMeasurement();
 
-        loud.ImportRecordedSweep(Configuration(), RecordSweep(loud, 1_500, gain: 0.5f), SampleRate);
-        quiet.ImportRecordedSweep(Configuration(), RecordSweep(quiet, 1_500, gain: 0.05f), SampleRate);
+        MeasurementImpulseResponse loudTransfer = Import(RecordSweep(loud, 1_500, gain: 0.5f)).Result.Transfer!;
+        MeasurementImpulseResponse quietTransfer = Import(RecordSweep(quiet, 1_500, gain: 0.05f)).Result.Transfer!;
 
-        Assert.Equal(quiet.Transfer!.PeakIndex, loud.Transfer!.PeakIndex);
-        double loudPeak = Math.Abs(loud.TransferImpulseResponse![loud.Transfer.PeakIndex].Real);
-        double quietPeak = Math.Abs(quiet.TransferImpulseResponse![quiet.Transfer.PeakIndex].Real);
+        Assert.Equal(quietTransfer.PeakIndex, loudTransfer.PeakIndex);
+        double loudPeak = Math.Abs(loudTransfer.ImpulseResponse[loudTransfer.PeakIndex].Real);
+        double quietPeak = Math.Abs(quietTransfer.ImpulseResponse[quietTransfer.PeakIndex].Real);
         Assert.Equal(10.0, loudPeak / quietPeak, tolerance: 0.1);
     }
 
@@ -516,80 +479,27 @@ public sealed class RecordedSweepImportTests
     {
         const int startOffset = 900;
         using ExpSweepMeasurement measurement = CreateMeasurement();
-        measurement.ImportRecordedSweep(Configuration(), RecordSweep(measurement, startOffset), SampleRate);
-        Assert.Equal(TimingReference.RecordedSweep, measurement.TimingReference);
+        MeasurementResult result = Import(RecordSweep(measurement, startOffset)).Result;
+        Assert.Equal(TimingReference.RecordedSweep, result.TimingReference);
         string path = Path.Combine(
             Path.GetTempPath(),
             "resonalyze-imported-" + Guid.NewGuid().ToString("N") + ".json");
 
         try
         {
-            await ImpulseResponseFile.Capture(measurement).SaveAsync(path);
+            await ImpulseResponseFile.From(result).SaveAsync(path);
             ImpulseResponseFile reloaded = await ImpulseResponseFile.LoadAsync(path);
 
             Assert.Equal(SweepMeasurementMode.LoopbackTransfer, reloaded.MeasurementMode);
             Assert.Equal(TimingReference.RecordedSweep, reloaded.TimingReference);
             Assert.Equal(SampleRate, reloaded.SampleRate);
             Assert.Equal(Arrival, reloaded.TransferPeakIndex!.Value);
-
-            using var restored = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-            (double lowHz, double highHz) = reloaded.ResolveSweepBand();
-            restored.RestoreImpulseResponse(
-                lowHz,
-                highHz,
-                reloaded.SampleRate,
-                reloaded.Bits,
-                reloaded.SweepDurationSeconds,
-                reloaded.PlayChannel,
-                reloaded.GetSweepDeconvolutionImpulseResponse(),
-                reloaded.SweepDeconvolutionPeakIndex,
-                reloaded.MeasurementMode,
-                reloaded.GetTransferImpulseResponse(),
-                reloaded.TransferPeakIndex,
-                reloaded.TransferCoherence,
-                reloaded.AverageRunCount,
-                reloaded.AcceptedAverageRunCount,
-                timingReference: reloaded.TimingReference);
-            Assert.Equal(TimingReference.RecordedSweep, restored.TimingReference);
+            Assert.Equal(TimingReference.RecordedSweep, reloaded.ToResult().TimingReference);
         }
         finally
         {
             File.Delete(path);
         }
-    }
-
-    [Fact]
-    public void AMeasuredSweepIsReferencedToItsOwnLoopback()
-    {
-        using ExpSweepMeasurement measurement = CreateMeasurement();
-        Assert.Equal(TimingReference.SynchronizedLoopback, measurement.TimingReference);
-
-        measurement.ImportRecordedSweep(
-            Configuration(), RecordSweep(measurement, 700), SampleRate);
-        Assert.Equal(TimingReference.RecordedSweep, measurement.TimingReference);
-
-        measurement.Init(Configuration());
-        Assert.Equal(TimingReference.SynchronizedLoopback, measurement.TimingReference);
-    }
-
-    [Fact]
-    public void ARejectedImportLeavesThePreviousResultAlone()
-    {
-        const int startOffset = 700;
-        using ExpSweepMeasurement measurement = CreateMeasurement();
-        measurement.ImportRecordedSweep(
-            Configuration(),
-            RecordSweep(measurement, startOffset),
-            SampleRate);
-        int peakBefore = measurement.Transfer!.PeakIndex;
-        Complex[] impulseResponseBefore = measurement.SweepDeconvolutionImpulseResponse!;
-
-        Assert.Throws<InvalidOperationException>(() =>
-            measurement.ImportRecordedSweep(Configuration(), Noise(measurement), SampleRate));
-
-        Assert.True(measurement.HasImpulseResponse);
-        Assert.Equal(peakBefore, measurement.Transfer!.PeakIndex);
-        Assert.Same(impulseResponseBefore, measurement.SweepDeconvolutionImpulseResponse);
     }
 
     // The file and the analyzed span are longer than the sweep; only counting from the excitation start catches it.
@@ -603,7 +513,7 @@ public sealed class RecordedSweepImportTests
         Assert.True(truncated.Length > sweepSamples);
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-            measurement.ImportRecordedSweep(Configuration(), truncated, SampleRate));
+            ExpSweepMeasurement.ImportRecordedSweep(Configuration(), truncated, SampleRate));
 
         Assert.Contains("cut short", exception.Message);
     }
@@ -620,10 +530,9 @@ public sealed class RecordedSweepImportTests
         }
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-            measurement.ImportRecordedSweep(Configuration(), recording, SampleRate));
+            ExpSweepMeasurement.ImportRecordedSweep(Configuration(), recording, SampleRate));
 
         Assert.Contains("clipped", exception.Message);
-        Assert.False(measurement.HasImpulseResponse);
     }
 
     [Fact]
@@ -633,11 +542,10 @@ public sealed class RecordedSweepImportTests
         float[] recording = RecordSweep(measurement, 1_000);
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-            measurement.ImportRecordedSweep(Configuration(), recording, 44_100));
+            ExpSweepMeasurement.ImportRecordedSweep(Configuration(), recording, 44_100));
 
         Assert.Contains("44100 Hz", exception.Message);
         Assert.Contains("48000 Hz", exception.Message);
-        Assert.False(measurement.HasImpulseResponse);
     }
 
     [Fact]
@@ -647,10 +555,9 @@ public sealed class RecordedSweepImportTests
         float[] truncated = RecordSweep(measurement, 0)[..(measurement.Sweep!.SweepSamples / 2)];
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-            measurement.ImportRecordedSweep(Configuration(), truncated, SampleRate));
+            ExpSweepMeasurement.ImportRecordedSweep(Configuration(), truncated, SampleRate));
 
         Assert.Contains("cannot hold the whole excitation", exception.Message);
-        Assert.False(measurement.HasImpulseResponse);
     }
 
     // On field takes a 5 % pace mismatch scored as high for compactness as the correct one.
@@ -666,11 +573,10 @@ public sealed class RecordedSweepImportTests
             Configuration().Averaging);
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-            measurement.ImportRecordedSweep(mismatched, recording, SampleRate));
+            ExpSweepMeasurement.ImportRecordedSweep(mismatched, recording, SampleRate));
 
         // Either gate may speak: here the shape gate fails too; on field takes only arrival sharpness did.
         Assert.Contains("per-octave time", exception.Message);
-        Assert.False(measurement.HasImpulseResponse);
     }
 
     [Fact]
@@ -679,9 +585,8 @@ public sealed class RecordedSweepImportTests
         using ExpSweepMeasurement measurement = CreateMeasurement();
 
         InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-            measurement.ImportRecordedSweep(Configuration(), Noise(measurement), SampleRate));
+            ExpSweepMeasurement.ImportRecordedSweep(Configuration(), Noise(measurement), SampleRate));
 
         Assert.Contains("not a recording of this sweep", exception.Message);
-        Assert.False(measurement.HasImpulseResponse);
     }
 }

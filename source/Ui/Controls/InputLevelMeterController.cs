@@ -29,6 +29,9 @@ internal sealed class InputLevelMeterController : IDisposable
         noiseMeasurement.LevelsAvailable += HandleLevels;
     }
 
+    /// <summary>A stored result's levels, as its capture left them.</summary>
+    public void Show(InputLevelMeterSnapshot levels) => HandleLevels(levels);
+
     public void Clear()
     {
         if (owner.IsDisposed || !owner.IsHandleCreated)

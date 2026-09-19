@@ -13,7 +13,7 @@ public partial class Form1
     private bool CanOpenDroppedFiles(Control over, IReadOnlyList<string> files) =>
         files.Count == 1 &&
         !openingDroppedFile &&
-        !expSweepMeasurement.InProgress &&
+        !analyzerDocument.IsBusy &&
         (over == buttonCompare
             ? DroppedFile.HasJsonExtension(files[0])
             : DroppedFile.HasOpenableExtension(files[0]));

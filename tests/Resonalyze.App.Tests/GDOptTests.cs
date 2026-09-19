@@ -8,14 +8,14 @@ public sealed class GDOptTests
     [Fact]
     public void WindowModeAndCyclesRoundTripThroughThePanel()
     {
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        var measurement = new AnalyzerDocument();
         var options = new FrequencyResponseOptions
         {
             GroupDelayWindowMode = PhaseWindowMode.FrequencyDependent,
             GroupDelayFdwCycles = 8
         };
         using var panel = new GDOpt();
-        panel.Init(measurement, options, new CurveVisibilityOptions());
+        panel.Init(measurement, 48_000, options, new CurveVisibilityOptions());
         Assert.True(panel.FdwCyclesEnabled);
 
         var written = new FrequencyResponseOptions
@@ -32,14 +32,14 @@ public sealed class GDOptTests
     [Fact]
     public void CyclesAreOnlyLiveUnderFdw_AndInvalidStoredCyclesFallBack()
     {
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        var measurement = new AnalyzerDocument();
         var options = new FrequencyResponseOptions
         {
             GroupDelayWindowMode = PhaseWindowMode.Fixed,
             GroupDelayFdwCycles = 123
         };
         using var panel = new GDOpt();
-        panel.Init(measurement, options, new CurveVisibilityOptions());
+        panel.Init(measurement, 48_000, options, new CurveVisibilityOptions());
         Assert.False(panel.FdwCyclesEnabled);
 
         var written = new FrequencyResponseOptions();

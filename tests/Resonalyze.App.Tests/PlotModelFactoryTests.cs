@@ -12,9 +12,9 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void MeasurementPlotTitles_IncludeImpulseResponseFileName()
     {
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var measurement = new TestAnalyzer();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
             sampleRate: 44_100,
@@ -27,10 +27,10 @@ public sealed class PlotModelFactoryTests
                 Complex.One,
                 Complex.Zero
             ],
-            sweepDeconvolutionPeakIndex: 1);
+            sweepDeconvolutionPeakIndex: 1));
 
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
-        factory.SetImpulseResponseFileName(@"C:\Temp\My Measurement.json");
+        measurement.Document.Rename(@"C:\Temp\My Measurement.json");
 
         Assert.Equal(
             "Impulse Response - My Measurement.json",
@@ -58,9 +58,9 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void MeasurementPlotTitles_FallBackToBaseTitlesWithoutFileName()
     {
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var measurement = new TestAnalyzer();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
             sampleRate: 44_100,
@@ -73,10 +73,10 @@ public sealed class PlotModelFactoryTests
                 Complex.One,
                 Complex.Zero
             ],
-            sweepDeconvolutionPeakIndex: 1);
+            sweepDeconvolutionPeakIndex: 1));
 
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
-        factory.SetImpulseResponseFileName(null);
+        measurement.Document.Rename(null);
 
         Assert.Equal(
             "Frequency Response",
@@ -167,7 +167,7 @@ public sealed class PlotModelFactoryTests
 
         LineSeries fixedMeasured = MeasuredGroupDelaySeries(factory);
         GroupDelayCurveSet legacy = DataHelper.GetGroupDelayCurves(
-            new MeasurementPlotContext(measurement).CreatePrimaryMeasurement(),
+            new MeasurementPlotContext(measurement.Document).CreatePrimaryMeasurement(),
             options.GroupDelayGateOffsetMs,
             options.GroupDelayLeftMs,
             options.GroupDelayPlateauMs,
@@ -525,7 +525,7 @@ public sealed class PlotModelFactoryTests
     {
         using var measurement = CreateTransferMeasurement();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
-        measurement.ArrayMicrophones = SyntheticArray();
+        measurement.Open(measurement.Result with { ArrayMicrophones = SyntheticArray() });
 
         var off = new CurveVisibilityOptions();
         Assert.DoesNotContain(
@@ -555,7 +555,7 @@ public sealed class PlotModelFactoryTests
     {
         using var measurement = CreateTransferMeasurement();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
-        measurement.ArrayMicrophones = SyntheticArray();
+        measurement.Open(measurement.Result with { ArrayMicrophones = SyntheticArray() });
         var shown = new CurveVisibilityOptions { ShowArraySpread = true };
 
         OxyPlot.PlotModel model = CreateFactory(
@@ -643,7 +643,7 @@ public sealed class PlotModelFactoryTests
         AssertRelativePhaseSlope(series, AnalysisCurveKind.Primary, expectedChange);
 
         IImpulseMeasurement mainView =
-            new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
+            new MeasurementPlotContext(measurement.Document).CreatePrimaryMeasurement();
         var compareView = new ImpulseMeasurementView(
             compareImpulse, compareSample, sampleRate);
         PhaseAnalysisSettings autoSettings = phaseOptions.CreatePhaseAnalysisSettings();
@@ -746,7 +746,7 @@ public sealed class PlotModelFactoryTests
             CalibrationId = MicrophoneCalibrationIds.ZeroDegrees,
             SmoothingInverseOctaves = smoothing
         };
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(
             measurement,
@@ -798,8 +798,8 @@ public sealed class PlotModelFactoryTests
         // The sum has no band of its own: it stops where both contributors stop and plays where either does.
         var impulse = new Complex[2048];
         impulse[64] = Complex.One;
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        using var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 800,
             highFrequencyHz: 20_000,
             sampleRate: 44_100,
@@ -812,7 +812,7 @@ public sealed class PlotModelFactoryTests
             transferImpulseResponse: impulse,
             transferPeakIndex: 64,
             achievedLowFrequencyHz: 800,
-            achievedHighFrequencyHz: 20_000);
+            achievedHighFrequencyHz: 20_000));
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
 
@@ -866,9 +866,9 @@ public sealed class PlotModelFactoryTests
         // Compare IR equals the main IR: coherent sum is +20·log10(2) dB everywhere.
         AnalysisCurve main = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(
-                measurement.TransferImpulseResponse!,
-                measurement.TransferPeakIndex,
-                measurement.SampleRate),
+                measurement.Result.Transfer!.ImpulseResponse,
+                measurement.Result.Transfer!.PeakIndex,
+                measurement.Result.SampleRate),
             new FrequencyResponseOptions(),
             calibration: null);
         double expectedDelta = 20.0 * Math.Log10(2.0);
@@ -899,9 +899,9 @@ public sealed class PlotModelFactoryTests
 
         AnalysisCurve main = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(
-                measurement.TransferImpulseResponse!,
-                measurement.TransferPeakIndex,
-                measurement.SampleRate),
+                measurement.Result.Transfer!.ImpulseResponse,
+                measurement.Result.Transfer!.PeakIndex,
+                measurement.Result.SampleRate),
             new FrequencyResponseOptions(),
             calibration: null);
         double expectedDelta = 20.0 * Math.Log10(2.0);
@@ -1143,15 +1143,15 @@ public sealed class PlotModelFactoryTests
             ir[peak + i] = new Complex(Math.Exp(-i / 200.0) * Math.Cos(i * 0.3), 0);
         }
 
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var measurement = new TestAnalyzer();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
             playChannel: PlaybackChannel.Mono,
             sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
-            transferImpulseResponse: ir, transferPeakIndex: peak);
+            transferImpulseResponse: ir, transferPeakIndex: peak));
 
         var options = new ImpulseResponseOptions { AmplitudeScale = scale, ShowImpulse = true };
         PlotModelFactory factory =
@@ -1188,7 +1188,7 @@ public sealed class PlotModelFactoryTests
         Assert.True(timeAxis.Maximum < timeAxis.AbsoluteMaximum);
     }
 
-    private static (ExpSweepMeasurement Measurement, NoiseMeasurement Noise) BandedCabin(
+    private static (TestAnalyzer Measurement, NoiseMeasurement Noise) BandedCabin(
         double toneHz, int sampleRate = 48_000, int arrival = 480)
     {
         var ir = new Complex[16_384];
@@ -1208,16 +1208,16 @@ public sealed class PlotModelFactoryTests
             }
         }
 
-        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        var measurement = new TestAnalyzer();
         var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000, sampleRate: sampleRate, bits: 24,
             sweepDurationSeconds: 1.0,
             playChannel: PlaybackChannel.Mono,
             sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
-            transferImpulseResponse: ir, transferPeakIndex: peak);
+            transferImpulseResponse: ir, transferPeakIndex: peak));
         return (measurement, noise);
     }
 
@@ -1230,7 +1230,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void ImpulseResponse_StatesHowLateTheBandPeaksWhenTheDriverPlaysThere()
     {
-        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        (TestAnalyzer measurement, NoiseMeasurement noise) = BandedCabin(250);
         using (measurement)
         using (noise)
         {
@@ -1255,7 +1255,7 @@ public sealed class PlotModelFactoryTests
     public void ImpulseResponse_RefusesTheBandOffsetWhereTheDriverDoesNotPlay()
     {
         // Field case: at 63 Hz a tweeter's "band peak" is leakage landing seconds after the arrival.
-        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(8_000);
+        (TestAnalyzer measurement, NoiseMeasurement noise) = BandedCabin(8_000);
         using (measurement)
         using (noise)
         {
@@ -1279,7 +1279,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void ImpulseResponse_OffersNoBandOffsetWithoutABandFilter()
     {
-        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        (TestAnalyzer measurement, NoiseMeasurement noise) = BandedCabin(250);
         using (measurement)
         using (noise)
         {
@@ -1301,7 +1301,7 @@ public sealed class PlotModelFactoryTests
         bool showImpulse, bool showStep)
     {
         // A series naming an axis the model lacks cannot bind, so hiding a trace must keep its axis.
-        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        (TestAnalyzer measurement, NoiseMeasurement noise) = BandedCabin(250);
         using (measurement)
         using (noise)
         {
@@ -1330,7 +1330,7 @@ public sealed class PlotModelFactoryTests
         ImpulseAmplitudeScale scale)
     {
         // Explicit Minimum/Maximum would win over the data range in OxyPlot and clip a louder overlay.
-        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        (TestAnalyzer measurement, NoiseMeasurement noise) = BandedCabin(250);
         using (measurement)
         using (noise)
         {
@@ -1367,7 +1367,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void ImpulseResponse_FramesOverlaysEvenWithEveryLiveTraceHidden()
     {
-        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        (TestAnalyzer measurement, NoiseMeasurement noise) = BandedCabin(250);
         using (measurement)
         using (noise)
         {
@@ -1386,10 +1386,10 @@ public sealed class PlotModelFactoryTests
             ImpulseOverlayFrame frame = factory.ImpulseFrame;
 
             Assert.Empty(model.Series);
-            Assert.Equal(measurement.Transfer!.PeakIndex, frame.OriginSamples, precision: 9);
+            Assert.Equal(measurement.Result.Transfer!.PeakIndex, frame.OriginSamples, precision: 9);
             Assert.NotNull(frame.ReferencePeak);
             Assert.True(frame.ReferencePeak > 0.0);
-            Assert.Equal(measurement.SampleRate, frame.SampleRate);
+            Assert.Equal(measurement.Result.SampleRate, frame.SampleRate);
             Assert.Same(options, frame.Options);
         }
     }
@@ -1397,7 +1397,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void ImpulseResponse_PinsTheDecibelFloorButNotTheTop()
     {
-        (ExpSweepMeasurement measurement, NoiseMeasurement noise) = BandedCabin(250);
+        (TestAnalyzer measurement, NoiseMeasurement noise) = BandedCabin(250);
         using (measurement)
         using (noise)
         {
@@ -1429,15 +1429,15 @@ public sealed class PlotModelFactoryTests
         ir[peak] = Complex.One;
         ir[7000] = new Complex(0.2, 0);
 
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var measurement = new TestAnalyzer();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000, sampleRate: 44_100, bits: 24, sweepDurationSeconds: 1.0,
             playChannel: PlaybackChannel.Mono,
             sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
-            transferImpulseResponse: ir, transferPeakIndex: peak);
+            transferImpulseResponse: ir, transferPeakIndex: peak));
 
         var options = new ImpulseResponseOptions
         {
@@ -1494,7 +1494,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void CreateFrequencyResponse_InSplMode_UsesTheSplAxisAndLimits()
     {
-        ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        TestAnalyzer measurement = CreateTransferMeasurement();
         var anchor = new SplCalibration
         {
             ReferenceLevelDbSpl = 94,
@@ -1505,11 +1505,10 @@ public sealed class PlotModelFactoryTests
             MicrophoneChannelOffset = 0,
             InputDeviceNumber = -1
         };
-        measurement.MeasurementSplCalibration = anchor;
-        measurement.MeasurementInput = anchor.CaptureIdentity;
-        measurement.RestoreLevelSnapshot(new InputLevelMeterSnapshot(
+        measurement.Open(measurement.Result with { SplCalibration = anchor });
+        measurement.Open(measurement.Result with { Levels = new InputLevelMeterSnapshot(
             new InputLevelMeterEntry(true, -3, -6, false, false),
-            new InputLevelMeterEntry(true, -6, -9, false, true)));
+            new InputLevelMeterEntry(true, -6, -9, false, true)) });
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
 
         var splOptions = new FrequencyResponseOptions
@@ -1530,7 +1529,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void CreateFrequencyResponse_SplWithoutCalibration_IsViewOnly()
     {
-        ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        TestAnalyzer measurement = CreateTransferMeasurement();
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
         var splOptions = new FrequencyResponseOptions
         {
@@ -1558,7 +1557,7 @@ public sealed class PlotModelFactoryTests
     public void CreateFrequencyResponse_InSplMode_DrawsCompareWithItsOwnOffset()
     {
         const int peakSample = 64;
-        ExpSweepMeasurement measurement = CreateSplTransferMeasurement(
+        TestAnalyzer measurement = CreateSplTransferMeasurement(
             peakSample, loopbackPeakDbFs: -6, referenceLevelDbSpl: 94, measuredLevelDbFs: -20);
         // K_main = -6 + (94 - -20) = 108 dB at 0 dBr.
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
@@ -1601,7 +1600,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void CreateFrequencyResponse_InSplMode_OmitsAnUncalibratedCompareAndSaysSo()
     {
-        ExpSweepMeasurement measurement = CreateSplTransferMeasurement(
+        TestAnalyzer measurement = CreateSplTransferMeasurement(
             peakSample: 64, loopbackPeakDbFs: -6, referenceLevelDbSpl: 94,
             measuredLevelDbFs: -20);
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
@@ -1631,7 +1630,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void CreateFrequencyResponse_SplViewOnly_StillDrawsACalibratedCompare()
     {
-        ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        TestAnalyzer measurement = CreateTransferMeasurement();
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
 
         PlotModelFactory factory = CreateFactory(
@@ -1666,7 +1665,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void CreateFrequencyResponse_InSplMode_LiftsHarmonicsWithThePrimaryHidden()
     {
-        using ExpSweepMeasurement measurement = CreateSplSweepWithSecondHarmonic();
+        using TestAnalyzer measurement = CreateSplSweepWithSecondHarmonic();
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
 
         LineSeries SecondHarmonic(bool showPrimary)
@@ -1729,7 +1728,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void CreateFrequencyResponse_HarmonicsBelowTheNoiseFloor_GetANeutralNote()
     {
-        using ExpSweepMeasurement measurement = CreateSweepWithNoiseFloorOnly();
+        using TestAnalyzer measurement = CreateSweepWithNoiseFloorOnly();
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
 
         OxyPlot.PlotModel model = CreateFactory(measurement, noise)
@@ -1762,7 +1761,7 @@ public sealed class PlotModelFactoryTests
             deconvolution[i] = new Complex(0.3 * Math.Cos(0.3 * (i - h2.PeakSample)), 0.0);
         }
 
-        using ExpSweepMeasurement measurement = CreateSweepMeasurement(deconvolution, sweep);
+        using TestAnalyzer measurement = CreateSweepMeasurement(deconvolution, sweep);
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
 
         OxyPlot.PlotModel model = CreateFactory(measurement, noise)
@@ -1785,7 +1784,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void CreateFrequencyResponse_InRelativeMode_LeavesRoomForAPaddedLoopback()
     {
-        ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        TestAnalyzer measurement = CreateTransferMeasurement();
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
 
         OxyPlot.PlotModel model = CreateFactory(measurement, noise)
@@ -1806,8 +1805,8 @@ public sealed class PlotModelFactoryTests
     {
         var transferImpulse = new Complex[2048];
         transferImpulse[64] = new Complex(10.0, 0.0);
-        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
             sampleRate: 44_100,
@@ -1818,7 +1817,7 @@ public sealed class PlotModelFactoryTests
             sweepDeconvolutionPeakIndex: 64,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: transferImpulse,
-            transferPeakIndex: 64);
+            transferPeakIndex: 64));
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
 
         OxyPlot.PlotModel padded = CreateFactory(measurement, noise)
@@ -1837,7 +1836,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void CreateLiveSpectrum_RelativeAxis_ClearsAPaddedLoopback()
     {
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         PlotModelFactory factory = CreateFactory(measurement, noise);
 
@@ -1849,13 +1848,13 @@ public sealed class PlotModelFactoryTests
             $"the live dB ceiling of {dbAxis.AbsoluteMaximum} dB cannot show a padded loopback");
     }
 
-    private static ExpSweepMeasurement CreateSweepOnlyMeasurement()
+    private static TestAnalyzer CreateSweepOnlyMeasurement()
     {
         var sweep = new Complex[2048];
         sweep[64] = Complex.One;
 
-        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
             sampleRate: 44_100,
@@ -1863,23 +1862,23 @@ public sealed class PlotModelFactoryTests
             sweepDurationSeconds: 1.0,
             playChannel: PlaybackChannel.Mono,
             sweepDeconvolutionImpulseResponse: sweep,
-            sweepDeconvolutionPeakIndex: 64);
+            sweepDeconvolutionPeakIndex: 64));
         return measurement;
     }
 
-    private static ExpSweepMeasurement CreateTransferMeasurement(int peakSample = 64)
+    private static TestAnalyzer CreateTransferMeasurement(int peakSample = 64)
     {
         var transferImpulse = new Complex[2048];
         transferImpulse[peakSample] = Complex.One;
         return CreateTransferMeasurement(transferImpulse, peakSample, 44_100);
     }
 
-    private static ExpSweepMeasurement CreateTransferMeasurement(
+    private static TestAnalyzer CreateTransferMeasurement(
         Complex[] transferImpulse, int peakSample, int sampleRate)
     {
 
-        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
             sampleRate: sampleRate,
@@ -1893,18 +1892,18 @@ public sealed class PlotModelFactoryTests
             transferPeakIndex: peakSample,
             // Stated achieved band: a regenerated 1 s sweep would reach full amplitude inside the grid and mask the points.
             achievedLowFrequencyHz: 20,
-            achievedHighFrequencyHz: 20_000);
+            achievedHighFrequencyHz: 20_000));
         return measurement;
     }
 
     // K = loopbackPeakDbFs + (referenceLevelDbSpl - measuredLevelDbFs).
-    private static ExpSweepMeasurement CreateSplTransferMeasurement(
+    private static TestAnalyzer CreateSplTransferMeasurement(
         int peakSample,
         double loopbackPeakDbFs,
         double referenceLevelDbSpl,
         double measuredLevelDbFs)
     {
-        ExpSweepMeasurement measurement = CreateTransferMeasurement(peakSample);
+        TestAnalyzer measurement = CreateTransferMeasurement(peakSample);
         var anchor = new SplCalibration
         {
             ReferenceLevelDbSpl = referenceLevelDbSpl,
@@ -1915,17 +1914,16 @@ public sealed class PlotModelFactoryTests
             MicrophoneChannelOffset = 0,
             InputDeviceNumber = -1
         };
-        measurement.MeasurementSplCalibration = anchor;
-        measurement.MeasurementInput = anchor.CaptureIdentity;
-        measurement.RestoreLevelSnapshot(new InputLevelMeterSnapshot(
+        measurement.Open(measurement.Result with { SplCalibration = anchor });
+        measurement.Open(measurement.Result with { Levels = new InputLevelMeterSnapshot(
             new InputLevelMeterEntry(true, -3, -6, false, false),
             new InputLevelMeterEntry(
-                true, loopbackPeakDbFs, loopbackPeakDbFs - 3, false, false)));
+                true, loopbackPeakDbFs, loopbackPeakDbFs - 3, false, false)) });
         return measurement;
     }
 
     // Flat |H1|, flat -34 dBc HD2 and a 0 dBr primary: every SPL level is K (108 dB) plus the curve's dB.
-    private static ExpSweepMeasurement CreateSplSweepWithSecondHarmonic()
+    private static TestAnalyzer CreateSplSweepWithSecondHarmonic()
     {
         const int sampleRate = 48_000;
         const int octaves = 10;
@@ -1942,8 +1940,8 @@ public sealed class PlotModelFactoryTests
         var transferImpulse = new Complex[2048];
         transferImpulse[transferPeak] = Complex.One;
 
-        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: sweep.StartFrequencyHz,
             highFrequencyHz: sweep.EndFrequencyHz,
             sampleRate: sampleRate,
@@ -1956,7 +1954,7 @@ public sealed class PlotModelFactoryTests
             transferImpulseResponse: transferImpulse,
             transferPeakIndex: transferPeak,
             achievedLowFrequencyHz: sweep.StartFrequencyHz,
-            achievedHighFrequencyHz: sweep.EndFrequencyHz);
+            achievedHighFrequencyHz: sweep.EndFrequencyHz));
 
         var anchor = new SplCalibration
         {
@@ -1968,11 +1966,10 @@ public sealed class PlotModelFactoryTests
             MicrophoneChannelOffset = 0,
             InputDeviceNumber = -1
         };
-        measurement.MeasurementSplCalibration = anchor;
-        measurement.MeasurementInput = anchor.CaptureIdentity;
-        measurement.RestoreLevelSnapshot(new InputLevelMeterSnapshot(
+        measurement.Open(measurement.Result with { SplCalibration = anchor });
+        measurement.Open(measurement.Result with { Levels = new InputLevelMeterSnapshot(
             new InputLevelMeterEntry(true, -3, -6, false, false),
-            new InputLevelMeterEntry(true, -6, -9, false, false)));
+            new InputLevelMeterEntry(true, -6, -9, false, false)) });
         return measurement;
     }
 
@@ -2000,20 +1997,20 @@ public sealed class PlotModelFactoryTests
         return deconvolution;
     }
 
-    private static ExpSweepMeasurement CreateSweepWithNoiseFloorOnly()
+    private static TestAnalyzer CreateSweepWithNoiseFloorOnly()
     {
         EssSweepMetadata sweep = NoiseFixtureSweep();
         return CreateSweepMeasurement(NoisyCleanDeconvolution(sweep), sweep);
     }
 
-    private static ExpSweepMeasurement CreateSweepMeasurement(
+    private static TestAnalyzer CreateSweepMeasurement(
         Complex[] deconvolution, EssSweepMetadata sweep)
     {
         var transferImpulse = new Complex[2048];
         transferImpulse[64] = Complex.One;
 
-        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: sweep.StartFrequencyHz,
             highFrequencyHz: sweep.EndFrequencyHz,
             sampleRate: (int)sweep.SampleRateHz,
@@ -2026,19 +2023,19 @@ public sealed class PlotModelFactoryTests
             transferImpulseResponse: transferImpulse,
             transferPeakIndex: 64,
             achievedLowFrequencyHz: sweep.StartFrequencyHz,
-            achievedHighFrequencyHz: sweep.EndFrequencyHz);
+            achievedHighFrequencyHz: sweep.EndFrequencyHz));
         return measurement;
     }
 
-    private static ExpSweepMeasurement CreateTransferMeasurementWithCoherence()
+    private static TestAnalyzer CreateTransferMeasurementWithCoherence()
     {
         var transferImpulse = new Complex[2048];
         transferImpulse[64] = Complex.One;
         double[] coherence = new double[1025];
         Array.Fill(coherence, 0.9);
 
-        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
             sampleRate: 44_100,
@@ -2050,12 +2047,12 @@ public sealed class PlotModelFactoryTests
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: transferImpulse,
             transferPeakIndex: 64,
-            transferCoherence: coherence);
+            transferCoherence: coherence));
         return measurement;
     }
 
     private static PlotModelFactory CreateFactory(
-        ExpSweepMeasurement measurement,
+        TestAnalyzer measurement,
         NoiseMeasurement noiseMeasurement,
         ImpulseResponseOptions? impulseOptions = null,
         FrequencyResponseOptions? groupDelayOptions = null,
@@ -2073,7 +2070,8 @@ public sealed class PlotModelFactoryTests
             $"resonalyze-calibration-{Guid.NewGuid():N}.txt");
 
         return new PlotModelFactory(
-            measurement,
+            measurement.Document,
+            measurement.Engine,
             noiseMeasurement,
             id => calibrationsById != null
                 ? calibrationsById(id)
@@ -2128,9 +2126,9 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void CreateLiveSpectrum_InSplMode_UsesTheSplAxis()
     {
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
-        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
+        measurement.Engine.SplCalibration = LiveAnchorMatching(noise, 94, -16);
         var options = new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Rta,
@@ -2154,7 +2152,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void LiveSplOffset_UnavailableWithoutOrWithMismatchedCalibration()
     {
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         var options = new LiveSpectrumOptions
         {
@@ -2173,7 +2171,7 @@ public sealed class PlotModelFactoryTests
 
         SplCalibration mismatched = LiveAnchorMatching(noise, 94, -16);
         mismatched.SampleRate = 48_000;
-        measurement.SplCalibration = mismatched;
+        measurement.Engine.SplCalibration = mismatched;
         Assert.Null(factory.LiveSplOffsetDb);
         Assert.Equal(
             MagnitudeScale.SoundPressureLevel, factory.EffectiveLiveSpectrumScale);
@@ -2183,9 +2181,9 @@ public sealed class PlotModelFactoryTests
     public void LiveSplPeakHold_HoldsBandPowerNotTheSumOfPerBinMaxima()
     {
         // Two frames in different bins of one band must not peak-hold to the sum of bin maxima (+3 dB).
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
-        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
+        measurement.Engine.SplCalibration = LiveAnchorMatching(noise, 94, -16);
         var options = new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Rta,
@@ -2230,7 +2228,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void CreateLiveSpectrum_MicOnly_ShowsTheRtaWithNoCoherenceAxis()
     {
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
         noise.Init(44_100, 24, 60, PlaybackChannel.Mono, sequenceLength: 2048, waveInputChannelOffset: 0);
         Assert.True(noise.IsMicOnly);
@@ -2248,7 +2246,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void LiveRta_InSplMode_IsLiftedByTheCalibrationOffset()
     {
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
 
         // The SPL RTA is power-integrated, so only the offset difference is compared.
@@ -2265,9 +2263,9 @@ public sealed class PlotModelFactoryTests
         var magnitude = new double[noise.SequenceLength / 2];
         Array.Fill(magnitude, 0.1);
 
-        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
+        measurement.Engine.SplCalibration = LiveAnchorMatching(noise, 94, -16);
         LineSeries lower = factory.BuildInputMagnitudeSeries(magnitude);
-        measurement.SplCalibration = LiveAnchorMatching(noise, 104, -16);
+        measurement.Engine.SplCalibration = LiveAnchorMatching(noise, 104, -16);
         LineSeries higher = factory.BuildInputMagnitudeSeries(magnitude);
 
         Assert.Equal(lower.Points.Count, higher.Points.Count);
@@ -2282,7 +2280,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void LiveRtaTilt_FlattensPinkOnTheRelativeAxis()
     {
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         // Periodic pink is an exact power law, so the cancellation is exact (random pink models the Kellett bank).
         var options = new LiveSpectrumOptions
@@ -2319,7 +2317,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void LiveRtaTilt_IsInertInTransferMode()
     {
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         var options = new LiveSpectrumOptions
         {
@@ -2349,9 +2347,9 @@ public sealed class PlotModelFactoryTests
     public void LiveSplTilt_FlattensWhiteOnTheBandAxis()
     {
         // Band power tilts flat white by +3 dB/oct, so the compensation follows the band law.
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
-        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
+        measurement.Engine.SplCalibration = LiveAnchorMatching(noise, 94, -16);
         var options = new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Rta,
@@ -2385,7 +2383,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void AnMmmCaptureKeepsTheMicrophoneItsRunWasTakenThrough()
     {
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         var options = new LiveSpectrumOptions
         {
@@ -2431,7 +2429,7 @@ public sealed class PlotModelFactoryTests
     [Fact]
     public void AnMmmCaptureDividesOutTheFilterItsRunWasTakenThrough()
     {
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         var options = new LiveSpectrumOptions
         {
@@ -2479,7 +2477,7 @@ public sealed class PlotModelFactoryTests
     public void MmmWithoutAnAnchorKeepsBandPowerOnARelativeAxis()
     {
         // The pipeline and the absolute axis are independent: an unanchored capture must not land at raw dBFS on the SPL axis.
-        using ExpSweepMeasurement measurement = CreateTransferMeasurement();
+        using TestAnalyzer measurement = CreateTransferMeasurement();
         using NoiseMeasurement noise = CreateLiveAnalyzer();
         var options = new LiveSpectrumOptions
         {
@@ -2502,7 +2500,7 @@ public sealed class PlotModelFactoryTests
         Assert.NotEmpty(relative.Points);
         Assert.All(relative.Points, point => Assert.True(double.IsFinite(point.Y)));
 
-        measurement.SplCalibration = LiveAnchorMatching(noise, 94, -16);
+        measurement.Engine.SplCalibration = LiveAnchorMatching(noise, 94, -16);
         PlotModelFactory anchored =
             CreateFactory(measurement, noise, liveSpectrumOptions: options);
         Assert.True(anchored.LiveUsesBandPower);

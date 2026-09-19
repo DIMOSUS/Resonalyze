@@ -15,8 +15,8 @@ public sealed class PROptTests
         impulse[directSample] = Complex.One;
         impulse[directSample + 480] = new Complex(0.8, 0.0);
 
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        using var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
             sampleRate,
@@ -27,7 +27,7 @@ public sealed class PROptTests
             sweepDeconvolutionPeakIndex: directSample,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: impulse,
-            transferPeakIndex: directSample);
+            transferPeakIndex: directSample));
 
         var options = new FrequencyResponseOptions
         {
@@ -43,10 +43,10 @@ public sealed class PROptTests
             Unwrap = true
         };
         using var panel = new PROpt();
-        panel.Init(measurement, options, new CurveVisibilityOptions());
+        panel.Init(measurement.Document, sampleRate, options, new CurveVisibilityOptions());
 
         IImpulseMeasurement view =
-            new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
+            new MeasurementPlotContext(measurement.Document).CreatePrimaryMeasurement();
         var fdwSettings = new PhaseAnalysisSettings(
             options.PhaseWindowMode,
             options.PhaseFdwCycles,

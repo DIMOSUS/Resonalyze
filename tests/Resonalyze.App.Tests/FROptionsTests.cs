@@ -8,7 +8,7 @@ public sealed class FROptionsTests
     [Fact]
     public void MagnitudeWindowModeRoundTripsThroughThePanel()
     {
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        var measurement = new AnalyzerDocument();
         var options = new FrequencyResponseOptions
         {
             MagnitudeWindowMode = PhaseWindowMode.FrequencyDependent,
@@ -17,6 +17,7 @@ public sealed class FROptionsTests
         using var panel = new FROptions();
         panel.Init(
             measurement,
+            48_000,
             options,
             new CurveVisibilityOptions(),
             []);
@@ -31,7 +32,7 @@ public sealed class FROptionsTests
     [Fact]
     public void InvalidStoredCyclesFallBackToTheDefaultChoice()
     {
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        var measurement = new AnalyzerDocument();
         var options = new FrequencyResponseOptions
         {
             MagnitudeWindowMode = PhaseWindowMode.Fixed,
@@ -40,6 +41,7 @@ public sealed class FROptionsTests
         using var panel = new FROptions();
         panel.Init(
             measurement,
+            48_000,
             options,
             new CurveVisibilityOptions(),
             []);

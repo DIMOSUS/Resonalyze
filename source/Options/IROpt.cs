@@ -20,10 +20,11 @@ namespace Resonalyze.Options
             Disposed += (_, _) => toolTip.Dispose();
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement, ImpulseResponseOptions opt)
+        /// <param name="sampleRate">The open result's rate, or the configured one when nothing is open.</param>
+        public void Init(int sampleRate, ImpulseResponseOptions opt)
         {
+            this.sampleRate = sampleRate;
             // The settings file clamps wider than the control; an out-of-range value must not throw.
-            sampleRate = expSweepMeasurement?.SampleRate ?? 0;
             numericLength.Value = numericLength.ClampValue(opt.Length);
             numericEnvelopeSmoothing.Value =
                 numericEnvelopeSmoothing.ClampValue(opt.EnvelopeSmoothingMs);

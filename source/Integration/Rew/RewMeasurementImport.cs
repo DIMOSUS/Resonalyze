@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 using System.Text.Json;
 using Resonalyze.Dsp;
 
@@ -207,6 +208,58 @@ internal sealed class RewMeasurementImport
             : fallback;
 
     public const double FallbackLowFrequencyHz = 20.0;
+
+    /// <summary>REW states no bit depth; this only describes the sweep the result is filed under.</summary>
+    public const int ImportedBitDepth = 24;
+
+    /// <summary>A REW impulse response as a measurement, for both REW routes: a loopback transfer, uncalibrated, with no
+    /// coherence, level meters or time of its own.</summary>
+    /// <param name="lowHz">Null when REW stated no band: 20 Hz to Nyquist stands in, and the caller reports it.</param>
+    public static MeasurementResult ToResult(
+        double[] samples,
+        double[] referenced,
+        int sampleRate,
+        double? lowHz,
+        double? highHz,
+        int sweepLengthSamples,
+        int sweepCount,
+        TimingReference timingReference)
+    {
+        double low = lowHz ?? FallbackLowFrequencyHz;
+        double high = highHz ?? sampleRate / 2.0;
+        int runs = Math.Clamp(sweepCount, 1, 64);
+        return new MeasurementResult
+        {
+            SampleRate = sampleRate,
+            Bits = ImportedBitDepth,
+            PlaybackChannel = PlaybackChannel.Mono,
+            LowFrequencyHz = low,
+            HighFrequencyHz = high,
+            AchievedLowFrequencyHz = low,
+            AchievedHighFrequencyHz = high,
+            MeasuredLowFrequencyHz = low,
+            MeasuredHighFrequencyHz = high,
+            SweepDurationSeconds = sweepLengthSamples / (double)sampleRate,
+            MeasuredAtUtc = DateTimeOffset.UtcNow,
+            MeasurementMode = SweepMeasurementMode.LoopbackTransfer,
+            TimingReference = timingReference,
+            SweepDeconvolution = new MeasurementImpulseResponse(ToComplex(samples), PeakIndexOf(samples)),
+            Transfer = new MeasurementImpulseResponse(ToComplex(referenced), PeakIndexOf(referenced)),
+            AverageRunCount = runs,
+            AcceptedAverageRunCount = runs
+        }.Validated();
+    }
+
+    private static Complex[] ToComplex(double[] samples)
+    {
+        var values = new Complex[samples.Length];
+        for (int i = 0; i < samples.Length; i++)
+        {
+            values[i] = new Complex(samples[i], 0.0);
+        }
+
+        return values;
+    }
 
     /// <summary>REW's listed range, the top clamped to Nyquist; 20 Hz to Nyquist when REW lists none.</summary>
     public static (double LowHz, double HighHz, bool FromRew) ResolveBand(RewMeasurementSummary measurement, int sampleRate)

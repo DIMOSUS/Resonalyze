@@ -38,13 +38,14 @@ namespace Resonalyze.Options
             InitializeToolTips();
         }
 
-        public void Init(
-            ExpSweepMeasurement expSweepMeasurement,
+        internal void Init(
+            AnalyzerDocument document,
+            int configuredSampleRate,
             FrequencyResponseOptions opt,
             CurveVisibilityOptions visibility,
             Func<CompareAnalysisSource?>? getCompare = null)
         {
-            AttachMeasurement(expSweepMeasurement);
+            AttachMeasurement(document, configuredSampleRate);
             this.getCompare = getCompare;
             manualDetrendMilliseconds = opt.PhaseDetrendMs;
             InitializeControls(() =>
@@ -142,13 +143,12 @@ namespace Resonalyze.Options
             resolved = 0.0;
             try
             {
-                if (Measurement is not { } measurement ||
-                    measurement.TransferImpulseResponse is not { Length: > 0 })
+                if (Document is not { } document || Measurement?.HasTransfer != true)
                 {
                     return false;
                 }
                 IImpulseMeasurement impulse =
-                    new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
+                    new MeasurementPlotContext(document).CreatePrimaryMeasurement();
                 PhaseAnalysisSettings settings = CreateCurrentPhaseAnalysisSettings(
                     PhaseDetrendMode.Auto);
                 resolved = DataHelper.ResolvePhaseDetrendMilliseconds(impulse, settings);
@@ -200,9 +200,9 @@ namespace Resonalyze.Options
         // Slope flattens the average excess-phase trend; peak references the dominant arrival.
         private void ApplyEstimatedTau(bool useSlope)
         {
-            if (Measurement is not { } measurement ||
-                measurement.TransferImpulseResponse is not { Length: > 0 } ||
-                measurement.InProgress)
+            if (Document is not { } document ||
+                Measurement?.HasTransfer != true ||
+                document.IsBusy)
             {
                 System.Media.SystemSounds.Beep.Play();
                 return;
@@ -211,7 +211,7 @@ namespace Resonalyze.Options
             try
             {
                 IImpulseMeasurement impulse =
-                    new MeasurementPlotContext(measurement).CreatePrimaryMeasurement();
+                    new MeasurementPlotContext(document).CreatePrimaryMeasurement();
                 (double slopeMs, double peakMs) = EstimateCurrentPhaseDetrend(impulse);
                 numericOffset.Value = numericOffset.ClampValue(
                     useSlope ? slopeMs : peakMs);

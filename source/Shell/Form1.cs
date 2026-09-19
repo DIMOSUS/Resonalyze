@@ -18,6 +18,8 @@ namespace Resonalyze
         private readonly IAudioSessionFactory audioSessionFactory =
             new AudioSessionFactory(AudioBackendRegistry.CreateDefault());
         private readonly ExpSweepMeasurement expSweepMeasurement;
+        // The open measurement every analysis mode reads; the engine only produces the next one.
+        private readonly AnalyzerDocument analyzerDocument = new();
         private readonly NoiseMeasurement noiseMeasurement;
         private readonly MicrophoneCalibrationService microphoneCalibration;
         private readonly WaterfallGenerateOptions waterfallGenOptions = new()
@@ -109,6 +111,7 @@ namespace Resonalyze
                 ShowCalibrationProblem);
             sessionTracker = new MeasurementSessionTracker(
                 measurementHistoryService,
+                analyzerDocument,
                 CaptureCurrentSessionSnapshot);
             Form1ControllerDependencies dependencies = CreateControllerDependencies();
             plotViewports = dependencies.PlotViewports;

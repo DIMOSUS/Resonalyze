@@ -33,10 +33,10 @@ public sealed class AbstractedMeasurementTests
                 signal, (_, s, tail, _) => Task.FromResult(SyntheticCapture.Good(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        bool success = await measurement.RunAsync();
+        MeasurementResult? result = await measurement.RunAsync();
 
-        Assert.True(success, measurement.LastError?.ToString());
-        Assert.True(measurement.HasImpulseResponse);
+        Assert.True(result != null, measurement.LastError?.ToString());
+        Assert.Equal(TimingReference.SynchronizedLoopback, result.TimingReference);
         Assert.Equal(1, factory.DuplexOpenCount);
     }
 
@@ -73,19 +73,18 @@ public sealed class AbstractedMeasurementTests
                 2_000,
                 24)));
 
-        bool success = await measurement.RunAsync();
+        MeasurementResult? compensated = await measurement.RunAsync();
 
-        Assert.True(success, measurement.LastError?.ToString());
-        Assert.NotNull(measurement.TransferImpulseResponse);
-        Assert.NotNull(measurement.SweepDeconvolutionImpulseResponse);
-        Assert.Equal(runCount > 1, measurement.TransferCoherence != null);
+        Assert.True(compensated != null, measurement.LastError?.ToString());
+        Assert.NotNull(compensated.Transfer);
+        Assert.Equal(runCount > 1, compensated.TransferCoherence != null);
 
         using ExpSweepMeasurement uncompensated = CreateSweep(factory);
-        bool uncompensatedSuccess = await uncompensated.RunAsync();
-        Assert.True(uncompensatedSuccess, uncompensated.LastError?.ToString());
+        MeasurementResult? raw = await uncompensated.RunAsync();
+        Assert.True(raw != null, uncompensated.LastError?.ToString());
 
-        Complex[] transfer = measurement.TransferImpulseResponse!.ToArray();
-        Complex[] rawTransfer = uncompensated.TransferImpulseResponse!.ToArray();
+        Complex[] transfer = compensated.Transfer!.ImpulseResponse.ToArray();
+        Complex[] rawTransfer = raw.Transfer!.ImpulseResponse.ToArray();
         Fourier.Forward(transfer, FourierOptions.Matlab);
         Fourier.Forward(rawTransfer, FourierOptions.Matlab);
         int cornerBin = (int)Math.Round(2_000.0 * transfer.Length / measurement.SampleRate);
@@ -105,7 +104,7 @@ public sealed class AbstractedMeasurementTests
             gatedStopBandRelativeDb < -140.0,
             $"unreliable stopband remained at {gatedStopBandRelativeDb:0.0} dB");
 
-        if (measurement.TransferCoherence is { } coherence)
+        if (compensated.TransferCoherence is { } coherence)
         {
             int coherenceFftLength = (coherence.Length - 1) * 2;
             int coherenceStopBin = (int)Math.Round(
@@ -117,8 +116,8 @@ public sealed class AbstractedMeasurementTests
             Assert.InRange(coherence[coherenceCornerBin], 0.99, 1.0);
         }
         Assert.Equal(
-            uncompensated.SweepDeconvolutionImpulseResponse,
-            measurement.SweepDeconvolutionImpulseResponse);
+            raw.SweepDeconvolution.ImpulseResponse,
+            compensated.SweepDeconvolution.ImpulseResponse);
     }
 
     [Fact]
@@ -129,20 +128,20 @@ public sealed class AbstractedMeasurementTests
                 signal,
                 (_, s, tail, _) => Task.FromResult(SyntheticCapture.Good(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
-        bool impulseObserverCalled = false;
+        bool levelsObserverCalled = false;
         bool completionObserverCalled = false;
-        measurement.ImpulseResponseChanged += () =>
-            throw new InvalidOperationException("broken impulse observer");
-        measurement.ImpulseResponseChanged += () => impulseObserverCalled = true;
+        measurement.LevelsAvailable += _ =>
+            throw new InvalidOperationException("broken levels observer");
+        measurement.LevelsAvailable += _ => levelsObserverCalled = true;
         measurement.Completed += _ =>
             throw new InvalidOperationException("broken completion observer");
-        measurement.Completed += success => completionObserverCalled = success;
+        measurement.Completed += result => completionObserverCalled = result != null;
 
-        bool result = await measurement.RunAsync();
+        MeasurementResult? result = await measurement.RunAsync();
 
-        Assert.True(result);
+        Assert.NotNull(result);
         Assert.Null(measurement.LastError);
-        Assert.True(impulseObserverCalled);
+        Assert.True(levelsObserverCalled);
         Assert.True(completionObserverCalled);
     }
 
@@ -155,13 +154,13 @@ public sealed class AbstractedMeasurementTests
                 signal, (_, s, tail, _) => Task.FromResult(SyntheticCapture.Good(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 3);
 
-        bool success = await measurement.RunAsync();
+        MeasurementResult? result = await measurement.RunAsync();
 
-        Assert.True(success, measurement.LastError?.ToString());
+        Assert.True(result != null, measurement.LastError?.ToString());
         Assert.Equal(1, factory.DuplexOpenCount);
         Assert.NotNull(opened);
         Assert.Equal(3, opened!.CaptureCount);
-        Assert.Equal(3, measurement.AcceptedAverageRunCount);
+        Assert.Equal(3, result.AcceptedAverageRunCount);
     }
 
     [Fact]
@@ -175,7 +174,7 @@ public sealed class AbstractedMeasurementTests
                     : SyntheticCapture.Good(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        Assert.False(await measurement.RunAsync());
+        Assert.Null(await measurement.RunAsync());
         Assert.Contains("silent", measurement.LastError!.Message);
         SweepRunQualityReport report = Assert.IsType<SweepRunQualityReport>(
             measurement.QualityReport);
@@ -193,10 +192,9 @@ public sealed class AbstractedMeasurementTests
                     SyntheticCapture.QuietCleanLoopback(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        bool success = await measurement.RunAsync();
+        bool success = await measurement.RunAsync() != null;
 
         Assert.True(success, measurement.LastError?.ToString());
-        Assert.True(measurement.HasImpulseResponse);
     }
 
     [Fact]
@@ -208,10 +206,9 @@ public sealed class AbstractedMeasurementTests
                     SyntheticCapture.BleedLoopback(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        bool success = await measurement.RunAsync();
+        bool success = await measurement.RunAsync() != null;
 
         Assert.False(success);
-        Assert.False(measurement.HasImpulseResponse);
         Assert.NotNull(measurement.LastError);
         Assert.Contains(
             "transfer function did not form a credible impulse response",
@@ -230,10 +227,9 @@ public sealed class AbstractedMeasurementTests
                     SyntheticCapture.DistortingLoopback(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        bool success = await measurement.RunAsync();
+        bool success = await measurement.RunAsync() != null;
 
         Assert.False(success);
-        Assert.False(measurement.HasImpulseResponse);
         Assert.NotNull(measurement.LastError);
         string message = measurement.LastError!.Message;
         Assert.Contains("LOOPBACK REFERENCE is distorting", message);
@@ -254,7 +250,7 @@ public sealed class AbstractedMeasurementTests
                     : SyntheticCapture.NoiseMicrophone(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 2);
 
-        bool success = await measurement.RunAsync();
+        bool success = await measurement.RunAsync() != null;
 
         Assert.False(success);
         Assert.NotNull(measurement.LastError);
@@ -323,7 +319,7 @@ public sealed class AbstractedMeasurementTests
                     : SyntheticCapture.NoiseMicrophoneLoudLoopback(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory, runs: 2);
 
-        bool success = await measurement.RunAsync();
+        bool success = await measurement.RunAsync() != null;
 
         Assert.False(success);
         Assert.NotNull(measurement.LastError);
@@ -341,7 +337,7 @@ public sealed class AbstractedMeasurementTests
                     SyntheticCapture.DistortingBothInputs(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        bool success = await measurement.RunAsync();
+        bool success = await measurement.RunAsync() != null;
 
         Assert.False(success);
         Assert.NotNull(measurement.LastError);
@@ -360,7 +356,7 @@ public sealed class AbstractedMeasurementTests
                     SyntheticCapture.NoiseMicrophone(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        bool success = await measurement.RunAsync();
+        bool success = await measurement.RunAsync() != null;
 
         Assert.False(success);
         Assert.NotNull(measurement.LastError);
@@ -377,10 +373,9 @@ public sealed class AbstractedMeasurementTests
                     SyntheticCapture.NaNMicrophone(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        bool success = await measurement.RunAsync();
+        bool success = await measurement.RunAsync() != null;
 
         Assert.False(success);
-        Assert.False(measurement.HasImpulseResponse);
         Assert.NotNull(measurement.LastError);
         Assert.Contains(
             "its shape could not be measured at all",
@@ -396,10 +391,9 @@ public sealed class AbstractedMeasurementTests
                     SyntheticCapture.NoiseMicrophone(s, tail))));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        bool success = await measurement.RunAsync();
+        bool success = await measurement.RunAsync() != null;
 
         Assert.False(success);
-        Assert.False(measurement.HasImpulseResponse);
         Assert.NotNull(measurement.LastError);
         Assert.Contains(
             "transfer function did not form a credible impulse response",
@@ -422,11 +416,11 @@ public sealed class AbstractedMeasurementTests
                 }));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        Task<bool> running = measurement.RunAsync();
+        Task<MeasurementResult?> running = measurement.RunAsync();
         await captureStarted.Task;
         await measurement.AbortAsync();
 
-        Assert.False(await running);
+        Assert.Null(await running);
         Assert.Null(measurement.LastError);
         Assert.False(measurement.InProgress);
         Assert.NotNull(opened);
@@ -441,7 +435,7 @@ public sealed class AbstractedMeasurementTests
                 signal, (_, _, _, _) => throw new InvalidOperationException("device unplugged")));
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        bool success = await measurement.RunAsync();
+        bool success = await measurement.RunAsync() != null;
 
         Assert.False(success);
         Assert.NotNull(measurement.LastError);
@@ -454,7 +448,7 @@ public sealed class AbstractedMeasurementTests
         var factory = new ThrowingOpenFactory();
         using ExpSweepMeasurement measurement = CreateSweep(factory);
 
-        bool success = await measurement.RunAsync();
+        bool success = await measurement.RunAsync() != null;
 
         Assert.False(success);
         Assert.NotNull(measurement.LastError);

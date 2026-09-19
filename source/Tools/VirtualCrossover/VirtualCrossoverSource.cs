@@ -1,6 +1,5 @@
 ﻿using System.Numerics;
 using Resonalyze.Dsp;
-using Resonalyze.History;
 
 namespace Resonalyze;
 
@@ -24,37 +23,33 @@ internal sealed class ResolvedVirtualDspSource
     public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; init; }
 
     /// <summary>Null without a loopback transfer IR, or for an imported sweep: its arrival is set by when the recorder started.</summary>
-    public static ResolvedVirtualDspSource? FromSnapshot(MeasurementHistorySnapshot snapshot)
+    public static ResolvedVirtualDspSource? FromResult(MeasurementResult result)
     {
-        ArgumentNullException.ThrowIfNull(snapshot);
-        if (snapshot.TransferImpulseResponse is not { Length: > 0 } transferIr ||
-            snapshot.TimingReference == TimingReference.RecordedSweep)
+        ArgumentNullException.ThrowIfNull(result);
+        if (result.Transfer is not { ImpulseResponse.Length: > 0 } transfer ||
+            result.TimingReference == TimingReference.RecordedSweep)
         {
             return null;
         }
 
+        Complex[] transferIr = transfer.ImpulseResponse;
         (LiveCaptureDocument? arrayCapture, double[]? arraySpreadDb) =
             ArrayCaptureDocument.TryCreateWithSpread(
-                snapshot.ArrayMicrophones,
-                snapshot.SampleRate,
-                snapshot.ProtectiveHighPass,
-                snapshot.MeasuredAtUtc);
+                result.ArrayMicrophones,
+                result.SampleRate,
+                result.ProtectiveHighPass,
+                result.MeasuredAtUtc);
         return new ResolvedVirtualDspSource
         {
             TransferImpulseResponse = transferIr,
-            TransferPeakIndex = Math.Clamp(
-                snapshot.TransferPeakIndex ?? 0, 0, transferIr.Length - 1),
-            SampleRate = snapshot.SampleRate,
-            TransferCoherence = snapshot.TransferCoherence,
-            DistortionCurve = ComputeDistortionCurve(snapshot),
+            TransferPeakIndex = Math.Clamp(transfer.PeakIndex, 0, transferIr.Length - 1),
+            SampleRate = result.SampleRate,
+            TransferCoherence = result.TransferCoherence,
+            DistortionCurve = ComputeDistortionCurve(result),
             ArrayCapture = arrayCapture,
             ArraySpreadDb = arraySpreadDb,
-            MeasuredBand = MeasuredBand.Resolve(
-                snapshot.ProtectiveHighPass,
-                snapshot.MeasuredLowFrequencyHz,
-                snapshot.MeasuredHighFrequencyHz,
-                snapshot.SampleRate),
-            MicrophoneCalibration = snapshot.MicrophoneCalibration
+            MeasuredBand = result.MeasuredBand,
+            MicrophoneCalibration = result.MicrophoneCalibration
         };
     }
 
@@ -73,22 +68,20 @@ internal sealed class ResolvedVirtualDspSource
     }
 
     // THD (dB vs fundamental) for the crossover wizard; null without sweep deconvolution (wizard uses class-based range).
-    private static IReadOnlyList<SignalPoint>? ComputeDistortionCurve(
-        MeasurementHistorySnapshot snapshot)
+    private static IReadOnlyList<SignalPoint>? ComputeDistortionCurve(MeasurementResult result)
     {
-        if (snapshot.SweepDeconvolutionImpulseResponse is not { Length: > 0 } ir ||
-            snapshot.SampleRate <= 0 ||
-            !double.IsFinite(snapshot.SweepDurationSeconds) ||
-            snapshot.SweepDurationSeconds <= 0 ||
-            (snapshot.AchievedHighFrequencyHz <= 0 &&
-                snapshot.HighFrequencyHz <= 0 &&
-                snapshot.Octaves <= 0))
+        Complex[] ir = result.SweepDeconvolution.ImpulseResponse;
+        if (ir.Length == 0 ||
+            result.SampleRate <= 0 ||
+            !double.IsFinite(result.SweepDurationSeconds) ||
+            result.SweepDurationSeconds <= 0)
         {
             return null;
         }
 
         // ACHIEVED edges: harmonic packets sit at ln(h)/ln(ratio) of the sweep, so the requested band misplaces them.
-        (double lowHz, double highHz) = snapshot.ResolveAchievedSweepBand();
+        double lowHz = result.AchievedLowFrequencyHz;
+        double highHz = result.AchievedHighFrequencyHz;
         if (!(lowHz > 0) || !(highHz > lowHz))
         {
             return null;
@@ -96,14 +89,13 @@ internal sealed class ResolvedVirtualDspSource
 
         try
         {
-            int sweepSamples = (int)Math.Round(snapshot.SweepDurationSeconds * snapshot.SampleRate);
             var sweep = new EssSweepMetadata(
                 lowHz,
                 highHz,
-                snapshot.SweepDurationSeconds,
-                snapshot.SampleRate,
-                sweepSamples,
-                snapshot.SweepDeconvolutionPeakIndex);
+                result.SweepDurationSeconds,
+                result.SampleRate,
+                result.SweepSampleCount,
+                result.SweepDeconvolution.PeakIndex);
 
             double[] real = new double[ir.Length];
             for (int i = 0; i < ir.Length; i++)

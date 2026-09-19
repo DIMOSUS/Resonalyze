@@ -111,9 +111,7 @@ public partial class Form1
         try
         {
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
-            MeasurementHistorySnapshot snapshot =
-                MeasurementHistoryService.CreateSnapshot(file);
-            compareSelection.Set(Path.GetFileName(path), path, snapshot);
+            compareSelection.Set(Path.GetFileName(path), path, file.ToResult());
             UpdateLastImpulseResponseDirectory(path);
         }
         catch (Exception exception)
@@ -132,9 +130,8 @@ public partial class Form1
         try
         {
             MeasurementHistoryEntry? entry = measurementHistoryService.FindById(entryId);
-            MeasurementHistorySnapshot? snapshot =
-                await measurementHistoryService.GetSnapshotAsync(entryId);
-            if (entry == null || snapshot == null)
+            MeasurementResult? result = await measurementHistoryService.GetResultAsync(entryId);
+            if (entry == null || result == null)
             {
                 return;
             }
@@ -142,7 +139,7 @@ public partial class Form1
             compareSelection.Set(
                 entry.FileNameOrDisplayName,
                 entry.SourceFilePath,
-                snapshot);
+                result);
         }
         catch (Exception exception)
         {

@@ -1,28 +1,23 @@
 ﻿using System.Numerics;
 using Resonalyze.Dsp;
-using static System.Math;
 
 namespace Resonalyze
 {
-    /// <summary>Sweep playback, recording and deconvolution policy; the device lifecycle lives behind <see cref="IAudioSessionFactory"/>.</summary>
+    /// <summary>
+    /// Sweep playback, recording and deconvolution policy; the device lifecycle lives behind <see cref="IAudioSessionFactory"/>.
+    /// Holds the configuration of the next run only: a run or an import hands its <see cref="MeasurementResult"/> out.
+    /// </summary>
     public sealed class ExpSweepMeasurement : IDisposable
     {
         private readonly IAudioSessionFactory audioSessionFactory;
         private readonly object stateSync = new();
         private CancellationTokenSource? cancellationTokenSource;
-        private Task<bool>? measurementTask;
+        private Task<MeasurementResult?>? measurementTask;
         private volatile bool inProgress;
-        // Whether inProgress is held by an outstanding Claim rather than by a run.
-        private bool claimed;
         private bool disposed;
-        // Published by the worker, read lock-free: IR and peak index travel as one immutable reference; the level
-        // snapshot is boxed because a reference swap is atomic and a struct copy is not.
-        private volatile MeasurementImpulseResponse? sweepDeconvolutionResult;
-        private volatile MeasurementImpulseResponse? transferResult;
-        private volatile object currentLevels = InputLevelMeterSnapshot.Empty;
 
-        public event Action<bool>? Completed;
-        public event Action? ImpulseResponseChanged;
+        /// <summary>Null when the run failed or was aborted (<see cref="LastError"/> says which).</summary>
+        internal event Action<MeasurementResult?>? Completed;
         public event Action<SweepAverageProgress>? AverageProgressChanged;
         internal event Action<InputLevelMeterSnapshot>? LevelsAvailable;
 
@@ -33,48 +28,12 @@ namespace Resonalyze
         }
 
         public ExponentialSineSweep? Sweep { get; private set; }
-        public MeasurementImpulseResponse? SweepDeconvolution => sweepDeconvolutionResult;
-        public MeasurementImpulseResponse? Transfer => transferResult;
-        public Complex[]? SweepDeconvolutionImpulseResponse => sweepDeconvolutionResult?.ImpulseResponse;
-        public int SweepDeconvolutionPeakIndex => sweepDeconvolutionResult?.PeakIndex ?? 0;
-        public Complex[]? TransferImpulseResponse => transferResult?.ImpulseResponse;
-        public int TransferPeakIndex => transferResult?.PeakIndex ?? 0;
-        public double[]? TransferCoherence { get; private set; }
-        public float[]? MicrophoneRecordedSamples { get; private set; }
-        public float[]? LoopbackRecordedSamples { get; private set; }
-        public SweepMeasurementMode MeasurementMode { get; private set; } =
-            SweepMeasurementMode.SweepDeconvolution;
 
-        /// <summary>Imported recordings have no timing reference; cross-measurement delay comparisons must refuse them.</summary>
-        public TimingReference TimingReference { get; private set; } =
-            TimingReference.SynchronizedLoopback;
-
-        /// <summary>Time-scale correction applied by the import, in ppm; null when none. See docs/tech/sweep-measurement.md#import-time-scale.</summary>
-        public double? ImportedTimeScalePpm { get; private set; }
-
-        /// <summary>Channel of a multi-channel import with the strongest sweep match; 0 otherwise.</summary>
-        public int ImportedChannelIndex { get; private set; }
-        public bool HasImpulseResponse => SweepDeconvolutionImpulseResponse != null;
+        /// <summary>A run holds the device; an import never touches the engine.</summary>
         public bool InProgress => inProgress;
         public int SampleRate { get; private set; }
         public double LowFrequencyHz { get; private set; }
         public double HighFrequencyHz { get; private set; }
-        // Band actually swept by the current result (harmonic geometry reads it). Restored results take it from the file:
-        // a pre-band file's low edge had less than one whole cycle, which today's generator cannot reproduce.
-        public double AchievedLowFrequencyHz { get; private set; }
-        public double AchievedHighFrequencyHz { get; private set; }
-
-        /// <summary>Band excited at full amplitude. See docs/tech/sweep-measurement.md#measured-band.</summary>
-        public double MeasuredLowFrequencyHz { get; private set; }
-        public double MeasuredHighFrequencyHz { get; private set; }
-
-        /// <summary>When the result was measured, not saved: spatial averages show it as the only evidence two channels came from one sitting.</summary>
-        public DateTimeOffset MeasuredAtUtc { get; private set; } = DateTimeOffset.UtcNow;
-        // Recorded, not read off the rebuilt sweep: generation caps at MaxDurationSeconds and would skew harmonic offsets.
-        public int AchievedSweepSampleCount { get; private set; }
-
-        public double AchievedSweepDurationSeconds =>
-            SampleRate > 0 ? AchievedSweepSampleCount / (double)SampleRate : 0.0;
         public int Bits { get; private set; }
         public PlaybackChannel PlaybackChannel { get; private set; }
         public AudioBackend AudioBackend { get; private set; } = AudioBackend.Wave;
@@ -100,44 +59,18 @@ namespace Resonalyze
                 ? AsioArrayInputChannelOffsets
                 : WaveArrayInputChannelOffsets;
 
-        /// <summary>Array microphones of the last result, measurement mic first. Settable so a loaded file restores its own array.</summary>
-        internal IReadOnlyList<ArrayMicrophoneCurve> ArrayMicrophones { get; set; } = [];
-
         public int AverageRunCount { get; private set; } = 1;
-        public int AcceptedAverageRunCount { get; private set; } = 1;
         public ProtectiveHighPassConfiguration ProtectiveHighPass { get; private set; } =
             ProtectiveHighPassConfiguration.Off;
 
-        /// <summary>Configured measurement-mic calibration; unused here, carried so a saved file states which mic response the IR was taken with.</summary>
+        /// <summary>Configured measurement-mic calibration; unused here, carried so a result states which mic response the IR was taken with.</summary>
         public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; set; }
 
         /// <summary>Array microphone notes and calibrations by channel; measured curves are stored raw.</summary>
         internal IReadOnlyList<ArrayMicrophoneMetadata> ArrayMicrophoneMetadata { get; set; } = [];
 
-        /// <summary>Mic calibration frozen at run start, like the SPL anchor and protective high-pass.</summary>
-        internal VirtualCrossoverCalibrationSettings? MeasurementMicrophoneCalibration
-        { get; set; }
-
-        private IReadOnlyList<ArrayMicrophoneMetadata> measurementArrayMetadata = [];
-        // Configured for the next run; snapshotted into MeasurementSplCalibration at run start.
+        /// <summary>Configured for the next run; frozen onto its result at run start.</summary>
         public SplCalibration? SplCalibration { get; set; }
-
-        // Belongs to the current result (run snapshot or loaded file); plot and save read this so recalibration never rewrites a measured IR.
-        public SplCalibration? MeasurementSplCalibration { get; set; }
-
-        // Snapshot for the current result; null = unknown (old file), which differs from Off.
-        // Saves stamp this, never the live ProtectiveHighPass.
-        public ProtectiveHighPassConfiguration? MeasurementProtectiveHighPass { get; set; }
-
-        // Input the current result was produced on; the SPL anchor validates against it, so re-saving a loaded file keeps a valid anchor.
-        public MeasurementInputIdentity? MeasurementInput { get; set; }
-
-        /// <summary>Whether the calibration was captured on the input that produced the current result.</summary>
-        public bool InputMatches(SplCalibration calibration)
-        {
-            ArgumentNullException.ThrowIfNull(calibration);
-            return MeasurementInput is { } identity && calibration.MatchesInput(identity);
-        }
 
         /// <summary>Whether the next run will carry a usable SPL anchor; mirrors what <see cref="RunAsync"/> freezes onto the result.</summary>
         public bool NextRunHasSplAnchor =>
@@ -156,17 +89,11 @@ namespace Resonalyze
             WasapiCaptureEndpointId,
             AsioDriverName);
 
-        // Null until a run completes, and for restored results.
+        // Null until a run completes.
         internal SweepRunQualityReport? QualityReport { get; private set; }
 
-        // Cleared with QualityReport so a restored file never wears the last run's verdict.
         internal SweepResultCaution? ResultCaution { get; private set; }
         public Exception? LastError { get; private set; }
-        internal InputLevelMeterSnapshot CurrentLevels
-        {
-            get => (InputLevelMeterSnapshot)currentLevels;
-            private set => currentLevels = value;
-        }
 
         public void Init(SweepMeasurementConfiguration configuration)
         {
@@ -180,15 +107,12 @@ namespace Resonalyze
             InitCore(configuration);
         }
 
-        // Init without its guard, for callers already holding the busy claim (ImportRecordedSweep, RestoreImpulseResponse).
         private void InitCore(SweepMeasurementConfiguration configuration)
         {
             SweepSignalConfiguration signal = configuration.Signal;
             SweepAudioConfiguration audio = configuration.Audio;
             SweepAveragingConfiguration averaging = configuration.Averaging;
-            PlaybackChannel = Enum.IsDefined(signal.PlaybackChannel)
-                ? signal.PlaybackChannel
-                : PlaybackChannel.Mono;
+            PlaybackChannel = NormalizePlaybackChannel(signal.PlaybackChannel);
             SampleRate = signal.SampleRate;
             Bits = signal.Bits;
             LowFrequencyHz = signal.LowFrequencyHz;
@@ -228,29 +152,12 @@ namespace Resonalyze
                 audio.AsioArrayInputChannelOffsets,
                 audio.AsioInputChannelOffset,
                 audio.AsioLoopbackInputChannelOffset);
-            ArrayMicrophones = [];
-            sweepDeconvolutionResult = null;
-            transferResult = null;
-            MeasurementSplCalibration = null;
-            MeasurementProtectiveHighPass = null;
-            MeasurementMicrophoneCalibration = null;
-            measurementArrayMetadata = [];
-            MeasurementInput = null;
-            TransferCoherence = null;
-            MicrophoneRecordedSamples = null;
-            LoopbackRecordedSamples = null;
-            MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
-            TimingReference = TimingReference.SynchronizedLoopback;
-            ImportedTimeScalePpm = null;
-            ImportedChannelIndex = 0;
             AverageRunCount = Math.Clamp(averaging.RunCount, 1, 64);
-            AcceptedAverageRunCount = 0;
             ProtectiveHighPass = ProtectiveHighPassConfiguration.Normalize(
                 configuration.ProtectiveHighPass);
             QualityReport = null;
             ResultCaution = null;
             LastError = null;
-            CurrentLevels = InputLevelMeterSnapshot.Empty;
 
             Sweep?.Dispose();
             Sweep = new ExponentialSineSweep();
@@ -261,14 +168,9 @@ namespace Resonalyze
                 signal.RequestedDurationSeconds,
                 signal.Bits,
                 signal.SampleRate);
-            AchievedLowFrequencyHz = Sweep.LowFrequencyHz;
-            AchievedHighFrequencyHz = Sweep.HighFrequencyHz;
-            MeasuredLowFrequencyHz = Sweep.Spec.FullAmplitudeLowFrequencyHz;
-            MeasuredHighFrequencyHz = Sweep.Spec.FullAmplitudeHighFrequencyHz;
-            AchievedSweepSampleCount = Sweep.SweepSamples;
         }
 
-        public Task<bool> RunAsync()
+        internal Task<MeasurementResult?> RunAsync()
         {
             ThrowIfDisposed();
             lock (stateSync)
@@ -281,78 +183,27 @@ namespace Resonalyze
                 {
                     throw new InvalidOperationException("Measurement is not initialized.");
                 }
-                // A claim (e.g. an import spanning its decode) owns the measurement; a run would publish over it and clear its busy flag.
-                if (claimed)
-                {
-                    throw new InvalidOperationException(
-                        "The measurement is already busy.");
-                }
 
                 cancellationTokenSource?.Dispose();
                 cancellationTokenSource = new CancellationTokenSource();
                 inProgress = true;
-                sweepDeconvolutionResult = null;
-                transferResult = null;
-                // Frozen at run start so later setting changes cannot rewrite this result.
-                MeasurementSplCalibration = SplCalibration;
-                MeasurementProtectiveHighPass = ProtectiveHighPass;
-                MeasurementMicrophoneCalibration = MicrophoneCalibration;
-                measurementArrayMetadata = ArrayMicrophoneMetadata;
-                MeasurementInput = CurrentInputIdentity();
-                TransferCoherence = null;
-                MicrophoneRecordedSamples = null;
-                LoopbackRecordedSamples = null;
-                MeasurementMode = SweepMeasurementMode.SweepDeconvolution;
-                AcceptedAverageRunCount = 0;
                 QualityReport = null;
                 ResultCaution = null;
                 LastError = null;
-                CurrentLevels = InputLevelMeterSnapshot.Empty;
-                measurementTask = RunCoreAsync(cancellationTokenSource.Token);
+                // Frozen at run start so later setting changes cannot rewrite this result.
+                var frozen = new FrozenRun(
+                    NextRunHasSplAnchor ? SplCalibration : null,
+                    ProtectiveHighPass,
+                    MicrophoneCalibration,
+                    ArrayMicrophoneMetadata);
+                measurementTask = RunCoreAsync(frozen, cancellationTokenSource.Token);
                 return measurementTask;
-            }
-        }
-
-        /// <summary>Holds <see cref="InProgress"/> across a multi-call operation (decode, then import); dispose to release.</summary>
-        public IDisposable Claim()
-        {
-            ThrowIfDisposed();
-            lock (stateSync)
-            {
-                if (inProgress)
-                {
-                    throw new InvalidOperationException(
-                        "The measurement is already busy.");
-                }
-                inProgress = true;
-                claimed = true;
-            }
-
-            return new MeasurementClaim(this);
-        }
-
-        private void ReleaseClaim()
-        {
-            lock (stateSync)
-            {
-                claimed = false;
-                inProgress = false;
-            }
-        }
-
-        private sealed class MeasurementClaim(ExpSweepMeasurement measurement) : IDisposable
-        {
-            private ExpSweepMeasurement? owner = measurement;
-
-            public void Dispose()
-            {
-                Interlocked.Exchange(ref owner, null)?.ReleaseClaim();
             }
         }
 
         public async Task AbortAsync()
         {
-            Task<bool>? runningTask;
+            Task<MeasurementResult?>? runningTask;
             lock (stateSync)
             {
                 cancellationTokenSource?.Cancel();
@@ -371,190 +222,12 @@ namespace Resonalyze
             }
         }
 
-        public double HarmonicIROffset(double harmonic)
-        {
-            double achievedRatio = AchievedFrequencyRatio;
-            if (AchievedSweepSampleCount <= 0 || achievedRatio <= 1.0)
-            {
-                return 0;
-            }
-            return AchievedSweepSampleCount * Log(harmonic) / Log(achievedRatio);
-        }
-
-        /// <summary>High/low ratio actually swept; harmonic packets sit at SweepSamples * ln(h) / ln(ratio).</summary>
-        public double AchievedFrequencyRatio =>
-            AchievedLowFrequencyHz > 0 && AchievedHighFrequencyHz > AchievedLowFrequencyHz
-                ? AchievedHighFrequencyHz / AchievedLowFrequencyHz
-                : 0.0;
-
-        /// <summary>Reinstates a stored result. Achieved band edges pin harmonic geometry; 0 falls back to the rebuilt sweep's band (valid only for band-generator files).</summary>
-        public void RestoreImpulseResponse(
-            double lowFrequencyHz,
-            double highFrequencyHz,
-            int sampleRate,
-            int bits,
-            double sweepDurationSeconds,
-            PlaybackChannel playChannel,
-            Complex[] sweepDeconvolutionImpulseResponse,
-            int sweepDeconvolutionPeakIndex,
-            SweepMeasurementMode measurementMode = SweepMeasurementMode.SweepDeconvolution,
-            Complex[]? transferImpulseResponse = null,
-            int? transferPeakIndex = null,
-            double[]? transferCoherence = null,
-            int averageRunCount = 1,
-            int acceptedAverageRunCount = 1,
-            double achievedLowFrequencyHz = 0.0,
-            double achievedHighFrequencyHz = 0.0,
-            TimingReference timingReference = TimingReference.SynchronizedLoopback,
-            double measuredLowFrequencyHz = 0.0,
-            double measuredHighFrequencyHz = 0.0,
-            DateTimeOffset? measuredAtUtc = null)
-        {
-            ThrowIfDisposed();
-            ArgumentNullException.ThrowIfNull(sweepDeconvolutionImpulseResponse);
-            if (transferImpulseResponse == null &&
-                measurementMode == SweepMeasurementMode.LoopbackTransfer)
-            {
-                throw new ArgumentException(
-                    "Transfer impulse response is required for loopback transfer measurements.",
-                    nameof(transferImpulseResponse));
-            }
-            // A run blocks; a claim does not: the caller that decoded this file may hold one and must still publish.
-            bool claimedHere = false;
-            lock (stateSync)
-            {
-                if (inProgress && !claimed)
-                {
-                    throw new InvalidOperationException(
-                        "Cannot load an impulse response while a measurement is running.");
-                }
-
-                if (!inProgress)
-                {
-                    inProgress = true;
-                    claimedHere = true;
-                }
-            }
-
-            try
-            {
-            if (sweepDeconvolutionImpulseResponse.Length == 0)
-            {
-                throw new ArgumentException(
-                    "Sweep deconvolution impulse response cannot be empty.",
-                    nameof(sweepDeconvolutionImpulseResponse));
-            }
-            if ((uint)sweepDeconvolutionPeakIndex >=
-                (uint)sweepDeconvolutionImpulseResponse.Length)
-            {
-                throw new ArgumentOutOfRangeException(nameof(sweepDeconvolutionPeakIndex));
-            }
-            if (transferImpulseResponse is { Length: 0 })
-            {
-                throw new ArgumentException(
-                    "Transfer impulse response cannot be empty.",
-                    nameof(transferImpulseResponse));
-            }
-            if (transferImpulseResponse != null &&
-                (!transferPeakIndex.HasValue ||
-                    (uint)transferPeakIndex.Value >= (uint)transferImpulseResponse.Length))
-            {
-                throw new ArgumentOutOfRangeException(nameof(transferPeakIndex));
-            }
-
-            InitCore(new SweepMeasurementConfiguration(
-                new SweepSignalConfiguration(
-                    lowFrequencyHz,
-                    highFrequencyHz,
-                    sampleRate,
-                    bits,
-                    sweepDurationSeconds,
-                    playChannel),
-                new SweepAudioConfiguration(
-                    Backend: AudioBackend,
-                    OutputDeviceNumber: OutputDeviceNumber,
-                    InputDeviceNumber: InputDeviceNumber,
-                    WaveInputChannelOffset: WaveInputChannelOffset,
-                    WaveLoopbackInputChannelOffset: WaveLoopbackInputChannelOffset,
-                    AsioDriverName: AsioDriverName,
-                    AsioInputChannelOffset: AsioInputChannelOffset,
-                    AsioLoopbackInputChannelOffset: AsioLoopbackInputChannelOffset,
-                    AsioOutputChannelOffset: AsioOutputChannelOffset,
-                    WasapiCaptureEndpointId: WasapiCaptureEndpointId,
-                    WasapiRenderEndpointId: WasapiRenderEndpointId,
-                    WasapiCaptureEndpointName: WasapiCaptureEndpointName,
-                    WasapiRenderEndpointName: WasapiRenderEndpointName,
-                    WasapiBufferMilliseconds: WasapiBufferMilliseconds,
-                    WaveArrayInputChannelOffsets: WaveArrayInputChannelOffsets,
-                    AsioArrayInputChannelOffsets: AsioArrayInputChannelOffsets),
-                new SweepAveragingConfiguration(AverageRunCount),
-                ProtectiveHighPass));
-            // InitCore just set these from the sweep it regenerated; the recorded
-            // geometry wins, since that sweep is a reconstruction and this result
-            // came from the original one. The length matters as much as the band:
-            // generation is capped at MaxDurationSeconds while a stored sweep may
-            // be minutes long, and the harmonic offsets scale with it.
-            // Restored, never re-stamped: a file re-saved today was still measured
-            // whenever it was measured. Null only for a source that carries no time of
-            // its own, where the clock is the best answer there is.
-            MeasuredAtUtc = measuredAtUtc ?? DateTimeOffset.UtcNow;
-            if (achievedLowFrequencyHz > 0 &&
-                achievedHighFrequencyHz > achievedLowFrequencyHz)
-            {
-                AchievedLowFrequencyHz = achievedLowFrequencyHz;
-                AchievedHighFrequencyHz = achievedHighFrequencyHz;
-                // Files predating recorded full-amplitude edges fall back to the achieved band they were always read over.
-                MeasuredLowFrequencyHz = measuredLowFrequencyHz > 0
-                    ? measuredLowFrequencyHz
-                    : achievedLowFrequencyHz;
-                MeasuredHighFrequencyHz = measuredHighFrequencyHz > MeasuredLowFrequencyHz
-                    ? measuredHighFrequencyHz
-                    : achievedHighFrequencyHz;
-            }
-            int storedSampleCount = (int)Math.Round(sweepDurationSeconds * sampleRate);
-            if (storedSampleCount > 0)
-            {
-                AchievedSweepSampleCount = storedSampleCount;
-            }
-            sweepDeconvolutionResult = new MeasurementImpulseResponse(
-                sweepDeconvolutionImpulseResponse.ToArray(),
-                sweepDeconvolutionPeakIndex);
-            transferResult = transferImpulseResponse != null
-                ? new MeasurementImpulseResponse(
-                    transferImpulseResponse.ToArray(),
-                    transferPeakIndex!.Value)
-                : null;
-            TransferCoherence = transferCoherence?.ToArray();
-            MicrophoneRecordedSamples = null;
-            LoopbackRecordedSamples = null;
-            MeasurementMode = measurementMode;
-            TimingReference = timingReference;
-            AverageRunCount = Math.Clamp(averageRunCount, 1, 64);
-            AcceptedAverageRunCount = Math.Clamp(
-                acceptedAverageRunCount,
-                1,
-                AverageRunCount);
-            LastError = null;
-            Publish(ImpulseResponseChanged);
-            }
-            finally
-            {
-                if (claimedHere)
-                {
-                    lock (stateSync)
-                    {
-                        inProgress = false;
-                    }
-                }
-            }
-        }
-
         /// <summary>
-        /// Publishes a sweep recorded outside Resonalyze, measuring the channel that best matches the configured sweep
+        /// Measures a sweep recorded outside Resonalyze, on the channel that best matches the configured sweep
         /// (<see cref="RecordedSweepChannels"/>). Only for callers with no user to ask: a DAW reference track beats the mic.
         /// See docs/tech/sweep-measurement.md#importing-a-recorded-sweep.
         /// </summary>
-        public void ImportRecordedSweep(
+        internal static RecordedSweepImport ImportRecordedSweep(
             SweepMeasurementConfiguration configuration,
             float[][] channels,
             int sampleRate)
@@ -566,7 +239,7 @@ namespace Resonalyze
                 throw new InvalidOperationException("The recording has no channels.");
             }
 
-            ImportRecordedSweep(
+            return ImportRecordedSweep(
                 configuration,
                 channels,
                 sampleRate,
@@ -576,7 +249,7 @@ namespace Resonalyze
                     : 0);
         }
 
-        public void ImportRecordedSweep(
+        internal static RecordedSweepImport ImportRecordedSweep(
             SweepMeasurementConfiguration configuration,
             float[][] channels,
             int sampleRate,
@@ -591,51 +264,21 @@ namespace Resonalyze
             ArgumentOutOfRangeException.ThrowIfNegative(channel);
             ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(channel, channels.Length);
 
-            ImportRecordedSweep(configuration, channels[channel], sampleRate);
-            ImportedChannelIndex = channel;
+            return ImportRecordedSweep(configuration, channels[channel], sampleRate) with { Channel = channel };
         }
 
-        public void ImportRecordedSweep(
+        /// <summary>Touches no engine state: the configuration describes the sweep the file holds, not the next run.</summary>
+        internal static RecordedSweepImport ImportRecordedSweep(
             SweepMeasurementConfiguration configuration,
             float[] recordedSamples,
             int sampleRate)
         {
-            ThrowIfDisposed();
             ArgumentNullException.ThrowIfNull(configuration);
             ArgumentNullException.ThrowIfNull(recordedSamples);
-            // Held for the whole import (analysis runs off the UI thread; record/Apply gate on this flag).
-            // A caller already holding a Claim keeps it, since the busy state must span its decode too.
-            bool claimedHere = false;
-            lock (stateSync)
-            {
-                if (inProgress && !claimed)
-                {
-                    throw new InvalidOperationException(
-                        "Cannot import a recording while a measurement is running.");
-                }
-                if (!inProgress)
-                {
-                    inProgress = true;
-                    claimedHere = true;
-                }
-            }
-            try
-            {
-                ImportRecordedSweepCore(configuration, recordedSamples, sampleRate);
-            }
-            finally
-            {
-                if (claimedHere)
-                {
-                    lock (stateSync)
-                    {
-                        inProgress = false;
-                    }
-                }
-            }
+            return ImportRecordedSweepCore(configuration, recordedSamples, sampleRate);
         }
 
-        private void ImportRecordedSweepCore(
+        private static RecordedSweepImport ImportRecordedSweepCore(
             SweepMeasurementConfiguration configuration,
             float[] recordedSamples,
             int sampleRate)
@@ -650,7 +293,6 @@ namespace Resonalyze
                     "same signal. Set the sample rate in Measurement Options to match the file.");
             }
 
-            // Not this.Sweep: the configuration is applied only after the analysis succeeds.
             using var sweep = new ExponentialSineSweep();
             sweep.FillData(
                 signal.LowFrequencyHz,
@@ -712,8 +354,7 @@ namespace Resonalyze
                     if (value.InsideOutsideDb >= TransferIrDiagnostics.MinimumCompactnessDb &&
                         arrival >= TransferIrDiagnostics.MinimumArrivalSharpnessDb)
                     {
-                        PublishImportedSweep(configuration, analysis, timeScalePpm);
-                        return;
+                        return BuildImportedSweep(configuration, sweep, analysis, timeScalePpm);
                     }
                 }
             }
@@ -867,21 +508,20 @@ namespace Resonalyze
         /// <summary>Where an imported arrival is placed. See docs/tech/sweep-measurement.md#imported-arrival-placement.</summary>
         private const double ImportedArrivalSeconds = 0.010;
 
-        private void PublishImportedSweep(
+        private static RecordedSweepImport BuildImportedSweep(
             SweepMeasurementConfiguration configuration,
+            ExponentialSineSweep sweep,
             ImportedSweepAnalysis analysis,
             double timeScalePpm)
         {
-            InitCore(configuration);
-            TimingReference = TimingReference.RecordedSweep;
-            ImportedTimeScalePpm = timeScalePpm == 0 ? null : timeScalePpm;
+            SweepSignalConfiguration signal = configuration.Signal;
             int arrival = Math.Min(
-                (int)Math.Round(ImportedArrivalSeconds * SampleRate),
+                (int)Math.Round(ImportedArrivalSeconds * signal.SampleRate),
                 analysis.TransferImpulseResponse.Length - 1);
             Complex[] transfer = RotateTo(
                 analysis.TransferImpulseResponse, analysis.TransferPeakIndex, arrival);
             // No loopback entry: the reference is generated, so there is no input level to meter.
-            ApplyAverageResult(new SweepAverageResult(
+            var average = new SweepAverageResult(
                 analysis.SweepImpulseResponse,
                 analysis.SweepPeakIndex,
                 transfer,
@@ -894,12 +534,31 @@ namespace Resonalyze
                 MicrophoneDistortion: null,
                 LoopbackDistortion: null,
                 LoopbackWorstRun: null,
-                ArrayMicrophones: []));
+                ArrayMicrophones: []);
+            // A recording made elsewhere freezes nothing: no anchor, mic curve or filter is known for it.
+            var origin = new ResultOrigin(
+                signal.SampleRate,
+                signal.Bits,
+                NormalizePlaybackChannel(signal.PlaybackChannel),
+                signal.LowFrequencyHz,
+                signal.HighFrequencyHz,
+                Math.Clamp(configuration.Averaging.RunCount, 1, 64),
+                ProtectiveHighPassConfiguration.Normalize(configuration.ProtectiveHighPass),
+                sweep,
+                TimingReference.RecordedSweep,
+                DateTimeOffset.UtcNow,
+                Frozen: null,
+                Diagnostics: null);
+            return new RecordedSweepImport(
+                BuildResult(average, origin),
+                Channel: 0,
+                timeScalePpm == 0 ? null : timeScalePpm);
         }
 
         /// <summary>Pairs array curves with configured metadata by channel, not index: failed mics are absent from the curves.</summary>
-        private IReadOnlyList<ArrayMicrophoneCurve> AttachArrayMetadata(
-            IReadOnlyList<ArrayMicrophoneCurve> microphones)
+        private static IReadOnlyList<ArrayMicrophoneCurve> AttachArrayMetadata(
+            IReadOnlyList<ArrayMicrophoneCurve> microphones,
+            FrozenRun? frozen)
         {
             if (microphones.Count == 0)
             {
@@ -913,12 +572,12 @@ namespace Resonalyze
                 {
                     attached.Add(microphone with
                     {
-                        Calibration = MeasurementMicrophoneCalibration
+                        Calibration = frozen?.MicrophoneCalibration
                     });
                     continue;
                 }
 
-                ArrayMicrophoneMetadata? metadata = measurementArrayMetadata.FirstOrDefault(
+                ArrayMicrophoneMetadata? metadata = frozen?.ArrayMetadata.FirstOrDefault(
                     candidate => candidate.ChannelOffset == microphone.ChannelOffset);
                 attached.Add(microphone with
                 {
@@ -974,19 +633,14 @@ namespace Resonalyze
                 $"The recording did not deconvolve into a credible impulse response: the energy around its peak is only {bestCompactnessDb:0.0} dB above the rest of the recording, at best (a real measurement reads 29-49 dB). It is most likely not a recording of this sweep — check that the band, the per-octave time and the sample rate in Measurement Options are the ones the sweep was generated with."));
         }
 
-        internal void RestoreLevelSnapshot(InputLevelMeterSnapshot snapshot)
-        {
-            ThrowIfDisposed();
-            CurrentLevels = snapshot;
-            RaiseLevels(snapshot);
-        }
-
-        private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
+        private async Task<MeasurementResult?> RunCoreAsync(
+            FrozenRun frozen,
+            CancellationToken cancellationToken)
         {
             // Stamped per run, not at Init: one configuration serves every Record press.
-            MeasuredAtUtc = DateTimeOffset.UtcNow;
+            DateTimeOffset measuredAtUtc = DateTimeOffset.UtcNow;
             ExponentialSineSweep sweep = Sweep!;
-            bool success = false;
+            MeasurementResult? measured = null;
             IAudioDuplexSession? session = null;
 
             try
@@ -1062,8 +716,22 @@ namespace Resonalyze
                 RequireCredibleTransferIr(averageResult);
                 // After the refusal, never inside it: the total-failure diagnosis also calls that check.
                 ResultCaution = DescribeResultCaution(averageResult);
-                ApplyAverageResult(averageResult);
-                success = true;
+                measured = BuildResult(
+                    averageResult,
+                    new ResultOrigin(
+                        SampleRate,
+                        Bits,
+                        PlaybackChannel,
+                        LowFrequencyHz,
+                        HighFrequencyHz,
+                        AverageRunCount,
+                        ProtectiveHighPass,
+                        sweep,
+                        TimingReference.SynchronizedLoopback,
+                        measuredAtUtc,
+                        frozen,
+                        LastAudioSessionDiagnostics));
+                RaiseLevels(averageResult.Levels);
             }
             catch (OperationCanceledException)
             {
@@ -1092,10 +760,10 @@ namespace Resonalyze
                 {
                     inProgress = false;
                 }
-                Publish(Completed, success);
+                Publish(Completed, measured);
             }
 
-            return success;
+            return measured;
         }
 
         // Requested band fully excited; achieved band adds fade guard bands. Clamps keep the gate ordered for short sweeps.
@@ -1186,9 +854,7 @@ namespace Resonalyze
 
         private void HandleSessionLevels(AudioInputLevels levels)
         {
-            InputLevelMeterSnapshot snapshot = InputLevelMapping.Map(levels);
-            CurrentLevels = snapshot;
-            RaiseLevels(snapshot);
+            RaiseLevels(InputLevelMapping.Map(levels));
         }
 
         /// <summary>Throws the transfer function's shape diagnosis in place of the generic every-run-failed refusal, when it applies.</summary>
@@ -1405,7 +1071,6 @@ namespace Resonalyze
                 captured.LoopbackChannel);
             if (raiseIntermediateLevels)
             {
-                CurrentLevels = finalLevels;
                 RaiseLevels(finalLevels);
             }
 
@@ -1461,14 +1126,15 @@ namespace Resonalyze
             {
                 SweepDeconvolutionResult deconvolved = deconvolve();
                 // Geometry of the sweep that actually ran, not the requested band.
+                ExponentialSineSweep sweep = Sweep!;
                 return EssHarmonicAnalysis.MeasureHarmonicEnergy(
                     deconvolved.ImpulseResponse,
                     new EssSweepMetadata(
-                        AchievedLowFrequencyHz,
-                        AchievedHighFrequencyHz,
-                        AchievedSweepDurationSeconds,
+                        sweep.LowFrequencyHz,
+                        sweep.HighFrequencyHz,
+                        sweep.SweepSamples / (double)SampleRate,
                         SampleRate,
-                        AchievedSweepSampleCount,
+                        sweep.SweepSamples,
                         deconvolved.PeakIndex));
             }
             catch (Exception)
@@ -1620,28 +1286,24 @@ namespace Resonalyze
                     $" at worst, on {tally.AffectedRuns} of the {tally.JudgedRuns} judged runs ({acceptedRuns} were averaged)");
         }
 
-        private void ApplyAverageResult(SweepAverageResult result)
+        private static MeasurementResult BuildResult(SweepAverageResult result, ResultOrigin origin)
         {
-            ArrayMicrophones = AttachArrayMetadata(result.ArrayMicrophones);
-            sweepDeconvolutionResult = new MeasurementImpulseResponse(
-                result.SweepImpulseResponse,
-                result.SweepPeakIndex);
             Complex[]? transferImpulseResponse = result.TransferImpulseResponse;
             int transferPeakIndex = result.TransferPeakIndex;
             double[]? transferCoherence = result.TransferCoherence;
-            if (transferImpulseResponse != null && ProtectiveHighPass.Enabled)
+            if (transferImpulseResponse != null && origin.Compensation.Enabled)
             {
                 ProtectiveHighPassCompensationResult compensation =
                     ProtectiveHighPassCompensation.RemoveFromImpulseResponse(
                         transferImpulseResponse,
-                        ProtectiveHighPass.ToEdge(),
-                        SampleRate,
+                        origin.Compensation.ToEdge(),
+                        origin.SampleRate,
                         ProtectiveHighPassConfiguration.MaximumCompensationBoostDb);
                 transferImpulseResponse = compensation.ImpulseResponse;
                 transferCoherence = compensation.MaskCoherence(transferCoherence);
                 // Live runs let the corrected arrival move with the removed HP group delay; imports rotate back to their 10 ms origin.
                 int correctedPeakIndex = FindPeakIndex(transferImpulseResponse);
-                if (TimingReference == TimingReference.RecordedSweep)
+                if (origin.TimingReference == TimingReference.RecordedSweep)
                 {
                     transferImpulseResponse = RotateTo(
                         transferImpulseResponse,
@@ -1653,22 +1315,67 @@ namespace Resonalyze
                     transferPeakIndex = correctedPeakIndex;
                 }
             }
-            transferResult = transferImpulseResponse != null
-                ? new MeasurementImpulseResponse(
-                    transferImpulseResponse,
-                    transferPeakIndex)
-                : null;
-            TransferCoherence = transferCoherence;
-            MicrophoneRecordedSamples = result.MicrophoneRecordedSamples;
-            LoopbackRecordedSamples = result.LoopbackRecordedSamples;
-            MeasurementMode = result.TransferImpulseResponse != null
-                ? SweepMeasurementMode.LoopbackTransfer
-                : SweepMeasurementMode.SweepDeconvolution;
-            AcceptedAverageRunCount = result.AcceptedRunCount;
-            CurrentLevels = result.Levels;
-            RaiseLevels(result.Levels);
-            Publish(ImpulseResponseChanged);
+
+            ExponentialSineSweep sweep = origin.Sweep;
+            return new MeasurementResult
+            {
+                SampleRate = origin.SampleRate,
+                Bits = origin.Bits,
+                PlaybackChannel = origin.PlaybackChannel,
+                LowFrequencyHz = origin.LowFrequencyHz,
+                HighFrequencyHz = origin.HighFrequencyHz,
+                AchievedLowFrequencyHz = sweep.LowFrequencyHz,
+                AchievedHighFrequencyHz = sweep.HighFrequencyHz,
+                MeasuredLowFrequencyHz = sweep.Spec.FullAmplitudeLowFrequencyHz,
+                MeasuredHighFrequencyHz = sweep.Spec.FullAmplitudeHighFrequencyHz,
+                SweepDurationSeconds = sweep.SweepSamples / (double)origin.SampleRate,
+                MeasuredAtUtc = origin.MeasuredAtUtc,
+                MeasurementMode = result.TransferImpulseResponse != null
+                    ? SweepMeasurementMode.LoopbackTransfer
+                    : SweepMeasurementMode.SweepDeconvolution,
+                TimingReference = origin.TimingReference,
+                SweepDeconvolution = new MeasurementImpulseResponse(
+                    result.SweepImpulseResponse,
+                    result.SweepPeakIndex),
+                Transfer = transferImpulseResponse != null
+                    ? new MeasurementImpulseResponse(transferImpulseResponse, transferPeakIndex)
+                    : null,
+                TransferCoherence = transferCoherence,
+                AverageRunCount = origin.AverageRunCount,
+                AcceptedAverageRunCount = result.AcceptedRunCount,
+                Levels = result.Levels,
+                SplCalibration = origin.Frozen?.SplCalibration,
+                MicrophoneCalibration = origin.Frozen?.MicrophoneCalibration,
+                ProtectiveHighPass = origin.Frozen?.ProtectiveHighPass,
+                ArrayMicrophones = AttachArrayMetadata(result.ArrayMicrophones, origin.Frozen),
+                AudioSession = ImpulseResponseFile.CreateAudioSessionFileEntry(
+                    origin.Diagnostics,
+                    origin.SampleRate,
+                    origin.Bits)
+            };
         }
+
+        /// <summary>The calibration a run is taken through, fixed when it starts.</summary>
+        private sealed record FrozenRun(
+            SplCalibration? SplCalibration,
+            ProtectiveHighPassConfiguration ProtectiveHighPass,
+            VirtualCrossoverCalibrationSettings? MicrophoneCalibration,
+            IReadOnlyList<ArrayMicrophoneMetadata> ArrayMetadata);
+
+        /// <summary>What a result takes from the sweep that produced it, beside the analysis itself.</summary>
+        private sealed record ResultOrigin(
+            int SampleRate,
+            int Bits,
+            PlaybackChannel PlaybackChannel,
+            double LowFrequencyHz,
+            double HighFrequencyHz,
+            int AverageRunCount,
+            ProtectiveHighPassConfiguration Compensation,
+            ExponentialSineSweep Sweep,
+            TimingReference TimingReference,
+            DateTimeOffset MeasuredAtUtc,
+            FrozenRun? Frozen,
+            AudioSessionDiagnostics? Diagnostics);
 
         private bool TryBuildTransferFrame(
             float[][] sampleChannels,
@@ -1697,7 +1404,7 @@ namespace Resonalyze
             return true;
         }
 
-        private InputLevelMeterSnapshot CreateFinalLevelSnapshot(
+        private static InputLevelMeterSnapshot CreateFinalLevelSnapshot(
             float[][] sampleChannels,
             int microphoneIndex,
             int? loopbackIndex)
@@ -2076,6 +1783,9 @@ namespace Resonalyze
                 : null;
         }
 
+        private static PlaybackChannel NormalizePlaybackChannel(PlaybackChannel channel) =>
+            Enum.IsDefined(channel) ? channel : PlaybackChannel.Mono;
+
         private static int? NormalizeOptionalWasapiChannel(int? offset) =>
             offset.HasValue ? Math.Max(0, offset.Value) : null;
 
@@ -2152,6 +1862,13 @@ namespace Resonalyze
     public sealed record MeasurementImpulseResponse(
         Complex[] ImpulseResponse,
         int PeakIndex);
+
+    /// <summary>A recorded sweep's result, and what the import decided on the way: the channel and any time-scale correction.</summary>
+    /// <param name="TimeScalePpm">Correction applied, in ppm; null when none. See docs/tech/sweep-measurement.md#import-time-scale.</param>
+    internal sealed record RecordedSweepImport(
+        MeasurementResult Result,
+        int Channel,
+        double? TimeScalePpm);
 }
 
 public readonly record struct SweepAverageProgress(

@@ -531,23 +531,14 @@ next field session rather than in a register nobody else can tick.
   axes rather than picking one, and deciding what a "Top/Bottom" pair means with
   two of them.
 
-- [ ] ★ **Snapshot read-model instead of the two live measurement objects in
-  `PlotModelFactory`.** The factory and `MeasurementPlotContext` are constructed
-  with `ExpSweepMeasurement` and `NoiseMeasurement` themselves and read 22
-  members between them, two of which (`InProgress`, `CurrentLevels`) mutate
-  during capture — so the replacement must be a read-model interface re-read per
-  plot build, NOT a value snapshot taken at construction, or Live Spectrum and
-  the in-progress guards change behaviour. This was the extraction audit's
-  top finding (2026-07-26): it is what a "plotting layer" split was really
-  after, and it needs no new project.
-  The reason it is not done yet is honest scope: the payoff — plot tests no
-  longer needing `FakeAudioSessionFactory` — only lands if the 2560-line
-  `PlotModelFactoryTests` is rewritten too (it was ~1030 when this was filed, and
-  the rewrite is what has grown), because it builds state through
-  `measurement.RestoreImpulseResponse(...)` and therefore needs a live
-  measurement regardless of what the factory accepts. Interface + adapter
-  without that rewrite is pure addition. Do it as one piece, its own branch.
-  (The 13-argument constructor half is DONE — `PlotPresentationOptions`.)
+- [ ] **`PlotModelFactory` still holds the live noise measurement and the sweep
+  engine.** The sweep side reads the `AnalyzerDocument` (re-read per plot build,
+  so the in-progress guard still holds); the engine stays only for the configured
+  SPL anchor of the live RTA and the rate a plot takes when nothing is open, both
+  of which are settings. The Live Spectrum side still reads `NoiseMeasurement`
+  itself (12 members, the capture snapshots changing with every run), so the replacement
+  there is a read-model re-read per build, not a value snapshot. Plot tests build
+  results directly now (`TestMeasurementResults`, `TestAnalyzer`).
 - [ ] **`LogarithmicClipAxis` label trim.** Edge tick labels can be trimmed at
   the plot boundary. Purely visual; needs a Windows render to reproduce.
 - [ ] **Waterfall renders nothing silently below 8 slices** (`RawSlices.Count <

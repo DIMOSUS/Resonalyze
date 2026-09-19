@@ -57,9 +57,10 @@ public sealed class ArrayMicrophoneFileTests
                 new ArrayMicrophoneMetadata(3, null, null)
             ],
             microphoneCalibration: Calibration("main", -0.5));
-        Assert.True(await measurement.RunAsync(), measurement.LastError?.ToString());
+        MeasurementResult? result = await measurement.RunAsync();
+        Assert.True(result != null, measurement.LastError?.ToString());
 
-        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+        ImpulseResponseFile file = ImpulseResponseFile.From(result!);
         string path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".json");
         try
         {
@@ -89,7 +90,7 @@ public sealed class ArrayMicrophoneFileTests
             for (int band = 0; band < first.LevelsDb.Length; band++)
             {
                 Assert.Equal(
-                    measurement.ArrayMicrophones[1].LevelsDb[band],
+                    result!.ArrayMicrophones[1].LevelsDb[band],
                     first.LevelsDb[band],
                     9);
             }
@@ -105,13 +106,13 @@ public sealed class ArrayMicrophoneFileTests
     {
         using ExpSweepMeasurement measurement = CreateMeasurement(
             microphoneCalibration: Calibration("ECM8000 0°", -2.0));
-        measurement.RestoreImpulseResponse(
+        MeasurementResult restored = TestMeasurementResults.Restored(
             20, 20_000, SampleRate, 24, 1.0, PlaybackChannel.Mono,
             [Complex.Zero, Complex.One, Complex.Zero],
             sweepDeconvolutionPeakIndex: 1);
-        measurement.MeasurementMicrophoneCalibration = Calibration("ECM8000 0°", -2.0);
+        restored = restored with { MicrophoneCalibration = Calibration("ECM8000 0°", -2.0) };
 
-        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+        ImpulseResponseFile file = ImpulseResponseFile.From(restored);
 
         // Calibration ids are minted per machine; the points decide.
         Assert.NotNull(file.MicrophoneCalibration);
@@ -119,8 +120,8 @@ public sealed class ArrayMicrophoneFileTests
         Assert.Equal(3, file.MicrophoneCalibration.Points.Count);
         Assert.Equal(-2.0, file.MicrophoneCalibration.Points[1][1]);
 
-        CalibrationFile restored = file.MicrophoneCalibration.ToCalibrationFile();
-        Assert.Equal(-2.0, restored.GetDecibelCorrection(1_000.0), 6);
+        CalibrationFile curve = file.MicrophoneCalibration.ToCalibrationFile();
+        Assert.Equal(-2.0, curve.GetDecibelCorrection(1_000.0), 6);
     }
 
     [Fact]
@@ -136,9 +137,10 @@ public sealed class ArrayMicrophoneFileTests
                 WaveInputChannelOffset: 0,
                 WaveLoopbackInputChannelOffset: 1),
             new SweepAveragingConfiguration(1)));
-        Assert.True(await measurement.RunAsync(), measurement.LastError?.ToString());
+        MeasurementResult? result = await measurement.RunAsync();
+        Assert.True(result != null, measurement.LastError?.ToString());
 
-        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+        ImpulseResponseFile file = ImpulseResponseFile.From(result!);
 
         Assert.Null(file.ArrayMicrophones);
         Assert.Null(file.MicrophoneCalibration);
@@ -151,9 +153,10 @@ public sealed class ArrayMicrophoneFileTests
             arrayChannels: [2],
             metadata: [new ArrayMicrophoneMetadata(2, null, null)],
             microphoneCalibration: Calibration("main", 0.0));
-        Assert.True(await measurement.RunAsync(), measurement.LastError?.ToString());
+        MeasurementResult? result = await measurement.RunAsync();
+        Assert.True(result != null, measurement.LastError?.ToString());
 
-        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+        ImpulseResponseFile file = ImpulseResponseFile.From(result!);
 
         // Additive optional sections do not bump the version (8 came from base64 float32 samples).
         Assert.Equal(8, file.Version);
@@ -164,11 +167,11 @@ public sealed class ArrayMicrophoneFileTests
     public async Task AFileWrittenWithoutAnArrayStillLoads()
     {
         using ExpSweepMeasurement measurement = CreateMeasurement();
-        measurement.RestoreImpulseResponse(
+        MeasurementResult restored = TestMeasurementResults.Restored(
             20, 20_000, SampleRate, 24, 1.0, PlaybackChannel.Mono,
             [Complex.Zero, Complex.One, Complex.Zero],
             sweepDeconvolutionPeakIndex: 1);
-        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+        ImpulseResponseFile file = ImpulseResponseFile.From(restored);
         string path = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".json");
         try
         {
@@ -190,11 +193,11 @@ public sealed class ArrayMicrophoneFileTests
     public async Task AnEmptyArraySectionIsRefused()
     {
         using ExpSweepMeasurement measurement = CreateMeasurement();
-        measurement.RestoreImpulseResponse(
+        MeasurementResult restored = TestMeasurementResults.Restored(
             20, 20_000, SampleRate, 24, 1.0, PlaybackChannel.Mono,
             [Complex.Zero, Complex.One, Complex.Zero],
             sweepDeconvolutionPeakIndex: 1);
-        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+        ImpulseResponseFile file = ImpulseResponseFile.From(restored);
         file.ArrayMicrophones = new ImpulseResponseFile.ArrayMicrophonesFileEntry
         {
             GridStartHz = 20,

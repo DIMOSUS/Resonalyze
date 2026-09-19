@@ -104,6 +104,9 @@ public partial class Form1
         RefreshSaveAvailability();
     }
 
+    // Held from the Record press to the run's completion, so no load lands under a sweep.
+    private AnalyzerDocument.Request? runRequest;
+
     private async void buttonRecord_Click(object sender, EventArgs e)
     {
         if (recordButtonLongPress.ConsumeClickSuppression())
@@ -140,7 +143,7 @@ public partial class Form1
         {
             await expSweepMeasurement.AbortAsync();
         }
-        else
+        else if (!analyzerDocument.IsBusy)
         {
             if (!measurementSettings.Measurement.HasLoopbackConfigured)
             {
@@ -158,7 +161,7 @@ public partial class Form1
             }
 
             await startupAudioWarmup.WaitAsync();
-            if (expSweepMeasurement.InProgress)
+            if (expSweepMeasurement.InProgress || analyzerDocument.IsBusy)
             {
                 // A second click during the warm-up would Init a running measurement.
                 return;
@@ -167,6 +170,9 @@ public partial class Form1
             PrepareSweepMeasurementForRun();
             // After Prepare, so the anchor prediction reads this run's input configuration.
             ResetSplViewOnlyDisplayForRun();
+            // A run replaces the open measurement from its first sample; completion installs the new one.
+            analyzerDocument.Clear();
+            runRequest = analyzerDocument.TryAcquire();
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
         }

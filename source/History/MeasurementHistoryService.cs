@@ -1,6 +1,4 @@
-﻿using System.Numerics;
-
-namespace Resonalyze.History;
+﻿namespace Resonalyze.History;
 
 internal sealed class MeasurementHistoryService
 {
@@ -28,15 +26,16 @@ internal sealed class MeasurementHistoryService
     public string? LoadWarning => persistence.LoadWarning;
 
     public Guid AddMeasurement(
-        ExpSweepMeasurement measurement,
+        MeasurementResult result,
         MeasurementSessionSnapshot session)
     {
-        MeasurementHistorySnapshot snapshot = CreateSnapshot(measurement, session);
         MeasurementHistoryEntry entry = CreateEntry(
             DateTimeOffset.Now,
             TimestampDisplayHelper.Format(DateTimeOffset.Now),
             sourceFilePath: null,
-            snapshot);
+            result,
+            MeasurementHistoryPreviewBuilder.Build(result),
+            session);
         entries.Insert(0, entry);
         // The depth cap can push a saved row off the end, which must reach disk.
         if (TrimEntries())
@@ -48,12 +47,14 @@ internal sealed class MeasurementHistoryService
         return entry.Id;
     }
 
+    /// <param name="result">The file's result, read once by whoever opened it.</param>
     public Guid AddOrUpdateLoadedFile(
         string filePath,
         ImpulseResponseFile file,
+        MeasurementResult result,
         MeasurementSessionSnapshot session)
     {
-        MeasurementHistorySnapshot snapshot = CreateSnapshot(file, session);
+        MeasurementHistoryPreview preview = PreviewOf(file, result);
         MeasurementHistoryEntry? entry = FindBySourceFilePath(filePath);
         if (entry == null)
         {
@@ -61,7 +62,9 @@ internal sealed class MeasurementHistoryService
                 DateTimeOffset.Now,
                 Path.GetFileName(filePath),
                 filePath,
-                snapshot);
+                result,
+                preview,
+                session);
             entries.Insert(0, entry);
         }
         else
@@ -69,31 +72,28 @@ internal sealed class MeasurementHistoryService
             entry.DisplayName = Path.GetFileName(filePath);
             entry.Timestamp = DateTimeOffset.Now;
             entry.SourceFilePath = filePath;
-            entry.Metadata = MeasurementHistorySnapshotMetadata.FromSnapshot(snapshot);
-            entry.Preview = snapshot.Preview;
-            entry.Session = snapshot.Session;
-            entry.Snapshot = snapshot;
+            Fill(entry, result, preview, session);
             MoveToStart(entry);
         }
 
-        RetainSingleFileBackedSnapshot(entry);
+        RetainSingleFileBackedResult(entry);
         TrimEntries();
         persistence.Save(entries);
         OnChanged();
         return entry.Id;
     }
 
+    /// <param name="result">What was written to <paramref name="file"/>.</param>
     public void MarkSaved(
         Guid entryId,
         string filePath,
         ImpulseResponseFile file,
+        MeasurementResult result,
         MeasurementSessionSnapshot? sessionOverride = null)
     {
         MeasurementHistoryEntry? existingEntry = FindById(entryId);
-        MeasurementSessionSnapshot? session = sessionOverride ??
-            existingEntry?.Session ??
-            existingEntry?.Snapshot?.Session;
-        MeasurementHistorySnapshot snapshot = CreateSnapshot(file, session);
+        MeasurementSessionSnapshot? session = sessionOverride ?? existingEntry?.Session;
+        MeasurementHistoryPreview preview = PreviewOf(file, result);
         MeasurementHistoryEntry? duplicate = FindBySourceFilePath(filePath);
         if (duplicate != null && duplicate.Id != entryId)
         {
@@ -107,7 +107,9 @@ internal sealed class MeasurementHistoryService
                 DateTimeOffset.Now,
                 Path.GetFileName(filePath),
                 filePath,
-                snapshot);
+                result,
+                preview,
+                session);
             entries.Insert(0, entry);
         }
         else
@@ -115,14 +117,11 @@ internal sealed class MeasurementHistoryService
             entry.DisplayName = Path.GetFileName(filePath);
             entry.Timestamp = DateTimeOffset.Now;
             entry.SourceFilePath = filePath;
-            entry.Metadata = MeasurementHistorySnapshotMetadata.FromSnapshot(snapshot);
-            entry.Preview = snapshot.Preview;
-            entry.Session = snapshot.Session;
-            entry.Snapshot = snapshot;
+            Fill(entry, result, preview, session);
             MoveToStart(entry);
         }
 
-        RetainSingleFileBackedSnapshot(entry);
+        RetainSingleFileBackedResult(entry);
         TrimEntries();
         persistence.Save(entries);
         OnChanged();
@@ -142,7 +141,8 @@ internal sealed class MeasurementHistoryService
         return true;
     }
 
-    public async Task<MeasurementHistorySnapshot?> GetSnapshotAsync(Guid entryId)
+    /// <summary>The entry's result; a file-backed one is read back from its file when its cache was dropped.</summary>
+    public async Task<MeasurementResult?> GetResultAsync(Guid entryId)
     {
         MeasurementHistoryEntry? entry = FindById(entryId);
         if (entry == null)
@@ -150,9 +150,9 @@ internal sealed class MeasurementHistoryService
             return null;
         }
 
-        if (entry.Snapshot != null)
+        if (entry.Result != null)
         {
-            return entry.Snapshot;
+            return entry.Result;
         }
 
         if (string.IsNullOrWhiteSpace(entry.SourceFilePath) ||
@@ -162,11 +162,10 @@ internal sealed class MeasurementHistoryService
         }
 
         ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(entry.SourceFilePath);
-        entry.Snapshot = CreateSnapshot(file, entry.Session);
-        entry.Metadata = MeasurementHistorySnapshotMetadata.FromSnapshot(entry.Snapshot);
-        entry.Preview = entry.Snapshot.Preview;
-        RetainSingleFileBackedSnapshot(entry);
-        return entry.Snapshot;
+        MeasurementResult result = file.ToResult();
+        Fill(entry, result, PreviewOf(file, result), entry.Session);
+        RetainSingleFileBackedResult(entry);
+        return result;
     }
 
     public void UpdateSession(Guid entryId, MeasurementSessionSnapshot session)
@@ -178,11 +177,6 @@ internal sealed class MeasurementHistoryService
         }
 
         entry.Session = session;
-        if (entry.Snapshot != null)
-        {
-            entry.Snapshot.Session = session;
-        }
-
         persistence.Save(entries);
     }
 
@@ -201,7 +195,9 @@ internal sealed class MeasurementHistoryService
         DateTimeOffset timestamp,
         string displayName,
         string? sourceFilePath,
-        MeasurementHistorySnapshot snapshot)
+        MeasurementResult result,
+        MeasurementHistoryPreview preview,
+        MeasurementSessionSnapshot? session)
     {
         return new MeasurementHistoryEntry
         {
@@ -209,142 +205,30 @@ internal sealed class MeasurementHistoryService
             DisplayName = displayName,
             Timestamp = timestamp,
             SourceFilePath = sourceFilePath,
-            Metadata = MeasurementHistorySnapshotMetadata.FromSnapshot(snapshot),
-            Preview = snapshot.Preview,
-            Session = snapshot.Session,
-            Snapshot = snapshot
+            Metadata = MeasurementHistorySnapshotMetadata.FromResult(result),
+            Preview = preview,
+            Session = session,
+            Result = result
         };
     }
 
-    private static MeasurementHistorySnapshot CreateSnapshot(
-        ExpSweepMeasurement measurement,
+    private static void Fill(
+        MeasurementHistoryEntry entry,
+        MeasurementResult result,
+        MeasurementHistoryPreview preview,
         MeasurementSessionSnapshot? session)
     {
-        MeasurementImpulseResponse sweepDeconvolution = measurement.SweepDeconvolution
-            ?? throw new InvalidOperationException("Measurement has no sweep-deconvolution IR.");
-        MeasurementImpulseResponse? transferResult = measurement.Transfer;
-        Complex[] sweep = sweepDeconvolution.ImpulseResponse;
-        Complex[]? transfer = transferResult?.ImpulseResponse.ToArray();
-        MeasurementHistoryPreview preview = MeasurementHistoryPreviewBuilder.Build(
-            sweep,
-            sweepDeconvolution.PeakIndex,
-            measurement.SampleRate,
-            measurement.MeasurementMode,
-            transfer,
-            transferResult?.PeakIndex,
-            MeasuredBand.Resolve(
-                measurement.MeasurementProtectiveHighPass,
-                measurement.MeasuredLowFrequencyHz,
-                measurement.MeasuredHighFrequencyHz,
-                measurement.SampleRate));
-
-        return new MeasurementHistorySnapshot
-        {
-            SampleRate = measurement.SampleRate,
-            Bits = measurement.Bits,
-            LowFrequencyHz = measurement.LowFrequencyHz,
-            HighFrequencyHz = measurement.HighFrequencyHz,
-            AchievedLowFrequencyHz = measurement.AchievedLowFrequencyHz,
-            AchievedHighFrequencyHz = measurement.AchievedHighFrequencyHz,
-            MeasuredLowFrequencyHz = measurement.MeasuredLowFrequencyHz,
-            MeasuredHighFrequencyHz = measurement.MeasuredHighFrequencyHz,
-            MeasuredAtUtc = measurement.MeasuredAtUtc,
-            SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
-            PlayChannel = measurement.PlaybackChannel,
-            MeasurementMode = measurement.MeasurementMode,
-            TimingReference = measurement.TimingReference,
-            SweepDeconvolutionPeakIndex = sweepDeconvolution.PeakIndex,
-            TransferPeakIndex = transferResult?.PeakIndex,
-            AverageRunCount = measurement.AverageRunCount,
-            AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
-            AudioSession = ImpulseResponseFile.CreateAudioSessionFileEntry(
-                measurement.LastAudioSessionDiagnostics,
-                measurement.SampleRate,
-                measurement.Bits),
-            SweepDeconvolutionImpulseResponse = sweep.ToArray(),
-            TransferImpulseResponse = transfer,
-            TransferCoherence = measurement.TransferCoherence?.ToArray(),
-            MeterSnapshot = measurement.CurrentLevels,
-            ArrayMicrophones = measurement.ArrayMicrophones,
-            ProtectiveHighPass = measurement.MeasurementProtectiveHighPass,
-            MicrophoneCalibration = measurement.MeasurementMicrophoneCalibration,
-            // Keep the anchor only when it belongs to this result's input; a leftover would be trusted on restore.
-            SplCalibration =
-                measurement.MeasurementSplCalibration is { } anchor &&
-                measurement.InputMatches(anchor)
-                    ? anchor
-                    : null,
-            Preview = preview,
-            Session = session
-        };
+        entry.Metadata = MeasurementHistorySnapshotMetadata.FromResult(result);
+        entry.Preview = preview;
+        entry.Session = session;
+        entry.Result = result;
     }
 
-    internal static MeasurementHistorySnapshot CreateSnapshot(
-        ImpulseResponseFile file,
-        MeasurementSessionSnapshot? session = null)
-    {
-        Complex[] sweep = file.GetSweepDeconvolutionImpulseResponse();
-        Complex[]? transfer = file.GetTransferImpulseResponse();
-        (double lowHz, double highHz) = file.ResolveSweepBand();
-        (double achievedLowHz, double achievedHighHz) = file.ResolveAchievedSweepBand();
-        // Older files lack full-amplitude edges: fall back to the achieved band.
-        double measuredLowHz = file.MeasuredLowFrequencyHz > 0
-            ? file.MeasuredLowFrequencyHz
-            : achievedLowHz;
-        double measuredHighHz = file.MeasuredHighFrequencyHz > measuredLowHz
-            ? file.MeasuredHighFrequencyHz
-            : achievedHighHz;
-        MeasurementHistoryPreview preview = file.ToPreview() ??
-            MeasurementHistoryPreviewBuilder.Build(
-                sweep,
-                file.SweepDeconvolutionPeakIndex,
-                file.SampleRate,
-                file.MeasurementMode,
-                transfer,
-                file.TransferPeakIndex,
-                MeasuredBand.Resolve(
-                    file.ProtectiveHighPass?.ToConfiguration(),
-                    measuredLowHz,
-                    measuredHighHz,
-                    file.SampleRate));
+    // A file keeps the preview it was saved with; one from before previews were stored gets it rebuilt.
+    private static MeasurementHistoryPreview PreviewOf(ImpulseResponseFile file, MeasurementResult result) =>
+        file.ToPreview() ?? MeasurementHistoryPreviewBuilder.Build(result);
 
-        return new MeasurementHistorySnapshot
-        {
-            SampleRate = file.SampleRate,
-            Bits = file.Bits,
-            LowFrequencyHz = lowHz,
-            HighFrequencyHz = highHz,
-            AchievedLowFrequencyHz = achievedLowHz,
-            AchievedHighFrequencyHz = achievedHighHz,
-            MeasuredLowFrequencyHz = measuredLowHz,
-            MeasuredHighFrequencyHz = measuredHighHz,
-            MeasuredAtUtc = file.MeasuredAtUtc > DateTimeOffset.UnixEpoch
-                ? file.MeasuredAtUtc
-                : file.SavedAtUtc,
-            Octaves = file.Octaves,
-            SweepDurationSeconds = file.SweepDurationSeconds,
-            PlayChannel = file.PlayChannel,
-            MeasurementMode = file.MeasurementMode,
-            TimingReference = file.TimingReference,
-            SweepDeconvolutionPeakIndex = file.SweepDeconvolutionPeakIndex,
-            TransferPeakIndex = file.TransferPeakIndex,
-            AverageRunCount = file.AverageRunCount,
-            AcceptedAverageRunCount = file.AcceptedAverageRunCount,
-            AudioSession = file.AudioSession,
-            SweepDeconvolutionImpulseResponse = sweep,
-            TransferImpulseResponse = transfer,
-            TransferCoherence = file.TransferCoherence?.ToArray(),
-            MeterSnapshot = file.GetMeterSnapshot(),
-            ArrayMicrophones = file.ArrayMicrophones?.ToCurves() ?? [],
-            ProtectiveHighPass = file.ProtectiveHighPass?.ToConfiguration(),
-            MicrophoneCalibration = file.MicrophoneCalibration,
-            SplCalibration = file.SplCalibration,
-            Preview = preview,
-            Session = session
-        };
-    }
-
-    // Memory cap: unsaved snapshots hold full IRs, so few are kept. Depth cap: over it the oldest file-backed
+    // Memory cap: unsaved results hold full IRs, so few are kept. Depth cap: over it the oldest file-backed
     // row goes even if an unsaved one is older (the file restores it; an unsaved row is the measurement).
     // The memory cap runs first (≤10 unsaved of 30). Returns whether a persisted row was removed.
     private bool TrimEntries()
@@ -389,14 +273,14 @@ internal sealed class MeasurementHistoryService
         }
     }
 
-    // Snapshots hold full IRs (tens of MB): one file-backed entry keeps its cache; unsaved entries always keep theirs.
-    private void RetainSingleFileBackedSnapshot(MeasurementHistoryEntry keep)
+    // Results hold full IRs (tens of MB): one file-backed entry keeps its cache; unsaved entries always keep theirs.
+    private void RetainSingleFileBackedResult(MeasurementHistoryEntry keep)
     {
         foreach (MeasurementHistoryEntry entry in entries)
         {
             if (!ReferenceEquals(entry, keep) && entry.IsFileBacked)
             {
-                entry.Snapshot = null;
+                entry.Result = null;
             }
         }
     }

@@ -330,8 +330,7 @@ public sealed class ImpulseResponseFileTests
     [Fact]
     public void Capture_StoresComputedSweepDuration()
     {
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        MeasurementResult restored = TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
             sampleRate: 44_100,
@@ -346,19 +345,18 @@ public sealed class ImpulseResponseFileTests
             ],
             sweepDeconvolutionPeakIndex: 1);
 
-        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+        ImpulseResponseFile file = ImpulseResponseFile.From(restored);
 
-        Assert.Equal(measurement.Sweep!.ComputedDuration, file.SweepDurationSeconds);
-        Assert.Equal(
-            measurement.Sweep.SweepSamples / (double)measurement.SampleRate,
-            file.SweepDurationSeconds);
+        using var sweep = new ExponentialSineSweep();
+        sweep.FillData(20, 20_000, 1.0, 24, 44_100);
+        Assert.Equal(sweep.ComputedDuration, file.SweepDurationSeconds);
+        Assert.Equal(sweep.SweepSamples / 44_100.0, file.SweepDurationSeconds);
     }
 
     [Fact]
     public void Capture_StoresCurrentLevelSnapshot()
     {
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        MeasurementResult restored = TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
             sampleRate: 44_100,
@@ -372,12 +370,12 @@ public sealed class ImpulseResponseFileTests
                 Complex.Zero
             ],
             sweepDeconvolutionPeakIndex: 1);
-        measurement.RestoreLevelSnapshot(
+        restored = restored with { Levels = 
             new InputLevelMeterSnapshot(
                 new InputLevelMeterEntry(true, -12.3, -20.4, true, false),
-                new InputLevelMeterEntry(true, 0.0, -5.4, false, true)));
+                new InputLevelMeterEntry(true, 0.0, -5.4, false, true)) };
 
-        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+        ImpulseResponseFile file = ImpulseResponseFile.From(restored);
 
         Assert.NotNull(file.MicrophoneLevels);
         Assert.Equal(-12.3, file.MicrophoneLevels.PeakDbFs);

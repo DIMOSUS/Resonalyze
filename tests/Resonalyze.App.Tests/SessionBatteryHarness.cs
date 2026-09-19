@@ -4,7 +4,6 @@ using System.Numerics;
 using System.Text;
 using OxyPlot;
 using Resonalyze.Dsp;
-using Resonalyze.History;
 using Xunit.Abstractions;
 
 namespace Resonalyze.App.Tests;
@@ -608,8 +607,7 @@ public sealed class SessionBatteryHarness(ITestOutputHelper output)
 
                 ImpulseResponseFile file = ImpulseResponseFile.LoadAsync(path)
                     .GetAwaiter().GetResult();
-                ResolvedVirtualDspSource.FromSnapshot(
-                    MeasurementHistoryService.CreateSnapshot(file))
+                ResolvedVirtualDspSource.FromResult(file.ToResult())
                     ?.ApplyTo(channel.SideState(right));
                 identity.Append(path).Append('|')
                     .Append(settings.DelayMs.ToString("0.000", CultureInfo.InvariantCulture))

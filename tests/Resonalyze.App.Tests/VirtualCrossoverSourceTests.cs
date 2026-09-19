@@ -1,11 +1,10 @@
 ﻿using System.Numerics;
-using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
 
 public sealed class VirtualCrossoverSourceTests
 {
-    private static MeasurementHistorySnapshot Snapshot(
+    private static MeasurementResult Result(
         Complex[]? transferIr,
         int? transferPeak = null,
         int sampleRate = 48_000,
@@ -14,57 +13,57 @@ public sealed class VirtualCrossoverSourceTests
         new()
         {
             SampleRate = sampleRate,
+            Bits = 24,
             TimingReference = timingReference,
-            TransferImpulseResponse = transferIr,
-            TransferPeakIndex = transferPeak,
+            Transfer = transferIr == null
+                ? null
+                : new MeasurementImpulseResponse(transferIr, transferPeak ?? 0),
             TransferCoherence = coherence,
-            SweepDeconvolutionImpulseResponse = [Complex.One],
-            MeterSnapshot = InputLevelMeterSnapshot.Empty,
-            Preview = new MeasurementHistoryPreview()
+            SweepDeconvolution = new MeasurementImpulseResponse([Complex.One], 0)
         };
 
     [Fact]
-    public void FromSnapshot_ReturnsNull_WhenThereIsNoTransferIr()
+    public void FromResult_ReturnsNull_WhenThereIsNoTransferIr()
     {
-        Assert.Null(ResolvedVirtualDspSource.FromSnapshot(Snapshot(null)));
-        Assert.Null(ResolvedVirtualDspSource.FromSnapshot(Snapshot([])));
+        Assert.Null(ResolvedVirtualDspSource.FromResult(Result(null)));
+        Assert.Null(ResolvedVirtualDspSource.FromResult(Result([])));
     }
 
     // An imported recording's arrival is set by when the recorder started, so it cannot be summed.
     [Fact]
-    public void FromSnapshot_ReturnsNull_ForAnImportedRecording()
+    public void FromResult_ReturnsNull_ForAnImportedRecording()
     {
         Complex[] transferIr = [Complex.One, Complex.Zero];
 
-        Assert.Null(ResolvedVirtualDspSource.FromSnapshot(
-            Snapshot(transferIr, timingReference: TimingReference.RecordedSweep)));
-        Assert.NotNull(ResolvedVirtualDspSource.FromSnapshot(
-            Snapshot(transferIr, timingReference: TimingReference.SynchronizedLoopback)));
+        Assert.Null(ResolvedVirtualDspSource.FromResult(
+            Result(transferIr, timingReference: TimingReference.RecordedSweep)));
+        Assert.NotNull(ResolvedVirtualDspSource.FromResult(
+            Result(transferIr, timingReference: TimingReference.SynchronizedLoopback)));
     }
 
     [Theory]
     [InlineData(10, 3)]
     [InlineData(-5, 0)]
     [InlineData(2, 2)]
-    public void FromSnapshot_ClampsTransferPeakIndexIntoTheIr(int rawPeak, int expected)
+    public void FromResult_ClampsTransferPeakIndexIntoTheIr(int rawPeak, int expected)
     {
         Complex[] ir = [Complex.One, Complex.Zero, Complex.Zero, Complex.Zero];
 
         ResolvedVirtualDspSource? resolved =
-            ResolvedVirtualDspSource.FromSnapshot(Snapshot(ir, rawPeak));
+            ResolvedVirtualDspSource.FromResult(Result(ir, rawPeak));
 
         Assert.NotNull(resolved);
         Assert.Equal(expected, resolved.TransferPeakIndex);
     }
 
     [Fact]
-    public void FromSnapshot_DefaultsPeakToZero_AndCarriesRateAndCoherence()
+    public void FromResult_DefaultsPeakToZero_AndCarriesRateAndCoherence()
     {
         Complex[] ir = [Complex.One, Complex.Zero];
         double[] coherence = [1.0, 0.5];
 
-        ResolvedVirtualDspSource? resolved = ResolvedVirtualDspSource.FromSnapshot(
-            Snapshot(ir, transferPeak: null, sampleRate: 44_100, coherence: coherence));
+        ResolvedVirtualDspSource? resolved = ResolvedVirtualDspSource.FromResult(
+            Result(ir, transferPeak: null, sampleRate: 44_100, coherence: coherence));
 
         Assert.NotNull(resolved);
         Assert.Equal(0, resolved.TransferPeakIndex);
@@ -78,7 +77,7 @@ public sealed class VirtualCrossoverSourceTests
     {
         Complex[] ir = [Complex.One, Complex.Zero, Complex.Zero];
         ResolvedVirtualDspSource resolved =
-            ResolvedVirtualDspSource.FromSnapshot(Snapshot(ir, transferPeak: 1))!;
+            ResolvedVirtualDspSource.FromResult(Result(ir, transferPeak: 1))!;
         var state = new VirtualCrossoverChannelState();
 
         resolved.ApplyTo(state);

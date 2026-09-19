@@ -6,6 +6,9 @@ namespace Resonalyze;
 
 public partial class Form1
 {
+    /// <summary>The open measurement's rate, or the one the next run is configured for.</summary>
+    private int OpenSampleRate => analyzerDocument.Result?.SampleRate ?? expSweepMeasurement.SampleRate;
+
     private ModeDescriptor GetActiveModeDescriptor() =>
         GetModeDescriptor(modeController.ActiveTab);
 
@@ -26,7 +29,7 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Impulse,
                     () => new IROpt(),
-                    opt => opt.Init(expSweepMeasurement, impulseResponseOptions),
+                    opt => opt.Init(OpenSampleRate, impulseResponseOptions),
                     opt => opt.SetOptions(impulseResponseOptions),
                     // These rescale or re-origin an axis, so refit instead of restoring zoom.
                     viewResetKey: () => (
@@ -46,7 +49,8 @@ public partial class Form1
                     ModeTab.Frequency,
                     () => new FROptions(),
                     opt => opt.Init(
-                        expSweepMeasurement,
+                        analyzerDocument,
+                        expSweepMeasurement.SampleRate,
                         frequencyResponseOptions,
                         frequencyResponseVisibility,
                         CalibrationEntries()),
@@ -64,7 +68,7 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Phase,
                     () => new PROpt(),
-                    opt => opt.Init(expSweepMeasurement, phaseResponseOptions, phaseResponseVisibility, compareSelection.GetAnalysisSource),
+                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, phaseResponseOptions, phaseResponseVisibility, compareSelection.GetAnalysisSource),
                     opt => opt.SetOptions(phaseResponseOptions, phaseResponseVisibility))),
             [ModeTab.GroupDelay] = new(
                 ModeTab.GroupDelay,
@@ -78,7 +82,7 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.GroupDelay,
                     () => new GDOpt(),
-                    opt => opt.Init(expSweepMeasurement, groupDelayOptions, groupDelayVisibility, compareSelection.GetAnalysisSource),
+                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, groupDelayOptions, groupDelayVisibility, compareSelection.GetAnalysisSource),
                     opt => opt.SetOptions(groupDelayOptions, groupDelayVisibility))),
             [ModeTab.Waterfall] = new(
                 ModeTab.Waterfall,
@@ -92,7 +96,7 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Waterfall,
                     () => new WaterfallOptions(),
-                    opt => opt.Init(expSweepMeasurement, waterfallGenOptions),
+                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, waterfallGenOptions),
                     opt => opt.SetOptions(waterfallGenOptions))),
             [ModeTab.Burst] = new(
                 ModeTab.Burst,
@@ -106,7 +110,7 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Burst,
                     () => new BDOpt(),
-                    opt => opt.Init(expSweepMeasurement, burstDecayGenOptions),
+                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, burstDecayGenOptions),
                     opt => opt.SetOptions(burstDecayGenOptions))),
             [ModeTab.LiveSpectrum] = new(
                 ModeTab.LiveSpectrum,
@@ -130,7 +134,7 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Autocorrelation,
                     () => new ACOpt(),
-                    opt => opt.Init(expSweepMeasurement, impulseResponseOptions),
+                    opt => opt.Init(impulseResponseOptions),
                     opt => opt.SetOptions(impulseResponseOptions))),
             [ModeTab.TimeAlignment] = new(
                 ModeTab.TimeAlignment,

@@ -307,7 +307,7 @@ internal static class ImpulseWindowPreview
 
     public static void Update(
         OxyPlot.WindowsForms.PlotView plotView,
-        ExpSweepMeasurement measurement,
+        MeasurementResult? measurement,
         int windowLength,
         int leftWindow,
         int rightWindow,
@@ -326,7 +326,7 @@ internal static class ImpulseWindowPreview
 
     public static void UpdateGated(
         OxyPlot.WindowsForms.PlotView plotView,
-        ExpSweepMeasurement measurement,
+        MeasurementResult? measurement,
         double gateOffsetMs,
         double leftMs,
         double plateauMs,
@@ -346,7 +346,7 @@ internal static class ImpulseWindowPreview
     }
 
     private static PlotModel CreateGatedPlotModel(
-        ExpSweepMeasurement measurement,
+        MeasurementResult? measurement,
         double gateOffsetMs,
         double leftMs,
         double plateauMs,
@@ -356,7 +356,7 @@ internal static class ImpulseWindowPreview
     {
         var model = CreatePreviewPlotModel("IR Gate");
 
-        IrSource? irSource = measurement.SampleRate > 0
+        IrSource? irSource = measurement is { SampleRate: > 0 }
             ? SelectImpulseResponse(measurement, source)
             : null;
         if (irSource == null)
@@ -366,7 +366,7 @@ internal static class ImpulseWindowPreview
             return model;
         }
 
-        int sampleRate = measurement.SampleRate;
+        int sampleRate = measurement!.SampleRate;
         int gateOffset = MillisecondsToSamples(gateOffsetMs, sampleRate);
         int left = MillisecondsToSamples(leftMs, sampleRate);
         int plateau = MillisecondsToSamples(plateauMs, sampleRate);
@@ -483,7 +483,7 @@ internal static class ImpulseWindowPreview
         (int)Math.Round(Math.Max(0.0, milliseconds) * sampleRate / 1000.0);
 
     private static PlotModel CreatePlotModel(
-        ExpSweepMeasurement measurement,
+        MeasurementResult? measurement,
         int windowLength,
         int leftWindow,
         int rightWindow,
@@ -531,14 +531,14 @@ internal static class ImpulseWindowPreview
     }
 
     private static WindowedImpulse? CreateWindowedImpulse(
-        ExpSweepMeasurement measurement,
+        MeasurementResult? measurement,
         int windowLength,
         int leftWindow,
         int rightWindow,
         int offset,
         IrPreviewSource source)
     {
-        if (measurement.SampleRate <= 0)
+        if (measurement is not { SampleRate: > 0 })
         {
             return null;
         }
@@ -587,7 +587,7 @@ internal static class ImpulseWindowPreview
     }
 
     private static IrSource? SelectImpulseResponse(
-        ExpSweepMeasurement measurement,
+        MeasurementResult measurement,
         IrPreviewSource source)
     {
         return source switch

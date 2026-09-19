@@ -29,12 +29,13 @@ namespace Resonalyze.Options
         }
 
         internal void Init(
-            ExpSweepMeasurement expSweepMeasurement,
+            AnalyzerDocument document,
+            int configuredSampleRate,
             FrequencyResponseOptions frequencyResponseOptions,
             CurveVisibilityOptions visibility,
             IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries)
         {
-            AttachMeasurement(expSweepMeasurement);
+            AttachMeasurement(document, configuredSampleRate);
             InitializeControls(() =>
             {
                 comboWindowMode.SelectedIndex =
@@ -132,12 +133,8 @@ namespace Resonalyze.Options
         private void UpdateMagnitudeWindowControlState() =>
             comboFdwCycles.Enabled = comboWindowMode.SelectedIndex == 1;
 
-        // Mirrors MeasurementPlotContext.SplOffsetDb using the measurement's own snapshot calibration (loaded files carry theirs).
-        private bool IsSplAvailable() =>
-            Measurement is { } measurement &&
-            measurement.MeasurementSplCalibration is { } calibration &&
-            measurement.CurrentLevels.Loopback.Available &&
-            measurement.InputMatches(calibration);
+        // Mirrors MeasurementPlotContext.SplOffsetDb: the result's own anchor (loaded files carry theirs).
+        private bool IsSplAvailable() => Measurement?.SplOffsetDb != null;
 
         /// <summary>Called after every run and file load; recolours without changing the selection.</summary>
         public void RefreshSplAvailability() => UpdateSplChoiceLook();
@@ -149,7 +146,7 @@ namespace Resonalyze.Options
         private void UpdateSplChoiceLook()
         {
             bool available = IsSplAvailable();
-            bool measurementOnScreen = Measurement is { HasImpulseResponse: true };
+            bool measurementOnScreen = Measurement != null;
             bool viewOnlyConflict = !available && measurementOnScreen;
             radioMagnitudeSpl.ForeColor = viewOnlyConflict
                 ? UiPalette.Warning
@@ -185,7 +182,7 @@ namespace Resonalyze.Options
 
         protected override void RenderIrPreview()
         {
-            if (Measurement == null)
+            if (Document == null)
             {
                 return;
             }

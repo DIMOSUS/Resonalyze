@@ -191,6 +191,9 @@ itself is never touched: a Silent RTA that loses SPL keeps running on the relati
   overlap) changes while stopped: redrawing old data under new parameters would silently re-interpret it
   (slope compensation would re-tilt a pink RTA as if the excitation were white). A loaded capture is
   discarded too. A running analyzer needs no call; its restart begins a fresh accumulation.
+- New session discards the same way. The accumulation outlives a stop and a loaded capture is state, so
+  forgetting only the held curve let the next visit to the mode read the last session's run, or show its
+  capture, again.
 - `StopAndHoldAsync` harvests the final accumulation into the held snapshot; `AbortAsync` would stop
   without the last reading. `HasCaptureToSave` excludes a loaded capture, since re-saving would restamp
   it with this session's recipe.

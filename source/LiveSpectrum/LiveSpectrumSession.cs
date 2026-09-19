@@ -292,20 +292,14 @@ internal sealed class LiveSpectrumSession : IDisposable
         Changed?.Invoke();
     }
 
-    /// <summary>Drops the held curve and its envelope, keeping the accumulation.</summary>
-    public void ForgetHeld()
-    {
-        heldSnapshot = null;
-        PeakHold.Clear();
-    }
-
-    /// <summary>Discards the accumulation, the held curve and a loaded capture after an acquisition change, so old data
-    /// is not re-interpreted under new parameters.</summary>
+    /// <summary>Discards the accumulation, the held curve, its envelope and a loaded capture: nothing of it may be
+    /// redrawn under new parameters or in a new session.</summary>
     public void Discard()
     {
         analyzer.ResetAccumulation();
         loadedCapture = null;
-        ForgetHeld();
+        heldSnapshot = null;
+        PeakHold.Clear();
         Changed?.Invoke();
     }
 

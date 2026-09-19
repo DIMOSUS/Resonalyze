@@ -130,6 +130,55 @@ public sealed class LiveSpectrumWiringTests : IDisposable
         });
     }
 
+    // The accumulation outlives a stop, so a new session must discard it or the next visit reads the old run again.
+    [Fact]
+    public void ANewSessionDoesNotBringBackTheLastRun()
+    {
+        StaTest.Run(() =>
+        {
+            using var window = new LiveWindow();
+            window.Options(options => options.AnalysisMode = LiveAnalysisMode.Rta);
+            window.Record();
+            window.PumpUntil(() => window.Plot.Series.Any(IsRta), "the run's RTA");
+            window.Record();
+
+            window.NewSession();
+            window.Select(ModeTab.LiveSpectrum);
+
+            Assert.Null(window.Session.HeldSnapshot);
+            Assert.False(window.Session.HasDisplayableCurve);
+            Assert.False(window.Session.HasCaptureToSave);
+            Assert.Empty(window.Plot.Series);
+        });
+    }
+
+    // A loaded capture is state; a new session must drop it with the rest.
+    [Fact]
+    public void ANewSessionDoesNotBringBackALoadedCapture()
+    {
+        StaTest.Run(() =>
+        {
+            using var window = new LiveWindow();
+            window.Options(options => options.AnalysisMode = LiveAnalysisMode.Mmm);
+            window.Record();
+            window.PumpUntil(() => window.Session.AveragedFrameCount > 0, "a frame");
+            window.Record();
+            string path = Path.Combine(directory, "walk.json");
+            LiveCaptureDocument document = window.Session.BuildCaptureDocument()!;
+            document.Title = "walk";
+            document.Save(path);
+            window.Open(path);
+            Assert.NotNull(LoadedSeries(window.Plot));
+
+            window.NewSession();
+            window.Select(ModeTab.LiveSpectrum);
+
+            Assert.Null(window.Session.LoadedCapture);
+            Assert.Null(window.Session.DisplayedCalibrationName);
+            Assert.Null(LoadedSeries(window.Plot));
+        });
+    }
+
     // dB SPL without an anchor suppresses the live curves; one notice per model says why, and only while it is true.
     [Fact]
     public void ViewOnlySplExplainsTheSuppressedCurveOncePerModel()
@@ -255,6 +304,8 @@ public sealed class LiveSpectrumWiringTests : IDisposable
         }
 
         public void Open(string path) => Await("OpenMeasurementFileAsync", path);
+
+        public void NewSession() => Await("StartNewSessionAsync");
 
         /// <summary>Clicks Record and waits until the analyzer has started or stopped.</summary>
         public void Record()

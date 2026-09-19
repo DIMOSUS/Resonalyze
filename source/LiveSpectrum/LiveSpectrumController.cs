@@ -164,12 +164,6 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
         plot.RefreshLabels();
     }
 
-    public void ForgetLastCurve()
-    {
-        session.ForgetHeld();
-        RemoveOverloadAnnotation(plotView.Model);
-    }
-
     /// <summary>Redraws what the session holds; a running analyzer redraws on its own clock.</summary>
     public void Redraw()
     {
@@ -197,7 +191,8 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
         }
     }
 
-    /// <summary>Discards accumulation and kept curve after a stopped-analyzer acquisition change, so old data is not re-interpreted under new parameters.</summary>
+    /// <summary>Discards the accumulation, the kept curve and a loaded capture while stopped: after an acquisition change,
+    /// so old data is not re-interpreted under new parameters, and on New session.</summary>
     public void DiscardCapturedData()
     {
         session.Discard();

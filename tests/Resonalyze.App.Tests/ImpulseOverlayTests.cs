@@ -279,15 +279,12 @@ public sealed class ImpulseOverlayTests
             measurement.Engine,
             noiseMeasurement,
             _ => null,
-            new PlotPresentationOptions(
-                FrequencyResponse: new FrequencyResponseOptions(),
-                PhaseResponse: new FrequencyResponseOptions(),
-                GroupDelay: new FrequencyResponseOptions(),
-                FrequencyResponseVisibility: new CurveVisibilityOptions(),
-                PhaseResponseVisibility: new CurveVisibilityOptions(),
-                GroupDelayVisibility: new CurveVisibilityOptions(),
-                ImpulseResponse: impulseOptions,
-                LiveSpectrum: new LiveSpectrumOptions(),
-                Waterfall: new WaterfallGenerateOptions(),
-                BurstDecay: new WaterfallGenerateOptions()));
+            new AnalyzerViewSettings
+            {
+                PhaseResponse = new FrequencyResponseOptions(),
+                GroupDelay = new FrequencyResponseOptions(),
+                ImpulseResponse = impulseOptions,
+                Waterfall = new WaterfallGenerateOptions(),
+                BurstDecay = new WaterfallGenerateOptions()
+            });
 }

@@ -38,9 +38,9 @@ public partial class Form1
         }
 
         await SelectModeAsync(ModeTab.LiveSpectrum);
-        if (liveSpectrumOptions.AnalysisMode != document.Recipe.AnalysisMode)
+        if (viewSettings.LiveSpectrum.AnalysisMode != document.Recipe.AnalysisMode)
         {
-            liveSpectrumOptions.AnalysisMode = document.Recipe.AnalysisMode;
+            viewSettings.LiveSpectrum.AnalysisMode = document.Recipe.AnalysisMode;
             SaveMeasurementSettings();
             await ApplyMeasurementConfigurationToControllersAsync();
             // Discard before showing: discarding clears the loaded capture too.

@@ -22,34 +22,8 @@ namespace Resonalyze
         private readonly AnalyzerDocument analyzerDocument = new();
         private readonly NoiseMeasurement noiseMeasurement;
         private readonly MicrophoneCalibrationService microphoneCalibration;
-        private readonly WaterfallGenerateOptions waterfallGenOptions = new()
-        {
-            WaterfallMode = WaterfallMode.Fourier,
-        };
-        private readonly WaterfallGenerateOptions burstDecayGenOptions = new()
-        {
-            WaterfallMode = WaterfallMode.BurstDecay,
-            Window = 1024,
-            LeftTukeyWindow = 8,
-            RightTukeyWindow = 128,
-            SmoothingInverseOctaves = 6,
-        };
-
-        private readonly FrequencyResponseOptions frequencyResponseOptions = new();
-        private readonly FrequencyResponseOptions phaseResponseOptions = new()
-        {
-            SmoothingInverseOctaves = FrequencyResponseOptions.DefaultPhaseSmoothingInverseOctaves,
-        };
-        private readonly FrequencyResponseOptions groupDelayOptions = new()
-        {
-            SmoothingInverseOctaves = FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves,
-        };
-        private readonly CurveVisibilityOptions frequencyResponseVisibility = new();
-        private readonly CurveVisibilityOptions phaseResponseVisibility = new();
-        private readonly CurveVisibilityOptions groupDelayVisibility = new();
-        private readonly ImpulseResponseOptions impulseResponseOptions = new();
-        private readonly LiveSpectrumOptions liveSpectrumOptions = new();
-        private readonly TimeAlignmentOptions timeAlignmentOptions = new();
+        // Every mode's options; the panels edit them in place and the plot builds read them.
+        private readonly AnalyzerViewSettings viewSettings = new();
         private readonly PlotModelFactory plotModelFactory;
         private readonly ModeController modeController;
         private readonly LiveSpectrumController liveSpectrumController;

@@ -204,7 +204,7 @@ public partial class Form1
 
     private void SelectFrequencyResponseCalibration(string? calibrationId)
     {
-        frequencyResponseOptions.CalibrationId = calibrationId;
+        viewSettings.FrequencyResponse.CalibrationId = calibrationId;
         IReadOnlyList<MicrophoneCalibrationEntry> entries = CalibrationEntries();
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.SelectCalibration(calibrationId, entries));

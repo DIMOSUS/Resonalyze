@@ -36,17 +36,7 @@ public partial class Form1
             expSweepMeasurement,
             noiseMeasurement,
             ResolveCalibration,
-            new PlotPresentationOptions(
-                FrequencyResponse: frequencyResponseOptions,
-                PhaseResponse: phaseResponseOptions,
-                GroupDelay: groupDelayOptions,
-                FrequencyResponseVisibility: frequencyResponseVisibility,
-                PhaseResponseVisibility: phaseResponseVisibility,
-                GroupDelayVisibility: groupDelayVisibility,
-                ImpulseResponse: impulseResponseOptions,
-                LiveSpectrum: liveSpectrumOptions,
-                Waterfall: waterfallGenOptions,
-                BurstDecay: burstDecayGenOptions));
+            viewSettings);
         createdPlotModelFactory.SetCompareSourceProvider(compareSelection.GetAnalysisSource);
         PlotViewportMemory createdPlotViewports = new(plotView1);
         LiveSpectrumController createdLiveSpectrumController = new(
@@ -61,7 +51,7 @@ public partial class Form1
             UpdateOverlayAvailability,
             UpdateRecordButtonForCurrentMode,
             UpdatePlotLabelsPanel,
-            liveSpectrumOptions,
+            viewSettings.LiveSpectrum,
             DescribeCalibrationForCapture,
             () => closingInProgress);
         ModeController createdModeController = new(
@@ -86,7 +76,7 @@ public partial class Form1
         TimeAlignmentPanelController createdTimeAlignmentController = new(
             this,
             timeAlignmentPanel,
-            timeAlignmentOptions,
+            viewSettings.TimeAlignment,
             analyzerDocument,
             () => SaveMeasurementSettings(),
             () => plotModelFactory.ImpulseResponseFileName,
@@ -115,22 +105,8 @@ public partial class Form1
             createdDockedHistoryHost);
     }
 
-    private void ApplyPersistedSettings()
-    {
-        measurementSettings.ApplyTo(
-            expSweepMeasurement,
-            frequencyResponseOptions,
-            frequencyResponseVisibility,
-            phaseResponseOptions,
-            phaseResponseVisibility,
-            groupDelayOptions,
-            groupDelayVisibility,
-            impulseResponseOptions,
-            waterfallGenOptions,
-            burstDecayGenOptions,
-            liveSpectrumOptions,
-            timeAlignmentOptions);
-    }
+    private void ApplyPersistedSettings() =>
+        measurementSettings.ApplyTo(expSweepMeasurement, viewSettings);
 
     private void WireControllerEvents()
     {
@@ -185,7 +161,7 @@ public partial class Form1
         // The rig's choice describes the next run; a capture taken keeps its frozen calibration (no re-render, no peak-hold drop).
         string? rigCalibrationId =
             measurementSettings.Measurement.MicrophoneCalibrationId;
-        liveSpectrumOptions.CalibrationId = rigCalibrationId;
+        viewSettings.LiveSpectrum.CalibrationId = rigCalibrationId;
         RefreshLiveCalibrationReadout();
     }
 

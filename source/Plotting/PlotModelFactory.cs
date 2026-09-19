@@ -44,23 +44,23 @@ internal sealed class PlotModelFactory
         ExpSweepMeasurement expSweepMeasurement,
         NoiseMeasurement noiseMeasurement,
         Func<string?, CalibrationFile?> getCalibration,
-        PlotPresentationOptions options)
+        AnalyzerViewSettings view)
     {
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(view);
         this.expSweepMeasurement = expSweepMeasurement;
         this.noiseMeasurement = noiseMeasurement;
         this.getCalibration = getCalibration;
         measurementContext = new MeasurementPlotContext(document);
-        frequencyResponseOptions = options.FrequencyResponse;
-        phaseResponseOptions = options.PhaseResponse;
-        groupDelayOptions = options.GroupDelay;
-        frequencyResponseVisibility = options.FrequencyResponseVisibility;
-        phaseResponseVisibility = options.PhaseResponseVisibility;
-        groupDelayVisibility = options.GroupDelayVisibility;
-        impulseResponseOptions = options.ImpulseResponse;
-        liveSpectrumOptions = options.LiveSpectrum;
-        waterfallGenOptions = options.Waterfall;
-        burstDecayGenOptions = options.BurstDecay;
+        frequencyResponseOptions = view.FrequencyResponse;
+        phaseResponseOptions = view.PhaseResponse;
+        groupDelayOptions = view.GroupDelay;
+        frequencyResponseVisibility = view.FrequencyResponseVisibility;
+        phaseResponseVisibility = view.PhaseResponseVisibility;
+        groupDelayVisibility = view.GroupDelayVisibility;
+        impulseResponseOptions = view.ImpulseResponse;
+        liveSpectrumOptions = view.LiveSpectrum;
+        waterfallGenOptions = view.Waterfall;
+        burstDecayGenOptions = view.BurstDecay;
     }
 
     public string? ImpulseResponseFileName => measurementContext.ImpulseResponseFileName;

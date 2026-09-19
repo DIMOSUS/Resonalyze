@@ -29,13 +29,13 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Impulse,
                     () => new IROpt(),
-                    opt => opt.Init(OpenSampleRate, impulseResponseOptions),
-                    opt => opt.SetOptions(impulseResponseOptions),
+                    opt => opt.Init(OpenSampleRate, viewSettings.ImpulseResponse),
+                    opt => opt.SetOptions(viewSettings.ImpulseResponse),
                     // These rescale or re-origin an axis, so refit instead of restoring zoom.
                     viewResetKey: () => (
-                        impulseResponseOptions.AmplitudeScale,
-                        impulseResponseOptions.TimeUnit,
-                        impulseResponseOptions.TimeOrigin))),
+                        viewSettings.ImpulseResponse.AmplitudeScale,
+                        viewSettings.ImpulseResponse.TimeUnit,
+                        viewSettings.ImpulseResponse.TimeOrigin))),
             [ModeTab.Frequency] = new(
                 ModeTab.Frequency,
                 Mode.FrequencyResponse,
@@ -51,11 +51,11 @@ public partial class Form1
                     opt => opt.Init(
                         analyzerDocument,
                         expSweepMeasurement.SampleRate,
-                        frequencyResponseOptions,
-                        frequencyResponseVisibility,
+                        viewSettings.FrequencyResponse,
+                        viewSettings.FrequencyResponseVisibility,
                         CalibrationEntries()),
-                    opt => opt.SetOptions(frequencyResponseOptions, frequencyResponseVisibility),
-                    viewResetKey: () => frequencyResponseOptions.MagnitudeScale)),
+                    opt => opt.SetOptions(viewSettings.FrequencyResponse, viewSettings.FrequencyResponseVisibility),
+                    viewResetKey: () => viewSettings.FrequencyResponse.MagnitudeScale)),
             [ModeTab.Phase] = new(
                 ModeTab.Phase,
                 Mode.PhaseResponse,
@@ -68,8 +68,8 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Phase,
                     () => new PROpt(),
-                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, phaseResponseOptions, phaseResponseVisibility, compareSelection.GetAnalysisSource),
-                    opt => opt.SetOptions(phaseResponseOptions, phaseResponseVisibility))),
+                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, viewSettings.PhaseResponse, viewSettings.PhaseResponseVisibility, compareSelection.GetAnalysisSource),
+                    opt => opt.SetOptions(viewSettings.PhaseResponse, viewSettings.PhaseResponseVisibility))),
             [ModeTab.GroupDelay] = new(
                 ModeTab.GroupDelay,
                 Mode.GroupDelay,
@@ -82,8 +82,8 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.GroupDelay,
                     () => new GDOpt(),
-                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, groupDelayOptions, groupDelayVisibility, compareSelection.GetAnalysisSource),
-                    opt => opt.SetOptions(groupDelayOptions, groupDelayVisibility))),
+                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, viewSettings.GroupDelay, viewSettings.GroupDelayVisibility, compareSelection.GetAnalysisSource),
+                    opt => opt.SetOptions(viewSettings.GroupDelay, viewSettings.GroupDelayVisibility))),
             [ModeTab.Waterfall] = new(
                 ModeTab.Waterfall,
                 Mode.CumulativeSpectrumDecay,
@@ -96,8 +96,8 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Waterfall,
                     () => new WaterfallOptions(),
-                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, waterfallGenOptions),
-                    opt => opt.SetOptions(waterfallGenOptions))),
+                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, viewSettings.Waterfall),
+                    opt => opt.SetOptions(viewSettings.Waterfall))),
             [ModeTab.Burst] = new(
                 ModeTab.Burst,
                 Mode.BurstDecay,
@@ -110,8 +110,8 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Burst,
                     () => new BDOpt(),
-                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, burstDecayGenOptions),
-                    opt => opt.SetOptions(burstDecayGenOptions))),
+                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, viewSettings.BurstDecay),
+                    opt => opt.SetOptions(viewSettings.BurstDecay))),
             [ModeTab.LiveSpectrum] = new(
                 ModeTab.LiveSpectrum,
                 Mode.LiveSpectrum,
@@ -134,8 +134,8 @@ public partial class Form1
                 OpenSettings: () => ToggleModeOptions(
                     ModeTab.Autocorrelation,
                     () => new ACOpt(),
-                    opt => opt.Init(impulseResponseOptions),
-                    opt => opt.SetOptions(impulseResponseOptions))),
+                    opt => opt.Init(viewSettings.ImpulseResponse),
+                    opt => opt.SetOptions(viewSettings.ImpulseResponse))),
             [ModeTab.TimeAlignment] = new(
                 ModeTab.TimeAlignment,
                 Mode.TimeAlignment,

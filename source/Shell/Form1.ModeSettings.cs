@@ -52,19 +52,7 @@ public partial class Form1
         MeasurementSettingsFile.SweepMeasurementSettings preservedMeasurementSettings =
             measurementSettings.Measurement;
         // Calibrations survive inside CaptureFrom; the measurement knows nothing about them.
-        measurementSettings.CaptureFrom(
-            expSweepMeasurement,
-            frequencyResponseOptions,
-            frequencyResponseVisibility,
-            phaseResponseOptions,
-            phaseResponseVisibility,
-            groupDelayOptions,
-            groupDelayVisibility,
-            impulseResponseOptions,
-            waterfallGenOptions,
-            burstDecayGenOptions,
-            liveSpectrumOptions,
-            timeAlignmentOptions);
+        measurementSettings.CaptureFrom(expSweepMeasurement, viewSettings);
         if (!captureMeasurementSettings)
         {
             measurementSettings.Measurement = preservedMeasurementSettings;
@@ -132,7 +120,7 @@ public partial class Form1
             opt =>
             {
                 opt.Init(
-                    liveSpectrumOptions,
+                    viewSettings.LiveSpectrum,
                     microphoneCalibration.GetEntries(),
                     plotModelFactory.LiveSplOffsetDb.HasValue,
                     liveSpectrumController.HasDisplayableCurve,
@@ -147,9 +135,9 @@ public partial class Form1
 
     private async Task ApplyLiveSpectrumOptionsAsync(LiveSpectrumOpt dialog)
     {
-        LiveSpectrumRestartSnapshot before = LiveSpectrumRestartSnapshot.Capture(liveSpectrumOptions);
-        dialog.SetOptions(liveSpectrumOptions);
-        LiveSpectrumRestartSnapshot after = LiveSpectrumRestartSnapshot.Capture(liveSpectrumOptions);
+        LiveSpectrumRestartSnapshot before = LiveSpectrumRestartSnapshot.Capture(viewSettings.LiveSpectrum);
+        dialog.SetOptions(viewSettings.LiveSpectrum);
+        LiveSpectrumRestartSnapshot after = LiveSpectrumRestartSnapshot.Capture(viewSettings.LiveSpectrum);
         SaveMeasurementSettings();
         RefreshSaveAvailability();
 

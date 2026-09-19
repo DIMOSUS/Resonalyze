@@ -190,7 +190,7 @@ public partial class Form1
             return;
         }
 
-        liveSpectrumOptions.MagnitudeScale = Dsp.MagnitudeScale.Relative;
+        viewSettings.LiveSpectrum.MagnitudeScale = Dsp.MagnitudeScale.Relative;
         SaveMeasurementSettings();
         // An open panel must follow, or its next apply writes SPL back.
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
@@ -201,14 +201,14 @@ public partial class Form1
     // Not gated on the previous measurement's anchor.
     private void ResetSplViewOnlyDisplayForRun()
     {
-        if (frequencyResponseOptions.MagnitudeScale !=
+        if (viewSettings.FrequencyResponse.MagnitudeScale !=
                 Dsp.MagnitudeScale.SoundPressureLevel ||
             expSweepMeasurement.NextRunHasSplAnchor)
         {
             return;
         }
 
-        frequencyResponseOptions.MagnitudeScale = Dsp.MagnitudeScale.Relative;
+        viewSettings.FrequencyResponse.MagnitudeScale = Dsp.MagnitudeScale.Relative;
         SaveMeasurementSettings();
         // An open panel must follow, or its next apply writes SPL back.
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(

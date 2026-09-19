@@ -297,6 +297,10 @@ suppression is there to make junctions readable, not to reduce every channel to 
   overwrite it and a downgrade or bug must not cost the tuning session. The move is best effort (the file may be
   locked).
 - `LoadFrom` (import) throws on a broken or incompatible file: an explicit import deserves an explicit error.
+- Nothing is saved before the first show. Until `OnPanelShown` starts the stored load the project is the
+  constructor's placeholder, so `ScheduleSave` drops edits to it: a panel built and disposed unseen (a test, a
+  harness, the host pushing its target at startup) must not write that placeholder over the stored session.
+  Nothing real edits earlier: a dropped session file shows the tool before importing, and Load lives on the panel.
 - `SaveResetBackup` writes the project **in memory** aside before Reset replaces it. Copying the autosave file
   was wrong: the file lags the screen by the debounce (and by everything on a never-written session), and a
   missing file was reported as "nothing to lose" while a whole tune stood in memory. Write failures are

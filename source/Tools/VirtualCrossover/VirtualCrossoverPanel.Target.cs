@@ -173,14 +173,8 @@ public partial class VirtualCrossoverPanel
         RedrawAll();
     }
 
-    // Nothing before the project loads: the host pushes a target at startup, which would save a default project over the real one.
     private void StoreTargetInProject(EqTargetCurve value)
     {
-        if (!initialized)
-        {
-            return;
-        }
-
         session.Project.Target = VirtualCrossoverTargetSettings.FromCurve(value);
         ScheduleSave();
     }

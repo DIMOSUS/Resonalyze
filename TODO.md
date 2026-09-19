@@ -279,17 +279,6 @@ next field session rather than in a register nobody else can tick.
   curve building vs side-processing orchestration; and moving `ProcessedChannel`'s
   `OxyColor` out into the render binding. Persistence, calibration and control
   binding are inherently UI-bound — leave them.
-- [ ] ★ **The Virtual DSP autosave trusts whoever built the panel.** `ScheduleSave`
-  and `FlushProject` have no guard and `Dispose` flushes, so any host that builds
-  a panel it never shows replaces the stored session with the panel's empty
-  three-block project. Until #203 the App test host did exactly that on every run,
-  which is why sessions kept resetting to default; it now runs portable, but a
-  scratchpad harness without `portable.flag` still would. Only two call sites
-  check `initialized` (`ReconcileCalibrationSelection`, `StoreTargetInProject`).
-  Guard the save itself: write only once `OnPanelShown` has started the stored
-  load. Nothing real saves earlier: a dropped session file shows the tool before
-  importing (`Form1.OpenDroppedFileAsync`), and Load lives on the panel. Pin it
-  with a test that builds, edits and disposes a panel that was never shown.
 - [ ] **The audition's "Own (as measured)" refuses more than the render needs.**
   A car whose two SIDES were measured through different microphones is refused
   along with one whose own channels disagree, though only the second is

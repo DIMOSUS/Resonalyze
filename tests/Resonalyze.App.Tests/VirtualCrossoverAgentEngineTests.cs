@@ -846,7 +846,7 @@ public sealed class VirtualCrossoverAgentEngineTests
             proposal, selected, reviewedFingerprint, proposedRows, summary, null)!;
         while (!task.IsCompleted)
         {
-            Application.DoEvents();
+            StaTest.Pump();
             Thread.Sleep(5);
         }
 
@@ -859,7 +859,7 @@ public sealed class VirtualCrossoverAgentEngineTests
         var task = (Task<bool>)Invoke(panel, "RunAgentProbesAsync", rows, summary, null)!;
         while (!task.IsCompleted)
         {
-            Application.DoEvents();
+            StaTest.Pump();
             Thread.Sleep(5);
         }
 
@@ -873,7 +873,7 @@ public sealed class VirtualCrossoverAgentEngineTests
         var task = (Task<bool>)Invoke(panel, "RunAgentEngineRequests", rows, summary, null)!;
         while (!task.IsCompleted)
         {
-            Application.DoEvents();
+            StaTest.Pump();
             Thread.Sleep(5);
         }
 

@@ -2,28 +2,14 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-// A strip's index in `peqSlots` IS its filter number, grid cell and export position: structural changes end in
-// LayoutSlots(), and order is part of the undo state.
+// One strip per band of the session's bank, in bank order: a strip's index IS its filter number, grid cell and export
+// position. Structural changes go to the bank and end in PresentBank().
 public partial class EqWizardPanel
 {
-    // Narrow and mid-band: a deliberate correction to drag into place, not a wide bell colouring half the spectrum.
-    private const double AddedBandFrequencyHz = 1000;
-    private const double AddedBandQ = 5;
-
-    // Target curve's default shelf corners, with the steepest monotonic knee.
-    private const double AddedLowShelfFrequencyHz = 100;
-    private const double AddedHighShelfFrequencyHz = 5000;
-    private const double AddedShelfQ = 0.7;
-
-    // Q is the first-order band's sentinel too: the order has no Q, but project-file validators require a positive one.
-    private const double AddedAllPassFrequencyHz = 2000;
-    private const double AddedAllPassQ = 1.0;
-
     // The timer restarts on every change, so a whole fader drag is one undo step.
     private const int BankEditIdleMilliseconds = 600;
 
     private readonly List<PeqSlotControl> peqSlots = new();
-    private readonly PeqBankHistory bankHistory = new();
     private readonly System.Windows.Forms.Timer bankEditTimer = new()
     {
         Interval = BankEditIdleMilliseconds
@@ -33,28 +19,11 @@ public partial class EqWizardPanel
     private PeqAddSlotControl addSlotTile = null!;
     // Rebuilt per open, so the last one is not owned by the designer container (see Dispose).
     private ContextMenuStrip? bandTypeMenu;
-    private PeqBankState committedBankState = PeqBankState.Empty;
     private PeqSlotControl? selectedSlot;
     private PeqSlotControl? draggedSlot;
     private int draggedSlotOrigin;
     private bool draggedSlotDropped;
     private bool draggedSlotCancelled;
-    private bool restoringBank;
-    private bool suppressBandCountSync;
-
-    // ISO 266 1/3-octave centres, 16 Hz..20 kHz: 32 values match the maximum bank; used for whole-bank spreads.
-    private static readonly double[] IsoThirdOctaveCentersHz =
-    {
-        16, 20, 25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500,
-        630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000,
-        10000, 12500, 16000, 20000
-    };
-
-    private const double DefaultBandQ = 1.0;
-
-    private static double DefaultBandFrequencyHz(int index) =>
-        IsoThirdOctaveCentersHz[
-            Math.Clamp(index, 0, IsoThirdOctaveCentersHz.Length - 1)];
 
     private void InitializePeqSlotTable()
     {
@@ -107,73 +76,32 @@ public partial class EqWizardPanel
     private void InitializeBandsComboBox()
     {
         darkComboBoxBands.Items.Clear();
-        for (int count = 0; count <= MaxPeqSlotCount; count++)
+        for (int count = 0; count <= EqWizardLimits.MaxBands; count++)
         {
             darkComboBoxBands.Items.Add(count);
         }
 
-        darkComboBoxBands.SelectedIndexChanged += ThemedComboBoxBandsSelectedIndexChanged;
-        SyncBandCountCombo();
+        darkComboBoxBands.SelectedIndexChanged += (_, _) =>
+        {
+            if (!presenting)
+            {
+                SetBandCount(darkComboBoxBands.SelectedItem is int count ? count : 0);
+            }
+        };
+        PresentBandCount();
     }
 
-    private void ThemedComboBoxBandsSelectedIndexChanged(object? sender, EventArgs e)
-    {
-        if (suppressBandCountSync)
-        {
-            return;
-        }
+    private void PresentBandCount() => Present(() => darkComboBoxBands.SelectedIndex = peqSlots.Count);
 
-        SetBandCount(darkComboBoxBands.SelectedItem is int count ? count : 0);
-    }
-
-    private void SyncBandCountCombo()
-    {
-        suppressBandCountSync = true;
-        try
-        {
-            darkComboBoxBands.SelectedIndex = peqSlots.Count;
-        }
-        finally
-        {
-            suppressBandCountSync = false;
-        }
-    }
-
+    // Each structural change lands the pending edit as its own step first (in the bank), so the edit timer stops only once one happened.
     private void SetBandCount(int count)
     {
-        count = Math.Clamp(count, 0, MaxPeqSlotCount);
-        if (count == peqSlots.Count)
+        if (session.Bank.SetCount(count))
         {
-            return;
+            bankEditTimer.Stop();
+            PresentBank(keepSelection: false);
+            Redraw();
         }
-
-        CommitBankChange();
-        suppressRedraw = true;
-        try
-        {
-            while (peqSlots.Count > count)
-            {
-                RemoveSlot(peqSlots[^1]);
-            }
-
-            while (peqSlots.Count < count)
-            {
-                InsertSlot(
-                    peqSlots.Count,
-                    new PeqBand(DefaultBandFrequencyHz(peqSlots.Count), DefaultBandQ, 0));
-            }
-
-            LayoutSlots();
-        }
-        finally
-        {
-            suppressRedraw = false;
-        }
-
-        SyncBandCountCombo();
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
-        CommitBankChange();
     }
 
     private static readonly (PeqBandType Type, string Label)[] BandTypeChoices =
@@ -185,7 +113,6 @@ public partial class EqWizardPanel
         (PeqBandType.AllPassSecondOrder, "All-pass, 2nd order (phase only)")
     };
 
-    // Keeps frequency, Q and gain: a bell and a shelf at the same corner are what a tuner compares.
     private void ShowBandTypeMenu(PeqSlotControl slot, Point screenPoint)
     {
         if (!peqSlots.Contains(slot))
@@ -210,45 +137,33 @@ public partial class EqWizardPanel
 
     private void SetBandType(PeqSlotControl slot, PeqBandType type)
     {
-        if (!peqSlots.Contains(slot) || slot.BandType == type)
+        int index = peqSlots.IndexOf(slot);
+        if (index < 0)
         {
             return;
         }
 
-        CommitBankChange();
-        slot.BandType = type;
-        SelectSlot(slot);
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
-        CommitBankChange();
+        if (session.Bank.SetType(index, type))
+        {
+            bankEditTimer.Stop();
+            PresentBank(keepSelection: false);
+            SelectSlot(slot);
+            Redraw();
+        }
     }
-
-    private static PeqBand NewBand(PeqBandType type) => type switch
-    {
-        PeqBandType.LowShelf =>
-            new PeqBand(AddedLowShelfFrequencyHz, AddedShelfQ, 0, type),
-        PeqBandType.HighShelf =>
-            new PeqBand(AddedHighShelfFrequencyHz, AddedShelfQ, 0, type),
-        PeqBandType.AllPassFirstOrder or PeqBandType.AllPassSecondOrder =>
-            new PeqBand(AddedAllPassFrequencyHz, AddedAllPassQ, 0, type),
-        _ => new PeqBand(AddedBandFrequencyHz, AddedBandQ, 0, type)
-    };
 
     private void AddBand(PeqBandType type)
     {
-        if (peqSlots.Count >= MaxPeqSlotCount)
+        int index = session.Bank.Add(type);
+        if (index < 0)
         {
             return;
         }
 
-        CommitBankChange();
-        PeqSlotControl slot = InsertSlot(peqSlots.Count, NewBand(type));
-        LayoutSlots();
-        SyncBandCountCombo();
-        SelectSlot(slot);
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
-        CommitBankChange();
+        bankEditTimer.Stop();
+        PresentBank(keepSelection: false);
+        SelectSlot(peqSlots[index]);
+        Redraw();
     }
 
     // The caller lays the grid out, so a batch of inserts costs one layout pass.
@@ -259,13 +174,13 @@ public partial class EqWizardPanel
             Dock = DockStyle.Fill,
             Margin = new Padding(1)
         };
-        slot.SetGainRange(numericGainMin.Value, numericGainMax.Value);
-        slot.SampleRateHz = EqProcessorSampleRate;
+        slot.SetGainRange(session.GainMinDb, session.GainMaxDb);
+        slot.SampleRateHz = session.ProcessorSampleRateHz;
         // Values before handlers: a fresh strip must not arm the undo timer or redraw.
         WriteBand(slot, band);
-        slot.FrequencyInput.ValueChanged += BankValueChanged;
-        slot.QInput.ValueChanged += BankValueChanged;
-        slot.GainInput.ValueChanged += BankValueChanged;
+        slot.FrequencyInput.ValueChanged += (_, _) => StripValueChanged(slot);
+        slot.QInput.ValueChanged += (_, _) => StripValueChanged(slot);
+        slot.GainInput.ValueChanged += (_, _) => StripValueChanged(slot);
         SetTip(slot.FrequencyInput, FrequencyTip);
         SetTip(slot.QInput, QTip);
         SetTip(slot.GainInput, GainTip);
@@ -301,12 +216,13 @@ public partial class EqWizardPanel
         slot.Dispose();
     }
 
+    // The session holds the band as the strip shows it, so writing it back changes no value.
     private static void WriteBand(PeqSlotControl slot, PeqBand band)
     {
         slot.BandType = band.Type;
-        slot.FrequencyInput.Value = slot.FrequencyInput.ClampValue(band.FrequencyHz);
-        slot.QInput.Value = slot.QInput.ClampValue(band.Q);
-        slot.GainInput.Value = slot.GainInput.ClampValue(band.GainDb);
+        slot.FrequencyInput.Value = (decimal)band.FrequencyHz;
+        slot.QInput.Value = (decimal)band.Q;
+        slot.GainInput.Value = (decimal)band.GainDb;
     }
 
     private static PeqBand ReadBand(PeqSlotControl slot) => new(
@@ -314,6 +230,46 @@ public partial class EqWizardPanel
         (double)slot.QInput.Value,
         (double)slot.GainInput.Value,
         slot.BandType);
+
+    /// <summary>
+    /// Makes the strips show the session's bank: trailing strips added or removed, every value written, the grid laid out.
+    /// </summary>
+    /// <param name="keepSelection">Keeps the selected filter NUMBER, for a whole new bank written over the old one.</param>
+    private void PresentBank(bool keepSelection)
+    {
+        int selectedIndex = selectedSlot == null ? -1 : peqSlots.IndexOf(selectedSlot);
+        IReadOnlyList<PeqBand> bands = session.Bank.Bands;
+        Present(() =>
+        {
+            while (peqSlots.Count > bands.Count)
+            {
+                RemoveSlot(peqSlots[^1]);
+            }
+
+            for (int index = 0; index < bands.Count; index++)
+            {
+                if (index < peqSlots.Count)
+                {
+                    // The range first, or a gain outside the old one would be clamped on its way in.
+                    peqSlots[index].SetGainRange(session.GainMinDb, session.GainMaxDb);
+                    WriteBand(peqSlots[index], bands[index]);
+                }
+                else
+                {
+                    InsertSlot(index, bands[index]);
+                }
+            }
+
+            NumericGain.Value = (decimal)session.Bank.PreampDb;
+            LayoutSlots();
+        });
+        PresentBandCount();
+        UpdateUndoRedoButtons();
+        if (keepSelection)
+        {
+            RestoreSelection(selectedIndex);
+        }
+    }
 
     // Called repeatedly while dragging; no-op when already in place.
     private void MoveSlot(PeqSlotControl slot, int index)
@@ -324,6 +280,7 @@ public partial class EqWizardPanel
             return;
         }
 
+        session.Bank.Move(current, index);
         peqSlots.RemoveAt(current);
         peqSlots.Insert(Math.Clamp(index, 0, peqSlots.Count), slot);
         LayoutSlots();
@@ -341,7 +298,7 @@ public partial class EqWizardPanel
                 SetCell(peqSlots[index], index);
             }
 
-            if (peqSlots.Count < MaxPeqSlotCount)
+            if (peqSlots.Count < EqWizardLimits.MaxBands)
             {
                 if (!peqSlotTable.Controls.Contains(addSlotTile))
                 {
@@ -383,7 +340,7 @@ public partial class EqWizardPanel
             other.SetSelected(other == slot);
         }
 
-        DrawSelectedCurves();
+        Redraw();
     }
 
     private void DeselectBand()
@@ -399,69 +356,7 @@ public partial class EqWizardPanel
             slot.SetSelected(false);
         }
 
-        DrawSelectedCurves();
-    }
-
-    private void BankValueChanged(object? sender, EventArgs e)
-    {
-        ArmBankEditTimer();
-        DrawSelectedCurves();
-    }
-
-    private void ArmBankEditTimer()
-    {
-        if (restoringBank)
-        {
-            return;
-        }
-
-        bankEditTimer.Stop();
-        bankEditTimer.Start();
-    }
-
-    private PeqBankState CaptureBankState() =>
-        new(peqSlots.Select(ReadBand), (double)NumericGain.Value);
-
-    // Pure UI: undo-history consequences are the caller's.
-    private void SetBank(PeqBankState state)
-    {
-        int selectedIndex = selectedSlot == null ? -1 : peqSlots.IndexOf(selectedSlot);
-
-        restoringBank = true;
-        suppressRedraw = true;
-        try
-        {
-            while (peqSlots.Count > state.Bands.Count)
-            {
-                RemoveSlot(peqSlots[^1]);
-            }
-
-            for (int index = 0; index < state.Bands.Count; index++)
-            {
-                if (index < peqSlots.Count)
-                {
-                    WriteBand(peqSlots[index], state.Bands[index]);
-                }
-                else
-                {
-                    InsertSlot(index, state.Bands[index]);
-                }
-            }
-
-            NumericGain.Value = NumericGain.ClampValue(state.PreampDb);
-            LayoutSlots();
-        }
-        finally
-        {
-            suppressRedraw = false;
-            restoringBank = false;
-        }
-
-        bankEditTimer.Stop();
-        SyncBandCountCombo();
-        RestoreSelection(selectedIndex);
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
+        Redraw();
     }
 
     private void RestoreSelection(int index)
@@ -476,25 +371,44 @@ public partial class EqWizardPanel
         SelectSlot(peqSlots[index]);
     }
 
-    // Also called before every structural change so a half-typed field does not ride along with it.
+    private void StripValueChanged(PeqSlotControl slot)
+    {
+        int index = peqSlots.IndexOf(slot);
+        if (presenting || index < 0)
+        {
+            return;
+        }
+
+        session.Bank.Edit(index, ReadBand(slot));
+        ArmBankEditTimer();
+        Redraw();
+    }
+
+    private void PreampValueChanged()
+    {
+        if (presenting)
+        {
+            return;
+        }
+
+        session.Bank.EditPreamp((double)NumericGain.Value);
+        ArmBankEditTimer();
+        Redraw();
+    }
+
+    private void ArmBankEditTimer()
+    {
+        bankEditTimer.Stop();
+        bankEditTimer.Start();
+    }
+
     private void CommitBankChange()
     {
         bankEditTimer.Stop();
-        if (restoringBank)
+        if (session.Bank.Commit())
         {
-            return;
+            UpdateUndoRedoButtons();
         }
-
-        PeqBankState current = CaptureBankState();
-        if (current.Equals(committedBankState))
-        {
-            return;
-        }
-
-        bankHistory.Push(committedBankState);
-        committedBankState = current;
-        UpdateUndoRedoButtons();
-        RaiseSettingsChanged();
     }
 
     /// <summary>
@@ -512,45 +426,34 @@ public partial class EqWizardPanel
         CommitBankChange();
     }
 
-    // Restored settings are not an edit anyone should undo into.
-    private void ResetBankHistory()
-    {
-        bankEditTimer.Stop();
-        bankHistory.Clear();
-        committedBankState = CaptureBankState();
-        UpdateUndoRedoButtons();
-    }
-
     private void UndoBankChange()
     {
-        CommitBankChange();
-        if (bankHistory.TryUndo(committedBankState, out PeqBankState previous))
+        bankEditTimer.Stop();
+        if (session.Bank.Undo())
         {
-            ApplyHistoryState(previous);
+            PresentBank(keepSelection: true);
+            Redraw();
         }
+
+        UpdateUndoRedoButtons();
     }
 
     private void RedoBankChange()
     {
-        CommitBankChange();
-        if (bankHistory.TryRedo(committedBankState, out PeqBankState next))
+        bankEditTimer.Stop();
+        if (session.Bank.Redo())
         {
-            ApplyHistoryState(next);
+            PresentBank(keepSelection: true);
+            Redraw();
         }
-    }
 
-    private void ApplyHistoryState(PeqBankState state)
-    {
-        SetBank(state);
-        // What the strips hold after clamping, or the next commit would record a phantom step and drop the redo trail.
-        committedBankState = CaptureBankState();
         UpdateUndoRedoButtons();
     }
 
     private void UpdateUndoRedoButtons()
     {
-        buttonUndo.Enabled = bankHistory.CanUndo;
-        buttonRedo.Enabled = bankHistory.CanRedo;
+        buttonUndo.Enabled = session.Bank.CanUndo;
+        buttonRedo.Enabled = session.Bank.CanRedo;
     }
 
     // Bound at the panel so a text box's own Ctrl+Z does not undo a keystroke instead of a filter (deliberate trade).
@@ -601,13 +504,13 @@ public partial class EqWizardPanel
         else if (!draggedSlotDropped)
         {
             // Dropped outside the bank: the others kept their relative order, so removal is the whole change.
+            session.Bank.Remove(peqSlots.IndexOf(slot));
             RemoveSlot(slot);
             LayoutSlots();
-            SyncBandCountCombo();
+            PresentBandCount();
         }
 
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
+        Redraw();
         CommitBankChange();
     }
 
@@ -686,7 +589,7 @@ public partial class EqWizardPanel
     // Source, target and Auto Tune settings are deliberately untouched: this clears the tune, not the setup.
     private void ResetBands()
     {
-        if (peqSlots.Count == 0 && NumericGain.Value == 0)
+        if (session.Bank.IsEmpty)
         {
             return;
         }
@@ -705,72 +608,17 @@ public partial class EqWizardPanel
             return;
         }
 
-        CommitBankChange();
-        SetBank(PeqBankState.Empty);
-        CommitBankChange();
-    }
-
-    /// <summary>
-    /// Carries the replaced bank's all-pass bands over into a tuned bank (the tuner emits bells only). On overflow the
-    /// FITTED bands give way: they can be regenerated, a hand-aligned all-pass cannot.
-    /// </summary>
-    internal static EqualizationCurve WithAllPassBands(
-        EqualizationCurve tuned,
-        IReadOnlyList<PeqBand> allPass)
-    {
-        ArgumentNullException.ThrowIfNull(tuned);
-        ArgumentNullException.ThrowIfNull(allPass);
-        if (allPass.Count == 0)
-        {
-            return tuned;
-        }
-
-        return new EqualizationCurve(
-            tuned.Bands
-                .Take(Math.Max(0, MaxPeqSlotCount - allPass.Count))
-                .Concat(allPass),
-            tuned.PreampDb);
+        bankEditTimer.Stop();
+        session.Bank.Clear();
+        PresentBank(keepSelection: true);
+        Redraw();
     }
 
     private void ApplyEqualizationCurve(EqualizationCurve curve)
     {
-        CommitBankChange();
-        SetBank(new PeqBankState(
-            curve.Bands.Take(MaxPeqSlotCount),
-            curve.PreampDb));
-        CommitBankChange();
+        bankEditTimer.Stop();
+        session.Bank.Replace(curve);
+        PresentBank(keepSelection: true);
+        Redraw();
     }
-
-    // Restored bank becomes the history baseline. Old files carry only a count and rebuild the ISO-centred spread.
-    private void ApplyPersistedBank(MeasurementSettingsFile.EqWizardSettings settings)
-    {
-        IEnumerable<PeqBand> bands = settings.Bands != null
-            ? settings.Bands
-                .Take(MaxPeqSlotCount)
-                .Select(band => new PeqBand(
-                    band.FrequencyHz,
-                    band.Q,
-                    band.GainDb,
-                    // An undefined enum number becomes a bell HERE, where it enters the app.
-                    Enum.IsDefined(band.Type) ? band.Type : PeqBandType.Peaking))
-            : Enumerable
-                .Range(0, Math.Clamp(settings.BandCount, 0, MaxPeqSlotCount))
-                .Select(index => new PeqBand(DefaultBandFrequencyHz(index), DefaultBandQ, 0));
-
-        // Strips clamp corrupt values (see WriteBand), so a hand-edited file loses a value, not the bank.
-        SetBank(new PeqBankState(bands, settings.PreampDb));
-        ResetBankHistory();
-    }
-
-    private List<MeasurementSettingsFile.PeqBandSettings> CaptureBands() =>
-        peqSlots
-            .Select(ReadBand)
-            .Select(band => new MeasurementSettingsFile.PeqBandSettings
-            {
-                FrequencyHz = band.FrequencyHz,
-                Q = band.Q,
-                GainDb = band.GainDb,
-                Type = band.Type
-            })
-            .ToList();
 }

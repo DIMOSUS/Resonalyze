@@ -279,7 +279,28 @@ internal sealed record EqWizardExportRequest(
     double MaxHz,
     EqTuneStats? Stats,
     // Tuning sheet only: profile formats are read by RBJ-Q software, so restating Q would corrupt them.
-    PeqQConvention QConvention = PeqQConvention.Rbj);
+    PeqQConvention QConvention = PeqQConvention.Rbj)
+{
+    /// <summary>The bank as the session holds it, realised at its processor's rate, titled after the file.</summary>
+    public static EqWizardExportRequest For(
+        EqWizardSession session,
+        string path,
+        EqWizardExportTarget target)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        (double minHz, double maxHz) = session.FrequencyWindow;
+        return new EqWizardExportRequest(
+            path,
+            target,
+            session.Bank.Curve,
+            session.ProcessorSampleRateHz,
+            System.IO.Path.GetFileNameWithoutExtension(path),
+            minHz,
+            maxHz,
+            EqWizardRender.CurrentStats(session),
+            session.QConvention);
+    }
+}
 
 internal sealed record EqWizardTuningSheetRequest(
     string Path,

@@ -42,7 +42,7 @@ public sealed class AgentProgressDialogTests
             Task.Run(() => dialog.Report("Excess group delay: B:left…")).GetAwaiter().GetResult();
             for (int pump = 0; pump < 20 && !Label(dialog, "labelStep").Text.Contains("B:left"); pump++)
             {
-                Application.DoEvents();
+                StaTest.Pump();
                 Thread.Sleep(5);
             }
 

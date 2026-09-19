@@ -70,7 +70,7 @@ public sealed class RewImportDialogTests
         dialog.Location = new Point(-6000, -6000);
         dialog.Show();
         // Shown is posted, and the list loads from it.
-        Application.DoEvents();
+        StaTest.Pump();
         try
         {
             act(dialog);

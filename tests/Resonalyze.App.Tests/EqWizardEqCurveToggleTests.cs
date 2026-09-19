@@ -1,101 +1,65 @@
-using System.Reflection;
-using System.Windows.Forms;
+using OxyPlot;
 using OxyPlot.Axes;
-using OxyPlot.Series;
-using OxyPlot.WindowsForms;
 
 namespace Resonalyze.App.Tests;
 
 public sealed class EqWizardEqCurveToggleTests
 {
-    private const string EqGainAxisKey = "eq-wizard:gain";
-
     [Fact]
     public void ByDefaultTheBanksCurveAndItsAxisAreDrawn()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
-        Assert.True(Toggle(panel).Checked);
-        Assert.Contains("EQ", CurveTitles(panel));
-        Assert.True(EqAxis(panel).IsAxisVisible);
+        PlotModel model = EqWizardTestPlots.Draw(session);
+
+        Assert.True(session.ShowEqCurve);
+        Assert.Contains("EQ", EqWizardTestPlots.CurveTitles(model));
+        Assert.True(EqAxis(model).IsAxisVisible);
     }
 
     [Fact]
     public void TurningItOffTakesTheCurveAndTheRightHandAxisWithIt()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
-        Toggle(panel).Checked = false;
+        session.SetShowEqCurve(false);
+        PlotModel model = EqWizardTestPlots.Draw(session);
 
-        Assert.DoesNotContain("EQ", CurveTitles(panel));
+        Assert.DoesNotContain("EQ", EqWizardTestPlots.CurveTitles(model));
         // A scale with no trace would read as a scale for the left-axis curves.
-        Assert.False(EqAxis(panel).IsAxisVisible);
+        Assert.False(EqAxis(model).IsAxisVisible);
     }
 
     [Fact]
     public void InPhaseTheBanksOwnCurveGoesButTheSharedAxisStays()
     {
-        using var panel = new EqWizardPanel();
-        SetBandCount(panel, 3);
-        SelectSlot(panel, Slots(panel)[1]);
-        Field<CheckBox>(panel, "checkBoxEqPhase").Checked = true;
+        var session = new EqWizardSession();
+        session.Bank.SetCount(3);
+        session.SetPhaseMode(true);
 
-        Toggle(panel).Checked = false;
+        session.SetShowEqCurve(false);
+        PlotModel model = EqWizardTestPlots.Draw(session, selectedBand: 1);
 
-        Assert.DoesNotContain("EQ phase", CurveTitles(panel));
-        Assert.Contains("Band 2 phase", CurveTitles(panel));
-        Assert.True(EqAxis(panel).IsAxisVisible);
+        Assert.DoesNotContain("EQ phase", EqWizardTestPlots.CurveTitles(model));
+        Assert.Contains("Band 2 phase", EqWizardTestPlots.CurveTitles(model));
+        Assert.True(EqAxis(model).IsAxisVisible);
         // Re-armed even when not drawn, or it keeps a decibel title over a phase plot.
-        Assert.Equal("Phase (°)", EqAxis(panel).Title);
+        Assert.Equal("Phase (°)", EqAxis(model).Title);
     }
 
     [Fact]
     public void TheChoiceSurvivesASettingsRoundTrip()
     {
-        using var saved = new EqWizardPanel();
-        Toggle(saved).Checked = false;
+        var saved = new EqWizardSession();
+        saved.SetShowEqCurve(false);
 
-        using var restored = new EqWizardPanel();
-        ApplyPersistedSettings(restored, saved.CaptureSettings());
+        var restored = new EqWizardSession();
+        restored.ApplySettings(saved.CaptureSettings());
 
-        Assert.False(Toggle(restored).Checked);
-        Assert.DoesNotContain("EQ", CurveTitles(restored));
+        Assert.False(restored.ShowEqCurve);
+        Assert.DoesNotContain("EQ", EqWizardTestPlots.CurveTitles(EqWizardTestPlots.Draw(restored)));
     }
 
-    private static CheckBox Toggle(EqWizardPanel panel) =>
-        Field<CheckBox>(panel, "checkBoxEqCurve");
-
-    private static Axis EqAxis(EqWizardPanel panel) =>
-        Field<PlotView>(panel, "plotWizard").Model!.Axes
-            .First(axis => axis.Key == EqGainAxisKey);
-
-    private static IReadOnlyList<string> CurveTitles(EqWizardPanel panel) =>
-        Field<PlotView>(panel, "plotWizard").Model!.Series
-            .OfType<XYAxisSeries>()
-            .Select(series => series.Title ?? string.Empty)
-            .ToList();
-
-    private static IReadOnlyList<PeqSlotControl> Slots(EqWizardPanel panel) =>
-        Field<List<PeqSlotControl>>(panel, "peqSlots");
-
-    private static void SetBandCount(EqWizardPanel panel, int count) =>
-        Invoke(panel, "SetBandCount", count);
-
-    private static void SelectSlot(EqWizardPanel panel, object slot) =>
-        Invoke(panel, "SelectSlot", slot);
-
-    private static void ApplyPersistedSettings(
-        EqWizardPanel panel,
-        MeasurementSettingsFile.EqWizardSettings settings) =>
-        Invoke(panel, "ApplyPersistedSettings", settings);
-
-    private static void Invoke(EqWizardPanel panel, string name, params object[] arguments) =>
-        typeof(EqWizardPanel)
-            .GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, arguments);
-
-    private static T Field<T>(EqWizardPanel panel, string name) =>
-        (T)typeof(EqWizardPanel)
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(panel)!;
+    private static Axis EqAxis(PlotModel model) =>
+        model.Axes.First(axis => axis.Key == EqWizardPlot.EqGainAxisKey);
 }

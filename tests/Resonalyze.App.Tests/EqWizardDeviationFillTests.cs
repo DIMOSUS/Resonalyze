@@ -1,9 +1,5 @@
 using System.Numerics;
-using System.Reflection;
-using System.Windows.Forms;
-using OxyPlot;
 using OxyPlot.Series;
-using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -18,11 +14,11 @@ public sealed class EqWizardDeviationFillTests
     [Fact]
     public void NothingIsShadedWhereTheSourceCurveDoesNotExist()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
-        ApplySource(panel, GappedHandoff());
+        session.Load(GappedHandoff());
 
-        IReadOnlyList<AreaSeries> fills = Fills(panel);
+        IReadOnlyList<AreaSeries> fills = Fills(session);
         Assert.NotEmpty(fills);
         foreach (AreaSeries fill in fills)
         {
@@ -36,26 +32,22 @@ public sealed class EqWizardDeviationFillTests
     [Fact]
     public void TheShadingStillCoversTheBandThatWasMeasured()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
-        ApplySource(panel, GappedHandoff());
+        session.Load(GappedHandoff());
 
-        IReadOnlyList<AreaSeries> fills = Fills(panel);
+        IReadOnlyList<AreaSeries> fills = Fills(session);
         Assert.All(fills, fill => Assert.True(fill.Points.Count > 100));
         Assert.All(fills, fill => Assert.True(fill.Points[^1].X > 19_000));
     }
 
     [Fact]
-    public void TheShadingReadsTheTargetAtItsOwnFrequencies() => StaTest.Run(() =>
+    public async Task TheShadingReadsTheTargetAtItsOwnFrequencies()
     {
-        using var panel = new EqWizardPanel();
-        panel.CreateControl();
-
-        ApplySource(panel, BandLimitedHandoff());
-        PumpUntilCorrectedCurveLands(panel);
+        EqWizardSession session = await WithCorrectedCurveAsync(BandLimitedHandoff());
 
         // Result and target vertices must share frequencies; one render dropping NaN bins slid the target sideways.
-        IReadOnlyList<AreaSeries> fills = Fills(panel);
+        IReadOnlyList<AreaSeries> fills = Fills(session);
         Assert.NotEmpty(fills);
         foreach (AreaSeries fill in fills)
         {
@@ -65,19 +57,15 @@ public sealed class EqWizardDeviationFillTests
                 Assert.Equal(fill.Points[i].X, fill.Points2[i].X, 9);
             }
         }
-    });
+    }
 
     [Fact]
-    public void TheShadingCoversEverythingTheSweepMeasured() => StaTest.Run(() =>
+    public async Task TheShadingCoversEverythingTheSweepMeasured()
     {
-        using var panel = new EqWizardPanel();
-        panel.CreateControl();
-
-        ApplySource(panel, BandLimitedHandoff());
-        PumpUntilCorrectedCurveLands(panel);
+        EqWizardSession session = await WithCorrectedCurveAsync(BandLimitedHandoff());
 
         // Symptom: a 200 Hz sweep's shading closed in a wedge near 2 kHz (200²/20).
-        IReadOnlyList<AreaSeries> fills = Fills(panel);
+        IReadOnlyList<AreaSeries> fills = Fills(session);
         Assert.NotEmpty(fills);
         Assert.True(
             fills.Max(fill => fill.Points[^1].X) > 19_000,
@@ -86,7 +74,7 @@ public sealed class EqWizardDeviationFillTests
             fills,
             fill => Assert.All(
                 fill.Points, point => Assert.True(point.X >= SweptFromHz)));
-    });
+    }
 
     private static EqWizardCurveSource BandLimitedHandoff()
     {
@@ -124,16 +112,16 @@ public sealed class EqWizardDeviationFillTests
         };
     }
 
-    // Gated sources are convolved off the UI thread.
-    private static void PumpUntilCorrectedCurveLands(EqWizardPanel panel)
+    // A gated source's corrected curve is convolved off the UI thread.
+    private static async Task<EqWizardSession> WithCorrectedCurveAsync(EqWizardCurveSource source)
     {
-        for (int attempt = 0; attempt < 400 && Fills(panel).Count == 0; attempt++)
-        {
-            Application.DoEvents();
-            Thread.Sleep(25);
-        }
-
-        Assert.NotEmpty(Fills(panel));
+        var session = new EqWizardSession();
+        session.Load(source);
+        Task? preview = session.Previews.RequestGatedPreview(EqWizardRender.DisplayedEq(session));
+        Assert.NotNull(preview);
+        await preview;
+        Assert.NotNull(session.Previews.GatedPreview);
+        return session;
     }
 
     private static EqWizardCurveSource GappedHandoff()
@@ -182,16 +170,6 @@ public sealed class EqWizardDeviationFillTests
         };
     }
 
-    private static IReadOnlyList<AreaSeries> Fills(EqWizardPanel panel) =>
-        Model(panel).Series.OfType<AreaSeries>().ToList();
-
-    private static PlotModel Model(EqWizardPanel panel) =>
-        ((PlotView)typeof(EqWizardPanel)
-            .GetField("plotWizard", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(panel)!).Model!;
-
-    private static void ApplySource(EqWizardPanel panel, EqWizardCurveSource source) =>
-        typeof(EqWizardPanel)
-            .GetMethod("ApplySource", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [source]);
+    private static IReadOnlyList<AreaSeries> Fills(EqWizardSession session) =>
+        EqWizardTestPlots.Draw(session).Series.OfType<AreaSeries>().ToList();
 }

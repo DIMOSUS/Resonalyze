@@ -169,7 +169,7 @@ internal static class EqAutoTuneHeadless
             TotalGainMaxDb = boostsAllowed ? double.PositiveInfinity : 0,
             SampleRateHz = ProcessorRate(source),
             CutsOnlyMode = !boostsAllowed,
-            QMin = PeqSlotControl.MinimumQ,
+            QMin = (double)EqWizardLimits.BandQ.Minimum,
             QMax = policy.MaxQ,
             AllowShelves = shelves
         };
@@ -193,7 +193,7 @@ internal static class EqAutoTuneHeadless
         ArgumentNullException.ThrowIfNull(inputs);
         EqualizationCurve tuned = EqAutoTuner.Tune(
             inputs.Source, inputs.Target, inputs.Options, inputs.Coherence);
-        return EqWizardPanel.WithAllPassBands(tuned, inputs.KeptAllPass);
+        return EqWizardFit.Finish(tuned, inputs.KeptAllPass);
     }
 
     public static double? RmsErrorDb(

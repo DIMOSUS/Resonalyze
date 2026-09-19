@@ -1,39 +1,14 @@
 using System.ComponentModel;
-using System.Numerics;
-using OxyPlot;
-using OxyPlot.Annotations;
-using OxyPlot.Axes;
-using OxyPlot.Series;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-internal sealed record EqWizardCurve(
-    string Title,
-    OxyColor Color,
-    double StrokeThickness,
-    LineStyle LineStyle,
-    IReadOnlyList<DataPoint> Points);
-
-// Source and SourcePlusEq are null without a source; otherwise Target is sampled on the source's frequencies.
-internal sealed record EqWizardRenderSet(
-    EqWizardCurve Target,
-    EqWizardCurve? Source,
-    EqWizardCurve? SourcePlusEq);
-
+// The panel binds its controls to an EqWizardSession: handlers write the session and redraw; Present* methods write the
+// controls back without raising their handlers. The rules live in the session and its readers (see EqWizardSession).
 public partial class EqWizardPanel : UserControl
 {
-    private const int MaxPeqSlotCount = 32;
-    private const int MinAutoTuneBandLimit = 4;
     private const int PeqColumnCount = 16;
     private const int PeqRowCount = 2;
-    private const string WizardSeriesTag = "eq-wizard:curve";
-    private const string WizardTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.00} dB";
-    private const string PhaseTrackerFormat = "{0}\n{2:0.0} Hz\n{4:0.0} °";
-    // Dense enough that a Q=20 all-pass (most of 360° in 1/20 oct) gets several points per wrap, so seam detection holds.
-    private const int PhaseGridPointCount = 1500;
-    // Own right-hand axis so the EQ reads around 0 dB even when a dB SPL source puts the left axis far from 0.
-    private const string EqGainAxisKey = "eq-wizard:gain";
 
     private const string FrequencyTip =
         "Band center frequency (Hz). On a shelf this is the middle of the " +
@@ -60,26 +35,13 @@ public partial class EqWizardPanel : UserControl
         ShowAlways = true
     };
 
+    private readonly EqWizardSession session = new();
     private readonly EqWizardAutoTuneOrchestrator autoTuneOrchestrator = new();
     private readonly EqWizardImportExportCoordinator importExportCoordinator = new();
+    private readonly EqWizardPlot plot = new();
     private PlotLabelsPanelController plotLabels = null!;
-    private PlotWatermarkAnnotation hintAnnotation = null!;
-    private LineAnnotation fromMarker = null!;
-    private LineAnnotation toMarker = null!;
-    private LineAnnotation bandMarker = null!;
-    private RectangleAnnotation rangeFill = null!;
-    private EqTuneStats? lastStats;
-    private bool suppressRedraw;
-    private bool suppressWindowClamp;
-    private bool suppressGainClamp;
-
-    private const decimal MinFrequencyGapHz = 1m;
-
-    private const decimal MinGainGapDb = 1m;
-
-    private static readonly OxyColor BandCurveColor = OxyColor.FromAColor(150, UiPalette.CurveBandOverlay.ToOxy());
-
-    private static readonly OxyColor EqAxisColor = UiPalette.GraphAxisText.ToOxy();
+    // Set while the panel writes its own controls, so their handlers do not write the value back.
+    private bool presenting;
 
     public EqWizardPanel()
     {
@@ -87,6 +49,7 @@ public partial class EqWizardPanel : UserControl
         // Before layout: the layout pass stretches the plot by deltas from the designed positions.
         CaptureLayoutBaseline();
         Ui.ThemedScrollBars.Apply(this);
+        ApplyFieldRanges();
         InitializePlotWizard();
         InitializePeqSlotTable();
         InitializeBandsComboBox();
@@ -100,25 +63,48 @@ public partial class EqWizardPanel : UserControl
         comboBoxCalibration.SelectedIndexChanged += (_, _) => OnCalibrationChanged();
         NumericTargetOffset.ValueChanged += (_, _) => OnTargetOffsetChanged();
         // The preamp is part of the bank's undo state.
-        NumericGain.ValueChanged += BankValueChanged;
-        checkBoxBypass.CheckedChanged += (_, _) => DrawSelectedCurves();
-        checkBoxEqPhase.CheckedChanged += (_, _) => DrawSelectedCurves();
+        NumericGain.ValueChanged += (_, _) => PreampValueChanged();
+        checkBoxBypass.CheckedChanged += (_, _) =>
+        {
+            if (!presenting)
+            {
+                session.SetBypass(checkBoxBypass.Checked);
+                Redraw();
+            }
+        };
+        checkBoxEqPhase.CheckedChanged += (_, _) =>
+        {
+            if (!presenting)
+            {
+                session.SetPhaseMode(checkBoxEqPhase.Checked);
+                Redraw();
+            }
+        };
         checkBoxEqCurve.CheckedChanged += (_, _) =>
         {
-            DrawSelectedCurves();
-            RaiseSettingsChanged();
+            if (!presenting)
+            {
+                session.SetShowEqCurve(checkBoxEqCurve.Checked);
+                Redraw();
+            }
         };
         buttonPhaseGate.Click += (_, _) => OpenPhaseGateDialog();
         checkBoxCutsOnly.CheckedChanged += (_, _) =>
         {
-            // Orphan any in-flight fit computed under the previous setting.
-            autoTuneOrchestrator.Invalidate();
-            RaiseSettingsChanged();
+            if (!presenting)
+            {
+                // Orphan any in-flight fit computed under the previous setting.
+                autoTuneOrchestrator.Invalidate();
+                session.SetCutsOnly(checkBoxCutsOnly.Checked);
+            }
         };
         checkBoxShelves.CheckedChanged += (_, _) =>
         {
-            autoTuneOrchestrator.Invalidate();
-            RaiseSettingsChanged();
+            if (!presenting)
+            {
+                autoTuneOrchestrator.Invalidate();
+                session.SetAllowShelves(checkBoxShelves.Checked);
+            }
         };
         buttonAutoTune.Click += (_, _) => AutoTune();
         buttonReturnToDsp.Click += (_, _) => ReturnPeqToVirtualDsp();
@@ -135,130 +121,162 @@ public partial class EqWizardPanel : UserControl
         numericGainMax.ValueChanged += (_, _) => GainBoundChanged(minChanged: false);
         numericQMax.ValueChanged += (_, _) =>
         {
-            autoTuneOrchestrator.Invalidate();
-            RaiseSettingsChanged();
+            if (!presenting)
+            {
+                autoTuneOrchestrator.Invalidate();
+                session.SetAutoTuneMaxQ(numericQMax.Value);
+            }
         };
         Click += (_, _) => DeselectBand();
         panelPEQ.Click += (_, _) => DeselectBand();
         plotWizard.Click += (_, _) => DeselectBand();
         InitializeToolTips();
-        ApplyGainRange();
+        PresentFitSettings();
+        PresentViewSettings();
+        PresentTargetOffset();
+        PresentGainRange();
+        Redraw();
+    }
+
+    /// <summary>The wizard's state, for the host and tests; the panel is its only writer from the UI.</summary>
+    internal EqWizardSession Session => session;
+
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<EqTuneStats?>? ResultsChanged { get; set; }
+
+    /// <summary>Raised after a change the settings file keeps (see <see cref="EqWizardSession.SettingsChanged"/>).</summary>
+    internal event Action? SettingsChanged
+    {
+        add => session.SettingsChanged += value;
+        remove => session.SettingsChanged -= value;
+    }
+
+    /// <summary>The Auto Tune settings on the controls, for a fit run elsewhere (AI import) that must match this button.</summary>
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal EqAutoTunePolicy CurrentAutoTunePolicy => EqWizardFit.Policy(session);
+
+    // The fields take their ranges from the limits the session holds its values to.
+    private void ApplyFieldRanges()
+    {
+        NumericTargetOffset.ApplyFieldRange(EqWizardLimits.TargetOffset);
+        NumericGain.ApplyFieldRange(EqWizardLimits.Preamp);
+        numericFromHz.ApplyFieldRange(EqWizardLimits.WindowFrequency);
+        numericToHz.ApplyFieldRange(EqWizardLimits.WindowFrequency);
+        numericGainMin.ApplyFieldRange(EqWizardLimits.GainMinimum);
+        numericGainMax.ApplyFieldRange(EqWizardLimits.GainMaximum);
+        numericQMax.ApplyFieldRange(EqWizardLimits.AutoTuneMaxQ);
+    }
+
+    private void Present(Action write)
+    {
+        bool outer = presenting;
+        presenting = true;
+        try
+        {
+            write();
+        }
+        finally
+        {
+            presenting = outer;
+        }
+    }
+
+    private void PresentFitSettings() => Present(() =>
+    {
+        numericFromHz.Value = session.WindowFromHz;
+        numericToHz.Value = session.WindowToHz;
+        numericGainMin.Value = session.GainMinDb;
+        numericGainMax.Value = session.GainMaxDb;
+        numericQMax.Value = session.AutoTuneMaxQ;
+        checkBoxCutsOnly.Checked = session.CutsOnly;
+        checkBoxShelves.Checked = session.AllowShelves;
+        comboBoxBandsLimit.SelectedItem = session.BandLimit;
+    });
+
+    private void PresentViewSettings() => Present(() =>
+    {
+        checkBoxBypass.Checked = session.Bypass;
+        checkBoxEqPhase.Checked = session.PhaseMode;
+        checkBoxEqCurve.Checked = session.ShowEqCurve;
+    });
+
+    private void PresentWindow()
+    {
+        Present(() =>
+        {
+            numericFromHz.Value = session.WindowFromHz;
+            numericToHz.Value = session.WindowToHz;
+        });
+        plot.ShowWindow(session);
+        plotWizard.InvalidatePlot(false);
     }
 
     private void GainBoundChanged(bool minChanged)
     {
-        if (suppressGainClamp)
+        if (presenting)
         {
             return;
         }
 
-        EnforceGainOrder(minChanged);
-        ApplyGainRange();
+        bool clamped = minChanged
+            ? session.SetGainMin(numericGainMin.Value)
+            : session.SetGainMax(numericGainMax.Value);
+        PresentGainRange();
+        // A clamped gain is an edit like a moved fader: it lands as its own undo step.
+        if (clamped)
+        {
+            ArmBankEditTimer();
+        }
+
+        Redraw();
     }
 
-    // Pushes the opposite bound; if it is at its limit, pulls the edited one back. The flag stops re-entry.
-    private void EnforceGainOrder(bool minChanged)
+    // Every strip's gain field follows Max Cut / Max Boost; the EQ axis's nominal range follows the budget.
+    private void PresentGainRange()
     {
-        if (numericGainMin.Value <= numericGainMax.Value - MinGainGapDb)
+        Present(() =>
         {
-            return;
-        }
-
-        suppressGainClamp = true;
-        try
-        {
-            if (minChanged)
+            numericGainMin.Value = session.GainMinDb;
+            numericGainMax.Value = session.GainMaxDb;
+            for (int index = 0; index < Math.Min(peqSlots.Count, session.Bank.Bands.Count); index++)
             {
-                decimal desiredMax = numericGainMin.Value + MinGainGapDb;
-                if (desiredMax <= numericGainMax.Maximum)
-                {
-                    numericGainMax.Value = desiredMax;
-                }
-                else
-                {
-                    numericGainMax.Value = numericGainMax.Maximum;
-                    numericGainMin.Value = numericGainMax.Maximum - MinGainGapDb;
-                }
+                peqSlots[index].SetGainRange(session.GainMinDb, session.GainMaxDb);
+                WriteBand(peqSlots[index], session.Bank.Bands[index]);
             }
-            else
-            {
-                decimal desiredMin = numericGainMax.Value - MinGainGapDb;
-                if (desiredMin >= numericGainMin.Minimum)
-                {
-                    numericGainMin.Value = desiredMin;
-                }
-                else
-                {
-                    numericGainMin.Value = numericGainMin.Minimum;
-                    numericGainMax.Value = numericGainMin.Minimum + MinGainGapDb;
-                }
-            }
-        }
-        finally
-        {
-            suppressGainClamp = false;
-        }
+        });
+        plot.RefreshEqAxis(session);
     }
 
-    private void ApplyGainRange()
+    private void FrequencyBoundChanged(bool fromChanged)
     {
-        decimal minimum = numericGainMin.Value;
-        decimal maximum = numericGainMax.Value;
-        // SetGainRange can clamp and redraw per band (up to 32 rebuilds); batch behind one redraw.
-        suppressRedraw = true;
-        try
+        if (presenting)
         {
-            foreach (PeqSlotControl slot in peqSlots)
-            {
-                slot.SetGainRange(minimum, maximum);
-            }
-        }
-        finally
-        {
-            suppressRedraw = false;
+            return;
         }
 
-        UpdateEqAxisRange();
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
+        if (fromChanged)
+        {
+            session.SetWindowFrom(numericFromHz.Value);
+        }
+        else
+        {
+            session.SetWindowTo(numericToHz.Value);
+        }
+
+        PresentWindow();
+        Redraw();
     }
 
-    // Last nominal range armed on the axis, to tell the panel's range from the user's zoom.
-    private (double Lower, double Upper)? eqAxisNominal;
-
-    // Budget range extended to contain the drawn curve (overlapping bands can exceed one band's limit); 0/0 = no curve.
-    private void UpdateEqAxisRange(double curveMinDb = 0, double curveMaxDb = 0)
+    private void InitializePlotWizard()
     {
-        if (plotWizard.Model?.Axes.FirstOrDefault(axis => axis.Key == EqGainAxisKey)
-            is not LinearAxis eqAxis)
-        {
-            return;
-        }
+        plot.ShowWindow(session);
+        plotWizard.Model = plot.Model;
+        plot.RefreshEqAxis(session);
+        PlotInteraction.Enable(plotWizard);
 
-        // Phase owns the whole axis at a fixed ±180°; the dB branch restores title and step.
-        (double lower, double upper) = PhaseMode
-            ? (-180.0, 180.0)
-            : EqWizardPlotFit.EqGainAxisRange(
-                (double)numericGainMin.Value,
-                (double)numericGainMax.Value,
-                curveMinDb,
-                curveMaxDb);
-        eqAxis.Title = PhaseMode ? "Phase (°)" : "EQ (dB)";
-        eqAxis.MajorStep = PhaseMode ? 90 : 6;
-        // Nominal is always the hard limit, but the range is re-armed only when the nominal moved, so redraws keep the user's zoom.
-        eqAxis.AbsoluteMinimum = lower;
-        eqAxis.AbsoluteMaximum = upper;
-        if (eqAxisNominal is { } previous &&
-            Math.Abs(previous.Lower - lower) < 1e-9 &&
-            Math.Abs(previous.Upper - upper) < 1e-9)
-        {
-            return;
-        }
-
-        eqAxisNominal = (lower, upper);
-        eqAxis.Minimum = lower;
-        eqAxis.Maximum = upper;
-        eqAxis.Reset();
+        plotLabels = new PlotLabelsPanelController(plotWizard, () => Mode.EqWizard);
     }
 
     private void InitializeToolTips()
@@ -407,335 +425,99 @@ public partial class EqWizardPanel : UserControl
         }
     }
 
-    // Selected width even when the selector does not apply: reading it as Off would persist Off over the user's preference.
-    private int SourceSmoothingInverseOctaves =>
-        comboBoxSmooth.SelectedItem is int value ? value : 0;
-
-    [Browsable(false)]
-    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-    internal Action<EqTuneStats?>? ResultsChanged { get; set; }
-
-    private void InitializePlotWizard()
+    private int? SelectedBandIndex
     {
-        PlotModel model = new PlotModel();
-        PlotModelStyle.ApplyChrome(model);
-        PlotModelStyle.AddFrequencyAxis(model);
-        // The IR bounds themselves, not copied literals that could drift from the ones a loaded source re-arms.
-        EqWizardAxisRange initialRange = EqWizardPlotFit.ImpulseResponseRange;
-        PlotModelStyle.AddAxis(model, new LinearAxis
+        get
         {
-            Position = AxisPosition.Left,
-            AbsoluteMinimum = initialRange.AbsoluteMinimum,
-            AbsoluteMaximum = initialRange.AbsoluteMaximum,
-            MajorStep = 10,
-            Minimum = initialRange.Minimum,
-            Maximum = initialRange.Maximum,
-            MajorGridlineStyle = LineStyle.Solid,
-            MinorGridlineStyle = LineStyle.Dot,
-            Title = "dB",
-        });
-
-        // EQ axis centred on 0 dB; no gridlines. Nominal range follows the boost/cut budget and is the hard pan/zoom limit.
-        PlotModelStyle.AddAxis(model, new LinearAxis
-        {
-            Key = EqGainAxisKey,
-            Position = AxisPosition.Right,
-            MajorStep = 6,
-            MajorGridlineStyle = LineStyle.None,
-            MinorGridlineStyle = LineStyle.None,
-            TextColor = EqAxisColor,
-            TitleColor = EqAxisColor,
-            TicklineColor = EqAxisColor,
-            ExtraGridlines = new[] { 0.0 },
-            ExtraGridlineColor = UiPalette.GraphAreaBorder.ToOxy(),
-            ExtraGridlineStyle = LineStyle.Solid,
-            Title = "EQ (dB)"
-        });
-
-        model.Annotations.Add(new PlotWatermarkAnnotation
-        {
-            Text = "EQ Wizard",
-            TextColor = OxyColor.FromAColor(10, UiPalette.GraphAxisText.ToOxy()),
-            FontSize = 80,
-            FontWeight = FontWeights.Bold
-        });
-
-        hintAnnotation = new PlotWatermarkAnnotation
-        {
-            Text = string.Empty,
-            VerticalPosition = 0.66,
-            TextColor = UiPalette.CurveTarget.ToOxy(),
-            FontSize = 15,
-            FontWeight = FontWeights.Bold
-        };
-        model.Annotations.Add(hintAnnotation);
-
-        rangeFill = new RectangleAnnotation
-        {
-            Fill = OxyColor.FromAColor(10, UiPalette.CurveWindowFill.ToOxy()),
-            StrokeThickness = 0,
-            Layer = AnnotationLayer.BelowSeries
-        };
-        model.Annotations.Add(rangeFill);
-        fromMarker = CreateRangeMarker();
-        toMarker = CreateRangeMarker();
-        model.Annotations.Add(fromMarker);
-        model.Annotations.Add(toMarker);
-        fromMarker.X = (double)numericFromHz.Value;
-        toMarker.X = (double)numericToHz.Value;
-        rangeFill.MinimumX = fromMarker.X;
-        rangeFill.MaximumX = toMarker.X;
-
-        // Marks where the selected band sits (a low-Q bell's summit is guesswork; shelves have none).
-        // No Visible on OxyPlot annotations here, so model membership is the switch.
-        bandMarker = new LineAnnotation
-        {
-            Type = LineAnnotationType.Vertical,
-            Color = BandCurveColor,
-            StrokeThickness = 1,
-            LineStyle = LineStyle.Dot,
-            Layer = AnnotationLayer.AboveSeries
-        };
-
-        plotWizard.Model = model;
-        UpdateEqAxisRange();
-        PlotInteraction.Enable(plotWizard);
-
-        plotLabels = new PlotLabelsPanelController(plotWizard, () => Mode.EqWizard);
-    }
-
-    private static LineAnnotation CreateRangeMarker() => new()
-    {
-        Type = LineAnnotationType.Vertical,
-        Color = OxyColor.FromAColor(100, UiPalette.CurveWindowFill.ToOxy()),
-        StrokeThickness = 1,
-        LineStyle = LineStyle.Dash,
-        Layer = AnnotationLayer.AboveSeries
-    };
-
-    private void UpdateAutoTuneRangeMarkers()
-    {
-        fromMarker.X = (double)numericFromHz.Value;
-        toMarker.X = (double)numericToHz.Value;
-        rangeFill.MinimumX = fromMarker.X;
-        rangeFill.MaximumX = toMarker.X;
-        plotWizard.InvalidatePlot(false);
-    }
-
-    private void FrequencyBoundChanged(bool fromChanged)
-    {
-        if (suppressWindowClamp)
-        {
-            return;
-        }
-
-        EnforceFrequencyOrder(fromChanged);
-        OnFrequencyWindowChanged();
-    }
-
-    // Pushes the opposite bound; if it is at its limit, pulls the edited one back. The flag stops re-entry.
-    private void EnforceFrequencyOrder(bool fromChanged)
-    {
-        if (numericFromHz.Value <= numericToHz.Value - MinFrequencyGapHz)
-        {
-            return;
-        }
-
-        suppressWindowClamp = true;
-        try
-        {
-            if (fromChanged)
-            {
-                decimal desiredTo = numericFromHz.Value + MinFrequencyGapHz;
-                if (desiredTo <= numericToHz.Maximum)
-                {
-                    numericToHz.Value = desiredTo;
-                }
-                else
-                {
-                    numericToHz.Value = numericToHz.Maximum;
-                    numericFromHz.Value = numericToHz.Maximum - MinFrequencyGapHz;
-                }
-            }
-            else
-            {
-                decimal desiredFrom = numericToHz.Value - MinFrequencyGapHz;
-                if (desiredFrom >= numericFromHz.Minimum)
-                {
-                    numericFromHz.Value = desiredFrom;
-                }
-                else
-                {
-                    numericFromHz.Value = numericFromHz.Minimum;
-                    numericToHz.Value = numericFromHz.Minimum + MinFrequencyGapHz;
-                }
-            }
-        }
-        finally
-        {
-            suppressWindowClamp = false;
+            int index = selectedSlot == null ? -1 : peqSlots.IndexOf(selectedSlot);
+            return index >= 0 ? index : null;
         }
     }
 
-    private void OnFrequencyWindowChanged()
-    {
-        UpdateAutoTuneRangeMarkers();
-        DrawSelectedCurves();
-    }
-
-    private void DrawSelectedCurves()
+    /// <summary>Redraws from the session. Any input change the user makes funnels through here, so it orphans a running fit.</summary>
+    /// <param name="orphanFit">False for a redraw that only shows a landed render: that changed no input of the fit.</param>
+    private void Redraw(bool orphanFit = true)
     {
         // Every rate change funnels through a redraw, so the strips' GD readouts learn the rate here.
         foreach (PeqSlotControl slot in peqSlots)
         {
-            slot.SampleRateHz = EqProcessorSampleRate;
+            slot.SampleRateHz = session.ProcessorSampleRateHz;
         }
 
-        // Every fit input change funnels through here, so orphan any in-flight fit (over-invalidation is safe).
-        autoTuneOrchestrator.Invalidate();
-
-        if (suppressRedraw)
+        if (orphanFit)
         {
-            return;
+            autoTuneOrchestrator.Invalidate();
         }
 
-        PlotModel? model = plotWizard.Model;
-        if (model == null)
+        EqualizationCurve eq = EqWizardRender.DisplayedEq(session);
+        // Not before the handle exists: a handoff installs while hidden, and a render landing in the creation pump draws
+        // into a half-created control (see OnVisibleChanged).
+        if (IsHandleCreated &&
+            session.SourceCurve is { Points.Count: >= 2 } &&
+            session.Previews.RequestGatedPreview(eq) is { } preview)
         {
-            return;
+            _ = RedrawAfterAsync(preview);
         }
 
-        RemoveWizardSeries(model);
-
-        bool bypass = checkBoxBypass.Checked;
-        EqualizationCurve eq = bypass
-            ? new EqualizationCurve(Array.Empty<PeqBand>())
-            : BuildEqualizationCurve();
-        EqWizardRenderSet render = BuildRenderSet(eq);
-        UpdateSourceHint();
+        EqWizardRenderSet render = EqWizardRender.RenderSet(session, eq);
         buttonOverlaySettings.Enabled = true;
         NumericTargetOffset.Enabled = true;
-        NumericGain.Enabled = !bypass && render.SourcePlusEq != null;
-        bool showEqCurves = render.SourcePlusEq != null;
-        lastStats = BuildStats(render, eq);
-        ResultsChanged?.Invoke(lastStats);
+        NumericGain.Enabled = !session.Bypass && render.SourcePlusEq != null;
+        ResultsChanged?.Invoke(EqWizardRender.Stats(session, render, eq));
 
-        // Phase is a mode, not an extra curve: magnitudes are hidden, but stats are still computed so they stay current.
-        SetMagnitudeAxisVisible(!PhaseMode);
-        if (PhaseMode)
+        EqWizardPhaseCurves? phase = null;
+        if (session.PhaseMode && session.PhaseContext != null)
         {
-            DrawMeasuredPhaseCurves(model, eq);
-        }
-        else
-        {
-            if (showEqCurves)
+            phase = session.Previews.PhaseCurves();
+            if (IsHandleCreated && session.Previews.RequestPhaseCurve(eq) is { } rendering)
             {
-                AddDeviationFill(model, render.SourcePlusEq!, render.Target);
-            }
-
-            if (render.Source != null)
-            {
-                AddWizardSeries(model, render.Source);
-            }
-
-            AddWizardSeries(model, render.Target);
-            if (showEqCurves)
-            {
-                AddWizardSeries(model, render.SourcePlusEq!);
+                _ = RedrawAfterAsync(rendering);
             }
         }
 
-        AddEqCurve(model, eq, render.Target);
-        AddSelectedBandCurve(model, render.Target);
-        UpdateSelectedBandMarker(model);
-        SetEqAxisVisible(model.Series.Any(series =>
-            series is XYAxisSeries { YAxisKey: EqGainAxisKey }));
-
+        plot.Draw(session, eq, render, SelectedBandIndex, phase);
         plotLabels.Refresh();
-        model.InvalidatePlot(true);
+        plot.Model.InvalidatePlot(true);
     }
 
-    // Every strip is a filter: an unwanted one is removed, not parked.
-    private EqualizationCurve BuildEqualizationCurve() =>
-        new(peqSlots.Select(ReadBand), (double)NumericGain.Value);
-
-    private EqTuneStats? BuildStats(EqWizardRenderSet? render, EqualizationCurve eq)
+    // Shows what landed, and starts the render a dropped request or an invalidation left waiting.
+    private async Task RedrawAfterAsync(Task rendering)
     {
-        if (render?.SourcePlusEq == null)
+        await rendering;
+        if (!IsDisposed && IsHandleCreated)
         {
-            return null;
+            Redraw(orphanFit: false);
         }
+    }
 
-        IReadOnlyList<DataPoint> corrected = render.SourcePlusEq.Points;
-        IReadOnlyList<DataPoint> target = render.Target.Points;
-        int count = Math.Min(corrected.Count, target.Count);
-
-        (double minHz, double maxHz) = GetFrequencyWindow();
-
-        double sumSquares = 0;
-        double maxError = 0;
-        int valid = 0;
-        for (int i = 0; i < count; i++)
+    /// <summary>Gated previews wait for the handle (see <see cref="Redraw"/>); showing the panel creates it, so a source installed before that starts rendering here.</summary>
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible && IsHandleCreated && session.Source is { IsGated: true })
         {
-            double frequency = corrected[i].X;
-            if (frequency < minHz || frequency > maxHz)
-            {
-                continue;
-            }
-
-            double error = target[i].Y - corrected[i].Y;
-            if (!double.IsFinite(error))
-            {
-                continue;
-            }
-
-            sumSquares += error * error;
-            maxError = Math.Max(maxError, Math.Abs(error));
-            valid++;
+            Redraw();
         }
-
-        double rms = valid > 0 ? Math.Sqrt(sumSquares / valid) : 0;
-        // All-pass is always "used": its work is phase, which the gain threshold cannot see.
-        int filtersUsed = peqSlots.Count(
-            slot => slot.BandType.IsAllPass() ||
-                Math.Abs((double)slot.GainInput.Value) >= 0.05);
-
-        double peakBoost = double.NegativeInfinity;
-        double peakCut = double.PositiveInfinity;
-        foreach (double frequency in EqualizationCurve.LogFrequencyGrid(20, 20_000, 256))
-        {
-            double gain = DigitalEqualizationResponse.MagnitudeDbAt(
-                eq, frequency, EqProcessorSampleRate);
-            peakBoost = Math.Max(peakBoost, gain);
-            peakCut = Math.Min(peakCut, gain);
-        }
-
-        double headroom = -peakBoost;
-        return new EqTuneStats(rms, maxError, filtersUsed, peakBoost, peakCut, headroom);
     }
 
     // Worker thread: tuning up to 32 bands visibly freezes the UI.
     private async void AutoTune()
     {
-        // Neutral EQ so the fit sees the raw source and a target aligned to its frequencies.
-        EqWizardRenderSet render = BuildRenderSet(
-            new EqualizationCurve(Array.Empty<PeqBand>()));
-        if (render.Source == null)
+        (EqWizardCurve? source, EqWizardCurve target) = EqWizardRender.FitCurves(session);
+        if (source == null)
         {
             System.Media.SystemSounds.Beep.Play();
             return;
         }
 
         // The tuner replaces the whole bank, all-pass included; ask before discarding phase work aligned by ear.
-        IReadOnlyList<PeqBand> allPass = CaptureBankState().Bands
-            .Where(band => band.Type.IsAllPass())
-            .ToList();
+        IReadOnlyList<PeqBand> allPass = EqWizardFit.AllPassBands(session);
         bool keepAllPass = false;
         if (allPass.Count > 0)
         {
             DialogResult answer = MessageBox.Show(
                 FindForm(),
-                $"The bank holds {DescribeAllPassCount(allPass.Count)} the tuner " +
+                $"The bank holds {EqWizardFit.DescribeAllPassCount(allPass.Count)} the tuner " +
                 "cannot fit and would replace." + Environment.NewLine +
                 Environment.NewLine +
                 "Keep them and tune the remaining slots around them?" +
@@ -754,12 +536,12 @@ public partial class EqWizardPanel : UserControl
 
         // Kept all-pass may leave no slots; say so rather than exceed Max Filters or replace the bank unasked.
         int reserved = keepAllPass ? allPass.Count : 0;
-        if (reserved > 0 && reserved >= SelectedBandLimit)
+        if (reserved > 0 && reserved >= session.BandLimit)
         {
             MessageBox.Show(
                 FindForm(),
-                $"Keeping {DescribeAllPassCount(reserved)} leaves no room under Max " +
-                $"Filters ({SelectedBandLimit}), so there is nothing for the fit to " +
+                $"Keeping {EqWizardFit.DescribeAllPassCount(reserved)} leaves no room under Max " +
+                $"Filters ({session.BandLimit}), so there is nothing for the fit to " +
                 "place." + Environment.NewLine + Environment.NewLine +
                 "Raise Max Filters, or run again and let the fit replace the bank.",
                 "EQ Wizard",
@@ -768,20 +550,14 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        List<SignalPoint> fitSource = FitSource(render.Source, keepAllPass ? allPass : [])
+        List<SignalPoint> fitSource = EqWizardFit.FitSource(session, source, keepAllPass ? allPass : [])
             .Select(point => new SignalPoint(point.X, point.Y))
             .ToList();
-        List<SignalPoint> fitTarget = render.Target.Points
+        List<SignalPoint> fitTarget = target.Points
             .Select(point => new SignalPoint(point.X, point.Y))
             .ToList();
 
-        // A wrong datum is fitted faithfully (whole window boosted/cut), so ask before, not in the headroom read-out after.
-        (double windowMinHz, double windowMaxHz) = GetFrequencyWindow();
-        string? levelWarning = EqTargetLevelCheck.Warning(
-            EqTargetLevelCheck.TargetAboveSourceDb(fitSource, fitTarget, windowMinHz, windowMaxHz),
-            checkBoxCutsOnly.Checked,
-            windowMinHz,
-            windowMaxHz);
+        string? levelWarning = EqWizardFit.LevelWarning(session, fitSource, fitTarget);
         if (levelWarning != null &&
             MessageBox.Show(
                 FindForm(),
@@ -796,11 +572,11 @@ public partial class EqWizardPanel : UserControl
         var request = new EqWizardAutoTuneRequest(
             fitSource,
             fitTarget,
-            CreateAutoTuneOptions(reserved),
+            EqWizardFit.Options(session, reserved),
             // Loopback γ² or mic-array agreement; without either, boosts fall back to null-detection.
-            loadedSource?.Coherence);
+            session.Source?.Coherence);
 
-        // Inputs stay editable during the fit; any input change bumps the revision and orphans the result.
+        // Inputs stay editable during the fit; any input change orphans the result (see Redraw).
         EqualizationCurve? tuned;
         buttonAutoTune.Enabled = false;
         try
@@ -826,95 +602,7 @@ public partial class EqWizardPanel : UserControl
         }
 
         checkBoxBypass.Checked = false;
-        ApplyEqualizationCurve(
-            keepAllPass ? WithAllPassBands(tuned, allPass) : tuned);
-    }
-
-    /// <summary>
-    /// The curve the fit corrects. When kept all-pass bands meet a GATED source they are applied first: through a
-    /// window an all-pass is not flat (see <see cref="EqWizardGatedPreview"/>).
-    /// </summary>
-    private IReadOnlyList<DataPoint> FitSource(
-        EqWizardCurve source,
-        IReadOnlyList<PeqBand> keptAllPass)
-    {
-        if (keptAllPass.Count == 0 ||
-            loadedSource is not { IsGated: true } gated)
-        {
-            return source.Points;
-        }
-
-        // Same conversion as the source curve, so the tuner's index pairing with the target holds (see ToPlotPoints).
-        return ToPlotPoints(
-            EqWizardGatedPreview.Render(
-                BuildGatedPreviewRequest(
-                    gated, new EqualizationCurve(keptAllPass, preampDb: 0))),
-            KeepsGaps(gated));
-    }
-
-    private int SelectedBandLimit =>
-        comboBoxBandsLimit.SelectedItem is int limit ? limit : MaxPeqSlotCount;
-
-    private static string DescribeAllPassCount(int count) =>
-        count == 1 ? "an all-pass filter" : $"{count} all-pass filters";
-
-    // Mirrors control limits; bands held back (kept all-pass) come off the fit's budget.
-    /// <summary>The Auto Tune settings on the controls, for a fit run elsewhere (AI import) that must match this button.</summary>
-    [System.ComponentModel.Browsable(false)]
-    [System.ComponentModel.DesignerSerializationVisibility(
-        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    internal EqAutoTunePolicy CurrentAutoTunePolicy => new(
-        SelectedBandLimit,
-        (double)numericGainMin.Value,
-        (double)numericGainMax.Value,
-        (double)numericQMax.Value,
-        checkBoxCutsOnly.Checked,
-        checkBoxShelves.Checked);
-
-    private EqAutoTuner.Options CreateAutoTuneOptions(int reservedBands)
-    {
-        // Max Filters budgets the BANK: kept bands come off it. A reserve eating the budget is refused in AutoTune; this only clamps.
-        int bandLimit = SelectedBandLimit - reservedBands;
-
-        (double minHz, double maxHz) = GetFrequencyWindow();
-
-        // Preamp policy: cuts-only lets it move with a 0 dB ceiling; with boosts it is pinned to the user's value.
-        // See docs/tech/eq-auto-tuner.md#wizard-preamp-policy.
-        bool cutsOnly = checkBoxCutsOnly.Checked;
-        double pinnedPreampDb = (double)NumericGain.Value;
-
-        return new EqAutoTuner.Options
-        {
-            MaxBands = Math.Clamp(bandLimit, 1, MaxPeqSlotCount),
-            MinFrequencyHz = minHz,
-            MaxFrequencyHz = maxHz,
-            PreampMinDb = cutsOnly ? (double)NumericGain.Minimum : pinnedPreampDb,
-            PreampMaxDb = cutsOnly ? (double)NumericGain.Maximum : pinnedPreampDb,
-            BandGainMinDb = (double)numericGainMin.Value,
-            BandGainMaxDb = (double)numericGainMax.Value,
-            TotalGainMaxDb = cutsOnly ? 0 : double.PositiveInfinity,
-            SampleRateHz = EqProcessorSampleRate,
-            CutsOnlyMode = cutsOnly,
-            // Widest Q is the strips' limit (available with an empty bank); narrowest is the user's Max Q, below what strips accept.
-            QMin = PeqSlotControl.MinimumQ,
-            QMax = (double)numericQMax.Value,
-            // Shelves are opt-in: they change the SHAPE returned, and Max Q says nothing about a shelf's knee.
-            AllowShelves = checkBoxShelves.Checked
-        };
-    }
-
-    private (double MinHz, double MaxHz) GetFrequencyWindow()
-    {
-        double fromHz = (double)numericFromHz.Value;
-        double toHz = (double)numericToHz.Value;
-        double minHz = Math.Min(fromHz, toHz);
-        double maxHz = Math.Max(fromHz, toHz);
-        if (maxHz - minHz < 1)
-        {
-            maxHz = minHz + 1;
-        }
-
-        return (minHz, maxHz);
+        ApplyEqualizationCurve(EqWizardFit.Finish(tuned, keepAllPass ? allPass : []));
     }
 
     // The panel owns only the dialog and feedback; resolution, format setup and I/O live in the coordinator.
@@ -933,44 +621,24 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        EqualizationCurve curve = BuildEqualizationCurve();
+        EqualizationCurve curve = session.Bank.Curve;
         EqWizardExportTarget target =
             importExportCoordinator.ResolveExportTarget(dialog.FilterIndex);
-        if (!ConfirmShelvingBandsDropped(target, curve) ||
+        // Formats that cannot state shelves, all-pass or a preamp would silently export a different tune; the user decides.
+        if (!ConfirmExportLoss(EqExportWarnings.ShelvingBandsDropped(target, curve)) ||
             !ConfirmExportLoss(EqExportWarnings.AllPassBandsDropped(target, curve)) ||
-            !ConfirmPreampDropped(target, curve))
+            !ConfirmExportLoss(EqExportWarnings.PreampDropped(target, curve)))
         {
             return;
         }
 
-        (double minHz, double maxHz) = GetFrequencyWindow();
         EqWizardFileResult result = importExportCoordinator.Export(
-            new EqWizardExportRequest(
-                dialog.FileName,
-                target,
-                curve,
-                EqProcessorSampleRate,
-                System.IO.Path.GetFileNameWithoutExtension(dialog.FileName),
-                minHz,
-                maxHz,
-                lastStats,
-                TargetDspQConvention));
+            EqWizardExportRequest.For(session, dialog.FileName, target));
         if (!result.Success)
         {
             ShowFileError("PEQ could not be exported.", result.Exception!);
         }
     }
-
-    // Formats that cannot state shelves would silently export a different tune; the user is told and decides.
-    private bool ConfirmShelvingBandsDropped(
-        EqWizardExportTarget target,
-        EqualizationCurve curve) =>
-        ConfirmExportLoss(EqExportWarnings.ShelvingBandsDropped(target, curve));
-
-    private bool ConfirmPreampDropped(
-        EqWizardExportTarget target,
-        EqualizationCurve curve) =>
-        ConfirmExportLoss(EqExportWarnings.PreampDropped(target, curve));
 
     private bool ConfirmExportLoss(string? warning) =>
         warning == null ||
@@ -1019,303 +687,24 @@ public partial class EqWizardPanel : UserControl
             MessageBoxIcon.Error);
     }
 
-    private static void RemoveWizardSeries(PlotModel model)
-    {
-        for (int index = model.Series.Count - 1; index >= 0; index--)
-        {
-            if (Equals(model.Series[index].Tag, WizardSeriesTag))
-            {
-                model.Series.RemoveAt(index);
-            }
-        }
-    }
-
-    private static void AddWizardSeries(
-        PlotModel model,
-        EqWizardCurve curve,
-        string? yAxisKey = null,
-        string trackerFormat = WizardTrackerFormat)
-    {
-        var series = new LineSeries
-        {
-            Color = curve.Color,
-            StrokeThickness = curve.StrokeThickness,
-            LineStyle = curve.LineStyle,
-            Title = curve.Title,
-            Tag = WizardSeriesTag,
-            TrackerFormatString = trackerFormat
-        };
-        if (!string.IsNullOrEmpty(yAxisKey))
-        {
-            series.YAxisKey = yAxisKey;
-        }
-
-        series.Points.AddRange(curve.Points);
-        model.Series.Add(series);
-    }
-
-    // EQ response of all bands (no preamp) on the right axis: gain in dB, or wrapped phase in degrees in phase view.
-    private void AddEqCurve(PlotModel model, EqualizationCurve eq, EqWizardCurve? baseline)
-    {
-        if (baseline is not { Points.Count: >= 2 })
-        {
-            return;
-        }
-
-        if (PhaseMode)
-        {
-            if (checkBoxEqCurve.Checked)
-            {
-                AddWizardSeries(
-                    model,
-                    new EqWizardCurve(
-                        "EQ phase",
-                        UiPalette.CurveNeutral.ToOxy(),
-                        1.5,
-                        LineStyle.Solid,
-                        PhasePoints(eq.Bands, baseline)),
-                    EqGainAxisKey,
-                    PhaseTrackerFormat);
-            }
-
-            // Re-armed even when not drawn: measured phase curves share this axis.
-            UpdateEqAxisRange();
-            return;
-        }
-
-        if (!checkBoxEqCurve.Checked)
-        {
-            UpdateEqAxisRange();
-            return;
-        }
-
-        var eqWithoutGain = new EqualizationCurve(eq.Bands, 0);
-        var points = baseline.Points
-            .Select(point => new DataPoint(
-                point.X,
-                DigitalEqualizationResponse.MagnitudeDbAt(
-                    eqWithoutGain, point.X, EqProcessorSampleRate)))
-            .ToArray();
-        AddWizardSeries(
-            model,
-            new EqWizardCurve("EQ", UiPalette.CurveNeutral.ToOxy(), 1.5, LineStyle.Solid, points),
-            EqGainAxisKey);
-
-        double curveMin = 0;
-        double curveMax = 0;
-        foreach (DataPoint point in points)
-        {
-            if (!double.IsFinite(point.Y))
-            {
-                continue;
-            }
-
-            curveMin = Math.Min(curveMin, point.Y);
-            curveMax = Math.Max(curveMax, point.Y);
-        }
-
-        UpdateEqAxisRange(curveMin, curveMax);
-    }
-
-    // Wrapped (like every phase plot here and REW) with breaks at ±180° seams, keeping the axis fixed.
-    private IReadOnlyList<DataPoint> PhasePoints(
-        IReadOnlyList<PeqBand> bands,
-        EqWizardCurve baseline)
-    {
-        BiquadCoefficients[] sections = bands
-            .Where(band => !band.IsTransparent)
-            .Select(band => PeqBiquad.Compute(band, EqProcessorSampleRate))
-            .ToArray();
-        IReadOnlyList<double> grid = EqualizationCurve.LogFrequencyGrid(
-            Math.Max(1, baseline.Points[0].X),
-            Math.Max(2, baseline.Points[^1].X),
-            PhaseGridPointCount);
-
-        var points = new List<DataPoint>(grid.Count + 16);
-        double previous = double.NaN;
-        foreach (double frequency in grid)
-        {
-            Complex response = Complex.One;
-            foreach (BiquadCoefficients section in sections)
-            {
-                response *= BiquadResponse.Evaluate(section, frequency, EqProcessorSampleRate);
-            }
-
-            double degrees = response.Phase * (180.0 / Math.PI);
-            if (!double.IsNaN(previous) && Math.Abs(degrees - previous) > 180.0)
-            {
-                points.Add(new DataPoint(frequency, double.NaN));
-            }
-
-            previous = degrees;
-            points.Add(new DataPoint(frequency, degrees));
-        }
-
-        return points;
-    }
-
-    // Selected band's contribution on the target (target + that band), or its own phase on the right axis in phase view.
-    private void AddSelectedBandCurve(PlotModel model, EqWizardCurve? baseline)
-    {
-        if (selectedSlot == null || baseline is not { Points.Count: >= 2 })
-        {
-            return;
-        }
-
-        int slotNumber = peqSlots.IndexOf(selectedSlot) + 1;
-        if (slotNumber < 1)
-        {
-            return;
-        }
-
-        PeqBand band = ReadBand(selectedSlot);
-        if (PhaseMode)
-        {
-            AddWizardSeries(
-                model,
-                new EqWizardCurve(
-                    $"Band {slotNumber} phase",
-                    BandCurveColor,
-                    2,
-                    LineStyle.Dash,
-                    PhasePoints(new[] { band }, baseline)),
-                EqGainAxisKey,
-                PhaseTrackerFormat);
-            return;
-        }
-
-        var points = baseline.Points
-            .Select(point => new DataPoint(
-                point.X,
-                point.Y + DigitalEqualizationResponse.MagnitudeDbAt(
-                    band, point.X, EqProcessorSampleRate)))
-            .ToArray();
-        AddWizardSeries(
-            model,
-            new EqWizardCurve(
-                $"Band {slotNumber}",
-                BandCurveColor,
-                2,
-                LineStyle.Dash,
-                points));
-    }
-
-    // Separate from AddSelectedBandCurve: the frequency needs no baseline curve, and applies to both views.
-    private void UpdateSelectedBandMarker(PlotModel model)
-    {
-        model.Annotations.Remove(bandMarker);
-        if (selectedSlot == null)
-        {
-            return;
-        }
-
-        // No guard: the strip field cannot go below 10 Hz, so the log axis never sees zero.
-        bandMarker.X = ReadBand(selectedSlot).FrequencyHz;
-        model.Annotations.Add(bandMarker);
-    }
-
-    private static readonly OxyColor AboveTargetFill = OxyColor.FromAColor(72, UiPalette.CurveAboveTarget.ToOxy());
-    private static readonly OxyColor BelowTargetFill = OxyColor.FromAColor(104, UiPalette.CurveBelowTarget.ToOxy());
-
-    // TwoColorAreaSeries splits only on a horizontal limit, so two AreaSeries clamp to the target (curves index-aligned),
-    // with exact crossings inserted so neither colour bleeds past the target.
-    private static void AddDeviationFill(
-        PlotModel model,
-        EqWizardCurve curve,
-        EqWizardCurve target)
-    {
-        IReadOnlyList<DataPoint> c = curve.Points;
-        IReadOnlyList<DataPoint> t = target.Points;
-        int n = Math.Min(c.Count, t.Count);
-        if (n < 2)
-        {
-            return;
-        }
-
-        var curveAug = new List<DataPoint>(n + 8);
-        var targetAug = new List<DataPoint>(n + 8);
-        for (int i = 0; i < n; i++)
-        {
-            curveAug.Add(c[i]);
-            targetAug.Add(t[i]);
-            if (i + 1 >= n)
-            {
-                continue;
-            }
-
-            double d0 = c[i].Y - t[i].Y;
-            double d1 = c[i + 1].Y - t[i + 1].Y;
-            if (double.IsFinite(d0) && double.IsFinite(d1) && d0 * d1 < 0)
-            {
-                double f = d0 / (d0 - d1);
-                double crossX = InterpolateLogX(c[i].X, c[i + 1].X, f);
-                double crossY = t[i].Y + f * (t[i + 1].Y - t[i].Y);
-                curveAug.Add(new DataPoint(crossX, crossY));
-                targetAug.Add(new DataPoint(crossX, crossY));
-            }
-        }
-
-        AddClampedFill(model, curveAug, targetAug, above: true, AboveTargetFill);
-        AddClampedFill(model, curveAug, targetAug, above: false, BelowTargetFill);
-    }
-
-    // One area per run of finite points: a NaN vertex would make the renderer close the shape across unmeasured octaves.
-    private static void AddClampedFill(
-        PlotModel model,
-        IReadOnlyList<DataPoint> curve,
-        IReadOnlyList<DataPoint> target,
-        bool above,
-        OxyColor fill)
-    {
-        AreaSeries? area = null;
-        for (int i = 0; i < curve.Count; i++)
-        {
-            double clamped = above
-                ? Math.Max(curve[i].Y, target[i].Y)
-                : Math.Min(curve[i].Y, target[i].Y);
-            if (!double.IsFinite(clamped) || !double.IsFinite(target[i].Y))
-            {
-                area = null;
-                continue;
-            }
-
-            if (area == null)
-            {
-                area = new AreaSeries
-                {
-                    Color = OxyColors.Transparent,
-                    Fill = fill,
-                    StrokeThickness = 0,
-                    Tag = WizardSeriesTag
-                };
-                model.Series.Add(area);
-            }
-
-            area.Points.Add(new DataPoint(curve[i].X, clamped));
-            area.Points2.Add(target[i]);
-        }
-    }
-
-    // Log-domain interpolation, matching the plot's log X axis.
-    private static double InterpolateLogX(double x0, double x1, double f)
-    {
-        if (x0 > 0 && x1 > 0)
-        {
-            return Math.Exp(Math.Log(x0) + f * (Math.Log(x1) - Math.Log(x0)));
-        }
-
-        return x0 + f * (x1 - x0);
-    }
-
     private void InitializeBandsLimitComboBox()
     {
         comboBoxBandsLimit.Items.Clear();
-        for (int count = MinAutoTuneBandLimit; count <= MaxPeqSlotCount; count++)
+        for (int count = EqWizardLimits.MinAutoTuneBandLimit; count <= EqWizardLimits.MaxBands; count++)
         {
             comboBoxBandsLimit.Items.Add(count);
         }
 
         comboBoxBandsLimit.SelectedIndex = comboBoxBandsLimit.Items.Count - 1;
+        comboBoxBandsLimit.SelectedIndexChanged += (_, _) =>
+        {
+            if (!presenting && comboBoxBandsLimit.SelectedItem is int limit)
+            {
+                // A fit under the old budget could land more filters than the field now allows.
+                autoTuneOrchestrator.Invalidate();
+                session.SetBandLimit(limit);
+            }
+        };
     }
 
     private void InitializeSmoothComboBox()
@@ -1334,9 +723,12 @@ public partial class EqWizardPanel : UserControl
         };
         comboBoxSmooth.SelectedIndexChanged += (_, _) =>
         {
-            InvalidateSourceCurve();
-            RaiseSettingsChanged();
-            DrawSelectedCurves();
+            if (!presenting &&
+                comboBoxSmooth.SelectedItem is int value &&
+                session.SetSourceSmoothing(value))
+            {
+                Redraw();
+            }
         };
         comboBoxSmooth.SelectedIndex = 0;
     }

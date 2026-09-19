@@ -21,11 +21,26 @@ internal static class StaTest
         DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMilliseconds);
         while (!task.IsCompleted && DateTime.UtcNow < deadline)
         {
-            Application.DoEvents();
+            Pump();
             Thread.Sleep(5);
         }
 
         Assert.True(task.IsCompleted, "The background work did not finish in time.");
+    }
+
+    /// <summary>
+    /// <see cref="Application.DoEvents"/>, keeping the thread's WinForms context: DoEvents leaves a plain
+    /// SynchronizationContext behind, so an await that follows would resume on the thread pool and race the test (or
+    /// create a control's handle there, which hangs disposal). The app's message loop never loses it.
+    /// </summary>
+    public static void Pump()
+    {
+        SynchronizationContext? context = SynchronizationContext.Current;
+        Application.DoEvents();
+        if (context is WindowsFormsSynchronizationContext && SynchronizationContext.Current != context)
+        {
+            SynchronizationContext.SetSynchronizationContext(context);
+        }
     }
 
     public static void Run(Action body)

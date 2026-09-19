@@ -358,7 +358,7 @@ public sealed class VirtualCrossoverPanelWiringTests
             DateTime deadline = DateTime.UtcNow.AddSeconds(30);
             while (DateTime.UtcNow < deadline)
             {
-                Application.DoEvents();
+                StaTest.Pump();
                 // A loop that completes without awaiting leaves its finished task behind rather than null.
                 if (Control<Task?>("redrawTask") is not { IsCompleted: false } &&
                     Control<Task?>("correlationRebuildTask") is not { IsCompleted: false })

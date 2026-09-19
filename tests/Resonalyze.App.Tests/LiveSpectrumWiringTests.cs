@@ -351,7 +351,7 @@ public sealed class LiveSpectrumWiringTests : IDisposable
             while (!condition())
             {
                 Assert.True(DateTime.UtcNow < deadline, $"Timed out waiting for {what}.");
-                Application.DoEvents();
+                StaTest.Pump();
                 Thread.Sleep(5);
             }
         }
@@ -360,7 +360,7 @@ public sealed class LiveSpectrumWiringTests : IDisposable
         {
             for (int i = 0; i < 20; i++)
             {
-                Application.DoEvents();
+                StaTest.Pump();
                 Thread.Sleep(5);
             }
         }

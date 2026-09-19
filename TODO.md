@@ -567,12 +567,6 @@ tool has set crossovers, delays and polarity — so crossovers, phase/time and
 convolution are deliberately out of its scope (see the note at the end). The
 items below are what a car DSP tune actually needs, roughly in priority order.
 
-- [ ] **`EqWizardPanel` shows the signals the Virtual DSP panel had before #203.**
-  4,209 lines over six partials, and 12 test files reach it through reflection
-  (`ApplySource`, `GetSourceCurve`, `ComputeSourceCurve`, `BeginVirtualDspHandoff`,
-  `ApplyPhaseGate` and private fields). Apply AGENTS.md › Where logic lives: a
-  UI-free owner for the wizard's source, bank and target, the rules as types
-  that take it, and tests against those types.
 - [ ] **The boostability mask has no notion of a driver band.** The mask itself
   is in (`EqBoostabilityMask`: boosts refused in low-coherence bins and narrow
   deep nulls, cuts always allowed, Auto Tune cuts-only by default), but the

@@ -106,7 +106,7 @@ public sealed class DropDownFocusGuardTests
     {
         for (int attempt = 0; attempt < 200 && !done(); attempt++)
         {
-            Application.DoEvents();
+            StaTest.Pump();
             Thread.Sleep(10);
         }
     }
@@ -116,7 +116,7 @@ public sealed class DropDownFocusGuardTests
         int until = Environment.TickCount + (int)duration.TotalMilliseconds;
         while (Environment.TickCount < until)
         {
-            Application.DoEvents();
+            StaTest.Pump();
             Thread.Sleep(10);
         }
     }

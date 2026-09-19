@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Reflection;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -12,47 +11,47 @@ public sealed class EqWizardHandoffCalibrationTests
     [Fact]
     public void ACaptureKeepsItsOwnCorrectionWhenTheMeasurementNamesNoFile()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         EqWizardCurveSource source = Handoff(
             pinnedCalibration: null,
             SpatialAverageCalibration.Own);
 
-        ApplySource(panel, source);
+        session.Load(source);
 
         Assert.Equal(
             SpatialAverageCalibration.Own,
-            ResolvedSpatialAverageCalibration(panel, source));
-        Assert.Contains("Own (as measured)", CalibrationOptionNames(panel));
+            session.SpatialAverageCalibrationFor(source));
+        Assert.Contains("Own (as measured)", session.CalibrationOptions.Select(option => option.Label));
     }
 
     [Fact]
     public void ThePinnedCurveStillWinsWhenTheMeasurementCarriesOne()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         CalibrationFile curve = CalibrationFile.Parse("20 0\n20000 -1.5\n");
         EqWizardCurveSource source = Handoff(curve, SpatialAverageCalibration.Specific(curve));
 
-        ApplySource(panel, source);
+        session.Load(source);
 
         Assert.Equal(
             SpatialAverageCalibrationMode.Specific,
-            ResolvedSpatialAverageCalibration(panel, source).Mode);
-        Assert.Contains("mic 90", CalibrationOptionNames(panel));
+            session.SpatialAverageCalibrationFor(source).Mode);
+        Assert.Contains("mic 90", session.CalibrationOptions.Select(option => option.Label));
     }
 
     [Fact]
     public void APanelReadingTheCaptureUncalibratedIsReproducedAsOff()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         EqWizardCurveSource source = Handoff(
             pinnedCalibration: null,
             SpatialAverageCalibration.Off);
 
-        ApplySource(panel, source);
+        session.Load(source);
 
         Assert.Equal(
             SpatialAverageCalibration.Off,
-            ResolvedSpatialAverageCalibration(panel, source));
+            session.SpatialAverageCalibrationFor(source));
     }
 
     private static EqWizardCurveSource Handoff(
@@ -108,28 +107,4 @@ public sealed class EqWizardHandoffCalibrationTests
             }
         };
     }
-
-    private static void ApplySource(EqWizardPanel panel, EqWizardCurveSource source) =>
-        typeof(EqWizardPanel)
-            .GetMethod("ApplySource", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [source]);
-
-    private static SpatialAverageCalibration ResolvedSpatialAverageCalibration(
-        EqWizardPanel panel,
-        EqWizardCurveSource source) =>
-        (SpatialAverageCalibration)typeof(EqWizardPanel)
-            .GetMethod(
-                "ResolveSpatialAverageCalibration",
-                BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [source])!;
-
-    private static IReadOnlyList<string> CalibrationOptionNames(EqWizardPanel panel) =>
-        ((System.Collections.IEnumerable)typeof(EqWizardPanel)
-            .GetMethod(
-                "BuildCalibrationOptions",
-                BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [])!)
-        .Cast<object>()
-        .Select(option => option.ToString()!)
-        .ToList();
 }

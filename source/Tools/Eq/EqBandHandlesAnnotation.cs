@@ -74,7 +74,14 @@ internal sealed class EqBandHandlesAnnotation : Annotation, IPlotDragHandles
     public void Show(IReadOnlyList<PeqBand> shown, int? selectedIndex)
     {
         bands = shown;
-        selected = selectedIndex < shown.Count ? selectedIndex : null;
+        int? wanted = selectedIndex < shown.Count ? selectedIndex : null;
+        if (wanted != selected)
+        {
+            // Part of a notch belongs to the band it was turned over, not to the next one selected.
+            wheelRemainder = 0;
+        }
+
+        selected = wanted;
         if (hovered >= shown.Count)
         {
             hovered = null;

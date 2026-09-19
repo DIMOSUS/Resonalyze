@@ -53,6 +53,24 @@ public sealed class EqBandHandlesTests
         Assert.Equal(band, EqBandHandles.StepQ(band, 3));
     }
 
+    [Fact]
+    public void PartOfANotch_DoesNotCarryToTheNextBandSelected()
+    {
+        var handles = new EqBandHandlesAnnotation();
+        PeqBand[] bands = [new PeqBand(1000, 3, -3), new PeqBand(4000, 3, -3)];
+        var steps = new List<(int Band, int Notches)>();
+        handles.QStepped += (band, notches) => steps.Add((band, notches));
+
+        handles.Show(bands, selectedIndex: 0);
+        Assert.True(handles.Wheel(0, 60));
+        handles.Show(bands, selectedIndex: 1);
+        Assert.True(handles.Wheel(1, 60));
+        Assert.Empty(steps);
+
+        Assert.True(handles.Wheel(1, 60));
+        Assert.Equal([(1, 1)], steps);
+    }
+
     [Theory]
     [InlineData(PeqBandType.Peaking, "3 PK   1250 Hz   -4.5 dB   Q 2.8")]
     [InlineData(PeqBandType.LowShelf, "3 LS   1250 Hz   -4.5 dB   Q 2.8")]

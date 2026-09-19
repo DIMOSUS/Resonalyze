@@ -216,26 +216,18 @@ public partial class Form1
 
         if (session != null)
         {
-            ApplySessionSnapshot(session, result.SampleRate);
+            viewSettings.ApplySession(session, result.SampleRate);
         }
 
+        // The live analyzer is configured with the entry's live options.
         ApplyMeasurementConfigurationToControllers();
-        UpdatePeakInfo();
-        dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
-            panel => panel.RefreshSplAvailability());
 
         if (session != null)
         {
             // Mode switch re-prepares overlays hidden, so only the active slots are re-shown. Audio settings untouched.
             await SelectModeAsync(NormalizeSessionMode(session.ActiveMode));
-            overlayCollection.RestoreActiveSlots(
-                CurrentMode,
-                session.ActiveOverlaySlots);
+            analyzerPlot.RestoreOverlaySlots(session.ActiveOverlaySlots);
             SaveMeasurementSettings();
-        }
-        else
-        {
-            RefreshCurrentModePlot();
         }
 
         return true;
@@ -280,9 +272,7 @@ public partial class Form1
 
         RefreshMeasurementCommands();
 
-        ApplySessionSnapshot(
-            new MeasurementSessionSnapshot(),
-            expSweepMeasurement.SampleRate);
+        viewSettings.ApplySession(new MeasurementSessionSnapshot(), expSweepMeasurement.SampleRate);
         ApplyMeasurementConfigurationToControllers();
         SaveMeasurementSettings();
 
@@ -292,52 +282,10 @@ public partial class Form1
             dialog.SetEntries(measurementHistoryService.Entries, null, null));
     }
 
-    private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot()
-    {
-        return new MeasurementSessionSnapshot
-        {
-            ActiveMode = modeController.ActiveTab,
-            FrequencyResponse =
-                MeasurementSettingsFile.FrequencyResponseSettings.Capture(
-                    frequencyResponseOptions, frequencyResponseVisibility),
-            PhaseResponse =
-                MeasurementSettingsFile.FrequencyResponseSettings.Capture(
-                    phaseResponseOptions, phaseResponseVisibility),
-            GroupDelay =
-                MeasurementSettingsFile.FrequencyResponseSettings.Capture(
-                    groupDelayOptions, groupDelayVisibility),
-            ImpulseResponse =
-                MeasurementSettingsFile.ImpulseResponseSettings.Capture(
-                    impulseResponseOptions),
-            Waterfall =
-                MeasurementSettingsFile.WaterfallSettings.Capture(
-                    waterfallGenOptions),
-            BurstDecay =
-                MeasurementSettingsFile.WaterfallSettings.Capture(
-                    burstDecayGenOptions),
-            LiveSpectrum =
-                MeasurementSettingsFile.LiveSpectrumSettings.Capture(
-                    liveSpectrumOptions),
-            TimeAlignment =
-                MeasurementSettingsFile.TimeAlignmentSettings.Capture(
-                    timeAlignmentOptions),
-            ActiveOverlaySlots = overlayCollection.CaptureActiveSlots(CurrentMode)
-        };
-    }
-
-    private void ApplySessionSnapshot(
-        MeasurementSessionSnapshot session,
-        int sampleRate)
-    {
-        session.FrequencyResponse.ApplyTo(frequencyResponseOptions, frequencyResponseVisibility);
-        session.PhaseResponse.ApplyTo(phaseResponseOptions, phaseResponseVisibility);
-        session.GroupDelay.ApplyTo(groupDelayOptions, groupDelayVisibility);
-        session.ImpulseResponse.ApplyTo(impulseResponseOptions);
-        session.Waterfall.ApplyTo(waterfallGenOptions, WaterfallMode.Fourier);
-        session.BurstDecay.ApplyTo(burstDecayGenOptions, WaterfallMode.BurstDecay);
-        session.LiveSpectrum.ApplyTo(liveSpectrumOptions);
-        session.TimeAlignment.ApplyTo(timeAlignmentOptions, sampleRate);
-    }
+    private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot() =>
+        viewSettings.CaptureSession(
+            modeController.ActiveTab,
+            analyzerPlot.ActiveOverlaySlots);
 
     private static ModeTab NormalizeSessionMode(ModeTab mode) =>
         Enum.IsDefined(mode) ? mode : ModeTab.Frequency;

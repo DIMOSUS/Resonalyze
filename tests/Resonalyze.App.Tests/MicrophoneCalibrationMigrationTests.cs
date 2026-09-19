@@ -181,14 +181,13 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
         LiveSpectrumOptions live = new();
         settings.ApplyTo(
             measurement,
-            frequencyResponse, new CurveVisibilityOptions(),
-            phase, new CurveVisibilityOptions(),
-            groupDelay, new CurveVisibilityOptions(),
-            new ImpulseResponseOptions(),
-            new WaterfallGenerateOptions(),
-            new WaterfallGenerateOptions(),
-            live,
-            new TimeAlignmentOptions());
+            new AnalyzerViewSettings
+            {
+                FrequencyResponse = frequencyResponse,
+                PhaseResponse = phase,
+                GroupDelay = groupDelay,
+                LiveSpectrum = live
+            });
 
         Assert.Equal("cal-90", frequencyResponse.CalibrationId);
         Assert.Equal("cal-90", settings.Measurement.MicrophoneCalibrationId);
@@ -215,19 +214,7 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
             });
 
         using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        settings.CaptureFrom(
-            measurement,
-            new FrequencyResponseOptions(),
-            new CurveVisibilityOptions(),
-            new FrequencyResponseOptions(),
-            new CurveVisibilityOptions(),
-            new FrequencyResponseOptions(),
-            new CurveVisibilityOptions(),
-            new ImpulseResponseOptions(),
-            new WaterfallGenerateOptions(),
-            new WaterfallGenerateOptions(),
-            new LiveSpectrumOptions(),
-            new TimeAlignmentOptions());
+        settings.CaptureFrom(measurement, new AnalyzerViewSettings());
 
         Assert.Equal(
             @"C:\mics\zero.txt",

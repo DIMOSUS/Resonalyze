@@ -1,7 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
-using Resonalyze.Options;
 
 namespace Resonalyze;
 
@@ -341,61 +340,37 @@ internal sealed partial class MeasurementSettingsFile
 
     private readonly record struct BackupResult(BackupStatus Status, string? Path);
 
-    public void ApplyTo(
-        ExpSweepMeasurement measurement,
-        FrequencyResponseOptions frequencyResponse,
-        CurveVisibilityOptions frequencyResponseVisibility,
-        FrequencyResponseOptions phaseResponse,
-        CurveVisibilityOptions phaseResponseVisibility,
-        FrequencyResponseOptions groupDelay,
-        CurveVisibilityOptions groupDelayVisibility,
-        ImpulseResponseOptions impulseResponse,
-        WaterfallGenerateOptions waterfall,
-        WaterfallGenerateOptions burstDecay,
-        LiveSpectrumOptions liveSpectrum,
-        TimeAlignmentOptions timeAlignment)
+    public void ApplyTo(ExpSweepMeasurement measurement, AnalyzerViewSettings view)
     {
         Measurement.ApplyTo(measurement);
-        FrequencyResponse.ApplyTo(frequencyResponse, frequencyResponseVisibility);
-        PhaseResponse.ApplyTo(phaseResponse, phaseResponseVisibility);
-        GroupDelay.ApplyTo(groupDelay, groupDelayVisibility);
-        ImpulseResponse.ApplyTo(impulseResponse);
-        Waterfall.ApplyTo(waterfall, WaterfallMode.Fourier);
-        BurstDecay.ApplyTo(burstDecay, WaterfallMode.BurstDecay);
-        LiveSpectrum.ApplyTo(liveSpectrum);
+        FrequencyResponse.ApplyTo(view.FrequencyResponse, view.FrequencyResponseVisibility);
+        PhaseResponse.ApplyTo(view.PhaseResponse, view.PhaseResponseVisibility);
+        GroupDelay.ApplyTo(view.GroupDelay, view.GroupDelayVisibility);
+        ImpulseResponse.ApplyTo(view.ImpulseResponse);
+        Waterfall.ApplyTo(view.Waterfall, WaterfallMode.Fourier);
+        BurstDecay.ApplyTo(view.BurstDecay, WaterfallMode.BurstDecay);
+        LiveSpectrum.ApplyTo(view.LiveSpectrum);
         // A live capture is corrected by the rig's microphone calibration.
-        liveSpectrum.CalibrationId = Measurement.MicrophoneCalibrationId;
-        TimeAlignment.ApplyTo(timeAlignment, measurement.SampleRate);
+        view.LiveSpectrum.CalibrationId = Measurement.MicrophoneCalibrationId;
+        TimeAlignment.ApplyTo(view.TimeAlignment, measurement.SampleRate);
     }
 
-    public void CaptureFrom(
-        ExpSweepMeasurement measurement,
-        FrequencyResponseOptions frequencyResponse,
-        CurveVisibilityOptions frequencyResponseVisibility,
-        FrequencyResponseOptions phaseResponse,
-        CurveVisibilityOptions phaseResponseVisibility,
-        FrequencyResponseOptions groupDelay,
-        CurveVisibilityOptions groupDelayVisibility,
-        ImpulseResponseOptions impulseResponse,
-        WaterfallGenerateOptions waterfall,
-        WaterfallGenerateOptions burstDecay,
-        LiveSpectrumOptions liveSpectrum,
-        TimeAlignmentOptions timeAlignment)
+    public void CaptureFrom(ExpSweepMeasurement measurement, AnalyzerViewSettings view)
     {
         SchemaVersion = CurrentSchemaVersion;
         SweepMeasurementSettings previousMeasurement = Measurement;
         Measurement = SweepMeasurementSettings.Capture(measurement);
         Measurement.CopyCalibrationFrom(previousMeasurement);
-        FrequencyResponse = FrequencyResponseSettings.Capture(frequencyResponse, frequencyResponseVisibility);
-        PhaseResponse = FrequencyResponseSettings.Capture(phaseResponse, phaseResponseVisibility);
-        GroupDelay = FrequencyResponseSettings.Capture(groupDelay, groupDelayVisibility);
+        FrequencyResponse = FrequencyResponseSettings.Capture(view.FrequencyResponse, view.FrequencyResponseVisibility);
+        PhaseResponse = FrequencyResponseSettings.Capture(view.PhaseResponse, view.PhaseResponseVisibility);
+        GroupDelay = FrequencyResponseSettings.Capture(view.GroupDelay, view.GroupDelayVisibility);
         // Phase and group delay apply no correction; a stored id only drifted.
         PhaseResponse.CalibrationId = null;
         GroupDelay.CalibrationId = null;
-        ImpulseResponse = ImpulseResponseSettings.Capture(impulseResponse);
-        Waterfall = WaterfallSettings.Capture(waterfall);
-        BurstDecay = WaterfallSettings.Capture(burstDecay);
-        LiveSpectrum = LiveSpectrumSettings.Capture(liveSpectrum);
+        ImpulseResponse = ImpulseResponseSettings.Capture(view.ImpulseResponse);
+        Waterfall = WaterfallSettings.Capture(view.Waterfall);
+        BurstDecay = WaterfallSettings.Capture(view.BurstDecay);
+        LiveSpectrum = LiveSpectrumSettings.Capture(view.LiveSpectrum);
         LiveSpectrum.CalibrationId = null;
-        TimeAlignment = TimeAlignmentSettings.Capture(timeAlignment);
+        TimeAlignment = TimeAlignmentSettings.Capture(view.TimeAlignment);
     }}

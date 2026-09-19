@@ -172,7 +172,7 @@ The plot is left showing exactly what it showed.
 
 Asking the axes, instead of comparing against a baseline captured when the model was shown, makes the answer
 independent of when it is asked. Overlays join a plot after it is drawn - a mode switch restores its slots
-after `ModeController` has drawn, Show All and slot check boxes act later still - and on an auto-scaled axis
+after `AnalyzerPlot` has drawn, Show All and slot check boxes act later still - and on an auto-scaled axis
 they widen the range through the data rather than through an override. A baseline comparison reads that as a zoom.
 
 ## Viewport memory

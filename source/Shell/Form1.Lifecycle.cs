@@ -46,7 +46,7 @@ public partial class Form1
             shutdownFastClose = true;
             startupAudioWarmup.Cancel();
             FlushMeasurementSettings();
-            overlayCollection.FlushPendingSaves();
+            analyzerPlot.Overlays.FlushPendingSaves();
             sessionTracker.PersistCurrentSessionState();
             return;
         }
@@ -61,7 +61,7 @@ public partial class Form1
         closingInProgress = true;
         Enabled = false;
         FlushMeasurementSettings();
-        overlayCollection.FlushPendingSaves();
+        analyzerPlot.Overlays.FlushPendingSaves();
         sessionTracker.PersistCurrentSessionState();
         startupAudioWarmup.Cancel();
         await Task.WhenAll(

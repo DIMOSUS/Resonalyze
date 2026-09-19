@@ -133,18 +133,23 @@ internal static class RawCurveRenderer
 public sealed class OverlayCollection
 {
     private readonly List<Overlay> overlays = new();
+    private readonly Func<Mode> currentMode;
     private readonly Action notifyPlotChanged;
     private Func<MagnitudeScale>? getCurrentMagnitudeScale;
     private Func<CurveTag, RawCurveCapture?>? rawCurveProvider;
+    private ComplexSumOverlayBuilder? complexSumProvider;
 
+    /// <param name="currentMode">The mode on the plot; overlays show and capture in its slots.</param>
     public OverlayCollection(
-        Form1 form,
+        Form form,
+        Func<Mode> currentMode,
         Panel container,
         OxyPlot.WindowsForms.PlotView plotView,
         WrappingToolTip toolTip,
         Action notifyPlotChanged)
     {
         Form = form;
+        this.currentMode = currentMode;
         PlotView = plotView;
         this.notifyPlotChanged = notifyPlotChanged;
 
@@ -229,7 +234,29 @@ public sealed class OverlayCollection
         UiPalette.OverlaySlotDefaults[(slot - 1) % UiPalette.OverlaySlotDefaults.Count];
 
     public OxyPlot.WindowsForms.PlotView PlotView { get; }
-    public Form1 Form { get; }
+
+    /// <summary>Owns the overlay dialogs.</summary>
+    public Form Form { get; }
+
+    public Mode CurrentMode => currentMode();
+
+    /// <summary>Null while unavailable (the overlay stays armed); showLoss asks for the sum-loss gap instead.</summary>
+    internal delegate OverlayPoint[]? ComplexSumOverlayBuilder(
+        double compareDelayMs,
+        bool invertComparePolarity,
+        bool showLoss,
+        double? lossSmoothingInverseOctaves);
+
+    internal void SetComplexSumProvider(ComplexSumOverlayBuilder provider) =>
+        complexSumProvider = provider;
+
+    internal OverlayPoint[]? BuildComplexSumOverlayPoints(
+        double compareDelayMs,
+        bool invertComparePolarity,
+        bool showLoss,
+        double? lossSmoothingInverseOctaves) =>
+        complexSumProvider?.Invoke(
+            compareDelayMs, invertComparePolarity, showLoss, lossSmoothingInverseOctaves);
 
     public void SetMagnitudeScaleProvider(Func<MagnitudeScale> provider) =>
         getCurrentMagnitudeScale = provider;
@@ -347,7 +374,7 @@ public sealed class OverlayCollection
         return overlays
             .Where(overlay =>
                 overlay.Kind == OverlayKind.Captured &&
-                overlay.SeriesMode == OverlayModeFor(Form.CurrentMode) &&
+                overlay.SeriesMode == OverlayModeFor(CurrentMode) &&
                 overlay.HasCaptureData)
             .Select(overlay => new OverlaySlotOption(
                 overlay.Index,
@@ -382,7 +409,7 @@ public sealed class OverlayCollection
             candidate =>
                 candidate.Index == slot &&
                 candidate.Kind == OverlayKind.Captured &&
-                candidate.SeriesMode == OverlayModeFor(Form.CurrentMode));
+                candidate.SeriesMode == OverlayModeFor(CurrentMode));
 
     private LineSeries? FindLiveCurve(string key) =>
         PlotView.Model?.Series
@@ -775,7 +802,7 @@ public sealed class Overlay
     public bool HasCaptureData => sourcePoints is { Length: > 1 };
 
     private Mode CurrentOverlayMode =>
-        OverlayCollection.OverlayModeFor(collection.Form.CurrentMode);
+        OverlayCollection.OverlayModeFor(collection.CurrentMode);
 
     public void Prepare(Mode mode)
     {
@@ -2469,7 +2496,7 @@ public sealed class Overlay
         int smoothing = settings.SmoothingInverseOctaves;
         // A ratio, smoothed once by the pipeline at this slot's width (DataHelper.SmoothRatioLevels); smoothing here
         // would double-smooth and flatten the psychoacoustic mode's variable bandwidth to 1/6 octave.
-        OverlayPoint[]? sumPoints = collection.Form.BuildComplexSumOverlayPoints(
+        OverlayPoint[]? sumPoints = collection.BuildComplexSumOverlayPoints(
             settings.CompareDelayMs,
             settings.CompareInvertPolarity,
             showLoss,

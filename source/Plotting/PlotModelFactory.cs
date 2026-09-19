@@ -44,23 +44,23 @@ internal sealed class PlotModelFactory
         ExpSweepMeasurement expSweepMeasurement,
         NoiseMeasurement noiseMeasurement,
         Func<string?, CalibrationFile?> getCalibration,
-        PlotPresentationOptions options)
+        AnalyzerViewSettings view)
     {
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(view);
         this.expSweepMeasurement = expSweepMeasurement;
         this.noiseMeasurement = noiseMeasurement;
         this.getCalibration = getCalibration;
         measurementContext = new MeasurementPlotContext(document);
-        frequencyResponseOptions = options.FrequencyResponse;
-        phaseResponseOptions = options.PhaseResponse;
-        groupDelayOptions = options.GroupDelay;
-        frequencyResponseVisibility = options.FrequencyResponseVisibility;
-        phaseResponseVisibility = options.PhaseResponseVisibility;
-        groupDelayVisibility = options.GroupDelayVisibility;
-        impulseResponseOptions = options.ImpulseResponse;
-        liveSpectrumOptions = options.LiveSpectrum;
-        waterfallGenOptions = options.Waterfall;
-        burstDecayGenOptions = options.BurstDecay;
+        frequencyResponseOptions = view.FrequencyResponse;
+        phaseResponseOptions = view.PhaseResponse;
+        groupDelayOptions = view.GroupDelay;
+        frequencyResponseVisibility = view.FrequencyResponseVisibility;
+        phaseResponseVisibility = view.PhaseResponseVisibility;
+        groupDelayVisibility = view.GroupDelayVisibility;
+        impulseResponseOptions = view.ImpulseResponse;
+        liveSpectrumOptions = view.LiveSpectrum;
+        waterfallGenOptions = view.Waterfall;
+        burstDecayGenOptions = view.BurstDecay;
     }
 
     public string? ImpulseResponseFileName => measurementContext.ImpulseResponseFileName;
@@ -385,6 +385,20 @@ internal sealed class PlotModelFactory
             smoothingCode,
             sampleRate > 0 ? sampleRate : null,
             calibration);
+
+    /// <summary>The main plot of a plot mode; Live Spectrum draws its captures itself and gets only its empty frame here.</summary>
+    public PlotModel Create(Mode mode, bool includeCurves) => mode switch
+    {
+        Mode.ImpulseResponse => CreateImpulseResponse(includeCurves),
+        Mode.FrequencyResponse => CreateFrequencyResponse(includeCurves),
+        Mode.PhaseResponse => CreatePhaseResponse(includeCurves),
+        Mode.GroupDelay => CreateGroupDelay(includeCurves),
+        Mode.CumulativeSpectrumDecay => CreateWaterfall(includeCurves),
+        Mode.BurstDecay => CreateBurstDecay(includeCurves),
+        Mode.LiveSpectrum => CreateLiveSpectrum(),
+        Mode.Autocorrelation => CreateAutocorrelation(includeCurves),
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Not a plot mode.")
+    };
 
     public PlotModel CreateFrequencyResponse(bool includeCurves)
     {

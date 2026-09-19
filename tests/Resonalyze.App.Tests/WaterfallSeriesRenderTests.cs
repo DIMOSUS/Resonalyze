@@ -1,7 +1,6 @@
 ﻿using System.Numerics;
 using OxyPlot;
 using Resonalyze.Dsp;
-using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
@@ -72,17 +71,13 @@ public sealed class WaterfallSeriesRenderTests
             measurement.Engine,
             noiseMeasurement,
             mode => new CalibrationFile(calibrationPath),
-            new PlotPresentationOptions(
-                FrequencyResponse: new FrequencyResponseOptions(),
-                PhaseResponse: new FrequencyResponseOptions(),
-                GroupDelay: new FrequencyResponseOptions(),
-                FrequencyResponseVisibility: new CurveVisibilityOptions(),
-                PhaseResponseVisibility: new CurveVisibilityOptions(),
-                GroupDelayVisibility: new CurveVisibilityOptions(),
-                ImpulseResponse: new ImpulseResponseOptions(),
-                LiveSpectrum: new LiveSpectrumOptions(),
-                Waterfall: new WaterfallGenerateOptions(),
-                BurstDecay: new WaterfallGenerateOptions { WaterfallMode = WaterfallMode.BurstDecay }));
+            new AnalyzerViewSettings
+            {
+                PhaseResponse = new FrequencyResponseOptions(),
+                GroupDelay = new FrequencyResponseOptions(),
+                Waterfall = new WaterfallGenerateOptions(),
+                BurstDecay = new WaterfallGenerateOptions { WaterfallMode = WaterfallMode.BurstDecay }
+            });
     }
 
     private sealed class RecordingRenderContext : IRenderContext

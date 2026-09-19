@@ -8,6 +8,11 @@ namespace Resonalyze;
 /// Every input lands through a <see cref="Request"/> taken when it starts, and lands only while no newer one has been
 /// taken since: whichever input started last wins, however long each takes. <see cref="Clear"/> counts as newer, so
 /// nothing started before New session lands after it.
+/// <para>
+/// <see cref="Changed"/> announces everything a view reads: the result, its name, and whether a producer holds the
+/// document. A producer that lands is announced once, when it lands; one that ends without a result is announced when
+/// it lets go.
+/// </para>
 /// </remarks>
 internal sealed class AnalyzerDocument
 {
@@ -15,7 +20,7 @@ internal sealed class AnalyzerDocument
     private volatile bool busy;
     private long latest;
 
-    /// <summary>Raised on the UI thread whenever the result or its name changes.</summary>
+    /// <summary>Raised on the UI thread whenever the result, its name or <see cref="IsBusy"/> changes.</summary>
     public event Action? Changed;
 
     public MeasurementResult? Result => result;
@@ -25,7 +30,7 @@ internal sealed class AnalyzerDocument
     /// <summary>The file the result came from or was saved to, or a title for one with no file; null for a run not saved.</summary>
     public string? SourceName { get; private set; }
 
-    /// <summary>A run or an import is producing the next result; nothing draws or saves the current one meanwhile.</summary>
+    /// <summary>A run or an import is producing the next result; views keep what they show, and nothing saves.</summary>
     public bool IsBusy => busy;
 
     /// <summary>For a load, a history entry or a REW read; null while a run or an import holds the document.</summary>
@@ -43,7 +48,9 @@ internal sealed class AnalyzerDocument
         }
 
         busy = true;
-        return new Request(this, ++latest, holds: true);
+        var request = new Request(this, ++latest, holds: true);
+        Changed?.Invoke();
+        return request;
     }
 
     /// <summary>After a save the result is the file's.</summary>
@@ -60,12 +67,15 @@ internal sealed class AnalyzerDocument
         Replace(null, null);
     }
 
+    /// <param name="measurement">Already validated, or null to empty the document.</param>
     private void Replace(MeasurementResult? measurement, string? sourceName)
     {
-        result = measurement?.Validated();
+        result = measurement;
         SourceName = sourceName;
         Changed?.Invoke();
     }
+
+    private void Released() => Changed?.Invoke();
 
     internal sealed class Request : IDisposable
     {
@@ -85,25 +95,52 @@ internal sealed class AnalyzerDocument
 
         /// <summary>Releases the hold, then makes the result the open measurement unless a newer request was taken.</summary>
         /// <returns>False when superseded: the result is dropped, and the caller shows nothing of it.</returns>
+        /// <exception cref="ArgumentException">The result is refused; the hold is let go, and the open result stays.</exception>
         public bool Install(MeasurementResult measurement, string? sourceName)
         {
-            Dispose();
             if (!IsCurrent)
+            {
+                Dispose();
+                return false;
+            }
+
+            MeasurementResult validated;
+            try
+            {
+                validated = measurement.Validated();
+            }
+            catch
+            {
+                // A refused result ends the producer like a failure: let go, and say so.
+                Dispose();
+                throw;
+            }
+
+            // Busy and result change together: one announcement.
+            Release();
+            owner.Replace(validated, sourceName);
+            return true;
+        }
+
+        /// <summary>Lets go without a result (failed, cancelled or superseded); a hold that ends is announced.</summary>
+        public void Dispose()
+        {
+            if (Release())
+            {
+                owner.Released();
+            }
+        }
+
+        private bool Release()
+        {
+            if (!holding)
             {
                 return false;
             }
 
-            owner.Replace(measurement, sourceName);
+            holding = false;
+            owner.busy = false;
             return true;
-        }
-
-        public void Dispose()
-        {
-            if (holding)
-            {
-                holding = false;
-                owner.busy = false;
-            }
         }
     }
 }

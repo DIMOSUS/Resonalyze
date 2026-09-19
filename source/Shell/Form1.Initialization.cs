@@ -22,56 +22,36 @@ public partial class Form1
             this,
             UpdateMaximizedBounds,
             CreateModeTabActions());
-        OverlayCollection createdOverlayCollection = new(
-            this,
-            overlays,
-            plotView1,
-            toolTip1,
-            UpdatePlotLabelsPanel);
-        PlotLabelsPanelController createdPlotLabelsPanelController = new(
-            plotView1,
-            () => CurrentMode);
         PlotModelFactory createdPlotModelFactory = new(
             analyzerDocument,
             expSweepMeasurement,
             noiseMeasurement,
             ResolveCalibration,
-            new PlotPresentationOptions(
-                FrequencyResponse: frequencyResponseOptions,
-                PhaseResponse: phaseResponseOptions,
-                GroupDelay: groupDelayOptions,
-                FrequencyResponseVisibility: frequencyResponseVisibility,
-                PhaseResponseVisibility: phaseResponseVisibility,
-                GroupDelayVisibility: groupDelayVisibility,
-                ImpulseResponse: impulseResponseOptions,
-                LiveSpectrum: liveSpectrumOptions,
-                Waterfall: waterfallGenOptions,
-                BurstDecay: burstDecayGenOptions));
+            viewSettings);
         createdPlotModelFactory.SetCompareSourceProvider(compareSelection.GetAnalysisSource);
-        PlotViewportMemory createdPlotViewports = new(plotView1);
+        AnalyzerPlot createdAnalyzerPlot = new(
+            this,
+            plotView1,
+            overlays,
+            buttonOverlayShowAll,
+            buttonOverlayHideAll,
+            toolTip1,
+            analyzerDocument,
+            compareSelection,
+            createdPlotModelFactory);
         LiveSpectrumController createdLiveSpectrumController = new(
             this,
             noiseMeasurement,
-            plotView1,
-            createdPlotViewports,
-            createdPlotModelFactory,
-            createdOverlayCollection,
-            () => CurrentMode,
+            createdAnalyzerPlot,
             () => SelectModeAsync(ModeTab.LiveSpectrum),
-            UpdateOverlayAvailability,
             UpdateRecordButtonForCurrentMode,
-            UpdatePlotLabelsPanel,
-            liveSpectrumOptions,
+            viewSettings.LiveSpectrum,
             DescribeCalibrationForCapture,
             () => closingInProgress);
         ModeController createdModeController = new(
-            ChangeModeAsync,
-            SetActiveModeTab,
-            DrawSelectedMode,
-            RestoreActiveOverlaySlotsForCurrentMode,
-            CanDrawCurrentMeasurement,
-            tab => GetModeDescriptor(tab).Mode,
-            tab => GetModeDescriptor(tab).SupportsCurveDrawing);
+            createdAnalyzerPlot,
+            StopRunningForModeSwitchAsync,
+            ShowModeSurfaces);
         MainCommandController createdCommandController = new(
             buttonSave,
             buttonLoad,
@@ -86,11 +66,10 @@ public partial class Form1
         TimeAlignmentPanelController createdTimeAlignmentController = new(
             this,
             timeAlignmentPanel,
-            timeAlignmentOptions,
+            viewSettings.TimeAlignment,
             analyzerDocument,
             () => SaveMeasurementSettings(),
-            () => plotModelFactory.ImpulseResponseFileName,
-            compareSelection.GetTimeAlignmentMeasurement);
+            compareSelection);
         InputLevelMeterController createdInputLevelMeterController = new(
             this,
             inputLevelMeterPanel,
@@ -101,10 +80,8 @@ public partial class Form1
         DockedModeSettingsHost createdDockedHistoryHost = new(this, plotView1);
 
         return new Form1ControllerDependencies(
-            createdPlotViewports,
-            createdOverlayCollection,
-            createdPlotLabelsPanelController,
             createdPlotModelFactory,
+            createdAnalyzerPlot,
             createdLiveSpectrumController,
             createdModeController,
             createdCommandController,
@@ -115,22 +92,8 @@ public partial class Form1
             createdDockedHistoryHost);
     }
 
-    private void ApplyPersistedSettings()
-    {
-        measurementSettings.ApplyTo(
-            expSweepMeasurement,
-            frequencyResponseOptions,
-            frequencyResponseVisibility,
-            phaseResponseOptions,
-            phaseResponseVisibility,
-            groupDelayOptions,
-            groupDelayVisibility,
-            impulseResponseOptions,
-            waterfallGenOptions,
-            burstDecayGenOptions,
-            liveSpectrumOptions,
-            timeAlignmentOptions);
-    }
+    private void ApplyPersistedSettings() =>
+        measurementSettings.ApplyTo(expSweepMeasurement, viewSettings);
 
     private void WireControllerEvents()
     {
@@ -166,7 +129,7 @@ public partial class Form1
         ApplyMainContentLayout();
         UpdateCompareButton();
         UpdateHistoryButton();
-        UpdatePeakInfo();
+        analyzerPlot.UpdatePeakInfo();
         ApplicationUpdateService.Initialize(this);
         _ = SelectModeAsync(ModeTab.Frequency);
     }
@@ -185,7 +148,7 @@ public partial class Form1
         // The rig's choice describes the next run; a capture taken keeps its frozen calibration (no re-render, no peak-hold drop).
         string? rigCalibrationId =
             measurementSettings.Measurement.MicrophoneCalibrationId;
-        liveSpectrumOptions.CalibrationId = rigCalibrationId;
+        viewSettings.LiveSpectrum.CalibrationId = rigCalibrationId;
         RefreshLiveCalibrationReadout();
     }
 
@@ -289,10 +252,11 @@ public partial class Form1
         {
             AnalyzerDocument.Request? run = runRequest;
             runRequest = null;
-            run?.Dispose();
             // New session aborts a run, but one finishing meanwhile still completes: it is dropped like an aborted one.
             MeasurementResult? landed =
                 result != null && run?.Install(result, sourceName: null) == true ? result : null;
+            // A run that landed nothing lets go here; the views then show what is open.
+            run?.Dispose();
             bool success = landed != null;
             if (landed != null)
             {
@@ -309,16 +273,6 @@ public partial class Form1
                 ShowMeasurementError("The measurement failed.", expSweepMeasurement.LastError);
             }
 
-            UpdatePeakInfo();
-
-            if (success && CurrentMode != Mode.LiveSpectrum)
-            {
-                DrawSelectedMode(true);
-            }
-
-            // Every completion can change SPL availability either way; the panel only evaluates on open.
-            dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
-                panel => panel.RefreshSplAvailability());
             // The run released the device (success or not); refresh the settings panel's deferred device view.
             RefreshOpenMeasurementSettingsDevice();
 
@@ -373,10 +327,8 @@ public partial class Form1
     }
 
     private sealed record Form1ControllerDependencies(
-        PlotViewportMemory PlotViewports,
-        OverlayCollection OverlayCollection,
-        PlotLabelsPanelController PlotLabelsPanelController,
         PlotModelFactory PlotModelFactory,
+        AnalyzerPlot AnalyzerPlot,
         LiveSpectrumController LiveSpectrumController,
         ModeController ModeController,
         MainCommandController CommandController,

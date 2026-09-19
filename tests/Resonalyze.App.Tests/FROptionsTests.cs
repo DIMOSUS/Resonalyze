@@ -1,5 +1,8 @@
-﻿using Resonalyze.Dsp;
+﻿using System.Reflection;
+using System.Windows.Forms;
+using Resonalyze.Dsp;
 using Resonalyze.Options;
+using Resonalyze.Ui;
 
 namespace Resonalyze.App.Tests;
 
@@ -52,5 +55,27 @@ public sealed class FROptionsTests
         Assert.Equal(PhaseWindowMode.Fixed, written.MagnitudeWindowMode);
         Assert.Equal(
             PhaseAnalysisSettings.DefaultFdwCycles, written.MagnitudeFdwCycles);
+    }
+
+    // Nothing tells an open panel a measurement landed; it follows the document.
+    [Fact]
+    public void TheSplChoiceTurnsAmberWhenAMeasurementWithoutAnAnchorLands()
+    {
+        var document = new AnalyzerDocument();
+        using var panel = new FROptions();
+        panel.Init(document, 48_000, new FrequencyResponseOptions(), new CurveVisibilityOptions(), []);
+        var spl = (RadioButton)typeof(FROptions)
+            .GetField("radioMagnitudeSpl", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(panel)!;
+        Assert.NotEqual(UiPalette.Warning, spl.ForeColor);
+
+        document.TryBegin()!.Install(
+            TestMeasurementResults.Restored(
+                20, 20_000, 48_000, 24, 1.0, PlaybackChannel.Mono,
+                [System.Numerics.Complex.Zero, System.Numerics.Complex.One],
+                sweepDeconvolutionPeakIndex: 1),
+            "no anchor.json");
+
+        Assert.Equal(UiPalette.Warning, spl.ForeColor);
     }
 }

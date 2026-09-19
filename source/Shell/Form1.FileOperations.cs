@@ -64,7 +64,6 @@ public partial class Form1
                 sessionTracker.MarkSavedFile(dialog.FileName, file, result);
                 analyzerDocument.Rename(dialog.FileName);
                 UpdateLastImpulseResponseDirectory(dialog.FileName);
-                RefreshCurrentModePlot();
             }
             catch (Exception exception)
             {
@@ -204,7 +203,7 @@ public partial class Form1
 
     private void SelectFrequencyResponseCalibration(string? calibrationId)
     {
-        frequencyResponseOptions.CalibrationId = calibrationId;
+        viewSettings.FrequencyResponse.CalibrationId = calibrationId;
         IReadOnlyList<MicrophoneCalibrationEntry> entries = CalibrationEntries();
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.SelectCalibration(calibrationId, entries));
@@ -213,14 +212,12 @@ public partial class Form1
     private void ApplyImpulseResponseFile(AnalyzerDocument.Request request, ImpulseResponseFile file, string path)
     {
         MeasurementResult result = file.ToResult();
-        if (!ShowLoadedMeasurement(request, result, path, fromFile: true))
+        if (!InstallMeasurement(request, result, path, fromFile: true))
         {
             return;
         }
 
         sessionTracker.MarkLoadedFile(path, file, result);
-        dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
-            panel => panel.RefreshSplAvailability());
     }
 
     // VDSP Open in analyzers: history-backed sources use full entry activation (the tab switch queues after its mode restore);
@@ -288,13 +285,13 @@ public partial class Form1
         RewImpulseResponseTextFile file;
         RewImportTimingPlan plan;
         EssSweepRateEstimate? sweepRate;
-        MeasurementResult result;
+        bool landed;
         if (analyzerDocument.TryAcquire() is not { } hold)
         {
             return;
         }
 
-        // Held from the read so a sweep cannot start meanwhile; Install releases it before the redraw (busy draws nothing).
+        // Held from the read so a sweep cannot start meanwhile. It lands inside the hold, so the views hear of it once.
         using (hold)
         {
             string text = await File.ReadAllTextAsync(path);
@@ -343,7 +340,7 @@ public partial class Form1
 
             double lowHz = file.LowFrequencyHz ?? RewMeasurementImport.FallbackLowFrequencyHz;
             double highHz = Math.Min(file.HighFrequencyHz ?? double.MaxValue, file.SampleRate / 2.0);
-            result = RewMeasurementImport.ToResult(
+            MeasurementResult result = RewMeasurementImport.ToResult(
                 samples,
                 referenced,
                 file.SampleRate,
@@ -353,9 +350,10 @@ public partial class Form1
                     sweepRate, lowHz, highHz, file.SampleRate, file.SweepLengthSamples ?? samples.Length),
                 file.SweepCount ?? 1,
                 plan.Reference);
+            landed = FinishRewImport(hold, result, path, fromFile: true);
         }
 
-        if (FinishRewImport(hold, result, path, fromFile: true))
+        if (landed)
         {
             NotifyImportDecisions("REW impulse response imported", RewImportNotes.Describe(file, plan, sweepRate));
         }
@@ -365,14 +363,12 @@ public partial class Form1
     private bool FinishRewImport(
         AnalyzerDocument.Request request, MeasurementResult result, string sourceName, bool fromFile)
     {
-        if (!ShowLoadedMeasurement(request, result, sourceName, fromFile))
+        if (!InstallMeasurement(request, result, sourceName, fromFile))
         {
             return false;
         }
 
         sessionTracker.MarkMeasurementCompleted(result);
-        dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
-            panel => panel.RefreshSplAvailability());
         return true;
     }
 
@@ -431,12 +427,13 @@ public partial class Form1
     {
         AudioFileContent recording;
         RecordedSweepImport import;
+        bool landed;
         if (analyzerDocument.TryAcquire() is not { } hold)
         {
             return;
         }
 
-        // Held before a decode that can take seconds; Install releases it before the redraw.
+        // Held before a decode that can take seconds. It lands inside the hold, so the views hear of it once.
         using (hold)
         {
             recording = await Task.Run(() => RecordedSweepFile.Load(path));
@@ -467,18 +464,16 @@ public partial class Form1
                 recording.Channels,
                 recording.SampleRate,
                 channel));
+            // New session during the decode supersedes it.
+            landed = InstallMeasurement(hold, import.Result, path, fromFile: true);
         }
 
-        // New session during the decode supersedes it.
-        if (!ShowLoadedMeasurement(hold, import.Result, path, fromFile: true))
+        if (!landed)
         {
             return;
         }
 
         sessionTracker.MarkMeasurementCompleted(import.Result);
-        // An import has no SPL anchor; re-evaluate availability downward.
-        dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
-            panel => panel.RefreshSplAvailability());
         NotifyImportDecisions("Recorded sweep", RecordedSweepFile.DescribeImport(recording, import));
     }
 }

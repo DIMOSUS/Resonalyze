@@ -39,9 +39,15 @@ public partial class Form1
     }
 
     /// <summary>Makes <paramref name="result"/> the open measurement; every input that restores one comes through here.</summary>
-    /// <remarks>Read through its own calibration: every file carries it, and imports carry none, so they must not get the user's mic curve.</remarks>
+    /// <remarks>
+    /// The plot, Time Alignment and the mode panels follow the document. Read through its own calibration: every file
+    /// carries it, and imports carry none, so they must not get the user's mic curve.
+    /// </remarks>
+    /// <param name="sourceName">A file path, or a title for a measurement with no file (no path separators).</param>
+    /// <param name="fromFile">The next Load dialog opens in the file's folder.</param>
     /// <returns>False when a newer request superseded <paramref name="request"/>: nothing changed.</returns>
-    private bool InstallMeasurement(AnalyzerDocument.Request request, MeasurementResult result, string? sourceName)
+    private bool InstallMeasurement(
+        AnalyzerDocument.Request request, MeasurementResult result, string? sourceName, bool fromFile = false)
     {
         if (!request.Install(result, sourceName))
         {
@@ -50,6 +56,11 @@ public partial class Form1
 
         inputLevelMeterController.Show(result.Levels);
         SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
+        if (fromFile && sourceName != null)
+        {
+            UpdateLastImpulseResponseDirectory(sourceName);
+        }
+
         return true;
     }
 
@@ -109,34 +120,10 @@ public partial class Form1
     {
         buttonRecord.Text = "Running...";
         sessionTracker.Reset();
-        UpdatePeakInfo();
+        analyzerPlot.UpdatePeakInfo();
         commandController.SetSaveAvailable(false);
         commandController.SetLoadAvailable(false);
     }
 
-    /// <param name="sourceName">A file path, or a title for a measurement with no file (no path separators).</param>
-    /// <returns>False when a newer request superseded <paramref name="request"/>: nothing changed.</returns>
-    private bool ShowLoadedMeasurement(
-        AnalyzerDocument.Request request, MeasurementResult result, string sourceName, bool fromFile)
-    {
-        if (!InstallMeasurement(request, result, sourceName))
-        {
-            return false;
-        }
-
-        ApplyMeasurementConfigurationToControllers();
-        if (fromFile)
-        {
-            UpdateLastImpulseResponseDirectory(sourceName);
-        }
-        UpdatePeakInfo();
-        RefreshCurrentModePlot();
-        return true;
-    }
-
-    private void FinalizeMeasurementCommandState()
-    {
-        commandController.SetLoadAvailable(true);
-        UpdatePeakInfo();
-    }
+    private void FinalizeMeasurementCommandState() => commandController.SetLoadAvailable(true);
 }

@@ -91,8 +91,7 @@ public sealed class TimeAlignmentBandModeSyncTests
                 options,
                 measurement,
                 () => harness!.Saves++,
-                () => null,
-                () => null);
+                new CompareSelection());
             harness = new Harness(form, panel, controller);
             return harness;
         }

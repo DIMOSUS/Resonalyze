@@ -55,21 +55,88 @@ public sealed class AnalyzerDocumentTests
         Assert.Same(second, document.Result);
     }
 
+    // Views keep what they show while a producer holds the document, so they must hear when it starts.
     [Fact]
-    public void AHolderLandsAndLetsGo()
+    public void AHolderIsAnnounced()
+    {
+        var document = new AnalyzerDocument();
+        var busyWhenChanged = new List<bool>();
+        document.Changed += () => busyWhenChanged.Add(document.IsBusy);
+
+        using AnalyzerDocument.Request hold = document.TryAcquire()!;
+
+        Assert.Equal([true], busyWhenChanged);
+    }
+
+    [Fact]
+    public void AHolderThatLandsIsAnnouncedOnce()
     {
         var document = new AnalyzerDocument();
         AnalyzerDocument.Request hold = document.TryAcquire()!;
         MeasurementResult result = Result();
-        bool busyWhenChanged = true;
-        document.Changed += () => busyWhenChanged = document.IsBusy;
+        var busyWhenChanged = new List<bool>();
+        document.Changed += () => busyWhenChanged.Add(document.IsBusy);
 
         Assert.True(hold.Install(result, "import.wav"));
+        hold.Dispose();
 
         Assert.Same(result, document.Result);
+        Assert.Equal([false], busyWhenChanged);
+    }
+
+    // A run that aborts or an import that fails leaves the document as it was, but no longer held: the views must hear.
+    [Fact]
+    public void AHolderThatEndsWithoutAResultIsAnnounced()
+    {
+        var document = new AnalyzerDocument();
+        AnalyzerDocument.Request hold = document.TryAcquire()!;
+        var busyWhenChanged = new List<bool>();
+        document.Changed += () => busyWhenChanged.Add(document.IsBusy);
+
+        hold.Dispose();
+        hold.Dispose();
+
+        Assert.Equal([false], busyWhenChanged);
+    }
+
+    // Validated() is the document's last check; a producer it refuses must not leave the views waiting.
+    [Fact]
+    public void AHolderWhoseResultIsRefusedStillLetsGoAndIsAnnounced()
+    {
+        var document = new AnalyzerDocument();
+        MeasurementResult open = Result();
+        document.TryBegin()!.Install(open, "open.json");
+        AnalyzerDocument.Request hold = document.TryAcquire()!;
+        var busyWhenChanged = new List<bool>();
+        document.Changed += () => busyWhenChanged.Add(document.IsBusy);
+        MeasurementResult broken = open with
+        {
+            SweepDeconvolution = new MeasurementImpulseResponse([], 0)
+        };
+
+        Assert.Throws<ArgumentException>(() => hold.Install(broken, "broken.wav"));
+
+        // Let go by the refusal itself: a run's completion calls Install with no using around it.
         Assert.False(document.IsBusy);
-        // Views redraw on Changed, and a busy document draws nothing.
-        Assert.False(busyWhenChanged);
+        Assert.Equal([false], busyWhenChanged);
+        Assert.Same(open, document.Result);
+        Assert.Equal("open.json", document.SourceName);
+        hold.Dispose();
+        Assert.Single(busyWhenChanged);
+    }
+
+    [Fact]
+    public void ASupersededHolderIsAnnouncedWhenItLetsGo()
+    {
+        var document = new AnalyzerDocument();
+        AnalyzerDocument.Request run = document.TryAcquire()!;
+        document.Clear();
+        var busyWhenChanged = new List<bool>();
+        document.Changed += () => busyWhenChanged.Add(document.IsBusy);
+
+        Assert.False(run.Install(Result(), null));
+
+        Assert.Equal([false], busyWhenChanged);
     }
 
     [Fact]

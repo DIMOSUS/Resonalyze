@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Resonalyze.Dsp;
-using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
@@ -142,17 +141,14 @@ public sealed class LiveSpectrumControllerTests
             sweep,
             noise,
             _ => null,
-            new PlotPresentationOptions(
-                FrequencyResponse: new FrequencyResponseOptions(),
-                PhaseResponse: new FrequencyResponseOptions(),
-                GroupDelay: new FrequencyResponseOptions(),
-                FrequencyResponseVisibility: new CurveVisibilityOptions(),
-                PhaseResponseVisibility: new CurveVisibilityOptions(),
-                GroupDelayVisibility: new CurveVisibilityOptions(),
-                ImpulseResponse: new ImpulseResponseOptions(),
-                LiveSpectrum: options,
-                Waterfall: new WaterfallGenerateOptions(),
-                BurstDecay: new WaterfallGenerateOptions())));
+            new AnalyzerViewSettings
+            {
+                PhaseResponse = new FrequencyResponseOptions(),
+                GroupDelay = new FrequencyResponseOptions(),
+                LiveSpectrum = options,
+                Waterfall = new WaterfallGenerateOptions(),
+                BurstDecay = new WaterfallGenerateOptions()
+            }));
 
         object before = CurrentPeakHoldKey(controller);
         options.CompensateNoiseTilt = true;
@@ -183,20 +179,17 @@ public sealed class LiveSpectrumControllerTests
             sweep,
             noise,
             _ => null,
-            new PlotPresentationOptions(
-                FrequencyResponse: new FrequencyResponseOptions(),
-                PhaseResponse: new FrequencyResponseOptions(),
-                GroupDelay: new FrequencyResponseOptions(),
-                FrequencyResponseVisibility: new CurveVisibilityOptions(),
-                PhaseResponseVisibility: new CurveVisibilityOptions(),
-                GroupDelayVisibility: new CurveVisibilityOptions(),
-                ImpulseResponse: new ImpulseResponseOptions(),
-                LiveSpectrum: new LiveSpectrumOptions
+            new AnalyzerViewSettings
+            {
+                PhaseResponse = new FrequencyResponseOptions(),
+                GroupDelay = new FrequencyResponseOptions(),
+                LiveSpectrum = new LiveSpectrumOptions
                 {
                     MagnitudeScale = MagnitudeScale.SoundPressureLevel
                 },
-                Waterfall: new WaterfallGenerateOptions(),
-                BurstDecay: new WaterfallGenerateOptions())));
+                Waterfall = new WaterfallGenerateOptions(),
+                BurstDecay = new WaterfallGenerateOptions()
+            }));
 
         var model = new OxyPlot.PlotModel();
         var snapshot = new LiveSpectrumSnapshot(
@@ -296,20 +289,17 @@ public sealed class LiveSpectrumControllerTests
             sweep,
             noise,
             _ => null,
-            new PlotPresentationOptions(
-                FrequencyResponse: new FrequencyResponseOptions(),
-                PhaseResponse: new FrequencyResponseOptions(),
-                GroupDelay: new FrequencyResponseOptions(),
-                FrequencyResponseVisibility: new CurveVisibilityOptions(),
-                PhaseResponseVisibility: new CurveVisibilityOptions(),
-                GroupDelayVisibility: new CurveVisibilityOptions(),
-                ImpulseResponse: new ImpulseResponseOptions(),
-                LiveSpectrum: new LiveSpectrumOptions
+            new AnalyzerViewSettings
+            {
+                PhaseResponse = new FrequencyResponseOptions(),
+                GroupDelay = new FrequencyResponseOptions(),
+                LiveSpectrum = new LiveSpectrumOptions
                 {
                     AnalysisMode = LiveAnalysisMode.Mmm
                 },
-                Waterfall: new WaterfallGenerateOptions(),
-                BurstDecay: new WaterfallGenerateOptions()));
+                Waterfall = new WaterfallGenerateOptions(),
+                BurstDecay = new WaterfallGenerateOptions()
+            });
 
     private static void UpdateCaptureProgressAnnotation(
         LiveSpectrumController controller,

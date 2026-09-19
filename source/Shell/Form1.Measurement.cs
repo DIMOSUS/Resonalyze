@@ -70,10 +70,9 @@ public partial class Form1
             MessageBoxIcon.Warning);
     }
 
-    public async Task ChangeModeAsync(Mode mode)
+    // A mode switch stops what the mode being left runs.
+    private async Task StopRunningForModeSwitchAsync()
     {
-        CaptureActiveOverlaySlotsForCurrentMode();
-
         if (expSweepMeasurement.InProgress)
         {
             await expSweepMeasurement.AbortAsync();
@@ -90,18 +89,6 @@ public partial class Form1
             // Only when a capture actually stopped: runs on every mode switch, and a needless refresh opens an AsioOut per tab click.
             RefreshOpenMeasurementSettingsDevice();
         }
-
-        CurrentMode = mode;
-        plotViewports.Show(null, mode);
-        UpdatePlotLabelsPanel();
-
-        if (OverlayCollection.SupportsMode(mode))
-        {
-            overlayCollection.Prepare(mode);
-        }
-
-        UpdateOverlayAvailability();
-        RefreshSaveAvailability();
     }
 
     // Held from the Record press to the run's completion, so no load lands under a sweep.
@@ -190,7 +177,7 @@ public partial class Form1
             return;
         }
 
-        liveSpectrumOptions.MagnitudeScale = Dsp.MagnitudeScale.Relative;
+        viewSettings.LiveSpectrum.MagnitudeScale = Dsp.MagnitudeScale.Relative;
         SaveMeasurementSettings();
         // An open panel must follow, or its next apply writes SPL back.
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
@@ -201,14 +188,14 @@ public partial class Form1
     // Not gated on the previous measurement's anchor.
     private void ResetSplViewOnlyDisplayForRun()
     {
-        if (frequencyResponseOptions.MagnitudeScale !=
+        if (viewSettings.FrequencyResponse.MagnitudeScale !=
                 Dsp.MagnitudeScale.SoundPressureLevel ||
             expSweepMeasurement.NextRunHasSplAnchor)
         {
             return;
         }
 
-        frequencyResponseOptions.MagnitudeScale = Dsp.MagnitudeScale.Relative;
+        viewSettings.FrequencyResponse.MagnitudeScale = Dsp.MagnitudeScale.Relative;
         SaveMeasurementSettings();
         // An open panel must follow, or its next apply writes SPL back.
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(

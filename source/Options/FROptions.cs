@@ -136,8 +136,12 @@ namespace Resonalyze.Options
         // Mirrors MeasurementPlotContext.SplOffsetDb: the result's own anchor (loaded files carry theirs).
         private bool IsSplAvailable() => Measurement?.SplOffsetDb != null;
 
-        /// <summary>Called after every run and file load; recolours without changing the selection.</summary>
-        public void RefreshSplAvailability() => UpdateSplChoiceLook();
+        // A new measurement may carry an SPL anchor or lack one; recolours without changing the selection.
+        protected override void OnMeasurementChanged()
+        {
+            UpdateSplChoiceLook();
+            base.OnMeasurementChanged();
+        }
 
         /// <summary>Called when a run starts in view-only SPL, so the fresh measurement is not born hidden.</summary>
         public void ForceRelativeScale() => radioMagnitudeRelative.Checked = true;

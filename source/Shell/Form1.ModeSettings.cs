@@ -1,14 +1,10 @@
-﻿using OxyPlot;
-using OxyPlot.Axes;
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze;
 
 public partial class Form1
 {
-    private int asyncPlotRefreshVersion;
-
     private void buttonWaterfallOpt_Click(object sender, EventArgs e)
     {
         OpenModeSettings(ModeTab.Waterfall);
@@ -43,8 +39,7 @@ public partial class Form1
     {
         dockedMeasurementSettingsHost.Close();
         dockedHistoryHost.Close();
-        ModeDescriptor descriptor = GetModeDescriptor(tab);
-        descriptor.OpenSettings?.Invoke();
+        ToggleModeSettingsPanel(tab);
     }
 
     private void SaveMeasurementSettings(bool captureMeasurementSettings = false)
@@ -52,19 +47,7 @@ public partial class Form1
         MeasurementSettingsFile.SweepMeasurementSettings preservedMeasurementSettings =
             measurementSettings.Measurement;
         // Calibrations survive inside CaptureFrom; the measurement knows nothing about them.
-        measurementSettings.CaptureFrom(
-            expSweepMeasurement,
-            frequencyResponseOptions,
-            frequencyResponseVisibility,
-            phaseResponseOptions,
-            phaseResponseVisibility,
-            groupDelayOptions,
-            groupDelayVisibility,
-            impulseResponseOptions,
-            waterfallGenOptions,
-            burstDecayGenOptions,
-            liveSpectrumOptions,
-            timeAlignmentOptions);
+        measurementSettings.CaptureFrom(expSweepMeasurement, viewSettings);
         if (!captureMeasurementSettings)
         {
             measurementSettings.Measurement = preservedMeasurementSettings;
@@ -116,7 +99,7 @@ public partial class Form1
                 // A scale change (linear/log) makes the old zoom meaningless: refit.
                 if (viewResetKey != null && !Equals(keyBefore, viewResetKey()))
                 {
-                    plotViewports.Forget(CurrentMode);
+                    analyzerPlot.ForgetZoom();
                 }
 
                 await RefreshCurrentModePlotAsync();
@@ -132,7 +115,7 @@ public partial class Form1
             opt =>
             {
                 opt.Init(
-                    liveSpectrumOptions,
+                    viewSettings.LiveSpectrum,
                     microphoneCalibration.GetEntries(),
                     plotModelFactory.LiveSplOffsetDb.HasValue,
                     liveSpectrumController.HasDisplayableCurve,
@@ -147,9 +130,9 @@ public partial class Form1
 
     private async Task ApplyLiveSpectrumOptionsAsync(LiveSpectrumOpt dialog)
     {
-        LiveSpectrumRestartSnapshot before = LiveSpectrumRestartSnapshot.Capture(liveSpectrumOptions);
-        dialog.SetOptions(liveSpectrumOptions);
-        LiveSpectrumRestartSnapshot after = LiveSpectrumRestartSnapshot.Capture(liveSpectrumOptions);
+        LiveSpectrumRestartSnapshot before = LiveSpectrumRestartSnapshot.Capture(viewSettings.LiveSpectrum);
+        dialog.SetOptions(viewSettings.LiveSpectrum);
+        LiveSpectrumRestartSnapshot after = LiveSpectrumRestartSnapshot.Capture(viewSettings.LiveSpectrum);
         SaveMeasurementSettings();
         RefreshSaveAvailability();
 
@@ -170,46 +153,39 @@ public partial class Form1
         RefreshCurrentModePlot();
     }
 
+    /// <summary>Settings edits arrive one after another, so the plot builds off the UI thread and only the newest is shown.</summary>
     private async Task RefreshCurrentModePlotAsync()
     {
-        ModeDescriptor descriptor = GetActiveModeDescriptor();
-        if (descriptor.CreatePlotModel == null || descriptor.Mode == Mode.LiveSpectrum)
+        if (GetActiveModeDescriptor().HasPlotView && CurrentMode != Mode.LiveSpectrum)
         {
-            RefreshCurrentModePlot();
+            await analyzerPlot.RedrawAsync();
             return;
         }
 
-        bool shouldIncludeCurves = descriptor.SupportsCurveDrawing &&
-            CanDrawCurrentMeasurement();
-        int version = Interlocked.Increment(ref asyncPlotRefreshVersion);
-        ModeTab tab = descriptor.Tab;
-        PlotModel model = await Task.Run(() => descriptor.CreatePlotModel(shouldIncludeCurves));
-        if (IsDisposed ||
-            version != Volatile.Read(ref asyncPlotRefreshVersion) ||
-            modeController.ActiveTab != tab)
-        {
-            return;
-        }
-
-        ShowPlotModel(model, shouldIncludeCurves, descriptor.ShowOverlayCurves);
+        RefreshCurrentModePlot();
     }
 
+    // The active tab redraws what it shows: the plot, the held live capture, or Time Alignment's read.
     private void RefreshCurrentModePlot()
     {
-        Interlocked.Increment(ref asyncPlotRefreshVersion);
-        if (GetActiveModeDescriptor().ShowsTimeAlignmentPanel)
+        ModeDescriptor descriptor = GetActiveModeDescriptor();
+        if (descriptor.ShowsTimeAlignmentPanel)
         {
             timeAlignmentController.RefreshConfiguration();
             return;
         }
 
-        bool includeCurves = GetActiveModeDescriptor().SupportsCurveDrawing &&
-            CanDrawCurrentMeasurement();
-        DrawSelectedMode(includeCurves);
+        if (descriptor.Mode == Mode.LiveSpectrum)
+        {
+            RestoreLiveCurveIfStopped();
+            return;
+        }
+
+        analyzerPlot.Redraw();
     }
 
     private bool HasDockedModeSettings(ModeTab tab) =>
-        GetModeDescriptor(tab).HasDockedSettings;
+        ModeCatalog.For(tab).HasDockedSettings;
 
     private void ShowDockedModeSettingsForActiveTab()
     {

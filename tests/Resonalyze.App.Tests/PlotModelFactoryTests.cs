@@ -2076,17 +2076,19 @@ public sealed class PlotModelFactoryTests
             id => calibrationsById != null
                 ? calibrationsById(id)
                 : calibration ?? new CalibrationFile(calibrationPath),
-            new PlotPresentationOptions(
-                FrequencyResponse: frequencyResponseOptions ?? new FrequencyResponseOptions(),
-                PhaseResponse: phaseResponseOptions ?? new FrequencyResponseOptions(),
-                GroupDelay: groupDelayOptions ?? new FrequencyResponseOptions(),
-                FrequencyResponseVisibility: frequencyResponseVisibility ?? new CurveVisibilityOptions(),
-                PhaseResponseVisibility: phaseResponseVisibility ?? new CurveVisibilityOptions(),
-                GroupDelayVisibility: groupDelayVisibility ?? new CurveVisibilityOptions(),
-                ImpulseResponse: impulseOptions ?? new ImpulseResponseOptions(),
-                LiveSpectrum: liveSpectrumOptions ?? new LiveSpectrumOptions(),
-                Waterfall: new WaterfallGenerateOptions(),
-                BurstDecay: new WaterfallGenerateOptions()));
+            new AnalyzerViewSettings
+            {
+                FrequencyResponse = frequencyResponseOptions ?? new FrequencyResponseOptions(),
+                PhaseResponse = phaseResponseOptions ?? new FrequencyResponseOptions(),
+                GroupDelay = groupDelayOptions ?? new FrequencyResponseOptions(),
+                FrequencyResponseVisibility = frequencyResponseVisibility ?? new CurveVisibilityOptions(),
+                PhaseResponseVisibility = phaseResponseVisibility ?? new CurveVisibilityOptions(),
+                GroupDelayVisibility = groupDelayVisibility ?? new CurveVisibilityOptions(),
+                ImpulseResponse = impulseOptions ?? new ImpulseResponseOptions(),
+                LiveSpectrum = liveSpectrumOptions ?? new LiveSpectrumOptions(),
+                Waterfall = new WaterfallGenerateOptions(),
+                BurstDecay = new WaterfallGenerateOptions()
+            });
     }
 
     private static NoiseMeasurement CreateLiveAnalyzer()

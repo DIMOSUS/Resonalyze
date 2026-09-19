@@ -67,9 +67,10 @@ internal sealed class AnalyzerDocument
         Replace(null, null);
     }
 
+    /// <param name="measurement">Already validated, or null to empty the document.</param>
     private void Replace(MeasurementResult? measurement, string? sourceName)
     {
-        result = measurement?.Validated();
+        result = measurement;
         SourceName = sourceName;
         Changed?.Invoke();
     }
@@ -94,21 +95,30 @@ internal sealed class AnalyzerDocument
 
         /// <summary>Releases the hold, then makes the result the open measurement unless a newer request was taken.</summary>
         /// <returns>False when superseded: the result is dropped, and the caller shows nothing of it.</returns>
+        /// <exception cref="ArgumentException">The result is refused; the hold is let go, and the open result stays.</exception>
         public bool Install(MeasurementResult measurement, string? sourceName)
         {
-            bool released = Release();
             if (!IsCurrent)
             {
-                if (released)
-                {
-                    owner.Released();
-                }
-
+                Dispose();
                 return false;
             }
 
+            MeasurementResult validated;
+            try
+            {
+                validated = measurement.Validated();
+            }
+            catch
+            {
+                // A refused result ends the producer like a failure: let go, and say so.
+                Dispose();
+                throw;
+            }
+
             // Busy and result change together: one announcement.
-            owner.Replace(measurement, sourceName);
+            Release();
+            owner.Replace(validated, sourceName);
             return true;
         }
 

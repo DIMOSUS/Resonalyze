@@ -99,6 +99,32 @@ public sealed class AnalyzerDocumentTests
         Assert.Equal([false], busyWhenChanged);
     }
 
+    // Validated() is the document's last check; a producer it refuses must not leave the views waiting.
+    [Fact]
+    public void AHolderWhoseResultIsRefusedStillLetsGoAndIsAnnounced()
+    {
+        var document = new AnalyzerDocument();
+        MeasurementResult open = Result();
+        document.TryBegin()!.Install(open, "open.json");
+        AnalyzerDocument.Request hold = document.TryAcquire()!;
+        var busyWhenChanged = new List<bool>();
+        document.Changed += () => busyWhenChanged.Add(document.IsBusy);
+        MeasurementResult broken = open with
+        {
+            SweepDeconvolution = new MeasurementImpulseResponse([], 0)
+        };
+
+        Assert.Throws<ArgumentException>(() => hold.Install(broken, "broken.wav"));
+
+        // Let go by the refusal itself: a run's completion calls Install with no using around it.
+        Assert.False(document.IsBusy);
+        Assert.Equal([false], busyWhenChanged);
+        Assert.Same(open, document.Result);
+        Assert.Equal("open.json", document.SourceName);
+        hold.Dispose();
+        Assert.Single(busyWhenChanged);
+    }
+
     [Fact]
     public void ASupersededHolderIsAnnouncedWhenItLetsGo()
     {

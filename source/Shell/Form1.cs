@@ -31,7 +31,6 @@ namespace Resonalyze
         private readonly MainCommandController commandController;
         private readonly MeasurementSettingsFile measurementSettings;
         private readonly MeasurementHistoryService measurementHistoryService = new();
-        private readonly IReadOnlyDictionary<ModeTab, ModeDescriptor> modeDescriptors;
         private readonly ActiveOverlaySlotTracker activeOverlaySlots = new();
         private readonly PlotLabelsPanelController plotLabelsPanelController;
         private readonly PlotViewportMemory plotViewports;
@@ -227,7 +226,6 @@ namespace Resonalyze
             };
             WirePersistentTooltip(virtualDspMetricLabel, () => virtualDspMetricDetail);
             WirePersistentTooltip(virtualDspWarningLabel, () => virtualDspWarningDetail);
-            modeDescriptors = CreateModeDescriptors();
             ApplyPersistedSettings();
             WireControllerEvents();
             InitializeStartupState();

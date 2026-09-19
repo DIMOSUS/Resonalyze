@@ -59,9 +59,7 @@ public partial class Form1
             SetActiveModeTab,
             DrawSelectedMode,
             RestoreActiveOverlaySlotsForCurrentMode,
-            CanDrawCurrentMeasurement,
-            tab => GetModeDescriptor(tab).Mode,
-            tab => GetModeDescriptor(tab).SupportsCurveDrawing);
+            CanDrawCurrentMeasurement);
         MainCommandController createdCommandController = new(
             buttonSave,
             buttonLoad,

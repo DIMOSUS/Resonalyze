@@ -386,6 +386,20 @@ internal sealed class PlotModelFactory
             sampleRate > 0 ? sampleRate : null,
             calibration);
 
+    /// <summary>The main plot of a plot mode; Live Spectrum draws its captures itself and gets only its empty frame here.</summary>
+    public PlotModel Create(Mode mode, bool includeCurves) => mode switch
+    {
+        Mode.ImpulseResponse => CreateImpulseResponse(includeCurves),
+        Mode.FrequencyResponse => CreateFrequencyResponse(includeCurves),
+        Mode.PhaseResponse => CreatePhaseResponse(includeCurves),
+        Mode.GroupDelay => CreateGroupDelay(includeCurves),
+        Mode.CumulativeSpectrumDecay => CreateWaterfall(includeCurves),
+        Mode.BurstDecay => CreateBurstDecay(includeCurves),
+        Mode.LiveSpectrum => CreateLiveSpectrum(),
+        Mode.Autocorrelation => CreateAutocorrelation(includeCurves),
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Not a plot mode.")
+    };
+
     public PlotModel CreateFrequencyResponse(bool includeCurves)
     {
         PlotModel model = PlotModelStyle.CreateTitledModel(

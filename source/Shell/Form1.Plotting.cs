@@ -9,7 +9,7 @@ public partial class Form1
     {
         using var _ = AppProfiler.Zone("Form1.DrawSelectedMode");
         ModeDescriptor descriptor = GetActiveModeDescriptor();
-        if (descriptor.CreatePlotModel == null)
+        if (!descriptor.HasPlotView)
         {
             if (descriptor.ShowsTimeAlignmentPanel)
             {
@@ -29,7 +29,7 @@ public partial class Form1
 
         bool shouldIncludeCurves = includeCurves && descriptor.SupportsCurveDrawing;
         ShowPlotModel(
-            descriptor.CreatePlotModel(shouldIncludeCurves),
+            plotModelFactory.Create(descriptor.Mode, shouldIncludeCurves),
             shouldIncludeCurves,
             descriptor.ShowOverlayCurves);
     }
@@ -177,7 +177,7 @@ public partial class Form1
 
     private void SetActiveModeTab(ModeTab activeTab)
     {
-        ModeDescriptor descriptor = GetModeDescriptor(activeTab);
+        ModeDescriptor descriptor = ModeCatalog.For(activeTab);
         chromeTitleBar.SetActiveModeTab(activeTab);
         UpdateCurrentModeSettingsButton();
         UpdateRecordButtonForCurrentMode();

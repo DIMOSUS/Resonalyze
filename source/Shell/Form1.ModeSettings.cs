@@ -43,8 +43,7 @@ public partial class Form1
     {
         dockedMeasurementSettingsHost.Close();
         dockedHistoryHost.Close();
-        ModeDescriptor descriptor = GetModeDescriptor(tab);
-        descriptor.OpenSettings?.Invoke();
+        ToggleModeSettingsPanel(tab);
     }
 
     private void SaveMeasurementSettings(bool captureMeasurementSettings = false)
@@ -161,7 +160,7 @@ public partial class Form1
     private async Task RefreshCurrentModePlotAsync()
     {
         ModeDescriptor descriptor = GetActiveModeDescriptor();
-        if (descriptor.CreatePlotModel == null || descriptor.Mode == Mode.LiveSpectrum)
+        if (!descriptor.HasPlotView || descriptor.Mode == Mode.LiveSpectrum)
         {
             RefreshCurrentModePlot();
             return;
@@ -171,7 +170,7 @@ public partial class Form1
             CanDrawCurrentMeasurement();
         int version = Interlocked.Increment(ref asyncPlotRefreshVersion);
         ModeTab tab = descriptor.Tab;
-        PlotModel model = await Task.Run(() => descriptor.CreatePlotModel(shouldIncludeCurves));
+        PlotModel model = await Task.Run(() => plotModelFactory.Create(descriptor.Mode, shouldIncludeCurves));
         if (IsDisposed ||
             version != Volatile.Read(ref asyncPlotRefreshVersion) ||
             modeController.ActiveTab != tab)
@@ -197,7 +196,7 @@ public partial class Form1
     }
 
     private bool HasDockedModeSettings(ModeTab tab) =>
-        GetModeDescriptor(tab).HasDockedSettings;
+        ModeCatalog.For(tab).HasDockedSettings;
 
     private void ShowDockedModeSettingsForActiveTab()
     {

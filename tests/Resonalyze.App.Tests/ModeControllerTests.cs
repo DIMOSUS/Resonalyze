@@ -92,9 +92,9 @@ public sealed class ModeControllerTests
         var calls = new List<string>();
         ModeController controller = CreateController(
             calls,
-            changeMode: _ => Task.CompletedTask,
-            supportsCurveDrawing: _ => false);
+            changeMode: _ => Task.CompletedTask);
 
+        // Live Spectrum draws its captures itself.
         await controller.SelectAsync(ModeTab.LiveSpectrum);
 
         Assert.Contains("draw:False", calls);
@@ -102,8 +102,7 @@ public sealed class ModeControllerTests
 
     private static ModeController CreateController(
         List<string> calls,
-        Func<Mode, Task> changeMode,
-        Func<ModeTab, bool>? supportsCurveDrawing = null)
+        Func<Mode, Task> changeMode)
     {
         return new ModeController(
             mode =>
@@ -114,16 +113,6 @@ public sealed class ModeControllerTests
             tab => calls.Add($"tab:{tab}"),
             includeCurves => calls.Add($"draw:{includeCurves}"),
             () => calls.Add("restore"),
-            () => true,
-            tab => GetMode(tab),
-            supportsCurveDrawing ?? (_ => true));
+            () => true);
     }
-
-    private static Mode GetMode(ModeTab tab) => tab switch
-    {
-        ModeTab.Impulse => Mode.ImpulseResponse,
-        ModeTab.Phase => Mode.PhaseResponse,
-        ModeTab.LiveSpectrum => Mode.LiveSpectrum,
-        _ => Mode.FrequencyResponse
-    };
 }

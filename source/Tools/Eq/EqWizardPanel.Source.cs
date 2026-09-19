@@ -1,64 +1,16 @@
-using OxyPlot;
 using Resonalyze.Dsp;
 using Resonalyze.History;
-using Resonalyze.Options;
 
 namespace Resonalyze;
 
-// The wizard owns its source and target. An imported curve is a SNAPSHOT: no link back to its slot, history entry or file.
+// Choosing a source (menus, file dialogs, async loads) and the selectors that say how it is read: calibration,
+// smoothing, processor rate and Q convention. Also the target's menu and dialog, and persisted settings.
 public partial class EqWizardPanel
 {
-    private const int DefaultSampleRateHz = 48_000;
-
-    private static readonly IReadOnlyList<int> SelectableSampleRatesHz =
-        DspProcessorCatalog.SelectableSampleRatesHz;
-
-    private static readonly IReadOnlyList<PeqQConvention> SelectableQConventions =
-        DspProcessorCatalog.SelectableQConventions;
-
-    private const string NoSourceHint =
-        "Load a source to equalize — an impulse response, a moving-mic capture,\n" +
-        "or a measured curve from an overlay slot or a text file.\n" +
-        "Use Target… to shape the goal curve.";
-
-    private static readonly OxyColor SourceCurveColor = UiPalette.CurveSource.ToOxy();
-    private static readonly OxyColor SourcePlusEqColor = UiPalette.CurveSourcePlusEq.ToOxy();
-
-    private static readonly double[] DefaultTargetGrid =
-        EqualizationCurve.LogFrequencyGrid(20, 20_000, 512).ToArray();
-
     private readonly EqWizardSourceResolver sourceResolver = new();
-    private readonly EqWizardPreviewOrchestrator previewOrchestrator = new();
-    private EqWizardCurveSource? loadedSource;
-    private EqWizardCurve? cachedSourceCurve;
-    private bool sourceCurveDirty = true;
     private int sourceLoadGeneration;
     private ContextMenuStrip? sourceMenu;
     private ContextMenuStrip? targetMenu;
-
-    private TargetPreset targetPreset = TargetPreset.Flat;
-    private TargetCurveSpec targetSpec = TargetCurveSpec.FromPreset(TargetPreset.Flat);
-    private double targetToleranceDb = 3;
-    private TargetDeviationMode targetDeviationMode = TargetDeviationMode.Deviation;
-    private Color targetColor = UiPalette.CurveTargetDefault;
-    private double targetStrokeThickness = 2;
-    private OverlayLineStyle targetLineStyle = OverlayLineStyle.Dash;
-    private int targetSmoothingInverseOctaves;
-
-    private Func<string?, CalibrationFile?>? calibrationResolver;
-    private IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries = [];
-    // Effective choice for the loaded source; loading a curve forces Own/Off without touching the persisted IR preference.
-    private EqWizardCalibrationChoice calibrationChoice = EqWizardCalibrationChoice.Off;
-    private string? preferredIrCalibrationId;
-    private bool suppressCalibrationEvents;
-    private bool suppressSampleRateEvents;
-    private bool suppressQConventionEvents;
-    private bool suppressSettingsSave;
-    private int manualSampleRateHz = DefaultSampleRateHz;
-    // The user's own convention, kept apart from the one a Virtual DSP handoff forces on the selector.
-    private PeqQConvention manualQConvention = PeqQConvention.Rbj;
-
-    internal event Action? SettingsChanged;
 
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
@@ -210,11 +162,11 @@ public partial class EqWizardPanel
             EqWizardSourceResolver.TryCreateFromArray(file, displayName, arrayDescription);
         if (array != null && AskToEqualizeArray(file))
         {
-            ApplySource(array);
+            LoadSource(array);
             return;
         }
 
-        ApplySource(EqWizardSourceResolver.CreateFromImpulseResponse(
+        LoadSource(EqWizardSourceResolver.CreateFromImpulseResponse(
             file, displayName, description));
     }
 
@@ -296,7 +248,7 @@ public partial class EqWizardPanel
             return;
         }
 
-        ApplySource(source);
+        LoadSource(source);
     }
 
     private async Task LoadCurveFromSpatialAverageAsync()
@@ -346,7 +298,7 @@ public partial class EqWizardPanel
             return;
         }
 
-        ApplySource(source);
+        LoadSource(source);
     }
 
     private static async Task<EqWizardCurveSource?> ResolveSpatialAverageAsync(string path)
@@ -392,520 +344,66 @@ public partial class EqWizardPanel
             return;
         }
 
-        ApplySource(source);
+        LoadSource(source);
     }
 
-    private void ApplySource(EqWizardCurveSource source)
+    private void LoadSource(EqWizardCurveSource source)
     {
-        // Ends any handoff so Return never sends a bank tuned against another curve; a handoff re-establishes it after.
-        EndVirtualDspHandoff();
-        loadedSource = source;
-        // Before drawing: a phase window left from the previous source would open on an arrival this one lacks.
-        SeedPhaseContext(source);
-
-        // Settle selectors and axis with redraws suppressed. Target Level is deliberately untouched: it is the user's knob.
-        suppressRedraw = true;
-        try
-        {
-            calibrationChoice = ChooseCalibration(source);
-            comboBoxSmooth.Enabled = source.SupportsSmoothing;
-            PopulateCalibrationCombo();
-            RefreshSampleRateCombo();
-            RefreshQConventionCombo();
-            InvalidateSourceCurve();
-
-            ApplyAxisForSource();
-        }
-        finally
-        {
-            suppressRedraw = false;
-        }
-
-        buttonSource.Text = source.DisplayName;
-        toolTip.SetToolTip(
-            buttonSource,
-            $"{source.Description}\r\nClick to load another source.");
-
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
+        session.Load(source);
+        PresentSource();
+        Redraw();
     }
 
-    // See docs/tech/eq-auto-tuner.md#calibration-choice.
-    private EqWizardCalibrationChoice ChooseCalibration(EqWizardCurveSource source)
+    // Everything a new source settles: its selectors, the phase gate button, the axis it needs and the handoff it ended.
+    private void PresentSource()
     {
-        if (source.HasOwnCalibration)
+        Present(() => comboBoxSmooth.Enabled = session.SmoothingSelectable);
+        PresentCalibration();
+        PresentSampleRate();
+        PresentQConvention();
+        buttonPhaseGate.Enabled = session.PhaseContext != null;
+        plot.FitSourceAxis(session);
+        PresentHandoff();
+        if (session.Source is { } source)
         {
-            return EqWizardCalibrationChoice.OwnCapture;
-        }
-        if (source.Kind == EqWizardSourceKind.ImpulseResponse)
-        {
-            return EqWizardCalibrationChoice.Microphone(preferredIrCalibrationId);
-        }
-        // A handoff is pinned to the correction its panel renders with; the IR preference stays untouched.
-        if (source.Kind == EqWizardSourceKind.VirtualDspChannel)
-        {
-            // Pinned whenever the panel pinned ANY correction, curve or mode (the curve alone misses the average's own correction).
-            return source.PinsCorrection
-                ? EqWizardCalibrationChoice.PinnedToSource
-                : EqWizardCalibrationChoice.Off;
-        }
-
-        return EqWizardCalibrationChoice.Off;
-    }
-
-    // Cached: the FFT changes only with source, smoothing or calibration, never with band/fader/target edits.
-    private EqWizardCurve? GetSourceCurve()
-    {
-        if (sourceCurveDirty)
-        {
-            cachedSourceCurve = ComputeSourceCurve();
-            sourceCurveDirty = false;
-        }
-
-        return cachedSourceCurve;
-    }
-
-    private void InvalidateSourceCurve()
-    {
-        sourceCurveDirty = true;
-        InvalidateGatedPreview();
-    }
-
-    // Captured on the UI thread so the render touches no control.
-    private EqWizardGatedPreviewRequest BuildGatedPreviewRequest(
-        EqWizardCurveSource source, EqualizationCurve? bank) =>
-        new(
-            source.PreviewImpulseResponse!,
-            source.PreviewChain!,
-            bank,
-            source.Measurement!.PeakIndex,
-            source.Measurement.SampleRate,
-            EqProcessorSampleRate,
-            source.GateSettings!,
-            ResolveChosenCalibration(),
-            SourceSmoothingInverseOctaves,
-            new MeasuredBand(
-                source.Measurement.LowestMeasuredFrequencyHz,
-                source.Measurement.HighestMeasuredFrequencyHz));
-
-    /// <summary>How a stored spatial average is read; a capture's "Own" is its own correction, not the IR's beside it.</summary>
-    private SpatialAverageCalibration ResolveSpatialAverageCalibration(
-        EqWizardCurveSource source) =>
-        calibrationChoice.Own ? SpatialAverageCalibration.Own
-        : calibrationChoice.Pinned ? source.SpatialAverageCalibration
-        : calibrationChoice.IsOff ? SpatialAverageCalibration.Off
-        : SpatialAverageCalibration.Specific(ResolveChosenCalibration());
-
-    private CalibrationFile? ResolveChosenCalibration() =>
-        calibrationChoice.Pinned
-            ? loadedSource?.PinnedCalibration
-            : calibrationResolver?.Invoke(calibrationChoice.MicrophoneCalibrationId);
-
-    private EqWizardCurve? ComputeSourceCurve()
-    {
-        if (loadedSource is not { } source)
-        {
-            return null;
-        }
-
-        // A spatial average IS the magnitude when present (the IR only feeds phase). Stored curves keep NaN gaps for the fitter.
-        IReadOnlyList<SignalPoint> points =
-            source.SpatialAverage != null ? ComputeSpatialAverageCurve(source)
-            : source.Measurement != null ? ComputeImpulseResponseSpectrum(source)
-            : ComputeImportedCurve(source);
-        return BuildSourceCurve(points, KeepsGaps(source));
-    }
-
-    /// <summary>
-    /// Channel magnitude from its spatial average through its chain, with the edited bank substituted INTO the chain
-    /// (smoothing does not commute with the bank). See docs/tech/eq-auto-tuner.md#spatial-average-sources.
-    /// </summary>
-    private IReadOnlyList<SignalPoint> ComputeSpatialAverageCurve(
-        EqWizardCurveSource source,
-        EqualizationCurve? bank = null)
-    {
-        LiveCaptureDocument document = source.SpatialAverage!;
-        List<double> grid = document.ToCurvePoints()
-            .Select(point => point.X)
-            .ToList();
-        List<SignalPoint>? curve = SpatialAverageHybrid.BuildChannelCurve(
-            document,
-            (source.PreviewChain ?? DspChannelChain.Identity) with { Peq = bank },
-            EqProcessorSampleRate,
-            // Pinned to the panel's calibration MODE, not only its curve, like every part of a handoff.
-            ResolveSpatialAverageCalibration(source),
-            grid,
-            SourceSmoothingInverseOctaves);
-        if (curve == null)
-        {
-            return Array.Empty<SignalPoint>();
-        }
-
-        // The set's scalar offset last, so the curve hangs where the panel plotted it and Target Level means the same.
-        double offset = source.SpatialAverageOffsetDb;
-        return offset == 0
-            ? curve
-            : curve.Select(point => new SignalPoint(point.X, point.Y + offset)).ToList();
-    }
-
-    private IReadOnlyList<SignalPoint> ComputeImpulseResponseSpectrum(
-        EqWizardCurveSource source)
-    {
-        // Only a configured calibration applies to a computed FR; "own" belongs to imported curves.
-        string? calibrationId = calibrationChoice.MicrophoneCalibrationId;
-
-        // Same DataHelper call, template and offset as the DSP panel's magnitude view; the bare curve is the no-bank path.
-        if (source.IsGated)
-        {
-            return EqWizardGatedPreview.Render(BuildGatedPreviewRequest(source, bank: null));
-        }
-
-        // The Virtual DSP steady-state window (ms), realised in samples at this rate; zero-padded when the IR is shorter.
-        (int window, int leftTukey, int rightTukey) =
-            FrequencyResponseOptions.SteadyStateWindowSamples(
-                source.Measurement!.SampleRate);
-        var options = new FrequencyResponseOptions
-        {
-            Window = window,
-            LeftTukeyWindow = leftTukey,
-            RightTukeyWindow = rightTukey,
-            SmoothingInverseOctaves = SourceSmoothingInverseOctaves,
-            Offset = 0,
-            CalibrationId = calibrationId
-        };
-        CalibrationFile? calibration = ResolveChosenCalibration();
-
-        IReadOnlyList<AnalysisCurve> curves = DataHelper.GetSpectrum(
-            source.Measurement!, options, calibration, SpectrumCurves.Primary);
-        return curves.Count > 0 ? curves[0].Points : Array.Empty<SignalPoint>();
-    }
-
-    // See docs/tech/eq-auto-tuner.md#imported-curve-calibration.
-    private IReadOnlyList<SignalPoint> ComputeImportedCurve(EqWizardCurveSource source)
-    {
-        if (source.RawSpectrum is not { Count: >= 2 } raw)
-        {
-            return EqWizardImportedCurve.Render(
-                source.Points,
-                source.PointsCalibrationCorrectionDb,
-                ResolvePointsCalibrationCorrection(source),
-                source.SupportsSmoothing ? SourceSmoothingInverseOctaves : 0);
-        }
-
-        return RawCurveRenderer.Render(
-            raw,
-            ResolveCurveCalibrationCorrection(source),
-            SourceSmoothingInverseOctaves,
-            source.RawSpectrumBand);
-    }
-
-    private IReadOnlyList<double> ResolvePointsCalibrationCorrection(
-        EqWizardCurveSource source)
-    {
-        if (calibrationChoice.Own)
-        {
-            return source.PointsCalibrationCorrectionDb;
-        }
-
-        return calibrationChoice.IsOff
-            ? Array.Empty<double>()
-            : EqWizardImportedCurve.SampleCorrection(
-                ResolveChosenCalibration(),
-                source.Points);
-    }
-
-    private IReadOnlyList<double> ResolveCurveCalibrationCorrection(
-        EqWizardCurveSource source)
-    {
-        if (calibrationChoice.Own)
-        {
-            return source.OwnCalibrationCorrectionDb;
-        }
-
-        return calibrationChoice.IsOff
-            ? Array.Empty<double>()
-            : RawCurveRenderer.CaptureCalibrationCorrection(
-                ResolveChosenCalibration());
-    }
-
-    private static EqWizardCurve? BuildSourceCurve(
-        IReadOnlyList<SignalPoint> points,
-        bool keepGaps)
-    {
-        List<DataPoint> result = ToPlotPoints(points, keepGaps);
-        return result.Count >= 2
-            ? new EqWizardCurve("Source", SourceCurveColor, 1.5, LineStyle.Solid, result)
-            : null;
-    }
-
-    /// <summary>
-    /// The single conversion to plot points: curves are paired BY INDEX (target, shading, fit), so every render must
-    /// keep or drop the same gaps. See docs/tech/eq-auto-tuner.md#index-aligned-curves.
-    /// </summary>
-    private static List<DataPoint> ToPlotPoints(
-        IReadOnlyList<SignalPoint> points,
-        bool keepGaps)
-    {
-        var result = new List<DataPoint>(points.Count);
-        foreach (SignalPoint point in points)
-        {
-            if (!double.IsFinite(point.X) || point.X <= 0)
-            {
-                continue;
-            }
-            if (!double.IsFinite(point.Y) && !keepGaps)
-            {
-                continue;
-            }
-
-            result.Add(new DataPoint(point.X, point.Y));
-        }
-
-        return result;
-    }
-
-    // Measured curves keep NaN gaps (untrusted bands); a computed FR drops non-finite values. Decided per SOURCE, not call site.
-    private static bool KeepsGaps(EqWizardCurveSource source) =>
-        source.SpatialAverage != null || source.Measurement == null;
-
-    private EqWizardRenderSet BuildRenderSet(EqualizationCurve eq)
-    {
-        EqWizardCurve? source = GetSourceCurve();
-        double offset = (double)NumericTargetOffset.Value;
-
-        EqWizardCurve target;
-        EqWizardCurve? sourcePlusEq = null;
-        if (source is { Points.Count: >= 2 })
-        {
-            double[] frequencies = source.Points.Select(point => point.X).ToArray();
-            target = BuildTargetCurve(frequencies, offset);
-            sourcePlusEq = BuildSourcePlusEqCurve(source.Points, eq);
-        }
-        else
-        {
-            target = BuildTargetCurve(DefaultTargetGrid, offset);
-        }
-
-        return new EqWizardRenderSet(target, source, sourcePlusEq);
-    }
-
-    private EqWizardCurve BuildTargetCurve(IReadOnlyList<double> frequencies, double offset)
-    {
-        var points = new DataPoint[frequencies.Count];
-        for (int i = 0; i < frequencies.Count; i++)
-        {
-            double frequency = frequencies[i];
-            points[i] = new DataPoint(frequency, targetSpec.Evaluate(frequency) + offset);
-        }
-
-        return new EqWizardCurve(
-            "Target",
-            ToOxyColor(targetColor),
-            targetStrokeThickness,
-            OverlayLineStyles.ToOxy(targetLineStyle),
-            points);
-    }
-
-    private EqWizardCurve? BuildSourcePlusEqCurve(
-        IReadOnlyList<DataPoint> sourcePoints,
-        EqualizationCurve eq)
-    {
-        // Filtered THEN windowed (they do not commute; several dB in the bass). Too heavy per frame, so it renders async.
-        if (loadedSource is { IsGated: true } gated)
-        {
-            RequestGatedPreview(gated, eq);
-            return landedGatedPreview == null
-                ? null
-                : new EqWizardCurve(
-                    "Source + EQ",
-                    SourcePlusEqColor,
-                    2,
-                    LineStyle.Solid,
-                    landedGatedPreview);
-        }
-
-        // Bank substituted inside the chain, not added after smoothing; same builder keeps points aligned by index.
-        if (loadedSource is { SpatialAverage: not null } average)
-        {
-            List<DataPoint> corrected = ToPlotPoints(
-                ComputeSpatialAverageCurve(average, eq), KeepsGaps(average));
-            return corrected.Count >= 2
-                ? new EqWizardCurve(
-                    "Source + EQ", SourcePlusEqColor, 2, LineStyle.Solid, corrected)
-                : null;
-        }
-
-        var points = new DataPoint[sourcePoints.Count];
-        for (int i = 0; i < sourcePoints.Count; i++)
-        {
-            DataPoint point = sourcePoints[i];
-            points[i] = new DataPoint(
-                point.X,
-                point.Y + DigitalEqualizationResponse.MagnitudeDbAt(
-                    eq, point.X, EqProcessorSampleRate));
-        }
-
-        return new EqWizardCurve("Source + EQ", SourcePlusEqColor, 2, LineStyle.Solid, points);
-    }
-
-    // Kept on screen while a newer render is in flight, so the curve does not strobe.
-    private IReadOnlyList<DataPoint>? landedGatedPreview;
-    private PeqBankState? landedGatedPreviewBank;
-    private bool gatedPreviewInFlight;
-
-    /// <summary>Gated previews wait for the handle (see <see cref="RequestGatedPreview"/>); showing the panel creates it, so a source installed before that starts rendering here.</summary>
-    protected override void OnVisibleChanged(EventArgs e)
-    {
-        base.OnVisibleChanged(e);
-        if (Visible && IsHandleCreated && loadedSource is { IsGated: true })
-        {
-            DrawSelectedCurves();
+            buttonSource.Text = source.DisplayName;
+            toolTip.SetToolTip(
+                buttonSource,
+                $"{source.Description}\r\nClick to load another source.");
         }
     }
-
-    private void InvalidateGatedPreview()
-    {
-        previewOrchestrator.Invalidate();
-        landedGatedPreview = null;
-        landedGatedPreviewBank = null;
-        // Phase view reads the same measurement and chain, neighbours included.
-        InvalidatePhaseCurves();
-    }
-
-    // The bank is the identity: redraws for the same filters must not re-run the transforms.
-    private void RequestGatedPreview(EqWizardCurveSource source, EqualizationCurve eq)
-    {
-        // Not before the handle exists: a handoff installs while hidden, and a render landing in the creation pump draws into a half-created control.
-        if (!IsHandleCreated)
-        {
-            return;
-        }
-
-        var bank = new PeqBankState(eq.Bands, eq.PreampDb);
-        if (gatedPreviewInFlight || bank.Equals(landedGatedPreviewBank))
-        {
-            return;
-        }
-
-        EqWizardGatedPreviewRequest request = BuildGatedPreviewRequest(source, eq);
-        gatedPreviewInFlight = true;
-        _ = RenderGatedPreviewAsync(request, bank, KeepsGaps(source));
-    }
-
-    private async Task RenderGatedPreviewAsync(
-        EqWizardGatedPreviewRequest request, PeqBankState bank, bool keepGaps)
-    {
-        try
-        {
-            IReadOnlyList<SignalPoint>? points =
-                await previewOrchestrator.RenderLatestAsync(request);
-            if (IsDisposed || !IsHandleCreated || points == null)
-            {
-                return;
-            }
-
-            // Same conversion as the bare curve, so both keep the same points (see ToPlotPoints).
-            landedGatedPreview = ToPlotPoints(points, keepGaps);
-            landedGatedPreviewBank = bank;
-        }
-        catch (Exception exception)
-        {
-            // A failed preview leaves the curve as it was; the bank stays exportable.
-            System.Diagnostics.Debug.WriteLine($"EQ Wizard preview failed: {exception}");
-        }
-        finally
-        {
-            gatedPreviewInFlight = false;
-        }
-
-        if (!IsDisposed && IsHandleCreated)
-        {
-            DrawSelectedCurves();
-        }
-    }
-
-    private void UpdateSourceHint()
-    {
-        hintAnnotation.Text = loadedSource == null
-            ? NoSourceHint
-            : PhaseMode ? PhaseModeHint() : string.Empty;
-    }
-
-    // An imported dB SPL curve sits near 80 dB, outside the IR bounds, which are ABSOLUTE limits.
-    private void ApplyAxisForSource()
-    {
-        if (plotWizard.Model is not { } model ||
-            model.Axes.FirstOrDefault(axis =>
-                axis.Position == OxyPlot.Axes.AxisPosition.Left) is not { } axis)
-        {
-            return;
-        }
-
-        bool splCurve = loadedSource is
-        {
-            Measurement: null,
-            Scale: MagnitudeScale.SoundPressureLevel
-        };
-        EqWizardAxisRange range = ComputeAxisRangeForSource();
-
-        axis.AbsoluteMinimum = double.NegativeInfinity;
-        axis.AbsoluteMaximum = double.PositiveInfinity;
-        axis.Minimum = range.Minimum;
-        axis.Maximum = range.Maximum;
-        axis.AbsoluteMinimum = range.AbsoluteMinimum;
-        axis.AbsoluteMaximum = range.AbsoluteMaximum;
-        axis.Title = splCurve ? "dB SPL" : "dB";
-        axis.Reset();
-    }
-
-    private EqWizardAxisRange ComputeAxisRangeForSource() =>
-        loadedSource is { Measurement: null }
-            ? EqWizardPlotFit.ForCurve(
-                GetSourceCurve()?.Points.Select(point => new SignalPoint(point.X, point.Y))
-                    ?? Enumerable.Empty<SignalPoint>())
-            : EqWizardPlotFit.ImpulseResponseRange;
 
     private void OnTargetOffsetChanged()
     {
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
+        if (presenting)
+        {
+            return;
+        }
+
+        session.SetTargetOffset(NumericTargetOffset.Value);
+        Redraw();
     }
 
+    private void PresentTargetOffset() => Present(() =>
+    {
+        NumericTargetOffset.ApplyFieldRange(session.TargetOffsetRange);
+        NumericTargetOffset.Value = session.TargetOffsetDb;
+    });
+
     /// <summary>The target as one value; the host shares it with the Virtual DSP tool, which edits it back via <see cref="ApplyTargetCurve"/>.</summary>
-    internal EqTargetCurve TargetCurve => new(
-        targetPreset,
-        targetSpec,
-        targetToleranceDb,
-        targetDeviationMode,
-        targetColor,
-        targetStrokeThickness,
-        targetLineStyle,
-        targetSmoothingInverseOctaves);
+    internal EqTargetCurve TargetCurve => session.Target;
 
     /// <summary>Takes a target edited elsewhere; ignores an equal value so the host can push on every change without looping.</summary>
     internal void ApplyTargetCurve(EqTargetCurve value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        if (TargetCurve == value)
+        if (session.Target == value)
         {
             return;
         }
 
-        AssignTargetCurve(value);
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
-    }
-
-    private void AssignTargetCurve(EqTargetCurve value)
-    {
-        targetPreset = value.Preset;
-        targetSpec = value.Spec;
-        targetToleranceDb = value.ToleranceDb;
-        targetDeviationMode = value.DeviationMode;
-        targetColor = value.Color;
-        targetStrokeThickness = value.StrokeThickness;
-        targetLineStyle = value.LineStyle;
-        targetSmoothingInverseOctaves = value.SmoothingInverseOctaves;
+        session.SetTarget(value);
+        Redraw();
     }
 
     private void ShowTargetMenu()
@@ -918,7 +416,7 @@ public partial class EqWizardPanel
 
         targetMenu?.Dispose();
         targetMenu = TargetCurveMenu.Build(
-            targetSpec.Imported,
+            session.Target.Spec.Imported,
             OpenTargetSettings,
             ImportTargetCurve);
         DropDownMenu.ShowUnder(buttonOverlaySettings, targetMenu);
@@ -931,16 +429,16 @@ public partial class EqWizardPanel
             return;
         }
 
-        ApplyTargetCurve(TargetCurve with
+        ApplyTargetCurve(session.Target with
         {
-            Spec = targetSpec with { Imported = imported }
+            Spec = session.Target.Spec with { Imported = imported }
         });
     }
 
     // Isolated overlay target dialog; Cancel reverts the preview. An imported curve rides as a preset entry so edits keep it.
     private void OpenTargetSettings()
     {
-        EqTargetCurve before = TargetCurve;
+        EqTargetCurve before = session.Target;
         using var dialog = new OverlayTargetSettingsDialog(
             Mode.EqWizard,
             "EQ target",
@@ -955,17 +453,21 @@ public partial class EqWizardPanel
             100,
             before.SmoothingInverseOctaves,
             Array.Empty<OverlaySlotOption>(),
-            ApplyTargetPreview,
+            preview =>
+            {
+                session.PreviewTarget(preview);
+                Redraw();
+            },
             isolatedTarget: true);
 
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
-            AssignTargetCurve(before);
-            DrawSelectedCurves();
+            session.RestoreTarget(before);
+            Redraw();
             return;
         }
 
-        AssignTargetCurve(new EqTargetCurve(
+        session.SetTarget(new EqTargetCurve(
             dialog.Preset,
             dialog.Spec,
             dialog.ToleranceDb,
@@ -974,173 +476,51 @@ public partial class EqWizardPanel
             dialog.StrokeThickness,
             dialog.LineStyle,
             dialog.SmoothingInverseOctaves));
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
-    }
-
-    private void ApplyTargetPreview(OverlayTargetPreview preview)
-    {
-        targetSpec = preview.Spec;
-        targetToleranceDb = preview.ToleranceDb;
-        targetDeviationMode = preview.DeviationMode;
-        targetColor = preview.Color;
-        targetStrokeThickness = preview.StrokeThickness;
-        targetLineStyle = preview.LineStyle;
-        targetSmoothingInverseOctaves = preview.SmoothingInverseOctaves;
-        DrawSelectedCurves();
+        Redraw();
     }
 
     internal void ConfigureCalibration(
         Func<string?, CalibrationFile?> resolver,
         IReadOnlyList<MicrophoneCalibrationEntry> entries)
     {
-        calibrationResolver = resolver;
-        calibrationEntries = entries;
-        RefreshCalibrationCombo();
+        session.ConfigureCalibration(resolver, entries);
+        PresentCalibration();
+        Redraw();
     }
 
-    private void RefreshCalibrationCombo()
+    private void PresentCalibration() => Present(() =>
     {
-        PopulateCalibrationCombo();
-        InvalidateSourceCurve();
-        DrawSelectedCurves();
-    }
-
-    // No redraw here, so ApplySource computes the curve and fits the axis once.
-    private void PopulateCalibrationCombo()
-    {
-        suppressCalibrationEvents = true;
-        try
+        comboBoxCalibration.Items.Clear();
+        comboBoxCalibration.DropDownStyle = ComboBoxStyle.DropDownList;
+        List<EqWizardCalibrationOption> options = session.CalibrationOptions.ToList();
+        foreach (EqWizardCalibrationOption option in options)
         {
-            comboBoxCalibration.Items.Clear();
-            comboBoxCalibration.DropDownStyle = ComboBoxStyle.DropDownList;
-            foreach (EqWizardCalibrationOption option in BuildCalibrationOptions())
-            {
-                comboBoxCalibration.Items.Add(option);
-            }
-
-            int index = -1;
-            for (int i = 0; i < comboBoxCalibration.Items.Count; i++)
-            {
-                if (comboBoxCalibration.Items[i] is EqWizardCalibrationOption option &&
-                    option.Choice == calibrationChoice)
-                {
-                    index = i;
-                    break;
-                }
-            }
-
-            comboBoxCalibration.SelectedIndex = index >= 0 ? index : 0;
-            comboBoxCalibration.Enabled =
-                comboBoxCalibration.Items.Count > 1 &&
-                (loadedSource?.SupportsCalibration ?? true);
-            toolTip.SetToolTip(
-                comboBoxCalibration,
-                loadedSource is { Kind: EqWizardSourceKind.VirtualDspChannel }
-                    ? "Follows the Virtual DSP panel's calibration selector while a " +
-                      "DSP channel is loaded — change it there."
-                    : string.Empty);
-        }
-        finally
-        {
-            suppressCalibrationEvents = false;
+            comboBoxCalibration.Items.Add(option);
         }
 
-        calibrationChoice = GetSelectedCalibration();
-    }
-
-    // Entries resolving to nothing, and a selection the list lost, stay listed: dropping them would rewrite the user's choice.
-    private IReadOnlyList<EqWizardCalibrationOption> BuildCalibrationOptions()
-    {
-        var options = new List<EqWizardCalibrationOption>
-        {
-            new(EqWizardCalibrationChoice.Off, "Off")
-        };
-
-        if (loadedSource is { HasOwnCalibration: true })
-        {
-            options.Add(new EqWizardCalibrationOption(
-                EqWizardCalibrationChoice.OwnCapture, "Own (as captured)"));
-        }
-
-        // Listed under the panel's name for it (may be a session curve absent from the wizard's list).
-        if (loadedSource is { Kind: EqWizardSourceKind.VirtualDspChannel, PinsCorrection: true } pinned)
-        {
-            options.Add(new EqWizardCalibrationOption(
-                EqWizardCalibrationChoice.PinnedToSource,
-                pinned.PinnedCalibrationName ??
-                    (pinned.SpatialAverageCalibration.Mode == SpatialAverageCalibrationMode.Own
-                        ? "Own (as measured)"
-                        : "Virtual DSP")));
-        }
-
-        // An aggregate (multi-mic) correction offers only Own and Off: one mic's file would apply to positions not read through it.
-        if (loadedSource is not { CalibrationIsAggregate: true })
-        {
-            foreach (MicrophoneCalibrationEntry entry in calibrationEntries)
-            {
-                options.Add(new EqWizardCalibrationOption(
-                    EqWizardCalibrationChoice.Microphone(entry.Id),
-                    entry.Available ? entry.Name : $"{entry.Name} (unavailable)"));
-            }
-        }
-
-        if (!calibrationChoice.Own &&
-            !calibrationChoice.IsOff &&
-            !calibrationEntries.Any(entry => string.Equals(
-                entry.Id,
-                calibrationChoice.CalibrationId,
-                StringComparison.OrdinalIgnoreCase)))
-        {
-            options.Add(new EqWizardCalibrationOption(
-                calibrationChoice,
-                "Deleted calibration (missing)"));
-        }
-
-        return options;
-    }
-
-    private EqWizardCalibrationChoice GetSelectedCalibration() =>
-        comboBoxCalibration.SelectedItem is EqWizardCalibrationOption option
-            ? option.Choice
-            : EqWizardCalibrationChoice.Off;
+        // The session settled its choice onto one of these; the first match, as a list with a repeat would select.
+        comboBoxCalibration.SelectedIndex = Math.Max(0, options.FindIndex(option => option.Choice == session.CalibrationChoice));
+        comboBoxCalibration.Enabled = session.CalibrationSelectable;
+        toolTip.SetToolTip(
+            comboBoxCalibration,
+            session.Source is { Kind: EqWizardSourceKind.VirtualDspChannel }
+                ? "Follows the Virtual DSP panel's calibration selector while a " +
+                  "DSP channel is loaded — change it there."
+                : string.Empty);
+    });
 
     private void OnCalibrationChanged()
     {
-        if (suppressCalibrationEvents)
+        if (presenting)
         {
             return;
         }
 
-        calibrationChoice = GetSelectedCalibration();
-        preferredIrCalibrationId = EqWizardCalibration.UpdatedIrPreference(
-            preferredIrCalibrationId, loadedSource?.Kind, calibrationChoice);
-        InvalidateSourceCurve();
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
-    }
-
-    private sealed record EqWizardCalibrationOption(
-        EqWizardCalibrationChoice Choice,
-        string Label)
-    {
-        public override string ToString() => Label;
-    }
-
-    // Rate the biquads are REALISED at: the processor's, independent of the measurement's. See docs/tech/eq-auto-tuner.md#processor-rate-and-q-convention.
-    private int EqProcessorSampleRate
-    {
-        get
-        {
-            if (loadedSource?.ProcessorProfile is { } profile)
-            {
-                return profile.SampleRateHz;
-            }
-
-            return comboBoxSampleRate.SelectedItem is int selected
-                ? selected
-                : manualSampleRateHz;
-        }
+        session.SelectCalibration(
+            comboBoxCalibration.SelectedItem is EqWizardCalibrationOption option
+                ? option.Choice
+                : EqWizardCalibrationChoice.Off);
+        Redraw();
     }
 
     /// <summary>
@@ -1151,26 +531,16 @@ public partial class EqWizardPanel
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal PeqQConvention TargetDspQConvention
     {
-        get => comboBoxQConvention.SelectedItem is PeqQConvention convention
-            ? convention
-            : PeqQConvention.Rbj;
+        get => session.QConvention;
         set
         {
-            manualQConvention = value;
-            suppressQConventionEvents = true;
-            try
-            {
-                comboBoxQConvention.SelectedItem = value;
-            }
-            finally
-            {
-                suppressQConventionEvents = false;
-            }
+            session.RestoreManualQConvention(value);
+            PresentQConvention();
         }
     }
 
     /// <summary>The user's selected convention (persisted); a handoff's processor convention must never be saved over it.</summary>
-    internal PeqQConvention ManualQConvention => manualQConvention;
+    internal PeqQConvention ManualQConvention => session.ManualQConvention;
 
     private void InitializeQConventionComboBox()
     {
@@ -1181,39 +551,28 @@ public partial class EqWizardPanel
                 args.Value = PeqQConventions.DescribeShort(convention);
             }
         };
-        foreach (PeqQConvention convention in SelectableQConventions)
+        foreach (PeqQConvention convention in DspProcessorCatalog.SelectableQConventions)
         {
             comboBoxQConvention.Items.Add(convention);
         }
 
         // Selected before the handler is attached, so construction is not a user change.
-        comboBoxQConvention.SelectedItem = PeqQConvention.Rbj;
+        comboBoxQConvention.SelectedItem = session.QConvention;
         comboBoxQConvention.SelectedIndexChanged += (_, _) =>
         {
-            if (!suppressQConventionEvents)
+            if (!presenting && comboBoxQConvention.SelectedItem is PeqQConvention convention)
             {
-                manualQConvention = TargetDspQConvention;
-                RaiseSettingsChanged();
+                session.SetManualQConvention(convention);
             }
         };
     }
 
     // A handoff locks the convention to its project's processor, like the rate.
-    private void RefreshQConventionCombo()
+    private void PresentQConvention() => Present(() =>
     {
-        PeqQConvention? fromProcessor = loadedSource?.ProcessorProfile?.QConvention;
-        suppressQConventionEvents = true;
-        try
-        {
-            comboBoxQConvention.SelectedItem = fromProcessor ?? manualQConvention;
-        }
-        finally
-        {
-            suppressQConventionEvents = false;
-        }
-
-        comboBoxQConvention.Enabled = fromProcessor == null;
-    }
+        comboBoxQConvention.SelectedItem = session.QConvention;
+        comboBoxQConvention.Enabled = !session.QConventionLocked;
+    });
 
     private void InitializeSampleRateComboBox()
     {
@@ -1225,174 +584,52 @@ public partial class EqWizardPanel
             }
         };
         comboBoxSampleRate.SelectedIndexChanged += (_, _) => OnSampleRateChanged();
-        RefreshSampleRateCombo();
+        PresentSampleRate();
     }
 
-    private void RefreshSampleRateCombo()
+    private void PresentSampleRate() => Present(() =>
     {
-        int selectRate =
-            loadedSource?.ProcessorProfile?.SampleRateHz ?? manualSampleRateHz;
-
-        suppressSampleRateEvents = true;
-        try
+        comboBoxSampleRate.Items.Clear();
+        foreach (int rate in session.SampleRateChoices)
         {
-            comboBoxSampleRate.Items.Clear();
-            foreach (int rate in SelectableSampleRatesHz)
-            {
-                comboBoxSampleRate.Items.Add(rate);
-            }
-
-            // A non-standard processor rate joins the list: the tune must be realised at exactly that rate.
-            if (!SelectableSampleRatesHz.Contains(selectRate))
-            {
-                comboBoxSampleRate.Items.Add(selectRate);
-            }
-
-            comboBoxSampleRate.SelectedItem = selectRate;
-        }
-        finally
-        {
-            suppressSampleRateEvents = false;
+            comboBoxSampleRate.Items.Add(rate);
         }
 
-        comboBoxSampleRate.Enabled = loadedSource?.ProcessorProfile == null;
-    }
+        comboBoxSampleRate.SelectedItem = session.ProcessorSampleRateHz;
+        comboBoxSampleRate.Enabled = !session.SampleRateLocked;
+    });
 
     private void OnSampleRateChanged()
     {
-        if (suppressSampleRateEvents)
+        if (presenting)
         {
             return;
         }
 
         if (comboBoxSampleRate.SelectedItem is int rate)
         {
-            manualSampleRateHz = rate;
+            session.SetManualSampleRate(rate);
         }
 
-        // Orphan any in-flight fit: it was computed at the old rate.
-        RaiseSettingsChanged();
-        DrawSelectedCurves();
+        Redraw();
     }
 
     internal void ApplyPersistedSettings(MeasurementSettingsFile.EqWizardSettings settings)
     {
-        suppressSettingsSave = true;
-        try
-        {
-            // Normalised: the settings file may hold non-finite numbers or undefined enums the dialog cannot take.
-            AssignTargetCurve(new EqTargetCurve(
-                settings.Preset,
-                new TargetCurveSpec(
-                    settings.TiltDbPerOctave,
-                    settings.BassShelfGainDb,
-                    settings.BassShelfFrequencyHz,
-                    settings.BassShelfWidthOctaves,
-                    settings.TrebleShelfGainDb,
-                    settings.TrebleShelfFrequencyHz,
-                    settings.TrebleShelfWidthOctaves,
-                    settings.PresenceGainDb,
-                    settings.PresenceFrequencyHz,
-                    settings.PresenceWidthOctaves)
-                {
-                    // The importer returns no shape for anything unreadable.
-                    Imported = ImportedTargetCurve.FromStorage(
-                        settings.TargetImportedName,
-                        settings.TargetImportedCurve)
-                },
-                settings.ToleranceDb,
-                settings.DeviationMode,
-                Color.FromArgb(settings.TargetColorArgb),
-                settings.TargetStrokeThickness,
-                settings.TargetLineStyle,
-                settings.TargetSmoothingInverseOctaves).Normalized());
-            // Only the configured IR preference persists; no source is restored.
-            preferredIrCalibrationId = settings.ResolveCalibrationId();
-            calibrationChoice =
-                EqWizardCalibrationChoice.Microphone(preferredIrCalibrationId);
-            manualSampleRateHz = settings.ManualSampleRateHz > 0
-                ? settings.ManualSampleRateHz
-                : DefaultSampleRateHz;
-
-            NumericTargetOffset.Value = NumericTargetOffset.ClampValue(settings.TargetOffsetDb);
-            numericGainMin.Value = numericGainMin.ClampValue(settings.GainMinDb);
-            numericGainMax.Value = numericGainMax.ClampValue(settings.GainMaxDb);
-            numericQMax.Value = numericQMax.ClampValue(settings.AutoTuneMaxQ);
-            checkBoxCutsOnly.Checked = settings.CutsOnly;
-            checkBoxShelves.Checked = settings.AllowShelves;
-            checkBoxEqCurve.Checked = settings.ShowEqCurve;
-            SetSourceSmoothing(settings.SourceSmoothingInverseOctaves);
-            ApplyPersistedBank(settings);
-
-            InvalidateSourceCurve();
-            ApplyGainRange();
-            RefreshCalibrationCombo();
-            RefreshSampleRateCombo();
-            RefreshQConventionCombo();
-            DrawSelectedCurves();
-        }
-        finally
-        {
-            suppressSettingsSave = false;
-        }
+        session.ApplySettings(settings);
+        // Restored settings are not an edit anyone should undo into.
+        bankEditTimer.Stop();
+        PresentTargetOffset();
+        PresentFitSettings();
+        PresentViewSettings();
+        Present(() => comboBoxSmooth.SelectedItem = session.SourceSmoothingInverseOctaves);
+        PresentBank(keepSelection: true);
+        PresentGainRange();
+        PresentCalibration();
+        PresentSampleRate();
+        PresentQConvention();
+        Redraw();
     }
 
-    internal MeasurementSettingsFile.EqWizardSettings CaptureSettings() => new()
-    {
-        Preset = targetPreset,
-        TiltDbPerOctave = targetSpec.TiltDbPerOctave,
-        BassShelfGainDb = targetSpec.BassShelfGainDb,
-        BassShelfFrequencyHz = targetSpec.BassShelfFrequencyHz,
-        BassShelfWidthOctaves = targetSpec.BassShelfWidthOctaves,
-        TrebleShelfGainDb = targetSpec.TrebleShelfGainDb,
-        TrebleShelfFrequencyHz = targetSpec.TrebleShelfFrequencyHz,
-        TrebleShelfWidthOctaves = targetSpec.TrebleShelfWidthOctaves,
-        PresenceGainDb = targetSpec.PresenceGainDb,
-        PresenceFrequencyHz = targetSpec.PresenceFrequencyHz,
-        PresenceWidthOctaves = targetSpec.PresenceWidthOctaves,
-        TargetImportedName = targetSpec.Imported?.Name,
-        TargetImportedCurve = targetSpec.Imported?.ToStorage(),
-        ToleranceDb = targetToleranceDb,
-        DeviationMode = targetDeviationMode,
-        TargetColorArgb = targetColor.ToArgb(),
-        TargetStrokeThickness = targetStrokeThickness,
-        TargetLineStyle = targetLineStyle,
-        TargetSmoothingInverseOctaves = targetSmoothingInverseOctaves,
-        TargetOffsetDb = (double)NumericTargetOffset.Value,
-        GainMinDb = (double)numericGainMin.Value,
-        GainMaxDb = (double)numericGainMax.Value,
-        Bands = CaptureBands(),
-        PreampDb = (double)NumericGain.Value,
-        BandCount = peqSlots.Count,
-        SourceSmoothingInverseOctaves = SourceSmoothingInverseOctaves,
-        CalibrationId = preferredIrCalibrationId,
-        ManualSampleRateHz = manualSampleRateHz,
-        CutsOnly = checkBoxCutsOnly.Checked,
-        AllowShelves = checkBoxShelves.Checked,
-        AutoTuneMaxQ = (double)numericQMax.Value,
-        ShowEqCurve = checkBoxEqCurve.Checked
-    };
-
-    private void RaiseSettingsChanged()
-    {
-        if (!suppressSettingsSave)
-        {
-            SettingsChanged?.Invoke();
-        }
-    }
-
-    private void SetSourceSmoothing(int inverseOctaves)
-    {
-        for (int i = 0; i < comboBoxSmooth.Items.Count; i++)
-        {
-            if (comboBoxSmooth.Items[i] is int value && value == inverseOctaves)
-            {
-                comboBoxSmooth.SelectedIndex = i;
-                return;
-            }
-        }
-    }
-
-    private static OxyColor ToOxyColor(Color color) =>
-        OxyColor.FromArgb(color.A, color.R, color.G, color.B);
+    internal MeasurementSettingsFile.EqWizardSettings CaptureSettings() => session.CaptureSettings();
 }

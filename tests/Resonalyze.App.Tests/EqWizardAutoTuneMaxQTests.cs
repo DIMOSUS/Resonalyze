@@ -1,6 +1,3 @@
-using System.Reflection;
-using Resonalyze.Dsp;
-
 namespace Resonalyze.App.Tests;
 
 /// <summary>A fit reads one position, so its sharpest bands would correct a peak only there; the Q ceiling is capped below the strip's.</summary>
@@ -13,43 +10,44 @@ public sealed class EqWizardAutoTuneMaxQTests : IDisposable
     [Fact]
     public void ByDefaultTheFitMayNotGoNarrowerThanSix()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
-        Assert.Equal(6.0m, MaxQBox(panel).Value);
-        Assert.Equal(6.0, Options(panel).QMax);
+        Assert.Equal(6.0m, session.AutoTuneMaxQ);
+        Assert.Equal(6.0, EqWizardFit.Options(session, 0).QMax);
     }
 
     [Fact]
-    public void TheCeilingTheUserTypedIsWhatTheFitIsGiven()
+    public void TheCeilingTheUserChoseIsWhatTheFitIsGiven()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
-        MaxQBox(panel).Value = 2.5m;
+        session.SetAutoTuneMaxQ(2.5m);
 
-        Assert.Equal(2.5, Options(panel).QMax);
+        Assert.Equal(2.5, EqWizardFit.Options(session, 0).QMax);
+        Assert.Equal(2.5, EqWizardFit.Policy(session).MaxQ);
     }
 
     [Fact]
     public void TheWidestBandIsStillTheStripsOwnFloor()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
+        session.SetAutoTuneMaxQ(4.0m);
+        using var strip = new PeqSlotControl();
 
-        MaxQBox(panel).Value = 4.0m;
-
-        Assert.Equal(PeqSlotControl.MinimumQ, Options(panel).QMin);
+        Assert.Equal((double)strip.QInput.Minimum, EqWizardFit.Options(session, 0).QMin);
     }
 
     [Fact]
     public void TheChoiceSurvivesASettingsRoundTrip()
     {
-        using var saved = new EqWizardPanel();
-        MaxQBox(saved).Value = 3.5m;
+        var saved = new EqWizardSession();
+        saved.SetAutoTuneMaxQ(3.5m);
 
-        using var restored = new EqWizardPanel();
-        Invoke(restored, "ApplyPersistedSettings", saved.CaptureSettings());
+        var restored = new EqWizardSession();
+        restored.ApplySettings(saved.CaptureSettings());
 
-        Assert.Equal(3.5m, MaxQBox(restored).Value);
-        Assert.Equal(3.5, Options(restored).QMax);
+        Assert.Equal(3.5m, restored.AutoTuneMaxQ);
+        Assert.Equal(3.5, EqWizardFit.Options(restored, 0).QMax);
     }
 
     [Fact]
@@ -71,32 +69,15 @@ public sealed class EqWizardAutoTuneMaxQTests : IDisposable
     [Fact]
     public void AFileHoldingAnUnusableCeilingIsClampedRatherThanObeyed()
     {
-        using var panel = new EqWizardPanel();
-
-        MeasurementSettingsFile.EqWizardSettings settings = panel.CaptureSettings();
+        var session = new EqWizardSession();
+        MeasurementSettingsFile.EqWizardSettings settings = session.CaptureSettings();
         settings.AutoTuneMaxQ = 0;
-        Invoke(panel, "ApplyPersistedSettings", settings);
 
-        Assert.Equal(MaxQBox(panel).Minimum, MaxQBox(panel).Value);
-        Assert.Equal((double)MaxQBox(panel).Minimum, Options(panel).QMax);
+        session.ApplySettings(settings);
+
+        Assert.Equal(EqWizardLimits.AutoTuneMaxQ.Minimum, session.AutoTuneMaxQ);
+        Assert.Equal((double)EqWizardLimits.AutoTuneMaxQ.Minimum, EqWizardFit.Options(session, 0).QMax);
     }
-
-    private static ThemedNumericUpDown MaxQBox(EqWizardPanel panel) =>
-        (ThemedNumericUpDown)typeof(EqWizardPanel)
-            .GetField("numericQMax", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(panel)!;
-
-    private static EqAutoTuner.Options Options(EqWizardPanel panel) =>
-        (EqAutoTuner.Options)typeof(EqWizardPanel)
-            .GetMethod(
-                "CreateAutoTuneOptions",
-                BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [0])!;
-
-    private static void Invoke(EqWizardPanel panel, string name, params object[] arguments) =>
-        typeof(EqWizardPanel)
-            .GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, arguments);
 
     public void Dispose()
     {

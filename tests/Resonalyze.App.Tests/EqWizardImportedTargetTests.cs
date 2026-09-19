@@ -1,4 +1,3 @@
-using System.Reflection;
 using OxyPlot;
 
 namespace Resonalyze.App.Tests;
@@ -9,10 +8,11 @@ public sealed class EqWizardImportedTargetTests
     public void TheWizardDrawsTheImportedShape()
     {
         // Auto Tune corrects toward what the plot builds, so drawing the imported shape is the feature.
-        using var panel = new EqWizardPanel();
-        panel.ApplyTargetCurve(TargetWith(House()));
+        var session = new EqWizardSession();
+        session.SetTarget(TargetWith(House()));
+        session.SetTargetOffset(-40);
 
-        EqWizardCurve target = BuildTarget(panel, [100, 1_000, 10_000], offset: -40);
+        EqWizardCurve target = EqWizardRender.TargetCurve(session, [100, 1_000, 10_000]);
 
         Assert.Equal(-34, target.Points[0].Y, 9);
         Assert.Equal(-40, target.Points[1].Y, 9);
@@ -22,12 +22,12 @@ public sealed class EqWizardImportedTargetTests
     [Fact]
     public void ThePresetUnderneathTakesOverWhenTheImportIsDropped()
     {
-        using var panel = new EqWizardPanel();
-        panel.ApplyTargetCurve(TargetWith(House()));
+        var session = new EqWizardSession();
+        session.SetTarget(TargetWith(House()));
 
-        panel.ApplyTargetCurve(TargetWith(null));
+        session.SetTarget(TargetWith(null));
 
-        EqWizardCurve target = BuildTarget(panel, [100], offset: 0);
+        EqWizardCurve target = EqWizardRender.TargetCurve(session, [100]);
         Assert.Equal(
             TargetCurveSpec.FromPreset(TargetPreset.Car).Evaluate(100),
             target.Points[0].Y,
@@ -37,19 +37,17 @@ public sealed class EqWizardImportedTargetTests
     [Fact]
     public void TheImportedShapeSurvivesASettingsRoundTrip()
     {
-        using var saved = new EqWizardPanel();
-        saved.ApplyTargetCurve(TargetWith(House()));
+        var saved = new EqWizardSession();
+        saved.SetTarget(TargetWith(House()));
 
-        using var restored = new EqWizardPanel();
-        restored.GetType()
-            .GetMethod("ApplyPersistedSettings", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(restored, [saved.CaptureSettings()]);
+        var restored = new EqWizardSession();
+        restored.ApplySettings(saved.CaptureSettings());
 
-        Assert.Equal(House(), restored.TargetCurve.Spec.Imported);
-        Assert.Equal(TargetPreset.Car, restored.TargetCurve.Preset);
+        Assert.Equal(House(), restored.Target.Spec.Imported);
+        Assert.Equal(TargetPreset.Car, restored.Target.Preset);
         Assert.Equal(
             TargetCurveSpec.FromPreset(TargetPreset.Car).BassShelfGainDb,
-            restored.TargetCurve.Spec.BassShelfGainDb);
+            restored.Target.Spec.BassShelfGainDb);
     }
 
     private static ImportedTargetCurve House() =>
@@ -70,12 +68,4 @@ public sealed class EqWizardImportedTargetTests
         StrokeThickness: 2,
         OverlayLineStyle.Dash,
         SmoothingInverseOctaves: 0);
-
-    private static EqWizardCurve BuildTarget(
-        EqWizardPanel panel,
-        double[] frequencies,
-        double offset) =>
-        (EqWizardCurve)panel.GetType()
-            .GetMethod("BuildTargetCurve", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(panel, [frequencies, offset])!;
 }

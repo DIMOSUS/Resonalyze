@@ -11,8 +11,36 @@ Where the code lives:
   band model and its digital (RBJ biquad) response.
 - `dsp/PeqQConvention.cs`, `dsp/PeqTextFile.cs`, `dsp/EqProfileFormats.cs`, `dsp/EqualizerApoFormat.cs` —
   Q conventions and profile import/export.
-- `source/Tools/Eq/` — the wizard UI (`EqWizardPanel` partials), curve sources (`EqWizardCurveSource`,
-  `EqWizardSourceResolver`), phase mode, slot strips and headless auto-tune (`EqAutoTuneHeadless`).
+- `source/Tools/Eq/` — the wizard: its session and readers, the panel that binds them, curve sources
+  (`EqWizardCurveSource`, `EqWizardSourceResolver`), slot strips and headless auto-tune (`EqAutoTuneHeadless`).
+  See [Code map](#code-map).
+
+## Code map
+
+| Area | Code |
+| --- | --- |
+| The wizard's state: source and calibration, smoothing, target and its level, processor, Auto Tune settings, view toggles, phase gate, Virtual DSP handoff, persisted settings | `EqWizardSession` |
+| The bank and its undo history, one step per edit or structural change | `EqWizardBank` |
+| Every field's range and decimals; a band as its strip holds it | `EqWizardLimits`, `NumericFieldRange` |
+| Calibration options and the choice a source opens with | `EqWizardCalibration` |
+| The source curve through its calibration and smoothing; a gated source's preview request | `EqWizardSourceCurve` |
+| Target, Source + EQ, statistics, the bank's gain and phase curves, hints, the source's axis | `EqWizardRender` |
+| What Auto Tune is given; kept all-pass bands | `EqWizardFit` |
+| The phase context a source opens with, a gate edited in the dialog, one render's request | `EqWizardPhase` |
+| Gated magnitude and measured phase rendered off the UI thread, keyed by bank | `EqWizardPreviews` |
+| The plot model: axes, window marks, curves, deviation shading, the selected band | `EqWizardPlot` |
+| Controls, strips, menus, dialogs, the Auto Tune run; binding only | `EqWizardPanel` partials |
+
+The session is UI-free and is what the tests build. The panel writes it from its controls and writes the controls back
+from it without raising their handlers; every redraw reads the session through the readers. The session raises
+`SettingsChanged` itself, after a change the settings file keeps, and not while settings are being restored, so the
+host saves what the session holds. `EqWizardPanelWiringTests` drive a shown panel through its fields.
+
+Every value is held as its field shows it, so the bank that the fit, the plot and an export read is the one on
+screen. A value written by code (a restored file, an Auto Tune result, an import, a handoff's seed) lands as
+`ThemedNumericUpDownExtensions.ClampValue` puts it in a field: clamped, then rounded to the field's decimals half to
+even. A value typed into a field arrives already rounded, half away from zero, by the field itself. Narrowing Max
+Boost or Max Cut clamps the bands' gains without rounding, as a pending edit that lands as its own undo step.
 
 ## Greedy fit
 
@@ -228,7 +256,7 @@ Importing a curve (overlay slot, history entry, text file) is a snapshot with no
 
 ### Calibration choice
 
-`EqWizardPanel.ChooseCalibration` decides the correction a freshly loaded source starts on:
+`EqWizardCalibration.Choose` decides the correction a freshly loaded source starts on:
 
 - a curve that stored its own correction defaults to reproducing it (Own);
 - an impulse response restores the user's standing configured preference, regardless of what a previously
@@ -305,7 +333,7 @@ wrap twice. Both the bare curve (`Bank` null) and the corrected one come from he
 both stop where the measured band stops. The gate anchor is the one resolved at handoff, never re-read per
 render, or the curve would slide under its own correction.
 
-The same applies to the fit: when all-pass bands are KEPT through a gated source, `EqWizardPanel.FitSource` (and
+The same applies to the fit: when all-pass bands are KEPT through a gated source, `EqWizardFit.FitSource` (and
 `EqAutoTuneHeadless.Prepare`) renders the source with them applied, because through a window an all-pass is not
 flat — "tune the remaining slots around them" has to mean around what they do. On an ungated curve or a spatial
 average an all-pass changes nothing and the source is used as is.
@@ -381,7 +409,7 @@ Source, target, Source + EQ and the fit are read against each other BY INDEX: th
 frequencies, the deviation shading pairs each vertex with the one beneath it, the read-out subtracts them and the
 tuner takes the error between them. That holds only while they are the same frequencies, and gaps decide it. An
 unmeasured bin is masked by frequency alone (`MaskUnmeasuredBands`), so two renders of one measurement mask the
-same points — provided a single conversion (`EqWizardPanel.ToPlotPoints`) drops the same points from both. Two
+same points — provided a single conversion (`EqWizardSourceCurve.ToPlotPoints`) drops the same points from both. Two
 conversions broke it: the bare curve dropped masked bins while the corrected preview kept them, and a channel swept
 from 200 Hz read its target 341 grid points too high, so the shading closed in a wedge at 2 kHz instead of
 following the result to 20 kHz. Whether to keep gaps belongs to the source (`KeepsGaps`): measured/stored curves
@@ -403,7 +431,7 @@ how it must be typed into the hardware.
 
 ## Wizard preamp policy
 
-`EqWizardPanel.CreateAutoTuneOptions` (mirrored by `EqAutoTuneHeadless.Prepare`) sets the preamp differently per mode:
+`EqWizardFit.Options` (mirrored by `EqAutoTuneHeadless.Prepare`) sets the preamp differently per mode:
 
 - **Cuts only:** the auto preamp may move within the control's range (±80 dB); it aligns to the least-excess point
   and can only lower the curve, and `TotalGainMaxDb` = 0 keeps the profile clip-free.
@@ -434,7 +462,7 @@ Other wizard-side rules:
 
 ## Phase mode
 
-The wizard's phase view (`EqWizardPanel.Phase.cs`, `EqWizardPhaseRender`) draws the MEASURED phase of the edited channel
+The wizard's phase view (`EqWizardPhase`, `EqWizardPreviews`, `EqWizardPhaseRender`) draws the MEASURED phase of the edited channel
 through its chain and bank, against neighbouring drivers frozen at the Virtual DSP handoff. It is the only view where an
 all-pass band's work is visible (on magnitude it is flat by construction), and lining a driver up with its neighbour
 through the crossover is what such a band is for. It is a mode, not an extra curve: source, target, error fill and

@@ -1,24 +1,20 @@
-using System.Reflection;
 using OxyPlot;
 using OxyPlot.Annotations;
-using OxyPlot.WindowsForms;
 
 namespace Resonalyze.App.Tests;
 
+/// <summary>The selected band is marked where it sits: a low-Q bell's summit is guesswork, and a shelf has none.</summary>
 public sealed class EqWizardBandGuideTests
 {
     [Fact]
     public void SelectingABand_PutsTheGuideOnItsFrequency()
     {
-        using var panel = new EqWizardPanel();
-        SetBandCount(panel, 3);
-        object slot = Slots(panel)[1];
-        SetFrequency(slot, 1_250m);
+        EqWizardSession session = ThreeBands();
+        Retune(session, 1, 1_250);
 
-        SelectSlot(panel, slot);
+        PlotModel model = EqWizardTestPlots.Draw(session, selectedBand: 1);
 
-        LineAnnotation guide = Guide(panel);
-        Assert.Contains(guide, Model(panel).Annotations);
+        LineAnnotation guide = Assert.Single(Guides(model));
         Assert.Equal(1_250.0, guide.X);
         Assert.Equal(LineAnnotationType.Vertical, guide.Type);
     }
@@ -26,57 +22,38 @@ public sealed class EqWizardBandGuideTests
     [Fact]
     public void RetuningTheSelectedBand_MovesTheGuideWithIt()
     {
-        using var panel = new EqWizardPanel();
-        SetBandCount(panel, 3);
-        object slot = Slots(panel)[1];
-        SetFrequency(slot, 1_250m);
-        SelectSlot(panel, slot);
+        EqWizardSession session = ThreeBands();
+        Retune(session, 1, 1_250);
 
-        SetFrequency(slot, 4_000m);
+        Retune(session, 1, 4_000);
 
-        Assert.Equal(4_000.0, Guide(panel).X);
+        Assert.Equal(4_000.0, Assert.Single(Guides(EqWizardTestPlots.Draw(session, selectedBand: 1))).X);
     }
 
     [Fact]
-    public void DeselectingTakesTheGuideOffThePlot()
+    public void WithoutASelectionThereIsNoGuide()
     {
-        using var panel = new EqWizardPanel();
-        SetBandCount(panel, 3);
-        object slot = Slots(panel)[1];
-        SetFrequency(slot, 1_250m);
-        SelectSlot(panel, slot);
-
-        Invoke(panel, "DeselectBand");
+        EqWizardSession session = ThreeBands();
+        Retune(session, 1, 1_250);
 
         // This OxyPlot has no annotation Visible, so hidden means removed from the collection.
-        Assert.DoesNotContain(Guide(panel), Model(panel).Annotations);
+        Assert.Empty(Guides(EqWizardTestPlots.Draw(session, selectedBand: null)));
     }
 
-    private static LineAnnotation Guide(EqWizardPanel panel) =>
-        Field<LineAnnotation>(panel, "bandMarker");
+    private static EqWizardSession ThreeBands()
+    {
+        var session = new EqWizardSession();
+        session.Bank.SetCount(3);
+        return session;
+    }
 
-    private static PlotModel Model(EqWizardPanel panel) =>
-        Field<PlotView>(panel, "plotWizard").Model!;
+    private static void Retune(EqWizardSession session, int index, double frequencyHz) =>
+        session.Bank.Edit(index, session.Bank.Bands[index] with { FrequencyHz = frequencyHz });
 
-    private static IReadOnlyList<PeqSlotControl> Slots(EqWizardPanel panel) =>
-        Field<List<PeqSlotControl>>(panel, "peqSlots");
-
-    private static void SetBandCount(EqWizardPanel panel, int count) =>
-        Invoke(panel, "SetBandCount", count);
-
-    private static void SelectSlot(EqWizardPanel panel, object slot) =>
-        Invoke(panel, "SelectSlot", slot);
-
-    private static void SetFrequency(object slot, decimal frequencyHz) =>
-        ((PeqSlotControl)slot).FrequencyInput.Value = frequencyHz;
-
-    private static void Invoke(EqWizardPanel panel, string name, params object[] arguments) =>
-        typeof(EqWizardPanel)
-            .GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, arguments);
-
-    private static T Field<T>(EqWizardPanel panel, string name) =>
-        (T)typeof(EqWizardPanel)
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(panel)!;
+    // The Auto Tune window's edges are vertical lines too; the guide is the one inside it.
+    private static IReadOnlyList<LineAnnotation> Guides(PlotModel model) =>
+        model.Annotations
+            .OfType<LineAnnotation>()
+            .Where(line => line.Type == LineAnnotationType.Vertical && line.LineStyle == LineStyle.Dot)
+            .ToList();
 }

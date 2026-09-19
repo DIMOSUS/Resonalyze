@@ -1,6 +1,4 @@
 using System.Numerics;
-using System.Reflection;
-using System.Windows.Forms;
 using OxyPlot;
 using Resonalyze.Dsp;
 
@@ -15,7 +13,7 @@ public sealed class EqWizardPhaseModeTests
     public void AHandoffsGateIsAdoptedAsItStands()
     {
         // Not re-derived from one channel: the panel placed these windows over the whole set.
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         var context = new EqWizardPhaseContext(
             Gate(9.0),
             GateOffsetMs: 9.5,
@@ -27,9 +25,9 @@ public sealed class EqWizardPhaseModeTests
             [new EqWizardPhaseNeighbour(
                 "B", OxyColors.Orange, new PlacementChannel(Wavelet(), 0, default), 9.75)]);
 
-        ApplySource(panel, Source(context));
+        session.Load(Source(context));
 
-        EqWizardPhaseContext seeded = ContextOf(panel)!;
+        EqWizardPhaseContext seeded = session.PhaseContext!;
         Assert.Same(context, seeded);
         Assert.Equal(9.5, seeded.GateOffsetMs);
         Assert.Equal(10.25, seeded.DetrendMs);
@@ -45,7 +43,7 @@ public sealed class EqWizardPhaseModeTests
         bool pinned)
     {
         // Detrend mode decides what phase is referenced to, so it must arrive as the user left it.
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         var context = new EqWizardPhaseContext(
             Gate(9.0) with { DetrendMode = detrendMode },
             GateOffsetMs: 9.5,
@@ -57,33 +55,33 @@ public sealed class EqWizardPhaseModeTests
             [new EqWizardPhaseNeighbour(
                 "B", OxyColors.Orange, new PlacementChannel(Wavelet(), 0, default), 9.75)]);
 
-        ApplySource(panel, Source(context));
+        session.Load(Source(context));
 
-        Assert.Equal(detrendMode, ContextOf(panel)!.Gate.DetrendMode);
-        Assert.Equal(pinned, ContextOf(panel)!.PinnedOffset);
-        Assert.Equal(pinned, PinnedFlag(panel));
+        Assert.Equal(detrendMode, session.PhaseContext!.Gate.DetrendMode);
+        Assert.Equal(pinned, session.PhaseContext!.PinnedOffset);
+        Assert.Equal(pinned, session.PhaseGatePinned);
     }
 
     [Fact]
     public void ChangingTheDetrendModeResolvesANewReference()
     {
         // τ is resolved once, when the gate changes: a τ moving with the bank would slide every curve.
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         var context = new EqWizardPhaseContext(
             Gate(9.0), GateOffsetMs: 9.5, DetrendMs: 10.25, PinnedOffset: false,
             new PlacementChannel(Wavelet(), 0, default), SampleRate, OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
                 "B", OxyColors.Orange, new PlacementChannel(Wavelet(), 0, default), 9.75)]);
-        ApplySource(panel, Source(context));
+        session.Load(Source(context));
 
-        ApplyPhaseGate(panel, context, 4.0, autoOffset: true, PhaseDetrendMode.Off);
-        Assert.Equal(0.0, ContextOf(panel)!.DetrendMs);
+        ApplyPhaseGate(session, context, 4.0, autoOffset: true, PhaseDetrendMode.Off);
+        Assert.Equal(0.0, session.PhaseContext!.DetrendMs);
 
-        ApplyPhaseGate(panel, context, 4.0, autoOffset: true, PhaseDetrendMode.Manual);
-        Assert.Equal(11.5, ContextOf(panel)!.DetrendMs);
+        ApplyPhaseGate(session, context, 4.0, autoOffset: true, PhaseDetrendMode.Manual);
+        Assert.Equal(11.5, session.PhaseContext!.DetrendMs);
 
-        ApplyPhaseGate(panel, context, 4.0, autoOffset: true, PhaseDetrendMode.Auto);
-        double estimated = ContextOf(panel)!.DetrendMs;
+        ApplyPhaseGate(session, context, 4.0, autoOffset: true, PhaseDetrendMode.Auto);
+        double estimated = session.PhaseContext!.DetrendMs;
         Assert.NotEqual(11.5, estimated);
         Assert.NotEqual(0.0, estimated);
     }
@@ -91,11 +89,11 @@ public sealed class EqWizardPhaseModeTests
     [Fact]
     public void AMeasurementOpenedOnItsOwnGetsItsOwnFrontAndNoNeighbours()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
-        ApplySource(panel, Source(phaseContext: null));
+        session.Load(Source(phaseContext: null));
 
-        EqWizardPhaseContext seeded = ContextOf(panel)!;
+        EqWizardPhaseContext seeded = session.PhaseContext!;
         Assert.Empty(seeded.Neighbours);
         // At the arrival or a hair ahead, never after.
         double arrivalMs = ArrivalSample * 1_000.0 / SampleRate;
@@ -107,9 +105,9 @@ public sealed class EqWizardPhaseModeTests
     [Fact]
     public void AnImportedCurveHasNoPhaseToDraw()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
-        ApplySource(panel, new EqWizardCurveSource
+        session.Load(new EqWizardCurveSource
         {
             Kind = EqWizardSourceKind.TextCurve,
             DisplayName = "curve.txt",
@@ -119,23 +117,22 @@ public sealed class EqWizardPhaseModeTests
             CurveKind = AnalysisCurveKind.Primary
         });
 
-        Assert.Null(ContextOf(panel));
-        Assert.False(GateButton(panel).Enabled);
+        Assert.Null(session.PhaseContext);
     }
 
     [Fact]
     public void LoadingASecondSourceDropsTheFirstsWindow()
     {
-        using var panel = new EqWizardPanel();
-        ApplySource(panel, Source(new EqWizardPhaseContext(
+        var session = new EqWizardSession();
+        session.Load(Source(new EqWizardPhaseContext(
             Gate(9.0), 9.5, 10.25, false,
             new PlacementChannel(Wavelet(), 0, default), SampleRate, OxyColors.SkyBlue,
             [new EqWizardPhaseNeighbour(
                 "B", OxyColors.Orange, new PlacementChannel(Wavelet(), 0, default), 9.75)])));
 
-        ApplySource(panel, Source(phaseContext: null));
+        session.Load(Source(phaseContext: null));
 
-        EqWizardPhaseContext seeded = ContextOf(panel)!;
+        EqWizardPhaseContext seeded = session.PhaseContext!;
         Assert.Empty(seeded.Neighbours);
         double arrivalMs = ArrivalSample * 1_000.0 / SampleRate;
         Assert.InRange(seeded.GateOffsetMs, arrivalMs - 0.5, arrivalMs);
@@ -144,7 +141,7 @@ public sealed class EqWizardPhaseModeTests
     [Fact]
     public void PinningTheGateGivesEveryCurveTheSameWindow()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         var context = new EqWizardPhaseContext(
             Gate(9.0), GateOffsetMs: 5.0, DetrendMs: 10.25, PinnedOffset: false,
             new PlacementChannel(Arriving(240), 240, default), SampleRate,
@@ -152,19 +149,19 @@ public sealed class EqWizardPhaseModeTests
             [new EqWizardPhaseNeighbour(
                 "B", OxyColors.Orange,
                 new PlacementChannel(Arriving(480), 480, default), 10.0)]);
-        ApplySource(panel, Source(context));
+        session.Load(Source(context));
 
-        ApplyPhaseGate(panel, context, offsetMs: 4.0, autoOffset: false);
+        ApplyPhaseGate(session, context, offsetMs: 4.0, autoOffset: false);
 
-        EqWizardPhaseContext pinned = ContextOf(panel)!;
+        EqWizardPhaseContext pinned = session.PhaseContext!;
         Assert.Equal(4.0, pinned.GateOffsetMs);
         Assert.Equal(4.0, pinned.Neighbours.Single().GateOffsetMs);
         Assert.Equal(2.5, pinned.Gate.PlateauMs);
         Assert.Equal(11.5, pinned.DetrendMs);
 
-        ApplyPhaseGate(panel, context, offsetMs: 4.0, autoOffset: true);
+        ApplyPhaseGate(session, context, offsetMs: 4.0, autoOffset: true);
 
-        EqWizardPhaseContext auto = ContextOf(panel)!;
+        EqWizardPhaseContext auto = session.PhaseContext!;
         Assert.Equal(5.0, auto.GateOffsetMs, 1);
         Assert.Equal(10.0, auto.Neighbours.Single().GateOffsetMs, 1);
     }
@@ -173,7 +170,7 @@ public sealed class EqWizardPhaseModeTests
     public void ChangingTheWindowLengthResolvesThePlacementsAgain()
     {
         // Per-curve vs shared placement depends on window lengths, so it is re-resolved, not carried from the handoff.
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         var context = new EqWizardPhaseContext(
             Gate(9.0),
             GateOffsetMs: 5.0,
@@ -185,13 +182,13 @@ public sealed class EqWizardPhaseModeTests
             [new EqWizardPhaseNeighbour(
                 "B", OxyColors.Orange,
                 new PlacementChannel(Arriving(480), 480, default), 5.0)]);
-        ApplySource(panel, Source(context));
+        session.Load(Source(context));
 
         ApplyPhaseGate(
-            panel, context, 5.0, autoOffset: true, PhaseDetrendMode.Manual,
+            session, context, 5.0, autoOffset: true, PhaseDetrendMode.Manual,
             detrendMs: 5.0, leftMs: 0.5, plateauMs: 4.0, rightMs: 1.5);
 
-        EqWizardPhaseContext resolved = ContextOf(panel)!;
+        EqWizardPhaseContext resolved = session.PhaseContext!;
         Assert.Equal(5.0, resolved.GateOffsetMs, 1);
         Assert.Equal(10.0, resolved.Neighbours.Single().GateOffsetMs, 1);
     }
@@ -212,7 +209,7 @@ public sealed class EqWizardPhaseModeTests
                 "B", OxyColors.Orange,
                 new PlacementChannel(Arriving(480), 480, default), 20.0)]);
 
-        double fit = AutoGateFitOffset(pinned);
+        double fit = EqWizardPhase.AutoGateFitOffsetMs(pinned);
 
         Assert.Equal(5.0, fit, 1);
     }
@@ -221,7 +218,7 @@ public sealed class EqWizardPhaseModeTests
     public void AnEstimatedDetrendFollowsTheWindowsJustResolved()
     {
         // Auto τ must be estimated through the window this call resolved, not the replaced ones.
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         var shared = new EqWizardPhaseContext(
             Gate(5.0),
             GateOffsetMs: 5.0,
@@ -233,13 +230,13 @@ public sealed class EqWizardPhaseModeTests
             [new EqWizardPhaseNeighbour(
                 "B", OxyColors.Orange,
                 new PlacementChannel(Arriving(480), 480, default), 5.0)]);
-        ApplySource(panel, Source(shared));
+        session.Load(Source(shared));
 
         ApplyPhaseGate(
-            panel, shared, offsetMs: 20.0, autoOffset: false, PhaseDetrendMode.Auto,
+            session, shared, offsetMs: 20.0, autoOffset: false, PhaseDetrendMode.Auto,
             detrendMs: 5.0, leftMs: 0.5, plateauMs: 4.0, rightMs: 1.5);
 
-        EqWizardPhaseContext resolved = ContextOf(panel)!;
+        EqWizardPhaseContext resolved = session.PhaseContext!;
         Assert.Equal(20.0, resolved.GateOffsetMs);
         Assert.Equal(20.0, resolved.Neighbours.Single().GateOffsetMs);
         Assert.NotEqual(5.0, resolved.DetrendMs);
@@ -249,7 +246,7 @@ public sealed class EqWizardPhaseModeTests
     public void UnpinningAGateThatArrivedPinnedPutsEachWindowBackOnItsDriver()
     {
         // Auto after a pinned handoff must return windows to their own arrivals, not reuse the pinned offsets.
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         var pinned = new EqWizardPhaseContext(
             Gate(4.0),
             GateOffsetMs: 4.0,
@@ -261,19 +258,19 @@ public sealed class EqWizardPhaseModeTests
             [new EqWizardPhaseNeighbour(
                 "B", OxyColors.Orange,
                 new PlacementChannel(Arriving(480), 480, default), 4.0)]);
-        ApplySource(panel, Source(pinned));
-        Assert.True(PinnedFlag(panel));
+        session.Load(Source(pinned));
+        Assert.True(session.PhaseGatePinned);
 
-        ApplyPhaseGate(panel, pinned, offsetMs: 4.0, autoOffset: true);
+        ApplyPhaseGate(session, pinned, offsetMs: 4.0, autoOffset: true);
 
-        EqWizardPhaseContext auto = ContextOf(panel)!;
-        Assert.False(PinnedFlag(panel));
+        EqWizardPhaseContext auto = session.PhaseContext!;
+        Assert.False(session.PhaseGatePinned);
         Assert.Equal(5.0, auto.GateOffsetMs, 1);
         Assert.Equal(10.0, auto.Neighbours.Single().GateOffsetMs, 1);
     }
 
     private static void ApplyPhaseGate(
-        EqWizardPanel panel,
+        EqWizardSession session,
         EqWizardPhaseContext opened,
         double offsetMs,
         bool autoOffset,
@@ -282,24 +279,9 @@ public sealed class EqWizardPhaseModeTests
         double leftMs = 0.5,
         double plateauMs = 2.5,
         double rightMs = 1.5) =>
-        typeof(EqWizardPanel)
-            .GetMethod("ApplyPhaseGate", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [
-                opened, offsetMs, autoOffset, leftMs, plateauMs, rightMs,
-                PhaseWindowMode.FrequencyDependent, 6, detrendMode, detrendMs
-            ]);
-
-    private static double AutoGateFitOffset(EqWizardPhaseContext context) =>
-        (double)typeof(EqWizardPanel)
-            .GetMethod(
-                "AutoGateFitOffsetMs",
-                BindingFlags.NonPublic | BindingFlags.Static)!
-            .Invoke(null, [context])!;
-
-    private static bool PinnedFlag(EqWizardPanel panel) =>
-        (bool)typeof(EqWizardPanel)
-            .GetField("phaseGatePinned", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(panel)!;
+        session.ApplyPhaseGate(
+            opened, offsetMs, autoOffset, leftMs, plateauMs, rightMs,
+            PhaseWindowMode.FrequencyDependent, 6, detrendMode, detrendMs);
 
     private static EqWizardCurveSource Source(EqWizardPhaseContext? phaseContext)
     {
@@ -356,19 +338,4 @@ public sealed class EqWizardPhaseModeTests
         RightMs: 5.0,
         Unwrap: false,
         SmoothingInverseOctaves: 0.0);
-
-    private static void ApplySource(EqWizardPanel panel, EqWizardCurveSource source) =>
-        typeof(EqWizardPanel)
-            .GetMethod("ApplySource", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [source]);
-
-    private static EqWizardPhaseContext? ContextOf(EqWizardPanel panel) =>
-        (EqWizardPhaseContext?)typeof(EqWizardPanel)
-            .GetField("phaseContext", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(panel);
-
-    private static Button GateButton(EqWizardPanel panel) =>
-        (Button)typeof(EqWizardPanel)
-            .GetField("buttonPhaseGate", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(panel)!;
 }

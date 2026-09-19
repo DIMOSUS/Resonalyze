@@ -1,7 +1,6 @@
 ﻿using System.Drawing;
 using System.Reflection;
 using System.Windows.Forms;
-using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
@@ -14,33 +13,34 @@ public sealed class EqWizardAutoTuneShelvesTests : IDisposable
     [Fact]
     public void TheFitIsBellsOnlyUntilTheUserAsksOtherwise()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
-        Assert.False(ShelvesBox(panel).Checked);
-        Assert.False(Options(panel).AllowShelves);
+        Assert.False(session.AllowShelves);
+        Assert.False(EqWizardFit.Options(session, 0).AllowShelves);
     }
 
     [Fact]
-    public void TickingTheBoxIsWhatTheFitIsGiven()
+    public void AllowingShelvesIsWhatTheFitIsGiven()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
-        ShelvesBox(panel).Checked = true;
+        session.SetAllowShelves(true);
 
-        Assert.True(Options(panel).AllowShelves);
+        Assert.True(EqWizardFit.Options(session, 0).AllowShelves);
+        Assert.True(EqWizardFit.Policy(session).AllowShelves);
     }
 
     [Fact]
     public void TheChoiceSurvivesASettingsRoundTrip()
     {
-        using var saved = new EqWizardPanel();
-        ShelvesBox(saved).Checked = true;
+        var saved = new EqWizardSession();
+        saved.SetAllowShelves(true);
 
-        using var restored = new EqWizardPanel();
-        Invoke(restored, "ApplyPersistedSettings", saved.CaptureSettings());
+        var restored = new EqWizardSession();
+        restored.ApplySettings(saved.CaptureSettings());
 
-        Assert.True(ShelvesBox(restored).Checked);
-        Assert.True(Options(restored).AllowShelves);
+        Assert.True(restored.AllowShelves);
+        Assert.True(EqWizardFit.Options(restored, 0).AllowShelves);
     }
 
     [Fact]
@@ -108,18 +108,6 @@ public sealed class EqWizardAutoTuneShelvesTests : IDisposable
         typeof(EqWizardPanel)
             .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
             .GetValue(panel)!;
-
-    private static EqAutoTuner.Options Options(EqWizardPanel panel) =>
-        (EqAutoTuner.Options)typeof(EqWizardPanel)
-            .GetMethod(
-                "CreateAutoTuneOptions",
-                BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [0])!;
-
-    private static void Invoke(EqWizardPanel panel, string name, params object[] arguments) =>
-        typeof(EqWizardPanel)
-            .GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, arguments);
 
     public void Dispose()
     {

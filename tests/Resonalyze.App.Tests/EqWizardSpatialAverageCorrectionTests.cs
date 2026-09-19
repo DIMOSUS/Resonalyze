@@ -1,6 +1,4 @@
-using System.Reflection;
-using OxyPlot.Series;
-using OxyPlot.WindowsForms;
+using OxyPlot;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -26,13 +24,13 @@ public sealed class EqWizardSpatialAverageCorrectionTests
     [Fact]
     public void TheCorrectedCurveIsTheChainWithTheBankInIt()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         EqWizardCurveSource source = Handoff();
-        ApplySource(panel, source);
-        SetSmoothing(panel, SpectrumSmoothing.PsychoacousticCode);
-        ApplyBank(panel, Bank);
+        session.Load(source);
+        session.SetSourceSmoothing(SpectrumSmoothing.PsychoacousticCode);
+        session.Bank.Replace(Bank);
 
-        IReadOnlyList<double> drawn = Curve(panel, "Source + EQ");
+        IReadOnlyList<double> drawn = Corrected(session).Select(point => point.Y).ToList();
         IReadOnlyList<double> expected = HybridWith(source, Bank);
 
         Assert.Equal(expected.Count, drawn.Count);
@@ -46,14 +44,14 @@ public sealed class EqWizardSpatialAverageCorrectionTests
     public void AddingTheBankAfterTheSmoothingWouldReadDifferently()
     {
         // Guards that the previous equality is not merely the two orders agreeing on this data.
-        using var panel = new EqWizardPanel();
-        ApplySource(panel, Handoff());
-        SetSmoothing(panel, SpectrumSmoothing.PsychoacousticCode);
-        ApplyBank(panel, Bank);
+        var session = new EqWizardSession();
+        session.Load(Handoff());
+        session.SetSourceSmoothing(SpectrumSmoothing.PsychoacousticCode);
+        session.Bank.Replace(Bank);
 
-        IReadOnlyList<double> drawn = Curve(panel, "Source + EQ");
-        IReadOnlyList<double> bare = Curve(panel, "Source");
-        IReadOnlyList<double> frequencies = Frequencies(panel, "Source");
+        IReadOnlyList<double> drawn = Corrected(session).Select(point => point.Y).ToList();
+        IReadOnlyList<double> bare = Bare(session).Select(point => point.Y).ToList();
+        IReadOnlyList<double> frequencies = Bare(session).Select(point => point.X).ToList();
 
         double worst = 0;
         for (int i = 0; i < drawn.Count; i++)
@@ -69,13 +67,13 @@ public sealed class EqWizardSpatialAverageCorrectionTests
     [Fact]
     public void AnEmptyBankLeavesTheSourceExactlyWhereItIs()
     {
-        using var panel = new EqWizardPanel();
-        ApplySource(panel, Handoff());
-        SetSmoothing(panel, SpectrumSmoothing.PsychoacousticCode);
-        ApplyBank(panel, new EqualizationCurve([]));
+        var session = new EqWizardSession();
+        session.Load(Handoff());
+        session.SetSourceSmoothing(SpectrumSmoothing.PsychoacousticCode);
+        session.Bank.Replace(new EqualizationCurve([]));
 
-        IReadOnlyList<double> drawn = Curve(panel, "Source + EQ");
-        IReadOnlyList<double> bare = Curve(panel, "Source");
+        IReadOnlyList<double> drawn = Corrected(session).Select(point => point.Y).ToList();
+        IReadOnlyList<double> bare = Bare(session).Select(point => point.Y).ToList();
 
         Assert.Equal(bare.Count, drawn.Count);
         for (int i = 0; i < bare.Count; i++)
@@ -88,7 +86,7 @@ public sealed class EqWizardSpatialAverageCorrectionTests
     public void TheGapUnderAProtectiveHighPassStaysAGapOnBothCurves()
     {
         // Target, error fill and fit statistics pair curves by index, so the points must match.
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
         LiveCaptureDocument capture = Capture();
         for (int i = 0; i < capture.CurveDb.Length; i++)
         {
@@ -98,12 +96,12 @@ public sealed class EqWizardSpatialAverageCorrectionTests
             }
         }
 
-        ApplySource(panel, Handoff(capture));
-        SetSmoothing(panel, SpectrumSmoothing.PsychoacousticCode);
-        ApplyBank(panel, Bank);
+        session.Load(Handoff(capture));
+        session.SetSourceSmoothing(SpectrumSmoothing.PsychoacousticCode);
+        session.Bank.Replace(Bank);
 
-        IReadOnlyList<double> drawn = Curve(panel, "Source + EQ");
-        IReadOnlyList<double> bare = Curve(panel, "Source");
+        IReadOnlyList<double> drawn = Corrected(session).Select(point => point.Y).ToList();
+        IReadOnlyList<double> bare = Bare(session).Select(point => point.Y).ToList();
 
         Assert.Equal(bare.Count, drawn.Count);
         Assert.Contains(drawn, double.IsNaN);
@@ -177,33 +175,8 @@ public sealed class EqWizardSpatialAverageCorrectionTests
         };
     }
 
-    private static IReadOnlyList<double> Curve(EqWizardPanel panel, string title) =>
-        Series(panel, title).Points.Select(point => point.Y).ToList();
+    private static IReadOnlyList<DataPoint> Corrected(EqWizardSession session) =>
+        EqWizardRender.RenderSet(session, EqWizardRender.DisplayedEq(session)).SourcePlusEq!.Points;
 
-    private static IReadOnlyList<double> Frequencies(EqWizardPanel panel, string title) =>
-        Series(panel, title).Points.Select(point => point.X).ToList();
-
-    private static LineSeries Series(EqWizardPanel panel, string title) =>
-        (LineSeries)Field<PlotView>(panel, "plotWizard").Model!.Series
-            .OfType<XYAxisSeries>()
-            .First(series => series.Title == title);
-
-    private static void ApplySource(EqWizardPanel panel, EqWizardCurveSource source) =>
-        Invoke(panel, "ApplySource", source);
-
-    private static void ApplyBank(EqWizardPanel panel, EqualizationCurve bank) =>
-        Invoke(panel, "ApplyEqualizationCurve", bank);
-
-    private static void SetSmoothing(EqWizardPanel panel, int code) =>
-        Invoke(panel, "SetSourceSmoothing", code);
-
-    private static void Invoke(EqWizardPanel panel, string name, params object[] arguments) =>
-        typeof(EqWizardPanel)
-            .GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, arguments);
-
-    private static T Field<T>(EqWizardPanel panel, string name) =>
-        (T)typeof(EqWizardPanel)
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(panel)!;
+    private static IReadOnlyList<DataPoint> Bare(EqWizardSession session) => session.SourceCurve!.Points;
 }

@@ -15,12 +15,6 @@ internal sealed class PeqSlotMenuEventArgs : EventArgs
 
 public partial class PeqSlotControl : UserControl
 {
-    /// <summary>Held here so the panel can bound Auto Tune even with no strip in the bank.</summary>
-    internal const double MinimumQ = 0.1;
-
-    /// <inheritdoc cref="MinimumQ"/>
-    internal const double MaximumQ = 20;
-
     private static readonly Color DraggingBackColor = UiPalette.SunkenSurface;
 
     private int slotNumber = 1;
@@ -35,8 +29,9 @@ public partial class PeqSlotControl : UserControl
     public PeqSlotControl()
     {
         InitializeComponent();
-        qInput.Minimum = (decimal)MinimumQ;
-        qInput.Maximum = (decimal)MaximumQ;
+        // The session holds every band as these fields show it, so both take their ranges from one place.
+        frequencyInput.ApplyFieldRange(EqWizardLimits.BandFrequency);
+        qInput.ApplyFieldRange(EqWizardLimits.BandQ);
         WireGainFader();
         // Hooked unconditionally: the strip may become an all-pass at any time.
         frequencyInput.ValueChanged += (_, _) => UpdateGroupDelayReadout();

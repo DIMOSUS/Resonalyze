@@ -18,6 +18,95 @@ internal static class EqWizardCalibration
             loadedKind is null or EqWizardSourceKind.ImpulseResponse;
         return appliesToImpulseResponses ? chosen.MicrophoneCalibrationId : current;
     }
+
+    /// <summary>The choice a newly loaded source opens with. See docs/tech/eq-auto-tuner.md#calibration-choice.</summary>
+    public static EqWizardCalibrationChoice Choose(
+        EqWizardCurveSource source,
+        string? preferredIrCalibrationId)
+    {
+        if (source.HasOwnCalibration)
+        {
+            return EqWizardCalibrationChoice.OwnCapture;
+        }
+        if (source.Kind == EqWizardSourceKind.ImpulseResponse)
+        {
+            return EqWizardCalibrationChoice.Microphone(preferredIrCalibrationId);
+        }
+        // A handoff is pinned to the correction its panel renders with; the IR preference stays untouched.
+        if (source.Kind == EqWizardSourceKind.VirtualDspChannel)
+        {
+            // Pinned whenever the panel pinned ANY correction, curve or mode (the curve alone misses the average's own correction).
+            return source.PinsCorrection
+                ? EqWizardCalibrationChoice.PinnedToSource
+                : EqWizardCalibrationChoice.Off;
+        }
+
+        return EqWizardCalibrationChoice.Off;
+    }
+
+    /// <summary>
+    /// What the selector offers for a source. Entries resolving to nothing, and a selection the list lost, stay listed:
+    /// dropping them would rewrite the user's choice.
+    /// </summary>
+    public static IReadOnlyList<EqWizardCalibrationOption> Options(
+        EqWizardCurveSource? source,
+        IReadOnlyList<MicrophoneCalibrationEntry> entries,
+        EqWizardCalibrationChoice current)
+    {
+        var options = new List<EqWizardCalibrationOption>
+        {
+            new(EqWizardCalibrationChoice.Off, "Off")
+        };
+
+        if (source is { HasOwnCalibration: true })
+        {
+            options.Add(new EqWizardCalibrationOption(
+                EqWizardCalibrationChoice.OwnCapture, "Own (as captured)"));
+        }
+
+        // Listed under the panel's name for it (may be a session curve absent from the wizard's list).
+        if (source is { Kind: EqWizardSourceKind.VirtualDspChannel, PinsCorrection: true } pinned)
+        {
+            options.Add(new EqWizardCalibrationOption(
+                EqWizardCalibrationChoice.PinnedToSource,
+                pinned.PinnedCalibrationName ??
+                    (pinned.SpatialAverageCalibration.Mode == SpatialAverageCalibrationMode.Own
+                        ? "Own (as measured)"
+                        : "Virtual DSP")));
+        }
+
+        // An aggregate (multi-mic) correction offers only Own and Off: one mic's file would apply to positions not read through it.
+        if (source is not { CalibrationIsAggregate: true })
+        {
+            foreach (MicrophoneCalibrationEntry entry in entries)
+            {
+                options.Add(new EqWizardCalibrationOption(
+                    EqWizardCalibrationChoice.Microphone(entry.Id),
+                    entry.Available ? entry.Name : $"{entry.Name} (unavailable)"));
+            }
+        }
+
+        if (!current.Own &&
+            !current.IsOff &&
+            !entries.Any(entry => string.Equals(
+                entry.Id,
+                current.CalibrationId,
+                StringComparison.OrdinalIgnoreCase)))
+        {
+            options.Add(new EqWizardCalibrationOption(
+                current,
+                "Deleted calibration (missing)"));
+        }
+
+        return options;
+    }
+}
+
+internal sealed record EqWizardCalibrationOption(
+    EqWizardCalibrationChoice Choice,
+    string Label)
+{
+    public override string ToString() => Label;
 }
 
 internal readonly record struct EqWizardCalibrationChoice

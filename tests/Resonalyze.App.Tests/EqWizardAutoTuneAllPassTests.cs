@@ -1,4 +1,3 @@
-using System.Reflection;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -16,7 +15,7 @@ public sealed class EqWizardAutoTuneAllPassTests
             [new PeqBand(1_000, 2, -4), new PeqBand(3_150, 3, -2)], preampDb: -3.5);
 
         EqualizationCurve merged =
-            EqWizardPanel.WithAllPassBands(tuned, [AllPass]);
+            EqWizardFit.WithAllPassBands(tuned, [AllPass]);
 
         Assert.Equal([.. tuned.Bands, AllPass], merged.Bands);
         Assert.Equal(-3.5, merged.PreampDb);
@@ -27,7 +26,7 @@ public sealed class EqWizardAutoTuneAllPassTests
     {
         var tuned = new EqualizationCurve([new PeqBand(1_000, 2, -4)], preampDb: -1);
 
-        Assert.Same(tuned, EqWizardPanel.WithAllPassBands(tuned, []));
+        Assert.Same(tuned, EqWizardFit.WithAllPassBands(tuned, []));
     }
 
     [Fact]
@@ -40,7 +39,7 @@ public sealed class EqWizardAutoTuneAllPassTests
             preampDb: 0);
 
         EqualizationCurve merged =
-            EqWizardPanel.WithAllPassBands(tuned, [AllPass]);
+            EqWizardFit.WithAllPassBands(tuned, [AllPass]);
 
         Assert.Equal(EqualizationCurve.MaxBandCount, merged.Bands.Count);
         Assert.Equal(AllPass, merged.Bands[^1]);
@@ -52,10 +51,10 @@ public sealed class EqWizardAutoTuneAllPassTests
     [Fact]
     public void AutoTuneOptions_TakeTheKeptBandsOffTheFitsBudget()
     {
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
-        int full = MaxBandsFor(panel, reservedBands: 0);
-        int reserved = MaxBandsFor(panel, reservedBands: 3);
+        int full = EqWizardFit.Options(session, reservedBands: 0).MaxBands;
+        int reserved = EqWizardFit.Options(session, reservedBands: 3).MaxBands;
 
         Assert.Equal(EqualizationCurve.MaxBandCount, full);
         Assert.Equal(EqualizationCurve.MaxBandCount - 3, reserved);
@@ -65,41 +64,20 @@ public sealed class EqWizardAutoTuneAllPassTests
     public void AutoTuneOptions_TakeTheKeptBandsOffTheCHOSENLimit_NotOffTheSlotCount()
     {
         // Max Filters budgets the bank: subtract kept bands from the user's number, not from the 32-slot ceiling.
-        using var panel = new EqWizardPanel();
-        SetBandLimit(panel, 8);
+        var session = new EqWizardSession();
+        session.SetBandLimit(8);
 
-        Assert.Equal(8, MaxBandsFor(panel, reservedBands: 0));
-        Assert.Equal(5, MaxBandsFor(panel, reservedBands: 3));
+        Assert.Equal(8, EqWizardFit.Options(session, reservedBands: 0).MaxBands);
+        Assert.Equal(5, EqWizardFit.Options(session, reservedBands: 3).MaxBands);
     }
 
     [Fact]
     public void AutoTuneOptions_WithNoRoomLeft_StillHandTheTunerARangeItCanHonour()
     {
         // AutoTune refuses a reserve that swallows the budget; the options builder must only degrade, not throw.
-        using var panel = new EqWizardPanel();
+        var session = new EqWizardSession();
 
         Assert.Equal(
-            1, MaxBandsFor(panel, reservedBands: EqualizationCurve.MaxBandCount));
-    }
-
-    private static void SetBandLimit(EqWizardPanel panel, int limit)
-    {
-        dynamic combo = typeof(EqWizardPanel)
-            .GetField("comboBoxBandsLimit", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(panel)!;
-        combo.SelectedItem = limit;
-        Assert.Equal(limit, (int)combo.SelectedItem);
-    }
-
-    private static int MaxBandsFor(EqWizardPanel panel, int reservedBands)
-    {
-        object options = typeof(EqWizardPanel)
-            .GetMethod(
-                "CreateAutoTuneOptions",
-                BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [reservedBands])!;
-        return (int)options.GetType()
-            .GetProperty(nameof(EqAutoTuner.Options.MaxBands))!
-            .GetValue(options)!;
+            1, EqWizardFit.Options(session, reservedBands: EqualizationCurve.MaxBandCount).MaxBands);
     }
 }

@@ -1,5 +1,4 @@
 ﻿using System.Numerics;
-using System.Reflection;
 using OxyPlot;
 using Resonalyze.Dsp;
 
@@ -912,18 +911,12 @@ public sealed class VirtualDspEqHandoffTests
         VirtualDspEqHandoffRequest request = Build(
             channel, withChain: true, spatialAverage: Capture(), spatialAverageOffsetDb: 0);
 
-        using var panel = new EqWizardPanel();
-        typeof(EqWizardPanel)
-            .GetMethod("BeginVirtualDspHandoff", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [request]);
-        object? curve = typeof(EqWizardPanel)
-            .GetMethod("GetSourceCurve", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, []);
+        var session = new EqWizardSession();
+        session.BeginHandoff(request);
 
+        EqWizardCurve? curve = session.SourceCurve;
         Assert.NotNull(curve);
-        var points = (IReadOnlyList<DataPoint>)typeof(EqWizardCurve)
-            .GetProperty("Points")!
-            .GetValue(curve)!;
+        IReadOnlyList<DataPoint> points = curve.Points;
         Assert.NotEmpty(points);
         Assert.All(
             points.Where(point => point.X is > 100 and < 10_000),

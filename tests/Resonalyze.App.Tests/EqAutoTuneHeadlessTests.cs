@@ -1,5 +1,4 @@
 using System.Numerics;
-using System.Reflection;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -99,7 +98,7 @@ public sealed class EqAutoTuneHeadlessTests
         Assert.Equal(96_000, cuts.SampleRateHz);
         Assert.Equal(EqAutoTuneHeadless.BandGainMinDb, cuts.BandGainMinDb);
         Assert.Equal(EqAutoTuneHeadless.BandGainMaxDb, cuts.BandGainMaxDb);
-        Assert.Equal(PeqSlotControl.MinimumQ, cuts.QMin);
+        Assert.Equal((double)EqWizardLimits.BandQ.Minimum, cuts.QMin);
         Assert.Equal(EqAutoTuneHeadless.MaxQ, cuts.QMax);
 
         EqAutoTuner.Options boosts = EqAutoTuneHeadless.Prepare(
@@ -210,13 +209,9 @@ public sealed class EqAutoTuneHeadlessTests
 
     private static IReadOnlyList<SignalPoint> WizardSourceCurve(VirtualDspEqHandoffRequest request)
     {
-        using var panel = new EqWizardPanel();
-        panel.BeginVirtualDspHandoff(request);
-        object curve = typeof(EqWizardPanel)
-            .GetMethod("ComputeSourceCurve", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, [])!;
-        var points = (IReadOnlyList<OxyPlot.DataPoint>)curve.GetType().GetProperty("Points")!.GetValue(curve)!;
-        return points.Select(point => new SignalPoint(point.X, point.Y)).ToList();
+        var session = new EqWizardSession();
+        session.BeginHandoff(request);
+        return session.SourceCurve!.Points.Select(point => new SignalPoint(point.X, point.Y)).ToList();
     }
 
     private static void AssertSameCurve(IReadOnlyList<SignalPoint> expected, IReadOnlyList<SignalPoint> actual)

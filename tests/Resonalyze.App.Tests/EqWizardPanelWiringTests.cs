@@ -336,7 +336,6 @@ public sealed class EqWizardPanelWiringTests
 
         public void Change(Action change)
         {
-            KeepUiContext();
             change();
             Settle();
         }
@@ -350,37 +349,19 @@ public sealed class EqWizardPanelWiringTests
         {
             for (int attempt = 0; attempt < 2_000 && Session.Previews.Rendering; attempt++)
             {
-                Pump();
+                StaTest.Pump();
                 Thread.Sleep(5);
             }
 
             // The redraw a landed render asks for is posted after it; let it run.
             for (int pass = 0; pass < 5; pass++)
             {
-                Pump();
+                StaTest.Pump();
             }
 
             Assert.False(Session.Previews.Rendering, "A preview did not land in time.");
         }
 
         public void Dispose() => host.Dispose();
-
-        private static void Pump()
-        {
-            KeepUiContext();
-            Application.DoEvents();
-            KeepUiContext();
-        }
-
-        // DoEvents leaves a plain SynchronizationContext behind once a form has been shown, where the app's message loop
-        // keeps the WinForms one: a render's continuation would then run on the thread pool and create a field's handle
-        // there, and disposing the form would wait on that thread for ever.
-        private static void KeepUiContext()
-        {
-            if (SynchronizationContext.Current is not WindowsFormsSynchronizationContext)
-            {
-                SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
-            }
-        }
     }
 }

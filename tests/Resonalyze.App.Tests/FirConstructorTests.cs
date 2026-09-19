@@ -596,7 +596,7 @@ public sealed class FirConstructorTests
         while (panel.RebuildPending)
         {
             Assert.True(DateTime.UtcNow < deadline, "The constructor's rebuild never landed.");
-            Application.DoEvents();
+            StaTest.Pump();
             Thread.Sleep(5);
         }
     }

@@ -472,7 +472,7 @@ public sealed class AnalyzerWiringTests : IDisposable
         {
             for (int i = 0; i < 20; i++)
             {
-                Application.DoEvents();
+                StaTest.Pump();
                 Thread.Sleep(5);
             }
         }

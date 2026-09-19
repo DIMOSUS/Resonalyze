@@ -26,7 +26,7 @@ public sealed class PeqSlotStripTests
         form.ClientSize = strip.Size;
         form.Controls.Add(strip);
         form.Show();
-        Application.DoEvents();
+        StaTest.Pump();
 
         Control fader = strip.Controls.Find("fader", searchAllChildren: true)[0];
         using var bitmap = new Bitmap(fader.Width, fader.Height);

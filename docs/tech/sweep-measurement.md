@@ -60,6 +60,23 @@ Whichever input started last wins, however long each one takes.
 - History entries hold a `MeasurementResult` beside their preview and session; Compare, Time
   Alignment's compare record, Virtual DSP sources and the EQ Wizard take one too.
 
+**The views follow the document.** An input installs its result and stops there. The main plot
+(`AnalyzerPlot`), Time Alignment and the settings panels that preview it subscribe to the document's
+`Changed`, and the plot and Time Alignment to the compare selection too:
+
+- The plot and Time Alignment refresh once after the input's work (`DeferredRefresh`), so an
+  input that installs and then changes the view (a history entry applies its session, a run
+  selects its own calibration) draws once, with the final state. A draw the view makes on its
+  own, such as a mode switch, cancels the queued one.
+- While a run or an import holds the document the plot keeps what it drew; the result redraws
+  it when it lands.
+- Time Alignment reads only while it is shown; showing it reads.
+- The Frequency Response panel recolours its SPL choice from the measurement it shows.
+
+What each tab shows is the plain table `ModeCatalog`, and every mode's view options are one
+`AnalyzerViewSettings`: the settings file keeps one copy and each history entry keeps the copy it
+was left with (`CaptureSession`, `ApplySession`).
+
 ## Sweep generation
 
 `ExponentialSineSweep` is pure signal generation: it exposes float samples and the audio

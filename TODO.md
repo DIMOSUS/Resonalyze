@@ -263,8 +263,9 @@ next field session rather than in a register nobody else can tick.
   branch against the frozen validated session, not alongside other work.
 - [ ] **Time Alignment analysis is not cached** — `RefreshAnalysis`
   (`TimeAlignmentPanelController`) recomputes Hilbert + GCC-PHAT on every tab
-  show even when inputs are unchanged. Needs a live-app check to avoid stale
-  display.
+  show even when inputs are unchanged. It no longer reads while hidden, and a
+  tab switch reads once, not twice, but every show still reads. Needs a
+  live-app check to avoid stale display.
 - [ ] **Virtual DSP — residual boundaries.** The tune lives in a UI-free
   `VirtualCrossoverSession` and whatever reads it takes the session
   (docs/tech/virtual-dsp-panel.md#code-map); the panel is binding code in

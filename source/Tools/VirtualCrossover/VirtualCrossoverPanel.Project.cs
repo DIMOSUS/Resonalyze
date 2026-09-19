@@ -14,15 +14,17 @@ public partial class VirtualCrossoverPanel
     private bool loadingProject;
 
     /// <summary>Called whenever the tab becomes active; the first call loads the saved project.</summary>
-    internal void OnPanelShown()
+    /// <returns>That load, never faulted; every later call returns it too.</returns>
+    internal Task OnPanelShown()
     {
         if (initialized)
         {
-            return;
+            return storedProjectLoad;
         }
 
         initialized = true;
         storedProjectLoad = LoadProjectSafelyAsync();
+        return storedProjectLoad;
     }
 
     // Kept as a task so an import arriving right after can await it.

@@ -34,7 +34,7 @@ public sealed class WaterfallSeriesRenderTests
             $"a non-finite screen coordinate reached the renderer: {context.FirstNonFinite}");
     }
 
-    private static ExpSweepMeasurement CreateBroadbandTransferMeasurement()
+    private static TestAnalyzer CreateBroadbandTransferMeasurement()
     {
         var ir = new Complex[8192];
         int peak = 256;
@@ -43,8 +43,8 @@ public sealed class WaterfallSeriesRenderTests
             ir[peak + i] = new Complex(Math.Exp(-i / 400.0) * Math.Cos(i * 0.2), 0);
         }
 
-        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000,
             sampleRate: 44_100,
@@ -55,12 +55,12 @@ public sealed class WaterfallSeriesRenderTests
             sweepDeconvolutionPeakIndex: peak,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
             transferImpulseResponse: ir,
-            transferPeakIndex: peak);
+            transferPeakIndex: peak));
         return measurement;
     }
 
     private static PlotModelFactory CreateFactory(
-        ExpSweepMeasurement measurement,
+        TestAnalyzer measurement,
         NoiseMeasurement noiseMeasurement)
     {
         string calibrationPath = Path.Combine(
@@ -68,7 +68,8 @@ public sealed class WaterfallSeriesRenderTests
             $"resonalyze-calibration-{Guid.NewGuid():N}.txt");
 
         return new PlotModelFactory(
-            measurement,
+            measurement.Document,
+            measurement.Engine,
             noiseMeasurement,
             mode => new CalibrationFile(calibrationPath),
             new PlotPresentationOptions(

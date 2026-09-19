@@ -89,7 +89,7 @@ internal sealed class MeasurementHistoryPersistence
                     Metadata = entry.Metadata,
                     Preview = entry.Preview,
                     Session = entry.Session,
-                    Snapshot = null
+                    Result = null
                 });
             }
 

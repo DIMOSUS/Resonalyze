@@ -25,13 +25,14 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
         InitializeToolTips();
     }
 
-    public void Init(
-        ExpSweepMeasurement expSweepMeasurement,
+    internal void Init(
+        AnalyzerDocument document,
+        int configuredSampleRate,
         FrequencyResponseOptions opt,
         CurveVisibilityOptions visibility,
         Func<CompareAnalysisSource?>? getCompare = null)
     {
-        AttachMeasurement(expSweepMeasurement);
+        AttachMeasurement(document, configuredSampleRate);
         this.getCompare = getCompare;
         InitializeControls(() =>
         {

@@ -83,7 +83,7 @@ public sealed class TimeAlignmentBandModeSyncTests
             var form = new Form();
             var panel = new TimeAlignmentPanel();
             form.Controls.Add(panel);
-            var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+            var measurement = new AnalyzerDocument();
             Harness? harness = null;
             var controller = new TimeAlignmentPanelController(
                 form,

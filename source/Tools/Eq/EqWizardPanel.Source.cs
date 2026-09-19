@@ -247,10 +247,10 @@ public partial class EqWizardPanel
         }
 
         int generation = ++sourceLoadGeneration;
-        MeasurementHistorySnapshot? snapshot;
+        MeasurementResult? result;
         try
         {
-            snapshot = await HistoryService.GetSnapshotAsync(entryId);
+            result = await HistoryService.GetResultAsync(entryId);
         }
         catch (Exception exception)
         {
@@ -268,12 +268,12 @@ public partial class EqWizardPanel
         }
 
         // Deleted between opening the menu and choosing: silent no-op, like the Compare picker.
-        if (snapshot == null)
+        if (result == null)
         {
             return;
         }
 
-        ImpulseResponseFile file = snapshot.ToImpulseResponseFile();
+        ImpulseResponseFile file = ImpulseResponseFile.From(result);
         ApplyMeasurementSource(
             file,
             displayName,

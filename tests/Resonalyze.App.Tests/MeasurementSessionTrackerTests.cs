@@ -5,6 +5,7 @@ namespace Resonalyze.App.Tests;
 public sealed class MeasurementSessionTrackerTests : IDisposable
 {
     private readonly string directory;
+    private readonly AnalyzerDocument document = new();
     private int sessionCaptures;
 
     public MeasurementSessionTrackerTests()
@@ -34,7 +35,6 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
         tracker.PersistCurrentSessionState();
 
         Assert.Null(tracker.CurrentEntryId);
-        Assert.False(tracker.HasImpulseResponse);
         Assert.Equal(0, sessionCaptures);
     }
 
@@ -46,9 +46,8 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
         (string path, ImpulseResponseFile file) = await CreateImpulseResponseFileAsync(
             "a.json");
 
-        tracker.MarkLoadedFile(path, file);
+        Open(tracker, path, file);
 
-        Assert.True(tracker.HasImpulseResponse);
         Assert.NotNull(tracker.CurrentEntryId);
         MeasurementHistoryEntry entry = Assert.Single(history.Entries);
         Assert.Equal(entry.Id, tracker.CurrentEntryId);
@@ -63,7 +62,7 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
         (string path, ImpulseResponseFile file) = await CreateImpulseResponseFileAsync(
             "saved.json");
 
-        tracker.MarkSavedFile(path, file);
+        tracker.MarkSavedFile(path, file, file.ToResult());
 
         MeasurementHistoryEntry entry = Assert.Single(history.Entries);
         Assert.Equal(entry.Id, tracker.CurrentEntryId);
@@ -77,12 +76,12 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
             CreateTracker();
         (string loadedPath, ImpulseResponseFile loadedFile) =
             await CreateImpulseResponseFileAsync("a.json");
-        tracker.MarkLoadedFile(loadedPath, loadedFile);
+        Open(tracker, loadedPath, loadedFile);
         Guid? currentBeforeSave = tracker.CurrentEntryId;
         (string savedPath, ImpulseResponseFile savedFile) =
             await CreateImpulseResponseFileAsync("b.json");
 
-        tracker.MarkSavedFile(savedPath, savedFile);
+        tracker.MarkSavedFile(savedPath, savedFile, savedFile.ToResult());
 
         Assert.Equal(currentBeforeSave, tracker.CurrentEntryId);
         MeasurementHistoryEntry entry = Assert.Single(history.Entries);
@@ -95,7 +94,7 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
         (MeasurementSessionTracker tracker, _) = CreateTracker();
         (string path, ImpulseResponseFile file) = await CreateImpulseResponseFileAsync(
             "a.json");
-        tracker.MarkLoadedFile(path, file);
+        Open(tracker, path, file);
         Guid current = tracker.CurrentEntryId!.Value;
 
         tracker.ForgetEntry(Guid.NewGuid());
@@ -103,7 +102,7 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
 
         tracker.ForgetEntry(current);
         Assert.Null(tracker.CurrentEntryId);
-        Assert.True(tracker.HasImpulseResponse);
+        Assert.True(document.HasResult);
     }
 
     [Fact]
@@ -113,7 +112,7 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
             CreateTracker();
         (string path, ImpulseResponseFile file) = await CreateImpulseResponseFileAsync(
             "a.json");
-        tracker.MarkLoadedFile(path, file);
+        Open(tracker, path, file);
         int capturesAfterLoad = sessionCaptures;
 
         tracker.PersistCurrentSessionState();
@@ -128,8 +127,8 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
         (MeasurementSessionTracker tracker, _) = CreateTracker();
         (string path, ImpulseResponseFile file) = await CreateImpulseResponseFileAsync(
             "a.json");
-        tracker.MarkLoadedFile(path, file);
-        tracker.SetImpulseResponseAvailable(false);
+        Open(tracker, path, file);
+        document.Clear();
         int capturesAfterLoad = sessionCaptures;
 
         tracker.PersistCurrentSessionState();
@@ -138,18 +137,16 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
     }
 
     [Fact]
-    public void MarkRestoredAndReset_ToggleTheWholeIdentity()
+    public void MarkRestoredAndReset_MoveTheCurrentEntry()
     {
         (MeasurementSessionTracker tracker, _) = CreateTracker();
         Guid entryId = Guid.NewGuid();
 
         tracker.MarkRestored(entryId);
         Assert.Equal(entryId, tracker.CurrentEntryId);
-        Assert.True(tracker.HasImpulseResponse);
 
         tracker.Reset();
         Assert.Null(tracker.CurrentEntryId);
-        Assert.False(tracker.HasImpulseResponse);
     }
 
     private (MeasurementSessionTracker Tracker, MeasurementHistoryService History)
@@ -159,12 +156,21 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
             Path.Combine(directory, "measurement-history.json")));
         var tracker = new MeasurementSessionTracker(
             history,
+            document,
             () =>
             {
                 sessionCaptures++;
                 return new MeasurementSessionSnapshot();
             });
         return (tracker, history);
+    }
+
+    // As the main window opens a file: the document shows it, the tracker files it.
+    private void Open(MeasurementSessionTracker tracker, string path, ImpulseResponseFile file)
+    {
+        MeasurementResult result = file.ToResult();
+        document.Install(result, path);
+        tracker.MarkLoadedFile(path, file, result);
     }
 
     private async Task<(string Path, ImpulseResponseFile File)>

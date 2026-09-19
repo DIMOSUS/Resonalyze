@@ -26,12 +26,15 @@ namespace Resonalyze.Options
             InitializeToolTips();
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement, WaterfallGenerateOptions burstDecayGenOptions)
+        internal void Init(
+            AnalyzerDocument document,
+            int configuredSampleRate,
+            WaterfallGenerateOptions burstDecayGenOptions)
         {
-            AttachMeasurement(expSweepMeasurement);
+            AttachMeasurement(document, configuredSampleRate);
             InitializeControls(() =>
             {
-                numericSampleRate.Value = expSweepMeasurement.SampleRate;
+                numericSampleRate.Value = SampleRate;
 
                 numericWindow.Value = burstDecayGenOptions.Window;
                 numericCaptureTime.Value = (decimal)CalcCapturedTime;
@@ -77,7 +80,7 @@ namespace Resonalyze.Options
         {
             get
             {
-                int sampleRate = Measurement?.SampleRate ?? 0;
+                int sampleRate = Document == null ? 0 : SampleRate;
                 return sampleRate > 0
                     ? (double)numericWindow.Value / sampleRate * 1000.0
                     : 0;
@@ -86,7 +89,7 @@ namespace Resonalyze.Options
 
         protected override void RenderIrPreview()
         {
-            if (Measurement == null)
+            if (Document == null)
             {
                 return;
             }

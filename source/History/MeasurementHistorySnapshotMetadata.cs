@@ -17,25 +17,21 @@ internal sealed class MeasurementHistorySnapshotMetadata
     public int AcceptedAverageRunCount { get; init; } = 1;
     public required InputLevelMeterSnapshot MeterSnapshot { get; init; }
 
-    public static MeasurementHistorySnapshotMetadata FromSnapshot(
-        MeasurementHistorySnapshot snapshot)
-    {
-        (double lowHz, double highHz) = snapshot.ResolveSweepBand();
-        return new MeasurementHistorySnapshotMetadata
+    public static MeasurementHistorySnapshotMetadata FromResult(MeasurementResult result) =>
+        new()
         {
-            SampleRate = snapshot.SampleRate,
-            Bits = snapshot.Bits,
-            LowFrequencyHz = lowHz,
-            HighFrequencyHz = highHz,
-            SweepDurationSeconds = snapshot.SweepDurationSeconds,
-            PlayChannel = snapshot.PlayChannel,
-            MeasurementMode = snapshot.MeasurementMode,
-            TimingReference = snapshot.TimingReference,
-            SweepDeconvolutionPeakIndex = snapshot.SweepDeconvolutionPeakIndex,
-            TransferPeakIndex = snapshot.TransferPeakIndex,
-            AverageRunCount = snapshot.AverageRunCount,
-            AcceptedAverageRunCount = snapshot.AcceptedAverageRunCount,
-            MeterSnapshot = snapshot.MeterSnapshot
+            SampleRate = result.SampleRate,
+            Bits = result.Bits,
+            LowFrequencyHz = result.LowFrequencyHz,
+            HighFrequencyHz = result.HighFrequencyHz,
+            SweepDurationSeconds = result.SweepDurationSeconds,
+            PlayChannel = result.PlaybackChannel,
+            MeasurementMode = result.MeasurementMode,
+            TimingReference = result.TimingReference,
+            SweepDeconvolutionPeakIndex = result.SweepDeconvolution.PeakIndex,
+            TransferPeakIndex = result.Transfer?.PeakIndex,
+            AverageRunCount = result.AverageRunCount,
+            AcceptedAverageRunCount = result.AcceptedAverageRunCount,
+            MeterSnapshot = result.Levels
         };
-    }
 }

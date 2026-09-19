@@ -22,6 +22,16 @@ internal static class MeasurementHistoryPreviewBuilder
 
     private static readonly CalibrationFile EmptyCalibration = new(string.Empty);
 
+    public static MeasurementHistoryPreview Build(MeasurementResult measurement) =>
+        Build(
+            measurement.SweepDeconvolution.ImpulseResponse,
+            measurement.SweepDeconvolution.PeakIndex,
+            measurement.SampleRate,
+            measurement.MeasurementMode,
+            measurement.Transfer?.ImpulseResponse,
+            measurement.Transfer?.PeakIndex,
+            measurement.MeasuredBand);
+
     public static MeasurementHistoryPreview Build(
         Complex[] sweepDeconvolutionImpulseResponse,
         int sweepPeakIndex,

@@ -54,7 +54,7 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         Assert.Single(loaded);
         Assert.Equal(entry.Id, loaded[0].Id);
         Assert.Equal(sourcePath, loaded[0].SourceFilePath);
-        Assert.Null(loaded[0].Snapshot);
+        Assert.Null(loaded[0].Result);
         Assert.DoesNotContain(
             Directory.GetFiles(directory),
             file => file.EndsWith(".tmp", StringComparison.Ordinal));

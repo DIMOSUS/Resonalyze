@@ -4,97 +4,72 @@ using Resonalyze.Options;
 
 namespace Resonalyze;
 
+/// <summary>What a plot build reads of the open measurement; one build reads one result, whatever lands meanwhile.</summary>
 internal sealed class MeasurementPlotContext
 {
-    private readonly ExpSweepMeasurement expSweepMeasurement;
-    private string? impulseResponseFileName;
+    private readonly AnalyzerDocument document;
 
-    public MeasurementPlotContext(ExpSweepMeasurement expSweepMeasurement)
+    public MeasurementPlotContext(AnalyzerDocument document)
     {
-        this.expSweepMeasurement = expSweepMeasurement;
+        this.document = document;
     }
 
-    public void SetImpulseResponseFileName(string? fileName)
-    {
-        impulseResponseFileName = string.IsNullOrWhiteSpace(fileName)
+    /// <summary>The open result; builds that span several reads take it once.</summary>
+    public MeasurementResult? Result => document.Result;
+
+    public int SampleRate => document.Result?.SampleRate ?? 0;
+
+    public string? ImpulseResponseFileName =>
+        string.IsNullOrWhiteSpace(document.SourceName)
             ? null
-            : Path.GetFileName(fileName);
-    }
-
-    public string? ImpulseResponseFileName => impulseResponseFileName;
+            : Path.GetFileName(document.SourceName);
 
     public string CreateTitle(string baseTitle) =>
-        string.IsNullOrWhiteSpace(impulseResponseFileName)
+        ImpulseResponseFileName is not { } fileName
             ? baseTitle
-            : $"{baseTitle} - {impulseResponseFileName}";
+            : $"{baseTitle} - {fileName}";
 
     public bool CanIncludeCurves(bool includeCurves) =>
         includeCurves &&
-        expSweepMeasurement.HasImpulseResponse &&
-        !expSweepMeasurement.InProgress;
+        document.HasResult &&
+        !document.IsBusy;
 
-    public bool HasTransferImpulseResponse =>
-        expSweepMeasurement.TransferImpulseResponse is { Length: > 0 };
+    public bool HasTransferImpulseResponse => document.Result?.HasTransfer == true;
 
     /// <summary>Estimated IR start (ms) for the Auto gate offset, memoized in <see cref="TransferIrStartCache"/>.</summary>
     public double? ResolveAutoGateOffsetMs() =>
-        expSweepMeasurement.Transfer is { ImpulseResponse.Length: > 0 } transfer &&
-        expSweepMeasurement.SampleRate > 0
+        document.Result is { Transfer.ImpulseResponse.Length: > 0, SampleRate: > 0 } result
             ? TransferIrStartCache.ResolveStartMs(
-                transfer.ImpulseResponse,
-                expSweepMeasurement.SampleRate,
-                transfer.PeakIndex)
+                result.Transfer.ImpulseResponse,
+                result.SampleRate,
+                result.Transfer.PeakIndex)
             : null;
 
-    /// <summary><c>K = loopbackPeakDbFs + calibrationOffsetDb</c> turns dBr into dB SPL. Null without a captured loopback level or a calibration matching this result's input.</summary>
-    public double? SplOffsetDb
-    {
-        get
-        {
-            // The result's frozen calibration, so a live recalibration does not rescale what is on screen.
-            if (expSweepMeasurement.MeasurementSplCalibration is not { } calibration)
-            {
-                return null;
-            }
-
-            InputLevelMeterEntry loopback = expSweepMeasurement.CurrentLevels.Loopback;
-            if (!loopback.Available)
-            {
-                return null;
-            }
-
-            if (!expSweepMeasurement.InputMatches(calibration))
-            {
-                return null;
-            }
-
-            return loopback.PeakDbFs + calibration.OffsetDb;
-        }
-    }
+    /// <summary>The result's frozen anchor, so a live recalibration does not rescale what is on screen.</summary>
+    public double? SplOffsetDb => document.Result?.SplOffsetDb;
 
     // All analysis derives from the loopback transfer IR (callers gate on HasTransferImpulseResponse); sweep deconvolution is for harmonics/noise.
     public IImpulseMeasurement CreatePrimaryMeasurement()
     {
-        MeasurementImpulseResponse transfer = expSweepMeasurement.Transfer
+        MeasurementResult result = document.Result
+            ?? throw new InvalidOperationException("Transfer impulse response is not available.");
+        MeasurementImpulseResponse transfer = result.Transfer
             ?? throw new InvalidOperationException(
                 "Transfer impulse response is not available.");
+        MeasuredBand band = result.MeasuredBand;
         return new ImpulseMeasurementView(
             transfer.ImpulseResponse,
             transfer.PeakIndex,
-            expSweepMeasurement.SampleRate)
+            result.SampleRate)
         {
             // From the result's filter and sweep, never the configured ones (those describe the next sweep).
-            LowestMeasuredFrequencyHz = MeasuredBand.LowEdgeHz,
-            HighestMeasuredFrequencyHz = MeasuredBand.HighEdgeHz
+            LowestMeasuredFrequencyHz = band.LowEdgeHz,
+            HighestMeasuredFrequencyHz = band.HighEdgeHz
         };
     }
 
     /// <summary>Band every derived curve stops at; overlays carry it past the measurement's lifetime.</summary>
-    public MeasuredBand MeasuredBand => MeasuredBand.Resolve(
-        expSweepMeasurement.MeasurementProtectiveHighPass,
-        expSweepMeasurement.MeasuredLowFrequencyHz,
-        expSweepMeasurement.MeasuredHighFrequencyHz,
-        expSweepMeasurement.SampleRate);
+    public MeasuredBand MeasuredBand => document.Result?.MeasuredBand ?? MeasuredBand.Everything;
 
     /// <summary>Uncalibrated oversampled spectrum for exact re-smoothing; calibration applies after smoothing.</summary>
     public IReadOnlyList<SignalPoint>? CreateRawPrimarySpectrum(
@@ -142,21 +117,21 @@ internal sealed class MeasurementPlotContext
         DistortionPacketValidity = Array.Empty<HarmonicPacketValidity>();
         // The result's recorded sweep geometry, not the rebuilt one (length-capped, legacy edges unreachable).
         if ((curves & SpectrumCurves.Distortion) == 0 ||
-            expSweepMeasurement.SweepDeconvolution is not { } deconvolution ||
-            expSweepMeasurement.AchievedSweepSampleCount <= 0 ||
-            !(expSweepMeasurement.AchievedLowFrequencyHz > 0) ||
-            !(expSweepMeasurement.AchievedHighFrequencyHz >
-                expSweepMeasurement.AchievedLowFrequencyHz))
+            document.Result is not { } result ||
+            result.SweepSampleCount <= 0 ||
+            !(result.AchievedLowFrequencyHz > 0) ||
+            !(result.AchievedHighFrequencyHz > result.AchievedLowFrequencyHz))
         {
             return Array.Empty<AnalysisCurve>();
         }
 
+        MeasurementImpulseResponse deconvolution = result.SweepDeconvolution;
         var sweepMetadata = new EssSweepMetadata(
-            expSweepMeasurement.AchievedLowFrequencyHz,
-            expSweepMeasurement.AchievedHighFrequencyHz,
-            expSweepMeasurement.AchievedSweepDurationSeconds,
-            expSweepMeasurement.SampleRate,
-            expSweepMeasurement.AchievedSweepSampleCount,
+            result.AchievedLowFrequencyHz,
+            result.AchievedHighFrequencyHz,
+            result.SweepSampleDurationSeconds,
+            result.SampleRate,
+            result.SweepSampleCount,
             deconvolution.PeakIndex);
 
         Complex[] impulse = deconvolution.ImpulseResponse;

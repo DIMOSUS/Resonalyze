@@ -14,7 +14,7 @@ namespace Resonalyze.Options
             Disposed += (_, _) => toolTip.Dispose();
         }
 
-        public void Init(ExpSweepMeasurement expSweepMeasurement, ImpulseResponseOptions opt)
+        public void Init(ImpulseResponseOptions opt)
         {
             checkBoxShowAutocorrelation.Checked = opt.ShowAutocorrelation;
         }

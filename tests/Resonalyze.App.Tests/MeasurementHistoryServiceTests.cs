@@ -27,55 +27,43 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task FileBackedEntries_KeepAtMostOneFullSnapshotInMemory()
+    public async Task FileBackedEntries_KeepAtMostOneFullResultInMemory()
     {
         MeasurementHistoryService service = CreateService();
         string pathA = await CreateImpulseResponseFileAsync("a.json");
         string pathB = await CreateImpulseResponseFileAsync("b.json");
 
-        Guid idA = service.AddOrUpdateLoadedFile(
-            pathA,
-            await ImpulseResponseFile.LoadAsync(pathA),
-            new MeasurementSessionSnapshot());
-        Guid idB = service.AddOrUpdateLoadedFile(
-            pathB,
-            await ImpulseResponseFile.LoadAsync(pathB),
-            new MeasurementSessionSnapshot());
+        Guid idA = await AddLoadedAsync(service, pathA);
+        Guid idB = await AddLoadedAsync(service, pathB);
 
-        Assert.Null(service.FindById(idA)!.Snapshot);
-        Assert.NotNull(service.FindById(idB)!.Snapshot);
+        Assert.Null(service.FindById(idA)!.Result);
+        Assert.NotNull(service.FindById(idB)!.Result);
 
-        MeasurementHistorySnapshot? reloaded = await service.GetSnapshotAsync(idA);
+        MeasurementResult? reloaded = await service.GetResultAsync(idA);
 
         Assert.NotNull(reloaded);
-        Assert.NotNull(service.FindById(idA)!.Snapshot);
-        Assert.Null(service.FindById(idB)!.Snapshot);
+        Assert.NotNull(service.FindById(idA)!.Result);
+        Assert.Null(service.FindById(idB)!.Result);
     }
 
     [Fact]
-    public async Task GetSnapshotAsync_ReloadsEvictedSnapshotFromDisk()
+    public async Task GetResultAsync_ReloadsAnEvictedResultFromDisk()
     {
         MeasurementHistoryService service = CreateService();
         string pathA = await CreateImpulseResponseFileAsync("a.json");
         string pathB = await CreateImpulseResponseFileAsync("b.json");
-        Guid idA = service.AddOrUpdateLoadedFile(
-            pathA,
-            await ImpulseResponseFile.LoadAsync(pathA),
-            new MeasurementSessionSnapshot());
-        service.AddOrUpdateLoadedFile(
-            pathB,
-            await ImpulseResponseFile.LoadAsync(pathB),
-            new MeasurementSessionSnapshot());
+        Guid idA = await AddLoadedAsync(service, pathA);
+        await AddLoadedAsync(service, pathB);
 
-        MeasurementHistorySnapshot? snapshot = await service.GetSnapshotAsync(idA);
+        MeasurementResult? result = await service.GetResultAsync(idA);
 
-        Assert.NotNull(snapshot);
-        Assert.Equal(48_000, snapshot!.SampleRate);
-        Assert.NotEmpty(snapshot.SweepDeconvolutionImpulseResponse);
+        Assert.NotNull(result);
+        Assert.Equal(48_000, result!.SampleRate);
+        Assert.NotEmpty(result.SweepDeconvolution.ImpulseResponse);
     }
 
     [Fact]
-    public void Snapshot_CarriesTheSplAnchorFromTheFileAndBackToIt()
+    public void AResult_CarriesTheSplAnchorFromTheFileAndBackToIt()
     {
         ImpulseResponseFile file = ImpulseResponseFileAtomicSaveTests.CreateFile(
             sampleValue: 1.0);
@@ -93,11 +81,11 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
             RmsDbFs = -9
         };
 
-        MeasurementHistorySnapshot snapshot = MeasurementHistoryService.CreateSnapshot(file);
+        MeasurementResult result = file.ToResult();
 
-        Assert.Same(file.SplCalibration, snapshot.SplCalibration);
-        Assert.Equal(108.0, snapshot.SplOffsetDb!.Value, tolerance: 1e-9);
-        Assert.Same(file.SplCalibration, snapshot.ToImpulseResponseFile().SplCalibration);
+        Assert.Same(file.SplCalibration, result.SplCalibration);
+        Assert.Equal(108.0, result.SplOffsetDb!.Value, tolerance: 1e-9);
+        Assert.Same(file.SplCalibration, ImpulseResponseFile.From(result).SplCalibration);
     }
 
     [Fact]
@@ -108,10 +96,7 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
         for (int index = 0; index < MeasurementHistoryService.MaxHistoryEntries + 3; index++)
         {
             string path = await CreateImpulseResponseFileAsync($"m{index}.json");
-            added.Add(service.AddOrUpdateLoadedFile(
-                path,
-                await ImpulseResponseFile.LoadAsync(path),
-                new MeasurementSessionSnapshot()));
+            added.Add(await AddLoadedAsync(service, path));
         }
 
         Assert.Equal(MeasurementHistoryService.MaxHistoryEntries, service.Entries.Count);
@@ -127,19 +112,12 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
     {
         MeasurementHistoryService service = CreateService();
         string firstPath = await CreateImpulseResponseFileAsync("first.json");
-        Guid oldestSaved = service.AddOrUpdateLoadedFile(
-            firstPath,
-            await ImpulseResponseFile.LoadAsync(firstPath),
-            new MeasurementSessionSnapshot());
-        using ExpSweepMeasurement measurement = CreateMeasurement();
-        Guid unsaved = service.AddMeasurement(measurement, new MeasurementSessionSnapshot());
+        Guid oldestSaved = await AddLoadedAsync(service, firstPath);
+        Guid unsaved = service.AddMeasurement(CreateMeasurement(), new MeasurementSessionSnapshot());
         for (int index = 0; index < MeasurementHistoryService.MaxHistoryEntries - 1; index++)
         {
             string path = await CreateImpulseResponseFileAsync($"filler{index}.json");
-            service.AddOrUpdateLoadedFile(
-                path,
-                await ImpulseResponseFile.LoadAsync(path),
-                new MeasurementSessionSnapshot());
+            await AddLoadedAsync(service, path);
         }
 
         Assert.Equal(MeasurementHistoryService.MaxHistoryEntries, service.Entries.Count);
@@ -198,14 +176,16 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
         return stored;
     }
 
-    private static ExpSweepMeasurement CreateMeasurement()
-    {
-        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+    private static MeasurementResult CreateMeasurement() =>
+        TestMeasurementResults.Restored(
             20, 20_000, 48_000, 24, 1.0, PlaybackChannel.Mono,
             [Complex.Zero, Complex.One, Complex.Zero],
             sweepDeconvolutionPeakIndex: 1);
-        return measurement;
+
+    private static async Task<Guid> AddLoadedAsync(MeasurementHistoryService service, string path)
+    {
+        ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
+        return service.AddOrUpdateLoadedFile(path, file, file.ToResult(), new MeasurementSessionSnapshot());
     }
 
     private MeasurementHistoryService CreateService() =>

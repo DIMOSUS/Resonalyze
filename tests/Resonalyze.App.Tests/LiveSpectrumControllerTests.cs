@@ -138,6 +138,7 @@ public sealed class LiveSpectrumControllerTests
         SetField(controller, "measurement", noise);
         SetField(controller, "liveSpectrumOptions", options);
         SetField(controller, "plotModelFactory", new PlotModelFactory(
+            new AnalyzerDocument(),
             sweep,
             noise,
             _ => null,
@@ -178,6 +179,7 @@ public sealed class LiveSpectrumControllerTests
         SetField(controller, "measurement", noise);
         SetField(controller, "liveSpectrumOptions", new LiveSpectrumOptions());
         SetField(controller, "plotModelFactory", new PlotModelFactory(
+            new AnalyzerDocument(),
             sweep,
             noise,
             _ => null,
@@ -290,6 +292,7 @@ public sealed class LiveSpectrumControllerTests
         ExpSweepMeasurement sweep,
         NoiseMeasurement noise) =>
         new(
+            new AnalyzerDocument(),
             sweep,
             noise,
             _ => null,

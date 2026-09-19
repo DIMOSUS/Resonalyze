@@ -58,7 +58,7 @@ public sealed class WasapiHardwareSmokeTests
                     WasapiRenderEndpointId: renderId),
                 new SweepAveragingConfiguration()));
 
-            Assert.False(await measurement.RunAsync());
+            Assert.Null(await measurement.RunAsync());
             Assert.NotNull(measurement.LastError);
         }
 
@@ -84,11 +84,11 @@ public sealed class WasapiHardwareSmokeTests
                 WasapiBufferMilliseconds: 100),
             new SweepAveragingConfiguration(8)));
 
-        bool succeeded = await measurement.RunAsync();
+        MeasurementResult? result = await measurement.RunAsync();
 
-        Assert.True(succeeded, measurement.LastError?.ToString());
-        Assert.Equal(8, measurement.AverageRunCount);
-        Assert.Equal(8, measurement.AcceptedAverageRunCount);
+        Assert.True(result != null, measurement.LastError?.ToString());
+        Assert.Equal(8, result.AverageRunCount);
+        Assert.Equal(8, result.AcceptedAverageRunCount);
         Assert.NotNull(measurement.LastAudioSessionDiagnostics);
         Assert.True(measurement.LastAudioSessionDiagnostics!.CapturePackets > 0);
         Assert.True(measurement.LastAudioSessionDiagnostics.RenderCallbacks > 0);
@@ -117,9 +117,9 @@ public sealed class WasapiHardwareSmokeTests
                 WasapiBufferMilliseconds: 100),
             new SweepAveragingConfiguration(1)));
 
-        bool succeeded = await measurement.RunAsync();
+        MeasurementResult? result = await measurement.RunAsync();
 
-        Assert.True(succeeded, measurement.LastError?.ToString());
+        Assert.True(result != null, measurement.LastError?.ToString());
     }
 
     [HardwareFact]
@@ -142,11 +142,11 @@ public sealed class WasapiHardwareSmokeTests
                     WasapiBufferMilliseconds: 100),
                 new SweepAveragingConfiguration()));
 
-            Task<bool> running = measurement.RunAsync();
+            Task<MeasurementResult?> running = measurement.RunAsync();
             await Task.Delay(500);
             await measurement.AbortAsync();
 
-            Assert.False(await running);
+            Assert.Null(await running);
             Assert.Null(measurement.LastError);
             Assert.False(measurement.InProgress);
         }

@@ -27,7 +27,7 @@ public partial class Form1
         commandController.SetSaveAvailable(
             LiveCaptureOwnsSaveLoad
                 ? liveSpectrumController.HasCaptureToSave
-                : expSweepMeasurement.HasImpulseResponse);
+                : analyzerDocument.HasResult);
 
     /// <summary>Opens a stored capture in its own mode; false when not a capture (IR loader takes it).</summary>
     private async Task<bool> TryOpenLiveCaptureAsync(string path)

@@ -226,16 +226,16 @@ public sealed class ImpulseOverlayTests
         int peak = 512;
         ir[peak] = new Complex(0.5, 0.0);
 
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var measurement = new TestAnalyzer();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
+        measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000, sampleRate: SampleRate, bits: 24,
             sweepDurationSeconds: 1.0,
             playChannel: PlaybackChannel.Mono,
             sweepDeconvolutionImpulseResponse: ir, sweepDeconvolutionPeakIndex: peak,
             measurementMode: SweepMeasurementMode.LoopbackTransfer,
-            transferImpulseResponse: ir, transferPeakIndex: peak);
+            transferImpulseResponse: ir, transferPeakIndex: peak));
 
         var options = new ImpulseResponseOptions
         {
@@ -261,7 +261,7 @@ public sealed class ImpulseOverlayTests
     [Fact]
     public void BuildImpulseCapture_RefusesACurveThatIsNotAnImpulseTrace()
     {
-        using var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
+        using var measurement = new TestAnalyzer();
         using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactoryFor(
             measurement, noiseMeasurement, new ImpulseResponseOptions());
@@ -271,11 +271,12 @@ public sealed class ImpulseOverlayTests
     }
 
     private static PlotModelFactory CreateFactoryFor(
-        ExpSweepMeasurement measurement,
+        TestAnalyzer measurement,
         NoiseMeasurement noiseMeasurement,
         ImpulseResponseOptions impulseOptions) =>
         new(
-            measurement,
+            measurement.Document,
+            measurement.Engine,
             noiseMeasurement,
             _ => null,
             new PlotPresentationOptions(

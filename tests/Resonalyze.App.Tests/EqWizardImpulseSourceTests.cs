@@ -1,6 +1,5 @@
 using System.Numerics;
 using Resonalyze.Dsp;
-using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
 
@@ -77,21 +76,21 @@ public sealed class EqWizardImpulseSourceTests
         int? transferPeakIndex,
         double[]? coherence)
     {
-        var snapshot = new MeasurementHistorySnapshot
+        (double lowHz, double highHz) = ImpulseResponseFile.ResolveSweepBand(0, 0, 10, 48_000);
+        var result = new MeasurementResult
         {
             SampleRate = 48_000,
             Bits = 24,
-            Octaves = 10,
+            LowFrequencyHz = lowHz,
+            HighFrequencyHz = highHz,
             SweepDurationSeconds = 1.0,
             MeasurementMode = mode,
-            SweepDeconvolutionImpulseResponse = [new(0, 0), new(1, 0), new(0, 0), new(0, 0)],
-            SweepDeconvolutionPeakIndex = 1,
-            TransferImpulseResponse = transferIr,
-            TransferPeakIndex = transferPeakIndex,
-            TransferCoherence = coherence,
-            MeterSnapshot = InputLevelMeterSnapshot.Empty,
-            Preview = new MeasurementHistoryPreview()
+            SweepDeconvolution = new MeasurementImpulseResponse([new(0, 0), new(1, 0), new(0, 0), new(0, 0)], 1),
+            Transfer = transferIr == null
+                ? null
+                : new MeasurementImpulseResponse(transferIr, transferPeakIndex ?? 0),
+            TransferCoherence = coherence
         };
-        return snapshot.ToImpulseResponseFile();
+        return ImpulseResponseFile.From(result);
     }
 }

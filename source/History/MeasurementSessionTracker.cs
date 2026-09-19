@@ -1,48 +1,41 @@
 namespace Resonalyze.History;
 
-/// <summary>Owns which history entry the loaded IR belongs to; every transition goes through here. UI-thread only.</summary>
+/// <summary>Owns which history entry the open measurement belongs to; every transition goes through here. UI-thread only.</summary>
 internal sealed class MeasurementSessionTracker
 {
     private readonly MeasurementHistoryService history;
+    private readonly AnalyzerDocument document;
     private readonly Func<MeasurementSessionSnapshot> captureSession;
 
     public MeasurementSessionTracker(
         MeasurementHistoryService history,
+        AnalyzerDocument document,
         Func<MeasurementSessionSnapshot> captureSession)
     {
         this.history = history;
+        this.document = document;
         this.captureSession = captureSession;
     }
 
     public Guid? CurrentEntryId { get; private set; }
 
-    public bool HasImpulseResponse { get; private set; }
-
     public void Reset()
     {
         CurrentEntryId = null;
-        HasImpulseResponse = false;
     }
 
-    public void SetImpulseResponseAvailable(bool available)
+    public void MarkMeasurementCompleted(MeasurementResult result)
     {
-        HasImpulseResponse = available;
+        CurrentEntryId = history.AddMeasurement(result, captureSession());
     }
 
-    public void MarkMeasurementCompleted(ExpSweepMeasurement measurement)
+    public void MarkLoadedFile(string filePath, ImpulseResponseFile file, MeasurementResult result)
     {
-        HasImpulseResponse = true;
-        CurrentEntryId = history.AddMeasurement(measurement, captureSession());
-    }
-
-    public void MarkLoadedFile(string filePath, ImpulseResponseFile file)
-    {
-        HasImpulseResponse = true;
-        CurrentEntryId = history.AddOrUpdateLoadedFile(filePath, file, captureSession());
+        CurrentEntryId = history.AddOrUpdateLoadedFile(filePath, file, result, captureSession());
     }
 
     /// <summary>Creates a file-backed entry when nothing was current (e.g. the entry was deleted).</summary>
-    public void MarkSavedFile(string filePath, ImpulseResponseFile file)
+    public void MarkSavedFile(string filePath, ImpulseResponseFile file, MeasurementResult result)
     {
         if (CurrentEntryId.HasValue)
         {
@@ -50,6 +43,7 @@ internal sealed class MeasurementSessionTracker
                 CurrentEntryId.Value,
                 filePath,
                 file,
+                result,
                 captureSession());
         }
         else
@@ -57,17 +51,17 @@ internal sealed class MeasurementSessionTracker
             CurrentEntryId = history.AddOrUpdateLoadedFile(
                 filePath,
                 file,
+                result,
                 captureSession());
         }
     }
 
     public void MarkRestored(Guid entryId)
     {
-        HasImpulseResponse = true;
         CurrentEntryId = entryId;
     }
 
-    /// <summary>The loaded impulse response stays usable.</summary>
+    /// <summary>The open measurement stays usable.</summary>
     public void ForgetEntry(Guid entryId)
     {
         if (CurrentEntryId == entryId)
@@ -78,7 +72,7 @@ internal sealed class MeasurementSessionTracker
 
     public void PersistCurrentSessionState()
     {
-        if (!CurrentEntryId.HasValue || !HasImpulseResponse)
+        if (!CurrentEntryId.HasValue || !document.HasResult)
         {
             return;
         }

@@ -102,15 +102,12 @@ public sealed class ImpulseResponseFile
     [JsonConverter(typeof(Float32SampleArrayJsonConverter))]
     public double[]? TransferCoherence { get; set; }
 
-    public static ImpulseResponseFile Capture(ExpSweepMeasurement measurement)
+    internal static ImpulseResponseFile From(MeasurementResult measurement)
     {
         ArgumentNullException.ThrowIfNull(measurement);
-        MeasurementImpulseResponse sweepDeconvolution = measurement.SweepDeconvolution
-            ?? throw new InvalidOperationException("There is no impulse response to save.");
+        MeasurementImpulseResponse sweepDeconvolution = measurement.SweepDeconvolution;
         MeasurementImpulseResponse? transfer = measurement.Transfer;
         Complex[] sweepImpulseResponse = sweepDeconvolution.ImpulseResponse;
-        ExponentialSineSweep sweep = measurement.Sweep
-            ?? throw new InvalidOperationException("The sweep measurement is not initialized.");
 
         (double[] sweepRealSamples, double[]? sweepImaginarySamples) =
             ConvertSamples(sweepImpulseResponse, "Sweep deconvolution impulse response");
@@ -123,17 +120,6 @@ public sealed class ImpulseResponseFile
                 ConvertSamples(transfer.ImpulseResponse, "Transfer impulse response");
             transferPeakIndex = transfer.PeakIndex;
         }
-        InputLevelMeterSnapshot levels = measurement.CurrentLevels;
-        LevelSnapshotFileEntry? microphoneLevels =
-            CreateLevelSnapshotFileEntry(levels.Microphone);
-        LevelSnapshotFileEntry? loopbackLevels =
-            CreateLevelSnapshotFileEntry(levels.Loopback);
-
-        // Stamp the run-time snapshot, only when it matches this input: loaded files skip the live match.
-        SplCalibration? splCalibration =
-            measurement.MeasurementSplCalibration is { } anchor && measurement.InputMatches(anchor)
-                ? anchor
-                : null;
 
         return new ImpulseResponseFile
         {
@@ -148,46 +134,78 @@ public sealed class ImpulseResponseFile
             MeasuredHighFrequencyHz = measurement.MeasuredHighFrequencyHz,
             MeasuredAtUtc = measurement.MeasuredAtUtc,
             // May exceed the length rebuilt on load if it outran the generation cap.
-            SweepDurationSeconds = measurement.AchievedSweepDurationSeconds,
+            SweepDurationSeconds = measurement.SweepSampleDurationSeconds,
             PlayChannel = measurement.PlaybackChannel,
             MeasurementMode = measurement.MeasurementMode,
             TimingReference = measurement.TimingReference,
             SweepDeconvolutionPeakIndex = sweepDeconvolution.PeakIndex,
             AverageRunCount = measurement.AverageRunCount,
             AcceptedAverageRunCount = measurement.AcceptedAverageRunCount,
-            SplCalibration = splCalibration,
+            SplCalibration = measurement.SplCalibration,
             // This result's filter, never the current setting; Off is recorded, null stays null.
-            ProtectiveHighPass = measurement.MeasurementProtectiveHighPass is { } filter
+            ProtectiveHighPass = measurement.ProtectiveHighPass is { } filter
                 ? ProtectiveHighPassFileEntry.From(filter)
                 : null,
-            AudioSession = CreateAudioSessionFileEntry(
-                measurement.LastAudioSessionDiagnostics,
-                measurement.SampleRate,
-                measurement.Bits),
+            AudioSession = measurement.AudioSession,
             TransferPeakIndex = transferPeakIndex,
-            MicrophoneLevels = microphoneLevels,
-            LoopbackLevels = loopbackLevels,
-            MicrophoneCalibration = measurement.MeasurementMicrophoneCalibration,
+            MicrophoneLevels = CreateLevelSnapshotFileEntry(measurement.Levels.Microphone),
+            LoopbackLevels = CreateLevelSnapshotFileEntry(measurement.Levels.Loopback),
+            MicrophoneCalibration = measurement.MicrophoneCalibration,
             ArrayMicrophones = ArrayMicrophonesFileEntry.From(measurement.ArrayMicrophones),
             PreviewFrequencyResponse = CreatePreviewFileEntry(
-                MeasurementHistoryPreviewBuilder.Build(
-                    sweepImpulseResponse,
-                    sweepDeconvolution.PeakIndex,
-                    measurement.SampleRate,
-                    measurement.MeasurementMode,
-                    transfer?.ImpulseResponse,
-                    transferPeakIndex,
-                    MeasuredBand.Resolve(
-                        measurement.MeasurementProtectiveHighPass,
-                        measurement.MeasuredLowFrequencyHz,
-                        measurement.MeasuredHighFrequencyHz,
-                        measurement.SampleRate))),
+                MeasurementHistoryPreviewBuilder.Build(measurement)),
             SweepDeconvolutionRealSamples = sweepRealSamples,
             SweepDeconvolutionImaginarySamples = sweepImaginarySamples,
             TransferRealSamples = transferRealSamples,
             TransferImaginarySamples = transferImaginarySamples,
             TransferCoherence = measurement.TransferCoherence?.ToArray()
         };
+    }
+
+    /// <summary>The result this file holds, read as it was measured; older files fill the bands they never wrote.</summary>
+    internal MeasurementResult ToResult()
+    {
+        (double lowHz, double highHz) = ResolveSweepBand();
+        (double achievedLowHz, double achievedHighHz) = ResolveAchievedSweepBand();
+        (double measuredLowHz, double measuredHighHz) = MeasurementResult.ResolveMeasuredBand(
+            MeasuredLowFrequencyHz,
+            MeasuredHighFrequencyHz,
+            achievedLowHz,
+            achievedHighHz);
+        Complex[]? transfer = GetTransferImpulseResponse();
+        int averageRunCount = Math.Clamp(AverageRunCount, 1, 64);
+        return new MeasurementResult
+        {
+            SampleRate = SampleRate,
+            Bits = Bits,
+            PlaybackChannel = Enum.IsDefined(PlayChannel) ? PlayChannel : PlaybackChannel.Mono,
+            LowFrequencyHz = lowHz,
+            HighFrequencyHz = highHz,
+            AchievedLowFrequencyHz = achievedLowHz,
+            AchievedHighFrequencyHz = achievedHighHz,
+            MeasuredLowFrequencyHz = measuredLowHz,
+            MeasuredHighFrequencyHz = measuredHighHz,
+            SweepDurationSeconds = SweepDurationSeconds,
+            // Never re-stamped: a file saved today was still measured whenever it was measured.
+            MeasuredAtUtc = MeasuredAtUtc > DateTimeOffset.UnixEpoch ? MeasuredAtUtc : SavedAtUtc,
+            MeasurementMode = MeasurementMode,
+            TimingReference = TimingReference,
+            SweepDeconvolution = new MeasurementImpulseResponse(
+                GetSweepDeconvolutionImpulseResponse(),
+                SweepDeconvolutionPeakIndex),
+            Transfer = transfer != null
+                ? new MeasurementImpulseResponse(transfer, TransferPeakIndex ?? -1)
+                : null,
+            TransferCoherence = TransferCoherence?.ToArray(),
+            AverageRunCount = averageRunCount,
+            AcceptedAverageRunCount = Math.Clamp(AcceptedAverageRunCount, 1, averageRunCount),
+            Levels = GetMeterSnapshot(),
+            SplCalibration = SplCalibration,
+            MicrophoneCalibration = MicrophoneCalibration,
+            ProtectiveHighPass = ProtectiveHighPass?.ToConfiguration(),
+            ArrayMicrophones = ArrayMicrophones?.ToCurves() ?? [],
+            AudioSession = AudioSession
+        }.Validated();
     }
 
     public async Task SaveAsync(string path, CancellationToken cancellationToken = default)

@@ -122,8 +122,7 @@ public partial class VirtualCrossoverPanel
                 return;
             }
 
-            MeasurementHistorySnapshot snapshot = MeasurementHistoryService.CreateSnapshot(file);
-            if (TryAssignSource(targetState, revision, snapshot, SourceConflictPolicy.Prompt))
+            if (TryAssignSource(targetState, revision, file.ToResult(), SourceConflictPolicy.Prompt))
             {
                 OnSourceAssigned(
                     channel,
@@ -156,15 +155,15 @@ public partial class VirtualCrossoverPanel
         try
         {
             MeasurementHistoryEntry? entry = HistoryService?.FindById(entryId);
-            MeasurementHistorySnapshot? snapshot = HistoryService == null
+            MeasurementResult? result = HistoryService == null
                 ? null
-                : await HistoryService.GetSnapshotAsync(entryId);
-            if (entry == null || snapshot == null || IsDisposed)
+                : await HistoryService.GetResultAsync(entryId);
+            if (entry == null || result == null || IsDisposed)
             {
                 return;
             }
 
-            if (TryAssignSource(targetState, revision, snapshot, SourceConflictPolicy.Prompt))
+            if (TryAssignSource(targetState, revision, result, SourceConflictPolicy.Prompt))
             {
                 OnSourceAssigned(
                     channel,
@@ -197,7 +196,7 @@ public partial class VirtualCrossoverPanel
     private bool TryAssignSource(
         VirtualCrossoverChannelState targetState,
         int sourceRevision,
-        MeasurementHistorySnapshot snapshot,
+        MeasurementResult result,
         SourceConflictPolicy policy)
     {
         if (targetState.SourceRevision != sourceRevision)
@@ -205,7 +204,7 @@ public partial class VirtualCrossoverPanel
             return false;
         }
 
-        if (ResolvedVirtualDspSource.FromSnapshot(snapshot) is not { } resolved)
+        if (ResolvedVirtualDspSource.FromResult(result) is not { } resolved)
         {
             if (policy == SourceConflictPolicy.Prompt)
             {
@@ -300,11 +299,11 @@ public partial class VirtualCrossoverPanel
         RefreshAutoActionsEnabled();
         try
         {
-            (MeasurementHistorySnapshot? snapshot, string? relocatedPath) =
-                await LoadSnapshotFromReferenceAsync(settings);
-            if (snapshot != null &&
+            (MeasurementResult? result, string? relocatedPath) =
+                await LoadResultFromReferenceAsync(settings);
+            if (result != null &&
                 TryAssignSource(
-                    state, revision, snapshot, SourceConflictPolicy.RejectSilently) &&
+                    state, revision, result, SourceConflictPolicy.RejectSilently) &&
                 relocatedPath != null)
             {
                 // Pin the relocated path only if the measurement landed: a stored path always wins, so pinning a refused file
@@ -324,16 +323,15 @@ public partial class VirtualCrossoverPanel
     }
 
     // RelocatedPath is pinned by the caller only on acceptance: the autosave has no session file beside it to search again.
-    private async Task<(MeasurementHistorySnapshot? Snapshot, string? RelocatedPath)>
-        LoadSnapshotFromReferenceAsync(VirtualCrossoverChannelSettings settings)
+    private async Task<(MeasurementResult? Result, string? RelocatedPath)>
+        LoadResultFromReferenceAsync(VirtualCrossoverChannelSettings settings)
     {
         if (settings.HistoryEntryId is { } entryId && HistoryService != null)
         {
-            MeasurementHistorySnapshot? snapshot =
-                await HistoryService.GetSnapshotAsync(entryId);
-            if (snapshot != null)
+            MeasurementResult? result = await HistoryService.GetResultAsync(entryId);
+            if (result != null)
             {
-                return (snapshot, null);
+                return (result, null);
             }
         }
 
@@ -341,7 +339,7 @@ public partial class VirtualCrossoverPanel
         {
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
             return (
-                MeasurementHistoryService.CreateSnapshot(file),
+                file.ToResult(),
                 string.Equals(path, settings.SourceFilePath, StringComparison.Ordinal)
                     ? null
                     : path);

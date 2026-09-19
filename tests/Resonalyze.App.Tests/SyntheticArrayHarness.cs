@@ -1,7 +1,6 @@
 using System.Numerics;
 using System.Text;
 using Resonalyze.Dsp;
-using Resonalyze.History;
 using Xunit.Abstractions;
 
 namespace Resonalyze.App.Tests;
@@ -53,8 +52,7 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
                 continue;
             }
 
-            MeasurementHistorySnapshot snapshot = MeasurementHistoryService.CreateSnapshot(file);
-            ResolvedVirtualDspSource? source = ResolvedVirtualDspSource.FromSnapshot(snapshot);
+            ResolvedVirtualDspSource? source = ResolvedVirtualDspSource.FromResult(file.ToResult());
             Assert.NotNull(source);
 
             // A curve on an unused grid would come back null and silently disable the hybrid.

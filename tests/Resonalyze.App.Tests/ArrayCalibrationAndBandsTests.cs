@@ -1,5 +1,4 @@
 using Resonalyze.Dsp;
-using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
 
@@ -170,15 +169,14 @@ public sealed class ArrayCalibrationAndBandsTests
     }
 
     [Fact]
-    public void AHistoryEntryHandsOverItsArrayAndItsFilter()
+    public void AResultHandsItsArrayAndItsFilterToTheFile()
     {
         // History and disk loads must be the same measurement (the conversion must carry both fields).
-        var snapshot = new MeasurementHistorySnapshot
+        var result = new MeasurementResult
         {
             SampleRate = 48_000,
-            MeterSnapshot = InputLevelMeterSnapshot.Empty,
-            Preview = new MeasurementHistoryPreview(),
-            SweepDeconvolutionImpulseResponse = new System.Numerics.Complex[8],
+            Bits = 24,
+            SweepDeconvolution = new MeasurementImpulseResponse(new System.Numerics.Complex[8], 0),
             ArrayMicrophones =
             [
                 Microphone(70.0, measurement: true, channel: 0, Calibration(-2.0))
@@ -188,7 +186,7 @@ public sealed class ArrayCalibrationAndBandsTests
             MicrophoneCalibration = Calibration(-2.0)
         };
 
-        ImpulseResponseFile file = snapshot.ToImpulseResponseFile();
+        ImpulseResponseFile file = ImpulseResponseFile.From(result);
 
         Assert.NotNull(file.ArrayMicrophones);
         Assert.Single(file.ArrayMicrophones!.Microphones);

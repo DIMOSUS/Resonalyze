@@ -22,6 +22,7 @@ internal sealed class PlotModelFactory
     public const string TimeAxisKey = "time";
     public const string AutocorrelationAxisKey = "autocorrelation";
 
+    // The next run's configuration: the live SPL anchor, and the rate a plot takes when nothing is open.
     private readonly ExpSweepMeasurement expSweepMeasurement;
     private readonly NoiseMeasurement noiseMeasurement;
     private readonly Func<string?, CalibrationFile?> getCalibration;
@@ -39,6 +40,7 @@ internal sealed class PlotModelFactory
     private Func<CompareAnalysisSource?>? getCompareSource;
 
     public PlotModelFactory(
+        AnalyzerDocument document,
         ExpSweepMeasurement expSweepMeasurement,
         NoiseMeasurement noiseMeasurement,
         Func<string?, CalibrationFile?> getCalibration,
@@ -48,7 +50,7 @@ internal sealed class PlotModelFactory
         this.expSweepMeasurement = expSweepMeasurement;
         this.noiseMeasurement = noiseMeasurement;
         this.getCalibration = getCalibration;
-        measurementContext = new MeasurementPlotContext(expSweepMeasurement);
+        measurementContext = new MeasurementPlotContext(document);
         frequencyResponseOptions = options.FrequencyResponse;
         phaseResponseOptions = options.PhaseResponse;
         groupDelayOptions = options.GroupDelay;
@@ -61,12 +63,9 @@ internal sealed class PlotModelFactory
         burstDecayGenOptions = options.BurstDecay;
     }
 
-    public void SetImpulseResponseFileName(string? fileName)
-    {
-        measurementContext.SetImpulseResponseFileName(fileName);
-    }
-
     public string? ImpulseResponseFileName => measurementContext.ImpulseResponseFileName;
+
+    private int AnalysisSampleRate => measurementContext.Result?.SampleRate ?? expSweepMeasurement.SampleRate;
 
     // Compare overlay uses the SAME analysis settings as the main measurement.
     public void SetCompareSourceProvider(Func<CompareAnalysisSource?> provider) =>
@@ -168,7 +167,7 @@ internal sealed class PlotModelFactory
         {
             return DescribeWithoutRawForm(
                 (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves),
-                expSweepMeasurement.SampleRate,
+                AnalysisSampleRate,
                 frequencyResponseOptions.UseCalibration
                     ? GetCalibration(frequencyResponseOptions)
                     : null);
@@ -188,7 +187,7 @@ internal sealed class PlotModelFactory
                     frequencyResponseOptions.UseCalibration ? calibration : null),
                 (int)Math.Round(frequencyResponseOptions.SmoothingInverseOctaves),
                 // Compare is only offered at the main measurement's rate.
-                expSweepMeasurement.SampleRate > 0 ? expSweepMeasurement.SampleRate : null,
+                AnalysisSampleRate > 0 ? AnalysisSampleRate : null,
                 PointsCalibration: null,
                 Band: tag.Source == CurveSource.Compare
                     ? getCompareSource?.Invoke()?.Band ?? default
@@ -586,7 +585,7 @@ internal sealed class PlotModelFactory
                 AnalysisCurve curve = DataHelper.GetPhase(
                     primaryMeasurement,
                     phaseSettings,
-                    expSweepMeasurement.TransferCoherence);
+                    measurementContext.Result?.TransferCoherence);
 
                 // Tag representation so overlay math knows whether a difference must use the wrapped formula.
                 AddLineSeries(
@@ -618,7 +617,7 @@ internal sealed class PlotModelFactory
                 AnalysisCurve excessPhaseCurve = DataHelper.GetExcessPhase(
                     primaryMeasurement,
                     phaseSettings,
-                    expSweepMeasurement.TransferCoherence);
+                    measurementContext.Result?.TransferCoherence);
 
                 AddLineSeries(
                     model,
@@ -943,9 +942,9 @@ internal sealed class PlotModelFactory
     {
         ImpulseResponseOptions opt = impulseResponseOptions;
         ImpulseFrame = new ImpulseOverlayFrame(
-            opt, 0.0, null, expSweepMeasurement.SampleRate);
+            opt, 0.0, null, AnalysisSampleRate);
         // A band-limited view is not the record; the title says so.
-        string band = ImpulseBandLabel(opt, expSweepMeasurement.SampleRate);
+        string band = ImpulseBandLabel(opt, AnalysisSampleRate);
         PlotModel model = PlotModelStyle.CreateTitledModel(
             measurementContext.CreateTitle("Impulse Response" + band));
 
@@ -1945,8 +1944,7 @@ internal sealed class PlotModelFactory
         bool showCoherence)
     {
         if (!showCoherence ||
-            expSweepMeasurement.TransferCoherence is not { Length: > 1 } coherence ||
-            expSweepMeasurement.SampleRate <= 0)
+            measurementContext.Result is not { TransferCoherence: { Length: > 1 } coherence, SampleRate: > 0 } result)
         {
             return;
         }
@@ -1955,7 +1953,7 @@ internal sealed class PlotModelFactory
         AddCoherenceAxis(model);
         model.Series.Add(BuildCoherenceSeries(
             coherence,
-            expSweepMeasurement.SampleRate,
+            result.SampleRate,
             fftLength,
             options.SmoothingInverseOctaves));
     }
@@ -1972,7 +1970,7 @@ internal sealed class PlotModelFactory
         }
 
         ArrayMicrophoneDisplay display = ArrayMicrophoneCurves.Build(
-            expSweepMeasurement.ArrayMicrophones,
+            measurementContext.Result?.ArrayMicrophones ?? [],
             frequencyResponseOptions.UseCalibration,
             frequencyResponseOptions.SmoothingInverseOctaves);
 
@@ -2132,7 +2130,8 @@ internal sealed class PlotModelFactory
     /// <summary>Whether Main and Compare share one clock (both loopback-synchronized). Imported recordings are referenced to their own arrival,
     /// so time-carrying curves (phase, GD, impulse, vector sum) would show an unmeasured delay.</summary>
     private bool CompareSharesATimeReference() =>
-        expSweepMeasurement.TimingReference == TimingReference.SynchronizedLoopback &&
+        (measurementContext.Result?.TimingReference ?? TimingReference.SynchronizedLoopback) ==
+            TimingReference.SynchronizedLoopback &&
         getCompareSource?.Invoke() is { TimingReference: TimingReference.SynchronizedLoopback };
 
     // Compare view over its transfer IR; requires a matching sample rate so the ms gate and frequency axis align.
@@ -2148,7 +2147,7 @@ internal sealed class PlotModelFactory
         }
 
         if (compare.TransferImpulseResponse is not { Length: > 0 } transferIr ||
-            compare.SampleRate != expSweepMeasurement.SampleRate)
+            compare.SampleRate != AnalysisSampleRate)
         {
             return null;
         }
@@ -2172,22 +2171,24 @@ internal sealed class PlotModelFactory
         bool invertComparePolarity = false,
         FrequencyResponseOptions? options = null)
     {
-        if (expSweepMeasurement.TransferImpulseResponse is not { Length: > 0 } mainIr)
+        if (measurementContext.Result is not { Transfer.ImpulseResponse.Length: > 0 } main)
         {
             return null;
         }
 
+        Complex[] mainIr = main.Transfer.ImpulseResponse;
+
         if (!CompareSharesATimeReference() ||
             getCompareSource?.Invoke() is not { } compare ||
             compare.TransferImpulseResponse is not { Length: > 0 } compareIr ||
-            compare.SampleRate != expSweepMeasurement.SampleRate)
+            compare.SampleRate != main.SampleRate)
         {
             return null;
         }
 
         // Linear interpolation for fractional delays; slight HF droop near half-sample offsets is negligible at crossovers.
         double delaySamples =
-            compareDelayMs / 1_000.0 * expSweepMeasurement.SampleRate;
+            compareDelayMs / 1_000.0 * main.SampleRate;
         int wholeDelay = (int)Math.Floor(delaySamples);
         double fraction = delaySamples - wholeDelay;
         double sign = invertComparePolarity ? -1.0 : 1.0;
@@ -2210,8 +2211,8 @@ internal sealed class PlotModelFactory
         int mainStart = Math.Clamp(
             TransferIrStartCache.ResolveStartIndex(
                 mainIr,
-                expSweepMeasurement.SampleRate,
-                expSweepMeasurement.TransferPeakIndex),
+                main.SampleRate,
+                main.Transfer.PeakIndex),
             0,
             length - 1);
         int compareStart = Math.Clamp(
@@ -2225,7 +2226,7 @@ internal sealed class PlotModelFactory
 
         // PeakIndex stays a real peak (the earlier record's), not the anchor in disguise.
         int peakIndex = Math.Min(
-            Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, length - 1),
+            Math.Clamp(main.Transfer.PeakIndex, 0, length - 1),
             Math.Clamp(
                 compare.TransferPeakIndex + (int)Math.Round(delaySamples),
                 0,
@@ -2233,7 +2234,7 @@ internal sealed class PlotModelFactory
 
         FrequencyResponseOptions curveOptions = options ?? frequencyResponseOptions;
         AnalysisCurve curve = DataHelper.GetPrimarySpectrum(
-            new ImpulseMeasurementView(sum, peakIndex, expSweepMeasurement.SampleRate),
+            new ImpulseMeasurementView(sum, peakIndex, main.SampleRate),
             curveOptions,
             GetCalibration(curveOptions),
             anchorIndex);
@@ -2242,7 +2243,7 @@ internal sealed class PlotModelFactory
         {
             Points = MeasuredBand.MaskUnmeasured(
                 curve.Points,
-                [measurementContext.MeasuredBand, compare.Band])
+                [main.MeasuredBand, compare.Band])
         };
     }
 
@@ -2264,22 +2265,23 @@ internal sealed class PlotModelFactory
             return null;
         }
 
-        if (expSweepMeasurement.TransferImpulseResponse is not { Length: > 0 } mainIr ||
+        if (measurementContext.Result is not { Transfer.ImpulseResponse.Length: > 0 } main ||
             getCompareSource?.Invoke() is not { } compare ||
             compare.TransferImpulseResponse is not { Length: > 0 } compareIr)
         {
             return null;
         }
 
+        Complex[] mainIr = main.Transfer.ImpulseResponse;
         // Each windowed at its own start, resampled onto the sum's grid so all three align by index.
         AnalysisCurve mainMagnitude = DataHelper.GetPrimarySpectrum(
             new ImpulseMeasurementView(
                 mainIr,
-                Math.Clamp(expSweepMeasurement.TransferPeakIndex, 0, mainIr.Length - 1),
-                expSweepMeasurement.SampleRate)
+                Math.Clamp(main.Transfer.PeakIndex, 0, mainIr.Length - 1),
+                main.SampleRate)
             {
-                LowestMeasuredFrequencyHz = measurementContext.MeasuredBand.LowEdgeHz,
-                HighestMeasuredFrequencyHz = measurementContext.MeasuredBand.HighEdgeHz
+                LowestMeasuredFrequencyHz = main.MeasuredBand.LowEdgeHz,
+                HighestMeasuredFrequencyHz = main.MeasuredBand.HighEdgeHz
             },
             rawOptions,
             GetCalibration(rawOptions));

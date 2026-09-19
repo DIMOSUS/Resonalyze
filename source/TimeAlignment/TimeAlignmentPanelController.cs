@@ -5,7 +5,6 @@ using OxyPlot.Axes;
 using OxyPlot.Series;
 using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
-using Resonalyze.History;
 
 namespace Resonalyze;
 
@@ -14,7 +13,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private readonly Form owner;
     private readonly TimeAlignmentOptions options;
-    private readonly ExpSweepMeasurement measurement;
+    private readonly AnalyzerDocument document;
     private readonly Action saveSettings;
     private readonly Func<string?> getImpulseResponseFileName;
     private readonly Func<TimeAlignmentCompareMeasurement?> getCompareMeasurement;
@@ -61,7 +60,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         Form owner,
         TimeAlignmentPanel panel,
         TimeAlignmentOptions options,
-        ExpSweepMeasurement measurement,
+        AnalyzerDocument document,
         Action saveSettings,
         Func<string?> getImpulseResponseFileName,
         Func<TimeAlignmentCompareMeasurement?> getCompareMeasurement)
@@ -69,7 +68,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         this.owner = owner;
         this.panel = panel;
         this.options = options;
-        this.measurement = measurement;
+        this.document = document;
         this.saveSettings = saveSettings;
         this.getImpulseResponseFileName = getImpulseResponseFileName;
         this.getCompareMeasurement = getCompareMeasurement;
@@ -479,8 +478,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         out TimeAlignmentAnalysisSource source,
         out string message)
     {
+        MeasurementResult? measurement = document.Result;
         // An imported recording has no absolute time, so every delay this mode reports would be meaningless.
-        if (measurement.TimingReference == TimingReference.RecordedSweep)
+        if (measurement?.TimingReference == TimingReference.RecordedSweep)
         {
             source = default;
             message =
@@ -491,24 +491,24 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return false;
         }
 
-        if (measurement.TransferImpulseResponse is { Length: > 0 } transferImpulseResponse)
+        if (measurement?.Transfer is { ImpulseResponse.Length: > 0 } transfer)
         {
             source = new TimeAlignmentAnalysisSource(
                 "Main",
                 getImpulseResponseFileName() ?? "Transfer IR",
                 measurement.SampleRate,
                 measurement.Bits,
-                measurement.Sweep?.ComputedDuration ?? 0.0,
+                measurement.SweepDurationSeconds,
                 measurement.PlaybackChannel,
                 measurement.MeasurementMode,
-                RealSamples(ref mainProjection, transferImpulseResponse),
+                RealSamples(ref mainProjection, transfer.ImpulseResponse),
                 measurement.TransferCoherence,
-                measurement.CurrentLevels);
+                measurement.Levels);
             message = string.Empty;
             return true;
         }
 
-        if (measurement.SweepDeconvolutionImpulseResponse is { Length: > 0 })
+        if (measurement != null)
         {
             source = default;
             message =
@@ -527,13 +527,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private string CreateSourceSummary()
     {
-        if (measurement.TransferImpulseResponse is { Length: > 0 })
+        MeasurementResult? measurement = document.Result;
+        if (measurement?.HasTransfer == true)
         {
             string source = getImpulseResponseFileName() ?? "Transfer IR";
             return $"Source: {source}, {measurement.SampleRate} Hz, {measurement.Bits} bit.";
         }
 
-        if (measurement.SweepDeconvolutionImpulseResponse is { Length: > 0 })
+        if (measurement != null)
         {
             return
                 $"Source: Sweep deconvolution IR only, {measurement.SampleRate} Hz, {measurement.Bits} bit.\r\n" +
@@ -551,24 +552,24 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return "Compare: -";
         }
 
-        MeasurementHistorySnapshot snapshot = compare.Value.Snapshot;
-        return $"Compare: {compare.Value.DisplayName}, {snapshot.SampleRate} Hz, {snapshot.Bits} bit.";
+        MeasurementResult result = compare.Value.Result;
+        return $"Compare: {compare.Value.DisplayName}, {result.SampleRate} Hz, {result.Bits} bit.";
     }
 
     private TimeAlignmentAnalysisSource CreateCompareSource(
         TimeAlignmentCompareMeasurement compare,
-        MeasurementHistorySnapshot snapshot) =>
+        MeasurementResult result) =>
         new(
             "Compare",
             compare.DisplayName,
-            snapshot.SampleRate,
-            snapshot.Bits,
-            snapshot.SweepDurationSeconds,
-            snapshot.PlayChannel,
-            snapshot.MeasurementMode,
-            RealSamples(ref compareProjection, snapshot.TransferImpulseResponse!),
-            snapshot.TransferCoherence,
-            snapshot.MeterSnapshot);
+            result.SampleRate,
+            result.Bits,
+            result.SweepDurationSeconds,
+            result.PlaybackChannel,
+            result.MeasurementMode,
+            RealSamples(ref compareProjection, result.Transfer!.ImpulseResponse),
+            result.TransferCoherence,
+            result.Levels);
 
     private static TimeAlignmentAnalysisOptions CreateAnalysisOptions(
         AnalysisRequest request,
@@ -714,8 +715,9 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private PlotModel CreateBandpassPreviewModel(bool addCurve)
     {
-        double maxFrequency = Math.Min(20_000, measurement.SampleRate > 0
-            ? measurement.SampleRate * 0.5
+        int sampleRate = document.Result?.SampleRate ?? 0;
+        double maxFrequency = Math.Min(20_000, sampleRate > 0
+            ? sampleRate * 0.5
             : 20_000);
         var model = CreatePreviewPlotModel("Bandpass Window");
         var frequencyAxis = new LogarithmicAxis
@@ -787,16 +789,16 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
 
         TimeAlignmentCompareMeasurement compareValue = compare.Value;
-        MeasurementHistorySnapshot snapshot = compareValue.Snapshot;
-        if (snapshot.SampleRate != mainSource.SampleRate)
+        MeasurementResult result = compareValue.Result;
+        if (result.SampleRate != mainSource.SampleRate)
         {
             warning =
                 $"Sample rate mismatch: Main is {mainSource.SampleRate} Hz, " +
-                $"Compare is {snapshot.SampleRate} Hz.";
+                $"Compare is {result.SampleRate} Hz.";
             return null;
         }
 
-        if (snapshot.TransferImpulseResponse is not { Length: > 0 })
+        if (!result.HasTransfer)
         {
             warning = "Compare impulse response has no transfer IR.";
             return null;
@@ -805,7 +807,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         try
         {
             TimeAlignmentAnalysisSource compareSource =
-                CreateCompareSource(compareValue, snapshot);
+                CreateCompareSource(compareValue, result);
             HygieneEntry hygiene = Hygiene(ref compareHygiene, compareSource);
             crosstalk = hygiene.Crosstalk;
             return CleanForAnalysis(compareSource, hygiene, request.BandMode);
@@ -1780,7 +1782,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
 internal readonly record struct TimeAlignmentCompareMeasurement(
     string DisplayName,
-    MeasurementHistorySnapshot Snapshot);
+    MeasurementResult Result);
 
 internal readonly record struct TimeAlignmentCompareAnalysis(
     TimeAlignmentAnalysisSource Source,

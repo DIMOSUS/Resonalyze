@@ -5,10 +5,6 @@ namespace Resonalyze;
 
 public partial class Form1
 {
-    // One token for every request that makes a measurement current (history activation, VDSP Open in analyzers):
-    // "newest wins" only holds if all bump and check the same counter.
-    private long measurementActivationRevision;
-
     // Makes each multi-await restore atomic; the revision token then decides which one runs last.
     private readonly SemaphoreSlim historyRestoreGate = new(1, 1);
 
@@ -55,7 +51,7 @@ public partial class Form1
     }
 
     private async void HandleHistoryEntryActivated(Guid entryId) =>
-        await ActivateHistoryEntryAsync(entryId, ++measurementActivationRevision);
+        await ActivateHistoryEntryAsync(entryId, analyzerDocument.BeginActivation());
 
     private enum HistoryActivation
     {
@@ -72,8 +68,8 @@ public partial class Form1
     private async Task<HistoryActivation> ActivateHistoryEntryAsync(
         Guid entryId, long revision)
     {
-        // Restoring during a sweep would Init an active measurement.
-        if (expSweepMeasurement.InProgress)
+        // A run or an import is producing the next result.
+        if (analyzerDocument.IsBusy)
         {
             return HistoryActivation.Unavailable;
         }
@@ -81,13 +77,12 @@ public partial class Form1
         // Stale loads are dropped at every await boundary, so a slow entry cannot overwrite a newer one.
         try
         {
-            MeasurementHistorySnapshot? snapshot =
-                await measurementHistoryService.GetSnapshotAsync(entryId);
-            if (revision != measurementActivationRevision)
+            MeasurementResult? result = await measurementHistoryService.GetResultAsync(entryId);
+            if (!analyzerDocument.IsCurrent(revision))
             {
                 return HistoryActivation.Superseded;
             }
-            if (snapshot == null)
+            if (result == null)
             {
                 return HistoryActivation.Unavailable;
             }
@@ -98,18 +93,17 @@ public partial class Form1
                 sessionTracker.PersistCurrentSessionState();
             }
 
-            string? sourceFilePath = measurementHistoryService.FindById(entryId)
-                ?.SourceFilePath;
+            MeasurementHistoryEntry? entry = measurementHistoryService.FindById(entryId);
             await historyRestoreGate.WaitAsync();
             try
             {
-                if (revision != measurementActivationRevision)
+                if (!analyzerDocument.IsCurrent(revision))
                 {
                     return HistoryActivation.Superseded;
                 }
 
-                await RestoreHistorySnapshotAsync(snapshot, sourceFilePath);
-                if (revision != measurementActivationRevision)
+                await RestoreHistoryResultAsync(result, entry?.Session, entry?.SourceFilePath);
+                if (!analyzerDocument.IsCurrent(revision))
                 {
                     return HistoryActivation.Superseded;
                 }
@@ -149,9 +143,8 @@ public partial class Form1
             return;
         }
 
-        MeasurementHistorySnapshot? snapshot =
-            await measurementHistoryService.GetSnapshotAsync(entryId);
-        if (snapshot == null)
+        MeasurementResult? result = await measurementHistoryService.GetResultAsync(entryId);
+        if (result == null)
         {
             return;
         }
@@ -173,16 +166,12 @@ public partial class Form1
 
         try
         {
-            ImpulseResponseFile file = snapshot.ToImpulseResponseFile();
+            ImpulseResponseFile file = ImpulseResponseFile.From(result);
             await file.SaveAsync(dialog.FileName);
-            measurementHistoryService.MarkSaved(
-                entryId,
-                dialog.FileName,
-                file,
-                snapshot.Session);
+            measurementHistoryService.MarkSaved(entryId, dialog.FileName, file, result);
             if (sessionTracker.CurrentEntryId == entryId)
             {
-                SetImpulseResponseSourceFile(dialog.FileName);
+                analyzerDocument.Rename(dialog.FileName);
                 UpdateLastImpulseResponseDirectory(dialog.FileName);
                 RefreshCurrentModePlot();
             }
@@ -217,60 +206,30 @@ public partial class Form1
         });
     }
 
-    private async Task RestoreHistorySnapshotAsync(
-        MeasurementHistorySnapshot snapshot,
+    private async Task RestoreHistoryResultAsync(
+        MeasurementResult result,
+        MeasurementSessionSnapshot? session,
         string? sourceFilePath)
     {
-        (double restoredLowHz, double restoredHighHz) = snapshot.ResolveSweepBand();
-        (double achievedLowHz, double achievedHighHz) = snapshot.ResolveAchievedSweepBand();
-        expSweepMeasurement.RestoreImpulseResponse(
-            restoredLowHz,
-            restoredHighHz,
-            snapshot.SampleRate,
-            snapshot.Bits,
-            snapshot.SweepDurationSeconds,
-            snapshot.PlayChannel,
-            snapshot.SweepDeconvolutionImpulseResponse,
-            snapshot.SweepDeconvolutionPeakIndex,
-            snapshot.MeasurementMode,
-            snapshot.TransferImpulseResponse,
-            snapshot.TransferPeakIndex,
-            snapshot.TransferCoherence,
-            snapshot.AverageRunCount,
-            snapshot.AcceptedAverageRunCount,
-            achievedLowHz,
-            achievedHighHz,
-            snapshot.TimingReference,
-            snapshot.MeasuredLowFrequencyHz,
-            snapshot.MeasuredHighFrequencyHz,
-            snapshot.MeasuredAtUtc);
-        expSweepMeasurement.RestoreLevelSnapshot(snapshot.MeterSnapshot);
         // Both halves of K travel with the entry, as when opening the file.
-        AdoptRestoredResult(
-            snapshot.SplCalibration,
-            snapshot.MicrophoneCalibration,
-            snapshot.ArrayMicrophones,
-            snapshot.ProtectiveHighPass);
-
-        if (snapshot.Session != null)
+        InstallMeasurement(result, sourceFilePath);
+        if (session != null)
         {
-            ApplySessionSnapshot(snapshot.Session, snapshot.SampleRate);
+            ApplySessionSnapshot(session, result.SampleRate);
         }
 
         ApplyMeasurementConfigurationToControllers();
-        SetImpulseResponseSourceFile(sourceFilePath);
-        sessionTracker.SetImpulseResponseAvailable(true);
         UpdatePeakInfo();
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
 
-        if (snapshot.Session != null)
+        if (session != null)
         {
             // Mode switch re-prepares overlays hidden, so only the active slots are re-shown. Audio settings untouched.
-            await SelectModeAsync(NormalizeSessionMode(snapshot.Session.ActiveMode));
+            await SelectModeAsync(NormalizeSessionMode(session.ActiveMode));
             overlayCollection.RestoreActiveSlots(
                 CurrentMode,
-                snapshot.Session.ActiveOverlaySlots);
+                session.ActiveOverlaySlots);
             SaveMeasurementSettings();
         }
         else
@@ -300,7 +259,7 @@ public partial class Form1
     private async Task StartNewSessionAsync()
     {
         // Emptying the session supersedes any in-flight load or activation.
-        measurementActivationRevision++;
+        analyzerDocument.BeginActivation();
         sessionTracker.PersistCurrentSessionState();
 
         if (liveSpectrumController.InProgress)
@@ -310,8 +269,8 @@ public partial class Form1
         liveSpectrumController.ForgetLastCurve();
 
         sessionTracker.Reset();
-        SetImpulseResponseAvailability(false);
-        SetImpulseResponseSourceFile(null);
+        analyzerDocument.Clear();
+        RefreshMeasurementCommands();
 
         ApplySessionSnapshot(
             new MeasurementSessionSnapshot(),

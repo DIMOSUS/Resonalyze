@@ -24,19 +24,27 @@ public class ImpulsePreviewOptionsForm : Form
         };
     }
 
-    protected ExpSweepMeasurement? Measurement { get; private set; }
+    private protected AnalyzerDocument? Document { get; private set; }
 
-    protected void AttachMeasurement(ExpSweepMeasurement measurement)
+    private int configuredSampleRate;
+
+    private protected MeasurementResult? Measurement => Document?.Result;
+
+    /// <summary>The open result's rate, or the one the next run is configured for when nothing is open.</summary>
+    protected int SampleRate => Measurement?.SampleRate ?? configuredSampleRate;
+
+    private protected void AttachMeasurement(AnalyzerDocument document, int configuredSampleRate)
     {
-        ArgumentNullException.ThrowIfNull(measurement);
-        if (ReferenceEquals(Measurement, measurement))
+        ArgumentNullException.ThrowIfNull(document);
+        this.configuredSampleRate = configuredSampleRate;
+        if (ReferenceEquals(Document, document))
         {
             return;
         }
 
         DetachMeasurement();
-        Measurement = measurement;
-        measurement.ImpulseResponseChanged += HandleImpulseResponseChanged;
+        Document = document;
+        document.Changed += HandleImpulseResponseChanged;
     }
 
     /// <summary>Suppresses the several renders each ValueChanged would trigger before Init's final render.</summary>
@@ -172,7 +180,7 @@ public class ImpulsePreviewOptionsForm : Form
 
         OnGatePreviewRendering();
 
-        if (Measurement is not { SampleRate: > 0 } measurement ||
+        if (Document == null ||
             lengths is not { } l ||
             gate is not { } g)
         {
@@ -181,7 +189,7 @@ public class ImpulsePreviewOptionsForm : Form
 
         ImpulseWindowPreview.UpdateGated(
             plotView,
-            measurement,
+            Measurement,
             (double)g.Offset.Value,
             (double)l.Left.Value,
             (double)l.Window.Value,
@@ -237,10 +245,10 @@ public class ImpulsePreviewOptionsForm : Form
 
     private void DetachMeasurement()
     {
-        if (Measurement != null)
+        if (Document != null)
         {
-            Measurement.ImpulseResponseChanged -= HandleImpulseResponseChanged;
-            Measurement = null;
+            Document.Changed -= HandleImpulseResponseChanged;
+            Document = null;
         }
     }
 

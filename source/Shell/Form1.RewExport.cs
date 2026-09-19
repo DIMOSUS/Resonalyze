@@ -72,23 +72,24 @@ public partial class Form1
     /// <summary>A finished transfer response owned by the IR side (in MMM Save/Load belong to the capture).</summary>
     internal bool CanExportToRew =>
         !LiveCaptureOwnsSaveLoad &&
-        !expSweepMeasurement.InProgress &&
-        expSweepMeasurement.Transfer is { ImpulseResponse.Length: > 0 };
+        !analyzerDocument.IsBusy &&
+        analyzerDocument.Result?.HasTransfer == true;
 
     private async Task SendToRewAsync(string? version)
     {
-        if (expSweepMeasurement.Transfer is not { ImpulseResponse.Length: > 0 } transfer)
+        if (analyzerDocument.Result is not { Transfer.ImpulseResponse.Length: > 0 } result)
         {
             return;
         }
 
-        double? splOffsetDb = new MeasurementPlotContext(expSweepMeasurement).SplOffsetDb;
+        MeasurementImpulseResponse transfer = result.Transfer;
+        double? splOffsetDb = result.SplOffsetDb;
         using var dialog = new RewExportDialog(
             SuggestRewMeasurementName(),
             RewBaseUrl,
             version,
             splOffsetDb,
-            expSweepMeasurement.TimingReference);
+            result.TimingReference);
         if (dialog.ShowDialog(this) != DialogResult.OK)
         {
             return;
@@ -120,18 +121,18 @@ public partial class Form1
         var request = new RewExportRequest(
             samples,
             transfer.PeakIndex,
-            expSweepMeasurement.SampleRate,
+            result.SampleRate,
             dialog.MeasurementName,
             splOffsetDb);
 
         UseWaitCursor = true;
         try
         {
-            RewExportResult result = await CreateRewExport(baseAddress!)
+            RewExportResult sent = await CreateRewExport(baseAddress!)
                 .SendAsync(request, CancellationToken.None);
-            if (!result.Verified)
+            if (!sent.Verified)
             {
-                ReportRewProblem(result.Problem!);
+                ReportRewProblem(sent.Problem!);
             }
         }
         catch (RewApiException exception)

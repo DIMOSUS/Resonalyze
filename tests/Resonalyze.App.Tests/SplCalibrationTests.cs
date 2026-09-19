@@ -1,4 +1,3 @@
-using System.Numerics;
 using Resonalyze.Audio;
 using Resonalyze.Dsp;
 
@@ -173,31 +172,27 @@ public sealed class SplCalibrationTests
     private static readonly MeasurementInputIdentity WaveInput =
         new(AudioBackend.Wave, 44_100, 24, 0, -1, null, null);
 
-    private static ExpSweepMeasurement RestoredMeasurement(
-        SplCalibration? anchor, MeasurementInputIdentity? input = null)
+    // The anchor is frozen when the run starts, and kept only when it was captured on the input the run measures.
+    private static async Task<MeasurementResult> MeasureAsync(SplCalibration? anchor)
     {
-        var measurement = new ExpSweepMeasurement(new FakeAudioSessionFactory());
-        measurement.RestoreImpulseResponse(
-            lowFrequencyHz: 20,
-            highFrequencyHz: 20_000,
-            sampleRate: 44_100,
-            bits: 24,
-            sweepDurationSeconds: 1.0,
-            playChannel: PlaybackChannel.Right,
-            sweepDeconvolutionImpulseResponse: [Complex.Zero, Complex.One, Complex.Zero],
-            sweepDeconvolutionPeakIndex: 1);
-        // Restore clears both via Init; Capture validates against these, not the app's current device.
-        measurement.MeasurementSplCalibration = anchor;
-        measurement.MeasurementInput = input ?? WaveInput;
-        return measurement;
+        var factory = new FakeAudioSessionFactory(
+            duplexFactory: (_, signal) => new RecordingDuplexSession(
+                signal, (_, s, tail, _) => Task.FromResult(SyntheticCapture.Good(s, tail))));
+        using var measurement = new ExpSweepMeasurement(factory);
+        measurement.Init(new SweepMeasurementConfiguration(
+            new SweepSignalConfiguration(20, 20_000, 44_100, 24, 0.05, PlaybackChannel.Mono),
+            new SweepAudioConfiguration(WaveInputChannelOffset: 0, WaveLoopbackInputChannelOffset: 1),
+            new SweepAveragingConfiguration(1)));
+        measurement.SplCalibration = anchor;
+        MeasurementResult? result = await measurement.RunAsync();
+        Assert.True(result != null, measurement.LastError?.ToString());
+        return result;
     }
 
     [Fact]
-    public void Capture_StampsTheMeasurementsActiveAnchor()
+    public async Task ARun_StampsTheAnchorOfItsOwnInput()
     {
-        using ExpSweepMeasurement measurement = RestoredMeasurement(MatchingWaveAnchor());
-
-        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+        ImpulseResponseFile file = ImpulseResponseFile.From(await MeasureAsync(MatchingWaveAnchor()));
 
         Assert.NotNull(file.SplCalibration);
         Assert.Equal(94.0, file.SplCalibration.ReferenceLevelDbSpl);
@@ -288,24 +283,25 @@ public sealed class SplCalibrationTests
     }
 
     [Fact]
-    public void Capture_DropsAnAnchorCapturedOnADifferentInput()
+    public async Task ARun_DropsAnAnchorCapturedOnADifferentInput()
     {
-        using ExpSweepMeasurement measurement = RestoredMeasurement(ValidAnchor());
+        MeasurementResult result = await MeasureAsync(ValidAnchor());
 
-        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+        Assert.Null(result.SplCalibration);
+        ImpulseResponseFile file = ImpulseResponseFile.From(result);
 
         Assert.Null(file.SplCalibration);
     }
 
     [Fact]
-    public void Capture_KeepsALoadedFilesAnchorWhenReSavedOnAnotherDevice()
+    public void AReSave_KeepsALoadedFilesAnchorOnAnotherDevice()
     {
         // Re-saving validates the anchor against the file's own input identity, not the current device.
         SplCalibration anchor = ValidAnchor();
-        using ExpSweepMeasurement measurement =
-            RestoredMeasurement(anchor, anchor.CaptureIdentity);
+        ImpulseResponseFile stored = ImpulseResponseFileAtomicSaveTests.CreateFile(sampleValue: 1.0);
+        stored.SplCalibration = anchor;
 
-        ImpulseResponseFile file = ImpulseResponseFile.Capture(measurement);
+        ImpulseResponseFile file = ImpulseResponseFile.From(stored.ToResult());
 
         Assert.NotNull(file.SplCalibration);
         Assert.Equal(114.5, file.SplCalibration.OffsetDb, 9);

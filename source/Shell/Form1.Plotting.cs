@@ -273,19 +273,19 @@ public partial class Form1
         }
 
         string transferPeak;
-        if (expSweepMeasurement.Transfer is not { } transfer)
+        if (analyzerDocument.Result is not { Transfer: { } transfer } result)
         {
             transferPeak = "--";
         }
         else
         {
             int peakSamples = transfer.PeakIndex;
-            double peakMs = expSweepMeasurement.SampleRate > 0
-                ? peakSamples * 1000.0 / expSweepMeasurement.SampleRate
+            double peakMs = result.SampleRate > 0
+                ? peakSamples * 1000.0 / result.SampleRate
                 : 0;
             transferPeak = $"{peakMs:0.000} ms ({peakSamples} samples)";
         }
-        string text = expSweepMeasurement.InProgress
+        string text = analyzerDocument.IsBusy
             ? "Peaks: measuring..."
             : "Transfer IR Peak: " + transferPeak;
         model.Annotations.Add(new OverlayTextAnnotation
@@ -303,5 +303,5 @@ public partial class Form1
     }
 
     private bool CanDrawCurrentMeasurement() =>
-        sessionTracker.HasImpulseResponse && !expSweepMeasurement.InProgress;
+        analyzerDocument.HasResult && !analyzerDocument.IsBusy;
 }

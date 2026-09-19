@@ -1,5 +1,4 @@
 ﻿using System.Numerics;
-using Resonalyze.History;
 
 namespace Resonalyze;
 
@@ -15,9 +14,9 @@ internal sealed class CompareSelection
     public void Set(
         string displayName,
         string? sourceFilePath,
-        MeasurementHistorySnapshot snapshot)
+        MeasurementResult result)
     {
-        current = new CompareMeasurementSelection(displayName, sourceFilePath, snapshot);
+        current = new CompareMeasurementSelection(displayName, sourceFilePath, result);
         Changed?.Invoke();
     }
 
@@ -30,41 +29,37 @@ internal sealed class CompareSelection
     public CompareAnalysisSource? GetAnalysisSource()
     {
         if (current is not { } selection ||
-            selection.Snapshot.TransferImpulseResponse is not { Length: > 0 } transferIr)
+            selection.Result.Transfer is not { ImpulseResponse.Length: > 0 } transfer)
         {
             return null;
         }
 
         return new CompareAnalysisSource(
             selection.DisplayName,
-            selection.Snapshot.SampleRate,
-            transferIr,
-            selection.Snapshot.TransferPeakIndex ?? 0,
-            selection.Snapshot.TransferCoherence,
+            selection.Result.SampleRate,
+            transfer.ImpulseResponse,
+            transfer.PeakIndex,
+            selection.Result.TransferCoherence,
             // Its own K: loopback levels differ unless both share a session.
-            selection.Snapshot.SplOffsetDb,
-            selection.Snapshot.TimingReference,
-            MeasuredBand.Resolve(
-                selection.Snapshot.ProtectiveHighPass,
-                selection.Snapshot.MeasuredLowFrequencyHz,
-                selection.Snapshot.MeasuredHighFrequencyHz,
-                selection.Snapshot.SampleRate));
+            selection.Result.SplOffsetDb,
+            selection.Result.TimingReference,
+            selection.Result.MeasuredBand);
     }
 
     // Recorded-sweep imports cannot join Time Alignment: their arrival depends on when the recorder started.
     public TimeAlignmentCompareMeasurement? GetTimeAlignmentMeasurement() =>
         current is not { } selection ||
-            selection.Snapshot.TimingReference == TimingReference.RecordedSweep
+            selection.Result.TimingReference == TimingReference.RecordedSweep
             ? null
             : new TimeAlignmentCompareMeasurement(
                 selection.DisplayName,
-                selection.Snapshot);
+                selection.Result);
 }
 
 internal sealed record CompareMeasurementSelection(
     string DisplayName,
     string? SourceFilePath,
-    MeasurementHistorySnapshot Snapshot);
+    MeasurementResult Result);
 
 // Sample rate match is validated by consumers. SplOffsetDb null means no anchor: FR omits it in dB SPL.
 public readonly record struct CompareAnalysisSource(

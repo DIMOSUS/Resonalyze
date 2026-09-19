@@ -38,28 +38,19 @@ public partial class Form1
                 .ToList();
     }
 
-    /// <summary>Installs what belongs to the result, not the next run; shared by file open and history (Init clears all of it).</summary>
-    /// <remarks>The SPL anchor's capture identity stands in for the result's input, so a re-save validates against the measured input.</remarks>
-    private void AdoptRestoredResult(
-        SplCalibration? splCalibration,
-        VirtualCrossoverCalibrationSettings? microphoneCalibration,
-        IReadOnlyList<ArrayMicrophoneCurve> arrayMicrophones,
-        ProtectiveHighPassConfiguration? protectiveHighPass)
+    /// <summary>Makes <paramref name="result"/> the open measurement; every input that restores one comes through here.</summary>
+    /// <remarks>Read through its own calibration: every file carries it, and imports carry none, so they must not get the user's mic curve.</remarks>
+    private void InstallMeasurement(MeasurementResult result, string? sourceName)
     {
-        expSweepMeasurement.MeasurementSplCalibration = splCalibration;
-        expSweepMeasurement.MeasurementMicrophoneCalibration = microphoneCalibration;
-        expSweepMeasurement.ArrayMicrophones = arrayMicrophones;
-        // Including null: "unknown filter" differs from "none".
-        expSweepMeasurement.MeasurementProtectiveHighPass = protectiveHighPass;
-        expSweepMeasurement.MeasurementInput = splCalibration?.CaptureIdentity;
-        // For the history path; a no-op when the file path already selected it.
+        analyzerDocument.Install(result, sourceName);
+        inputLevelMeterController.Show(result.Levels);
         SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
     }
 
     /// <remarks>The measurement's own curve is not in the calibration service's list, so always resolve through here.</remarks>
     private CalibrationFile? ResolveCalibration(string? calibrationId) =>
         MicrophoneCalibrationIds.IsOwn(calibrationId)
-            ? expSweepMeasurement.MeasurementMicrophoneCalibration?.ToCalibrationFile()
+            ? analyzerDocument.Result?.MicrophoneCalibration?.ToCalibrationFile()
             : microphoneCalibration.Get(calibrationId);
 
     /// <remarks><see cref="MicrophoneCalibrationIds.Own"/> is a regular entry, marked unavailable when the open measurement carries none.</remarks>
@@ -68,7 +59,7 @@ public partial class Form1
         new MicrophoneCalibrationEntry(
             MicrophoneCalibrationIds.Own,
             "Own (as measured)",
-            expSweepMeasurement.MeasurementMicrophoneCalibration != null),
+            analyzerDocument.Result?.MicrophoneCalibration != null),
         .. microphoneCalibration.GetEntries()
     ];
 
@@ -101,9 +92,8 @@ public partial class Form1
             entry?.FileName);
     }
 
-    private void SetImpulseResponseAvailability(bool available)
+    private void RefreshMeasurementCommands()
     {
-        sessionTracker.SetImpulseResponseAvailable(available);
         // In a capture mode the button belongs to the live analyzer.
         RefreshSaveAvailability();
         commandController.SetLoadAvailable(true);
@@ -113,24 +103,20 @@ public partial class Form1
     {
         buttonRecord.Text = "Running...";
         sessionTracker.Reset();
-        SetImpulseResponseSourceFile(null);
         UpdatePeakInfo();
         commandController.SetSaveAvailable(false);
         commandController.SetLoadAvailable(false);
     }
 
-    /// <param name="sourceName">Titles a measurement with no file; must hold no path separators.</param>
-    private void ApplyLoadedImpulseResponseState(string? filePath, string? sourceName = null)
+    /// <param name="sourceName">A file path, or a title for a measurement with no file (no path separators).</param>
+    private void ShowLoadedMeasurement(MeasurementResult result, string sourceName, bool fromFile)
     {
-        // Every file from disk is read through its own calibration; imports carry none and must not get the user's mic curve.
-        SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
+        InstallMeasurement(result, sourceName);
         ApplyMeasurementConfigurationToControllers();
-        SetImpulseResponseSourceFile(filePath ?? sourceName);
-        if (!string.IsNullOrWhiteSpace(filePath))
+        if (fromFile)
         {
-            UpdateLastImpulseResponseDirectory(filePath);
+            UpdateLastImpulseResponseDirectory(sourceName);
         }
-        sessionTracker.SetImpulseResponseAvailable(true);
         UpdatePeakInfo();
         RefreshCurrentModePlot();
     }

@@ -155,8 +155,6 @@ public partial class Form1
     private void OnCompareMeasurementChanged()
     {
         UpdateCompareButton();
-        timeAlignmentController.RefreshConfiguration();
-        RefreshCurrentModePlot();
         dockedModeSettingsHost.InvokeIfOpen<PROpt>(dialog => dialog.RefreshComparePreview());
         dockedModeSettingsHost.InvokeIfOpen<GDOpt>(dialog => dialog.RefreshComparePreview());
     }

@@ -219,10 +219,8 @@ public partial class Form1
             viewSettings.ApplySession(session, result.SampleRate);
         }
 
+        // The live analyzer is configured with the entry's live options.
         ApplyMeasurementConfigurationToControllers();
-        analyzerPlot.UpdatePeakInfo();
-        dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
-            panel => panel.RefreshSplAvailability());
 
         if (session != null)
         {
@@ -230,10 +228,6 @@ public partial class Form1
             await SelectModeAsync(NormalizeSessionMode(session.ActiveMode));
             analyzerPlot.RestoreOverlaySlots(session.ActiveOverlaySlots);
             SaveMeasurementSettings();
-        }
-        else
-        {
-            RefreshCurrentModePlot();
         }
 
         return true;

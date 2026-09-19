@@ -10,8 +10,9 @@ namespace Resonalyze;
 /// curve labels, the zoom it was left at and the phase modes' peak read-out.
 /// </summary>
 /// <remarks>
-/// Live Spectrum draws its captures into the same view itself (<see cref="LiveSpectrumController"/>); this class still
-/// owns the view's mode, zoom memory and overlays while it does.
+/// Redraws on its own when the open measurement or the compare selection changes, once per burst of changes. Live
+/// Spectrum draws its captures into the same view itself (<see cref="LiveSpectrumController"/>); this class still owns
+/// the view's mode, zoom memory and overlays while it does.
 /// </remarks>
 internal sealed class AnalyzerPlot : IModeView
 {
@@ -23,6 +24,7 @@ internal sealed class AnalyzerPlot : IModeView
     private readonly Control showAllButton;
     private readonly Control hideAllButton;
     private readonly PlotLabelsPanelController labels;
+    private readonly DeferredRefresh measurementChanged;
     // Each mode's checked slots, kept while another mode is shown.
     private readonly ActiveOverlaySlotTracker activeOverlaySlots = new();
     private ModeDescriptor descriptor = ModeCatalog.For(ModeTab.Frequency);
@@ -37,6 +39,7 @@ internal sealed class AnalyzerPlot : IModeView
         Control hideAllButton,
         WrappingToolTip toolTip,
         AnalyzerDocument document,
+        CompareSelection compare,
         PlotModelFactory factory)
     {
         this.owner = owner;
@@ -67,6 +70,9 @@ internal sealed class AnalyzerPlot : IModeView
         Overlays.SetImpulseFrameProvider(
             () => Mode == Mode.ImpulseResponse ? factory.ImpulseFrame : null);
         Overlays.SetComplexSumProvider(BuildComplexSumOverlayPoints);
+        measurementChanged = new DeferredRefresh(owner, RedrawChangedMeasurement);
+        document.Changed += measurementChanged.Request;
+        compare.Changed += measurementChanged.Request;
     }
 
     public PlotView View { get; }
@@ -156,6 +162,8 @@ internal sealed class AnalyzerPlot : IModeView
         bool includeCurves = IncludesCurves;
         bool showOverlay = descriptor.ShowOverlayCurves;
         int version = Interlocked.Increment(ref refreshVersion);
+        // A change during the build queues a redraw, which drops this build.
+        measurementChanged.Refreshed();
         Mode mode = Mode;
         PlotModel model = await Task.Run(() => Factory.Create(mode, includeCurves));
         if (owner.IsDisposed ||
@@ -301,9 +309,19 @@ internal sealed class AnalyzerPlot : IModeView
 
     private bool IncludesCurves => descriptor.SupportsCurveDrawing && CanDrawMeasurement;
 
+    // A run or an import still producing keeps what is on screen; its result redraws when it lands.
+    private void RedrawChangedMeasurement()
+    {
+        if (!document.IsBusy)
+        {
+            Redraw();
+        }
+    }
+
     private void Draw()
     {
         using var _ = AppProfiler.Zone("AnalyzerPlot.Draw");
+        measurementChanged.Refreshed();
         bool includeCurves = IncludesCurves;
         Show(Factory.Create(Mode, includeCurves), includeCurves, descriptor.ShowOverlayCurves);
     }

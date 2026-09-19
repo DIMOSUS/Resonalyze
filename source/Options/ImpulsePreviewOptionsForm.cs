@@ -261,10 +261,13 @@ public class ImpulsePreviewOptionsForm : Form
 
         if (IsHandleCreated && InvokeRequired)
         {
-            BeginInvoke((MethodInvoker)UpdateIrPreview);
+            BeginInvoke((MethodInvoker)OnMeasurementChanged);
             return;
         }
 
-        UpdateIrPreview();
+        OnMeasurementChanged();
     }
+
+    /// <summary>The open measurement changed: the preview redraws; a panel showing more of it adds to this.</summary>
+    protected virtual void OnMeasurementChanged() => UpdateIrPreview();
 }

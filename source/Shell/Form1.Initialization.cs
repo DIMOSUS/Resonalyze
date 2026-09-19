@@ -37,6 +37,7 @@ public partial class Form1
             buttonOverlayHideAll,
             toolTip1,
             analyzerDocument,
+            compareSelection,
             createdPlotModelFactory);
         LiveSpectrumController createdLiveSpectrumController = new(
             this,
@@ -68,8 +69,7 @@ public partial class Form1
             viewSettings.TimeAlignment,
             analyzerDocument,
             () => SaveMeasurementSettings(),
-            () => plotModelFactory.ImpulseResponseFileName,
-            compareSelection.GetTimeAlignmentMeasurement);
+            compareSelection);
         InputLevelMeterController createdInputLevelMeterController = new(
             this,
             inputLevelMeterPanel,
@@ -272,16 +272,8 @@ public partial class Form1
                 ShowMeasurementError("The measurement failed.", expSweepMeasurement.LastError);
             }
 
+            // A run that landed nothing still ends "measuring...".
             analyzerPlot.UpdatePeakInfo();
-
-            if (success && CurrentMode != Mode.LiveSpectrum)
-            {
-                RefreshCurrentModePlot();
-            }
-
-            // Every completion can change SPL availability either way; the panel only evaluates on open.
-            dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
-                panel => panel.RefreshSplAvailability());
             // The run released the device (success or not); refresh the settings panel's deferred device view.
             RefreshOpenMeasurementSettingsDevice();
 

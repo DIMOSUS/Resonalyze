@@ -132,6 +132,80 @@ public sealed class AnalyzerWiringTests : IDisposable
         });
     }
 
+    // Nothing tells Time Alignment a measurement landed: it reads the document while it is on screen.
+    [Fact]
+    public void TimeAlignmentReadsAFileOpenedWhileItIsShown()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Select(ModeTab.TimeAlignment);
+            Assert.StartsWith("Source: waiting", analyzer.TimeAlignment.SourceSummaryLabel.Text);
+
+            analyzer.Open(path);
+
+            Assert.Contains("cabin left.json", analyzer.TimeAlignment.SourceSummaryLabel.Text);
+        });
+    }
+
+    [Fact]
+    public void TheCompareSelectionRedrawsThePlot()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+            var compare = analyzer.Field<CompareSelection>("compareSelection");
+            Assert.DoesNotContain(analyzer.Plot.Series, IsCompareCurve);
+
+            compare.Set("reference", null, Measurement(peak: 480));
+            analyzer.Pump();
+            Assert.Contains(analyzer.Plot.Series, IsCompareCurve);
+
+            compare.Clear();
+            analyzer.Pump();
+            Assert.DoesNotContain(analyzer.Plot.Series, IsCompareCurve);
+        });
+    }
+
+    // A save renames the open measurement; the title follows the document.
+    [Fact]
+    public void ARenameRetitlesThePlot()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+
+            analyzer.Document.Rename(Path.Combine(directory, "saved.json"));
+            analyzer.Pump();
+
+            Assert.Equal("Frequency Response - saved.json", analyzer.Plot.Title);
+        });
+    }
+
+    // A run empties the document from its first sample, but the plot keeps what it drew until the result lands.
+    [Fact]
+    public void ARunKeepsThePlotUntilItsResultLands()
+    {
+        string path = WriteMeasurement("cabin left.json", peak: 240);
+        StaTest.Run(() =>
+        {
+            using var analyzer = new LiveAnalyzer();
+            analyzer.Open(path);
+
+            analyzer.StartRun();
+            analyzer.Pump();
+            Assert.Equal("Frequency Response - cabin left.json", analyzer.Plot.Title);
+
+            analyzer.CompleteRun(Measurement(peak: 480));
+            Assert.Equal("Frequency Response", analyzer.Plot.Title);
+        });
+    }
+
     // New session aborts a run, but one finishing meanwhile still completes; its result belongs to the old session.
     [Fact]
     public void ARunFinishingAfterANewSessionDoesNotLand()
@@ -210,6 +284,9 @@ public sealed class AnalyzerWiringTests : IDisposable
             Assert.Equal("Frequency Response - sweep.wav", analyzer.Plot.Title);
         });
     }
+
+    private static bool IsCompareCurve(OxyPlot.Series.Series series) =>
+        series.Tag is CurveTag { Source: CurveSource.Compare };
 
     private static MeasurementResult Measurement(int peak)
     {
@@ -329,7 +406,8 @@ public sealed class AnalyzerWiringTests : IDisposable
 
         public void Dispose() => Form.Dispose();
 
-        private static void Pump()
+        /// <summary>Lets queued UI work run: a view redraws after the input that changed it.</summary>
+        public void Pump()
         {
             for (int i = 0; i < 20; i++)
             {

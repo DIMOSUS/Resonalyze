@@ -10,8 +10,10 @@ and the impulse-response file format.
 Where the code lives:
 
 - `source/Measurements/ExpSweepMeasurement.cs` — the sweep measurement policy: run
-  acceptance, averaging, deconvolution, transfer function, imports, result snapshots.
-  The device lifecycle is behind `IAudioSessionFactory`.
+  acceptance, averaging, deconvolution, transfer function, imports. It holds the next
+  run's configuration only; the device lifecycle is behind `IAudioSessionFactory`.
+- `source/Measurements/MeasurementResult.cs`, `AnalyzerDocument.cs` — one result, and the
+  analyzer's open one (see [The open measurement](#the-open-measurement)).
 - `source/Measurements/ExponentialSineSweep.cs` — sweep geometry (`ExpSweepSpec`),
   sample synthesis and the inverse filter.
 - `dsp/TransferFunction.cs` — H1 estimate, excitation gate, coherence, GCC-PHAT.
@@ -26,6 +28,30 @@ Where the code lives:
   live analyzer.
 - `source/Measurements/ImpulseResponseFile.cs`, `Float32SampleArrayJsonConverter.cs` — file format.
 - `source/Measurements/MeasuredBand.cs` — which frequencies a response really measured.
+
+## The open measurement
+
+A sweep result arrives five ways: a run, a recorded-sweep import, an impulse-response file,
+a history entry and REW (a text export or the API). Each builds the same immutable
+`MeasurementResult`: the IRs, the band asked for, swept and measured at full amplitude, the
+sweep length, the timing reference, levels, and what was frozen with it (SPL anchor,
+microphone curve, protective high-pass, array, audio-session diagnostics).
+`ImpulseResponseFile.From` and `ToResult` convert it to and from the file, and
+`MeasurementResult.Validated` is the one check a restored result passes.
+
+`AnalyzerDocument` owns the open result for the whole analyzer: every mode, Save, Send to
+REW, Time Alignment and the level meter read it, and every input replaces it through
+`Install`. Plot builds read it off the UI thread, so a result is swapped whole.
+
+- `Acquire` holds the document for a run or an import from its first read; nothing installs
+  meanwhile, and the record button, history and drops refuse. A run clears the open result
+  when it starts and installs its own on completion.
+- `BeginActivation`/`IsCurrent` is the one "newest wins" token for requests that make a
+  measurement current (file load, history, Virtual DSP's Open in analyzers, a finished run).
+- `ExpSweepMeasurement` keeps only the configuration of the next run, so a loaded file never
+  changes what the next sweep, the signal generator or Record Settings see.
+- History entries hold a `MeasurementResult` beside their preview and session; Compare, Time
+  Alignment's compare record, Virtual DSP sources and the EQ Wizard take one too.
 
 ## Sweep generation
 
@@ -532,13 +558,13 @@ The sweep the configuration describes — the same signal the options panel expo
 (`SweepWavExport`) — stands in for the loopback: the excitation is known exactly. The
 analysis is then the live one: deconvolution plus the gated H1 estimate.
 
-- The configuration is applied only after the recording is analysed and accepted, so a
-  rejected import leaves the on-screen measurement alone. The analysis therefore generates
-  its own sweep instead of using the measurement's current one.
-- The busy flag is held for the whole import: the analysis runs off the UI thread, and the
-  record button and settings Apply are a click away. A caller already holding a `Claim`
-  (the file import takes one before decoding) keeps it, since the busy state must span the
-  decode too.
+- The import touches no engine state: its configuration describes the sweep in the file,
+  not the next run, so it generates its own sweep and hands back a `RecordedSweepImport` (the
+  result, the channel measured, any time-scale correction). A rejected import throws before
+  anything is installed, so the open measurement stays.
+- The file import holds the document (`AnalyzerDocument.Acquire`) from before the decode:
+  the analysis runs off the UI thread, and the record button is a click away.
+- The result is stamped with the import time: the recording carries no time of its own.
 - Only the excitation and its decay are analysed (`RecordedSweepWindow`). People start the
   recorder, walk to the seat, play the sweep and walk back, leaving tens of seconds of
   silence; every FFT is sized by its input, so a five-minute file holding a two-second
@@ -805,7 +831,7 @@ a spatial average is a spatial average.
   composition warning and the set comparison.
 - `measuredAtUtc` is null only for a measurement taken now; a loaded one keeps its own date,
   because the composition warning offers the date as evidence two channels came from one
-  sitting. (`ExpSweepMeasurement.MeasuredAtUtc` is likewise stamped per run and survives
+  sitting. (`MeasurementResult.MeasuredAtUtc` is likewise stamped per run and survives
   re-saves; a save stamp would make Monday's and Friday's measurements both read Saturday
   after being re-saved.)
 - Each array measurement gets its own capture session id: what a session id guards (levels
@@ -829,13 +855,12 @@ format, channel routing) is recorded so a mismatched input is detected; the anal
 gain is invisible to software, so the standing rule is to leave it alone between
 calibration and measurement.
 
-Each result carries a `MeasurementInputIdentity` snapshot (the input a run used, or the one
-a loaded file was measured on) and a frozen copy of the SPL calibration, protective
-high-pass and microphone calibration taken at run start. The plot and the saved file read
-the snapshots, so recalibrating or changing settings later never rewrites what an existing
-IR means, and re-saving a loaded file keeps an anchor that was valid for it. A save stamps
-the anchor only when it matches the result's own input: loaded files skip the live match, so
-a calibration left over from a different device would otherwise be trusted on reload.
+Each result carries a frozen copy of the SPL calibration, protective high-pass and microphone
+calibration taken at run start. The plot and the saved file read those, so recalibrating or
+changing settings later never rewrites what an existing IR means. A run keeps the anchor
+only when it was captured on the input the run measured (`MeasurementInputIdentity`); a
+calibration left over from a different device would otherwise be trusted on reload. A loaded
+file keeps its own anchor, which passed that check when the file was first saved.
 
 `SplCalibrationListener` measures the tone on the microphone alone through a silent
 streaming session, accumulating a flat-top power spectrum whose peak gives the level within
@@ -962,7 +987,7 @@ cannot reach a finished capture. The name is what people read; ids (e.g.
 - **Microphone calibration** is stored as a curve: IRs are raw, so a recipient without the
   author's calibration file would otherwise see a different curve with nothing saying so. As
   in Virtual DSP sessions, the curve is the truth and the name a hint (ids differ per machine).
-- **SPL calibration** is the run-time snapshot, stamped only when it matches the result's input.
+- **SPL calibration** is the result's anchor, kept at run start only when it matched the run's input.
 - **Timing reference** defaults to `SynchronizedLoopback`, right for every file written before
   imports existed.
 - **Sweep band**: `Octaves` is legacy (sweep from Nyquist / 2^octaves to Nyquist) and kept only

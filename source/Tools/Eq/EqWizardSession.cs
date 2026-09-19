@@ -148,7 +148,7 @@ internal sealed class EqWizardSession
 
     public int BandLimit { get; private set; } = EqWizardLimits.MaxBands;
 
-    public bool CutsOnly { get; private set; } = true;
+    public EqAutoTuneBoosts Boosts { get; private set; } = EqAutoTuneBoosts.RefillOwnCuts;
 
     public bool AllowShelves { get; private set; }
 
@@ -429,9 +429,9 @@ internal sealed class EqWizardSession
     public void SetBandLimit(int limit) =>
         BandLimit = Math.Clamp(limit, EqWizardLimits.MinAutoTuneBandLimit, EqWizardLimits.MaxBands);
 
-    public void SetCutsOnly(bool cutsOnly)
+    public void SetBoosts(EqAutoTuneBoosts boosts)
     {
-        CutsOnly = cutsOnly;
+        Boosts = boosts;
         Announce();
     }
 
@@ -569,7 +569,8 @@ internal sealed class EqWizardSession
         SourceSmoothingInverseOctaves = SourceSmoothingInverseOctaves,
         CalibrationId = PreferredIrCalibrationId,
         ManualSampleRateHz = ManualSampleRateHz,
-        CutsOnly = CutsOnly,
+        AutoTuneBoosts = Boosts,
+        CutsOnly = Boosts != EqAutoTuneBoosts.Allowed,
         AllowShelves = AllowShelves,
         AutoTuneMaxQ = (double)AutoTuneMaxQ,
         ShowEqCurve = ShowEqCurve
@@ -621,7 +622,7 @@ internal sealed class EqWizardSession
             SetGainMin(EqWizardLimits.GainMinimum.Clamp(settings.GainMinDb));
             SetGainMax(EqWizardLimits.GainMaximum.Clamp(settings.GainMaxDb));
             SetAutoTuneMaxQ(EqWizardLimits.AutoTuneMaxQ.Clamp(settings.AutoTuneMaxQ));
-            CutsOnly = settings.CutsOnly;
+            Boosts = settings.ResolveAutoTuneBoosts();
             AllowShelves = settings.AllowShelves;
             ShowEqCurve = settings.ShowEqCurve;
             SetSourceSmoothing(settings.SourceSmoothingInverseOctaves);

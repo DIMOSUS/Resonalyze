@@ -54,6 +54,7 @@ public partial class EqWizardPanel : UserControl
         InitializePeqSlotTable();
         InitializeBandsComboBox();
         InitializeBandsLimitComboBox();
+        InitializeBoostsComboBox();
         InitializeSmoothComboBox();
         InitializeSampleRateComboBox();
         InitializeQConventionComboBox();
@@ -89,15 +90,6 @@ public partial class EqWizardPanel : UserControl
             }
         };
         buttonPhaseGate.Click += (_, _) => OpenPhaseGateDialog();
-        checkBoxCutsOnly.CheckedChanged += (_, _) =>
-        {
-            if (!presenting)
-            {
-                // Orphan any in-flight fit computed under the previous setting.
-                autoTuneOrchestrator.Invalidate();
-                session.SetCutsOnly(checkBoxCutsOnly.Checked);
-            }
-        };
         checkBoxShelves.CheckedChanged += (_, _) =>
         {
             if (!presenting)
@@ -129,7 +121,15 @@ public partial class EqWizardPanel : UserControl
         };
         Click += (_, _) => DeselectBand();
         panelPEQ.Click += (_, _) => DeselectBand();
-        plotWizard.Click += (_, _) => DeselectBand();
+        // A press that took a handle is not a click on empty graph.
+        plotWizard.MouseDown += (_, _) => handlePressed = false;
+        plotWizard.Click += (_, _) =>
+        {
+            if (!handlePressed)
+            {
+                DeselectBand();
+            }
+        };
         InitializeToolTips();
         PresentFitSettings();
         PresentViewSettings();
@@ -190,7 +190,7 @@ public partial class EqWizardPanel : UserControl
         numericGainMin.Value = session.GainMinDb;
         numericGainMax.Value = session.GainMaxDb;
         numericQMax.Value = session.AutoTuneMaxQ;
-        checkBoxCutsOnly.Checked = session.CutsOnly;
+        comboBoxBoosts.SelectedIndex = Array.IndexOf(BoostChoices, session.Boosts);
         checkBoxShelves.Checked = session.AllowShelves;
         comboBoxBandsLimit.SelectedItem = session.BandLimit;
     });
@@ -275,6 +275,7 @@ public partial class EqWizardPanel : UserControl
         plotWizard.Model = plot.Model;
         plot.RefreshEqAxis(session);
         PlotInteraction.Enable(plotWizard);
+        WireBandHandles();
 
         plotLabels = new PlotLabelsPanelController(plotWizard, () => Mode.EqWizard);
     }
@@ -352,17 +353,13 @@ public partial class EqWizardPanel : UserControl
             "Also bounds what Auto Tune may apply.");
         SetTip(labelGainMax, numericGainMax,
             "Highest gain (dB) every band's field and fader allow — the maximum boost. " +
-            "Also bounds what Auto Tune may apply.");
+            "Auto Tune also keeps its boosts together under it.");
         SetTip(labelBandsLimit, comboBoxBandsLimit,
             "Maximum number of bands Auto Tune may create.");
         SetTip(labelQMax, numericQMax,
-            "Narrowest band Auto Tune may place — the highest Q it is allowed to " +
-            "choose. Lower it to keep the fit on broader trends, the ones likelier " +
-            "to hold across the listening area, instead of chasing a sharp peak that " +
-            "may belong to where the microphone stood; the strips themselves still " +
-            "accept any Q up to 20. The fit picks from a fixed ladder of Q values " +
-            "(…2.0, 2.8, 4.0, 5.6, 8.0, 10.0), so the effective ceiling is the " +
-            "largest of those at or below this number.");
+            "Narrowest band Auto Tune may place (the highest Q). Lower keeps the fit " +
+            "on broad trends that hold across the seat, not a peak at one mic spot; " +
+            "the strips themselves accept any Q up to 20.");
         SetTip(labelFromHz, numericFromHz,
             "Lower edge of the Auto Tune frequency window; also bounds the error metrics.");
         SetTip(labelToHz, numericToHz,
@@ -372,20 +369,14 @@ public partial class EqWizardPanel : UserControl
             "in dB here and in degrees in Phase. Turning it off leaves the plot to " +
             "the measurement and the target; the filters keep working either way. " +
             "The right-hand axis goes with it when nothing else is left on it.");
-        SetTip(checkBoxCutsOnly,
-            "Auto Tune only cuts, never boosts — the safe default for a car tune " +
-            "(a boost cannot fill an interference null, it just burns headroom). " +
-            "Uncheck to allow boosts, still limited to reliable regions: high " +
-            "coherence and not inside a narrow, deep null.");
+        SetTip(labelBoosts, comboBoxBoosts,
+            "What Auto Tune may boost. Refill cuts: a boost only puts back what " +
+            "its own cuts dug, so the EQ never rises above 0 dB. Off: cuts only. " +
+            "Allowed: boosts fill dips too, outside narrow deep nulls.");
         SetTip(checkBoxShelves,
-            "Let Auto Tune fit a low and a high shelf as well as bells. A car target " +
-            "is a bass shelf plus a downward tilt, and a stack of bells copies that " +
-            "badly — slots spent on a trend, and ringing between the centres. A shelf " +
-            "is kept only where finishing the fit with it beats finishing it without, " +
-            "so a response made of resonances alone gets none. Off by default: it " +
-            "changes what a fit returns, and with Cuts only unchecked a shelf can lift " +
-            "a whole end of the range, so the total boost may pass Max Gain — watch " +
-            "the headroom read-out.");
+            "Let Auto Tune fit a low and a high shelf as well as bells; a shelf is " +
+            "kept only where it beats the fit without one. With boosts Allowed a " +
+            "shelf can lift a whole end past Max Gain — watch the headroom read-out.");
         SetTip(buttonAutoTune,
             "Automatically fit the bands and preamp so Source + EQ approaches the " +
             "target within the frequency window.");
@@ -703,6 +694,30 @@ public partial class EqWizardPanel : UserControl
                 // A fit under the old budget could land more filters than the field now allows.
                 autoTuneOrchestrator.Invalidate();
                 session.SetBandLimit(limit);
+            }
+        };
+    }
+
+    // In the combo's order; the text is what the box shows.
+    private static readonly EqAutoTuneBoosts[] BoostChoices =
+    {
+        EqAutoTuneBoosts.Off,
+        EqAutoTuneBoosts.RefillOwnCuts,
+        EqAutoTuneBoosts.Allowed
+    };
+
+    private void InitializeBoostsComboBox()
+    {
+        comboBoxBoosts.Items.Clear();
+        comboBoxBoosts.Items.AddRange(new object[] { "Off", "Refill cuts", "Allowed" });
+        comboBoxBoosts.SelectedIndex = Array.IndexOf(BoostChoices, session.Boosts);
+        comboBoxBoosts.SelectedIndexChanged += (_, _) =>
+        {
+            if (!presenting && comboBoxBoosts.SelectedIndex >= 0)
+            {
+                // Orphan any in-flight fit computed under the previous setting.
+                autoTuneOrchestrator.Invalidate();
+                session.SetBoosts(BoostChoices[comboBoxBoosts.SelectedIndex]);
             }
         };
     }

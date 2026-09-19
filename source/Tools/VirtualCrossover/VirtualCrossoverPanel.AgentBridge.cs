@@ -642,8 +642,8 @@ public partial class VirtualCrossoverPanel
 
         EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
             request, spec, policy, operation.MinHz, operation.MaxHz,
-            operation.AllowShelves, operation.CutsOnly);
-        bool cutsOnly = inputs.CutsOnly;
+            operation.AllowShelves, operation.BoostMode);
+        bool lifts = inputs.Boosts == EqAutoTuneBoosts.Allowed;
         // The wizard beeps at a source it cannot draw; the tuner must not get one.
         if (inputs.Source.Count < 2)
         {
@@ -662,7 +662,7 @@ public partial class VirtualCrossoverPanel
         string? levelWarning = EqTargetLevelCheck.Warning(
             EqTargetLevelCheck.TargetAboveSourceDb(
                 inputs.Source, inputs.Target, inputs.MinHz, inputs.MaxHz),
-            cutsOnly, inputs.MinHz, inputs.MaxHz);
+            !lifts, inputs.MinHz, inputs.MaxHz);
         if (levelWarning != null)
         {
             summary.Add($"{label}: skipped ({levelWarning.Split('.')[0]}).");
@@ -734,7 +734,7 @@ public partial class VirtualCrossoverPanel
             $"{label}: applied — {fittedBands} band{(fittedBands == 1 ? "" : "s")}" +
             (inputs.KeptAllPass.Count > 0 ? $" + {inputs.KeptAllPass.Count} all-pass kept" : string.Empty) +
             $", preamp {fitted.PreampDb:0.0} dB, {inputs.MinHz:0}–{inputs.MaxHz:0} Hz, " +
-            $"{(cutsOnly ? "cuts only" : "cuts and boosts")}, on the " +
+            $"{EqWizardFit.DescribeBoosts(inputs.Boosts)}, on the " +
             $"{(average.Capture != null ? "spatial average" : "point measurement")}; " +
             $"RMS error {Rms(before)} -> {Rms(after)}.");
         return true;

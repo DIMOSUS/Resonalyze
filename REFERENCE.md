@@ -114,6 +114,8 @@ preview, the history list — are fixed-scale by design and take none of this.)
 | Right-button drag | Pans |
 | The **+** / **&minus;** buttons on the graph | Zoom the axis they sit against by about two, click after click; they appear while the pointer is over the plot, and hovering one names the axis it moves |
 | Double click | Opens the graph limits dialog |
+| Left drag on an EQ Wizard band handle | Moves that band: frequency sideways, gain up and down (see [EQ Wizard](#eq-wizard)) |
+| Wheel over the selected EQ Wizard band handle | Steps that band's Q instead of zooming |
 | **Ctrl+Z** | Steps back through the zoom-to-area, variable-zoom, zoom-button and fit-to-data moves (a wheel notch is its own undo — scroll it back) |
 | **Ctrl+Alt+F** / **Ctrl+Alt+Y** | Fit to data / fit the vertical axis to data |
 | **Home** or `A` | Back to the view's own default scale (also the **Defaults** button in the limits dialog) |
@@ -1581,17 +1583,41 @@ its own right-hand dB axis), and a shaded **error fill**. The fill stops where t
 measurement does: where the source curve has no level — under a protective
 high-pass, outside the band the driver was swept over, past the end of a capture's
 grid — that range is left unshaded rather than shaded as a deviation from a target
-nothing was measured against. Click a band card to
-overlay that band's contribution as a dashed curve, with a dotted vertical guide
-at its frequency in the same colour. The curve says what the filter does and the
-guide says where it sits, which the curve is bad at: a low-Q bell is a shape an
-octave wide whose summit the eye places by guesswork, and a shelf or an all-pass
-has no summit to place at all. Both follow the card as it is edited, and the
-guide is drawn in the **Phase** view as well. Each card carries its
+nothing was measured against. Each card carries its
 **frequency**, **Q**, and **gain**, and the panel adds a **Target Level**, a
 **Gain** (preamp), a **Bands** count, source **Smoothing**, and **Bypass**.
 
-**EQ curve** draws the bank's own response — the white trace, in dB here and in
+Every band also has a **handle** on the EQ axis, at its frequency and on its own
+curve — at the gain of a bell, halfway up a shelf's transition (which is where a
+shelf's frequency sits), on 0 dB for an all-pass. A band you are not working on
+is a dot, drawn under the curves so a full bank does not bury them; the pointer
+over it, or selecting its card, turns it into a disc numbered as the card, over
+the curves, and reads the band out beside it: number, type, frequency, gain
+and Q.
+
+- **Click** a handle to select its card, as clicking the card does; a click on
+  empty graph lets the selection go.
+- **Drag** a handle to move its band: sideways is frequency, up and down is gain
+  (an all-pass follows sideways only). The card follows as you drag, rounded to
+  what its fields hold, and letting go lands the whole drag as one undo step.
+- The **wheel** over the selected handle steps its **Q** — a sixth of an octave
+  of bandwidth per notch, up narrowing, at least one step of the Q field. Over
+  anything else, and with **Alt**, **Shift** or **Ctrl** held even over the
+  handle, the wheel zooms as it does on every graph. A first-order all-pass has
+  no Q, so its handle leaves the wheel to zoom.
+
+The handles go with the **EQ curve**: they are not drawn when it is off, in the
+**Phase** view, or under **Bypass**.
+
+The selected band is drawn twice. Its own gain is filled down to 0 dB on the EQ
+axis, joining its handle to the bank's curve, and its contribution rides on the
+target as a dashed curve, which says what the filter does against the goal. Both
+follow the card as it is edited. Where the handles are hidden, a dotted vertical
+guide in the same colour marks the band's frequency instead — which the dashed
+curve is bad at: a low-Q bell is a shape an octave wide whose summit the eye
+places by guesswork, and a shelf or an all-pass has no summit to place at all.
+
+**EQ curve** draws the bank's own response — the violet trace, in dB here and in
 degrees under **Phase**. Turning it off leaves the plot to the measurement and
 the target, which is what a crowded fit is read on; the filters keep working
 either way, and **Source + EQ** still carries them. The right-hand axis goes
@@ -1672,7 +1698,7 @@ fitted. The channel under edit is the solid curve, its dashed twin is the same
 channel before the bank (**Without EQ**), and the two drivers it crosses with —
 the midbass below it and the tweeter above — keep the colours they had on the
 panel, frozen as it drew them. The subwoofer is a junction further down and stays
-behind. The white curve is the bank's own phase on the right-hand axis, which the
+behind. The violet curve is the bank's own phase on the right-hand axis, which the
 **EQ curve** checkbox turns off.
 
 **Phase gate…** is the window those curves are read through — the same dialog,
@@ -1827,21 +1853,25 @@ the chain check, but it is refused all the same).
 ### Auto Tune
 
 **Auto Tune** fits the whole EQ automatically: it works on the error between the
-target and the (smoothed) source, sets a preamp for the broadband level, then
-adds peaking bands greedily where the residual error is largest, choosing each
-band's frequency, gain, and the Q that reduces the error the most — and, with
-**Shelves** ticked, may put a low and a high shelf in front of them. It **chooses
-the band count itself**, up to the **Max Filters** limit (4–32), while a
-cumulative-boost cap and minimum band spacing keep it from stacking maxed-out
-bands where the response simply cannot be corrected.
+target and the (smoothed) source and sets a preamp for the broadband level. It
+then places a band where the error is worst and refines the frequency, gain and
+Q of **every** band placed so far together, so a band moves over when the next
+one arrives instead of leaving its skirt for the next band to patch — and, with
+**Shelves** ticked, may start from a low and a high shelf. Q is set to whatever
+fits, anywhere up to **Max Q**, not picked from a list. It **chooses the band
+count itself**, up to the **Max Filters** limit (4–32): a band has to take a
+real amount of error off the curve to be kept — a decibel over a sixth of an
+octave is about the smallest that earns one — and after the fit each band is
+tried out again, and dropped when the others, refitted, cover for it. Ripple
+under a decibel is therefore left alone rather than chased with narrow bands.
 
 Before it runs, the fit reads where **Target Level** sits against the source
 over the From–To window — the median of their difference, so a junction dip or
 a modal null does not move it — and asks first when the datum is the problem
 rather than the shape: a target 3 dB or more **above** the source would be
-reached by boosting the whole window, spending headroom on level — or, under
-**Cuts only**, not reached at all: its preamp stops at 0 dB and its bands only
-cut, so the curve stays below the target, and a bump that stays under the
+reached by boosting the whole window, spending headroom on level — or, with
+**Boosts** on Off or Refill cuts, not reached at all: the preamp stops at 0 dB
+and the bank never lifts the curve, so it stays below the target, and a bump that stays under the
 target line is not a cut the fit will make; a target 10 dB or more **below**
 the source would be reached by cutting the whole window, handing that level to
 the amplifier gain and its noise. All three are a Target Level typed wrong.
@@ -1850,9 +1880,8 @@ the amplifier gain and its noise. All three are a Target Level typed wrong.
 **Max Q** is the ceiling on how narrow those bands may be — **6.0** by default,
 against the 20 a strip accepts when you type one in by hand. It bounds Auto Tune
 alone; nothing it fitted earlier is touched, and you can still narrow any band
-yourself. The fit picks each band's Q off a fixed ladder (0.5, 0.7, 1.0, 1.4,
-2.0, 2.8, 4.0, 5.6, 8.0, 10.0), so the effective limit is the highest rung at or
-below your number — 6.0 admits 5.6. Keep it low because a single measurement is
+yourself. The fit sets each band's Q to whatever fits up to that number, so a
+band at exactly your Max Q is one that wanted to be narrower still. Keep it low because a single measurement is
 a single microphone position: much of a sharp peak there is interference, it
 moves when the microphone moves, and a filter cut to match it corrects that one
 point, while a broader band favours the trend that is likelier to hold across
@@ -1874,11 +1903,25 @@ with those bands already applied, because through a window an all-pass is not
 flat, and correcting a curve the bank never produces would leave the tune off
 by that difference.
 
-**Cuts only** (on by default) is the safe choice for a car tune: a boost cannot
-fill a reflective cabin's interference null — it just burns amplifier headroom on
-a dip that shifts the moment the microphone moves. Unticking it lets Auto Tune
-boost where boosting is trustworthy: high measured coherence and not inside a
-narrow, deep null, still obeying the Max Gain and total-gain limits. A **From /
+**Boosts** says what Auto Tune may do above 0 dB:
+
+- **Refill cuts** (the default) cuts the peaks and allows a boost only to put
+  back what its own cuts dug below the target; the whole EQ never rises above
+  0 dB, so the curve is never lifted and the profile cannot clip. A broad peak
+  with steep sides is where it shows: a cut wide enough for the top digs into the
+  sides, one narrow enough to spare them leaves a comb along the top, and a wide
+  cut with a small boost on each side gives a flat top without the gouges. The
+  boost is kept only where the cut dug more than a decibel.
+- **Off** only cuts. Peaks next to dips are then a trade — cutting the peak
+  digs the dip — which the fit settles by leaving a little of the peak rather
+  than gouging deep.
+- **Allowed** also fills dips where boosting is trustworthy: high measured
+  coherence and not inside a narrow, deep null (a boost cannot fill a reflective
+  cabin's interference null — it just burns amplifier headroom on a dip that
+  shifts the moment the microphone moves). The boosts together stay under **Max
+  Gain**; a cut placed beside them does not make room for more.
+
+A **From /
 To** window limits where bands are placed and bounds the error metrics in the
 colour-coded **Tuning results** panel, which reports **RMS error** and **Max
 error** between Source + EQ and Target, **Filters used**, **Peak boost** and
@@ -1889,29 +1932,29 @@ as bells. A car target is a bass shelf plus a downward tilt, and a bell is the
 wrong shape for either: a stack of them spends slots on a trend that resonances
 needed, and rings between the centres. A shelf is kept only where it earns the
 slot, and which shelf that is gets decided on the finished curve rather than on
-how the band reads by itself: every corner and knee of both directions is taken
-all the way through the rest of the fit, once more with no shelf at all, and the
-one that ends closest to the target goes in — if any of them beats placing none.
-A shelf that does not leave the fit shorter has to earn its filter by a margin
-you could see, so a response made of resonances alone gets none at all and
-nothing changes for it.
+how the band reads by itself: a shelf at every octave of both ends is taken all
+the way through the rest of the fit, with its corner, knee and gain refined
+along with the bells, once more with no shelf at all, and the fit that ends
+closest to the target — counting what each filter costs — goes in, if any beats
+placing none. A response made of resonances alone gets none at all and nothing
+changes for it.
 Measured on synthetic responses, at the default Max Gain of 6 dB: a top end
-running uniformly hot took one shelf where four bells had been spent, at a third
-of the residual (0.04 dB RMS against 0.13); the same response with resonances on
-it came out at four filters against seven, for the same error; a car target with
-bass lift and tilt at 0.34 dB RMS against 1.28 with the same ten filters. At
-most one shelf per direction, and the fit re-runs its own search after placing
-the first, so a bass shelf and a treble shelf can describe one tilt between
-them.
+running uniformly hot took a shelf and one bell where three bells had been
+spent; the same response with resonances on it came out at three filters
+against five, for the same error; a car target with bass lift and tilt at
+0.16 dB RMS against 1.43 with the same ten filters; a response sloping away at
+both ends at four filters against seven. At most one shelf per direction, and
+the fit searches again after placing the first, so a bass shelf and a treble
+shelf can describe one tilt between them.
 
 A shelf's knee is capped at **Q 0.7**, the steepest that still rises
 monotonically: above that an RBJ shelf overshoots its own gain before settling,
-and on a cut that overshoot is a boost — which **Cuts only** promises never to
-produce. **Max Q** is not applied to a shelf; that number bounds how narrow a
+and on a cut that overshoot is a boost — which **Off** and **Refill cuts** promise
+never to produce. **Max Q** is not applied to a shelf; that number bounds how narrow a
 *bell* may be, and a shelf has no bandwidth to bound. You can still add, edit or
 delete a shelf by hand afterwards, and a re-run replaces it like any other band.
 
-Two things change with **Cuts only** unticked. A boosting shelf lifts a whole end
+Two things change with **Boosts** on **Allowed**. A boosting shelf lifts a whole end
 of the range, nulls included, so it is offered only where at least three quarters
 of that end is measured and passes the boost mask — a tail that is mostly nulls
 or low coherence never gets shelved upwards, and the per-bin skirt guard that
@@ -1919,9 +1962,10 @@ applies to a boosting bell deliberately does not apply to a shelf, since a
 shelf's plateau is the correction rather than spill from one. And a shelf is not
 counted against the cumulative boost the bells are held to, because it is a
 correction of the whole tail and not a stack of bands at one frequency: with a
-shelf placed, the **total** boost can exceed **Max Gain** (measured: +10.5 dB
+shelf placed, the **total** boost can exceed **Max Gain** (measured: +11.1 dB
 where Max Gain was +6), which is what the **Headroom** read-out is for. Each
-band still obeys **Max Gain**, and **Cuts only** rules all of this out.
+band still obeys **Max Gain**, and the other two **Boosts** settings rule all of
+this out (their shelves only cut).
 
 ### Import, export, and tuning sheet
 
@@ -3778,7 +3822,7 @@ this: the clipboard is the only transport, and you are the one who pastes.
   shown returned in the import's summary and the alignment log; Auto-tune runs
   without the EQ Wizard, on the curve the wizard would have opened on for that
   channel and with the wizard's own Auto Tune settings as they stand (Max
-  Filters, Gain min/max, Max Q, Cuts only, Shelves) for whatever the reply
+  Filters, Gain min/max, Max Q, Boosts, Shelves) for whatever the reply
   leaves out, keeps the bank's all-pass bands, lands the fit the way the wizard's
   **Return** lands it, and skips itself — with the reason — where the wizard
   would have asked about the [target level](#eq-wizard). The junction tune has

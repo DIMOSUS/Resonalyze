@@ -45,7 +45,7 @@ Pointer tracking invalidates the view only when the zoom buttons appear, disappe
 state - a plain move across the plot must not repaint a waterfall.
 
 A plain left press is answered in order: a waiting zoom box first, then an on-graph zoom button,
-otherwise OxyPlot's snapping tracker. Two double-click traps are handled explicitly:
+then a drag handle (see [Drag handles](#drag-handles)), otherwise OxyPlot's snapping tracker. Two double-click traps are handled explicitly:
 
 - A second quick click on a zoom button arrives as a double click; it is answered as another zoom
   step instead of opening the limits dialog.
@@ -54,6 +54,31 @@ otherwise OxyPlot's snapping tracker. Two double-click traps are handled explici
 
 OxyPlot's element tooltips are not wired up in its WinForms view, so hints (which axis a button
 zooms, why a box is too small) use a plain WinForms `ToolTip` on the control, shown for 4 s.
+
+## Drag handles
+
+An annotation that implements `IPlotDragHandles` (`source/Plotting/PlotDragHandles.cs`) offers handles the
+pointer can grab; the EQ Wizard's band handles (`EqBandHandlesAnnotation`) are the one today. The controller
+asks every such annotation in the model, so the gestures stay in the one map and the annotation stays free of
+WinForms:
+
+- **Left press** on a handle, after the zoom box and the zoom buttons, starts `PlotDragHandleManipulator`
+  instead of the tracker. The double-click binding checks handles too, so a quick second press on a handle is a
+  grab and not the limits dialog.
+- **Drag** is forwarded only once the pointer has travelled 3 px, so the jitter of a click never edits
+  anything. The annotation keeps the offset between the press and the handle's centre, so a press off centre
+  does not jump the handle.
+- **Plain wheel** goes to the handle under the pointer first; the handle may decline (the EQ Wizard takes it
+  only over the selected band, and not for a band without Q), and the wheel then zooms. The modified wheels are
+  never offered: Alt, Shift and Ctrl keep their zoom meaning over a handle.
+- **Hover** is tracked from the view's mouse moves, like the zoom buttons: the plot is invalidated only when the
+  highlighted handle changes, and the cursor becomes a hand over a handle or a waiting zoom box. Hover is frozen
+  while a handle is held, because the pointer runs ahead of a handle stopped at its limit.
+
+The annotation reports only what the pointer did (press, where a drag went, wheel notches, release). The owner
+turns that into edits: the EQ Wizard writes the band through `EqWizardBank.Edit`, which rounds it to the
+strip's precision, and lands the drag as one undo step on release. WinForms raises the view's `Click` after any
+press, so the wizard marks a press that took a handle and does not read that click as a click on empty graph.
 
 ## Axis zoom arithmetic
 

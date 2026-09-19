@@ -272,9 +272,8 @@ public sealed class EqAutoTunerTests
     }
 
     [Fact]
-    public void Tune_QRangeExcludingAllCandidates_FallsBackWithoutThrowing()
+    public void Tune_NarrowQRange_KeepsEveryBandInsideIt()
     {
-        // [3, 3.5] excludes every fixed candidate Q (2.8, 4.0): fall back to one clamped Q.
         IReadOnlyList<SignalPoint> source = Grid(_ => 0.0);
         IReadOnlyList<SignalPoint> target = Grid(f => new PeqBand(1_000, 3.0, 6.0).MagnitudeDbAt(f));
 
@@ -314,7 +313,7 @@ public sealed class EqAutoTunerTests
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
 
         EqualizationCurve curve = EqAutoTuner.Tune(
-            source, target, new EqAutoTuner.Options { CutsOnlyMode = true });
+            source, target, new EqAutoTuner.Options { Boosts = EqAutoTuneBoosts.Off });
 
         Assert.All(curve.Bands, band => Assert.True(band.GainDb <= 0 + 1e-9));
         double maxGain = EqualizationCurve
@@ -333,7 +332,7 @@ public sealed class EqAutoTunerTests
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
 
         EqualizationCurve curve = EqAutoTuner.Tune(
-            source, target, new EqAutoTuner.Options { CutsOnlyMode = true });
+            source, target, new EqAutoTuner.Options { Boosts = EqAutoTuneBoosts.Off });
 
         // The discriminator: a mean-centred preamp (~ -4) fails this.
         Assert.True(
@@ -363,7 +362,7 @@ public sealed class EqAutoTunerTests
             target,
             new EqAutoTuner.Options
             {
-                CutsOnlyMode = true,
+                Boosts = EqAutoTuneBoosts.Off,
                 SampleRateHz = sampleRate,
                 MinFrequencyHz = 2_000,
                 MaxFrequencyHz = 20_000,
@@ -397,7 +396,7 @@ public sealed class EqAutoTunerTests
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
 
         EqualizationCurve curve = EqAutoTuner.Tune(
-            source, target, new EqAutoTuner.Options { CutsOnlyMode = false });
+            source, target, new EqAutoTuner.Options { Boosts = EqAutoTuneBoosts.Allowed });
 
         Assert.DoesNotContain(
             curve.Bands,
@@ -413,7 +412,7 @@ public sealed class EqAutoTunerTests
         // Low coherence withholds a boost the fit would otherwise apply (control assertion without coherence).
         IReadOnlyList<SignalPoint> source = Grid(f => NotchDb(f, 1_000, 6, 0.7));
         IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
-        var options = new EqAutoTuner.Options { CutsOnlyMode = false };
+        var options = new EqAutoTuner.Options { Boosts = EqAutoTuneBoosts.Allowed };
 
         IReadOnlyList<SignalPoint> coherence = Grid(
             f => Math.Abs(Math.Log2(f / 1_000)) < 0.5 ? 0.2 : 0.95);
@@ -443,7 +442,7 @@ public sealed class EqAutoTunerTests
             target,
             new EqAutoTuner.Options
             {
-                CutsOnlyMode = false,
+                Boosts = EqAutoTuneBoosts.Allowed,
                 PreampMinDb = 0,
                 PreampMaxDb = 0,
                 ForbiddenRegionMaxBoostDb = double.PositiveInfinity
@@ -458,7 +457,7 @@ public sealed class EqAutoTunerTests
             target,
             new EqAutoTuner.Options
             {
-                CutsOnlyMode = false,
+                Boosts = EqAutoTuneBoosts.Allowed,
                 PreampMinDb = 0,
                 PreampMaxDb = 0
             },
@@ -485,7 +484,7 @@ public sealed class EqAutoTunerTests
             target,
             new EqAutoTuner.Options
             {
-                CutsOnlyMode = false,
+                Boosts = EqAutoTuneBoosts.Allowed,
                 PreampMinDb = 0,
                 PreampMaxDb = 0
             });
@@ -515,7 +514,7 @@ public sealed class EqAutoTunerTests
             target,
             new EqAutoTuner.Options
             {
-                CutsOnlyMode = true,
+                Boosts = EqAutoTuneBoosts.Off,
                 MinFrequencyHz = 200,
                 MaxFrequencyHz = 2000,
                 BandGainMinDb = -18
@@ -544,7 +543,7 @@ public sealed class EqAutoTunerTests
             target,
             new EqAutoTuner.Options
             {
-                CutsOnlyMode = true,
+                Boosts = EqAutoTuneBoosts.Off,
                 SampleRateHz = sampleRate,
                 MinFrequencyHz = 2_000,
                 MaxFrequencyHz = 20_000,

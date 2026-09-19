@@ -37,13 +37,14 @@ public sealed class EqWizardPanelWiringTests
         using var live = new LivePanel();
 
         live.Set<ThemedNumericUpDown>("numericQMax", box => box.Value = 2.5m);
-        live.Set<CheckBox>("checkBoxCutsOnly", box => box.Checked = false);
+        live.Set<ThemedComboBox>("comboBoxBoosts", box => box.SelectedIndex = 2);
         live.Set<CheckBox>("checkBoxShelves", box => box.Checked = true);
         live.Set<ThemedComboBox>("comboBoxBandsLimit", box => box.SelectedItem = 8);
         live.Set<ThemedNumericUpDown>("numericGainMin", box => box.Value = -9m);
         live.Set<ThemedNumericUpDown>("numericGainMax", box => box.Value = 3m);
 
-        Assert.Equal(new EqAutoTunePolicy(8, -9, 3, 2.5, false, true), live.Panel.CurrentAutoTunePolicy);
+        Assert.Equal(
+            new EqAutoTunePolicy(8, -9, 3, 2.5, EqAutoTuneBoosts.Allowed, true), live.Panel.CurrentAutoTunePolicy);
     });
 
     [Fact]
@@ -107,7 +108,7 @@ public sealed class EqWizardPanelWiringTests
     });
 
     [Fact]
-    public void AddingAndSelectingABand_MarksItOnThePlot() => StaTest.Run(() =>
+    public void AnAddedBand_IsSelectedOnItsHandle_AndTheGuideStandsInWhereHandlesAreHidden() => StaTest.Run(() =>
     {
         using var live = new LivePanel();
 
@@ -115,9 +116,74 @@ public sealed class EqWizardPanelWiringTests
 
         Assert.Equal(PeqBandType.HighShelf, Assert.Single(live.Session.Bank.Bands).Type);
         Assert.Equal(PeqBandType.HighShelf, live.Strips[0].BandType);
+        Assert.Equal(live.Session.Bank.Bands, live.Handles.Bands);
+        Assert.Equal(0, live.Handles.Selected);
+        Assert.DoesNotContain(live.Plot.Annotations.OfType<LineAnnotation>(), line => line.LineStyle == LineStyle.Dot);
+
+        live.Set<CheckBox>("checkBoxEqCurve", box => box.Checked = false);
+
+        Assert.Empty(live.Handles.Bands);
         LineAnnotation guide = Assert.Single(
             live.Plot.Annotations.OfType<LineAnnotation>(), line => line.LineStyle == LineStyle.Dot);
         Assert.Equal(live.Session.Bank.Bands[0].FrequencyHz, guide.X);
+    });
+
+    [Fact]
+    public void DraggingAHandle_SelectsItsBand_MovesIt_AndLandsAsOneStep() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Invoke("AddBand", PeqBandType.Peaking);
+        live.Invoke("DeselectBand");
+        PeqBand added = live.Session.Bank.Bands[0];
+        ScreenPoint start = live.HandleCenter(0);
+
+        live.Press(start);
+        live.Move(new ScreenPoint(start.X + 40, start.Y - 30));
+        live.Release(new ScreenPoint(start.X + 40, start.Y - 30));
+
+        PeqBand moved = live.Session.Bank.Bands[0];
+        Assert.Equal(0, live.Handles.Selected);
+        Assert.True(moved.FrequencyHz > added.FrequencyHz);
+        Assert.True(moved.GainDb > 0);
+        Assert.Equal(added.Q, moved.Q);
+        Assert.Equal((decimal)moved.FrequencyHz, live.Strips[0].FrequencyInput.Value);
+        Assert.Equal((decimal)moved.GainDb, live.Strips[0].GainInput.Value);
+
+        live.Click("buttonUndo");
+        Assert.Equal(added, live.Session.Bank.Bands[0]);
+    });
+
+    [Fact]
+    public void TheWheelOverTheSelectedHandle_StepsItsQ_AndOverAnotherZooms() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Invoke("AddBand", PeqBandType.Peaking);
+        live.Invoke("AddBand", PeqBandType.LowShelf);
+        live.Invoke("SelectSlot", live.Strips[0]);
+        double bellQ = live.Session.Bank.Bands[0].Q;
+        double shelfQ = live.Session.Bank.Bands[1].Q;
+
+        live.Wheel(live.HandleCenter(0));
+        live.Wheel(live.HandleCenter(1));
+
+        Assert.Equal((double)EqWizardLimits.BandQ.Clamp(bellQ * Math.Pow(2, 1.0 / 6)), live.Session.Bank.Bands[0].Q);
+        Assert.Equal((decimal)live.Session.Bank.Bands[0].Q, live.Strips[0].QInput.Value);
+        Assert.Equal(shelfQ, live.Session.Bank.Bands[1].Q);
+    });
+
+    [Fact]
+    public void AClickOnAHandle_KeepsItsBandSelected_AndOneOnEmptyGraphDeselects() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Invoke("AddBand", PeqBandType.Peaking);
+        live.Invoke("DeselectBand");
+
+        live.ClickPlot(live.HandleCenter(0));
+        Assert.Equal(0, live.Handles.Selected);
+
+        ScreenPoint center = live.HandleCenter(0);
+        live.ClickPlot(new ScreenPoint(center.X - 100, center.Y + 60));
+        Assert.Null(live.Handles.Selected);
     });
 
     [Fact]
@@ -171,7 +237,7 @@ public sealed class EqWizardPanelWiringTests
         settings.GainMinDb = -9;
         settings.GainMaxDb = 3;
         settings.AutoTuneMaxQ = 3.5;
-        settings.CutsOnly = false;
+        settings.AutoTuneBoosts = EqAutoTuneBoosts.Off;
         settings.ShowEqCurve = false;
         settings.TargetOffsetDb = -30;
         settings.PreampDb = -2;
@@ -187,7 +253,7 @@ public sealed class EqWizardPanelWiringTests
         Assert.Equal(3.5m, live.Control<ThemedNumericUpDown>("numericQMax").Value);
         Assert.Equal(-30m, live.Control<ThemedNumericUpDown>("NumericTargetOffset").Value);
         Assert.Equal(-2m, live.Control<ThemedNumericUpDown>("NumericGain").Value);
-        Assert.False(live.Control<CheckBox>("checkBoxCutsOnly").Checked);
+        Assert.Equal("Off", live.Control<ThemedComboBox>("comboBoxBoosts").SelectedItem);
         Assert.False(live.Control<CheckBox>("checkBoxEqCurve").Checked);
         // Max Boost bounds the restored band as it bounds a typed one.
         PeqSlotControl strip = Assert.Single(live.Strips);
@@ -376,6 +442,45 @@ public sealed class EqWizardPanelWiringTests
         public IReadOnlyList<PeqSlotControl> Strips => Control<List<PeqSlotControl>>("peqSlots");
 
         public PlotModel Plot => Control<PlotView>("plotWizard").Model!;
+
+        public EqBandHandlesAnnotation Handles => Plot.Annotations.OfType<EqBandHandlesAnnotation>().Single();
+
+        private PlotView View => Control<PlotView>("plotWizard");
+
+        // An off-screen view never paints; a PNG export at its size lays the model out as a paint would.
+        public ScreenPoint HandleCenter(int index)
+        {
+            using var stream = new MemoryStream();
+            new PngExporter { Width = View.Width, Height = View.Height }.Export(Plot, stream);
+            return Handles.Center(index);
+        }
+
+        public void Press(ScreenPoint at) => Change(() =>
+            View.ActualController.HandleMouseDown(
+                View,
+                new OxyMouseDownEventArgs { ChangedButton = OxyMouseButton.Left, ClickCount = 1, Position = at }));
+
+        public void Move(ScreenPoint at) => Change(() =>
+            View.ActualController.HandleMouseMove(View, new OxyMouseEventArgs { Position = at }));
+
+        public void Release(ScreenPoint at) => Change(() =>
+            View.ActualController.HandleMouseUp(View, new OxyMouseEventArgs { Position = at }));
+
+        public void Wheel(ScreenPoint at) => Change(() =>
+            View.ActualController.HandleMouseWheel(View, new OxyMouseWheelEventArgs { Delta = 120, Position = at }));
+
+        // Through the control's own handlers, so the panel sees the press and the click the way Windows delivers them.
+        public void ClickPlot(ScreenPoint at) => Change(() =>
+        {
+            var args = new MouseEventArgs(MouseButtons.Left, 1, (int)at.X, (int)at.Y, 0);
+            Raise("OnMouseDown", args);
+            View.Capture = false;
+            Raise("OnMouseUp", args);
+            Raise("OnClick", EventArgs.Empty);
+        });
+
+        private void Raise(string handler, EventArgs args) =>
+            typeof(Control).GetMethod(handler, Hidden)!.Invoke(View, [args]);
 
         public T Control<T>(string name) => (T)typeof(EqWizardPanel).GetField(name, Hidden)!.GetValue(Panel)!;
 

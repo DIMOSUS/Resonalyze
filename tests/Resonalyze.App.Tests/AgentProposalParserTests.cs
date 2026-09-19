@@ -43,7 +43,7 @@ public sealed class AgentProposalParserTests
             { "id": "op-1", "op": "useSpatialAverage", "mode": "MicArray", "hybrid": true, "reason": "Arrays are attached but unused." },
             { "id": "op-2", "op": "runAutoCrossover", "reason": "The corners are guesses." },
             { "id": "op-3", "op": "runAutoDelay", "sceneOffsetMs": 0.25, "rightHandDrive": false, "adjustGains": true, "nearSideCutDb": 1.5, "reason": "Realign after the flip." },
-            { "id": "op-4", "op": "autoTunePeq", "channelId": "B:left", "targetLevelDb": -6, "minHz": 100, "maxHz": 8000, "allowShelves": true, "cutsOnly": false, "source": "spatialAverage", "reason": "Fit the door." }
+            { "id": "op-4", "op": "autoTunePeq", "channelId": "B:left", "targetLevelDb": -6, "minHz": 100, "maxHz": 8000, "allowShelves": true, "boosts": "refillOwnCuts", "source": "spatialAverage", "reason": "Fit the door." }
           ]
         }
         """;
@@ -144,7 +144,8 @@ public sealed class AgentProposalParserTests
                 Assert.Equal(100, tune.MinHz);
                 Assert.Equal(8000, tune.MaxHz);
                 Assert.True(tune.AllowShelves);
-                Assert.False(tune.CutsOnly);
+                Assert.Null(tune.CutsOnly);
+                Assert.Equal("refillOwnCuts", tune.Boosts);
                 Assert.Equal("spatialAverage", tune.Source);
             });
 

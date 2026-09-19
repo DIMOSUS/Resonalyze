@@ -225,18 +225,8 @@ public partial class PeqSlotControl : UserControl
         }
     }
 
-    /// <summary>Header token; AP1/AP2 match Audiotec PC-Tool slot names.</summary>
-    internal static string DescribeType(PeqBandType type) => type switch
-    {
-        PeqBandType.LowShelf => "LS",
-        PeqBandType.HighShelf => "HS",
-        PeqBandType.AllPassFirstOrder => "AP1",
-        PeqBandType.AllPassSecondOrder => "AP2",
-        _ => "PK"
-    };
-
     private void UpdateSlotLabel() =>
-        slotLabel.Text = $"{slotNumber} {DescribeType(bandType)}";
+        slotLabel.Text = $"{slotNumber} {PeqBandToken.Of(bandType)}";
 
     // All-pass hides gain in favour of its corner group delay; the gain VALUE stays in the hidden field so switching back restores the bell.
     private void UpdateBandTypeAppearance()

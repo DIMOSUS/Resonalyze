@@ -217,7 +217,7 @@ public sealed class SyntheticArrayHarness(ITestOutputHelper output)
             MaxBands = 10,
             MinFrequencyHz = lowHz,
             MaxFrequencyHz = highHz,
-            CutsOnlyMode = cutsOnly,
+            Boosts = cutsOnly ? EqAutoTuneBoosts.Off : EqAutoTuneBoosts.Allowed,
             TotalGainMaxDb = cutsOnly ? 0 : double.PositiveInfinity,
             BandGainMinDb = -12,
             BandGainMaxDb = 12,

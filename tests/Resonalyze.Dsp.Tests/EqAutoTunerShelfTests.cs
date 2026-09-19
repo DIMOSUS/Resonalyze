@@ -50,7 +50,7 @@ public sealed class EqAutoTunerShelfTests
         SampleRateHz = Rate,
         QMin = 0.1,
         QMax = 6.0,
-        CutsOnlyMode = true,
+        Boosts = EqAutoTuneBoosts.Off,
         TotalGainMaxDb = 0
     };
 

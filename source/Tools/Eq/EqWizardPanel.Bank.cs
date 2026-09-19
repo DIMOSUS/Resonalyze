@@ -24,6 +24,8 @@ public partial class EqWizardPanel
     private int draggedSlotOrigin;
     private bool draggedSlotDropped;
     private bool draggedSlotCancelled;
+    // Set by a press on a plot handle, which raises the plot's Click like any other press.
+    private bool handlePressed;
 
     private void InitializePeqSlotTable()
     {
@@ -369,6 +371,46 @@ public partial class EqWizardPanel
 
         selectedSlot = null;
         SelectSlot(peqSlots[index]);
+    }
+
+    private void WireBandHandles()
+    {
+        EqBandHandlesAnnotation handles = plot.Handles;
+        handles.Pressed += index =>
+        {
+            handlePressed = true;
+            if (index < peqSlots.Count)
+            {
+                SelectSlot(peqSlots[index]);
+            }
+        };
+        handles.Dragged += (index, frequencyHz, levelDb) =>
+            EditBandFromPlot(index, EqBandHandles.MoveTo(session.Bank.Bands[index], frequencyHz, levelDb));
+        handles.QStepped += (index, notches) =>
+            EditBandFromPlot(index, EqBandHandles.StepQ(session.Bank.Bands[index], notches));
+        // A drag lands as one undo step when let go; wheel notches wait for the idle timer like typing.
+        handles.Released += CommitBankChange;
+    }
+
+    // As a strip edit: the bank rounds the band to what its strip can show, and the strip is told without echoing back.
+    private void EditBandFromPlot(int index, PeqBand band)
+    {
+        if (index >= peqSlots.Count)
+        {
+            return;
+        }
+
+        PeqBand before = session.Bank.Bands[index];
+        session.Bank.Edit(index, band);
+        PeqBand edited = session.Bank.Bands[index];
+        if (edited == before)
+        {
+            return;
+        }
+
+        Present(() => WriteBand(peqSlots[index], edited));
+        ArmBankEditTimer();
+        Redraw();
     }
 
     private void StripValueChanged(PeqSlotControl slot)

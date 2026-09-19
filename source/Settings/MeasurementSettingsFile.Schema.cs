@@ -561,7 +561,17 @@ internal sealed partial class MeasurementSettingsFile
         // Used when the source states no rate; a source rate overrides without changing this.
         public int ManualSampleRateHz { get; set; } = 48_000;
 
+        /// <summary>Legacy flag, read only when <see cref="AutoTuneBoosts"/> is absent; still written so older builds can load.</summary>
         public bool CutsOnly { get; set; } = true;
+
+        public EqAutoTuneBoosts? AutoTuneBoosts { get; set; }
+
+        // A file from before the choice existed ticked Cuts only to keep the curve from being lifted, which refilling
+        // the bank's own cuts keeps too; unticked was plain boosts.
+        public EqAutoTuneBoosts ResolveAutoTuneBoosts() =>
+            AutoTuneBoosts is { } boosts && Enum.IsDefined(boosts)
+                ? boosts
+                : CutsOnly ? EqAutoTuneBoosts.RefillOwnCuts : EqAutoTuneBoosts.Allowed;
 
         public bool AllowShelves { get; set; }
 

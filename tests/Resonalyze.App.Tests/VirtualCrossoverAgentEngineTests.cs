@@ -147,11 +147,11 @@ public sealed class VirtualCrossoverAgentEngineTests
     {
         // The level is decided once per import, so rows do not fit against different datums.
         AgentOperationVerdict stated = Row(
-            new AutoTunePeqOperation("op-1", "B:left", "", -6, null, null, null, null, null), "Auto-tune");
+            new AutoTunePeqOperation("op-1", "B:left", "", -6, null, null, null, null, null, null), "Auto-tune");
         AgentOperationVerdict omitted = Row(
-            new AutoTunePeqOperation("op-2", "A:left", "", null, null, null, null, null, null), "Auto-tune");
+            new AutoTunePeqOperation("op-2", "A:left", "", null, null, null, null, null, null, null), "Auto-tune");
         AgentOperationVerdict rejected = Row(
-            new AutoTunePeqOperation("op-3", "C:mono", "", -9, null, null, null, null, null), "Auto-tune")
+            new AutoTunePeqOperation("op-3", "C:mono", "", -9, null, null, null, null, null, null), "Auto-tune")
             with { Status = AgentVerdictStatus.Rejected };
 
         Assert.Equal(-6, AgentEngineRequests.TargetLevelDb([omitted, stated], -4));

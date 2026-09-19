@@ -149,6 +149,17 @@ internal static class EqWizardRender
             .ToArray();
     }
 
+    /// <summary>One band's own gain on the baseline's frequencies.</summary>
+    public static IReadOnlyList<DataPoint> BandGainPoints(
+        EqWizardSession session,
+        PeqBand band,
+        EqWizardCurve baseline) =>
+        baseline.Points
+            .Select(point => new DataPoint(
+                point.X,
+                DigitalEqualizationResponse.MagnitudeDbAt(band, point.X, session.ProcessorSampleRateHz)))
+            .ToArray();
+
     /// <summary>One band's contribution riding on the baseline (the target), so its shape reads against the goal.</summary>
     public static IReadOnlyList<DataPoint> BandPoints(
         EqWizardSession session,

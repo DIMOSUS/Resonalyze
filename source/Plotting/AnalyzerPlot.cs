@@ -38,6 +38,7 @@ internal sealed class AnalyzerPlot : IModeView
         Control hideAllButton,
         WrappingToolTip toolTip,
         AnalyzerDocument document,
+        LiveSpectrumSession live,
         CompareSelection compare,
         PlotModelFactory factory)
     {
@@ -56,13 +57,13 @@ internal sealed class AnalyzerPlot : IModeView
             () => Mode switch
             {
                 Mode.FrequencyResponse => factory.EffectiveFrequencyResponseScale,
-                Mode.LiveSpectrum => factory.EffectiveLiveSpectrumScale,
+                Mode.LiveSpectrum => live.Display.Scale,
                 _ => MagnitudeScale.Relative
             });
         // Overlays store the raw curve so smoothing Off reveals the original.
         Overlays.SetRawCurveProvider(tag =>
             tag == LiveSpectrumController.LiveSpectrumInputMagnitudeTag
-                ? LiveRawCapture?.Invoke()
+                ? live.BuildRawRtaCapture()
                 : factory.BuildRawCurve(tag));
         // Impulse axes are view settings, so overlays store record coordinates and re-frame on draw.
         Overlays.SetImpulseCaptureProvider(tag => factory.BuildImpulseCapture(tag));
@@ -84,9 +85,6 @@ internal sealed class AnalyzerPlot : IModeView
 
     /// <summary>The mode on screen; <see cref="Mode.None"/> until the first switch.</summary>
     public Mode Mode { get; private set; }
-
-    /// <summary>Live Spectrum's raw RTA for an overlay capture; set by the live controller.</summary>
-    public Func<RawCurveCapture?>? LiveRawCapture { get; set; }
 
     /// <summary>The overlay slots checked in the mode on screen, for a history entry.</summary>
     public List<int> ActiveOverlaySlots => Overlays.CaptureActiveSlots(Mode);

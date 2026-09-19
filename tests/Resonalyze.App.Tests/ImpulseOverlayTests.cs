@@ -226,7 +226,6 @@ public sealed class ImpulseOverlayTests
         ir[peak] = new Complex(0.5, 0.0);
 
         using var measurement = new TestAnalyzer();
-        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         measurement.Open(TestMeasurementResults.Restored(
             lowFrequencyHz: 20,
             highFrequencyHz: 20_000, sampleRate: SampleRate, bits: 24,
@@ -244,7 +243,7 @@ public sealed class ImpulseOverlayTests
             Invert = true
         };
         PlotModelFactory factory =
-            CreateFactoryFor(measurement, noiseMeasurement, options);
+            CreateFactoryFor(measurement, options);
 
         ImpulseOverlayCapture capture = Assert.NotNull(
             factory.BuildImpulseCapture(
@@ -261,9 +260,8 @@ public sealed class ImpulseOverlayTests
     public void BuildImpulseCapture_RefusesACurveThatIsNotAnImpulseTrace()
     {
         using var measurement = new TestAnalyzer();
-        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
         PlotModelFactory factory = CreateFactoryFor(
-            measurement, noiseMeasurement, new ImpulseResponseOptions());
+            measurement, new ImpulseResponseOptions());
 
         Assert.Null(factory.BuildImpulseCapture(
             new CurveTag(Mode.FrequencyResponse, AnalysisCurveKind.Primary)));
@@ -271,12 +269,10 @@ public sealed class ImpulseOverlayTests
 
     private static PlotModelFactory CreateFactoryFor(
         TestAnalyzer measurement,
-        NoiseMeasurement noiseMeasurement,
         ImpulseResponseOptions impulseOptions) =>
         new(
             measurement.Document,
             measurement.Engine,
-            noiseMeasurement,
             _ => null,
             new AnalyzerViewSettings
             {

@@ -28,7 +28,7 @@ public sealed class SilentLiveSpectrumTests
             sequenceLength: 1024,
             liveSpectrumOptions: options);
 
-        Assert.True(LiveSpectrumController.NormalizeSignalType(options));
+        Assert.True(options.NormalizeSignalType());
         measurement.RefreshPlaybackSignal();
 
         Task<bool> running = measurement.RunAsync();
@@ -56,7 +56,7 @@ public sealed class SilentLiveSpectrumTests
             AnalysisMode = LiveAnalysisMode.TransferFunction,
             NoiseColor = NoiseColor.Silent
         };
-        LiveSpectrumController.NormalizeSignalType(options);
+        options.NormalizeSignalType();
 
         MeasurementSettingsFile.LiveSpectrumSettings captured =
             MeasurementSettingsFile.LiveSpectrumSettings.Capture(options);

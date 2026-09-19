@@ -1,28 +1,26 @@
 using OxyPlot;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
-using Resonalyze.Options;
 
 namespace Resonalyze;
 
-internal sealed class LiveSpectrumController : IDisposable
+/// <summary>
+/// Draws Live Spectrum into the main plot: the redraw loop while the analyzer runs, the held or loaded curve when it
+/// does not, and the notices over them. What is shown and how lives in <see cref="LiveSpectrumSession"/>.
+/// </summary>
+/// <remarks>A mode view beside <see cref="AnalyzerPlot"/>: entering Live Spectrum draws what the session holds.</remarks>
+internal sealed class LiveSpectrumController : IModeView, IDisposable
 {
     private readonly Form owner;
-    private readonly NoiseMeasurement measurement;
+    private readonly LiveSpectrumSession session;
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 33 };
     // The main plot, drawn into while Live Spectrum is its mode.
     private readonly AnalyzerPlot plot;
     private readonly OxyPlot.WindowsForms.PlotView plotView;
     // Through viewport memory so the user's zoom survives model rebuilds.
     private readonly PlotViewportMemory plotViewports;
-    private readonly PlotModelFactory plotModelFactory;
+    private readonly LiveSpectrumPlotFactory plotFactory;
     private readonly OverlayCollection overlayCollection;
-    private readonly Func<Task> selectLiveSpectrumAsync;
-    private readonly Action updateRecordButton;
-    private readonly LiveSpectrumOptions liveSpectrumOptions;
-    // Resolves the id to the curve so a run freezes the calibration itself.
-    private readonly Func<string?, CapturedMicrophoneCalibration> resolveCalibration;
-    private readonly Func<bool> suppressErrorDialogs;
     private static readonly CurveTag LiveSpectrumTag =
         new(Mode.LiveSpectrum, AnalysisCurveKind.Primary, CurveSource.Main);
     internal static readonly CurveTag LiveSpectrumInputMagnitudeTag =
@@ -33,19 +31,10 @@ internal sealed class LiveSpectrumController : IDisposable
     private const string OverloadAnnotationTag = "live-spectrum:overload";
     private const string SplViewOnlyAnnotationTag = "live-spectrum:spl-view-only";
     private const string CaptureProgressAnnotationTag = "live-spectrum:capture-progress";
-    private const long PeakHoldSuppressionMs = 1000;
     private bool disposed;
     private bool redrawInProgress;
-    // Held over the displayed band curve, not raw bins. See docs/tech/live-spectrum.md#peak-hold.
-    private List<SignalPoint>? peakHoldPoints;
-    private long peakHoldResumeTick;
-    private LiveSpectrumSnapshot? lastSnapshot;
     // Lets a tick with no new frame skip clone-and-render.
     private int lastDrawnFrameCount = -1;
-    // A loaded capture is state: every RebuildModel must redraw it, or the accumulation replaces it.
-    private LiveCaptureDocument? loadedCapture;
-    private ProtectiveHighPassConfiguration configuredProtectiveHighPass =
-        ProtectiveHighPassConfiguration.Off;
     // Pooled per model: an OxyPlot element belongs to one model at a time.
     private OverlayTextAnnotation? captureProgressAnnotation;
     private PlotModel? captureProgressOwner;
@@ -63,65 +52,26 @@ internal sealed class LiveSpectrumController : IDisposable
 
     public LiveSpectrumController(
         Form owner,
-        NoiseMeasurement measurement,
-        AnalyzerPlot plot,
-        Func<Task> selectLiveSpectrumAsync,
-        Action updateRecordButton,
-        LiveSpectrumOptions liveSpectrumOptions,
-        Func<string?, CapturedMicrophoneCalibration> resolveCalibration,
-        Func<bool> suppressErrorDialogs)
+        LiveSpectrumSession session,
+        AnalyzerPlot plot)
     {
         this.owner = owner;
-        this.measurement = measurement;
+        this.session = session;
         this.plot = plot;
         plotView = plot.View;
         plotViewports = plot.Viewports;
-        plotModelFactory = plot.Factory;
         overlayCollection = plot.Overlays;
-        this.selectLiveSpectrumAsync = selectLiveSpectrumAsync;
-        this.updateRecordButton = updateRecordButton;
-        this.liveSpectrumOptions = liveSpectrumOptions;
-        this.resolveCalibration = resolveCalibration;
-        this.suppressErrorDialogs = suppressErrorDialogs;
-        measurement.Completed += MeasurementCompleted;
+        plotFactory = new LiveSpectrumPlotFactory(session.Curves);
+        session.Completed += MeasurementCompleted;
         timer.Tick += TimerTick;
-        plot.LiveRawCapture = BuildRawRtaCapture;
     }
 
-    public bool InProgress => measurement.InProgress;
     public bool TimerEnabled => timer.Enabled;
-
-    public bool HasConfiguredLoopback => measurement.HasConfiguredLoopback;
-
-    /// <summary>Whether a view-only SPL scale would hide a curve (drives the amber SPL warning).</summary>
-    public bool HasDisplayableCurve => measurement.InProgress || lastSnapshot != null;
-
-    /// <summary>Calibration of the curve on the plot: a loaded capture's own, else the id frozen on the accumulation; null for an empty plot.</summary>
-    public string? DisplayedCalibrationName =>
-        loadedCapture is { } document
-            ? document.Calibration?.Name ?? string.Empty
-            : HasDisplayableCurve
-                ? measurement.CaptureMicrophoneCalibrationName
-                : null;
-
-    /// <summary>Whether a held accumulation can be saved; a loaded capture is excluded (re-saving would restamp its recipe).</summary>
-    public bool HasCaptureToSave =>
-        loadedCapture == null && lastSnapshot?.InputMagnitude is { Length: > 1 };
-
-    /// <summary>The held snapshot as a capture document, or null. Call <see cref="StopAndHoldAsync"/> first.</summary>
-    public LiveCaptureDocument? BuildCaptureDocument() =>
-        lastSnapshot is { } snapshot
-            ? plotModelFactory.BuildLiveCaptureDocument(
-                snapshot.InputMagnitude,
-                snapshot.FrameCount,
-                title: string.Empty,
-                snapshot.ClippedFrameCount)
-            : null;
 
     /// <summary>Stops and harvests the final accumulation; <see cref="AbortAsync"/> would drop the newest frames.</summary>
     public async Task StopAndHoldAsync()
     {
-        if (measurement.InProgress)
+        if (session.InProgress)
         {
             await StopAsync();
             return;
@@ -140,189 +90,84 @@ internal sealed class LiveSpectrumController : IDisposable
             attachedModel = null;
         }
 
-        lastSnapshot = null;
-        SuspendPeakHold();
-        peakHoldPoints = null;
-        loadedCapture = document;
+        session.ShowLoaded(document);
         RebuildModel();
     }
 
     // The loaded capture keeps its own scale: its levels mean what its capture-time anchor made them.
-    private void ShowLoadedCaptureModel(LiveCaptureDocument document)
+    private void ShowLoadedCaptureModel(LiveSpectrumDisplay display, LiveCaptureDocument document)
     {
-        PlotModel model = plotModelFactory.CreateLiveSpectrum(
-            document.Recipe.MagnitudeScale);
-        model.Series.Add(plotModelFactory.BuildLoadedCaptureSeries(document));
+        PlotModel model = LiveSpectrumPlotFactory.CreateModel(
+            display, document.Recipe.MagnitudeScale);
+        model.Series.Add(LiveSpectrumPlotFactory.BuildLoadedCaptureSeries(document));
         if (document.CurveDb.Length > 0)
         {
             PlotModelStyle.RaiseDecibelViewCeiling(model, document.CurveDb.Max());
         }
 
-        UpdateCaptureProgressAnnotation(model);
+        UpdateCaptureProgressAnnotation(display, model);
         plotViewports.Show(model, plot.Mode);
         plot.UpdateOverlayAvailability();
         overlayCollection.Show(plot.Mode);
         plot.RefreshLabels();
     }
 
-    public RawCurveCapture? BuildRawRtaCapture() =>
-        plotModelFactory.BuildRawRtaCurve(lastSnapshot?.InputMagnitude);
-
-    // Follows the selection: without a matching calibration the SPL axis is view-only (SplViewOnly).
-    private bool RenderingSpl =>
-        plotModelFactory.EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
-
-    // SPL selected without calibration: axis shows, live curves suppressed. MMM never gets here (reports relative; see PlotModelFactory.LiveUsesBandPower).
-    private bool SplViewOnly =>
-        RenderingSpl && plotModelFactory.LiveSplOffsetDb == null;
-
-    private bool RtaOnly =>
-        plotModelFactory.EffectiveLiveAnalysisMode.IsReferenceFree();
-
-    private bool NeedsInputMagnitude =>
-        liveSpectrumOptions.ShowInputMagnitude || RtaOnly;
-
-    // Display transform behind the peak-hold envelope; any change must drop the envelope. See docs/tech/live-spectrum.md#peak-hold.
-    private readonly record struct PeakHoldDisplayKey(
-        MagnitudeScale Scale,
-        bool RtaOnly,
-        int SmoothingInverseOctaves,
-        double? SplOffsetDb,
-        NoiseSpectralModel? TiltModel);
-
-    private PeakHoldDisplayKey renderedPeakHoldKey;
-
-    private PeakHoldDisplayKey CurrentPeakHoldKey() => new(
-        RenderingSpl ? MagnitudeScale.SoundPressureLevel : MagnitudeScale.Relative,
-        RtaOnly,
-        // Effective code: MMM pins smoothing Off.
-        plotModelFactory.EffectiveLiveSmoothingCode,
-        RenderingSpl ? plotModelFactory.LiveSplOffsetDb : null,
-        // Null (off) and a flat model are different transforms.
-        plotModelFactory.LiveTiltModel);
-
     public void ResetAverage()
     {
-        measurement.ResetAccumulation();
+        session.ResetAverage();
         lastDrawnFrameCount = -1;
-        SuspendPeakHold();
     }
 
     public void ApplyDisplayOptions()
     {
-        measurement.RefreshLiveAveraging();
-        // Infinite average restarts on option changes, except spatial-average captures (the accumulation is the measurement). Keyed on mode, not stored speed.
-        if (!liveSpectrumOptions.AnalysisMode.IsSpatialAverageCapture() &&
-            liveSpectrumOptions.EffectiveAveragingSpeed == AveragingSpeed.Infinite)
+        if (session.ApplyDisplayOptions())
         {
-            measurement.ResetAccumulation();
             lastDrawnFrameCount = -1;
-        }
-
-        if (!liveSpectrumOptions.PeakHold)
-        {
-            peakHoldPoints = null;
-        }
-
-        if (CurrentPeakHoldKey() != renderedPeakHoldKey)
-        {
-            SuspendPeakHold();
         }
 
         // Rebuild even while running: coherence display adds/removes an axis.
         RebuildModel();
     }
 
-    // Keeps ramp-up frames out of the envelope.
-    private void SuspendPeakHold()
-    {
-        peakHoldPoints = null;
-        peakHoldResumeTick = Environment.TickCount64 + PeakHoldSuppressionMs;
-    }
-
     public async Task ReconfigureFromAsync(
         MeasurementSettingsFile.SweepMeasurementSettings measurementSettings)
     {
-        bool restart = measurement.InProgress;
+        bool restart = session.InProgress;
         if (restart)
         {
             await StopAsync();
         }
 
-        ConfigureFrom(measurementSettings);
+        session.Configure(measurementSettings);
 
         if (restart && plot.Mode == Mode.LiveSpectrum)
         {
-            await StartAsync();
+            Start();
         }
-    }
-
-    /// <summary>Updates the next run's protective high-pass without reconfiguring (and so restarting) the analyzer.</summary>
-    public void ApplyProtectiveHighPass(
-        MeasurementSettingsFile.SweepMeasurementSettings measurementSettings)
-    {
-        ArgumentNullException.ThrowIfNull(measurementSettings);
-        configuredProtectiveHighPass = measurementSettings.ToProtectiveHighPass();
-    }
-
-    public void ConfigureFrom(MeasurementSettingsFile.SweepMeasurementSettings measurementSettings)
-    {
-        ApplyProtectiveHighPass(measurementSettings);
-        measurement.Init(
-            measurementSettings.SampleRate,
-            measurementSettings.Bits,
-            60,
-            measurementSettings.PlaybackChannel,
-            liveSpectrumOptions.SequenceLength,
-            measurementSettings.OutputDeviceNumber,
-            measurementSettings.InputDeviceNumber,
-            measurementSettings.AudioBackend,
-            measurementSettings.AsioDriverName,
-            measurementSettings.AsioInputChannelOffset,
-            measurementSettings.AsioOutputChannelOffset,
-            measurementSettings.WaveInputChannelOffset,
-            measurementSettings.WaveLoopbackInputChannelOffset,
-            measurementSettings.AsioLoopbackInputChannelOffset,
-            liveSpectrumOptions,
-            measurementSettings.WasapiCaptureEndpointId,
-            measurementSettings.WasapiRenderEndpointId,
-            measurementSettings.WasapiBufferMilliseconds);
-        NormalizeSilentSignal();
     }
 
     public async Task ToggleAsync()
     {
-        if (measurement.InProgress)
+        if (session.InProgress)
         {
             await StopAsync();
             return;
         }
 
-        await StartAsync();
+        Start();
     }
 
     public async Task AbortAsync()
     {
         timer.Stop();
-        if (measurement.InProgress)
-        {
-            await measurement.AbortAsync();
-        }
-
-        updateRecordButton();
+        await session.AbortAsync();
         plot.RefreshLabels();
     }
 
-    public void ForgetLastCurve()
+    /// <summary>Redraws what the session holds; a running analyzer redraws on its own clock.</summary>
+    public void Redraw()
     {
-        lastSnapshot = null;
-        peakHoldPoints = null;
-        RemoveOverloadAnnotation(plotView.Model);
-    }
-
-    public void RestoreLastCurve()
-    {
-        if (measurement.InProgress)
+        if (session.InProgress)
         {
             return;
         }
@@ -330,26 +175,36 @@ internal sealed class LiveSpectrumController : IDisposable
         RebuildModel();
     }
 
-    /// <summary>Discards accumulation and kept curve after a stopped-analyzer acquisition change, so old data is not re-interpreted under new parameters.</summary>
-    public void DiscardCapturedData()
+    public void Leave()
     {
-        measurement.ResetAccumulation();
-        lastDrawnFrameCount = -1;
-        loadedCapture = null;
-        ForgetLastCurve();
-        updateRecordButton();
     }
 
-    /// <summary>Drops display state incompatible with a calibration change; runs even while another mode owns the plot.</summary>
-    public void InvalidateCalibration()
+    public void Enter(ModeDescriptor mode)
     {
-        SuspendPeakHold();
+    }
+
+    public void Present()
+    {
+        if (plot.Mode == Mode.LiveSpectrum)
+        {
+            Redraw();
+        }
+    }
+
+    /// <summary>Discards the accumulation, the kept curve and a loaded capture while stopped: after an acquisition change,
+    /// so old data is not re-interpreted under new parameters, and on New session.</summary>
+    public void DiscardCapturedData()
+    {
+        session.Discard();
+        lastDrawnFrameCount = -1;
+        RemoveOverloadAnnotation(plotView.Model);
     }
 
     /// <summary>Reacts to any calibration change in every app mode; the capture keeps running (signal follows the analysis mode).</summary>
     public void RefreshCalibration()
     {
-        InvalidateCalibration();
+        // Runs even while another mode owns the plot: the envelope is invalid wherever the analyzer sits.
+        session.InvalidateCalibration();
 
         if (plot.Mode == Mode.LiveSpectrum)
         {
@@ -357,46 +212,19 @@ internal sealed class LiveSpectrumController : IDisposable
         }
     }
 
-    // Silent is RTA-only (Transfer needs an excitation), so Transfer falls back to periodic pink. Other signals are valid in both modes.
-    internal static bool NormalizeSignalType(LiveSpectrumOptions options)
-    {
-        if (options.AnalysisMode == LiveAnalysisMode.TransferFunction &&
-            options.NoiseColor == NoiseColor.Silent)
-        {
-            options.NoiseColor = NoiseColor.PinkPeriodic;
-            return true;
-        }
-
-        return false;
-    }
-
-    private bool NormalizeSilentSignal()
-    {
-        bool changed = NormalizeSignalType(liveSpectrumOptions);
-        if (changed)
-        {
-            measurement.RefreshPlaybackSignal();
-        }
-
-        return changed;
-    }
-
     private void RebuildModel()
     {
-        if (loadedCapture is { } document)
+        LiveSpectrumDisplay display = session.Display;
+        if (session.LoadedCapture is { } document)
         {
-            ShowLoadedCaptureModel(document);
+            ShowLoadedCaptureModel(display, document);
             return;
         }
 
-        PlotModel model = plotModelFactory.CreateLiveSpectrum();
-        // Prefer a fresh snapshot (accumulators survive a stop) so a scale switch gets curves the stored one lacks.
-        LiveSpectrumSnapshot? snapshot =
-            measurement.GetAccumulatedSpectrumSnapshot(NeedsInputMagnitude) ?? lastSnapshot;
-        if (snapshot != null)
+        PlotModel model = LiveSpectrumPlotFactory.CreateModel(display);
+        if (session.Reread(display) is { } snapshot)
         {
-            lastSnapshot = snapshot;
-            AddLiveSpectrumSeries(model, snapshot);
+            AddLiveSpectrumSeries(display, model, snapshot);
             PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
         }
 
@@ -417,56 +245,36 @@ internal sealed class LiveSpectrumController : IDisposable
         timer.Stop();
         timer.Tick -= TimerTick;
         timer.Dispose();
-        measurement.Completed -= MeasurementCompleted;
-        measurement.Dispose();
+        session.Completed -= MeasurementCompleted;
     }
 
-    private async Task StartAsync()
+    private void Start()
     {
-        if (plot.Mode != Mode.LiveSpectrum)
-        {
-            await selectLiveSpectrumAsync();
-        }
-
-        NormalizeSilentSignal();
-
-        SuspendPeakHold();
-        lastSnapshot = null;
+        session.Start();
         lastDrawnFrameCount = -1;
-        loadedCapture = null;
-        plotViewports.Show(plotModelFactory.CreateLiveSpectrum(), plot.Mode);
+        plotViewports.Show(LiveSpectrumPlotFactory.CreateModel(session.Display), plot.Mode);
         overlayCollection.Show(plot.Mode);
-        // Frozen for this accumulation so the divided-out filter and the saved recipe agree.
-        measurement.SetCaptureProtectiveHighPass(configuredProtectiveHighPass);
-        // Calibration curve frozen too: bins are re-rendered on every redraw and on Save.
-        measurement.SetCaptureMicrophoneCalibration(
-            resolveCalibration(liveSpectrumOptions.CalibrationId));
-        _ = measurement.RunAsync();
         timer.Start();
-        updateRecordButton();
         plot.RefreshLabels();
     }
 
     private async Task StopAsync()
     {
-        LiveSpectrumSnapshot? finalSnapshot = measurement.GetAccumulatedSpectrumSnapshot(
-            NeedsInputMagnitude);
         timer.Stop();
-        await measurement.AbortAsync();
+        LiveSpectrumSnapshot? finalSnapshot = await session.StopAsync();
 
-        lastSnapshot = finalSnapshot ?? lastSnapshot;
-        PlotModel model = plotModelFactory.CreateLiveSpectrum();
+        LiveSpectrumDisplay display = session.Display;
+        PlotModel model = LiveSpectrumPlotFactory.CreateModel(display);
         if (finalSnapshot != null)
         {
-            AddLiveSpectrumSeries(model, finalSnapshot);
+            AddLiveSpectrumSeries(display, model, finalSnapshot);
             PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
         }
 
-        UpdateCaptureProgressAnnotation(model);
+        UpdateCaptureProgressAnnotation(display, model);
         plotViewports.Show(model, plot.Mode);
         plot.UpdateOverlayAvailability();
         overlayCollection.Show(plot.Mode);
-        updateRecordButton();
         plot.RefreshLabels();
     }
 
@@ -486,33 +294,31 @@ internal sealed class LiveSpectrumController : IDisposable
                 return;
             }
 
+            LiveSpectrumDisplay display = session.Display;
             // Re-render only on a new analysis frame (a 683 ms frame spans ~20 ticks of 33 ms); notices still update every tick. See docs/tech/live-spectrum.md#redraw-loop.
-            int frames = measurement.AveragedFrameCount;
-            if (frames == lastDrawnFrameCount && lastSnapshot != null)
+            int frames = session.AveragedFrameCount;
+            if (frames == lastDrawnFrameCount && session.HeldSnapshot != null)
             {
                 UpdateOverloadAnnotation(model);
-                UpdateCaptureProgressAnnotation(model);
+                UpdateCaptureProgressAnnotation(display, model);
                 model.InvalidatePlot(false);
                 return;
             }
 
-            LiveSpectrumSnapshot? snapshot = measurement.GetAccumulatedSpectrumSnapshot(
-                NeedsInputMagnitude);
-            if (snapshot == null)
+            if (session.ReadFrame(display) is not { } snapshot)
             {
                 return;
             }
 
             lastDrawnFrameCount = frames;
 
-            lastSnapshot = snapshot;
             RemoveLiveSpectrumSeries(model);
-            AddLiveSpectrumSeries(model, snapshot);
+            AddLiveSpectrumSeries(display, model, snapshot);
             // A padded loopback puts the transfer above 0 dB; expand-only ceiling raise.
             PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
             overlayCollection.RefreshCurrentMeasurementTargets();
             UpdateOverloadAnnotation(model);
-            UpdateCaptureProgressAnnotation(model);
+            UpdateCaptureProgressAnnotation(display, model);
             model.InvalidatePlot(true);
             plot.RefreshLabels();
         }
@@ -546,8 +352,12 @@ internal sealed class LiveSpectrumController : IDisposable
         return maxDb;
     }
 
-    private void AddLiveSpectrumSeries(PlotModel model, LiveSpectrumSnapshot snapshot)
+    private void AddLiveSpectrumSeries(
+        LiveSpectrumDisplay display,
+        PlotModel model,
+        LiveSpectrumSnapshot snapshot)
     {
+        LiveSpectrumOptions options = display.Options;
         // A reused series must never sit in two models at once.
         if (attachedModel != null && !ReferenceEquals(attachedModel, model))
         {
@@ -557,7 +367,7 @@ internal sealed class LiveSpectrumController : IDisposable
 
         // View-only SPL: explain the missing curve. Created per model (OxyPlot element ownership); remove-then-add.
         RemoveSplViewOnlyAnnotation(model);
-        if (SplViewOnly)
+        if (display.SplViewOnly)
         {
             OverlayTextAnnotation notice = PlotModelFactory.CreateSplViewOnlyAnnotation(
                 "No SPL calibration for the live input — showing dB SPL overlays only");
@@ -566,63 +376,64 @@ internal sealed class LiveSpectrumController : IDisposable
             return;
         }
 
-        bool rtaOnly = RtaOnly;
-        renderedPeakHoldKey = CurrentPeakHoldKey();
+        bool rtaOnly = display.RtaOnly;
+        LivePeakHold peakHold = session.PeakHold;
+        peakHold.Drawn(display.PeakHoldKey);
 
-        if (liveSpectrumOptions.PeakHold)
+        if (options.PeakHold)
         {
             double[]? peakSource = rtaOnly ? snapshot.InputMagnitude : snapshot.Magnitude;
             if (peakSource is { Length: > 0 })
             {
                 // Envelope the displayed band curve: per-bin peaks from different frames would overstate the band.
-                List<SignalPoint> current =
-                    plotModelFactory.BuildMainDisplayPoints(peakSource, rtaOnly);
-                UpdatePeakHold(current);
+                peakHold.Hold(plotFactory.MainDisplayPoints(display, peakSource, rtaOnly));
             }
             else
             {
-                peakHoldPoints = null;
+                peakHold.Clear();
             }
 
-            if (peakHoldPoints != null)
+            if (peakHold.Points is { } peakHoldPoints)
             {
                 if (peakHoldSeries == null)
                 {
-                    peakHoldSeries = plotModelFactory.BuildPeakHoldSeries(peakHoldPoints);
+                    peakHoldSeries = LiveSpectrumPlotFactory.BuildPeakHoldSeries(display, peakHoldPoints);
                     peakHoldSeries.Tag = LiveSpectrumPeakHoldTag;
                 }
                 else
                 {
-                    plotModelFactory.UpdatePeakHoldSeries(peakHoldSeries, peakHoldPoints);
+                    LiveSpectrumPlotFactory.UpdatePeakHoldSeries(display, peakHoldSeries, peakHoldPoints);
                 }
                 model.Series.Add(peakHoldSeries);
             }
         }
 
-        if (!rtaOnly && liveSpectrumOptions.ShowMainCurve)
+        if (!rtaOnly && options.ShowMainCurve)
         {
             if (snapshot.Coherence != null &&
-                liveSpectrumOptions.CoherenceThresholdPercent > 0)
+                options.CoherenceThresholdPercent > 0)
             {
                 if (trustedSeries == null || untrustedSeries == null)
                 {
                     (trustedSeries, untrustedSeries) =
-                        plotModelFactory.BuildNoiseSeriesSegmented(
+                        plotFactory.BuildCoherenceSplitSeries(
+                            display,
                             snapshot.Magnitude,
                             snapshot.Coherence,
-                            liveSpectrumOptions.CoherenceThresholdPercent);
+                            options.CoherenceThresholdPercent);
                     // The trusted segment stays primary so the current-measurement target uses it.
                     untrustedSeries.Tag = LiveSpectrumLowCoherenceTag;
                     trustedSeries.Tag = LiveSpectrumTag;
                 }
                 else
                 {
-                    plotModelFactory.UpdateNoiseSeriesSegmented(
+                    plotFactory.UpdateCoherenceSplitSeries(
+                        display,
                         trustedSeries,
                         untrustedSeries,
                         snapshot.Magnitude,
                         snapshot.Coherence,
-                        liveSpectrumOptions.CoherenceThresholdPercent);
+                        options.CoherenceThresholdPercent);
                 }
                 model.Series.Add(untrustedSeries);
                 model.Series.Add(trustedSeries);
@@ -631,67 +442,46 @@ internal sealed class LiveSpectrumController : IDisposable
             {
                 if (mainSeries == null)
                 {
-                    mainSeries = plotModelFactory.BuildNoiseSeries(snapshot.Magnitude);
+                    mainSeries = plotFactory.BuildTransferSeries(display, snapshot.Magnitude);
                     mainSeries.Tag = LiveSpectrumTag;
                 }
                 else
                 {
-                    plotModelFactory.UpdateNoiseSeries(mainSeries, snapshot.Magnitude);
+                    plotFactory.UpdateTransferSeries(display, mainSeries, snapshot.Magnitude);
                 }
                 model.Series.Add(mainSeries);
             }
         }
 
         if (snapshot.InputMagnitude != null &&
-            (liveSpectrumOptions.ShowInputMagnitude || rtaOnly))
+            (options.ShowInputMagnitude || rtaOnly))
         {
             if (inputMagnitudeSeries == null)
             {
                 inputMagnitudeSeries =
-                    plotModelFactory.BuildInputMagnitudeSeries(snapshot.InputMagnitude);
+                    plotFactory.BuildInputMagnitudeSeries(display, snapshot.InputMagnitude);
                 inputMagnitudeSeries.Tag = LiveSpectrumInputMagnitudeTag;
             }
             else
             {
-                plotModelFactory.UpdateInputMagnitudeSeries(
-                    inputMagnitudeSeries, snapshot.InputMagnitude);
+                plotFactory.UpdateInputMagnitudeSeries(
+                    display, inputMagnitudeSeries, snapshot.InputMagnitude);
             }
             model.Series.Add(inputMagnitudeSeries);
         }
 
-        if (!rtaOnly && snapshot.Coherence != null && liveSpectrumOptions.ShowCoherence)
+        if (!rtaOnly && snapshot.Coherence != null && options.ShowCoherence)
         {
             if (coherenceSeries == null)
             {
-                coherenceSeries = plotModelFactory.BuildCoherenceSeries(snapshot.Coherence);
+                coherenceSeries = LiveSpectrumPlotFactory.BuildCoherenceSeries(display, snapshot.Coherence);
                 coherenceSeries.Tag = LiveSpectrumCoherenceTag;
             }
             else
             {
-                plotModelFactory.UpdateCoherenceSeries(coherenceSeries, snapshot.Coherence);
+                plotFactory.UpdateCoherenceSeries(display, coherenceSeries, snapshot.Coherence);
             }
             model.Series.Add(coherenceSeries);
-        }
-    }
-
-    // Per-index max of displayed dB equals the band-level peak (grid stable, level monotone in power).
-    private void UpdatePeakHold(List<SignalPoint> current)
-    {
-        if (Environment.TickCount64 < peakHoldResumeTick)
-        {
-            return;
-        }
-
-        if (peakHoldPoints == null || peakHoldPoints.Count != current.Count)
-        {
-            peakHoldPoints = new List<SignalPoint>(current);
-            return;
-        }
-
-        for (int i = 0; i < current.Count; i++)
-        {
-            double held = Math.Max(peakHoldPoints[i].Y, current[i].Y);
-            peakHoldPoints[i] = new SignalPoint(current[i].X, held);
         }
     }
 
@@ -699,7 +489,7 @@ internal sealed class LiveSpectrumController : IDisposable
     {
         RemoveOverloadAnnotation(model);
 
-        if (!measurement.HasRecentDrops())
+        if (!session.HasRecentDrops)
         {
             return;
         }
@@ -740,43 +530,10 @@ internal sealed class LiveSpectrumController : IDisposable
         }
     }
 
-    /// <summary>MMM integration progress: the curve settles visually long before the average does.</summary>
-    private void UpdateCaptureProgressAnnotation(PlotModel? model)
+    private void UpdateCaptureProgressAnnotation(LiveSpectrumDisplay display, PlotModel? model)
     {
         RemoveTaggedAnnotations(model, CaptureProgressAnnotationTag);
-        if (model == null ||
-            !plotModelFactory.EffectiveLiveAnalysisMode.IsSpatialAverageCapture())
-        {
-            return;
-        }
-
-        int frames;
-        int clipped;
-        double seconds;
-        string state;
-        if (loadedCapture is { } document)
-        {
-            frames = document.Recipe.AveragedFrameCount;
-            clipped = document.Recipe.ClippedFrameCount ?? 0;
-            seconds = document.Recipe.IntegratedSeconds;
-            state = "Loaded";
-        }
-        else
-        {
-            bool running = measurement.InProgress;
-            frames = running ? measurement.AveragedFrameCount : lastSnapshot?.FrameCount ?? 0;
-            clipped = running ? measurement.ClippedFrameCount : lastSnapshot?.ClippedFrameCount ?? 0;
-            int sampleRate = measurement.SampleRate;
-            if (sampleRate < 1)
-            {
-                return;
-            }
-
-            seconds = (double)frames * measurement.AnalysisHopSize / sampleRate;
-            state = running ? "Integrating" : "Capture held";
-        }
-
-        if (frames <= 0)
+        if (model == null || session.Progress(display) is not { } progress)
         {
             return;
         }
@@ -798,15 +555,15 @@ internal sealed class LiveSpectrumController : IDisposable
             captureProgressState = null;
         }
 
-        if (state != captureProgressState || frames != captureProgressFrames || clipped != captureProgressClipped)
+        if (progress.State != captureProgressState ||
+            progress.Frames != captureProgressFrames ||
+            progress.ClippedFrames != captureProgressClipped)
         {
-            captureProgressState = state;
-            captureProgressFrames = frames;
-            captureProgressClipped = clipped;
-            captureProgressAnnotation.Text = clipped > 0
-                ? $"{state} — {seconds:0} s, {frames} frames, {clipped} clipped"
-                : $"{state} — {seconds:0} s, {frames} frames";
-            captureProgressAnnotation.TextColor = clipped > 0
+            captureProgressState = progress.State;
+            captureProgressFrames = progress.Frames;
+            captureProgressClipped = progress.ClippedFrames;
+            captureProgressAnnotation.Text = progress.Text;
+            captureProgressAnnotation.TextColor = progress.ClippedFrames > 0
                 ? UiPalette.Warning.ToOxy()
                 : UiPalette.TextSecondary.ToOxy();
         }
@@ -843,21 +600,8 @@ internal sealed class LiveSpectrumController : IDisposable
             {
                 timer.Stop();
                 plot.UpdateOverlayAvailability();
-                updateRecordButton();
                 plot.RefreshLabels();
-                // A user stop reports success; an error here is a device failure and must not reset the UI silently.
-                if (!success &&
-                    measurement.LastError is Exception error &&
-                    !owner.IsDisposed &&
-                    !suppressErrorDialogs())
-                {
-                    MessageBox.Show(
-                        owner,
-                        $"The live measurement failed.\r\n\r\n{error.Message}",
-                        "Live Spectrum",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                }
+                session.RunEnded(success);
             });
         }
         catch (InvalidOperationException)

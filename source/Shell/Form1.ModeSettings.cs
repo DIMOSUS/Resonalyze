@@ -117,10 +117,10 @@ public partial class Form1
                 opt.Init(
                     viewSettings.LiveSpectrum,
                     microphoneCalibration.GetEntries(),
-                    plotModelFactory.LiveSplOffsetDb.HasValue,
-                    liveSpectrumController.HasDisplayableCurve,
-                    liveSpectrumController.HasConfiguredLoopback,
-                    noiseMeasurement.SampleRate);
+                    liveSpectrumSession.Display.SplOffsetDb.HasValue,
+                    liveSpectrumSession.HasDisplayableCurve,
+                    liveSpectrumSession.HasConfiguredLoopback,
+                    liveSpectrumSession.SampleRate);
                 opt.ShowCalibration(DescribeLiveCalibration());
                 opt.ResetAverageRequested += liveSpectrumController.ResetAverage;
             },
@@ -140,7 +140,7 @@ public partial class Form1
         {
             await ApplyMeasurementConfigurationToControllersAsync();
             // A stopped analyzer's curve must not be redrawn under new acquisition parameters (e.g. slope compensation re-tilting pink as white).
-            if (!liveSpectrumController.InProgress)
+            if (!liveSpectrumSession.InProgress)
             {
                 liveSpectrumController.DiscardCapturedData();
             }
@@ -177,7 +177,7 @@ public partial class Form1
 
         if (descriptor.Mode == Mode.LiveSpectrum)
         {
-            RestoreLiveCurveIfStopped();
+            liveSpectrumController.Redraw();
             return;
         }
 

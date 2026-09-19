@@ -22,9 +22,8 @@ internal sealed class PlotModelFactory
     public const string TimeAxisKey = "time";
     public const string AutocorrelationAxisKey = "autocorrelation";
 
-    // The next run's configuration: the live SPL anchor, and the rate a plot takes when nothing is open.
+    // The next run's configuration: the rate a plot takes when nothing is open.
     private readonly ExpSweepMeasurement expSweepMeasurement;
-    private readonly NoiseMeasurement noiseMeasurement;
     private readonly Func<string?, CalibrationFile?> getCalibration;
     private readonly MeasurementPlotContext measurementContext;
     private readonly FrequencyResponseOptions frequencyResponseOptions;
@@ -34,7 +33,6 @@ internal sealed class PlotModelFactory
     private readonly CurveVisibilityOptions phaseResponseVisibility;
     private readonly CurveVisibilityOptions groupDelayVisibility;
     private readonly ImpulseResponseOptions impulseResponseOptions;
-    private readonly LiveSpectrumOptions liveSpectrumOptions;
     private readonly WaterfallGenerateOptions waterfallGenOptions;
     private readonly WaterfallGenerateOptions burstDecayGenOptions;
     private Func<CompareAnalysisSource?>? getCompareSource;
@@ -42,13 +40,11 @@ internal sealed class PlotModelFactory
     public PlotModelFactory(
         AnalyzerDocument document,
         ExpSweepMeasurement expSweepMeasurement,
-        NoiseMeasurement noiseMeasurement,
         Func<string?, CalibrationFile?> getCalibration,
         AnalyzerViewSettings view)
     {
         ArgumentNullException.ThrowIfNull(view);
         this.expSweepMeasurement = expSweepMeasurement;
-        this.noiseMeasurement = noiseMeasurement;
         this.getCalibration = getCalibration;
         measurementContext = new MeasurementPlotContext(document);
         frequencyResponseOptions = view.FrequencyResponse;
@@ -58,7 +54,6 @@ internal sealed class PlotModelFactory
         phaseResponseVisibility = view.PhaseResponseVisibility;
         groupDelayVisibility = view.GroupDelayVisibility;
         impulseResponseOptions = view.ImpulseResponse;
-        liveSpectrumOptions = view.LiveSpectrum;
         waterfallGenOptions = view.Waterfall;
         burstDecayGenOptions = view.BurstDecay;
     }
@@ -75,84 +70,8 @@ internal sealed class PlotModelFactory
     public MagnitudeScale EffectiveFrequencyResponseScale =>
         frequencyResponseOptions.MagnitudeScale;
 
-    /// <summary>Offset turning raw mic dBFS into dB SPL for the live RTA (no loopback term). Null without a calibration captured on the live input.</summary>
-    public double? LiveSplOffsetDb
-    {
-        get
-        {
-            if (expSweepMeasurement.SplCalibration is not { } calibration)
-            {
-                return null;
-            }
-
-            // Validate against the live input, not the saved sweep input.
-            if (!calibration.MatchesInput(noiseMeasurement.CurrentInputIdentity()))
-            {
-                return null;
-            }
-
-            return calibration.OffsetDb;
-        }
-    }
-
-    /// <summary>Selected mode, forced to RTA without a loopback reference. Single source for plot and controller.</summary>
-    public LiveAnalysisMode EffectiveLiveAnalysisMode =>
-        noiseMeasurement.IsMicOnly &&
-        liveSpectrumOptions.AnalysisMode == LiveAnalysisMode.TransferFunction
-            ? LiveAnalysisMode.Rta
-            : liveSpectrumOptions.AnalysisMode;
-
-    /// <summary>RTA: the selection (view-only SPL without calibration). Transfer: always relative (dimensionless ratio).</summary>
-    public MagnitudeScale EffectiveLiveSpectrumScale
-    {
-        get
-        {
-            LiveAnalysisMode mode = EffectiveLiveAnalysisMode;
-            // Spatial average is absolute only with an anchor: relative band levels on the SPL axis fall below its -20 floor.
-            // Tested by trait, not identity, so band power and axis scale stay consistent.
-            if (mode.IsSpatialAverageCapture())
-            {
-                return LiveSplOffsetDb.HasValue
-                    ? MagnitudeScale.SoundPressureLevel
-                    : MagnitudeScale.Relative;
-            }
-
-            return mode.IsReferenceFree()
-                ? liveSpectrumOptions.MagnitudeScale
-                : MagnitudeScale.Relative;
-        }
-    }
-
-    /// <summary>Rendering pipeline (band power vs per-bin), deliberately separate from the axis scale: a spatial average needs band levels but no absolute reference.</summary>
-    public bool LiveUsesBandPower =>
-        EffectiveLiveAnalysisMode.IsSpatialAverageCapture() ||
-        EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel;
-
-    /// <summary>Excitation model the RTA display compensates; null when off (MMM forces it on), not reference-free, or Silent. Flat is a real value. Part of the peak-hold key.</summary>
-    public NoiseSpectralModel? LiveTiltModel =>
-        EffectiveLiveAnalysisMode.IsReferenceFree() &&
-        (liveSpectrumOptions.CompensateNoiseTilt ||
-            EffectiveLiveAnalysisMode.IsSpatialAverageCapture())
-            ? NoiseColorTilt.SpectralModel(liveSpectrumOptions.EffectiveNoiseColor)
-            : null;
-
-    /// <summary>MMM pins smoothing Off: the SPL path already integrates a fixed 1/12-octave band, and a capture recipe must not vary across a set.</summary>
-    public int EffectiveLiveSmoothingCode =>
-        EffectiveLiveAnalysisMode.IsSpatialAverageCapture()
-            ? 0
-            : liveSpectrumOptions.SmoothingInverseOctaves;
-
-    private double LiveSplRenderOffset =>
-        EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel
-            ? LiveSplOffsetDb ?? 0.0
-            : 0.0;
-
     private CalibrationFile? GetCalibration(FrequencyResponseOptions options) =>
         getCalibration(options.CalibrationId);
-
-    /// <summary>Calibration frozen when the run began, not the rig's current choice: a changed setting must not re-render or mislabel the saved walk.</summary>
-    private CalibrationFile? LiveCaptureCalibration =>
-        noiseMeasurement.CaptureMicrophoneCalibration;
 
     /// <summary>Raw samples plus smoothing code for the overlay layer; only the primary FR magnitude has a raw form, others return null (drawn-curve fallback).</summary>
     public RawCurveCapture? BuildRawCurve(CurveTag tag)
@@ -255,128 +174,8 @@ internal sealed class PlotModelFactory
             source.SampleRate);
     }
 
-    public RawCurveCapture? BuildRawRtaCurve(IReadOnlyList<double>? inputMagnitude)
-    {
-        if (inputMagnitude is not { Count: > 1 })
-        {
-            return null;
-        }
-
-        int smoothingCode = EffectiveLiveSmoothingCode;
-        if (LiveUsesBandPower)
-        {
-            // The band trace applies calibration additively per band, so a consumer can swap it exactly later.
-            return DescribeWithoutRawForm(
-                smoothingCode,
-                noiseMeasurement.SampleRate,
-                LiveCaptureCalibration);
-        }
-
-        List<SignalPoint> spectrum = LiveRtaRawCapture.BuildRelativeRaw(
-            inputMagnitude,
-            noiseMeasurement.SequenceLength,
-            noiseMeasurement.SampleRate,
-            LiveTiltModel);
-        if (spectrum.Count < 2)
-        {
-            return DescribeWithoutRawForm(
-                smoothingCode,
-                noiseMeasurement.SampleRate,
-                LiveCaptureCalibration);
-        }
-
-        return new RawCurveCapture(
-            spectrum,
-            RawCurveRenderer.CaptureCalibrationCorrection(
-                LiveCaptureCalibration),
-            smoothingCode,
-            noiseMeasurement.SampleRate > 0 ? noiseMeasurement.SampleRate : null);
-    }
-
-    /// <summary>Snapshot of the reference-free capture as a document; null unless on the band-power path.</summary>
-    /// <remarks>Built here so the recipe describes what this pipeline drew, not what the options asked for.</remarks>
-    /// <param name="frameCount">Taken from the same snapshot as the bins; the analyzer may have advanced since.</param>
-    public LiveCaptureDocument? BuildLiveCaptureDocument(
-        double[]? inputMagnitude,
-        int frameCount,
-        string title,
-        int clippedFrameCount = 0)
-    {
-        // From the accumulation, the same field the render divides out.
-        ProtectiveHighPassConfiguration protectiveHighPass =
-            noiseMeasurement.CaptureProtectiveHighPass;
-        int sampleRate = noiseMeasurement.SampleRate;
-        int sequenceLength = noiseMeasurement.SequenceLength;
-        if (inputMagnitude is not { Length: > 1 } ||
-            sampleRate < 1 ||
-            sequenceLength < 2 ||
-            !LiveUsesBandPower)
-        {
-            return null;
-        }
-
-        var applied = new LiveRtaApplied();
-        List<SignalPoint> curve = ResampleLiveRta(inputMagnitude, applied);
-        if (curve.Count != LiveCaptureDocument.CurvePointCount)
-        {
-            return null;
-        }
-
-        CalibrationFile? calibration = LiveCaptureCalibration;
-
-        int hop = Math.Max(1, noiseMeasurement.AnalysisHopSize);
-        int frames = frameCount;
-        return new LiveCaptureDocument
-        {
-            SavedAtUtc = DateTimeOffset.UtcNow,
-            Title = title ?? string.Empty,
-            Method = SpatialAverageMethod.MovingMic,
-            CaptureSessionId = noiseMeasurement.CaptureSessionId,
-            SpectrumDb = LiveCaptureDocument.StoreSpectrumBins(
-                inputMagnitude, sequenceLength, sampleRate),
-            CurveDb = curve.Select(point => point.Y).ToArray(),
-            GridStartHz = curve[0].X,
-            GridStopHz = curve[^1].X,
-            TiltCompensationDb = applied.TiltDb,
-            CalibrationCorrectionDb = applied.CalibrationDb,
-            ProtectiveHighPassCorrectionDb = applied.ProtectiveHighPassDb,
-            // Name frozen beside the curve: ids past the 0 deg slot are GUIDs. The name is only a hint.
-            Calibration = calibration != null
-                ? VirtualCrossoverCalibrationSettings.From(
-                    calibration,
-                    noiseMeasurement.CaptureMicrophoneCalibrationName,
-                    fileName: null)
-                : null,
-            Recipe = new LiveCaptureRecipe
-            {
-                AnalysisMode = EffectiveLiveAnalysisMode,
-                SampleRateHz = sampleRate,
-                SequenceLength = sequenceLength,
-                FrameMilliseconds = 1000.0 * sequenceLength / sampleRate,
-                WindowType = noiseMeasurement.AnalysisWindowType,
-                WindowEnbwBins = noiseMeasurement.AnalysisWindowEnbwBins,
-                WindowMainLobeBins = noiseMeasurement.AnalysisWindowMainLobeBins,
-                OverlapPercent = 100 - 100 * hop / sequenceLength,
-                AveragingSpeed = liveSpectrumOptions.EffectiveAveragingSpeed,
-                AveragedFrameCount = frames,
-                ClippedFrameCount = clippedFrameCount,
-                IntegratedSeconds = (double)frames * hop / sampleRate,
-                NoiseColor = liveSpectrumOptions.EffectiveNoiseColor,
-                // What the curve received: the render skips a misaligned compensation.
-                SlopeCompensation = applied.TiltDb.Length > 0,
-                // Null offset: relative levels, consistent across the set.
-                MagnitudeScale = EffectiveLiveSpectrumScale,
-                SplAnchorOffsetDb = LiveSplOffsetDb,
-                SmoothingCode = EffectiveLiveSmoothingCode,
-                ProtectiveHighPassKind = protectiveHighPass.Kind,
-                ProtectiveHighPassFrequencyHz = protectiveHighPass.FrequencyHz,
-                ProtectiveHighPassSlopeDbPerOctave = protectiveHighPass.SlopeDbPerOctave
-            }
-        };
-    }
-
     // Drawn curve plus rate, baked smoothing and calibration, so a consumer can undo the additive correction.
-    private static RawCurveCapture DescribeWithoutRawForm(
+    internal static RawCurveCapture DescribeWithoutRawForm(
         int smoothingCode,
         int sampleRate,
         CalibrationFile? calibration) =>
@@ -386,7 +185,7 @@ internal sealed class PlotModelFactory
             sampleRate > 0 ? sampleRate : null,
             calibration);
 
-    /// <summary>The main plot of a plot mode; Live Spectrum draws its captures itself and gets only its empty frame here.</summary>
+    /// <summary>The main plot of a plot mode but Live Spectrum, which draws its own (<see cref="LiveSpectrumController"/>).</summary>
     public PlotModel Create(Mode mode, bool includeCurves) => mode switch
     {
         Mode.ImpulseResponse => CreateImpulseResponse(includeCurves),
@@ -395,9 +194,8 @@ internal sealed class PlotModelFactory
         Mode.GroupDelay => CreateGroupDelay(includeCurves),
         Mode.CumulativeSpectrumDecay => CreateWaterfall(includeCurves),
         Mode.BurstDecay => CreateBurstDecay(includeCurves),
-        Mode.LiveSpectrum => CreateLiveSpectrum(),
         Mode.Autocorrelation => CreateAutocorrelation(includeCurves),
-        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Not a plot mode.")
+        _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Not a mode this factory draws.")
     };
 
     public PlotModel CreateFrequencyResponse(bool includeCurves)
@@ -1392,276 +1190,7 @@ internal sealed class PlotModelFactory
         return model;
     }
 
-    private bool LiveRtaOnly => EffectiveLiveAnalysisMode.IsReferenceFree();
-
-    /// <param name="scaleOverride">Axis for a STORED capture, whose levels follow the anchor at capture time. Null follows the live state.</param>
-    public PlotModel CreateLiveSpectrum(MagnitudeScale? scaleOverride = null)
-    {
-        // An active tilt compensation is named in the title: the level is reshaped by the excitation spectrum.
-        bool renderSpl =
-            (scaleOverride ?? EffectiveLiveSpectrumScale) == MagnitudeScale.SoundPressureLevel;
-        bool rtaOnly = LiveRtaOnly;
-        bool mmm = EffectiveLiveAnalysisMode.IsSpatialAverageCapture();
-        string tiltSuffix = LiveTiltModel != null ? " (noise-compensated)" : "";
-        // An unanchored MMM capture is a valid spatial average but must not pass for absolute.
-        PlotModel model = PlotModelStyle.CreateTitledModel(
-            mmm
-                ? (renderSpl
-                    ? "Live Spectrum — MMM, dB SPL"
-                    : "Live Spectrum — MMM, relative (no SPL anchor)") + tiltSuffix
-                : renderSpl
-                    ? "Live Spectrum — dB SPL" + tiltSuffix
-                    : rtaOnly
-                        ? "Live Spectrum (RTA)" + tiltSuffix
-                        : "Live Transfer Function");
-
-        PlotModelStyle.AddFrequencyAxis(model);
-        if (renderSpl)
-        {
-            PlotModelStyle.AddDecibelAxis(
-                model,
-                "dB SPL",
-                PlotModelStyle.SplDecibelMinimum,
-                PlotModelStyle.SplDecibelMaximum,
-                PlotModelStyle.SplDecibelAbsoluteMinimum,
-                PlotModelStyle.SplDecibelAbsoluteMaximum);
-        }
-        else
-        {
-            PlotModelStyle.AddDecibelAxis(model);
-            if (!rtaOnly && liveSpectrumOptions.ShowCoherence)
-            {
-                AddCoherenceAxis(model);
-            }
-        }
-
-        return model;
-    }
-
-    private string LiveMagnitudeTracker() =>
-        EffectiveLiveSpectrumScale == MagnitudeScale.SoundPressureLevel
-            ? "{0}\n{2:0.0} Hz\n{4:0.00} dB SPL"
-            : "{0}\n{2:0.0} Hz\n{4:0.00} dB";
-
-    public LineSeries BuildNoiseSeries(double[] accumulatedData)
-    {
-        var series = new LineSeries
-        {
-            Color = UiPalette.CurveLiveTransfer.ToOxy(),
-            Title = "Live Transfer Function",
-            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
-        };
-        UpdateNoiseSeries(series, accumulatedData);
-        return series;
-    }
-
-    // Refill in place at ~30 fps to avoid re-allocating plot objects.
-    public void UpdateNoiseSeries(LineSeries series, double[] magnitude) =>
-        FillPoints(series, ResampleLiveSpectrumMagnitude(magnitude));
-
-    /// <summary>A stored capture drawn as captured, not re-rendered from its bins: viewing must show what the author saw.</summary>
-    public LineSeries BuildLoadedCaptureSeries(LiveCaptureDocument document)
-    {
-        ArgumentNullException.ThrowIfNull(document);
-        var series = new LineSeries
-        {
-            Color = UiPalette.CurveLiveInput.ToOxy(),
-            Title = string.IsNullOrWhiteSpace(document.Title)
-                ? "Loaded capture"
-                : document.Title,
-            // The document's unit: an unanchored capture is relative regardless of this machine's calibration.
-            TrackerFormatString =
-                document.Recipe.MagnitudeScale == MagnitudeScale.SoundPressureLevel
-                    ? "{0}\n{2:0.0} Hz\n{4:0.00} dB SPL"
-                    : "{0}\n{2:0.0} Hz\n{4:0.00} dB"
-        };
-
-        FillPoints(series, document.ToCurvePoints());
-        return series;
-    }
-
-    public LineSeries BuildInputMagnitudeSeries(double[] inputMagnitude)
-    {
-        var series = new LineSeries
-        {
-            Color = UiPalette.CurveLiveInput.ToOxy(),
-            Title = "Input Spectrum (RTA)"
-        };
-        UpdateInputMagnitudeSeries(series, inputMagnitude);
-        return series;
-    }
-
-    // The RTA is the one live curve with an honest absolute level: in SPL it is band-power integrated (FFT-size independent) and offset.
-    public void UpdateInputMagnitudeSeries(LineSeries series, double[] inputMagnitude)
-    {
-        series.TrackerFormatString = LiveMagnitudeTracker();
-        FillPoints(series, ResampleLiveRta(inputMagnitude));
-    }
-
-    // Peak-hold accumulates over display points: per-bin maxima summed per band would overstate peak band power.
-    public List<SignalPoint> BuildMainDisplayPoints(double[] magnitude, bool rtaOnly) =>
-        rtaOnly
-            ? ResampleLiveRta(magnitude)
-            : ResampleLiveSpectrumMagnitude(magnitude, 0.0);
-
-    public LineSeries BuildPeakHoldSeries(List<SignalPoint> peakHoldPoints)
-    {
-        var series = new LineSeries
-        {
-            Color = OxyColor.FromAColor(170, UiPalette.CurvePeakHold.ToOxy()),
-            LineStyle = LineStyle.Solid,
-            StrokeThickness = 1.0,
-            Title = "Peak Hold"
-        };
-        UpdatePeakHoldSeries(series, peakHoldPoints);
-        return series;
-    }
-
-    public void UpdatePeakHoldSeries(LineSeries series, List<SignalPoint> peakHoldPoints)
-    {
-        series.TrackerFormatString = LiveMagnitudeTracker();
-        FillPoints(series, peakHoldPoints);
-    }
-
-    // SPL: band-integrated power with per-band calibration and offset; native: amplitude-averaged dB.
-    // Tilt compensation applies per bin (native) or per band (SPL), whose band laws differ (see NoiseTiltCompensation).
-    /// <summary>What the band render baked in, reported by the render itself (compensation may be skipped on length mismatch).</summary>
-    private sealed class LiveRtaApplied
-    {
-        public double[] TiltDb { get; set; } = [];
-
-        /// <summary>Protective high-pass divided out, dB per point; NaN where unrecoverable.</summary>
-        public double[] ProtectiveHighPassDb { get; set; } = [];
-
-        /// <summary>Mic correction per point, sign convention of <see cref="CalibrationFile.GetDecibelCorrection"/>; the render subtracts it.</summary>
-        public double[] CalibrationDb { get; set; } = [];
-    }
-
-    private List<SignalPoint> ResampleLiveRta(
-        double[] amplitudeSpectrum,
-        LiveRtaApplied? applied = null)
-    {
-        NoiseSpectralModel? tiltModel = LiveTiltModel;
-        if (!LiveUsesBandPower)
-        {
-            return ResampleLiveSpectrumMagnitude(amplitudeSpectrum, 0.0, tiltModel);
-        }
-
-        int smoothingCode = EffectiveLiveSmoothingCode;
-        double smoothingOctaves = SpectrumSmoothing.SmoothingOctaves(smoothingCode);
-        bool psychoacoustic = SpectrumSmoothing.IsPsychoacoustic(smoothingCode);
-        List<SignalPoint> bands = DataHelper.LogarithmicPowerBandResample(
-            amplitudeSpectrum,
-            noiseMeasurement.SequenceLength,
-            noiseMeasurement.SampleRate,
-            noiseMeasurement.AnalysisWindowEnbwBins,
-            noiseMeasurement.AnalysisWindowMainLobeBins,
-            20,
-            20000,
-            1024,
-            smoothingOctaves,
-            psychoacoustic);
-
-        double offsetDb = LiveSplRenderOffset;
-        CalibrationFile? calibration = LiveCaptureCalibration;
-        double[]? recordedCorrection =
-            applied != null && calibration != null ? new double[bands.Count] : null;
-        for (int i = 0; i < bands.Count; i++)
-        {
-            double correction = calibration?.GetDecibelCorrection(bands[i].X) ?? 0.0;
-            if (recordedCorrection != null)
-            {
-                recordedCorrection[i] = correction;
-            }
-
-            bands[i] = new SignalPoint(bands[i].X, bands[i].Y - correction + offsetDb);
-        }
-
-        if (applied != null && recordedCorrection != null)
-        {
-            applied.CalibrationDb = recordedCorrection;
-        }
-
-        // The protective HP sits ahead of the speaker, so an MMM capture carries it; divide it out to match swept IRs (plain RTA keeps it).
-        // Read from the accumulation: the filter in force during the walk, same field as the saved recipe.
-        ProtectiveHighPassConfiguration captureFilter =
-            noiseMeasurement.CaptureProtectiveHighPass;
-        if (EffectiveLiveAnalysisMode.IsSpatialAverageCapture() && captureFilter.Enabled)
-        {
-            double[] filter = ProtectiveHighPassCompensation.MagnitudeCorrectionDb(
-                captureFilter.ToEdge(),
-                noiseMeasurement.SampleRate,
-                ProtectiveHighPassConfiguration.MaximumCompensationBoostDb,
-                bands.Select(band => band.X).ToArray());
-            for (int i = 0; i < bands.Count; i++)
-            {
-                bands[i] = new SignalPoint(bands[i].X, bands[i].Y + filter[i]);
-            }
-
-            if (applied != null)
-            {
-                applied.ProtectiveHighPassDb = filter;
-            }
-        }
-
-        if (tiltModel is { } bandModel)
-        {
-            // Same resampler and parameters, so grids align by index; a length mismatch means divergence, so skip.
-            double[] compensation = LiveTiltBandCompensation(
-                bandModel, amplitudeSpectrum.Length, smoothingOctaves, psychoacoustic);
-            if (compensation.Length == bands.Count)
-            {
-                for (int i = 0; i < bands.Count; i++)
-                {
-                    bands[i] = new SignalPoint(bands[i].X, bands[i].Y + compensation[i]);
-                }
-
-                if (applied != null)
-                {
-                    applied.TiltDb = compensation;
-                }
-            }
-        }
-
-        return bands;
-    }
-
-    // One full render of the analytic noise spectrum per call, too heavy per tick; memoized on its parameters.
-    private double[]? liveTiltBandCompensation;
-    private (NoiseSpectralModel Model, int BinCount, int FftLength, int SampleRate,
-        double EnbwBins, double MainLobeBins, double SmoothingOctaves, bool Psycho)
-        liveTiltBandKey;
-
-    private double[] LiveTiltBandCompensation(
-        NoiseSpectralModel model,
-        int binCount,
-        double smoothingOctaves,
-        bool psychoacoustic)
-    {
-        var key = (model, binCount, noiseMeasurement.SequenceLength,
-            noiseMeasurement.SampleRate, noiseMeasurement.AnalysisWindowEnbwBins,
-            noiseMeasurement.AnalysisWindowMainLobeBins, smoothingOctaves, psychoacoustic);
-        if (liveTiltBandCompensation == null || !key.Equals(liveTiltBandKey))
-        {
-            liveTiltBandCompensation = NoiseTiltCompensation.BandCompensationDb(
-                model,
-                binCount,
-                noiseMeasurement.SequenceLength,
-                noiseMeasurement.SampleRate,
-                noiseMeasurement.AnalysisWindowEnbwBins,
-                noiseMeasurement.AnalysisWindowMainLobeBins,
-                20,
-                20000,
-                1024,
-                smoothingOctaves,
-                psychoacoustic);
-            liveTiltBandKey = key;
-        }
-
-        return liveTiltBandCompensation;
-    }
-
-    private static void FillPoints(LineSeries series, List<SignalPoint> points)
+    internal static void FillPoints(LineSeries series, List<SignalPoint> points)
     {
         series.Points.Clear();
         foreach (SignalPoint point in points)
@@ -1670,54 +1199,7 @@ internal sealed class PlotModelFactory
         }
     }
 
-    private List<SignalPoint> ResampleLiveSpectrumMagnitude(
-        double[] magnitude,
-        double offsetDb = 0.0,
-        NoiseSpectralModel? tiltCompensationModel = null)
-    {
-        List<SignalPoint> bins = DataHelper.MagnitudeBinsToDecibels(
-            magnitude, noiseMeasurement.SequenceLength, noiseMeasurement.SampleRate, offsetDb);
-
-        // Per bin before resample, where LiveRtaRawCapture bakes it, so re-smoothing a raw capture reproduces this trace.
-        if (tiltCompensationModel is { } model)
-        {
-            for (int i = 0; i < bins.Count; i++)
-            {
-                bins[i] = new SignalPoint(
-                    bins[i].X,
-                    bins[i].Y + NoiseTiltCompensation.BinCompensationDb(
-                        model, bins[i].X, noiseMeasurement.SampleRate));
-            }
-        }
-
-        return DataHelper.LogarithmicResample(
-            bins,
-            20,
-            20000,
-            1024,
-            LiveCaptureCalibration,
-            SpectrumSmoothing.SmoothingOctaves(EffectiveLiveSmoothingCode),
-            psychoacoustic: SpectrumSmoothing.IsPsychoacoustic(
-                EffectiveLiveSmoothingCode));
-    }
-
-    public LineSeries BuildCoherenceSeries(double[] coherence)
-    {
-        return BuildCoherenceSeries(
-            coherence,
-            noiseMeasurement.SampleRate,
-            noiseMeasurement.SequenceLength,
-            liveSpectrumOptions.SmoothingInverseOctaves);
-    }
-
-    public void UpdateCoherenceSeries(LineSeries series, double[] coherence) =>
-        FillPoints(series, ResampleCoherence(
-            coherence,
-            noiseMeasurement.SampleRate,
-            noiseMeasurement.SequenceLength,
-            liveSpectrumOptions.SmoothingInverseOctaves));
-
-    private LineSeries BuildCoherenceSeries(
+    internal static LineSeries BuildCoherenceSeries(
         double[] coherence,
         int sampleRate,
         int fftLength,
@@ -1741,106 +1223,7 @@ internal sealed class PlotModelFactory
         return series;
     }
 
-    /// <summary>Trusted and low-coherence (dimmed, dashed) segments sharing boundary points.</summary>
-    public (LineSeries Trusted, LineSeries Untrusted) BuildNoiseSeriesSegmented(
-        double[] magnitude,
-        double[] coherence,
-        int thresholdPercent)
-    {
-        var trusted = new LineSeries
-        {
-            Color = UiPalette.CurveLiveTransfer.ToOxy(),
-            Title = "Live Transfer Function",
-            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
-        };
-        var untrusted = new LineSeries
-        {
-            Color = OxyColor.FromAColor(140, UiPalette.CurveMuted.ToOxy()),
-            LineStyle = LineStyle.Dash,
-            StrokeThickness = 1.0,
-            Title = "Low coherence",
-            TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
-        };
-        UpdateNoiseSeriesSegmented(trusted, untrusted, magnitude, coherence, thresholdPercent);
-        return (trusted, untrusted);
-    }
-
-    public void UpdateNoiseSeriesSegmented(
-        LineSeries trusted,
-        LineSeries untrusted,
-        double[] magnitude,
-        double[] coherence,
-        int thresholdPercent)
-    {
-        List<SignalPoint> magnitudePoints = ResampleLiveSpectrumMagnitude(magnitude);
-        List<SignalPoint> coherencePoints = ResampleCoherence(
-            coherence,
-            noiseMeasurement.SampleRate,
-            noiseMeasurement.SequenceLength,
-            liveSpectrumOptions.SmoothingInverseOctaves);
-        int count = magnitudePoints.Count;
-        double threshold = thresholdPercent / 100.0;
-
-        // Different grids, so match coherence by frequency, not index. Missing coverage counts as trusted.
-        var trustedFlags = new bool[count];
-        int cursor = 0;
-        for (int i = 0; i < count; i++)
-        {
-            trustedFlags[i] =
-                NearestCoherence(coherencePoints, magnitudePoints[i].X, ref cursor) >=
-                threshold;
-        }
-
-        bool IsTrusted(int index) => trustedFlags[index];
-
-        trusted.Points.Clear();
-        untrusted.Points.Clear();
-        for (int i = 0; i < count; i++)
-        {
-            bool trustedHere = IsTrusted(i);
-            bool boundary =
-                (i > 0 && IsTrusted(i - 1) != trustedHere) ||
-                (i < count - 1 && IsTrusted(i + 1) != trustedHere);
-            double frequency = magnitudePoints[i].X;
-            double decibels = magnitudePoints[i].Y;
-
-            trusted.Points.Add(new DataPoint(
-                frequency,
-                trustedHere || boundary ? decibels : double.NaN));
-            untrusted.Points.Add(new DataPoint(
-                frequency,
-                !trustedHere || boundary ? decibels : double.NaN));
-        }
-    }
-
-    // Both lists sorted by X; a forward cursor keeps pairing linear.
-    private static double NearestCoherence(
-        List<SignalPoint> coherencePoints,
-        double frequency,
-        ref int cursor)
-    {
-        if (coherencePoints.Count == 0)
-        {
-            return 1.0;
-        }
-
-        while (cursor + 1 < coherencePoints.Count &&
-            coherencePoints[cursor + 1].X <= frequency)
-        {
-            cursor++;
-        }
-
-        double value = coherencePoints[cursor].Y;
-        if (cursor + 1 < coherencePoints.Count &&
-            coherencePoints[cursor + 1].X - frequency < frequency - coherencePoints[cursor].X)
-        {
-            value = coherencePoints[cursor + 1].Y;
-        }
-
-        return value;
-    }
-
-    private List<SignalPoint> ResampleCoherence(
+    internal static List<SignalPoint> ResampleCoherence(
         double[] coherence,
         int sampleRate,
         int fftLength,

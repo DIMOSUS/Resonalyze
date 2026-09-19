@@ -82,7 +82,7 @@ public partial class Form1
             await timeAlignmentController.AbortAsync();
         }
 
-        bool liveCaptureWasRunning = liveSpectrumController.InProgress;
+        bool liveCaptureWasRunning = liveSpectrumSession.InProgress;
         await liveSpectrumController.AbortAsync();
         if (liveCaptureWasRunning)
         {
@@ -108,20 +108,24 @@ public partial class Form1
 
         if (CurrentMode == Mode.LiveSpectrum)
         {
-            if (!liveSpectrumController.InProgress)
+            if (!liveSpectrumSession.InProgress)
             {
                 ResetLiveSplViewOnlyDisplayForRun();
                 await startupAudioWarmup.WaitAsync();
+                // Another tab may have been chosen while the device warmed up; a run starts in its own.
+                if (!liveSpectrumSession.InProgress && CurrentMode != Mode.LiveSpectrum)
+                {
+                    await SelectModeAsync(ModeTab.LiveSpectrum);
+                }
             }
 
             await liveSpectrumController.ToggleAsync();
-            UpdateRecordButtonForCurrentMode();
             // Pay the settings panel's device refresh deferred while the capture owned the device.
             RefreshOpenMeasurementSettingsDevice();
             return;
         }
 
-        if (liveSpectrumController.InProgress)
+        if (liveSpectrumSession.InProgress)
         {
             await liveSpectrumController.AbortAsync();
         }
@@ -165,14 +169,27 @@ public partial class Form1
         }
     }
 
+    // A user stop reports success; a failure is the device's and must not reset the UI silently.
+    private void ShowLiveSpectrumFailure(Exception error)
+    {
+        if (IsDisposed || closingInProgress)
+        {
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            $"The live measurement failed.\r\n\r\n{error.Message}",
+            "Live Spectrum",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
+    }
+
     // Live mirror of ResetSplViewOnlyDisplayForRun; also used when a running analyzer loses calibration. The signal is left alone.
     private void ResetLiveSplViewOnlyDisplayForRun()
     {
         // MMM is never view-only and always renders band-power dB SPL.
-        if (plotModelFactory.EffectiveLiveAnalysisMode.IsSpatialAverageCapture() ||
-            plotModelFactory.EffectiveLiveSpectrumScale !=
-                Dsp.MagnitudeScale.SoundPressureLevel ||
-            plotModelFactory.LiveSplOffsetDb.HasValue)
+        if (!liveSpectrumSession.Display.SplViewOnly)
         {
             return;
         }
@@ -243,15 +260,10 @@ public partial class Form1
         expSweepMeasurement.SplCalibration = selection.SplCalibration;
         RefreshCalibrationConsumers();
         // A running analyzer losing its anchor in dB SPL would draw nothing, so drop to relative. Idle view-only SPL is legitimate.
-        if (liveSpectrumController.InProgress)
+        if (liveSpectrumSession.InProgress)
         {
             ResetLiveSplViewOnlyDisplayForRun();
         }
-        dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
-            panel => panel.RefreshAvailability(
-                plotModelFactory.LiveSplOffsetDb.HasValue,
-                liveSpectrumController.HasDisplayableCurve,
-                liveSpectrumController.HasConfiguredLoopback));
         // Persist first so it survives a failed redraw.
         ScheduleMeasurementSettingsSave();
 
@@ -305,7 +317,7 @@ public partial class Form1
 
     private void RefreshOpenMeasurementSettingsDevice()
     {
-        if (liveSpectrumController.InProgress || expSweepMeasurement.InProgress)
+        if (liveSpectrumSession.InProgress || expSweepMeasurement.InProgress)
         {
             return;
         }
@@ -317,7 +329,7 @@ public partial class Form1
     /// <summary>Stops a live capture and refreshes an open Record Settings panel; no-op (no ASIO probe) when nothing ran.</summary>
     private async Task StopLiveCaptureAsync()
     {
-        if (!liveSpectrumController.InProgress && !liveSpectrumController.TimerEnabled)
+        if (!liveSpectrumSession.InProgress && !liveSpectrumController.TimerEnabled)
         {
             return;
         }
@@ -336,7 +348,7 @@ public partial class Form1
         SaveMeasurementSettings();
 
         // Before the early return: the protective high-pass is not an audio setting but the live analyzer divides it out, without a restart.
-        liveSpectrumController.ApplyProtectiveHighPass(measurementSettings.Measurement);
+        liveSpectrumSession.SetProtectiveHighPass(measurementSettings.Measurement);
 
         AudioSessionRequest request =
             CreateAudioWarmupRequest(measurementSettings.Measurement);
@@ -347,7 +359,7 @@ public partial class Form1
         }
 
         await ApplyMeasurementConfigurationToControllersAsync();
-        if (liveSpectrumController.InProgress || expSweepMeasurement.InProgress)
+        if (liveSpectrumSession.InProgress || expSweepMeasurement.InProgress)
         {
             return;
         }
@@ -397,7 +409,7 @@ public partial class Form1
                     SaveMeasurementSettings(captureMeasurementSettings: true);
                     RefreshCalibrationConsumers();
                     await ApplyMeasurementConfigurationToControllersAsync();
-                    if (!liveSpectrumController.InProgress &&
+                    if (!liveSpectrumSession.InProgress &&
                         !expSweepMeasurement.InProgress)
                     {
                         await audioSessionFactory.WarmUpAsync(
@@ -445,7 +457,7 @@ public partial class Form1
             await Task.Delay(250, cancellationToken);
             if (IsDisposed ||
                 expSweepMeasurement.InProgress ||
-                liveSpectrumController.InProgress)
+                liveSpectrumSession.InProgress)
             {
                 return;
             }

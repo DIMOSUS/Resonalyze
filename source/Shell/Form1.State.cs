@@ -6,7 +6,7 @@ public partial class Form1
 {
     private void ApplyMeasurementConfigurationToControllers()
     {
-        liveSpectrumController.ConfigureFrom(measurementSettings.Measurement);
+        liveSpectrumSession.Configure(measurementSettings.Measurement);
         timeAlignmentController.RefreshConfiguration();
     }
 
@@ -14,12 +14,6 @@ public partial class Form1
     {
         await liveSpectrumController.ReconfigureFromAsync(measurementSettings.Measurement);
         timeAlignmentController.RefreshConfiguration();
-        // Routing may have gained or lost the loopback (needed by live Transfer); every routing change passes here.
-        dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
-            panel => panel.RefreshAvailability(
-                plotModelFactory.LiveSplOffsetDb.HasValue,
-                liveSpectrumController.HasDisplayableCurve,
-                liveSpectrumController.HasConfiguredLoopback));
     }
 
     private void PrepareSweepMeasurementForRun()

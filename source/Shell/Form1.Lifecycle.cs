@@ -101,5 +101,6 @@ public partial class Form1
         expSweepMeasurement.Dispose();
         timeAlignmentController.Dispose();
         liveSpectrumController.Dispose();
+        liveSpectrumSession.Dispose();
     }
 }

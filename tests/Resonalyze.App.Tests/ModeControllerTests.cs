@@ -16,6 +16,31 @@ public sealed class ModeControllerTests
         Assert.Equal(ModeTab.Impulse, controller.ActiveTab);
     }
 
+    // Live Spectrum draws its captures before the plot restores the overlays over them.
+    [Fact]
+    public async Task SelectAsync_TakesEveryViewThroughEachStepInOrder()
+    {
+        var calls = new List<string>();
+        var controller = new ModeController(
+            [new RecordingView(calls, "live"), new RecordingView(calls, "plot")],
+            () =>
+            {
+                calls.Add("stop");
+                return Task.CompletedTask;
+            },
+            descriptor => calls.Add($"tab:{descriptor.Tab}"));
+
+        await controller.SelectAsync(ModeTab.LiveSpectrum);
+
+        Assert.Equal(
+            new[]
+            {
+                "leave:live", "leave:plot", "stop", "enter:LiveSpectrum:live", "enter:LiveSpectrum:plot",
+                "tab:LiveSpectrum", "present:live", "present:plot"
+            },
+            calls);
+    }
+
     [Fact]
     public async Task SelectAsync_SerializesOverlappingSwitches()
     {
@@ -85,7 +110,7 @@ public sealed class ModeControllerTests
 
     private static ModeController CreateController(List<string> calls, Func<Task> stop) =>
         new(
-            new RecordingView(calls),
+            [new RecordingView(calls)],
             () =>
             {
                 calls.Add("stop");
@@ -93,12 +118,14 @@ public sealed class ModeControllerTests
             },
             descriptor => calls.Add($"tab:{descriptor.Tab}"));
 
-    private sealed class RecordingView(List<string> calls) : IModeView
+    private sealed class RecordingView(List<string> calls, string? name = null) : IModeView
     {
-        public void Leave() => calls.Add("leave");
+        private string Suffix => name == null ? "" : ":" + name;
 
-        public void Enter(ModeDescriptor mode) => calls.Add($"enter:{mode.Mode}");
+        public void Leave() => calls.Add("leave" + Suffix);
 
-        public void Present() => calls.Add("present");
+        public void Enter(ModeDescriptor mode) => calls.Add($"enter:{mode.Mode}" + Suffix);
+
+        public void Present() => calls.Add("present" + Suffix);
     }
 }

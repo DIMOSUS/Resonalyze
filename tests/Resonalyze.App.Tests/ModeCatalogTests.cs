@@ -12,19 +12,19 @@ public sealed class ModeCatalogTests
         }
     }
 
-    // The table says which tabs are plots; the factory must have a plot for each, or a tab switch throws.
+    // The table says which tabs are plots; the factory must have a plot for each, or a tab switch throws. Live Spectrum
+    // is the exception: its controller draws it (LiveSpectrumPlotFactory).
     [Fact]
     public void EveryPlotTabHasAPlotToDraw()
     {
         using var analyzer = new TestAnalyzer();
-        using var noise = new NoiseMeasurement(new FakeAudioSessionFactory());
         var factory = new PlotModelFactory(
-            analyzer.Document, analyzer.Engine, noise, _ => null, new AnalyzerViewSettings());
+            analyzer.Document, analyzer.Engine, _ => null, new AnalyzerViewSettings());
 
         foreach (ModeTab tab in Enum.GetValues<ModeTab>())
         {
             ModeDescriptor descriptor = ModeCatalog.For(tab);
-            if (descriptor.HasPlotView)
+            if (descriptor.HasPlotView && descriptor.Mode != Mode.LiveSpectrum)
             {
                 Assert.NotNull(factory.Create(descriptor.Mode, includeCurves: false));
             }

@@ -11,8 +11,7 @@ public sealed class WaterfallSeriesRenderTests
     public void BurstDecay_WithNaNTail_RendersWithoutEmittingNonFiniteCoordinates()
     {
         using var measurement = CreateBroadbandTransferMeasurement();
-        using var noiseMeasurement = new NoiseMeasurement(new FakeAudioSessionFactory());
-        PlotModelFactory factory = CreateFactory(measurement, noiseMeasurement);
+        PlotModelFactory factory = CreateFactory(measurement);
 
         PlotModel model = factory.CreateBurstDecay(includeCurves: true);
         WaterfallSeries waterfall = model.Series.OfType<WaterfallSeries>().Single();
@@ -59,8 +58,7 @@ public sealed class WaterfallSeriesRenderTests
     }
 
     private static PlotModelFactory CreateFactory(
-        TestAnalyzer measurement,
-        NoiseMeasurement noiseMeasurement)
+        TestAnalyzer measurement)
     {
         string calibrationPath = Path.Combine(
             Path.GetTempPath(),
@@ -69,7 +67,6 @@ public sealed class WaterfallSeriesRenderTests
         return new PlotModelFactory(
             measurement.Document,
             measurement.Engine,
-            noiseMeasurement,
             mode => new CalibrationFile(calibrationPath),
             new AnalyzerViewSettings
             {

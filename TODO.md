@@ -532,14 +532,16 @@ next field session rather than in a register nobody else can tick.
   axes rather than picking one, and deciding what a "Top/Bottom" pair means with
   two of them.
 
-- [ ] **`PlotModelFactory` still holds the live noise measurement and the sweep
-  engine.** The sweep side reads the `AnalyzerDocument` (re-read per plot build,
-  so the in-progress guard still holds); the engine stays only for the configured
-  SPL anchor of the live RTA and the rate a plot takes when nothing is open, both
-  of which are settings. The Live Spectrum side still reads `NoiseMeasurement`
-  itself (12 members, the capture snapshots changing with every run), so the replacement
-  there is a read-model re-read per build, not a value snapshot. Plot tests build
-  results directly now (`TestMeasurementResults`, `TestAnalyzer`).
+- [ ] **Two settings are still read off the sweep engine.** `PlotModelFactory`
+  takes the rate a plot has when nothing is open from `ExpSweepMeasurement`, and
+  `LiveSpectrumSession` takes its SPL anchor from it (a provider the form passes).
+  Both are measurement settings. The rate on the engine lags an edit until the
+  next run pushes the settings, and the anchor is copied onto it by hand in three
+  places (`PersistCalibration`, the settings file's `ApplyTo`,
+  `MeasurementOptions.SetOptions`). Reading the settings would leave one owner,
+  but it moves an empty plot's rate to the edited value at once: decide that
+  before changing it. Neither factory reads the live analyzer any more
+  (`LiveCaptureSetup`, docs/tech/live-spectrum.md#code-map).
 - [ ] **`LogarithmicClipAxis` label trim.** Edge tick labels can be trimmed at
   the plot boundary. Purely visual; needs a Windows render to reproduce.
 - [ ] **Waterfall renders nothing silently below 8 slices** (`RawSlices.Count <
@@ -680,11 +682,6 @@ shows it as flat by construction.
 
 ## Live Spectrum / coherence
 
-- [ ] **`LiveSpectrumControllerTests` build the controller with
-  `GetUninitializedObject`** (six tests, each setting its private `measurement`
-  field), the signal the Virtual DSP panel's tests showed before #203: logic the
-  tests need lives on the controller. Move it to a type the tests can construct
-  (AGENTS.md › Where logic lives).
 - [✗] **RTA tone level is only accurate with a Flat Top window — RESOLVED for
   the general case; the periodic-pink residual is conditional.**
   Flat Top is a selectable Live Spectrum window and reads a tone at its true,

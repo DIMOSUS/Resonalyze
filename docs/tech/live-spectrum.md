@@ -5,14 +5,29 @@ transfer function (with coherence); without one, or when RTA is selected, it sho
 reference-free microphone spectrum (RTA). The MMM mode accumulates an RTA as a moving-microphone
 spatial average and saves it as a capture document (see [spatial-average.md](spatial-average.md)).
 
-Where the code lives (`source/LiveSpectrum/`):
+## Code map
+
+Everything lives in `source/LiveSpectrum/`; the analyzer itself is `Measurements/NoiseMeasurement`.
 
 | Area | Code |
 | --- | --- |
-| UI controller, redraw loop, peak hold, capture state | `LiveSpectrumController` |
+| The mode's state: the run, the accumulation it holds, a loaded capture, peak hold, the next run's filter | `LiveSpectrumSession` |
+| The analyzer as a plot reads it, once per build | `LiveCaptureSetup` (`NoiseMeasurement.Setup`) |
+| Mode in effect, axis, SPL anchor, tilt, smoothing, view-only, peak-hold key | `LiveSpectrumDisplay` |
+| Peak-hold envelope | `LivePeakHold` |
+| The curves as points, the raw RTA for overlays, the capture document | `LiveSpectrumCurves` |
+| The plot's frame and series | `LiveSpectrumPlotFactory` |
+| Redraw loop, pooled series, notices; the mode's view | `LiveSpectrumController` |
 | Stored capture format | `LiveCaptureDocument`, `LiveCaptureRecipe` |
-| Raw RTA for overlays | `LiveRtaRawCapture` |
-| Plot models, scale and smoothing rules | `PlotModelFactory` (`EffectiveLiveSpectrumScale`, `EffectiveLiveSmoothingCode`, `LiveUsesBandPower`) |
+| Raw RTA samples | `LiveRtaRawCapture` |
+
+The session is UI-free and is what the tests build. It announces `Changed` whenever something the form's live
+surfaces read moves: a run starting or ending, a stop, a discard, a loaded capture, the routing, the SPL anchor. The
+record button, Save, the calibration read-out and the settings panel's warnings follow that one event, and a device
+failure arrives as `Failed`. The controller draws the session into the main plot. It is an `IModeView` beside
+`AnalyzerPlot`, so entering the mode draws what the session holds before the plot restores its overlay slots, and it
+is the entry point for the gestures that redraw (Record, a display option, a loaded capture). `PlotModelFactory` does
+not read the live analyzer.
 
 ## Analysis modes and signals
 
@@ -22,7 +37,7 @@ Where the code lives (`source/LiveSpectrum/`):
 - Coherence describes the transfer estimate, so it is drawn only with the transfer function. The
   above-threshold transfer segment keeps the primary tag so current-measurement targets use it, not the
   low-coherence segment.
-- `NormalizeSignalType`: Silent (ambient RTA, no excitation) is the only mode-exclusive signal. A
+- `LiveSpectrumOptions.NormalizeSignalType`: Silent (ambient RTA, no excitation) is the only mode-exclusive signal. A
   transfer function has nothing to correlate without an excitation, so entering Transfer mode falls back
   to periodic pink. Every real excitation is valid in both modes.
 - The live transfer curve and the RTA carry `CurveTag`s so overlays can bind to them by key and capture
@@ -112,7 +127,7 @@ of the same length reads every bin leakage-free.
 
 ## Scale and SPL view-only
 
-`RenderingSpl` follows the selection. With dB SPL selected but no matching calibration
+`LiveSpectrumDisplay.RendersSpl` follows the selection. With dB SPL selected but no matching calibration
 (`SplViewOnly`), the SPL axis and SPL overlays show but live curves are suppressed: at raw dBFS on an
 absolute axis they would read as absurd sound-pressure levels. A notice explains the missing curve,
 added only when a curve really was suppressed. The record button resets the scale to relative before a
@@ -121,7 +136,7 @@ calibration.
 
 MMM never enters view-only: without an anchor it reports a relative scale and keeps drawing band
 levels, because a spatial average needs the band-power rendering, not an absolute reference
-(`PlotModelFactory.LiveUsesBandPower`). The options panel colours its SPL choice amber only when
+(`LiveSpectrumDisplay.UsesBandPower`). The options panel colours its SPL choice amber only when
 `HasDisplayableCurve` says a curve would actually be hidden.
 
 A loaded capture is always drawn on its own axis: its levels mean what its capture-time anchor made
@@ -129,7 +144,7 @@ them mean, whatever the current options say.
 
 ## Per-run freezing and calibration
 
-Immediately before an accumulation begins, the controller freezes on it:
+Immediately before an accumulation begins, `LiveSpectrumSession.Start` freezes on it:
 
 - the protective high-pass (`SetCaptureProtectiveHighPass`), so the filter the curve divides out and the
   filter the saved recipe records are the same, and an edit mid-walk cannot re-tilt it;
@@ -137,8 +152,8 @@ Immediately before an accumulation begins, the controller freezes on it:
   re-rendered on every redraw and again on Save, so a rig calibration changed between walk and Save
   would otherwise recompute the walk and the file would name a microphone it was never taken through.
 
-`ApplyProtectiveHighPass` is a separate entry point because a settings edit that leaves the audio session
-alone deliberately does not reach `ConfigureFrom` (reconfiguring restarts a running analyzer), yet the
+`SetProtectiveHighPass` is a separate entry point because a settings edit that leaves the audio session
+alone deliberately does not reach `Configure` (reconfiguring restarts a running analyzer), yet the
 next run's filter must still update.
 
 `DisplayedCalibrationName` answers for the curve on screen: a loaded capture's own correction (by name,
@@ -146,7 +161,7 @@ which need not exist on this machine), else the id frozen on the running or held
 null. Showing the rig's selection beside a curve taken through another microphone was the bug this
 prevents.
 
-`RefreshCalibration` runs in every app mode because a calibration change invalidates the peak-hold
+`RefreshCalibration` runs in every app mode because an SPL anchor change invalidates the peak-hold
 envelope wherever the analyzer sits; the plot is rebuilt only when Live Spectrum is visible. The capture
 itself is never touched: a Silent RTA that loses SPL keeps running on the relative axis.
 
@@ -157,14 +172,14 @@ itself is never touched: a Silent RTA that loses SPL keeps running on the relati
   and overstate the band. The grid is stable across ticks and a band level is monotone in its power, so a
   per-index max of displayed dB is the peak of the band level shown.
 - Because the envelope stores finished display values, any change to the display transform makes it
-  incompatible and it is dropped, not max-ed against new values. `PeakHoldDisplayKey` captures that
+  incompatible and it is dropped, not max-ed against new values. `LivePeakHoldKey` captures that
   transform: scale, RTA-only shaping, the **effective** smoothing code (MMM pins smoothing Off, so the
   stored option would call two transforms the same), the SPL offset (only in SPL), and the tilt model
   (null = off is distinct from a flat model).
 - The microphone calibration and protective high-pass are not in the key: both are frozen when the run
-  begins, right after `SuspendPeakHold`, so they cannot change while an envelope exists. Keying on the
+  begins, right after `LivePeakHold.Suspend`, so they cannot change while an envelope exists. Keying on the
   rig's calibration dropped valid envelopes whenever the next run's microphone was chosen mid-hold.
-- `SuspendPeakHold` briefly pauses tracking so ramp-up frames are not latched.
+- `Suspend` briefly pauses tracking so ramp-up frames are not latched.
 
 ## Averaging reset and discarding data
 
@@ -176,13 +191,16 @@ itself is never touched: a Silent RTA that loses SPL keeps running on the relati
   overlap) changes while stopped: redrawing old data under new parameters would silently re-interpret it
   (slope compensation would re-tilt a pink RTA as if the excitation were white). A loaded capture is
   discarded too. A running analyzer needs no call; its restart begins a fresh accumulation.
+- New session discards the same way. The accumulation outlives a stop and a loaded capture is state, so
+  forgetting only the held curve let the next visit to the mode read the last session's run, or show its
+  capture, again.
 - `StopAndHoldAsync` harvests the final accumulation into the held snapshot; `AbortAsync` would stop
   without the last reading. `HasCaptureToSave` excludes a loaded capture, since re-saving would restamp
   it with this session's recipe.
 
 ## Loaded captures
 
-A capture shown with `ShowLoadedCapture` is controller **state**, not a one-off draw. Every rebuild (tab
+A capture shown with `ShowLoadedCapture` is session **state** (`LoadedCapture`), not a one-off draw. Every rebuild (tab
 switch, display option, calibration change) goes through `RebuildModel`, which redraws the loaded
 capture; painting it once let the surviving accumulation replace it on the next rebuild, which looked
 like Load did nothing. Live series and peak hold are cleared so two measurements are not blended. A new

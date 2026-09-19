@@ -907,7 +907,7 @@ reference on the analysis path.
   back to RTA without a loopback.
 - **RTA**: reference-free microphone spectrum, the only mode where the Silent (ambient)
   signal makes sense (enforced at settings load and by
-  `LiveSpectrumController.NormalizeSignalType`); dB SPL applies only to reference-free modes,
+  `LiveSpectrumOptions.NormalizeSignalType`); dB SPL applies only to reference-free modes,
   since a transfer function under noise has no scalar SPL.
 - **MMM**: the same reference-free spectrum under the one recipe a moving-microphone
   measurement is valid under. It is a mode, not an RTA preset, because its settings are not

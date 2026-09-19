@@ -13,9 +13,7 @@ namespace Resonalyze
 
         // The main plot: draws the open measurement in the active mode, with its overlays and zoom.
         private readonly AnalyzerPlot analyzerPlot;
-        // Composition root: the one place audio backends are wired.
-        private readonly IAudioSessionFactory audioSessionFactory =
-            new AudioSessionFactory(AudioBackendRegistry.CreateDefault());
+        private readonly IAudioSessionFactory audioSessionFactory;
         private readonly ExpSweepMeasurement expSweepMeasurement;
         // The open measurement every analysis mode reads; the engine only produces the next one.
         private readonly AnalyzerDocument analyzerDocument = new();
@@ -25,6 +23,8 @@ namespace Resonalyze
         private readonly AnalyzerViewSettings viewSettings = new();
         private readonly PlotModelFactory plotModelFactory;
         private readonly ModeController modeController;
+        // Live Spectrum's state; the controller draws it into the main plot.
+        private readonly LiveSpectrumSession liveSpectrumSession;
         private readonly LiveSpectrumController liveSpectrumController;
         private readonly TimeAlignmentPanelController timeAlignmentController;
         private readonly MainCommandController commandController;
@@ -50,11 +50,24 @@ namespace Resonalyze
         private readonly CompareSelection compareSelection = new();
         private ContextMenuStrip? compareMenuStrip;
 
+        // Composition root: the one place audio backends are wired.
         public Form1()
+            : this(new AudioSessionFactory(AudioBackendRegistry.CreateDefault()))
         {
+        }
+
+        /// <summary>The window over the given audio backends; tests run its analyzers on a fake input.</summary>
+        internal Form1(IAudioSessionFactory audioSessionFactory)
+        {
+            this.audioSessionFactory = audioSessionFactory;
             InitializeComponent();
             expSweepMeasurement = new ExpSweepMeasurement(audioSessionFactory);
             noiseMeasurement = new NoiseMeasurement(audioSessionFactory);
+            liveSpectrumSession = new LiveSpectrumSession(
+                noiseMeasurement,
+                viewSettings.LiveSpectrum,
+                () => expSweepMeasurement.SplCalibration,
+                DescribeCalibrationForCapture);
             ConfigureToolTips();
             // PlotView paints only BackColor; axis colours come from the model (PlotModelStyle.ApplyChrome).
             plotView1.BackColor = UiPalette.GraphSurface;

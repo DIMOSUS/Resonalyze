@@ -258,11 +258,12 @@ public partial class Form1
         sessionTracker.Reset();
         analyzerDocument.Clear();
 
-        if (liveSpectrumController.InProgress)
+        if (liveSpectrumSession.InProgress)
         {
             await liveSpectrumController.AbortAsync();
         }
-        liveSpectrumController.ForgetLastCurve();
+        // The accumulation outlives a stop and a loaded capture is state: both would come back on the next visit.
+        liveSpectrumController.DiscardCapturedData();
 
         // Its result would be dropped; stop the sweep rather than play it out.
         if (expSweepMeasurement.InProgress)

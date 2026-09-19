@@ -50,35 +50,35 @@ public partial class Form1
         });
     }
 
-    private async void HandleHistoryEntryActivated(Guid entryId) =>
-        await ActivateHistoryEntryAsync(entryId, analyzerDocument.BeginActivation());
+    private async void HandleHistoryEntryActivated(Guid entryId)
+    {
+        // A run or an import is producing the next result.
+        if (analyzerDocument.TryBegin() is { } request)
+        {
+            await ActivateHistoryEntryAsync(entryId, request);
+        }
+    }
 
     private enum HistoryActivation
     {
         Landed,
 
-        /// <summary>Nothing landed (file gone, sweep running, load threw); a caller may fall back.</summary>
+        /// <summary>Nothing landed (file gone, load threw); a caller may fall back.</summary>
         Unavailable,
 
-        /// <summary>A newer activation is replacing this one; the caller must not fall back.</summary>
+        /// <summary>A newer request is replacing this one; the caller must not fall back.</summary>
         Superseded
     }
 
-    /// <param name="revision">Taken by the caller: one user action owns one revision, so a VDSP fallback after this still passes its check.</param>
+    /// <param name="request">Taken by the caller: one user action owns one request, so a VDSP fallback after this can still land.</param>
     private async Task<HistoryActivation> ActivateHistoryEntryAsync(
-        Guid entryId, long revision)
+        Guid entryId, AnalyzerDocument.Request request)
     {
-        // A run or an import is producing the next result.
-        if (analyzerDocument.IsBusy)
-        {
-            return HistoryActivation.Unavailable;
-        }
-
         // Stale loads are dropped at every await boundary, so a slow entry cannot overwrite a newer one.
         try
         {
             MeasurementResult? result = await measurementHistoryService.GetResultAsync(entryId);
-            if (!analyzerDocument.IsCurrent(revision))
+            if (!request.IsCurrent)
             {
                 return HistoryActivation.Superseded;
             }
@@ -97,13 +97,8 @@ public partial class Form1
             await historyRestoreGate.WaitAsync();
             try
             {
-                if (!analyzerDocument.IsCurrent(revision))
-                {
-                    return HistoryActivation.Superseded;
-                }
-
-                await RestoreHistoryResultAsync(result, entry?.Session, entry?.SourceFilePath);
-                if (!analyzerDocument.IsCurrent(revision))
+                if (!await RestoreHistoryResultAsync(request, result, entry?.Session, entry?.SourceFilePath) ||
+                    !request.IsCurrent)
                 {
                     return HistoryActivation.Superseded;
                 }
@@ -206,13 +201,19 @@ public partial class Form1
         });
     }
 
-    private async Task RestoreHistoryResultAsync(
+    /// <returns>False when a newer request superseded <paramref name="request"/>: nothing was restored.</returns>
+    private async Task<bool> RestoreHistoryResultAsync(
+        AnalyzerDocument.Request request,
         MeasurementResult result,
         MeasurementSessionSnapshot? session,
         string? sourceFilePath)
     {
         // Both halves of K travel with the entry, as when opening the file.
-        InstallMeasurement(result, sourceFilePath);
+        if (!InstallMeasurement(request, result, sourceFilePath))
+        {
+            return false;
+        }
+
         if (session != null)
         {
             ApplySessionSnapshot(session, result.SampleRate);
@@ -236,6 +237,8 @@ public partial class Form1
         {
             RefreshCurrentModePlot();
         }
+
+        return true;
     }
 
     private async void HandleNewSessionRequested()
@@ -258,9 +261,10 @@ public partial class Form1
     // Resets mode settings, measurement and overlays; keeps audio settings, history and overlay files. Saves the active entry first.
     private async Task StartNewSessionAsync()
     {
-        // Emptying the session supersedes any in-flight load or activation.
-        analyzerDocument.BeginActivation();
         sessionTracker.PersistCurrentSessionState();
+        // Before the first await: no load, import or run already started lands after this.
+        sessionTracker.Reset();
+        analyzerDocument.Clear();
 
         if (liveSpectrumController.InProgress)
         {
@@ -268,8 +272,12 @@ public partial class Form1
         }
         liveSpectrumController.ForgetLastCurve();
 
-        sessionTracker.Reset();
-        analyzerDocument.Clear();
+        // Its result would be dropped; stop the sweep rather than play it out.
+        if (expSweepMeasurement.InProgress)
+        {
+            await expSweepMeasurement.AbortAsync();
+        }
+
         RefreshMeasurementCommands();
 
         ApplySessionSnapshot(

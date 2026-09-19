@@ -74,7 +74,7 @@ internal static class TestMeasurementResults
     public static AnalyzerDocument Open(MeasurementResult result, string? sourceName = null)
     {
         var document = new AnalyzerDocument();
-        document.Install(result, sourceName);
+        document.TryBegin()!.Install(result, sourceName);
         return document;
     }
 }

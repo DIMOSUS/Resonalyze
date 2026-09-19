@@ -169,7 +169,7 @@ public sealed class MeasurementSessionTrackerTests : IDisposable
     private void Open(MeasurementSessionTracker tracker, string path, ImpulseResponseFile file)
     {
         MeasurementResult result = file.ToResult();
-        document.Install(result, path);
+        document.TryBegin()!.Install(result, path);
         tracker.MarkLoadedFile(path, file, result);
     }
 

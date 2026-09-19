@@ -10,7 +10,8 @@ internal sealed class TestAnalyzer : IDisposable
     public MeasurementResult Result =>
         Document.Result ?? throw new InvalidOperationException("Nothing is open.");
 
-    public void Open(MeasurementResult result, string? sourceName = null) => Document.Install(result, sourceName);
+    public void Open(MeasurementResult result, string? sourceName = null) =>
+        Document.TryBegin()!.Install(result, sourceName);
 
     public void Dispose() => Engine.Dispose();
 }

@@ -287,17 +287,18 @@ public partial class Form1
     {
         TryBeginInvokeOnUiThread(() =>
         {
-            runAcquisition?.Dispose();
-            runAcquisition = null;
-            bool success = result != null;
-            if (result != null)
+            AnalyzerDocument.Request? run = runRequest;
+            runRequest = null;
+            run?.Dispose();
+            // New session aborts a run, but one finishing meanwhile still completes: it is dropped like an aborted one.
+            MeasurementResult? landed =
+                result != null && run?.Install(result, sourceName: null) == true ? result : null;
+            bool success = landed != null;
+            if (landed != null)
             {
-                // A finished sweep supersedes any in-flight read.
-                analyzerDocument.BeginActivation();
                 buttonRecord.Text = "Ready";
-                analyzerDocument.Install(result, sourceName: null);
                 RefreshMeasurementCommands();
-                sessionTracker.MarkMeasurementCompleted(result);
+                sessionTracker.MarkMeasurementCompleted(landed);
                 // Move the view to the run's frozen calibration even from a user entry, or the response is drawn through the wrong mic.
                 SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
             }

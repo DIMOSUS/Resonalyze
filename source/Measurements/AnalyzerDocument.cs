@@ -4,11 +4,16 @@ namespace Resonalyze;
 /// The analyzer's open measurement: every analysis mode, Save, Send to REW and Time Alignment read it, and every
 /// input (a run, a file, history, REW, a recorded sweep) replaces it. Written on the UI thread.
 /// </summary>
+/// <remarks>
+/// Every input lands through a <see cref="Request"/> taken when it starts, and lands only while no newer one has been
+/// taken since: whichever input started last wins, however long each takes. <see cref="Clear"/> counts as newer, so
+/// nothing started before New session lands after it.
+/// </remarks>
 internal sealed class AnalyzerDocument
 {
     private volatile MeasurementResult? result;
     private volatile bool busy;
-    private long activation;
+    private long latest;
 
     /// <summary>Raised on the UI thread whenever the result or its name changes.</summary>
     public event Action? Changed;
@@ -23,32 +28,22 @@ internal sealed class AnalyzerDocument
     /// <summary>A run or an import is producing the next result; nothing draws or saves the current one meanwhile.</summary>
     public bool IsBusy => busy;
 
-    /// <summary>Taken by every request that makes a measurement current, and checked across its awaits: the newest wins.</summary>
-    public long BeginActivation() => ++activation;
+    /// <summary>For a load, a history entry or a REW read; null while a run or an import holds the document.</summary>
+    public Request? TryBegin() => busy ? null : new Request(this, ++latest, holds: false);
 
-    public bool IsCurrent(long token) => token == activation;
-
-    /// <summary>Holds the document for a run or an import; nothing installs until the holder releases it.</summary>
-    public IDisposable Acquire()
+    /// <summary>
+    /// For a run or an import: held until it installs or is disposed, so the record button, history, drops and other
+    /// imports refuse meanwhile. Null while another one holds the document.
+    /// </summary>
+    public Request? TryAcquire()
     {
         if (busy)
         {
-            throw new InvalidOperationException("The measurement is already busy.");
+            return null;
         }
 
         busy = true;
-        return new Acquisition(this);
-    }
-
-    public void Install(MeasurementResult measurement, string? sourceName)
-    {
-        if (busy)
-        {
-            throw new InvalidOperationException(
-                "Cannot load an impulse response while a measurement is running.");
-        }
-
-        Replace(measurement, sourceName);
+        return new Request(this, ++latest, holds: true);
     }
 
     /// <summary>After a save the result is the file's.</summary>
@@ -58,7 +53,12 @@ internal sealed class AnalyzerDocument
         Changed?.Invoke();
     }
 
-    public void Clear() => Replace(null, null);
+    /// <summary>Empties the document; every request taken before, a run's or an import's included, will not land.</summary>
+    public void Clear()
+    {
+        ++latest;
+        Replace(null, null);
+    }
 
     private void Replace(MeasurementResult? measurement, string? sourceName)
     {
@@ -67,16 +67,42 @@ internal sealed class AnalyzerDocument
         Changed?.Invoke();
     }
 
-    private sealed class Acquisition(AnalyzerDocument owner) : IDisposable
+    internal sealed class Request : IDisposable
     {
-        private AnalyzerDocument? owner = owner;
+        private readonly AnalyzerDocument owner;
+        private readonly long id;
+        private bool holding;
+
+        public Request(AnalyzerDocument owner, long id, bool holds)
+        {
+            this.owner = owner;
+            this.id = id;
+            holding = holds;
+        }
+
+        /// <summary>No request has been taken, and the document not cleared, since this one.</summary>
+        public bool IsCurrent => owner.latest == id;
+
+        /// <summary>Releases the hold, then makes the result the open measurement unless a newer request was taken.</summary>
+        /// <returns>False when superseded: the result is dropped, and the caller shows nothing of it.</returns>
+        public bool Install(MeasurementResult measurement, string? sourceName)
+        {
+            Dispose();
+            if (!IsCurrent)
+            {
+                return false;
+            }
+
+            owner.Replace(measurement, sourceName);
+            return true;
+        }
 
         public void Dispose()
         {
-            if (owner != null)
+            if (holding)
             {
+                holding = false;
                 owner.busy = false;
-                owner = null;
             }
         }
     }

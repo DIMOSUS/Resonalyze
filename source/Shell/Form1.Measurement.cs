@@ -105,7 +105,7 @@ public partial class Form1
     }
 
     // Held from the Record press to the run's completion, so no load lands under a sweep.
-    private IDisposable? runAcquisition;
+    private AnalyzerDocument.Request? runRequest;
 
     private async void buttonRecord_Click(object sender, EventArgs e)
     {
@@ -171,8 +171,8 @@ public partial class Form1
             // After Prepare, so the anchor prediction reads this run's input configuration.
             ResetSplViewOnlyDisplayForRun();
             // A run replaces the open measurement from its first sample; completion installs the new one.
-            runAcquisition = analyzerDocument.Acquire();
             analyzerDocument.Clear();
+            runRequest = analyzerDocument.TryAcquire();
             EnterMeasurementRunningState();
             _ = expSweepMeasurement.RunAsync();
         }

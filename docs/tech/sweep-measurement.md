@@ -40,14 +40,21 @@ microphone curve, protective high-pass, array, audio-session diagnostics).
 `MeasurementResult.Validated` is the one check a restored result passes.
 
 `AnalyzerDocument` owns the open result for the whole analyzer: every mode, Save, Send to
-REW, Time Alignment and the level meter read it, and every input replaces it through
-`Install`. Plot builds read it off the UI thread, so a result is swapped whole.
+REW, Time Alignment and the level meter read it. Plot builds read it off the UI thread, so a
+result is swapped whole.
 
-- `Acquire` holds the document for a run or an import from its first read; nothing installs
-  meanwhile, and the record button, history and drops refuse. A run clears the open result
-  when it starts and installs its own on completion.
-- `BeginActivation`/`IsCurrent` is the one "newest wins" token for requests that make a
-  measurement current (file load, history, Virtual DSP's Open in analyzers, a finished run).
+Every input replaces it the same way: it takes a request when it starts and installs through
+that request when it finishes, and the install lands only if no request has been taken since.
+Whichever input started last wins, however long each one takes.
+
+- `TryBegin` is the request of a file load, a history entry, Virtual DSP's Open in analyzers
+  and a REW read.
+- `TryAcquire` is the request of a run or an import (recorded sweep, REW text export), and
+  also holds the document until it installs or is released: the record button, history,
+  drops and other inputs refuse meanwhile. A run clears the open result when it starts.
+- `Clear` (New session) supersedes every request taken before it, a run's or an import's
+  included. New session aborts a run, and a run or an import that finishes anyway lands
+  nothing and enters no history.
 - `ExpSweepMeasurement` keeps only the configuration of the next run, so a loaded file never
   changes what the next sweep, the signal generator or Record Settings see.
 - History entries hold a `MeasurementResult` beside their preview and session; Compare, Time

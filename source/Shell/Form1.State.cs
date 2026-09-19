@@ -40,11 +40,17 @@ public partial class Form1
 
     /// <summary>Makes <paramref name="result"/> the open measurement; every input that restores one comes through here.</summary>
     /// <remarks>Read through its own calibration: every file carries it, and imports carry none, so they must not get the user's mic curve.</remarks>
-    private void InstallMeasurement(MeasurementResult result, string? sourceName)
+    /// <returns>False when a newer request superseded <paramref name="request"/>: nothing changed.</returns>
+    private bool InstallMeasurement(AnalyzerDocument.Request request, MeasurementResult result, string? sourceName)
     {
-        analyzerDocument.Install(result, sourceName);
+        if (!request.Install(result, sourceName))
+        {
+            return false;
+        }
+
         inputLevelMeterController.Show(result.Levels);
         SelectAnalysisCalibration(MicrophoneCalibrationIds.Own);
+        return true;
     }
 
     /// <remarks>The measurement's own curve is not in the calibration service's list, so always resolve through here.</remarks>
@@ -109,9 +115,15 @@ public partial class Form1
     }
 
     /// <param name="sourceName">A file path, or a title for a measurement with no file (no path separators).</param>
-    private void ShowLoadedMeasurement(MeasurementResult result, string sourceName, bool fromFile)
+    /// <returns>False when a newer request superseded <paramref name="request"/>: nothing changed.</returns>
+    private bool ShowLoadedMeasurement(
+        AnalyzerDocument.Request request, MeasurementResult result, string sourceName, bool fromFile)
     {
-        InstallMeasurement(result, sourceName);
+        if (!InstallMeasurement(request, result, sourceName))
+        {
+            return false;
+        }
+
         ApplyMeasurementConfigurationToControllers();
         if (fromFile)
         {
@@ -119,6 +131,7 @@ public partial class Form1
         }
         UpdatePeakInfo();
         RefreshCurrentModePlot();
+        return true;
     }
 
     private void FinalizeMeasurementCommandState()

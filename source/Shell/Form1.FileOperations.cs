@@ -190,17 +190,16 @@ public partial class Form1
         }
     }
 
-    // Takes the shared revision and checks it between read and install: a disabled Load button does not stop a VDSP Open in analyzers landing first.
+    // Takes its request before the read: a disabled Load button does not stop a VDSP Open in analyzers landing first.
     private async Task LoadImpulseResponseFileAsync(string path)
     {
-        long revision = analyzerDocument.BeginActivation();
-        ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
-        if (!analyzerDocument.IsCurrent(revision))
+        if (analyzerDocument.TryBegin() is not { } request)
         {
             return;
         }
 
-        ApplyImpulseResponseFile(file, path);
+        ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(path);
+        ApplyImpulseResponseFile(request, file, path);
     }
 
     private void SelectFrequencyResponseCalibration(string? calibrationId)
@@ -211,11 +210,14 @@ public partial class Form1
             panel => panel.SelectCalibration(calibrationId, entries));
     }
 
-    // Split from the read so callers can check their guard in between.
-    private void ApplyImpulseResponseFile(ImpulseResponseFile file, string path)
+    private void ApplyImpulseResponseFile(AnalyzerDocument.Request request, ImpulseResponseFile file, string path)
     {
         MeasurementResult result = file.ToResult();
-        ShowLoadedMeasurement(result, path, fromFile: true);
+        if (!ShowLoadedMeasurement(request, result, path, fromFile: true))
+        {
+            return;
+        }
+
         sessionTracker.MarkLoadedFile(path, file, result);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
@@ -226,18 +228,16 @@ public partial class Form1
     private async Task OpenVirtualDspSourceInAnalyzersAsync(
         Guid? historyEntryId, string? filePath)
     {
-        if (analyzerDocument.IsBusy)
+        if (analyzerDocument.TryBegin() is not { } request)
         {
             return;
         }
-
-        long revision = analyzerDocument.BeginActivation();
 
         // The entry is tried, not trusted: its file may be gone while VDSP handed a relocated path; fall through on Unavailable.
         if (historyEntryId is { } entryId &&
             measurementHistoryService.FindById(entryId) != null)
         {
-            switch (await ActivateHistoryEntryAsync(entryId, revision))
+            switch (await ActivateHistoryEntryAsync(entryId, request))
             {
                 case HistoryActivation.Landed:
                     await SelectModeAsync(ModeTab.Frequency);
@@ -261,14 +261,9 @@ public partial class Form1
         commandController.SetLoadAvailable(false);
         try
         {
-            // Read, check, install: a later jump may have landed meanwhile.
+            // A later jump may have landed meanwhile; the request then installs nothing.
             ImpulseResponseFile file = await ImpulseResponseFile.LoadAsync(filePath);
-            if (!analyzerDocument.IsCurrent(revision))
-            {
-                return;
-            }
-
-            ApplyImpulseResponseFile(file, filePath);
+            ApplyImpulseResponseFile(request, file, filePath);
         }
         catch (Exception exception)
         {
@@ -294,8 +289,13 @@ public partial class Form1
         RewImportTimingPlan plan;
         EssSweepRateEstimate? sweepRate;
         MeasurementResult result;
-        // Held from the read so a sweep cannot start meanwhile; released before the redraw (busy draws nothing) and the modal notice.
-        using (analyzerDocument.Acquire())
+        if (analyzerDocument.TryAcquire() is not { } hold)
+        {
+            return;
+        }
+
+        // Held from the read so a sweep cannot start meanwhile; Install releases it before the redraw (busy draws nothing).
+        using (hold)
         {
             string text = await File.ReadAllTextAsync(path);
             file = await Task.Run(
@@ -355,17 +355,25 @@ public partial class Form1
                 plan.Reference);
         }
 
-        FinishRewImport(result, path, fromFile: true);
-        NotifyImportDecisions("REW impulse response imported", RewImportNotes.Describe(file, plan, sweepRate));
+        if (FinishRewImport(hold, result, path, fromFile: true))
+        {
+            NotifyImportDecisions("REW impulse response imported", RewImportNotes.Describe(file, plan, sweepRate));
+        }
     }
 
     // Enters as a measurement, not a file that could be saved back over its source.
-    private void FinishRewImport(MeasurementResult result, string sourceName, bool fromFile)
+    private bool FinishRewImport(
+        AnalyzerDocument.Request request, MeasurementResult result, string sourceName, bool fromFile)
     {
-        ShowLoadedMeasurement(result, sourceName, fromFile);
+        if (!ShowLoadedMeasurement(request, result, sourceName, fromFile))
+        {
+            return false;
+        }
+
         sessionTracker.MarkMeasurementCompleted(result);
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
+        return true;
     }
 
     // False means cancelled: not an error, no notice.
@@ -423,8 +431,13 @@ public partial class Form1
     {
         AudioFileContent recording;
         RecordedSweepImport import;
-        // Held before a decode that can take seconds; released before the redraw.
-        using (analyzerDocument.Acquire())
+        if (analyzerDocument.TryAcquire() is not { } hold)
+        {
+            return;
+        }
+
+        // Held before a decode that can take seconds; Install releases it before the redraw.
+        using (hold)
         {
             recording = await Task.Run(() => RecordedSweepFile.Load(path));
             // Handed over rather than applied first, so a rejected recording leaves the screen alone.
@@ -456,7 +469,12 @@ public partial class Form1
                 channel));
         }
 
-        ShowLoadedMeasurement(import.Result, path, fromFile: true);
+        // New session during the decode supersedes it.
+        if (!ShowLoadedMeasurement(hold, import.Result, path, fromFile: true))
+        {
+            return;
+        }
+
         sessionTracker.MarkMeasurementCompleted(import.Result);
         // An import has no SPL anchor; re-evaluate availability downward.
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(

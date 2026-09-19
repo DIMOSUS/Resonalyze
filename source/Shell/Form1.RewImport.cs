@@ -55,6 +55,12 @@ public partial class Form1
             return;
         }
 
+        // Supersedes a load or Open in analyzers still reading, as a plain Load does.
+        if (analyzerDocument.TryBegin() is not { } request)
+        {
+            return;
+        }
+
         if (!GetActiveModeDescriptor().ShowsLoadedMeasurement)
         {
             await SelectModeAsync(ModeTab.Frequency);
@@ -64,7 +70,7 @@ public partial class Form1
         commandController.SetLoadAvailable(false);
         try
         {
-            InstallRewMeasurementImport(import);
+            InstallRewMeasurementImport(request, import);
         }
         catch (Exception exception)
         {
@@ -82,10 +88,8 @@ public partial class Form1
         }
     }
 
-    private void InstallRewMeasurementImport(RewPreparedImport import)
+    private void InstallRewMeasurementImport(AnalyzerDocument.Request request, RewPreparedImport import)
     {
-        // Supersedes a load or Open in analyzers still reading, as a plain Load does.
-        analyzerDocument.BeginActivation();
         MeasurementResult result = RewMeasurementImport.ToResult(
             import.Samples,
             import.Referenced,
@@ -95,8 +99,10 @@ public partial class Form1
             import.SweepLengthSamples,
             sweepCount: 1,
             import.Plan.Reference);
-        FinishRewImport(result, RewSourceName(import.Measurement.Title), fromFile: false);
-        NotifyImportDecisions("REW measurement imported", RewImportNotes.Describe(import));
+        if (FinishRewImport(request, result, RewSourceName(import.Measurement.Title), fromFile: false))
+        {
+            NotifyImportDecisions("REW measurement imported", RewImportNotes.Describe(import));
+        }
     }
 
     private RewMeasurementImport CreateRewImport(Uri baseAddress) =>

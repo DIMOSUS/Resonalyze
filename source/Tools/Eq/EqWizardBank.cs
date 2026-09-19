@@ -123,7 +123,7 @@ internal sealed class EqWizardBank
             bands.Add(EqWizardLimits.Normalize(DefaultBand(bands.Count), gain));
         }
 
-        EndStep();
+        Commit();
         return true;
     }
 
@@ -137,7 +137,7 @@ internal sealed class EqWizardBank
 
         Commit();
         bands.Add(EqWizardLimits.Normalize(NewBand(type), gain));
-        EndStep();
+        Commit();
         return bands.Count - 1;
     }
 
@@ -151,7 +151,7 @@ internal sealed class EqWizardBank
 
         Commit();
         bands[index] = bands[index] with { Type = type };
-        EndStep();
+        Commit();
         return true;
     }
 
@@ -172,7 +172,7 @@ internal sealed class EqWizardBank
         ArgumentNullException.ThrowIfNull(curve);
         Commit();
         Write(curve.Bands.Take(EqWizardLimits.MaxBands), curve.PreampDb);
-        EndStep();
+        Commit();
     }
 
     /// <summary>No filters, preamp 0 dB; one step, so undo brings them back.</summary>
@@ -180,7 +180,7 @@ internal sealed class EqWizardBank
     {
         Commit();
         Write([], 0);
-        EndStep();
+        Commit();
     }
 
     public bool Undo()
@@ -242,12 +242,6 @@ internal sealed class EqWizardBank
         Write(state.Bands, state.PreampDb);
         changed();
         committed = State;
-    }
-
-    private void EndStep()
-    {
-        changed();
-        Commit();
     }
 
     // Held as the strips would hold it, so a hand-edited file loses a value, not the bank.

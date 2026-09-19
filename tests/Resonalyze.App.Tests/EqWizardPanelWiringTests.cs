@@ -255,6 +255,53 @@ public sealed class EqWizardPanelWiringTests
         Assert.Contains("Source + EQ", EqWizardTestPlots.CurveTitles(live.Plot));
     });
 
+    [Fact]
+    public void AnUndisturbedFit_LandsInTheBank() => StaTest.Run(() =>
+    {
+        using var live = FitReady();
+        PeqBankState before = live.Session.Bank.State;
+
+        live.Control<Button>("buttonAutoTune").PerformClick();
+        live.SettleFit();
+
+        Assert.NotEqual(before, live.Session.Bank.State);
+    });
+
+    [Fact]
+    public void LoweringMaxFiltersDuringAFit_DropsTheFit() => StaTest.Run(() =>
+    {
+        using var live = FitReady();
+        PeqBankState before = live.Session.Bank.State;
+
+        live.Control<Button>("buttonAutoTune").PerformClick();
+        // While the worker fits: a result under the old budget could land more filters than the field now allows.
+        live.Control<ThemedComboBox>("comboBoxBandsLimit").SelectedItem = 4;
+        live.SettleFit();
+
+        Assert.Equal(before, live.Session.Bank.State);
+    });
+
+    // A gated handoff with the target a little under the source, so the fit has cuts to make and asks nothing.
+    private static LivePanel FitReady()
+    {
+        var live = new LivePanel();
+        live.Panel.BeginVirtualDspHandoff(Handoff(DspProcessorProfile.Custom(SampleRate, PeqQConvention.Rbj)));
+        live.Settle();
+        (EqWizardCurve? source, EqWizardCurve target) = EqWizardRender.FitCurves(live.Session);
+        (double minHz, double maxHz) = live.Session.FrequencyWindow;
+        double above = EqTargetLevelCheck.TargetAboveSourceDb(
+            Signal(source!), Signal(target), minHz, maxHz)!.Value;
+        live.Set<ThemedNumericUpDown>(
+            "NumericTargetOffset", box => box.Value = Math.Round(box.Value - (decimal)above - 2m));
+        (source, target) = EqWizardRender.FitCurves(live.Session);
+        // A question would open a modal box the test cannot answer.
+        Assert.Null(EqWizardFit.LevelWarning(live.Session, Signal(source!), Signal(target)));
+        return live;
+    }
+
+    private static List<SignalPoint> Signal(EqWizardCurve curve) =>
+        curve.Points.Select(point => new SignalPoint(point.X, point.Y)).ToList();
+
     private static VirtualDspEqHandoffRequest Handoff(DspProcessorProfile profile)
     {
         var impulseResponse = new Complex[4_096];
@@ -360,6 +407,20 @@ public sealed class EqWizardPanelWiringTests
             }
 
             Assert.False(Session.Previews.Rendering, "A preview did not land in time.");
+        }
+
+        // The Auto Tune button is off while its fit runs.
+        public void SettleFit()
+        {
+            Button autoTune = Control<Button>("buttonAutoTune");
+            for (int attempt = 0; attempt < 2_000 && !autoTune.Enabled; attempt++)
+            {
+                StaTest.Pump();
+                Thread.Sleep(5);
+            }
+
+            Assert.True(autoTune.Enabled, "The fit did not finish in time.");
+            Settle();
         }
 
         public void Dispose() => host.Dispose();

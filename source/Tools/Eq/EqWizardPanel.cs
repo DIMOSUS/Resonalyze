@@ -700,6 +700,8 @@ public partial class EqWizardPanel : UserControl
         {
             if (!presenting && comboBoxBandsLimit.SelectedItem is int limit)
             {
+                // A fit under the old budget could land more filters than the field now allows.
+                autoTuneOrchestrator.Invalidate();
                 session.SetBandLimit(limit);
             }
         };

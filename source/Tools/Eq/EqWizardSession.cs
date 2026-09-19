@@ -66,7 +66,7 @@ internal sealed class EqWizardSession
     /// <summary>A curve smoothed when it was captured, or that never said, would compound a second smoothing.</summary>
     public bool SmoothingSelectable => Source?.SupportsSmoothing ?? true;
 
-    /// <summary>The bare source curve. Cached: it changes only with source, smoothing or calibration, never with the bank.</summary>
+    /// <summary>The bare source curve. Cached: it changes only with source, smoothing, calibration or processor rate, never with the bank.</summary>
     public EqWizardCurve? SourceCurve
     {
         get
@@ -277,7 +277,14 @@ internal sealed class EqWizardSession
 
     public void SetManualSampleRate(int sampleRateHz)
     {
+        if (sampleRateHz == ManualSampleRateHz)
+        {
+            return;
+        }
+
         ManualSampleRateHz = sampleRateHz;
+        // Every curve realised the chain at the old rate; the rendered ones are keyed by the bank alone.
+        InvalidateSourceCurve();
         Announce();
     }
 

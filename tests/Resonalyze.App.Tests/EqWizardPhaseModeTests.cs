@@ -103,6 +103,26 @@ public sealed class EqWizardPhaseModeTests
     }
 
     [Fact]
+    public async Task ChangingTheProcessorRate_RendersTheMeasuredPhaseAgain()
+    {
+        // The rendered phase is keyed by the bank; the same bank realised at another rate is another curve.
+        var session = new EqWizardSession();
+        session.Load(Source(phaseContext: null));
+        session.Bank.Add(PeqBandType.AllPassSecondOrder);
+        EqualizationCurve bank = session.Bank.Curve;
+        await session.Previews.RequestPhaseCurve(bank)!;
+        GatedPhaseCurve at48 = session.Previews.PhaseCurves().Edited!;
+        Assert.Null(session.Previews.RequestPhaseCurve(bank));
+
+        session.SetManualSampleRate(96_000);
+
+        Assert.Null(session.Previews.PhaseCurves().Edited);
+        await session.Previews.RequestPhaseCurve(bank)!;
+        GatedPhaseCurve at96 = session.Previews.PhaseCurves().Edited!;
+        Assert.NotEqual(at48.Points, at96.Points);
+    }
+
+    [Fact]
     public void AnImportedCurveHasNoPhaseToDraw()
     {
         var session = new EqWizardSession();

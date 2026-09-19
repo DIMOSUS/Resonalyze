@@ -1,17 +1,15 @@
 using System.Drawing;
-using System.Reflection;
-using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
 /// <summary>
 /// The autosave belongs to the stored session the first show loads. A panel built and disposed without being shown
 /// holds only the constructor's placeholder, which must never reach the file: until #203 every run of the App tests
-/// replaced the owner's session with it. The test host is portable, so the file here is the one beside the tests.
+/// replaced the owner's session with it. Driven through what the host calls; the test host is portable, so the file
+/// here is the one beside the tests.
 /// </summary>
 public sealed class VirtualCrossoverPanelAutosaveTests
 {
-    private const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
     private const double StoredLevelDb = -37;
 
     [Fact]
@@ -26,7 +24,7 @@ public sealed class VirtualCrossoverPanelAutosaveTests
                 using var panel = new VirtualCrossoverPanel();
                 // What the host does at startup, before anyone opens the tool.
                 panel.SetTargetCurve(Target());
-                PickDsp(panel, "radioDspPhase");
+                StaTest.Pump();
             });
 
             Assert.Equal(stored, File.ReadAllBytes(path));
@@ -41,16 +39,16 @@ public sealed class VirtualCrossoverPanelAutosaveTests
             StaTest.Run(() =>
             {
                 using var panel = new VirtualCrossoverPanel();
-                panel.OnPanelShown();
-                AwaitStoredLoad(panel);
+                Settle(panel.OnPanelShown());
                 Assert.Equal(StoredLevelDb, panel.Session.Project.TargetLevelDb);
 
-                PickDsp(panel, "radioDspPhase");
+                panel.SetTargetCurve(Target());
+                StaTest.Pump();
             });
 
             VirtualCrossoverProjectFile saved = VirtualCrossoverProjectFile.LoadOrDefault();
             Assert.Equal(StoredLevelDb, saved.TargetLevelDb);
-            Assert.Equal(DspPlotMode.Phase, saved.EffectiveDspPlotMode);
+            Assert.Equal(TargetPreset.Car, saved.Target?.Preset);
         });
     }
 
@@ -76,21 +74,9 @@ public sealed class VirtualCrossoverPanelAutosaveTests
         }
     }
 
-    private static void PickDsp(VirtualCrossoverPanel panel, string radio)
+    // The load resumes on this thread, so it is pumped rather than waited on.
+    private static void Settle(Task load)
     {
-        foreach (string other in new[]
-            { "radioDspMagnitude", "radioDspPhase", "radioDspGroupDelay", "radioDspCorrelation", "radioDspCoherence" })
-        {
-            Control<RadioButton>(panel, other).Checked = false;
-        }
-
-        Control<RadioButton>(panel, radio).Checked = true;
-        StaTest.Pump();
-    }
-
-    private static void AwaitStoredLoad(VirtualCrossoverPanel panel)
-    {
-        var load = Control<Task>(panel, "storedProjectLoad");
         DateTime deadline = DateTime.UtcNow.AddSeconds(30);
         while (!load.IsCompleted && DateTime.UtcNow < deadline)
         {
@@ -100,9 +86,6 @@ public sealed class VirtualCrossoverPanelAutosaveTests
 
         Assert.True(load.IsCompleted, "The stored session did not load.");
     }
-
-    private static T Control<T>(VirtualCrossoverPanel panel, string name) =>
-        (T)typeof(VirtualCrossoverPanel).GetField(name, Hidden)!.GetValue(panel)!;
 
     private static EqTargetCurve Target() => new(
         TargetPreset.Car,

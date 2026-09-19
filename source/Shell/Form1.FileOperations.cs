@@ -285,13 +285,13 @@ public partial class Form1
         RewImpulseResponseTextFile file;
         RewImportTimingPlan plan;
         EssSweepRateEstimate? sweepRate;
-        MeasurementResult result;
+        bool landed;
         if (analyzerDocument.TryAcquire() is not { } hold)
         {
             return;
         }
 
-        // Held from the read so a sweep cannot start meanwhile; Install releases it before the redraw (busy draws nothing).
+        // Held from the read so a sweep cannot start meanwhile. It lands inside the hold, so the views hear of it once.
         using (hold)
         {
             string text = await File.ReadAllTextAsync(path);
@@ -340,7 +340,7 @@ public partial class Form1
 
             double lowHz = file.LowFrequencyHz ?? RewMeasurementImport.FallbackLowFrequencyHz;
             double highHz = Math.Min(file.HighFrequencyHz ?? double.MaxValue, file.SampleRate / 2.0);
-            result = RewMeasurementImport.ToResult(
+            MeasurementResult result = RewMeasurementImport.ToResult(
                 samples,
                 referenced,
                 file.SampleRate,
@@ -350,9 +350,10 @@ public partial class Form1
                     sweepRate, lowHz, highHz, file.SampleRate, file.SweepLengthSamples ?? samples.Length),
                 file.SweepCount ?? 1,
                 plan.Reference);
+            landed = FinishRewImport(hold, result, path, fromFile: true);
         }
 
-        if (FinishRewImport(hold, result, path, fromFile: true))
+        if (landed)
         {
             NotifyImportDecisions("REW impulse response imported", RewImportNotes.Describe(file, plan, sweepRate));
         }
@@ -426,12 +427,13 @@ public partial class Form1
     {
         AudioFileContent recording;
         RecordedSweepImport import;
+        bool landed;
         if (analyzerDocument.TryAcquire() is not { } hold)
         {
             return;
         }
 
-        // Held before a decode that can take seconds; Install releases it before the redraw.
+        // Held before a decode that can take seconds. It lands inside the hold, so the views hear of it once.
         using (hold)
         {
             recording = await Task.Run(() => RecordedSweepFile.Load(path));
@@ -462,10 +464,11 @@ public partial class Form1
                 recording.Channels,
                 recording.SampleRate,
                 channel));
+            // New session during the decode supersedes it.
+            landed = InstallMeasurement(hold, import.Result, path, fromFile: true);
         }
 
-        // New session during the decode supersedes it.
-        if (!InstallMeasurement(hold, import.Result, path, fromFile: true))
+        if (!landed)
         {
             return;
         }

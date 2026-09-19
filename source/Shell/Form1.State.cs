@@ -125,9 +125,5 @@ public partial class Form1
         commandController.SetLoadAvailable(false);
     }
 
-    private void FinalizeMeasurementCommandState()
-    {
-        commandController.SetLoadAvailable(true);
-        analyzerPlot.UpdatePeakInfo();
-    }
+    private void FinalizeMeasurementCommandState() => commandController.SetLoadAvailable(true);
 }

@@ -252,10 +252,11 @@ public partial class Form1
         {
             AnalyzerDocument.Request? run = runRequest;
             runRequest = null;
-            run?.Dispose();
             // New session aborts a run, but one finishing meanwhile still completes: it is dropped like an aborted one.
             MeasurementResult? landed =
                 result != null && run?.Install(result, sourceName: null) == true ? result : null;
+            // A run that landed nothing lets go here; the views then show what is open.
+            run?.Dispose();
             bool success = landed != null;
             if (landed != null)
             {
@@ -272,8 +273,6 @@ public partial class Form1
                 ShowMeasurementError("The measurement failed.", expSweepMeasurement.LastError);
             }
 
-            // A run that landed nothing still ends "measuring...".
-            analyzerPlot.UpdatePeakInfo();
             // The run released the device (success or not); refresh the settings panel's deferred device view.
             RefreshOpenMeasurementSettingsDevice();
 

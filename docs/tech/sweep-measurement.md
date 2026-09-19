@@ -62,14 +62,17 @@ Whichever input started last wins, however long each one takes.
 
 **The views follow the document.** An input installs its result and stops there. The main plot
 (`AnalyzerPlot`), Time Alignment and the settings panels that preview it subscribe to the document's
-`Changed`, and the plot and Time Alignment to the compare selection too:
+`Changed`, and the plot and Time Alignment to the compare selection too. `Changed` announces
+everything a view reads: the result, its name, and whether a producer holds the document. A
+producer that lands is announced once; one that ends without a result (aborted, failed,
+cancelled, superseded) is announced when it lets go.
 
 - The plot and Time Alignment refresh once after the input's work (`DeferredRefresh`), so an
   input that installs and then changes the view (a history entry applies its session, a run
   selects its own calibration) draws once, with the final state. A draw the view makes on its
   own, such as a mode switch, cancels the queued one.
-- While a run or an import holds the document the plot keeps what it drew; the result redraws
-  it when it lands.
+- While a run or an import holds the document the plot and Time Alignment keep what they show;
+  the end of the hold redraws them, whether a result landed or not.
 - Time Alignment reads only while it is shown; showing it reads.
 - The Frequency Response panel recolours its SPL choice from the measurement it shows.
 

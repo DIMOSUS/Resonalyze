@@ -72,7 +72,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         this.document = document;
         this.saveSettings = saveSettings;
         this.compareSelection = compareSelection;
-        sourcesChanged = new DeferredRefresh(owner, RefreshConfiguration);
+        sourcesChanged = new DeferredRefresh(owner, RefreshChangedSources);
         // +1 over the panel font, not +4: at +4 the status box wrapped the meters cell.
         resultTableFont = new Font(
             FontFamily.GenericMonospace,
@@ -135,6 +135,15 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     }
 
     public Task AbortAsync() => Task.CompletedTask;
+
+    // While a run or an import holds the document the panel keeps what it read; the end of the hold reads again.
+    private void RefreshChangedSources()
+    {
+        if (!document.IsBusy)
+        {
+            RefreshConfiguration();
+        }
+    }
 
     private string? ImpulseResponseFileName =>
         string.IsNullOrWhiteSpace(document.SourceName) ? null : Path.GetFileName(document.SourceName);

@@ -7,8 +7,6 @@ namespace Resonalyze;
 
 public partial class Form1
 {
-    private int asyncPlotRefreshVersion;
-
     private void buttonWaterfallOpt_Click(object sender, EventArgs e)
     {
         OpenModeSettings(ModeTab.Waterfall);
@@ -103,7 +101,7 @@ public partial class Form1
                 // A scale change (linear/log) makes the old zoom meaningless: refit.
                 if (viewResetKey != null && !Equals(keyBefore, viewResetKey()))
                 {
-                    plotViewports.Forget(CurrentMode);
+                    analyzerPlot.ForgetZoom();
                 }
 
                 await RefreshCurrentModePlotAsync();
@@ -157,42 +155,35 @@ public partial class Form1
         RefreshCurrentModePlot();
     }
 
+    /// <summary>Settings edits arrive one after another, so the plot builds off the UI thread and only the newest is shown.</summary>
     private async Task RefreshCurrentModePlotAsync()
     {
-        ModeDescriptor descriptor = GetActiveModeDescriptor();
-        if (!descriptor.HasPlotView || descriptor.Mode == Mode.LiveSpectrum)
+        if (GetActiveModeDescriptor().HasPlotView && CurrentMode != Mode.LiveSpectrum)
         {
-            RefreshCurrentModePlot();
+            await analyzerPlot.RedrawAsync();
             return;
         }
 
-        bool shouldIncludeCurves = descriptor.SupportsCurveDrawing &&
-            CanDrawCurrentMeasurement();
-        int version = Interlocked.Increment(ref asyncPlotRefreshVersion);
-        ModeTab tab = descriptor.Tab;
-        PlotModel model = await Task.Run(() => plotModelFactory.Create(descriptor.Mode, shouldIncludeCurves));
-        if (IsDisposed ||
-            version != Volatile.Read(ref asyncPlotRefreshVersion) ||
-            modeController.ActiveTab != tab)
-        {
-            return;
-        }
-
-        ShowPlotModel(model, shouldIncludeCurves, descriptor.ShowOverlayCurves);
+        RefreshCurrentModePlot();
     }
 
+    // The active tab redraws what it shows: the plot, the held live capture, or Time Alignment's read.
     private void RefreshCurrentModePlot()
     {
-        Interlocked.Increment(ref asyncPlotRefreshVersion);
-        if (GetActiveModeDescriptor().ShowsTimeAlignmentPanel)
+        ModeDescriptor descriptor = GetActiveModeDescriptor();
+        if (descriptor.ShowsTimeAlignmentPanel)
         {
             timeAlignmentController.RefreshConfiguration();
             return;
         }
 
-        bool includeCurves = GetActiveModeDescriptor().SupportsCurveDrawing &&
-            CanDrawCurrentMeasurement();
-        DrawSelectedMode(includeCurves);
+        if (descriptor.Mode == Mode.LiveSpectrum)
+        {
+            RestoreLiveCurveIfStopped();
+            return;
+        }
+
+        analyzerPlot.Redraw();
     }
 
     private bool HasDockedModeSettings(ModeTab tab) =>

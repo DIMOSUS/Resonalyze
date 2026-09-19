@@ -5,155 +5,9 @@ namespace Resonalyze;
 
 public partial class Form1
 {
-    private void DrawSelectedMode(bool includeCurves)
-    {
-        using var _ = AppProfiler.Zone("Form1.DrawSelectedMode");
-        ModeDescriptor descriptor = GetActiveModeDescriptor();
-        if (!descriptor.HasPlotView)
-        {
-            if (descriptor.ShowsTimeAlignmentPanel)
-            {
-                timeAlignmentController.RefreshConfiguration();
-            }
-            return;
-        }
+    private void buttonOverlayShowAll_Click(object? sender, EventArgs e) => analyzerPlot.ShowAllOverlays();
 
-        if (descriptor.Mode == Mode.LiveSpectrum)
-        {
-            if (!liveSpectrumController.InProgress)
-            {
-                liveSpectrumController.RestoreLastCurve();
-            }
-            return;
-        }
-
-        bool shouldIncludeCurves = includeCurves && descriptor.SupportsCurveDrawing;
-        ShowPlotModel(
-            plotModelFactory.Create(descriptor.Mode, shouldIncludeCurves),
-            shouldIncludeCurves,
-            descriptor.ShowOverlayCurves);
-    }
-
-    private void ShowPlotModel(
-        PlotModel model,
-        bool includeCurves,
-        bool showOverlay)
-    {
-        using var _ = AppProfiler.Zone("Form1.ShowPlotModel");
-        plotViewports.Show(model, CurrentMode);
-        UpdatePeakInfo();
-
-        if (includeCurves && showOverlay)
-        {
-            overlayCollection.Show(CurrentMode);
-        }
-        else
-        {
-            UpdatePlotLabelsPanel();
-        }
-
-    }
-
-    private void UpdateOverlayAvailability()
-    {
-        bool available = OverlaysAvailableForCurrentMode();
-        overlays.Enabled = available;
-        RefreshOverlayButtons();
-        if (!available)
-        {
-            overlayCollection.HideAll();
-        }
-    }
-
-    private bool OverlaysAvailableForCurrentMode() =>
-        OverlayCollection.SupportsMode(CurrentMode);
-
-    private void CaptureActiveOverlaySlotsForCurrentMode()
-    {
-        // Modes without a main plot share Frequency slots but never draw them; capturing their empty set would wipe the selection.
-        if (!GetActiveModeDescriptor().HasPlotView ||
-            !OverlayCollection.SupportsMode(CurrentMode))
-        {
-            return;
-        }
-
-        activeOverlaySlots.Store(
-            OverlayCollection.OverlayModeFor(CurrentMode),
-            overlayCollection.CaptureActiveSlots(CurrentMode));
-    }
-
-    private void RestoreActiveOverlaySlotsForCurrentMode()
-    {
-        // Show() with a null model unchecks the slots and loses the saved selection.
-        if (!GetActiveModeDescriptor().HasPlotView ||
-            !OverlayCollection.SupportsMode(CurrentMode))
-        {
-            return;
-        }
-
-        Mode overlayMode = OverlayCollection.OverlayModeFor(CurrentMode);
-        if (activeOverlaySlots.TryGet(overlayMode, out List<int> activeSlots))
-        {
-            overlayCollection.RestoreActiveSlots(CurrentMode, activeSlots);
-        }
-    }
-
-    // Returns the slot, or null when all twelve are occupied. Prepare() loads it on the next frequency-mode switch, already checked.
-    internal int? SaveVirtualCrossoverOverlay(string title, OverlayPoint[] points)
-    {
-        for (int slot = 1; slot <= OverlayFile.MaximumSlotCount; slot++)
-        {
-            bool occupied;
-            try
-            {
-                occupied = OverlayFile.Load(Mode.FrequencyResponse, slot) != null;
-            }
-            catch (Exception)
-            {
-                occupied = true;
-            }
-            if (occupied)
-            {
-                continue;
-            }
-
-            var file = new OverlayFile
-            {
-                SavedAtUtc = DateTimeOffset.UtcNow,
-                Mode = Mode.FrequencyResponse,
-                Slot = slot,
-                Kind = OverlayKind.Captured,
-                Title = title,
-                ColorArgb = UiPalette.CurveOverlayDefault.ToArgb(),
-                Points = points
-            };
-            file.Save();
-            activeOverlaySlots.MarkActive(Mode.FrequencyResponse, slot);
-            return slot;
-        }
-
-        return null;
-    }
-
-    private void RefreshOverlayButtons()
-    {
-        bool hasOverlays = OverlaysAvailableForCurrentMode() &&
-            overlayCollection.HasOverlays(CurrentMode);
-        buttonOverlayShowAll.Enabled = hasOverlays;
-        buttonOverlayHideAll.Enabled = hasOverlays;
-    }
-
-    private void buttonOverlayShowAll_Click(object? sender, EventArgs e)
-    {
-        overlayCollection.Show(CurrentMode);
-        UpdatePlotLabelsPanel();
-    }
-
-    private void buttonOverlayHideAll_Click(object? sender, EventArgs e)
-    {
-        overlayCollection.HideAll();
-        UpdatePlotLabelsPanel();
-    }
+    private void buttonOverlayHideAll_Click(object? sender, EventArgs e) => analyzerPlot.HideAllOverlays();
 
     private Task SelectModeAsync(ModeTab tab) => modeController.SelectAsync(tab);
 
@@ -175,10 +29,10 @@ public partial class Form1
             [ModeTab.ToolsFirConstructor] = () => _ = SelectModeAsync(ModeTab.ToolsFirConstructor)
         };
 
-    private void SetActiveModeTab(ModeTab activeTab)
+    // A switch shows the new tab's panels and buttons before the plot draws; Live Spectrum brings back its held capture.
+    private void ShowModeSurfaces(ModeDescriptor descriptor)
     {
-        ModeDescriptor descriptor = ModeCatalog.For(activeTab);
-        chromeTitleBar.SetActiveModeTab(activeTab);
+        chromeTitleBar.SetActiveModeTab(descriptor.Tab);
         UpdateCurrentModeSettingsButton();
         UpdateRecordButtonForCurrentMode();
         ApplyMainContentLayout();
@@ -205,7 +59,11 @@ public partial class Form1
         }
         eqResultsPanel.Visible = descriptor.ShowsEqWizardPanel;
         SyncDockedModeSettingsOnModeChange();
-        UpdatePlotLabelsPanel();
+        analyzerPlot.RefreshLabels();
+        if (descriptor.Mode == Mode.LiveSpectrum)
+        {
+            RestoreLiveCurveIfStopped();
+        }
     }
 
     // Record Settings and History dock as separate windows, so they must be closed, not just their buttons hidden.
@@ -241,67 +99,11 @@ public partial class Form1
                 liveSpectrumController.HasConfiguredLoopback));
     }
 
-    private void UpdatePlotLabelsPanel()
+    private void RestoreLiveCurveIfStopped()
     {
-        plotLabelsPanelController.Refresh();
-        RefreshOverlayButtons();
+        if (!liveSpectrumController.InProgress)
+        {
+            liveSpectrumController.RestoreLastCurve();
+        }
     }
-
-    private void UpdatePeakInfo()
-    {
-        PlotModel? model = plotView1.Model;
-        if (model == null)
-        {
-            return;
-        }
-
-        for (int index = model.Annotations.Count - 1; index >= 0; index--)
-        {
-            if (model.Annotations[index] is OverlayTextAnnotation
-                {
-                    Tag: PeakInfoAnnotationTag
-                })
-            {
-                model.Annotations.RemoveAt(index);
-            }
-        }
-
-        if (modeController.ActiveTab is not (ModeTab.Phase or ModeTab.GroupDelay))
-        {
-            model.InvalidatePlot(false);
-            return;
-        }
-
-        string transferPeak;
-        if (analyzerDocument.Result is not { Transfer: { } transfer } result)
-        {
-            transferPeak = "--";
-        }
-        else
-        {
-            int peakSamples = transfer.PeakIndex;
-            double peakMs = result.SampleRate > 0
-                ? peakSamples * 1000.0 / result.SampleRate
-                : 0;
-            transferPeak = $"{peakMs:0.000} ms ({peakSamples} samples)";
-        }
-        string text = analyzerDocument.IsBusy
-            ? "Peaks: measuring..."
-            : "Transfer IR Peak: " + transferPeak;
-        model.Annotations.Add(new OverlayTextAnnotation
-        {
-            Tag = PeakInfoAnnotationTag,
-            Text = text,
-            TextPosition = new DataPoint(0.01, 0),
-            TextFlowDirection = TextFlowDirection.TopDown,
-            FontSize = 12,
-            FontWeight = 700,
-            TextColor = UiPalette.GraphAxisText.ToOxy(),
-            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left
-        });
-        model.InvalidatePlot(false);
-    }
-
-    private bool CanDrawCurrentMeasurement() =>
-        analyzerDocument.HasResult && !analyzerDocument.IsBusy;
 }

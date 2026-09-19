@@ -220,7 +220,7 @@ public partial class Form1
         }
 
         ApplyMeasurementConfigurationToControllers();
-        UpdatePeakInfo();
+        analyzerPlot.UpdatePeakInfo();
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(
             panel => panel.RefreshSplAvailability());
 
@@ -228,9 +228,7 @@ public partial class Form1
         {
             // Mode switch re-prepares overlays hidden, so only the active slots are re-shown. Audio settings untouched.
             await SelectModeAsync(NormalizeSessionMode(session.ActiveMode));
-            overlayCollection.RestoreActiveSlots(
-                CurrentMode,
-                session.ActiveOverlaySlots);
+            analyzerPlot.RestoreOverlaySlots(session.ActiveOverlaySlots);
             SaveMeasurementSettings();
         }
         else
@@ -293,7 +291,7 @@ public partial class Form1
     private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot() =>
         viewSettings.CaptureSession(
             modeController.ActiveTab,
-            overlayCollection.CaptureActiveSlots(CurrentMode));
+            analyzerPlot.ActiveOverlaySlots);
 
     private static ModeTab NormalizeSessionMode(ModeTab mode) =>
         Enum.IsDefined(mode) ? mode : ModeTab.Frequency;

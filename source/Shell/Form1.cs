@@ -7,13 +7,13 @@ namespace Resonalyze
 {
     public partial class Form1 : Form
     {
-        private const string PeakInfoAnnotationTag = "PeakInfoAnnotation";
         private const int MeasurementSettingsSaveDelayMilliseconds = 10_000;
         private const int RecordButtonLongPressMilliseconds = 650;
 
-        public Mode CurrentMode { get; private set; }
+        public Mode CurrentMode => analyzerPlot.Mode;
 
-        private readonly OverlayCollection overlayCollection;
+        // The main plot: draws the open measurement in the active mode, with its overlays and zoom.
+        private readonly AnalyzerPlot analyzerPlot;
         // Composition root: the one place audio backends are wired.
         private readonly IAudioSessionFactory audioSessionFactory =
             new AudioSessionFactory(AudioBackendRegistry.CreateDefault());
@@ -31,9 +31,6 @@ namespace Resonalyze
         private readonly MainCommandController commandController;
         private readonly MeasurementSettingsFile measurementSettings;
         private readonly MeasurementHistoryService measurementHistoryService = new();
-        private readonly ActiveOverlaySlotTracker activeOverlaySlots = new();
-        private readonly PlotLabelsPanelController plotLabelsPanelController;
-        private readonly PlotViewportMemory plotViewports;
         private readonly InputLevelMeterController inputLevelMeterController;
         private readonly DockedModeSettingsHost dockedModeSettingsHost;
         private readonly DockedModeSettingsHost dockedMeasurementSettingsHost;
@@ -87,32 +84,9 @@ namespace Resonalyze
                 analyzerDocument,
                 CaptureCurrentSessionSnapshot);
             Form1ControllerDependencies dependencies = CreateControllerDependencies();
-            plotViewports = dependencies.PlotViewports;
-            overlayCollection = dependencies.OverlayCollection;
-            plotLabelsPanelController = dependencies.PlotLabelsPanelController;
             plotModelFactory = dependencies.PlotModelFactory;
-            // Overlays gate on the shown axis scale. Live Spectrum shares FR's overlay slots, so it reports its own scale.
-            // Wired after plotModelFactory is assigned.
-            overlayCollection.SetMagnitudeScaleProvider(
-                () => CurrentMode switch
-                {
-                    Mode.FrequencyResponse => plotModelFactory.EffectiveFrequencyResponseScale,
-                    Mode.LiveSpectrum => plotModelFactory.EffectiveLiveSpectrumScale,
-                    _ => Dsp.MagnitudeScale.Relative
-                });
+            analyzerPlot = dependencies.AnalyzerPlot;
             liveSpectrumController = dependencies.LiveSpectrumController;
-            // Overlays store the raw curve so smoothing Off reveals the original. Wired after both providers are assigned.
-            overlayCollection.SetRawCurveProvider(tag =>
-                tag == LiveSpectrumController.LiveSpectrumInputMagnitudeTag
-                    ? liveSpectrumController.BuildRawRtaCapture()
-                    : plotModelFactory.BuildRawCurve(tag));
-            // Impulse axes are view settings, so overlays store record coordinates and re-frame on draw.
-            overlayCollection.SetImpulseCaptureProvider(
-                tag => plotModelFactory.BuildImpulseCapture(tag));
-            overlayCollection.SetImpulseFrameProvider(
-                () => CurrentMode == Mode.ImpulseResponse
-                    ? plotModelFactory.ImpulseFrame
-                    : null);
             modeController = dependencies.ModeController;
             commandController = dependencies.CommandController;
             timeAlignmentController = dependencies.TimeAlignmentController;
@@ -136,7 +110,7 @@ namespace Resonalyze
             signalGeneratorPanel.AudioSessionFactory = audioSessionFactory;
             virtualCrossoverPanel.HistoryService = measurementHistoryService;
             RefreshCalibrationConsumers();
-            virtualCrossoverPanel.OverlayCaptureRequested = SaveVirtualCrossoverOverlay;
+            virtualCrossoverPanel.OverlayCaptureRequested = analyzerPlot.SaveFrequencyResponseOverlay;
             // The wizard owns the EQ target; it ignores an equal value, so the write-back cannot loop.
             virtualCrossoverPanel.SetTargetCurve(eqWizardPanel.TargetCurve);
             virtualCrossoverPanel.TargetCurveChanged = eqWizardPanel.ApplyTargetCurve;

@@ -3,17 +3,15 @@ namespace Resonalyze.App.Tests;
 public sealed class ModeControllerTests
 {
     [Fact]
-    public async Task SelectAsync_RunsCallbacksInOrder()
+    public async Task SelectAsync_RunsTheSwitchInOrder()
     {
         var calls = new List<string>();
-        ModeController controller = CreateController(
-            calls,
-            changeMode: _ => Task.CompletedTask);
+        ModeController controller = CreateController(calls, stop: () => Task.CompletedTask);
 
         await controller.SelectAsync(ModeTab.Impulse);
 
         Assert.Equal(
-            new[] { "change:ImpulseResponse", "tab:Impulse", "draw:True", "restore" },
+            new[] { "leave", "stop", "enter:ImpulseResponse", "tab:Impulse", "present" },
             calls);
         Assert.Equal(ModeTab.Impulse, controller.ActiveTab);
     }
@@ -24,35 +22,33 @@ public sealed class ModeControllerTests
         var calls = new List<string>();
         var firstSwitchBlocked = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        int changeModeCalls = 0;
+        int stops = 0;
         ModeController controller = CreateController(
             calls,
-            changeMode: _ =>
+            stop: () =>
             {
-                changeModeCalls++;
-                return changeModeCalls == 1
-                    ? firstSwitchBlocked.Task
-                    : Task.CompletedTask;
+                stops++;
+                return stops == 1 ? firstSwitchBlocked.Task : Task.CompletedTask;
             });
 
         Task first = controller.SelectAsync(ModeTab.Impulse);
         Task second = controller.SelectAsync(ModeTab.Phase);
 
         // The second switch must queue behind the first, not interleave with it.
-        Assert.Equal(1, changeModeCalls);
+        Assert.Equal(1, stops);
         Assert.DoesNotContain("tab:Impulse", calls);
 
         firstSwitchBlocked.SetResult();
         await first;
         await second;
 
-        Assert.Equal(2, changeModeCalls);
+        Assert.Equal(2, stops);
         Assert.Equal(ModeTab.Phase, controller.ActiveTab);
         Assert.Equal(
             new[]
             {
-                "change:ImpulseResponse", "tab:Impulse", "draw:True", "restore",
-                "change:PhaseResponse", "tab:Phase", "draw:True", "restore"
+                "leave", "stop", "enter:ImpulseResponse", "tab:Impulse", "present",
+                "leave", "stop", "enter:PhaseResponse", "tab:Phase", "present"
             },
             calls);
     }
@@ -64,7 +60,7 @@ public sealed class ModeControllerTests
         bool fail = true;
         ModeController controller = CreateController(
             calls,
-            changeMode: _ =>
+            stop: () =>
             {
                 if (fail)
                 {
@@ -84,35 +80,25 @@ public sealed class ModeControllerTests
         Assert.Equal(ModeTab.Phase, controller.ActiveTab);
         Assert.Contains("tab:Phase", calls);
         Assert.DoesNotContain("tab:Impulse", calls);
+        Assert.DoesNotContain("enter:ImpulseResponse", calls);
     }
 
-    [Fact]
-    public async Task SelectAsync_DrawSkipsCurvesWhenModeDoesNotSupportThem()
-    {
-        var calls = new List<string>();
-        ModeController controller = CreateController(
-            calls,
-            changeMode: _ => Task.CompletedTask);
-
-        // Live Spectrum draws its captures itself.
-        await controller.SelectAsync(ModeTab.LiveSpectrum);
-
-        Assert.Contains("draw:False", calls);
-    }
-
-    private static ModeController CreateController(
-        List<string> calls,
-        Func<Mode, Task> changeMode)
-    {
-        return new ModeController(
-            mode =>
+    private static ModeController CreateController(List<string> calls, Func<Task> stop) =>
+        new(
+            new RecordingView(calls),
+            () =>
             {
-                calls.Add($"change:{mode}");
-                return changeMode(mode);
+                calls.Add("stop");
+                return stop();
             },
-            tab => calls.Add($"tab:{tab}"),
-            includeCurves => calls.Add($"draw:{includeCurves}"),
-            () => calls.Add("restore"),
-            () => true);
+            descriptor => calls.Add($"tab:{descriptor.Tab}"));
+
+    private sealed class RecordingView(List<string> calls) : IModeView
+    {
+        public void Leave() => calls.Add("leave");
+
+        public void Enter(ModeDescriptor mode) => calls.Add($"enter:{mode.Mode}");
+
+        public void Present() => calls.Add("present");
     }
 }

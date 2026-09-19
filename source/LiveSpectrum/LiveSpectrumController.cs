@@ -10,16 +10,15 @@ internal sealed class LiveSpectrumController : IDisposable
     private readonly Form owner;
     private readonly NoiseMeasurement measurement;
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 33 };
+    // The main plot, drawn into while Live Spectrum is its mode.
+    private readonly AnalyzerPlot plot;
     private readonly OxyPlot.WindowsForms.PlotView plotView;
     // Through viewport memory so the user's zoom survives model rebuilds.
     private readonly PlotViewportMemory plotViewports;
     private readonly PlotModelFactory plotModelFactory;
     private readonly OverlayCollection overlayCollection;
-    private readonly Func<Mode> getCurrentMode;
     private readonly Func<Task> selectLiveSpectrumAsync;
-    private readonly Action updateOverlayAvailability;
     private readonly Action updateRecordButton;
-    private readonly Action updatePlotLabels;
     private readonly LiveSpectrumOptions liveSpectrumOptions;
     // Resolves the id to the curve so a run freezes the calibration itself.
     private readonly Func<string?, CapturedMicrophoneCalibration> resolveCalibration;
@@ -65,35 +64,28 @@ internal sealed class LiveSpectrumController : IDisposable
     public LiveSpectrumController(
         Form owner,
         NoiseMeasurement measurement,
-        OxyPlot.WindowsForms.PlotView plotView,
-        PlotViewportMemory plotViewports,
-        PlotModelFactory plotModelFactory,
-        OverlayCollection overlayCollection,
-        Func<Mode> getCurrentMode,
+        AnalyzerPlot plot,
         Func<Task> selectLiveSpectrumAsync,
-        Action updateOverlayAvailability,
         Action updateRecordButton,
-        Action updatePlotLabels,
         LiveSpectrumOptions liveSpectrumOptions,
         Func<string?, CapturedMicrophoneCalibration> resolveCalibration,
         Func<bool> suppressErrorDialogs)
     {
         this.owner = owner;
         this.measurement = measurement;
-        this.plotView = plotView;
-        this.plotViewports = plotViewports;
-        this.plotModelFactory = plotModelFactory;
-        this.overlayCollection = overlayCollection;
-        this.getCurrentMode = getCurrentMode;
+        this.plot = plot;
+        plotView = plot.View;
+        plotViewports = plot.Viewports;
+        plotModelFactory = plot.Factory;
+        overlayCollection = plot.Overlays;
         this.selectLiveSpectrumAsync = selectLiveSpectrumAsync;
-        this.updateOverlayAvailability = updateOverlayAvailability;
         this.updateRecordButton = updateRecordButton;
-        this.updatePlotLabels = updatePlotLabels;
         this.liveSpectrumOptions = liveSpectrumOptions;
         this.resolveCalibration = resolveCalibration;
         this.suppressErrorDialogs = suppressErrorDialogs;
         measurement.Completed += MeasurementCompleted;
         timer.Tick += TimerTick;
+        plot.LiveRawCapture = BuildRawRtaCapture;
     }
 
     public bool InProgress => measurement.InProgress;
@@ -167,10 +159,10 @@ internal sealed class LiveSpectrumController : IDisposable
         }
 
         UpdateCaptureProgressAnnotation(model);
-        plotViewports.Show(model, getCurrentMode());
-        updateOverlayAvailability();
-        overlayCollection.Show(getCurrentMode());
-        updatePlotLabels();
+        plotViewports.Show(model, plot.Mode);
+        plot.UpdateOverlayAvailability();
+        overlayCollection.Show(plot.Mode);
+        plot.RefreshLabels();
     }
 
     public RawCurveCapture? BuildRawRtaCapture() =>
@@ -259,7 +251,7 @@ internal sealed class LiveSpectrumController : IDisposable
 
         ConfigureFrom(measurementSettings);
 
-        if (restart && getCurrentMode() == Mode.LiveSpectrum)
+        if (restart && plot.Mode == Mode.LiveSpectrum)
         {
             await StartAsync();
         }
@@ -318,7 +310,7 @@ internal sealed class LiveSpectrumController : IDisposable
         }
 
         updateRecordButton();
-        updatePlotLabels();
+        plot.RefreshLabels();
     }
 
     public void ForgetLastCurve()
@@ -359,7 +351,7 @@ internal sealed class LiveSpectrumController : IDisposable
     {
         InvalidateCalibration();
 
-        if (getCurrentMode() == Mode.LiveSpectrum)
+        if (plot.Mode == Mode.LiveSpectrum)
         {
             RebuildModel();
         }
@@ -408,10 +400,10 @@ internal sealed class LiveSpectrumController : IDisposable
             PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
         }
 
-        plotViewports.Show(model, getCurrentMode());
-        updateOverlayAvailability();
-        overlayCollection.Show(getCurrentMode());
-        updatePlotLabels();
+        plotViewports.Show(model, plot.Mode);
+        plot.UpdateOverlayAvailability();
+        overlayCollection.Show(plot.Mode);
+        plot.RefreshLabels();
     }
 
     public void Dispose()
@@ -431,7 +423,7 @@ internal sealed class LiveSpectrumController : IDisposable
 
     private async Task StartAsync()
     {
-        if (getCurrentMode() != Mode.LiveSpectrum)
+        if (plot.Mode != Mode.LiveSpectrum)
         {
             await selectLiveSpectrumAsync();
         }
@@ -442,8 +434,8 @@ internal sealed class LiveSpectrumController : IDisposable
         lastSnapshot = null;
         lastDrawnFrameCount = -1;
         loadedCapture = null;
-        plotViewports.Show(plotModelFactory.CreateLiveSpectrum(), getCurrentMode());
-        overlayCollection.Show(getCurrentMode());
+        plotViewports.Show(plotModelFactory.CreateLiveSpectrum(), plot.Mode);
+        overlayCollection.Show(plot.Mode);
         // Frozen for this accumulation so the divided-out filter and the saved recipe agree.
         measurement.SetCaptureProtectiveHighPass(configuredProtectiveHighPass);
         // Calibration curve frozen too: bins are re-rendered on every redraw and on Save.
@@ -452,7 +444,7 @@ internal sealed class LiveSpectrumController : IDisposable
         _ = measurement.RunAsync();
         timer.Start();
         updateRecordButton();
-        updatePlotLabels();
+        plot.RefreshLabels();
     }
 
     private async Task StopAsync()
@@ -471,11 +463,11 @@ internal sealed class LiveSpectrumController : IDisposable
         }
 
         UpdateCaptureProgressAnnotation(model);
-        plotViewports.Show(model, getCurrentMode());
-        updateOverlayAvailability();
-        overlayCollection.Show(getCurrentMode());
+        plotViewports.Show(model, plot.Mode);
+        plot.UpdateOverlayAvailability();
+        overlayCollection.Show(plot.Mode);
         updateRecordButton();
-        updatePlotLabels();
+        plot.RefreshLabels();
     }
 
     private void TimerTick(object? sender, EventArgs e)
@@ -489,7 +481,7 @@ internal sealed class LiveSpectrumController : IDisposable
         try
         {
             PlotModel? model = plotView.Model;
-            if (model == null || getCurrentMode() != Mode.LiveSpectrum)
+            if (model == null || plot.Mode != Mode.LiveSpectrum)
             {
                 return;
             }
@@ -522,7 +514,7 @@ internal sealed class LiveSpectrumController : IDisposable
             UpdateOverloadAnnotation(model);
             UpdateCaptureProgressAnnotation(model);
             model.InvalidatePlot(true);
-            updatePlotLabels();
+            plot.RefreshLabels();
         }
         finally
         {
@@ -850,9 +842,9 @@ internal sealed class LiveSpectrumController : IDisposable
             owner.BeginInvoke((MethodInvoker)delegate
             {
                 timer.Stop();
-                updateOverlayAvailability();
+                plot.UpdateOverlayAvailability();
                 updateRecordButton();
-                updatePlotLabels();
+                plot.RefreshLabels();
                 // A user stop reports success; an error here is a device failure and must not reset the UI silently.
                 if (!success &&
                     measurement.LastError is Exception error &&

@@ -109,7 +109,7 @@ public partial class Form1
     {
         buttonRecord.Text = "Running...";
         sessionTracker.Reset();
-        UpdatePeakInfo();
+        analyzerPlot.UpdatePeakInfo();
         commandController.SetSaveAvailable(false);
         commandController.SetLoadAvailable(false);
     }
@@ -129,7 +129,7 @@ public partial class Form1
         {
             UpdateLastImpulseResponseDirectory(sourceName);
         }
-        UpdatePeakInfo();
+        analyzerPlot.UpdatePeakInfo();
         RefreshCurrentModePlot();
         return true;
     }
@@ -137,6 +137,6 @@ public partial class Form1
     private void FinalizeMeasurementCommandState()
     {
         commandController.SetLoadAvailable(true);
-        UpdatePeakInfo();
+        analyzerPlot.UpdatePeakInfo();
     }
 }

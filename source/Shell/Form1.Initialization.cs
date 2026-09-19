@@ -22,15 +22,6 @@ public partial class Form1
             this,
             UpdateMaximizedBounds,
             CreateModeTabActions());
-        OverlayCollection createdOverlayCollection = new(
-            this,
-            overlays,
-            plotView1,
-            toolTip1,
-            UpdatePlotLabelsPanel);
-        PlotLabelsPanelController createdPlotLabelsPanelController = new(
-            plotView1,
-            () => CurrentMode);
         PlotModelFactory createdPlotModelFactory = new(
             analyzerDocument,
             expSweepMeasurement,
@@ -38,28 +29,28 @@ public partial class Form1
             ResolveCalibration,
             viewSettings);
         createdPlotModelFactory.SetCompareSourceProvider(compareSelection.GetAnalysisSource);
-        PlotViewportMemory createdPlotViewports = new(plotView1);
+        AnalyzerPlot createdAnalyzerPlot = new(
+            this,
+            plotView1,
+            overlays,
+            buttonOverlayShowAll,
+            buttonOverlayHideAll,
+            toolTip1,
+            analyzerDocument,
+            createdPlotModelFactory);
         LiveSpectrumController createdLiveSpectrumController = new(
             this,
             noiseMeasurement,
-            plotView1,
-            createdPlotViewports,
-            createdPlotModelFactory,
-            createdOverlayCollection,
-            () => CurrentMode,
+            createdAnalyzerPlot,
             () => SelectModeAsync(ModeTab.LiveSpectrum),
-            UpdateOverlayAvailability,
             UpdateRecordButtonForCurrentMode,
-            UpdatePlotLabelsPanel,
             viewSettings.LiveSpectrum,
             DescribeCalibrationForCapture,
             () => closingInProgress);
         ModeController createdModeController = new(
-            ChangeModeAsync,
-            SetActiveModeTab,
-            DrawSelectedMode,
-            RestoreActiveOverlaySlotsForCurrentMode,
-            CanDrawCurrentMeasurement);
+            createdAnalyzerPlot,
+            StopRunningForModeSwitchAsync,
+            ShowModeSurfaces);
         MainCommandController createdCommandController = new(
             buttonSave,
             buttonLoad,
@@ -89,10 +80,8 @@ public partial class Form1
         DockedModeSettingsHost createdDockedHistoryHost = new(this, plotView1);
 
         return new Form1ControllerDependencies(
-            createdPlotViewports,
-            createdOverlayCollection,
-            createdPlotLabelsPanelController,
             createdPlotModelFactory,
+            createdAnalyzerPlot,
             createdLiveSpectrumController,
             createdModeController,
             createdCommandController,
@@ -140,7 +129,7 @@ public partial class Form1
         ApplyMainContentLayout();
         UpdateCompareButton();
         UpdateHistoryButton();
-        UpdatePeakInfo();
+        analyzerPlot.UpdatePeakInfo();
         ApplicationUpdateService.Initialize(this);
         _ = SelectModeAsync(ModeTab.Frequency);
     }
@@ -283,11 +272,11 @@ public partial class Form1
                 ShowMeasurementError("The measurement failed.", expSweepMeasurement.LastError);
             }
 
-            UpdatePeakInfo();
+            analyzerPlot.UpdatePeakInfo();
 
             if (success && CurrentMode != Mode.LiveSpectrum)
             {
-                DrawSelectedMode(true);
+                RefreshCurrentModePlot();
             }
 
             // Every completion can change SPL availability either way; the panel only evaluates on open.
@@ -347,10 +336,8 @@ public partial class Form1
     }
 
     private sealed record Form1ControllerDependencies(
-        PlotViewportMemory PlotViewports,
-        OverlayCollection OverlayCollection,
-        PlotLabelsPanelController PlotLabelsPanelController,
         PlotModelFactory PlotModelFactory,
+        AnalyzerPlot AnalyzerPlot,
         LiveSpectrumController LiveSpectrumController,
         ModeController ModeController,
         MainCommandController CommandController,

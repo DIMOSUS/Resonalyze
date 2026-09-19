@@ -161,22 +161,6 @@ public partial class Form1
         dockedModeSettingsHost.InvokeIfOpen<GDOpt>(dialog => dialog.RefreshComparePreview());
     }
 
-    // Null while unavailable (the overlay stays armed). showLoss returns the sum-loss gap instead, smoothed at the slot's own width.
-    internal OverlayPoint[]? BuildComplexSumOverlayPoints(
-        double compareDelayMs,
-        bool invertComparePolarity,
-        bool showLoss = false,
-        double? lossSmoothingInverseOctaves = null)
-    {
-        Resonalyze.Dsp.AnalysisCurve? curve = showLoss
-            ? plotModelFactory.TryBuildComplexSumLossCurve(
-                compareDelayMs, invertComparePolarity, lossSmoothingInverseOctaves)
-            : plotModelFactory.TryBuildComplexSumCurve(compareDelayMs, invertComparePolarity);
-        return curve?.Points
-            .Select(point => new OverlayPoint(point.X, point.Y))
-            .ToArray();
-    }
-
     private void UpdateCompareButton()
     {
         CompareMeasurementSelection? selection = compareSelection.Current;

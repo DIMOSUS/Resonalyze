@@ -70,10 +70,9 @@ public partial class Form1
             MessageBoxIcon.Warning);
     }
 
-    public async Task ChangeModeAsync(Mode mode)
+    // A mode switch stops what the mode being left runs.
+    private async Task StopRunningForModeSwitchAsync()
     {
-        CaptureActiveOverlaySlotsForCurrentMode();
-
         if (expSweepMeasurement.InProgress)
         {
             await expSweepMeasurement.AbortAsync();
@@ -90,18 +89,6 @@ public partial class Form1
             // Only when a capture actually stopped: runs on every mode switch, and a needless refresh opens an AsioOut per tab click.
             RefreshOpenMeasurementSettingsDevice();
         }
-
-        CurrentMode = mode;
-        plotViewports.Show(null, mode);
-        UpdatePlotLabelsPanel();
-
-        if (OverlayCollection.SupportsMode(mode))
-        {
-            overlayCollection.Prepare(mode);
-        }
-
-        UpdateOverlayAvailability();
-        RefreshSaveAvailability();
     }
 
     // Held from the Record press to the run's completion, so no load lands under a sweep.

@@ -53,8 +53,7 @@ public partial class VirtualCrossoverPanel
         }
 
         ApplyCalibrationSelection(selectedId);
-        // Only once initialized: before that the project is a placeholder and would overwrite the real autosave.
-        if (PersistCalibrationSelection() && initialized)
+        if (PersistCalibrationSelection())
         {
             ScheduleSave();
         }

@@ -178,6 +178,13 @@ public partial class VirtualCrossoverPanel : UserControl
     {
         // Every change passes through here, so the side lock reads here, ahead of the redraw and the save.
         sideLock.Follow(session.Channels.Select(channel => channel.Pair), session.ActiveSideRight);
+        // Until the first show starts the stored load the project is the constructor's placeholder, and saving it would
+        // replace the stored session: a panel built and disposed unseen, as tests and harnesses do, must write nothing.
+        if (!initialized)
+        {
+            return;
+        }
+
         savePending = true;
         saveTimer.Stop();
         saveTimer.Start();

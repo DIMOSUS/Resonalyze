@@ -204,6 +204,8 @@ public sealed class EqAutoTuneHeadlessTests
 
         Assert.Contains(fitted.Bands, band => band.Type.IsAllPass() && band.FrequencyHz == 400);
         Assert.True(fitted.Bands.Count <= EqualizationCurve.MaxBandCount);
+        // Low to high, as the button leaves it.
+        Assert.Equal(fitted.Bands.OrderBy(band => band.FrequencyHz), fitted.Bands);
         Assert.All(fitted.Bands.Where(band => !band.Type.IsAllPass()), band => Assert.True(band.GainDb <= 0));
     }
 

@@ -448,9 +448,11 @@ Other wizard-side rules:
   up front rather than returning more filters than the limit promises. When a run would replace a bank holding
   all-pass bands, the user is asked whether to keep them (phase work aligned by ear). `WithAllPassBands` puts kept
   bands last; on overflow the FITTED bands give way, since the tuner can regenerate those but not a hand-aligned
-  all-pass.
+  all-pass. Only then is the bank sorted by frequency (`EqWizardFit.Finish`, for the button and the headless fit
+  alike): the tuner returns its bands in the order it placed them, most important first, and a tuner reading the
+  bank, or a DSP's numbered filters, reads it low to high.
 - Band gain is bounded by the Min/Max Gain fields, like the faders. QMin is the strips' own limit
-  (`PeqSlotControl.MinimumQ`); QMax is the user's Max Q (default 6), well below what a hand-typed strip accepts,
+  (`EqWizardLimits.BandQ`); QMax is the user's Max Q (default 6), well below what a hand-typed strip accepts,
   since a fit is free to place filters far sharper than a cabin measurement justifies.
 - Shelves are opt-in because they change the SHAPE of the result, and Max Q says nothing about a knee.
 - Before fitting, `EqTargetLevelCheck` takes the median of target minus source over the window. More than 3 dB above

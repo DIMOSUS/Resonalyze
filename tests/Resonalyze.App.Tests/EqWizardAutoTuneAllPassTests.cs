@@ -49,6 +49,47 @@ public sealed class EqWizardAutoTuneAllPassTests
     }
 
     [Fact]
+    public void AFinishedFit_ReadsLowToHigh_KeptAllPassIncluded()
+    {
+        // The tuner returns its bands most important first; a bank is read by its numbered filters.
+        var tuned = new EqualizationCurve(
+            [new PeqBand(3_150, 3, -2), new PeqBand(60, 4, -6), new PeqBand(1_000, 2, -4)], preampDb: -1.5);
+
+        EqualizationCurve finished = EqWizardFit.Finish(tuned, [AllPass]);
+
+        Assert.Equal([60.0, 90.0, 1_000.0, 3_150.0], finished.Bands.Select(band => band.FrequencyHz));
+        Assert.Equal(-1.5, finished.PreampDb);
+    }
+
+    [Fact]
+    public void AFinishedFit_OverTheSlotBudget_StillDropsTheLeastImportantFittedBand()
+    {
+        // Sorting comes after the carry: sorting first would drop the highest frequency, not the fit's last band.
+        var tuned = new EqualizationCurve(
+            Enumerable.Range(0, EqualizationCurve.MaxBandCount)
+                .Select(i => new PeqBand(20_000 - (i * 100), 2, -1)),
+            preampDb: 0);
+
+        EqualizationCurve finished = EqWizardFit.Finish(tuned, [AllPass]);
+
+        Assert.Equal(EqualizationCurve.MaxBandCount, finished.Bands.Count);
+        Assert.Contains(AllPass, finished.Bands);
+        Assert.Contains(tuned.Bands[0], finished.Bands);
+        Assert.DoesNotContain(tuned.Bands[^1], finished.Bands);
+    }
+
+    [Fact]
+    public void AFinishedFit_KeepsTheFitsOrderAtOneFrequency()
+    {
+        var bell = new PeqBand(100, 2, -3);
+        var shelf = new PeqBand(100, 0.7, 2, PeqBandType.LowShelf);
+
+        EqualizationCurve finished = EqWizardFit.Finish(new EqualizationCurve([bell, shelf], 0), []);
+
+        Assert.Equal([bell, shelf], finished.Bands);
+    }
+
+    [Fact]
     public void AutoTuneOptions_TakeTheKeptBandsOffTheFitsBudget()
     {
         var session = new EqWizardSession();

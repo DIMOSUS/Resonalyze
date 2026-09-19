@@ -113,6 +113,21 @@ internal static class EqWizardFit
             tuned.PreampDb);
     }
 
+    /// <summary>
+    /// The bank a fit leaves: the kept all-pass bands carried over (<see cref="WithAllPassBands"/>, so an overflow still
+    /// drops the fit's least important bands, which it returns last), then every band in ascending frequency, the order
+    /// a tuner reads a bank in. Bands at one frequency keep the fit's order.
+    /// </summary>
+    public static EqualizationCurve Finish(
+        EqualizationCurve tuned,
+        IReadOnlyList<PeqBand> keptAllPass)
+    {
+        EqualizationCurve carried = WithAllPassBands(tuned, keptAllPass);
+        return new EqualizationCurve(
+            carried.Bands.OrderBy(band => band.FrequencyHz),
+            carried.PreampDb);
+    }
+
     public static string DescribeAllPassCount(int count) =>
         count == 1 ? "an all-pass filter" : $"{count} all-pass filters";
 }

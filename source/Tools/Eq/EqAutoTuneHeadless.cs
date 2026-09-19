@@ -193,7 +193,7 @@ internal static class EqAutoTuneHeadless
         ArgumentNullException.ThrowIfNull(inputs);
         EqualizationCurve tuned = EqAutoTuner.Tune(
             inputs.Source, inputs.Target, inputs.Options, inputs.Coherence);
-        return EqWizardFit.WithAllPassBands(tuned, inputs.KeptAllPass);
+        return EqWizardFit.Finish(tuned, inputs.KeptAllPass);
     }
 
     public static double? RmsErrorDb(

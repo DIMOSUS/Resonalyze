@@ -602,8 +602,7 @@ public partial class EqWizardPanel : UserControl
         }
 
         checkBoxBypass.Checked = false;
-        ApplyEqualizationCurve(
-            keepAllPass ? EqWizardFit.WithAllPassBands(tuned, allPass) : tuned);
+        ApplyEqualizationCurve(EqWizardFit.Finish(tuned, keepAllPass ? allPass : []));
     }
 
     // The panel owns only the dialog and feedback; resolution, format setup and I/O live in the coordinator.

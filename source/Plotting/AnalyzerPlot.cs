@@ -1,5 +1,4 @@
 using OxyPlot;
-using OxyPlot.Annotations;
 using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
 

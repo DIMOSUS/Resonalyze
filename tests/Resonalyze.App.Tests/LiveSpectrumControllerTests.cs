@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Resonalyze.Dsp;
-using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 

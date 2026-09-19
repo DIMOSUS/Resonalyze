@@ -1,6 +1,3 @@
-using OxyPlot;
-using OxyPlot.Annotations;
-
 namespace Resonalyze;
 
 public partial class Form1

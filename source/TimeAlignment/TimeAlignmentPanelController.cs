@@ -17,7 +17,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly Action saveSettings;
     private readonly CompareSelection compareSelection;
     private readonly DeferredRefresh sourcesChanged;
-    // Reads only while shown: a hidden panel reads on SetVisible.
+    // Reads only while shown: a hidden panel reads when SetVisible shows it.
     private bool shown;
     private readonly TimeAlignmentPanel panel;
     private readonly Label sourceSummaryLabel;
@@ -72,7 +72,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         this.document = document;
         this.saveSettings = saveSettings;
         this.compareSelection = compareSelection;
-        sourcesChanged = new DeferredRefresh(owner, RefreshIfShown);
+        sourcesChanged = new DeferredRefresh(owner, RefreshConfiguration);
         // +1 over the panel font, not +4: at +4 the status box wrapped the meters cell.
         resultTableFont = new Font(
             FontFamily.GenericMonospace,
@@ -122,23 +122,19 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
+    /// <summary>Puts the options on the controls, and reads the sources while shown; showing reads them.</summary>
     public void RefreshConfiguration()
     {
         sourcesChanged.Refreshed();
         // The shared options object is written behind this panel (persisted settings, history restore) without touching controls; re-read it or the radios lie.
         ApplyOptionsToControls();
-        RefreshAnalysis();
+        if (shown)
+        {
+            RefreshAnalysis();
+        }
     }
 
     public Task AbortAsync() => Task.CompletedTask;
-
-    private void RefreshIfShown()
-    {
-        if (shown)
-        {
-            RefreshConfiguration();
-        }
-    }
 
     private string? ImpulseResponseFileName =>
         string.IsNullOrWhiteSpace(document.SourceName) ? null : Path.GetFileName(document.SourceName);

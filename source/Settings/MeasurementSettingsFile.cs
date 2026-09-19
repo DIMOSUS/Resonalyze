@@ -1,7 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
-using Resonalyze.Options;
 
 namespace Resonalyze;
 

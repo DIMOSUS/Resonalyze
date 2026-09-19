@@ -1,7 +1,6 @@
 ﻿using System.Windows.Forms;
 using Resonalyze.Dsp;
 using Resonalyze.History;
-using Resonalyze.Options;
 
 namespace Resonalyze
 {

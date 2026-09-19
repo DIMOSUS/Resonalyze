@@ -1,7 +1,6 @@
 ﻿using System.Numerics;
 using OxyPlot;
 using Resonalyze.Dsp;
-using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 

@@ -1,6 +1,4 @@
-﻿using OxyPlot;
-using OxyPlot.Axes;
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze;

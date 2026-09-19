@@ -258,7 +258,7 @@ public partial class Form1
         sessionTracker.Reset();
         analyzerDocument.Clear();
 
-        if (liveSpectrumController.InProgress)
+        if (liveSpectrumSession.InProgress)
         {
             await liveSpectrumController.AbortAsync();
         }

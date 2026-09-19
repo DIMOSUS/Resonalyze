@@ -817,6 +817,21 @@ namespace Resonalyze
         /// <summary>Window actually applied (periodic pink forces Rectangular); recipes record this, not the option.</summary>
         public WindowType AnalysisWindowType => EffectiveWindowType;
 
+        /// <summary>Everything a live plot reads from the analyzer, in one read.</summary>
+        internal LiveCaptureSetup Setup => new(
+            SampleRate,
+            SequenceLength,
+            AnalysisHopSize,
+            AnalysisWindowType,
+            AnalysisWindowEnbwBins,
+            AnalysisWindowMainLobeBins,
+            IsMicOnly,
+            CurrentInputIdentity(),
+            CaptureSessionId,
+            CaptureProtectiveHighPass,
+            CaptureMicrophoneCalibration,
+            CaptureMicrophoneCalibrationName);
+
         private static int? NormalizeOptionalWaveChannel(int? channel) =>
             channel.HasValue
                 ? Math.Clamp(channel.Value, 0, 1)

@@ -25,7 +25,6 @@ public partial class Form1
         PlotModelFactory createdPlotModelFactory = new(
             analyzerDocument,
             expSweepMeasurement,
-            noiseMeasurement,
             ResolveCalibration,
             viewSettings);
         createdPlotModelFactory.SetCompareSourceProvider(compareSelection.GetAnalysisSource);
@@ -37,19 +36,16 @@ public partial class Form1
             buttonOverlayHideAll,
             toolTip1,
             analyzerDocument,
+            liveSpectrumSession,
             compareSelection,
             createdPlotModelFactory);
         LiveSpectrumController createdLiveSpectrumController = new(
             this,
-            noiseMeasurement,
-            createdAnalyzerPlot,
-            () => SelectModeAsync(ModeTab.LiveSpectrum),
-            UpdateRecordButtonForCurrentMode,
-            viewSettings.LiveSpectrum,
-            DescribeCalibrationForCapture,
-            () => closingInProgress);
+            liveSpectrumSession,
+            createdAnalyzerPlot);
+        // Live Spectrum draws its captures before the plot brings back the overlays they sit under.
         ModeController createdModeController = new(
-            createdAnalyzerPlot,
+            [createdLiveSpectrumController, createdAnalyzerPlot],
             StopRunningForModeSwitchAsync,
             ShowModeSurfaces);
         MainCommandController createdCommandController = new(
@@ -112,6 +108,8 @@ public partial class Form1
         expSweepMeasurement.Completed += HandleMeasurementCompleted;
         expSweepMeasurement.AverageProgressChanged += HandleAverageProgressChanged;
         measurementHistoryService.Changed += HandleHistoryChanged;
+        liveSpectrumSession.Changed += UpdateRecordButtonForCurrentMode;
+        liveSpectrumSession.Failed += ShowLiveSpectrumFailure;
     }
 
     private void FlushMeasurementSettingsIfClosed(DockedModeSettingsHost host)
@@ -160,7 +158,7 @@ public partial class Form1
     private string DescribeLiveCalibration()
     {
         // A capture's stored name is shown as written; only the rig's id needs a lookup.
-        if (liveSpectrumController.DisplayedCalibrationName is not { } name)
+        if (liveSpectrumSession.DisplayedCalibrationName is not { } name)
         {
             return NameCalibration(
                 measurementSettings.Measurement.MicrophoneCalibrationId);

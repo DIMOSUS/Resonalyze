@@ -26,7 +26,7 @@ public partial class Form1
             [ModeTab.ToolsFirConstructor] = () => _ = SelectModeAsync(ModeTab.ToolsFirConstructor)
         };
 
-    // A switch shows the new tab's panels and buttons before the plot draws; Live Spectrum brings back its held capture.
+    // A switch shows the new tab's panels and buttons before the views draw.
     private void ShowModeSurfaces(ModeDescriptor descriptor)
     {
         chromeTitleBar.SetActiveModeTab(descriptor.Tab);
@@ -57,10 +57,6 @@ public partial class Form1
         eqResultsPanel.Visible = descriptor.ShowsEqWizardPanel;
         SyncDockedModeSettingsOnModeChange();
         analyzerPlot.RefreshLabels();
-        if (descriptor.Mode == Mode.LiveSpectrum)
-        {
-            RestoreLiveCurveIfStopped();
-        }
     }
 
     // Record Settings and History dock as separate windows, so they must be closed, not just their buttons hidden.
@@ -86,21 +82,13 @@ public partial class Form1
             return;
         }
 
-        buttonRecord.Text = liveSpectrumController.InProgress ? "Stop" : "Start";
+        buttonRecord.Text = liveSpectrumSession.InProgress ? "Stop" : "Start";
         RefreshLiveCalibrationReadout();
         // Start/stop/completion is when an uncalibrated dB SPL choice becomes or stops being a conflict; refresh the amber state.
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
             panel => panel.RefreshAvailability(
-                plotModelFactory.LiveSplOffsetDb.HasValue,
-                liveSpectrumController.HasDisplayableCurve,
-                liveSpectrumController.HasConfiguredLoopback));
-    }
-
-    private void RestoreLiveCurveIfStopped()
-    {
-        if (!liveSpectrumController.InProgress)
-        {
-            liveSpectrumController.RestoreLastCurve();
-        }
+                liveSpectrumSession.Display.SplOffsetDb.HasValue,
+                liveSpectrumSession.HasDisplayableCurve,
+                liveSpectrumSession.HasConfiguredLoopback));
     }
 }

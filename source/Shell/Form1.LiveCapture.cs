@@ -20,13 +20,13 @@ public partial class Form1
 
     private bool LiveCaptureOwnsSaveLoad =>
         CurrentMode == Mode.LiveSpectrum &&
-        plotModelFactory.EffectiveLiveAnalysisMode.IsSpatialAverageCapture();
+        liveSpectrumSession.Display.Mode.IsSpatialAverageCapture();
 
     /// <summary>One place decides Save availability, asking both owners; call on anything that changes either answer.</summary>
     private void RefreshSaveAvailability() =>
         commandController.SetSaveAvailable(
             LiveCaptureOwnsSaveLoad
-                ? liveSpectrumController.HasCaptureToSave
+                ? liveSpectrumSession.HasCaptureToSave
                 : analyzerDocument.HasResult);
 
     /// <summary>Opens a stored capture in its own mode; false when not a capture (IR loader takes it).</summary>
@@ -50,9 +50,7 @@ public partial class Form1
         }
 
         liveSpectrumController.ShowLoadedCapture(document);
-        RefreshLiveCalibrationReadout();
         UpdateLastImpulseResponseDirectory(path);
-        RefreshSaveAvailability();
         return true;
     }
 
@@ -61,7 +59,7 @@ public partial class Form1
         // Stop like the record button (harvesting the final accumulation); aborting would lose frames since the last redraw.
         await liveSpectrumController.StopAndHoldAsync();
 
-        LiveCaptureDocument? document = liveSpectrumController.BuildCaptureDocument();
+        LiveCaptureDocument? document = liveSpectrumSession.BuildCaptureDocument();
         if (document == null)
         {
             MessageBox.Show(

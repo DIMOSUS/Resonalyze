@@ -1,6 +1,6 @@
 namespace Resonalyze;
 
-/// <summary>What shows a mode: the main plot, which draws the open measurement itself.</summary>
+/// <summary>What shows a mode: the main plot drawing the open measurement, and Live Spectrum drawing its captures.</summary>
 internal interface IModeView
 {
     /// <summary>Remembers what the mode being left had on screen (its overlay slots).</summary>
@@ -16,16 +16,20 @@ internal interface IModeView
 /// <summary>Switches tabs one at a time: the view leaves, running work stops, the view enters, the window lays out, the view draws.</summary>
 internal sealed class ModeController
 {
-    private readonly IModeView view;
+    // In drawing order.
+    private readonly IReadOnlyList<IModeView> views;
     private readonly Func<Task> stopRunningAsync;
     private readonly Action<ModeDescriptor> showSurfaces;
     private Task selectChain = Task.CompletedTask;
 
     /// <param name="stopRunningAsync">Stops what the mode being left runs (a sweep, a live capture).</param>
     /// <param name="showSurfaces">Shows the new tab's panels and buttons, before the view draws.</param>
-    public ModeController(IModeView view, Func<Task> stopRunningAsync, Action<ModeDescriptor> showSurfaces)
+    public ModeController(
+        IReadOnlyList<IModeView> views,
+        Func<Task> stopRunningAsync,
+        Action<ModeDescriptor> showSurfaces)
     {
-        this.view = view;
+        this.views = views;
         this.stopRunningAsync = stopRunningAsync;
         this.showSurfaces = showSurfaces;
     }
@@ -51,11 +55,22 @@ internal sealed class ModeController
         }
 
         ModeDescriptor descriptor = ModeCatalog.For(tab);
-        view.Leave();
+        foreach (IModeView view in views)
+        {
+            view.Leave();
+        }
+
         await stopRunningAsync();
-        view.Enter(descriptor);
+        foreach (IModeView view in views)
+        {
+            view.Enter(descriptor);
+        }
+
         ActiveTab = tab;
         showSurfaces(descriptor);
-        view.Present();
+        foreach (IModeView view in views)
+        {
+            view.Present();
+        }
     }
 }

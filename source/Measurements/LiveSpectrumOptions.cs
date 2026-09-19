@@ -111,6 +111,20 @@ namespace Resonalyze
             AnalysisMode.IsSpatialAverageCapture()
                 ? AveragingSpeed.Infinite
                 : AveragingSpeed;
+
+        /// <summary>Silent is RTA-only (Transfer needs an excitation), so Transfer falls back to periodic pink. Other signals are valid in both modes.</summary>
+        /// <returns>Whether the signal changed.</returns>
+        public bool NormalizeSignalType()
+        {
+            if (AnalysisMode == LiveAnalysisMode.TransferFunction &&
+                NoiseColor == NoiseColor.Silent)
+            {
+                NoiseColor = NoiseColor.PinkPeriodic;
+                return true;
+            }
+
+            return false;
+        }
     }
 
     /// <summary>Synthesised spectral shape the tilt compensation undoes. See docs/tech/sweep-measurement.md#live-analysis-modes.</summary>

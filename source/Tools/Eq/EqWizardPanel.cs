@@ -456,7 +456,7 @@ public partial class EqWizardPanel : UserControl
             session.SourceCurve is { Points.Count: >= 2 } &&
             session.Previews.RequestGatedPreview(eq) is { } preview)
         {
-            _ = RedrawWhenLandedAsync(preview);
+            _ = RedrawAfterAsync(preview);
         }
 
         EqWizardRenderSet render = EqWizardRender.RenderSet(session, eq);
@@ -480,15 +480,7 @@ public partial class EqWizardPanel : UserControl
         plot.Model.InvalidatePlot(true);
     }
 
-    private async Task RedrawWhenLandedAsync(Task<bool> landing)
-    {
-        if (await landing && !IsDisposed && IsHandleCreated)
-        {
-            Redraw(orphanFit: false);
-        }
-    }
-
-    // Also starts the render a dropped request is waiting for.
+    // Shows what landed, and starts the render a dropped request or an invalidation left waiting.
     private async Task RedrawAfterAsync(Task rendering)
     {
         await rendering;

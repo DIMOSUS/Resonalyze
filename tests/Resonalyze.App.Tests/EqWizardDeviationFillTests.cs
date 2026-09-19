@@ -117,9 +117,10 @@ public sealed class EqWizardDeviationFillTests
     {
         var session = new EqWizardSession();
         session.Load(source);
-        Task<bool>? preview = session.Previews.RequestGatedPreview(EqWizardRender.DisplayedEq(session));
+        Task? preview = session.Previews.RequestGatedPreview(EqWizardRender.DisplayedEq(session));
         Assert.NotNull(preview);
-        Assert.True(await preview);
+        await preview;
+        Assert.NotNull(session.Previews.GatedPreview);
         return session;
     }
 

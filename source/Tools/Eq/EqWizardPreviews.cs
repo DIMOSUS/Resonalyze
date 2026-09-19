@@ -53,9 +53,10 @@ internal sealed class EqWizardPreviews
 
     /// <summary>
     /// Starts rendering the gated corrected curve for this bank, unless one is rendering or this bank's has landed. The
-    /// task finishes on the caller's context: true when the plot should be redrawn, false when a newer request took over.
+    /// task finishes on the caller's context, after which the plot is redrawn: that also starts the render an
+    /// invalidation dropped, which the redraw that caused it could not start while this one was in flight.
     /// </summary>
-    public Task<bool>? RequestGatedPreview(EqualizationCurve eq)
+    public Task? RequestGatedPreview(EqualizationCurve eq)
     {
         ArgumentNullException.ThrowIfNull(eq);
         if (session.Source is not { IsGated: true } gated)
@@ -140,21 +141,20 @@ internal sealed class EqWizardPreviews
         neighbourPhaseCurves = null;
     }
 
-    private async Task<bool> RenderGatedPreviewAsync(
+    private async Task RenderGatedPreviewAsync(
         EqWizardGatedPreviewRequest request, PeqBankState bank, bool keepGaps)
     {
         try
         {
             IReadOnlyList<SignalPoint>? points =
                 await gatedOrchestrator.RenderLatestAsync(request);
-            if (points == null)
+            // Null = dropped by an invalidation: nothing to keep.
+            if (points != null)
             {
-                return false;
+                // Same conversion as the bare curve, so both keep the same points.
+                GatedPreview = EqWizardSourceCurve.ToPlotPoints(points, keepGaps);
+                gatedPreviewBank = bank;
             }
-
-            // Same conversion as the bare curve, so both keep the same points.
-            GatedPreview = EqWizardSourceCurve.ToPlotPoints(points, keepGaps);
-            gatedPreviewBank = bank;
         }
         catch (Exception exception)
         {
@@ -165,8 +165,6 @@ internal sealed class EqWizardPreviews
         {
             gatedPreviewInFlight = false;
         }
-
-        return true;
     }
 
     private async Task RenderPhaseCurveAsync(

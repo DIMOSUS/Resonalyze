@@ -242,6 +242,19 @@ public sealed class EqWizardPanelWiringTests
         Assert.NotNull(live.Results);
     });
 
+    [Fact]
+    public void ACorrectedCurveDroppedByANewSmoothing_IsRenderedAgain() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Panel.BeginVirtualDspHandoff(Handoff(DspProcessorProfile.Custom(SampleRate, PeqQConvention.Rbj)));
+
+        // Before the handoff's render lands: the new width makes it stale, and it must not be the last word.
+        live.Set<ThemedComboBox>("comboBoxSmooth", box => box.SelectedItem = 3);
+
+        Assert.NotNull(live.Session.Previews.GatedPreview);
+        Assert.Contains("Source + EQ", EqWizardTestPlots.CurveTitles(live.Plot));
+    });
+
     private static VirtualDspEqHandoffRequest Handoff(DspProcessorProfile profile)
     {
         var impulseResponse = new Complex[4_096];

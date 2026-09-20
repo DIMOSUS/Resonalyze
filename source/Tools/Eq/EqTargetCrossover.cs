@@ -21,9 +21,13 @@ internal static class EqTargetCrossover
     private const int StepsPerOctave = 24;
     private const double SearchOctaves = 6;
 
-    /// <summary>The crossover of the chain the source was read through, or null: no chain, or no crossover in it.</summary>
+    /// <summary>
+    /// The crossover the source's channel defines, or null: no chain behind the source, or no crossover in it. This is
+    /// the channel's effective crossover — a FIR crossover's design corners included — not the built chain, whose
+    /// <c>Crossover</c> is Off while a FIR kernel carries the filter.
+    /// </summary>
     public static CrossoverSpec? Of(EqWizardCurveSource? source) =>
-        source?.PreviewChain?.Crossover is { Kind: not CrossoverKind.Off } crossover
+        source?.TargetCrossover is { Kind: not CrossoverKind.Off } crossover
             ? crossover
             : null;
 
@@ -76,24 +80,31 @@ internal static class EqTargetCrossover
         int sampleRateHz)
     {
         ArgumentNullException.ThrowIfNull(crossover);
-        var bands = new List<EqNoBoostBand>(2);
         // Inward from each edge while the skirt is still that far down; a skirt is monotonic, so the first rise ends it.
-        double low = Scan(crossover, windowMinHz, windowMaxHz, sampleRateHz, up: true);
-        if (low > windowMinHz)
+        double? low = Scan(crossover, windowMinHz, windowMaxHz, sampleRateHz, up: true);
+        double? high = Scan(crossover, windowMaxHz, windowMinHz, sampleRateHz, up: false);
+        if (low == null || high == null)
         {
-            bands.Add(new EqNoBoostBand(0, low));
+            // Nowhere in the window is the skirt less than that far down: the whole window is somebody's slope.
+            return [new EqNoBoostBand(0, double.PositiveInfinity)];
         }
 
-        double high = Scan(crossover, windowMaxHz, windowMinHz, sampleRateHz, up: false);
+        var bands = new List<EqNoBoostBand>(2);
+        if (low > windowMinHz)
+        {
+            bands.Add(new EqNoBoostBand(0, low.Value));
+        }
+
         if (high < windowMaxHz)
         {
-            bands.Add(new EqNoBoostBand(high, double.PositiveInfinity));
+            bands.Add(new EqNoBoostBand(high.Value, double.PositiveInfinity));
         }
 
         return bands;
     }
 
-    private static double Scan(
+    /// <returns>The first frequency whose skirt is less than <see cref="NoBoostFallDb"/> down, or null: there is none.</returns>
+    private static double? Scan(
         CrossoverSpec crossover,
         double fromHz,
         double toHz,
@@ -112,7 +123,7 @@ internal static class EqTargetCrossover
             hz *= step;
         }
 
-        return fromHz;
+        return null;
     }
 
     // Outward from a passband edge to where the skirt has fallen this far; the edge itself when nothing falls that far.

@@ -49,6 +49,13 @@ internal sealed record EqWizardCurveSource
     /// <summary>The chain without its PEQ, into which the edited bank is substituted. Identity for a raw handoff.</summary>
     public DspChannelChain? PreviewChain { get; init; }
 
+    /// <summary>
+    /// The crossover this channel defines, as junctions and Auto Tune read it
+    /// (<c>VirtualCrossoverChannelSettings.EffectiveCrossover</c>: the IIR filter, or a FIR crossover's design
+    /// corners). It shapes the target (<see cref="EqTargetCrossover"/>); null without a chain or a crossover.
+    /// </summary>
+    public CrossoverSpec? TargetCrossover { get; init; }
+
     /// <summary>Spatial average that REPLACES the magnitude when present; the measurement still serves the phase view.</summary>
     public LiveCaptureDocument? SpatialAverage { get; init; }
 

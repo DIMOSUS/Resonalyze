@@ -65,24 +65,60 @@ public sealed class EqTargetCrossoverTests
     }
 
     [Fact]
-    public void WithoutACrossoverBehindTheSource_ThereIsNothingToFollow()
+    public void AWindowThatIsSkirtFromEdgeToEdge_RefusesBoostsThroughout()
+    {
+        // A band-pass crossed past itself: nowhere in the window does the pair rise within 6 dB of its plateau.
+        var crossed = new CrossoverSpec(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 200, 24),
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24));
+
+        IReadOnlyList<EqNoBoostBand> bands = EqTargetCrossover.NoBoostBands(crossed, 300, 1_500, Rate);
+
+        Assert.True(EqTargetCrossover.ShapeDb(crossed, 600, Rate) < -EqTargetCrossover.NoBoostFallDb);
+        Assert.True(Forbidden(bands, 300), "the low edge of the window is skirt.");
+        Assert.True(Forbidden(bands, 600), "so is its middle.");
+        Assert.True(Forbidden(bands, 1_500), "and its high edge.");
+    }
+
+    [Fact]
+    public void TheShapeFollowsTheChannelsOwnCrossover_IncludingAFirCrossoversCorners()
     {
         Assert.Null(EqTargetCrossover.Of(null));
         Assert.Null(EqTargetCrossover.Of(Source(null)));
-        Assert.Null(EqTargetCrossover.Of(Source(DspChannelChain.Identity)));
-        Assert.Null(EqTargetCrossover.Of(
-            Source(DspChannelChain.Identity with { Crossover = CrossoverSpec.Off })));
+        Assert.Null(EqTargetCrossover.Of(Source(CrossoverSpec.Off)));
+        Assert.Equal(BandPass, EqTargetCrossover.Of(Source(BandPass)));
+
+        // A FIR crossover leaves the built chain's Crossover Off and carries the filter as a kernel, so the source
+        // brings the channel's EFFECTIVE crossover instead: its design corners.
+        var design = new FirCrossoverDesign(
+            CrossoverKind.HighPass,
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24),
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24),
+            FirCrossoverMethod.IirMagnitude,
+            FirWindow.Kaiser,
+            8,
+            1_023,
+            Rate);
+        var settings = new VirtualCrossoverChannelSettings { Fir = design.Build(), FirDesign = design };
+
+        Assert.Equal(CrossoverKind.Off, settings.ToChain(VirtualCrossoverZone.Front).Crossover?.Kind ?? CrossoverKind.Off);
+        Assert.Equal(CrossoverKind.HighPass, settings.EffectiveCrossover.Kind);
         Assert.Equal(
-            BandPass,
-            EqTargetCrossover.Of(Source(DspChannelChain.Identity with { Crossover = BandPass })));
+            settings.EffectiveCrossover,
+            EqTargetCrossover.Of(Source(settings.EffectiveCrossover)));
+        Assert.True(
+            EqTargetCrossover.ShapeDb(settings.EffectiveCrossover, 500, Rate) < -20,
+            "an octave and a half below a 24 dB/oct corner the target should be far down.");
     }
 
-    private static EqWizardCurveSource Source(DspChannelChain? chain) => new()
+    private static EqWizardCurveSource Source(CrossoverSpec? crossover) => new()
     {
         Kind = EqWizardSourceKind.VirtualDspChannel,
         DisplayName = "Ch A",
         Description = "test",
-        PreviewChain = chain
+        PreviewChain = DspChannelChain.Identity,
+        TargetCrossover = crossover
     };
 
     private static bool Forbidden(IReadOnlyList<EqNoBoostBand> bands, double hz) =>

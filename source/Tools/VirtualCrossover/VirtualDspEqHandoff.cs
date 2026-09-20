@@ -176,6 +176,10 @@ internal static class VirtualDspEqHandoff
             SpatialAverageCalibration = spatialAverageCalibration,
             PreviewImpulseResponse = state.ProcessingSource.CroppedImpulseResponse,
             PreviewChain = previewChain,
+            // The corners the window comes from, so the shaped target and From/To describe one filter.
+            TargetCrossover = withChain && settings.EffectiveCrossover is { Kind: not CrossoverKind.Off } effective
+                ? effective
+                : null,
             // Neighbours only for a chain handoff: a raw curve against processed neighbours describes no real system.
             PhaseContext = withChain ? phaseContext : null,
             // Hybrid: the average replaces the fitted magnitude; the impulse response still serves phase.

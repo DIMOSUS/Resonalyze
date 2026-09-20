@@ -1885,7 +1885,9 @@ outside it — and the fit brings the ACOUSTIC roll-off onto the slope you chose
 what the neighbouring channel has to sum with. That is how current REW tuning guides
 work, and it is on by default for a chain handoff. Untick it to fit inside the passband
 only and leave the slopes alone; the box is greyed out for any source with no crossover
-behind it (a raw handoff, an imported curve, an overlay).
+behind it (a raw handoff, an imported curve, an overlay). A channel crossed with a
+[FIR](#fir-constructor) kernel counts: the target follows the corners that design states,
+the same ones the junction read-outs use.
 
 Three things follow the box, all measured rather than chosen:
 

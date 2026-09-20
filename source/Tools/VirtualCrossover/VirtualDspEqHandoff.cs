@@ -176,9 +176,11 @@ internal static class VirtualDspEqHandoff
             SpatialAverageCalibration = spatialAverageCalibration,
             PreviewImpulseResponse = state.ProcessingSource.CroppedImpulseResponse,
             PreviewChain = previewChain,
-            // The corners the window comes from, so the shaped target and From/To describe one filter.
-            TargetCrossover = withChain && settings.EffectiveCrossover is { Kind: not CrossoverKind.Off } effective
-                ? effective
+            // The corners the window comes from, so the shaped target and From/To describe one filter. Only when the
+            // IIR crossover is really on: with it off, EffectiveCrossover stands in for the FIR design, whose kernel
+            // travels below and would then be counted twice.
+            TargetCrossover = withChain && settings.CrossoverKind != CrossoverKind.Off
+                ? settings.EffectiveCrossover
                 : null,
             // A designed crossover kernel describes its own slope; the design's corners do not (a windowed sinc's
             // slope is its window and length). FirDesign is what tells a crossover FIR from a correction one.

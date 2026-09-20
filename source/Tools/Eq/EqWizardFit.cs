@@ -53,6 +53,42 @@ internal static class EqWizardFit
         };
     }
 
+    /// <summary>
+    /// Why the fit must not run: the window holds no point the fit could read. Auto Tune would return an empty bank
+    /// and replace the user's with it, and a window outside the record is missing data, not a fit worth making.
+    /// </summary>
+    public static string? NoMeasuredDataRefusal(
+        EqWizardSession session,
+        IReadOnlyList<SignalPoint> source,
+        IReadOnlyList<SignalPoint> target)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(target);
+        (double minHz, double maxHz) = session.FrequencyWindow;
+        int count = Math.Min(source.Count, target.Count);
+        for (int i = 0; i < count; i++)
+        {
+            if (source[i].X >= minHz &&
+                source[i].X <= maxHz &&
+                double.IsFinite(source[i].Y) &&
+                double.IsFinite(target[i].Y))
+            {
+                return null;
+            }
+        }
+
+        string window = $"{minHz:0} Hz - {maxHz:0} Hz";
+        string measured = source.Count > 0 &&
+            source.Where(point => double.IsFinite(point.Y)).ToList() is { Count: > 0 } measuredPoints
+                ? $"{measuredPoints.Min(point => point.X):0} Hz - {measuredPoints.Max(point => point.X):0} Hz"
+                : "nothing";
+        return $"The fit window ({window}) holds no measured point: the source covers {measured}." +
+            Environment.NewLine + Environment.NewLine +
+            "Widen From / To onto the measured range, or untick Crossover in target, which set them from " +
+            "the channel's crossover.";
+    }
+
     /// <summary>The all-pass bands in the bank, which the fit cannot place and may keep.</summary>
     public static IReadOnlyList<PeqBand> AllPassBands(EqWizardSession session) =>
         session.Bank.Bands.Where(band => band.Type.IsAllPass()).ToList();

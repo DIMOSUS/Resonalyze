@@ -571,6 +571,17 @@ public partial class EqWizardPanel : UserControl
             .Select(point => new SignalPoint(point.X, point.Y))
             .ToList();
 
+        if (EqWizardFit.NoMeasuredDataRefusal(session, fitSource, fitTarget) is { } refusal)
+        {
+            MessageBox.Show(
+                FindForm(),
+                refusal,
+                "EQ Wizard",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
+
         string? levelWarning = EqWizardFit.LevelWarning(session, fitSource, fitTarget);
         if (levelWarning != null &&
             MessageBox.Show(

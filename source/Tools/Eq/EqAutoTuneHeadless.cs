@@ -203,6 +203,20 @@ internal static class EqAutoTuneHeadless
             NoBoostBands = noBoost
         };
 
+        // Same refusal as the button's: an empty fit would replace the channel's bank with nothing. Read on the
+        // ORDERED pair, since an inverted window stated by a reply is taken as stated and refused elsewhere.
+        double dataLowHz = Math.Min(windowMinHz, windowMaxHz);
+        double dataHighHz = Math.Max(windowMinHz, windowMaxHz);
+        if (!fitSource.Where((point, index) => index < target.Count &&
+                point.X >= dataLowHz &&
+                point.X <= dataHighHz &&
+                double.IsFinite(point.Y) &&
+                double.IsFinite(target[index].Y)).Any())
+        {
+            throw new InvalidOperationException(
+                $"The fit window ({dataLowHz:0} Hz - {dataHighHz:0} Hz) holds no measured point.");
+        }
+
         return new EqHeadlessTuneInputs(
             fitSource, target, options, source.Coherence, allPass,
             windowMinHz, windowMaxHz, mode);

@@ -3,8 +3,9 @@ using Resonalyze.Dsp;
 namespace Resonalyze;
 
 /// <summary>
-/// The slope the target follows for one channel: the crossover KERNEL when the channel is crossed by a designed FIR
-/// (its window and length set the slope, which the design's corners do not describe), otherwise the IIR crossover.
+/// The slope the target follows for one channel: the IIR crossover, a designed FIR crossover's KERNEL (its window and
+/// length set the slope, which the design's corners do not describe), or — since a channel may legitimately run both —
+/// the two in series, as the chain applies them.
 /// </summary>
 internal sealed record EqTargetSlope(CrossoverSpec? Crossover, FirFilter? Fir);
 
@@ -38,14 +39,11 @@ internal static class EqTargetCrossover
     /// </summary>
     public static EqTargetSlope? Of(EqWizardCurveSource? source)
     {
-        if (source?.TargetCrossoverFir is { } fir)
-        {
-            return new EqTargetSlope(null, fir);
-        }
-
-        return source?.TargetCrossover is { Kind: not CrossoverKind.Off } crossover
-            ? new EqTargetSlope(crossover, null)
-            : null;
+        CrossoverSpec? crossover = source?.TargetCrossover is { Kind: not CrossoverKind.Off } iir ? iir : null;
+        FirFilter? fir = source?.TargetCrossoverFir;
+        return crossover == null && fir == null
+            ? null
+            : new EqTargetSlope(crossover, fir);
     }
 
     /// <summary>What the crossover adds to the target at one frequency: 0 dB in the passband, negative down a skirt.</summary>
@@ -57,12 +55,17 @@ internal static class EqTargetCrossover
             return -ShapeFloorDb;
         }
 
-        double magnitude = slope switch
+        // In series, as the chain applies them: a channel may run a FIR crossover AND an IIR one.
+        double magnitude = 1;
+        if (slope.Crossover is { } crossover)
         {
-            { Fir: { } fir } => fir.Response(frequencyHz, sampleRateHz).Magnitude,
-            { Crossover: { } crossover } => CrossoverFilter.Response(crossover, frequencyHz, sampleRateHz).Magnitude,
-            _ => 1
-        };
+            magnitude *= CrossoverFilter.Response(crossover, frequencyHz, sampleRateHz).Magnitude;
+        }
+
+        if (slope.Fir is { } fir)
+        {
+            magnitude *= fir.Response(frequencyHz, sampleRateHz).Magnitude;
+        }
         double decibels = magnitude > 0 ? 20 * Math.Log10(magnitude) : -ShapeFloorDb;
         return Math.Clamp(decibels, -ShapeFloorDb, 0);
     }
@@ -88,11 +91,19 @@ internal static class EqTargetCrossover
             measuredHighHz ?? double.PositiveInfinity);
         double low = Math.Max(lowLimit, Walk(slope, passbandMinHz, sampleRateHz, SlopeWindowFallDb, down: true));
         double high = Math.Min(highLimit, Walk(slope, passbandMaxHz, sampleRateHz, SlopeWindowFallDb, down: false));
-        // A crossover outside the band that was actually measured leaves nothing to widen into; the passband it came
-        // with is still a window, and both callers (the fields and a headless fit) must get one they can use.
-        return low < high
-            ? (low, high)
-            : (Math.Min(passbandMinHz, passbandMaxHz), Math.Max(passbandMinHz, passbandMaxHz));
+        if (low < high)
+        {
+            return (low, high);
+        }
+
+        // Nothing to widen into: a crossover outside the band that was actually measured. Keep the passband, clipped to
+        // what the record covers while that still leaves a window — and where even that is empty the fit refuses, since
+        // a window with no measured point in it is missing data, not a window (EqWizardFit.NoMeasuredDataRefusal).
+        double passLow = Math.Min(passbandMinHz, passbandMaxHz);
+        double passHigh = Math.Max(passbandMinHz, passbandMaxHz);
+        double clippedLow = Math.Max(passLow, lowLimit);
+        double clippedHigh = Math.Min(passHigh, highLimit);
+        return clippedLow < clippedHigh ? (clippedLow, clippedHigh) : (passLow, passHigh);
     }
 
     /// <summary>

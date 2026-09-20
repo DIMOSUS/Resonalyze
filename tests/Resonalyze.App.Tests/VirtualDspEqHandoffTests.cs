@@ -51,11 +51,17 @@ public sealed class VirtualDspEqHandoffTests
         VirtualDspEqHandoffRequest fir = Build(channel, withChain: true);
 
         Assert.Equal(CrossoverKind.Off, fir.Token.PreviewChain.Crossover?.Kind ?? CrossoverKind.Off);
-        Assert.NotNull(fir.Source.TargetCrossover);
-        Assert.Equal(CrossoverKind.HighPass, fir.Source.TargetCrossover!.Kind);
-        Assert.Equal(
-            channel.Settings.HighPassEdge.FrequencyHz,
-            fir.Source.TargetCrossover.HighPassEdge!.Value.FrequencyHz);
+        // The kernel travels, and the IIR stage does not: with the IIR off, EffectiveCrossover stands in for the
+        // design, and sending it as well would shape the target with the same filter twice.
+        Assert.Null(fir.Source.TargetCrossover);
+        Assert.NotNull(fir.Source.TargetCrossoverFir);
+
+        // Both at once is legitimate though rare, and then both shape the target.
+        channel.Settings.CrossoverKind = CrossoverKind.LowPass;
+        VirtualDspEqHandoffRequest both = Build(channel, withChain: true);
+
+        Assert.Equal(CrossoverKind.LowPass, both.Source.TargetCrossover!.Kind);
+        Assert.NotNull(both.Source.TargetCrossoverFir);
     }
 
     [Fact]

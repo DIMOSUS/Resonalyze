@@ -105,10 +105,9 @@ public sealed class EqTargetCrossoverTests
             1_023,
             Rate);
         var settings = new VirtualCrossoverChannelSettings { Fir = sinc.Build(), FirDesign = sinc };
-        EqWizardCurveSource source = Source(settings.EffectiveCrossover) with
-        {
-            TargetCrossoverFir = settings.Fir
-        };
+        // As the handoff carries it: with the IIR crossover off, only the kernel travels — EffectiveCrossover stands
+        // in for the design there, and sending it too would count the same filter twice.
+        EqWizardCurveSource source = Source(null) with { TargetCrossoverFir = settings.Fir };
 
         EqTargetSlope slope = Assert.IsType<EqTargetSlope>(EqTargetCrossover.Of(source));
         Assert.Null(slope.Crossover);
@@ -122,15 +121,68 @@ public sealed class EqTargetCrossoverTests
     }
 
     [Fact]
-    public void ACrossoverOutsideTheMeasuredBand_StillLeavesAUsableWindow()
+    public void ACrossoverOutsideTheMeasuredBand_LeavesAnOrderedWindow()
     {
-        // A low-pass at 500 Hz on a record that starts at 1 kHz: widening has nothing to widen into.
+        // A band-pass at 80..500 Hz on a record that starts at 1 kHz: nothing to widen into, and no overlap to keep.
+        // The window stays ordered and the fit refuses it for want of data (EqWizardFit.NoMeasuredDataRefusal).
         (double minHz, double maxHz) = EqTargetCrossover.SlopeWindow(
             BandPass, 80, 500, Rate, measuredLowHz: 1_000, measuredHighHz: 4_000);
 
         Assert.True(minHz < maxHz, $"window {minHz}..{maxHz} is inverted.");
         Assert.Equal(80, minHz);
         Assert.Equal(500, maxHz);
+    }
+
+    [Fact]
+    public void APassbandOnlyHalfMeasured_KeepsTheHalfThatWasMeasured()
+    {
+        // The record starts inside the passband: the window is what both cover, not the corners.
+        (double minHz, double maxHz) = EqTargetCrossover.SlopeWindow(
+            BandPass, 80, 500, Rate, measuredLowHz: 300, measuredHighHz: 320);
+
+        Assert.Equal(300, minHz);
+        Assert.Equal(320, maxHz);
+    }
+
+    [Fact]
+    public void AChannelRunningBothCrossovers_FollowsThemInSeries()
+    {
+        // Legitimate though rare: a FIR high-pass and an IIR low-pass both filter the channel.
+        var iirLowPass = new CrossoverSpec(
+            CrossoverKind.LowPass,
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 5_000, 24));
+        var design = new FirCrossoverDesign(
+            CrossoverKind.HighPass,
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
+            FirCrossoverMethod.WindowedSinc,
+            FirWindow.Kaiser,
+            8,
+            1_023,
+            Rate);
+        var settings = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.LowPass,
+            LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 5_000, 24),
+            Fir = design.Build(),
+            FirDesign = design
+        };
+        EqWizardCurveSource source = Source(settings.EffectiveCrossover) with
+        {
+            TargetCrossoverFir = settings.Fir
+        };
+
+        EqTargetSlope slope = Assert.IsType<EqTargetSlope>(EqTargetCrossover.Of(source));
+
+        Assert.NotNull(slope.Crossover);
+        Assert.NotNull(slope.Fir);
+        // Flat between the two, and down on BOTH skirts — the upper one is the IIR's, which used to vanish.
+        Assert.Equal(0, EqTargetCrossover.ShapeDb(slope, 2_000, Rate), 0.6);
+        Assert.True(EqTargetCrossover.ShapeDb(slope, 250, Rate) < -20, "the FIR's skirt should pull the target down.");
+        Assert.True(EqTargetCrossover.ShapeDb(slope, 15_000, Rate) < -20, "so should the IIR's.");
+        IReadOnlyList<EqNoBoostBand> bands = EqTargetCrossover.NoBoostBands(slope, 100, 18_000, Rate);
+        Assert.True(Forbidden(bands, 15_000), "the IIR skirt must be protected too.");
+        Assert.False(Forbidden(bands, 2_000), "the passband between them is the fit's business.");
     }
 
     private static EqWizardCurveSource Source(CrossoverSpec? crossover) => new()

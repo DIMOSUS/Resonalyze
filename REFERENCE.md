@@ -1901,7 +1901,9 @@ Three things follow the box, all measured rather than chosen:
   and everything below it. There the target's fall IS the filter, so lifting it would undo
   the crossover and spend the driver's excursion where the neighbour plays at full level.
   What a boost aimed inside the passband spills down a skirt through its own edge is held
-  to 0.5 dB, as in a band the reliability mask closed.
+  to 0.5 dB, as in a band the reliability mask closed. A channel running a FIR crossover AND
+  an IIR one — legitimate, though rarely meant — is shaped by both, in series, as the chain
+  applies them.
   Cuts stay allowed, and that is the direction that does the work: a driver whose acoustic
   slope is shallower than the filter's gets brought down onto it. Refilling its own cuts
   (**Boosts** on Refill cuts) still works everywhere, since such a bank never rises above

@@ -145,16 +145,20 @@ everywhere it is sampled, so the plot, the fit, the statistics and the level che
   design's slope is its window and length — its `Family` and `SlopeDbPerOctave` are carried but unused, so a brick
   wall would be drawn as the LR24 the corners claim. `FirDesign != null` is what tells a crossover kernel from a
   correction FIR, whose magnitude belongs in the source and not in the goal (folded into the target it would simply
-  be cancelled by the fit). The shape is clamped to 0 dB above and 40 dB below: a target diving to minus infinity is
-  no goal. A narrow passband's two skirts overlap, so the middle of the band sits a few tenths below 0 — the measured
+  be cancelled by the fit). A channel may legitimately run both stages, and then the shape is their product, as the
+  chain applies them — reading one and dropping the other left the other's skirt unshaped and unprotected. The shape
+  is clamped to 0 dB above and 40 dB below: a target diving to minus infinity is no goal. A narrow passband's two skirts overlap, so the middle of the band sits a few tenths below 0 — the measured
   curve through the same chain carries that droop too, so target and source still agree there.
 - **The window** widens to where each skirt has fallen `SlopeWindowFallDb` (18 dB), bounded by the measured band: far
   enough to score the slope that matters for summation, not so far that the fit chases a filter into the floor. It
   moves only while it still stands where the handoff or the box last put it — a typed edge is the user's and is left
   alone, in either direction. A crossover outside the band that was actually measured (a low-pass at 500 Hz on a
   record that starts at 1 kHz) leaves nothing to widen into, and the clamps would cross: the passband is returned
-  instead, ordered, since both callers need a window they can use — the fields quietly reorder one, a headless fit
-  hands it to `EqAutoTuner`, which refuses it.
+  instead — clipped to what the record does cover while that still leaves a window — since both callers need one they
+  can use: the fields quietly reorder an inverted window, a headless fit hands it to `EqAutoTuner`, which refuses it.
+  Where even the passband holds no measured point, the fit itself refuses (`EqWizardFit.NoMeasuredDataRefusal`, and
+  the same guard in `EqAutoTuneHeadless.Prepare`): the tuner answers an empty window with an empty bank, and Auto Tune
+  applies what it returns, so the refusal is what keeps a channel's existing bank from being replaced by nothing.
 - **No boost is aimed down the skirts** (`Options.NoBoostBands`, from `NoBoostFallDb` = 6 dB of fall outwards): there
   the target's fall IS the filter, so a boost would fight the crossover, and with boosts Allowed an 18 dB deficit at
   the window edge would otherwise pull bands to Max Gain. What a boost aimed elsewhere spills in through its own skirt

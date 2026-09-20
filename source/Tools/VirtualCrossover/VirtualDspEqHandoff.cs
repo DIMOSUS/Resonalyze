@@ -347,15 +347,20 @@ internal static class VirtualDspEqHandoff
     {
         ArgumentNullException.ThrowIfNull(settings);
         CrossoverSpec electrical = settings.EffectiveCrossover;
-        if (settings.AcousticLowPassEdge == null && settings.AcousticHighPassEdge == null)
-        {
-            return electrical;
-        }
-
-        return new CrossoverSpec(
-            electrical.Kind,
-            settings.AcousticLowPassEdge ?? electrical.LowPassEdge,
-            settings.AcousticHighPassEdge ?? electrical.HighPassEdge);
+        // A statement holds only while the edge it was made for is still the edge the channel runs: move the corner
+        // by hand and the acoustic goal is stale, not merely inconvenient.
+        CrossoverEdge? lowPass = settings.AcousticLowPassGoal is { } low && low.HoldsFor(electrical.LowPassEdge)
+            ? low.Asked
+            : null;
+        CrossoverEdge? highPass = settings.AcousticHighPassGoal is { } high && high.HoldsFor(electrical.HighPassEdge)
+            ? high.Asked
+            : null;
+        return lowPass == null && highPass == null
+            ? electrical
+            : new CrossoverSpec(
+                electrical.Kind,
+                lowPass ?? electrical.LowPassEdge,
+                highPass ?? electrical.HighPassEdge);
     }
 
     /// <summary>Passband where the channel plays — the narrower of the IIR crossover's corners and a designed FIR's — or null when neither filters (callers keep their range).</summary>

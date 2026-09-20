@@ -723,6 +723,13 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
 - **The tonal target comes out first.** The goal for a channel is `target × acoustic crossover`, so
   `JunctionTuneOptions.TargetCurveDb` is subtracted from the plant before any shape is read. Left in, a
   house curve's own tilt through a low junction would be read as the driver's acoustic slope.
+- **Its own resolution, and a robust charge.** The plant is read on a 1/24-octave grid smoothed over a
+  sixth of an octave — the objective's own policy, never the display's smoothing, or the answer would
+  change with a combo box. Smoothing alone does not make a narrow notch cheap, though: a mean
+  integrates, so the same decibel-octaves survive any resolution. What separates the seat from the
+  crossover is dropping the worst fifth of the charged region's weight before averaging. A feature
+  narrower than that is nothing a filter on the lattice could answer; a slope that is systematically
+  wrong covers the region and pays in full. Both figures are the battery's to confirm.
 - **Level free, shape charged.** The level is removed as the median difference between the achieved
   curve and the asked edge over the passband side — a median, so one broad bump cannot shift the whole
   comparison. The charge runs from the corner outwards to 24 dB of fall, within the ranking band and

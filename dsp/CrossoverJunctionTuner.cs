@@ -129,6 +129,25 @@ public sealed record JunctionTuneCandidate(
             return read > 0 ? total / read : null;
         }
     }
+
+    /// <summary>The worst side's charge, for the report: one electrical filter serves both sides, and an average can
+    /// be bought by making one of them worse. Read beside <see cref="AcousticCostDb"/>, which is what chooses.</summary>
+    public double? WorstAcousticCostDb
+    {
+        get
+        {
+            double? worst = null;
+            foreach (JunctionTuneReading side in RankingSides)
+            {
+                if (side.Acoustic is { } fit && (worst == null || fit.ChargeDb > worst))
+                {
+                    worst = fit.ChargeDb;
+                }
+            }
+
+            return worst;
+        }
+    }
 }
 
 /// <summary>The junction after the delay production alignment would pick for the upper channel.</summary>
@@ -244,11 +263,28 @@ public static class CrossoverJunctionTuner
     /// the EQ stage would not touch it either. The floor goes into the battery's sweep.</summary>
     private const double AcousticChargeFloorDb = 24.0;
 
+    /// <summary>
+    /// How wide a feature the acoustic term is allowed to see, as a moving average over log frequency. The objective
+    /// keeps its OWN resolution rather than borrowing the display's smoothing, or the answer would change with a
+    /// combo box; and it is wider than the grid the arithmetic runs on, because a narrow spatial notch must not cost
+    /// what a systematic slope error over half an octave costs, while a slope fit still needs points to stand on.
+    /// A sixth of an octave for now — the battery's to confirm or move.
+    /// </summary>
+    private const double AcousticSmoothingOctaves = 1.0 / 6.0;
+
     /// <summary>Octaves either side of the corner that hold the level reference and the charged region; the asked
     /// edge is past the floor beyond them, so the target is never evaluated there.</summary>
     private const double AcousticWindowOctaves = 2.0;
 
     private const int AcousticMinimumBins = 3;
+
+    /// <summary>
+    /// How much of the charged region's weight is dropped, worst deviation first, before the charge is averaged. A
+    /// fifth: narrower than that and a feature is the seat rather than the crossover — and no filter on the lattice
+    /// could answer it anyway — while a slope that is systematically wrong covers the region and pays in full.
+    /// The battery's to confirm or move, together with <see cref="AcousticSmoothingOctaves"/>.
+    /// </summary>
+    private const double AcousticTrimmedWeight = 0.2;
 
     public const int PracticalSlopeFloorDbPerOctave = 12;
 
@@ -892,10 +928,7 @@ public static class CrossoverJunctionTuner
         double reference = offsets.Count % 2 == 1
             ? offsets[offsets.Count / 2]
             : 0.5 * (offsets[offsets.Count / 2 - 1] + offsets[offsets.Count / 2]);
-        double charge = 0;
-        double residual = 0;
-        double weight = 0;
-        int charged = 0;
+        var charged = new List<(double Weight, double Deviation)>();
         var achieved = new MagnitudeSlopeFit();
         var wanted = new MagnitudeSlopeFit();
         foreach (SignalPoint point in plant)
@@ -922,18 +955,42 @@ public static class CrossoverJunctionTuner
             // Steeper than asked reads BELOW the asked edge and only a skirt boost would fix it, which the EQ stage
             // refuses; softer reads above it and a cut lands it.
             double levelDb = AchievedDb(point, applied, rateHz) - reference;
-            double deviation = levelDb - askedDb;
             double weightHere = 1.0 / point.X;
-            charge += weightHere *
-                (deviation < 0 ? -deviation : AcousticSofterChargeFactor * deviation);
-            residual += weightHere * deviation;
-            weight += weightHere;
-            charged++;
+            charged.Add((weightHere, levelDb - askedDb));
             achieved.Add(point.X, levelDb, weightHere);
             wanted.Add(point.X, askedDb, weightHere);
         }
 
-        if (charged < AcousticMinimumBins || !(weight > 0))
+        if (charged.Count < AcousticMinimumBins)
+        {
+            return null;
+        }
+
+        // The worst fifth of the region's weight is dropped before averaging. Smoothing alone would not do this: a
+        // mean integrates, so a deep narrow notch keeps its decibel-octaves whatever resolution it is read at. A
+        // feature that narrow is the seat's doing and the crossover cannot fix it, while a wrong slope covers the
+        // whole region and survives the trim — which is the distinction the charge has to make.
+        charged.Sort((left, right) => Math.Abs(right.Deviation).CompareTo(Math.Abs(left.Deviation)));
+        double region = charged.Sum(bin => bin.Weight);
+        double trimmed = 0;
+        double charge = 0;
+        double residual = 0;
+        double weight = 0;
+        foreach ((double binWeight, double deviation) in charged)
+        {
+            if (trimmed < AcousticTrimmedWeight * region)
+            {
+                trimmed += binWeight;
+                continue;
+            }
+
+            charge += binWeight *
+                (deviation < 0 ? -deviation : AcousticSofterChargeFactor * deviation);
+            residual += binWeight * deviation;
+            weight += binWeight;
+        }
+
+        if (!(weight > 0))
         {
             return null;
         }
@@ -1014,7 +1071,39 @@ public static class CrossoverJunctionTuner
         }
 
         Flush();
-        return thinned;
+        return Smooth(thinned);
+    }
+
+    /// <summary>A moving average of <see cref="AcousticSmoothingOctaves"/> over log frequency, on the thinned grid.</summary>
+    private static List<SignalPoint> Smooth(List<SignalPoint> curve)
+    {
+        if (curve.Count < 3)
+        {
+            return curve;
+        }
+
+        double halfWidth = AcousticSmoothingOctaves / 2;
+        var smoothed = new List<SignalPoint>(curve.Count);
+        for (int i = 0; i < curve.Count; i++)
+        {
+            double centre = Math.Log2(curve[i].X);
+            double total = 0;
+            int count = 0;
+            for (int j = i; j >= 0 && centre - Math.Log2(curve[j].X) <= halfWidth; j--)
+            {
+                total += curve[j].Y;
+                count++;
+            }
+            for (int j = i + 1; j < curve.Count && Math.Log2(curve[j].X) - centre <= halfWidth; j++)
+            {
+                total += curve[j].Y;
+                count++;
+            }
+
+            smoothed.Add(new SignalPoint(curve[i].X, total / count));
+        }
+
+        return smoothed;
     }
 
     /// <summary>Takes the low-pass out, leaving a high-pass where the channel had both; everything else unchanged.</summary>

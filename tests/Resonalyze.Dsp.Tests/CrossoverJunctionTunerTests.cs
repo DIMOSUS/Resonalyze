@@ -490,6 +490,78 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    public void ANarrowNotchInThePlant_CostsFarLessThanASlopeThatIsSystematicallyWrong()
+    {
+        // The objective keeps its own resolution: a spatial notch a twelfth of an octave wide is the seat, not the
+        // crossover, while half an octave of wrong slope is the crossover. Charging them alike would let the room
+        // choose the filter. Plant curves are supplied here, which is how a channel with a spatial average arrives.
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        JunctionTuneOptions options = Options(
+            950, 1_050, slopes: [24], independentSlopes: false,
+            CrossoverFilterFamily.LinkwitzRiley) with
+        {
+            AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)
+        };
+
+        double flat = ChargeWithPlant(lr, options, Plant(notchHz: null, tiltDbPerOctave: 0));
+        double notched = ChargeWithPlant(lr, options, Plant(notchHz: 1_150, tiltDbPerOctave: 0));
+        double tilted = ChargeWithPlant(lr, options, Plant(notchHz: null, tiltDbPerOctave: -1.5));
+
+        // A twelve-decibel notch one twelfth of an octave wide must read almost like the flat plant it sits in.
+        Assert.Equal(flat, notched, 0.2);
+        // And a slope error the eye would call mild must read as the expensive one of the two.
+        Assert.True(
+            tilted > notched + 0.5,
+            $"the tilt charged {tilted:0.00} dB against the notch's {notched:0.00} dB (flat reads {flat:0.00}).");
+    }
+
+    [Fact]
+    public void ADeficitAcrossTheWholeSkirt_IsNotTrimmedAway()
+    {
+        // The other side of the trim: it must drop the seat's narrow damage, not a systematic error. Three decibels
+        // too steep everywhere is exactly what the mode exists to notice.
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        JunctionTuneOptions options = Options(
+            950, 1_050, slopes: [24], independentSlopes: false,
+            CrossoverFilterFamily.LinkwitzRiley) with
+        {
+            AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)
+        };
+
+        double flat = ChargeWithPlant(lr, options, Plant(notchHz: null, tiltDbPerOctave: 0));
+        double steep = ChargeWithPlant(lr, options, Plant(notchHz: null, tiltDbPerOctave: -6));
+
+        Assert.True(steep > flat + 1.5, $"a whole-skirt error charged only {steep:0.00} dB against {flat:0.00}.");
+    }
+
+    // A flat plant with one narrow dip or one systematic tilt through the junction; levels are arbitrary.
+    private static List<SignalPoint> Plant(double? notchHz, double tiltDbPerOctave)
+    {
+        var curve = new List<SignalPoint>();
+        for (double hz = 250; hz <= 4_000; hz *= Math.Pow(2, 1.0 / 48.0))
+        {
+            double db = tiltDbPerOctave * Math.Log2(hz / 1_000);
+            if (notchHz is { } centre && Math.Abs(Math.Log2(hz / centre)) < 1.0 / 24.0)
+            {
+                db -= 12;
+            }
+
+            curve.Add(new SignalPoint(hz, db));
+        }
+
+        return curve;
+    }
+
+    private static double ChargeWithPlant(
+        CrossoverEdge current, JunctionTuneOptions options, List<SignalPoint> plant)
+    {
+        var side = new JunctionTuneSide(
+            "left", Impulse(), LowPassChain(current), Impulse(), HighPassChain(current), SampleRate,
+            plant, plant);
+        return CrossoverJunctionTuner.Tune([side], options).Current.Sides[0].Acoustic!.ChargeDb;
+    }
+
+    [Fact]
     public void WithNoAcousticTargetStated_NothingIsReportedAndTheScoreIsTheSumAlone()
     {
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);

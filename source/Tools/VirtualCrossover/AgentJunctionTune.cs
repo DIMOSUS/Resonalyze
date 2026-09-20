@@ -99,11 +99,14 @@ internal static class AgentJunctionTune
     {
         CrossoverEdge lowPass = result.Best.LowerLowPass!.Value;
         CrossoverEdge highPass = result.Best.UpperHighPass!.Value;
-        CrossoverEdge? acousticLowPass = acoustic is { } asked
-            ? new CrossoverEdge(asked.Family, lowPass.FrequencyHz, asked.SlopeDbPerOctave)
+        // Stamped against the electrical edge chosen for it, so moving that edge by hand retires the statement.
+        AcousticEdgeGoal? acousticLowPass = acoustic is { } asked
+            ? new AcousticEdgeGoal(
+                new CrossoverEdge(asked.Family, lowPass.FrequencyHz, asked.SlopeDbPerOctave), lowPass)
             : null;
-        CrossoverEdge? acousticHighPass = acoustic is { } askedAgain
-            ? new CrossoverEdge(askedAgain.Family, highPass.FrequencyHz, askedAgain.SlopeDbPerOctave)
+        AcousticEdgeGoal? acousticHighPass = acoustic is { } askedAgain
+            ? new AcousticEdgeGoal(
+                new CrossoverEdge(askedAgain.Family, highPass.FrequencyHz, askedAgain.SlopeDbPerOctave), highPass)
             : null;
         foreach (bool rightSide in new[] { false, true })
         {
@@ -111,7 +114,7 @@ internal static class AgentJunctionTune
             {
                 VirtualCrossoverChannelSettings settings = lower.SideSettings(rightSide);
                 settings.LowPassEdge = lowPass;
-                settings.AcousticLowPassEdge = acousticLowPass;
+                settings.AcousticLowPassGoal = acousticLowPass;
                 settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
                     ? CrossoverKind.BandPass
                     : CrossoverKind.LowPass;
@@ -120,7 +123,7 @@ internal static class AgentJunctionTune
             {
                 VirtualCrossoverChannelSettings settings = upper.SideSettings(rightSide);
                 settings.HighPassEdge = highPass;
-                settings.AcousticHighPassEdge = acousticHighPass;
+                settings.AcousticHighPassGoal = acousticHighPass;
                 settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
                     ? CrossoverKind.BandPass
                     : CrossoverKind.HighPass;

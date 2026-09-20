@@ -113,6 +113,19 @@ public sealed class VirtualCrossoverTargetSettings
     }
 }
 
+/// <summary>
+/// An acoustic crossover a junction tune was asked for, remembered against the electrical edge it chose for it.
+/// Moving that edge by any other hand — the wizard, a plain junction tune, the boxes on screen — leaves the two
+/// disagreeing, and the statement is then stale and ignored. Self-invalidating on purpose: chasing every place an
+/// edge can be written would leave a hidden goal alive behind the one that got missed.
+/// </summary>
+public readonly record struct AcousticEdgeGoal(CrossoverEdge Asked, CrossoverEdge Electrical)
+{
+    /// <summary>Whether the statement still describes the edge the channel actually runs.</summary>
+    public bool HoldsFor(CrossoverEdge? electrical) =>
+        electrical is { } edge && edge.Equals(Electrical);
+}
+
 /// <summary>One channel side. The source is re-resolved on load (see <see cref="VirtualCrossoverSourceLocator"/>).</summary>
 public sealed class VirtualCrossoverChannelSettings
 {
@@ -202,15 +215,15 @@ public sealed class VirtualCrossoverChannelSettings
 
     /// <summary>
     /// The ACOUSTIC crossover a junction tune was asked for on this edge — stamped by the tune, not stored, and
-    /// cleared by a plain tune. The EQ stage's target follows it instead of the electrical filter where it is set, so
+    /// cleared by a plain tune. The EQ stage's target follows it instead of the electrical filter while it holds, so
     /// the crossover stage and the fit aim at one thing; see docs/specs/acoustic-crossover-target.md.
     /// </summary>
     [JsonIgnore]
-    public CrossoverEdge? AcousticLowPassEdge { get; set; }
+    public AcousticEdgeGoal? AcousticLowPassGoal { get; set; }
 
-    /// <inheritdoc cref="AcousticLowPassEdge"/>
+    /// <inheritdoc cref="AcousticLowPassGoal"/>
     [JsonIgnore]
-    public CrossoverEdge? AcousticHighPassEdge { get; set; }
+    public AcousticEdgeGoal? AcousticHighPassGoal { get; set; }
 
     [JsonIgnore]
     public bool HasFirCrossover => Fir != null && FirDesign != null;

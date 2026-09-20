@@ -74,8 +74,9 @@ public sealed class VirtualDspEqHandoffTests
         channel.Settings.CrossoverKind = CrossoverKind.BandPass;
         channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 12);
         channel.Settings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24);
-        channel.Settings.AcousticLowPassEdge =
-            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24);
+        channel.Settings.AcousticLowPassGoal = new AcousticEdgeGoal(
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
+            channel.Settings.LowPassEdge);
 
         CrossoverSpec goal = Assert.IsType<CrossoverSpec>(
             Build(channel, withChain: true).Source.TargetCrossover);
@@ -85,8 +86,14 @@ public sealed class VirtualDspEqHandoffTests
         Assert.Equal(channel.Settings.HighPassEdge, goal.HighPassEdge);
         Assert.Equal(CrossoverKind.BandPass, goal.Kind);
 
-        // And a plain tune clears the statement, so an old one cannot go on steering the fit.
-        channel.Settings.AcousticLowPassEdge = null;
+        // Move that edge by hand and the statement is stale: it described a filter the channel no longer runs.
+        channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 200, 12);
+        Assert.Equal(
+            channel.Settings.EffectiveCrossover,
+            Build(channel, withChain: true).Source.TargetCrossover);
+
+        // And a plain tune clears it outright.
+        channel.Settings.AcousticLowPassGoal = null;
         Assert.Equal(
             channel.Settings.EffectiveCrossover,
             Build(channel, withChain: true).Source.TargetCrossover);

@@ -12,7 +12,7 @@ internal static class EqWizardFit
         (double)session.GainMinDb,
         (double)session.GainMaxDb,
         (double)session.AutoTuneMaxQ,
-        session.CutsOnly,
+        session.Boosts,
         session.AllowShelves);
 
     /// <summary>Mirrors the fields; bands held back (kept all-pass) come off Max Filters, which budgets the whole BANK.</summary>
@@ -23,9 +23,9 @@ internal static class EqWizardFit
         int bandLimit = session.BandLimit - reservedBands;
         (double minHz, double maxHz) = session.FrequencyWindow;
 
-        // Preamp policy: cuts-only lets it move with a 0 dB ceiling; with boosts it is pinned to the user's value.
-        // See docs/tech/eq-auto-tuner.md#wizard-preamp-policy.
-        bool cutsOnly = session.CutsOnly;
+        // Preamp policy: a bank that may not lift the curve lets it move with a 0 dB ceiling; with boosts it is pinned to
+        // the user's value. See docs/tech/eq-auto-tuner.md#wizard-preamp-policy.
+        bool lifts = session.Boosts == EqAutoTuneBoosts.Allowed;
         double pinnedPreampDb = session.Bank.PreampDb;
 
         return new EqAutoTuner.Options
@@ -33,13 +33,13 @@ internal static class EqWizardFit
             MaxBands = Math.Clamp(bandLimit, 1, EqWizardLimits.MaxBands),
             MinFrequencyHz = minHz,
             MaxFrequencyHz = maxHz,
-            PreampMinDb = cutsOnly ? (double)EqWizardLimits.Preamp.Minimum : pinnedPreampDb,
-            PreampMaxDb = cutsOnly ? (double)EqWizardLimits.Preamp.Maximum : pinnedPreampDb,
+            PreampMinDb = lifts ? pinnedPreampDb : (double)EqWizardLimits.Preamp.Minimum,
+            PreampMaxDb = lifts ? pinnedPreampDb : (double)EqWizardLimits.Preamp.Maximum,
             BandGainMinDb = (double)session.GainMinDb,
             BandGainMaxDb = (double)session.GainMaxDb,
-            TotalGainMaxDb = cutsOnly ? 0 : double.PositiveInfinity,
+            TotalGainMaxDb = lifts ? double.PositiveInfinity : 0,
             SampleRateHz = session.ProcessorSampleRateHz,
-            CutsOnlyMode = cutsOnly,
+            Boosts = session.Boosts,
             // Widest Q is the strips' limit (available with an empty bank); narrowest is the user's Max Q, below what strips accept.
             QMin = (double)EqWizardLimits.BandQ.Minimum,
             QMax = (double)session.AutoTuneMaxQ,
@@ -86,7 +86,7 @@ internal static class EqWizardFit
         (double minHz, double maxHz) = session.FrequencyWindow;
         return EqTargetLevelCheck.Warning(
             EqTargetLevelCheck.TargetAboveSourceDb(fitSource, fitTarget, minHz, maxHz),
-            session.CutsOnly,
+            session.Boosts != EqAutoTuneBoosts.Allowed,
             minHz,
             maxHz);
     }
@@ -127,6 +127,13 @@ internal static class EqWizardFit
             carried.Bands.OrderBy(band => band.FrequencyHz),
             carried.PreampDb);
     }
+
+    public static string DescribeBoosts(EqAutoTuneBoosts boosts) => boosts switch
+    {
+        EqAutoTuneBoosts.Off => "cuts only",
+        EqAutoTuneBoosts.RefillOwnCuts => "boosts only refilling its own cuts",
+        _ => "cuts and boosts"
+    };
 
     public static string DescribeAllPassCount(int count) =>
         count == 1 ? "an all-pass filter" : $"{count} all-pass filters";

@@ -551,7 +551,7 @@ internal static class AgentProposalParser
         ? null
         : new AutoTunePeqOperation(
             wire.Id, wire.ChannelId, Prose(wire.Reason), wire.TargetLevelDb, wire.MinHz, wire.MaxHz,
-            wire.AllowShelves, wire.CutsOnly, wire.Source);
+            wire.AllowShelves, wire.CutsOnly, wire.Boosts, wire.Source);
 
     private static AgentOperation? Map(SpatialAverageWire? wire) => wire == null
         ? null
@@ -744,6 +744,7 @@ internal static class AgentProposalParser
         public double? MaxHz { get; init; }
         public bool? AllowShelves { get; init; }
         public bool? CutsOnly { get; init; }
+        public string? Boosts { get; init; }
         public string? Source { get; init; }
     }
 

@@ -7,8 +7,9 @@ using Resonalyze.Dsp;
 namespace Resonalyze;
 
 /// <summary>
-/// The EQ Wizard's plot model: magnitudes on the left axis, the bank on its own right-hand axis (which phase takes
-/// over), the Auto Tune window and the selected band. Built from the session and the render set; no WinForms.
+/// The EQ Wizard's plot model: magnitudes on the left axis, the bank and its handles on their own right-hand axis
+/// (which phase takes over), the Auto Tune window and the selected band. Built from the session and the render set;
+/// no WinForms.
 /// </summary>
 internal sealed class EqWizardPlot
 {
@@ -23,12 +24,14 @@ internal sealed class EqWizardPlot
     private static readonly OxyColor EqAxisColor = UiPalette.GraphAxisText.ToOxy();
     private static readonly OxyColor AboveTargetFill = OxyColor.FromAColor(72, UiPalette.CurveAboveTarget.ToOxy());
     private static readonly OxyColor BelowTargetFill = OxyColor.FromAColor(104, UiPalette.CurveBelowTarget.ToOxy());
+    private static readonly OxyColor BandShapeFill = OxyColor.FromAColor(36, UiPalette.CurveBandOverlay.ToOxy());
 
     private readonly PlotWatermarkAnnotation hint;
     private readonly LineAnnotation fromMarker;
     private readonly LineAnnotation toMarker;
     private readonly LineAnnotation bandMarker;
     private readonly RectangleAnnotation rangeFill;
+    private readonly EqBandHandlesAnnotation handles = new() { YAxisKey = EqGainAxisKey };
 
     // Last nominal range armed on the EQ axis, to tell the wizard's range from the user's zoom.
     private (double Lower, double Upper)? eqAxisNominal;
@@ -110,9 +113,14 @@ internal sealed class EqWizardPlot
             LineStyle = LineStyle.Dot,
             Layer = AnnotationLayer.AboveSeries
         };
+        Model.Annotations.Add(handles.FaintLayer);
+        Model.Annotations.Add(handles);
     }
 
     public PlotModel Model { get; }
+
+    /// <summary>The bank's handles; the panel turns what they report into edits.</summary>
+    public EqBandHandlesAnnotation Handles => handles;
 
     /// <summary>Marks the Auto Tune window, which also bounds the error metrics.</summary>
     public void ShowWindow(EqWizardSession session)
@@ -204,6 +212,13 @@ internal sealed class EqWizardPlot
 
         // In phase mode the empty dB axis would read as a scale for the degree curves.
         SetMagnitudeAxisVisible(!session.PhaseMode);
+        // First, so every curve draws over it.
+        bool showHandles = ShowsHandles(session);
+        if (showHandles)
+        {
+            AddSelectedBandShape(session, selectedBand, render.Target);
+        }
+
         if (session.PhaseMode)
         {
             if (phase != null)
@@ -233,7 +248,8 @@ internal sealed class EqWizardPlot
 
         AddEqCurve(session, eq, render.Target);
         AddSelectedBandCurve(session, selectedBand, render.Target);
-        UpdateSelectedBandMarker(session, selectedBand);
+        handles.Show(showHandles ? session.Bank.Bands : Array.Empty<PeqBand>(), selectedBand);
+        UpdateSelectedBandMarker(session, showHandles ? null : selectedBand);
         // In magnitude the right axis holds only the EQ curve; in phase every measured curve is on it.
         if (Model.Axes.FirstOrDefault(axis => axis.Key == EqGainAxisKey) is { } eqAxis)
         {
@@ -241,6 +257,10 @@ internal sealed class EqWizardPlot
                 series is XYAxisSeries { YAxisKey: EqGainAxisKey });
         }
     }
+
+    // With the bank's curve, and like it not under Bypass, whose plot shows no EQ.
+    private static bool ShowsHandles(EqWizardSession session) =>
+        !session.PhaseMode && session.ShowEqCurve && !session.Bypass;
 
     private static LineAnnotation CreateRangeMarker() => new()
     {
@@ -369,7 +389,7 @@ internal sealed class EqWizardPlot
                 AddSeries(
                     new EqWizardCurve(
                         "EQ phase",
-                        UiPalette.CurveNeutral.ToOxy(),
+                        UiPalette.CurveEqBank.ToOxy(),
                         1.5,
                         LineStyle.Solid,
                         EqWizardRender.PhasePoints(session, eq.Bands, baseline)),
@@ -390,7 +410,7 @@ internal sealed class EqWizardPlot
 
         IReadOnlyList<DataPoint> points = EqWizardRender.EqGainPoints(session, eq, baseline);
         AddSeries(
-            new EqWizardCurve("EQ", UiPalette.CurveNeutral.ToOxy(), 1.5, LineStyle.Solid, points),
+            new EqWizardCurve("EQ", UiPalette.CurveEqBank.ToOxy(), 1.5, LineStyle.Solid, points),
             EqGainAxisKey);
 
         double curveMin = 0;
@@ -442,7 +462,34 @@ internal sealed class EqWizardPlot
                 EqWizardRender.BandPoints(session, band, baseline)));
     }
 
-    // Separate from the band curve: the frequency needs no baseline curve, and applies to both views.
+    // The selected band's own gain filled down to 0 dB on the EQ axis, joining its handle to the bank's curve.
+    private void AddSelectedBandShape(EqWizardSession session, int? selectedBand, EqWizardCurve baseline)
+    {
+        if (selectedBand is not { } index ||
+            baseline.Points.Count < 2 ||
+            session.Bank.Bands[index].Type.IsAllPass())
+        {
+            return;
+        }
+
+        var area = new AreaSeries
+        {
+            Color = OxyColors.Transparent,
+            Fill = BandShapeFill,
+            StrokeThickness = 0,
+            YAxisKey = EqGainAxisKey,
+            Tag = WizardSeriesTag
+        };
+        foreach (DataPoint point in EqWizardRender.BandGainPoints(session, session.Bank.Bands[index], baseline))
+        {
+            area.Points.Add(point);
+            area.Points2.Add(new DataPoint(point.X, 0));
+        }
+
+        Model.Series.Add(area);
+    }
+
+    // Where the handles are hidden (phase, no EQ curve, Bypass); the frequency needs no baseline curve.
     private void UpdateSelectedBandMarker(EqWizardSession session, int? selectedBand)
     {
         Model.Annotations.Remove(bandMarker);

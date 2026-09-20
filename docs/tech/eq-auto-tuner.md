@@ -5,7 +5,9 @@ parametric bands plus a preamp. Bands are placed by hand in slot strips or fitte
 
 Where the code lives:
 
-- `dsp/EqAutoTuner.cs` — the fitter (`EqAutoTuner.Tune`, `EqAutoTuner.Options`).
+- `dsp/EqAutoTuner.cs` — the entry point (`EqAutoTuner.Tune`, `EqAutoTuner.Options`, `EqAutoTuneBoosts`): grid,
+  preamp and boost mask.
+- `dsp/EqBandFitter.cs` — the fit itself: the objective (`EqFitTuning`), insertion, joint refinement, pruning, shelves.
 - `dsp/EqBoostabilityMask.cs` — per-frequency decision whether a boost may be placed.
 - `dsp/EqualizationCurve.cs`, `dsp/PeqBiquad.cs`, `dsp/BiquadResponse.cs`, `dsp/PeakingBiquad.cs` — the
   band model and its digital (RBJ biquad) response.
@@ -42,211 +44,261 @@ screen. A value written by code (a restored file, an Auto Tune result, an import
 even. A value typed into a field arrives already rounded, half away from zero, by the field itself. Narrowing Max
 Boost or Max Cut clamps the bands' gains without rounding, as a pending edit that lands as its own undo step.
 
-## Greedy fit
+## Fit
 
-`EqAutoTuner.Tune` resamples source, target and (optionally) coherence onto a logarithmic grid
-(`GridSize` points, default 256). The error is defined only where both source and target have data;
-resampling without end clamping yields NaN outside the measured range and those points are excluded.
+`EqAutoTuner.Tune` resamples source, target and (optionally) coherence onto a 256-point logarithmic grid over
+the window. The error is defined only where both source and target have data; resampling without end clamping
+yields NaN outside the measured range and those points are excluded. The preamp absorbs the broadband level
+difference (see [Preamp alignment](#preamp-alignment)); `EqBandFitter` fits the shape:
 
-The preamp absorbs the broadband level difference (see [Preamp alignment](#preamp-alignment)); bands fit the
-shape. The greedy pass (`NextBell`) then repeatedly:
+1. **Insert.** Take the grid point with the largest error a band could remove — see
+   [The objective](#the-objective) for which errors count in which mode — and seed a bell there: its gain is that
+   error (a boost clamped to what Max Gain leaves), its Q the width of the error's lobe between half-height points,
+   its frequency free to drift a third of an octave. Refine that band alone. It stays only if it lowers the
+   objective by at least `SlotWorth`; otherwise its lobe is blocked for the rest of the pass.
+2. **Refine together.** After every kept band, frequency, gain and Q of the whole bank are refined jointly: bounded
+   Levenberg–Marquardt on (ln f, gain, ln Q), the Jacobian by forward differences of the digital response.
+3. **Prune.** The band that costs least to lose is removed and the rest refitted; the removal stands when the
+   objective rises by less than `SlotWorth`. A band whose bare removal already costs six slots is not tried.
+4. **Repeat.** Refinement moves bands, so a place refused a band in one pass may earn one after it: the blocks are
+   cleared and insertion runs again, up to four passes, while a pass still adds or drops a band. A pruned band leaves
+   a free slot and a changed residual, which is as good a reason to look again as an insertion — though no fixture
+   found reaches that case: pruning fires in the pass that added the bands, and by the next pass the bank has
+   converged (8000 fits over the corpus and over random sources never took the branch, so `AnotherPass` is pinned by
+   a unit test rather than by a fit).
+5. **Round** to what the strips hold (1 Hz, 0.1 dB, Q 0.1), then enforce the ceilings the objective held softly by
+   trimming, in 0.1 dB steps, the boost doing most of any excess — see
+   [Ceilings on the finished bank](#ceilings-on-the-finished-bank).
 
-1. picks the grid point with the largest remaining error that is not blocked;
-2. refuses boosts the mode or the reliability mask forbids (see [Boost reliability](#boost-reliability));
-3. limits a boost to the remaining boost headroom (`BandGainMaxDb` minus the bells' running sum), so a
-   roll-off that needs +30 dB gets one capped band rather than a stack;
-4. tries every candidate Q (`CandidateQ`: 0.5 ... 10, filtered to the caller's [QMin, QMax]) and keeps the
-   one that minimises the residual RMS — narrow peaks get narrow bands, broad trends wide ones;
-5. sterilises a footprint around the band.
+### Ceilings on the finished bank
 
-It stops when the largest remaining error is under `StopResidualDb` (0.5 dB) or the band budget
-(`MaxBands`) is spent.
+A ceiling is a promise about the bank, not about the bins it was fitted on. The soft constraints in the objective and
+the trimming pass both read the 256-point fitting grid, where a narrow band peaks between samples: at Q 20, the
+narrowest a strip allows, a band is about 0.07 octave wide against a grid step of 0.04, so a refill and its cut can
+read as summing to zero on the samples and still lift between them (measured: 0.36 dB on a synthetic fixture of
+off-bin peaks). The skirts also run through bins the source never covered, which the fit treats as contributing
+nothing.
 
-Footprints: `MinBandSpacingOctaves` (0.1 oct) is deliberately small — it only stops the fit re-nibbling the
-peak it just corrected, and a cluster of narrow peaks spaced wider than that each still gets its own band
-(an older, coarser fixed spacing prevented that). A boost pinned at the headroom limit instead blocks
-`SaturatedBlockOctaves` (1 oct), because that whole region genuinely cannot improve further (e.g. a
-low-frequency roll-off). If even the narrowest Q would over-fill a masked bin through its skirt, the fit
-blocks a small footprint and moves on.
+So after rounding, the ceilings are enforced twice: on the fitting grid, where the boost mask lines up exactly, and
+again on a grid of 4096 logarithmic points from half the window's low edge (or 10 Hz) to just under Nyquist, dense
+enough to give the narrowest allowed band tens of samples. Which points a ceiling answers for differs by what it
+promises:
 
-Candidate responses are evaluated at pre-computed unit-circle points, so each candidate costs one biquad
-build plus one complex division per point. The arithmetic is identical to
-`DigitalEqualizationResponse.MagnitudeDbAt`, so the fit sees exactly what the DSP will realise at
-`SampleRateHz`. A degenerate (`IsTransparent`) band contributes nothing and is detected once per candidate.
+- **A bank that may not lift** (`Off`, `RefillOwnCuts`) promises clip safety, so its sum is held at or below 0 dB
+  over the whole dense range, measured bins or not.
+- **The stacking limit on boosts** (`Allowed`) is held where the source was measured. Held everywhere instead, a boost
+  at the edge of the window was trimmed to nothing for what its skirt does in an unmeasured octave above it, which
+  cost 0.10 dB RMS on the corpus for a constraint about frequencies nobody asked the bank to correct.
+- **`TotalGainMaxDb`** is a headroom figure, so the bank's peak for it is read over the whole dense range.
 
-`ScoreBand` is the single objective for bells and shelves: mean squared residual over valid points plus the
-cuts-only over-correction charge. Because shelves go through the same function, a shelf is never accepted
-on a softer test than the bell whose slot it takes.
+The dense pass costs about 2 ms per fit. On the corpus it moves the result only where the promise was being broken:
+refilling, RMS 1.381 → 1.386 dB and dug 0.91 → 0.93 dB; with boosts, nothing measurable.
 
-All-pass bands are never fitted: an all-pass is flat, so a magnitude error never asks for one. Callers
-replace the whole bank with the result, so hand-dialled bands (shelves included) do not survive a re-fit.
+Both ends of a band are bounded: gain by Min/Max Gain with the sign it was seeded with (a boost never turns into a
+cut), Q by `[max(QMin, 0.5), QMax]` — a bell wider than Q 0.5 is a tilt, which is a shelf's or the preamp's job.
+Candidate responses are evaluated at pre-computed unit-circle points with the arithmetic of
+`DigitalEqualizationResponse.MagnitudeDbAt`, so the fit sees what the DSP realises at `SampleRateHz`. A fit takes
+under 10 ms on a typical channel and at most about 80 ms on the widest windows measured.
+
+All-pass bands are never fitted: an all-pass is flat, so a magnitude error never asks for one. Callers replace the
+whole bank with the result, so hand-dialled bands (shelves included) do not survive a re-fit.
+
+### What it replaced
+
+The fitter before this one set each band's gain to the full error at the worst point and only then chose Q from a
+fixed ladder (0.5, 0.7, 1.0, 1.4, 2.0, 2.8, 4.0, 5.6, 8.0, 10.0). At full depth a wider band digs the neighbours of
+the local extremum it was aimed at and loses, so almost every band landed on the highest step under Max Q — 5.6
+under the default 6, the value users read as a bug — and nothing placed moved again, so the ripple one band's skirt
+left became the next band's target. Measured on the fits the wizard's own handoff makes from five Virtual DSP
+sessions (moving-mic averages and gated responses, every channel and side, the wizard's defaults), 36 per mode once
+the cases the level check would question are left out; the columns are means over the fitting window:
+
+| mode | bands | RMS error | RMS above target | dug below target | bands at Max Q |
+| --- | --- | --- | --- | --- | --- |
+| Refill cuts | 5.5 → 5.0 | 1.75 → 1.42 dB | 0.07 → 0.07 dB | 2.05 → 0.94 dB | 3.9 → 2.0 |
+| Allowed | 11.4 → 6.1 | 0.72 → 0.54 dB | 0.29 → 0.22 dB | 0.83 → 0.66 dB | 7.6 → 3.2 |
+| Off | 5.5 → 3.9 | 1.75 → 1.57 dB | 0.07 → 0.14 dB | 2.05 → 1.51 dB | 3.9 → 1.5 |
+
+"Refill cuts" compares against the old fitter's cuts only, which it replaces as the wizard's default. Read back
+through the wizard's own render (the bank inside the chain, then the display smoothing), the moving-mic averages keep
+the gain — RMS 1.69 → 1.42 dB refilling, 1.04 → 0.95 dB with boosts. A gated source is filtered before it is
+windowed (see [Gated sources](#gated-sources)), a gap the fit does not model for old and new alike: there the new
+fit's narrower refills show as up to half a decibel more above the target (RMS above 0.05 → 0.12 dB).
+
+### The objective
+
+What the fit minimises is an integral over log frequency (dB²·octave): a per-point loss, soft constraints, and a
+price per band. `EqFitTuning` holds the numbers.
+
+- **A deficit the fit fills** (boosts Allowed and the [boost mask](#boost-reliability) trusts the point): the plain
+  squared error.
+- **Anywhere else** only what the bank itself does is charged: `AboveWeight` (4) × the square of what stands above
+  the target, plus the square of what the bank's own cut dug below it — the full depth when the point already sat
+  below, the overshoot when it sat above — with `OverCutWeight` (5) more on digging past `OverCutFreeDb` (1 dB).
+- **The dug charge falls with depth**: it is scaled by `1 / (1 + (D / 3 dB)²)`, D how far under the target the point
+  already was. Digging a point 10 dB under changes nothing anyone sees; digging one at the target shows a dent. A
+  cut on a peak beside a crossover slope was otherwise refused because its skirt reached down the slope.
+- **Constraints** at 400 per dB²: when refilling, the bank's sum at most 0 dB; with boosts, the boosting bells' sum at
+  most Max Gain and at most `ForbiddenRegionMaxBoostDb` in a masked bin.
+- **Overlap**: 0.1 × the square of what a boost and a cut take from each other at a point (min of the two). A pair
+  cancelling over an octave is two slots spent on their difference; a skirt brushing an opposite band costs little.
+  Refilling is overlap by design, so there the weight is 0.01 (see [Boost modes](#boost-modes)).
+- **`SlotWorth`** (0.03 dB²·oct) is what a band must remove to earn its slot, at insertion and at pruning alike, and
+  what the shelf stage charges per band. A 1 dB bump a sixth of an octave wide is worth about 0.1.
+
+Never charge the depth a point already had: a real response weaves below the target everywhere, and a penalty that
+grows with pre-existing depth makes every wide band lose to the narrowest — it once shredded a smooth lobe into a
+comb of Q 10 slivers. The old fitter's plain squared error had the same bias in milder form, which is part of why
+its bands sat at the top of the ladder.
+
+The weights were read off the 144 fits, varying one at a time:
+
+- `AboveWeight` 1 → 4 moved RMS above target 0.24 → 0.14 dB and dug depth 1.27 → 1.51 dB in cuts only: the objective
+  alone, symmetric, left 1–2 dB bumps on peaks next to dips; the old fitter left none at the price of 2 dB gouges.
+- `OverCutWeight` barely matters once the dug charge exists (25 → 0 moved above-target RMS 0.31 → 0.24 dB); 5 keeps a
+  gouge dearer than a bump.
+- `SlotWorth` 0.02 / 0.03 / 0.05 gave 6.6 / 6.1 / 5.4 bands with boosts, RMS 0.51 / 0.54 / 0.58 dB, and 5.2 / 5.0 / 4.8
+  refilling; below 0.03 ripple under a decibel starts earning bands.
+- `StopResidualDb` 0.5 against 1.0 dB: 5.0 against 4.7 bands refilling, RMS above target 0.07 against 0.10 dB; 6.1
+  against 5.4 bands with boosts, RMS 0.54 against 0.61 dB.
+
+### Boost modes
+
+`Options.Boosts` says what the bank may do above 0 dB. The library defaults to `Allowed`; the EQ Wizard to
+`RefillOwnCuts`.
+
+- **`Off`**: every band cuts. The preamp aligns to the least-excess point (see [Preamp alignment](#preamp-alignment)).
+- **`RefillOwnCuts`**: bands may boost, but only to put back what the cuts dug; the bank's summed response stays at or
+  below 0 dB everywhere, so the curve is never lifted and the profile is clip-safe exactly as a cuts-only one. The
+  preamp behaves as with `Off`. A broad resonance with steep sides is the case it exists for: a cut wide enough for
+  its top digs its sides, a cut narrow enough to spare them combs the top, and a boost on each side of one wide cut
+  gives both (on the BMW F30 midbass average, five bands put 80–190 Hz on the target where the old cuts, also five,
+  left a 3 dB gouge at 130 Hz). A refill is seeded only where the bank dug past `OverCutFreeDb`: seeded from any dent,
+  a 6 dB resonance came back as a −15 dB wide cut between two +6 dB boosts that sculpted its skirts — flat, and absurd
+  in the strips; with the floor it is one band. The overlap charge (0.01) keeps boosts from reshaping a cut's own
+  centre; ten times that narrowed refills to Max Q and cost depth (dug 0.82 → 0.99 dB when it was tried).
+- **`Allowed`**: bands boost and fill deficits the [boost mask](#boost-reliability) trusts. Boosting bells together
+  stay under Max Gain, measured on the boosts alone: with the net sum of the bells, a cut made room for boosts stacked
+  over it (+10.6 dB at 70 Hz on a 6 dB Max Gain, two bands at one frequency), and a cut in a null's core let a boost
+  fill the null's wall — three bands netting +0.36 dB on a synthetic null. The preamp is the median error when
+  unpinned.
+
+Rejected, measured:
+
+- REW's rule of no boosts beyond the first and last points where the response reaches the target. It removes
+  boosts up a crossover slope, but equally refuses the bass shelf a car target asks for (RMS 0.54 → 1.34 dB with boosts).
+- A Q ceiling for boosts alone (3 or 4): with boosts RMS 0.54 → 0.58–0.62 dB; refills need narrow bands between two
+  cuts, and dug depth rose 0.82 → 1.01–1.08 dB.
 
 ## Preamp alignment
 
 The right broadband level depends on which way bands can move the source:
 
-- **Boosts allowed:** bands correct both ways, so the preamp centres the residual on the MEAN error.
-- **Cuts only:** bands can only pull the source down. A preamp below the largest error would drop a point
-  beneath the target where no cut can lift it back. So the preamp aligns to the point where the source is
-  LEAST above the target (the maximum error), absorbing only the excess every point shares, and stays at the
-  ceiling whenever any point is already at or below target. Rounding goes up, so every point stays cuttable.
+- **Boosts allowed:** bands correct both ways, so the preamp centres the residual on the MEDIAN error. A null or a
+  roll-off is shape the bands answer; a mean carried it into the level and the fit then cut everything by a dB.
+- **Off or refilling:** the bank can only pull the source down. A preamp below the largest error would drop a point
+  beneath the target where no band can lift it back. So the preamp aligns to the point where the source is LEAST
+  above the target (the maximum error), absorbing only the excess every point shares, and stays at the ceiling
+  whenever any point is already at or below target. Rounding goes up, so every point stays cuttable.
 
-The ceiling is pre-applied here, not only in the post-band clamp, so bands fit against the same level the
-curve is finally realised at. In cuts-only the band peak is 0, so the ceiling is 0: cuts-only must never lift
-the curve whatever the level difference or an unbounded `TotalGainMaxDb`.
+The ceiling is pre-applied here, not only in the post-band clamp, so bands fit against the same level the curve is
+finally realised at. When the bank may not lift, its peak is 0, so the ceiling is 0: such a fit must never lift the
+curve whatever the level difference or an unbounded `TotalGainMaxDb`.
 
 ### Total gain ceiling
 
-`TotalGainMaxDb` caps preamp + summed band gain at every frequency. A positive preamp stacked under boost
-bands is a clipping DSP profile, and handing one out leaves the UI reporting the damage as negative
-headroom. The cap is applied to the preamp AFTER bands are placed, so the fitted shape stays and the curve
-honestly sits below an unreachable target. It is unbounded by default because, as a pure curve fit, the
-preamp legitimately carries the level difference between arbitrarily referenced source and target; a
-caller producing a clip-safe cuts-only profile passes 0. With boosts allowed, prefer pinning the preamp
-(`PreampMinDb == PreampMaxDb`): under the post-hoc cap a boosting fit is realised below the level its bands
-were placed against — the whole curve drops by the peak boost.
-
-## Cuts-only over-correction penalty
-
-`CutsOnlyMode` places only cuts. It defaults off in `EqAutoTuner` so the general fitter stays unconstrained,
-but the EQ Wizard defaults it on: boosting a reflective cabin's response is where auto EQ does harm (filling
-an interference null wastes headroom and a band on a dip that does not survive a small mic move). Cutting
-peaks and leaving level on the table is the conservative correction.
-
-In cuts-only, over-cutting pushes a point below the target where no later cut can lift it back. When
-choosing a band's Q, each candidate is charged (`CutsOnlyOverCorrectionWeight` = 25) for the over-cut this
-band ADDS at a point — the part of its own cut that lands below target — with the first
-`CutsOnlyOverCutFreeDb` free. Under-correction (above target) is always fixable and unpenalised.
-
-Charging the band's own contribution, never the depth a point already had, matters: a real response weaves
-below the target everywhere, and any penalty scaling with pre-existing depth makes every wide Q lose to the
-narrowest one. That shredded a smooth response into a swarm of Q=10 slivers whose notch comb looked worse
-than no EQ. With the free zone, a moderately wide skirt grazing a neighbouring dip by up to 1 dB costs
-nothing, so residual RMS alone picks the width; only a skirt digging several dB below target (a visible
-gouge) is weighted up and loses to a tighter band.
+`TotalGainMaxDb` caps preamp + summed band gain at every frequency. A positive preamp stacked under boost bands is a
+clipping DSP profile, and handing one out leaves the UI reporting the damage as negative headroom. The cap is applied
+to the preamp AFTER bands are placed, so the fitted shape stays and the curve honestly sits below an unreachable
+target. It is unbounded by default because, as a pure curve fit, the preamp legitimately carries the level difference
+between arbitrarily referenced source and target; a caller producing a clip-safe profile passes 0. The bank's peak is
+read with a 10⁻⁶ dB tolerance, since the cap floors to whole dB and rounding noise on a bank that never lifts would
+otherwise cost the preamp a decibel. With boosts allowed, prefer pinning the preamp (`PreampMinDb == PreampMaxDb`):
+under the post-hoc cap a boosting fit is realised below the level its bands were placed against — the whole curve
+drops by the peak boost.
 
 ## Boost reliability
 
-When cuts-only is off, `EqBoostabilityMask` (options in `Options.BoostMask`) decides per frequency whether a
-boost band may be centred there (high coherence, not inside a narrow deep null). A boost the mask forbids is
-not fitted: `BlockForbiddenBoostRun` blocks the contiguous run of boost-wanting, boost-forbidden points
-around it, stopping at the first boost-allowed point on each side. A wide correctable dip with a narrow null
-at its floor thus keeps its reliable shoulders; only the forbidden core is dropped. It always blocks at
-least the centre so the loop progresses.
+With boosts `Allowed`, `EqBoostabilityMask` (options in `Options.BoostMask`) decides per frequency whether a boost
+may fill the deficit there (high coherence, not inside a narrow deep null). Elsewhere a deficit is not chased: the
+point is charged only for what the bank digs, like every point when boosts are off.
 
-The mask only clears a band's CENTRE. A wide low-Q boost centred on a reliable point can still pour several
-dB into an adjacent forbidden region through its skirt, quietly filling the null the mask protects. So any
-boost candidate whose placement would push the cumulative boost at a forbidden bin past
-`ForbiddenRegionMaxBoostDb` (0.5 dB) is discarded from the Q search; the fit narrows the band or withholds
-it. +infinity restores unguarded behaviour. Cuts are never checked (a cut cannot fill a null).
+The mask clears where a boost is AIMED. A boost's centre stays inside the trusted run it was seeded in, and a seed
+whose boost, even at the narrowest Q, would pour more than `ForbiddenRegionMaxBoostDb` (0.5 dB) into a masked bin is
+a null's wall, not a dip: only a tenth of an octave around it is blocked, since further out on the same dip a
+narrower boost may fit. A wide correctable dip with a narrow null at its floor thus keeps its reliable shoulders;
+only the null is left. The boosting bells' sum in a masked bin stays under the same 0.5 dB, which also stops a wide
+boost aimed at a reliable centre from quietly filling the null beside it through its skirt. +infinity restores
+unguarded behaviour. Cuts are never checked (a cut cannot fill a null).
 
-A missing coherence curve means every point is treated as reliable (null-detection and the fitting band
-still gate boosts); a frequency outside the coherence curve holds the nearest value.
+A missing coherence curve means every point is treated as reliable (null-detection and the fitting band still gate
+boosts); a frequency outside the coherence curve holds the nearest value.
 
-## Shelf stage
+## Shelves
 
-With `Options.AllowShelves` (off by default, so callers get the bells-only curve), a stage in front of the
-greedy pass may place one low and one high shelf.
+With `Options.AllowShelves` (off by default, so callers get the bells-only curve), the fit may start from one low and
+one high shelf.
 
 ### Why shelves
 
-The bell is right for a resonance and wrong for a trend. A car target is bass-lifted and tilted down, which
-leaves whole octaves at one end of the residual off-target; a stack of bells approximates that badly, spending
-three or four slots on a trend and leaving skirts ringing between centres. One shelf replaces them.
+The bell is right for a resonance and wrong for a trend. A car target is bass-lifted and tilted down, which leaves
+whole octaves at one end of the residual off-target; a stack of bells approximates that badly, spending three or four
+slots on a trend and leaving skirts ringing between centres. One shelf replaces them.
 
 ### Decision on the finished fit
 
-`PlaceShelves` runs one round per direction. Each round takes EVERY viable candidate of every direction not
-yet placed — both shelves, every corner, every knee — through the rest of the fit on scratch state
-(`TrialFit`, which runs the greedy bell pass to exhaustion) and applies the one that ends closest to the
-target, provided it beats finishing with no shelf. The no-shelf baseline is run once and seeds the
-comparison, so the same comparison ranks candidates and refuses all of them when none beats placing nothing.
-Running the second round against the first round's residual lets a bass shelf and a treble shelf describe
-one tilt together instead of both fitting the same slope. A round in which nothing wins ends the stage (the
-next round would search the same residual). The stage never blocks frequencies: bells work on top of shelves.
+`ChooseShelves` runs one round per direction. Each round takes every candidate of every direction not yet placed
+through a finished fit on scratch state — one insertion pass and the joint refinement, the shelf refined with the bells
+— and keeps the candidate whose fit ends cheapest, counting `SlotWorth` per band, provided it beats finishing with no
+shelf. The same comparison ranks candidates and refuses all of them, so a shelf that neither shortens the fit nor buys
+a slot's worth of error is not placed. The second round runs against the first round's shelf, so a bass and a treble
+shelf can describe one tilt together. The chosen shelves then enter the full fit like any band: refined with the
+bells, and dropped by pruning if the bells make them redundant.
 
-Three cheaper rules were tried, measured, and rejected:
+Candidates are one per octave of the corners a shelf may take in each direction — rounded UP, since a corner drifts
+half an octave and seeds further apart than an octave would leave corners in between that no candidate can reach —
+each seeded with the mean error over its plateau (only what stands above the target where the mode does not chase a deficit), knee 0.5, and a corner free
+to move half an octave while its plateau stays usable. The joint refinement finds the corner a finer ladder would
+have enumerated.
 
-- an absolute "improves the residual by X" bar, and
-- beating the single bell the shelf displaces —
-
-both spent slots on shelves that left the finished fit worse: a shelf acts across octaves and changes what
-every later band has to do, which no single-band figure sees.
-
-- Ranking candidates by the single-band score and running only the winner through the finished fit is the
-  same mistake one level up. On a tilted response with a loud resonance, the best-reading candidate was a
-  wide shelf shaving the resonance's skirt that finished WORSE than none, while the winning shelf sat two and
-  a half octaves away and was never asked.
-
-Only the gain at a fixed corner and knee is left to the single-band objective (`ShelfCandidates`): at a fixed
-corner and knee gain is a level, and choosing it badly means over-correcting the plateau, which that
-objective already charges for. Handing the gain ladder up too would be unaffordable (a tenth of a dB across
-the gain range is a couple of hundred candidates per corner, against four knees). Gain is searched in the
-0.1 dB the slot strips keep, first in whole dB, then refined within one step of the coarse winner.
-
-### Worth a slot
-
-Beating the bells is not the same as being worth a filter. A shelf that leaves the finished fit SHORTER (fewer
-bands, since the pass stops when nothing is worth a filter) has paid for itself. Otherwise the RMS-equivalent
-improvement must reach `ShelfSlotWorthDb` = 0.01 dB — two orders of magnitude below anything a tuner would
-notice on the plot, and four above the improvements an exhaustive search finds on a response with no trend.
-Without it a resonance-only response quietly spends a slot on a half-dB shelf at the bottom of the range for
-no visible change.
-
-### Ranking finished fits
-
-`FinalScore` is the mean squared distance from target plus, in cuts-only, the same below-target charge the
-band search uses. The charge is on what the BANDS did (`eqSum` = how far this fit pulled the point down; only
-the part landing under target counts). Charging the depth itself lets a pre-existing deficit the preamp could
-not absorb dominate the number, and the comparison turns on a constant both candidates share. Measured: that
-variant rejected at a four-band budget the very shelf it accepted at three, on a response where the shelf was
-plainly better.
+Cheaper rules were tried before and all failed the same way: an absolute improvement bar, beating the bell the shelf
+displaces, and ranking by the single-band score and finishing only the winner. A shelf acts across octaves and
+changes what every later band has to do, which no single-band figure sees; on a tilted response with a loud
+resonance the best-reading candidate was a wide shelf shaving the resonance's skirt that finished WORSE than none,
+while the winning shelf sat two and a half octaves away.
 
 ### Shelf geometry and thresholds
 
-Every number is about "is there really a trend at that end of the range" — a wrong shelf is wrong across
-octaves, so none may be decided by a single point.
+Every number is about "is there really a trend at that end of the range" — a wrong shelf is wrong across octaves, so
+none may be decided by a single point.
 
-- **Knees** `ShelfCandidateQ` = {0.3, 0.4, 0.5, 0.7}, in the one decimal the strips keep (a Q the strips
-  would round is not the shelf that was scored). Capped at 0.7 by construction, not by the caller's QMax:
-  above 1/sqrt(2) an RBJ shelf overshoots its own gain, and overshoot on a CUT is a boost — which cuts-only
-  promises never to produce and the mask may have refused. Measured over the whole corner and gain ladder at
-  48 kHz, the most a cutting shelf lifts anywhere: 0.0000 dB at Q 0.70, 0.0002 at 0.71, 0.15 at 0.8, 0.90 at
-  1.0, 2.69 at 1.4. QMax bounds how narrow a bell may be and is not applied to knees; QMin is (the strips
-  accept only that).
-- **Quiet-side margin** `ShelfSettledMarginOctaves` = 2 oct of fitting range must lie on the shelf's
-  UNAFFECTED side (below a high shelf, above a low one). This separates a shelf from a level change: a high
-  shelf an octave off the bottom lifts practically everything — a preamp wearing a filter slot — and the fit
-  reached for exactly that when the mask refused the shelf it wanted.
-- **Plateau span** `ShelfPlateauSpanOctaves` = 1 oct must lie on the side it acts on, so there is a plateau
-  to decide about, not a corner hanging off the range.
-- **Plateau start** `ShelfPlateauMarginOctaves` = 0.5 oct out from the corner. There a shelf has reached 57%
-  of its gain at the widest knee and 78% at the narrowest, so the span beyond is what it decides about, not
-  its transition.
-- **Usable plateau** `ShelfPlateauUsableFraction` = 0.75 of the plateau must carry usable data — measured
-  points for a cut, boost-allowed points for a boost — with a floor of two points (one point is a bin). At
-  three fifths, the fit answered a mask refusing to lift an incoherent top by lifting nearly the whole range
-  through a shelf whose plateau cleared the bar by a single point.
-- **Corners** `ShelfCorners` tries `ShelfCornersPerOctave` = 3 per octave (a knee is broad; a third octave is
-  finer than the choice can be told apart). The ladder is built per direction because the two margins sit on
-  opposite sides: a high shelf at 10 kHz is an ordinary car correction, and one symmetric margin wide enough
-  to keep a high shelf off the bottom would have excluded it.
-- **Minimum gain** `ShelfMinGainDb` = 0.5 dB; below that a shelf is not worth a slot.
+- **Knee** within 0.3–0.7, in the one decimal the strips keep. Capped at 0.7 by construction, not by the caller's
+  QMax: above 1/sqrt(2) an RBJ shelf overshoots its own gain, and overshoot on a CUT is a boost — which a bank that
+  may not lift promises never to produce and the mask may have refused. Measured over the whole corner and gain
+  ladder at 48 kHz, the most a cutting shelf lifts anywhere: 0.0000 dB at Q 0.70, 0.0002 at 0.71, 0.15 at 0.8, 0.90 at
+  1.0, 2.69 at 1.4. QMax bounds how narrow a bell may be and is not applied to knees; QMin is.
+- **Quiet-side margin** 2 octaves of fitting range must lie on the shelf's UNAFFECTED side (below a high shelf, above a
+  low one). This separates a shelf from a level change: a high shelf an octave off the bottom lifts practically
+  everything — a preamp wearing a filter slot.
+- **Plateau span** 1 octave must lie on the side it acts on, so there is a plateau to decide about.
+- **Plateau start** 0.5 octave out from the corner. There a shelf has reached 57% of its gain at the widest knee and
+  78% at the narrowest, so the span beyond is what it decides about, not its transition.
+- **Usable plateau** 0.75 of the plateau must carry usable data — measured points for a cut, boost-allowed points for
+  a boost — with a floor of two points. At three fifths, the fit answered a mask refusing to lift an incoherent top by
+  lifting nearly the whole range through a shelf whose plateau cleared the bar by a single point.
+- **Minimum gain** 0.5 dB; below that a shelf is not worth a slot. A boosting shelf is only tried with boosts Allowed.
 
 ### Shelves and the boost guards
 
-A BOOSTING shelf is treated differently from a boosting bell. `ForbiddenRegionMaxBoostDb` stops a band aimed
-at a reliable centre from pouring gain into a null through its skirt; a shelf has no skirt in that sense —
-its plateau IS the correction and necessarily passes over whatever nulls that end holds — so the per-bin
-guard would refuse every boosting shelf. A shelf is instead gated on being justified (usable plateau above)
-and its gain is still bounded by `BandGainMaxDb`.
+A BOOSTING shelf is treated differently from a boosting bell. The skirt guard stops a band aimed at a reliable centre
+from pouring gain into a null; a shelf has no skirt in that sense — its plateau IS the correction and necessarily
+passes over whatever nulls that end holds — so the per-bin guard would refuse every boosting shelf. A shelf is instead
+gated on being justified (usable plateau above) and its gain is still bounded by Max Gain.
 
-The fitter keeps two running sums: `eqSum` (all bands) and `bellSum` (bells only). Both boost guards — the
-headroom cap and the skirt guard — read `bellSum`, because both exist to stop bells piling on each other and
-a shelf is not a pile. Charging bells for a shelf locks them out of the region it covers: measured, a +6 dB
-bass shelf left zero headroom across the bass, every resonance under it was refused, and the finished fit was
-worse than no shelf. The two sums are identical when no shelf is placed, so bells-only fits are unchanged.
-Consequently a fit with a shelf can boost past `BandGainMaxDb` in total; bounding that is the caller's job via
+Both boost ceilings read the boosting BELLS, because both exist to stop bells piling on each other and a shelf is not
+a pile. Charging bells for a shelf locks them out of the region it covers: measured, a +6 dB bass shelf left zero
+headroom across the bass, every resonance under it was refused, and the finished fit was worse than no shelf.
+Consequently a fit with a shelf can boost past Max Gain in total; bounding that is the caller's job via
 `TotalGainMaxDb`, and the EQ Wizard reports it as headroom.
 
 ## Wizard sources
@@ -433,9 +485,9 @@ how it must be typed into the hardware.
 
 `EqWizardFit.Options` (mirrored by `EqAutoTuneHeadless.Prepare`) sets the preamp differently per mode:
 
-- **Cuts only:** the auto preamp may move within the control's range (±80 dB); it aligns to the least-excess point
-  and can only lower the curve, and `TotalGainMaxDb` = 0 keeps the profile clip-free.
-- **Boosts allowed:** the preamp belongs to the user. Auto-centring it would put broadband gain where the Target Level
+- **Boosts Off or Refill cuts:** the auto preamp may move within the control's range (±80 dB); it aligns to the
+  least-excess point and can only lower the curve, and `TotalGainMaxDb` = 0 keeps the profile clip-free.
+- **Boosts Allowed:** the preamp belongs to the user. Auto-centring it would put broadband gain where the Target Level
   datum belongs, and the total-gain ceiling would then "compensate" fitted boosts by dropping the preamp after the
   fit — bands placed against one level, realised far lower, the whole curve falling by the peak boost instead of the
   window rising to target. Pinning `PreampMinDb == PreampMaxDb` to the current value makes every tuner preamp
@@ -455,8 +507,11 @@ Other wizard-side rules:
   (`EqWizardLimits.BandQ`); QMax is the user's Max Q (default 6), well below what a hand-typed strip accepts,
   since a fit is free to place filters far sharper than a cabin measurement justifies.
 - Shelves are opt-in because they change the SHAPE of the result, and Max Q says nothing about a knee.
+- Boosts open on Refill cuts. A settings file from before the choice existed stored only Cuts only: ticked it opens on
+  Refill cuts, which keeps the promise the box made (the curve is never lifted), unticked on Allowed. The flag is still
+  written, as "not Allowed", so an older build reads the same promise back.
 - Before fitting, `EqTargetLevelCheck` takes the median of target minus source over the window. More than 3 dB above
-  (broadband boost; unreachable in cuts-only, whose preamp is capped at 0 dB) or 10 dB below (a broadband cut that
+  (broadband boost; unreachable unless boosts are Allowed, the preamp being capped at 0 dB) or 10 dB below (a broadband cut that
   hands level to the amplifier gain and its noise) is a datum set wrong that the fit would follow faithfully, so the
   wizard asks first. The median ignores junction dips and modal nulls, which are shape, not level.
 - Every change to a fit input funnels through a redraw that invalidates any in-flight fit; over-invalidation is safe

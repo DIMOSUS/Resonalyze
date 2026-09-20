@@ -1,3 +1,5 @@
+using Resonalyze.Dsp;
+
 namespace Resonalyze.Integration.AgentBridge;
 
 /// <summary>A parsed reply: prose plus a closed set of typed operations. No path leads from a reply to a file, source or setting beyond channel parameters and panel engines. PackageId is a correlation hint, never a gate.</summary>
@@ -158,9 +160,19 @@ internal sealed record AutoTunePeqOperation(
     double? MaxHz,
     bool? AllowShelves,
     bool? CutsOnly,
+    string? Boosts,
     string? Source) : AgentChannelOperation(Id, ChannelId, Reason)
 {
     public override string Op => AgentProtocol.AutoTunePeq;
+
+    /// <summary>The mode the fit runs in, null for the wizard's own; <see cref="CutsOnly"/> is the older way to say Off or Allowed.</summary>
+    public EqAutoTuneBoosts? BoostMode => Boosts switch
+    {
+        AgentProposalValidator.BoostsOff => EqAutoTuneBoosts.Off,
+        AgentProposalValidator.BoostsRefillOwnCuts => EqAutoTuneBoosts.RefillOwnCuts,
+        AgentProposalValidator.BoostsAllowed => EqAutoTuneBoosts.Allowed,
+        _ => CutsOnly is { } cuts ? cuts ? EqAutoTuneBoosts.Off : EqAutoTuneBoosts.Allowed : null
+    };
 
     public override string Parameter => "Auto-tune";
 }

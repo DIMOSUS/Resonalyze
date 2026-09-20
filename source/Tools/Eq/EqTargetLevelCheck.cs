@@ -52,9 +52,10 @@ internal static class EqTargetLevelCheck
             : (differences[middle - 1] + differences[middle]) / 2;
     }
 
+    /// <param name="bankCannotLift">Boosts Off or refilling: the preamp stops at 0 dB and the bank never lifts the curve.</param>
     public static string? Warning(
         double? targetAboveSourceDb,
-        bool cutsOnly,
+        bool bankCannotLift,
         double minHz,
         double maxHz)
     {
@@ -66,9 +67,9 @@ internal static class EqTargetLevelCheck
         string window = $"{minHz:0}–{maxHz:0} Hz";
         if (offset >= BoostWarningDb)
         {
-            return cutsOnly
+            return bankCannotLift
                 ? $"The target sits {offset:0.0} dB above the source over {window} " +
-                  "(median). Cuts only cannot raise the curve: the fit will leave " +
+                  "(median). With these Boosts the fit cannot raise the curve: it will leave " +
                   "it below the target, and a bump that stays under the target line " +
                   "is not a cut it will make." + Environment.NewLine +
                   Environment.NewLine +

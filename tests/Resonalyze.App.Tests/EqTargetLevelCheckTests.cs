@@ -50,9 +50,9 @@ public sealed class EqTargetLevelCheckTests
     [InlineData(-10.0, false, "below")]
     [InlineData(-10.0, true, "below")]
     public void TheWarningFollowsTheThresholds_InBothModes(
-        double targetAboveSourceDb, bool cutsOnly, string? expected)
+        double targetAboveSourceDb, bool bankCannotLift, string? expected)
     {
-        string? warning = EqTargetLevelCheck.Warning(targetAboveSourceDb, cutsOnly, 80, 3_000);
+        string? warning = EqTargetLevelCheck.Warning(targetAboveSourceDb, bankCannotLift, 80, 3_000);
 
         if (expected == null)
         {
@@ -64,18 +64,18 @@ public sealed class EqTargetLevelCheckTests
             Assert.EndsWith("Tune anyway?", warning);
         }
 
-        Assert.Null(EqTargetLevelCheck.Warning(null, cutsOnly, 80, 3_000));
+        Assert.Null(EqTargetLevelCheck.Warning(null, bankCannotLift, 80, 3_000));
     }
 
     [Fact]
-    public void ATargetAboveTheSource_IsExplainedDifferentlyUnderCutsOnly()
+    public void ATargetAboveTheSource_IsExplainedDifferentlyWhenTheBankCannotLift()
     {
-        // Cuts-only caps the preamp at 0 dB and only cuts, so a target above the source is unreachable, not a headroom cost.
-        string boosting = EqTargetLevelCheck.Warning(4, cutsOnly: false, 80, 3_000)!;
-        string cutting = EqTargetLevelCheck.Warning(4, cutsOnly: true, 80, 3_000)!;
+        // Off or refilling caps the preamp at 0 dB and never lifts, so a target above the source is unreachable, not a headroom cost.
+        string boosting = EqTargetLevelCheck.Warning(4, bankCannotLift: false, 80, 3_000)!;
+        string cutting = EqTargetLevelCheck.Warning(4, bankCannotLift: true, 80, 3_000)!;
 
         Assert.Contains("boost across the whole window", boosting);
-        Assert.Contains("Cuts only cannot raise the curve", cutting);
+        Assert.Contains("the fit cannot raise the curve", cutting);
         Assert.Contains("Lower the Target Level to the curve", cutting);
         Assert.DoesNotContain("tick Cuts only", boosting);
     }

@@ -100,6 +100,7 @@ internal sealed class UiThemePalette
     public required Color CurveTarget { get; init; }
     public required Color CurveSource { get; init; }
     public required Color CurveSourcePlusEq { get; init; }
+    public required Color CurveEqBank { get; init; }
     public required Color CurveKernel { get; init; }
     public required Color CurvePhase { get; init; }
     public required Color CurveLiveTransfer { get; init; }
@@ -273,6 +274,7 @@ internal sealed class UiThemePalette
         CurveTarget = Color.FromArgb(230, 184, 0),
         CurveSource = Color.FromArgb(180, 190, 205),
         CurveSourcePlusEq = Color.FromArgb(0, 209, 255),
+        CurveEqBank = Color.FromArgb(198, 152, 255),
         CurveKernel = Color.FromArgb(90, 180, 255),
         CurvePhase = Color.FromArgb(210, 140, 255),
         CurveLiveTransfer = Color.FromArgb(255, 0, 127),
@@ -463,6 +465,7 @@ internal sealed class UiThemePalette
         CurveTarget = Color.FromArgb(148, 108, 0),
         CurveSource = Color.FromArgb(88, 96, 112),
         CurveSourcePlusEq = Color.FromArgb(0, 108, 158),
+        CurveEqBank = Color.FromArgb(104, 52, 168),
         CurveKernel = Color.FromArgb(16, 90, 174),
         CurvePhase = Color.FromArgb(122, 48, 174),
         CurveLiveTransfer = Color.FromArgb(196, 0, 98),

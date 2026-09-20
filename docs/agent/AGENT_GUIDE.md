@@ -290,8 +290,8 @@ hybrid sum, and it is the one to read while the averages are active (that sum
 estimates one position's interference, so it is a tonal datum, not a reading of
 a junction's depth). The target
 LEVEL is a number the user typed and a fit obeys it literally: 3 dB or more
-above the sum makes Auto-tune boost everything and spend headroom (or, under
-*Cuts only*, leave the curve short of the target); 10 dB or more below makes it
+above the sum makes Auto-tune boost everything and spend headroom (or, with
+boosts off or only refilling its cuts, leave the curve short of the target); 10 dB or more below makes it
 cut everything and hand the level back to the amplifier gain, with its noise.
 Say so before any PEQ advice and have the user move **Target Level** rather
 than let the bands carry it. Judge tonal balance on broad trends over half an
@@ -389,7 +389,7 @@ every input and what each refuses):
 | `runAutoDelay` | Delays and polarities per junction and across the sides. `adjustGains` is a cut-only STARTING balance — on a tuned system the L/R difference and the tweeter level are the user's decisions about the stage, so ask for it only on a fresh tune or by request. |
 | `runAutoCrossover` | The wizard, for a tune with NO crossovers yet or one to rebuild. Magnitude only, ideal alignment assumed, anchored on 24 dB/oct, and it writes a cut-only gain with every corner — on a finished tune that undoes slopes, phase and gains the user chose. It does not know any driver's limits: check every corner it proposes against them. |
 | `tuneJunction` | The crossover engine for a finished tune: ONE junction, both facing edges, scored on the pair's coherent sum at the current delays, everything else kept. Name steeper slopes in `slopes` when a ragged junction phase over a wide overlap is the problem. Its report also says what the best delay would still take back: when that is far below the loss at the current timing, the junction wants realigning — ask for `runAutoDelay` in the NEXT reply, once the user has copied a package and you have read what the tune actually did. (An import can run both; the reason to separate them is that you cannot judge the second while the first is unread.) |
-| `autoTunePeq` | Fits a bank to the target over a channel's band, optionally on the spatial average. `targetLevelDb` moves the project's datum, so every request in a reply must state the same one. |
+| `autoTunePeq` | Fits a bank to the target over a channel's band, optionally on the spatial average. `targetLevelDb` moves the project's datum, so every request in a reply must state the same one. `boosts` is `off`, `refillOwnCuts` (boosts only put back what the cuts dug; the bank never lifts the curve) or `allowed`; leave it out to fit as the wizard is set. |
 | `useSpatialAverage` | The capture family and the Hybrid tick together. |
 
 Three rules: never send an engine beside a hand-written value that engine

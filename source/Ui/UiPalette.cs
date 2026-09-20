@@ -90,6 +90,8 @@ internal static class UiPalette
     public static Color CurveTarget => Current.CurveTarget;
     public static Color CurveSource => Current.CurveSource;
     public static Color CurveSourcePlusEq => Current.CurveSourcePlusEq;
+
+    public static Color CurveEqBank => Current.CurveEqBank;
     public static Color CurveKernel => Current.CurveKernel;
     public static Color CurvePhase => Current.CurvePhase;
     public static Color CurveLiveTransfer => Current.CurveLiveTransfer;

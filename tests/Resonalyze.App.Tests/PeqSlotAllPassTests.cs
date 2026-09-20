@@ -70,6 +70,6 @@ public sealed class PeqSlotAllPassTests
     public void Header_NamesTheAllPassWithTheDeviceToken(PeqBandType type, string token)
     {
         // Tokens match Audiotec PC-Tool slot names.
-        Assert.Equal(token, PeqSlotControl.DescribeType(type));
+        Assert.Equal(token, PeqBandToken.Of(type));
     }
 }

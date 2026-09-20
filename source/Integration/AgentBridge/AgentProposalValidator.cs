@@ -67,6 +67,10 @@ internal static class AgentProposalValidator
     public const string PointSource = "point";
     public const string SpatialAverageSource = "spatialAverage";
 
+    public const string BoostsOff = "off";
+    public const string BoostsRefillOwnCuts = "refillOwnCuts";
+    public const string BoostsAllowed = "allowed";
+
     public const string AllChannels = "all";
 
     public const string DeviceLimitsUnknown =
@@ -1187,6 +1191,16 @@ internal static class AgentProposalValidator
         {
             return $"{channel.Label} carries no spatial average to fit against.";
         }
+        if (tune.Boosts != null &&
+            tune.Boosts != BoostsOff && tune.Boosts != BoostsRefillOwnCuts && tune.Boosts != BoostsAllowed)
+        {
+            return $"Unknown auto-tune boosts '{tune.Boosts}'; " +
+                $"use '{BoostsOff}', '{BoostsRefillOwnCuts}' or '{BoostsAllowed}'.";
+        }
+        if (tune.Boosts != null && tune.CutsOnly != null)
+        {
+            return "State boosts or cutsOnly, not both.";
+        }
 
         string? problem =
             Bounded(tune.TargetLevelDb, MinimumTargetLevelDb, MaximumTargetLevelDb,
@@ -1420,9 +1434,9 @@ internal static class AgentProposalValidator
         {
             parts.Add(shelves ? "shelves allowed" : "no shelves");
         }
-        if (tune.CutsOnly is { } cutsOnly)
+        if (tune.BoostMode is { } boosts)
         {
-            parts.Add(cutsOnly ? "cuts only" : "cuts and boosts");
+            parts.Add(EqWizardFit.DescribeBoosts(boosts));
         }
         if (tune.Source is { } source)
         {

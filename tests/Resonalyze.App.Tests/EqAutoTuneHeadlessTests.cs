@@ -60,7 +60,7 @@ public sealed class EqAutoTuneHeadlessTests
 
         EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
             request, TargetCurveSpec.FromPreset(TargetPreset.Flat), EqAutoTunePolicy.Default, null, null,
-            allowShelves: false, cutsOnly: true);
+            allowShelves: false, boosts: EqAutoTuneBoosts.Off);
 
         PeqBand kept = Assert.Single(inputs.KeptAllPass);
         Assert.Equal(400, kept.FrequencyHz);
@@ -87,8 +87,8 @@ public sealed class EqAutoTuneHeadlessTests
         TargetCurveSpec target = TargetCurveSpec.FromPreset(TargetPreset.Flat);
 
         EqAutoTuner.Options cuts = EqAutoTuneHeadless.Prepare(
-            request, target, EqAutoTunePolicy.Default, null, null, allowShelves: false, cutsOnly: true).Options;
-        Assert.True(cuts.CutsOnlyMode);
+            request, target, EqAutoTunePolicy.Default, null, null, allowShelves: false, boosts: EqAutoTuneBoosts.Off).Options;
+        Assert.Equal(EqAutoTuneBoosts.Off, cuts.Boosts);
         Assert.Equal(-EqAutoTuneHeadless.PreampRangeDb, cuts.PreampMinDb);
         Assert.Equal(EqAutoTuneHeadless.PreampRangeDb, cuts.PreampMaxDb);
         Assert.Equal(0, cuts.TotalGainMaxDb);
@@ -102,8 +102,8 @@ public sealed class EqAutoTuneHeadlessTests
         Assert.Equal(EqAutoTuneHeadless.MaxQ, cuts.QMax);
 
         EqAutoTuner.Options boosts = EqAutoTuneHeadless.Prepare(
-            request, target, EqAutoTunePolicy.Default, 100, 3_000, allowShelves: true, cutsOnly: false).Options;
-        Assert.False(boosts.CutsOnlyMode);
+            request, target, EqAutoTunePolicy.Default, 100, 3_000, allowShelves: true, boosts: EqAutoTuneBoosts.Allowed).Options;
+        Assert.Equal(EqAutoTuneBoosts.Allowed, boosts.Boosts);
         Assert.Equal(-2.5, boosts.PreampMinDb);
         Assert.Equal(-2.5, boosts.PreampMaxDb);
         Assert.Equal(double.PositiveInfinity, boosts.TotalGainMaxDb);
@@ -120,7 +120,7 @@ public sealed class EqAutoTuneHeadlessTests
 
         // Inverted edges are not reordered: a swap would fit a window nobody ticked.
         EqHeadlessTuneInputs inverted = EqAutoTuneHeadless.Prepare(
-            request, target, EqAutoTunePolicy.Default, 5_000, 300, allowShelves: false, cutsOnly: true);
+            request, target, EqAutoTunePolicy.Default, 5_000, 300, allowShelves: false, boosts: EqAutoTuneBoosts.Off);
         Assert.Equal(5_000, inverted.MinHz);
         Assert.Equal(300, inverted.MaxHz);
         Assert.False(EqAutoTuneHeadless.IsUsableWindow(inverted.MinHz, inverted.MaxHz));
@@ -128,7 +128,7 @@ public sealed class EqAutoTuneHeadlessTests
         Assert.False(EqAutoTuneHeadless.IsUsableWindow(300, 300.5));
 
         EqHeadlessTuneInputs wide = EqAutoTuneHeadless.Prepare(
-            request, target, EqAutoTunePolicy.Default, 5, 40_000, allowShelves: false, cutsOnly: true);
+            request, target, EqAutoTunePolicy.Default, 5, 40_000, allowShelves: false, boosts: EqAutoTuneBoosts.Off);
         Assert.Equal(EqAutoTuneHeadless.WindowMinHz, wide.MinHz);
         Assert.Equal(EqAutoTuneHeadless.WindowMaxHz, wide.MaxHz);
     }
@@ -138,26 +138,26 @@ public sealed class EqAutoTuneHeadlessTests
     {
         VirtualDspEqHandoffRequest request = Build(BuildChannel());
         TargetCurveSpec target = TargetCurveSpec.FromPreset(TargetPreset.Flat);
-        var policy = new EqAutoTunePolicy(8, -10, 4, 3.5, CutsOnly: false, AllowShelves: true);
+        var policy = new EqAutoTunePolicy(8, -10, 4, 3.5, EqAutoTuneBoosts.Allowed, AllowShelves: true);
 
         EqAutoTuner.Options asWizard = EqAutoTuneHeadless.Prepare(
-            request, target, policy, null, null, allowShelves: null, cutsOnly: null).Options;
+            request, target, policy, null, null, allowShelves: null, boosts: null).Options;
         Assert.Equal(8, asWizard.MaxBands);
         Assert.Equal(-10, asWizard.BandGainMinDb);
         Assert.Equal(4, asWizard.BandGainMaxDb);
         Assert.Equal(3.5, asWizard.QMax);
-        Assert.False(asWizard.CutsOnlyMode);
+        Assert.Equal(EqAutoTuneBoosts.Allowed, asWizard.Boosts);
         Assert.True(asWizard.AllowShelves);
 
         EqAutoTuner.Options overridden = EqAutoTuneHeadless.Prepare(
-            request, target, policy, null, null, allowShelves: false, cutsOnly: true).Options;
-        Assert.True(overridden.CutsOnlyMode);
+            request, target, policy, null, null, allowShelves: false, boosts: EqAutoTuneBoosts.Off).Options;
+        Assert.Equal(EqAutoTuneBoosts.Off, overridden.Boosts);
         Assert.False(overridden.AllowShelves);
         Assert.Equal(8, overridden.MaxBands);
         Assert.Equal(3.5, overridden.QMax);
 
         Assert.Equal(EqualizationCurve.MaxBandCount, EqAutoTunePolicy.Default.MaxBands);
-        Assert.True(EqAutoTunePolicy.Default.CutsOnly);
+        Assert.Equal(EqAutoTuneBoosts.RefillOwnCuts, EqAutoTunePolicy.Default.Boosts);
         Assert.False(EqAutoTunePolicy.Default.AllowShelves);
     }
 
@@ -174,7 +174,7 @@ public sealed class EqAutoTuneHeadlessTests
             new PeqBand(500, 0.7, 0, PeqBandType.AllPassSecondOrder)
         ];
         VirtualDspEqHandoffRequest request = Build(channel);
-        var four = new EqAutoTunePolicy(4, -15, 6, 6, CutsOnly: true, AllowShelves: false);
+        var four = new EqAutoTunePolicy(4, -15, 6, 6, EqAutoTuneBoosts.Off, AllowShelves: false);
         var five = four with { MaxBands = 5 };
         TargetCurveSpec target = TargetCurveSpec.FromPreset(TargetPreset.Flat);
 
@@ -198,7 +198,7 @@ public sealed class EqAutoTuneHeadlessTests
         VirtualDspEqHandoffRequest request = Build(channel);
         EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
             request, TargetCurveSpec.FromPreset(TargetPreset.Flat), EqAutoTunePolicy.Default, null, null,
-            allowShelves: false, cutsOnly: true);
+            allowShelves: false, boosts: EqAutoTuneBoosts.Off);
 
         EqualizationCurve fitted = EqAutoTuneHeadless.Fit(inputs);
 

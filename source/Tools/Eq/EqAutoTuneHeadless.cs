@@ -11,7 +11,7 @@ internal sealed record EqHeadlessTuneInputs(
     IReadOnlyList<PeqBand> KeptAllPass,
     double MinHz,
     double MaxHz,
-    bool CutsOnly);
+    EqAutoTuneBoosts Boosts);
 
 /// <summary>The wizard's current Auto Tune settings, so an import and the button fit the same bank.</summary>
 internal sealed record EqAutoTunePolicy(
@@ -19,7 +19,7 @@ internal sealed record EqAutoTunePolicy(
     double BandGainMinDb,
     double BandGainMaxDb,
     double MaxQ,
-    bool CutsOnly,
+    EqAutoTuneBoosts Boosts,
     bool AllowShelves)
 {
     public static EqAutoTunePolicy Default { get; } = new(
@@ -27,7 +27,7 @@ internal sealed record EqAutoTunePolicy(
         EqAutoTuneHeadless.BandGainMinDb,
         EqAutoTuneHeadless.BandGainMaxDb,
         EqAutoTuneHeadless.MaxQ,
-        CutsOnly: true,
+        EqAutoTuneBoosts.RefillOwnCuts,
         AllowShelves: false);
 }
 
@@ -120,12 +120,13 @@ internal static class EqAutoTuneHeadless
         double? minHz,
         double? maxHz,
         bool? allowShelves,
-        bool? cutsOnly)
+        EqAutoTuneBoosts? boosts)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(targetSpec);
         ArgumentNullException.ThrowIfNull(policy);
-        bool boostsAllowed = !(cutsOnly ?? policy.CutsOnly);
+        EqAutoTuneBoosts mode = boosts ?? policy.Boosts;
+        bool lifts = mode == EqAutoTuneBoosts.Allowed;
         bool shelves = allowShelves ?? policy.AllowShelves;
 
         EqWizardCurveSource source = request.Source;
@@ -162,13 +163,13 @@ internal static class EqAutoTuneHeadless
             MaxBands = bandLimit,
             MinFrequencyHz = windowMinHz,
             MaxFrequencyHz = windowMaxHz,
-            PreampMinDb = boostsAllowed ? seedPreamp : -PreampRangeDb,
-            PreampMaxDb = boostsAllowed ? seedPreamp : PreampRangeDb,
+            PreampMinDb = lifts ? seedPreamp : -PreampRangeDb,
+            PreampMaxDb = lifts ? seedPreamp : PreampRangeDb,
             BandGainMinDb = policy.BandGainMinDb,
             BandGainMaxDb = policy.BandGainMaxDb,
-            TotalGainMaxDb = boostsAllowed ? double.PositiveInfinity : 0,
+            TotalGainMaxDb = lifts ? double.PositiveInfinity : 0,
             SampleRateHz = ProcessorRate(source),
-            CutsOnlyMode = !boostsAllowed,
+            Boosts = mode,
             QMin = (double)EqWizardLimits.BandQ.Minimum,
             QMax = policy.MaxQ,
             AllowShelves = shelves
@@ -176,7 +177,7 @@ internal static class EqAutoTuneHeadless
 
         return new EqHeadlessTuneInputs(
             fitSource, target, options, source.Coherence, allPass,
-            windowMinHz, windowMaxHz, !boostsAllowed);
+            windowMinHz, windowMaxHz, mode);
     }
 
     /// <summary>Max Filters less kept all-pass bands; zero or less is a run the wizard refuses.</summary>

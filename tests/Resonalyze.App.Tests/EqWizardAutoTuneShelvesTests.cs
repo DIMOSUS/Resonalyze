@@ -63,9 +63,9 @@ public sealed class EqWizardAutoTuneShelvesTests : IDisposable
     [InlineData(1.25f)]
     [InlineData(1.5f)]
     [InlineData(2.0f)]
-    public void TheBoxSitsBesideCutsOnlyWithoutTouchingIt(float scale)
+    public void TheBoostsRowShelvesAndTheButtonStackWithoutTouching(float scale)
     {
-        // Both controls auto-size at designer coordinates, so the row is measured at real display scales.
+        // The label and the checkbox auto-size at designer coordinates, so the block is measured at real display scales.
         using var panel = new EqWizardPanel();
         if (scale != 1.0f)
         {
@@ -73,31 +73,41 @@ public sealed class EqWizardAutoTuneShelvesTests : IDisposable
         }
 
         var box = (Control)Field(panel, "panelAutoTune");
-        var cutsOnly = (Control)Field(panel, "checkBoxCutsOnly");
-        Control shelves = ShelvesBox(panel);
+        Control[] stacked =
+        [
+            (Control)Field(panel, "labelBoosts"),
+            (Control)Field(panel, "comboBoxBoosts"),
+            ShelvesBox(panel),
+            (Control)Field(panel, "buttonAutoTune")
+        ];
 
-        Assert.Same(box, cutsOnly.Parent);
-        Assert.Same(box, shelves.Parent);
-        Assert.False(
-            cutsOnly.Bounds.IntersectsWith(shelves.Bounds),
-            $"at {scale:0.00}x the two checkboxes overlap: {cutsOnly.Bounds} and " +
-            $"{shelves.Bounds}.");
-        Assert.True(
-            box.ClientRectangle.Contains(shelves.Bounds),
-            $"at {scale:0.00}x Shelves ({shelves.Bounds}) leaves the Auto Tune box " +
-            $"({box.ClientRectangle}).");
+        foreach (Control control in stacked)
+        {
+            Assert.Same(box, control.Parent);
+            Assert.True(
+                box.ClientRectangle.Contains(control.Bounds),
+                $"at {scale:0.00}x {control.Name} ({control.Bounds}) leaves the Auto Tune box " +
+                $"({box.ClientRectangle}).");
+        }
+
+        for (int a = 0; a < stacked.Length; a++)
+        {
+            for (int b = a + 1; b < stacked.Length; b++)
+            {
+                Assert.False(
+                    stacked[a].Bounds.IntersectsWith(stacked[b].Bounds),
+                    $"at {scale:0.00}x {stacked[a].Name} {stacked[a].Bounds} overlaps " +
+                    $"{stacked[b].Name} {stacked[b].Bounds}.");
+            }
+        }
 
         // Control.Scale does not regrow text, so only the designer slack is pinned at 1.0; DPI autoscaling preserves its proportion.
         if (scale == 1.0f)
         {
             Assert.True(
-                shelves.Left - cutsOnly.Right >= 8,
-                $"only {shelves.Left - cutsOnly.Right} px between the two checkboxes: " +
+                stacked[1].Left - stacked[0].Right >= 8,
+                $"only {stacked[1].Left - stacked[0].Right} px between Boosts and its box: " +
                 "too little to survive being scaled with the text.");
-            Assert.True(
-                box.ClientRectangle.Right - shelves.Right >= 8,
-                $"only {box.ClientRectangle.Right - shelves.Right} px between Shelves " +
-                "and the edge of the Auto Tune box.");
         }
     }
 

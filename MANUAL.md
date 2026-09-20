@@ -993,15 +993,17 @@ no file changes hands.
 3. **The way back.** **Return PEQ to Virtual DSP** writes the bank onto the channel;
    **Back without applying** leaves the channel alone and keeps your edits here.
 4. **What the fit may do.** **Max / Min Gain** should match your real DSP, **Max EQ
-   Filters** its number of bands, and **Cuts only** should stay ticked — it stops the
-   optimizer spending headroom on acoustic nulls. **Max Q** (6.0 by default) caps how
+   Filters** its number of bands, and **Boosts** should stay on **Refill cuts** — the
+   fit may boost only to put back what its own cuts dug, so it never spends headroom
+   on acoustic nulls and never lifts the curve. **Max Q** (6.0 by default) caps how
    narrow a filter may be, favouring broad trends that hold across the listening area
    over notching a peak that may belong to where the microphone stood. **Shelves** is
    worth ticking when the target is shelved or a whole end of the response runs hot or
    shy: one shelf replaces three or four bells and frees the slots for real resonances.
-   With **Cuts only** on it is safe to leave ticked — a shelf is kept only where it
-   lands closer to the target; with **Cuts only** off a boosting shelf can push the
-   total boost past **Max Gain**, so read **Headroom** before accepting. **From** and
+   With **Boosts** on **Refill cuts** or **Off** it is safe to leave ticked — a shelf
+   is kept only where it lands closer to the target; with boosts **Allowed** a boosting
+   shelf can push the total boost past **Max Gain**, so read **Headroom** before
+   accepting. **From** and
    **To** arrived from the crossover corners.
 5. **Auto Tune** — run it once these are set.
 6. **The scoreboard.** RMS and max error against the target, filters spent, and the
@@ -1036,8 +1038,9 @@ If the whole useful response sits several dB above the target, use **Preamp** ra
 than several bands cutting the same amount everywhere. The preamp is part of the bank:
 it returns to Virtual DSP with the filters and appears on the tuning sheet.
 
-Auto Tune is a starting point. Remove bands by drag-and-drop, adjust them, or add them
-with the **+** buttons: **PK**, the two shelves, and **AP1 / AP2**, the first- and
+Auto Tune is a starting point. Remove bands by drag-and-drop, adjust them — on their
+cards, or by dragging their numbered handles on the graph, where the wheel over the
+selected one sets its Q — or add them with the **+** buttons: **PK**, the two shelves, and **AP1 / AP2**, the first- and
 second-order all-pass bands [Section 9](#9-delay-and-phase-alignment) uses to bend
 phase without touching magnitude.
 
@@ -1059,7 +1062,7 @@ the added group delay is measured in milliseconds.
 
 So: prefer broad, moderate corrections; cut resonant peaks that are repeatable and
 belong to the driver or the installation; never fill cancellation nulls with boost
-(what **Cuts only** prevents); do not spend filters on every ripple; and watch narrow
+(what **Boosts** on **Refill cuts** or **Off** prevents); do not spend filters on every ripple; and watch narrow
 filters near a crossover, whose phase feeds straight into the integration. There is no
 rule of the form "five PEQs are safe and ten are too many" — a filter should exist
 because it solves a real problem.

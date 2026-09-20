@@ -65,7 +65,8 @@ namespace Resonalyze
             checkBoxBypass = new ReleaseClickCheckBox();
             checkBoxEqPhase = new ReleaseClickCheckBox();
             checkBoxEqCurve = new ReleaseClickCheckBox();
-            checkBoxCutsOnly = new ReleaseClickCheckBox();
+            comboBoxBoosts = new ThemedComboBox();
+            labelBoosts = new Label();
             checkBoxShelves = new ReleaseClickCheckBox();
             panelAutoTune = new RoundedPanel();
             buttonOverlaySettings = new ReleaseClickButton();
@@ -216,7 +217,7 @@ namespace Resonalyze
             buttonAutoTune.BackColor = UiPalette.ButtonBackground;
             buttonAutoTune.FlatStyle = FlatStyle.Popup;
             buttonAutoTune.ForeColor = UiPalette.TextPrimary;
-            buttonAutoTune.Location = new Point(6, 181);
+            buttonAutoTune.Location = new Point(6, 206);
             buttonAutoTune.Name = "buttonAutoTune";
             buttonAutoTune.Size = new Size(173, 24);
             buttonAutoTune.TabIndex = 46;
@@ -439,26 +440,34 @@ namespace Resonalyze
             checkBoxEqCurve.Text = "EQ curve";
             checkBoxEqCurve.UseVisualStyleBackColor = true;
             // 
-            // checkBoxCutsOnly
+            // comboBoxBoosts
             // 
-            checkBoxCutsOnly.AutoSize = true;
-            checkBoxCutsOnly.Checked = true;
-            checkBoxCutsOnly.CheckState = CheckState.Checked;
-            checkBoxCutsOnly.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            checkBoxCutsOnly.ForeColor = UiPalette.TextDefault;
-            checkBoxCutsOnly.Location = new Point(6, 157);
-            checkBoxCutsOnly.Name = "checkBoxCutsOnly";
-            checkBoxCutsOnly.Size = new Size(75, 19);
-            checkBoxCutsOnly.TabIndex = 48;
-            checkBoxCutsOnly.Text = "Cuts only";
-            checkBoxCutsOnly.UseVisualStyleBackColor = true;
+            comboBoxBoosts.BackColor = UiPalette.ControlSurface;
+            comboBoxBoosts.ForeColor = UiPalette.TextPrimary;
+            comboBoxBoosts.Location = new Point(93, 156);
+            comboBoxBoosts.MinimumSize = new Size(36, 19);
+            comboBoxBoosts.Name = "comboBoxBoosts";
+            comboBoxBoosts.Size = new Size(90, 19);
+            comboBoxBoosts.TabIndex = 48;
+            // 
+            // labelBoosts
+            // 
+            labelBoosts.AutoSize = true;
+            labelBoosts.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            labelBoosts.ForeColor = UiPalette.TextDefault;
+            labelBoosts.Location = new Point(6, 158);
+            labelBoosts.Margin = new Padding(3);
+            labelBoosts.Name = "labelBoosts";
+            labelBoosts.Size = new Size(43, 15);
+            labelBoosts.TabIndex = 70;
+            labelBoosts.Text = "Boosts";
             // 
             // checkBoxShelves
             // 
             checkBoxShelves.AutoSize = true;
             checkBoxShelves.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxShelves.ForeColor = UiPalette.TextDefault;
-            checkBoxShelves.Location = new Point(95, 157);
+            checkBoxShelves.Location = new Point(6, 182);
             checkBoxShelves.Name = "checkBoxShelves";
             checkBoxShelves.Size = new Size(66, 19);
             checkBoxShelves.TabIndex = 69;
@@ -480,12 +489,13 @@ namespace Resonalyze
             panelAutoTune.Controls.Add(numericToHz);
             panelAutoTune.Controls.Add(labelBandsLimit);
             panelAutoTune.Controls.Add(comboBoxBandsLimit);
-            panelAutoTune.Controls.Add(checkBoxCutsOnly);
+            panelAutoTune.Controls.Add(labelBoosts);
+            panelAutoTune.Controls.Add(comboBoxBoosts);
             panelAutoTune.Controls.Add(checkBoxShelves);
             panelAutoTune.Controls.Add(buttonAutoTune);
-            panelAutoTune.Location = new Point(6, 550);
+            panelAutoTune.Location = new Point(6, 525);
             panelAutoTune.Name = "panelAutoTune";
-            panelAutoTune.Size = new Size(186, 211);
+            panelAutoTune.Size = new Size(186, 236);
             panelAutoTune.TabIndex = 54;
             // 
             // buttonOverlaySettings
@@ -762,7 +772,8 @@ namespace Resonalyze
         private ReleaseClickCheckBox checkBoxBypass;
         private ReleaseClickCheckBox checkBoxEqPhase;
         private ReleaseClickCheckBox checkBoxEqCurve;
-        private ReleaseClickCheckBox checkBoxCutsOnly;
+        private ThemedComboBox comboBoxBoosts;
+        private Label labelBoosts;
         private ReleaseClickCheckBox checkBoxShelves;
         private RoundedPanel panelAutoTune;
         private ReleaseClickButton buttonOverlaySettings;

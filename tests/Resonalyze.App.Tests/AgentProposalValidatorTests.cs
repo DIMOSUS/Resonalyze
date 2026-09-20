@@ -441,7 +441,7 @@ public sealed class AgentProposalValidatorTests
         AgentProposal proposal = Proposal(
             new SetGainOperation("op-1", "A:right", "", -2.0, -3.0),
             new RunAutoDelayOperation("op-2", "", null, null, null, null, null),
-            new AutoTunePeqOperation("op-3", "B:left", "", null, null, null, null, null, null));
+            new AutoTunePeqOperation("op-3", "B:left", "", null, null, null, null, null, null, null));
 
         foreach (AgentSessionSnapshot session in new[]
         {
@@ -515,7 +515,7 @@ public sealed class AgentProposalValidatorTests
             new UseSpatialAverageOperation("op-1", "the averages are attached", "MicArray", true),
             new RunAutoCrossoverOperation("op-2", "the corners are guesses"),
             new RunAutoDelayOperation("op-3", "realign after the flip", 0.35, null, null, null, null),
-            new AutoTunePeqOperation("op-4", "B:left", "fit the door", -6, 100, 8000, true, false, "point"));
+            new AutoTunePeqOperation("op-4", "B:left", "fit the door", -6, 100, 8000, true, false, null, "point"));
 
         AgentProposalReview review = AgentProposalValidator.Review(
             proposal, Session(captures: ["MicArray"]));
@@ -609,13 +609,46 @@ public sealed class AgentProposalValidatorTests
         string channelId, double? targetLevelDb, double? minHz, double? maxHz, string? source, string words)
     {
         AgentProposal proposal = Proposal(new AutoTunePeqOperation(
-            "op-1", channelId, "", targetLevelDb, minHz, maxHz, null, null, source));
+            "op-1", channelId, "", targetLevelDb, minHz, maxHz, null, null, null, source));
 
         AgentOperationVerdict verdict = AgentProposalValidator.Review(proposal, Session()).Verdicts[0];
 
         Assert.Equal(AgentVerdictStatus.Rejected, verdict.Status);
         Assert.Contains(words, verdict.Message);
     }
+
+    [Theory]
+    [InlineData("sometimes", null, "Unknown auto-tune boosts 'sometimes'")]
+    [InlineData("off", true, "State boosts or cutsOnly, not both")]
+    public void Review_HoldsTheBoostModeToTheWizardsThree(string boosts, bool? cutsOnly, string words)
+    {
+        AgentProposal proposal = Proposal(new AutoTunePeqOperation(
+            "op-1", "B:left", "", null, null, null, null, cutsOnly, boosts, null));
+
+        AgentOperationVerdict verdict = AgentProposalValidator.Review(proposal, Session()).Verdicts[0];
+
+        Assert.Equal(AgentVerdictStatus.Rejected, verdict.Status);
+        Assert.Contains(words, verdict.Message);
+    }
+
+    [Theory]
+    [InlineData("off", null, EqAutoTuneBoosts.Off)]
+    [InlineData("refillOwnCuts", null, EqAutoTuneBoosts.RefillOwnCuts)]
+    [InlineData("allowed", null, EqAutoTuneBoosts.Allowed)]
+    [InlineData(null, true, EqAutoTuneBoosts.Off)]
+    [InlineData(null, false, EqAutoTuneBoosts.Allowed)]
+    public void AnAutoTuneRequest_NamesItsModeOrTheOlderCutsOnlyFlag(
+        string? boosts, bool? cutsOnly, EqAutoTuneBoosts expected)
+    {
+        var tune = new AutoTunePeqOperation("op-1", "B:left", "", null, null, null, null, cutsOnly, boosts, null);
+
+        Assert.Equal(expected, tune.BoostMode);
+        Assert.True(AgentProposalValidator.Review(Proposal(tune), Session()).Verdicts[0].Applicable);
+    }
+
+    [Fact]
+    public void AnAutoTuneRequestStatingNoMode_LeavesItToTheWizard() =>
+        Assert.Null(new AutoTunePeqOperation("op-1", "B:left", "", null, null, null, null, null, null, null).BoostMode);
 
     [Theory]
     [InlineData("MicArray", true, VirtualCrossoverSpatialAverageMode.Off, false, "MovingMic", "No channel in this session carries a MicArray capture")]
@@ -688,7 +721,7 @@ public sealed class AgentProposalValidatorTests
         AgentChannelSnapshot bLeft = session.Find("B:left")!;
         string hash = AgentPeqHash.Compute(bLeft.Settings.PeqPreampDb, bLeft.Settings.PeqBands);
         AgentProposal proposal = Proposal(
-            new AutoTunePeqOperation("op-1", "B:left", "", null, null, null, null, null, null),
+            new AutoTunePeqOperation("op-1", "B:left", "", null, null, null, null, null, null, null),
             new ReplacePeqBankOperation("op-2", "B:left", "", hash,
                 new AgentPeqBank(0, [new AgentPeqBand("Peaking", 820, 2.1, -2.4)])));
 
@@ -703,8 +736,8 @@ public sealed class AgentProposalValidatorTests
     public void Review_RefusesAnAutoTuneForTheSideNotOnScreen()
     {
         AgentProposal proposal = Proposal(
-            new AutoTunePeqOperation("op-1", "B:left", "", null, null, null, null, null, null),
-            new AutoTunePeqOperation("op-2", "A:right", "", null, null, null, null, null, null));
+            new AutoTunePeqOperation("op-1", "B:left", "", null, null, null, null, null, null, null),
+            new AutoTunePeqOperation("op-2", "A:right", "", null, null, null, null, null, null, null));
 
         AgentProposalReview left = AgentProposalValidator.Review(proposal, Session());
         Assert.True(left.Verdicts[0].Applicable);
@@ -737,10 +770,10 @@ public sealed class AgentProposalValidatorTests
     public void Review_HoldsTheAutoTuneWindowToTheWizardsFields_AsTheRunWillUseIt()
     {
         AgentProposal proposal = Proposal(
-            new AutoTunePeqOperation("op-1", "B:left", "", null, 3_000, null, null, null, null),
-            new AutoTunePeqOperation("op-2", "A:left", "", null, 5, null, null, null, null),
-            new AutoTunePeqOperation("op-3", "C:mono", "", null, null, 40_000, null, null, null),
-            new AutoTunePeqOperation("op-4", "B:right", "", null, 400, null, null, null, null));
+            new AutoTunePeqOperation("op-1", "B:left", "", null, 3_000, null, null, null, null, null),
+            new AutoTunePeqOperation("op-2", "A:left", "", null, 5, null, null, null, null, null),
+            new AutoTunePeqOperation("op-3", "C:mono", "", null, null, 40_000, null, null, null, null),
+            new AutoTunePeqOperation("op-4", "B:right", "", null, 400, null, null, null, null, null));
 
         AgentProposalReview review = AgentProposalValidator.Review(
             proposal, Session() with { ActiveSideRight = false });
@@ -755,7 +788,7 @@ public sealed class AgentProposalValidatorTests
         Assert.Contains("side not on screen", review.Verdicts[3].Message);
 
         AgentProposalReview inside = AgentProposalValidator.Review(
-            Proposal(new AutoTunePeqOperation("op-1", "B:left", "", null, 400, null, null, null, null)),
+            Proposal(new AutoTunePeqOperation("op-1", "B:left", "", null, 400, null, null, null, null, null)),
             Session());
         Assert.True(inside.Verdicts[0].Applicable);
     }
@@ -765,10 +798,10 @@ public sealed class AgentProposalValidatorTests
     {
         // The target level is one project datum: the first stated level stands.
         AgentProposal proposal = Proposal(
-            new AutoTunePeqOperation("op-1", "B:left", "", -6, null, null, null, null, null),
-            new AutoTunePeqOperation("op-2", "A:left", "", -8, null, null, null, null, null),
-            new AutoTunePeqOperation("op-3", "C:mono", "", -6, null, null, null, null, null),
-            new AutoTunePeqOperation("op-4", "A:left", "", null, null, null, null, null, null));
+            new AutoTunePeqOperation("op-1", "B:left", "", -6, null, null, null, null, null, null),
+            new AutoTunePeqOperation("op-2", "A:left", "", -8, null, null, null, null, null, null),
+            new AutoTunePeqOperation("op-3", "C:mono", "", -6, null, null, null, null, null, null),
+            new AutoTunePeqOperation("op-4", "A:left", "", null, null, null, null, null, null, null));
 
         AgentProposalReview review = AgentProposalValidator.Review(proposal, Session());
 
@@ -788,7 +821,7 @@ public sealed class AgentProposalValidatorTests
         AgentSessionSnapshot session = Session(adjustGains: projectAdjustsGains);
         var autoDelay = new RunAutoDelayOperation("op-1", "", null, null, null, null, null);
         var autoCrossover = new RunAutoCrossoverOperation("op-2", "");
-        var autoTune = new AutoTunePeqOperation("op-3", "B:left", "", null, null, null, null, null, null);
+        var autoTune = new AutoTunePeqOperation("op-3", "B:left", "", null, null, null, null, null, null, null);
         var gain = new SetGainOperation("op-4", "A:right", "", -2.0, -2.6);
         var delay = new SetDelayOperation("op-5", "A:right", "", 1.42, 1.37);
         var polarity = new SetPolarityOperation("op-6", "B:left", "", false, true);

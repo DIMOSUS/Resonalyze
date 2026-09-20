@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -143,7 +143,8 @@ public partial class VirtualCrossoverPanel
         control.SourceClicked += (_, _) => ShowSourceMenu(channel);
         control.SpatialAverageClicked += (_, _) => ShowSpatialAverageMenu(channel);
         control.PeqMenuClicked += (_, _) => ShowPeqMenu(channel);
-        control.FirClicked += (_, _) => ShowFirMenu(channel);
+        control.FirClicked += (_, _) => ShowFirMenu(channel);
+        control.AcousticGoalClicked += (_, _) => ShowAcousticGoalDialog(channel);
         control.CollapsedChanged += (_, _) => OnChannelCollapsedChanged(channel);
         control.MoveUpClicked += (_, _) => MoveChannel(channel, -1);
         control.MoveDownClicked += (_, _) => MoveChannel(channel, +1);
@@ -550,6 +551,7 @@ public partial class VirtualCrossoverPanel
         UpdateSourceButton(channel);
         UpdatePeqReadouts(channel);
         UpdateFirReadout(channel);
+        control.SetAcousticGoal(settings.AcousticHighPass, settings.AcousticLowPass);
     }
 
     // Also runs on redraw (catches a rate that follows replaced measurements); only a real change reaches the layout.

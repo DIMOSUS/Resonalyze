@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using Resonalyze.Dsp;
 using Resonalyze.Integration.AgentBridge;
@@ -86,10 +86,10 @@ internal static class AgentJunctionTune
 
     /// <summary>The winner's crossover on both sides of both blocks; a mono block takes it once.</summary>
     /// <param name="acoustic">
-    /// The acoustic crossover this tune was asked for, or null for a plain one. Stamped on the edges it wrote so the
-    /// EQ stage's target follows it instead of the electrical filter — see docs/specs/acoustic-crossover-target.md.
-    /// A plain tune CLEARS the stamp: a statement from an earlier run would otherwise go on steering an EQ that never
-    /// heard it.
+    /// The acoustic crossover this tune was asked for, or null for a plain one. Written onto the edges it wrote, so
+    /// the EQ stage's target follows it instead of the electrical filter — see
+    /// docs/specs/acoustic-crossover-target.md. A plain tune leaves whatever the card holds alone: the wish is the
+    /// user's, shown on the channel card, not a by-product of this run.
     /// </param>
     public static void Write(
         JunctionTuneResult result,
@@ -99,22 +99,23 @@ internal static class AgentJunctionTune
     {
         CrossoverEdge lowPass = result.Best.LowerLowPass!.Value;
         CrossoverEdge highPass = result.Best.UpperHighPass!.Value;
-        // Stamped against the electrical edge chosen for it, so moving that edge by hand retires the statement.
-        AcousticEdgeGoal? acousticLowPass = acoustic is { } asked
-            ? new AcousticEdgeGoal(
-                new CrossoverEdge(asked.Family, lowPass.FrequencyHz, asked.SlopeDbPerOctave), lowPass)
-            : null;
-        AcousticEdgeGoal? acousticHighPass = acoustic is { } askedAgain
-            ? new AcousticEdgeGoal(
-                new CrossoverEdge(askedAgain.Family, highPass.FrequencyHz, askedAgain.SlopeDbPerOctave), highPass)
-            : null;
+        // Only where the lattice actually reached the asked edge. Measured, on eight cabins: sending an unreachable
+        // wish on to the EQ stage is the one thing that made the finished junction worse, because the fit then
+        // chases a skirt it is not allowed to lift (docs/specs/acoustic-crossover-target.md#6a).
+        JunctionAcousticTarget? reached =
+            CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb)
+                ? acoustic
+                : null;
         foreach (bool rightSide in new[] { false, true })
         {
             if (!lower.Pair.Mono || !rightSide)
             {
                 VirtualCrossoverChannelSettings settings = lower.SideSettings(rightSide);
                 settings.LowPassEdge = lowPass;
-                settings.AcousticLowPassGoal = acousticLowPass;
+                if (reached != null)
+                {
+                    settings.AcousticLowPass = reached;
+                }
                 settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
                     ? CrossoverKind.BandPass
                     : CrossoverKind.LowPass;
@@ -123,7 +124,10 @@ internal static class AgentJunctionTune
             {
                 VirtualCrossoverChannelSettings settings = upper.SideSettings(rightSide);
                 settings.HighPassEdge = highPass;
-                settings.AcousticHighPassGoal = acousticHighPass;
+                if (reached != null)
+                {
+                    settings.AcousticHighPass = reached;
+                }
                 settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
                     ? CrossoverKind.BandPass
                     : CrossoverKind.HighPass;

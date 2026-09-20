@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
 
@@ -73,6 +73,9 @@ public partial class VirtualCrossoverChannelControl : UserControl
     public event EventHandler? PeqMenuClicked;
 
     public event EventHandler? FirClicked;
+
+    /// <summary>The acoustic crossover goal button in the crossover row: what driver x filter should look like here.</summary>
+    public event EventHandler? AcousticGoalClicked;
 
     /// <summary>Separate from <see cref="SettingsChanged"/>: the fold is persisted without recomputing curves.</summary>
     public event EventHandler? CollapsedChanged;
@@ -178,6 +181,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal Label PhaseLabel => labelPhase;
     internal Label PhaseInfoLabel => labelPhaseInfo;
     internal Button FirButton => buttonFir;
+    internal Button AcousticGoalButton => buttonAcousticGoal;
     internal Label FirLabel => labelFir;
     internal Label FirInfoLabel => labelFirInfo;
     internal Label PeqInfoLabel => labelPeqInfo;
@@ -254,6 +258,55 @@ public partial class VirtualCrossoverChannelControl : UserControl
             UpdatePhaseReadout();
             UpdateFirReadout();
         }
+    }
+
+    /// <summary>
+    /// The acoustic crossover asked for on this channel's edges, shown on the crossover row: what
+    /// <c>driver × filter</c> should look like, which is not what the filter boxes beside it say. Em dash for a
+    /// channel nobody has stated a wish for; the button opens the editor either way.
+    /// </summary>
+    internal void SetAcousticGoal(JunctionAcousticTarget? highPass, JunctionAcousticTarget? lowPass)
+    {
+        string? high = Describe(highPass);
+        string? low = Describe(lowPass);
+        buttonAcousticGoal.Text = (high, low) switch
+        {
+            (null, null) => "—",
+            (not null, null) => high!,
+            (null, not null) => low!,
+            _ => high == low ? high! : $"{high}/{low}"
+        };
+        buttonAcousticGoal.ForeColor = high == null && low == null
+            ? UiPalette.TextDisabled
+            : UiPalette.TextPrimary;
+        tooltipHost?.SetToolTip(buttonAcousticGoal, AcousticGoalTooltipText(highPass, lowPass));
+
+        static string? Describe(JunctionAcousticTarget? goal) => goal is { } asked
+            ? FamilyShort(asked.Family) + asked.SlopeDbPerOctave
+            : null;
+    }
+
+    private static string FamilyShort(CrossoverFilterFamily family) => family switch
+    {
+        CrossoverFilterFamily.LinkwitzRiley => "LR",
+        CrossoverFilterFamily.Butterworth => "BW",
+        CrossoverFilterFamily.Bessel => "BE",
+        _ => "CH"
+    };
+
+    private static string AcousticGoalTooltipText(
+        JunctionAcousticTarget? highPass, JunctionAcousticTarget? lowPass)
+    {
+        string stated = highPass == null && lowPass == null
+            ? "Nothing stated: the EQ target follows the electrical filter."
+            : "Stated" +
+              (highPass is { } high ? $", HP {FamilyShort(high.Family)}{high.SlopeDbPerOctave}" : string.Empty) +
+              (lowPass is { } low ? $", LP {FamilyShort(low.Family)}{low.SlopeDbPerOctave}" : string.Empty) +
+              ": Auto Tune aims at THIS instead of the filter.";
+        return "The ACOUSTIC crossover you want here — driver and filter together," + "\r\n" +
+            "which is steeper than the filter alone by the driver's own fall." + "\r\n" +
+            stated + "\r\n" +
+            "Click to read or edit it; the corner always follows the filter's.";
     }
 
     internal void SetFir(FirFilter? kernel, string? sourceName, FirCrossoverDesign? design = null)
@@ -731,6 +784,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         buttonMoveDown.Click += (_, _) => MoveDownClicked?.Invoke(this, EventArgs.Empty);
         buttonPeqMenu.Click += (_, _) => PeqMenuClicked?.Invoke(this, EventArgs.Empty);
         buttonFir.Click += (_, _) => FirClicked?.Invoke(this, EventArgs.Empty);
+        buttonAcousticGoal.Click += (_, _) => AcousticGoalClicked?.Invoke(this, EventArgs.Empty);
 
         numericGain.ValueChanged += (_, _) =>
         {

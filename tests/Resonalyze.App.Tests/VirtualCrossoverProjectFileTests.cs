@@ -399,6 +399,40 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void TheAcousticCrossoverGoal_RoundTripsThroughTheProjectFile_AndIsHeldToTheFamilysSlopes()
+    {
+        // It is shown and edited on the channel card, so it has to survive a save; hidden state the user could see
+        // but not keep would be worse than no state at all.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Pairs[1].Left.AcousticLowPass =
+                new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24);
+            saved.Pairs[1].Left.AcousticHighPass =
+                new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 18);
+            saved.Save(root);
+
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(saved.Pairs[1].Left.AcousticLowPass, loaded.Pairs[1].Left.AcousticLowPass);
+            Assert.Equal(saved.Pairs[1].Left.AcousticHighPass, loaded.Pairs[1].Left.AcousticHighPass);
+            // A channel nobody stated a wish for carries none, rather than a default nobody asked for.
+            Assert.Null(loaded.Pairs[0].Left.AcousticLowPass);
+
+            // Linkwitz-Riley has no 18 dB/oct: a hand-written file naming one would ask the fit to draw an edge
+            // nobody can build.
+            saved.Pairs[1].Left.AcousticLowPass =
+                new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 18);
+            Assert.Throws<InvalidDataException>(() => saved.Validate());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ToChain_AppliesAnAllPassBandEvenWithTheCrossoverOff()
     {
         // At its corner a 2nd-order all-pass is -180 deg with flat magnitude.

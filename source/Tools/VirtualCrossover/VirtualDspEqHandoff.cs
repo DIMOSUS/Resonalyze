@@ -342,19 +342,17 @@ internal static class VirtualDspEqHandoff
     /// picks an electrical edge so that driver × filter lands on the stated acoustic slope, and an EQ aiming at the
     /// electrical edge instead would flatten the driver back out where boosts are still allowed.
     /// </summary>
-    /// <remarks>Corners come from the electrical filter either way: a stated slope is drawn at the corner that won.</remarks>
+    /// <remarks>
+    /// A wish carries a family and a slope; its CORNER is always the electrical one, so moving the corner moves the
+    /// wish with it and there is no stale state to invalidate — which is what lets the wish live on the channel card
+    /// where it can be read and edited.
+    /// </remarks>
     internal static CrossoverSpec GoalCrossoverFor(VirtualCrossoverChannelSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         CrossoverSpec electrical = settings.EffectiveCrossover;
-        // A statement holds only while the edge it was made for is still the edge the channel runs: move the corner
-        // by hand and the acoustic goal is stale, not merely inconvenient.
-        CrossoverEdge? lowPass = settings.AcousticLowPassGoal is { } low && low.HoldsFor(electrical.LowPassEdge)
-            ? low.Asked
-            : null;
-        CrossoverEdge? highPass = settings.AcousticHighPassGoal is { } high && high.HoldsFor(electrical.HighPassEdge)
-            ? high.Asked
-            : null;
+        CrossoverEdge? lowPass = Asked(settings.AcousticLowPass, electrical.LowPassEdge);
+        CrossoverEdge? highPass = Asked(settings.AcousticHighPass, electrical.HighPassEdge);
         return lowPass == null && highPass == null
             ? electrical
             : new CrossoverSpec(
@@ -362,6 +360,11 @@ internal static class VirtualDspEqHandoff
                 lowPass ?? electrical.LowPassEdge,
                 highPass ?? electrical.HighPassEdge);
     }
+
+    private static CrossoverEdge? Asked(JunctionAcousticTarget? goal, CrossoverEdge? electrical) =>
+        goal is { } asked && electrical is { } edge
+            ? new CrossoverEdge(asked.Family, edge.FrequencyHz, asked.SlopeDbPerOctave)
+            : null;
 
     /// <summary>Passband where the channel plays — the narrower of the IIR crossover's corners and a designed FIR's — or null when neither filters (callers keep their range).</summary>
     internal static (double MinHz, double MaxHz)? PassbandFor(

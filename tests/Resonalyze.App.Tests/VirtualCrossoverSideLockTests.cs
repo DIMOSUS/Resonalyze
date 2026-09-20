@@ -52,6 +52,28 @@ public sealed class VirtualCrossoverSideLockTests
     }
 
     [Fact]
+    public void TheAcousticGoalRidesWithTheCrossover_BecauseItDescribesThatOneFilter()
+    {
+        // Stating what the crossover should SOUND like is a statement about the crossover, and a crossover is one
+        // electrical filter for both sides. Left behind, the hidden side would equalise towards a different goal.
+        VirtualCrossoverChannelPairSettings pair = StereoPair();
+        var sideLock = new VirtualCrossoverSideLock();
+        sideLock.Engage([pair]);
+
+        pair.Left.AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24);
+        bool wrote = sideLock.Follow([pair], shownRight: false);
+
+        Assert.True(wrote);
+        Assert.Equal(pair.Left.AcousticLowPass, pair.Right.AcousticLowPass);
+        Assert.Null(pair.Right.AcousticHighPass);
+
+        // And clearing it carries too, or the hidden side would keep aiming at a wish nobody holds any more.
+        pair.Left.AcousticLowPass = null;
+        Assert.True(sideLock.Follow([pair], shownRight: false));
+        Assert.Null(pair.Right.AcousticLowPass);
+    }
+
+    [Fact]
     public void APolarityFlipOnTheShownSide_CarriesOnlyThePolarity()
     {
         VirtualCrossoverChannelPairSettings pair = StereoPair();

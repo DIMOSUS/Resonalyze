@@ -113,19 +113,6 @@ public sealed class VirtualCrossoverTargetSettings
     }
 }
 
-/// <summary>
-/// An acoustic crossover a junction tune was asked for, remembered against the electrical edge it chose for it.
-/// Moving that edge by any other hand — the wizard, a plain junction tune, the boxes on screen — leaves the two
-/// disagreeing, and the statement is then stale and ignored. Self-invalidating on purpose: chasing every place an
-/// edge can be written would leave a hidden goal alive behind the one that got missed.
-/// </summary>
-public readonly record struct AcousticEdgeGoal(CrossoverEdge Asked, CrossoverEdge Electrical)
-{
-    /// <summary>Whether the statement still describes the edge the channel actually runs.</summary>
-    public bool HoldsFor(CrossoverEdge? electrical) =>
-        electrical is { } edge && edge.Equals(Electrical);
-}
-
 /// <summary>One channel side. The source is re-resolved on load (see <see cref="VirtualCrossoverSourceLocator"/>).</summary>
 public sealed class VirtualCrossoverChannelSettings
 {
@@ -214,16 +201,20 @@ public sealed class VirtualCrossoverChannelSettings
     public int? FirRunSampleRateHz { get; set; }
 
     /// <summary>
-    /// The ACOUSTIC crossover a junction tune was asked for on this edge — stamped by the tune, not stored, and
-    /// cleared by a plain tune. The EQ stage's target follows it instead of the electrical filter while it holds, so
-    /// the crossover stage and the fit aim at one thing; see docs/specs/acoustic-crossover-target.md.
+    /// What <c>driver × filter</c> should look like on this edge: the ACOUSTIC crossover asked for, family and slope
+    /// only. The corner is always the electrical one, so moving the corner moves the wish with it and there is no
+    /// stale state to invalidate. The EQ stage's target follows it instead of the electrical filter where it is set,
+    /// so the crossover stage and the fit aim at one thing. Shown and edited on the channel card, written by a
+    /// junction tune that was asked for a slope. See docs/specs/acoustic-crossover-target.md.
     /// </summary>
-    [JsonIgnore]
-    public AcousticEdgeGoal? AcousticLowPassGoal { get; set; }
+    [JsonPropertyName("acousticLowPass")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JunctionAcousticTarget? AcousticLowPass { get; set; }
 
-    /// <inheritdoc cref="AcousticLowPassGoal"/>
-    [JsonIgnore]
-    public AcousticEdgeGoal? AcousticHighPassGoal { get; set; }
+    /// <inheritdoc cref="AcousticLowPass"/>
+    [JsonPropertyName("acousticHighPass")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JunctionAcousticTarget? AcousticHighPass { get; set; }
 
     [JsonIgnore]
     public bool HasFirCrossover => Fir != null && FirDesign != null;
@@ -322,6 +313,10 @@ public sealed class VirtualCrossoverChannelSettings
         }
         ValidateEdge(LowPassEdge);
         ValidateEdge(HighPassEdge);
+        // A stated acoustic slope is a wish, not a filter, so only its family and slope are checked - against the
+        // same lists an electrical edge is held to, or the fit would be asked to draw an edge nobody can build.
+        ValidateAcoustic(AcousticLowPass);
+        ValidateAcoustic(AcousticHighPass);
         // Range only, not the hardware's 5.625° grid: editors snap, and a hand-written angle still builds.
         if (!double.IsFinite(PhaseRotationDegrees) ||
             PhaseRotationDegrees is < 0 or > PhaseRotationControl.MaximumDegrees)
@@ -380,6 +375,23 @@ public sealed class VirtualCrossoverChannelSettings
     }
 
     // Both edges validated even when unused: they are shown greyed out and must round-trip.
+    private static void ValidateAcoustic(JunctionAcousticTarget? goal)
+    {
+        if (goal is not { } asked)
+        {
+            return;
+        }
+
+        if (!Enum.IsDefined(asked.Family))
+        {
+            throw new InvalidDataException("The acoustic crossover family is invalid.");
+        }
+        if (!CrossoverFilter.SupportedSlopes(asked.Family).Contains(asked.SlopeDbPerOctave))
+        {
+            throw new InvalidDataException("The acoustic crossover slope is invalid.");
+        }
+    }
+
     private static void ValidateEdge(CrossoverEdge edge)
     {
         if (!Enum.IsDefined(edge.Family))

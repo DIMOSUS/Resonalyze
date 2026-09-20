@@ -74,26 +74,27 @@ public sealed class VirtualDspEqHandoffTests
         channel.Settings.CrossoverKind = CrossoverKind.BandPass;
         channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 12);
         channel.Settings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24);
-        channel.Settings.AcousticLowPassGoal = new AcousticEdgeGoal(
-            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
-            channel.Settings.LowPassEdge);
+        channel.Settings.AcousticLowPass =
+            new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24);
 
         CrossoverSpec goal = Assert.IsType<CrossoverSpec>(
             Build(channel, withChain: true).Source.TargetCrossover);
 
         Assert.Equal(24, goal.LowPassEdge!.Value.SlopeDbPerOctave);
+        Assert.Equal(500, goal.LowPassEdge!.Value.FrequencyHz);
         // The edge nobody stated anything about is still the electrical one.
         Assert.Equal(channel.Settings.HighPassEdge, goal.HighPassEdge);
         Assert.Equal(CrossoverKind.BandPass, goal.Kind);
 
-        // Move that edge by hand and the statement is stale: it described a filter the channel no longer runs.
+        // A wish is a family and a slope: its corner is always the electrical one, so moving the corner moves the
+        // wish with it. Nothing goes stale, which is what lets it live on the channel card.
         channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 200, 12);
-        Assert.Equal(
-            channel.Settings.EffectiveCrossover,
-            Build(channel, withChain: true).Source.TargetCrossover);
+        CrossoverSpec moved = Build(channel, withChain: true).Source.TargetCrossover!;
+        Assert.Equal(200, moved.LowPassEdge!.Value.FrequencyHz);
+        Assert.Equal(24, moved.LowPassEdge!.Value.SlopeDbPerOctave);
 
-        // And a plain tune clears it outright.
-        channel.Settings.AcousticLowPassGoal = null;
+        // Cleared on the card, the target is the electrical filter again.
+        channel.Settings.AcousticLowPass = null;
         Assert.Equal(
             channel.Settings.EffectiveCrossover,
             Build(channel, withChain: true).Source.TargetCrossover);

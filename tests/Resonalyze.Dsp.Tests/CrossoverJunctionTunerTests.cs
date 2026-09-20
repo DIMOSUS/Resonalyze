@@ -351,6 +351,120 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    public void AStatedAcousticSlope_PicksTheElectricalFilterThatLandsIt()
+    {
+        // A perfect impulse is a flat driver, so acoustic IS electrical here: asked acoustic LR24, the answer is an
+        // LR24 pair. Every candidate on offer sums losslessly, so nothing but the stated slope can decide.
+        CrossoverEdge steep = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 48);
+        JunctionTuneOptions options = Options(
+            950, 1_050, slopes: [12, 24, 48], independentSlopes: false,
+            CrossoverFilterFamily.LinkwitzRiley) with
+        {
+            AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)
+        };
+
+        JunctionTuneResult result = CrossoverJunctionTuner.Tune(
+            [Side("left", LowPassChain(steep), HighPassChain(steep))], options);
+
+        Assert.True(result.Changed, "an LR48 pair does not answer a request for acoustic LR24.");
+        Assert.Equal(24, result.Best.LowerLowPass!.Value.SlopeDbPerOctave);
+        Assert.Equal(24, result.Best.UpperHighPass!.Value.SlopeDbPerOctave);
+
+        // The report compares like with like: both slopes are fitted over the same region.
+        JunctionAcousticFit fit = result.Best.Sides[0].Acoustic!;
+        Assert.NotNull(fit.TargetSlopeDbPerOctave);
+        Assert.Equal(fit.TargetSlopeDbPerOctave!.Value, fit.LowerSlopeDbPerOctave!.Value, 1.5);
+        Assert.Equal(fit.TargetSlopeDbPerOctave!.Value, fit.UpperSlopeDbPerOctave!.Value, 1.5);
+        Assert.InRange(fit.ChargeDb, 0, 0.5);
+        Assert.True(
+            result.Current.Sides[0].Acoustic!.ChargeDb > fit.ChargeDb + 1,
+            "the steeper pair should be charged for the skirt the EQ could not lift.");
+        // A flat driver falls nowhere by itself, so any slope was reachable.
+        JunctionDriverSlopes driver = Assert.Single(result.DriverSlopes);
+        Assert.True(CrossoverJunctionTuner.IsReachable(
+            driver.LowerDbPerOctave, fit.TargetSlopeDbPerOctave));
+    }
+
+    [Fact]
+    public void ADriverAlreadyFallingSteeperThanAsked_SaysSo_RatherThanPretending()
+    {
+        // The drivers' own roll-off is an LR24 at 1 kHz. A filter multiplies, so acoustic LR12 is not on offer at any
+        // corner - and the report has to say that instead of quietly picking the softest filter.
+        CrossoverEdge own = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        Complex[] rolledOff = VirtualCrossoverAnalysis.ApplyChain(
+            Impulse(), LowPassChain(own), SampleRate, SampleRate);
+        Complex[] rolledOn = VirtualCrossoverAnalysis.ApplyChain(
+            Impulse(), HighPassChain(own), SampleRate, SampleRate);
+        var bare = new DspChannelChain(Crossover: CrossoverSpec.Off);
+        var side = new JunctionTuneSide("left", rolledOff, bare, rolledOn, bare, SampleRate);
+        JunctionTuneOptions options = Options(
+            950, 1_050, slopes: [12], independentSlopes: false,
+            CrossoverFilterFamily.LinkwitzRiley) with
+        {
+            AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 12)
+        };
+
+        JunctionTuneResult result = CrossoverJunctionTuner.Tune([side], options);
+
+        JunctionDriverSlopes driver = Assert.Single(result.DriverSlopes);
+        double asked = result.Best.Sides[0].Acoustic!.TargetSlopeDbPerOctave!.Value;
+        Assert.True(
+            driver.LowerDbPerOctave > asked + CrossoverJunctionTuner.SlopeReachToleranceDbPerOctave,
+            $"the driver falls {driver.LowerDbPerOctave:0.0} dB/oct where {asked:0.0} was asked.");
+        Assert.False(CrossoverJunctionTuner.IsReachable(driver.LowerDbPerOctave, asked));
+        Assert.False(CrossoverJunctionTuner.IsReachable(driver.UpperDbPerOctave, asked));
+        // Steeper than asked is charged, and the sign says the EQ would have to LIFT the skirt, which it refuses.
+        Assert.True(result.Best.Sides[0].Acoustic!.ResidualDb < 0);
+        // An unfitted figure is not a refusal.
+        Assert.True(CrossoverJunctionTuner.IsReachable(null, asked));
+        Assert.True(CrossoverJunctionTuner.IsReachable(driver.LowerDbPerOctave, null));
+    }
+
+    [Fact]
+    public void AnAcousticSlopeTheSumCannotAfford_IsNotBought()
+    {
+        // Asked: acoustic Butterworth 12. On a flat driver that is a BW12 pair exactly - which sums with a bump, and
+        // a bump costs far more than the corridor allows. The stated slope chooses INSIDE what the sum calls
+        // equivalent, so the answer stays Linkwitz-Riley and the report shows the deviation it could not spend.
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        JunctionTuneOptions options = Options(
+            950, 1_050, slopes: [12, 24], independentSlopes: false,
+            CrossoverFilterFamily.LinkwitzRiley, CrossoverFilterFamily.Butterworth) with
+        {
+            AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 12)
+        };
+
+        JunctionTuneResult result = CrossoverJunctionTuner.Tune(
+            [Side("left", LowPassChain(lr), HighPassChain(lr))], options);
+
+        Assert.Equal(CrossoverFilterFamily.LinkwitzRiley, result.Best.LowerLowPass!.Value.Family);
+        Assert.True(
+            result.Best.Sides[0].Acoustic!.ChargeDb > 0.5,
+            "the answer cannot draw the asked edge, and the report must say so rather than hide it.");
+        // And the corridor is what held it: the sum score of the winner is the best on offer.
+        Assert.True(result.Best.RankingScoreDb <= result.Current.RankingScoreDb + options.SumSlackDb);
+    }
+
+    [Fact]
+    public void WithNoAcousticTargetStated_NothingIsReportedAndTheScoreIsTheSumAlone()
+    {
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+
+        JunctionTuneResult result = CrossoverJunctionTuner.Tune(
+            [Side("left", LowPassChain(lr), HighPassChain(lr))], Options(700, 1_400));
+
+        JunctionTuneReading reading = result.Current.Sides[0];
+        Assert.Null(reading.Acoustic);
+        Assert.Empty(result.DriverSlopes);
+        Assert.Equal(
+            -reading.LossDb +
+                CrossoverJunctionTuner.DipPenaltyWeight * (reading.LossDb - reading.DipDb) +
+                CrossoverJunctionTuner.RippleWeight * reading.RippleDb,
+            reading.ScoreDb,
+            1e-9);
+    }
+
+    [Fact]
     public void Tune_RefusesAnEmptyFamilyList_AndAnInvertedWindow()
     {
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);

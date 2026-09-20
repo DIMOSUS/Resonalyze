@@ -3,16 +3,63 @@ using System.Numerics;
 namespace Resonalyze.Dsp;
 
 /// <summary>The pair's raw responses (one sample rate) and current chains; the tuner keeps everything except the two facing edges.</summary>
+/// <param name="LowerMagnitude">
+/// The channel's magnitude through its chain WITH THE FACING EDGE TAKEN OUT — the plant a candidate edge multiplies.
+/// A spatial average where the channel has one, since that is the curve the EQ stage will work on later; null leaves
+/// the tuner to read it off the gated impulse response, which is the same curve where there is no average.
+/// Read only when an acoustic slope is stated; the coherent sum always comes from the impulse responses.
+/// </param>
 public sealed record JunctionTuneSide(
     string Name,
     Complex[] LowerImpulseResponse,
     DspChannelChain LowerChain,
     Complex[] UpperImpulseResponse,
     DspChannelChain UpperChain,
-    int SampleRate);
+    int SampleRate,
+    IReadOnlyList<SignalPoint>? LowerMagnitude = null,
+    IReadOnlyList<SignalPoint>? UpperMagnitude = null);
+
+/// <summary>
+/// The acoustic crossover asked for at this junction: what <c>driver × filter</c> should look like, not what the
+/// filter is. A filter can only steepen a driver, so a fall of the driver's own that is already steeper than this
+/// cannot be reached — see <see cref="CrossoverJunctionTuner.IsReachable"/>.
+/// </summary>
+public sealed record JunctionAcousticTarget(CrossoverFilterFamily Family, int SlopeDbPerOctave);
+
+/// <summary>
+/// How one side's two acoustic shapes compare with the stated acoustic crossover over the handover region.
+/// <see cref="ChargeDb"/> is what the score pays (asymmetric: too steep costs four times too soft, since only a cut
+/// is free to the EQ stage); <see cref="ResidualDb"/> keeps the sign, so a reader can say which way the EQ must work.
+/// Slopes are fitted the same way for the target and for the achieved curves, so they are comparable with each other
+/// and not with the nameplate figure.
+/// </summary>
+public sealed record JunctionAcousticFit(
+    double ChargeDb,
+    double ResidualDb,
+    double? LowerSlopeDbPerOctave,
+    double? UpperSlopeDbPerOctave,
+    double? TargetSlopeDbPerOctave);
+
+/// <summary>One side's two plants: each channel's magnitude with the facing edge out of the chain, thinned to the
+/// corner lattice's own resolution. The level is arbitrary; only shapes are read off them.</summary>
+public sealed record JunctionPlant(
+    IReadOnlyList<SignalPoint> Lower,
+    IReadOnlyList<SignalPoint> Upper);
+
+/// <summary>The drivers' own fall through the handover region, with the facing crossover edge taken out of the chain
+/// and everything else left as it runs. This is the physics the stated slope has to live with.</summary>
+public sealed record JunctionDriverSlopes(
+    string Side,
+    double? LowerDbPerOctave,
+    double? UpperDbPerOctave);
 
 /// <summary><see cref="Slopes"/> null = every family slope at or above 12 dB/oct.</summary>
 /// <param name="KeepMarginDb">Per-side score margin a challenger needs to replace the user's current crossover.</param>
+/// <param name="AcousticTarget">Null = the tuner judges the sum alone, as it always has.</param>
+/// <param name="SumSlackDb">
+/// How much summation a stated acoustic slope may spend. The slope never enters the score: candidates within this
+/// much of the best summation are the ones it chooses between, so "the sum is the judge" is literally true.
+/// </param>
 public sealed record JunctionTuneOptions(
     IReadOnlyList<CrossoverFilterFamily> Families,
     IReadOnlyList<int>? Slopes,
@@ -20,16 +67,20 @@ public sealed record JunctionTuneOptions(
     double MaxCrossoverHz,
     bool IndependentSlopes,
     int ProcessorSampleRateHz,
-    double KeepMarginDb = CrossoverJunctionTuner.DefaultKeepMarginDb);
+    double KeepMarginDb = CrossoverJunctionTuner.DefaultKeepMarginDb,
+    JunctionAcousticTarget? AcousticTarget = null,
+    double SumSlackDb = CrossoverJunctionTuner.DefaultSumSlackDb);
 
 /// <summary>Coherent sum at the current delays and polarity over a band; lower score is better. Ripple includes the room's own.</summary>
 public sealed record JunctionTuneReading(
     string Side,
     double LossDb,
     double DipDb,
-    double RippleDb)
+    double RippleDb,
+    JunctionAcousticFit? Acoustic = null)
 {
-    /// <summary>Loss, plus the dip's excess at half weight (as in the wizard post-check), plus ripple.</summary>
+    /// <summary>Loss, plus the dip's excess at half weight (as in the wizard post-check), plus ripple. The stated
+    /// acoustic slope is NOT in here: it picks between candidates this score already calls equivalent.</summary>
     public double ScoreDb =>
         -LossDb +
         CrossoverJunctionTuner.DipPenaltyWeight * (LossDb - DipDb) +
@@ -51,6 +102,27 @@ public sealed record JunctionTuneCandidate(
 
     public double RankingScoreDb =>
         RankingSides.Count == 0 ? double.PositiveInfinity : RankingSides.Average(side => side.ScoreDb);
+
+    /// <summary>Average charge against the stated acoustic slope on the band candidates are ranked on, or null when
+    /// none was stated or no side could be read against it.</summary>
+    public double? AcousticCostDb
+    {
+        get
+        {
+            double total = 0;
+            int read = 0;
+            foreach (JunctionTuneReading side in RankingSides)
+            {
+                if (side.Acoustic is { } fit)
+                {
+                    total += fit.ChargeDb;
+                    read++;
+                }
+            }
+
+            return read > 0 ? total / read : null;
+        }
+    }
 }
 
 /// <summary>The junction after the delay production alignment would pick for the upper channel.</summary>
@@ -63,6 +135,7 @@ public sealed record JunctionTuneAlignment(
     double DipDb);
 
 /// <param name="Changed">Best beats Current by the keep margin on the shared band and reads no worse on its own band.</param>
+/// <param name="DriverSlopes">Read at the winner's corner, and empty unless an acoustic slope was stated.</param>
 public sealed record JunctionTuneResult(
     JunctionTuneCandidate Current,
     JunctionTuneCandidate Best,
@@ -72,7 +145,8 @@ public sealed record JunctionTuneResult(
     IReadOnlyList<JunctionTuneAlignment> BestAfterDelay,
     int CandidatesEvaluated,
     double RankingBandLowHz,
-    double RankingBandHighHz);
+    double RankingBandHighHz,
+    IReadOnlyList<JunctionDriverSlopes> DriverSlopes);
 
 public sealed record JunctionProbeChains(DspChannelChain Lower, DspChannelChain Upper);
 
@@ -126,6 +200,45 @@ public static class CrossoverJunctionTuner
     public const double DefaultKeepMarginDb = 0.5;
     public const double DipPenaltyWeight = 0.5;
     public const double RippleWeight = 1.0;
+
+    /// <summary>
+    /// How much summation a stated acoustic slope may spend: candidates within this much of the best summation are
+    /// the ones it chooses between. A corridor rather than a weight in the score, because a weight lets a handsome
+    /// slope buy a dip at some exchange rate nobody can name, while this figure is measurable on the battery and
+    /// says what it means. See docs/tech/crossover-auto-setup.md#acoustic-slope-target.
+    /// </summary>
+    public const double DefaultSumSlackDb = 0.2;
+
+    /// <summary>What the stated slope must gain before the user's own crossover is rewritten for its sake: a decibel
+    /// of average deviation across the skirt. Less than that is not a reason to move a filter somebody chose.</summary>
+    public const double AcousticKeepMarginDb = 1.0;
+
+    /// <summary>Softer than asked costs a quarter of steeper than asked: the EQ stage lands the rest with CUTS, which
+    /// it is free to make, while a skirt boost is what it refuses. Not free, or the search would buy the softest
+    /// filter on offer and spend the bank's slots.</summary>
+    public const double AcousticSofterChargeFactor = 0.25;
+
+    /// <summary>Slack before a driver's own fall counts as steeper than the stated slope. Both sides of that
+    /// comparison are straight-line fits of curved things, so a decibel or two per octave is not a disagreement.</summary>
+    public const double SlopeReachToleranceDbPerOctave = 2.0;
+
+    /// <summary>
+    /// Where the passband ends and the skirt begins, in decibels of fall: levels are matched above it and shapes are
+    /// charged below it. Six, the same figure the EQ stage calls a skirt (<c>EqTargetCrossover.NoBoostFallDb</c>), so
+    /// the two stages divide the handover at one frequency — and every Linkwitz-Riley order crosses exactly there, so
+    /// the region a level is read over does not depend on the order asked for.
+    /// </summary>
+    private const double AcousticReferenceFloorDb = 6.0;
+
+    /// <summary>Charged from the corner out to here. Deeper is a stopband: the measurement is noise there and the EQ
+    /// stage would not touch it either.</summary>
+    private const double AcousticChargeFloorDb = 20.0;
+
+    /// <summary>Octaves either side of the corner that hold the level reference and the charged region; the asked
+    /// edge is past the floor beyond them, so the target is never evaluated there.</summary>
+    private const double AcousticWindowOctaves = 2.0;
+
+    private const int AcousticMinimumBins = 3;
 
     public const int PracticalSlopeFloorDbPerOctave = 12;
 
@@ -231,6 +344,21 @@ public static class CrossoverJunctionTuner
         Work rankingWork = BuildRankingWork(
             sides, cropped, options, nyquistHz, rankingLowHz, rankingHighHz) ?? detailWork;
 
+        // The plant each candidate edge multiplies: the channel through its chain with the facing edge taken out,
+        // thinned to the corner lattice's own resolution. Read once here rather than per candidate, and taken from
+        // the caller's spatial average where there is one, since that is the curve the EQ stage will work on.
+        if (options.AcousticTarget != null)
+        {
+            var plants = new List<JunctionPlant>(sides.Count);
+            for (int i = 0; i < sides.Count; i++)
+            {
+                plants.Add(detailWork.PlantFor(i, rankingLowHz, rankingHighHz));
+            }
+
+            detailWork.Plants = plants;
+            rankingWork.Plants = plants;
+        }
+
         JunctionTuneCandidate? ranking = rankingWork.Evaluate(
             currentLowPass, currentHighPass, currentHz, replaceEdges: false, ownBand: false);
         JunctionTuneCandidate current = (ranking == null
@@ -265,6 +393,20 @@ public static class CrossoverJunctionTuner
                 "or the band holds no usable bins.");
         }
 
+        // A stated slope chooses INSIDE the corridor the summation leaves: everything within SumSlackDb of the best
+        // sum is equivalent as a junction, so the slope decides between those, and a candidate outside the corridor
+        // is never reached however well it draws the asked edge.
+        if (options.AcousticTarget != null)
+        {
+            double admissible = ranked[0].RankingScoreDb + options.SumSlackDb;
+            ranked = ranked
+                .Where(candidate => candidate.RankingScoreDb <= admissible)
+                .OrderBy(candidate => candidate.AcousticCostDb ?? double.PositiveInfinity)
+                .ThenBy(candidate => candidate.RankingScoreDb)
+                .Concat(ranked.Where(candidate => candidate.RankingScoreDb > admissible))
+                .ToList();
+        }
+
         List<JunctionTuneCandidate> reported = ranked
             .Take(1 + RunnersUpReported)
             .Select(candidate => detailWork.ReadOwnBand(candidate) ?? candidate)
@@ -272,13 +414,38 @@ public static class CrossoverJunctionTuner
 
         // A shared-band win the user's own read-outs would not show is a win on paper.
         JunctionTuneCandidate best = reported[0];
-        bool changed = best.RankingScoreDb < current.RankingScoreDb - options.KeepMarginDb &&
+        bool sumWins = best.RankingScoreDb < current.RankingScoreDb - options.KeepMarginDb &&
+            best.ScoreDb <= current.ScoreDb;
+        // Or the junction is as good as it was and the asked slope is materially better drawn: that is what the mode
+        // is for, and without this an equal-summation answer could never replace the crossover on screen.
+        bool slopeWins = options.AcousticTarget != null &&
+            best.AcousticCostDb is { } bestCost &&
+            current.AcousticCostDb is { } currentCost &&
+            bestCost < currentCost - AcousticKeepMarginDb &&
+            best.RankingScoreDb <= current.RankingScoreDb + options.SumSlackDb &&
+            best.ScoreDb <= current.ScoreDb + options.SumSlackDb;
+        bool changed = (sumWins || slopeWins) &&
             best.Sides.Count > 0 &&
-            best.ScoreDb <= current.ScoreDb &&
             !SameEdges(best, current);
 
         List<JunctionTuneAlignment> currentAfterDelay = detailWork.AfterDelay(current, replaceEdges: false);
         List<JunctionTuneAlignment> bestAfterDelay = detailWork.AfterDelay(best, replaceEdges: true);
+
+        // Read once, at the winner's corner: what the drivers do by themselves there is what says whether the stated
+        // slope was reachable at all, and it is a handful of reads rather than a term in the search.
+        var driverSlopes = new List<JunctionDriverSlopes>();
+        if (options.AcousticTarget is { } target)
+        {
+            double bestHz = best.LowerLowPass?.FrequencyHz ?? best.UpperHighPass?.FrequencyHz ?? currentHz;
+            for (int i = 0; i < sides.Count; i++)
+            {
+                if (detailWork.DriverSlopes(i, target, bestHz) is { } slopes)
+                {
+                    driverSlopes.Add(slopes);
+                }
+            }
+        }
+
         return new JunctionTuneResult(
             current,
             best,
@@ -288,7 +455,8 @@ public static class CrossoverJunctionTuner
             bestAfterDelay,
             ranked.Count,
             rankingLowHz,
-            rankingHighHz);
+            rankingHighHz,
+            driverSlopes);
     }
 
     /// <summary>A <see cref="Work"/> reading the same crops at a rate just above the ranking band, or null when the
@@ -598,6 +766,239 @@ public static class CrossoverJunctionTuner
         return result;
     }
 
+    /// <summary>Whether the stated acoustic slope is reachable on a driver that already falls this fast by itself:
+    /// a filter multiplies, so it can only make the fall steeper. Both figures are fits of curved things, hence the
+    /// tolerance; an unfitted figure (null) is not a refusal.</summary>
+    public static bool IsReachable(double? driverDbPerOctave, double? askedDbPerOctave) =>
+        driverDbPerOctave is not { } driver ||
+        askedDbPerOctave is not { } asked ||
+        Math.Abs(driver) <= Math.Abs(asked) + SlopeReachToleranceDbPerOctave;
+
+    /// <summary>The side's two shapes against the asked edges, averaged over whichever of them could be read.</summary>
+    private static JunctionAcousticFit? AcousticFit(
+        JunctionAcousticTarget target,
+        double cornerHz,
+        JunctionPlant plant,
+        CrossoverEdge? lowerEdge,
+        CrossoverEdge? upperEdge,
+        int rateHz)
+    {
+        AcousticChannelFit? lower = ChannelFit(target, cornerHz, plant.Lower, lowerEdge, rateHz, upper: false);
+        AcousticChannelFit? upper = ChannelFit(target, cornerHz, plant.Upper, upperEdge, rateHz, upper: true);
+        if (lower == null && upper == null)
+        {
+            return null;
+        }
+
+        // A side whose passband is outside the read band carries no reference and is left out rather than guessed at.
+        double charge = lower == null ? upper!.ChargeDb
+            : upper == null ? lower.ChargeDb
+            : 0.5 * (lower.ChargeDb + upper.ChargeDb);
+        double residual = lower == null ? upper!.ResidualDb
+            : upper == null ? lower.ResidualDb
+            : 0.5 * (lower.ResidualDb + upper.ResidualDb);
+        return new JunctionAcousticFit(
+            charge,
+            residual,
+            lower?.SlopeDbPerOctave,
+            upper?.SlopeDbPerOctave,
+            lower?.TargetSlopeDbPerOctave ?? upper?.TargetSlopeDbPerOctave);
+    }
+
+    /// <summary>Slopes are FALL per octave away from the corner (positive), fitted the same way for the asked edge and
+    /// for the achieved curve, so the two compare with each other rather than with a nameplate figure.</summary>
+    private sealed record AcousticChannelFit(
+        double ChargeDb,
+        double ResidualDb,
+        double? SlopeDbPerOctave,
+        double? TargetSlopeDbPerOctave);
+
+    private static AcousticChannelFit? ChannelFit(
+        JunctionAcousticTarget target,
+        double cornerHz,
+        IReadOnlyList<SignalPoint> plant,
+        CrossoverEdge? candidate,
+        int rateHz,
+        bool upper)
+    {
+        if (!(cornerHz > 0) || plant.Count == 0)
+        {
+            return null;
+        }
+
+        var edge = new CrossoverEdge(target.Family, cornerHz, target.SlopeDbPerOctave);
+        CrossoverSpec asked = upper
+            ? new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: edge)
+            : new CrossoverSpec(CrossoverKind.LowPass, edge);
+        CrossoverSpec? applied = candidate is { } value
+            ? upper
+                ? new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: value)
+                : new CrossoverSpec(CrossoverKind.LowPass, value)
+            : null;
+
+        // The level is free, so it is measured over the passband side and taken out before anything is charged.
+        // No reference, no verdict: a side whose passband was not read is left alone rather than guessed at.
+        double referenceWeight = 0;
+        double referenceSum = 0;
+        int referenceBins = 0;
+        foreach (SignalPoint point in plant)
+        {
+            if (!InAcousticWindow(point.X, cornerHz))
+            {
+                continue;
+            }
+
+            double askedDb = EdgeDb(asked, point.X, rateHz);
+            if (askedDb < -AcousticReferenceFloorDb)
+            {
+                continue;
+            }
+
+            double weightHere = 1.0 / point.X;
+            referenceWeight += weightHere;
+            referenceSum += weightHere * (AchievedDb(point, applied, rateHz) - askedDb);
+            referenceBins++;
+        }
+
+        if (referenceBins < AcousticMinimumBins || !(referenceWeight > 0))
+        {
+            return null;
+        }
+
+        double reference = referenceSum / referenceWeight;
+        double charge = 0;
+        double residual = 0;
+        double weight = 0;
+        int charged = 0;
+        var achieved = new MagnitudeSlopeFit();
+        var wanted = new MagnitudeSlopeFit();
+        foreach (SignalPoint point in plant)
+        {
+            if (!InAcousticWindow(point.X, cornerHz))
+            {
+                continue;
+            }
+
+            double askedDb = EdgeDb(asked, point.X, rateHz);
+            if (askedDb >= -AcousticReferenceFloorDb || askedDb < -AcousticChargeFloorDb)
+            {
+                continue;
+            }
+
+            // Steeper than asked reads BELOW the asked edge and only a skirt boost would fix it, which the EQ stage
+            // refuses; softer reads above it and a cut lands it.
+            double levelDb = AchievedDb(point, applied, rateHz) - reference;
+            double deviation = levelDb - askedDb;
+            double weightHere = 1.0 / point.X;
+            charge += weightHere *
+                (deviation < 0 ? -deviation : AcousticSofterChargeFactor * deviation);
+            residual += weightHere * deviation;
+            weight += weightHere;
+            charged++;
+            achieved.Add(point.X, levelDb, weightHere);
+            wanted.Add(point.X, askedDb, weightHere);
+        }
+
+        if (charged < AcousticMinimumBins || !(weight > 0))
+        {
+            return null;
+        }
+
+        return new AcousticChannelFit(
+            charge / weight,
+            residual / weight,
+            achieved.DbPerOctave is { } slope ? Math.Abs(slope) : null,
+            wanted.DbPerOctave is { } askedSlope ? Math.Abs(askedSlope) : null);
+    }
+
+    private static bool InAcousticWindow(double frequencyHz, double cornerHz) =>
+        frequencyHz > 0 && Math.Abs(Math.Log2(frequencyHz / cornerHz)) <= AcousticWindowOctaves;
+
+    /// <summary>The plant with the candidate edge on it — the acoustic response the device would produce.</summary>
+    private static double AchievedDb(SignalPoint plant, CrossoverSpec? applied, int rateHz) =>
+        applied == null ? plant.Y : plant.Y + EdgeDb(applied, plant.X, rateHz);
+
+    private static double EdgeDb(CrossoverSpec spec, double frequencyHz, int rateHz) =>
+        20 * Math.Log10(Math.Max(
+            CrossoverFilter.Response(spec, frequencyHz, rateHz).Magnitude, 1e-12));
+
+    /// <summary>One point per sixth of the corner lattice's step (1/24 octave), levels averaged in dB: a slope is a
+    /// trend, and the room's bin-to-bin ripple is not part of it. Also what keeps the per-candidate arithmetic small.</summary>
+    private static List<SignalPoint> Thin(IReadOnlyList<SignalPoint> curve, double lowHz, double highHz)
+    {
+        var thinned = new List<SignalPoint>();
+        double bucketTop = 0;
+        double levels = 0;
+        double logs = 0;
+        int count = 0;
+
+        void Flush()
+        {
+            if (count > 0)
+            {
+                thinned.Add(new SignalPoint(Math.Exp(logs / count), levels / count));
+            }
+
+            levels = 0;
+            logs = 0;
+            count = 0;
+        }
+
+        foreach (SignalPoint point in curve.OrderBy(point => point.X))
+        {
+            if (!(point.X >= lowHz) || point.X > highHz || !double.IsFinite(point.Y))
+            {
+                continue;
+            }
+
+            if (count > 0 && point.X > bucketTop)
+            {
+                Flush();
+            }
+
+            if (count == 0)
+            {
+                bucketTop = point.X * MinProbeRatio;
+            }
+
+            levels += point.Y;
+            logs += Math.Log(point.X);
+            count++;
+        }
+
+        Flush();
+        return thinned;
+    }
+
+    /// <summary>Takes the low-pass out, leaving a high-pass where the channel had both; everything else unchanged.</summary>
+    public static DspChannelChain WithoutLowPass(DspChannelChain chain)
+    {
+        ArgumentNullException.ThrowIfNull(chain);
+        return chain.Crossover switch
+        {
+            { Kind: CrossoverKind.BandPass } spec => chain with
+            {
+                Crossover = new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: spec.HighPassEdge)
+            },
+            { Kind: CrossoverKind.LowPass } => chain with { Crossover = CrossoverSpec.Off },
+            _ => chain
+        };
+    }
+
+    public static DspChannelChain WithoutHighPass(DspChannelChain chain)
+    {
+        ArgumentNullException.ThrowIfNull(chain);
+        return chain.Crossover switch
+        {
+            { Kind: CrossoverKind.BandPass } spec => chain with
+            {
+                Crossover = new CrossoverSpec(CrossoverKind.LowPass, spec.LowPassEdge)
+            },
+            { Kind: CrossoverKind.HighPass } => chain with { Crossover = CrossoverSpec.Off },
+            _ => chain
+        };
+    }
+
     /// <summary>Replaces the low-pass, adding it where there was none; everything else unchanged.</summary>
     public static DspChannelChain WithLowPass(DspChannelChain chain, CrossoverEdge lowPass)
     {
@@ -729,6 +1130,9 @@ public static class CrossoverJunctionTuner
         private readonly System.Collections.Concurrent.ConcurrentDictionary<
             (int Side, bool Upper, DspChannelChain Chain), (Complex[] Response, ValidSampleRange Range)> processed = new();
 
+        /// <summary>Per side, set before ranking when an acoustic slope was stated; null leaves the acoustic term out.</summary>
+        public IReadOnlyList<JunctionPlant>? Plants { get; set; }
+
         public Work(
             IReadOnlyList<JunctionTuneSide> sides,
             (Complex[] Lower, Complex[] Upper)[] cropped,
@@ -849,13 +1253,80 @@ public static class CrossoverJunctionTuner
 
         private JunctionTuneReading? Read(
             int side, CrossoverEdge? lowPass, CrossoverEdge? highPass, bool replaceEdges,
-            double bandLowHz, double bandHighHz) =>
-            Read(
+            double bandLowHz, double bandHighHz)
+        {
+            JunctionTuneReading? reading = Read(
                 side,
                 ChainFor(side, upper: false, lowPass, replaceEdges),
                 ChainFor(side, upper: true, highPass, replaceEdges),
                 bandLowHz,
                 bandHighHz);
+            if (reading == null || options.AcousticTarget is not { } target || Plants is not { } plants)
+            {
+                return reading;
+            }
+
+            // The asked edges are drawn at the CANDIDATE's corner: LR24 at 500 Hz and LR24 at 700 Hz are both answers
+            // to "acoustic LR24", and where the handover sits is what the corner window and the sum decide. The
+            // candidate multiplies the plant arithmetically, exactly as the device will.
+            double cornerHz = lowPass?.FrequencyHz ?? highPass?.FrequencyHz ?? 0;
+            return reading with
+            {
+                Acoustic = AcousticFit(
+                    target, cornerHz, plants[side], lowPass, highPass, options.ProcessorSampleRateHz)
+            };
+        }
+
+        /// <summary>What the channels do through this region by themselves — the plant, with the facing edge out of
+        /// the chain and everything else (PEQ, FIR, the opposite edge) left as it runs. A filter only steepens, so
+        /// this is the physics a stated slope has to live with.</summary>
+        public JunctionDriverSlopes? DriverSlopes(int side, JunctionAcousticTarget target, double cornerHz)
+        {
+            if (Plants is not { } plants)
+            {
+                return null;
+            }
+
+            int rate = options.ProcessorSampleRateHz;
+            return new JunctionDriverSlopes(
+                sides[side].Name,
+                ChannelFit(target, cornerHz, plants[side].Lower, null, rate, upper: false)?.SlopeDbPerOctave,
+                ChannelFit(target, cornerHz, plants[side].Upper, null, rate, upper: true)?.SlopeDbPerOctave);
+        }
+
+        /// <summary>The side's two plants: the caller's own magnitude curves where it has them (a spatial average is
+        /// what the EQ stage will work on), else read off the gated impulse responses with the facing edges out.</summary>
+        public JunctionPlant PlantFor(int side, double lowHz, double highHz)
+        {
+            IReadOnlyList<SignalPoint>? lowerGiven = sides[side].LowerMagnitude;
+            IReadOnlyList<SignalPoint>? upperGiven = sides[side].UpperMagnitude;
+            if (lowerGiven != null && upperGiven != null)
+            {
+                return new JunctionPlant(
+                    Thin(lowerGiven, lowHz, highHz), Thin(upperGiven, lowHz, highHz));
+            }
+
+            (Complex[] lower, ValidSampleRange lowerRange) = Processed(
+                side, upper: false, WithoutLowPass(sides[side].LowerChain));
+            (Complex[] upper, ValidSampleRange upperRange) = Processed(
+                side, upper: true, WithoutHighPass(sides[side].UpperChain));
+            var read = new List<SignalPoint>();
+            var readUpper = new List<SignalPoint>();
+            if (VirtualCrossoverAnalysis.MeasureJunctionSpectrum(
+                    upper, [lower], sides[side].SampleRate, lowHz, highHz,
+                    upperRange, [lowerRange], out IReadOnlyList<JunctionLevelBin> bins) != null)
+            {
+                foreach (JunctionLevelBin bin in bins)
+                {
+                    read.Add(new SignalPoint(bin.FrequencyHz, bin.FixedDb));
+                    readUpper.Add(new SignalPoint(bin.FrequencyHz, bin.VariableDb));
+                }
+            }
+
+            return new JunctionPlant(
+                Thin(lowerGiven ?? read, lowHz, highHz),
+                Thin(upperGiven ?? readUpper, lowHz, highHz));
+        }
 
         private JunctionTuneReading? Read(
             int side, DspChannelChain lowerChain, DspChannelChain upperChain,

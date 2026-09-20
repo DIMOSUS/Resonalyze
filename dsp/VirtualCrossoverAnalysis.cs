@@ -17,6 +17,14 @@ public sealed record AlignmentCandidate(
 /// <summary>Junction sum at current timing: loss and dip (dB, ≤ 0) and ripple of the summed magnitude (dB RMS, ≥ 0).</summary>
 public sealed record JunctionSpectrumReading(double LossDb, double DipDb, double RippleDb);
 
+/// <summary>What one bin of a junction read is made of: each side's gated level and the 1/f weight the read gives it.
+/// Levels share the read's arbitrary reference, so only differences and slopes mean anything.</summary>
+public readonly record struct JunctionLevelBin(
+    double FrequencyHz,
+    double LogWeight,
+    double FixedDb,
+    double VariableDb);
+
 /// <summary>Envelope crossings at 10/25/50 % of the first credible arrival's peak, on its rising front. Callers comparing
 /// channels must gate on the spread of the DIFFERENCE and on <see cref="SnrDb"/>: noise alone gives stable-looking crossings.</summary>
 public readonly record struct BroadbandOnsetEstimate(
@@ -2400,7 +2408,40 @@ public static class VirtualCrossoverAnalysis
         double minFrequencyHz,
         double maxFrequencyHz,
         ValidSampleRange variableValidRange = default,
-        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null) =>
+        MeasureJunctionSpectrum(
+            variableImpulseResponse, fixedImpulseResponses, sampleRate, minFrequencyHz, maxFrequencyHz,
+            variableValidRange, fixedValidRanges, levels: null);
+
+    /// <summary>The same read, also handing back each bin's two levels: what the sum is made of, for a caller judging
+    /// the shape of either side (the tuner's acoustic slope). The list is built only when asked for.</summary>
+    public static JunctionSpectrumReading? MeasureJunctionSpectrum(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz,
+        ValidSampleRange variableValidRange,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges,
+        out IReadOnlyList<JunctionLevelBin> levelBins)
+    {
+        var collected = new List<JunctionLevelBin>();
+        JunctionSpectrumReading? reading = MeasureJunctionSpectrum(
+            variableImpulseResponse, fixedImpulseResponses, sampleRate, minFrequencyHz, maxFrequencyHz,
+            variableValidRange, fixedValidRanges, collected);
+        levelBins = collected;
+        return reading;
+    }
+
+    private static JunctionSpectrumReading? MeasureJunctionSpectrum(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz,
+        ValidSampleRange variableValidRange,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges,
+        List<JunctionLevelBin>? levels)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
@@ -2421,21 +2462,26 @@ public static class VirtualCrossoverAnalysis
 
         double weightSum = 0;
         double levelSum = 0;
-        var levels = new double[bins.Count];
+        var sumLevels = new double[bins.Count];
         for (int i = 0; i < bins.Count; i++)
         {
             AlignmentBin bin = bins[i];
             weightSum += bin.LogWeight;
             double magnitude = (bin.FixedSum + bin.Variable).Magnitude;
-            levels[i] = 20 * Math.Log10(Math.Max(magnitude, 1e-12));
-            levelSum += bin.LogWeight * levels[i];
+            sumLevels[i] = 20 * Math.Log10(Math.Max(magnitude, 1e-12));
+            levelSum += bin.LogWeight * sumLevels[i];
+            levels?.Add(new JunctionLevelBin(
+                bin.OmegaMs * 1_000.0 / Math.Tau,
+                bin.LogWeight,
+                20 * Math.Log10(Math.Max(bin.FixedSum.Magnitude, 1e-12)),
+                20 * Math.Log10(Math.Max(bin.Variable.Magnitude, 1e-12))));
         }
 
         double mean = levelSum / weightSum;
         double variance = 0;
         for (int i = 0; i < bins.Count; i++)
         {
-            double deviation = levels[i] - mean;
+            double deviation = sumLevels[i] - mean;
             variance += bins[i].LogWeight * deviation * deviation;
         }
 

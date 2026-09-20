@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Numerics;
 using System.Text;
 using Resonalyze.Dsp;
@@ -21,9 +21,23 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
 {
     public const string OutputVariable = "RESONALYZE_ACOUSTIC_TARGET_OUT";
 
-    /// <summary>What the arms ask for; the default a tuner would state.</summary>
-    private static readonly JunctionAcousticTarget Asked =
-        new(CrossoverFilterFamily.LinkwitzRiley, 24);
+    /// <summary>
+    /// The arms. LR24 is what a tuner would state; LR48 is the other direction, because a filter can only steepen
+    /// and a steep target is therefore always reachable. One arm states the slope to the TUNE only and leaves the EQ
+    /// aiming at the electrical filter, to tell which half of the mode is responsible for whatever the numbers say.
+    /// </summary>
+    private static readonly Arm[] Arms =
+    [
+        new("plain", null, TellTheEq: false, CrossoverJunctionTuner.DefaultSumSlackDb),
+        new("lr24", new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24),
+            TellTheEq: true, CrossoverJunctionTuner.DefaultSumSlackDb),
+        new("lr24-tune", new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24),
+            TellTheEq: false, CrossoverJunctionTuner.DefaultSumSlackDb),
+        new("lr24-slack1", new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24),
+            TellTheEq: true, 1.0),
+        new("lr48", new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 48),
+            TellTheEq: true, CrossoverJunctionTuner.DefaultSumSlackDb)
+    ];
 
     private static readonly PhaseAnalysisSettings GateTemplate = new(
         PhaseWindowMode.Fixed,
@@ -57,9 +71,9 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             report.AppendLine($"=== {name}  ({session})");
             try
             {
-                foreach (bool acoustic in new[] { false, true })
+                foreach (Arm arm in Arms)
                 {
-                    rows.AddRange(RunArm(session, acoustic, report));
+                    rows.AddRange(RunArm(session, arm, report));
                 }
             }
             catch (Exception exception)
@@ -79,8 +93,10 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
     }
 
     /// <summary>One whole pass over a cabin: tune every junction, then equalise every channel, then read the sums.</summary>
-    private static List<Row> RunArm(string sessionPath, bool acoustic, StringBuilder report)
+    private static List<Row> RunArm(string sessionPath, Arm arm, StringBuilder report)
     {
+        JunctionAcousticTarget? acousticTarget = arm.Asked;
+        bool acoustic = acousticTarget != null;
         // Re-loaded per arm: a tune and a fit both write into the settings, and the two arms must not see each other.
         VirtualCrossoverProjectFile project = VirtualCrossoverProjectFile.LoadFrom(sessionPath);
         List<VirtualCrossoverChannel> channels =
@@ -90,10 +106,9 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             .OrderBy(channel => VirtualCrossoverJunctions.BandCenterHz(
                 channel.SideSettings(channel.ActiveRight)))
             .ToList();
-        string arm = acoustic ? "acoustic" : "plain";
         if (usable.Count < 2)
         {
-            report.AppendLine($"  {arm}: fewer than two measured channels");
+            report.AppendLine($"  {arm.Name}: fewer than two measured channels");
             return [];
         }
 
@@ -110,7 +125,7 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
                 AgentProbeReader.JunctionTuneSides(lower, upper, rightSideOnly: null);
             if (refusal != null)
             {
-                report.AppendLine($"  {arm} {label}: skipped ({refusal})");
+                report.AppendLine($"  {arm.Name} {label}: skipped ({refusal})");
                 continue;
             }
 
@@ -118,7 +133,7 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
                 lower.SideSettings(lower.ActiveRight), upper.SideSettings(upper.ActiveRight));
             if (!(currentHz > 0))
             {
-                report.AppendLine($"  {arm} {label}: skipped (no corner set)");
+                report.AppendLine($"  {arm.Name} {label}: skipped (no corner set)");
                 continue;
             }
 
@@ -131,13 +146,14 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
                 maxHz,
                 IndependentSlopes: false,
                 processor.SampleRateHz,
-                AcousticTarget: acoustic ? Asked : null,
-                TargetCurveDb: acoustic ? targetCurve : null);
+                AcousticTarget: acousticTarget,
+                TargetCurveDb: acoustic ? targetCurve : null,
+                SumSlackDb: arm.SlackDb);
             JunctionTuneResult result = CrossoverJunctionTuner.Tune(sides, options);
             tuned.Add(new Tuned(label, lower, upper, result));
             if (result.Changed)
             {
-                AgentJunctionTune.Write(result, lower, upper, acoustic ? Asked : null);
+                AgentJunctionTune.Write(result, lower, upper, arm.TellTheEq ? acousticTarget : null);
             }
         }
 
@@ -185,7 +201,7 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
                 rows.Add(new Row(
                     Path.GetFileName(Path.GetDirectoryName(sessionPath)!),
                     label + ":" + sum.Side,
-                    acoustic,
+                    arm.Name,
                     sum.LossDb,
                     sum.DipDb,
                     sum.RippleDb,
@@ -196,7 +212,7 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
                     spentHere.Count == 0 ? null : spentHere.Max(item => item.WorstBoostDb),
                     spentHere.Count == 0 ? null : spentHere.Sum(item => item.Bands)));
                 report.AppendLine(
-                    $"  {arm,-8} {label + ":" + sum.Side,-16} loss {sum.LossDb,6:0.00} dip {sum.DipDb,6:0.00} " +
+                    $"  {arm.Name,-12} {label + ":" + sum.Side,-16} loss {sum.LossDb,6:0.00} dip {sum.DipDb,6:0.00} " +
                     $"ripple {sum.RippleDb,5:0.00}" +
                     (result.Best.AcousticCostDb is { } chosen
                         ? $"  acoustic {chosen,5:0.00} (closest {result.ClosestAcousticCostDb,5:0.00}, " +
@@ -208,7 +224,7 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             }
         }
 
-        report.AppendLine($"  {arm}: {tuned.Count} junctions, {fitted} fits, {refusedFits} refused");
+        report.AppendLine($"  {arm.Name}: {tuned.Count} junctions, {fitted} fits, {refusedFits} refused");
         return rows;
     }
 
@@ -343,54 +359,57 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             return;
         }
 
-        foreach (bool acoustic in new[] { false, true })
+        foreach (Arm arm in Arms)
         {
-            List<Row> arm = rows.Where(row => row.Acoustic == acoustic).ToList();
-            if (arm.Count == 0)
+            List<Row> read = rows.Where(row => row.Arm == arm.Name).ToList();
+            if (read.Count == 0)
             {
                 continue;
             }
 
             report.AppendLine(
-                $"  {(acoustic ? "acoustic" : "plain"),-8} rows {arm.Count,3}  " +
-                $"loss avg {arm.Average(row => row.LossDb),6:0.00}  worst dip {arm.Min(row => row.DipDb),6:0.00}  " +
-                $"ripple avg {arm.Average(row => row.RippleDb),5:0.00}  applied {arm.Count(row => row.Changed),3}" +
-                (acoustic
-                    ? $"  acoustic cost avg {Average(arm.Select(row => row.AcousticCostDb)),5:0.00}" +
-                      $" (closest {Average(arm.Select(row => row.ClosestCostDb)),5:0.00})"
+                $"  {arm.Name,-12} rows {read.Count,3}  " +
+                $"loss avg {read.Average(row => row.LossDb),6:0.00}  worst dip {read.Min(row => row.DipDb),6:0.00}  " +
+                $"ripple avg {read.Average(row => row.RippleDb),5:0.00}  applied {read.Count(row => row.Changed),3}" +
+                (arm.Asked != null
+                    ? $"  acoustic cost avg {Average(read.Select(row => row.AcousticCostDb)),5:0.00}" +
+                      $" (closest {Average(read.Select(row => row.ClosestCostDb)),5:0.00})"
                     : string.Empty));
         }
 
-        // Paired by junction and side: the same cabin's same junction under the two arms.
-        var paired = rows
-            .Where(row => !row.Acoustic)
-            .Join(
-                rows.Where(row => row.Acoustic),
-                row => (row.Session, row.Junction),
-                row => (row.Session, row.Junction),
-                (plain, acoustic) => (Plain: plain, Acoustic: acoustic))
-            .ToList();
-        report.AppendLine();
-        report.AppendLine($"  paired junctions: {paired.Count}");
-        if (paired.Count == 0)
+        // Paired by cabin, junction and side against the plain arm: the same junction under two policies.
+        List<Row> plainRows = rows.Where(row => row.Arm == "plain").ToList();
+        foreach (Arm arm in Arms.Where(item => item.Asked != null))
         {
-            return;
+            var paired = plainRows
+                .Join(
+                    rows.Where(row => row.Arm == arm.Name),
+                    row => (row.Session, row.Junction),
+                    row => (row.Session, row.Junction),
+                    (plain, acoustic) => (Plain: plain, Acoustic: acoustic))
+                .ToList();
+            report.AppendLine();
+            report.AppendLine($"  --- {arm.Name} against plain, paired junctions: {paired.Count}");
+            if (paired.Count == 0)
+            {
+                continue;
+            }
+
+            report.AppendLine(
+                $"  loss  {paired.Average(pair => pair.Plain.LossDb),6:0.00} -> " +
+                $"{paired.Average(pair => pair.Acoustic.LossDb),6:0.00}  " +
+                $"better in {paired.Count(pair => pair.Acoustic.LossDb > pair.Plain.LossDb + 0.01),3}/{paired.Count}");
+            report.AppendLine(
+                $"  dip   {paired.Average(pair => pair.Plain.DipDb),6:0.00} -> " +
+                $"{paired.Average(pair => pair.Acoustic.DipDb),6:0.00}  " +
+                $"better in {paired.Count(pair => pair.Acoustic.DipDb > pair.Plain.DipDb + 0.01),3}/{paired.Count}");
+            report.AppendLine(
+                $"  boost {Average(paired.Select(pair => pair.Plain.WorstBoostDb)),6:0.00} -> " +
+                $"{Average(paired.Select(pair => pair.Acoustic.WorstBoostDb)),6:0.00}   " +
+                $"bands {Average(paired.Select(pair => (double?)pair.Plain.Bands)),5:0.0} -> " +
+                $"{Average(paired.Select(pair => (double?)pair.Acoustic.Bands)),5:0.0}");
         }
 
-        report.AppendLine(
-            $"  loss  plain {paired.Average(pair => pair.Plain.LossDb),6:0.00} -> " +
-            $"acoustic {paired.Average(pair => pair.Acoustic.LossDb),6:0.00}  " +
-            $"better in {paired.Count(pair => pair.Acoustic.LossDb > pair.Plain.LossDb + 0.01),3}/{paired.Count}");
-        report.AppendLine(
-            $"  dip   plain {paired.Average(pair => pair.Plain.DipDb),6:0.00} -> " +
-            $"acoustic {paired.Average(pair => pair.Acoustic.DipDb),6:0.00}  " +
-            $"better in {paired.Count(pair => pair.Acoustic.DipDb > pair.Plain.DipDb + 0.01),3}/{paired.Count}");
-        report.AppendLine(
-            $"  worst boost  plain {Average(paired.Select(pair => pair.Plain.WorstBoostDb)),5:0.00} -> " +
-            $"acoustic {Average(paired.Select(pair => pair.Acoustic.WorstBoostDb)),5:0.00}");
-        report.AppendLine(
-            $"  bands        plain {Average(paired.Select(pair => (double?)pair.Plain.Bands)),6:0.0} -> " +
-            $"acoustic {Average(paired.Select(pair => (double?)pair.Acoustic.Bands)),6:0.0}");
         report.AppendLine();
         report.AppendLine(
             "  Stop criterion: no gain in the final sum and no cheaper EQ means the mode ships as the button and " +
@@ -406,7 +425,7 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
     private sealed record Row(
         string Session,
         string Junction,
-        bool Acoustic,
+        string Arm,
         double LossDb,
         double DipDb,
         double RippleDb,
@@ -416,6 +435,13 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
         double? WorstSideCostDb,
         double? WorstBoostDb,
         int? Bands);
+
+    /// <summary>One policy to walk a cabin with: what is asked for, whether the EQ stage is told, and the corridor.</summary>
+    private sealed record Arm(
+        string Name,
+        JunctionAcousticTarget? Asked,
+        bool TellTheEq,
+        double SlackDb);
 
     private sealed record Tuned(
         string Label,

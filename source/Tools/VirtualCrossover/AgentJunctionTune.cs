@@ -85,16 +85,33 @@ internal static class AgentJunctionTune
     }
 
     /// <summary>The winner's crossover on both sides of both blocks; a mono block takes it once.</summary>
-    public static void Write(JunctionTuneResult result, VirtualCrossoverChannel lower, VirtualCrossoverChannel upper)
+    /// <param name="acoustic">
+    /// The acoustic crossover this tune was asked for, or null for a plain one. Stamped on the edges it wrote so the
+    /// EQ stage's target follows it instead of the electrical filter — see docs/specs/acoustic-crossover-target.md.
+    /// A plain tune CLEARS the stamp: a statement from an earlier run would otherwise go on steering an EQ that never
+    /// heard it.
+    /// </param>
+    public static void Write(
+        JunctionTuneResult result,
+        VirtualCrossoverChannel lower,
+        VirtualCrossoverChannel upper,
+        JunctionAcousticTarget? acoustic = null)
     {
         CrossoverEdge lowPass = result.Best.LowerLowPass!.Value;
         CrossoverEdge highPass = result.Best.UpperHighPass!.Value;
+        CrossoverEdge? acousticLowPass = acoustic is { } asked
+            ? new CrossoverEdge(asked.Family, lowPass.FrequencyHz, asked.SlopeDbPerOctave)
+            : null;
+        CrossoverEdge? acousticHighPass = acoustic is { } askedAgain
+            ? new CrossoverEdge(askedAgain.Family, highPass.FrequencyHz, askedAgain.SlopeDbPerOctave)
+            : null;
         foreach (bool rightSide in new[] { false, true })
         {
             if (!lower.Pair.Mono || !rightSide)
             {
                 VirtualCrossoverChannelSettings settings = lower.SideSettings(rightSide);
                 settings.LowPassEdge = lowPass;
+                settings.AcousticLowPassEdge = acousticLowPass;
                 settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
                     ? CrossoverKind.BandPass
                     : CrossoverKind.LowPass;
@@ -103,6 +120,7 @@ internal static class AgentJunctionTune
             {
                 VirtualCrossoverChannelSettings settings = upper.SideSettings(rightSide);
                 settings.HighPassEdge = highPass;
+                settings.AcousticHighPassEdge = acousticHighPass;
                 settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
                     ? CrossoverKind.BandPass
                     : CrossoverKind.HighPass;

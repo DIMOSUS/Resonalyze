@@ -200,6 +200,18 @@ public sealed class VirtualCrossoverChannelSettings
     [JsonIgnore]
     public int? FirRunSampleRateHz { get; set; }
 
+    /// <summary>
+    /// The ACOUSTIC crossover a junction tune was asked for on this edge — stamped by the tune, not stored, and
+    /// cleared by a plain tune. The EQ stage's target follows it instead of the electrical filter where it is set, so
+    /// the crossover stage and the fit aim at one thing; see docs/specs/acoustic-crossover-target.md.
+    /// </summary>
+    [JsonIgnore]
+    public CrossoverEdge? AcousticLowPassEdge { get; set; }
+
+    /// <inheritdoc cref="AcousticLowPassEdge"/>
+    [JsonIgnore]
+    public CrossoverEdge? AcousticHighPassEdge { get; set; }
+
     [JsonIgnore]
     public bool HasFirCrossover => Fir != null && FirDesign != null;
 

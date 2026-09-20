@@ -413,6 +413,9 @@ public sealed class CrossoverJunctionTunerTests
             $"the driver falls {driver.LowerDbPerOctave:0.0} dB/oct where {asked:0.0} was asked.");
         Assert.False(CrossoverJunctionTuner.IsReachable(driver.LowerDbPerOctave, asked));
         Assert.False(CrossoverJunctionTuner.IsReachable(driver.UpperDbPerOctave, asked));
+        // And the verdict itself comes off the lattice, not off the regression: no allowed filter comes near.
+        Assert.False(CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb));
+        Assert.True(result.ClosestAcousticCostDb > CrossoverJunctionTuner.AcousticReachedCostDb);
         // Steeper than asked is charged, and the sign says the EQ would have to LIFT the skirt, which it refuses.
         Assert.True(result.Best.Sides[0].Acoustic!.ResidualDb < 0);
         // An unfitted figure is not a refusal.
@@ -443,6 +446,47 @@ public sealed class CrossoverJunctionTunerTests
             "the answer cannot draw the asked edge, and the report must say so rather than hide it.");
         // And the corridor is what held it: the sum score of the winner is the best on offer.
         Assert.True(result.Best.RankingScoreDb <= result.Current.RankingScoreDb + options.SumSlackDb);
+
+        // The lattice says the target WAS reachable - a Butterworth pair draws it exactly - so the report can tell
+        // "your drivers cannot" from "the summation would not pay for it".
+        Assert.True(CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb));
+        Assert.True(
+            result.ClosestAcousticCostDb < result.Best.AcousticCostDb - 0.5,
+            $"closest {result.ClosestAcousticCostDb:0.00} dB against chosen {result.Best.AcousticCostDb:0.00} dB.");
+    }
+
+    [Fact]
+    public void TheAcousticReadIgnoresTheBankThatIsAboutToBeRefitted_WhileTheSumStillHearsIt()
+    {
+        // A bell right at the junction. The bank will be refitted the moment this tune lands, so choosing a filter
+        // against it would make the answer depend on the tune's history - the acoustic read takes the PEQ out. The
+        // summation read keeps it, because that one is the chain as it actually plays. The asymmetry is deliberate.
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        var bell = new EqualizationCurve([new PeqBand(1_000, 1.0, -6)], preampDb: 0);
+        JunctionTuneOptions options = Options(
+            950, 1_050, slopes: [24], independentSlopes: false,
+            CrossoverFilterFamily.LinkwitzRiley) with
+        {
+            AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)
+        };
+
+        JunctionTuneResult plain = CrossoverJunctionTuner.Tune(
+            [Side("left", LowPassChain(lr), HighPassChain(lr))], options);
+        JunctionTuneResult equalised = CrossoverJunctionTuner.Tune(
+            [Side("left", LowPassChain(lr, peq: bell), HighPassChain(lr))], options);
+
+        Assert.Equal(
+            plain.Current.Sides[0].Acoustic!.ChargeDb,
+            equalised.Current.Sides[0].Acoustic!.ChargeDb,
+            1e-9);
+        Assert.Equal(
+            plain.Current.Sides[0].Acoustic!.LowerSlopeDbPerOctave!.Value,
+            equalised.Current.Sides[0].Acoustic!.LowerSlopeDbPerOctave!.Value,
+            1e-9);
+        Assert.NotEqual(
+            plain.Current.Sides[0].RippleDb,
+            equalised.Current.Sides[0].RippleDb,
+            1e-3);
     }
 
     [Fact]

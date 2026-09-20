@@ -65,6 +65,34 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void AStatedAcousticCrossover_IsWhatTheTargetFollows_NotTheElectricalFilterUnderIt()
+    {
+        // A junction tune asked for acoustic LR24 and picked an electrical LR12 to get there on this driver. If the
+        // EQ then aimed at the LR12 it would flatten the driver back out wherever boosts are still allowed, undoing
+        // the acoustic slope the tune just found - so the goal the handoff carries is the ACOUSTIC one, per edge.
+        VirtualCrossoverChannel channel = BuildChannel();
+        channel.Settings.CrossoverKind = CrossoverKind.BandPass;
+        channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 12);
+        channel.Settings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24);
+        channel.Settings.AcousticLowPassEdge =
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24);
+
+        CrossoverSpec goal = Assert.IsType<CrossoverSpec>(
+            Build(channel, withChain: true).Source.TargetCrossover);
+
+        Assert.Equal(24, goal.LowPassEdge!.Value.SlopeDbPerOctave);
+        // The edge nobody stated anything about is still the electrical one.
+        Assert.Equal(channel.Settings.HighPassEdge, goal.HighPassEdge);
+        Assert.Equal(CrossoverKind.BandPass, goal.Kind);
+
+        // And a plain tune clears the statement, so an old one cannot go on steering the fit.
+        channel.Settings.AcousticLowPassEdge = null;
+        Assert.Equal(
+            channel.Settings.EffectiveCrossover,
+            Build(channel, withChain: true).Source.TargetCrossover);
+    }
+
+    [Fact]
     public void WithChain_AppliesTheChainWithoutItsPeq()
     {
         VirtualCrossoverChannel channel = BuildChannel();

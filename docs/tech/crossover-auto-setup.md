@@ -704,3 +704,47 @@ purpose (a mid low-passed at 3.6 kHz under a tweeter high-passed at 4.4 kHz). It
 uses the phase analysis's own window and is comparable only between entries of one probe, not with the
 panel's gated junction phase. `ProbeAlignment` reports what Auto delay would pick per junction plus the
 rival optima it weighed, always including the pick.
+
+## Acoustic slope target
+
+`JunctionTuneOptions.AcousticTarget` states what `driver × filter` should look like at a junction — a
+family and a slope, the language a tuner actually thinks in — and the search answers with the
+ELECTRICAL filter that comes nearest on these drivers. It is off by default; without it the tuner
+behaves exactly as above. Design and open questions: `docs/specs/acoustic-crossover-target.md`.
+
+- **The plant, not the measurement.** Shapes are judged on each channel's magnitude through its chain
+  with the facing edge taken out and **the PEQ taken out**, because the bank is refitted the moment a
+  tune lands — leaving it in would make the same car answer differently depending on its tune history.
+  A correction FIR stays (the EQ stage does not rewrite that one). A caller passes the curve it wants
+  judged through `JunctionTuneSide.LowerMagnitude` / `UpperMagnitude` — the channel's **spatial
+  average** where it has one, since that is the curve the EQ stage will work on — and the tuner reads
+  it off the gated impulse responses otherwise. The candidate edge is then applied to the plant
+  arithmetically, as the device applies it, so the search pays no transform for the acoustic term.
+- **The tonal target comes out first.** The goal for a channel is `target × acoustic crossover`, so
+  `JunctionTuneOptions.TargetCurveDb` is subtracted from the plant before any shape is read. Left in, a
+  house curve's own tilt through a low junction would be read as the driver's acoustic slope.
+- **Level free, shape charged.** The level is removed as the median difference between the achieved
+  curve and the asked edge over the passband side — a median, so one broad bump cannot shift the whole
+  comparison. The charge runs from the corner outwards to 24 dB of fall, within the ranking band and
+  two octaves of the corner: the decibels just past the corner are where filter orders differ most and
+  where the EQ stage's no-boost region starts, and past 24 dB the read is noise. Steeper than asked
+  costs full price (only a skirt boost would fix it, which the EQ stage refuses); softer costs a
+  quarter (a cut lands it). That asymmetry is only honest because the stated slope travels on to the
+  EQ stage: see `VirtualDspEqHandoff.GoalCrossoverFor`.
+- **The sum still decides.** The slope is not in `JunctionTuneReading.ScoreDb`. Candidates rank on the
+  coherent sum as always; everything within `SumSlackDb` (0.2 dB) of the best sum is a corridor the
+  sum calls equivalent, and the stated slope chooses inside it. The user's crossover is rewritten on a
+  sum win by `KeepMarginDb`, or on an equal sum with the asked edge drawn better by
+  `AcousticKeepMarginDb` (1 dB). A weight in the score would have let a handsome slope buy a dip at an
+  exchange rate nobody can name.
+- **Reachability is read off the lattice.** A filter only steepens, so a target softer than the
+  drivers' own fall is not on offer at all. The verdict is `ClosestAcousticCostDb`: the least any
+  candidate on the lattice missed the asked edge by, before the corridor removed any of them. Read
+  beside the chosen candidate's own cost it separates "these drivers cannot" from "the summation would
+  not pay for it". `JunctionDriverSlopes` (a `MagnitudeSlopeFit` of the plant, fitted the same way as
+  the asked edge over the same region, so the two compare with each other rather than with a nameplate
+  figure) is the explanation, not the verdict.
+- **What is claimed.** The magnitude is fitted to the asked edge. Each side keeps its own excess phase,
+  so "the magnitude follows an acoustic LR24" is true where "the acoustic crossover is LR24" would be
+  more than was shown — and the coherent sum term is there precisely because it sees what a magnitude
+  target cannot.

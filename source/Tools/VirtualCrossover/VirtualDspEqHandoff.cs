@@ -180,7 +180,7 @@ internal static class VirtualDspEqHandoff
             // IIR crossover is really on: with it off, EffectiveCrossover stands in for the FIR design, whose kernel
             // travels below and would then be counted twice.
             TargetCrossover = withChain && settings.CrossoverKind != CrossoverKind.Off
-                ? settings.EffectiveCrossover
+                ? GoalCrossoverFor(settings)
                 : null,
             // A designed crossover kernel describes its own slope; the design's corners do not (a windowed sinc's
             // slope is its window and length). FirDesign is what tells a crossover FIR from a correction one.
@@ -335,6 +335,28 @@ internal static class VirtualDspEqHandoff
     // Polarity is -1 at every frequency: neither shape nor level changes.
     private static DspChannelChain Comparable(DspChannelChain chain) =>
         chain with { InvertPolarity = false };
+
+    /// <summary>
+    /// The crossover the EQ target follows: per edge, the ACOUSTIC crossover a junction tune was asked for where one
+    /// was stated, else the electrical filter the channel runs. Without this the two stages pull apart — the tune
+    /// picks an electrical edge so that driver × filter lands on the stated acoustic slope, and an EQ aiming at the
+    /// electrical edge instead would flatten the driver back out where boosts are still allowed.
+    /// </summary>
+    /// <remarks>Corners come from the electrical filter either way: a stated slope is drawn at the corner that won.</remarks>
+    internal static CrossoverSpec GoalCrossoverFor(VirtualCrossoverChannelSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        CrossoverSpec electrical = settings.EffectiveCrossover;
+        if (settings.AcousticLowPassEdge == null && settings.AcousticHighPassEdge == null)
+        {
+            return electrical;
+        }
+
+        return new CrossoverSpec(
+            electrical.Kind,
+            settings.AcousticLowPassEdge ?? electrical.LowPassEdge,
+            settings.AcousticHighPassEdge ?? electrical.HighPassEdge);
+    }
 
     /// <summary>Passband where the channel plays — the narrower of the IIR crossover's corners and a designed FIR's — or null when neither filters (callers keep their range).</summary>
     internal static (double MinHz, double MaxHz)? PassbandFor(

@@ -1003,8 +1003,13 @@ no file changes hands.
    With **Boosts** on **Refill cuts** or **Off** it is safe to leave ticked — a shelf
    is kept only where it lands closer to the target; with boosts **Allowed** a boosting
    shelf can push the total boost past **Max Gain**, so read **Headroom** before
-   accepting. **From** and
-   **To** arrived from the crossover corners.
+   accepting. **Crossover in target** is ticked for a channel handed over with its
+   chain: the goal is then the target curve inside the passband and the channel's own
+   crossover slope outside it, so the fit brings the ACOUSTIC roll-off onto the filter
+   you chose — which is what the neighbour has to sum with. **From** and **To** arrive
+   from the crossover corners and, with the box ticked, reach out down each skirt;
+   they stay where you put them if you type them yourself. Untick the box to leave the
+   slopes alone and fit inside the passband only.
 5. **Auto Tune** — run it once these are set.
 6. **The scoreboard.** RMS and max error against the target, filters spent, and the
    headroom the bank costs — before the fit the raw disagreement, after it what is left.
@@ -1022,7 +1027,13 @@ the curve, and press again.
 
 Equalizing through the chain means the crossover is part of the curve: the response
 falls away toward **From** and **To** because the filter puts it there. That is the
-crossover working, not a defect.
+crossover working, not a defect — and with **Crossover in target** ticked it is part of
+the goal, so the fit matches the slope instead of reading it as error. What it does
+there is bring an over-generous slope DOWN onto the filter's; it never lifts a skirt,
+which would undo the crossover you chose and spend the driver's excursion where the
+neighbour is playing at full level. Measured across seven car tunes, following the
+slopes took the junctions' sum loss from 0.37 to 0.30 dB on average and their worst dip
+from 2.0 to 1.6 dB.
 
 Correct the driver's own irregularities inside the band instead. Broad, minimum-phase
 bumps and dips are worth attention, especially near a crossover: flattening them also

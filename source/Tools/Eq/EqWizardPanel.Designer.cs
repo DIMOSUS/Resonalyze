@@ -68,6 +68,7 @@ namespace Resonalyze
             comboBoxBoosts = new ThemedComboBox();
             labelBoosts = new Label();
             checkBoxShelves = new ReleaseClickCheckBox();
+            checkBoxCrossoverTarget = new ReleaseClickCheckBox();
             panelAutoTune = new RoundedPanel();
             buttonOverlaySettings = new ReleaseClickButton();
             comboBoxCalibration = new ThemedComboBox();
@@ -217,7 +218,7 @@ namespace Resonalyze
             buttonAutoTune.BackColor = UiPalette.ButtonBackground;
             buttonAutoTune.FlatStyle = FlatStyle.Popup;
             buttonAutoTune.ForeColor = UiPalette.TextPrimary;
-            buttonAutoTune.Location = new Point(6, 206);
+            buttonAutoTune.Location = new Point(6, 230);
             buttonAutoTune.Name = "buttonAutoTune";
             buttonAutoTune.Size = new Size(173, 24);
             buttonAutoTune.TabIndex = 46;
@@ -474,6 +475,18 @@ namespace Resonalyze
             checkBoxShelves.Text = "Shelves";
             checkBoxShelves.UseVisualStyleBackColor = true;
             // 
+            // checkBoxCrossoverTarget
+            // 
+            checkBoxCrossoverTarget.AutoSize = true;
+            checkBoxCrossoverTarget.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+            checkBoxCrossoverTarget.ForeColor = UiPalette.TextDefault;
+            checkBoxCrossoverTarget.Location = new Point(6, 206);
+            checkBoxCrossoverTarget.Name = "checkBoxCrossoverTarget";
+            checkBoxCrossoverTarget.Size = new Size(140, 19);
+            checkBoxCrossoverTarget.TabIndex = 71;
+            checkBoxCrossoverTarget.Text = "Crossover in target";
+            checkBoxCrossoverTarget.UseVisualStyleBackColor = true;
+            // 
             // panelAutoTune
             // 
             panelAutoTune.BackColor = UiPalette.PanelSurface;
@@ -492,10 +505,11 @@ namespace Resonalyze
             panelAutoTune.Controls.Add(labelBoosts);
             panelAutoTune.Controls.Add(comboBoxBoosts);
             panelAutoTune.Controls.Add(checkBoxShelves);
+            panelAutoTune.Controls.Add(checkBoxCrossoverTarget);
             panelAutoTune.Controls.Add(buttonAutoTune);
-            panelAutoTune.Location = new Point(6, 525);
+            panelAutoTune.Location = new Point(6, 501);
             panelAutoTune.Name = "panelAutoTune";
-            panelAutoTune.Size = new Size(186, 236);
+            panelAutoTune.Size = new Size(186, 260);
             panelAutoTune.TabIndex = 54;
             // 
             // buttonOverlaySettings
@@ -775,6 +789,7 @@ namespace Resonalyze
         private ThemedComboBox comboBoxBoosts;
         private Label labelBoosts;
         private ReleaseClickCheckBox checkBoxShelves;
+        private ReleaseClickCheckBox checkBoxCrossoverTarget;
         private RoundedPanel panelAutoTune;
         private ReleaseClickButton buttonOverlaySettings;
         private ThemedComboBox comboBoxCalibration;

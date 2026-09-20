@@ -134,6 +134,11 @@ internal sealed class EqWizardSession
 
     // ---- Auto Tune ----
 
+    // The two windows a handoff knows: its passband, and that widened down the skirts. Kept so the crossover checkbox
+    // may move the window while it still stands where it was put, and never over an edge the user typed.
+    private (decimal From, decimal To)? passbandWindow;
+    private (decimal From, decimal To)? slopeWindow;
+
     /// <summary>Lower edge of the Auto Tune window; also bounds the error metrics.</summary>
     public decimal WindowFromHz { get; private set; } = EqWizardLimits.WindowFrequency.Minimum;
 
@@ -151,6 +156,16 @@ internal sealed class EqWizardSession
     public EqAutoTuneBoosts Boosts { get; private set; } = EqAutoTuneBoosts.RefillOwnCuts;
 
     public bool AllowShelves { get; private set; }
+
+    /// <summary>
+    /// Whether the handed-over channel's crossover shapes the target, so the fit follows the filter's slope instead of
+    /// stopping at the passband. Only a source read through a chain with a crossover has one
+    /// (<see cref="TargetCrossover"/>).
+    /// </summary>
+    public bool CrossoverInTarget { get; private set; } = true;
+
+    /// <summary>The crossover that shapes the target, or null: no chain behind the source, or no crossover in it.</summary>
+    public CrossoverSpec? TargetCrossover => EqTargetCrossover.Of(Source);
 
     // ---- bank and view ----
 
@@ -441,6 +456,26 @@ internal sealed class EqWizardSession
         Announce();
     }
 
+    /// <summary>
+    /// Takes the channel's crossover into the target (or out of it). The window follows — widened down the skirts, or
+    /// back to the passband — but only while it still stands where the handoff or this switch last put it.
+    /// </summary>
+    public void SetCrossoverInTarget(bool include)
+    {
+        CrossoverInTarget = include;
+        if (include)
+        {
+            MoveWindow(from: passbandWindow, to: slopeWindow);
+        }
+        else
+        {
+            MoveWindow(from: slopeWindow, to: passbandWindow);
+        }
+
+        InvalidateSourceCurve();
+        Announce();
+    }
+
     public void SetShowEqCurve(bool show)
     {
         ShowEqCurve = show;
@@ -490,9 +525,28 @@ internal sealed class EqWizardSession
         Load(request.Source);
         Bank.Replace(request.BankSeed);
         Bypass = false;
+        passbandWindow = null;
+        slopeWindow = null;
         if (request is { AutoTuneMinHz: { } minHz, AutoTuneMaxHz: { } maxHz })
         {
             SetAutoTuneWindow(minHz, maxHz);
+            passbandWindow = (WindowFromHz, WindowToHz);
+            if (EqTargetCrossover.Of(request.Source) is { } crossover)
+            {
+                (double slopeMinHz, double slopeMaxHz) = EqTargetCrossover.SlopeWindow(
+                    crossover,
+                    minHz,
+                    maxHz,
+                    ProcessorSampleRateHz,
+                    request.Source.Measurement?.LowestMeasuredFrequencyHz,
+                    request.Source.Measurement?.HighestMeasuredFrequencyHz);
+                SetAutoTuneWindow(slopeMinHz, slopeMaxHz);
+                slopeWindow = (WindowFromHz, WindowToHz);
+                if (!CrossoverInTarget)
+                {
+                    SetAutoTuneWindow(minHz, maxHz);
+                }
+            }
         }
 
         // Same dB frame as the Virtual DSP plot, so its target level applies verbatim (the one case a load moves it).
@@ -572,6 +626,7 @@ internal sealed class EqWizardSession
         AutoTuneBoosts = Boosts,
         CutsOnly = Boosts != EqAutoTuneBoosts.Allowed,
         AllowShelves = AllowShelves,
+        CrossoverInTarget = CrossoverInTarget,
         AutoTuneMaxQ = (double)AutoTuneMaxQ,
         ShowEqCurve = ShowEqCurve
     };
@@ -624,6 +679,7 @@ internal sealed class EqWizardSession
             SetAutoTuneMaxQ(EqWizardLimits.AutoTuneMaxQ.Clamp(settings.AutoTuneMaxQ));
             Boosts = settings.ResolveAutoTuneBoosts();
             AllowShelves = settings.AllowShelves;
+            CrossoverInTarget = settings.CrossoverInTarget;
             ShowEqCurve = settings.ShowEqCurve;
             SetSourceSmoothing(settings.SourceSmoothingInverseOctaves);
             Bank.Load(
@@ -662,6 +718,21 @@ internal sealed class EqWizardSession
         {
             CalibrationChoice = options[0].Choice;
         }
+    }
+
+    // Only a window still standing exactly where it was put follows the switch; a typed edge is the user's.
+    private void MoveWindow((decimal From, decimal To)? from, (decimal From, decimal To)? to)
+    {
+        if (from is not { } standing ||
+            to is not { } wanted ||
+            WindowFromHz != standing.From ||
+            WindowToHz != standing.To)
+        {
+            return;
+        }
+
+        WindowFromHz = wanted.From;
+        WindowToHz = wanted.To;
     }
 
     private void InvalidateSourceCurve()

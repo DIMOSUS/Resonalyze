@@ -106,6 +106,25 @@ public sealed class EqAutoTunerFitTests
     }
 
     [Fact]
+    public void Tune_ADipInsideANoBoostBand_IsLeftAlone()
+    {
+        // A broad dip the mask trusts: boosts fill it, unless the band says the fall belongs to a filter.
+        Func<double, double> source = f => Bump(f, 4_000, 0.8, -6);
+        EqAutoTuner.Options options = Options(EqAutoTuneBoosts.Allowed);
+
+        EqualizationCurve free = EqAutoTuner.Tune(Grid(source), Flat, options);
+        EqualizationCurve guarded = EqAutoTuner.Tune(
+            Grid(source),
+            Flat,
+            options with { NoBoostBands = [new EqNoBoostBand(3_000, 20_000)] });
+
+        Assert.Contains(free.Bands, band => band.GainDb > 1 && band.FrequencyHz is > 3_000 and < 6_000);
+        Assert.DoesNotContain(
+            guarded.Bands,
+            band => band.GainDb > 0.6 && band.FrequencyHz is > 3_000 and < 6_000);
+    }
+
+    [Fact]
     public void Tune_FitsAQBetweenWhatALadderWouldOffer()
     {
         // Q 3.3 sits between the 2.8 and 4.0 steps a fixed ladder had to choose from.

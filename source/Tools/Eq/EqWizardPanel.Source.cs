@@ -362,6 +362,7 @@ public partial class EqWizardPanel
         PresentSampleRate();
         PresentQConvention();
         buttonPhaseGate.Enabled = session.PhaseContext != null;
+        PresentCrossoverTarget();
         plot.FitSourceAxis(session);
         PresentHandoff();
         if (session.Source is { } source)

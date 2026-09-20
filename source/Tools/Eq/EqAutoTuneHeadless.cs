@@ -20,7 +20,8 @@ internal sealed record EqAutoTunePolicy(
     double BandGainMaxDb,
     double MaxQ,
     EqAutoTuneBoosts Boosts,
-    bool AllowShelves)
+    bool AllowShelves,
+    bool CrossoverInTarget)
 {
     public static EqAutoTunePolicy Default { get; } = new(
         EqualizationCurve.MaxBandCount,
@@ -28,7 +29,8 @@ internal sealed record EqAutoTunePolicy(
         EqAutoTuneHeadless.BandGainMaxDb,
         EqAutoTuneHeadless.MaxQ,
         EqAutoTuneBoosts.RefillOwnCuts,
-        AllowShelves: false);
+        AllowShelves: false,
+        CrossoverInTarget: true);
 }
 
 /// <summary>
@@ -149,6 +151,31 @@ internal static class EqAutoTuneHeadless
             minHz ?? request.AutoTuneMinHz ?? WindowMinHz,
             maxHz ?? request.AutoTuneMaxHz ?? WindowMaxHz);
 
+        // The wizard's goal for a handed-over channel, so an import fits what the screen shows: target inside the
+        // passband, the crossover's slope outside it. See docs/tech/eq-auto-tuner.md#the-crossover-in-the-target.
+        IReadOnlyList<EqNoBoostBand> noBoost = Array.Empty<EqNoBoostBand>();
+        if (policy.CrossoverInTarget && EqTargetCrossover.Of(source) is { } crossover)
+        {
+            int shapeRate = ProcessorRate(source);
+            // A stated window is the caller's; only the handoff's own passband is widened down the skirts.
+            if (minHz == null && maxHz == null)
+            {
+                (windowMinHz, windowMaxHz) = EqTargetCrossover.SlopeWindow(
+                    crossover,
+                    windowMinHz,
+                    windowMaxHz,
+                    shapeRate,
+                    source.Measurement?.LowestMeasuredFrequencyHz,
+                    source.Measurement?.HighestMeasuredFrequencyHz);
+            }
+
+            target = target
+                .Select(point => new SignalPoint(
+                    point.X, point.Y + EqTargetCrossover.ShapeDb(crossover, point.X, shapeRate)))
+                .ToList();
+            noBoost = EqTargetCrossover.NoBoostBands(crossover, windowMinHz, windowMaxHz, shapeRate);
+        }
+
         // Max Filters budgets the BANK; kept bands come off it.
         int bandLimit = RoomUnderMaxFilters(request, policy);
         if (bandLimit <= 0)
@@ -172,7 +199,8 @@ internal static class EqAutoTuneHeadless
             Boosts = mode,
             QMin = (double)EqWizardLimits.BandQ.Minimum,
             QMax = policy.MaxQ,
-            AllowShelves = shelves
+            AllowShelves = shelves,
+            NoBoostBands = noBoost
         };
 
         return new EqHeadlessTuneInputs(

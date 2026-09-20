@@ -1877,6 +1877,40 @@ the source would be reached by cutting the whole window, handing that level to
 the amplifier gain and its noise. All three are a Target Level typed wrong.
 *Yes* tunes anyway.
 
+**Crossover in target** makes the channel's own crossover part of the goal. A channel
+handed over from [Virtual DSP](#virtual-dsp) with its chain is measured THROUGH that
+chain, so its curve already carries the crossover's skirts; with the box ticked the
+target carries them too — the target curve inside the passband, the filter's own slope
+outside it — and the fit brings the ACOUSTIC roll-off onto the slope you chose, which is
+what the neighbouring channel has to sum with. That is how current REW tuning guides
+work, and it is on by default for a chain handoff. Untick it to fit inside the passband
+only and leave the slopes alone; the box is greyed out for any source with no crossover
+behind it (a raw handoff, an imported curve, an overlay).
+
+Three things follow the box, all measured rather than chosen:
+
+- **From** and **To** reach out down each skirt, to where it has fallen 18 dB, bounded by
+  the measured band — far enough that the region that decides the summation is scored,
+  not so far that the fit chases a filter into the floor. They follow the box only while
+  they still stand where the handoff or the box last put them: an edge you typed is
+  yours, and neither ticking nor unticking moves it.
+- **Boosts are refused down the skirts**, from 6 dB of fall outwards — the corner itself
+  and everything below it. There the target's fall IS the filter, so lifting it would undo
+  the crossover and spend the driver's excursion where the neighbour plays at full level.
+  Cuts stay allowed, and that is the direction that does the work: a driver whose acoustic
+  slope is shallower than the filter's gets brought down onto it. Refilling its own cuts
+  (**Boosts** on Refill cuts) still works everywhere, since such a bank never rises above
+  0 dB in total.
+- **The read-outs** follow the same goal: the plot's target curve, the RMS and max error,
+  and the Target Level check all read the shaped target, so the number on screen is the
+  one the fit minimised.
+
+Measured on seven car tunes (every channel fitted with boosts Allowed, then the junctions
+read): following the slopes took the sum loss from 0.37 to 0.30 dB on average and the
+worst junction dip from 2.0 to 1.6 dB. Letting boosts work down the skirts instead was
+worth nothing in the sum (0.31 dB) while raising the largest boost in the bank from about
+4 to nearly 6 dB, which is why the refusal is not a setting.
+
 **Max Q** is the ceiling on how narrow those bands may be — **6.0** by default,
 against the 20 a strip accepts when you type one in by hand. It bounds Auto Tune
 alone; nothing it fitted earlier is touched, and you can still narrow any band
@@ -3822,7 +3856,7 @@ this: the clipboard is the only transport, and you are the one who pastes.
   shown returned in the import's summary and the alignment log; Auto-tune runs
   without the EQ Wizard, on the curve the wizard would have opened on for that
   channel and with the wizard's own Auto Tune settings as they stand (Max
-  Filters, Gain min/max, Max Q, Boosts, Shelves) for whatever the reply
+  Filters, Gain min/max, Max Q, Boosts, Shelves, Crossover in target) for whatever the reply
   leaves out, keeps the bank's all-pass bands, lands the fit the way the wizard's
   **Return** lands it, and skips itself — with the reason — where the wizard
   would have asked about the [target level](#eq-wizard). The junction tune has

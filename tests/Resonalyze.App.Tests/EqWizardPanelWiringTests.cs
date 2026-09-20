@@ -44,7 +44,8 @@ public sealed class EqWizardPanelWiringTests
         live.Set<ThemedNumericUpDown>("numericGainMax", box => box.Value = 3m);
 
         Assert.Equal(
-            new EqAutoTunePolicy(8, -9, 3, 2.5, EqAutoTuneBoosts.Allowed, true), live.Panel.CurrentAutoTunePolicy);
+            new EqAutoTunePolicy(8, -9, 3, 2.5, EqAutoTuneBoosts.Allowed, true, true),
+            live.Panel.CurrentAutoTunePolicy);
     });
 
     [Fact]
@@ -322,6 +323,56 @@ public sealed class EqWizardPanelWiringTests
     });
 
     [Fact]
+    public void AHandoffsCrossover_ShapesTheTarget_AndTheWindowFollowsTheBox() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Panel.BeginVirtualDspHandoff(Handoff(DspProcessorProfile.Custom(SampleRate, PeqQConvention.Rbj)));
+
+        // The fixture's channel is a band-pass at 80 Hz and 500 Hz.
+        Assert.True(live.Control<CheckBox>("checkBoxCrossoverTarget").Checked);
+        Assert.True(live.Control<CheckBox>("checkBoxCrossoverTarget").Enabled);
+        Assert.True(live.Session.WindowFromHz < 80, $"From is {live.Session.WindowFromHz}.");
+        Assert.True(live.Session.WindowToHz > 500, $"To is {live.Session.WindowToHz}.");
+        double passband = TargetAt(live, 200);
+        Assert.True(TargetAt(live, 40) < passband - 15, "the target should follow the low skirt down.");
+        Assert.True(TargetAt(live, 1_000) < passband - 15, "the target should follow the high skirt down.");
+
+        live.Set<CheckBox>("checkBoxCrossoverTarget", box => box.Checked = false);
+
+        Assert.Equal(80m, live.Session.WindowFromHz);
+        Assert.Equal(500m, live.Session.WindowToHz);
+        // Flat again, and a shade above what the shaped target read in the passband: two skirts 2.6 octaves apart
+        // leave the middle of the band half a dB down.
+        Assert.Equal(TargetAt(live, 200), TargetAt(live, 40), 0.01);
+        Assert.True(TargetAt(live, 200) > passband);
+        Assert.Equal(80m, live.Control<ThemedNumericUpDown>("numericFromHz").Value);
+    });
+
+    [Fact]
+    public void AWindowEdgeTypedByHand_SurvivesTheCrossoverBox() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Panel.BeginVirtualDspHandoff(Handoff(DspProcessorProfile.Custom(SampleRate, PeqQConvention.Rbj)));
+        live.Set<ThemedNumericUpDown>("numericFromHz", box => box.Value = 60m);
+        decimal toHz = live.Session.WindowToHz;
+
+        live.Set<CheckBox>("checkBoxCrossoverTarget", box => box.Checked = false);
+
+        Assert.Equal(60m, live.Session.WindowFromHz);
+        Assert.Equal(toHz, live.Session.WindowToHz);
+        Assert.False(live.Session.CrossoverInTarget);
+    });
+
+    [Fact]
+    public void WithoutAHandoff_TheCrossoverBoxHasNothingToFollow() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+
+        Assert.False(live.Control<CheckBox>("checkBoxCrossoverTarget").Enabled);
+        Assert.Null(live.Session.TargetCrossover);
+    });
+
+    [Fact]
     public void AnUndisturbedFit_LandsInTheBank() => StaTest.Run(() =>
     {
         using var live = FitReady();
@@ -367,6 +418,9 @@ public sealed class EqWizardPanelWiringTests
 
     private static List<SignalPoint> Signal(EqWizardCurve curve) =>
         curve.Points.Select(point => new SignalPoint(point.X, point.Y)).ToList();
+
+    private static double TargetAt(LivePanel live, double hz) =>
+        EqWizardRender.TargetCurve(live.Session, [hz]).Points[0].Y;
 
     private static VirtualDspEqHandoffRequest Handoff(DspProcessorProfile profile)
     {

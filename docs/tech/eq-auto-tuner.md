@@ -125,6 +125,35 @@ the gain — RMS 1.69 → 1.42 dB refilling, 1.04 → 0.95 dB with boosts. A gat
 windowed (see [Gated sources](#gated-sources)), a gap the fit does not model for old and new alike: there the new
 fit's narrower refills show as up to half a decibel more above the target (RMS above 0.05 → 0.12 dB).
 
+### The crossover in the target
+
+A channel handed over from Virtual DSP is measured THROUGH its chain, so its curve already carries the crossover's
+skirts. The wizard therefore used to fit inside the passband only: `VirtualDspEqHandoff.PassbandFor` sets From/To to
+the effective corners, and the slopes were left alone as the filter's doing.
+
+`EqTargetCrossover` is the other reading, the one current REW guides tune by: the goal for the channel is the target
+curve INSIDE the passband and the crossover's own slope outside it, so the fit can bring the ACOUSTIC roll-off onto
+the filter the tune defines — which is what the neighbour's slope has to sum with. `EqWizardSession.CrossoverInTarget`
+(the **Crossover in target** box, on by default for a chain handoff) adds `20·log10|crossover|` to the target
+everywhere it is sampled, so the plot, the fit, the statistics and the level check all read the same goal.
+
+- **The shape** comes from the handoff's own chain (`EqWizardCurveSource.PreviewChain`, which excludes the PEQ), so it
+  is the filter the user chose, at the processor's rate. It is clamped to 0 dB above and 40 dB below: a target diving
+  to minus infinity is no goal. A narrow passband's two skirts overlap, so the middle of the band sits a few tenths
+  below 0 — the measured curve through the same chain carries that droop too, so target and source still agree there.
+- **The window** widens to where each skirt has fallen `SlopeWindowFallDb` (18 dB), bounded by the measured band: far
+  enough to score the slope that matters for summation, not so far that the fit chases a filter into the floor. It
+  moves only while it still stands where the handoff or the box last put it — a typed edge is the user's and is left
+  alone, in either direction.
+- **Boosts are refused down the skirts** (`Options.NoBoostBands`, from `NoBoostFallDb` = 6 dB of fall outwards): there
+  the target's fall IS the filter, so a boost would fight the crossover, and with boosts Allowed an 18 dB deficit at
+  the window edge would otherwise pull bands to Max Gain. Cuts stay allowed, which is the direction that does the
+  work: a driver whose acoustic slope is shallower than the target gets cut onto it.
+
+The gain is one-sided by nature. Where the measured slope is steeper than the target's — the driver's own roll-off on
+top of the filter — a bank that may not lift leaves it alone, and only the statistics notice. Where the driver has
+more output than the filter's slope asks for, the fit now brings it down instead of stopping at the corner.
+
 ### The objective
 
 What the fit minimises is an integral over log frequency (dB²·octave): a per-point loss, soft constraints, and a

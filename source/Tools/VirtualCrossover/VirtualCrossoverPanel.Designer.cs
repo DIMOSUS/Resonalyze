@@ -548,7 +548,7 @@
             buttonTools.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonTools.FlatStyle = FlatStyle.Popup;
             buttonTools.ForeColor = UiPalette.TextPrimary;
-            buttonTools.Location = new Point(358, 612);
+            buttonTools.Location = new Point(358, 642);
             buttonTools.Name = "buttonTools";
             buttonTools.Size = new Size(125, 24);
             buttonTools.TabIndex = 13;
@@ -560,7 +560,7 @@
             buttonExport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonExport.FlatStyle = FlatStyle.Popup;
             buttonExport.ForeColor = UiPalette.TextPrimary;
-            buttonExport.Location = new Point(358, 702);
+            buttonExport.Location = new Point(358, 732);
             buttonExport.Name = "buttonExport";
             buttonExport.Size = new Size(125, 24);
             buttonExport.TabIndex = 14;
@@ -593,7 +593,7 @@
             buttonSessionImport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonSessionImport.FlatStyle = FlatStyle.Popup;
             buttonSessionImport.ForeColor = UiPalette.TextPrimary;
-            buttonSessionImport.Location = new Point(358, 672);
+            buttonSessionImport.Location = new Point(358, 702);
             buttonSessionImport.Name = "buttonSessionImport";
             buttonSessionImport.Size = new Size(125, 24);
             buttonSessionImport.TabIndex = 17;
@@ -605,7 +605,7 @@
             buttonSessionExport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonSessionExport.FlatStyle = FlatStyle.Popup;
             buttonSessionExport.ForeColor = UiPalette.TextPrimary;
-            buttonSessionExport.Location = new Point(358, 642);
+            buttonSessionExport.Location = new Point(358, 672);
             buttonSessionExport.Name = "buttonSessionExport";
             buttonSessionExport.Size = new Size(125, 24);
             buttonSessionExport.TabIndex = 18;

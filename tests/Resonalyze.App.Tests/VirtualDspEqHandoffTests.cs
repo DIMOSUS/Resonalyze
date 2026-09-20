@@ -22,6 +22,49 @@ public sealed class VirtualDspEqHandoffTests
         SmoothingInverseOctaves: 0.0);
 
     [Fact]
+    public void TheHandoffCarriesTheChannelsEffectiveCrossover_ForTheTargetsShape()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+
+        VirtualDspEqHandoffRequest chained = Build(channel, withChain: true);
+        VirtualDspEqHandoffRequest raw = Build(channel, withChain: false);
+
+        Assert.Equal(channel.Settings.EffectiveCrossover, chained.Source.TargetCrossover);
+        // A raw handoff has no chain in its curve, so there is no slope to follow.
+        Assert.Null(raw.Source.TargetCrossover);
+
+        // A FIR crossover lives in the chain as a kernel, with the built chain's Crossover Off; the effective
+        // crossover carries its design corners, and that is what the target follows.
+        var design = new FirCrossoverDesign(
+            CrossoverKind.HighPass,
+            channel.Settings.HighPassEdge,
+            channel.Settings.HighPassEdge,
+            FirCrossoverMethod.IirMagnitude,
+            FirWindow.Kaiser,
+            8,
+            255,
+            SampleRate);
+        channel.Settings.CrossoverKind = CrossoverKind.Off;
+        channel.Settings.Fir = design.Build();
+        channel.Settings.FirDesign = design;
+
+        VirtualDspEqHandoffRequest fir = Build(channel, withChain: true);
+
+        Assert.Equal(CrossoverKind.Off, fir.Token.PreviewChain.Crossover?.Kind ?? CrossoverKind.Off);
+        // The kernel travels, and the IIR stage does not: with the IIR off, EffectiveCrossover stands in for the
+        // design, and sending it as well would shape the target with the same filter twice.
+        Assert.Null(fir.Source.TargetCrossover);
+        Assert.NotNull(fir.Source.TargetCrossoverFir);
+
+        // Both at once is legitimate though rare, and then both shape the target.
+        channel.Settings.CrossoverKind = CrossoverKind.LowPass;
+        VirtualDspEqHandoffRequest both = Build(channel, withChain: true);
+
+        Assert.Equal(CrossoverKind.LowPass, both.Source.TargetCrossover!.Kind);
+        Assert.NotNull(both.Source.TargetCrossoverFir);
+    }
+
+    [Fact]
     public void WithChain_AppliesTheChainWithoutItsPeq()
     {
         VirtualCrossoverChannel channel = BuildChannel();
@@ -331,6 +374,25 @@ public sealed class VirtualDspEqHandoffTests
         VirtualDspEqHandoffRequest raw = Build(channel, withChain: false);
         Assert.Null(raw.AutoTuneMinHz);
         Assert.Null(raw.AutoTuneMaxHz);
+
+        // A designed FIR high-pass beside an IIR low-pass: both stages filter, so both set an edge of the window.
+        // Read from the IIR alone the window would start at 20 Hz and send the fit down the FIR's whole stopband.
+        var design = new FirCrossoverDesign(
+            CrossoverKind.HighPass,
+            channel.Settings.HighPassEdge,
+            channel.Settings.HighPassEdge,
+            FirCrossoverMethod.IirMagnitude,
+            FirWindow.Kaiser,
+            8,
+            255,
+            SampleRate);
+        channel.Settings.CrossoverKind = CrossoverKind.LowPass;
+        channel.Settings.Fir = design.Build();
+        channel.Settings.FirDesign = design;
+
+        VirtualDspEqHandoffRequest both = Build(channel, withChain: true);
+        Assert.Equal(80, both.AutoTuneMinHz);
+        Assert.Equal(500, both.AutoTuneMaxHz);
     }
 
     [Fact]

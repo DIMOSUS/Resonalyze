@@ -337,7 +337,9 @@ Headless engine runs:
   side: gate pin, render anchor and hybrid datum are the shown side's), fits with `EqAutoTuneHeadless`
   (pinned against the wizard's render) and lands the way the wizard's Return lands, guards included,
   so a channel that moved during the fit is refused. The wizard's target-level question becomes a
-  refusal. All fits of one import use one target level decided up front
+  refusal, and so does a window with nothing measured in it
+  (`EqAutoTuneHeadless.NoMeasuredDataRefusal`) — asked here rather than thrown from `Prepare`, so the
+  channel is skipped with a line in the summary and the rows after it still run. All fits of one import use one target level decided up front
   (`AgentEngineRequests.TargetLevelDb`): the first stated level, else the project's; read per operation,
   a row stating none would fit at the old datum and the next row would move it. The level travels in the request token and reaches the panel
   only when the fit lands, so a skipped run leaves nothing behind.

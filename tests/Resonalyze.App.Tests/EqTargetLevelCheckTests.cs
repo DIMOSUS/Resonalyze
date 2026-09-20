@@ -5,6 +5,42 @@ namespace Resonalyze.App.Tests;
 public sealed class EqTargetLevelCheckTests
 {
     [Fact]
+    public void AWindowWithNoMeasuredPoint_RefusesTheFit_RatherThanReplacingTheBankWithNothing()
+    {
+        // The fit returns an empty bank for a window it can read nothing in, and Auto Tune applies what it returns.
+        var session = new EqWizardSession();
+        session.SetAutoTuneWindow(5_000, 8_000);
+        List<SignalPoint> source = EqualizationCurve.LogFrequencyGrid(20, 1_000, 200)
+            .Select(hz => new SignalPoint(hz, -40))
+            .ToList();
+        List<SignalPoint> target = source.Select(point => new SignalPoint(point.X, -41)).ToList();
+
+        string refusal = EqWizardFit.NoMeasuredDataRefusal(session, source, target)!;
+
+        Assert.Contains("5000 Hz - 8000 Hz", refusal);
+        Assert.Contains("20 Hz - 1000 Hz", refusal);
+        Assert.Contains("Crossover in target", refusal);
+
+        // An overlap of even one point is a fit worth making.
+        session.SetAutoTuneWindow(900, 8_000);
+        Assert.Null(EqWizardFit.NoMeasuredDataRefusal(session, source, target));
+    }
+
+    [Fact]
+    public void AGapInTheSourceInsideTheWindow_IsNotARefusal()
+    {
+        // Unmeasured octaves inside the window are normal; the fit reads around them.
+        var session = new EqWizardSession();
+        session.SetAutoTuneWindow(100, 1_000);
+        List<SignalPoint> source = EqualizationCurve.LogFrequencyGrid(20, 2_000, 200)
+            .Select(hz => new SignalPoint(hz, hz is > 200 and < 400 ? double.NaN : -40))
+            .ToList();
+        List<SignalPoint> target = source.Select(point => new SignalPoint(point.X, -41)).ToList();
+
+        Assert.Null(EqWizardFit.NoMeasuredDataRefusal(session, source, target));
+    }
+
+    [Fact]
     public void TheReadingIsTheMedianOverTheWindow_AndADipDoesNotMoveIt()
     {
         List<SignalPoint> source = Grid(frequency => -80);

@@ -575,6 +575,9 @@ internal sealed partial class MeasurementSettingsFile
 
         public bool AllowShelves { get; set; }
 
+        /// <summary>A handed-over channel's crossover shapes the target; true for a file written before it existed.</summary>
+        public bool CrossoverInTarget { get; set; } = true;
+
         // Well below the manual limit of 20: the fit reads one mic position, and a sharp notch fits that position alone.
         public double AutoTuneMaxQ { get; set; } = 6.0;
 

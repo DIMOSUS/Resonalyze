@@ -240,11 +240,18 @@ internal static class EqWizardRender
         ArgumentNullException.ThrowIfNull(frequencies);
         EqTargetCurve target = session.Target;
         double offset = (double)session.TargetOffsetDb;
+        // The channel's crossover is part of the goal when the wizard is told to follow it: flat inside the passband,
+        // the filter's own slope outside. See docs/tech/eq-auto-tuner.md#the-crossover-in-the-target.
+        EqTargetSlope? slope = session.CrossoverInTarget ? session.TargetCrossover : null;
+        int sampleRateHz = session.ProcessorSampleRateHz;
         var points = new DataPoint[frequencies.Count];
         for (int i = 0; i < frequencies.Count; i++)
         {
             double frequency = frequencies[i];
-            points[i] = new DataPoint(frequency, target.Spec.Evaluate(frequency) + offset);
+            double shape = slope is { } shaped
+                ? EqTargetCrossover.ShapeDb(shaped, frequency, sampleRateHz)
+                : 0;
+            points[i] = new DataPoint(frequency, target.Spec.Evaluate(frequency) + offset + shape);
         }
 
         return new EqWizardCurve(

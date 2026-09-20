@@ -32,6 +32,14 @@ public sealed record CrossoverSpec(
     CrossoverEdge? HighPassEdge = null)
 {
     public static CrossoverSpec Off { get; } = new(CrossoverKind.Off);
+
+    /// <summary>Lower corner, null when this kind does not high-pass (an edge the kind does not read is not a corner).</summary>
+    public double? HighPassHz =>
+        Kind is CrossoverKind.HighPass or CrossoverKind.BandPass ? HighPassEdge?.FrequencyHz : null;
+
+    /// <summary>Upper corner, null when this kind does not low-pass.</summary>
+    public double? LowPassHz =>
+        Kind is CrossoverKind.LowPass or CrossoverKind.BandPass ? LowPassEdge?.FrequencyHz : null;
 }
 
 public static class CrossoverFilter

@@ -20,6 +20,9 @@ public enum EqAutoTuneBoosts
 /// then frequency, gain and Q of the whole bank refined together. See docs/tech/eq-auto-tuner.md#fit.
 /// </summary>
 /// <remarks>All-pass bands are never fitted (they are flat). Callers replace the whole bank with the result.</remarks>
+/// <summary>A band where the fit may cut but never boost: a crossover skirt the target itself already describes.</summary>
+public readonly record struct EqNoBoostBand(double LowHz, double HighHz);
+
 public static class EqAutoTuner
 {
     public sealed record Options
@@ -63,6 +66,12 @@ public static class EqAutoTuner
         /// where a boost is aimed). +infinity disables the guard.
         /// </summary>
         public double ForbiddenRegionMaxBoostDb { get; init; } = 0.5;
+
+        /// <summary>
+        /// Bands the fit may cut but never boost, whatever the mask says: a crossover's skirts, where the target's own
+        /// fall is the filter's doing and a boost would fight it. Empty by default.
+        /// </summary>
+        public IReadOnlyList<EqNoBoostBand> NoBoostBands { get; init; } = Array.Empty<EqNoBoostBand>();
 
         /// <summary>Lets the fit place a low and a high shelf. See docs/tech/eq-auto-tuner.md#shelves.</summary>
         public bool AllowShelves { get; init; }
@@ -163,6 +172,17 @@ public static class EqAutoTuner
             double[]? coherenceGrid = ResampleCoherence(coherence, grid);
             boostAllowed = EqBoostabilityMask.ComputeBoostAllowed(
                 grid, sourceDb, valid, coherenceGrid, opt.BoostMask);
+        }
+
+        foreach (EqNoBoostBand band in opt.NoBoostBands)
+        {
+            for (int i = 0; i < n; i++)
+            {
+                if (grid[i] >= band.LowHz && grid[i] <= band.HighHz)
+                {
+                    boostAllowed[i] = false;
+                }
+            }
         }
 
         // Pre-computed so a band costs one biquad build; same arithmetic as DigitalEqualizationResponse.MagnitudeDbAt.

@@ -125,6 +125,63 @@ the gain — RMS 1.69 → 1.42 dB refilling, 1.04 → 0.95 dB with boosts. A gat
 windowed (see [Gated sources](#gated-sources)), a gap the fit does not model for old and new alike: there the new
 fit's narrower refills show as up to half a decibel more above the target (RMS above 0.05 → 0.12 dB).
 
+### The crossover in the target
+
+A channel handed over from Virtual DSP is measured THROUGH its chain, so its curve already carries the crossover's
+skirts. The wizard therefore used to fit inside the passband only: `VirtualDspEqHandoff.PassbandFor` sets From/To to
+the corners the channel is cut at — the narrower of the IIR crossover's and a designed FIR's, since a channel running
+both stages is filtered by both — and the slopes were left alone as the filter's doing.
+
+`EqTargetCrossover` is the other reading, the one current REW guides tune by: the goal for the channel is the target
+curve INSIDE the passband and the crossover's own slope outside it, so the fit can bring the ACOUSTIC roll-off onto
+the filter the tune defines — which is what the neighbour's slope has to sum with. `EqWizardSession.CrossoverInTarget`
+(the **Crossover in target** box, on by default for a chain handoff) adds `20·log10|crossover|` to the target
+everywhere it is sampled, so the plot, the fit, the statistics and the level check all read the same goal.
+
+- **The shape** (`EqTargetSlope`) is a designed FIR crossover's own KERNEL where there is one, and otherwise the
+  channel's `VirtualCrossoverChannelSettings.EffectiveCrossover` — the same corners the window comes from, so From/To
+  and the shaped target describe one filter. Both travel on the handoff (`EqWizardCurveSource.TargetCrossover` and
+  `TargetCrossoverFir`), because the built chain describes neither: a FIR crossover leaves `DspChannelChain.Crossover`
+  off and carries the filter as taps. The kernel is read rather than the design's corners because a `WindowedSinc`
+  design's slope is its window and length — its `Family` and `SlopeDbPerOctave` are carried but unused, so a brick
+  wall would be drawn as the LR24 the corners claim. `FirDesign != null` is what tells a crossover kernel from a
+  correction FIR, whose magnitude belongs in the source and not in the goal (folded into the target it would simply
+  be cancelled by the fit). A channel may legitimately run both stages, and then the shape is their product, as the
+  chain applies them — reading one and dropping the other left the other's skirt unshaped and unprotected. The shape
+  is clamped to 0 dB above and 40 dB below: a target diving to minus infinity is no goal. A narrow passband's two skirts overlap, so the middle of the band sits a few tenths below 0 — the measured
+  curve through the same chain carries that droop too, so target and source still agree there.
+- **The window** widens to where each skirt has fallen `SlopeWindowFallDb` (18 dB), bounded by the measured band: far
+  enough to score the slope that matters for summation, not so far that the fit chases a filter into the floor. It
+  moves only while it still stands where the handoff or the box last put it — a typed edge is the user's and is left
+  alone, in either direction. A crossover outside the band that was actually measured (a low-pass at 500 Hz on a
+  record that starts at 1 kHz) leaves nothing to widen into, and the clamps would cross: the passband is returned
+  instead — clipped to what the record does cover while that still leaves a window — since both callers need one they
+  can use: the fields quietly reorder an inverted window, a headless fit hands it to `EqAutoTuner`, which refuses it.
+  Where even the passband holds no measured point, the fit itself refuses (`EqWizardFit.NoMeasuredDataRefusal`, and
+  `EqAutoTuneHeadless.NoMeasuredDataRefusal` for the import path): the tuner answers an empty window with an empty
+  bank, and Auto Tune applies what it returns, so the refusal is what keeps a channel's existing bank from being
+  replaced by nothing. The headless refusal is a question the caller asks — one channel outside its measured band
+  skips with a line in the import's summary instead of stopping the channels after it — and `Fit` throws on it as the
+  backstop for a caller that does not ask.
+- **No boost is aimed down the skirts** (`Options.NoBoostBands`, from `NoBoostFallDb` = 6 dB of fall outwards): there
+  the target's fall IS the filter, so a boost would fight the crossover, and with boosts Allowed an 18 dB deficit at
+  the window edge would otherwise pull bands to Max Gain. What a boost aimed elsewhere spills in through its own skirt
+  is bounded by `ForbiddenRegionMaxBoostDb` (0.5 dB), exactly as in a bin the reliability mask closed — refusing every
+  last tenth would refuse legitimate boosts beside the corner for their skirts. Cuts stay allowed, which is the
+  direction that does the work: a driver whose acoustic slope is shallower than the target gets cut onto it. A window
+  that is skirt from edge to edge — a band-pass crossed past itself — is refused throughout rather than left
+  unprotected.
+
+The gain is one-sided by nature. Where the measured slope is steeper than the target's — the driver's own roll-off on
+top of the filter — a bank that may not lift leaves it alone, and only the statistics notice. Where the driver has
+more output than the filter's slope asks for, the fit now brings it down instead of stopping at the corner.
+
+**What this is not.** The goal here is the channel's CURRENT electrical crossover: the tune's filter becomes the
+acoustic target. The fuller idea is a DESIRED acoustic crossover stated independently — an acoustic LR24 at 2 kHz
+does not require an electrical LR24 — with the electrical filter, the PEQ and the driver's own roll-off chosen
+together to reach it. That is a larger feature touching Auto crossover, and this is the first step toward it: it
+stops the fit from ignoring the slopes, and it is measured to help the sum.
+
 ### The objective
 
 What the fit minimises is an integral over log frequency (dB²·octave): a per-point loss, soft constraints, and a

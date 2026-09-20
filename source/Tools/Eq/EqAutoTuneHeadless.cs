@@ -20,7 +20,8 @@ internal sealed record EqAutoTunePolicy(
     double BandGainMaxDb,
     double MaxQ,
     EqAutoTuneBoosts Boosts,
-    bool AllowShelves)
+    bool AllowShelves,
+    bool CrossoverInTarget)
 {
     public static EqAutoTunePolicy Default { get; } = new(
         EqualizationCurve.MaxBandCount,
@@ -28,7 +29,8 @@ internal sealed record EqAutoTunePolicy(
         EqAutoTuneHeadless.BandGainMaxDb,
         EqAutoTuneHeadless.MaxQ,
         EqAutoTuneBoosts.RefillOwnCuts,
-        AllowShelves: false);
+        AllowShelves: false,
+        CrossoverInTarget: true);
 }
 
 /// <summary>
@@ -149,6 +151,31 @@ internal static class EqAutoTuneHeadless
             minHz ?? request.AutoTuneMinHz ?? WindowMinHz,
             maxHz ?? request.AutoTuneMaxHz ?? WindowMaxHz);
 
+        // The wizard's goal for a handed-over channel, so an import fits what the screen shows: target inside the
+        // passband, the crossover's slope outside it. See docs/tech/eq-auto-tuner.md#the-crossover-in-the-target.
+        IReadOnlyList<EqNoBoostBand> noBoost = Array.Empty<EqNoBoostBand>();
+        if (policy.CrossoverInTarget && EqTargetCrossover.Of(source) is { } slope)
+        {
+            int shapeRate = ProcessorRate(source);
+            // A stated window is the caller's; only the handoff's own passband is widened down the skirts.
+            if (minHz == null && maxHz == null)
+            {
+                (windowMinHz, windowMaxHz) = EqTargetCrossover.SlopeWindow(
+                    slope,
+                    windowMinHz,
+                    windowMaxHz,
+                    shapeRate,
+                    source.Measurement?.LowestMeasuredFrequencyHz,
+                    source.Measurement?.HighestMeasuredFrequencyHz);
+            }
+
+            target = target
+                .Select(point => new SignalPoint(
+                    point.X, point.Y + EqTargetCrossover.ShapeDb(slope, point.X, shapeRate)))
+                .ToList();
+            noBoost = EqTargetCrossover.NoBoostBands(slope, windowMinHz, windowMaxHz, shapeRate);
+        }
+
         // Max Filters budgets the BANK; kept bands come off it.
         int bandLimit = RoomUnderMaxFilters(request, policy);
         if (bandLimit <= 0)
@@ -172,7 +199,8 @@ internal static class EqAutoTuneHeadless
             Boosts = mode,
             QMin = (double)EqWizardLimits.BandQ.Minimum,
             QMax = policy.MaxQ,
-            AllowShelves = shelves
+            AllowShelves = shelves,
+            NoBoostBands = noBoost
         };
 
         return new EqHeadlessTuneInputs(
@@ -189,9 +217,37 @@ internal static class EqAutoTuneHeadless
         return Math.Min(policy.MaxBands, EqualizationCurve.MaxBandCount) - kept;
     }
 
+    /// <summary>
+    /// Why this fit must not run: its window holds no measured point, so the tuner would answer with an empty bank
+    /// and Auto Tune would apply it over the channel's own. Null when there is something to fit.
+    /// </summary>
+    /// <remarks>
+    /// The button's wording is <see cref="EqWizardFit.NoMeasuredDataRefusal"/>. Read on the ORDERED pair: an inverted
+    /// window stated by a reply is taken as stated and refused by <see cref="IsUsableWindow"/>, not read backwards.
+    /// </remarks>
+    public static string? NoMeasuredDataRefusal(EqHeadlessTuneInputs inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        double lowHz = Math.Min(inputs.MinHz, inputs.MaxHz);
+        double highHz = Math.Max(inputs.MinHz, inputs.MaxHz);
+        return inputs.Source.Where((point, index) => index < inputs.Target.Count &&
+                point.X >= lowHz &&
+                point.X <= highHz &&
+                double.IsFinite(point.Y) &&
+                double.IsFinite(inputs.Target[index].Y)).Any()
+            ? null
+            : $"the fit window ({lowHz:0} Hz - {highHz:0} Hz) holds no measured point";
+    }
+
     public static EqualizationCurve Fit(EqHeadlessTuneInputs inputs)
     {
         ArgumentNullException.ThrowIfNull(inputs);
+        // Backstop, not the path: a caller that skips the refusal above would otherwise apply an empty bank.
+        if (NoMeasuredDataRefusal(inputs) is { } refusal)
+        {
+            throw new InvalidOperationException($"Nothing to fit: {refusal}.");
+        }
+
         EqualizationCurve tuned = EqAutoTuner.Tune(
             inputs.Source, inputs.Target, inputs.Options, inputs.Coherence);
         return EqWizardFit.Finish(tuned, inputs.KeptAllPass);

@@ -176,6 +176,15 @@ internal static class VirtualDspEqHandoff
             SpatialAverageCalibration = spatialAverageCalibration,
             PreviewImpulseResponse = state.ProcessingSource.CroppedImpulseResponse,
             PreviewChain = previewChain,
+            // The corners the window comes from, so the shaped target and From/To describe one filter. Only when the
+            // IIR crossover is really on: with it off, EffectiveCrossover stands in for the FIR design, whose kernel
+            // travels below and would then be counted twice.
+            TargetCrossover = withChain && settings.CrossoverKind != CrossoverKind.Off
+                ? settings.EffectiveCrossover
+                : null,
+            // A designed crossover kernel describes its own slope; the design's corners do not (a windowed sinc's
+            // slope is its window and length). FirDesign is what tells a crossover FIR from a correction one.
+            TargetCrossoverFir = withChain && settings.HasFirCrossover ? settings.Fir : null,
             // Neighbours only for a chain handoff: a raw curve against processed neighbours describes no real system.
             PhaseContext = withChain ? phaseContext : null,
             // Hybrid: the average replaces the fitted magnitude; the impulse response still serves phase.
@@ -327,12 +336,25 @@ internal static class VirtualDspEqHandoff
     private static DspChannelChain Comparable(DspChannelChain chain) =>
         chain with { InvertPolarity = false };
 
-    /// <summary>Passband between the effective crossover corners, or null when there is no crossover (callers keep their range).</summary>
+    /// <summary>Passband where the channel plays — the narrower of the IIR crossover's corners and a designed FIR's — or null when neither filters (callers keep their range).</summary>
     internal static (double MinHz, double MaxHz)? PassbandFor(
-        VirtualCrossoverChannelSettings settings) =>
-        settings.EffectiveHighPassHz is null && settings.EffectiveLowPassHz is null
+        VirtualCrossoverChannelSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        // Both stages can filter at once, and then both narrow the band: EffectiveCrossover answers the IIR while it
+        // is on, so the FIR design is read beside it. With the IIR off the two are the same spec and this is a no-op.
+        CrossoverSpec? fir = settings.FirDesignCrossover;
+        double? highPass = Inner(settings.EffectiveHighPassHz, fir?.HighPassHz, Math.Max);
+        double? lowPass = Inner(settings.EffectiveLowPassHz, fir?.LowPassHz, Math.Min);
+        return highPass is null && lowPass is null
             ? null
-            : (settings.EffectiveHighPassHz ?? 20, settings.EffectiveLowPassHz ?? 20_000);
+            : (highPass ?? 20, lowPass ?? 20_000);
+    }
+
+    private static double? Inner(double? stage, double? other, Func<double, double, double> narrower) =>
+        stage is { } one
+            ? other is { } two ? narrower(one, two) : one
+            : other;
 
     private static string SideDescription(VirtualCrossoverChannel channel, bool rightSide) =>
         channel.Pair.Mono ? "mono" : rightSide ? "right side" : "left side";

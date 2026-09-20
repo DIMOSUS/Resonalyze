@@ -180,6 +180,55 @@ public sealed class VirtualCrossoverAgentEngineTests
     }
 
     [Fact]
+    public void AnAutoTuneWhoseWindowHoldsNothingMeasured_SkipsThatRowAndRunsTheNext()
+    {
+        StaTest.Run(() =>
+        {
+            using VirtualCrossoverPanel panel = Loaded();
+            // Two channels crossed at 80..500 Hz but measured from 5 kHz up: each fit window holds no point, and an
+            // empty fit would replace the channel's bank with nothing. Refusing must skip the row, not the import.
+            List<VirtualCrossoverChannel> channels = Channels(panel).Take(2).ToList();
+            foreach (VirtualCrossoverChannel channel in channels)
+            {
+                VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
+                var impulse = new System.Numerics.Complex[16_384];
+                impulse[480] = System.Numerics.Complex.One;
+                state.TransferImpulseResponse = impulse;
+                state.TransferPeakIndex = 480;
+                state.SampleRate = 48_000;
+                state.MeasuredBand = new MeasuredBand(5_000, 8_000);
+                VirtualCrossoverChannelSettings settings = channel.SideSettings(channel.ActiveRight);
+                settings.CrossoverKind = CrossoverKind.BandPass;
+                settings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24);
+                settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24);
+                settings.PeqBands = [new PeqBand(3_000, 2, -4)];
+            }
+            AgentSessionSnapshot snapshot = Snapshot(panel);
+            List<AgentOperationVerdict> rows = channels
+                .Select((channel, index) => Row(
+                    new AutoTunePeqOperation(
+                        $"op-{index + 1}", $"{channel.Name}:left", "", null, null, null, null, null, null, null),
+                    "Auto-tune")
+                    with
+                    {
+                        Channel = snapshot.Channels.First(item => ReferenceEquals(
+                            item.Settings, channel.SideSettings(channel.ActiveRight)))
+                    })
+                .ToList();
+            var summary = new List<string>();
+
+            bool ran = RunEnginesPumping(panel, rows, summary);
+
+            Assert.False(ran);
+            Assert.Equal(2, summary.Count);
+            Assert.All(summary, line => Assert.Contains("holds no measured point", line));
+            // And the banks they were aimed at are still there.
+            Assert.All(channels, channel => Assert.Single(
+                channel.SideSettings(channel.ActiveRight).PeqBands));
+        });
+    }
+
+    [Fact]
     public void JunctionTune_WritesOneCrossoverToBothSidesOfBothBlocks_AndUndoPutsItBack()
     {
         StaTest.Run(() =>

@@ -13,7 +13,8 @@ internal static class EqWizardFit
         (double)session.GainMaxDb,
         (double)session.AutoTuneMaxQ,
         session.Boosts,
-        session.AllowShelves);
+        session.AllowShelves,
+        session.CrossoverInTarget);
 
     /// <summary>Mirrors the fields; bands held back (kept all-pass) come off Max Filters, which budgets the whole BANK.</summary>
     public static EqAutoTuner.Options Options(EqWizardSession session, int reservedBands)
@@ -44,8 +45,48 @@ internal static class EqWizardFit
             QMin = (double)EqWizardLimits.BandQ.Minimum,
             QMax = (double)session.AutoTuneMaxQ,
             // Shelves are opt-in: they change the SHAPE returned, and Max Q says nothing about a shelf's knee.
-            AllowShelves = session.AllowShelves
+            AllowShelves = session.AllowShelves,
+            // Down a crossover skirt the target's fall is the filter's doing: cut onto it, never lift it.
+            NoBoostBands = session.CrossoverInTarget && session.TargetCrossover is { } slope
+                ? EqTargetCrossover.NoBoostBands(slope, minHz, maxHz, session.ProcessorSampleRateHz)
+                : Array.Empty<EqNoBoostBand>()
         };
+    }
+
+    /// <summary>
+    /// Why the fit must not run: the window holds no point the fit could read. Auto Tune would return an empty bank
+    /// and replace the user's with it, and a window outside the record is missing data, not a fit worth making.
+    /// </summary>
+    public static string? NoMeasuredDataRefusal(
+        EqWizardSession session,
+        IReadOnlyList<SignalPoint> source,
+        IReadOnlyList<SignalPoint> target)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(target);
+        (double minHz, double maxHz) = session.FrequencyWindow;
+        int count = Math.Min(source.Count, target.Count);
+        for (int i = 0; i < count; i++)
+        {
+            if (source[i].X >= minHz &&
+                source[i].X <= maxHz &&
+                double.IsFinite(source[i].Y) &&
+                double.IsFinite(target[i].Y))
+            {
+                return null;
+            }
+        }
+
+        string window = $"{minHz:0} Hz - {maxHz:0} Hz";
+        string measured = source.Count > 0 &&
+            source.Where(point => double.IsFinite(point.Y)).ToList() is { Count: > 0 } measuredPoints
+                ? $"{measuredPoints.Min(point => point.X):0} Hz - {measuredPoints.Max(point => point.X):0} Hz"
+                : "nothing";
+        return $"The fit window ({window}) holds no measured point: the source covers {measured}." +
+            Environment.NewLine + Environment.NewLine +
+            "Widen From / To onto the measured range, or untick Crossover in target, which set them from " +
+            "the channel's crossover.";
     }
 
     /// <summary>The all-pass bands in the bank, which the fit cannot place and may keep.</summary>

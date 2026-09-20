@@ -58,9 +58,15 @@ public sealed class EqAutoTuneHeadlessTests
         ];
         VirtualDspEqHandoffRequest request = Build(channel);
 
+        // The crossover stays out of the target here: the subject is the all-pass band, not the skirts.
         EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
-            request, TargetCurveSpec.FromPreset(TargetPreset.Flat), EqAutoTunePolicy.Default, null, null,
-            allowShelves: false, boosts: EqAutoTuneBoosts.Off);
+            request,
+            TargetCurveSpec.FromPreset(TargetPreset.Flat),
+            EqAutoTunePolicy.Default with { CrossoverInTarget = false },
+            null,
+            null,
+            allowShelves: false,
+            boosts: EqAutoTuneBoosts.Off);
 
         PeqBand kept = Assert.Single(inputs.KeptAllPass);
         Assert.Equal(400, kept.FrequencyHz);
@@ -78,6 +84,36 @@ public sealed class EqAutoTuneHeadlessTests
     }
 
     [Fact]
+    public void Prepare_WithTheCrossoverInTheTarget_FollowsTheSkirtsAndRefusesToLiftThem()
+    {
+        // The channel is a band-pass at 80 Hz and 500 Hz, and the wizard's default is to follow its slopes.
+        VirtualDspEqHandoffRequest request = Build(BuildChannel());
+        TargetCurveSpec flat = TargetCurveSpec.FromPreset(TargetPreset.Flat);
+
+        EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
+            request, flat, EqAutoTunePolicy.Default, null, null, allowShelves: null, boosts: null);
+
+        Assert.True(inputs.Options.MinFrequencyHz < 80, $"From is {inputs.Options.MinFrequencyHz}.");
+        Assert.True(inputs.Options.MaxFrequencyHz > 500, $"To is {inputs.Options.MaxFrequencyHz}.");
+        Assert.NotEmpty(inputs.Options.NoBoostBands);
+        // Half a decibel of tolerance: a 2.6-octave passband's own skirts leave its middle a shade below 0 dB.
+        double passband = TargetAt(inputs.Target, 200);
+        Assert.Equal(-41, passband, 0.6);
+        Assert.True(TargetAt(inputs.Target, 45) < passband - 10, "the low skirt should pull the target down.");
+        Assert.True(TargetAt(inputs.Target, 900) < passband - 10, "the high skirt should pull the target down.");
+
+        // A window the reply states is the caller's; only the handoff's own passband is widened.
+        EqHeadlessTuneInputs stated = EqAutoTuneHeadless.Prepare(
+            request, flat, EqAutoTunePolicy.Default, 100, 400, allowShelves: null, boosts: null);
+
+        Assert.Equal(100, stated.Options.MinFrequencyHz);
+        Assert.Equal(400, stated.Options.MaxFrequencyHz);
+    }
+
+    private static double TargetAt(IReadOnlyList<SignalPoint> curve, double hz) =>
+        curve.OrderBy(point => Math.Abs(Math.Log(point.X / hz))).First().Y;
+
+    [Fact]
     public void Prepare_MapsTheOptionsAsTheWizardDoes()
     {
         VirtualCrossoverChannel channel = BuildChannel();
@@ -86,8 +122,10 @@ public sealed class EqAutoTuneHeadlessTests
             channel, processorProfile: DspProcessorCatalog.Preset("helix-dsp-ultra-s")!.ToProfile());
         TargetCurveSpec target = TargetCurveSpec.FromPreset(TargetPreset.Flat);
 
+        // Window and target as they stand without the crossover; its own test covers the shaped goal.
+        EqAutoTunePolicy plain = EqAutoTunePolicy.Default with { CrossoverInTarget = false };
         EqAutoTuner.Options cuts = EqAutoTuneHeadless.Prepare(
-            request, target, EqAutoTunePolicy.Default, null, null, allowShelves: false, boosts: EqAutoTuneBoosts.Off).Options;
+            request, target, plain, null, null, allowShelves: false, boosts: EqAutoTuneBoosts.Off).Options;
         Assert.Equal(EqAutoTuneBoosts.Off, cuts.Boosts);
         Assert.Equal(-EqAutoTuneHeadless.PreampRangeDb, cuts.PreampMinDb);
         Assert.Equal(EqAutoTuneHeadless.PreampRangeDb, cuts.PreampMaxDb);
@@ -102,7 +140,7 @@ public sealed class EqAutoTuneHeadlessTests
         Assert.Equal(EqAutoTuneHeadless.MaxQ, cuts.QMax);
 
         EqAutoTuner.Options boosts = EqAutoTuneHeadless.Prepare(
-            request, target, EqAutoTunePolicy.Default, 100, 3_000, allowShelves: true, boosts: EqAutoTuneBoosts.Allowed).Options;
+            request, target, plain, 100, 3_000, allowShelves: true, boosts: EqAutoTuneBoosts.Allowed).Options;
         Assert.Equal(EqAutoTuneBoosts.Allowed, boosts.Boosts);
         Assert.Equal(-2.5, boosts.PreampMinDb);
         Assert.Equal(-2.5, boosts.PreampMaxDb);
@@ -138,7 +176,8 @@ public sealed class EqAutoTuneHeadlessTests
     {
         VirtualDspEqHandoffRequest request = Build(BuildChannel());
         TargetCurveSpec target = TargetCurveSpec.FromPreset(TargetPreset.Flat);
-        var policy = new EqAutoTunePolicy(8, -10, 4, 3.5, EqAutoTuneBoosts.Allowed, AllowShelves: true);
+        var policy = new EqAutoTunePolicy(
+            8, -10, 4, 3.5, EqAutoTuneBoosts.Allowed, AllowShelves: true, CrossoverInTarget: false);
 
         EqAutoTuner.Options asWizard = EqAutoTuneHeadless.Prepare(
             request, target, policy, null, null, allowShelves: null, boosts: null).Options;
@@ -174,7 +213,8 @@ public sealed class EqAutoTuneHeadlessTests
             new PeqBand(500, 0.7, 0, PeqBandType.AllPassSecondOrder)
         ];
         VirtualDspEqHandoffRequest request = Build(channel);
-        var four = new EqAutoTunePolicy(4, -15, 6, 6, EqAutoTuneBoosts.Off, AllowShelves: false);
+        var four = new EqAutoTunePolicy(
+            4, -15, 6, 6, EqAutoTuneBoosts.Off, AllowShelves: false, CrossoverInTarget: false);
         var five = four with { MaxBands = 5 };
         TargetCurveSpec target = TargetCurveSpec.FromPreset(TargetPreset.Flat);
 
@@ -188,6 +228,33 @@ public sealed class EqAutoTuneHeadlessTests
         EqualizationCurve fitted = EqAutoTuneHeadless.Fit(inputs);
         Assert.True(fitted.Bands.Count <= 5);
         Assert.Equal(4, fitted.Bands.Count(band => band.Type.IsAllPass()));
+    }
+
+    [Fact]
+    public void AWindowWithNothingMeasuredInIt_IsARefusalTheCallerSkipsOn_AndFitRefusesItOutright()
+    {
+        // The tuner answers an empty window with an empty bank and Auto Tune applies what it returns, so this run
+        // must not happen. Prepare does not throw: the import skips this channel and goes on to the next.
+        VirtualDspEqHandoffRequest request = Build(BuildChannel(), spatialAverage: Capture(gridStopHz: 1_000));
+        TargetCurveSpec target = TargetCurveSpec.FromPreset(TargetPreset.Flat);
+
+        EqHeadlessTuneInputs empty = EqAutoTuneHeadless.Prepare(
+            request, target, EqAutoTunePolicy.Default, 5_000, 8_000,
+            allowShelves: false, boosts: EqAutoTuneBoosts.Off);
+
+        string refusal = Assert.IsType<string>(EqAutoTuneHeadless.NoMeasuredDataRefusal(empty));
+        Assert.Contains("5000 Hz - 8000 Hz", refusal);
+        Assert.Contains("no measured point", refusal);
+        // The backstop for a caller that does not ask: an empty bank must never reach a channel.
+        Assert.Throws<InvalidOperationException>(() => EqAutoTuneHeadless.Fit(empty));
+
+        // Inside what the capture covers there is something to fit, and nothing refuses it.
+        EqHeadlessTuneInputs fits = EqAutoTuneHeadless.Prepare(
+            request, target, EqAutoTunePolicy.Default, 100, 400,
+            allowShelves: false, boosts: EqAutoTuneBoosts.Off);
+
+        Assert.Null(EqAutoTuneHeadless.NoMeasuredDataRefusal(fits));
+        Assert.NotEmpty(EqAutoTuneHeadless.Fit(fits).Bands);
     }
 
     [Fact]
@@ -259,7 +326,7 @@ public sealed class EqAutoTuneHeadlessTests
             spatialAverage,
             spatialAverageOffsetDb);
 
-    private static LiveCaptureDocument Capture() => new()
+    private static LiveCaptureDocument Capture(double gridStopHz = 20_000) => new()
     {
         SavedAtUtc = DateTimeOffset.UnixEpoch,
         Title = "l tw mmm",
@@ -267,7 +334,7 @@ public sealed class EqAutoTuneHeadlessTests
             .Select(index => -20.0 + 3 * Math.Sin(index / 40.0))
             .ToArray(),
         GridStartHz = 20,
-        GridStopHz = 20_000,
+        GridStopHz = gridStopHz,
         Recipe = new LiveCaptureRecipe
         {
             AnalysisMode = LiveAnalysisMode.Mmm,

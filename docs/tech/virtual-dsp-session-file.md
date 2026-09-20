@@ -212,6 +212,13 @@ IIR crossover when on, otherwise the FIR crossover's corners. It is never used t
 builds the IIR stage from `CrossoverKind` alone and the kernel is already the FIR stage, so nothing is filtered
 twice.
 
+A channel may legitimately run both stages, and then the effective crossover speaks for the IIR alone. Where the
+question is how wide the channel plays rather than which spec to read, `PassbandFor` narrows the band with
+`FirDesignCrossover` as well — the designed FIR's own corners, scaled the same way — so the Auto Tune window of a
+FIR high-pass beside an IIR low-pass starts at the FIR's corner instead of at 20 Hz, which would send the fit down
+the kernel's whole stopband. The junction list and the phase control still read the IIR alone there; that is Auto
+crossover's reading of a pair, not this file's.
+
 A FIR crossover's corners are where the kernel *cuts*, not where it was designed: taps designed at one rate and
 run at another scale every frequency by the ratio, so a 48 kHz design on a 96 kHz processor cuts an octave
 higher until rebuilt (the block's FIR button is red meanwhile). Corners are scaled by `FirRunSampleRateHz`

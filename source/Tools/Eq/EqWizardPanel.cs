@@ -98,6 +98,16 @@ public partial class EqWizardPanel : UserControl
                 session.SetAllowShelves(checkBoxShelves.Checked);
             }
         };
+        checkBoxCrossoverTarget.CheckedChanged += (_, _) =>
+        {
+            if (!presenting)
+            {
+                autoTuneOrchestrator.Invalidate();
+                session.SetCrossoverInTarget(checkBoxCrossoverTarget.Checked);
+                PresentWindow();
+                Redraw();
+            }
+        };
         buttonAutoTune.Click += (_, _) => AutoTune();
         buttonReturnToDsp.Click += (_, _) => ReturnPeqToVirtualDsp();
         buttonBackToDsp.Click += (_, _) => BackToVirtualDsp();
@@ -132,6 +142,7 @@ public partial class EqWizardPanel : UserControl
         };
         InitializeToolTips();
         PresentFitSettings();
+        PresentCrossoverTarget();
         PresentViewSettings();
         PresentTargetOffset();
         PresentGainRange();
@@ -193,6 +204,13 @@ public partial class EqWizardPanel : UserControl
         comboBoxBoosts.SelectedIndex = Array.IndexOf(BoostChoices, session.Boosts);
         checkBoxShelves.Checked = session.AllowShelves;
         comboBoxBandsLimit.SelectedItem = session.BandLimit;
+    });
+
+    // Its own presenter: the box follows the SOURCE (only a chain with a crossover has one), not just the fit fields.
+    private void PresentCrossoverTarget() => Present(() =>
+    {
+        checkBoxCrossoverTarget.Checked = session.CrossoverInTarget;
+        checkBoxCrossoverTarget.Enabled = session.TargetCrossover != null;
     });
 
     private void PresentViewSettings() => Present(() =>
@@ -373,6 +391,11 @@ public partial class EqWizardPanel : UserControl
             "What Auto Tune may boost. Refill cuts: a boost only puts back what " +
             "its own cuts dug, so the EQ never rises above 0 dB. Off: cuts only. " +
             "Allowed: boosts fill dips too, outside narrow deep nulls.");
+        SetTip(checkBoxCrossoverTarget,
+            "Take the channel's own crossover into the target, so the fit follows " +
+            "the filter's slope instead of stopping at the passband: the acoustic " +
+            "roll-off is matched to the crossover you chose. Off leaves the slopes " +
+            "alone. From / To follow the box while you have not typed them yourself.");
         SetTip(checkBoxShelves,
             "Let Auto Tune fit a low and a high shelf as well as bells; a shelf is " +
             "kept only where it beats the fit without one. With boosts Allowed a " +
@@ -547,6 +570,17 @@ public partial class EqWizardPanel : UserControl
         List<SignalPoint> fitTarget = target.Points
             .Select(point => new SignalPoint(point.X, point.Y))
             .ToList();
+
+        if (EqWizardFit.NoMeasuredDataRefusal(session, fitSource, fitTarget) is { } refusal)
+        {
+            MessageBox.Show(
+                FindForm(),
+                refusal,
+                "EQ Wizard",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+            return;
+        }
 
         string? levelWarning = EqWizardFit.LevelWarning(session, fitSource, fitTarget);
         if (levelWarning != null &&

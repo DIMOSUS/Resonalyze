@@ -1,4 +1,4 @@
-using Resonalyze.Integration.AgentBridge;
+﻿using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.Screenshots;
 
@@ -36,7 +36,8 @@ internal static class Shots
             ["manual/virtual-dsp", "manual/channel-card", "manual/eq-wizard-handoff",
              "manual/eq-wizard-tuned", "manual/dsp-processor",
              "manual/dsp-processor-model", "manual/eq-target", "manual/auto-crossover",
-             "manual/auto-delay", "manual/tuning-sheet-q", "manual/audition-track"],
+             "manual/auto-delay", "manual/tune-junction", "manual/tuning-sheet-q",
+             "manual/audition-track"],
             Manual)
     ];
 
@@ -378,6 +379,26 @@ internal static class Shots
                 AutoCrossoverFigure.Draw(
                     crossover, session.Config.Resolve("manual/auto-crossover"));
             }
+        }
+
+        if (wanted("manual/tune-junction"))
+        {
+            // The search is pressed inside the dialog's loop, so the report is on screen for the shot.
+            session.CaptureModal(
+                "manual/tune-junction",
+                () => Reflect.Field<Button>(panel, "buttonTuneJunction").PerformClick(),
+                4_000,
+                dialog =>
+                {
+                    if (Reflect.Field<CheckedListBox>(dialog, "checkedListFamilies") is { } families &&
+                        families.Items.Count > 0)
+                    {
+                        families.SetItemChecked(0, true);
+                    }
+
+                    Reflect.Field<Button>(dialog, "buttonRun").PerformClick();
+                    session.Pump(3_000);
+                });
         }
 
         if (wanted("manual/auto-delay"))

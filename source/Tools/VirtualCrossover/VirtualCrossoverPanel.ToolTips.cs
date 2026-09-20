@@ -1,4 +1,4 @@
-namespace Resonalyze;
+﻿namespace Resonalyze;
 
 /// <summary>Tooltips of the panel's own controls; a block's come from <see cref="VirtualCrossoverChannelControl"/>.</summary>
 public partial class VirtualCrossoverPanel
@@ -146,6 +146,13 @@ public partial class VirtualCrossoverPanel
             "puts the tune on it, Import AI proposal reads the reply back\r\n" +
             "and shows every change before it is applied.\r\n" +
             "Nothing is sent anywhere by Resonalyze.");
+        toolTip.SetToolTip(
+            buttonTuneJunction,
+            "Refine ONE junction of a finished tune: the lower block's\r\n" +
+            "low-pass and the upper block's high-pass, read on the coherent\r\n" +
+            "sum through both chains at their current delays.\r\n" +
+            "State an acoustic slope and it also says what these drivers\r\n" +
+            "can reach. Nothing is written until Apply.");
         toolTip.SetToolTip(
             buttonAutoSetup,
             "Crossover wizard: detect each channel's driver type from\r\n" +

@@ -1,4 +1,4 @@
-namespace Resonalyze
+﻿namespace Resonalyze
 {
     partial class VirtualCrossoverPanel
     {
@@ -66,7 +66,8 @@ namespace Resonalyze
             comboBoxSmoothing = new ThemedComboBox();
             buttonAutoDelay = new ReleaseClickButton();
             buttonAi = new ReleaseClickButton();
-            buttonAutoSetup = new ReleaseClickButton();
+            buttonAutoSetup = new ReleaseClickButton();
+            buttonTuneJunction = new ReleaseClickButton();
             buttonDspProcessor = new ReleaseClickButton();
             buttonCaptureOverlay = new ReleaseClickButton();
             buttonExport = new ReleaseClickButton();
@@ -487,7 +488,7 @@ namespace Resonalyze
             buttonAutoDelay.BackColor = UiPalette.ButtonBackground;
             buttonAutoDelay.FlatStyle = FlatStyle.Popup;
             buttonAutoDelay.ForeColor = UiPalette.TextPrimary;
-            buttonAutoDelay.Location = new Point(359, 530);
+            buttonAutoDelay.Location = new Point(359, 554);
             buttonAutoDelay.Name = "buttonAutoDelay";
             buttonAutoDelay.Size = new Size(125, 24);
             buttonAutoDelay.TabIndex = 12;
@@ -499,19 +500,31 @@ namespace Resonalyze
             buttonAi.BackColor = UiPalette.ButtonBackground;
             buttonAi.FlatStyle = FlatStyle.Popup;
             buttonAi.ForeColor = UiPalette.TextPrimary;
-            buttonAi.Location = new Point(359, 560);
+            buttonAi.Location = new Point(359, 582);
             buttonAi.Name = "buttonAi";
             buttonAi.Size = new Size(125, 24);
             buttonAi.TabIndex = 22;
             buttonAi.Text = "AI assistant...";
             buttonAi.UseVisualStyleBackColor = false;
             // 
+            // buttonTuneJunction
+            // 
+            buttonTuneJunction.FlatStyle = FlatStyle.Popup;
+            buttonTuneJunction.ForeColor = UiPalette.TextPrimary;
+            buttonTuneJunction.Location = new Point(359, 526);
+            buttonTuneJunction.Name = "buttonTuneJunction";
+            buttonTuneJunction.Size = new Size(125, 24);
+            buttonTuneJunction.TabIndex = 45;
+            buttonTuneJunction.Text = "Tune junction…";
+            buttonTuneJunction.UseCompatibleTextRendering = true;
+            buttonTuneJunction.UseVisualStyleBackColor = true;
+            // 
             // buttonAutoSetup
             // 
             buttonAutoSetup.BackColor = UiPalette.ButtonBackground;
             buttonAutoSetup.FlatStyle = FlatStyle.Popup;
             buttonAutoSetup.ForeColor = UiPalette.TextPrimary;
-            buttonAutoSetup.Location = new Point(359, 500);
+            buttonAutoSetup.Location = new Point(359, 498);
             buttonAutoSetup.Name = "buttonAutoSetup";
             buttonAutoSetup.Size = new Size(125, 24);
             buttonAutoSetup.TabIndex = 19;
@@ -790,7 +803,8 @@ namespace Resonalyze
             Controls.Add(comboBoxSmoothing);
             Controls.Add(buttonAutoDelay);
             Controls.Add(buttonAi);
-            Controls.Add(buttonAutoSetup);
+            Controls.Add(buttonAutoSetup);
+            Controls.Add(buttonTuneJunction);
             Controls.Add(buttonDspProcessor);
             Controls.Add(buttonCaptureOverlay);
             Controls.Add(buttonExport);
@@ -868,7 +882,8 @@ namespace Resonalyze
         private ThemedComboBox comboBoxSmoothing;
         private ReleaseClickButton buttonAutoDelay;
         private ReleaseClickButton buttonAi;
-        private ReleaseClickButton buttonAutoSetup;
+        private ReleaseClickButton buttonAutoSetup;
+        private ReleaseClickButton buttonTuneJunction;
         private ReleaseClickButton buttonDspProcessor;
         private ReleaseClickButton buttonCaptureOverlay;
         private ReleaseClickButton buttonExport;

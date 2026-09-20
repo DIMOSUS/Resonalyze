@@ -63,9 +63,11 @@ public sealed class VirtualCrossoverPanelLayoutTests
         Control curves = Field<Control>(panel, "labelCurves");
         Control view = Field<Control>(panel, "panel1");
         Control autoDelay = Field<Control>(panel, "buttonAutoDelay");
+        Control tuneJunction = Field<Control>(panel, "buttonTuneJunction");
         int curvesGap = curves.Top - main.Bottom;
         int viewGap = view.Top - main.Bottom;
         int autoDelayGap = autoDelay.Top - main.Bottom;
+        int tuneJunctionGap = tuneJunction.Top - main.Bottom;
         int dspGap = dsp.Top - main.Bottom;
         Size design = panel.Size;
 
@@ -74,8 +76,13 @@ public sealed class VirtualCrossoverPanelLayoutTests
         Assert.Equal(curvesGap, curves.Top - main.Bottom);
         Assert.Equal(viewGap, view.Top - main.Bottom);
         Assert.Equal(autoDelayGap, autoDelay.Top - main.Bottom);
+        Assert.Equal(tuneJunctionGap, tuneJunction.Top - main.Bottom);
         Assert.Equal(dspGap, dsp.Top - main.Bottom);
         Assert.True(main.Bottom < curves.Top);
+        // The column is tight: five buttons above the bottom-anchored block must still clear it.
+        Assert.True(
+            tuneJunction.Bottom < Field<Control>(panel, "buttonAudition").Top,
+            "the button column overlaps the bottom row.");
     }
 
     [Fact]

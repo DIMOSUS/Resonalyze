@@ -84,13 +84,10 @@ next field session rather than in a register nobody else can tick.
   own criterion (maximum mutual sum in the shared band) and its own battery, and
   must NOT be bundled with the grouping above — the grouping has nothing to
   calibrate and this has a great deal.
-- [ ] **`CrossoverJunctionTuner` is not reachable from the panel.** The measured
-  junction refinement exists and is exercised by the AI assistant only
-  (MANUAL.md). It belongs in the PANEL on a finished tune rather than in the
-  wizard — the tuner needs the current chains, which the wizard has not built
-  yet — so it is a new dialog plus a re-layout of an already packed button row.
-  Split corners are not searched inside the tuner either; they exist in the
-  wizard only.
+- [ ] **Split corners are not searched inside the junction tuner**; they exist in
+  the crossover wizard only. The tuner itself is now reachable from the panel —
+  **Tune junction** (REFERENCE.md) — which is what the rest of this item asked
+  for.
 
 - [✗] **Phase-slope (residual group delay) as an Auto delay score prior —
   REFUTED on real measurements** (2026-07-10, do not re-propose). At the true

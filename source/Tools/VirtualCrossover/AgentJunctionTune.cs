@@ -155,7 +155,55 @@ internal static class AgentJunctionTune
                     ? ", or reads worse on its own junction band."
                     : "."));
         AppendReadings(summary, result, best: result.Changed);
+        if (options.AcousticTarget is { } asked)
+        {
+            AppendAcoustic(summary, asked, result);
+        }
     }
+
+    /// <summary>
+    /// What the stated acoustic slope came to: the magnitude fit against the best any allowed filter could reach,
+    /// the slopes fitted alike so they compare with each other, and whether the goal travels on to the EQ stage.
+    /// </summary>
+    private static void AppendAcoustic(
+        List<string> summary, JunctionAcousticTarget asked, JunctionTuneResult result)
+    {
+        JunctionTuneCandidate candidate = result.Changed ? result.Best : result.Current;
+        bool reached = CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb);
+        string family = asked.Family switch
+        {
+            CrossoverFilterFamily.LinkwitzRiley => "LR",
+            CrossoverFilterFamily.Butterworth => "BW",
+            CrossoverFilterFamily.Bessel => "Bessel",
+            _ => "Cheb"
+        };
+        summary.Add(
+            $"  acoustic {family}{asked.SlopeDbPerOctave} asked: magnitude fit " +
+            $"{Number(candidate.AcousticCostDb)} dB, worst side {Number(candidate.WorstAcousticCostDb)} dB, " +
+            $"the nearest any allowed filter reaches {Number(result.ClosestAcousticCostDb)} dB — " +
+            (reached ? "reached." : "OUT OF REACH."));
+        JunctionAcousticFit? fit = candidate.Sides.FirstOrDefault()?.Acoustic;
+        JunctionDriverSlopes? plant = result.DriverSlopes.FirstOrDefault();
+        if (fit != null || plant != null)
+        {
+            summary.Add(
+                "  slopes over the handover, all fitted the same way: asked " +
+                $"{Number(fit?.TargetSlopeDbPerOctave)}, got {Number(fit?.LowerSlopeDbPerOctave)} / " +
+                $"{Number(fit?.UpperSlopeDbPerOctave)}, the channels alone {Number(plant?.LowerDbPerOctave)} / " +
+                $"{Number(plant?.UpperDbPerOctave)} dB/oct.");
+        }
+
+        summary.Add(reached
+            ? "  the goal is written onto these edges, so Auto Tune aims at it instead of the filter" +
+              (fit is { ResidualDb: > 0 }
+                  ? $"; the {Number(fit.ResidualDb)} dB left over is cuts, which it may make."
+                  : "; what is left over would need a skirt boost, which it refuses.")
+            : "  the goal is NOT written onto these edges: aiming the fit at a slope these drivers " +
+              "cannot reach makes the junction worse, measured.");
+    }
+
+    private static string Number(double? value) =>
+        value is { } read ? read.ToString("0.0", CultureInfo.InvariantCulture) : "—";
 
     // Readings on the package's octave-each-side junction band, so they compare with what the assistant read.
     private static void AppendReadings(List<string> summary, JunctionTuneResult result, bool best)

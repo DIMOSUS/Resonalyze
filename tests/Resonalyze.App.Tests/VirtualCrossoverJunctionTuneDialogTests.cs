@@ -1,0 +1,123 @@
+using System.Reflection;
+using System.Windows.Forms;
+using Resonalyze.Dsp;
+
+namespace Resonalyze.App.Tests;
+
+public sealed class VirtualCrossoverJunctionTuneDialogTests
+{
+    [Fact]
+    public void ApplyStandsForASearchThatRan_AndAChangedQuestionRetiresIt() => StaTest.Run(() =>
+    {
+        using var dialog = new VirtualCrossoverJunctionTuneDialog();
+        int searches = 0;
+        dialog.Init(
+            ["A-B", "B-C"],
+            index => index == 0
+                ? (80, 200, null)
+                : (500, 2_000, new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)),
+            request =>
+            {
+                searches++;
+                return Task.FromResult(new JunctionTuneOutcome(
+                    ["Junction tune A/B: applied."], CanApply: true, "A better crossover was found.", false));
+            });
+        Button apply = Field<Button>(dialog, "buttonApply");
+        Assert.False(apply.Enabled);
+        Assert.Null(dialog.Result);
+
+        // The window opens on the junction's own defaults, and the second junction carries the card's wish.
+        Field<ThemedComboBox>(dialog, "comboBoxJunction").SelectedIndex = 1;
+        Assert.Equal(500m, Field<ThemedNumericUpDown>(dialog, "numericMinHz").Value);
+        Assert.Equal(
+            CrossoverFilterFamily.LinkwitzRiley,
+            Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").SelectedItem);
+        Assert.Equal(24, Field<ThemedComboBox>(dialog, "comboBoxGoalSlope").SelectedItem);
+
+        // No family ticked is a question with no candidates, and it does not reach the search.
+        Run(dialog);
+        Assert.Equal(0, searches);
+        Assert.False(apply.Enabled);
+        Assert.Contains("family", Field<Label>(dialog, "labelStatus").Text);
+
+        CheckedListBox families = Field<CheckedListBox>(dialog, "checkedListFamilies");
+        families.SetItemChecked(families.Items.IndexOf(CrossoverFilterFamily.LinkwitzRiley), true);
+        Run(dialog);
+
+        Assert.Equal(1, searches);
+        Assert.True(apply.Enabled);
+        JunctionTuneRequest asked = Assert.IsType<JunctionTuneRequest>(dialog.Result);
+        Assert.Equal(1, asked.JunctionIndex);
+        Assert.Equal(new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24), asked.AcousticGoal);
+        Assert.Contains("applied", Field<TextBox>(dialog, "textBoxReport").Text);
+
+        // Moving the corner window asks a different question, so the answer is retired.
+        Field<ThemedNumericUpDown>(dialog, "numericMaxHz").Value = 1_500m;
+        Assert.Null(dialog.Result);
+        Assert.False(apply.Enabled);
+    });
+
+    [Fact]
+    public void WithNoJunctionInView_ItSaysSoInsteadOfOfferingASearch() => StaTest.Run(() =>
+    {
+        using var dialog = new VirtualCrossoverJunctionTuneDialog();
+        dialog.Init(
+            [],
+            _ => (20, 20_000, null),
+            _ => throw new InvalidOperationException("nothing should be searched"));
+
+        Assert.False(Field<Button>(dialog, "buttonRun").Enabled);
+        Assert.Contains("no junction", Field<Label>(dialog, "labelStatus").Text);
+    });
+
+    [Fact]
+    public void TheActionButtonsStayVisibleAtEveryHeight() => StaTest.Run(() =>
+    {
+        using var dialog = new VirtualCrossoverJunctionTuneDialog();
+        AssertNothingCoversTheActionButtons(dialog);
+
+        dialog.Size = dialog.Size with { Height = 1 };
+        Assert.Equal(dialog.MinimumSize.Height, dialog.Height);
+        AssertNothingCoversTheActionButtons(dialog);
+
+        dialog.ClientSize = dialog.ClientSize with { Height = 1_100 };
+        AssertNothingCoversTheActionButtons(dialog);
+    });
+
+    private static void Run(VirtualCrossoverJunctionTuneDialog dialog)
+    {
+        var task = (Task)typeof(VirtualCrossoverJunctionTuneDialog)
+            .GetMethod("RunAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(dialog, null)!;
+        task.GetAwaiter().GetResult();
+    }
+
+    private static void AssertNothingCoversTheActionButtons(Form dialog)
+    {
+        foreach (string name in new[] { "buttonApply", "buttonCancel", "buttonRun" })
+        {
+            Button button = Field<Button>(dialog, name);
+            Assert.True(
+                button.Top >= 0 && button.Bottom <= dialog.ClientSize.Height,
+                $"{name} is outside the client area: {button.Bounds} in {dialog.ClientSize}.");
+            int index = dialog.Controls.GetChildIndex(button);
+            foreach (Control sibling in dialog.Controls)
+            {
+                if (ReferenceEquals(sibling, button) ||
+                    dialog.Controls.GetChildIndex(sibling) > index)
+                {
+                    continue;
+                }
+
+                Assert.False(
+                    sibling.Bounds.IntersectsWith(button.Bounds),
+                    $"{sibling.Name} {sibling.Bounds} covers {name} {button.Bounds}.");
+            }
+        }
+    }
+
+    private static T Field<T>(object target, string name) where T : class =>
+        (T)target.GetType()
+            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(target)!;
+}

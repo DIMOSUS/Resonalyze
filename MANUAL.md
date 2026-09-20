@@ -1,4 +1,4 @@
-# Professional Car Audio Tuning with Resonalyze
+﻿# Professional Car Audio Tuning with Resonalyze
 
 **A complete step-by-step guide**
 
@@ -864,6 +864,26 @@ not here.
 Press **Apply** if the result makes physical sense. Auto Crossover does not know your
 drivers' limits: always check the proposal against the datasheets and your own knowledge
 of the system.
+
+### Refining one junction: Tune junction
+
+Auto Crossover works from magnitudes with the drivers taken as perfectly aligned, which
+is the right reading for a blank tune. Once delays and polarity are set, press **Tune
+junction...** to refine ONE handover against what the pair actually measures: every
+candidate crossover is read on the **coherent sum through both full chains at their
+current delays**, and the crossover on screen is kept unless a challenger beats it on
+that reading. Nothing is written until you press Apply.
+
+This is also where you can state the crossover in **acoustic** terms. Set the goal to
+LR24 and Resonalyze looks for the electrical filter that, with this driver's own
+roll-off included, adds up to that slope — and tells you plainly whether these drivers
+can reach it at all, since a filter can only make a response steeper. Where the goal is
+reachable it is remembered on the channel card and the EQ stage aims at it instead of
+at the electrical filter; where it is not, the report says so and nothing is carried
+forward. The summation always has the last word: the stated slope only chooses between
+crossovers that sum equally well.
+
+![The Tune junction dialog: the junction, the corner window, the filters on offer and the acoustic goal, with the search report below](assets/images/manual/tune-junction.png)
 
 ### Manual tuning is always available
 

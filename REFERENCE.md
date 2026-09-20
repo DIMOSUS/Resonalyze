@@ -1,4 +1,4 @@
-# Resonalyze Reference
+﻿# Resonalyze Reference
 
 Every mode, panel, setting and graph gesture, with the reasoning behind the ones
 whose behaviour is not obvious — why a window is anchored where it is, why a
@@ -52,6 +52,7 @@ read-out refuses rather than guesses, what a number was measured against.
   - [The panel: gates, plots and read-outs](#the-panel-gates-plots-and-read-outs)
   - [DSP processor](#dsp-processor)
   - [Auto crossover](#auto-crossover)
+  - [Tune junction](#tune-junction)
   - [Auto delay](#auto-delay)
   - [Panel commands](#panel-commands)
   - [AI assistant bridge](#ai-assistant-bridge)
@@ -3306,6 +3307,62 @@ the corners leaves the same number building a different filter; a hand edit
 keeps the angle — that is what the device itself does, and the read-out moves
 under it where you can see — but a wizard rewriting every channel at once is not
 something to leave a stale all-pass under.
+
+### Tune junction
+
+**Auto crossover** decides a whole system from magnitudes under ideal alignment.
+**Tune junction** does the opposite job on a tune that already exists: it refines
+ONE junction — the lower block's low-pass and the upper block's high-pass — and
+judges every candidate on the **coherent sum of the measured responses through
+both full chains at their current delays and polarity**. Everything else stays:
+the other junctions, gains, delays, polarity, PEQ, FIR. One result serves both
+sides of the pair, because a crossover is one electrical filter.
+
+Because the sum is read rather than predicted, a steeper slope that narrows the
+overlap where a ragged excess phase interferes is a legitimate answer the
+magnitude alone cannot see — which is why this tune and the wizard can disagree,
+and why this one has the last word on a finished tune.
+
+- **Junction, corner window, families, slopes free per side.** The window opens
+  half an octave each way around the corner you already have. Candidates are
+  ranked on one band shared by all of them — different corners are not
+  comparable on their own bands — and your crossover is **kept** unless a
+  challenger beats it by half a decibel there *and* reads no worse on its own
+  junction band, where your Sum loss read-out lives.
+- **Nothing is written until Apply**, which writes the crossover into both sides
+  of both blocks as one undo step.
+- The report gives each side's sum loss, dip and ripple before and after, the
+  runners-up, and what the junction would read **after the delay Auto delay
+  would then pick** — how much of what is left is timing's to fix rather than
+  the crossover's.
+
+#### The acoustic goal
+
+Optionally state the **acoustic** crossover you want at this junction — driver
+and filter together, which is steeper than the filter alone by the driver's own
+roll-off. The search then prefers the electrical filter that lands on it, but
+only among candidates the summation already calls equivalent (within 0.2 dB of
+the best): the stated slope settles a near-tie, it never buys a dip.
+
+The report then also says, all fitted the same way so they compare with each
+other: what was asked, what the two sides achieved, what the channels do by
+themselves, how near **any** allowed filter could have come, and whether the
+goal is reachable at all. A filter only steepens, so a slope softer than the
+drivers' own fall is not on offer — the report says so instead of quietly
+picking the softest filter.
+
+Where the goal is reached it is written onto those edges and shows on the
+channel cards, and **Auto Tune then aims at it** instead of at the electrical
+filter (see [Crossover in target](#auto-tune)). Where it is not reached it is
+not carried: measured on eight cabins, pointing the fit at a slope the drivers
+cannot reach made the finished junction worse, so the tool reports the wish and
+leaves the fit aiming at the filter.
+
+Honest about what is claimed: the magnitude is fitted to the asked edge. Each
+side keeps its own excess phase, so "the magnitude follows an acoustic LR24" is
+true where "the acoustic crossover is LR24" would be more than was shown — and
+the summation term is there precisely because it sees what a magnitude target
+cannot.
 
 ### Auto delay
 

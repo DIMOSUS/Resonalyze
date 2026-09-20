@@ -126,7 +126,8 @@ public partial class VirtualCrossoverPanel
             request.IndependentSlopes,
             session.ProcessorSampleRateHz,
             AcousticTarget: request.AcousticGoal,
-            TargetCurveDb: request.AcousticGoal == null ? null : TargetCurvePoints());
+            TargetCurveDb: request.AcousticGoal == null ? null : TargetCurvePoints(),
+            SplitCorners: request.SplitCorners);
         var plan = new JunctionTunePlan(label, lower, upper, sides, options);
         string fingerprintBefore = ComputeAgentFingerprint();
         JunctionTuneResult result;

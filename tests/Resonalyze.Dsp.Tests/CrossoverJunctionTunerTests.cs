@@ -581,6 +581,36 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    public void FreeingTheCorners_ReadsPairsHeldApartAndPairsOverlapped()
+    {
+        // A split is a signed offset from the junction, refined on the corners the sweep settled: positive holds
+        // them apart, which takes a bump off the junction; negative overlaps them, which fills a dip. As a second
+        // lattice dimension it would square the candidate count, so it is a pass of its own.
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        JunctionTuneSide side = Side("left", LowPassChain(lr), HighPassChain(lr));
+        JunctionTuneOptions matched = Options(
+            950, 1_050, slopes: [24], independentSlopes: false, CrossoverFilterFamily.LinkwitzRiley);
+
+        JunctionTuneResult without = CrossoverJunctionTuner.Tune([side], matched);
+        JunctionTuneResult with = CrossoverJunctionTuner.Tune([side], matched with { SplitCorners = true });
+
+        Assert.True(
+            with.CandidatesEvaluated > without.CandidatesEvaluated,
+            $"{with.CandidatesEvaluated} candidates against {without.CandidatesEvaluated}.");
+        // A textbook matched pair is still what wins on a flat driver: a split has to earn its place on the sum
+        // like any other candidate.
+        Assert.Equal(
+            with.Best.LowerLowPass!.Value.FrequencyHz,
+            with.Best.UpperHighPass!.Value.FrequencyHz,
+            1e-9);
+        // And the pass really did read spread pairs: at least one reported candidate has its corners apart.
+        Assert.Contains(
+            with.RunnersUp,
+            candidate => Math.Abs(
+                candidate.LowerLowPass!.Value.FrequencyHz - candidate.UpperHighPass!.Value.FrequencyHz) > 1);
+    }
+
+    [Fact]
     public void Tune_RefusesAnEmptyFamilyList_AndAnInvertedWindow()
     {
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);

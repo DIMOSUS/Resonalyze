@@ -28,7 +28,10 @@ partial class VirtualCrossoverJunctionTuneDialog
         checkButterworth = new ReleaseClickCheckBox();
         checkLinkwitzRiley = new ReleaseClickCheckBox();
         checkBessel = new ReleaseClickCheckBox();
-        labelGoal = new Label();
+        labelTuneFor = new Label();
+        radioSummation = new ReleaseClickRadioButton();
+        radioAcoustic = new ReleaseClickRadioButton();
+        checkBoxSplitCorners = new ReleaseClickCheckBox();
         comboBoxGoalFamily = new ThemedComboBox();
         comboBoxGoalSlope = new ThemedComboBox();
         labelGoalHint = new Label();
@@ -171,22 +174,56 @@ partial class VirtualCrossoverJunctionTuneDialog
         checkBessel.Text = "Bessel";
         checkBessel.UseVisualStyleBackColor = true;
         //
-        // labelGoal
+        // labelTuneFor
         //
-        labelGoal.AutoSize = true;
-        labelGoal.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-        labelGoal.ForeColor = UiPalette.TextDefault;
-        labelGoal.Location = new Point(300, 77);
-        labelGoal.Name = "labelGoal";
-        labelGoal.Size = new Size(96, 15);
-        labelGoal.TabIndex = 9;
-        labelGoal.Text = "Acoustic goal";
+        labelTuneFor.AutoSize = true;
+        labelTuneFor.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+        labelTuneFor.ForeColor = UiPalette.TextDefault;
+        labelTuneFor.Location = new Point(300, 74);
+        labelTuneFor.Name = "labelTuneFor";
+        labelTuneFor.Size = new Size(64, 15);
+        labelTuneFor.TabIndex = 9;
+        labelTuneFor.Text = "Tune for";
+        //
+        // radioSummation
+        //
+        radioSummation.AutoSize = true;
+        radioSummation.Checked = true;
+        radioSummation.ForeColor = UiPalette.TextPrimary;
+        radioSummation.Location = new Point(300, 95);
+        radioSummation.Name = "radioSummation";
+        radioSummation.Size = new Size(150, 19);
+        radioSummation.TabIndex = 10;
+        radioSummation.TabStop = true;
+        radioSummation.Text = "the best summation";
+        radioSummation.UseVisualStyleBackColor = true;
+        //
+        // radioAcoustic
+        //
+        radioAcoustic.AutoSize = true;
+        radioAcoustic.ForeColor = UiPalette.TextPrimary;
+        radioAcoustic.Location = new Point(300, 118);
+        radioAcoustic.Name = "radioAcoustic";
+        radioAcoustic.Size = new Size(170, 19);
+        radioAcoustic.TabIndex = 11;
+        radioAcoustic.Text = "this acoustic crossover";
+        radioAcoustic.UseVisualStyleBackColor = true;
+        //
+        // checkBoxSplitCorners
+        //
+        checkBoxSplitCorners.ForeColor = UiPalette.TextPrimary;
+        checkBoxSplitCorners.Location = new Point(470, 43);
+        checkBoxSplitCorners.Name = "checkBoxSplitCorners";
+        checkBoxSplitCorners.Size = new Size(190, 21);
+        checkBoxSplitCorners.TabIndex = 7;
+        checkBoxSplitCorners.Text = "Corners free per side";
+        checkBoxSplitCorners.UseVisualStyleBackColor = true;
         //
         // comboBoxGoalFamily
         //
         comboBoxGoalFamily.BackColor = UiPalette.ControlSurface;
         comboBoxGoalFamily.ForeColor = UiPalette.TextPrimary;
-        comboBoxGoalFamily.Location = new Point(300, 97);
+        comboBoxGoalFamily.Location = new Point(480, 116);
         comboBoxGoalFamily.MinimumSize = new Size(36, 21);
         comboBoxGoalFamily.Name = "comboBoxGoalFamily";
         comboBoxGoalFamily.Size = new Size(130, 21);
@@ -196,7 +233,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         //
         comboBoxGoalSlope.BackColor = UiPalette.ControlSurface;
         comboBoxGoalSlope.ForeColor = UiPalette.TextPrimary;
-        comboBoxGoalSlope.Location = new Point(436, 97);
+        comboBoxGoalSlope.Location = new Point(616, 116);
         comboBoxGoalSlope.MinimumSize = new Size(36, 21);
         comboBoxGoalSlope.Name = "comboBoxGoalSlope";
         comboBoxGoalSlope.Size = new Size(74, 21);
@@ -205,9 +242,9 @@ partial class VirtualCrossoverJunctionTuneDialog
         // labelGoalHint
         //
         labelGoalHint.ForeColor = UiPalette.TextMuted;
-        labelGoalHint.Location = new Point(300, 122);
+        labelGoalHint.Location = new Point(300, 143);
         labelGoalHint.Name = "labelGoalHint";
-        labelGoalHint.Size = new Size(330, 30);
+        labelGoalHint.Size = new Size(570, 15);
         labelGoalHint.TabIndex = 12;
         labelGoalHint.Text = "Driver and filter together, which is steeper than the filter alone.";
         //
@@ -295,7 +332,10 @@ partial class VirtualCrossoverJunctionTuneDialog
         Controls.Add(checkButterworth);
         Controls.Add(checkLinkwitzRiley);
         Controls.Add(checkBessel);
-        Controls.Add(labelGoal);
+        Controls.Add(labelTuneFor);
+        Controls.Add(radioSummation);
+        Controls.Add(radioAcoustic);
+        Controls.Add(checkBoxSplitCorners);
         Controls.Add(comboBoxGoalFamily);
         Controls.Add(comboBoxGoalSlope);
         Controls.Add(labelGoalHint);
@@ -328,7 +368,10 @@ partial class VirtualCrossoverJunctionTuneDialog
     private ReleaseClickCheckBox checkButterworth;
     private ReleaseClickCheckBox checkLinkwitzRiley;
     private ReleaseClickCheckBox checkBessel;
-    private Label labelGoal;
+    private Label labelTuneFor;
+    private ReleaseClickRadioButton radioSummation;
+    private ReleaseClickRadioButton radioAcoustic;
+    private ReleaseClickCheckBox checkBoxSplitCorners;
     private ThemedComboBox comboBoxGoalFamily;
     private ThemedComboBox comboBoxGoalSlope;
     private Label labelGoalHint;

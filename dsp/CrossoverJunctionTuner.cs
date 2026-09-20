@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace Resonalyze.Dsp;
 
@@ -75,7 +75,8 @@ public sealed record JunctionTuneOptions(
     double KeepMarginDb = CrossoverJunctionTuner.DefaultKeepMarginDb,
     JunctionAcousticTarget? AcousticTarget = null,
     double SumSlackDb = CrossoverJunctionTuner.DefaultSumSlackDb,
-    IReadOnlyList<SignalPoint>? TargetCurveDb = null);
+    IReadOnlyList<SignalPoint>? TargetCurveDb = null,
+    bool SplitCorners = false);
 
 /// <summary>Coherent sum at the current delays and polarity over a band; lower score is better. Ripple includes the room's own.</summary>
 public sealed record JunctionTuneReading(
@@ -290,6 +291,10 @@ public static class CrossoverJunctionTuner
 
     public const int RunnersUpReported = 3;
 
+    /// <summary>Leading candidates the split-corner pass is tried on. Four: a split refines a corner the sweep
+    /// already likes, and every extra one costs the whole offset ladder.</summary>
+    public const int SplitRefinements = 4;
+
     public const int DelayProbeCandidatesReported = 5;
 
     // Sized to the ranking band's gate (~9 periods of its low edge plus delay and fades), capped at the post-check length.
@@ -437,6 +442,58 @@ public static class CrossoverJunctionTuner
             throw new InvalidOperationException(
                 "No candidate could be read: the corner window admits no lattice frequency " +
                 "or the band holds no usable bins.");
+        }
+
+        // Split corners are a coordinate of their own, refined on the corners the sweep settled - the wizard's own
+        // arrangement (docs/tech/crossover-auto-setup.md#split-corners). As a second lattice dimension it would
+        // square the candidate count; refined on the few that lead, it costs a couple of dozen reads.
+        if (options.SplitCorners)
+        {
+            var split = new List<JunctionTuneCandidate>();
+            foreach (JunctionTuneCandidate candidate in ranked.Take(SplitRefinements))
+            {
+                if (candidate.LowerLowPass is not { } low || candidate.UpperHighPass is not { } high)
+                {
+                    continue;
+                }
+
+                foreach (double octaves in CrossoverAutoSetup.SplitOffsetOctaves)
+                {
+                    if (octaves == 0)
+                    {
+                        continue;
+                    }
+
+                    // Positive holds the corners apart, which takes a bump off the junction; negative overlaps them,
+                    // which fills a dip. Half the offset each way, so the junction itself does not move.
+                    double spread = Math.Pow(2, octaves / 2);
+                    CrossoverEdge lowEdge = low with { FrequencyHz = low.FrequencyHz / spread };
+                    CrossoverEdge highEdge = high with { FrequencyHz = high.FrequencyHz * spread };
+                    if (lowEdge.FrequencyHz < 20 || highEdge.FrequencyHz > nyquistHz)
+                    {
+                        continue;
+                    }
+
+                    JunctionTuneCandidate? read = rankingWork.Evaluate(
+                        lowEdge,
+                        highEdge,
+                        Math.Sqrt(lowEdge.FrequencyHz * highEdge.FrequencyHz),
+                        replaceEdges: true,
+                        ownBand: false);
+                    if (read != null)
+                    {
+                        split.Add(read);
+                    }
+                }
+            }
+
+            if (split.Count > 0)
+            {
+                ranked = ranked
+                    .Concat(split)
+                    .OrderBy(candidate => candidate.RankingScoreDb)
+                    .ToList();
+            }
         }
 
         // A stated slope chooses INSIDE the corridor the summation leaves: everything within SumSlackDb of the best

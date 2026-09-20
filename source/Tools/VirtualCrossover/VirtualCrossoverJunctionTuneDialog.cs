@@ -10,7 +10,8 @@ internal sealed record JunctionTuneRequest(
     double MaxHz,
     IReadOnlyList<CrossoverFilterFamily> Families,
     bool IndependentSlopes,
-    JunctionAcousticTarget? AcousticGoal);
+    JunctionAcousticTarget? AcousticGoal,
+    bool SplitCorners);
 
 /// <summary>What a junction opens on: the window the assistant's tune would use, the families it already runs, and
 /// the acoustic goal its channel cards already hold.</summary>
@@ -35,6 +36,9 @@ internal sealed record JunctionTuneOutcome(
 internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 {
     private const string Nothing = "—";
+
+    /// <summary>Status for a question that changed after its answer landed.</summary>
+    private const string Again = "The question changed — search again.";
 
     private readonly WrappingToolTip toolTip = new()
     {
@@ -62,8 +66,9 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         comboBoxGoalSlope.Enabled = false;
         comboBoxGoalFamily.SelectedIndexChanged += (_, _) => FillGoalSlopes();
         comboBoxJunction.SelectedIndexChanged += (_, _) => PresentJunctionDefaults();
+        radioSummation.CheckedChanged += (_, _) => PresentMode();
+        radioAcoustic.CheckedChanged += (_, _) => PresentMode();
         // Every input retires the answer: Apply must never stand for a question nobody asked.
-        const string Again = "The question changed — search again.";
         numericMinHz.ValueChanged += (_, _) => InvalidateResult(Again);
         numericMaxHz.ValueChanged += (_, _) => InvalidateResult(Again);
         comboBoxGoalSlope.SelectedIndexChanged += (_, _) => InvalidateResult(Again);
@@ -72,6 +77,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         {
             family.CheckedChanged += (_, _) => InvalidateResult(Again);
         }
+        checkBoxSplitCorners.CheckedChanged += (_, _) => InvalidateResult(Again);
         buttonRun.Click += async (_, _) => await RunAsync().ConfigureAwait(true);
         buttonApply.Click += (_, _) =>
         {
@@ -79,6 +85,31 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             Close();
         };
         Tips();
+        PresentMode();
+    }
+
+    /// <summary>
+    /// Which of the two questions the search answers, stated where it cannot be missed: the best summation this
+    /// junction can have, or the electrical filter that lands nearest a stated ACOUSTIC crossover among the
+    /// candidates that sum as well. Without the switch the dialog never said what it was optimising.
+    /// </summary>
+    private void PresentMode()
+    {
+        bool acoustic = radioAcoustic.Checked;
+        comboBoxGoalFamily.Enabled = acoustic;
+        comboBoxGoalSlope.Enabled = acoustic && comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice;
+        if (acoustic && comboBoxGoalFamily.SelectedItem is not CrossoverFamilyChoice)
+        {
+            // The mode IS the goal: entering it with nothing stated would search for nothing.
+            comboBoxGoalFamily.SelectedItem = CrossoverFamilyChoice.Offered
+                .First(choice => choice.Value == CrossoverFilterFamily.LinkwitzRiley);
+        }
+
+        labelGoalHint.Text = acoustic
+            ? "Driver and filter together, which is steeper than the filter alone. Chosen among filters that sum " +
+              "as well."
+            : "Every allowed filter is read on the coherent sum at this junction; the one that sums best wins.";
+        InvalidateResult(Again);
     }
 
     /// <summary>The request the Apply button stands for; null until a search has landed.</summary>
@@ -128,13 +159,13 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         checkLinkwitzRiley.Checked = opening.Families.Contains(CrossoverFilterFamily.LinkwitzRiley);
         checkBessel.Checked = opening.Families.Contains(CrossoverFilterFamily.Bessel);
         // The card's own wish is what this junction already asks for, so the dialog opens on it.
-        comboBoxGoalFamily.SelectedItem = opening.Goal is { } asked
-            ? CrossoverFamilyChoice.Offered.FirstOrDefault(choice => choice.Value == asked.Family)
-                ?? (object)Nothing
-            : Nothing;
-        if (opening.Goal is { } wanted)
+        if (opening.Goal is { } asked)
         {
-            comboBoxGoalSlope.SelectedItem = wanted.SlopeDbPerOctave;
+            // A junction whose cards already state a goal opens on it: that is the question it was last asked.
+            comboBoxGoalFamily.SelectedItem = CrossoverFamilyChoice.Offered
+                .FirstOrDefault(choice => choice.Value == asked.Family) ?? (object)Nothing;
+            comboBoxGoalSlope.SelectedItem = asked.SlopeDbPerOctave;
+            radioAcoustic.Checked = true;
         }
 
         InvalidateResult("Nothing searched yet.");
@@ -210,10 +241,12 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             (double)numericMaxHz.Value,
             families,
             checkBoxIndependentSlopes.Checked,
-            comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice goalFamily &&
+            radioAcoustic.Checked &&
+                comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice goalFamily &&
                 comboBoxGoalSlope.SelectedItem is int goalSlope
                     ? new JunctionAcousticTarget(goalFamily.Value, goalSlope)
-                    : null);
+                    : null,
+            checkBoxSplitCorners.Checked);
 
         running = true;
         buttonRun.Enabled = false;

@@ -77,6 +77,65 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
     });
 
     [Fact]
+    public void TheModeSaysWhatIsBeingTunedFor_AndOnlyTheAcousticOneCarriesAGoal() => StaTest.Run(() =>
+    {
+        // Without the switch the dialog never said what it optimised, and a run with the goal boxes left alone was
+        // a search for nothing in particular.
+        using var dialog = new VirtualCrossoverJunctionTuneDialog();
+        JunctionTuneRequest? asked = null;
+        dialog.Init(
+            ["A-B"],
+            _ => new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.LinkwitzRiley], null),
+            request =>
+            {
+                asked = request;
+                return Task.FromResult(new JunctionTuneOutcome(
+                    [JunctionTuneLine.Of("read")], CanApply: false, "kept", false));
+            });
+        RadioButton summation = Field<RadioButton>(dialog, "radioSummation");
+        RadioButton acoustic = Field<RadioButton>(dialog, "radioAcoustic");
+        Label hint = Field<Label>(dialog, "labelGoalHint");
+
+        Assert.True(summation.Checked);
+        Assert.False(Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").Enabled);
+        Assert.Contains("sums best", hint.Text, StringComparison.Ordinal);
+        Run(dialog);
+        Assert.Null(asked!.AcousticGoal);
+        Assert.False(asked.SplitCorners);
+
+        // Switching mode states a goal rather than leaving the boxes empty, and says so in the hint.
+        acoustic.Checked = true;
+        Assert.True(Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").Enabled);
+        Assert.Contains("Driver and filter together", hint.Text, StringComparison.Ordinal);
+        Field<CheckBox>(dialog, "checkBoxSplitCorners").Checked = true;
+        Run(dialog);
+
+        Assert.NotNull(asked!.AcousticGoal);
+        Assert.Equal(CrossoverFilterFamily.LinkwitzRiley, asked.AcousticGoal!.Family);
+        Assert.True(asked.SplitCorners);
+    });
+
+    [Fact]
+    public void AJunctionWhoseCardsAlreadyStateAGoal_OpensOnIt() => StaTest.Run(() =>
+    {
+        using var dialog = new VirtualCrossoverJunctionTuneDialog();
+        dialog.Init(
+            ["A-B"],
+            _ => new JunctionTuneDefaults(
+                80,
+                200,
+                [CrossoverFilterFamily.Butterworth],
+                new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 18)),
+            _ => Task.FromResult(new JunctionTuneOutcome([], false, "kept", false)));
+
+        Assert.True(Field<RadioButton>(dialog, "radioAcoustic").Checked);
+        Assert.Equal(
+            CrossoverFilterFamily.Butterworth,
+            (Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").SelectedItem as CrossoverFamilyChoice)?.Value);
+        Assert.Equal(18, Field<ThemedComboBox>(dialog, "comboBoxGoalSlope").SelectedItem);
+    });
+
+    [Fact]
     public void WithNoJunctionInView_ItSaysSoInsteadOfOfferingASearch() => StaTest.Run(() =>
     {
         using var dialog = new VirtualCrossoverJunctionTuneDialog();

@@ -281,12 +281,19 @@ internal sealed class EqBandFitter
             int added = InsertionPass(budget);
             Refine(All(), FinalIterations);
             int removed = prune ? Prune() : 0;
-            if ((added == 0 && removed == 0) || bands.Count >= budget)
+            if (!AnotherPass(added, removed, bands.Count, budget))
             {
                 return;
             }
         }
     }
+
+    /// <summary>
+    /// Whether the fit looks again: the last pass has to have changed the bank — inserting, or dropping a band, which
+    /// leaves a free slot and a changed residual — and there has to be room left.
+    /// </summary>
+    internal static bool AnotherPass(int added, int removed, int bands, int budget) =>
+        (added > 0 || removed > 0) && bands < budget;
 
     private int[] All() => Enumerable.Range(0, bands.Count).ToArray();
 

@@ -67,6 +67,31 @@ public sealed class EqAutoTunerShelfTests
     };
 
     [Fact]
+    public void Tune_ACornerMidwayInANarrowRange_IsStillReachable()
+    {
+        // 100 Hz..2.11 kHz leaves a low shelf's corner 1.4 octaves to sit in (200..527 Hz): seeds an octave apart
+        // reach all of it, seeds at the two ends with half an octave of drift each do not. One slot, so the corner
+        // is the whole answer and no bell can paper over a seed that could not get there.
+        var ideal = new PeqBand(325, 0.5, 6, PeqBandType.LowShelf);
+        IReadOnlyList<SignalPoint> source = Grid(
+            f => DigitalEqualizationResponse.MagnitudeDbAt(new EqualizationCurve([ideal]), f, Rate));
+        IReadOnlyList<SignalPoint> target = Grid(_ => 0.0);
+        EqAutoTuner.Options options = CutsOnly with
+        {
+            AllowShelves = true,
+            MaxBands = 1,
+            MinFrequencyHz = 100,
+            MaxFrequencyHz = 2_110
+        };
+
+        EqualizationCurve curve = EqAutoTuner.Tune(source, target, options);
+
+        PeqBand shelf = Assert.Single(curve.Bands);
+        Assert.Equal(PeqBandType.LowShelf, shelf.Type);
+        Assert.InRange(shelf.FrequencyHz, 300, 352);
+    }
+
+    [Fact]
     public void Tune_ShelvesOffByDefault_PlacesBellsOnly()
     {
         // Default off: callers that say nothing keep the bells-only result.

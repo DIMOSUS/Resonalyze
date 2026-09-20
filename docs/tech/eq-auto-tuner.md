@@ -62,7 +62,10 @@ difference (see [Preamp alignment](#preamp-alignment)); `EqBandFitter` fits the 
    objective rises by less than `SlotWorth`. A band whose bare removal already costs six slots is not tried.
 4. **Repeat.** Refinement moves bands, so a place refused a band in one pass may earn one after it: the blocks are
    cleared and insertion runs again, up to four passes, while a pass still adds or drops a band. A pruned band leaves
-   a free slot and a changed residual, which is as good a reason to look again as an insertion.
+   a free slot and a changed residual, which is as good a reason to look again as an insertion — though no fixture
+   found reaches that case: pruning fires in the pass that added the bands, and by the next pass the bank has
+   converged (8000 fits over the corpus and over random sources never took the branch, so `AnotherPass` is pinned by
+   a unit test rather than by a fit).
 5. **Round** to what the strips hold (1 Hz, 0.1 dB, Q 0.1), then enforce the ceilings the objective held softly by
    trimming, in 0.1 dB steps, the boost doing most of any excess — see
    [Ceilings on the finished bank](#ceilings-on-the-finished-bank).

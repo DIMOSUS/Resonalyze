@@ -61,6 +61,21 @@ public sealed class EqAutoTunerFitTests
     }
 
     [Theory]
+    // added, removed, bands, budget
+    [InlineData(1, 0, 3, 6, true)]
+    [InlineData(0, 1, 3, 6, true)]
+    [InlineData(2, 1, 3, 6, true)]
+    [InlineData(0, 0, 3, 6, false)]
+    [InlineData(1, 1, 6, 6, false)]
+    public void APassThatOnlyDroppedABand_EarnsAnotherLook(
+        int added, int removed, int bands, int budget, bool again)
+    {
+        // A dropped band leaves a free slot and a changed residual, which is as good a reason to look again as an
+        // insertion. No fixture reaches this: 8_000 fits over the corpus and random sources never took the branch.
+        Assert.Equal(again, EqBandFitter.AnotherPass(added, removed, bands, budget));
+    }
+
+    [Theory]
     [InlineData(EqAutoTuneBoosts.RefillOwnCuts)]
     [InlineData(EqAutoTuneBoosts.Off)]
     public void Tune_ABankThatMayNotLift_StaysAtOrBelowZero_BetweenTheFittedBinsToo(EqAutoTuneBoosts boosts)

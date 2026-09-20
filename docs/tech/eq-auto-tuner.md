@@ -61,9 +61,35 @@ difference (see [Preamp alignment](#preamp-alignment)); `EqBandFitter` fits the 
 3. **Prune.** The band that costs least to lose is removed and the rest refitted; the removal stands when the
    objective rises by less than `SlotWorth`. A band whose bare removal already costs six slots is not tried.
 4. **Repeat.** Refinement moves bands, so a place refused a band in one pass may earn one after it: the blocks are
-   cleared and insertion runs again, up to four passes, while a pass still adds a band.
+   cleared and insertion runs again, up to four passes, while a pass still adds or drops a band. A pruned band leaves
+   a free slot and a changed residual, which is as good a reason to look again as an insertion.
 5. **Round** to what the strips hold (1 Hz, 0.1 dB, Q 0.1), then enforce the ceilings the objective held softly by
-   trimming, in 0.1 dB steps, the boost doing most of any excess.
+   trimming, in 0.1 dB steps, the boost doing most of any excess — see
+   [Ceilings on the finished bank](#ceilings-on-the-finished-bank).
+
+### Ceilings on the finished bank
+
+A ceiling is a promise about the bank, not about the bins it was fitted on. The soft constraints in the objective and
+the trimming pass both read the 256-point fitting grid, where a narrow band peaks between samples: at Q 20, the
+narrowest a strip allows, a band is about 0.07 octave wide against a grid step of 0.04, so a refill and its cut can
+read as summing to zero on the samples and still lift between them (measured: 0.36 dB on a synthetic fixture of
+off-bin peaks). The skirts also run through bins the source never covered, which the fit treats as contributing
+nothing.
+
+So after rounding, the ceilings are enforced twice: on the fitting grid, where the boost mask lines up exactly, and
+again on a grid of 4096 logarithmic points from half the window's low edge (or 10 Hz) to just under Nyquist, dense
+enough to give the narrowest allowed band tens of samples. Which points a ceiling answers for differs by what it
+promises:
+
+- **A bank that may not lift** (`Off`, `RefillOwnCuts`) promises clip safety, so its sum is held at or below 0 dB
+  over the whole dense range, measured bins or not.
+- **The stacking limit on boosts** (`Allowed`) is held where the source was measured. Held everywhere instead, a boost
+  at the edge of the window was trimmed to nothing for what its skirt does in an unmeasured octave above it, which
+  cost 0.10 dB RMS on the corpus for a constraint about frequencies nobody asked the bank to correct.
+- **`TotalGainMaxDb`** is a headroom figure, so the bank's peak for it is read over the whole dense range.
+
+The dense pass costs about 2 ms per fit. On the corpus it moves the result only where the promise was being broken:
+refilling, RMS 1.381 → 1.386 dB and dug 0.91 → 0.93 dB; with boosts, nothing measurable.
 
 Both ends of a band are bounded: gain by Min/Max Gain with the sign it was seeded with (a boost never turns into a
 cut), Q by `[max(QMin, 0.5), QMax]` — a bell wider than Q 0.5 is a tilt, which is a shelf's or the preamp's job.
@@ -226,8 +252,9 @@ a slot's worth of error is not placed. The second round runs against the first r
 shelf can describe one tilt together. The chosen shelves then enter the full fit like any band: refined with the
 bells, and dropped by pruning if the bells make them redundant.
 
-Candidates are one per octave of the corners a shelf may take in each direction, each seeded with the mean error over
-its plateau (only what stands above the target where the mode does not chase a deficit), knee 0.5, and a corner free
+Candidates are one per octave of the corners a shelf may take in each direction — rounded UP, since a corner drifts
+half an octave and seeds further apart than an octave would leave corners in between that no candidate can reach —
+each seeded with the mean error over its plateau (only what stands above the target where the mode does not chase a deficit), knee 0.5, and a corner free
 to move half an octave while its plateau stays usable. The joint refinement finds the corner a finer ladder would
 have enumerated.
 

@@ -25,6 +25,14 @@ internal sealed record EqFitTuning(
 /// <summary>One fit on the tuner's grid. <see cref="Desired"/> is the correction each point asks for (target − source − preamp).</summary>
 internal sealed class EqFitProblem
 {
+    // The ceiling grid: dense enough that the narrowest Q a strip allows (20, about 0.07 octave wide) still gets tens of
+    // points, and wide enough to hold every skirt the biquads reach.
+    // See docs/tech/eq-auto-tuner.md#ceilings-on-the-finished-bank.
+    private const int CeilingGridSize = 4_096;
+    private const double CeilingNyquistFraction = 0.49;
+
+    private EqFitProblem? ceilings;
+
     public EqFitProblem(
         EqAutoTuner.Options options,
         IReadOnlyList<double> hz,
@@ -57,6 +65,56 @@ internal sealed class EqFitProblem
         LogMaxHz = Math.Log(hz[^1]);
     }
 
+    private EqFitProblem BuildCeilings()
+    {
+        double lowestHz = Math.Max(1, Math.Min(Hz[0], 20) / 2);
+        double highestHz = Math.Max(lowestHz * 2, Options.SampleRateHz * CeilingNyquistFraction);
+        IReadOnlyList<double> hz = EqualizationCurve.LogFrequencyGrid(lowestHz, highestHz, CeilingGridSize);
+        var z1 = new Complex[hz.Count];
+        var z2 = new Complex[hz.Count];
+        var valid = new bool[hz.Count];
+        var allowed = new bool[hz.Count];
+        for (int i = 0; i < hz.Count; i++)
+        {
+            z1[i] = Complex.Exp(new Complex(0, -Math.Tau * hz[i] / Options.SampleRateHz));
+            z2[i] = z1[i] * z1[i];
+            // Which points a ceiling answers for. A bank that may not lift promises clip safety, so it answers
+            // everywhere; the stacking limit on boosts answers where the source was measured, or a boost would be
+            // trimmed to nothing for what its skirt does in an unmeasured octave nobody asked it to correct.
+            int near = Nearest(hz[i]);
+            valid[i] = Refills || (near >= 0 && Valid[near]);
+            allowed[i] = near < 0 || BoostAllowed[near];
+        }
+
+        return new EqFitProblem(Options, hz, z1, z2, valid, allowed, new double[hz.Count]);
+    }
+
+    // The nearest fitted bin, or −1 outside the fitted band, where nothing was measured.
+    private int Nearest(double hz)
+    {
+        if (hz < Hz[0] || hz > Hz[^1])
+        {
+            return -1;
+        }
+
+        int lo = 0;
+        int hi = Count - 1;
+        while (hi - lo > 1)
+        {
+            int mid = (lo + hi) / 2;
+            if (Hz[mid] <= hz)
+            {
+                lo = mid;
+            }
+            else
+            {
+                hi = mid;
+            }
+        }
+
+        return Math.Log(hz / Hz[lo]) <= Math.Log(Hz[hi] / hz) ? lo : hi;
+    }
+
     public EqAutoTuner.Options Options { get; }
     public EqFitTuning Tuning => Options.Tuning;
     public IReadOnlyList<double> Hz { get; }
@@ -74,6 +132,12 @@ internal sealed class EqFitProblem
     public double LogMinHz { get; }
     public double LogMaxHz { get; }
     public bool Refills => Options.Boosts == EqAutoTuneBoosts.RefillOwnCuts;
+
+    /// <summary>
+    /// The same options over a grid the ceilings are checked on: every point valid (a filter's skirt runs through
+    /// unmeasured octaves too), dense, and spanning the whole band rather than the fitted window.
+    /// </summary>
+    public EqFitProblem Ceilings() => ceilings ??= BuildCeilings();
 
     public double[] Response(PeqBand band)
     {
@@ -128,6 +192,8 @@ internal sealed class EqBandFitter
     private const double ShelfPlateauSpanOctaves = 1.0;
     private const double ShelfPlateauMarginOctaves = 0.5;
     private const double ShelfPlateauUsableFraction = 0.75;
+    // Ceiling, not rounding: a seed drifts at most ShelfDriftOctaves, so a wider gap between seeds is a corner no
+    // shelf can reach.
     private const int ShelfSeedsPerOctave = 1;
     private const int ShelfBoundStepsPerOctave = 8;
 
@@ -206,19 +272,16 @@ internal sealed class EqBandFitter
         return fitter.Quantize();
     }
 
-    // Joint refinement moves bands, so an error refused a band in one pass may earn one in the next.
+    // Joint refinement moves bands, so an error refused a band in one pass may earn one in the next; and a pruned band
+    // leaves both a free slot and a changed residual, which is another reason to look again.
     private void Run(int budget, int passes, bool prune)
     {
         for (int pass = 0; pass < passes; pass++)
         {
             int added = InsertionPass(budget);
             Refine(All(), FinalIterations);
-            if (prune)
-            {
-                Prune();
-            }
-
-            if (added == 0 || bands.Count >= budget)
+            int removed = prune ? Prune() : 0;
+            if ((added == 0 && removed == 0) || bands.Count >= budget)
             {
                 return;
             }
@@ -286,9 +349,11 @@ internal sealed class EqBandFitter
     }
 
     // Removes the band that costs least to lose while the rest, refitted, make up for all but a slot's worth of it.
-    private void Prune()
+    /// <returns>How many bands were dropped.</returns>
+    private int Prune()
     {
         var kept = new HashSet<int>();
+        int removed = 0;
         while (bands.Count > 0)
         {
             Sum();
@@ -312,7 +377,7 @@ internal sealed class EqBandFitter
 
             if (weakest == null || weakestCost > PruneScreenSlots * p.Tuning.SlotWorth)
             {
-                return;
+                return removed;
             }
 
             List<Band> snapshot = bands.Select(band => band.Clone()).ToList();
@@ -321,6 +386,7 @@ internal sealed class EqBandFitter
             Sum();
             if (Objective() - current < p.Tuning.SlotWorth)
             {
+                removed++;
                 continue;
             }
 
@@ -328,6 +394,8 @@ internal sealed class EqBandFitter
             bands.AddRange(snapshot);
             kept.Add(weakest.Id);
         }
+
+        return removed;
     }
 
     private double ObjectiveWithout(Band band)
@@ -369,19 +437,21 @@ internal sealed class EqBandFitter
             result.Add(new PeqBand(Math.Max(1, Math.Round(Math.Exp(band.U))), q, gain, band.Type));
         }
 
-        EnforceCeilings(result);
+        // The fitted bins first (their boost mask is exact), then the dense grid, which also holds what the fit never saw.
+        EnforceCeilings(p, result);
+        EnforceCeilings(p.Ceilings(), result);
 
         return result;
     }
 
     // The objective holds the ceilings softly and rounding moves bands, so the boost doing most of any excess is trimmed
     // in the strips' tenth-of-a-dB steps until none is left.
-    private void EnforceCeilings(List<PeqBand> result)
+    private static void EnforceCeilings(EqFitProblem p, List<PeqBand> result)
     {
         List<double[]> responses = result.Select(p.Response).ToList();
         while (true)
         {
-            int worst = WorstExcess(result, responses);
+            int worst = WorstExcess(p, result, responses);
             int culprit = -1;
             double most = 0;
             for (int k = 0; worst >= 0 && k < result.Count; k++)
@@ -413,7 +483,7 @@ internal sealed class EqBandFitter
     }
 
     // The point furthest over its ceiling, or −1: the bank's sum when refilling, the boosting bells' sum when boosting.
-    private int WorstExcess(List<PeqBand> result, List<double[]> responses)
+    private static int WorstExcess(EqFitProblem p, List<PeqBand> result, List<double[]> responses)
     {
         EqAutoTuner.Options opt = p.Options;
         if (opt.Boosts == EqAutoTuneBoosts.Off)
@@ -1101,7 +1171,7 @@ internal sealed class EqBandFitter
             }
         }
 
-        int count = Math.Max(2, (int)Math.Round(Math.Log2(highestHz / lowestHz) * ShelfSeedsPerOctave) + 1);
+        int count = Math.Max(2, (int)Math.Ceiling(Math.Log2(highestHz / lowestHz) * ShelfSeedsPerOctave) + 1);
         var factory = new EqBandFitter(problem, placed);
         foreach (double cornerHz in EqualizationCurve.LogFrequencyGrid(lowestHz, highestHz, count))
         {

@@ -174,21 +174,20 @@ public static class EqAutoTuner
             z2[i] = z1[i] * z1[i];
         }
 
-        List<PeqBand> bands = EqBandFitter.Fit(
-            new EqFitProblem(opt, grid, z1, z2, valid, boostAllowed, desired));
+        var problem = new EqFitProblem(opt, grid, z1, z2, valid, boostAllowed, desired);
+        List<PeqBand> bands = EqBandFitter.Fit(problem);
 
         if (double.IsFinite(opt.TotalGainMaxDb))
         {
             var bank = new EqualizationCurve(bands, 0);
             double bandPeak = 0;
-            for (int i = 0; i < n; i++)
+            // The bank's own peak, on the ceiling grid: a narrow band peaks between the fitted bins, and its skirt runs
+            // through octaves the source never covered.
+            foreach (double hz in problem.Ceilings().Hz)
             {
-                if (valid[i])
-                {
-                    bandPeak = Math.Max(
-                        bandPeak,
-                        DigitalEqualizationResponse.MagnitudeDbAt(bank, grid[i], opt.SampleRateHz));
-                }
+                bandPeak = Math.Max(
+                    bandPeak,
+                    DigitalEqualizationResponse.MagnitudeDbAt(bank, hz, opt.SampleRateHz));
             }
 
             // The tolerance keeps rounding noise on a bank that never lifts from costing the preamp a whole dB.

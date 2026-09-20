@@ -35,6 +35,61 @@ public sealed class EqAutoTunerFitTests
         TotalGainMaxDb = boosts == EqAutoTuneBoosts.Allowed ? double.PositiveInfinity : 0
     };
 
+    // Narrow work between the fitted bins, with an unmeasured octave: the ceilings are promises about the bank, not the bins.
+    private static IReadOnlyList<SignalPoint> Adversarial()
+    {
+        var points = new List<SignalPoint>();
+        foreach (double f in EqualizationCurve.LogFrequencyGrid(20, 20_000, 1_200))
+        {
+            double value = Bump(f, 971, 0.02, 9) + Bump(f, 1_033, 0.02, -7) + Bump(f, 4_517, 0.015, 8) +
+                Bump(f, 4_701, 0.02, -9) + Bump(f, 11_311, 0.03, 7) + Box(f, 40, 90, 0.1, -6);
+            points.Add(new SignalPoint(f, f is > 200 and < 400 ? double.NaN : value));
+        }
+
+        return points;
+    }
+
+    private static double WorstBankPeak(EqualizationCurve curve)
+    {
+        double worst = double.NegativeInfinity;
+        foreach (double f in EqualizationCurve.LogFrequencyGrid(10, Rate * 0.49, 60_000))
+        {
+            worst = Math.Max(worst, Bank(curve, f));
+        }
+
+        return worst;
+    }
+
+    [Theory]
+    [InlineData(EqAutoTuneBoosts.RefillOwnCuts)]
+    [InlineData(EqAutoTuneBoosts.Off)]
+    public void Tune_ABankThatMayNotLift_StaysAtOrBelowZero_BetweenTheFittedBinsToo(EqAutoTuneBoosts boosts)
+    {
+        EqAutoTuner.Options options = Options(boosts) with { QMax = 20 };
+
+        EqualizationCurve curve = EqAutoTuner.Tune(Adversarial(), Flat, options);
+
+        double peak = WorstBankPeak(curve);
+        Assert.True(peak <= 1e-6, $"the bank lifts {peak:0.000} dB somewhere.");
+        Assert.True(curve.PreampDb <= 0, $"preamp {curve.PreampDb:0.0} dB.");
+    }
+
+    [Fact]
+    public void Tune_TheTotalGainCeiling_HoldsBetweenTheFittedBinsToo()
+    {
+        EqAutoTuner.Options options = Options(EqAutoTuneBoosts.Allowed) with
+        {
+            QMax = 20,
+            BandGainMaxDb = 12,
+            TotalGainMaxDb = 3
+        };
+
+        EqualizationCurve curve = EqAutoTuner.Tune(Adversarial(), Flat, options);
+
+        double worst = WorstBankPeak(curve) + curve.PreampDb;
+        Assert.True(worst <= 3 + 1e-6, $"the bank reaches {worst:0.000} dB against a 3 dB ceiling.");
+    }
+
     [Fact]
     public void Tune_FitsAQBetweenWhatALadderWouldOffer()
     {

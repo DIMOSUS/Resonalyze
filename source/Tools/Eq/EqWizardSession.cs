@@ -164,8 +164,8 @@ internal sealed class EqWizardSession
     /// </summary>
     public bool CrossoverInTarget { get; private set; } = true;
 
-    /// <summary>The crossover that shapes the target, or null: no chain behind the source, or no crossover in it.</summary>
-    public CrossoverSpec? TargetCrossover => EqTargetCrossover.Of(Source);
+    /// <summary>The slope that shapes the target, or null: no chain behind the source, or no crossover in it.</summary>
+    public EqTargetSlope? TargetCrossover => EqTargetCrossover.Of(Source);
 
     // ---- bank and view ----
 
@@ -531,10 +531,10 @@ internal sealed class EqWizardSession
         {
             SetAutoTuneWindow(minHz, maxHz);
             passbandWindow = (WindowFromHz, WindowToHz);
-            if (EqTargetCrossover.Of(request.Source) is { } crossover)
+            if (EqTargetCrossover.Of(request.Source) is { } slope)
             {
                 (double slopeMinHz, double slopeMaxHz) = EqTargetCrossover.SlopeWindow(
-                    crossover,
+                    slope,
                     minHz,
                     maxHz,
                     ProcessorSampleRateHz,

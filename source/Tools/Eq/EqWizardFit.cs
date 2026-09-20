@@ -47,8 +47,8 @@ internal static class EqWizardFit
             // Shelves are opt-in: they change the SHAPE returned, and Max Q says nothing about a shelf's knee.
             AllowShelves = session.AllowShelves,
             // Down a crossover skirt the target's fall is the filter's doing: cut onto it, never lift it.
-            NoBoostBands = session.CrossoverInTarget && session.TargetCrossover is { } crossover
-                ? EqTargetCrossover.NoBoostBands(crossover, minHz, maxHz, session.ProcessorSampleRateHz)
+            NoBoostBands = session.CrossoverInTarget && session.TargetCrossover is { } slope
+                ? EqTargetCrossover.NoBoostBands(slope, minHz, maxHz, session.ProcessorSampleRateHz)
                 : Array.Empty<EqNoBoostBand>()
         };
     }

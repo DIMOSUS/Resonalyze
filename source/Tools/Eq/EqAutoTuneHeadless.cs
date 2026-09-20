@@ -154,14 +154,14 @@ internal static class EqAutoTuneHeadless
         // The wizard's goal for a handed-over channel, so an import fits what the screen shows: target inside the
         // passband, the crossover's slope outside it. See docs/tech/eq-auto-tuner.md#the-crossover-in-the-target.
         IReadOnlyList<EqNoBoostBand> noBoost = Array.Empty<EqNoBoostBand>();
-        if (policy.CrossoverInTarget && EqTargetCrossover.Of(source) is { } crossover)
+        if (policy.CrossoverInTarget && EqTargetCrossover.Of(source) is { } slope)
         {
             int shapeRate = ProcessorRate(source);
             // A stated window is the caller's; only the handoff's own passband is widened down the skirts.
             if (minHz == null && maxHz == null)
             {
                 (windowMinHz, windowMaxHz) = EqTargetCrossover.SlopeWindow(
-                    crossover,
+                    slope,
                     windowMinHz,
                     windowMaxHz,
                     shapeRate,
@@ -171,9 +171,9 @@ internal static class EqAutoTuneHeadless
 
             target = target
                 .Select(point => new SignalPoint(
-                    point.X, point.Y + EqTargetCrossover.ShapeDb(crossover, point.X, shapeRate)))
+                    point.X, point.Y + EqTargetCrossover.ShapeDb(slope, point.X, shapeRate)))
                 .ToList();
-            noBoost = EqTargetCrossover.NoBoostBands(crossover, windowMinHz, windowMaxHz, shapeRate);
+            noBoost = EqTargetCrossover.NoBoostBands(slope, windowMinHz, windowMaxHz, shapeRate);
         }
 
         // Max Filters budgets the BANK; kept bands come off it.

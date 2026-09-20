@@ -180,6 +180,9 @@ internal static class VirtualDspEqHandoff
             TargetCrossover = withChain && settings.EffectiveCrossover is { Kind: not CrossoverKind.Off } effective
                 ? effective
                 : null,
+            // A designed crossover kernel describes its own slope; the design's corners do not (a windowed sinc's
+            // slope is its window and length). FirDesign is what tells a crossover FIR from a correction one.
+            TargetCrossoverFir = withChain && settings.HasFirCrossover ? settings.Fir : null,
             // Neighbours only for a chain handoff: a raw curve against processed neighbours describes no real system.
             PhaseContext = withChain ? phaseContext : null,
             // Hybrid: the average replaces the fitted magnitude; the impulse response still serves phase.

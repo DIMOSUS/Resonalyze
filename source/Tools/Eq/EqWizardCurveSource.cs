@@ -56,6 +56,12 @@ internal sealed record EqWizardCurveSource
     /// </summary>
     public CrossoverSpec? TargetCrossover { get; init; }
 
+    /// <summary>
+    /// The crossover KERNEL when the channel is crossed by a designed FIR: its window and length set the slope, which
+    /// the design's corners do not describe. Takes precedence over <see cref="TargetCrossover"/>.
+    /// </summary>
+    public FirFilter? TargetCrossoverFir { get; init; }
+
     /// <summary>Spatial average that REPLACES the magnitude when present; the measurement still serves the phase view.</summary>
     public LiveCaptureDocument? SpatialAverage { get; init; }
 

@@ -1886,8 +1886,9 @@ what the neighbouring channel has to sum with. That is how current REW tuning gu
 work, and it is on by default for a chain handoff. Untick it to fit inside the passband
 only and leave the slopes alone; the box is greyed out for any source with no crossover
 behind it (a raw handoff, an imported curve, an overlay). A channel crossed with a
-[FIR](#fir-constructor) kernel counts: the target follows the corners that design states,
-the same ones the junction read-outs use.
+[FIR](#fir-constructor) kernel counts, and there the target follows the kernel itself: a
+windowed-sinc design's slope is its window and length, so the corners it carries would
+describe a filter it is not.
 
 Three things follow the box, all measured rather than chosen:
 
@@ -1896,9 +1897,11 @@ Three things follow the box, all measured rather than chosen:
   not so far that the fit chases a filter into the floor. They follow the box only while
   they still stand where the handoff or the box last put them: an edge you typed is
   yours, and neither ticking nor unticking moves it.
-- **Boosts are refused down the skirts**, from 6 dB of fall outwards — the corner itself
+- **No boost is aimed down the skirts**, from 6 dB of fall outwards — the corner itself
   and everything below it. There the target's fall IS the filter, so lifting it would undo
   the crossover and spend the driver's excursion where the neighbour plays at full level.
+  What a boost aimed inside the passband spills down a skirt through its own edge is held
+  to 0.5 dB, as in a band the reliability mask closed.
   Cuts stay allowed, and that is the direction that does the work: a driver whose acoustic
   slope is shallower than the filter's gets brought down onto it. Refilling its own cuts
   (**Boosts** on Refill cuts) still works everywhere, since such a bank never rises above

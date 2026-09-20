@@ -6,10 +6,12 @@ public sealed class EqTargetCrossoverTests
 {
     private const int Rate = 48_000;
 
-    private static readonly CrossoverSpec BandPass = new(
+    private static readonly CrossoverSpec BandPassSpec = new(
         CrossoverKind.BandPass,
         new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 24),
         new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24));
+
+    private static readonly EqTargetSlope BandPass = new(BandPassSpec, null);
 
     [Fact]
     public void TheShape_IsFlatInThePassbandAndFallsDownEachSkirt()
@@ -68,10 +70,12 @@ public sealed class EqTargetCrossoverTests
     public void AWindowThatIsSkirtFromEdgeToEdge_RefusesBoostsThroughout()
     {
         // A band-pass crossed past itself: nowhere in the window does the pair rise within 6 dB of its plateau.
-        var crossed = new CrossoverSpec(
-            CrossoverKind.BandPass,
-            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 200, 24),
-            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24));
+        EqTargetSlope crossed = new(
+            new CrossoverSpec(
+                CrossoverKind.BandPass,
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 200, 24),
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24)),
+            null);
 
         IReadOnlyList<EqNoBoostBand> bands = EqTargetCrossover.NoBoostBands(crossed, 300, 1_500, Rate);
 
@@ -87,29 +91,46 @@ public sealed class EqTargetCrossoverTests
         Assert.Null(EqTargetCrossover.Of(null));
         Assert.Null(EqTargetCrossover.Of(Source(null)));
         Assert.Null(EqTargetCrossover.Of(Source(CrossoverSpec.Off)));
-        Assert.Equal(BandPass, EqTargetCrossover.Of(Source(BandPass)));
+        Assert.Equal(BandPass, EqTargetCrossover.Of(Source(BandPassSpec)));
 
-        // A FIR crossover leaves the built chain's Crossover Off and carries the filter as a kernel, so the source
-        // brings the channel's EFFECTIVE crossover instead: its design corners.
-        var design = new FirCrossoverDesign(
+        // A designed FIR crossover answers with its KERNEL: a windowed sinc's slope is its window and length, which
+        // the corners the design carries do not describe, so reading them would draw an IIR that does not exist.
+        var sinc = new FirCrossoverDesign(
             CrossoverKind.HighPass,
             new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24),
             new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_000, 24),
-            FirCrossoverMethod.IirMagnitude,
+            FirCrossoverMethod.WindowedSinc,
             FirWindow.Kaiser,
             8,
             1_023,
             Rate);
-        var settings = new VirtualCrossoverChannelSettings { Fir = design.Build(), FirDesign = design };
+        var settings = new VirtualCrossoverChannelSettings { Fir = sinc.Build(), FirDesign = sinc };
+        EqWizardCurveSource source = Source(settings.EffectiveCrossover) with
+        {
+            TargetCrossoverFir = settings.Fir
+        };
 
-        Assert.Equal(CrossoverKind.Off, settings.ToChain(VirtualCrossoverZone.Front).Crossover?.Kind ?? CrossoverKind.Off);
-        Assert.Equal(CrossoverKind.HighPass, settings.EffectiveCrossover.Kind);
-        Assert.Equal(
-            settings.EffectiveCrossover,
-            EqTargetCrossover.Of(Source(settings.EffectiveCrossover)));
+        EqTargetSlope slope = Assert.IsType<EqTargetSlope>(EqTargetCrossover.Of(source));
+        Assert.Null(slope.Crossover);
+        Assert.NotNull(slope.Fir);
+        // The kernel's own brick wall is far steeper than the 24 dB/oct the corners claim.
+        double kernel = EqTargetCrossover.ShapeDb(slope, 1_400, Rate);
+        double pretendIir = EqTargetCrossover.ShapeDb(new EqTargetSlope(settings.EffectiveCrossover, null), 1_400, Rate);
         Assert.True(
-            EqTargetCrossover.ShapeDb(settings.EffectiveCrossover, 500, Rate) < -20,
-            "an octave and a half below a 24 dB/oct corner the target should be far down.");
+            kernel < pretendIir - 3,
+            $"the kernel reads {kernel:0.0} dB where the corners would claim {pretendIir:0.0} dB.");
+    }
+
+    [Fact]
+    public void ACrossoverOutsideTheMeasuredBand_StillLeavesAUsableWindow()
+    {
+        // A low-pass at 500 Hz on a record that starts at 1 kHz: widening has nothing to widen into.
+        (double minHz, double maxHz) = EqTargetCrossover.SlopeWindow(
+            BandPass, 80, 500, Rate, measuredLowHz: 1_000, measuredHighHz: 4_000);
+
+        Assert.True(minHz < maxHz, $"window {minHz}..{maxHz} is inverted.");
+        Assert.Equal(80, minHz);
+        Assert.Equal(500, maxHz);
     }
 
     private static EqWizardCurveSource Source(CrossoverSpec? crossover) => new()

@@ -1333,7 +1333,7 @@ measurement. [REFERENCE.md](REFERENCE.md#ai-assistant-bridge) describes the brid
 
 ### Hear it before you go back to the car
 
-Press **Audition track...**, choose a music file and a destination, and Resonalyze
+Press **Tools...**, pick **Audition track...**, choose a music file and a destination, and Resonalyze
 convolves it with both sides' summed responses — the sums the graph draws — into a
 stereo file.
 

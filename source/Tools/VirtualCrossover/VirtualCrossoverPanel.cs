@@ -92,13 +92,12 @@ public partial class VirtualCrossoverPanel : UserControl
         buttonAutoSetup.Click += (_, _) => OpenAutoSetupWizard();
         buttonTuneJunction.Click += async (_, _) => await ShowJunctionTuneDialogAsync().ConfigureAwait(true);
         buttonDspProcessor.Click += (_, _) => OpenDspProcessorDialog();
-        buttonCaptureOverlay.Click += async (_, _) => await CaptureSumToOverlayAsync();
+        buttonTools.Click += (_, _) => ShowToolsMenu();
         buttonExport.Click += async (_, _) => await ExportTuningSheetAsync();
         buttonPhaseGate.Click += async (_, _) => await OpenPhaseGateDialogAsync();
         buttonTargetSettings.Click += (_, _) => ShowTargetMenu();
         buttonSessionImport.Click += async (_, _) => await ImportSessionAsync();
         buttonSessionExport.Click += (_, _) => ExportSession();
-        buttonAudition.Click += async (_, _) => await AuditionTrackAsync();
         buttonAddChannel.Click += (_, _) => AddChannel();
         buttonRemoveChannel.Click += (_, _) => RemoveChannel();
         buttonResetChannels.Click += async (_, _) => await ResetChannelsAsync();
@@ -358,7 +357,7 @@ public partial class VirtualCrossoverPanel : UserControl
         // Gathered at one revision; an import would be overwritten by a load in progress.
         buttonAi.Enabled = !busy && !agentBusy;
         // Starting mid-redraw would race the invalidation and render nothing.
-        buttonAudition.Enabled = !busy;
+        buttonTools.Enabled = !busy;
     }
 
     // Revision, cancellation and cache ownership live in the coordinator; this only applies results to OxyPlot.

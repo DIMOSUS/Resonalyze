@@ -3730,12 +3730,14 @@ under the table.
 
 ### Panel commands
 
-The remaining buttons in the column beside the plots:
+The remaining buttons in the column beside the plots. The two used occasionally
+rather than while tuning live under **Tools…**, so the column stays the sequence a
+tune is actually built in:
 
-- **Capture to overlay** saves the predicted sum as a Captured overlay in
+- **Tools… → Capture to overlay** saves the predicted sum as a Captured overlay in
   Frequency Response — compare it against real measurements and target curves, or
   feed it onward to the EQ Wizard.
-- **Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
+- **Tools… → Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
   the tune into a stereo WAV: each program channel is convolved with the summed
   processed response of its side, with the microphone calibration optionally
   baked in and one shared normalization gain so the L/R balance survives. The

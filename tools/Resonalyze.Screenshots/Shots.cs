@@ -419,7 +419,8 @@ internal static class Shots
         if (wanted("manual/audition-track"))
         {
             session.CaptureModal("manual/audition-track",
-                () => Reflect.Field<Button>(panel, "buttonAudition").PerformClick(), 3_000);
+                // Behind the Tools menu now; the action is invoked directly rather than posting a drop-down.
+                () => Reflect.Invoke(panel, "AuditionTrackAsync"), 3_000);
         }
     }
 

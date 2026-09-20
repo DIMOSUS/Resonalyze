@@ -174,9 +174,10 @@ public partial class VirtualCrossoverPanel
             "Load a saved session file, replacing the current state.\r\n" +
             "Sources are re-resolved from history or their file paths.");
         toolTip.SetToolTip(
-            buttonAudition,
-            "Render a music file through the tune into a stereo WAV: the\r\n" +
-            "left sum on channel 1, the right on channel 2.\r\n" +
-            "Listen through HEADPHONES only.");
+            buttonTools,
+            "The occasional tools, off the main path: audition the tune\r\n" +
+            "through a music file, or capture the current sum as an overlay\r\n" +
+            "to compare a later one against. Each says what it does in the\r\n" +
+            "menu.");
     }
 }

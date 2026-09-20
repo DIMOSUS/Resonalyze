@@ -1,4 +1,4 @@
-using System.Drawing;
+﻿using System.Drawing;
 using System.Reflection;
 using System.Windows.Forms;
 using OxyPlot.WindowsForms;
@@ -81,7 +81,7 @@ public sealed class VirtualCrossoverPanelLayoutTests
         Assert.True(main.Bottom < curves.Top);
         // The column is tight: five buttons above the bottom-anchored block must still clear it.
         Assert.True(
-            tuneJunction.Bottom < Field<Control>(panel, "buttonAudition").Top,
+            tuneJunction.Bottom < Field<Control>(panel, "buttonTools").Top,
             "the button column overlaps the bottom row.");
     }
 

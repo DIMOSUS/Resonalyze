@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -62,14 +62,16 @@ internal static class VirtualCrossoverJunctionTuneReport
         {
             // The score is "lower is better", so a candidate that did not beat the current one reads as a plus.
             double delta = result.Best.RankingScoreDb - result.Current.RankingScoreDb;
+            // "best" is the best CANDIDATE, which is not the same as advice: where it did not win, say so on the
+            // same line, or the reader takes it for a recommendation.
             lines.Add(JunctionTuneLine.Of(
-                $"  best   {Edges(result.Best, lower, upper)}" +
-                (result.Changed
-                    ? string.Empty
-                    : delta >= 0
-                        ? "   (nothing on the lattice beat it)"
-                        : $"   (better by {Number(-delta)} dB, under the " +
-                          $"{Number(plan.Options.KeepMarginDb)} dB it takes)")));
+                result.Changed
+                    ? $"  apply  {Edges(result.Best, lower, upper)}"
+                    : $"  found  {Edges(result.Best, lower, upper)}   — NOT applied" +
+                      (delta >= 0
+                          ? ", nothing on the lattice beat what you have"
+                          : $", better by only {Number(-delta)} dB of the " +
+                            $"{Number(plan.Options.KeepMarginDb)} dB it takes")));
         }
 
         lines.Add(JunctionTuneLine.Of(string.Empty));
@@ -144,9 +146,12 @@ internal static class VirtualCrossoverJunctionTuneReport
         // The difference matters: "these drivers could" is not "this filter does", and only the second carries the
         // goal on to the EQ stage.
         bool lands = CrossoverJunctionTuner.WasAcousticTargetReached(candidate.AcousticCostDb);
+        // Say WHICH crossover the figures describe: the kept one and the challenger are different answers, and the
+        // table above has just shown both.
         lines.Add(new JunctionTuneLine([
             new JunctionTuneSpan(
-                $"  Acoustic {FirCrossoverDescription.FamilyName(asked.Family)} {asked.SlopeDbPerOctave}: " +
+                $"  Acoustic {FirCrossoverDescription.FamilyName(asked.Family)} {asked.SlopeDbPerOctave}, " +
+                $"{(result.Changed ? "as applied" : "as it stands")}: " +
                 $"off by {Number(candidate.AcousticCostDb)} dB, " +
                 $"nearest any filter {Number(result.ClosestAcousticCostDb)} dB — "),
             anyFilterCould
@@ -157,6 +162,17 @@ internal static class VirtualCrossoverJunctionTuneReport
             $"    got {Number(fit?.LowerSlopeDbPerOctave)} / {Number(fit?.UpperSlopeDbPerOctave)} dB/oct " +
             $"against {Number(fit?.TargetSlopeDbPerOctave)} asked; the channels fall " +
             $"{Number(plant?.LowerDbPerOctave)} / {Number(plant?.UpperDbPerOctave)} alone."));
+        // The question a reader actually asks next is "so what WOULD land on it?" — which is the asked slope less
+        // what the channels do by themselves, and the answer is usually a filter too soft to sum well.
+        if (!lands && anyFilterCould && fit?.TargetSlopeDbPerOctave is { } askedSlope &&
+            plant is { LowerDbPerOctave: { } plantLower, UpperDbPerOctave: { } plantUpper })
+        {
+            lines.Add(JunctionTuneLine.Of(
+                $"    landing on it needs about {Number(Math.Max(0, askedSlope - plantLower))} / " +
+                $"{Number(Math.Max(0, askedSlope - plantUpper))} dB/oct of filter — softer than this, " +
+                "and a soft pair sums worse."));
+        }
+
         lines.Add(new JunctionTuneLine([
             lands
                 ? new JunctionTuneSpan(

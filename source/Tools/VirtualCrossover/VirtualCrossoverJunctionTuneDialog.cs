@@ -9,6 +9,7 @@ internal sealed record JunctionTuneRequest(
     double MinHz,
     double MaxHz,
     IReadOnlyList<CrossoverFilterFamily> Families,
+    IReadOnlyList<int> Slopes,
     bool IndependentSlopes,
     JunctionAcousticTarget? AcousticGoal,
     bool SplitCorners);
@@ -53,6 +54,13 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 
     private CheckBox[] FamilyBoxes => [checkButterworth, checkLinkwitzRiley, checkBessel];
 
+    /// <summary>Slopes the window offers, as the crossover wizard offers them: 6 dB/oct protects nothing and the
+    /// search leaves it out anyway.</summary>
+    private static readonly int[] SelectableSlopes = CrossoverFilter
+        .SupportedSlopes(CrossoverFilterFamily.Butterworth)
+        .Where(slope => slope >= CrossoverJunctionTuner.PracticalSlopeFloorDbPerOctave)
+        .ToArray();
+
     public VirtualCrossoverJunctionTuneDialog()
     {
         InitializeComponent();
@@ -64,6 +72,15 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 
         comboBoxGoalFamily.SelectedItem = Nothing;
         comboBoxGoalSlope.Enabled = false;
+        foreach (ThemedComboBox window in new[] { comboBoxMinSlope, comboBoxMaxSlope })
+        {
+            window.Items.AddRange(SelectableSlopes.Cast<object>().ToArray());
+            window.SelectedIndexChanged += (_, _) => InvalidateResult(Again);
+        }
+
+        // The whole menu by default: narrowing it is the point of the field, not its normal state.
+        comboBoxMinSlope.SelectedItem = SelectableSlopes[0];
+        comboBoxMaxSlope.SelectedItem = SelectableSlopes[^1];
         comboBoxGoalFamily.SelectedIndexChanged += (_, _) => FillGoalSlopes();
         comboBoxJunction.SelectedIndexChanged += (_, _) => PresentJunctionDefaults();
         radioSummation.CheckedChanged += (_, _) => PresentMode();
@@ -235,11 +252,17 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             return;
         }
 
+        int lowSlope = comboBoxMinSlope.SelectedItem as int? ?? SelectableSlopes[0];
+        int highSlope = comboBoxMaxSlope.SelectedItem as int? ?? SelectableSlopes[^1];
+        List<int> slopes = SelectableSlopes
+            .Where(slope => slope >= Math.Min(lowSlope, highSlope) && slope <= Math.Max(lowSlope, highSlope))
+            .ToList();
         var request = new JunctionTuneRequest(
             comboBoxJunction.SelectedIndex,
             (double)numericMinHz.Value,
             (double)numericMaxHz.Value,
             families,
+            slopes,
             checkBoxIndependentSlopes.Checked,
             radioAcoustic.Checked &&
                 comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice goalFamily &&
@@ -344,6 +367,15 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             "Corner frequencies the search may put the handover at." + "\r\n" +
             "Wider costs candidates; half an octave each way is the default.");
         numericMaxHz.ApplyToolTip(toolTip, "See the lower bound.");
+        foreach (ThemedComboBox window in new[] { comboBoxMinSlope, comboBoxMaxSlope })
+        {
+            toolTip.SetToolTip(
+                window,
+                "Slopes the search may use, in dB per octave. Narrow it to hold\r\n" +
+                "the junction near the steepness you want; the whole menu is the\r\n" +
+                "default, and each family takes the slopes it actually has.");
+        }
+
         toolTip.SetToolTip(
             checkBoxIndependentSlopes,
             "Let the two sides take different slopes. The search then costs" + "\r\n" +

@@ -120,7 +120,8 @@ public partial class VirtualCrossoverPanel
 
         var options = new JunctionTuneOptions(
             request.Families,
-            null,
+            // Null would mean "every slope at or above the floor"; the dialog always states a window.
+            request.Slopes.Count > 0 ? request.Slopes : null,
             Math.Min(request.MinHz, request.MaxHz),
             Math.Max(request.MinHz, request.MaxHz),
             request.IndependentSlopes,

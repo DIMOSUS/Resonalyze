@@ -116,6 +116,34 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
     });
 
     [Fact]
+    public void TheSlopeWindowIsWhatTheSearchMayUse_AndDefaultsToTheWholeMenu() => StaTest.Run(() =>
+    {
+        // The engine takes a list of slopes and the dialog used to send none, so "12 to 48" was the only search
+        // there was. Narrowing the window is the point of the field.
+        using var dialog = new VirtualCrossoverJunctionTuneDialog();
+        JunctionTuneRequest? asked = null;
+        dialog.Init(
+            ["A-B"],
+            _ => new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.LinkwitzRiley], null),
+            request =>
+            {
+                asked = request;
+                return Task.FromResult(new JunctionTuneOutcome([], false, "kept", false));
+            });
+
+        Run(dialog);
+        Assert.Equal([12, 18, 24, 30, 36, 42, 48], asked!.Slopes);
+
+        Field<ThemedComboBox>(dialog, "comboBoxMinSlope").SelectedItem = 24;
+        Field<ThemedComboBox>(dialog, "comboBoxMaxSlope").SelectedItem = 36;
+        // Narrowing the window is a different question, so the previous answer is retired.
+        Assert.Null(dialog.Result);
+        Run(dialog);
+
+        Assert.Equal([24, 30, 36], asked!.Slopes);
+    });
+
+    [Fact]
     public void AJunctionWhoseCardsAlreadyStateAGoal_OpensOnIt() => StaTest.Run(() =>
     {
         using var dialog = new VirtualCrossoverJunctionTuneDialog();

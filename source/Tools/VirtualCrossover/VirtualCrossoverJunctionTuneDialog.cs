@@ -22,7 +22,7 @@ internal sealed record JunctionTuneDefaults(
 
 /// <summary>What the search found, for the report and for Apply.</summary>
 internal sealed record JunctionTuneOutcome(
-    IReadOnlyList<string> Report,
+    IReadOnlyList<JunctionTuneLine> Report,
     bool CanApply,
     string Status,
     bool Refused);
@@ -230,7 +230,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
                 return;
             }
 
-            textBoxReport.Lines = outcome.Report.ToArray();
+            ShowReport(outcome.Report);
             labelStatus.Text = outcome.Status;
             labelStatus.ForeColor = outcome.Refused
                 ? UiPalette.Error
@@ -247,6 +247,42 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
                 buttonCancel.Enabled = true;
                 UseWaitCursor = false;
             }
+        }
+    }
+
+    /// <summary>Writes the report into the pane, colouring the figures that moved: green where the answer is
+    /// better, red where it is worse. The colours are the only thing the pane does that a label could not.</summary>
+    private void ShowReport(IReadOnlyList<JunctionTuneLine> report)
+    {
+        textBoxReport.BeginUpdate();
+        try
+        {
+            textBoxReport.Clear();
+            foreach (JunctionTuneLine line in report)
+            {
+                foreach (JunctionTuneSpan span in line.Spans)
+                {
+                    textBoxReport.SelectionStart = textBoxReport.TextLength;
+                    textBoxReport.SelectionLength = 0;
+                    textBoxReport.SelectionColor = span.Tone switch
+                    {
+                        JunctionTuneTone.Better => UiPalette.Success,
+                        JunctionTuneTone.Worse => UiPalette.Error,
+                        _ => textBoxReport.ForeColor
+                    };
+                    textBoxReport.AppendText(span.Text);
+                }
+
+                textBoxReport.AppendText(Environment.NewLine);
+            }
+
+            textBoxReport.SelectionStart = 0;
+            textBoxReport.SelectionLength = 0;
+            textBoxReport.SelectionColor = textBoxReport.ForeColor;
+        }
+        finally
+        {
+            textBoxReport.EndUpdate();
         }
     }
 

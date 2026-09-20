@@ -82,7 +82,10 @@ public partial class VirtualCrossoverPanel
         if (request.JunctionIndex < 0 || request.JunctionIndex >= junctions.Count)
         {
             return new JunctionTuneOutcome(
-                ["The junction is no longer in this view."], false, "Nothing to search.", true);
+                [JunctionTuneLine.Of("The junction is no longer in this view.")],
+                false,
+                "Nothing to search.",
+                true);
         }
 
         VirtualCrossoverChannel lower = junctions[request.JunctionIndex].Lower.Channel;
@@ -91,7 +94,8 @@ public partial class VirtualCrossoverPanel
         if (GateIsMisplaced)
         {
             return new JunctionTuneOutcome(
-                ["The phase gate is misplaced, so the junction cannot be read through it."],
+                [JunctionTuneLine.Of(
+                    "The phase gate is misplaced, so the junction cannot be read through it.")],
                 false,
                 "Place the gate first.",
                 true);
@@ -154,7 +158,7 @@ public partial class VirtualCrossoverPanel
         }
 
         // The dialog's own layout, not the import summary's one-line-per-item list: a monospace pane wants columns.
-        List<string> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
         lastJunctionTune = result;
         // What the search cost goes in the status line: it says whether the question was wide enough, which is not
         // something to read in the pane every time.
@@ -170,7 +174,11 @@ public partial class VirtualCrossoverPanel
             false);
 
         static JunctionTuneOutcome Refusal(string because) =>
-            new([because[..1].ToUpperInvariant() + because[1..] + "."], false, "Refused.", true);
+            new(
+                [JunctionTuneLine.Of(because[..1].ToUpperInvariant() + because[1..] + ".")],
+                false,
+                "Refused.",
+                true);
     }
 
     /// <summary>Why a facing edge cannot be tuned here, or null. A correction FIR is no obstacle; a crossover one is.</summary>

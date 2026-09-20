@@ -24,7 +24,10 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
             {
                 searches++;
                 return Task.FromResult(new JunctionTuneOutcome(
-                    ["Junction tune A/B: applied."], CanApply: true, "A better crossover was found.", false));
+                    [JunctionTuneLine.Of("Junction tune A/B: applied.")],
+                    CanApply: true,
+                    "A better crossover was found.",
+                    false));
             });
         Button apply = Field<Button>(dialog, "buttonApply");
         Assert.False(apply.Enabled);
@@ -65,7 +68,7 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         JunctionTuneRequest asked = Assert.IsType<JunctionTuneRequest>(dialog.Result);
         Assert.Equal(1, asked.JunctionIndex);
         Assert.Equal(new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24), asked.AcousticGoal);
-        Assert.Contains("applied", Field<TextBox>(dialog, "textBoxReport").Text);
+        Assert.Contains("applied", Field<RichTextBox>(dialog, "textBoxReport").Text);
 
         // Moving the corner window asks a different question, so the answer is retired.
         Field<ThemedNumericUpDown>(dialog, "numericMaxHz").Value = 1_500m;

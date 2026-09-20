@@ -20,7 +20,9 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
         (JunctionTunePlan plan, JunctionTuneResult result) = Tune(
             new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24));
 
-        List<string> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+        List<string> report = VirtualCrossoverJunctionTuneReport.Build(plan, result)
+            .Select(line => line.Text)
+            .ToList();
         output.WriteLine(string.Join(Environment.NewLine, report));
 
         Assert.StartsWith("A/B —", report[0], StringComparison.Ordinal);
@@ -56,10 +58,39 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     {
         (JunctionTunePlan plan, JunctionTuneResult result) = Tune(acoustic: null);
 
-        List<string> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+        List<string> report = VirtualCrossoverJunctionTuneReport.Build(plan, result)
+            .Select(line => line.Text)
+            .ToList();
 
         Assert.DoesNotContain(report, line => line.Contains("Acoustic", StringComparison.Ordinal));
         Assert.Contains(report, line => line.Contains("sum loss", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AReadingThatGotWorse_IsToldApartFromOneThatGotBetter()
+    {
+        // The colour IS the reading for most people: green where the answer improves a figure, red where it costs
+        // one, and nothing where it did not move. Only the second half of a "now→best" cell carries it.
+        (JunctionTunePlan plan, JunctionTuneResult result) = Tune(
+            new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24));
+
+        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+        int header = report.FindIndex(line => line.Text.Contains("sum loss", StringComparison.Ordinal));
+        JunctionTuneLine row = report[header + 1];
+
+        Assert.Contains("→", row.Text, StringComparison.Ordinal);
+        // The side name, then three cells of a plain lead-in and the figure it leads to.
+        Assert.Equal(7, row.Spans.Count);
+        Assert.All(
+            row.Spans.Where((_, index) => index is 0 or 1 or 3 or 5),
+            span => Assert.Equal(JunctionTuneTone.Plain, span.Tone));
+        // Ripple falls from 0.2 to 0.0 here, which is an improvement, and it is the figure that says so.
+        JunctionTuneSpan ripple = row.Spans[^1];
+        Assert.Equal(JunctionTuneTone.Better, ripple.Tone);
+        Assert.DoesNotContain("→", ripple.Text, StringComparison.Ordinal);
+        // The verdict carries a tone too, and the table header never does.
+        Assert.Equal(JunctionTuneTone.Better, report[0].Spans[^1].Tone);
+        Assert.All(report[header].Spans, span => Assert.Equal(JunctionTuneTone.Plain, span.Tone));
     }
 
     private static (JunctionTunePlan Plan, JunctionTuneResult Result) Tune(JunctionAcousticTarget? acoustic)

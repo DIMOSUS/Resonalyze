@@ -34,7 +34,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         labelGoalHint = new Label();
         buttonRun = new ReleaseClickButton();
         labelStatus = new Label();
-        textBoxReport = new TextBox();
+        textBoxReport = new StatusRichTextBox();
         buttonApply = new ReleaseClickButton();
         buttonCancel = new ReleaseClickButton();
         ((System.ComponentModel.ISupportInitialize)numericMinHz).BeginInit();
@@ -242,10 +242,9 @@ partial class VirtualCrossoverJunctionTuneDialog
         textBoxReport.Font = new Font("Consolas", 9F);
         textBoxReport.ForeColor = UiPalette.TextPrimary;
         textBoxReport.Location = new Point(12, 190);
-        textBoxReport.Multiline = true;
         textBoxReport.Name = "textBoxReport";
         textBoxReport.ReadOnly = true;
-        textBoxReport.ScrollBars = ScrollBars.Both;
+        textBoxReport.ScrollBars = RichTextBoxScrollBars.Both;
         textBoxReport.Size = new Size(860, 250);
         textBoxReport.TabIndex = 15;
         textBoxReport.WordWrap = false;
@@ -335,7 +334,7 @@ partial class VirtualCrossoverJunctionTuneDialog
     private Label labelGoalHint;
     private ReleaseClickButton buttonRun;
     private Label labelStatus;
-    private TextBox textBoxReport;
+    private StatusRichTextBox textBoxReport;
     private ReleaseClickButton buttonApply;
     private ReleaseClickButton buttonCancel;
 }

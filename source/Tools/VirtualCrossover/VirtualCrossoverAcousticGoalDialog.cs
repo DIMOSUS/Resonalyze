@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -74,12 +74,15 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
     {
         family.Items.Clear();
         family.Items.Add(Nothing);
-        foreach (CrossoverFilterFamily item in Enum.GetValues<CrossoverFilterFamily>())
+        foreach (CrossoverFamilyChoice item in CrossoverFamilyChoice.Offered)
         {
             family.Items.Add(item);
         }
 
-        family.SelectedItem = goal is { } asked ? asked.Family : Nothing;
+        family.SelectedItem = goal is { } asked
+            ? CrossoverFamilyChoice.Offered.FirstOrDefault(choice => choice.Value == asked.Family)
+                ?? (object)Nothing
+            : Nothing;
         if (goal is { } wanted)
         {
             slope.SelectedItem = wanted.SlopeDbPerOctave;
@@ -99,7 +102,7 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
 
     private static void FillSlopes(ThemedComboBox family, ThemedComboBox slope)
     {
-        if (family.SelectedItem is not CrossoverFilterFamily selected)
+        if (family.SelectedItem is not CrossoverFamilyChoice selected)
         {
             slope.Items.Clear();
             slope.Enabled = false;
@@ -109,7 +112,7 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
         int? kept = slope.SelectedItem as int?;
         slope.Enabled = true;
         slope.Items.Clear();
-        foreach (int supported in CrossoverFilter.SupportedSlopes(selected))
+        foreach (int supported in CrossoverFilter.SupportedSlopes(selected.Value))
         {
             slope.Items.Add(supported);
         }
@@ -133,15 +136,10 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
     }
 
     private static JunctionAcousticTarget? Read(ThemedComboBox family, ThemedComboBox slope) =>
-        family.SelectedItem is CrossoverFilterFamily selected && slope.SelectedItem is int chosen
-            ? new JunctionAcousticTarget(selected, chosen)
+        family.SelectedItem is CrossoverFamilyChoice selected && slope.SelectedItem is int chosen
+            ? new JunctionAcousticTarget(selected.Value, chosen)
             : null;
 
-    private static string FamilyName(CrossoverFilterFamily family) => family switch
-    {
-        CrossoverFilterFamily.LinkwitzRiley => "LR",
-        CrossoverFilterFamily.Butterworth => "BW",
-        CrossoverFilterFamily.Bessel => "BE",
-        _ => "CH"
-    };
+    private static string FamilyName(CrossoverFilterFamily family) =>
+        FirCrossoverDescription.FamilyName(family);
 }

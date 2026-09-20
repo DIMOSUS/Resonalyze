@@ -755,3 +755,12 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
   so "the magnitude follows an acoustic LR24" is true where "the acoustic crossover is LR24" would be
   more than was shown — and the coherent sum term is there precisely because it sees what a magnitude
   target cannot.
+- **What it is worth, measured.** On eight archived cabins and 46 paired junctions, with the same EQ
+  stage after every arm, asking for acoustic LR24 did not pay: sum loss −0.55 → −0.65 dB, worst dip
+  −8.40 → −10.01, EQ cost unchanged. The arms separate why. The slope told to the TUNE alone reads
+  like the plain tune, so choosing inside the corridor is harmless; the loss is entirely in telling
+  the EQ stage to aim at a slope these drivers cannot reach, which is why `AgentJunctionTune.Write`
+  carries the goal **only where `WasAcousticTargetReached`**. A corridor of 1 dB instead of 0.2
+  gives −0.84 and a −16.73 dip, and a reachable target (LR48) drops the acoustic cost from 8.13 to
+  2.00 dB at no cost to the sum at all. The mode therefore ships as a language and a diagnosis rather
+  than as a better tune; `docs/specs/acoustic-crossover-target.md#6a` holds the table.

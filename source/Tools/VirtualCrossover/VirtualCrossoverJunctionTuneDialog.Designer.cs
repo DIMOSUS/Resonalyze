@@ -1,4 +1,4 @@
-namespace Resonalyze;
+﻿namespace Resonalyze;
 
 partial class VirtualCrossoverJunctionTuneDialog
 {
@@ -25,7 +25,9 @@ partial class VirtualCrossoverJunctionTuneDialog
         numericMaxHz = new ThemedNumericUpDown();
         checkBoxIndependentSlopes = new ReleaseClickCheckBox();
         labelFamilies = new Label();
-        checkedListFamilies = new CheckedListBox();
+        checkButterworth = new ReleaseClickCheckBox();
+        checkLinkwitzRiley = new ReleaseClickCheckBox();
+        checkBessel = new ReleaseClickCheckBox();
         labelGoal = new Label();
         comboBoxGoalFamily = new ThemedComboBox();
         comboBoxGoalSlope = new ThemedComboBox();
@@ -136,16 +138,38 @@ partial class VirtualCrossoverJunctionTuneDialog
         labelFamilies.TabIndex = 7;
         labelFamilies.Text = "Families";
         //
-        // checkedListFamilies
+        // checkButterworth
         //
-        checkedListFamilies.BackColor = UiPalette.ControlSurface;
-        checkedListFamilies.BorderStyle = BorderStyle.FixedSingle;
-        checkedListFamilies.CheckOnClick = true;
-        checkedListFamilies.ForeColor = UiPalette.TextPrimary;
-        checkedListFamilies.Location = new Point(96, 74);
-        checkedListFamilies.Name = "checkedListFamilies";
-        checkedListFamilies.Size = new Size(168, 72);
-        checkedListFamilies.TabIndex = 8;
+        checkButterworth.AutoSize = true;
+        checkButterworth.ForeColor = UiPalette.TextPrimary;
+        checkButterworth.Location = new Point(96, 74);
+        checkButterworth.Name = "checkButterworth";
+        checkButterworth.Size = new Size(92, 19);
+        checkButterworth.TabIndex = 8;
+        checkButterworth.Text = "Butterworth";
+        checkButterworth.UseVisualStyleBackColor = true;
+        //
+        // checkLinkwitzRiley
+        //
+        checkLinkwitzRiley.AutoSize = true;
+        checkLinkwitzRiley.ForeColor = UiPalette.TextPrimary;
+        checkLinkwitzRiley.Location = new Point(96, 97);
+        checkLinkwitzRiley.Name = "checkLinkwitzRiley";
+        checkLinkwitzRiley.Size = new Size(104, 19);
+        checkLinkwitzRiley.TabIndex = 9;
+        checkLinkwitzRiley.Text = "Linkwitz-Riley";
+        checkLinkwitzRiley.UseVisualStyleBackColor = true;
+        //
+        // checkBessel
+        //
+        checkBessel.AutoSize = true;
+        checkBessel.ForeColor = UiPalette.TextPrimary;
+        checkBessel.Location = new Point(96, 120);
+        checkBessel.Name = "checkBessel";
+        checkBessel.Size = new Size(58, 19);
+        checkBessel.TabIndex = 10;
+        checkBessel.Text = "Bessel";
+        checkBessel.UseVisualStyleBackColor = true;
         //
         // labelGoal
         //
@@ -265,7 +289,9 @@ partial class VirtualCrossoverJunctionTuneDialog
         Controls.Add(numericMaxHz);
         Controls.Add(checkBoxIndependentSlopes);
         Controls.Add(labelFamilies);
-        Controls.Add(checkedListFamilies);
+        Controls.Add(checkButterworth);
+        Controls.Add(checkLinkwitzRiley);
+        Controls.Add(checkBessel);
         Controls.Add(labelGoal);
         Controls.Add(comboBoxGoalFamily);
         Controls.Add(comboBoxGoalSlope);
@@ -296,7 +322,9 @@ partial class VirtualCrossoverJunctionTuneDialog
     private ThemedNumericUpDown numericMaxHz;
     private ReleaseClickCheckBox checkBoxIndependentSlopes;
     private Label labelFamilies;
-    private CheckedListBox checkedListFamilies;
+    private ReleaseClickCheckBox checkButterworth;
+    private ReleaseClickCheckBox checkLinkwitzRiley;
+    private ReleaseClickCheckBox checkBessel;
     private Label labelGoal;
     private ThemedComboBox comboBoxGoalFamily;
     private ThemedComboBox comboBoxGoalSlope;

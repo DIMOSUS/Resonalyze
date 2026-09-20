@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -11,6 +11,14 @@ internal sealed record JunctionTuneRequest(
     IReadOnlyList<CrossoverFilterFamily> Families,
     bool IndependentSlopes,
     JunctionAcousticTarget? AcousticGoal);
+
+/// <summary>What a junction opens on: the window the assistant's tune would use, the families it already runs, and
+/// the acoustic goal its channel cards already hold.</summary>
+internal sealed record JunctionTuneDefaults(
+    double MinHz,
+    double MaxHz,
+    IReadOnlyList<CrossoverFilterFamily> Families,
+    JunctionAcousticTarget? Goal);
 
 /// <summary>What the search found, for the report and for Apply.</summary>
 internal sealed record JunctionTuneOutcome(
@@ -36,19 +44,16 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     };
 
     private Func<JunctionTuneRequest, Task<JunctionTuneOutcome>>? runner;
-    private Func<int, (double MinHz, double MaxHz, JunctionAcousticTarget? Goal)>? defaultsFor;
+    private Func<int, JunctionTuneDefaults>? defaultsFor;
     private bool running;
+
+    private CheckBox[] FamilyBoxes => [checkButterworth, checkLinkwitzRiley, checkBessel];
 
     public VirtualCrossoverJunctionTuneDialog()
     {
         InitializeComponent();
-        foreach (CrossoverFilterFamily family in Enum.GetValues<CrossoverFilterFamily>())
-        {
-            checkedListFamilies.Items.Add(family);
-        }
-
         comboBoxGoalFamily.Items.Add(Nothing);
-        foreach (CrossoverFilterFamily family in Enum.GetValues<CrossoverFilterFamily>())
+        foreach (CrossoverFamilyChoice family in CrossoverFamilyChoice.Offered)
         {
             comboBoxGoalFamily.Items.Add(family);
         }
@@ -63,7 +68,10 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         numericMaxHz.ValueChanged += (_, _) => InvalidateResult(Again);
         comboBoxGoalSlope.SelectedIndexChanged += (_, _) => InvalidateResult(Again);
         checkBoxIndependentSlopes.CheckedChanged += (_, _) => InvalidateResult(Again);
-        checkedListFamilies.ItemCheck += (_, _) => InvalidateResult(Again);
+        foreach (CheckBox family in FamilyBoxes)
+        {
+            family.CheckedChanged += (_, _) => InvalidateResult(Again);
+        }
         buttonRun.Click += async (_, _) => await RunAsync().ConfigureAwait(true);
         buttonApply.Click += (_, _) =>
         {
@@ -77,11 +85,11 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     public JunctionTuneRequest? Result { get; private set; }
 
     /// <param name="junctions">Labels as the panel's read-outs name them, lower to upper.</param>
-    /// <param name="defaults">The corner window and the card's own acoustic goal for a junction, by index.</param>
+    /// <param name="defaults">The corner window, the families in use and the card's own goal, by junction index.</param>
     /// <param name="search">Runs the search off the UI thread; the dialog owns the await and the buttons.</param>
     public void Init(
         IReadOnlyList<string> junctions,
-        Func<int, (double MinHz, double MaxHz, JunctionAcousticTarget? Goal)> defaults,
+        Func<int, JunctionTuneDefaults> defaults,
         Func<JunctionTuneRequest, Task<JunctionTuneOutcome>> search)
     {
         ArgumentNullException.ThrowIfNull(junctions);
@@ -112,13 +120,19 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             return;
         }
 
-        (double minHz, double maxHz, JunctionAcousticTarget? goal) =
-            defaults(comboBoxJunction.SelectedIndex);
-        numericMinHz.Value = numericMinHz.ClampValue(minHz);
-        numericMaxHz.Value = numericMaxHz.ClampValue(maxHz);
+        JunctionTuneDefaults opening = defaults(comboBoxJunction.SelectedIndex);
+        numericMinHz.Value = numericMinHz.ClampValue(opening.MinHz);
+        numericMaxHz.Value = numericMaxHz.ClampValue(opening.MaxHz);
+        // What the junction already runs is what it is offered, so a search asks about the filters in use first.
+        checkButterworth.Checked = opening.Families.Contains(CrossoverFilterFamily.Butterworth);
+        checkLinkwitzRiley.Checked = opening.Families.Contains(CrossoverFilterFamily.LinkwitzRiley);
+        checkBessel.Checked = opening.Families.Contains(CrossoverFilterFamily.Bessel);
         // The card's own wish is what this junction already asks for, so the dialog opens on it.
-        comboBoxGoalFamily.SelectedItem = goal is { } asked ? asked.Family : Nothing;
-        if (goal is { } wanted)
+        comboBoxGoalFamily.SelectedItem = opening.Goal is { } asked
+            ? CrossoverFamilyChoice.Offered.FirstOrDefault(choice => choice.Value == asked.Family)
+                ?? (object)Nothing
+            : Nothing;
+        if (opening.Goal is { } wanted)
         {
             comboBoxGoalSlope.SelectedItem = wanted.SlopeDbPerOctave;
         }
@@ -128,7 +142,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 
     private void FillGoalSlopes()
     {
-        if (comboBoxGoalFamily.SelectedItem is not CrossoverFilterFamily family)
+        if (comboBoxGoalFamily.SelectedItem is not CrossoverFamilyChoice choice)
         {
             comboBoxGoalSlope.Items.Clear();
             comboBoxGoalSlope.Enabled = false;
@@ -139,7 +153,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         int? kept = comboBoxGoalSlope.SelectedItem as int?;
         comboBoxGoalSlope.Enabled = true;
         comboBoxGoalSlope.Items.Clear();
-        foreach (int slope in CrossoverFilter.SupportedSlopes(family))
+        foreach (int slope in CrossoverFilter.SupportedSlopes(choice.Value))
         {
             comboBoxGoalSlope.Items.Add(slope);
         }
@@ -170,12 +184,17 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         }
 
         var families = new List<CrossoverFilterFamily>();
-        foreach (object item in checkedListFamilies.CheckedItems)
+        if (checkButterworth.Checked)
         {
-            if (item is CrossoverFilterFamily family)
-            {
-                families.Add(family);
-            }
+            families.Add(CrossoverFilterFamily.Butterworth);
+        }
+        if (checkLinkwitzRiley.Checked)
+        {
+            families.Add(CrossoverFilterFamily.LinkwitzRiley);
+        }
+        if (checkBessel.Checked)
+        {
+            families.Add(CrossoverFilterFamily.Bessel);
         }
 
         if (families.Count == 0)
@@ -191,9 +210,9 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             (double)numericMaxHz.Value,
             families,
             checkBoxIndependentSlopes.Checked,
-            comboBoxGoalFamily.SelectedItem is CrossoverFilterFamily goalFamily &&
+            comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice goalFamily &&
                 comboBoxGoalSlope.SelectedItem is int goalSlope
-                    ? new JunctionAcousticTarget(goalFamily, goalSlope)
+                    ? new JunctionAcousticTarget(goalFamily.Value, goalSlope)
                     : null);
 
         running = true;
@@ -261,10 +280,14 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             "Let the two sides take different slopes. The search then costs" + "\r\n" +
             "slopes squared per corner, and asymmetric pairs are rarely" + "\r\n" +
             "what a crossover wants.");
-        toolTip.SetToolTip(
-            checkedListFamilies,
-            "Filter families on offer. Only what your processor can run" + "\r\n" +
-            "belongs here; the tune writes one of these into both blocks.");
+        foreach (CheckBox family in FamilyBoxes)
+        {
+            toolTip.SetToolTip(
+                family,
+                "Filter families the search may use. Only what your processor" + "\r\n" +
+                "can run belongs here; the tune writes one of these into both" + "\r\n" +
+                "blocks.");
+        }
         toolTip.SetToolTip(
             comboBoxGoalFamily,
             "Optional: the ACOUSTIC crossover this junction should add up to," + "\r\n" +

@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
 
@@ -14,8 +14,12 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         dialog.Init(
             ["A-B", "B-C"],
             index => index == 0
-                ? (80, 200, null)
-                : (500, 2_000, new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)),
+                ? new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.Butterworth], null)
+                : new JunctionTuneDefaults(
+                    500,
+                    2_000,
+                    [CrossoverFilterFamily.LinkwitzRiley],
+                    new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)),
             request =>
             {
                 searches++;
@@ -31,17 +35,29 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         Assert.Equal(500m, Field<ThemedNumericUpDown>(dialog, "numericMinHz").Value);
         Assert.Equal(
             CrossoverFilterFamily.LinkwitzRiley,
-            Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").SelectedItem);
+            (Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").SelectedItem
+                as CrossoverFamilyChoice)?.Value);
         Assert.Equal(24, Field<ThemedComboBox>(dialog, "comboBoxGoalSlope").SelectedItem);
 
+        // The junction opens on the families it already runs, and every one on offer is visible at once.
+        Assert.True(Field<CheckBox>(dialog, "checkLinkwitzRiley").Checked);
+        Assert.False(Field<CheckBox>(dialog, "checkButterworth").Checked);
+        foreach (string name in new[] { "checkButterworth", "checkLinkwitzRiley", "checkBessel" })
+        {
+            CheckBox box = Field<CheckBox>(dialog, name);
+            Assert.True(
+                box.Bottom <= dialog.ClientSize.Height,
+                $"{name} {box.Bounds} falls outside {dialog.ClientSize}.");
+        }
+
         // No family ticked is a question with no candidates, and it does not reach the search.
+        Field<CheckBox>(dialog, "checkLinkwitzRiley").Checked = false;
         Run(dialog);
         Assert.Equal(0, searches);
         Assert.False(apply.Enabled);
         Assert.Contains("family", Field<Label>(dialog, "labelStatus").Text);
 
-        CheckedListBox families = Field<CheckedListBox>(dialog, "checkedListFamilies");
-        families.SetItemChecked(families.Items.IndexOf(CrossoverFilterFamily.LinkwitzRiley), true);
+        Field<CheckBox>(dialog, "checkLinkwitzRiley").Checked = true;
         Run(dialog);
 
         Assert.Equal(1, searches);
@@ -63,7 +79,7 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         using var dialog = new VirtualCrossoverJunctionTuneDialog();
         dialog.Init(
             [],
-            _ => (20, 20_000, null),
+            _ => new JunctionTuneDefaults(20, 20_000, [CrossoverFilterFamily.LinkwitzRiley], null),
             _ => throw new InvalidOperationException("nothing should be searched"));
 
         Assert.False(Field<Button>(dialog, "buttonRun").Enabled);

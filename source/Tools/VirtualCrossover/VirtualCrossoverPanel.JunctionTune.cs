@@ -1,4 +1,4 @@
-using Resonalyze.Dsp;
+﻿using Resonalyze.Dsp;
 using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze;
@@ -18,7 +18,7 @@ public partial class VirtualCrossoverPanel
             junctions
                 .Select(pair => $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}")
                 .ToList(),
-            index => JunctionTuneDefaults(junctions, index),
+            index => JunctionTuneOpening(junctions, index),
             request => RunJunctionTuneAsync(junctions, request));
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
             dialog.Result is not { } request ||
@@ -50,13 +50,13 @@ public partial class VirtualCrossoverPanel
 
     private JunctionTuneResult? lastJunctionTune;
 
-    /// <summary>The window the assistant's tune would use, and the acoustic goal the two cards already hold.</summary>
-    private (double MinHz, double MaxHz, JunctionAcousticTarget? Goal) JunctionTuneDefaults(
-        List<AdjacentPair> junctions, int index)
+    /// <summary>What the dialog opens on for a junction: the assistant's own window, the families in use, and the
+    /// acoustic goal the two channel cards already hold.</summary>
+    private JunctionTuneDefaults JunctionTuneOpening(List<AdjacentPair> junctions, int index)
     {
         if (index < 0 || index >= junctions.Count)
         {
-            return (20, 20_000, null);
+            return new JunctionTuneDefaults(20, 20_000, [CrossoverFilterFamily.LinkwitzRiley], null);
         }
 
         VirtualCrossoverChannelSettings lower = junctions[index].Lower.Channel.Settings;
@@ -65,7 +65,11 @@ public partial class VirtualCrossoverPanel
         (double minHz, double maxHz) = currentHz > 0
             ? AgentProposalValidator.DefaultJunctionWindow(currentHz)
             : (junctions[index].BandLowHz, junctions[index].BandHighHz);
-        return (minHz, maxHz, lower.AcousticLowPass ?? upper.AcousticHighPass);
+        return new JunctionTuneDefaults(
+            minHz,
+            maxHz,
+            AgentProposalValidator.CurrentFamilies(lower, upper),
+            lower.AcousticLowPass ?? upper.AcousticHighPass);
     }
 
     /// <summary>Runs the search off the UI thread and builds the report; writes nothing.</summary>

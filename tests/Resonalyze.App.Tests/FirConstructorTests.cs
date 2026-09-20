@@ -154,6 +154,10 @@ public sealed class FirConstructorTests
         Assert.Equal(CrossoverKind.LowPass, settings.EffectiveCrossover.Kind);
         Assert.Equal(5_000, settings.EffectiveLowPassHz);
         Assert.Null(settings.EffectiveHighPassHz);
+        // Both stages filter here, so both narrow the band the fit works in: the FIR's own corner is the lower edge
+        // even though the effective crossover speaks for the IIR.
+        Assert.Equal(80, settings.FirDesignCrossover!.HighPassHz);
+        Assert.Equal((80.0, 5_000.0), VirtualDspEqHandoff.PassbandFor(settings));
 
         settings.CrossoverKind = CrossoverKind.Off;
         Assert.Equal(CrossoverKind.HighPass, settings.EffectiveCrossover.Kind);

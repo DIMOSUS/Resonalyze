@@ -374,6 +374,25 @@ public sealed class VirtualDspEqHandoffTests
         VirtualDspEqHandoffRequest raw = Build(channel, withChain: false);
         Assert.Null(raw.AutoTuneMinHz);
         Assert.Null(raw.AutoTuneMaxHz);
+
+        // A designed FIR high-pass beside an IIR low-pass: both stages filter, so both set an edge of the window.
+        // Read from the IIR alone the window would start at 20 Hz and send the fit down the FIR's whole stopband.
+        var design = new FirCrossoverDesign(
+            CrossoverKind.HighPass,
+            channel.Settings.HighPassEdge,
+            channel.Settings.HighPassEdge,
+            FirCrossoverMethod.IirMagnitude,
+            FirWindow.Kaiser,
+            8,
+            255,
+            SampleRate);
+        channel.Settings.CrossoverKind = CrossoverKind.LowPass;
+        channel.Settings.Fir = design.Build();
+        channel.Settings.FirDesign = design;
+
+        VirtualDspEqHandoffRequest both = Build(channel, withChain: true);
+        Assert.Equal(80, both.AutoTuneMinHz);
+        Assert.Equal(500, both.AutoTuneMaxHz);
     }
 
     [Fact]

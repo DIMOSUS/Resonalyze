@@ -129,7 +129,8 @@ fit's narrower refills show as up to half a decibel more above the target (RMS a
 
 A channel handed over from Virtual DSP is measured THROUGH its chain, so its curve already carries the crossover's
 skirts. The wizard therefore used to fit inside the passband only: `VirtualDspEqHandoff.PassbandFor` sets From/To to
-the effective corners, and the slopes were left alone as the filter's doing.
+the corners the channel is cut at — the narrower of the IIR crossover's and a designed FIR's, since a channel running
+both stages is filtered by both — and the slopes were left alone as the filter's doing.
 
 `EqTargetCrossover` is the other reading, the one current REW guides tune by: the goal for the channel is the target
 curve INSIDE the passband and the crossover's own slope outside it, so the fit can bring the ACOUSTIC roll-off onto
@@ -157,8 +158,11 @@ everywhere it is sampled, so the plot, the fit, the statistics and the level che
   instead — clipped to what the record does cover while that still leaves a window — since both callers need one they
   can use: the fields quietly reorder an inverted window, a headless fit hands it to `EqAutoTuner`, which refuses it.
   Where even the passband holds no measured point, the fit itself refuses (`EqWizardFit.NoMeasuredDataRefusal`, and
-  the same guard in `EqAutoTuneHeadless.Prepare`): the tuner answers an empty window with an empty bank, and Auto Tune
-  applies what it returns, so the refusal is what keeps a channel's existing bank from being replaced by nothing.
+  `EqAutoTuneHeadless.NoMeasuredDataRefusal` for the import path): the tuner answers an empty window with an empty
+  bank, and Auto Tune applies what it returns, so the refusal is what keeps a channel's existing bank from being
+  replaced by nothing. The headless refusal is a question the caller asks — one channel outside its measured band
+  skips with a line in the import's summary instead of stopping the channels after it — and `Fit` throws on it as the
+  backstop for a caller that does not ask.
 - **No boost is aimed down the skirts** (`Options.NoBoostBands`, from `NoBoostFallDb` = 6 dB of fall outwards): there
   the target's fall IS the filter, so a boost would fight the crossover, and with boosts Allowed an 18 dB deficit at
   the window edge would otherwise pull bands to Max Gain. What a boost aimed elsewhere spills in through its own skirt

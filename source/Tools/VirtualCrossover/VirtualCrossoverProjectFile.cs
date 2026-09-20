@@ -206,13 +206,21 @@ public sealed class VirtualCrossoverChannelSettings
     /// <summary>Corners that junctions, Auto Tune and the phase control read: the IIR crossover when on, else the FIR design's corners scaled by run/design rate. Never used to build the chain.</summary>
     /// <remarks>See docs/tech/virtual-dsp-session-file.md#effective-crossover.</remarks>
     [JsonIgnore]
-    public CrossoverSpec EffectiveCrossover
+    public CrossoverSpec EffectiveCrossover =>
+        CrossoverKind != CrossoverKind.Off || FirDesignCrossover is not { } fir
+            ? new CrossoverSpec(CrossoverKind, LowPassEdge, HighPassEdge)
+            : fir;
+
+    /// <summary>The designed FIR stage's own corners, scaled by run/design rate; null where this side runs no designed FIR (an imported kernel names no corners).</summary>
+    /// <remarks>Read beside <see cref="EffectiveCrossover"/> where both stages filter at once, since that one answers the IIR while it is on.</remarks>
+    [JsonIgnore]
+    public CrossoverSpec? FirDesignCrossover
     {
         get
         {
-            if (CrossoverKind != CrossoverKind.Off || !HasFirCrossover)
+            if (!HasFirCrossover)
             {
-                return new CrossoverSpec(CrossoverKind, LowPassEdge, HighPassEdge);
+                return null;
             }
 
             FirCrossoverDesign design = FirDesign!;
@@ -227,16 +235,10 @@ public sealed class VirtualCrossoverChannelSettings
     }
 
     [JsonIgnore]
-    public double? EffectiveHighPassHz =>
-        EffectiveCrossover is { Kind: CrossoverKind.HighPass or CrossoverKind.BandPass, HighPassEdge: { } edge }
-            ? edge.FrequencyHz
-            : null;
+    public double? EffectiveHighPassHz => EffectiveCrossover.HighPassHz;
 
     [JsonIgnore]
-    public double? EffectiveLowPassHz =>
-        EffectiveCrossover is { Kind: CrossoverKind.LowPass or CrossoverKind.BandPass, LowPassEdge: { } edge }
-            ? edge.FrequencyHz
-            : null;
+    public double? EffectiveLowPassHz => EffectiveCrossover.LowPassHz;
 
     public bool HasSource =>
         HistoryEntryId.HasValue || !string.IsNullOrWhiteSpace(SourceFilePath);

@@ -1789,6 +1789,9 @@ is the wizard's single global one, so Ctrl+Z is the way back to what it held),
 and the **From / To** window lands on the channel's crossover corners — beyond
 them the chain is rolling the driver off on purpose, and a fit would chase the
 slope (a raw edit, or a channel with no crossover, leaves the window alone).
+A channel running two stages is cut by both, so both set an edge: a
+[FIR](#fir-constructor) high-pass beside an IIR low-pass opens the window at the
+kernel's corner, not at 20 Hz.
 The **Target Level** arrives from the Virtual DSP panel verbatim: the handoff
 curve is rendered in that plot's own dB frame, so one target means one height
 too — the curve hangs exactly where it hung a click ago.

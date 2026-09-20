@@ -231,6 +231,33 @@ public sealed class EqAutoTuneHeadlessTests
     }
 
     [Fact]
+    public void AWindowWithNothingMeasuredInIt_IsARefusalTheCallerSkipsOn_AndFitRefusesItOutright()
+    {
+        // The tuner answers an empty window with an empty bank and Auto Tune applies what it returns, so this run
+        // must not happen. Prepare does not throw: the import skips this channel and goes on to the next.
+        VirtualDspEqHandoffRequest request = Build(BuildChannel(), spatialAverage: Capture(gridStopHz: 1_000));
+        TargetCurveSpec target = TargetCurveSpec.FromPreset(TargetPreset.Flat);
+
+        EqHeadlessTuneInputs empty = EqAutoTuneHeadless.Prepare(
+            request, target, EqAutoTunePolicy.Default, 5_000, 8_000,
+            allowShelves: false, boosts: EqAutoTuneBoosts.Off);
+
+        string refusal = Assert.IsType<string>(EqAutoTuneHeadless.NoMeasuredDataRefusal(empty));
+        Assert.Contains("5000 Hz - 8000 Hz", refusal);
+        Assert.Contains("no measured point", refusal);
+        // The backstop for a caller that does not ask: an empty bank must never reach a channel.
+        Assert.Throws<InvalidOperationException>(() => EqAutoTuneHeadless.Fit(empty));
+
+        // Inside what the capture covers there is something to fit, and nothing refuses it.
+        EqHeadlessTuneInputs fits = EqAutoTuneHeadless.Prepare(
+            request, target, EqAutoTunePolicy.Default, 100, 400,
+            allowShelves: false, boosts: EqAutoTuneBoosts.Off);
+
+        Assert.Null(EqAutoTuneHeadless.NoMeasuredDataRefusal(fits));
+        Assert.NotEmpty(EqAutoTuneHeadless.Fit(fits).Bands);
+    }
+
+    [Fact]
     public void Fit_ReturnsTheKeptAllPassBandsWithTheFittedOnes()
     {
         VirtualCrossoverChannel channel = BuildChannel();
@@ -299,7 +326,7 @@ public sealed class EqAutoTuneHeadlessTests
             spatialAverage,
             spatialAverageOffsetDb);
 
-    private static LiveCaptureDocument Capture() => new()
+    private static LiveCaptureDocument Capture(double gridStopHz = 20_000) => new()
     {
         SavedAtUtc = DateTimeOffset.UnixEpoch,
         Title = "l tw mmm",
@@ -307,7 +334,7 @@ public sealed class EqAutoTuneHeadlessTests
             .Select(index => -20.0 + 3 * Math.Sin(index / 40.0))
             .ToArray(),
         GridStartHz = 20,
-        GridStopHz = 20_000,
+        GridStopHz = gridStopHz,
         Recipe = new LiveCaptureRecipe
         {
             AnalysisMode = LiveAnalysisMode.Mmm,

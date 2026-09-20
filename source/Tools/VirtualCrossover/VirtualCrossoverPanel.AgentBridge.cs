@@ -658,6 +658,13 @@ public partial class VirtualCrossoverPanel
                 "has its lower edge above its upper).");
             return false;
         }
+        // The wizard's refusal, as a skip: an empty fit would replace this channel's bank with nothing, and one
+        // channel outside its measured band must not stop the channels after it.
+        if (EqAutoTuneHeadless.NoMeasuredDataRefusal(inputs) is { } noData)
+        {
+            summary.Add($"{label}: skipped ({noData}).");
+            return false;
+        }
 
         string? levelWarning = EqTargetLevelCheck.Warning(
             EqTargetLevelCheck.TargetAboveSourceDb(

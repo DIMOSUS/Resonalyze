@@ -203,20 +203,6 @@ internal static class EqAutoTuneHeadless
             NoBoostBands = noBoost
         };
 
-        // Same refusal as the button's: an empty fit would replace the channel's bank with nothing. Read on the
-        // ORDERED pair, since an inverted window stated by a reply is taken as stated and refused elsewhere.
-        double dataLowHz = Math.Min(windowMinHz, windowMaxHz);
-        double dataHighHz = Math.Max(windowMinHz, windowMaxHz);
-        if (!fitSource.Where((point, index) => index < target.Count &&
-                point.X >= dataLowHz &&
-                point.X <= dataHighHz &&
-                double.IsFinite(point.Y) &&
-                double.IsFinite(target[index].Y)).Any())
-        {
-            throw new InvalidOperationException(
-                $"The fit window ({dataLowHz:0} Hz - {dataHighHz:0} Hz) holds no measured point.");
-        }
-
         return new EqHeadlessTuneInputs(
             fitSource, target, options, source.Coherence, allPass,
             windowMinHz, windowMaxHz, mode);
@@ -231,9 +217,37 @@ internal static class EqAutoTuneHeadless
         return Math.Min(policy.MaxBands, EqualizationCurve.MaxBandCount) - kept;
     }
 
+    /// <summary>
+    /// Why this fit must not run: its window holds no measured point, so the tuner would answer with an empty bank
+    /// and Auto Tune would apply it over the channel's own. Null when there is something to fit.
+    /// </summary>
+    /// <remarks>
+    /// The button's wording is <see cref="EqWizardFit.NoMeasuredDataRefusal"/>. Read on the ORDERED pair: an inverted
+    /// window stated by a reply is taken as stated and refused by <see cref="IsUsableWindow"/>, not read backwards.
+    /// </remarks>
+    public static string? NoMeasuredDataRefusal(EqHeadlessTuneInputs inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        double lowHz = Math.Min(inputs.MinHz, inputs.MaxHz);
+        double highHz = Math.Max(inputs.MinHz, inputs.MaxHz);
+        return inputs.Source.Where((point, index) => index < inputs.Target.Count &&
+                point.X >= lowHz &&
+                point.X <= highHz &&
+                double.IsFinite(point.Y) &&
+                double.IsFinite(inputs.Target[index].Y)).Any()
+            ? null
+            : $"the fit window ({lowHz:0} Hz - {highHz:0} Hz) holds no measured point";
+    }
+
     public static EqualizationCurve Fit(EqHeadlessTuneInputs inputs)
     {
         ArgumentNullException.ThrowIfNull(inputs);
+        // Backstop, not the path: a caller that skips the refusal above would otherwise apply an empty bank.
+        if (NoMeasuredDataRefusal(inputs) is { } refusal)
+        {
+            throw new InvalidOperationException($"Nothing to fit: {refusal}.");
+        }
+
         EqualizationCurve tuned = EqAutoTuner.Tune(
             inputs.Source, inputs.Target, inputs.Options, inputs.Coherence);
         return EqWizardFit.Finish(tuned, inputs.KeptAllPass);

@@ -115,6 +115,12 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         bool acoustic = radioAcoustic.Checked;
         comboBoxGoalFamily.Enabled = acoustic;
         comboBoxGoalSlope.Enabled = acoustic && comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice;
+        // The slope window belongs to the summation mode. Stating an ACOUSTIC slope already says what the answer
+        // must come to, so tying the electrical slopes down as well only takes filters away from the search.
+        comboBoxMinSlope.Enabled = !acoustic;
+        comboBoxMaxSlope.Enabled = !acoustic;
+        UiStyle.SetTextEnabledLook(labelSlopes, !acoustic);
+        UiStyle.SetTextEnabledLook(labelSlopeTo, !acoustic);
         if (acoustic && comboBoxGoalFamily.SelectedItem is not CrossoverFamilyChoice)
         {
             // The mode IS the goal: entering it with nothing stated would search for nothing.
@@ -254,9 +260,12 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 
         int lowSlope = comboBoxMinSlope.SelectedItem as int? ?? SelectableSlopes[0];
         int highSlope = comboBoxMaxSlope.SelectedItem as int? ?? SelectableSlopes[^1];
-        List<int> slopes = SelectableSlopes
-            .Where(slope => slope >= Math.Min(lowSlope, highSlope) && slope <= Math.Max(lowSlope, highSlope))
-            .ToList();
+        // Empty means "every slope the families have": what the acoustic mode always wants.
+        List<int> slopes = radioAcoustic.Checked
+            ? []
+            : SelectableSlopes
+                .Where(slope => slope >= Math.Min(lowSlope, highSlope) && slope <= Math.Max(lowSlope, highSlope))
+                .ToList();
         var request = new JunctionTuneRequest(
             comboBoxJunction.SelectedIndex,
             (double)numericMinHz.Value,
@@ -371,9 +380,10 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         {
             toolTip.SetToolTip(
                 window,
-                "Slopes the search may use, in dB per octave. Narrow it to hold\r\n" +
-                "the junction near the steepness you want; the whole menu is the\r\n" +
-                "default, and each family takes the slopes it actually has.");
+                "Electrical slopes the search may use when it is tuning for the\r\n" +
+                "best summation: narrow it to hold the junction near a steepness\r\n" +
+                "you want. An acoustic goal states the answer instead, so the\r\n" +
+                "window is left out of that mode altogether.");
         }
 
         toolTip.SetToolTip(

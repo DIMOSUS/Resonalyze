@@ -141,6 +141,15 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         Run(dialog);
 
         Assert.Equal([24, 30, 36], asked!.Slopes);
+
+        // The window belongs to the summation mode: an acoustic goal states what the answer must come to, so tying
+        // the electrical slopes down as well would only take filters away from the search.
+        Field<RadioButton>(dialog, "radioAcoustic").Checked = true;
+        Assert.False(Field<ThemedComboBox>(dialog, "comboBoxMinSlope").Enabled);
+        Assert.False(Field<ThemedComboBox>(dialog, "comboBoxMaxSlope").Enabled);
+        Run(dialog);
+
+        Assert.Empty(asked!.Slopes);
     });
 
     [Fact]

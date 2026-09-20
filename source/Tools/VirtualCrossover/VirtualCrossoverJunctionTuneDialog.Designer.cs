@@ -139,17 +139,17 @@ partial class VirtualCrossoverJunctionTuneDialog
         labelSlopes.AutoSize = true;
         labelSlopes.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
         labelSlopes.ForeColor = UiPalette.TextDefault;
-        labelSlopes.Location = new Point(12, 77);
+        labelSlopes.Location = new Point(480, 98);
         labelSlopes.Name = "labelSlopes";
-        labelSlopes.Size = new Size(74, 15);
+        labelSlopes.Size = new Size(44, 15);
         labelSlopes.TabIndex = 7;
-        labelSlopes.Text = "Slopes from";
+        labelSlopes.Text = "slopes";
         //
         // comboBoxMinSlope
         //
         comboBoxMinSlope.BackColor = UiPalette.ControlSurface;
         comboBoxMinSlope.ForeColor = UiPalette.TextPrimary;
-        comboBoxMinSlope.Location = new Point(96, 74);
+        comboBoxMinSlope.Location = new Point(532, 95);
         comboBoxMinSlope.MinimumSize = new Size(36, 21);
         comboBoxMinSlope.Name = "comboBoxMinSlope";
         comboBoxMinSlope.Size = new Size(70, 21);
@@ -159,7 +159,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         //
         labelSlopeTo.AutoSize = true;
         labelSlopeTo.ForeColor = UiPalette.TextDefault;
-        labelSlopeTo.Location = new Point(172, 77);
+        labelSlopeTo.Location = new Point(608, 98);
         labelSlopeTo.Name = "labelSlopeTo";
         labelSlopeTo.Size = new Size(16, 15);
         labelSlopeTo.TabIndex = 9;
@@ -169,7 +169,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         //
         comboBoxMaxSlope.BackColor = UiPalette.ControlSurface;
         comboBoxMaxSlope.ForeColor = UiPalette.TextPrimary;
-        comboBoxMaxSlope.Location = new Point(194, 74);
+        comboBoxMaxSlope.Location = new Point(630, 95);
         comboBoxMaxSlope.MinimumSize = new Size(36, 21);
         comboBoxMaxSlope.Name = "comboBoxMaxSlope";
         comboBoxMaxSlope.Size = new Size(70, 21);
@@ -180,7 +180,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         labelFamilies.AutoSize = true;
         labelFamilies.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
         labelFamilies.ForeColor = UiPalette.TextDefault;
-        labelFamilies.Location = new Point(12, 108);
+        labelFamilies.Location = new Point(12, 77);
         labelFamilies.Name = "labelFamilies";
         labelFamilies.Size = new Size(58, 15);
         labelFamilies.TabIndex = 7;
@@ -190,7 +190,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         //
         checkButterworth.AutoSize = true;
         checkButterworth.ForeColor = UiPalette.TextPrimary;
-        checkButterworth.Location = new Point(96, 105);
+        checkButterworth.Location = new Point(96, 74);
         checkButterworth.Name = "checkButterworth";
         checkButterworth.Size = new Size(92, 19);
         checkButterworth.TabIndex = 8;
@@ -201,7 +201,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         //
         checkLinkwitzRiley.AutoSize = true;
         checkLinkwitzRiley.ForeColor = UiPalette.TextPrimary;
-        checkLinkwitzRiley.Location = new Point(96, 128);
+        checkLinkwitzRiley.Location = new Point(96, 97);
         checkLinkwitzRiley.Name = "checkLinkwitzRiley";
         checkLinkwitzRiley.Size = new Size(104, 19);
         checkLinkwitzRiley.TabIndex = 9;
@@ -212,7 +212,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         //
         checkBessel.AutoSize = true;
         checkBessel.ForeColor = UiPalette.TextPrimary;
-        checkBessel.Location = new Point(96, 151);
+        checkBessel.Location = new Point(96, 120);
         checkBessel.Name = "checkBessel";
         checkBessel.Size = new Size(58, 19);
         checkBessel.TabIndex = 10;
@@ -297,7 +297,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         //
         buttonRun.FlatStyle = FlatStyle.Popup;
         buttonRun.ForeColor = UiPalette.TextPrimary;
-        buttonRun.Location = new Point(12, 182);
+        buttonRun.Location = new Point(12, 170);
         buttonRun.Name = "buttonRun";
         buttonRun.Size = new Size(110, 26);
         buttonRun.TabIndex = 13;
@@ -310,7 +310,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         labelStatus.AutoEllipsis = true;
         labelStatus.ForeColor = UiPalette.TextMuted;
         labelStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        labelStatus.Location = new Point(130, 187);
+        labelStatus.Location = new Point(130, 175);
         labelStatus.Name = "labelStatus";
         labelStatus.Size = new Size(742, 19);
         labelStatus.TabIndex = 14;
@@ -323,7 +323,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         textBoxReport.BorderStyle = BorderStyle.FixedSingle;
         textBoxReport.Font = new Font("Consolas", 9F);
         textBoxReport.ForeColor = UiPalette.TextPrimary;
-        textBoxReport.Location = new Point(12, 214);
+        textBoxReport.Location = new Point(12, 202);
         textBoxReport.Name = "textBoxReport";
         textBoxReport.ReadOnly = true;
         textBoxReport.ScrollBars = RichTextBoxScrollBars.Both;
@@ -337,7 +337,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         buttonApply.FlatStyle = FlatStyle.Popup;
         buttonApply.ForeColor = UiPalette.TextPrimary;
         buttonApply.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-        buttonApply.Location = new Point(692, 476);
+        buttonApply.Location = new Point(692, 464);
         buttonApply.Name = "buttonApply";
         buttonApply.Size = new Size(80, 26);
         buttonApply.TabIndex = 16;
@@ -351,7 +351,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         buttonCancel.FlatStyle = FlatStyle.Popup;
         buttonCancel.ForeColor = UiPalette.TextPrimary;
         buttonCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-        buttonCancel.Location = new Point(792, 476);
+        buttonCancel.Location = new Point(792, 464);
         buttonCancel.Name = "buttonCancel";
         buttonCancel.Size = new Size(80, 26);
         buttonCancel.TabIndex = 17;
@@ -365,7 +365,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         AutoScaleMode = AutoScaleMode.Dpi;
         BackColor = UiPalette.ShellSurface;
         CancelButton = buttonCancel;
-        ClientSize = new Size(884, 514);
+        ClientSize = new Size(884, 502);
         Controls.Add(labelJunction);
         Controls.Add(comboBoxJunction);
         Controls.Add(labelWindow);
@@ -396,7 +396,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         Font = new Font("Segoe UI", 9F);
         ForeColor = UiPalette.TextPrimary;
         MinimizeBox = false;
-        MinimumSize = new Size(700, 444);
+        MinimumSize = new Size(700, 432);
         Name = "VirtualCrossoverJunctionTuneDialog";
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;

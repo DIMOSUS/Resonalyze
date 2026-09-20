@@ -53,6 +53,47 @@ public sealed class AgentJunctionTuneAcousticReportTests
     }
 
     [Fact]
+    public void ApplyingOnlyTheGoal_LeavesTheEdgesWhereTheReportSaidTheyWouldStay()
+    {
+        // The dialog offers Apply on a kept crossover so a goal can be stated without retuning. Writing the best
+        // candidate's edges there would move the crossover the report had just called unchanged.
+        (JunctionTunePlan plan, JunctionTuneResult result) = Tune(
+            new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24));
+        var lower = new VirtualCrossoverChannel("A");
+        var upper = new VirtualCrossoverChannel("B");
+        foreach (bool right in new[] { false, true })
+        {
+            lower.SideSettings(right).CrossoverKind = CrossoverKind.LowPass;
+            lower.SideSettings(right).LowPassEdge = Edge(300);
+            upper.SideSettings(right).CrossoverKind = CrossoverKind.HighPass;
+            upper.SideSettings(right).HighPassEdge = Edge(300);
+        }
+
+        AgentJunctionTune.Write(
+            result, lower, upper, new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24),
+            applyCrossover: false);
+
+        foreach (bool right in new[] { false, true })
+        {
+            Assert.Equal(Edge(300), lower.SideSettings(right).LowPassEdge);
+            Assert.Equal(Edge(300), upper.SideSettings(right).HighPassEdge);
+            // Both sides carry the goal, since one electrical filter serves both.
+            Assert.Equal(24, lower.SideSettings(right).AcousticLowPass!.SlopeDbPerOctave);
+            Assert.Equal(24, upper.SideSettings(right).AcousticHighPass!.SlopeDbPerOctave);
+        }
+
+        // And applying the crossover does move the edges.
+        AgentJunctionTune.Write(result, lower, upper, null);
+
+        Assert.Equal(result.Best.LowerLowPass, lower.Settings.LowPassEdge);
+        Assert.Equal(result.Best.UpperHighPass, upper.Settings.HighPassEdge);
+        _ = plan;
+    }
+
+    private static CrossoverEdge Edge(double hz) =>
+        new(CrossoverFilterFamily.LinkwitzRiley, hz, 24);
+
+    [Fact]
     public void WithNoGoalStated_TheReportSaysNothingAboutOne()
     {
         var report = new List<string>();

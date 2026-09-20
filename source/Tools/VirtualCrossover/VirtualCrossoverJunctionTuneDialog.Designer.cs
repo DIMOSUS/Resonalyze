@@ -246,7 +246,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         textBoxReport.Name = "textBoxReport";
         textBoxReport.ReadOnly = true;
         textBoxReport.ScrollBars = ScrollBars.Both;
-        textBoxReport.Size = new Size(860, 300);
+        textBoxReport.Size = new Size(860, 250);
         textBoxReport.TabIndex = 15;
         textBoxReport.WordWrap = false;
         //
@@ -256,7 +256,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         buttonApply.FlatStyle = FlatStyle.Popup;
         buttonApply.ForeColor = UiPalette.TextPrimary;
         buttonApply.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-        buttonApply.Location = new Point(692, 500);
+        buttonApply.Location = new Point(692, 452);
         buttonApply.Name = "buttonApply";
         buttonApply.Size = new Size(80, 26);
         buttonApply.TabIndex = 16;
@@ -270,7 +270,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         buttonCancel.FlatStyle = FlatStyle.Popup;
         buttonCancel.ForeColor = UiPalette.TextPrimary;
         buttonCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-        buttonCancel.Location = new Point(792, 500);
+        buttonCancel.Location = new Point(792, 452);
         buttonCancel.Name = "buttonCancel";
         buttonCancel.Size = new Size(80, 26);
         buttonCancel.TabIndex = 17;
@@ -284,7 +284,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         AutoScaleMode = AutoScaleMode.Dpi;
         BackColor = UiPalette.ShellSurface;
         CancelButton = buttonCancel;
-        ClientSize = new Size(884, 538);
+        ClientSize = new Size(884, 490);
         Controls.Add(labelJunction);
         Controls.Add(comboBoxJunction);
         Controls.Add(labelWindow);
@@ -308,7 +308,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         Font = new Font("Segoe UI", 9F);
         ForeColor = UiPalette.TextPrimary;
         MinimizeBox = false;
-        MinimumSize = new Size(700, 460);
+        MinimumSize = new Size(700, 420);
         Name = "VirtualCrossoverJunctionTuneDialog";
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;

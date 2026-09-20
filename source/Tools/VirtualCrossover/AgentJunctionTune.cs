@@ -95,15 +95,18 @@ internal static class AgentJunctionTune
         JunctionTuneResult result,
         VirtualCrossoverChannel lower,
         VirtualCrossoverChannel upper,
-        JunctionAcousticTarget? acoustic = null)
+        JunctionAcousticTarget? acoustic = null,
+        bool applyCrossover = true)
     {
-        CrossoverEdge lowPass = result.Best.LowerLowPass!.Value;
-        CrossoverEdge highPass = result.Best.UpperHighPass!.Value;
-        // Only where the lattice actually reached the asked edge. Measured, on eight cabins: sending an unreachable
-        // wish on to the EQ stage is the one thing that made the finished junction worse, because the fit then
-        // chases a skirt it is not allowed to lift (docs/specs/acoustic-crossover-target.md#6a).
+        // Keeping the crossover means keeping it: a run that only states a goal must not move the edges the report
+        // just said were staying.
+        JunctionTuneCandidate applied = applyCrossover ? result.Best : result.Current;
+        // Only where the crossover being applied actually lands on the asked edge — not merely where some candidate
+        // on the lattice could have. Measured, on eight cabins: aiming the EQ stage at a slope the channel does not
+        // produce is the one thing that made the finished junction worse
+        // (docs/specs/acoustic-crossover-target.md#6a).
         JunctionAcousticTarget? reached =
-            CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb)
+            CrossoverJunctionTuner.WasAcousticTargetReached(applied.AcousticCostDb)
                 ? acoustic
                 : null;
         foreach (bool rightSide in new[] { false, true })
@@ -111,26 +114,34 @@ internal static class AgentJunctionTune
             if (!lower.Pair.Mono || !rightSide)
             {
                 VirtualCrossoverChannelSettings settings = lower.SideSettings(rightSide);
-                settings.LowPassEdge = lowPass;
+                if (applyCrossover && applied.LowerLowPass is { } lowPass)
+                {
+                    settings.LowPassEdge = lowPass;
+                    settings.CrossoverKind =
+                        settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
+                            ? CrossoverKind.BandPass
+                            : CrossoverKind.LowPass;
+                }
                 if (reached != null)
                 {
                     settings.AcousticLowPass = reached;
                 }
-                settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
-                    ? CrossoverKind.BandPass
-                    : CrossoverKind.LowPass;
             }
             if (!upper.Pair.Mono || !rightSide)
             {
                 VirtualCrossoverChannelSettings settings = upper.SideSettings(rightSide);
-                settings.HighPassEdge = highPass;
+                if (applyCrossover && applied.UpperHighPass is { } highPass)
+                {
+                    settings.HighPassEdge = highPass;
+                    settings.CrossoverKind =
+                        settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
+                            ? CrossoverKind.BandPass
+                            : CrossoverKind.HighPass;
+                }
                 if (reached != null)
                 {
                     settings.AcousticHighPass = reached;
                 }
-                settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
-                    ? CrossoverKind.BandPass
-                    : CrossoverKind.HighPass;
             }
         }
     }

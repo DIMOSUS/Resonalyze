@@ -37,9 +37,11 @@ public partial class VirtualCrossoverPanel
 
         VirtualCrossoverChannel lower = junctions[request.JunctionIndex].Lower.Channel;
         VirtualCrossoverChannel upper = junctions[request.JunctionIndex].Upper.Channel;
-        // The same write the assistant's tune makes: one crossover into both sides of both blocks, and the acoustic
-        // goal onto the edges where the lattice reached it.
-        AgentJunctionTune.Write(landed, lower, upper, request.AcousticGoal);
+        // The same write the assistant's tune makes: one crossover into both sides of both blocks, and the goal onto
+        // the edges the applied crossover actually lands on. Where the report said the crossover stands, Apply is
+        // only there to write the goal, so the edges are left exactly where they are.
+        AgentJunctionTune.Write(
+            landed, lower, upper, request.AcousticGoal, applyCrossover: landed.Changed);
         ApplySettingsToControl(lower);
         ApplySettingsToControl(upper);
         // Both sides were decided here, so the Lock remembers rather than carries.
@@ -154,12 +156,17 @@ public partial class VirtualCrossoverPanel
         // The dialog's own layout, not the import summary's one-line-per-item list: a monospace pane wants columns.
         List<string> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
         lastJunctionTune = result;
+        // What the search cost goes in the status line: it says whether the question was wide enough, which is not
+        // something to read in the pane every time.
+        string searched =
+            $"{result.CandidatesEvaluated} candidates read over " +
+            $"{options.MinCrossoverHz:0.###}–{options.MaxCrossoverHz:0.###} Hz.";
         return new JunctionTuneOutcome(
             report,
             result.Changed || request.AcousticGoal != null,
-            result.Changed
-                ? "A better crossover was found; Apply writes it."
-                : "The crossover on screen stands; Apply rewrites the goal only.",
+            (result.Changed
+                ? "A better crossover was found; Apply writes it. "
+                : "The crossover on screen stands; Apply rewrites the goal only. ") + searched,
             false);
 
         static JunctionTuneOutcome Refusal(string because) =>

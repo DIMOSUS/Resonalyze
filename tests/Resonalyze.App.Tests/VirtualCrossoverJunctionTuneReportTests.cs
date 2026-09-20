@@ -23,9 +23,13 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
         List<string> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
         output.WriteLine(string.Join(Environment.NewLine, report));
 
-        Assert.StartsWith("Junction A/B —", report[0], StringComparison.Ordinal);
+        Assert.StartsWith("A/B —", report[0], StringComparison.Ordinal);
         Assert.All(report, line => Assert.True(
             line.Length <= Columns, $"{line.Length} characters: {line}"));
+        // It has to be readable at a glance and fit the pane without scrolling; a wall of text is not a report.
+        Assert.True(
+            report.Count <= VirtualCrossoverJunctionTuneReport.PaneLines,
+            $"{report.Count} lines:{Environment.NewLine}{string.Join(Environment.NewLine, report)}");
 
         // The per-side table: a header, then one row per side, with the numbers under their own headings.
         int header = report.FindIndex(line => line.Contains("sum loss", StringComparison.Ordinal));
@@ -37,13 +41,14 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
         Assert.True(numbers.Count >= 3, sideRow);
         Assert.Equal(
             report[header].IndexOf("ripple, dB", StringComparison.Ordinal) + "ripple, dB".Length,
-            numbers[2].Index + numbers[2].Length);
+            numbers[^1].Index + numbers[^1].Length);
 
-        // The goal's own block, with the four comparable slopes on one line.
-        Assert.Contains(report, line => line.Contains("Acoustic goal: Linkwitz-Riley 24", StringComparison.Ordinal));
+        // The goal in three lines: how far off, what it came to, and whether it travels to the EQ stage.
+        Assert.Contains(report, line => line.Contains("Acoustic Linkwitz-Riley 24", StringComparison.Ordinal));
         Assert.Contains(report, line => line.Contains("nearest any filter", StringComparison.Ordinal));
-        Assert.Contains(report, line => line.Contains("channels alone", StringComparison.Ordinal));
-        Assert.Contains(report, line => line.Contains("searched", StringComparison.Ordinal));
+        Assert.Contains(report, line => line.Contains("the channels fall", StringComparison.Ordinal));
+        // The search's extent is the status line's business, not the pane's.
+        Assert.DoesNotContain(report, line => line.Contains("candidates", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -59,7 +59,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         comboBoxJunction.Location = new Point(96, 12);
         comboBoxJunction.MinimumSize = new Size(36, 21);
         comboBoxJunction.Name = "comboBoxJunction";
-        comboBoxJunction.Size = new Size(150, 21);
+        comboBoxJunction.Size = new Size(200, 21);
         comboBoxJunction.TabIndex = 1;
         //
         // labelWindow
@@ -120,7 +120,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         // checkBoxIndependentSlopes
         //
         checkBoxIndependentSlopes.ForeColor = UiPalette.TextPrimary;
-        checkBoxIndependentSlopes.Location = new Point(276, 43);
+        checkBoxIndependentSlopes.Location = new Point(300, 43);
         checkBoxIndependentSlopes.Name = "checkBoxIndependentSlopes";
         checkBoxIndependentSlopes.Size = new Size(160, 21);
         checkBoxIndependentSlopes.TabIndex = 6;
@@ -176,7 +176,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         labelGoal.AutoSize = true;
         labelGoal.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
         labelGoal.ForeColor = UiPalette.TextDefault;
-        labelGoal.Location = new Point(276, 77);
+        labelGoal.Location = new Point(300, 77);
         labelGoal.Name = "labelGoal";
         labelGoal.Size = new Size(96, 15);
         labelGoal.TabIndex = 9;
@@ -186,17 +186,17 @@ partial class VirtualCrossoverJunctionTuneDialog
         //
         comboBoxGoalFamily.BackColor = UiPalette.ControlSurface;
         comboBoxGoalFamily.ForeColor = UiPalette.TextPrimary;
-        comboBoxGoalFamily.Location = new Point(276, 97);
+        comboBoxGoalFamily.Location = new Point(300, 97);
         comboBoxGoalFamily.MinimumSize = new Size(36, 21);
         comboBoxGoalFamily.Name = "comboBoxGoalFamily";
-        comboBoxGoalFamily.Size = new Size(110, 21);
+        comboBoxGoalFamily.Size = new Size(130, 21);
         comboBoxGoalFamily.TabIndex = 10;
         //
         // comboBoxGoalSlope
         //
         comboBoxGoalSlope.BackColor = UiPalette.ControlSurface;
         comboBoxGoalSlope.ForeColor = UiPalette.TextPrimary;
-        comboBoxGoalSlope.Location = new Point(392, 97);
+        comboBoxGoalSlope.Location = new Point(436, 97);
         comboBoxGoalSlope.MinimumSize = new Size(36, 21);
         comboBoxGoalSlope.Name = "comboBoxGoalSlope";
         comboBoxGoalSlope.Size = new Size(74, 21);
@@ -205,9 +205,9 @@ partial class VirtualCrossoverJunctionTuneDialog
         // labelGoalHint
         //
         labelGoalHint.ForeColor = UiPalette.TextMuted;
-        labelGoalHint.Location = new Point(276, 122);
+        labelGoalHint.Location = new Point(300, 122);
         labelGoalHint.Name = "labelGoalHint";
-        labelGoalHint.Size = new Size(190, 30);
+        labelGoalHint.Size = new Size(330, 30);
         labelGoalHint.TabIndex = 12;
         labelGoalHint.Text = "Driver and filter together, which is steeper than the filter alone.";
         //
@@ -227,14 +227,16 @@ partial class VirtualCrossoverJunctionTuneDialog
         //
         labelStatus.AutoEllipsis = true;
         labelStatus.ForeColor = UiPalette.TextMuted;
+        labelStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         labelStatus.Location = new Point(130, 163);
         labelStatus.Name = "labelStatus";
-        labelStatus.Size = new Size(336, 19);
+        labelStatus.Size = new Size(742, 19);
         labelStatus.TabIndex = 14;
         labelStatus.Text = "Nothing searched yet.";
         //
         // textBoxReport
         //
+        textBoxReport.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
         textBoxReport.BackColor = UiPalette.SunkenSurface;
         textBoxReport.BorderStyle = BorderStyle.FixedSingle;
         textBoxReport.Font = new Font("Consolas", 9F);
@@ -243,8 +245,8 @@ partial class VirtualCrossoverJunctionTuneDialog
         textBoxReport.Multiline = true;
         textBoxReport.Name = "textBoxReport";
         textBoxReport.ReadOnly = true;
-        textBoxReport.ScrollBars = ScrollBars.Vertical;
-        textBoxReport.Size = new Size(454, 200);
+        textBoxReport.ScrollBars = ScrollBars.Both;
+        textBoxReport.Size = new Size(860, 300);
         textBoxReport.TabIndex = 15;
         textBoxReport.WordWrap = false;
         //
@@ -253,7 +255,8 @@ partial class VirtualCrossoverJunctionTuneDialog
         buttonApply.Enabled = false;
         buttonApply.FlatStyle = FlatStyle.Popup;
         buttonApply.ForeColor = UiPalette.TextPrimary;
-        buttonApply.Location = new Point(296, 400);
+        buttonApply.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+        buttonApply.Location = new Point(692, 500);
         buttonApply.Name = "buttonApply";
         buttonApply.Size = new Size(80, 26);
         buttonApply.TabIndex = 16;
@@ -266,7 +269,8 @@ partial class VirtualCrossoverJunctionTuneDialog
         buttonCancel.DialogResult = DialogResult.Cancel;
         buttonCancel.FlatStyle = FlatStyle.Popup;
         buttonCancel.ForeColor = UiPalette.TextPrimary;
-        buttonCancel.Location = new Point(386, 400);
+        buttonCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+        buttonCancel.Location = new Point(792, 500);
         buttonCancel.Name = "buttonCancel";
         buttonCancel.Size = new Size(80, 26);
         buttonCancel.TabIndex = 17;
@@ -280,7 +284,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         AutoScaleMode = AutoScaleMode.Dpi;
         BackColor = UiPalette.ShellSurface;
         CancelButton = buttonCancel;
-        ClientSize = new Size(478, 438);
+        ClientSize = new Size(884, 538);
         Controls.Add(labelJunction);
         Controls.Add(comboBoxJunction);
         Controls.Add(labelWindow);
@@ -304,7 +308,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         Font = new Font("Segoe UI", 9F);
         ForeColor = UiPalette.TextPrimary;
         MinimizeBox = false;
-        MinimumSize = new Size(494, 477);
+        MinimumSize = new Size(700, 460);
         Name = "VirtualCrossoverJunctionTuneDialog";
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;

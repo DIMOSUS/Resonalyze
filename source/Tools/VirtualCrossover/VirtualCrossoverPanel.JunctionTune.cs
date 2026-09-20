@@ -151,8 +151,8 @@ public partial class VirtualCrossoverPanel
             return Refusal("the session changed while the search ran");
         }
 
-        var report = new List<string>();
-        AgentJunctionTune.Describe(report, plan, result);
+        // The dialog's own layout, not the import summary's one-line-per-item list: a monospace pane wants columns.
+        List<string> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
         lastJunctionTune = result;
         return new JunctionTuneOutcome(
             report,

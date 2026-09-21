@@ -1,16 +1,9 @@
-using System.Numerics;
-using OxyPlot;
-using OxyPlot.Annotations;
-using OxyPlot.Axes;
-using OxyPlot.Series;
 using OxyPlot.WindowsForms;
-using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-internal sealed class TimeAlignmentPanelController : IDisposable
+internal sealed partial class TimeAlignmentPanelController : IDisposable
 {
-
     private readonly Form owner;
     private readonly TimeAlignmentSession session;
     private readonly Action saveSettings;
@@ -131,38 +124,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         resultTableFont.Dispose();
     }
 
-    private void WireEvents()
-    {
-        // Both radios fire CheckedChanged; react to the arriving one only.
-        void OnRadio(object? sender, EventArgs _)
-        {
-            if (!applyingOptions && sender is RadioButton { Checked: true })
-            {
-                ApplyBandpassOptionChange();
-            }
-        }
-        void OnNumeric(object? sender, EventArgs _)
-        {
-            if (!applyingOptions)
-            {
-                ApplyBandpassOptionChange();
-            }
-        }
-        bandModeFullRadio.CheckedChanged += OnRadio;
-        bandModeAutoRadio.CheckedChanged += OnRadio;
-        bandModeManualRadio.CheckedChanged += OnRadio;
-        bandpassCenterNumeric.ValueChanged += OnNumeric;
-        bandpassPassOctavesNumeric.ValueChanged += OnNumeric;
-        bandpassFadeOctavesNumeric.ValueChanged += OnNumeric;
-    }
-
-    private void ApplyBandpassOptionChange()
-    {
-        UpdateOptionsFromControls();
-        RefreshAnalysis();
-        saveSettings();
-    }
-
     private void RefreshAnalysis()
     {
         sourceSummaryLabel.Text = TimeAlignmentSources.MainSummary(session);
@@ -267,200 +228,8 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
-    // Writing controls raises the user-edit events, which would save the controls back into the options.
-    private bool applyingOptions;
-
-    private void ApplyOptionsToControls()
-    {
-        applyingOptions = true;
-        try
-        {
-            bandModeFullRadio.Checked =
-                session.Options.BandMode == TimeAlignmentBandMode.FullBand;
-            bandModeAutoRadio.Checked =
-                session.Options.BandMode == TimeAlignmentBandMode.AutoBand;
-            bandModeManualRadio.Checked =
-                session.Options.BandMode == TimeAlignmentBandMode.ManualBand;
-            bandpassCenterNumeric.Value =
-                bandpassCenterNumeric.ClampValue(session.Options.BandpassCenterHz);
-            bandpassPassOctavesNumeric.Value =
-                bandpassPassOctavesNumeric.ClampValue(session.Options.BandpassPassOctaves);
-            bandpassFadeOctavesNumeric.Value =
-                bandpassFadeOctavesNumeric.ClampValue(session.Options.BandpassFadeOctaves);
-        }
-        finally
-        {
-            applyingOptions = false;
-        }
-
-        UpdateBandpassControlStates();
-    }
-
-    private void UpdateOptionsFromControls()
-    {
-        session.Options.BandMode =
-            bandModeAutoRadio.Checked ? TimeAlignmentBandMode.AutoBand
-            : bandModeManualRadio.Checked ? TimeAlignmentBandMode.ManualBand
-            : TimeAlignmentBandMode.FullBand;
-        session.Options.BandpassCenterHz = (double)bandpassCenterNumeric.Value;
-        session.Options.BandpassPassOctaves = (double)bandpassPassOctavesNumeric.Value;
-        session.Options.BandpassFadeOctaves = (double)bandpassFadeOctavesNumeric.Value;
-        UpdateBandpassControlStates();
-    }
-
-    private void UpdateBandpassControlStates()
-    {
-        bool manual = bandModeManualRadio.Checked;
-        bandpassCenterNumeric.Enabled = manual;
-        bandpassPassOctavesNumeric.Enabled = manual;
-        bandpassFadeOctavesNumeric.Enabled = manual;
-    }
-
-    private void UpdateAutoBandLabel()
-    {
-        autoBandLabel.Text = TimeAlignmentBand.AutoBandCaption(session);
-    }
-
-    private void UpdateBandpassPreview()
-    {
-        PlotModel model = TimeAlignmentPreviews.Bandpass(
-            session,
-            (double)bandpassCenterNumeric.Value,
-            (double)bandpassPassOctavesNumeric.Value,
-            (double)bandpassFadeOctavesNumeric.Value);
-        bandpassViewports.Show(model, Mode.TimeAlignment);
-    }
-
     private void ClearEnvelopePreview()
     {
         envelopeViewports.Show(TimeAlignmentPreviews.EmptyEnvelope(), Mode.TimeAlignment);
     }
-
-    private void ShowReport(IReadOnlyList<TimeAlignmentReportSegment> segments, bool fromTop)
-    {
-        statusTextBox.BeginUpdate();
-        try
-        {
-            statusTextBox.Clear();
-            foreach (TimeAlignmentReportSegment segment in segments)
-            {
-                AppendStatusText(segment.Text, segment.Color, segment.Table ? resultTableFont : null);
-            }
-
-            if (fromTop)
-            {
-                statusTextBox.SelectionStart = 0;
-                statusTextBox.SelectionLength = 0;
-            }
-        }
-        finally
-        {
-            statusTextBox.EndUpdate();
-        }
-    }
-
-    private void AppendStatusText(string text, Color color, Font? font = null)
-    {
-        statusTextBox.SelectionStart = statusTextBox.TextLength;
-        statusTextBox.SelectionLength = 0;
-        statusTextBox.SelectionColor = color;
-        statusTextBox.SelectionFont = font ?? statusTextBox.Font;
-        statusTextBox.AppendText(text);
-        statusTextBox.SelectionFont = statusTextBox.Font;
-        statusTextBox.SelectionColor = statusTextBox.ForeColor;
-    }
-
-    private void StatusTextBoxMouseClick(object? sender, MouseEventArgs args)
-    {
-        if (args.Button != MouseButtons.Left ||
-            !TryGetCopyableStatusLine(args.Location, out string value))
-        {
-            return;
-        }
-
-        try
-        {
-            Clipboard.SetText(value);
-        }
-        catch (System.Runtime.InteropServices.ExternalException)
-        {
-            // Another process may hold the clipboard (RDP, clipboard managers); a lost copy must not crash.
-            System.Media.SystemSounds.Beep.Play();
-            return;
-        }
-
-        System.Media.SystemSounds.Asterisk.Play();
-    }
-
-    private bool TryGetCopyableStatusLine(Point location, out string value)
-    {
-        value = string.Empty;
-        int index = statusTextBox.GetCharIndexFromPosition(location);
-        int line = statusTextBox.GetLineFromCharIndex(index);
-        if (line >= statusTextBox.Lines.Length)
-        {
-            return false;
-        }
-
-        int column = Math.Max(0, index - statusTextBox.GetFirstCharIndexFromLine(line));
-        value = DelayTableText.CopyableValue(statusTextBox.Lines[line], column);
-        return !string.IsNullOrWhiteSpace(value);
-    }
-
-}
-
-internal sealed class StatusRichTextBox : RichTextBox
-{
-    private const int WmSetCursor = 0x20;
-    private const int WmSetRedraw = 0x0B;
-    private int updateDepth;
-
-    [System.ComponentModel.DesignerSerializationVisibility(
-        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public Func<Point, bool>? UseHandCursorAt { get; set; }
-
-    public void BeginUpdate()
-    {
-        if (updateDepth++ == 0 && IsHandleCreated)
-        {
-            SendMessage(Handle, WmSetRedraw, IntPtr.Zero, IntPtr.Zero);
-        }
-    }
-
-    public void EndUpdate()
-    {
-        if (updateDepth == 0)
-        {
-            return;
-        }
-
-        updateDepth--;
-        if (updateDepth == 0 && IsHandleCreated)
-        {
-            SendMessage(Handle, WmSetRedraw, new IntPtr(1), IntPtr.Zero);
-            Invalidate();
-        }
-    }
-
-    protected override void WndProc(ref Message message)
-    {
-        if (message.Msg == WmSetCursor)
-        {
-            Point point = PointToClient(Cursor.Position);
-            Cursor.Current = UseHandCursorAt?.Invoke(point) == true
-                ? Cursors.Hand
-                : Cursors.Default;
-            message.Result = (IntPtr)1;
-            return;
-        }
-
-        base.WndProc(ref message);
-    }
-
-    [System.Runtime.InteropServices.DllImport("user32.dll")]
-    private static extern IntPtr SendMessage(
-        IntPtr hWnd,
-        int msg,
-        IntPtr wParam,
-        IntPtr lParam);
 }

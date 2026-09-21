@@ -386,7 +386,7 @@ band, or manual).
 | Band-pass and envelope preview models | `TimeAlignmentPreviews` |
 | Binding: controls, background reads, drawing | `TimeAlignmentPanelController` (+ `.Band`, `.Status`) |
 
-The controller is the session's only writer and holds no rule of its own; `TimeAlignmentPanelBoundaryTests` keeps
+The controller writes the reads and the Auto band and holds no rule of its own; `TimeAlignmentPanelBoundaryTests` keeps
 statics and nested types off it, and `TimeAlignmentPanelWiringTests` drives the panel through its controls.
 
 - **Background reads.** One read of a megabyte transfer IR takes a few hundred milliseconds, so reads run off the

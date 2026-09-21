@@ -3,7 +3,7 @@ using Resonalyze.Dsp;
 namespace Resonalyze;
 
 /// <summary>What Time Alignment reads (the open measurement and the compare selection), with which band options,
-/// and what the last drawn read found. UI-free; the panel controller is its only writer.</summary>
+/// and what the last drawn read found. UI-free; the panel controller writes the reads and the Auto band.</summary>
 internal sealed class TimeAlignmentSession
 {
     private readonly AnalyzerDocument document;

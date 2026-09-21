@@ -158,6 +158,18 @@ public sealed class TimeAlignmentPanelWiringTests
     });
 
     [Fact]
+    public void ShowingThePanelAgain_DoesNotReReadAnUnchangedRecord() => StaTest.Run(() =>
+    {
+        using var live = new LiveTa();
+        live.Open(Measurement(peak: 400), "a.json");
+
+        live.Controller.SetVisible(false);
+        live.Controller.SetVisible(true);
+
+        Assert.True(live.Controller.Session.Reads.IsIdle);
+    });
+
+    [Fact]
     public void ARunHoldingTheDocument_KeepsWhatWasRead_UntilItLands() => StaTest.Run(() =>
     {
         using var live = new LiveTa();

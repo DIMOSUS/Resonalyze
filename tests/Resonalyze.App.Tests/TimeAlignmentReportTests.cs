@@ -81,17 +81,23 @@ public sealed class TimeAlignmentReportTests
             Report(TimeAlignmentBandMode.AutoBand, Outcome(Result()));
 
         Assert.Contains(segments, segment => segment.Table && segment.Text == DelayTableText.FormatHeader() + "\r\n");
-        Assert.Contains(segments, segment => segment.Table && segment.Text == DelayTableText.RecommendedMarker);
+        Assert.Contains(
+            segments,
+            segment => segment.Table && segment.Text == DelayTableText.RecommendedMarker && segment.Color == UiPalette.Success);
         Assert.Contains("Recommended for alignment: First Arrival", Text(segments), StringComparison.Ordinal);
     }
 
     [Fact]
     public void AFullBandReadWithCrosstalk_WarnsAndRecommendsNothing()
     {
-        string text = Text(Report(
+        IReadOnlyList<TimeAlignmentReportSegment> segments = Report(
             TimeAlignmentBandMode.FullBand,
-            Outcome(Result(), new CrosstalkHeadGate(40, 0.57, -18.1))));
+            Outcome(Result(), new CrosstalkHeadGate(40, 0.57, -18.1)));
+        string text = Text(segments);
 
+        Assert.Equal(
+            UiPalette.Error,
+            segments.Single(segment => segment.Text.Contains("Playback crosstalk", StringComparison.Ordinal)).Color);
         Assert.Contains("Playback crosstalk at 0.57 ms", text, StringComparison.Ordinal);
         Assert.Contains("Switch to Auto band", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Recommended for alignment", text, StringComparison.Ordinal);

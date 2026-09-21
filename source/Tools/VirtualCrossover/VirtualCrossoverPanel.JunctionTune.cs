@@ -53,7 +53,8 @@ public partial class VirtualCrossoverPanel
         // The same write the assistant's tune makes: one crossover into both sides of both blocks, and the goal onto
         // the edges the applied crossover actually lands on. The crossover is the one the report calls found
         // whenever it differs from the one on screen: the keep margin is the report's advice, and Apply is the
-        // user overruling it. Where nothing different was found, only the goal is written.
+        // user overruling it. Where nothing different was found, only the goal is written. The goal is written as
+        // asked whether or not the crossover lands on it; the report says how far it is.
         AgentJunctionTune.Write(landed, lower, upper, goal, applyCrossover: landed.Moves);
         ApplySettingsToControl(lower);
         ApplySettingsToControl(upper);
@@ -179,9 +180,10 @@ public partial class VirtualCrossoverPanel
         string searched =
             $"{result.CandidatesEvaluated} candidates read over " +
             $"{options.MinCrossoverHz:0.###}–{options.MaxCrossoverHz:0.###} Hz.";
-        // Apply writes what the report calls found, so it is offered whenever that is something: a different
-        // crossover, or a goal the crossover on screen lands on. A button that closes the window and changes
-        // nothing is the one thing it must not be.
+        // Apply writes what the report calls found and the goal that was asked, so it is offered whenever that
+        // changes something: a different crossover, or a goal the cards do not state yet. A button that closes
+        // the window and changes nothing is the one thing it must not be.
+        bool goalChanges = AgentJunctionTune.WouldChangeGoal(lower, upper, request.AcousticGoal);
         bool goalLands = request.AcousticGoal != null &&
             CrossoverJunctionTuner.WasAcousticTargetReached(
                 (result.Moves ? result.Best : result.Current).AcousticCostDb);
@@ -189,15 +191,17 @@ public partial class VirtualCrossoverPanel
             ? "A better crossover was found; Apply writes it. "
             : result.Moves
                 ? "Keeping the crossover on screen is recommended; Apply writes the found one anyway. "
-                : goalLands
+                : goalChanges
                     ? "The crossover on screen is the best found; Apply writes the goal onto the cards. "
                     : "The crossover on screen is the best found; nothing to apply. ";
         return new JunctionTuneOutcome(
             report,
-            result.Moves || goalLands,
+            result.Moves || goalChanges,
             verdict + searched,
             false,
-            Recommended: result.Changed || (!result.Moves && goalLands));
+            // A goal the crossover misses is written as asked, but it is not what the search advises.
+            Recommended: (result.Changed || (!result.Moves && goalChanges)) &&
+                (request.AcousticGoal == null || goalLands));
 
         static JunctionTuneOutcome Refusal(string because) =>
             new(

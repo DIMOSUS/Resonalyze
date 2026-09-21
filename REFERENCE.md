@@ -3374,12 +3374,14 @@ goal is reachable at all. A filter only steepens, so a slope softer than the
 drivers' own fall is not on offer — the report says so instead of quietly
 picking the softest filter.
 
-Where the goal is reached it is written onto those edges and shows on the
-channel cards, and **Auto Tune then aims at it** instead of at the electrical
-filter (see [Crossover in target](#auto-tune)). Where it is not reached it is
-not carried: measured on eight cabins, pointing the fit at a slope the drivers
-cannot reach made the finished junction worse, so the tool reports the wish and
-leaves the fit aiming at the filter.
+Apply writes the goal onto those edges as you asked it, and it shows on the
+channel cards; **Auto Tune then aims at it** instead of at the electrical filter
+(see [Crossover in target](#auto-tune)). That holds whether or not the crossover
+lands on it, and the report says which: where the crossover misses the goal,
+Auto Tune will be aiming at a slope the filter does not make. Measured on eight
+cabins, that made the finished junction worse on average (about 0.1 dB of sum
+loss and 1.6 dB on the worst dip), so where the report shows the goal missed,
+clearing it on the card leaves the fit aiming at the filter.
 
 Honest about what is claimed: the magnitude is fitted to the asked edge. Each
 side keeps its own excess phase, so "the magnitude follows an acoustic LR24" is

@@ -121,6 +121,41 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
         Assert.Contains("not worth it", line, StringComparison.Ordinal);
         Assert.DoesNotContain(report, text => text.Contains("NOT applied", StringComparison.Ordinal));
     }
+    [Fact]
+    public void AGoalTheCrossoverMisses_IsStillWritten_AndTheReportSaysWhatThatMeans()
+    {
+        // The goal is the user's statement and Apply writes it; what the report owes the reader is that Auto
+        // Tune will then aim at a slope the filter does not make. It says so in one line that fits the pane.
+        (JunctionTunePlan plain, _) = Tune(acoustic: null);
+        JunctionTunePlan plan = plain with
+        {
+            Options = plain.Options with
+            {
+                AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24)
+            }
+        };
+        CrossoverEdge now = new(CrossoverFilterFamily.Butterworth, 216, 24);
+        CrossoverEdge foundLow = new(CrossoverFilterFamily.Butterworth, 211, 30);
+        CrossoverEdge foundHigh = new(CrossoverFilterFamily.Butterworth, 251, 36);
+        JunctionTuneReading[] before = [new("left", -0.9, -4.3, 3.4, new JunctionAcousticFit(6.0, -6, 45, 52, 21.5))];
+        JunctionTuneReading[] after = [new("left", -0.6, -1.8, 2.8, new JunctionAcousticFit(4.6, -4.6, 42, 51, 21.5))];
+        var result = new JunctionTuneResult(
+            new JunctionTuneCandidate(now, now, before, before, 100, 500),
+            new JunctionTuneCandidate(foundLow, foundHigh, after, after, 100, 500),
+            Changed: true,
+            [], [], [], 857, 100, 500,
+            [new JunctionDriverSlopes("left", 14.1, 16.4)],
+            ClosestAcousticCostDb: 1.3);
+
+        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+
+        JunctionTuneLine verdict = report[^1];
+        Assert.Contains("Apply writes it anyway", verdict.Text, StringComparison.Ordinal);
+        Assert.Equal(JunctionTuneTone.Worse, verdict.Spans[^1].Tone);
+        Assert.All(report, line => Assert.True(
+            line.Text.Length <= Columns, $"{line.Text.Length} characters: {line.Text}"));
+    }
+
     private static (JunctionTunePlan Plan, JunctionTuneResult Result) Tune(JunctionAcousticTarget? acoustic)
     {
         CrossoverEdge lr = new(CrossoverFilterFamily.LinkwitzRiley, 1_000, 48);

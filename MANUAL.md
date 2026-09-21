@@ -885,9 +885,10 @@ overlapped fills a dip — always on whole hertz, the way the channel card state
 The other question is the crossover in **acoustic** terms. Set the goal to LR24 and
 Resonalyze looks for the electrical filter that, with this driver's own roll-off
 included, adds up to that slope — and tells you plainly whether these drivers can reach
-it at all, since a filter can only make a response steeper. Where the goal is reachable
-it is remembered on the channel card and the EQ stage aims at it instead of at the
-electrical filter; where it is not, the report says so and nothing is carried forward.
+it at all, since a filter can only make a response steeper. Apply remembers the goal on
+the channel card and the EQ stage aims at it instead of at the electrical filter; where
+the crossover misses it, the report says so in red, and clearing it on the card sends the
+fit back to the filter.
 The summation always has the last word: the stated slope only chooses between crossovers
 that sum equally well.
 

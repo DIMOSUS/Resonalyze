@@ -176,8 +176,9 @@ The gain is one-sided by nature. Where the measured slope is steeper than the ta
 top of the filter — a bank that may not lift leaves it alone, and only the statistics notice. Where the driver has
 more output than the filter's slope asks for, the fit now brings it down instead of stopping at the corner.
 
-**An acoustic crossover stated on the card.** Where a junction tune landed on a stated ACOUSTIC crossover, the handoff
-sends that as `TargetCrossover`, per edge (`VirtualDspEqHandoff.GoalCrossoverFor`: the family and slope asked, at the
+**An acoustic crossover stated on the card.** Where the card states an ACOUSTIC crossover (a junction tune writes the
+one it was asked for, or the card editor sets it), the handoff sends that as `TargetCrossover`, per edge
+(`VirtualDspEqHandoff.GoalCrossoverFor`: the family and slope asked, at the
 electrical corner), so the fit aims at driver and filter together rather than at the filter alone. The filter the
 chain runs then travels beside it as `EqWizardCurveSource.ElectricalCrossover` — only where the two differ — and the
 wizard draws the target on it too (`EqWizardRender.ElectricalTargetCurve`): dotted, at half the target's opacity,

@@ -86,11 +86,11 @@ internal static class AgentJunctionTune
 
     /// <summary>The winner's crossover on both sides of both blocks; a mono block takes it once.</summary>
     /// <param name="acoustic">
-    /// The acoustic crossover this tune was asked for, or null for a plain one. Written onto the edges it wrote, so
-    /// the EQ stage's target follows it instead of the electrical filter — see
-    /// docs/specs/acoustic-crossover-target.md. A tune that was asked for one and could not land on it clears the
-    /// card instead of leaving the old wish to aim the fit somewhere the filter does not go; a plain tune leaves
-    /// whatever the card holds alone, because the wish is the user's and not a by-product of this run.
+    /// The acoustic crossover this tune was asked for, or null for a plain one. Written onto both edges of the
+    /// junction whether or not the crossover lands on it: it is the user's own statement, shown and edited on the
+    /// channel card, and the report says how far the crossover is from it. The EQ stage's target follows it
+    /// instead of the electrical filter — see docs/specs/acoustic-crossover-target.md. A plain tune leaves
+    /// whatever the card holds alone, because it was not asked about the wish.
     /// </param>
     public static void Write(
         JunctionTuneResult result,
@@ -102,14 +102,6 @@ internal static class AgentJunctionTune
         // Keeping the crossover means keeping it: a run that only states a goal must not move the edges the report
         // just said were staying.
         JunctionTuneCandidate applied = applyCrossover ? result.Best : result.Current;
-        // Only where the crossover being applied actually lands on the asked edge — not merely where some candidate
-        // on the lattice could have. Measured, on eight cabins: aiming the EQ stage at a slope the channel does not
-        // produce is the one thing that made the finished junction worse
-        // (docs/specs/acoustic-crossover-target.md#6a).
-        JunctionAcousticTarget? reached =
-            CrossoverJunctionTuner.WasAcousticTargetReached(applied.AcousticCostDb)
-                ? acoustic
-                : null;
         foreach (bool rightSide in new[] { false, true })
         {
             if (!lower.Pair.Mono || !rightSide)
@@ -125,9 +117,7 @@ internal static class AgentJunctionTune
                 }
                 if (acoustic != null)
                 {
-                    // Asked for and not reached CLEARS it: the report says the fit will aim at the filter, and a
-                    // goal left over from an earlier run would quietly make it aim somewhere else.
-                    settings.AcousticLowPass = reached;
+                    settings.AcousticLowPass = acoustic;
                 }
             }
             if (!upper.Pair.Mono || !rightSide)
@@ -143,10 +133,37 @@ internal static class AgentJunctionTune
                 }
                 if (acoustic != null)
                 {
-                    settings.AcousticHighPass = reached;
+                    settings.AcousticHighPass = acoustic;
                 }
             }
         }
+    }
+
+    /// <summary>Whether writing <paramref name="acoustic"/> would change what any of the junction's cards state.</summary>
+    public static bool WouldChangeGoal(
+        VirtualCrossoverChannel lower, VirtualCrossoverChannel upper, JunctionAcousticTarget? acoustic)
+    {
+        if (acoustic == null)
+        {
+            return false;
+        }
+
+        foreach (bool rightSide in new[] { false, true })
+        {
+            if ((!lower.Pair.Mono || !rightSide) &&
+                !Equals(lower.SideSettings(rightSide).AcousticLowPass, acoustic))
+            {
+                return true;
+            }
+
+            if ((!upper.Pair.Mono || !rightSide) &&
+                !Equals(upper.SideSettings(rightSide).AcousticHighPass, acoustic))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>What the tune found: the crossover kept or applied, against the search it ran, with each side's readings.</summary>
@@ -184,7 +201,7 @@ internal static class AgentJunctionTune
     {
         JunctionTuneCandidate candidate = result.Changed ? result.Best : result.Current;
         bool reached = CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb);
-        // Reachable is the lattice's answer; written is the crossover that stays, which is what Write gates on.
+        // Reachable is the lattice's answer; lands is the crossover that stays. The goal is written either way.
         bool lands = CrossoverJunctionTuner.WasAcousticTargetReached(candidate.AcousticCostDb);
         string family = asked.Family switch
         {
@@ -214,8 +231,8 @@ internal static class AgentJunctionTune
               (fit is { ResidualDb: > 0 }
                   ? $"; the {Number(fit.ResidualDb)} dB left over is cuts, which it may make."
                   : "; what is left over would need a skirt boost, which it refuses.")
-            : "  the goal is NOT written onto these edges: aiming the fit at a slope the crossover " +
-              "does not reach makes the junction worse, measured.");
+            : $"  the goal is written onto these edges, but the crossover misses it by " +
+              $"{Number(candidate.AcousticCostDb)} dB: Auto Tune will aim at a slope the filter does not make.");
     }
 
     private static string Number(double? value) =>

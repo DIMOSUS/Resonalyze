@@ -31,7 +31,7 @@ public sealed class AgentJunctionTuneAcousticReportTests
     }
 
     [Fact]
-    public void AGoalTheDriversCannotReach_SaysSo_AndThatItIsNotCarried()
+    public void AGoalTheDriversCannotReach_SaysSo_AndThatAutoTuneWillAimAtItAnyway()
     {
         var report = new List<string>();
         (JunctionTunePlan plan, JunctionTuneResult result) = OutOfReach();
@@ -40,15 +40,15 @@ public sealed class AgentJunctionTuneAcousticReportTests
 
         string text = string.Join(Environment.NewLine, report);
         Assert.Contains("OUT OF REACH.", text);
-        Assert.Contains("the goal is NOT written onto these edges", text);
+        Assert.Contains("the goal is written onto these edges, but the crossover misses it", text);
     }
 
     [Fact]
-    public void AGoalSomeFilterCouldReach_ButTheCrossoverKeptDoesNot_IsNotCalledWritten()
+    public void AGoalSomeFilterCouldReach_ButTheCrossoverKeptDoesNot_IsCalledMissed()
     {
-        // "Reachable" is a statement about the lattice; "written onto these edges" is a statement about the
-        // crossover that stays, and Write carries the goal only when THAT one lands. The summary must not
-        // promise the EQ stage a goal Write is about to clear.
+        // "Reachable" is a statement about the lattice; whether the fit aims at a slope the filter makes is a
+        // statement about the crossover that stays. The goal is written either way, and the summary must not
+        // call a kept crossover that misses it a landing.
         CrossoverEdge edge = new(CrossoverFilterFamily.LinkwitzRiley, 1_000, 48);
         var far = new JunctionTuneReading(
             "left", -0.5, -1.0, 1.0, new JunctionAcousticFit(6.0, -6.0, 40, 40, 24));
@@ -70,7 +70,7 @@ public sealed class AgentJunctionTuneAcousticReportTests
 
         string text = string.Join(Environment.NewLine, report);
         Assert.Contains("reached.", text);
-        Assert.Contains("the goal is NOT written onto these edges", text);
+        Assert.Contains("the crossover misses it by 6.0 dB", text);
     }
     [Fact]
     public void ApplyingOnlyTheGoal_LeavesTheEdgesWhereTheReportSaidTheyWouldStay()
@@ -111,10 +111,10 @@ public sealed class AgentJunctionTuneAcousticReportTests
     }
 
     [Fact]
-    public void AGoalAskedForAndMissed_ClearsTheWishTheCardsHeld()
+    public void AGoalAskedForAndMissed_IsStillWrittenOverTheWishTheCardsHeld()
     {
-        // The report says the goal is NOT written onto these edges; the card must agree. An older wish left
-        // standing would keep aiming the EQ stage at a slope this run has just called out of reach.
+        // The goal is the user's statement, shown on the card: a tune asked for LR12 writes LR12, whatever the
+        // cards said before and however far the crossover lands from it. The report says how far.
         (_, JunctionTuneResult unreachable) = OutOfReach();
         var lower = new VirtualCrossoverChannel("A");
         var upper = new VirtualCrossoverChannel("B");
@@ -129,10 +129,11 @@ public sealed class AgentJunctionTuneAcousticReportTests
             unreachable, lower, upper,
             new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 12));
 
+        var asked = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 12);
         foreach (bool right in new[] { false, true })
         {
-            Assert.Null(lower.SideSettings(right).AcousticLowPass);
-            Assert.Null(upper.SideSettings(right).AcousticHighPass);
+            Assert.Equal(asked, lower.SideSettings(right).AcousticLowPass);
+            Assert.Equal(asked, upper.SideSettings(right).AcousticHighPass);
         }
     }
 

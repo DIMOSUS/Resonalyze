@@ -53,6 +53,32 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
         }
     });
 
+    [Fact]
+    public void TheAskedAcousticCrossover_LandsOnTheCards_EvenWhereTheFoundCrossoverMissesIt() => StaTest.Run(() =>
+    {
+        // Reported from the field: acoustic BW24 asked, BW30/BW36 found 4.6 dB off it, Apply pressed, and the
+        // card button still read a dash. The goal is the user's own statement, shown and edited on the card; the
+        // report says how far the crossover is from it, and the card says what was asked.
+        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
+        var asked = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
+        JunctionTuneReading[] missed =
+            [new("left", -0.6, -1.8, 2.8, new JunctionAcousticFit(4.6, -4.6, 41.8, 50.7, 21.5))];
+        var found = new JunctionTuneCandidate(FoundLow, FoundHigh, missed, missed, 90, 360);
+        var result = new JunctionTuneResult(
+            Candidate(Before, Before), found, Changed: true, [], [], [], 1, 90, 360, [], ClosestAcousticCostDb: 1.3);
+
+        Apply(panel, lower, upper, result, asked);
+
+        foreach (bool right in new[] { false, true })
+        {
+            Assert.Equal(asked, lower.SideSettings(right).AcousticLowPass);
+            Assert.Equal(asked, upper.SideSettings(right).AcousticHighPass);
+        }
+
+        Assert.Equal("BW24", Card(panel, lower).AcousticGoalButton.Text);
+        Assert.Equal("BW24", Card(panel, upper).AcousticGoalButton.Text);
+    });
+
     private static void AssertFound(
         VirtualCrossoverPanel panel, VirtualCrossoverChannel lower, VirtualCrossoverChannel upper)
     {

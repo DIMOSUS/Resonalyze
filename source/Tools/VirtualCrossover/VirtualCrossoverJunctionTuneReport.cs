@@ -147,8 +147,8 @@ internal static class VirtualCrossoverJunctionTuneReport
         JunctionAcousticFit? fit = candidate.Sides.FirstOrDefault()?.Acoustic;
         JunctionDriverSlopes? plant = result.DriverSlopes.FirstOrDefault();
         bool anyFilterCould = CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb);
-        // The difference matters: "these drivers could" is not "this filter does", and only the second carries the
-        // goal on to the EQ stage.
+        // The difference matters: "these drivers could" is not "this filter does". The goal is written as asked
+        // either way; what differs is whether Auto Tune will then aim at a slope the filter actually makes.
         bool lands = CrossoverJunctionTuner.WasAcousticTargetReached(candidate.AcousticCostDb);
         // Say WHICH crossover the figures describe: the kept one and the challenger are different answers, and the
         // table above has just shown both.
@@ -172,23 +172,21 @@ internal static class VirtualCrossoverJunctionTuneReport
             plant is { LowerDbPerOctave: { } plantLower, UpperDbPerOctave: { } plantUpper })
         {
             lines.Add(JunctionTuneLine.Of(
-                $"    landing on it needs about {Number(Math.Max(0, askedSlope - plantLower))} / " +
-                $"{Number(Math.Max(0, askedSlope - plantUpper))} dB/oct of filter — softer than this, " +
-                "and a soft pair sums worse."));
+                $"    landing on it takes about {Number(Math.Max(0, askedSlope - plantLower))} / " +
+                $"{Number(Math.Max(0, askedSlope - plantUpper))} dB/oct of filter; a pair that soft sums worse."));
         }
 
         lines.Add(new JunctionTuneLine([
             lands
                 ? new JunctionTuneSpan(
-                    "    Written onto these edges, so Auto Tune aims at it instead of the filter.",
+                    "    Apply writes it onto the cards; Auto Tune aims at it instead of the filter.",
                     JunctionTuneTone.Better)
-                : anyFilterCould
-                    ? new JunctionTuneSpan(
-                        "    Within reach, but not by a filter that sums as well — so it is not carried.",
-                        JunctionTuneTone.Worse)
-                    : new JunctionTuneSpan(
-                        "    Not carried to the fit: these drivers already fall too steeply for it.",
-                        JunctionTuneTone.Worse)
+                : new JunctionTuneSpan(
+                    "    Apply writes it anyway, and Auto Tune will aim at it; " +
+                    (anyFilterCould
+                        ? "a filter that lands on it sums worse."
+                        : "these drivers cannot make it."),
+                    JunctionTuneTone.Worse)
         ]));
     }
 

@@ -198,8 +198,8 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
     private static void SetQuestion(VirtualCrossoverJunctionTuneDialog dialog)
     {
         Field<CheckBox>(dialog, "checkBessel").Checked = true;
-        Field<CheckBox>(dialog, "checkBoxIndependentSlopes").Checked = true;
-        Field<CheckBox>(dialog, "checkBoxSplitCorners").Checked = true;
+        Field<CheckBox>(dialog, "checkBoxIndependentSlopes").Checked = false;
+        Field<CheckBox>(dialog, "checkBoxSplitCorners").Checked = false;
         Field<ThemedComboBox>(dialog, "comboBoxMinSlope").SelectedItem = 18;
         Field<ThemedComboBox>(dialog, "comboBoxMaxSlope").SelectedItem = 36;
         Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").SelectedItem = CrossoverFamilyChoice.Offered
@@ -211,8 +211,8 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
     private static void AssertQuestion(VirtualCrossoverJunctionTuneDialog dialog)
     {
         Assert.True(Field<CheckBox>(dialog, "checkBessel").Checked);
-        Assert.True(Field<CheckBox>(dialog, "checkBoxIndependentSlopes").Checked);
-        Assert.True(Field<CheckBox>(dialog, "checkBoxSplitCorners").Checked);
+        Assert.False(Field<CheckBox>(dialog, "checkBoxIndependentSlopes").Checked);
+        Assert.False(Field<CheckBox>(dialog, "checkBoxSplitCorners").Checked);
         Assert.Equal(18, Field<ThemedComboBox>(dialog, "comboBoxMinSlope").SelectedItem);
         Assert.Equal(36, Field<ThemedComboBox>(dialog, "comboBoxMaxSlope").SelectedItem);
         Assert.Equal(
@@ -246,18 +246,20 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         Assert.Contains("sums best", hint.Text, StringComparison.Ordinal);
         Run(dialog);
         Assert.Null(asked!.AcousticGoal);
-        Assert.False(asked.SplitCorners);
+        // Both freedoms are on unless the user takes them away: at one junction the wider search is worth it.
+        Assert.True(asked.IndependentSlopes);
+        Assert.True(asked.SplitCorners);
 
         // Switching mode states a goal rather than leaving the boxes empty, and says so in the hint.
         acoustic.Checked = true;
         Assert.True(Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").Enabled);
         Assert.Contains("Driver and filter together", hint.Text, StringComparison.Ordinal);
-        Field<CheckBox>(dialog, "checkBoxSplitCorners").Checked = true;
+        Field<CheckBox>(dialog, "checkBoxSplitCorners").Checked = false;
         Run(dialog);
 
         Assert.NotNull(asked!.AcousticGoal);
         Assert.Equal(CrossoverFilterFamily.LinkwitzRiley, asked.AcousticGoal!.Family);
-        Assert.True(asked.SplitCorners);
+        Assert.False(asked.SplitCorners);
     });
 
     [Fact]

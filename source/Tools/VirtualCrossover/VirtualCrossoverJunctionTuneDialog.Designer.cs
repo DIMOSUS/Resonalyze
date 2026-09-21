@@ -126,6 +126,8 @@ partial class VirtualCrossoverJunctionTuneDialog
         //
         // checkBoxIndependentSlopes
         //
+        checkBoxIndependentSlopes.Checked = true;
+        checkBoxIndependentSlopes.CheckState = CheckState.Checked;
         checkBoxIndependentSlopes.ForeColor = UiPalette.TextPrimary;
         checkBoxIndependentSlopes.Location = new Point(300, 43);
         checkBoxIndependentSlopes.Name = "checkBoxIndependentSlopes";
@@ -256,6 +258,8 @@ partial class VirtualCrossoverJunctionTuneDialog
         //
         // checkBoxSplitCorners
         //
+        checkBoxSplitCorners.Checked = true;
+        checkBoxSplitCorners.CheckState = CheckState.Checked;
         checkBoxSplitCorners.ForeColor = UiPalette.TextPrimary;
         checkBoxSplitCorners.Location = new Point(470, 43);
         checkBoxSplitCorners.Name = "checkBoxSplitCorners";

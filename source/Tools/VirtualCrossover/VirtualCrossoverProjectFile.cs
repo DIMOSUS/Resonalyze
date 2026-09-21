@@ -26,8 +26,12 @@ public sealed class VirtualCrossoverJunctionTuneSettings
     public string? Junction { get; set; }
 
     public List<CrossoverFilterFamily> Families { get; set; } = new();
-    public bool IndependentSlopes { get; set; }
-    public bool SplitCorners { get; set; }
+
+    /// <summary>On by default, as in the dialog: the free search is the one worth its cost at a single junction.</summary>
+    public bool IndependentSlopes { get; set; } = true;
+
+    /// <inheritdoc cref="IndependentSlopes"/>
+    public bool SplitCorners { get; set; } = true;
 
     /// <summary>The "this acoustic crossover" mode; false is "the best summation".</summary>
     public bool Acoustic { get; set; }

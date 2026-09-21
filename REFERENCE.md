@@ -3342,8 +3342,9 @@ and why this one has the last word on a finished tune.
   steepness you want. An acoustic goal states the answer instead, so the window
   is left out of that mode altogether.
 - **Families**, and **slopes free per side** where the two edges may differ in
-  steepness (that costs slopes² candidates per corner, so it is a tick rather
-  than the default).
+  steepness. It is on by default, like **Corners free per side** below; untick
+  either to narrow the question (the free search costs slopes² candidates per
+  corner).
 - **Corners free per side** adds a pass that offsets the two edges from the
   junction — a twelfth, a sixth or a quarter of an octave, half of it each way,
   so the junction stays where it is. Holding them apart takes a bump off the

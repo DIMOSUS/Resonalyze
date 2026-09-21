@@ -73,6 +73,20 @@ public sealed class DelayTableTextTests
     }
 
     [Fact]
+    public void CopyableValue_CopiesADelayCellAndNothingElse()
+    {
+        RunWithInvariantCulture(() =>
+        {
+            string line = DelayTableText.FormatLine(DelayTableText.FirstArrivalLabel, "1.006 (+0.010)", "48.3", "0.345");
+
+            Assert.Equal("1.006", DelayTableText.CopyableValue(line, DelayTableText.MillisecondsColumn + 3));
+            Assert.Equal("0.345", DelayTableText.CopyableValue(line, DelayTableText.MetersColumn));
+            Assert.Equal(string.Empty, DelayTableText.CopyableValue(line, 2));
+            Assert.Equal(string.Empty, DelayTableText.CopyableValue(DelayTableText.FormatHeader(), DelayTableText.SamplesColumn));
+        });
+    }
+
+    [Fact]
     public void FormatValueWithDelta_SignsTheDelta()
     {
         RunWithInvariantCulture(() =>

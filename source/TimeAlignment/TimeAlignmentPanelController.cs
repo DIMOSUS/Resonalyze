@@ -402,22 +402,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             return false;
         }
 
-        string lineText = statusTextBox.Lines[line];
-        if (!DelayTableText.IsDelayRow(lineText))
-        {
-            return false;
-        }
-
-        int lineStart = statusTextBox.GetFirstCharIndexFromLine(line);
-        int column = Math.Max(0, index - lineStart);
-        value = DelayTableText.CellAt(column) is { } cellStart
-            ? GetDelayTableValue(lineText, cellStart)
-            : string.Empty;
+        int column = Math.Max(0, index - statusTextBox.GetFirstCharIndexFromLine(line));
+        value = DelayTableText.CopyableValue(statusTextBox.Lines[line], column);
         return !string.IsNullOrWhiteSpace(value);
     }
-
-    private static string GetDelayTableValue(string line, int startColumn) =>
-        DelayTableText.GetValue(line, startColumn);
 
 }
 

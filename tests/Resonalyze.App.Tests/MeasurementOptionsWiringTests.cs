@@ -25,6 +25,8 @@ public sealed class MeasurementOptionsWiringTests
         Assert.Equal(100m, live.Number("numericUpDownLowFrequency").Value);
         Assert.Equal("Stereo input available for Wave loopback.", live.Control<Label>("labelWaveLoopbackStatus").Text);
         Assert.Equal("Speakers", live.ToolTip("comboBoxPlaybackDevice"));
+        ThemedComboBox recording = live.Combo("comboBoxRecordingDevice");
+        Assert.True(recording.DropDownWidth > recording.Width, "a long device name widens the drop-down");
         Assert.True(live.Control<Control>("waveAudioBackendPanel").Visible);
         Assert.False(live.Control<Control>("asioAudioBackendPanel").Visible);
     });
@@ -234,6 +236,33 @@ public sealed class MeasurementOptionsWiringTests
     });
 
     [Fact]
+    public void OneEditPresentsOnce_SoTheHardwareIsAskedOnce() => StaTest.Run(() =>
+    {
+        static void Exclusive(MeasurementSettingsFile.SweepMeasurementSettings settings)
+        {
+            settings.AudioBackend = AudioBackend.WasapiExclusive;
+            settings.WasapiCaptureEndpointId = "{capture}";
+            settings.WasapiRenderEndpointId = "{render}";
+        }
+
+        using var live = new LiveRecordSettings(Exclusive);
+        int before = live.Devices.ExclusiveChecks;
+        live.Pick("comboBoxRecordingDevice", "Four in");
+        int byTheForm = live.Devices.ExclusiveChecks - before;
+
+        FakeRecordDevices bare = LiveRecordSettings.Machine();
+        var session = new RecordSettingsSession(bare);
+        session.Load(live.Settings);
+        before = bare.ExclusiveChecks;
+        session.RecordingDevice.SelectedIndex = session.RecordingDevice.Items.ToList().FindIndex(item => item.ToString() == "Four in");
+        int bySession = bare.ExclusiveChecks - before;
+
+        // The session's own re-probes, plus one read of the status line.
+        Assert.Equal(bySession + 1, byTheForm);
+        Assert.Equal("Input 1", live.Text("comboBoxWaveInputChannel"));
+    });
+
+    [Fact]
     public void TheAsioControlPanel_ReReadsTheDriver() => StaTest.Run(() =>
     {
         using var live = new LiveRecordSettings(settings => settings.AudioBackend = AudioBackend.Asio);
@@ -259,8 +288,6 @@ public sealed class MeasurementOptionsWiringTests
     {
         public LiveRecordSettings(Action<MeasurementSettingsFile.SweepMeasurementSettings>? edit = null)
         {
-            Devices.Playback[1] = new AudioDeviceInfo(0, "Speakers", 2);
-            Devices.AsioDrivers["Card"] = FakeRecordDevices.Asio("Card", 4, 2, 44_100, 48_000);
             Settings = new MeasurementSettingsFile.SweepMeasurementSettings
             {
                 AudioBackend = AudioBackend.Wave,
@@ -307,7 +334,7 @@ public sealed class MeasurementOptionsWiringTests
             Settle();
         }
 
-        public FakeRecordDevices Devices { get; } = new();
+        public FakeRecordDevices Devices { get; } = Machine();
         public MeasurementSettingsFile.SweepMeasurementSettings Settings { get; }
         public ExpSweepMeasurement Engine { get; }
         public MeasurementOptions Form { get; }
@@ -352,6 +379,16 @@ public sealed class MeasurementOptionsWiringTests
             var applied = new MeasurementSettingsFile.SweepMeasurementSettings { SampleRate = 48_000 };
             Form.ApplySweepSettings(applied);
             return applied;
+        }
+
+        public static FakeRecordDevices Machine()
+        {
+            var devices = new FakeRecordDevices();
+            devices.Playback[1] = new AudioDeviceInfo(0, "Speakers", 2);
+            devices.Recording.Add(new AudioDeviceInfo(2, "Line in 3-4 (A Very Long Interface Name That Needs A Wide Drop-Down List)", 2));
+            devices.Capture.Add(FakeRecordDevices.Endpoint("{four}", "Four in", AudioEndpointDirection.Capture, 48_000, 4));
+            devices.AsioDrivers["Card"] = FakeRecordDevices.Asio("Card", 4, 2, 44_100, 48_000);
+            return devices;
         }
 
         public void Settle()

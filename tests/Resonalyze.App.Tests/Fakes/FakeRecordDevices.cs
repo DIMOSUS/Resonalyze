@@ -38,6 +38,8 @@ internal sealed class FakeRecordDevices : IRecordDevices
 
     public int AsioOpenCount { get; private set; }
 
+    public int ExclusiveChecks { get; private set; }
+
     public bool Disposed { get; private set; }
 
     public event Action? EndpointsChanged;
@@ -92,8 +94,11 @@ internal sealed class FakeRecordDevices : IRecordDevices
         int sampleRate,
         int bits,
         int captureChannels,
-        int renderChannels) =>
-        renderChannels == 2 && Rates.Contains(sampleRate);
+        int renderChannels)
+    {
+        ExclusiveChecks++;
+        return renderChannels == 2 && Rates.Contains(sampleRate);
+    }
 
     public IReadOnlyList<AsioDeviceInfo> GetAsioDrivers() =>
         AsioDrivers.Keys.Select(name => new AsioDeviceInfo(name)).ToArray();

@@ -313,7 +313,7 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             return sums;
         }
 
-        // Re-aligned as Auto delay will after the tune, one shift where a block is mono.
+        // Re-aligned as Auto delay will after the tune, one shift where the upper block is mono.
         double cornerHz = Math.Sqrt(result.Best.BandLowHz * result.Best.BandHighHz);
         double halfWindowMs = CrossoverAutoSetup.PostCheckHalfWindowMs(cornerHz);
         var inputs = new List<JunctionAlignmentSide>(sides.Count);

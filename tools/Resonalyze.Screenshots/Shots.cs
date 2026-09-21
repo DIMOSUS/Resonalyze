@@ -105,30 +105,26 @@ internal static class Shots
         session.Capture(dialog, "measurement-options");
     }
 
-    // Through the real Overlay methods: ConfigureOperation takes 23 arguments the collection already knows.
+    // Through the slot views' own dialogs: ConfigureOperation passes 23 arguments the session already holds.
     private static void Overlays(ShotSession session, Func<string, bool> wanted)
     {
         session.LoadMeasurement(session.Config.Measurement);
-        object collection = Reflect.Field(session.Shell, "overlayCollection");
-        object[] slots = ((System.Collections.IEnumerable)Reflect.Field(collection, "overlays"))
-            .Cast<object>().ToArray();
+        IReadOnlyList<OverlaySlotView> slots =
+            Reflect.Field<AnalyzerPlot>(session.Shell, "analyzerPlot").OverlayControls.Views;
 
         if (wanted("regular_overlay"))
         {
-            session.CaptureModal("regular_overlay",
-                () => Reflect.Invoke(slots[1], "ConfigureCaptured"), 2_000);
+            session.CaptureModal("regular_overlay", slots[1].ConfigureCaptured, 2_000);
         }
 
         if (wanted("calc_overlay"))
         {
-            session.CaptureModal("calc_overlay",
-                () => Reflect.Invoke(slots[2], "ConfigureOperation"), 2_000);
+            session.CaptureModal("calc_overlay", slots[2].ConfigureOperation, 2_000);
         }
 
         if (wanted("target_overlay"))
         {
-            session.CaptureModal("target_overlay",
-                () => Reflect.Invoke(slots[3], "ConfigureTarget"), 2_000);
+            session.CaptureModal("target_overlay", slots[3].ConfigureTarget, 2_000);
         }
     }
 

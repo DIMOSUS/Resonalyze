@@ -676,7 +676,7 @@ public static class OverlayTargets
             : TargetPreset.Custom;
     }
 
-    /// <summary>Only dB-over-frequency modes; takes the canonical overlay mode (OverlayCollection.OverlayModeFor).</summary>
+    /// <summary>Only dB-over-frequency modes; takes the canonical overlay mode (OverlayModes.SlotModeFor).</summary>
     public static bool SupportsMode(Mode mode)
     {
         return mode is Mode.FrequencyResponse or Mode.LiveSpectrum;

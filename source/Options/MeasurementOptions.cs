@@ -322,30 +322,24 @@ namespace Resonalyze.Options
 
         private void PresentDevices()
         {
-            bool useAsio = session.IsAsio;
-            bool useWasapi = session.IsWasapi;
-            AsioDriverInfo driver = session.AsioDriverInfo;
-            bool driverSelected = session.AsioDriver.SelectedItem is AsioDeviceInfo;
+            RecordDeviceView view = RecordDeviceStatus.Read(session);
+            bool useAsio = view.UseAsio;
             waveAudioBackendPanel.Visible = !useAsio;
             asioAudioBackendPanel.Visible = useAsio;
             comboBoxPlaybackDevice.Enabled = !useAsio;
             comboBoxRecordingDevice.Enabled = !useAsio;
             comboBoxWaveInputChannel.Enabled = !useAsio;
-            comboBoxWaveLoopbackChannel.Enabled =
-                useWasapi || (!useAsio && session.RecordingDeviceSupportsWaveLoopback);
-            comboBoxAsioDriver.Enabled = useAsio && session.AsioDriverCount > 0;
-            buttonAsioControlPanel.Enabled = useAsio && driverSelected;
-            buttonAsioInputProbe.Enabled =
-                useAsio &&
-                driverSelected &&
-                driver.InputChannels.Count > 0 &&
-                driver.OutputChannels.Count > 0;
-            comboBoxAsioInputChannel.Enabled = useAsio && driver.InputChannels.Count > 0;
-            comboBoxAsioLoopbackChannel.Enabled = useAsio && driver.InputChannels.Count > 0;
-            comboBoxAsioOutputChannel.Enabled = useAsio && driver.OutputChannels.Count > 0;
+            comboBoxWaveLoopbackChannel.Enabled = view.WaveLoopbackEnabled;
+            comboBoxAsioDriver.Enabled = view.AsioDriverEnabled;
+            buttonAsioControlPanel.Enabled = view.AsioControlPanelEnabled;
+            buttonAsioInputProbe.Enabled = view.AsioInputProbeEnabled;
+            comboBoxAsioInputChannel.Enabled = view.AsioInputsEnabled;
+            comboBoxAsioLoopbackChannel.Enabled = view.AsioInputsEnabled;
+            comboBoxAsioOutputChannel.Enabled = view.AsioOutputEnabled;
             UiStyle.SetTextEnabledLook(labelAsioDriver, useAsio);
             UiStyle.SetTextEnabledLook(labelAsioInputChannel, useAsio);
             UiStyle.SetTextEnabledLook(labelAsioOutputChannel, useAsio);
+            UiStyle.SetTextEnabledLook(labelAsioLoopbackChannel, useAsio);
             UiStyle.SetTextEnabledLook(labelAsioSampleRate, useAsio);
             UiStyle.SetTextEnabledLook(labelAsioPlaybackLatency, useAsio);
             UiStyle.SetTextEnabledLook(labelAsioPlaybackLatencyValue, useAsio);
@@ -353,154 +347,26 @@ namespace Resonalyze.Options
             UiStyle.SetTextEnabledLook(labelRecordingDevice, !useAsio);
             UiStyle.SetTextEnabledLook(labelWaveInputChannel, !useAsio);
             UiStyle.SetTextEnabledLook(labelWaveLoopbackChannel, !useAsio);
-            labelDeviceSettings.Visible = useWasapi;
-            buttonDeviceSettings.Visible = useWasapi;
-            buttonDeviceSettings.Enabled = useWasapi;
-            UiStyle.SetTextEnabledLook(labelAsioLoopbackChannel, useAsio);
-            labelPlaybackDevice.Text = useWasapi ? "Output endpoint" : "Playback device";
-            labelRecordingDevice.Text = useWasapi ? "Input endpoint" : "Recording device";
-            labelWaveInputChannel.Text = useWasapi ? "Microphone channel" : "Wave input channel";
-            labelWaveLoopbackChannel.Text = useWasapi ? "Loopback channel" : "Wave loopback channel";
-            PresentLoopbackStatus();
-            PresentAsioStatus();
-        }
-
-        private void PresentLoopbackStatus()
-        {
-            if (session.IsWasapi)
-            {
-                labelWaveLoopbackStatus.Font = NormalStatusFont;
-                AudioEndpointDescriptor? capture = session.SelectedCaptureEndpoint;
-                AudioEndpointDescriptor? render = session.SelectedRenderEndpoint;
-                if (capture is not { IsAvailable: true } || render is not { IsAvailable: true })
-                {
-                    labelWaveLoopbackStatus.Text =
-                        "⚠ A saved endpoint is unavailable. Reconnect it or select a replacement.";
-                    labelWaveLoopbackStatus.ForeColor = UiPalette.Warning;
-                    return;
-                }
-                if (session.SelectedWaveLoopbackOffset == null)
-                {
-                    labelWaveLoopbackStatus.Font = WarningStatusFont;
-                    labelWaveLoopbackStatus.Text =
-                        "⚠ Loopback channel is REQUIRED. Select the physical input carrying " +
-                        "the playback reference.";
-                    labelWaveLoopbackStatus.ForeColor = UiPalette.Warning;
-                    return;
-                }
-                if (session.Backend.SelectedIndex == (int)AudioBackend.WasapiExclusive)
-                {
-                    int selectedRate = session.SelectedSampleRate;
-                    int bits = (int)session.Bits.Value;
-                    int captureChannels = session.WaveRecordingChannelCount;
-                    int renderChannels = session.PlaybackChannelCount;
-                    if (session.SampleRate.Items.Count == 0)
-                    {
-                        // No rate opens at all, so do not name the fallback rate. Exclusive passes the format unchanged;
-                        // mono (a one-channel format) is the usual reason native-stereo endpoints refuse.
-                        labelWaveLoopbackStatus.Text =
-                            $"⚠ No sample rate opens in Exclusive: {bits}-bit, " +
-                            $"{captureChannels}-ch capture, {renderChannels}-ch render. " +
-                            (renderChannels < 2
-                                ? "Mono asks for a one-channel format most endpoints " +
-                                    "refuse — try Stereo."
-                                : "Try another endpoint pair, or Shared.");
-                        labelWaveLoopbackStatus.ForeColor = UiPalette.Error;
-                        return;
-                    }
-                    bool supported = session.IsExclusiveFormatSupported(capture, render, selectedRate);
-                    labelWaveLoopbackStatus.Text = supported
-                        ? $"Exclusive: {selectedRate:N0} Hz / {bits}-bit opens directly " +
-                            "on both endpoints."
-                        : $"⚠ Exclusive format {selectedRate:N0} Hz / {bits}-bit is not supported by both endpoints.";
-                    labelWaveLoopbackStatus.ForeColor = supported
-                        ? UiPalette.TextSecondary
-                        : UiPalette.Error;
-                    return;
-                }
-                string compatibility = capture.PreferredFormat.SampleRate == render.PreferredFormat.SampleRate
-                    ? ""
-                    : " — sample rates do not match";
-                labelWaveLoopbackStatus.Text =
-                    $"Shared mix format: {capture.PreferredFormat.SampleRate:N0} Hz / " +
-                    $"{capture.PreferredFormat.BitsPerSample}-bit capture, " +
-                    $"{render.PreferredFormat.BitsPerSample}-bit render{compatibility}. " +
-                    "Windows may convert render audio; timing remains loopback-referenced.";
-                labelWaveLoopbackStatus.ForeColor = compatibility.Length == 0
-                    ? UiPalette.TextSecondary
-                    : UiPalette.Error;
-                return;
-            }
-
-            bool loopbackSelected = session.WaveLoopback.SelectedItem is InputChannelOption { Offset: not null };
-            bool supportsLoopback = session.RecordingDeviceSupportsWaveLoopback;
-            // No loopback = no transfer IR, no measurement; make it impossible to overlook.
-            if (!loopbackSelected)
-            {
-                labelWaveLoopbackStatus.Font = WarningStatusFont;
-                labelWaveLoopbackStatus.Text = supportsLoopback
-                    ? "⚠ Loopback channel is REQUIRED. Select the channel carrying the " +
-                        "loopback reference; measurements cannot run without it."
-                    : "⚠ Loopback channel is REQUIRED. Select a stereo recording device, " +
-                        "then choose its channel.";
-                labelWaveLoopbackStatus.ForeColor = UiPalette.Warning;
-                return;
-            }
-
-            labelWaveLoopbackStatus.Font = NormalStatusFont;
-            labelWaveLoopbackStatus.Text = supportsLoopback
-                ? "Stereo input available for Wave loopback."
-                : "Select a stereo recording device.";
-            labelWaveLoopbackStatus.ForeColor = supportsLoopback
-                ? UiPalette.TextSecondary
-                : UiPalette.Error;
-        }
-
-        // Only ASIO's own route has a verdict; the hidden line keeps the last one, greyed.
-        private void PresentAsioStatus()
-        {
-            if (!session.IsAsio)
+            labelDeviceSettings.Visible = view.UseWasapi;
+            buttonDeviceSettings.Visible = view.UseWasapi;
+            buttonDeviceSettings.Enabled = view.UseWasapi;
+            labelPlaybackDevice.Text = view.PlaybackDeviceCaption;
+            labelRecordingDevice.Text = view.RecordingDeviceCaption;
+            labelWaveInputChannel.Text = view.WaveInputCaption;
+            labelWaveLoopbackChannel.Text = view.WaveLoopbackCaption;
+            labelWaveLoopbackStatus.Font = view.LoopbackStatus.Emphasized ? WarningStatusFont : NormalStatusFont;
+            labelWaveLoopbackStatus.Text = view.LoopbackStatus.Text;
+            labelWaveLoopbackStatus.ForeColor = view.LoopbackStatus.Color;
+            // Only ASIO's own route has a verdict; the hidden line keeps the last one, greyed.
+            if (!useAsio)
             {
                 labelAsioSampleRateStatus.ForeColor = UiPalette.TextDisabled;
                 return;
             }
 
-            AsioDriverInfo driver = session.AsioDriverInfo;
-            if (!string.IsNullOrWhiteSpace(driver.ErrorMessage))
-            {
-                labelAsioSampleRateStatus.Text = driver.ErrorMessage;
-                labelAsioSampleRateStatus.ForeColor = UiPalette.Error;
-                labelAsioPlaybackLatencyValue.Text = "-";
-                return;
-            }
-
-            int sampleRate = session.SelectedSampleRate;
-            if (session.SampleRateProbeFailed)
-            {
-                // The last probe said nothing, so do not claim support for an untested rate.
-                labelAsioSampleRateStatus.Text =
-                    $"{sampleRate} Hz kept — the driver did not report its rates";
-                labelAsioSampleRateStatus.ForeColor = UiPalette.Warning;
-            }
-            else if (session.SampleRateFellBackFrom is int previous)
-            {
-                labelAsioSampleRateStatus.Text =
-                    $"{previous} Hz is not offered by this driver — changed to {sampleRate} Hz";
-                labelAsioSampleRateStatus.ForeColor = UiPalette.Error;
-            }
-            else
-            {
-                labelAsioSampleRateStatus.Text = driver.SupportsSampleRate
-                    ? $"{sampleRate} Hz supported"
-                    : $"{sampleRate} Hz not supported";
-                labelAsioSampleRateStatus.ForeColor = driver.SupportsSampleRate
-                    ? UiPalette.Success
-                    : UiPalette.Error;
-            }
-            labelAsioPlaybackLatencyValue.Text =
-                driver.PlaybackLatency > 0
-                    ? $"{driver.PlaybackLatency} samples"
-                    : "-";
+            labelAsioSampleRateStatus.Text = view.AsioSampleRateStatus.Text;
+            labelAsioSampleRateStatus.ForeColor = view.AsioSampleRateStatus.Color;
+            labelAsioPlaybackLatencyValue.Text = view.AsioPlaybackLatency;
         }
 
         private void PresentCalibrations()

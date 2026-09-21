@@ -91,6 +91,11 @@ build ignores them. Patterns used repeatedly:
 - `GroupView` defaults to `FrontAndSub`, which draws exactly what pre-group files always drew.
 - `ShowHybridCurves` is stored with the captures it needs. The tick is intent and survives a load even when a
   playing channel no longer has an average; the hybrid is then simply not drawn, so the session still opens honest.
+- `JunctionTune` is the Tune junction dialog's last question (`VirtualCrossoverJunctionTuneSettings`): absent until
+  the dialog has been opened, so older sessions round-trip untouched. It is a convenience, not part of the tune, so
+  it is the one block that never refuses a file: `Sanitize` drops a family, goal or corner window it cannot use
+  instead of throwing. Corner windows are keyed by the junction label the dialog lists (`B-C`), since a window
+  belongs to one junction and everything else in the block is one choice.
 
 ## Source paths
 

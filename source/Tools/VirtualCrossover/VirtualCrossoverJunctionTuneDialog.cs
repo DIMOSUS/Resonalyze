@@ -16,11 +16,14 @@ internal sealed record JunctionTuneRequest(
 
 /// <summary>What a junction opens on: the window the assistant's tune would use, the families it already runs, and
 /// the acoustic goal its channel cards already hold.</summary>
+/// <param name="CornerHz">Where the junction is crossed now, or null: a remembered window that no longer holds it
+/// was set for a crossover that has since moved, and the default window is used instead.</param>
 internal sealed record JunctionTuneDefaults(
     double MinHz,
     double MaxHz,
     IReadOnlyList<CrossoverFilterFamily> Families,
-    JunctionAcousticTarget? Goal);
+    JunctionAcousticTarget? Goal,
+    double? CornerHz = null);
 
 /// <summary>What the search found, for the report and for Apply.</summary>
 /// <param name="Recommended">Whether Apply would write what the search advises, which colours the status: Apply
@@ -54,6 +57,16 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     private Func<JunctionTuneRequest, Task<JunctionTuneOutcome>>? runner;
     private Func<int, JunctionTuneDefaults>? defaultsFor;
     private bool running;
+
+    /// <summary>Corner windows as left, per junction label: switching away and back finds a window as it was set.</summary>
+    private readonly Dictionary<string, (decimal Min, decimal Max)> windows = new(StringComparer.Ordinal);
+
+    /// <summary>The junction whose window the corner boxes show now.</summary>
+    private string? shownJunction;
+
+    /// <summary>With nothing remembered, the first junction shown opens on its own families and card goal; after
+    /// that, switching junction moves the corner window and nothing else.</summary>
+    private bool useJunctionDefaults = true;
 
     /// <summary>Bumped by every change to the question. The boxes stay live while the search runs, so this is
     /// what tells an answer that came back for the question on screen from one that came back for a retired
@@ -90,7 +103,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         comboBoxMinSlope.SelectedItem = SelectableSlopes[0];
         comboBoxMaxSlope.SelectedItem = SelectableSlopes[^1];
         comboBoxGoalFamily.SelectedIndexChanged += (_, _) => FillGoalSlopes();
-        comboBoxJunction.SelectedIndexChanged += (_, _) => PresentJunctionDefaults();
+        comboBoxJunction.SelectedIndexChanged += (_, _) => PresentJunction();
         radioSummation.CheckedChanged += (_, _) => PresentMode();
         radioAcoustic.CheckedChanged += (_, _) => PresentMode();
         // Every input retires the answer: Apply must never stand for a question nobody asked.
@@ -149,10 +162,12 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     /// <param name="junctions">Labels as the panel's read-outs name them, lower to upper.</param>
     /// <param name="defaults">The corner window, the families in use and the card's own goal, by junction index.</param>
     /// <param name="search">Runs the search off the UI thread; the dialog owns the await and the buttons.</param>
+    /// <param name="remembered">What the dialog was left on last time, or null to open on the junction's defaults.</param>
     public void Init(
         IReadOnlyList<string> junctions,
         Func<int, JunctionTuneDefaults> defaults,
-        Func<JunctionTuneRequest, Task<JunctionTuneOutcome>> search)
+        Func<JunctionTuneRequest, Task<JunctionTuneOutcome>> search,
+        VirtualCrossoverJunctionTuneSettings? remembered = null)
     {
         ArgumentNullException.ThrowIfNull(junctions);
         defaultsFor = defaults ?? throw new ArgumentNullException(nameof(defaults));
@@ -163,9 +178,15 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             comboBoxJunction.Items.Add(junction);
         }
 
+        if (remembered != null)
+        {
+            Restore(remembered);
+        }
+
         if (junctions.Count > 0)
         {
-            comboBoxJunction.SelectedIndex = 0;
+            int last = remembered?.Junction is { } label ? IndexOf(junctions, label) : -1;
+            comboBoxJunction.SelectedIndex = Math.Max(0, last);
         }
         else
         {
@@ -175,39 +196,148 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         }
     }
 
-    private void PresentJunctionDefaults()
+    /// <summary>
+    /// Shows the selected junction. Only what belongs to a junction changes: its corner window, as it was left
+    /// here or else the default around its corner. Families, slopes, the mode and the goal are the user's and stay
+    /// as set - except on a first opening with nothing remembered, which starts from the junction's own filters
+    /// and the goal its cards state.
+    /// </summary>
+    private void PresentJunction()
     {
         if (defaultsFor is not { } defaults || comboBoxJunction.SelectedIndex < 0)
         {
             return;
         }
 
+        KeepShownWindow();
+        string label = comboBoxJunction.Items[comboBoxJunction.SelectedIndex]?.ToString() ?? string.Empty;
         JunctionTuneDefaults opening = defaults(comboBoxJunction.SelectedIndex);
-        numericMinHz.Value = numericMinHz.ClampValue(opening.MinHz);
-        numericMaxHz.Value = numericMaxHz.ClampValue(opening.MaxHz);
-        // What the junction already runs is what it is offered, so a search asks about the filters in use first.
-        checkButterworth.Checked = opening.Families.Contains(CrossoverFilterFamily.Butterworth);
-        checkLinkwitzRiley.Checked = opening.Families.Contains(CrossoverFilterFamily.LinkwitzRiley);
-        checkBessel.Checked = opening.Families.Contains(CrossoverFilterFamily.Bessel);
-        // The card's own wish is what this junction already asks for, so the dialog opens on it - and a junction
-        // whose cards state none opens without one: a goal carried over from the junction shown before would be
-        // written onto cards that never asked for it.
-        if (opening.Goal is { } asked)
+        (decimal min, decimal max) = windows.TryGetValue(label, out (decimal Min, decimal Max) kept) &&
+            (opening.CornerHz is not { } corner || ((double)kept.Min <= corner && corner <= (double)kept.Max))
+                ? kept
+                : (numericMinHz.ClampValue(opening.MinHz), numericMaxHz.ClampValue(opening.MaxHz));
+        numericMinHz.Value = numericMinHz.ClampValue((double)min);
+        numericMaxHz.Value = numericMaxHz.ClampValue((double)max);
+        shownJunction = label;
+        if (useJunctionDefaults)
         {
-            comboBoxGoalFamily.SelectedItem = CrossoverFamilyChoice.Offered
-                .FirstOrDefault(choice => choice.Value == asked.Family) ?? (object)Nothing;
-            comboBoxGoalSlope.SelectedItem = asked.SlopeDbPerOctave;
-            radioAcoustic.Checked = true;
-        }
-        else
-        {
-            radioSummation.Checked = true;
-            comboBoxGoalFamily.SelectedItem = Nothing;
+            useJunctionDefaults = false;
+            // What the junction already runs is what it is offered, so a search asks about the filters in use first.
+            checkButterworth.Checked = opening.Families.Contains(CrossoverFilterFamily.Butterworth);
+            checkLinkwitzRiley.Checked = opening.Families.Contains(CrossoverFilterFamily.LinkwitzRiley);
+            checkBessel.Checked = opening.Families.Contains(CrossoverFilterFamily.Bessel);
+            // The card's own wish is what this junction already asks for, so the dialog opens on it.
+            if (opening.Goal is { } asked)
+            {
+                ShowGoal(asked);
+                radioAcoustic.Checked = true;
+            }
         }
 
         // The report in the pane describes the junction it was searched on, not this one.
         textBoxReport.Clear();
         InvalidateResult("Nothing searched yet.");
+    }
+
+    private void KeepShownWindow()
+    {
+        if (shownJunction != null)
+        {
+            windows[shownJunction] = (numericMinHz.Value, numericMaxHz.Value);
+        }
+    }
+
+    private void ShowGoal(JunctionAcousticTarget goal)
+    {
+        comboBoxGoalFamily.SelectedItem = CrossoverFamilyChoice.Offered
+            .FirstOrDefault(choice => choice.Value == goal.Family) ?? (object)Nothing;
+        if (comboBoxGoalSlope.Items.Contains(goal.SlopeDbPerOctave))
+        {
+            comboBoxGoalSlope.SelectedItem = goal.SlopeDbPerOctave;
+        }
+    }
+
+    /// <summary>Puts the dialog back as it was left. Anything the menus no longer offer keeps its default.</summary>
+    private void Restore(VirtualCrossoverJunctionTuneSettings remembered)
+    {
+        useJunctionDefaults = false;
+        checkButterworth.Checked = remembered.Families.Contains(CrossoverFilterFamily.Butterworth);
+        checkLinkwitzRiley.Checked = remembered.Families.Contains(CrossoverFilterFamily.LinkwitzRiley);
+        checkBessel.Checked = remembered.Families.Contains(CrossoverFilterFamily.Bessel);
+        checkBoxIndependentSlopes.Checked = remembered.IndependentSlopes;
+        checkBoxSplitCorners.Checked = remembered.SplitCorners;
+        if (remembered.MinSlopeDbPerOctave is { } low && SelectableSlopes.Contains(low))
+        {
+            comboBoxMinSlope.SelectedItem = low;
+        }
+        if (remembered.MaxSlopeDbPerOctave is { } high && SelectableSlopes.Contains(high))
+        {
+            comboBoxMaxSlope.SelectedItem = high;
+        }
+        if (remembered.Goal is { } goal)
+        {
+            ShowGoal(goal);
+        }
+
+        (remembered.Acoustic ? radioAcoustic : radioSummation).Checked = true;
+        foreach ((string label, double[] window) in remembered.Windows)
+        {
+            if (window is [var min, var max])
+            {
+                windows[label] = ((decimal)min, (decimal)max);
+            }
+        }
+    }
+
+    /// <summary>What the dialog is left on, for the next time it opens: every box, and each junction's window.</summary>
+    public VirtualCrossoverJunctionTuneSettings Remembered()
+    {
+        KeepShownWindow();
+        var families = new List<CrossoverFilterFamily>();
+        if (checkButterworth.Checked)
+        {
+            families.Add(CrossoverFilterFamily.Butterworth);
+        }
+        if (checkLinkwitzRiley.Checked)
+        {
+            families.Add(CrossoverFilterFamily.LinkwitzRiley);
+        }
+        if (checkBessel.Checked)
+        {
+            families.Add(CrossoverFilterFamily.Bessel);
+        }
+
+        return new VirtualCrossoverJunctionTuneSettings
+        {
+            Junction = shownJunction,
+            Families = families,
+            IndependentSlopes = checkBoxIndependentSlopes.Checked,
+            SplitCorners = checkBoxSplitCorners.Checked,
+            Acoustic = radioAcoustic.Checked,
+            MinSlopeDbPerOctave = comboBoxMinSlope.SelectedItem as int?,
+            MaxSlopeDbPerOctave = comboBoxMaxSlope.SelectedItem as int?,
+            Goal = comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice family &&
+                comboBoxGoalSlope.SelectedItem is int slope
+                    ? new JunctionAcousticTarget(family.Value, slope)
+                    : null,
+            Windows = windows.ToDictionary(
+                pair => pair.Key,
+                pair => new[] { (double)pair.Value.Min, (double)pair.Value.Max },
+                StringComparer.Ordinal)
+        };
+    }
+
+    private static int IndexOf(IReadOnlyList<string> junctions, string label)
+    {
+        for (int i = 0; i < junctions.Count; i++)
+        {
+            if (string.Equals(junctions[i], label, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private void FillGoalSlopes()

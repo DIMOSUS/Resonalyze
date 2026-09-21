@@ -14,6 +14,54 @@ public enum DspPlotMode
     Coherence
 }
 
+/// <summary>
+/// The Tune junction dialog's last question, so opening it again, or switching junction inside it, keeps what was
+/// set. The corner window belongs to a junction and is kept per junction label; everything else is one choice for
+/// the session. A dialog's memory must never refuse a session, so what it cannot use is dropped on load rather
+/// than rejected (<see cref="Sanitize"/>).
+/// </summary>
+public sealed class VirtualCrossoverJunctionTuneSettings
+{
+    /// <summary>The junction last shown, by the label the dialog lists it under ("B-C").</summary>
+    public string? Junction { get; set; }
+
+    public List<CrossoverFilterFamily> Families { get; set; } = new();
+    public bool IndependentSlopes { get; set; }
+    public bool SplitCorners { get; set; }
+
+    /// <summary>The "this acoustic crossover" mode; false is "the best summation".</summary>
+    public bool Acoustic { get; set; }
+
+    /// <summary>The summation mode's slope window; null leaves the whole menu.</summary>
+    public int? MinSlopeDbPerOctave { get; set; }
+
+    /// <inheritdoc cref="MinSlopeDbPerOctave"/>
+    public int? MaxSlopeDbPerOctave { get; set; }
+
+    /// <summary>The goal boxes as left, kept in the summation mode too so switching back finds them.</summary>
+    public JunctionAcousticTarget? Goal { get; set; }
+
+    /// <summary>Corner window per junction label, as [low Hz, high Hz].</summary>
+    public Dictionary<string, double[]> Windows { get; set; } = new();
+
+    /// <summary>Drops what the dialog could not use. Never throws: this is a convenience, not part of the tune.</summary>
+    public void Sanitize()
+    {
+        Families = (Families ?? new()).Where(family => Enum.IsDefined(family)).Distinct().ToList();
+        if (Goal is { } goal &&
+            (!Enum.IsDefined(goal.Family) ||
+                !CrossoverFilter.SupportedSlopes(goal.Family).Contains(goal.SlopeDbPerOctave)))
+        {
+            Goal = null;
+        }
+
+        Windows = (Windows ?? new())
+            .Where(pair => pair.Value is [var low, var high] &&
+                double.IsFinite(low) && double.IsFinite(high) && low > 0 && high > low)
+            .ToDictionary(pair => pair.Key, pair => pair.Value);
+    }
+}
+
 /// <summary>Per-side phase gate placement; window lengths and analysis modes stay project-wide so the sides stay comparable.</summary>
 public sealed class VirtualCrossoverPhaseGateSettings
 {
@@ -740,6 +788,12 @@ public sealed class VirtualCrossoverProjectFile
     /// <summary>Draw the hybrid (spatial-average) magnitude. Intent: kept on load, drawn only while every playing channel has an average.</summary>
     public bool ShowHybridCurves { get; set; }
 
+    /// <summary>What the Tune junction dialog was last asked; null until it has been opened, and then absent from the
+    /// file, so a session nobody tuned a junction in round-trips untouched. See
+    /// <see cref="VirtualCrossoverJunctionTuneSettings"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public VirtualCrossoverJunctionTuneSettings? JunctionTune { get; set; }
+
     /// <summary>Older files inherit the magnitude answer.</summary>
     [JsonIgnore]
     public bool ShowSumCurveOnPhase
@@ -1356,6 +1410,7 @@ public sealed class VirtualCrossoverProjectFile
             throw new InvalidDataException("The phase analysis mode is invalid.");
         }
         Calibration?.Validate();
+        JunctionTune?.Sanitize();
         if (PhaseFdwCycles is not (4 or 6 or 8))
         {
             PhaseFdwCycles = DefaultPhaseFdwCycles;

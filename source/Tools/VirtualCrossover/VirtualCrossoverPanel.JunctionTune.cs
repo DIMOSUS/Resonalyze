@@ -19,13 +19,23 @@ public partial class VirtualCrossoverPanel
                 .Select(pair => $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}")
                 .ToList(),
             index => JunctionTuneOpening(junctions, index),
-            request => RunJunctionTuneAsync(junctions, request));
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK ||
+            request => RunJunctionTuneAsync(junctions, request),
+            session.Project.JunctionTune);
+        DialogResult answer = dialog.ShowDialog(FindForm());
+        if (IsDisposed)
+        {
+            lastJunctionTune = null;
+            return;
+        }
+
+        // Kept however the dialog closed: the next opening starts where this one was left, Apply or not.
+        session.Project.JunctionTune = dialog.Remembered();
+        if (answer != DialogResult.OK ||
             dialog.Result is not { } request ||
-            IsDisposed ||
             lastJunctionTune is not { } landed)
         {
             lastJunctionTune = null;
+            ScheduleSave();
             return;
         }
 
@@ -84,7 +94,8 @@ public partial class VirtualCrossoverPanel
             minHz,
             maxHz,
             AgentProposalValidator.CurrentFamilies(lower, upper),
-            lower.AcousticLowPass ?? upper.AcousticHighPass);
+            lower.AcousticLowPass ?? upper.AcousticHighPass,
+            currentHz > 0 ? currentHz : null);
     }
 
     /// <summary>Runs the search off the UI thread and builds the report; writes nothing.</summary>

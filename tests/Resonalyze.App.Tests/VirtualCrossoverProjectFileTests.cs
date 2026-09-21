@@ -433,6 +433,56 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void TheTuneJunctionDialogsMemory_RoundTrips_AndWhatItCannotUseIsDropped()
+    {
+        // Kept in the session, so reopening the dialog - in this run or after a restart - starts where it was
+        // left. A dialog's memory must never refuse a session: garbage in it is dropped, not rejected.
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string path = Path.Combine(root, "session.json");
+            var original = new VirtualCrossoverProjectFile();
+            original.SaveTo(path);
+            Assert.DoesNotContain("junctionTune", File.ReadAllText(path), StringComparison.OrdinalIgnoreCase);
+
+            original.JunctionTune = new VirtualCrossoverJunctionTuneSettings
+            {
+                Junction = "B-C",
+                Families = [CrossoverFilterFamily.Butterworth, CrossoverFilterFamily.Bessel],
+                IndependentSlopes = true,
+                SplitCorners = true,
+                Acoustic = true,
+                MinSlopeDbPerOctave = 18,
+                MaxSlopeDbPerOctave = 36,
+                Goal = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24),
+                Windows = { ["B-C"] = [150, 310], ["A-B"] = [40, 120] }
+            };
+            original.SaveTo(path);
+            VirtualCrossoverJunctionTuneSettings loaded = VirtualCrossoverProjectFile.LoadFrom(path).JunctionTune!;
+
+            Assert.Equal("B-C", loaded.Junction);
+            Assert.Equal(original.JunctionTune.Families, loaded.Families);
+            Assert.True(loaded.IndependentSlopes && loaded.SplitCorners && loaded.Acoustic);
+            Assert.Equal(18, loaded.MinSlopeDbPerOctave);
+            Assert.Equal(36, loaded.MaxSlopeDbPerOctave);
+            Assert.Equal(original.JunctionTune.Goal, loaded.Goal);
+            Assert.Equal([150.0, 310.0], loaded.Windows["B-C"]);
+            Assert.Equal([40.0, 120.0], loaded.Windows["A-B"]);
+
+            loaded.Goal = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 18);
+            loaded.Windows["B-C"] = [310, 150];
+            loaded.Windows["A-B"] = [double.NaN, 120];
+            loaded.Sanitize();
+            Assert.Null(loaded.Goal);
+            Assert.Empty(loaded.Windows);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ToChain_AppliesAnAllPassBandEvenWithTheCrossoverOff()
     {
         // At its corner a 2nd-order all-pass is -180 deg with flat magnitude.

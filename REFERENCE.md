@@ -3351,9 +3351,16 @@ and why this one has the last word on a finished tune.
   number of hertz, the way the channel card states it and a processor takes it.
 - **Nothing is written until Apply**, which writes the crossover the report
   calls *found* into both sides of both blocks as one undo step — including one
-  the report advises against, because that choice is yours. Where nothing
-  different was found, Apply only writes an acoustic goal the crossover on
-  screen lands on, and is not offered otherwise.
+  the report advises against, because that choice is yours — and, in the
+  acoustic mode, the goal onto the channel cards. Where nothing different was
+  found, Apply is offered only for a goal the cards do not state yet.
+- **The dialog remembers what it was left on**: the junction, the families, both
+  toggles, the mode, the slope window, the goal, and each junction's corner
+  window. It is kept in the session, so reopening the dialog — in the same run
+  or after a restart — starts there, Apply or not. Switching junction moves only
+  the corner window; the rest is your question and stays as set. A remembered
+  window that no longer holds the junction's crossover (Auto crossover has moved
+  it since) gives way to the default around where it is crossed now.
 - The report gives each side's sum loss, dip and ripple before and after, the
   runners-up, and what the junction would read **after the delay Auto delay
   would then pick** — how much of what is left is timing's to fix rather than

@@ -14,12 +14,12 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         dialog.Init(
             ["A-B", "B-C"],
             index => index == 0
-                ? new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.Butterworth], null)
-                : new JunctionTuneDefaults(
-                    500,
-                    2_000,
+                ? new JunctionTuneDefaults(
+                    80,
+                    200,
                     [CrossoverFilterFamily.LinkwitzRiley],
-                    new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)),
+                    new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24))
+                : new JunctionTuneDefaults(500, 2_000, [CrossoverFilterFamily.Butterworth], null),
             request =>
             {
                 searches++;
@@ -33,7 +33,8 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         Assert.False(apply.Enabled);
         Assert.Null(dialog.Result);
 
-        // The window opens on the junction's own defaults, and the second junction carries the card's wish.
+        // The first junction opens on its own filters and its cards' wish; switching junction then moves the
+        // corner window and leaves the rest as set.
         Field<ThemedComboBox>(dialog, "comboBoxJunction").SelectedIndex = 1;
         Assert.Equal(500m, Field<ThemedNumericUpDown>(dialog, "numericMinHz").Value);
         Assert.Equal(
@@ -42,7 +43,7 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
                 as CrossoverFamilyChoice)?.Value);
         Assert.Equal(24, Field<ThemedComboBox>(dialog, "comboBoxGoalSlope").SelectedItem);
 
-        // The junction opens on the families it already runs, and every one on offer is visible at once.
+        // The families the dialog opened on stay, and every one on offer is visible at once.
         Assert.True(Field<CheckBox>(dialog, "checkLinkwitzRiley").Checked);
         Assert.False(Field<CheckBox>(dialog, "checkButterworth").Checked);
         foreach (string name in new[] { "checkButterworth", "checkLinkwitzRiley", "checkBessel" })
@@ -109,11 +110,13 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         Assert.NotNull(dialog.Result);
         Assert.True(apply.Enabled);
     });
+
     [Fact]
-    public void SwitchingJunction_TakesTheNewJunctionsOwnGoalAndDropsTheOldReport() => StaTest.Run(() =>
+    public void SwitchingJunction_MovesOnlyTheCornerWindow_AndDropsTheOldReport() => StaTest.Run(() =>
     {
-        // A goal belongs to the cards of one junction. Carried to the next junction it would be written onto
-        // cards that never asked for it, and the report left in the pane would describe the wrong junction.
+        // Reported from the field: switching junction reset settings the user had just made. Only the corner
+        // window belongs to a junction; families, slopes, the mode and the goal are the question being asked.
+        // Coming back finds the window as it was left, and the report of another junction is not left standing.
         using var dialog = new VirtualCrossoverJunctionTuneDialog();
         dialog.Init(
             ["A-B", "B-C"],
@@ -125,21 +128,99 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
                     [CrossoverFilterFamily.LinkwitzRiley],
                     new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)),
             _ => Task.FromResult(new JunctionTuneOutcome(
-                [JunctionTuneLine.Of("B/C report")], CanApply: true, "found", false)));
+                [JunctionTuneLine.Of("A/B report")], CanApply: true, "found", false)));
         var junction = Field<ThemedComboBox>(dialog, "comboBoxJunction");
-        junction.SelectedIndex = 1;
-        Assert.True(Field<RadioButton>(dialog, "radioAcoustic").Checked);
+        SetQuestion(dialog);
+        Field<ThemedNumericUpDown>(dialog, "numericMinHz").Value = 90m;
+        Field<ThemedNumericUpDown>(dialog, "numericMaxHz").Value = 190m;
         Run(dialog);
-        Assert.Contains("B/C report", Field<RichTextBox>(dialog, "textBoxReport").Text);
+        Assert.Contains("A/B report", Field<RichTextBox>(dialog, "textBoxReport").Text);
+
+        junction.SelectedIndex = 1;
+
+        Assert.Equal(500m, Field<ThemedNumericUpDown>(dialog, "numericMinHz").Value);
+        Assert.Equal(2_000m, Field<ThemedNumericUpDown>(dialog, "numericMaxHz").Value);
+        AssertQuestion(dialog);
+        Assert.DoesNotContain("A/B report", Field<RichTextBox>(dialog, "textBoxReport").Text);
+        Assert.Null(dialog.Result);
 
         junction.SelectedIndex = 0;
 
-        Assert.True(Field<RadioButton>(dialog, "radioSummation").Checked);
-        Assert.IsNotType<CrossoverFamilyChoice>(
-            Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").SelectedItem);
-        Assert.DoesNotContain("B/C report", Field<RichTextBox>(dialog, "textBoxReport").Text);
-        Assert.Null(dialog.Result);
+        Assert.Equal(90m, Field<ThemedNumericUpDown>(dialog, "numericMinHz").Value);
+        Assert.Equal(190m, Field<ThemedNumericUpDown>(dialog, "numericMaxHz").Value);
+        AssertQuestion(dialog);
     });
+
+    [Fact]
+    public void ReopeningFindsTheDialogAsItWasLeft() => StaTest.Run(() =>
+    {
+        // Asked for from the field: every opening started from scratch, even within one session.
+        Func<int, JunctionTuneDefaults> defaults = index => index == 0
+            ? new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.Butterworth], null, CornerHz: 125)
+            : new JunctionTuneDefaults(500, 2_000, [CrossoverFilterFamily.LinkwitzRiley], null, CornerHz: 1_000);
+        Func<JunctionTuneRequest, Task<JunctionTuneOutcome>> search =
+            _ => Task.FromResult(new JunctionTuneOutcome([], false, "kept", false));
+        VirtualCrossoverJunctionTuneSettings left;
+        using (var first = new VirtualCrossoverJunctionTuneDialog())
+        {
+            first.Init(["A-B", "B-C"], defaults, search);
+            Field<ThemedComboBox>(first, "comboBoxJunction").SelectedIndex = 1;
+            SetQuestion(first);
+            Field<ThemedNumericUpDown>(first, "numericMinHz").Value = 700m;
+            Field<ThemedNumericUpDown>(first, "numericMaxHz").Value = 1_400m;
+            left = first.Remembered();
+        }
+
+        using var second = new VirtualCrossoverJunctionTuneDialog();
+        second.Init(["A-B", "B-C"], defaults, search, left);
+
+        Assert.Equal(1, Field<ThemedComboBox>(second, "comboBoxJunction").SelectedIndex);
+        Assert.Equal(700m, Field<ThemedNumericUpDown>(second, "numericMinHz").Value);
+        Assert.Equal(1_400m, Field<ThemedNumericUpDown>(second, "numericMaxHz").Value);
+        AssertQuestion(second);
+
+        // A window set for a crossover that has since moved out of it is not the question any more: the
+        // junction reopens on the default around where it is crossed now.
+        using var moved = new VirtualCrossoverJunctionTuneDialog();
+        moved.Init(
+            ["A-B", "B-C"],
+            index => index == 0
+                ? defaults(0)
+                : new JunctionTuneDefaults(
+                    2_000, 4_000, [CrossoverFilterFamily.LinkwitzRiley], null, CornerHz: 2_800),
+            search,
+            left);
+        Assert.Equal(2_000m, Field<ThemedNumericUpDown>(moved, "numericMinHz").Value);
+        AssertQuestion(moved);
+    });
+
+    /// <summary>A question unlike any default: the goal, families, both toggles and the slope window all set.</summary>
+    private static void SetQuestion(VirtualCrossoverJunctionTuneDialog dialog)
+    {
+        Field<CheckBox>(dialog, "checkBessel").Checked = true;
+        Field<CheckBox>(dialog, "checkBoxIndependentSlopes").Checked = true;
+        Field<CheckBox>(dialog, "checkBoxSplitCorners").Checked = true;
+        Field<ThemedComboBox>(dialog, "comboBoxMinSlope").SelectedItem = 18;
+        Field<ThemedComboBox>(dialog, "comboBoxMaxSlope").SelectedItem = 36;
+        Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").SelectedItem = CrossoverFamilyChoice.Offered
+            .First(choice => choice.Value == CrossoverFilterFamily.Butterworth);
+        Field<ThemedComboBox>(dialog, "comboBoxGoalSlope").SelectedItem = 30;
+        Field<RadioButton>(dialog, "radioAcoustic").Checked = true;
+    }
+
+    private static void AssertQuestion(VirtualCrossoverJunctionTuneDialog dialog)
+    {
+        Assert.True(Field<CheckBox>(dialog, "checkBessel").Checked);
+        Assert.True(Field<CheckBox>(dialog, "checkBoxIndependentSlopes").Checked);
+        Assert.True(Field<CheckBox>(dialog, "checkBoxSplitCorners").Checked);
+        Assert.Equal(18, Field<ThemedComboBox>(dialog, "comboBoxMinSlope").SelectedItem);
+        Assert.Equal(36, Field<ThemedComboBox>(dialog, "comboBoxMaxSlope").SelectedItem);
+        Assert.Equal(
+            CrossoverFilterFamily.Butterworth,
+            (Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").SelectedItem as CrossoverFamilyChoice)?.Value);
+        Assert.Equal(30, Field<ThemedComboBox>(dialog, "comboBoxGoalSlope").SelectedItem);
+        Assert.True(Field<RadioButton>(dialog, "radioAcoustic").Checked);
+    }
     [Fact]
     public void TheModeSaysWhatIsBeingTunedFor_AndOnlyTheAcousticOneCarriesAGoal() => StaTest.Run(() =>
     {

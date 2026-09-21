@@ -34,7 +34,7 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     [Fact]
     public void ModalLatchSuppressesTheFirstArrivalRecommendation()
     {
-        Assert.False(TimeAlignmentPanelController.IsArrivalRecommendable(
+        Assert.False(TimeAlignmentRecommendation.IsArrivalRecommendable(
             Result(snrDb: 40, strongestIsSeparateArrival: true),
             Probe(AutoAlignmentEngine.ArrivalCertificate.Latched),
             TimeAlignmentBandMode.ManualBand,
@@ -44,7 +44,7 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     [Fact]
     public void NearNoiseSuppressesTheFirstArrivalRecommendation()
     {
-        Assert.False(TimeAlignmentPanelController.IsArrivalRecommendable(
+        Assert.False(TimeAlignmentRecommendation.IsArrivalRecommendable(
             Result(snrDb: 8),
             honestyProbe: null,
             TimeAlignmentBandMode.FullBand,
@@ -55,7 +55,7 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     public void ContaminatedFullBandSuppressesTheFirstArrivalRecommendation()
     {
         // Bypass analyzes the raw record, so detected crosstalk may be what First Arrival times.
-        Assert.False(TimeAlignmentPanelController.IsArrivalRecommendable(
+        Assert.False(TimeAlignmentRecommendation.IsArrivalRecommendable(
             Result(snrDb: 40),
             honestyProbe: null,
             TimeAlignmentBandMode.FullBand,
@@ -65,7 +65,7 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     [Fact]
     public void CleanedBandedModeWithCrosstalkKeepsTheRecommendation()
     {
-        Assert.True(TimeAlignmentPanelController.IsArrivalRecommendable(
+        Assert.True(TimeAlignmentRecommendation.IsArrivalRecommendable(
             Result(snrDb: 40),
             Probe(AutoAlignmentEngine.ArrivalCertificate.Verified),
             TimeAlignmentBandMode.AutoBand,
@@ -75,12 +75,12 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     [Fact]
     public void AHealthyReadKeepsTheRecommendation()
     {
-        Assert.True(TimeAlignmentPanelController.IsArrivalRecommendable(
+        Assert.True(TimeAlignmentRecommendation.IsArrivalRecommendable(
             Result(snrDb: 40),
             Probe(AutoAlignmentEngine.ArrivalCertificate.Verified),
             TimeAlignmentBandMode.ManualBand,
             crosstalkDetected: false));
-        Assert.True(TimeAlignmentPanelController.IsArrivalRecommendable(
+        Assert.True(TimeAlignmentRecommendation.IsArrivalRecommendable(
             Result(snrDb: 40),
             honestyProbe: null,
             TimeAlignmentBandMode.FullBand,
@@ -90,7 +90,7 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     [Fact]
     public void AnUnverifiedProbeAloneDoesNotSuppressTheRecommendation()
     {
-        Assert.True(TimeAlignmentPanelController.IsArrivalRecommendable(
+        Assert.True(TimeAlignmentRecommendation.IsArrivalRecommendable(
             Result(snrDb: 40),
             Probe(AutoAlignmentEngine.ArrivalCertificate.Unverified),
             TimeAlignmentBandMode.AutoBand,
@@ -102,15 +102,15 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     public void RecommendedRow_IsTheFirstArrivalWhereItStands()
     {
         Assert.Equal(
-            TimeAlignmentPanelController.DelayRow.FirstArrival,
-            TimeAlignmentPanelController.RecommendedRow(
+            TimeAlignmentDelayRow.FirstArrival,
+            TimeAlignmentRecommendation.RecommendedRow(
                 Result(snrDb: 60),
                 Probe(AutoAlignmentEngine.ArrivalCertificate.Verified),
                 TimeAlignmentBandMode.ManualBand,
                 crosstalkDetected: false));
         Assert.Equal(
-            TimeAlignmentPanelController.DelayRow.FirstArrival,
-            TimeAlignmentPanelController.RecommendedRow(
+            TimeAlignmentDelayRow.FirstArrival,
+            TimeAlignmentRecommendation.RecommendedRow(
                 Result(snrDb: 60),
                 honestyProbe: null,
                 TimeAlignmentBandMode.FullBand,
@@ -121,8 +121,8 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     public void RecommendedRow_NeverPicksTheEnergyOnsetOrTheStrongestPeak()
     {
         Assert.Equal(
-            TimeAlignmentPanelController.DelayRow.FirstArrival,
-            TimeAlignmentPanelController.RecommendedRow(
+            TimeAlignmentDelayRow.FirstArrival,
+            TimeAlignmentRecommendation.RecommendedRow(
                 Result(snrDb: 70),
                 Probe(AutoAlignmentEngine.ArrivalCertificate.Verified),
                 TimeAlignmentBandMode.AutoBand,
@@ -132,17 +132,17 @@ public sealed class TimeAlignmentArrivalRecommendationTests
     [Fact]
     public void RecommendedRow_IsNoneWhereAVerdictDisqualifiedTheRead()
     {
-        Assert.Null(TimeAlignmentPanelController.RecommendedRow(
+        Assert.Null(TimeAlignmentRecommendation.RecommendedRow(
             Result(snrDb: 8),
             honestyProbe: null,
             TimeAlignmentBandMode.ManualBand,
             crosstalkDetected: false));
-        Assert.Null(TimeAlignmentPanelController.RecommendedRow(
+        Assert.Null(TimeAlignmentRecommendation.RecommendedRow(
             Result(snrDb: 60),
             Probe(AutoAlignmentEngine.ArrivalCertificate.Latched),
             TimeAlignmentBandMode.ManualBand,
             crosstalkDetected: false));
-        Assert.Null(TimeAlignmentPanelController.RecommendedRow(
+        Assert.Null(TimeAlignmentRecommendation.RecommendedRow(
             Result(snrDb: 60),
             honestyProbe: null,
             TimeAlignmentBandMode.FullBand,

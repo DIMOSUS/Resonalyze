@@ -872,51 +872,16 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         AppendCrosstalkFlag(bandMode, crosstalk);
         AppendLevelsLine(levels);
         AppendSeparator();
-        DelayRow? recommended = RecommendedRow(
+        TimeAlignmentDelayRow? recommended = TimeAlignmentRecommendation.RecommendedRow(
             result, honestyProbe, bandMode, crosstalk != null);
         AppendDelayTable(result, reference, recommended);
         if (recommended is { } row)
         {
             AppendStatusText("Recommended for alignment: ", UiPalette.TextDefault);
-            AppendStatusText(RowLabel(row) + "\r\n", UiPalette.Success);
+            AppendStatusText(TimeAlignmentRecommendation.RowLabel(row) + "\r\n", UiPalette.Success);
             AppendStrongestPeakHint(result);
         }
     }
-
-    internal enum DelayRow
-    {
-        FirstArrival,
-        StrongestPeak,
-        EnergyOnset
-    }
-
-    internal static string RowLabel(DelayRow row) => row switch
-    {
-        DelayRow.FirstArrival => DelayTableText.FirstArrivalLabel,
-        DelayRow.StrongestPeak => DelayTableText.StrongestPeakLabel,
-        _ => DelayTableText.EnergyOnsetLabel
-    };
-
-    // First arrival unless disqualified; never the strongest peak (mode/reflection) nor the energy onset (partly response shape between unrelated drivers).
-    // See docs/tech/junction-phase-and-group-placement.md#time-alignment-panel.
-    internal static DelayRow? RecommendedRow(
-        TimeAlignmentAnalysisResult result,
-        TimeAlignmentArrivalProbe? honestyProbe,
-        TimeAlignmentBandMode bandMode,
-        bool crosstalkDetected) =>
-        IsArrivalRecommendable(result, honestyProbe, bandMode, crosstalkDetected)
-            ? DelayRow.FirstArrival
-            : null;
-
-    // Gate so "Use First Arrival" never prints beside a verdict that disqualified it (modal latch, near noise, full-band read with crosstalk).
-    internal static bool IsArrivalRecommendable(
-        TimeAlignmentAnalysisResult result,
-        TimeAlignmentArrivalProbe? honestyProbe,
-        TimeAlignmentBandMode bandMode,
-        bool crosstalkDetected) =>
-        result.SignalToNoiseDecibels >= AutoAlignmentEngine.MinimumArrivalSnrDb &&
-        honestyProbe?.Certificate != AutoAlignmentEngine.ArrivalCertificate.Latched &&
-        !(bandMode == TimeAlignmentBandMode.FullBand && crosstalkDetected);
 
     // Field failure (v3): an electrical playback copy at a fixed early sample is timed by the full-band first arrival instead of the sound.
     private void AppendCrosstalkFlag(
@@ -1095,14 +1060,14 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private void AppendDelayTable(
         TimeAlignmentAnalysisResult result,
         TimeAlignmentAnalysisResult? reference,
-        DelayRow? recommended)
+        TimeAlignmentDelayRow? recommended)
     {
         AppendStatusText(
             DelayTableText.FormatHeader() + "\r\n",
             UiPalette.TextDefault,
             resultTableFont);
         AppendDelayRow(
-            DelayRow.FirstArrival,
+            TimeAlignmentDelayRow.FirstArrival,
             UiPalette.MarkerFirstArrival,
             result.FirstArrivalDelayMilliseconds,
             result.FirstArrivalPeakSample,
@@ -1110,7 +1075,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             reference?.FirstArrivalPeakSample,
             recommended);
         AppendDelayRow(
-            DelayRow.StrongestPeak,
+            TimeAlignmentDelayRow.StrongestPeak,
             UiPalette.MarkerStrongestPeak,
             result.StrongestDelayMilliseconds,
             result.StrongestPeakSample,
@@ -1118,7 +1083,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
             reference?.StrongestPeakSample,
             recommended);
         AppendDelayRow(
-            DelayRow.EnergyOnset,
+            TimeAlignmentDelayRow.EnergyOnset,
             UiPalette.MarkerEnergyOnset,
             result.EnergyOnsetDelayMilliseconds,
             result.EnergyOnsetSample,
@@ -1128,18 +1093,18 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     }
 
     private void AppendDelayRow(
-        DelayRow row,
+        TimeAlignmentDelayRow row,
         Color labelColor,
         double milliseconds,
         double samples,
         double? referenceMilliseconds,
         double? referenceSamples,
-        DelayRow? recommended)
+        TimeAlignmentDelayRow? recommended)
     {
         bool isRecommended = recommended == row;
         // Cells stay one segment so click-to-copy columns remain exact.
         AppendStatusText(
-            RowLabel(row).PadRight(DelayTableText.MillisecondsColumn),
+            TimeAlignmentRecommendation.RowLabel(row).PadRight(DelayTableText.MillisecondsColumn),
             labelColor,
             resultTableFont);
         AppendStatusText(

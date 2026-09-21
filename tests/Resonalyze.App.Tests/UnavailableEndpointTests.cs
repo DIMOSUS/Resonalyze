@@ -7,7 +7,7 @@ public sealed class UnavailableEndpointTests
     [Fact]
     public void MissingEndpointPlaceholderPreservesIdAndDisplayName()
     {
-        AudioEndpointDescriptor endpoint = Options.MeasurementOptions.CreateUnavailableEndpoint(
+        AudioEndpointDescriptor endpoint = Options.RecordSettingsSession.CreateUnavailableEndpoint(
             "endpoint-id",
             "Focusrite USB",
             AudioEndpointDirection.Capture);

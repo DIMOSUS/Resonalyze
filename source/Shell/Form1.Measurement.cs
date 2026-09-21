@@ -247,7 +247,7 @@ public partial class Form1
         expSweepMeasurement.AverageRunCount > 1;
 
     // A completed calibration commits immediately (settings, disk, measurement, plot) without Apply.
-    private async void PersistCalibration(MeasurementOptions.CalibrationSelection selection)
+    private async void PersistCalibration(RecordCalibrationSelection selection)
     {
         // Mic curves cannot reach a capture already taken (frozen on the accumulation); only the SPL anchor may drop a peak hold.
         bool splAnchorMoved = !ReferenceEquals(

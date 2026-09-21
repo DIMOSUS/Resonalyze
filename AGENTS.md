@@ -48,6 +48,7 @@ Key structural points:
 - **`Options/`** holds one settings panel per mode (`FROptions`, `IROpt`, `GDOpt`, ...), docked into the shell via `Shell/DockedModeSettingsHost`.
 - **The EQ Wizard's state is an `EqWizardSession`**: the source and how it is read, the target and its level, the processor, the Auto Tune settings, the bank with its undo history (`EqWizardBank`), the phase gate and the Virtual DSP handoff, each value held as its field shows it (`EqWizardLimits`). Readers turn it into the source curve, the render set and statistics, the fit's inputs and the plot (`EqWizardSourceCurve`, `EqWizardRender`, `EqWizardFit`, `EqWizardPlot`); `EqWizardPanel` binds the controls and runs the dialogs and the fit. See `docs/tech/eq-auto-tuner.md#code-map`.
 - **Time Alignment's state is a `TimeAlignmentSession`**: what is read (the open measurement and the compare selection), the band options, the read schedule and the last Auto band. `TimeAlignmentSources`, `TimeAlignmentBand` and `TimeAlignmentRead` turn it into a read; `TimeAlignmentRecommendation`, `TimeAlignmentReport` and `TimeAlignmentPreviews` turn the read's outcome into the table's verdict, the status text and the two previews. `TimeAlignmentPanelController` binds the controls and runs reads off the UI thread. See `docs/tech/junction-phase-and-group-placement.md#time-alignment-code-map`.
+- **Record Settings' state is a `RecordSettingsSession`**: the audio route, the sweep, the protective high-pass and the calibrations, each field held as its control shows it (`RecordChoice`, `RecordNumber`), with the rules that move one field when another does; the hardware is read through `IRecordDevices`. `RecordDeviceStatus`, `RecordCalibrations`, `RecordArrayInputs`, `SweepBandPreview` and `RecordHighPass` read it into what the panel shows, and `RecordSettingsApply` checks the route and hands it to the engine on Apply. `MeasurementOptions` binds the controls and runs the dialogs. See `docs/tech/sweep-measurement.md#record-settings-code-map`.
 - **`Tools/`** contains the larger feature panels: EQ Wizard, Signal Generator, Virtual DSP (`VirtualCrossoverPanel` + project file persistence), and PDF tuning-sheet export (PDFsharp/MigraDoc). The EQ Wizard is self-contained: its session owns its source, uses a mode-local target curve and persists through `MeasurementSettingsFile.EqWizard`. It picks that source itself — an impulse response (file or history), a captured overlay slot, or a text curve — through `EqWizardSourceResolver`, which reads overlay slot FILES and history results as one-time imports. Keep it that way: the panel must not reach into the live `OverlaySession` or the current measurement, and an imported curve is a snapshot with no link back to what it came from.
 - **Virtual DSP keeps its tune in a UI-free `VirtualCrossoverSession`.** Whatever reads the tune (curves, warnings, Auto delay, the crossover wizard's inputs, the audition, the Agent Bridge) is a class that takes the session; `VirtualCrossoverPanel` is its only writer and holds binding code only, in partials named for what they bind. A new Virtual DSP feature brings its own session-reading class and, if it has controls, a partial, never logic in the panel; a test of a rule builds a session, not a panel. `VirtualCrossoverPanelBoundaryTests` keeps non-private statics out of the panel. See `docs/tech/virtual-dsp-panel.md#code-map`.
 - **`Plotting/` owns the plot INTERACTION as well as the models.** `PlotInteraction.Enable` installs `PlotGestureController` on every `PlotView` in the app, and that controller is the single place the mouse/keyboard map lives — it is shaped after REW's graph panel (wheel zooms both axes, Shift/Ctrl or the pointer over an axis restricts it, the end of an axis moves one limit, middle-drag is a variable zoom, double click opens `Ui/Dialogs/GraphLimitsDialog`), and the `REFERENCE.md` table under "Graph Zoom and Limits" is the user-facing copy of it. Keep new gestures there rather than on individual views. `PlotViewportMemory` carries a plot's zoom across the constant model rebuilds — the main plot keyed per `Mode`, the two Time Alignment previews one memory each — by asking the axes which ranges a user forced on them (`PlotAxisViewport.CaptureOverrides` resets an axis, reads what the model computes on its own, and puts the override back). Do NOT replace that with a baseline captured when a model is shown: overlays join a plot afterwards — a mode switch restores its slots after `AnalyzerPlot` has drawn, Show All later still — and on an auto-scaled axis they widen the range through the data, which a baseline comparison reads as a zoom. An axis the user moved is restored; an untouched one is left to the new model, so `RaiseDecibelViewCeiling` and the group-delay auto-fit still work. A setting that changes what an axis MEANS calls `Forget`.
@@ -62,7 +63,7 @@ session and about twenty classes that read it (#203). These rules keep the other
 
 - **State gets a UI-free owner before features are written against it.** Once a second feature reads a tool's data,
   the data moves into a plain type (`VirtualCrossoverSession`, `AnalyzerDocument`, `LiveSpectrumSession`, `EqWizardSession`, `OverlaySession`,
-  `TimeAlignmentSession`); the UI writes it and presents what
+  `TimeAlignmentSession`, `RecordSettingsSession`); the UI writes it and presents what
   readers return.
 - **A feature is a type that takes the model, plus a partial if it has controls.** Computations, verdicts, report text
   and write-back rules take the model and return values; the UI reads controls into the model, calls the feature and
@@ -88,10 +89,53 @@ session and about twenty classes that read it (#203). These rules keep the other
 **Refactoring a part that has grown.** Keep behaviour identical and name each deliberate difference in the PR. Before
 moving code, build a characterization harness outside the repo that drives the real UI on real sessions and dumps
 everything the part produces (curves, read-outs, reports, exported documents); build it against `main` and against the
-branch and require a byte-identical diff. A harness that builds panels runs portable (see User data paths). Keep a
+branch and require a byte-identical diff (see Golden harness below). A harness that builds panels runs portable (see User data paths). Keep a
 synthetic version in the repo that drives the live UI through its controls (`VirtualCrossoverPanelWiringTests`), and
 prove it catches wiring mistakes by putting some in on purpose. Work in stages, a commit each: the state owner, the
 features one by one, then the partial split as a pure move checked line by line.
+
+### Golden harness: catching regressions and acting as QA
+
+A golden harness is how a change is proven to keep behaviour: it drives the real app, dumps everything the user could
+see or the app could write, and is diffed between `main` and the branch. Use it for any refactor, and as QA before a PR
+that touches a panel's behaviour. It lives in the session's scratchpad, never in the repo.
+
+- **Build.** An exe project with `AssemblyName` `Resonalyze.Screenshots` (the app grants it `InternalsVisibleTo`), a
+  `ProjectReference` to `$(AppProject)`, and `portable.flag` copied beside the exe so it never touches the owner's data.
+  `run.sh base|branch <out>` builds against `git worktree add --detach <scratchpad>/base-wt main` or the branch.
+- **Drive the real shell.** `new Form1(fakeFactory)` with the test suite's `FakeAudioSessionFactory`. Act through the
+  controls, found by `Name` in the control tree, and the buttons' `PerformClick`, as the user would. `ThemedComboBox`
+  and `ThemedNumericUpDown` are `UserControl`s, not `ComboBox`/`NumericUpDown`. Wait for a condition (a flag, a
+  button re-enabled), never a fixed delay.
+- **No hardware, no production seam.** Lib.Harmony (2.4.2 or later on .NET 10) patches the static hardware entry points
+  (`AudioDeviceCatalog`, `AsioDeviceCatalog`, `WindowsAudioEndpointService`, `WasapiFormatSupport`, `AsioInputProbe`)
+  to answer from a scripted fake machine a step can change (unplug, replug, raise `EndpointsChanged`). Patch NAudio's
+  own constructors as tripwires that fail loudly, so a missed path cannot reach real devices.
+- **Nothing reaches the owner's desktop.** The harness runs on the owner's session: no system sounds, no clipboard, no
+  real dialog. Patch `MessageBox.ShowCore` to log the text and return, `CommonDialog.ShowDialog(IWin32Window)` to answer
+  from a queue, and `Process.Start`. Answer the app's own modal forms from a pilot on a WinForms timer that runs a plan
+  per dialog. A plan that throws still cancels its dialog, a modal left open for seconds is force-closed, each step has
+  a watchdog that writes the dump and exits, and the run has an outer `timeout`. Run it in the background and check that
+  no harness process is left.
+- **Dump everything, per step.** Every control (type, name, visible, enabled, colour, bold, text, a combo's items and
+  selection, a field's value and range, tooltips from every `ToolTip` on the form), events with their payloads, the
+  in-memory settings, what reached the engine (a Harmony prefix on its configuration call), the settings file after
+  flushing it, and the hardware calls in a separate file. Normalize GUIDs, times and the output path. Use the invariant
+  culture.
+- **Trust it only when it repeats.** Two runs on `main` must be byte-identical before any comparison means anything.
+- **Compare every stage.** A script groups the diff by step and control, and fails when a dump is missing (a failed
+  build once read as "no differences"). Compare each stage with `main` through a list of accepted lines, and with the
+  previous stage exactly. Every difference is one of three things: a regression, which is fixed; a `main` bug the change
+  fixes, which is named in the PR and added to the accepted list; or harmless noise such as a call count, which is
+  explained. Nothing stays unexplained.
+- **Behind the harness.** Keep a wiring test in the repo that drives the real controls on fakes, and prove it with a
+  mutation script: one mistake at a time, run the test, restore the file's bytes, confirm `git status` of `source/` is
+  clean. A surviving mutation means a stronger test or an explicit argument that it is equivalent. A mutation that only
+  breaks the build under warnings-as-errors proves nothing, so rewrite it until it compiles. Finish with an independent
+  review agent that compares the old code with the new, method by method.
+- **Traps.** Git Bash `sed -i` writes LF, and Python in text mode hides CRLF, so a CRLF pattern reads as missing;
+  `cat > file` without a heredoc waits on stdin; after `Application.DoEvents` in tests use `StaTest.Pump`; the test
+  locale may use a decimal comma.
 
 ### Accessibility is not an external contract
 

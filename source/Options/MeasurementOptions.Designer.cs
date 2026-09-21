@@ -139,7 +139,6 @@ namespace Resonalyze.Options
             numericUpDownRequestedDuration.TextAlign = HorizontalAlignment.Right;
             numericUpDownRequestedDuration.ThousandsSeparator = false;
             numericUpDownRequestedDuration.Value = new decimal(new int[] { 200, 0, 0, 0 });
-            numericUpDownRequestedDuration.ValueChanged += numericUpDownRequestedDuration_ValueChanged;
             // 
             // label4
             // 
@@ -167,7 +166,6 @@ namespace Resonalyze.Options
             numericUpDownHighFrequency.TextAlign = HorizontalAlignment.Right;
             numericUpDownHighFrequency.ThousandsSeparator = false;
             numericUpDownHighFrequency.Value = new decimal(new int[] { 20000, 0, 0, 0 });
-            numericUpDownHighFrequency.ValueChanged += numericUpDownSweepBand_ValueChanged;
             // 
             // labelHighFrequency
             // 
@@ -195,7 +193,6 @@ namespace Resonalyze.Options
             numericUpDownLowFrequency.TextAlign = HorizontalAlignment.Right;
             numericUpDownLowFrequency.ThousandsSeparator = false;
             numericUpDownLowFrequency.Value = new decimal(new int[] { 20, 0, 0, 0 });
-            numericUpDownLowFrequency.ValueChanged += numericUpDownSweepBand_ValueChanged;
             // 
             // labelLowFrequency
             // 
@@ -295,7 +292,6 @@ namespace Resonalyze.Options
             comboBoxSampleRate.Name = "comboBoxSampleRate";
             comboBoxSampleRate.Size = new Size(170, 23);
             comboBoxSampleRate.TabIndex = 16;
-            comboBoxSampleRate.SelectedIndexChanged += comboBoxSampleRate_SelectedIndexChanged;
             // 
             // label1
             // 
@@ -317,7 +313,6 @@ namespace Resonalyze.Options
             comboBoxChannel.Name = "comboBoxChannel";
             comboBoxChannel.Size = new Size(170, 23);
             comboBoxChannel.TabIndex = 4;
-            comboBoxChannel.SelectedIndexChanged += comboBoxChannel_SelectedIndexChanged;
             // 
             // label3
             // 
@@ -382,7 +377,6 @@ namespace Resonalyze.Options
             comboBoxAudioBackend.Name = "comboBoxAudioBackend";
             comboBoxAudioBackend.Size = new Size(170, 23);
             comboBoxAudioBackend.TabIndex = 24;
-            comboBoxAudioBackend.SelectedIndexChanged += comboBoxAudioBackend_SelectedIndexChanged;
             // 
             // labelAverageRunCount
             // 
@@ -410,7 +404,6 @@ namespace Resonalyze.Options
             numericUpDownAverageRunCount.TextAlign = HorizontalAlignment.Right;
             numericUpDownAverageRunCount.ThousandsSeparator = false;
             numericUpDownAverageRunCount.Value = new decimal(new int[] { 2, 0, 0, 0 });
-            numericUpDownAverageRunCount.ValueChanged += averagingSetting_Changed;
             // 
             // labelCalibration0
             // 
@@ -520,7 +513,6 @@ namespace Resonalyze.Options
             comboBoxMicrophoneCalibration.Name = "comboBoxMicrophoneCalibration";
             comboBoxMicrophoneCalibration.Size = new Size(170, 23);
             comboBoxMicrophoneCalibration.TabIndex = 41;
-            comboBoxMicrophoneCalibration.SelectedIndexChanged += comboBoxMicrophoneCalibration_SelectedIndexChanged;
             //
             // labelArrayMicrophones
             //

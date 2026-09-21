@@ -503,7 +503,7 @@ next field session rather than in a register nobody else can tick.
   Both are measurement settings. The rate on the engine lags an edit until the
   next run pushes the settings, and the anchor is copied onto it by hand in three
   places (`PersistCalibration`, the settings file's `ApplyTo`,
-  `MeasurementOptions.SetOptions`). Reading the settings would leave one owner,
+  `RecordSettingsApply.Apply`). Reading the settings would leave one owner,
   but it moves an empty plot's rate to the edited value at once: decide that
   before changing it. Neither factory reads the live analyzer any more
   (`LiveCaptureSetup`, docs/tech/live-spectrum.md#code-map).

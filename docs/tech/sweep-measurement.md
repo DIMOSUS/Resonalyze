@@ -28,6 +28,8 @@ Where the code lives:
   live analyzer.
 - `source/Measurements/ImpulseResponseFile.cs`, `Float32SampleArrayJsonConverter.cs` — file format.
 - `source/Measurements/MeasuredBand.cs` — which frequencies a response really measured.
+- `source/Options/RecordSettings/` — the Record Settings dialog's state and rules (see
+  [Record Settings code map](#record-settings-code-map)).
 
 ## The open measurement
 
@@ -897,6 +899,35 @@ and stability estimate (the device may still be priming). A seated calibrator ho
 hundredths of a dB, so a level standard deviation over 1.5 dB means a drifting coupler. Any
 dropped frame or backend packet discontinuity invalidates the capture, since the missing
 frames could be the failing ones.
+
+## Record Settings code map
+
+| Concern | Where |
+| --- | --- |
+| Every field as it shows (route, sweep, protective high-pass, calibrations, arrays), the rules that move one field when another does, load and live write | `RecordSettingsSession` (+ `.Devices`), fields `RecordChoice` / `RecordNumber` |
+| The machine: devices, endpoints and their changes, rates, ASIO drivers, format checks | `IRecordDevices` → `SystemRecordDevices` |
+| Device captions, which controls apply, the loopback line, the ASIO rate status | `RecordDeviceStatus` |
+| Apply: the route checked against the hardware now, the engine configuration, what the settings keep | `RecordSettingsApply` |
+| 0° file, further calibrations, the microphone's pick, the SPL anchor and whether it is stale, the SPL capture request | `RecordCalibrations` |
+| The inputs an array can use and which of them a run records | `RecordArrayInputs` |
+| The achieved-band line, its shortfall warning, the sweep file | `SweepBandPreview` |
+| The protective high-pass as configured | `RecordHighPass` |
+| Binding: controls, dialogs, message boxes | `MeasurementOptions` (+ `.Devices`, `.Calibration`, `.Sweep`) |
+
+- **Fields behave as their controls.** A `RecordChoice` raises `Changed` only when its selection moves; clearing
+  it is silent, as `ThemedComboBox.Items.Clear` is. A `RecordNumber` rounds and clamps as its field does
+  (`NumericFieldRange`). The cascades between fields (a backend repopulates the devices, a device re-probes the
+  rates, a mono MME device forces the loopback to None and a stereo one restores the remembered channel) are the
+  session's handlers, fired when the controls' used to be, so the host sees the same live-apply events.
+- **Presenting.** The form writes one field into the session per edit and then presents the whole session,
+  ignoring its controls' events meanwhile. Everything shown is derived on each present, so the SPL anchor's stale
+  warning follows every change of the input. The ASIO rate status describes the last driver probe and is written
+  only while ASIO is selected; hidden, it is greyed.
+- **Two ways out.** Everything but the audio-backend group applies as edited: `SweepSettingsChanged`, then the host
+  calls `ApplySweepSettings`. The backend group waits for Apply (`RecordSettingsApply`), which throws the refusal
+  the host shows. A calibration change raises `CalibrationChanged` and the host persists it at once.
+- **Tests.** Rules are tested on a session over `FakeRecordDevices`; `MeasurementOptionsBoundaryTests` keeps
+  statics and nested types off the form, and `MeasurementOptionsWiringTests` drives its controls.
 
 ## Live analysis modes
 

@@ -93,6 +93,34 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
         Assert.All(report[header].Spans, span => Assert.Equal(JunctionTuneTone.Plain, span.Tone));
     }
 
+    [Fact]
+    public void AFoundCrossoverShortOfTheMargin_IsAdvisedAgainst_NotCalledUnapplied()
+    {
+        // Apply writes the found crossover whether or not it cleared the keep margin, so the report may advise
+        // against it but must not say it will not be applied: that told the user Apply would do something it
+        // then did not.
+        (JunctionTunePlan plan, _) = Tune(acoustic: null);
+        CrossoverEdge now = new(CrossoverFilterFamily.Butterworth, 180, 36);
+        CrossoverEdge foundLow = new(CrossoverFilterFamily.Butterworth, 175, 36);
+        CrossoverEdge foundHigh = new(CrossoverFilterFamily.Butterworth, 185, 24);
+        JunctionTuneReading[] kept = [new("left", -0.5, -1.8, 4.4)];
+        JunctionTuneReading[] found = [new("left", -0.5, -1.6, 4.3)];
+        var result = new JunctionTuneResult(
+            new JunctionTuneCandidate(now, now, kept, kept, 90, 360),
+            new JunctionTuneCandidate(foundLow, foundHigh, found, found, 90, 360),
+            Changed: false,
+            [], [], [], 661, 90, 360, []);
+
+        List<string> report = VirtualCrossoverJunctionTuneReport.Build(plan, result)
+            .Select(line => line.Text)
+            .ToList();
+
+        Assert.EndsWith("keeping the crossover on screen is recommended.", report[0], StringComparison.Ordinal);
+        string line = Assert.Single(report, line => line.TrimStart().StartsWith("found", StringComparison.Ordinal));
+        Assert.Contains("175 Hz", line, StringComparison.Ordinal);
+        Assert.Contains("not worth it", line, StringComparison.Ordinal);
+        Assert.DoesNotContain(report, text => text.Contains("NOT applied", StringComparison.Ordinal));
+    }
     private static (JunctionTunePlan Plan, JunctionTuneResult Result) Tune(JunctionAcousticTarget? acoustic)
     {
         CrossoverEdge lr = new(CrossoverFilterFamily.LinkwitzRiley, 1_000, 48);

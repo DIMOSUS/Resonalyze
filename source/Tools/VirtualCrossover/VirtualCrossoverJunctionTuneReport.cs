@@ -47,14 +47,16 @@ internal static class VirtualCrossoverJunctionTuneReport
         ArgumentNullException.ThrowIfNull(result);
         string lower = plan.Lower.Name;
         string upper = plan.Upper.Name;
-        bool moved = !SameEdges(result.Current, result.Best);
+        bool moved = result.Moves;
         var lines = new List<JunctionTuneLine>
         {
             new([
                 new JunctionTuneSpan($"{lower}/{upper} — "),
                 result.Changed
                     ? new JunctionTuneSpan("a better crossover was found.", JunctionTuneTone.Better)
-                    : new JunctionTuneSpan("the crossover on screen stands.")
+                    : moved
+                        ? new JunctionTuneSpan("keeping the crossover on screen is recommended.")
+                        : new JunctionTuneSpan("the crossover on screen is the best found.")
             ]),
             JunctionTuneLine.Of($"  now    {Edges(result.Current, lower, upper)}")
         };
@@ -62,16 +64,17 @@ internal static class VirtualCrossoverJunctionTuneReport
         {
             // The score is "lower is better", so a candidate that did not beat the current one reads as a plus.
             double delta = result.Best.RankingScoreDb - result.Current.RankingScoreDb;
-            // "best" is the best CANDIDATE, which is not the same as advice: where it did not win, say so on the
-            // same line, or the reader takes it for a recommendation.
+            // "found" is the best CANDIDATE, which is not the same as advice: where it did not win, say so on the
+            // same line, or the reader takes it for a recommendation. Apply writes it either way.
             lines.Add(JunctionTuneLine.Of(
-                result.Changed
-                    ? $"  apply  {Edges(result.Best, lower, upper)}"
-                    : $"  found  {Edges(result.Best, lower, upper)}   — NOT applied" +
+                $"  found  {Edges(result.Best, lower, upper)}" +
+                (result.Changed
+                    ? string.Empty
+                    : "   — not worth it" +
                       (delta >= 0
-                          ? ", nothing on the lattice beat what you have"
-                          : $", better by only {Number(-delta)} dB of the " +
-                            $"{Number(plan.Options.KeepMarginDb)} dB it takes")));
+                          ? ": nothing on the lattice beat what you have"
+                          : $": better by only {Number(-delta)} dB of the " +
+                            $"{Number(plan.Options.KeepMarginDb)} dB it takes"))));
         }
 
         lines.Add(JunctionTuneLine.Of(string.Empty));
@@ -109,7 +112,7 @@ internal static class VirtualCrossoverJunctionTuneReport
         }
 
         // Timing's share of what is left, one line for all the sides rather than a row each.
-        IReadOnlyList<JunctionTuneAlignment> aligned = moved && result.Changed
+        IReadOnlyList<JunctionTuneAlignment> aligned = moved
             ? result.BestAfterDelay
             : result.CurrentAfterDelay;
         if (aligned.Count > 0)
@@ -139,7 +142,8 @@ internal static class VirtualCrossoverJunctionTuneReport
     private static void Acoustic(
         List<JunctionTuneLine> lines, JunctionAcousticTarget asked, JunctionTuneResult result)
     {
-        JunctionTuneCandidate candidate = result.Changed ? result.Best : result.Current;
+        // The crossover Apply would leave on screen: the found one wherever it differs.
+        JunctionTuneCandidate candidate = result.Moves ? result.Best : result.Current;
         JunctionAcousticFit? fit = candidate.Sides.FirstOrDefault()?.Acoustic;
         JunctionDriverSlopes? plant = result.DriverSlopes.FirstOrDefault();
         bool anyFilterCould = CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb);
@@ -151,7 +155,7 @@ internal static class VirtualCrossoverJunctionTuneReport
         lines.Add(new JunctionTuneLine([
             new JunctionTuneSpan(
                 $"  Acoustic {FirCrossoverDescription.FamilyName(asked.Family)} {asked.SlopeDbPerOctave}, " +
-                $"{(result.Changed ? "as applied" : "as it stands")}: " +
+                $"{(result.Moves ? "as found" : "as it stands")}: " +
                 $"off by {Number(candidate.AcousticCostDb)} dB, " +
                 $"nearest any filter {Number(result.ClosestAcousticCostDb)} dB — "),
             anyFilterCould
@@ -218,7 +222,4 @@ internal static class VirtualCrossoverJunctionTuneReport
 
     private static string Hz(double value) =>
         value.ToString("0.###", CultureInfo.InvariantCulture) + " Hz";
-
-    private static bool SameEdges(JunctionTuneCandidate a, JunctionTuneCandidate b) =>
-        a.LowerLowPass.Equals(b.LowerLowPass) && a.UpperHighPass.Equals(b.UpperHighPass);
 }

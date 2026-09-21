@@ -668,6 +668,9 @@ the magnitude cannot see. So each candidate is scored on the coherent sum of the
 through their full chains: loss, plus the dip's excess over the loss at half weight, plus ripple (room
 ripple included — what varies between candidates is the crossover's doing). There is no slope
 preference, and the current crossover is kept unless a challenger beats it by `KeepMarginDb` per side.
+`Changed` is that verdict. The AI import applies only a `Changed` result; the Tune junction dialog treats
+it as advice, and its Apply writes `Best` whenever it differs from the crossover on screen
+(`JunctionTuneResult.Moves`), because a user who presses Apply on a found crossover has overruled it.
 
 - **Two bands**. Candidates are ranked on one shared band: an octave outside the whole corner window
   and the current corner, inside the audio band and measured range, so every overlap region is inside

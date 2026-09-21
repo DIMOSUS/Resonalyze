@@ -35,19 +35,31 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        VirtualCrossoverChannel lower = junctions[request.JunctionIndex].Lower.Channel;
-        VirtualCrossoverChannel upper = junctions[request.JunctionIndex].Upper.Channel;
+        ApplyJunctionTune(
+            junctions[request.JunctionIndex].Lower.Channel,
+            junctions[request.JunctionIndex].Upper.Channel,
+            landed,
+            request.AcousticGoal);
+        await Task.CompletedTask.ConfigureAwait(true);
+    }
+
+    /// <summary>What Apply writes for a landed tune, onto the settings and the channel cards.</summary>
+    private void ApplyJunctionTune(
+        VirtualCrossoverChannel lower,
+        VirtualCrossoverChannel upper,
+        JunctionTuneResult landed,
+        JunctionAcousticTarget? goal)
+    {
         // The same write the assistant's tune makes: one crossover into both sides of both blocks, and the goal onto
-        // the edges the applied crossover actually lands on. Where the report said the crossover stands, Apply is
-        // only there to write the goal, so the edges are left exactly where they are.
-        AgentJunctionTune.Write(
-            landed, lower, upper, request.AcousticGoal, applyCrossover: landed.Changed);
+        // the edges the applied crossover actually lands on. The crossover is the one the report calls found
+        // whenever it differs from the one on screen: the keep margin is the report's advice, and Apply is the
+        // user overruling it. Where nothing different was found, only the goal is written.
+        AgentJunctionTune.Write(landed, lower, upper, goal, applyCrossover: landed.Moves);
         ApplySettingsToControl(lower);
         ApplySettingsToControl(upper);
         // Both sides were decided here, so the Lock remembers rather than carries.
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         SaveAndRedraw();
-        await Task.CompletedTask.ConfigureAwait(true);
     }
 
     private JunctionTuneResult? lastJunctionTune;
@@ -167,13 +179,25 @@ public partial class VirtualCrossoverPanel
         string searched =
             $"{result.CandidatesEvaluated} candidates read over " +
             $"{options.MinCrossoverHz:0.###}–{options.MaxCrossoverHz:0.###} Hz.";
+        // Apply writes what the report calls found, so it is offered whenever that is something: a different
+        // crossover, or a goal the crossover on screen lands on. A button that closes the window and changes
+        // nothing is the one thing it must not be.
+        bool goalLands = request.AcousticGoal != null &&
+            CrossoverJunctionTuner.WasAcousticTargetReached(
+                (result.Moves ? result.Best : result.Current).AcousticCostDb);
+        string verdict = result.Changed
+            ? "A better crossover was found; Apply writes it. "
+            : result.Moves
+                ? "Keeping the crossover on screen is recommended; Apply writes the found one anyway. "
+                : goalLands
+                    ? "The crossover on screen is the best found; Apply writes the goal onto the cards. "
+                    : "The crossover on screen is the best found; nothing to apply. ";
         return new JunctionTuneOutcome(
             report,
-            result.Changed || request.AcousticGoal != null,
-            (result.Changed
-                ? "A better crossover was found; Apply writes it. "
-                : "The crossover on screen stands; Apply rewrites the goal only. ") + searched,
-            false);
+            result.Moves || goalLands,
+            verdict + searched,
+            false,
+            Recommended: result.Changed || (!result.Moves && goalLands));
 
         static JunctionTuneOutcome Refusal(string because) =>
             new(

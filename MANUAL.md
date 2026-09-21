@@ -871,8 +871,10 @@ Auto Crossover works from magnitudes with the drivers taken as perfectly aligned
 is the right reading for a blank tune. Once delays and polarity are set, press **Tune
 junction...** to refine ONE handover against what the pair actually measures: every
 candidate crossover is read on the **coherent sum through both full chains at their
-current delays**, and the crossover on screen is kept unless a challenger beats it on
-that reading. Nothing is written until you press Apply.
+current delays**, and the report recommends keeping the crossover on screen unless a
+challenger beats it on that reading. Nothing is written until you press Apply, which
+writes the crossover the report found — even one it advises against, because that choice
+is yours.
 
 **Tune for** says which question you are asking. **The best summation** searches for the
 flattest handover this junction can have, and the slope window beside it holds the

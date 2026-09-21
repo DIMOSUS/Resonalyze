@@ -3325,10 +3325,10 @@ and why this one has the last word on a finished tune.
 
 - **Junction and corner window.** The window opens half an octave each way
   around the corner you already have. Candidates are ranked on one band shared
-  by all of them — different corners are not comparable on their own bands —
-  and your crossover is **kept** unless a challenger beats it by half a decibel
-  there *and* reads no worse on its own junction band, where your Sum loss
-  read-out lives.
+  by all of them — different corners are not comparable on their own bands — and
+  the report recommends **keeping** your crossover unless a challenger beats it
+  by half a decibel there *and* reads no worse on its own junction band, where
+  your Sum loss read-out lives.
 - **Tune for** says what the search is answering: **the best summation** this
   junction can have, or **this acoustic crossover** (below). The summation mode
   takes a **slope window** beside it — narrow it to hold the junction near a
@@ -3342,8 +3342,11 @@ and why this one has the last word on a finished tune.
   so the junction stays where it is. Holding them apart takes a bump off the
   junction; overlapping them fills a dip. Every corner it offers is a whole
   number of hertz, the way the channel card states it and a processor takes it.
-- **Nothing is written until Apply**, which writes the crossover into both sides
-  of both blocks as one undo step.
+- **Nothing is written until Apply**, which writes the crossover the report
+  calls *found* into both sides of both blocks as one undo step — including one
+  the report advises against, because that choice is yours. Where nothing
+  different was found, Apply only writes an acoustic goal the crossover on
+  screen lands on, and is not offered otherwise.
 - The report gives each side's sum loss, dip and ripple before and after, the
   runners-up, and what the junction would read **after the delay Auto delay
   would then pick** — how much of what is left is timing's to fix rather than

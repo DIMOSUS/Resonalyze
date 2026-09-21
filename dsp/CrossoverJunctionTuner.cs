@@ -180,7 +180,13 @@ public sealed record JunctionTuneResult(
     double RankingBandLowHz,
     double RankingBandHighHz,
     IReadOnlyList<JunctionDriverSlopes> DriverSlopes,
-    double? ClosestAcousticCostDb = null);
+    double? ClosestAcousticCostDb = null)
+{
+    /// <summary>Whether the best candidate is a different crossover from the one on screen, won or not. The keep
+    /// margin behind <see cref="Changed"/> is advice; this is what an explicit Apply would change.</summary>
+    public bool Moves =>
+        !(Current.LowerLowPass.Equals(Best.LowerLowPass) && Current.UpperHighPass.Equals(Best.UpperHighPass));
+}
 
 public sealed record JunctionProbeChains(DspChannelChain Lower, DspChannelChain Upper);
 

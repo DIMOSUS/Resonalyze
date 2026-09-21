@@ -23,11 +23,14 @@ internal sealed record JunctionTuneDefaults(
     JunctionAcousticTarget? Goal);
 
 /// <summary>What the search found, for the report and for Apply.</summary>
+/// <param name="Recommended">Whether Apply would write what the search advises, which colours the status: Apply
+/// is also offered for a found crossover the report advises against, because the choice is the user's.</param>
 internal sealed record JunctionTuneOutcome(
     IReadOnlyList<JunctionTuneLine> Report,
     bool CanApply,
     string Status,
-    bool Refused);
+    bool Refused,
+    bool Recommended = false);
 
 /// <summary>
 /// Refines one junction of a finished tune: the lower channel's low-pass and the upper channel's high-pass, judged on
@@ -313,7 +316,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             labelStatus.Text = outcome.Status;
             labelStatus.ForeColor = outcome.Refused
                 ? UiPalette.Error
-                : outcome.CanApply ? UiPalette.Success : UiPalette.Warning;
+                : outcome.Recommended ? UiPalette.Success : UiPalette.Warning;
             Result = outcome.CanApply ? request : null;
             buttonApply.Enabled = outcome.CanApply;
         }

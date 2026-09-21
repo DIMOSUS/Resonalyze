@@ -416,7 +416,7 @@ public sealed class MeasurementOptionsWiringTests
         }
 
         public string ToolTip(string name) =>
-            ToolTips().Select(tip => tip.GetToolTip(Control<Control>(name))).FirstOrDefault(text => !string.IsNullOrEmpty(text)) ?? string.Empty;
+            Form.ToolTips.GetToolTip(Control<Control>(name)) ?? string.Empty;
 
         public void Pick(string name, string text)
         {
@@ -459,14 +459,6 @@ public sealed class MeasurementOptionsWiringTests
             Form.Dispose();
             Engine.Dispose();
         }
-
-        private IEnumerable<ToolTip> ToolTips() =>
-            new[] { Form }.Concat(All(Form))
-                .SelectMany(control => control.GetType()
-                    .GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
-                    .Where(field => typeof(ToolTip).IsAssignableFrom(field.FieldType))
-                    .Select(field => (ToolTip)field.GetValue(control)!))
-                .Distinct();
 
         private static IEnumerable<Control> All(Control root)
         {

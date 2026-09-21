@@ -108,6 +108,9 @@ namespace Resonalyze.Options
             Present();
         }
 
+        /// <summary>Every tooltip the panel shows, including the ones it rewrites as the session changes.</summary>
+        internal ToolTip ToolTips => deviceToolTip;
+
         /// <summary>Re-reads the device after Apply reconfigured it under the open panel (otherwise the status stays stale).</summary>
         internal void RefreshAudioDeviceView()
         {

@@ -139,6 +139,26 @@ public sealed class RecordSettingsApplyTests
         Assert.Equal("{capture}", session.PreferredWasapiCaptureEndpointId);
     }
 
+    [Theory]
+    [InlineData("{other}", new[] { 4, 5 })]
+    [InlineData("{capture}", new int[0])]
+    public void AnArrayRecordsOnlyOnTheEndpointItWasSetUpOn(string selectedCapture, int[] expected)
+    {
+        MeasurementSettingsFile.SweepMeasurementSettings loaded = Settings(AudioBackend.WasapiShared);
+        loaded.WaveArrayMicrophones = [new ArrayMicrophoneDefinition { ChannelOffset = 4 }, new ArrayMicrophoneDefinition { ChannelOffset = 5 }];
+        loaded.WaveArrayDeviceId = "{other}";
+        loaded.WasapiCaptureEndpointId = selectedCapture;
+        var devices = new FakeRecordDevices();
+        devices.Capture.Add(FakeRecordDevices.Endpoint("{other}", "Other in", AudioEndpointDirection.Capture, 48_000, 8));
+        var session = new RecordSettingsSession(devices);
+        session.Load(loaded);
+        using ExpSweepMeasurement engine = Engine();
+
+        RecordSettingsApply.Apply(session, engine, new MeasurementSettingsFile.SweepMeasurementSettings());
+
+        Assert.Equal(expected, engine.WaveArrayInputChannelOffsets);
+    }
+
     [Fact]
     public void ARefusedApplyStillKeepsTheCalibrations()
     {

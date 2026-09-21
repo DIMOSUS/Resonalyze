@@ -222,6 +222,22 @@ public sealed class RecordSettingsSessionTests
     }
 
     [Fact]
+    public void AnArraySetUpOnAnotherDevice_NeitherRecordsNorWidensTheProbedFormat()
+    {
+        MeasurementSettingsFile.SweepMeasurementSettings settings = WaveSettings();
+        settings.AudioBackend = AudioBackend.WasapiShared;
+        settings.WasapiCaptureEndpointId = "{capture}";
+        settings.WaveArrayMicrophones = [new ArrayMicrophoneDefinition { ChannelOffset = 5 }];
+        settings.WaveArrayDeviceId = "{elsewhere}";
+
+        RecordSettingsSession session = Load(settings);
+
+        Assert.Empty(RecordArrayInputs.ReachableChannels(session));
+        Assert.Equal(2, session.WaveRecordingChannelCount);
+        Assert.Equal("1 on another device...", RecordArrayInputs.ButtonText(session));
+    }
+
+    [Fact]
     public void AnArrayEditIsStampedWithTheDeviceItWasMadeOn()
     {
         var devices = new FakeRecordDevices();

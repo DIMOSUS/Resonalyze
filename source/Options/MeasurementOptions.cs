@@ -393,74 +393,12 @@ namespace Resonalyze.Options
             deviceToolTip.SetToolTip(button, view.ToolTip);
         }
 
-        // From the session's values, not the last generated sweep (stale until the next run).
         private void PresentSweepBand()
         {
-            if (session.SampleRate.SelectedItem is not int sampleRate)
-            {
-                // No rate opens: the 44.1 kHz fallback would describe an unrunnable sweep.
-                labelActualRangeCaption.Text = "—";
-                labelActualRangeCaption.ForeColor = UiPalette.Warning;
-                deviceToolTip.SetToolTip(
-                    labelActualRangeCaption,
-                    "No sample rate opens for the current configuration, so there is " +
-                    "nothing to compute the sweep against.");
-                return;
-            }
-
-            double lowHz = (double)session.LowFrequency.Value;
-            double highHz = (double)session.HighFrequency.Value;
-            double perOctaveSeconds = (double)session.OctavePaceMilliseconds.Value * 0.001;
-            double totalSeconds = ExponentialSineSweep.TotalDurationForOctavePace(
-                lowHz, highHz, perOctaveSeconds, sampleRate);
-            ExpSweepSpec spec = ExponentialSineSweep.ComputeSpec(
-                lowHz, highHz, totalSeconds, sampleRate);
-            labelActualRangeCaption.Text = spec.IsValid
-                ? $"{spec.LowFrequencyHz:0.#}–{spec.HighFrequencyHz:0} Hz · " +
-                    $"{spec.OctaveSpan:0.00} oct · {spec.ComputedDurationSeconds:0.00} s"
-                : "—";
-            string? warning = DescribeSweepShortfall(spec, lowHz, highHz, totalSeconds);
-            labelActualRangeCaption.ForeColor = warning == null
-                ? UiPalette.Success
-                : UiPalette.Warning;
-            deviceToolTip.SetToolTip(
-                labelActualRangeCaption,
-                warning ??
-                    "The band the sweep covers at full amplitude, with the fades " +
-                    "outside it, and how long it takes.");
-        }
-
-        private static string? DescribeSweepShortfall(
-            ExpSweepSpec spec,
-            double requestedLowHz,
-            double requestedHighHz,
-            double requestedTotalSeconds)
-        {
-            if (!spec.IsValid)
-            {
-                return null;
-            }
-
-            if (requestedTotalSeconds > ExponentialSineSweep.MaxDurationSeconds &&
-                spec.OctaveSpan > 0)
-            {
-                double effectivePace = spec.ComputedDurationSeconds / spec.OctaveSpan;
-                return $"⚠ Capped at {ExponentialSineSweep.MaxDurationSeconds:0} s " +
-                    $"(asked for {requestedTotalSeconds:0} s), so the sweep really " +
-                    $"paces {effectivePace * 1000.0:0} ms per octave.";
-            }
-
-            if (spec.Covers(requestedLowHz, requestedHighHz))
-            {
-                return null;
-            }
-
-            // Full amplitude needs a whole cycle plus fade room, so a short sweep falls short at the bottom first.
-            return $"⚠ Full amplitude only from {spec.FullAmplitudeLowFrequencyHz:0.#} " +
-                $"to {spec.FullAmplitudeHighFrequencyHz:0} Hz: one cycle at " +
-                $"{requestedLowHz:0.#} Hz already takes " +
-                $"{1000.0 / Math.Max(requestedLowHz, 1e-9):0} ms. Raise the " +
-                "per-octave time to reach the requested band.";
+            SweepBandView view = SweepBandPreview.Read(session);
+            labelActualRangeCaption.Text = view.Text;
+            labelActualRangeCaption.ForeColor = view.Color;
+            deviceToolTip.SetToolTip(labelActualRangeCaption, view.ToolTip);
         }
 
         private void ApplyRoute(
@@ -823,24 +761,15 @@ namespace Resonalyze.Options
             return dialog.FileName;
         }
 
-        // Writes the sweep the next measurement would play, for playback from another device while this records.
-        // Uses the selected (not applied) rate, matching the achieved-range line.
+        // For playback from another device while this records; at the selected (not applied) rate, like the band line.
         private void buttonSaveSweepFile_Click(object? sender, EventArgs e)
         {
-            double lowFrequencyHz = (double)session.LowFrequency.Value;
-            double highFrequencyHz = (double)session.HighFrequency.Value;
-            int sampleRate = session.SelectedSampleRate;
-            double totalSeconds = session.RequestedDurationSeconds(sampleRate);
-
+            SweepFileExport export = SweepBandPreview.Export(session);
             using var dialog = new SaveFileDialog
             {
                 AddExtension = true,
                 DefaultExt = "wav",
-                FileName = SweepWavExport.SuggestFileName(
-                    lowFrequencyHz,
-                    highFrequencyHz,
-                    totalSeconds,
-                    sampleRate),
+                FileName = export.SuggestedFileName,
                 Filter = "WAV audio (*.wav)|*.wav",
                 OverwritePrompt = true,
                 Title = "Save the sweep signal"
@@ -853,20 +782,7 @@ namespace Resonalyze.Options
             UseWaitCursor = true;
             try
             {
-                // Own instance: generating into the live one would discard the result on screen.
-                using var sweep = new ExponentialSineSweep();
-                sweep.FillData(
-                    lowFrequencyHz,
-                    highFrequencyHz,
-                    totalSeconds,
-                    (int)session.Bits.Value,
-                    sampleRate);
-                AudioFileCodec.WriteWav(
-                    dialog.FileName,
-                    SweepWavExport.BuildContent(
-                        sweep.SweepData,
-                        sampleRate,
-                        session.SelectedPlaybackChannel));
+                export.Write(dialog.FileName);
             }
             catch (Exception exception)
             {

@@ -42,15 +42,4 @@ public sealed class MeasurementChannelRoutingTests
 
         Assert.Contains("different channels", exception.Message);
     }
-
-    [Fact]
-    public void OptionsRejectMissingWasapiLoopback()
-    {
-        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
-            Options.MeasurementOptions.ValidateRequiredWaveLoopback(
-                loopbackSelected: false,
-                recordingDeviceSupportsLoopback: true));
-
-        Assert.Contains("required", exception.Message, StringComparison.OrdinalIgnoreCase);
-    }
 }

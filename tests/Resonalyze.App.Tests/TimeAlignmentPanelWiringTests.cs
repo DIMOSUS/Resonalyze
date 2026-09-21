@@ -194,6 +194,18 @@ public sealed class TimeAlignmentPanelWiringTests
     });
 
     [Fact]
+    public void ADisposedController_NoLongerFollowsTheSources() => StaTest.Run(() =>
+    {
+        using var live = new LiveTa();
+        live.Open(Measurement(peak: 400), "a.json");
+
+        live.Controller.Dispose();
+        live.Open(Measurement(peak: 900), "b.json");
+
+        Assert.Equal("Source: a.json, 48000 Hz, 24 bit.", live.Panel.SourceSummaryLabel.Text);
+    });
+
+    [Fact]
     public void ARecordWithoutLoopback_SaysSoAndClearsTheEnvelope() => StaTest.Run(() =>
     {
         using var live = new LiveTa();

@@ -123,6 +123,7 @@ internal sealed partial class TimeAlignmentPanelController : IDisposable
         }
 
         disposed = true;
+        session.SourcesChanged -= sourcesChanged.Request;
         resultTableFont.Dispose();
     }
 

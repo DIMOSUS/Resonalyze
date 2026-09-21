@@ -74,6 +74,7 @@ internal sealed class TimeAlignmentSession
     {
         Reads.Clear();
         AutoBand = null;
+        AutoBandShared = false;
     }
 
     public void Land(TimeAlignmentOutcome outcome)

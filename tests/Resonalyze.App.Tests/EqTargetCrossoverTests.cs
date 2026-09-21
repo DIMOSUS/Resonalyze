@@ -27,9 +27,13 @@ public sealed class EqTargetCrossoverTests
         Assert.Equal(-6, EqTargetCrossover.ShapeDb(BandPass, 500, Rate), 0.5);
         Assert.True(EqTargetCrossover.ShapeDb(BandPass, 40, Rate) < -20);
         Assert.True(EqTargetCrossover.ShapeDb(BandPass, 1_000, Rate) < -20);
-        // Never a target of minus infinity, and never a lift.
-        Assert.InRange(EqTargetCrossover.ShapeDb(BandPass, 20, Rate), -40, 0);
-        Assert.True(EqTargetCrossover.ShapeDb(BandPass, 0, Rate) <= 0);
+        // No floor: another octave down the skirt is another 24 dB down.
+        Assert.Equal(
+            EqTargetCrossover.ShapeDb(BandPass, 20, Rate) - 24,
+            EqTargetCrossover.ShapeDb(BandPass, 10, Rate),
+            1.0);
+        Assert.True(EqTargetCrossover.ShapeDb(BandPass, 10, Rate) < -60);
+        Assert.True(EqTargetCrossover.ShapeDb(BandPass, 0, Rate) < -120);
     }
 
     [Fact]

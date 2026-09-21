@@ -148,7 +148,8 @@ everywhere it is sampled, so the plot, the fit, the statistics and the level che
   correction FIR, whose magnitude belongs in the source and not in the goal (folded into the target it would simply
   be cancelled by the fit). A channel may legitimately run both stages, and then the shape is their product, as the
   chain applies them — reading one and dropping the other left the other's skirt unshaped and unprotected. The shape
-  is clamped to 0 dB above and 40 dB below: a target diving to minus infinity is no goal. A narrow passband's two skirts overlap, so the middle of the band sits a few tenths below 0 — the measured
+  is clamped to 0 dB above and has no floor: a floor drew a false shelf, and a window widened by hand past it had the
+  fit pin the response onto that shelf. A zero of the response is minus infinity, which the fit skips. A narrow passband's two skirts overlap, so the middle of the band sits a few tenths below 0 — the measured
   curve through the same chain carries that droop too, so target and source still agree there.
 - **The window** widens to where each skirt has fallen `SlopeWindowFallDb` (18 dB), bounded by the measured band: far
   enough to score the slope that matters for summation, not so far that the fit chases a filter into the floor. It

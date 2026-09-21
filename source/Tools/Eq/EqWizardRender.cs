@@ -292,7 +292,8 @@ internal static class EqWizardRender
             double shape = slope is { } shaped
                 ? EqTargetCrossover.ShapeDb(shaped, frequency, sampleRateHz)
                 : 0;
-            points[i] = new DataPoint(frequency, target.Spec.Evaluate(frequency) + offset + shape);
+            double level = target.Spec.Evaluate(frequency) + offset + shape;
+            points[i] = new DataPoint(frequency, double.IsFinite(level) ? level : double.NaN);
         }
 
         return points;

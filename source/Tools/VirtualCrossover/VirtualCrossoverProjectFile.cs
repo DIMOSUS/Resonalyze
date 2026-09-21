@@ -14,50 +14,38 @@ public enum DspPlotMode
     Coherence
 }
 
-/// <summary>
-/// The Tune junction dialog's last question, so opening it again, or switching junction inside it, keeps what was
-/// set. The corner window belongs to a junction and is kept per junction label; everything else is one choice for
-/// the session. A dialog's memory must never refuse a session, so what it cannot use is dropped on load rather
-/// than rejected (<see cref="Sanitize"/>).
-/// </summary>
+/// <summary>The Tune junction dialog's last question; corner windows are kept per junction label.</summary>
 public sealed class VirtualCrossoverJunctionTuneSettings
 {
-    /// <summary>The junction last shown, by the label the dialog lists it under ("B-C").</summary>
+    /// <summary>The label the dialog lists it under ("B-C").</summary>
     public string? Junction { get; set; }
 
     public List<CrossoverFilterFamily> Families { get; set; } = new();
 
-    /// <summary>On by default, as in the dialog: the free search is the one worth its cost at a single junction.</summary>
     public bool IndependentSlopes { get; set; } = true;
 
-    /// <inheritdoc cref="IndependentSlopes"/>
     public bool SplitCorners { get; set; } = true;
 
-    /// <summary>The "this acoustic crossover" mode; false is "the best summation".</summary>
     public bool Acoustic { get; set; }
 
-    /// <summary>The summation mode's slope window; null leaves the whole menu.</summary>
+    /// <summary>Null leaves the whole menu.</summary>
     public int? MinSlopeDbPerOctave { get; set; }
 
-    /// <inheritdoc cref="MinSlopeDbPerOctave"/>
     public int? MaxSlopeDbPerOctave { get; set; }
 
-    /// <summary>The acoustic mode's budget of summation score; null leaves the dialog's default.</summary>
     public double? SumBudgetDb { get; set; }
 
-    /// <summary>The goal boxes as left, kept in the summation mode too so switching back finds them.</summary>
     public JunctionAcousticTarget? Goal { get; set; }
 
-    /// <summary>Corner window per junction label, as [low Hz, high Hz].</summary>
+    /// <summary>Per junction label, [low Hz, high Hz].</summary>
     public Dictionary<string, double[]> Windows { get; set; } = new();
 
-    /// <summary>The corner boxes' own range: a window outside it describes no question the dialog can ask.</summary>
+    /// <summary>The corner boxes' own range.</summary>
     public const double WindowLowestHz = 10;
 
-    /// <inheritdoc cref="WindowLowestHz"/>
     public const double WindowHighestHz = 24_000;
 
-    /// <summary>Drops what the dialog could not use. Never throws: this is a convenience, not part of the tune.</summary>
+    /// <summary>Drops what the dialog could not use; never throws, as a dialog's memory must not refuse a session.</summary>
     public void Sanitize()
     {
         Families = (Families ?? new()).Where(family => Enum.IsDefined(family)).Distinct().ToList();
@@ -266,29 +254,20 @@ public sealed class VirtualCrossoverChannelSettings
     [JsonIgnore]
     public int? FirRunSampleRateHz { get; set; }
 
-    /// <summary>
-    /// What <c>driver × filter</c> should look like on this edge: the ACOUSTIC crossover asked for, family and slope
-    /// only. The corner is always the electrical one, so moving the corner moves the wish with it and there is no
-    /// stale state to invalidate. The EQ stage's target follows it instead of the electrical filter where it is set,
-    /// so the crossover stage and the fit aim at one thing. Shown and edited on the channel card, written by a
-    /// junction tune that was asked for a slope. See docs/specs/acoustic-crossover-target.md.
-    /// </summary>
+    /// <summary>The acoustic crossover asked for on this edge: family and slope, the corner always the electrical one.
+    /// See docs/specs/acoustic-crossover-target.md.</summary>
     [JsonPropertyName("acousticLowPass")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public JunctionAcousticTarget? AcousticLowPass { get; set; }
 
-    /// <inheritdoc cref="AcousticLowPass"/>
     [JsonPropertyName("acousticHighPass")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public JunctionAcousticTarget? AcousticHighPass { get; set; }
 
-    /// <summary>Whether the IIR crossover runs the high-pass. Only then does a goal stated for it describe a filter,
-    /// and only then does Auto Tune read it. A goal for an edge the channel does not run stays with that edge, as its
-    /// electrical corner and slope do, and applies again once the channel runs it; the card shows it as kept.</summary>
+    /// <summary>Whether the IIR crossover runs this edge: a goal is read only then, and kept with the edge otherwise.</summary>
     [JsonIgnore]
     public bool RunsHighPass => CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass;
 
-    /// <inheritdoc cref="RunsHighPass"/>
     [JsonIgnore]
     public bool RunsLowPass => CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass;
 
@@ -389,8 +368,7 @@ public sealed class VirtualCrossoverChannelSettings
         }
         ValidateEdge(LowPassEdge);
         ValidateEdge(HighPassEdge);
-        // A stated acoustic slope is a wish, not a filter, so only its family and slope are checked - against the
-        // same lists an electrical edge is held to, or the fit would be asked to draw an edge nobody can build.
+        // A goal is held to the slopes an electrical edge of its family could have.
         ValidateAcoustic(AcousticLowPass);
         ValidateAcoustic(AcousticHighPass);
         // Range only, not the hardware's 5.625° grid: editors snap, and a hand-written angle still builds.
@@ -816,9 +794,7 @@ public sealed class VirtualCrossoverProjectFile
     /// <summary>Draw the hybrid (spatial-average) magnitude. Intent: kept on load, drawn only while every playing channel has an average.</summary>
     public bool ShowHybridCurves { get; set; }
 
-    /// <summary>What the Tune junction dialog was last asked; null until it has been opened, and then absent from the
-    /// file, so a session nobody tuned a junction in round-trips untouched. See
-    /// <see cref="VirtualCrossoverJunctionTuneSettings"/>.</summary>
+    /// <summary>Null until the Tune junction dialog has been opened, so other sessions round-trip untouched.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public VirtualCrossoverJunctionTuneSettings? JunctionTune { get; set; }
 

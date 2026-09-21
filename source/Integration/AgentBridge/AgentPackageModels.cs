@@ -148,10 +148,6 @@ internal sealed record AgentPackageFirCrossover(
     int DesignedAtHz,
     double LatencyMs);
 
-/// <param name="AcousticHighPass">The acoustic crossover the user asked for at the high-pass: what driver and filter
-/// should add up to there, at the electrical corner. Auto Tune aims the channel at it instead of at the filter while
-/// the kind uses that edge. Absent where nothing is stated.</param>
-/// <param name="AcousticLowPass">The same at the low-pass.</param>
 internal sealed record AgentPackageCrossover(
     string Kind,
     AgentPackageEdge HighPass,

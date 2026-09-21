@@ -264,20 +264,12 @@ internal static class AgentProbeReader
             : (sides, null);
     }
 
-    /// <summary>
-    /// Whether one re-alignment has to serve every side of the junction: a mono block has one delay and one polarity
-    /// for both, and Auto delay settles it on its mean over them (docs/tech/auto-alignment.md#stereo-cascade).
-    /// </summary>
+    /// <summary>A mono block has one delay for both sides.</summary>
     internal static bool SharesOneAlignment(VirtualCrossoverChannel lower, VirtualCrossoverChannel upper) =>
         lower.Pair.Mono || upper.Pair.Mono;
 
-    /// <summary>
-    /// The sides with each channel's plant taken from its spatial average wherever Auto Tune would fit that average:
-    /// a stated acoustic slope is judged on the curve the EQ stage then works on, and the EQ handoff hands the average
-    /// over exactly when the hybrid is drawn (<paramref name="mode"/> is null otherwise). The chain goes on without the
-    /// facing edge and without the PEQ, as the tuner's own plant takes them off; a channel without a capture of that
-    /// family keeps the gated reading.
-    /// </summary>
+    /// <summary>Each channel's plant from its spatial average, where the EQ handoff would give Auto Tune one
+    /// (<paramref name="mode"/> null while the hybrid is not drawn).</summary>
     internal static List<JunctionTuneSide> WithSpatialAverages(
         List<JunctionTuneSide> sides,
         VirtualCrossoverChannel lower,

@@ -67,9 +67,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void AStatedAcousticCrossover_IsWhatTheTargetFollows_NotTheElectricalFilterUnderIt()
     {
-        // A junction tune asked for acoustic LR24 and picked an electrical LR12 to get there on this driver. If the
-        // EQ then aimed at the LR12 it would flatten the driver back out wherever boosts are still allowed, undoing
-        // the acoustic slope the tune just found - so the goal the handoff carries is the ACOUSTIC one, per edge.
         VirtualCrossoverChannel channel = BuildChannel();
         channel.Settings.CrossoverKind = CrossoverKind.BandPass;
         channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 12);
@@ -82,18 +79,14 @@ public sealed class VirtualDspEqHandoffTests
 
         Assert.Equal(24, goal.LowPassEdge!.Value.SlopeDbPerOctave);
         Assert.Equal(500, goal.LowPassEdge!.Value.FrequencyHz);
-        // The edge nobody stated anything about is still the electrical one.
         Assert.Equal(channel.Settings.HighPassEdge, goal.HighPassEdge);
         Assert.Equal(CrossoverKind.BandPass, goal.Kind);
 
-        // A wish is a family and a slope: its corner is always the electrical one, so moving the corner moves the
-        // wish with it. Nothing goes stale, which is what lets it live on the channel card.
         channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 200, 12);
         CrossoverSpec moved = Build(channel, withChain: true).Source.TargetCrossover!;
         Assert.Equal(200, moved.LowPassEdge!.Value.FrequencyHz);
         Assert.Equal(24, moved.LowPassEdge!.Value.SlopeDbPerOctave);
 
-        // Cleared on the card, the target is the electrical filter again.
         channel.Settings.AcousticLowPass = null;
         Assert.Equal(
             channel.Settings.EffectiveCrossover,
@@ -103,9 +96,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void AWishOnAnEdgeTheChannelDoesNotRun_ChangesNothing()
     {
-        // A high-pass-only channel keeps a low-pass edge in its settings, greyed out on the card. A wish stated
-        // for that edge describes no filter, so the target, the drawn reference and the return guard must all
-        // read the channel as having one crossover.
         VirtualCrossoverChannel channel = BuildChannel();
         channel.Settings.CrossoverKind = CrossoverKind.HighPass;
         channel.Settings.AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 12);
@@ -119,8 +109,6 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void TheElectricalCrossoverTravels_OnlyWhereTheTargetFollowsAnAcousticOne()
     {
-        // The wizard draws the filter the chain runs beside the target, and only where the two differ: with no
-        // wish, or a wish naming the shape of the filter itself, there is one crossover and one curve.
         VirtualCrossoverChannel channel = BuildChannel();
         channel.Settings.CrossoverKind = CrossoverKind.BandPass;
         channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 12);
@@ -134,7 +122,6 @@ public sealed class VirtualDspEqHandoffTests
         Assert.Equal(
             channel.Settings.EffectiveCrossover,
             Build(channel, withChain: true).Source.ElectricalCrossover);
-        // A raw handoff has no chain, so no crossover of either kind.
         Assert.Null(Build(channel, withChain: false).Source.ElectricalCrossover);
     }
 
@@ -711,12 +698,8 @@ public sealed class VirtualDspEqHandoffTests
     [Fact]
     public void ReturnAfterTheAcousticWishWasStatedOrWithdrawn_Refuses()
     {
-        // The wish moves the target's SHAPE without touching the chain: the electrical filter the chain guard
-        // reads is the same either way, and a bank fitted against one target would land on a channel aiming at
-        // another.
         VirtualCrossoverChannel channel = BuildChannel();
         VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
-        // Not LR24: that IS the filter under it, and a wish naming the filter's own shape changes no target.
         channel.Settings.AcousticLowPass =
             new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 12);
         var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
@@ -725,14 +708,12 @@ public sealed class VirtualDspEqHandoffTests
             new[] { channel }, token, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
         Assert.Empty(channel.Settings.PeqBands);
 
-        // And the other way round: a wish the panel dropped while the wizard was open.
         VirtualDspEqReturnToken stated = TokenFor(channel, rightSide: false);
         channel.Settings.AcousticLowPass = null;
         Assert.False(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, stated, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
         Assert.Empty(channel.Settings.PeqBands);
 
-        // A wish that stands still is no obstacle.
         VirtualDspEqReturnToken same = TokenFor(channel, rightSide: false);
         Assert.True(VirtualDspEqHandoff.TryApplyReturn(
             new[] { channel }, same, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));

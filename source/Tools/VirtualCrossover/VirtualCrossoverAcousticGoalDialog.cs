@@ -2,11 +2,7 @@
 
 namespace Resonalyze;
 
-/// <summary>
-/// Reads and edits one channel's ACOUSTIC crossover goal: what driver and filter should add up to at each of its
-/// edges. Only a family and a slope — the corner is always the electrical filter's, so the wish follows a corner
-/// that moves and there is no hidden state to go stale. See docs/specs/acoustic-crossover-target.md.
-/// </summary>
+/// <summary>Edits one channel's acoustic crossover goal. See docs/specs/acoustic-crossover-target.md.</summary>
 internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
 {
     private const string Nothing = "—";
@@ -36,29 +32,21 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
             "filter as it does by default.");
     }
 
-    /// <summary>The high-pass edge's goal as edited, or null for "nothing stated".</summary>
     public JunctionAcousticTarget? HighPassGoal { get; private set; }
 
-    /// <inheritdoc cref="HighPassGoal"/>
     public JunctionAcousticTarget? LowPassGoal { get; private set; }
 
-    /// <param name="settings">Read only: the dialog hands its answer back through the two properties.</param>
-    /// <param name="channelName">Shown in the title, so a card's dialog is recognisable.</param>
     public void Init(VirtualCrossoverChannelSettings settings, string channelName)
     {
         ArgumentNullException.ThrowIfNull(settings);
         Text = $"Acoustic crossover goal — channel {channelName}";
-        // A goal describes an edge the IIR crossover runs, the only one Auto Tune reads it for. One kept for an edge
-        // the channel does not run is shown greyed: neither edited as if it worked nor lost, since it applies again
-        // once the channel runs that edge, as the edge's own corner and slope do.
+        // A goal kept for an edge the channel does not run is shown greyed: not editable, not lost.
         Present(
             comboBoxHighPassFamily, comboBoxHighPassSlope, labelHighPassElectrical,
             settings.AcousticHighPass, settings.RunsHighPass ? settings.HighPassEdge : null, "high-pass");
         Present(
             comboBoxLowPassFamily, comboBoxLowPassSlope, labelLowPassElectrical,
             settings.AcousticLowPass, settings.RunsLowPass ? settings.LowPassEdge : null, "low-pass");
-        // The driver's own fall is what makes the two differ, and it is measured by the junction tune rather than
-        // known here, so the note says where to look instead of inventing a number.
         labelNote.Text =
             "A driver's own roll-off adds to the filter, so the acoustic slope is the steeper of the two. " +
             "Tune junction measures what these drivers actually manage and says whether a stated slope is " +
@@ -73,7 +61,7 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
         CrossoverEdge? running,
         string what)
     {
-        // Before the family is chosen: choosing it fills the slopes, and they follow the family box's state.
+        // Before the family is chosen: the slopes it fills follow the family box's state.
         family.Enabled = running != null;
         family.Items.Clear();
         family.Items.Add(Nothing);
@@ -125,7 +113,6 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
             slope.Items.Add(supported);
         }
 
-        // Keep the slope across a family change where that family has it; the default is the middle of the list.
         slope.SelectedItem = kept is { } previous && slope.Items.Contains(previous)
             ? previous
             : slope.Items[Math.Min(1, slope.Items.Count - 1)];

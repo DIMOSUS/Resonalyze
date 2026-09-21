@@ -190,9 +190,6 @@ public sealed class EqTargetCrossoverTests
     [Fact]
     public void AStatedAcousticCrossover_DrawsTheElectricalOneBesideTheTarget()
     {
-        // The target follows the acoustic crossover the card states; the filter the chain runs is drawn beside it
-        // so the two skirts can be compared. It is a reference and not the goal: a pattern of its own, half as
-        // opaque, under the target, and never what the fit aims at.
         CrossoverSpec acoustic = new(
             CrossoverKind.LowPass, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24));
         CrossoverSpec electrical = new(
@@ -207,18 +204,14 @@ public sealed class EqTargetCrossoverTests
         Assert.NotEqual(LineStyle.Solid, drawn.LineStyle);
         Assert.Equal(render.Target.Color.A / 2, drawn.Color.A);
         Assert.Equal(render.Target.Color.R, drawn.Color.R);
-        // One octave up the skirt LR24 has fallen about 24.6 dB and BW12 about 12.3: the two curves say so, and
-        // in the passband they are one curve.
         int octaveUp = Nearest(render.Target, 2_000);
         Assert.Equal(12.3, drawn.Points[octaveUp].Y - render.Target.Points[octaveUp].Y, 0.5);
         int passband = Nearest(render.Target, 100);
         Assert.Equal(render.Target.Points[passband].Y, drawn.Points[passband].Y, 0.05);
 
-        // What the fit reads is the target alone.
         (_, EqWizardCurve fitted) = EqWizardRender.FitCurves(session);
         Assert.Equal(render.Target.Points[octaveUp].Y, fitted.Points[octaveUp].Y, 9);
 
-        // Drawn under the target, so the goal is never covered by its reference.
         List<string> titles = EqWizardTestPlots.Draw(session).Series
             .OfType<LineSeries>()
             .Select(series => series.Title)
@@ -238,7 +231,6 @@ public sealed class EqTargetCrossoverTests
         plain.Load(Source(acoustic));
         Assert.Null(EqWizardRender.RenderSet(plain, new EqualizationCurve([])).ElectricalTarget);
 
-        // With the crossover left out of the target there is no skirt to compare it with.
         var leftOut = new EqWizardSession();
         leftOut.Load(Source(acoustic) with
         {

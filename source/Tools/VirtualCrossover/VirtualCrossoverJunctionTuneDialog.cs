@@ -2,10 +2,6 @@
 
 namespace Resonalyze;
 
-/// <summary>What one junction's tune was asked for: which junction, where its corner may sit, which filters are on
-/// offer, and optionally the ACOUSTIC crossover it should add up to.</summary>
-/// <param name="SumSlackDb">How much summation score the acoustic goal may cost against the best sum: the corridor
-/// the stated slope chooses in. Read only with a goal.</param>
 internal sealed record JunctionTuneRequest(
     int JunctionIndex,
     double MinHz,
@@ -17,10 +13,7 @@ internal sealed record JunctionTuneRequest(
     bool SplitCorners,
     double SumSlackDb = CrossoverJunctionTuner.DefaultSumSlackDb);
 
-/// <summary>What a junction opens on: the window the assistant's tune would use, the families it already runs, and
-/// the acoustic goal its channel cards already hold.</summary>
-/// <param name="CornerHz">Where the junction is crossed now, or null: a remembered window that no longer holds it
-/// was set for a crossover that has since moved, and the default window is used instead.</param>
+/// <param name="CornerHz">Where the junction is crossed now: a remembered window without it gives way to the default.</param>
 internal sealed record JunctionTuneDefaults(
     double MinHz,
     double MaxHz,
@@ -28,9 +21,7 @@ internal sealed record JunctionTuneDefaults(
     JunctionAcousticTarget? Goal,
     double? CornerHz = null);
 
-/// <summary>What the search found, for the report and for Apply.</summary>
-/// <param name="Recommended">Whether Apply would write what the search advises, which colours the status: Apply
-/// is also offered for a found crossover the report advises against, because the choice is the user's.</param>
+/// <param name="Recommended">Whether Apply writes what the search advises; it is offered either way.</param>
 internal sealed record JunctionTuneOutcome(
     IReadOnlyList<JunctionTuneLine> Report,
     bool CanApply,
@@ -38,25 +29,15 @@ internal sealed record JunctionTuneOutcome(
     bool Refused,
     bool Recommended = false);
 
-/// <summary>
-/// Refines one junction of a finished tune: the lower channel's low-pass and the upper channel's high-pass, judged on
-/// the coherent sum through the full chains, optionally against a stated acoustic slope. The search runs in the
-/// panel; this dialog states the question and shows the answer. See docs/tech/crossover-auto-setup.md#junction-tuner.
-/// </summary>
+/// <summary>States one junction's tune and shows the answer; the search runs in the panel. See
+/// docs/tech/crossover-auto-setup.md#junction-tuner.</summary>
 internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 {
     private const string Nothing = "—";
 
-    /// <summary>
-    /// What the acoustic goal may cost the sum by default, in summation score against the best candidate: the
-    /// owner's choice. The engine keeps 0.2 for a caller that states nothing; here the user is weighing a slope
-    /// against the sum and sees the price. Measured on eight cabins (docs/specs/acoustic-crossover-target.md#6c):
-    /// 1.0 lands acoustic LR24 at every channel on 5 junctions of 23, for ~0.3 dB of average loss and ~0.7 dB of
-    /// average dip.
-    /// </summary>
+    /// <summary>What the goal may cost against the best sum; measured in docs/specs/acoustic-crossover-target.md#6c.</summary>
     public const double DefaultSumBudgetDb = 1.0;
 
-    /// <summary>Status for a question that changed after its answer landed.</summary>
     private const string Again = "The question changed — search again.";
 
     private readonly WrappingToolTip toolTip = new()
@@ -70,25 +51,20 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     private Func<int, JunctionTuneDefaults>? defaultsFor;
     private bool running;
 
-    /// <summary>Corner windows as left, per junction label: switching away and back finds a window as it was set.</summary>
+    /// <summary>Corner windows as left, per junction label.</summary>
     private readonly Dictionary<string, (decimal Min, decimal Max)> windows = new(StringComparer.Ordinal);
 
-    /// <summary>The junction whose window the corner boxes show now.</summary>
     private string? shownJunction;
 
-    /// <summary>With nothing remembered, the first junction shown opens on its own families and card goal; after
-    /// that, switching junction moves the corner window and nothing else.</summary>
+    /// <summary>Only the first junction shown, with nothing remembered, opens on its own families and goal.</summary>
     private bool useJunctionDefaults = true;
 
-    /// <summary>Bumped by every change to the question. The boxes stay live while the search runs, so this is
-    /// what tells an answer that came back for the question on screen from one that came back for a retired
-    /// question.</summary>
+    /// <summary>Bumped by every change to the question: the boxes stay live while the search runs.</summary>
     private int question;
 
     private CheckBox[] FamilyBoxes => [checkButterworth, checkLinkwitzRiley, checkBessel];
 
-    /// <summary>Slopes the window offers, as the crossover wizard offers them: 6 dB/oct protects nothing and the
-    /// search leaves it out anyway.</summary>
+    /// <summary>As the crossover wizard offers them: from 12 dB/oct.</summary>
     private static readonly int[] SelectableSlopes = CrossoverFilter
         .SupportedSlopes(CrossoverFilterFamily.Butterworth)
         .Where(slope => slope >= CrossoverJunctionTuner.PracticalSlopeFloorDbPerOctave)
@@ -111,14 +87,13 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             window.SelectedIndexChanged += (_, _) => InvalidateResult(Again);
         }
 
-        // The whole menu by default: narrowing it is the point of the field, not its normal state.
         comboBoxMinSlope.SelectedItem = SelectableSlopes[0];
         comboBoxMaxSlope.SelectedItem = SelectableSlopes[^1];
         comboBoxGoalFamily.SelectedIndexChanged += (_, _) => FillGoalSlopes();
         comboBoxJunction.SelectedIndexChanged += (_, _) => PresentJunction();
         radioSummation.CheckedChanged += (_, _) => PresentMode();
         radioAcoustic.CheckedChanged += (_, _) => PresentMode();
-        // Every input retires the answer: Apply must never stand for a question nobody asked.
+        // Every input retires the answer, so Apply never stands for a question nobody asked.
         numericMinHz.ValueChanged += (_, _) => InvalidateResult(Again);
         numericMaxHz.ValueChanged += (_, _) => InvalidateResult(Again);
         comboBoxGoalSlope.SelectedIndexChanged += (_, _) => InvalidateResult(Again);
@@ -145,29 +120,21 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         PresentMode();
     }
 
-    /// <summary>
-    /// Which of the two questions the search answers, stated where it cannot be missed: the best summation this
-    /// junction can have, or the electrical filter that lands nearest a stated ACOUSTIC crossover among the
-    /// candidates that sum as well. Without the switch the dialog never said what it was optimising.
-    /// </summary>
     private void PresentMode()
     {
         bool acoustic = radioAcoustic.Checked;
         comboBoxGoalFamily.Enabled = acoustic;
         comboBoxGoalSlope.Enabled = acoustic && comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice;
-        // The slope window belongs to the summation mode. Stating an ACOUSTIC slope already says what the answer
-        // must come to, so tying the electrical slopes down as well only takes filters away from the search.
+        // The slope window is the summation mode's, the budget the acoustic mode's.
         comboBoxMinSlope.Enabled = !acoustic;
         comboBoxMaxSlope.Enabled = !acoustic;
         UiStyle.SetTextEnabledLook(labelSlopes, !acoustic);
         UiStyle.SetTextEnabledLook(labelSlopeTo, !acoustic);
-        // And the budget belongs to the acoustic one: without a goal there is nothing to spend the sum on.
         numericSumBudget.Enabled = acoustic;
         UiStyle.SetTextEnabledLook(labelSumBudget, acoustic);
         UiStyle.SetTextEnabledLook(labelSumBudgetUnit, acoustic);
         if (acoustic && comboBoxGoalFamily.SelectedItem is not CrossoverFamilyChoice)
         {
-            // The mode IS the goal: entering it with nothing stated would search for nothing.
             comboBoxGoalFamily.SelectedItem = CrossoverFamilyChoice.Offered
                 .First(choice => choice.Value == CrossoverFilterFamily.LinkwitzRiley);
         }
@@ -179,17 +146,12 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         InvalidateResult(Again);
     }
 
-    /// <summary>The request the Apply button stands for; null until a search has landed.</summary>
+    /// <summary>Null until a search has landed.</summary>
     public JunctionTuneRequest? Result { get; private set; }
 
-    /// <summary>Undo last Apply was pressed: the panel puts the channels back once the dialog is closed.</summary>
     public bool UndoRequested { get; private set; }
 
-    /// <param name="junctions">Labels as the panel's read-outs name them, lower to upper.</param>
-    /// <param name="defaults">The corner window, the families in use and the card's own goal, by junction index.</param>
-    /// <param name="search">Runs the search off the UI thread; the dialog owns the await and the buttons.</param>
-    /// <param name="remembered">What the dialog was left on last time, or null to open on the junction's defaults.</param>
-    /// <param name="undoable">The junction the last Apply was for ("B/C") while it can still be undone, else null.</param>
+    /// <param name="undoable">The junction the last Apply was for, while it can be undone.</param>
     public void Init(
         IReadOnlyList<string> junctions,
         Func<int, JunctionTuneDefaults> defaults,
@@ -231,12 +193,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         }
     }
 
-    /// <summary>
-    /// Shows the selected junction. Only what belongs to a junction changes: its corner window, as it was left
-    /// here or else the default around its corner. Families, slopes, the mode and the goal are the user's and stay
-    /// as set - except on a first opening with nothing remembered, which starts from the junction's own filters
-    /// and the goal its cards state.
-    /// </summary>
+    /// <summary>Switching junction changes only its corner window; the rest of the question stays as set.</summary>
     private void PresentJunction()
     {
         if (defaultsFor is not { } defaults || comboBoxJunction.SelectedIndex < 0)
@@ -257,11 +214,9 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         if (useJunctionDefaults)
         {
             useJunctionDefaults = false;
-            // What the junction already runs is what it is offered, so a search asks about the filters in use first.
             checkButterworth.Checked = opening.Families.Contains(CrossoverFilterFamily.Butterworth);
             checkLinkwitzRiley.Checked = opening.Families.Contains(CrossoverFilterFamily.LinkwitzRiley);
             checkBessel.Checked = opening.Families.Contains(CrossoverFilterFamily.Bessel);
-            // The card's own wish is what this junction already asks for, so the dialog opens on it.
             if (opening.Goal is { } asked)
             {
                 ShowGoal(asked);
@@ -269,7 +224,6 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             }
         }
 
-        // The report in the pane describes the junction it was searched on, not this one.
         textBoxReport.Clear();
         InvalidateResult("Nothing searched yet.");
     }
@@ -292,7 +246,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         }
     }
 
-    /// <summary>Puts the dialog back as it was left. Anything the menus no longer offer keeps its default.</summary>
+    /// <summary>Anything the menus no longer offer keeps its default.</summary>
     private void Restore(VirtualCrossoverJunctionTuneSettings remembered)
     {
         useJunctionDefaults = false;
@@ -318,7 +272,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         (remembered.Acoustic ? radioAcoustic : radioSummation).Checked = true;
         foreach ((string label, double[] window) in remembered.Windows)
         {
-            // Clamped before it becomes a decimal: a hand-edited file may hold a figure no decimal can.
+            // Clamped as a double: a hand-edited file may hold a figure no decimal can.
             if (window is [var min, var max])
             {
                 windows[label] = (numericMinHz.ClampValue(min), numericMaxHz.ClampValue(max));
@@ -326,7 +280,6 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         }
     }
 
-    /// <summary>What the dialog is left on, for the next time it opens: every box, and each junction's window.</summary>
     public VirtualCrossoverJunctionTuneSettings Remembered()
     {
         KeepShownWindow();
@@ -402,7 +355,6 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         InvalidateResult();
     }
 
-    /// <summary>Any change to the question retires the answer: Apply must never stand for a search nobody ran.</summary>
     private void InvalidateResult(string? status = null)
     {
         question++;
@@ -445,7 +397,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 
         int lowSlope = comboBoxMinSlope.SelectedItem as int? ?? SelectableSlopes[0];
         int highSlope = comboBoxMaxSlope.SelectedItem as int? ?? SelectableSlopes[^1];
-        // Empty means "every slope the families have": what the acoustic mode always wants.
+        // Empty means every slope the families have.
         List<int> slopes = radioAcoustic.Checked
             ? []
             : SelectableSlopes
@@ -484,8 +436,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 
             if (asked != question)
             {
-                // The question moved while the search ran: the report would describe the old one and Apply
-                // would write it. The handler that moved it has already said so on the status line.
+                // The question moved while the search ran; its handler has said so on the status line.
                 return;
             }
 
@@ -509,8 +460,6 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         }
     }
 
-    /// <summary>Writes the report into the pane, colouring the figures that moved: green where the answer is
-    /// better, red where it is worse. The colours are the only thing the pane does that a label could not.</summary>
     private void ShowReport(IReadOnlyList<JunctionTuneLine> report)
     {
         textBoxReport.BeginUpdate();
@@ -548,8 +497,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         ArgumentNullException.ThrowIfNull(e);
-        // A search writes nothing until Apply, but closing mid-search would leave the panel's await holding a
-        // disposed dialog.
+        // Closing mid-search would leave the panel's await holding a disposed dialog.
         if (running)
         {
             e.Cancel = true;

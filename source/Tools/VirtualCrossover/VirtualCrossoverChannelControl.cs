@@ -74,7 +74,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
     public event EventHandler? FirClicked;
 
-    /// <summary>The acoustic crossover goal button in the crossover row: what driver x filter should look like here.</summary>
     public event EventHandler? AcousticGoalClicked;
 
     /// <summary>Separate from <see cref="SettingsChanged"/>: the fold is persisted without recomputing curves.</summary>
@@ -260,12 +259,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         }
     }
 
-    /// <summary>
-    /// The acoustic crossover asked for on this channel's edges, shown on the crossover row: what
-    /// <c>driver × filter</c> should look like, which is not what the filter boxes beside it say. Em dash for a
-    /// channel nobody has stated a wish for; the button opens the editor either way. A goal for an edge the channel
-    /// does not run is not shown as stated, since Auto Tune does not read it: the tooltip says it is kept.
-    /// </summary>
+    /// <summary>A goal for an edge the channel does not run is not shown as stated; the tooltip names it as kept.</summary>
     internal void SetAcousticGoal(
         JunctionAcousticTarget? highPass,
         JunctionAcousticTarget? lowPass,
@@ -317,7 +311,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
               (highPass is { } high ? $", HP {FamilyShort(high.Family)}{high.SlopeDbPerOctave}" : string.Empty) +
               (lowPass is { } low ? $", LP {FamilyShort(low.Family)}{low.SlopeDbPerOctave}" : string.Empty) +
               ": Auto Tune aims at THIS instead of the filter.";
-        // A goal kept for an edge the channel does not run takes the last line: it matters more than the hint.
         string last = keptHighPass == null && keptLowPass == null
             ? "Click to read or edit it; the corner always follows the filter's."
             : "Kept for an edge this channel does not run:" +

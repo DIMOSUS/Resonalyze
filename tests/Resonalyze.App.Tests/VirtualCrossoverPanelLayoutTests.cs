@@ -88,8 +88,6 @@ public sealed class VirtualCrossoverPanelLayoutTests
     [Fact]
     public void TheAuxiliaryBlock_SitsAtTheBottom_ApartFromTheTuningButtons()
     {
-        // Read as two groups, not one column: the buttons a tune is built with ride the plot, and the occasional
-        // ones (Tools, the session files, Export) are anchored at the bottom with a visible gap above them.
         using var panel = new VirtualCrossoverPanel();
         Control ai = Field<Control>(panel, "buttonAi");
         Control tools = Field<Control>(panel, "buttonTools");
@@ -100,7 +98,6 @@ public sealed class VirtualCrossoverPanelLayoutTests
         Assert.True(
             tools.Top - ai.Bottom >= tools.Height / 2,
             $"the two groups touch: {ai.Bottom} to {tools.Top}.");
-        // Evenly pitched inside the block, and nothing left hanging under Export.
         int pitch = save.Top - tools.Top;
         Assert.Equal(pitch, load.Top - save.Top);
         Assert.Equal(pitch, export.Top - load.Top);

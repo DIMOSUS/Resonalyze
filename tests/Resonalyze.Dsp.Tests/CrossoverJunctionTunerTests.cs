@@ -168,13 +168,10 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void Tune_ReadsEverySide_AfterItsBestDelay_AndRanksOnTheirMean()
     {
-        // A junction tune is followed by re-aligning the delays, so a side that is merely late is not a crossover
-        // problem: it is read after the delay that re-alignment would give it, and the delay is reported.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         JunctionTuneResult result = CrossoverJunctionTuner.Tune(
             [
                 Side("left", LowPassChain(lr), HighPassChain(lr)),
-                // Half a period late at the corner: a delay mends it, the crossover does not have to.
                 Side("right", LowPassChain(lr), HighPassChain(lr, delayMs: 0.5))
             ],
             Options(700, 1_400));
@@ -186,7 +183,6 @@ public sealed class CrossoverJunctionTunerTests
         JunctionTuneAlignment right = Assert.Single(
             result.CurrentAfterDelay, alignment => alignment.Side == "right");
         Assert.InRange(right.ExtraDelayMs, -0.6, -0.4);
-        // Nothing to retune: the textbook pair stays once the late side is read where it will be.
         Assert.False(result.Changed);
     }
 
@@ -356,8 +352,7 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void AStatedAcousticSlope_PicksTheElectricalFilterThatLandsIt()
     {
-        // A perfect impulse is a flat driver, so acoustic IS electrical here: asked acoustic LR24, the answer is an
-        // LR24 pair. Every candidate on offer sums losslessly, so nothing but the stated slope can decide.
+        // A perfect impulse is a flat driver: acoustic is electrical.
         CrossoverEdge steep = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 48);
         JunctionTuneOptions options = Options(
             950, 1_050, slopes: [12, 24, 48], independentSlopes: false,
@@ -373,7 +368,6 @@ public sealed class CrossoverJunctionTunerTests
         Assert.Equal(24, result.Best.LowerLowPass!.Value.SlopeDbPerOctave);
         Assert.Equal(24, result.Best.UpperHighPass!.Value.SlopeDbPerOctave);
 
-        // The report compares like with like: both slopes are fitted over the same region.
         JunctionAcousticFit fit = result.Best.Sides[0].Acoustic!;
         Assert.NotNull(fit.TargetSlopeDbPerOctave);
         Assert.Equal(fit.TargetSlopeDbPerOctave!.Value, fit.LowerSlopeDbPerOctave!.Value, 1.5);
@@ -382,7 +376,6 @@ public sealed class CrossoverJunctionTunerTests
         Assert.True(
             result.Current.Sides[0].Acoustic!.ChargeDb > fit.ChargeDb + 1,
             "the steeper pair should be charged for the skirt the EQ could not lift.");
-        // A flat driver falls nowhere by itself, so any slope was reachable.
         JunctionDriverSlopes driver = Assert.Single(result.DriverSlopes);
         Assert.True(CrossoverJunctionTuner.IsReachable(
             driver.LowerDbPerOctave, fit.TargetSlopeDbPerOctave));
@@ -391,8 +384,7 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void ADriverAlreadyFallingSteeperThanAsked_SaysSo_RatherThanPretending()
     {
-        // The drivers' own roll-off is an LR24 at 1 kHz. A filter multiplies, so acoustic LR12 is not on offer at any
-        // corner - and the report has to say that instead of quietly picking the softest filter.
+        // The drivers' own roll-off is an LR24 at 1 kHz.
         CrossoverEdge own = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         Complex[] rolledOff = VirtualCrossoverAnalysis.ApplyChain(
             Impulse(), LowPassChain(own), SampleRate, SampleRate);
@@ -416,12 +408,8 @@ public sealed class CrossoverJunctionTunerTests
             $"the driver falls {driver.LowerDbPerOctave:0.0} dB/oct where {asked:0.0} was asked.");
         Assert.False(CrossoverJunctionTuner.IsReachable(driver.LowerDbPerOctave, asked));
         Assert.False(CrossoverJunctionTuner.IsReachable(driver.UpperDbPerOctave, asked));
-        // And the verdict itself comes off the lattice, not off the regression: no allowed filter comes near.
         Assert.False(CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb));
         Assert.True(result.ClosestAcousticCostDb > CrossoverJunctionTuner.AcousticReachedCostDb);
-        // Steeper than asked is charged, and the sign says the EQ would have to LIFT the skirt, which it refuses.
-        Assert.True(result.Best.Sides[0].Acoustic!.ResidualDb < 0);
-        // An unfitted figure is not a refusal.
         Assert.True(CrossoverJunctionTuner.IsReachable(null, asked));
         Assert.True(CrossoverJunctionTuner.IsReachable(driver.LowerDbPerOctave, null));
     }
@@ -429,10 +417,7 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void AnAcousticSlopeTheSumCannotAfford_IsNotBought()
     {
-        // Asked: acoustic Bessel 24. On a flat driver that is a Bessel 24 pair exactly, and a Bessel pair does not
-        // sum flat at any delay or polarity - measured, it ranks well outside the corridor even re-aligned. The
-        // stated slope chooses INSIDE what the sum calls equivalent, so the answer stays Linkwitz-Riley and the
-        // report shows the deviation it could not spend.
+        // A Bessel pair draws the goal exactly but sums outside the corridor at any delay.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         JunctionTuneOptions options = Options(
             950, 1_050, slopes: [24], independentSlopes: false,
@@ -448,11 +433,8 @@ public sealed class CrossoverJunctionTunerTests
         Assert.True(
             result.Best.Sides[0].Acoustic!.ChargeDb > 0.5,
             "the answer cannot draw the asked edge, and the report must say so rather than hide it.");
-        // And the corridor is what held it: the sum score of the winner is the best on offer.
         Assert.True(result.Best.RankingScoreDb <= result.Current.RankingScoreDb + options.SumSlackDb);
 
-        // The lattice says the target WAS reachable - a Bessel pair draws it exactly - so the report can tell
-        // "your drivers cannot" from "the summation would not pay for it".
         Assert.True(CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb));
         Assert.True(
             result.ClosestAcousticCostDb < result.Best.AcousticCostDb - 0.5,
@@ -462,10 +444,7 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void AStatedSlopeThatSumsAsWellOnceReAligned_IsTaken()
     {
-        // Asked: acoustic Butterworth 12, with an LR24 on screen. Every 12 dB/oct pair is 180 degrees apart through
-        // the handover, so at the delays set for the LR24 it sums with a hole at the corner (a BW12 pair: -33 dB) and
-        // was refused. With the upper channel inverted, as re-aligning finds, an LR12 pair sums flat and draws the
-        // asked BW12 within a fraction of a decibel - so it is taken, and the report says the inversion it needs.
+        // A 12 dB/oct pair sums flat only with the upper channel inverted.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         JunctionTuneOptions options = Options(
             950, 1_050, slopes: [12, 24], independentSlopes: false,
@@ -480,16 +459,13 @@ public sealed class CrossoverJunctionTunerTests
         Assert.True(result.Changed);
         Assert.Equal(12, result.Best.LowerLowPass!.Value.SlopeDbPerOctave);
         Assert.True(CrossoverJunctionTuner.WasAcousticTargetReached(result.Best.AcousticCostDb));
-        // What re-aligning takes is reported: the upper channel inverted.
         Assert.True(Assert.Single(result.BestAfterDelay).InvertUpper);
     }
 
     [Fact]
     public void TheAcousticReadIgnoresTheBankThatIsAboutToBeRefitted_WhileTheSumStillHearsIt()
     {
-        // A bell right at the junction. The bank will be refitted the moment this tune lands, so choosing a filter
-        // against it would make the answer depend on the tune's history - the acoustic read takes the PEQ out. The
-        // summation read keeps it, because that one is the chain as it actually plays. The asymmetry is deliberate.
+        // A bell at the junction: the acoustic read drops the PEQ, the summation keeps it.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         var bell = new EqualizationCurve([new PeqBand(1_000, 1.0, -6)], preampDb: 0);
         JunctionTuneOptions options = Options(
@@ -521,9 +497,6 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void ANarrowNotchInThePlant_CostsFarLessThanASlopeThatIsSystematicallyWrong()
     {
-        // The objective keeps its own resolution: a spatial notch a twelfth of an octave wide is the seat, not the
-        // crossover, while half an octave of wrong slope is the crossover. Charging them alike would let the room
-        // choose the filter. Plant curves are supplied here, which is how a channel with a spatial average arrives.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         JunctionTuneOptions options = Options(
             950, 1_050, slopes: [24], independentSlopes: false,
@@ -536,9 +509,7 @@ public sealed class CrossoverJunctionTunerTests
         double notched = ChargeWithPlant(lr, options, Plant(notchHz: 1_150, tiltDbPerOctave: 0));
         double tilted = ChargeWithPlant(lr, options, Plant(notchHz: null, tiltDbPerOctave: -1.5));
 
-        // A twelve-decibel notch one twelfth of an octave wide must read almost like the flat plant it sits in.
         Assert.Equal(flat, notched, 0.2);
-        // And a slope error the eye would call mild must read as the expensive one of the two.
         Assert.True(
             tilted > notched + 0.5,
             $"the tilt charged {tilted:0.00} dB against the notch's {notched:0.00} dB (flat reads {flat:0.00}).");
@@ -547,8 +518,6 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void ADeficitAcrossTheWholeSkirt_IsNotTrimmedAway()
     {
-        // The other side of the trim: it must drop the seat's narrow damage, not a systematic error. Three decibels
-        // too steep everywhere is exactly what the mode exists to notice.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         JunctionTuneOptions options = Options(
             950, 1_050, slopes: [24], independentSlopes: false,
@@ -593,11 +562,7 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void ASplitJunction_IsJudgedAgainstTheAskedEdgeAtEachOfItsOwnCorners()
     {
-        // The goal a tune writes is a family and a slope at the ELECTRICAL corner of each edge, and the EQ stage
-        // then aims every edge at its own corner. So the tune must judge a split pair the same way: an LR24
-        // low-pass at 900 Hz and an LR24 high-pass at 1100 Hz on flat drivers ARE acoustic LR24 on both edges.
-        // Judged against one shared corner, the high-pass reads a sixth of an octave too steep and is charged
-        // for a slope it draws exactly.
+        // LR24 at 900 Hz under LR24 at 1100 Hz on flat drivers is acoustic LR24 on both edges.
         JunctionTuneOptions options = Options(
             950, 1_050, slopes: [24], independentSlopes: false, CrossoverFilterFamily.LinkwitzRiley) with
         {
@@ -635,9 +600,6 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void FreeingTheCorners_ReadsPairsHeldApartAndPairsOverlapped()
     {
-        // A split is a signed offset from the junction, refined on the corners the sweep settled: positive holds
-        // them apart, which takes a bump off the junction; negative overlaps them, which fills a dip. As a second
-        // lattice dimension it would square the candidate count, so it is a pass of its own.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         JunctionTuneSide side = Side("left", LowPassChain(lr), HighPassChain(lr));
         JunctionTuneOptions matched = Options(
@@ -649,13 +611,10 @@ public sealed class CrossoverJunctionTunerTests
         Assert.True(
             with.CandidatesEvaluated > without.CandidatesEvaluated,
             $"{with.CandidatesEvaluated} candidates against {without.CandidatesEvaluated}.");
-        // A textbook matched pair is still what wins on a flat driver: a split has to earn its place on the sum
-        // like any other candidate.
         Assert.Equal(
             with.Best.LowerLowPass!.Value.FrequencyHz,
             with.Best.UpperHighPass!.Value.FrequencyHz,
             1e-9);
-        // And the pass really did read spread pairs: at least one reported candidate has its corners apart.
         Assert.Contains(
             with.RunnersUp,
             candidate => Math.Abs(
@@ -665,10 +624,7 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void EveryCornerItOffers_IsOneTheCardCanShowAndTheProcessorCanTake()
     {
-        // The channel card states the crossover frequency with no decimals. A split taken as a pure ratio of
-        // the corner lands between hertz (1 kHz held a twelfth apart is 971.532 / 1029.302), and the panel
-        // would then show 972 and 1029 while the chain ran the fractions - a filter the user cannot read back,
-        // let alone type into a processor.
+        // 1 kHz held a twelfth apart is 971.532 / 1029.302 Hz as a pure ratio.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         JunctionTuneSide side = Side("left", LowPassChain(lr), HighPassChain(lr));
         JunctionTuneOptions options = Options(
@@ -678,7 +634,6 @@ public sealed class CrossoverJunctionTunerTests
         JunctionTuneResult result = CrossoverJunctionTuner.Tune([side], options);
 
         List<JunctionTuneCandidate> reported = result.RunnersUp.Append(result.Best).ToList();
-        // Without a split among them the test would be watching nothing.
         Assert.Contains(
             reported,
             candidate => Math.Abs(
@@ -714,8 +669,6 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void SidesRunningDifferentCrossovers_AreRefused_SinceOneCrossoverIsWrittenToBoth()
     {
-        // With the side Lock off the two sides may differ. The tune searches ONE crossover and writes it to both,
-        // so "the crossover on screen" would be two answers: the readings would mix the left one with the right.
         CrossoverEdge left = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         CrossoverEdge right = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_100, 24);
 
@@ -748,9 +701,7 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void WithOneAlignmentForAllSides_EverySideIsReadAtOneShift()
     {
-        // A mono block has one delay and one polarity for both sides. The right side here is half a period late
-        // at the corner: re-aligned on its own it would be mended, but one shift for both sides has to serve the
-        // left too, so neither side can be read at its own best.
+        // The right side is half a period late at the corner.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         JunctionTuneSide[] sides =
         [
@@ -767,9 +718,7 @@ public sealed class CrossoverJunctionTunerTests
         Assert.Equal(2, joint.CurrentAfterDelay.Count);
         Assert.Equal(joint.CurrentAfterDelay[0].ExtraDelayMs, joint.CurrentAfterDelay[1].ExtraDelayMs);
         Assert.Equal(joint.CurrentAfterDelay[0].InvertUpper, joint.CurrentAfterDelay[1].InvertUpper);
-        // The reported delay is the one the readings were taken at.
         Assert.Equal(joint.Current.Sides[1].LossDb, joint.CurrentAfterDelay[1].LossDb, 6);
-        // A shared shift is a compromise: the late side reads worse than it would re-aligned on its own.
         Assert.True(
             joint.Current.Sides[1].LossDb < apart.Current.Sides[1].LossDb - 0.1,
             $"joint {joint.Current.Sides[1].LossDb:0.00} dB against apart {apart.Current.Sides[1].LossDb:0.00} dB.");
@@ -778,10 +727,7 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void MirrorImageShapes_AreChargedAlike_OnTheLowPassAndTheHighPassSide()
     {
-        // Each driver adds a Butterworth 12 of its own an octave past the corner: the woofer above 1 kHz, the
-        // tweeter below it, mirror images of each other on a log axis. Asked acoustic LR24 on an electrical LR24
-        // pair, both channels are too steep by the same shape and must be charged the same. Weighted per point by
-        // 1/f on a log grid, the low-pass side leaned on its corner and the high-pass side on its far skirt.
+        // Each driver adds its own BW12 an octave past the corner, mirror images on a log axis.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         Complex[] woofer = VirtualCrossoverAnalysis.ApplyChain(
             Impulse(), LowPassChain(Edge(CrossoverFilterFamily.Butterworth, 2_000, 12)), SampleRate, SampleRate);
@@ -804,10 +750,6 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void InsideTheBudget_ACandidateLandingEveryChannel_BeatsOneWithTheBetterAverage()
     {
-        // The best sum draws three channels exactly and misses the right tweeter by 3 dB: 0.8 on average, and no
-        // landing. One 0.1 dB of sum behind lands every channel within 1.5 dB, 1.1 on average. The average would
-        // take the first and leave that tweeter off the goal; the worst channel takes the second. A candidate
-        // outside the budget stays behind both however well it draws.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         JunctionTuneCandidate missesOne = Charged(1.0, 0.1, 0.1, 0.1, 3.0);
         JunctionTuneCandidate landsAll = Charged(1.1, 1.0, 1.0, 1.0, 1.5);
@@ -822,10 +764,8 @@ public sealed class CrossoverJunctionTunerTests
         JunctionTuneCandidate Charged(double ripple, double leftLow, double leftHigh, double rightLow, double rightHigh) =>
             new(lr, lr, [],
                 [
-                    new JunctionTuneReading("left", 0, 0, ripple, new JunctionAcousticFit(
-                        0.5 * (leftLow + leftHigh), 0, null, null, null, leftLow, leftHigh)),
-                    new JunctionTuneReading("right", 0, 0, ripple, new JunctionAcousticFit(
-                        0.5 * (rightLow + rightHigh), 0, null, null, null, rightLow, rightHigh))
+                    new JunctionTuneReading("left", 0, 0, ripple, new JunctionAcousticFit(leftLow, leftHigh, null, null, null)),
+                    new JunctionTuneReading("right", 0, 0, ripple, new JunctionAcousticFit(rightLow, rightHigh, null, null, null))
                 ],
                 500, 2_000);
     }
@@ -833,9 +773,6 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void TheNearestAnyFilterComes_IsReadAtTheWorstChannel()
     {
-        // A flat woofer and a tweeter with a Butterworth 12 of its own an octave under the corner, and one filter on
-        // offer: the woofer lands, the tweeter does not. "Nearest any filter" is the verdict on reachability, so it is
-        // the tweeter's figure, not the average that half of it would make.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         Complex[] tweeter = VirtualCrossoverAnalysis.ApplyChain(
             Impulse(), HighPassChain(Edge(CrossoverFilterFamily.Butterworth, 500, 12)), SampleRate, SampleRate);
@@ -848,7 +785,7 @@ public sealed class CrossoverJunctionTunerTests
 
         JunctionTuneResult result = CrossoverJunctionTuner.Tune([side], options);
 
-        Assert.Equal(true, result.Best.WorstAcousticChannel!.Upper);
+        Assert.True(result.Best.WorstAcousticChannel!.Upper);
         Assert.Equal(result.Best.WorstAcousticCostDb, result.ClosestAcousticCostDb);
         Assert.True(
             result.ClosestAcousticCostDb > result.Best.AcousticCostDb + 0.1,
@@ -858,14 +795,12 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void TheWorstChannel_IsNamed_WhereAnAverageWouldHideIt()
     {
-        // One filter serves both sides and every channel's EQ aims at the goal by itself: 0.2, 0.3, 0.4 and 3.7 dB
-        // average 1.2 and would pass, while the right tweeter cannot be brought onto the goal.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         var candidate = new JunctionTuneCandidate(
             lr, lr, [],
             [
-                new JunctionTuneReading("left", 0, 0, 0, new JunctionAcousticFit(0.25, 0, null, null, null, 0.2, 0.3)),
-                new JunctionTuneReading("right", 0, 0, 0, new JunctionAcousticFit(2.05, 0, null, null, null, 0.4, 3.7))
+                new JunctionTuneReading("left", 0, 0, 0, new JunctionAcousticFit(0.2, 0.3, null, null, null)),
+                new JunctionTuneReading("right", 0, 0, 0, new JunctionAcousticFit(0.4, 3.7, null, null, null))
             ],
             500, 2_000);
 

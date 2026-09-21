@@ -12,7 +12,6 @@ internal sealed record EqWizardCurve(
     IReadOnlyList<DataPoint> Points);
 
 // Source and SourcePlusEq are null without a source; otherwise Target is sampled on the source's frequencies.
-// ElectricalTarget is the target on the chain's own filter, only where the target follows an acoustic crossover.
 internal sealed record EqWizardRenderSet(
     EqWizardCurve Target,
     EqWizardCurve? Source,
@@ -259,12 +258,8 @@ internal static class EqWizardRender
 
     public const string ElectricalTargetTitle = "Target on the electrical crossover";
 
-    /// <summary>
-    /// The same target on the chain's ELECTRICAL crossover, where the target follows a stated acoustic one: the two
-    /// skirts side by side show how much of the slope the driver is expected to supply. Half-transparent and dotted,
-    /// in the target's own colour, because it is a reference and not the goal. Null where there is only one
-    /// crossover to draw, or while the crossover is left out of the target.
-    /// </summary>
+    /// <summary>The target on the electrical crossover, drawn as a reference where the target follows a stated
+    /// acoustic one; null otherwise.</summary>
     public static EqWizardCurve? ElectricalTargetCurve(EqWizardSession session, IReadOnlyList<double> frequencies)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -279,8 +274,7 @@ internal static class EqWizardRender
             ElectricalTargetTitle,
             OxyColor.FromArgb((byte)(target.Color.A / 2), target.Color.R, target.Color.G, target.Color.B),
             target.StrokeThickness,
-            // The target is dashed by default, so the reference takes the other pattern; and the dash where a
-            // user has made the target dotted. Opacity alone does not tell two curves apart at a glance.
+            // Always the other pattern than the target's: opacity alone does not tell them apart.
             target.LineStyle == OverlayLineStyle.Dot ? LineStyle.Dash : LineStyle.Dot,
             ShapedTarget(session, frequencies, electrical));
     }

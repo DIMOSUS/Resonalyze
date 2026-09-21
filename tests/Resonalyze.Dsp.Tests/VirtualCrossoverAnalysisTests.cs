@@ -1682,8 +1682,6 @@ public sealed class VirtualCrossoverAnalysisTests
     [Fact]
     public void AJointRead_TimesEverySideByOneShift_ChosenOnTheirMean()
     {
-        // Late by 0.3 ms on one side and early by 0.3 on the other: each side alone would be moved its own way, and
-        // one shift for both lands between them, reading both sides a little short of their own best.
         JunctionAlignmentSide late = LatePair(0.3);
         JunctionAlignmentSide early = LatePair(-0.3);
 

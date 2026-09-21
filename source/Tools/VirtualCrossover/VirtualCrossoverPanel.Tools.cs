@@ -4,11 +4,7 @@ public partial class VirtualCrossoverPanel
 {
     private ContextMenuStrip? toolsMenu;
 
-    /// <summary>
-    /// The occasional tools, off the main tuning path: auditioning the tune through a music file and capturing the
-    /// sum as an overlay. Both used to hold a row each in a column that has run out of them, and neither belongs in
-    /// the sequence of buttons the tune is actually built with.
-    /// </summary>
+    /// <summary>The occasional tools, off the main tuning path: audition and overlay capture.</summary>
     private void ShowToolsMenu()
     {
         if (toolsMenu is { Visible: true })

@@ -3,10 +3,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// What pressing Apply in Tune junction does to the panel: the settings of both blocks and what their cards show.
-/// The dialog and the search are tested on their own; this is the write between them, which nothing else reached.
-/// </summary>
 public sealed class VirtualCrossoverJunctionTuneApplyTests
 {
     private const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
@@ -18,9 +14,6 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
     [Fact]
     public void ApplyWritesTheFoundCrossover_EvenWhereTheReportCalledItNotWorthTheChange() => StaTest.Run(() =>
     {
-        // The report says the found crossover gains less than the keep margin, and recommends keeping the one on
-        // screen. Apply is still the user's explicit choice: pressing it and seeing nothing change is a button that
-        // does not work.
         using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
 
         Apply(panel, lower, upper, Result(changed: false), goal: null);
@@ -56,13 +49,10 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
     [Fact]
     public void TheAskedAcousticCrossover_LandsOnTheCards_EvenWhereTheFoundCrossoverMissesIt() => StaTest.Run(() =>
     {
-        // Reported from the field: acoustic BW24 asked, BW30/BW36 found 4.6 dB off it, Apply pressed, and the
-        // card button still read a dash. The goal is the user's own statement, shown and edited on the card; the
-        // report says how far the crossover is from it, and the card says what was asked.
         using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
         var asked = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
         JunctionTuneReading[] missed =
-            [new("left", -0.6, -1.8, 2.8, new JunctionAcousticFit(4.6, -4.6, 41.8, 50.7, 21.5))];
+            [new("left", -0.6, -1.8, 2.8, new JunctionAcousticFit(4.6, 4.6, 41.8, 50.7, 21.5))];
         var found = new JunctionTuneCandidate(FoundLow, FoundHigh, missed, missed, 90, 360);
         var result = new JunctionTuneResult(
             Candidate(Before, Before), found, Changed: true, [], [], [], 1, 90, 360, [], ClosestAcousticCostDb: 1.3);
@@ -82,7 +72,6 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
     [Fact]
     public void UndoLastApply_PutsTheCrossoverAndTheGoalBack() => StaTest.Run(() =>
     {
-        // The dialog's Apply writes four edges and the goals at once; Undo last Apply takes all of it back.
         using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
         var asked = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
         Apply(panel, lower, upper, Result(changed: true), asked);
@@ -105,8 +94,6 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
     [Fact]
     public void AGoalGoesOnlyOntoAnEdgeTheCrossoverLeftOnScreenRuns() => StaTest.Run(() =>
     {
-        // A lower block with no low-pass, and a tune that keeps it so: a goal written there would describe a filter
-        // the channel does not run, and Auto Tune would never read it.
         using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
         foreach (bool right in new[] { false, true })
         {
@@ -128,8 +115,6 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
     [Fact]
     public void AGoalForAnEdgeSwitchedOff_IsNoLongerShownAsStated() => StaTest.Run(() =>
     {
-        // The goal stays with its edge, as the edge's own corner and slope do, but the card stops saying Auto Tune
-        // aims at it the moment the channel stops running that edge.
         using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out _);
         var asked = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
         lower.Settings.AcousticLowPass = asked;
@@ -146,7 +131,6 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
     [Fact]
     public void AStatedGoal_IsPartOfTheSessionAnAssistantReadsAgainst() => StaTest.Run(() =>
     {
-        // A goal moves Auto Tune's target, so a reply read against another goal is stale.
         using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out _);
         string before = Fingerprint(panel);
 
@@ -171,7 +155,6 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
             Assert.Equal(FoundHigh, upper.SideSettings(right).HighPassEdge);
         }
 
-        // And the cards say so: a write the card does not show is one the next edit on the card undoes.
         VirtualCrossoverChannelControl lowerCard = Card(panel, lower);
         Assert.Equal(175m, lowerCard.LowPassFrequencyInput.Value);
         Assert.Equal(36, lowerCard.LowPassSlopeComboBox.SelectedItem);
@@ -205,7 +188,6 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
             .GetMethod("ControlFor", Hidden)!
             .Invoke(panel, [channel])!;
 
-    // Bound the way applying a project binds, with a low-pass on the lower block and a high-pass on the upper.
     private static VirtualCrossoverPanel Loaded(
         out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper)
     {

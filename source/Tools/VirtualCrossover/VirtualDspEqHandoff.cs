@@ -15,8 +15,7 @@ internal sealed record VirtualDspEqReturnToken(
     bool Mono,
     DspChannelChain PreviewChain,
     bool WithChain,
-    // The crossover the wizard SHAPED its target with, which the chain above does not describe: an acoustic wish
-    // stated or withdrawn on the card moves this and nothing else.
+    // What the target was shaped with; a goal changed on the card moves this and nothing else.
     CrossoverSpec? TargetCrossover,
     PeqBankState Peq,
     double TargetLevelDb,
@@ -179,9 +178,7 @@ internal static class VirtualDspEqHandoff
             SpatialAverageCalibration = spatialAverageCalibration,
             PreviewImpulseResponse = state.ProcessingSource.CroppedImpulseResponse,
             PreviewChain = previewChain,
-            // The corners the window comes from, so the shaped target and From/To describe one filter.
             TargetCrossover = withChain ? TargetCrossoverFor(settings) : null,
-            // Beside it, the filter the chain runs, where a stated acoustic crossover moved the target off it.
             ElectricalCrossover = withChain ? ElectricalCrossoverFor(settings) : null,
             // A designed crossover kernel describes its own slope; the design's corners do not (a windowed sinc's
             // slope is its window and length). FirDesign is what tells a crossover FIR from a correction one.
@@ -311,9 +308,7 @@ internal static class VirtualDspEqHandoff
         // SideFor, not the active side: the user may have flipped L/R while editing.
         VirtualCrossoverChannelSettings settings = token.Channel.Pair.SideFor(token.RightSide);
 
-        // The chain check above reads the electrical filter; the target the wizard shaped may have been the
-        // ACOUSTIC wish instead, and a wish stated or withdrawn meanwhile makes the returning bank answer a
-        // different target than the one on the card.
+        // The chain check reads the electrical filter; a goal changed meanwhile means a different target.
         if (token.WithChain &&
             !Equals(token.TargetCrossover, TargetCrossoverFor(settings)))
         {
@@ -347,23 +342,13 @@ internal static class VirtualDspEqHandoff
     private static DspChannelChain Comparable(DspChannelChain chain) =>
         chain with { InvertPolarity = false };
 
-    /// <summary>
-    /// The crossover the EQ target follows: per edge, the ACOUSTIC crossover a junction tune was asked for where one
-    /// was stated, else the electrical filter the channel runs. Without this the two stages pull apart — the tune
-    /// picks an electrical edge so that driver × filter lands on the stated acoustic slope, and an EQ aiming at the
-    /// electrical edge instead would flatten the driver back out where boosts are still allowed.
-    /// </summary>
-    /// <remarks>
-    /// A wish carries a family and a slope; its CORNER is always the electrical one, so moving the corner moves the
-    /// wish with it and there is no stale state to invalidate — which is what lets the wish live on the channel card
-    /// where it can be read and edited.
-    /// </remarks>
+    /// <summary>Per edge, the stated acoustic crossover at the electrical corner, else the electrical filter. See
+    /// docs/specs/acoustic-crossover-target.md.</summary>
     internal static CrossoverSpec GoalCrossoverFor(VirtualCrossoverChannelSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
         CrossoverSpec electrical = settings.EffectiveCrossover;
-        // Only edges the kind reads: a wish for the greyed-out edge of a one-sided channel describes no filter,
-        // and substituting it would make an identical target look like a different crossover.
+        // Only edges the kind reads.
         CrossoverEdge? lowPass = electrical.LowPassHz == null
             ? null
             : Asked(settings.AcousticLowPass, electrical.LowPassEdge);
@@ -378,14 +363,12 @@ internal static class VirtualDspEqHandoff
                 highPass ?? electrical.HighPassEdge);
     }
 
-    /// <summary>What the EQ target's shape is read from, or null where the IIR crossover is off and
-    /// EffectiveCrossover would stand in for the FIR design, whose kernel travels separately and would then be
-    /// counted twice.</summary>
+    /// <summary>Null with the IIR crossover off: EffectiveCrossover would then be the FIR design, which travels
+    /// separately.</summary>
     internal static CrossoverSpec? TargetCrossoverFor(VirtualCrossoverChannelSettings settings) =>
         settings.CrossoverKind != CrossoverKind.Off ? GoalCrossoverFor(settings) : null;
 
-    /// <summary>The filter the channel runs, where the target follows a stated acoustic crossover instead; null
-    /// where the two are one crossover.</summary>
+    /// <summary>The filter the channel runs, where the target follows a stated goal instead; else null.</summary>
     internal static CrossoverSpec? ElectricalCrossoverFor(VirtualCrossoverChannelSettings settings) =>
         TargetCrossoverFor(settings) is { } target && !Equals(target, settings.EffectiveCrossover)
             ? settings.EffectiveCrossover

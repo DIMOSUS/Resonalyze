@@ -17,8 +17,7 @@ public sealed record AlignmentCandidate(
 /// <summary>Junction sum at current timing: loss and dip (dB, ≤ 0) and ripple of the summed magnitude (dB RMS, ≥ 0).</summary>
 public sealed record JunctionSpectrumReading(double LossDb, double DipDb, double RippleDb);
 
-/// <summary>One side of a junction for a read that times every side at once: the variable (upper) and the fixed
-/// (lower) response, at one sample rate.</summary>
+/// <summary>One side of a junction for a read that times every side at once.</summary>
 public sealed record JunctionAlignmentSide(
     Complex[] VariableImpulseResponse,
     Complex[] FixedImpulseResponse,
@@ -26,8 +25,7 @@ public sealed record JunctionAlignmentSide(
     ValidSampleRange VariableValidRange = default,
     ValidSampleRange FixedValidRange = default);
 
-/// <summary>What one bin of a junction read is made of: each side's gated level and the 1/f weight the read gives it.
-/// Levels share the read's arbitrary reference, so only differences and slopes mean anything.</summary>
+/// <summary>One bin of a junction read: each side's gated level (arbitrary reference) and the read's 1/f weight.</summary>
 public readonly record struct JunctionLevelBin(
     double FrequencyHz,
     double LogWeight,
@@ -2131,8 +2129,7 @@ public static class VirtualCrossoverAnalysis
             forcedPolarity,
             out allOptima);
 
-    /// <summary>The same search over several sides at once, scored on the MEAN of their objectives, since one shift
-    /// of the variable side serves them all. With one side it is the search above, figure for figure.</summary>
+    /// <summary>One shift for several sides, scored on the mean of their objectives; one side gives the search above.</summary>
     private static List<AlignmentCandidate> SearchAlignmentCandidatesByLoss(
         IReadOnlyList<List<AlignmentBin>> sides,
         double minDelayMs,
@@ -2479,8 +2476,7 @@ public static class VirtualCrossoverAnalysis
             variableImpulseResponse, fixedImpulseResponses, sampleRate, minFrequencyHz, maxFrequencyHz,
             variableValidRange, fixedValidRanges, levels: null);
 
-    /// <summary>The same read, also handing back each bin's two levels: what the sum is made of, for a caller judging
-    /// the shape of either side (the tuner's acoustic slope). The list is built only when asked for.</summary>
+    /// <summary>The same read, also handing back each bin's two levels.</summary>
     public static JunctionSpectrumReading? MeasureJunctionSpectrum(
         Complex[] variableImpulseResponse,
         IReadOnlyList<Complex[]> fixedImpulseResponses,
@@ -2541,14 +2537,8 @@ public static class VirtualCrossoverAnalysis
         return ReadAt(bins, delayMs: 0, invert: false);
     }
 
-    /// <summary>
-    /// The junction read at the variable side's BEST timing inside +/- <paramref name="halfWindowMs"/> rather than at
-    /// its current one: the delay and polarity chosen as the crossover wizard's post-check chooses them (the penalized
-    /// loss search with a prior at zero, then <see cref="AlignmentSelection.Select"/>), and loss, dip and ripple read
-    /// on the same bins at that timing. For a caller comparing crossovers that will be re-aligned afterwards, where
-    /// judging them all at the delays set for one of them would favour that one. Null where the band holds no usable
-    /// bins or no delay evidence.
-    /// </summary>
+    /// <summary>The junction read at the variable side's best timing within +/- <paramref name="halfWindowMs"/>, chosen
+    /// as the wizard's post-check chooses it. Null without usable bins or delay evidence.</summary>
     public static (JunctionSpectrumReading Reading, AlignmentCandidate Alignment)? MeasureAlignedJunctionSpectrum(
         Complex[] variableImpulseResponse,
         IReadOnlyList<Complex[]> fixedImpulseResponses,
@@ -2594,15 +2584,8 @@ public static class VirtualCrossoverAnalysis
         return (ReadAt(bins, chosen.DelayMs, chosen.InvertPolarity), chosen);
     }
 
-    /// <summary>
-    /// Several sides of one junction read at ONE timing of the variable side, chosen as
-    /// <see cref="MeasureAlignedJunctionSpectrum"/> chooses it but on the mean of the sides' objectives. For a junction
-    /// with a mono block, which has one delay and one polarity for both sides: re-aligned side by side, each side
-    /// would be read at a setting of its own that the processor cannot hold at once. Auto delay settles a mono channel
-    /// the same way, on its mean over both sides (docs/tech/auto-alignment.md#stereo-cascade). Only sides holding delay
-    /// evidence vote; every side with usable bins is read at the result, the others read null. Null where no side
-    /// votes.
-    /// </summary>
+    /// <summary>Every side read at one timing of the variable side, chosen on the mean of the sides' objectives, as a
+    /// mono block's single delay requires. Only sides with delay evidence vote; null where none does.</summary>
     public static (IReadOnlyList<JunctionSpectrumReading?> Readings, AlignmentCandidate Alignment)?
         MeasureJointlyAlignedJunctionSpectra(
             IReadOnlyList<JunctionAlignmentSide> sides,
@@ -2659,8 +2642,7 @@ public static class VirtualCrossoverAnalysis
             chosen);
     }
 
-    /// <summary>Loss and dip against the ideal sum, and the summed level's ripple, with the variable side shifted by
-    /// <paramref name="delayMs"/> and inverted when asked.</summary>
+
     private static JunctionSpectrumReading ReadAt(List<AlignmentBin> bins, double delayMs, bool invert)
     {
         double weightSum = 0;

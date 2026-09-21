@@ -5,11 +5,7 @@ namespace Resonalyze;
 
 public partial class VirtualCrossoverPanel
 {
-    /// <summary>
-    /// Tune junction: refines one junction's facing edges on the coherent sum through the full chains, with the
-    /// acoustic goal as an optional constraint. The engine is the one the AI assistant drives
-    /// (<see cref="CrossoverJunctionTuner"/>); this is the same tune with a dialog in front of it.
-    /// </summary>
+    /// <summary>The AI assistant's junction tune (<see cref="CrossoverJunctionTuner"/>) with a dialog in front.</summary>
     private async Task ShowJunctionTuneDialogAsync()
     {
         List<AdjacentPair> junctions = CurrentCorrelationPairs();
@@ -29,7 +25,6 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        // Kept however the dialog closed: the next opening starts where this one was left, Apply or not.
         session.Project.JunctionTune = dialog.Remembered();
         if (dialog.UndoRequested)
         {
@@ -61,21 +56,14 @@ public partial class VirtualCrossoverPanel
         await Task.CompletedTask.ConfigureAwait(true);
     }
 
-    /// <summary>What Apply writes for a landed tune, onto the settings and the channel cards.</summary>
     private void ApplyJunctionTune(
         VirtualCrossoverChannel lower,
         VirtualCrossoverChannel upper,
         JunctionTuneResult landed,
         JunctionAcousticTarget? goal)
     {
-        // Every channel as it was, taken before the first write: Undo last Apply in the dialog puts it back, as
-        // Undo AI import does for an import.
         AgentImportUndo before = CaptureAgentUndo();
-        // The same write the assistant's tune makes: one crossover into both sides of both blocks, and the goal onto
-        // the edges the applied crossover runs. The crossover is the one the report calls found whenever it differs
-        // from the one on screen: the keep margin is the report's advice, and Apply is the user overruling it.
-        // Where nothing different was found, only the goal is written. The goal is written as asked whether or not
-        // the crossover lands on it; the report says how far it is.
+        // The found crossover whenever it differs, won or not: the keep margin is advice.
         AgentJunctionTune.Write(landed, lower, upper, goal, applyCrossover: landed.Moves);
         ApplySettingsToControl(lower);
         ApplySettingsToControl(upper);
@@ -86,8 +74,7 @@ public partial class VirtualCrossoverPanel
             before, projectGeneration, $"{lower.Name}/{upper.Name}", ComputeAgentFingerprint());
     }
 
-    /// <summary>Puts every channel back as it was before the last Apply. Where the session has changed since, the
-    /// later changes go too, so that is asked first.</summary>
+    /// <summary>Changes made since the Apply go too, so that is asked first.</summary>
     private void UndoJunctionTune()
     {
         if (junctionTuneUndo is not { } undo || undo.Generation != projectGeneration)
@@ -115,15 +102,11 @@ public partial class VirtualCrossoverPanel
 
     private JunctionTuneResult? lastJunctionTune;
 
-    /// <summary>The last Apply's undo: every channel before it, the project generation it wrote into (a session
-    /// load retires it), the junction it was for, and the session as the Apply left it.</summary>
     private sealed record JunctionTuneUndo(
         AgentImportUndo Channels, long Generation, string Junction, string FingerprintAfter);
 
     private JunctionTuneUndo? junctionTuneUndo;
 
-    /// <summary>What the dialog opens on for a junction: the assistant's own window, the families in use, and the
-    /// acoustic goal the two channel cards already hold.</summary>
     private JunctionTuneDefaults JunctionTuneOpening(List<AdjacentPair> junctions, int index)
     {
         if (index < 0 || index >= junctions.Count)
@@ -145,7 +128,6 @@ public partial class VirtualCrossoverPanel
             currentHz > 0 ? currentHz : null);
     }
 
-    /// <summary>Runs the search off the UI thread and builds the report; writes nothing.</summary>
     private async Task<JunctionTuneOutcome> RunJunctionTuneAsync(
         List<AdjacentPair> junctions, JunctionTuneRequest request)
     {
@@ -172,7 +154,6 @@ public partial class VirtualCrossoverPanel
                 true);
         }
 
-        // A designed FIR crossover on a facing edge is a second crossover stage, not a slope this tune can fit.
         if (FirCrossoverOn(lower.Settings, lowPass: true) is { } lowerFir)
         {
             return Refusal(lowerFir);
@@ -189,8 +170,6 @@ public partial class VirtualCrossoverPanel
             return Refusal(refusal);
         }
 
-        // A stated slope is judged on the curve the EQ stage fits next: the spatial average wherever the hybrid
-        // hands one to Auto Tune, the gated reading elsewhere.
         if (request.AcousticGoal != null)
         {
             sides = AgentProbeReader.WithSpatialAverages(
@@ -204,7 +183,6 @@ public partial class VirtualCrossoverPanel
 
         var options = new JunctionTuneOptions(
             request.Families,
-            // Null would mean "every slope at or above the floor"; the dialog always states a window.
             request.Slopes.Count > 0 ? request.Slopes : null,
             Math.Min(request.MinHz, request.MaxHz),
             Math.Max(request.MinHz, request.MaxHz),
@@ -245,20 +223,14 @@ public partial class VirtualCrossoverPanel
             return Refusal("the session changed while the search ran");
         }
 
-        // The dialog's own layout, not the import summary's one-line-per-item list: a monospace pane wants columns.
         List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
         lastJunctionTune = result;
-        // What the search cost goes in the status line: it says whether the question was wide enough, which is not
-        // something to read in the pane every time.
         string searched =
             $"{result.CandidatesEvaluated} candidates read over " +
             $"{options.MinCrossoverHz:0.###}–{options.MaxCrossoverHz:0.###} Hz.";
-        // Apply writes what the report calls found and the goal that was asked, so it is offered whenever that
-        // changes something: a different crossover, or a goal the cards do not state yet. A button that closes
-        // the window and changes nothing is the one thing it must not be.
+        // Apply is offered whenever it changes something, and only then.
         JunctionTuneCandidate applied = result.Moves ? result.Best : result.Current;
         bool goalChanges = AgentJunctionTune.WouldChangeGoal(lower, upper, request.AcousticGoal, applied);
-        // At the channel that misses most, as the report reads it.
         bool goalLands = request.AcousticGoal != null &&
             CrossoverJunctionTuner.WasAcousticTargetReached(applied.WorstAcousticCostDb);
         bool forTheGoal = request.AcousticGoal != null &&
@@ -277,7 +249,6 @@ public partial class VirtualCrossoverPanel
             result.Moves || goalChanges,
             verdict + searched,
             false,
-            // A goal the crossover misses is written as asked, but it is not what the search advises.
             Recommended: (result.Changed || (!result.Moves && goalChanges)) &&
                 (request.AcousticGoal == null || goalLands));
 
@@ -289,7 +260,7 @@ public partial class VirtualCrossoverPanel
                 true);
     }
 
-    /// <summary>Why a facing edge cannot be tuned here, or null. A correction FIR is no obstacle; a crossover one is.</summary>
+    /// <summary>A designed FIR crossover on a facing edge is a second stage, not an edge this tune fits.</summary>
     private static string? FirCrossoverOn(VirtualCrossoverChannelSettings settings, bool lowPass)
     {
         if (!settings.HasFirCrossover || settings.FirDesign is not { } design)

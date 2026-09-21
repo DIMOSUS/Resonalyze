@@ -761,13 +761,13 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
 - **The tonal target comes out first.** The goal for a channel is `target × acoustic crossover`, so
   `JunctionTuneOptions.TargetCurveDb` is subtracted from the plant before any shape is read. Left in, a
   house curve's own tilt through a low junction would be read as the driver's acoustic slope.
-- **Its own resolution, and a robust charge.** The plant is read on a 1/24-octave grid smoothed over a
-  sixth of an octave — the objective's own policy, never the display's smoothing, or the answer would
-  change with a combo box. Smoothing alone does not make a narrow notch cheap, though: a mean
-  integrates, so the same decibel-octaves survive any resolution. What separates the seat from the
-  crossover is dropping the worst fifth of the charged region's weight before averaging. A feature
-  narrower than that is nothing a filter on the lattice could answer; a slope that is systematically
-  wrong covers the region and pays in full. Both figures are the battery's to confirm. Every point is
+- **Its own resolution, and a robust charge.** The plant is read on a 1/24-octave grid — the objective's
+  own policy, never the display's smoothing, or the answer would change with a combo box — and is not
+  smoothed: a mean integrates, so a narrow notch keeps its decibel-octaves at any resolution, and a
+  smoothing pass that was tried first changed nothing a test could see. What separates the seat from the
+  crossover is dropping the worst fifth of the charged region's weight before averaging
+  (`AcousticTrimmedWeight`). A feature narrower than that is nothing a filter on the lattice could answer; a
+  slope that is systematically wrong covers the region and pays in full. Every point is
   weighted per **octave** (`OctaveWeights`: the stretch of log frequency around it, a step wider than a third
   of an octave counting as a hole), the level median included. The thinned plant is a 1/24-octave grid only
   where the read has bins to spare and the FFT's own spacing lower down; a 1/f weight on top of that grid,
@@ -802,7 +802,9 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
 - **The worst channel decides.** Each channel's EQ aims at the goal by itself, so whether a candidate lands
   is its worst channel's question (`JunctionTuneCandidate.WorstAcousticChannel`, from each fit's
   `LowerChargeDb` / `UpperChargeDb`): four channels at 0.2, 0.2, 0.3 and 3.7 dB average 1.1 and would read as
-  landed while one tweeter cannot be brought onto the goal. Inside the corridor, candidates whose worst
+  landed while one tweeter cannot be brought onto the goal. A goal lands where the worst channel is within
+  `AcousticReachedCostDb`, 2 dB of average deviation across the skirt: as near as a discrete filter menu is
+  asked to come. Inside the corridor, candidates whose worst
   channel lands come first and the average — the steadier figure — chooses among them; where none lands, the
   one nearest to landing. `slopeWins` compares worst channels too.
 - **Reachability is read off the lattice.** A filter only steepens, so a target softer than the
@@ -811,7 +813,8 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
   candidate's own it separates "no allowed filter can" from "the summation would not pay for it" — and it is
   a statement about the SEARCH (corner window, families, slopes), not the drivers. What is the drivers' own is
   `JunctionDriverSlopes` (a `MagnitudeSlopeFit` of the plant, fitted the same way as the asked edge over the
-  same region): where a channel's own fall is already steeper than asked (`IsReachable`), the report names
+  same region): where a channel's own fall is already steeper than asked by more than
+  `SlopeReachToleranceDbPerOctave` (2 dB/oct, since both are line fits of curves; `IsReachable`), the report names
   that channel, since no filter can soften it; otherwise a missed goal is either one a filter in reach would
   pay for in sum, or one outside the search.
 - **What is claimed.** The magnitude is fitted to the asked edge. Each side keeps its own excess phase,

@@ -401,8 +401,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void TheAcousticCrossoverGoal_RoundTripsThroughTheProjectFile_AndIsHeldToTheFamilysSlopes()
     {
-        // It is shown and edited on the channel card, so it has to survive a save; hidden state the user could see
-        // but not keep would be worse than no state at all.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -417,11 +415,8 @@ public sealed class VirtualCrossoverProjectFileTests
 
             Assert.Equal(saved.Pairs[1].Left.AcousticLowPass, loaded.Pairs[1].Left.AcousticLowPass);
             Assert.Equal(saved.Pairs[1].Left.AcousticHighPass, loaded.Pairs[1].Left.AcousticHighPass);
-            // A channel nobody stated a wish for carries none, rather than a default nobody asked for.
             Assert.Null(loaded.Pairs[0].Left.AcousticLowPass);
 
-            // Linkwitz-Riley has no 18 dB/oct: a hand-written file naming one would ask the fit to draw an edge
-            // nobody can build.
             saved.Pairs[1].Left.AcousticLowPass =
                 new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 18);
             Assert.Throws<InvalidDataException>(() => saved.Validate());
@@ -435,8 +430,6 @@ public sealed class VirtualCrossoverProjectFileTests
     [Fact]
     public void TheTuneJunctionDialogsMemory_RoundTrips_AndWhatItCannotUseIsDropped()
     {
-        // Kept in the session, so reopening the dialog - in this run or after a restart - starts where it was
-        // left. A dialog's memory must never refuse a session: garbage in it is dropped, not rejected.
         string root = CreateTemporaryDirectory();
         try
         {
@@ -474,7 +467,6 @@ public sealed class VirtualCrossoverProjectFileTests
             loaded.Goal = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 18);
             loaded.Windows["B-C"] = [310, 150];
             loaded.Windows["A-B"] = [double.NaN, 120];
-            // Finite, but outside what the corner boxes hold: no decimal holds 1e100.
             loaded.Windows["C-D"] = [1e100, 2e100];
             loaded.Windows["D-E"] = [5, 120];
             loaded.Windows["E-F"] = [20, 200];

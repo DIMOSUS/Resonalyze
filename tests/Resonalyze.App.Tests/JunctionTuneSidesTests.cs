@@ -3,8 +3,6 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>What the panel hands the junction tuner: the plant a stated slope is judged on, and whether one
-/// re-alignment has to serve both sides.</summary>
 public sealed class JunctionTuneSidesTests
 {
     private const int SampleRate = 48_000;
@@ -12,9 +10,6 @@ public sealed class JunctionTuneSidesTests
     [Fact]
     public void TheSpatialAverage_IsThePlant_WhereAutoTuneWouldFitIt()
     {
-        // Auto Tune fits a channel on its spatial average while the hybrid is drawn, so a stated acoustic slope has
-        // to be judged on that same curve: through the chain less the facing edge and less the PEQ, which is the
-        // plant a candidate edge multiplies.
         VirtualCrossoverChannel lower = Channel("A", CrossoverKind.LowPass);
         lower.Settings.PeqBands = [new PeqBand(150, 2, -6)];
         VirtualCrossoverChannel upper = Channel("B", CrossoverKind.HighPass);
@@ -38,7 +33,6 @@ public sealed class JunctionTuneSidesTests
             capture.ToCurvePoints().Select(point => point.X).ToList(),
             smoothingCode: 0)!;
         Assert.Equal(expected, left.LowerMagnitude);
-        // A channel with no capture keeps the gated reading, and without the hybrid nothing is averaged at all.
         Assert.Null(left.UpperMagnitude);
         Assert.Null(Assert.Single(notDrawn).LowerMagnitude);
     }

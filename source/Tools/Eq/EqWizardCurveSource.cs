@@ -49,19 +49,11 @@ internal sealed record EqWizardCurveSource
     /// <summary>The chain without its PEQ, into which the edited bank is substituted. Identity for a raw handoff.</summary>
     public DspChannelChain? PreviewChain { get; init; }
 
-    /// <summary>
-    /// The crossover the target follows (<see cref="EqTargetCrossover"/>): per edge, the ACOUSTIC crossover stated on
-    /// the channel card where there is one, else the filter the channel runs
-    /// (<c>VirtualCrossoverChannelSettings.EffectiveCrossover</c>: the IIR filter, or a FIR crossover's design
-    /// corners). Null without a chain or a crossover.
-    /// </summary>
+    /// <summary>Per edge, the acoustic crossover stated on the card, else the filter the channel runs. Null without a
+    /// chain or a crossover.</summary>
     public CrossoverSpec? TargetCrossover { get; init; }
 
-    /// <summary>
-    /// The ELECTRICAL crossover the chain runs, carried only where it differs from <see cref="TargetCrossover"/> —
-    /// that is, where an acoustic crossover was stated. Drawn beside the target so the two skirts can be compared;
-    /// nothing is fitted to it.
-    /// </summary>
+    /// <summary>The electrical crossover, only where it differs from <see cref="TargetCrossover"/>; drawn, never fitted.</summary>
     public CrossoverSpec? ElectricalCrossover { get; init; }
 
     /// <summary>

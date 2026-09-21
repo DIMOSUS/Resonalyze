@@ -4,11 +4,7 @@ namespace Resonalyze;
 
 public partial class VirtualCrossoverPanel
 {
-    /// <summary>
-    /// The channel card's acoustic-goal button: what driver and filter should add up to on this channel's edges.
-    /// Written to the shown side, and mirrored by the side Lock exactly as the crossover itself is, since the wish
-    /// describes that one filter. See docs/specs/acoustic-crossover-target.md.
-    /// </summary>
+    /// <summary>Written to the shown side; the side Lock mirrors it as it does the crossover.</summary>
     private void ShowAcousticGoalDialog(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;
@@ -28,12 +24,9 @@ public partial class VirtualCrossoverPanel
         settings.AcousticHighPass = dialog.HighPassGoal;
         settings.AcousticLowPass = dialog.LowPassGoal;
         ShowAcousticGoal(channel);
-        // Through the channel's own change path: the side Lock carries it to the hidden side and the session saves.
         OnChannelSettingsChanged(channel);
     }
 
-    /// <summary>The card's goal button for the side shown, with a goal for an edge the channel does not run
-    /// shown as kept rather than as stated.</summary>
     private void ShowAcousticGoal(VirtualCrossoverChannel channel)
     {
         VirtualCrossoverChannelSettings settings = channel.Settings;

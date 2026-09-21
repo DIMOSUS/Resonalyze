@@ -7,25 +7,13 @@ using Xunit.Abstractions;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The measurement that decides the acoustic-slope mode: on each archived cabin, walk every junction with the plain
-/// junction tune and again with a stated acoustic slope, equalise both the same way afterwards, and read what the
-/// junctions actually sum to. A runner, not a pinned expectation — it asserts only that cabins were judged, and the
-/// ROW lines are for diffing two builds. Stop criterion: docs/specs/acoustic-crossover-target.md#6.
-/// </summary>
-/// <remarks>
-/// Plants are read off the gated impulse responses here rather than from spatial averages, so every cabin is judged
-/// the same way and the corridor is the only thing that differs between the arms.
-/// </remarks>
+/// <summary>The acoustic-slope battery: every junction tuned per arm, the same EQ after, the sums read re-aligned.
+/// A runner, not a pinned expectation. See docs/specs/acoustic-crossover-target.md#6.</summary>
 public sealed class AcousticTargetBattery(ITestOutputHelper output)
 {
     public const string OutputVariable = "RESONALYZE_ACOUSTIC_TARGET_OUT";
 
-    /// <summary>
-    /// The arms. LR24 is what a tuner would state; LR48 is the other direction, because a filter can only steepen
-    /// and a steep target is therefore always reachable. One arm states the slope to the TUNE only and leaves the EQ
-    /// aiming at the electrical filter, to tell which half of the mode is responsible for whatever the numbers say.
-    /// </summary>
+    /// <summary>lr24-tune states the slope to the tune only, which tells the two halves of the mode apart.</summary>
     private static readonly Arm[] Arms =
     [
         new("plain", null, TellTheEq: false, CrossoverJunctionTuner.DefaultSumSlackDb),
@@ -92,12 +80,11 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
         Assert.NotEmpty(rows);
     }
 
-    /// <summary>One whole pass over a cabin: tune every junction, then equalise every channel, then read the sums.</summary>
     private static List<Row> RunArm(string sessionPath, Arm arm, StringBuilder report)
     {
         JunctionAcousticTarget? acousticTarget = arm.Asked;
         bool acoustic = acousticTarget != null;
-        // Re-loaded per arm: a tune and a fit both write into the settings, and the two arms must not see each other.
+        // Re-loaded per arm: tunes and fits write into the settings.
         VirtualCrossoverProjectFile project = VirtualCrossoverProjectFile.LoadFrom(sessionPath);
         List<VirtualCrossoverChannel> channels =
             SessionBatteryHarness.LoadChannels(project, out _, bothSides: true);
@@ -158,7 +145,6 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             }
         }
 
-        // One equalisation stage for both arms, exactly the wizard's defaults, after every junction is settled.
         int fitted = 0;
         int refusedFits = 0;
         var cost = new Dictionary<VirtualCrossoverChannelSettings, EqCost>();
@@ -186,7 +172,6 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
         foreach ((string label, VirtualCrossoverChannel lower, VirtualCrossoverChannel upper,
             JunctionTuneResult result) in tuned)
         {
-            // The EQ cost of THIS junction: the two banks that meet in it, not the cabin's total.
             List<EqCost> spentHere = new[] { false, true }
                 .SelectMany(right => new[]
                 {
@@ -229,7 +214,6 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
         return rows;
     }
 
-    /// <summary>The wizard's own Auto Tune on one channel side, written into the settings; null when it refuses.</summary>
     private static EqCost? Equalise(
         VirtualCrossoverChannel channel,
         bool rightSide,
@@ -248,8 +232,7 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             return null;
         }
 
-        // The level the wizard's numeric would be set to: just under what the channel plays, so a cut-first fit has
-        // somewhere to go. Identical rule in both arms.
+        // Just under what the channel plays, so a cut-first fit has somewhere to go.
         IReadOnlyList<SignalPoint> source = EqAutoTuneHeadless.SourceCurve(request.Source, 0, null);
         List<double> levels = source
             .Where(point => double.IsFinite(point.Y))
@@ -296,7 +279,6 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             fitted.PreampDb);
     }
 
-    /// <summary>Every measured side's sum on the junction's own band, through the chains as they now stand.</summary>
     private static List<JunctionSum> ReadSums(
         VirtualCrossoverChannel lower,
         VirtualCrossoverChannel upper,
@@ -311,10 +293,7 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             return sums;
         }
 
-        // Read after re-aligning the upper channel, as the finished junction will be once Auto delay runs again
-        // after the tune: a crossover change that only moved the timing is not charged for it - by one shift for
-        // every side where a block is mono, as Auto delay moves a mono channel. The band is the candidate's own, an
-        // octave each side of its corner, so the corner is its geometric middle.
+        // Re-aligned as Auto delay will after the tune, one shift where a block is mono.
         double cornerHz = Math.Sqrt(result.Best.BandLowHz * result.Best.BandHighHz);
         double halfWindowMs = CrossoverAutoSetup.PostCheckHalfWindowMs(cornerHz);
         var inputs = new List<JunctionAlignmentSide>(sides.Count);
@@ -361,7 +340,6 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
         return sums;
     }
 
-    /// <summary>What the winner achieved against what was asked, and what the channels do by themselves, in dB/oct.</summary>
     private static string Slopes(JunctionTuneResult result)
     {
         JunctionAcousticFit? fit = result.Best.Sides.FirstOrDefault()?.Acoustic;
@@ -408,7 +386,6 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
                     : string.Empty));
         }
 
-        // Paired by cabin, junction and side against the plain arm: the same junction under two policies.
         List<Row> plainRows = rows.Where(row => row.Arm == "plain").ToList();
         foreach (Arm arm in Arms.Where(item => item.Asked != null))
         {
@@ -467,7 +444,6 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
         double? WorstBoostDb,
         int? Bands);
 
-    /// <summary>One policy to walk a cabin with: what is asked for, whether the EQ stage is told, and the corridor.</summary>
     private sealed record Arm(
         string Name,
         JunctionAcousticTarget? Asked,

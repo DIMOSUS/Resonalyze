@@ -46,10 +46,8 @@ internal static class EqTargetCrossover
             : new EqTargetSlope(crossover, fir);
     }
 
-    /// <summary>
-    /// The slope the chain's ELECTRICAL crossover would give the target, or null where the target already follows it
-    /// (no acoustic crossover stated). A FIR crossover kernel is the chain's either way, so it stays in series.
-    /// </summary>
+    /// <summary>The slope the electrical crossover would give the target, or null where the target already follows it.
+    /// A FIR crossover kernel stays in series either way.</summary>
     public static EqTargetSlope? ElectricalOf(EqWizardCurveSource? source) =>
         source?.ElectricalCrossover is { Kind: not CrossoverKind.Off } electrical
             ? new EqTargetSlope(electrical, source.TargetCrossoverFir)

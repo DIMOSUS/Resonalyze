@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using OxyPlot;
 using OxyPlot.Axes;
+using OxyPlot.Series;
 using OxyPlot.WindowsForms;
 using Resonalyze.Ui.Dialogs;
 
@@ -62,6 +63,24 @@ internal sealed class PlotGestureController : PlotController
         BindWheelGestures();
         BindMouseGestures();
         BindKeyboardGestures();
+    }
+
+    public override bool HandleMouseDown(IView view, OxyMouseDownEventArgs args)
+    {
+        BindNewElements(view);
+        return base.HandleMouseDown(view, args);
+    }
+
+    // A redraw's new series join their axes at the next paint, and a press can come first: OxyPlot's hit test and
+    // tracker throw on a series without axes. See docs/tech/plot-interaction.md#redraw-before-paint.
+    private static void BindNewElements(IView view)
+    {
+        if (view.ActualModel is PlotModel model &&
+            (model.Series.Any(series => series.IsVisible && series is XYAxisSeries { XAxis: null }) ||
+             model.Annotations.Any(annotation => annotation.XAxis == null)))
+        {
+            ((IPlotModel)model).Update(false);
+        }
     }
 
     private void BindWheelGestures()

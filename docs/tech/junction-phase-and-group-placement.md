@@ -12,7 +12,7 @@ Time Alignment panel:
 - **zones, group views and alignment stages** (`VirtualCrossoverZone`, `VirtualCrossoverGroupView`,
   `VirtualCrossoverAlignmentStage`) and the Auto delay dialog/report (`VirtualCrossoverAutoDelayDialog`,
   `VirtualCrossoverAutoDelayReport`, `AlignmentReprocessor`);
-- the **Time Alignment panel** (`source/TimeAlignment/TimeAlignmentPanelController.cs`, `AnalysisReadSchedule`).
+- the **Time Alignment panel** (`source/TimeAlignment/`: `TimeAlignmentSession` and the classes that read it).
 
 The alignment engine itself (seed selection, chain walk, arrival reading) is described in `auto-alignment.md`.
 
@@ -368,8 +368,26 @@ Rear+Sub, Front+Center, Groups compared, Everything).
 
 ## Time Alignment panel
 
-`TimeAlignmentPanelController` reads the delay between a Main and an optional Compare record in a band (Full band
-bypass, Auto dominant band, or manual).
+The panel reads the delay between a Main and an optional Compare record in a band (Full band bypass, Auto dominant
+band, or manual).
+
+### Time Alignment code map
+
+| Concern | Where |
+| --- | --- |
+| What is read, with which options, the read schedule, the last Auto band | `TimeAlignmentSession` |
+| Per-record projection and crosstalk hygiene, shared across band edits | `TimeAlignmentRecordCache` |
+| Main/Compare sources, refusals, source captions | `TimeAlignmentSources` |
+| Auto band (shared with Compare), analysis options, the Auto caption | `TimeAlignmentBand` |
+| One read: hygiene, both analyses, arrival probes | `TimeAlignmentRead` → `TimeAlignmentOutcome` |
+| Recommended delay row | `TimeAlignmentRecommendation` |
+| Status report as text/colour/table segments | `TimeAlignmentReport` |
+| Delay table layout and what a click copies | `DelayTableText` |
+| Band-pass and envelope preview models | `TimeAlignmentPreviews` |
+| Binding: controls, background reads, drawing | `TimeAlignmentPanelController` (+ `.Band`, `.Status`) |
+
+The controller writes the reads and the Auto band and holds no rule of its own; `TimeAlignmentPanelBoundaryTests` keeps
+statics and nested types off it, and `TimeAlignmentPanelWiringTests` drives the panel through its controls.
 
 - **Background reads.** One read of a megabyte transfer IR takes a few hundred milliseconds, so reads run off the
   UI thread. `AnalysisReadSchedule` makes the newest request authoritative: a request freezes the records and every

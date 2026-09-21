@@ -3,7 +3,7 @@ using Resonalyze.Dsp;
 namespace Resonalyze.App.Tests;
 
 // A Main-only band made the delta depend on load order: a field mid pair read 32.7-7671 vs 75.5-4695 Hz, moving the split 0.3 ms.
-public sealed class TimeAlignmentSharedBandTests
+public sealed class TimeAlignmentBandTests
 {
     [Fact]
     public void SharedBand_IsTheOverlapOfBothRecordsOwnBands()
@@ -12,7 +12,7 @@ public sealed class TimeAlignmentSharedBandTests
         var compare = new DominantBand(75.5, 4695.1, 261.4);
 
         (DominantBand band, bool shared) =
-            TimeAlignmentPanelController.SharedBand(main, compare);
+            TimeAlignmentBand.SharedBand(main, compare);
 
         Assert.True(shared);
         Assert.Equal(75.5, band.LowHz, precision: 6);
@@ -26,9 +26,9 @@ public sealed class TimeAlignmentSharedBandTests
         var compare = new DominantBand(75.5, 4695.1, 261.4);
 
         (DominantBand forward, _) =
-            TimeAlignmentPanelController.SharedBand(main, compare);
+            TimeAlignmentBand.SharedBand(main, compare);
         (DominantBand reversed, _) =
-            TimeAlignmentPanelController.SharedBand(compare, main);
+            TimeAlignmentBand.SharedBand(compare, main);
 
         Assert.Equal(forward.LowHz, reversed.LowHz, precision: 9);
         Assert.Equal(forward.HighHz, reversed.HighHz, precision: 9);
@@ -41,7 +41,7 @@ public sealed class TimeAlignmentSharedBandTests
         var compare = new DominantBand(200.0, 4000.0, 800.0);
 
         (DominantBand band, bool shared) =
-            TimeAlignmentPanelController.SharedBand(main, compare);
+            TimeAlignmentBand.SharedBand(main, compare);
 
         Assert.True(shared);
         Assert.InRange(band.PeakHz, band.LowHz, band.HighHz);
@@ -53,7 +53,7 @@ public sealed class TimeAlignmentSharedBandTests
         // The detector throws on an incoherent record; Compare's failure must not take Main's analysis down.
         TimeAlignmentAnalysisSource source = Source(coherent: false);
 
-        bool detected = TimeAlignmentPanelController.TryDetectDominantBand(
+        bool detected = TimeAlignmentBand.TryDetectDominantBand(
             source, out DominantBand band);
 
         Assert.False(detected);
@@ -65,7 +65,7 @@ public sealed class TimeAlignmentSharedBandTests
     {
         TimeAlignmentAnalysisSource source = Source(coherent: true);
 
-        bool detected = TimeAlignmentPanelController.TryDetectDominantBand(
+        bool detected = TimeAlignmentBand.TryDetectDominantBand(
             source, out DominantBand band);
 
         Assert.True(detected);
@@ -99,7 +99,7 @@ public sealed class TimeAlignmentSharedBandTests
         var compare = new DominantBand(150.0, 18_000.0, 3_000.0);
 
         (DominantBand band, bool shared) =
-            TimeAlignmentPanelController.SharedBand(main, compare);
+            TimeAlignmentBand.SharedBand(main, compare);
 
         Assert.False(shared);
         Assert.Equal(main, band);

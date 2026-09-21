@@ -11,6 +11,9 @@ internal sealed class AnalysisReadSchedule<TRequest>
     private int flightVersion;
     private int version;
 
+    /// <summary>No read is running or waiting to start.</summary>
+    public bool IsIdle => flight == null && desired == null;
+
     /// <summary>Version to run under, or null when already drawn, already in flight, or waiting for the pool.</summary>
     public int? Submit(TRequest request)
     {

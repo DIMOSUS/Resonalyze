@@ -43,9 +43,9 @@ public sealed class TimeAlignmentEnvelopePlotTests
         TimeAlignmentAnalysisResult compare = MakeResult(peak: 0.5, arrivalBelowPeakDb: 25);
         double reference = main.StrongestEnvelopePeak;
 
-        double comparePeakDb = TimeAlignmentPanelController.GetPeakMarkerDecibels(
+        double comparePeakDb = TimeAlignmentPreviews.GetPeakMarkerDecibels(
             compare, reference, compare.StrongestEnvelopePeakIndex);
-        double compareArrivalDb = TimeAlignmentPanelController.GetPeakMarkerDecibels(
+        double compareArrivalDb = TimeAlignmentPreviews.GetPeakMarkerDecibels(
             compare, reference, compare.EnvelopePeakIndex);
 
         DrawnCurve compareCurve = Draw(compare, reference);
@@ -78,7 +78,7 @@ public sealed class TimeAlignmentEnvelopePlotTests
         TimeAlignmentAnalysisResult result,
         double referenceAmplitude)
     {
-        LineSeries series = TimeAlignmentPanelController.CreateEnvelopeSeries(
+        LineSeries series = TimeAlignmentPreviews.CreateEnvelopeSeries(
             result,
             referenceAmplitude,
             SampleRate,

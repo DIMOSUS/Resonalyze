@@ -68,6 +68,12 @@ internal static class DelayTableText
         return (negative ? "-" : "+") + magnitude;
     }
 
+    /// <summary>What a click at <paramref name="column"/> of a report line copies: a delay cell's number, or empty.</summary>
+    public static string CopyableValue(string line, int column) =>
+        IsDelayRow(line) && CellAt(column) is { } cellStart
+            ? GetValue(line, cellStart)
+            : string.Empty;
+
     public static string GetValue(string line, int startColumn)
     {
         if (line.Length <= startColumn)

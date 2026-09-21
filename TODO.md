@@ -254,11 +254,6 @@ next field session rather than in a register nobody else can tick.
   tested on its own — the thing most worth testing after the #52 saga. Lift
   `CrossSideTargetMs` into a type carrying the state it needs. Do it on its own
   branch against the frozen validated session, not alongside other work.
-- [ ] **Time Alignment analysis is not cached** — `RefreshAnalysis`
-  (`TimeAlignmentPanelController`) recomputes Hilbert + GCC-PHAT on every tab
-  show even when inputs are unchanged. It no longer reads while hidden, and a
-  tab switch reads once, not twice, but every show still reads. Needs a
-  live-app check to avoid stale display.
 - [ ] **Virtual DSP — residual boundaries.** The tune lives in a UI-free
   `VirtualCrossoverSession` and whatever reads it takes the session
   (docs/tech/virtual-dsp-panel.md#code-map); the panel is binding code in
@@ -605,12 +600,6 @@ shows it as flat by construction.
 
 ## Time Alignment / unwrap
 
-- [ ] **`TimeAlignmentPanelController` holds its rules as `internal static`
-  members** (ten of them, 1,856 lines): band detection (`TryDetectDominantBand`,
-  `SharedBand`), the onset (`GetEnergyOnsetIndex`), the recommendation
-  (`RecommendedRow`, `IsArrivalRecommendable`, `RowLabel`) and plot markers. They
-  are static only so tests can reach them; move the rules to a type of their own
-  (AGENTS.md › Where logic lives) and leave the controller the binding.
 - [ ] ★ **The panel reads the WHOLE record to answer a question about its first
   80 ms.** A transfer IR is `NextPow2(2 x capture)` — a 2.2 s sweep at 96 kHz
   reads a 10.9 s buffer — and every transform is sized by it, so one read costs

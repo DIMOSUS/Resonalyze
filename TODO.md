@@ -22,7 +22,7 @@ three structural items nearly doubled while they sat still, which raises the
 price of the split rather than lowering it: `VirtualCrossoverPanel.cs` was 7061
 lines against the ~3900 last recorded (split since; see its item below) and
 `PlotModelFactoryTests` 2560 against ~1035. The third moved
-far less: the `Overlay` CLASS is 2541 lines against ~2230. This audit first gave
+far less: the `Overlay` CLASS was 2541 lines against ~2230 (split since into `OverlaySession` and its readers). This audit first gave
 it 3219, which is the FILE, `OverlayCollection` and two small types included —
 measure the class when the item is about splitting a class, and say which when
 the two differ by a quarter. `AutoAlignmentEngine.ComputeStereo` grew 744 → 759
@@ -486,18 +486,6 @@ next field session rather than in a register nobody else can tick.
 
 ## Overlays
 
-- [ ] ★ **`Overlay` is a God object** — 2541 lines in one class (line 669 to
-  3209; the file is 3219, with `OverlayCollection` and two small types beside it):
-  runtime control creation, the capture menu and its long-press behaviour, text
-  import/export, three settings dialogs, persistence, preview/restore and the
-  plot series. The render-path caching and the pure-math extraction are done;
-  what remains is a real split (capture-menu behaviour, text import/export and
-  the dialog orchestration are each separable without touching the draw path).
-  Bigger than one sitting — it wants its own branch.
-- [ ] **Introduce an `OverlaySlotState` record** to replace the triple
-  field-mapping between overlay, slot file and UI state (the render-path caching
-  and the pure-math extraction from `Overlay.cs` are done; this structural half
-  remains).
 - [ ] **Overlay curves are assumed sorted/unique/finite in X**
   (`CalculateOperation`'s forward-only cursor): normalize imported overlays once
   (drop non-finite, sort, merge duplicate frequencies).

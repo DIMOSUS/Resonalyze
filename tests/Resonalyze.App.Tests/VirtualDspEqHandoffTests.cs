@@ -65,6 +65,67 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void AStatedAcousticCrossover_IsWhatTheTargetFollows_NotTheElectricalFilterUnderIt()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        channel.Settings.CrossoverKind = CrossoverKind.BandPass;
+        channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 12);
+        channel.Settings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24);
+        channel.Settings.AcousticLowPass =
+            new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24);
+
+        CrossoverSpec goal = Assert.IsType<CrossoverSpec>(
+            Build(channel, withChain: true).Source.TargetCrossover);
+
+        Assert.Equal(24, goal.LowPassEdge!.Value.SlopeDbPerOctave);
+        Assert.Equal(500, goal.LowPassEdge!.Value.FrequencyHz);
+        Assert.Equal(channel.Settings.HighPassEdge, goal.HighPassEdge);
+        Assert.Equal(CrossoverKind.BandPass, goal.Kind);
+
+        channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 200, 12);
+        CrossoverSpec moved = Build(channel, withChain: true).Source.TargetCrossover!;
+        Assert.Equal(200, moved.LowPassEdge!.Value.FrequencyHz);
+        Assert.Equal(24, moved.LowPassEdge!.Value.SlopeDbPerOctave);
+
+        channel.Settings.AcousticLowPass = null;
+        Assert.Equal(
+            channel.Settings.EffectiveCrossover,
+            Build(channel, withChain: true).Source.TargetCrossover);
+    }
+
+    [Fact]
+    public void AWishOnAnEdgeTheChannelDoesNotRun_ChangesNothing()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        channel.Settings.CrossoverKind = CrossoverKind.HighPass;
+        channel.Settings.AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 12);
+
+        EqWizardCurveSource source = Build(channel, withChain: true).Source;
+
+        Assert.Equal(channel.Settings.EffectiveCrossover, source.TargetCrossover);
+        Assert.Null(source.ElectricalCrossover);
+    }
+
+    [Fact]
+    public void TheElectricalCrossoverTravels_OnlyWhereTheTargetFollowsAnAcousticOne()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        channel.Settings.CrossoverKind = CrossoverKind.BandPass;
+        channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 12);
+        channel.Settings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24);
+        Assert.Null(Build(channel, withChain: true).Source.ElectricalCrossover);
+
+        channel.Settings.AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 12);
+        Assert.Null(Build(channel, withChain: true).Source.ElectricalCrossover);
+
+        channel.Settings.AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24);
+        Assert.Equal(
+            channel.Settings.EffectiveCrossover,
+            Build(channel, withChain: true).Source.ElectricalCrossover);
+        Assert.Null(Build(channel, withChain: false).Source.ElectricalCrossover);
+    }
+
+    [Fact]
     public void WithChain_AppliesTheChainWithoutItsPeq()
     {
         VirtualCrossoverChannel channel = BuildChannel();
@@ -635,6 +696,30 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void ReturnAfterTheAcousticWishWasStatedOrWithdrawn_Refuses()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
+        channel.Settings.AcousticLowPass =
+            new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 12);
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
+        Assert.Empty(channel.Settings.PeqBands);
+
+        VirtualDspEqReturnToken stated = TokenFor(channel, rightSide: false);
+        channel.Settings.AcousticLowPass = null;
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, stated, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
+        Assert.Empty(channel.Settings.PeqBands);
+
+        VirtualDspEqReturnToken same = TokenFor(channel, rightSide: false);
+        Assert.True(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, same, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
+        Assert.Equal(curve.Bands, channel.Settings.PeqBands);
+    }
+    [Fact]
     public void ReturnAfterADelayOrAnAllPassBandEdit_Refuses()
     {
         // Not free: at 192 kHz (171 ms window) a delay edit moves the gated shape up to 1.70 dB, an all-pass up to 4.77 dB. See SteadyStateWindowTests.
@@ -863,6 +948,7 @@ public sealed class VirtualDspEqHandoffTests
             channel.Pair.Mono,
             channel.Pair.ToChain(rightSide) with { Peq = null },
             WithChain: true,
+            VirtualDspEqHandoff.TargetCrossoverFor(channel.SideSettings(rightSide)),
             new PeqBankState(
                 channel.SideSettings(rightSide).PeqBands,
                 channel.SideSettings(rightSide).PeqPreampDb),

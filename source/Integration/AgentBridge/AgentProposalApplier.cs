@@ -135,7 +135,9 @@ internal static class AgentProposalApplier
         to.CrossoverKind = from.CrossoverKind;
         to.LowPassEdge = from.LowPassEdge;
         to.HighPassEdge = from.HighPassEdge;
-        // No operation writes rotation or FIR, but this is also the undo path: they must go back with everything else.
+        to.AcousticLowPass = from.AcousticLowPass;
+        to.AcousticHighPass = from.AcousticHighPass;
+        // Also the undo path, and probe variants are built from it: every running filter and goal is carried.
         to.PhaseRotationDegrees = from.PhaseRotationDegrees;
         to.PeqPreampDb = from.PeqPreampDb;
         to.PeqBands = new List<PeqBand>(from.PeqBands);
@@ -143,5 +145,6 @@ internal static class AgentProposalApplier
         to.Fir = from.Fir;
         to.FirSourceName = from.FirSourceName;
         to.FirDesign = from.FirDesign;
+        to.FirRunSampleRateHz = from.FirRunSampleRateHz;
     }
 }

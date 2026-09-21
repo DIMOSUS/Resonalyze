@@ -34,6 +34,7 @@ public partial class VirtualCrossoverPanel
             buttonPhaseGate,
             buttonDspProcessor,
             buttonAutoSetup,
+            buttonTuneJunction,
             buttonAutoDelay,
             buttonAi,
             dspPlotView

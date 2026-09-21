@@ -151,7 +151,11 @@ internal sealed record AgentPackageFirCrossover(
 internal sealed record AgentPackageCrossover(
     string Kind,
     AgentPackageEdge HighPass,
-    AgentPackageEdge LowPass);
+    AgentPackageEdge LowPass,
+    AgentPackageAcousticGoal? AcousticHighPass = null,
+    AgentPackageAcousticGoal? AcousticLowPass = null);
+
+internal sealed record AgentPackageAcousticGoal(string Family, int SlopeDbPerOctave);
 
 internal sealed record AgentPackageEdge(
     string Family,

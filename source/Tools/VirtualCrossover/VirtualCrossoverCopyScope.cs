@@ -40,6 +40,10 @@ internal readonly record struct VirtualCrossoverCopyScope(
             to.CrossoverKind = from.CrossoverKind;
             to.HighPassEdge = from.HighPassEdge;
             to.LowPassEdge = from.LowPassEdge;
+            // The acoustic wish belongs to the edge it is stated for: left behind, it would aim the target of a
+            // side that now has another filter.
+            to.AcousticHighPass = from.AcousticHighPass;
+            to.AcousticLowPass = from.AcousticLowPass;
         }
 
         // A timing decision like the delay, so its own tick; copied as the number, the reference follows the target's crossover.

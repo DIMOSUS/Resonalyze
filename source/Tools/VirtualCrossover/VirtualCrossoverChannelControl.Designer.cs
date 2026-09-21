@@ -44,6 +44,7 @@ namespace Resonalyze
             buttonMoveDown = new ReleaseClickButton();
             labelCrossover = new Label();
             comboBoxCrossoverKind = new ThemedComboBox();
+            buttonAcousticGoal = new ReleaseClickButton();
             labelMeasuredPolarity = new Label();
             labelHighPass = new Label();
             numericHighPassHz = new ThemedNumericUpDown();
@@ -250,6 +251,18 @@ namespace Resonalyze
             comboBoxCrossoverKind.Name = "comboBoxCrossoverKind";
             comboBoxCrossoverKind.Size = new Size(100, 19);
             comboBoxCrossoverKind.TabIndex = 13;
+            // 
+            // buttonAcousticGoal
+            // 
+            buttonAcousticGoal.FlatStyle = FlatStyle.Popup;
+            buttonAcousticGoal.ForeColor = UiPalette.TextPrimary;
+            buttonAcousticGoal.Location = new Point(266, 103);
+            buttonAcousticGoal.Name = "buttonAcousticGoal";
+            buttonAcousticGoal.Size = new Size(50, 19);
+            buttonAcousticGoal.TabIndex = 44;
+            buttonAcousticGoal.Text = "—";
+            buttonAcousticGoal.UseCompatibleTextRendering = true;
+            buttonAcousticGoal.UseVisualStyleBackColor = true;
             // 
             // labelMeasuredPolarity
             // 
@@ -608,6 +621,7 @@ namespace Resonalyze
             Controls.Add(buttonMoveDown);
             Controls.Add(labelCrossover);
             Controls.Add(comboBoxCrossoverKind);
+            Controls.Add(buttonAcousticGoal);
             Controls.Add(labelMeasuredPolarity);
             Controls.Add(labelHighPass);
             Controls.Add(numericHighPassHz);
@@ -664,6 +678,7 @@ namespace Resonalyze
         private ReleaseClickButton buttonMoveDown;
         private Label labelCrossover;
         private ThemedComboBox comboBoxCrossoverKind;
+        private ReleaseClickButton buttonAcousticGoal;
         private Label labelMeasuredPolarity;
         private Label labelHighPass;
         private ThemedNumericUpDown numericHighPassHz;

@@ -1657,25 +1657,10 @@ internal static class AgentOperations
     {
         ArgumentNullException.ThrowIfNull(settings);
 
-        return new VirtualCrossoverChannelSettings
-        {
-            DisplayName = settings.DisplayName,
-            GainDb = settings.GainDb,
-            DelayMs = settings.DelayMs,
-            InvertPolarity = settings.InvertPolarity,
-            CrossoverKind = settings.CrossoverKind,
-            LowPassEdge = settings.LowPassEdge,
-            HighPassEdge = settings.HighPassEdge,
-            // Probe variant chains are built from the copy: every running filter must be carried, including FIR kernel, design and run rate.
-            PhaseRotationDegrees = settings.PhaseRotationDegrees,
-            PeqPreampDb = settings.PeqPreampDb,
-            PeqBands = new List<PeqBand>(settings.PeqBands),
-            PeqSourceName = settings.PeqSourceName,
-            Fir = settings.Fir,
-            FirSourceName = settings.FirSourceName,
-            FirDesign = settings.FirDesign,
-            FirRunSampleRateHz = settings.FirRunSampleRateHz
-        };
+        // The undo restores through CopyEditable, so the snapshot takes exactly the fields it restores.
+        var copy = new VirtualCrossoverChannelSettings { DisplayName = settings.DisplayName };
+        AgentProposalApplier.CopyEditable(settings, copy);
+        return copy;
     }
 
     /// <summary>Writes the operation; the review has already passed it.</summary>

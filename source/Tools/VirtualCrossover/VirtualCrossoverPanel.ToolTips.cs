@@ -147,6 +147,12 @@ public partial class VirtualCrossoverPanel
             "and shows every change before it is applied.\r\n" +
             "Nothing is sent anywhere by Resonalyze.");
         toolTip.SetToolTip(
+            buttonTuneJunction,
+            "Refine ONE junction: the lower block's low-pass and the upper\r\n" +
+            "block's high-pass, each candidate read on the coherent sum after\r\n" +
+            "the re-alignment Auto delay would give it. Optionally aims at an\r\n" +
+            "acoustic slope. Nothing is written until Apply.");
+        toolTip.SetToolTip(
             buttonAutoSetup,
             "Crossover wizard: detect each channel's driver type from\r\n" +
             "its response, confirm the types, and get a starting point —\r\n" +
@@ -167,9 +173,10 @@ public partial class VirtualCrossoverPanel
             "Load a saved session file, replacing the current state.\r\n" +
             "Sources are re-resolved from history or their file paths.");
         toolTip.SetToolTip(
-            buttonAudition,
-            "Render a music file through the tune into a stereo WAV: the\r\n" +
-            "left sum on channel 1, the right on channel 2.\r\n" +
-            "Listen through HEADPHONES only.");
+            buttonTools,
+            "The occasional tools, off the main path: audition the tune\r\n" +
+            "through a music file, or capture the current sum as an overlay\r\n" +
+            "to compare a later one against. Each says what it does in the\r\n" +
+            "menu.");
     }
 }

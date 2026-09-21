@@ -14,6 +14,60 @@ public enum DspPlotMode
     Coherence
 }
 
+/// <summary>The Tune junction dialog's last question; corner windows are kept per junction label.</summary>
+public sealed class VirtualCrossoverJunctionTuneSettings
+{
+    /// <summary>The label the dialog lists it under ("B-C").</summary>
+    public string? Junction { get; set; }
+
+    public List<CrossoverFilterFamily> Families { get; set; } = new();
+
+    public bool IndependentSlopes { get; set; } = true;
+
+    public bool SplitCorners { get; set; } = true;
+
+    public bool Acoustic { get; set; }
+
+    /// <summary>Null leaves the whole menu.</summary>
+    public int? MinSlopeDbPerOctave { get; set; }
+
+    public int? MaxSlopeDbPerOctave { get; set; }
+
+    public double? SumBudgetDb { get; set; }
+
+    public JunctionAcousticTarget? Goal { get; set; }
+
+    /// <summary>Per junction label, [low Hz, high Hz].</summary>
+    public Dictionary<string, double[]> Windows { get; set; } = new();
+
+    /// <summary>The corner boxes' own range.</summary>
+    public const double WindowLowestHz = 10;
+
+    public const double WindowHighestHz = 24_000;
+
+    /// <summary>Drops what the dialog could not use; never throws, as a dialog's memory must not refuse a session.</summary>
+    public void Sanitize()
+    {
+        Families = (Families ?? new()).Where(family => Enum.IsDefined(family)).Distinct().ToList();
+        if (Goal is { } goal &&
+            (!Enum.IsDefined(goal.Family) ||
+                !CrossoverFilter.SupportedSlopes(goal.Family).Contains(goal.SlopeDbPerOctave)))
+        {
+            Goal = null;
+        }
+
+        if (SumBudgetDb is { } budget && (!double.IsFinite(budget) || budget is < 0 or > 3))
+        {
+            SumBudgetDb = null;
+        }
+
+        Windows = (Windows ?? new())
+            .Where(pair => pair.Value is [var low, var high] &&
+                low >= WindowLowestHz && high <= WindowHighestHz && high > low)
+            .ToDictionary(pair => pair.Key, pair => pair.Value);
+    }
+}
+
 /// <summary>Per-side phase gate placement; window lengths and analysis modes stay project-wide so the sides stay comparable.</summary>
 public sealed class VirtualCrossoverPhaseGateSettings
 {
@@ -200,6 +254,23 @@ public sealed class VirtualCrossoverChannelSettings
     [JsonIgnore]
     public int? FirRunSampleRateHz { get; set; }
 
+    /// <summary>The acoustic crossover asked for on this edge: family and slope, the corner always the electrical one.
+    /// See docs/tech/crossover-auto-setup.md#acoustic-slope-target.</summary>
+    [JsonPropertyName("acousticLowPass")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JunctionAcousticTarget? AcousticLowPass { get; set; }
+
+    [JsonPropertyName("acousticHighPass")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JunctionAcousticTarget? AcousticHighPass { get; set; }
+
+    /// <summary>Whether the IIR crossover runs this edge: a goal is read only then, and kept with the edge otherwise.</summary>
+    [JsonIgnore]
+    public bool RunsHighPass => CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass;
+
+    [JsonIgnore]
+    public bool RunsLowPass => CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass;
+
     [JsonIgnore]
     public bool HasFirCrossover => Fir != null && FirDesign != null;
 
@@ -297,6 +368,9 @@ public sealed class VirtualCrossoverChannelSettings
         }
         ValidateEdge(LowPassEdge);
         ValidateEdge(HighPassEdge);
+        // A goal is held to the slopes an electrical edge of its family could have.
+        ValidateAcoustic(AcousticLowPass);
+        ValidateAcoustic(AcousticHighPass);
         // Range only, not the hardware's 5.625° grid: editors snap, and a hand-written angle still builds.
         if (!double.IsFinite(PhaseRotationDegrees) ||
             PhaseRotationDegrees is < 0 or > PhaseRotationControl.MaximumDegrees)
@@ -351,6 +425,23 @@ public sealed class VirtualCrossoverChannelSettings
         if (!double.IsFinite(edge.FrequencyHz) || edge.FrequencyHz is < 10 or > 24_000)
         {
             throw new InvalidDataException("The FIR crossover design's corner frequency is invalid.");
+        }
+    }
+
+    private static void ValidateAcoustic(JunctionAcousticTarget? goal)
+    {
+        if (goal is not { } asked)
+        {
+            return;
+        }
+
+        if (!Enum.IsDefined(asked.Family))
+        {
+            throw new InvalidDataException("The acoustic crossover family is invalid.");
+        }
+        if (!CrossoverFilter.SupportedSlopes(asked.Family).Contains(asked.SlopeDbPerOctave))
+        {
+            throw new InvalidDataException("The acoustic crossover slope is invalid.");
         }
     }
 
@@ -702,6 +793,10 @@ public sealed class VirtualCrossoverProjectFile
 
     /// <summary>Draw the hybrid (spatial-average) magnitude. Intent: kept on load, drawn only while every playing channel has an average.</summary>
     public bool ShowHybridCurves { get; set; }
+
+    /// <summary>Null until the Tune junction dialog has been opened, so other sessions round-trip untouched.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public VirtualCrossoverJunctionTuneSettings? JunctionTune { get; set; }
 
     /// <summary>Older files inherit the magnitude answer.</summary>
     [JsonIgnore]
@@ -1319,6 +1414,7 @@ public sealed class VirtualCrossoverProjectFile
             throw new InvalidDataException("The phase analysis mode is invalid.");
         }
         Calibration?.Validate();
+        JunctionTune?.Sanitize();
         if (PhaseFdwCycles is not (4 or 6 or 8))
         {
             PhaseFdwCycles = DefaultPhaseFdwCycles;

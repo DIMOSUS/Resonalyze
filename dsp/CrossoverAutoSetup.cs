@@ -203,7 +203,7 @@ public static class CrossoverAutoSetup
     /// frequencies: a free pair squares the lattice and breaks the coordinate descent. Positive holds the corners
     /// apart, which takes a bump off the junction; negative overlaps them, which fills a dip. Both are searched —
     /// the ask was a junction free of both. See docs/tech/crossover-auto-setup.md#split-corners.</summary>
-    private static readonly IReadOnlyList<double> SplitOffsetOctaves =
+    internal static readonly IReadOnlyList<double> SplitOffsetOctaves =
     [
         0.0,
         1.0 / 12.0, -1.0 / 12.0,

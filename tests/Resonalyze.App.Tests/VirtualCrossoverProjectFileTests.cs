@@ -399,6 +399,90 @@ public sealed class VirtualCrossoverProjectFileTests
     }
 
     [Fact]
+    public void TheAcousticCrossoverGoal_RoundTripsThroughTheProjectFile_AndIsHeldToTheFamilysSlopes()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            var saved = new VirtualCrossoverProjectFile();
+            saved.Pairs[1].Left.AcousticLowPass =
+                new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24);
+            saved.Pairs[1].Left.AcousticHighPass =
+                new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 18);
+            saved.Save(root);
+
+            VirtualCrossoverProjectFile loaded = VirtualCrossoverProjectFile.LoadOrDefault(root);
+
+            Assert.Equal(saved.Pairs[1].Left.AcousticLowPass, loaded.Pairs[1].Left.AcousticLowPass);
+            Assert.Equal(saved.Pairs[1].Left.AcousticHighPass, loaded.Pairs[1].Left.AcousticHighPass);
+            Assert.Null(loaded.Pairs[0].Left.AcousticLowPass);
+
+            saved.Pairs[1].Left.AcousticLowPass =
+                new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 18);
+            Assert.Throws<InvalidDataException>(() => saved.Validate());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void TheTuneJunctionDialogsMemory_RoundTrips_AndWhatItCannotUseIsDropped()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            string path = Path.Combine(root, "session.json");
+            var original = new VirtualCrossoverProjectFile();
+            original.SaveTo(path);
+            Assert.DoesNotContain("junctionTune", File.ReadAllText(path), StringComparison.OrdinalIgnoreCase);
+
+            original.JunctionTune = new VirtualCrossoverJunctionTuneSettings
+            {
+                Junction = "B-C",
+                Families = [CrossoverFilterFamily.Butterworth, CrossoverFilterFamily.Bessel],
+                IndependentSlopes = true,
+                SplitCorners = true,
+                Acoustic = true,
+                MinSlopeDbPerOctave = 18,
+                MaxSlopeDbPerOctave = 36,
+                SumBudgetDb = 0.6,
+                Goal = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24),
+                Windows = { ["B-C"] = [150, 310], ["A-B"] = [40, 120] }
+            };
+            original.SaveTo(path);
+            VirtualCrossoverJunctionTuneSettings loaded = VirtualCrossoverProjectFile.LoadFrom(path).JunctionTune!;
+
+            Assert.Equal("B-C", loaded.Junction);
+            Assert.Equal(original.JunctionTune.Families, loaded.Families);
+            Assert.True(loaded.IndependentSlopes && loaded.SplitCorners && loaded.Acoustic);
+            Assert.Equal(18, loaded.MinSlopeDbPerOctave);
+            Assert.Equal(36, loaded.MaxSlopeDbPerOctave);
+            Assert.Equal(0.6, loaded.SumBudgetDb);
+            Assert.Equal(original.JunctionTune.Goal, loaded.Goal);
+            Assert.Equal([150.0, 310.0], loaded.Windows["B-C"]);
+            Assert.Equal([40.0, 120.0], loaded.Windows["A-B"]);
+
+            loaded.Goal = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 18);
+            loaded.Windows["B-C"] = [310, 150];
+            loaded.Windows["A-B"] = [double.NaN, 120];
+            loaded.Windows["C-D"] = [1e100, 2e100];
+            loaded.Windows["D-E"] = [5, 120];
+            loaded.Windows["E-F"] = [20, 200];
+            loaded.SumBudgetDb = 40;
+            loaded.Sanitize();
+            Assert.Null(loaded.Goal);
+            Assert.Null(loaded.SumBudgetDb);
+            Assert.Equal(["E-F"], loaded.Windows.Keys);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ToChain_AppliesAnAllPassBandEvenWithTheCrossoverOff()
     {
         // At its corner a 2nd-order all-pass is -180 deg with flat magnitude.

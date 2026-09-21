@@ -49,12 +49,12 @@ internal sealed record EqWizardCurveSource
     /// <summary>The chain without its PEQ, into which the edited bank is substituted. Identity for a raw handoff.</summary>
     public DspChannelChain? PreviewChain { get; init; }
 
-    /// <summary>
-    /// The crossover this channel defines, as junctions and Auto Tune read it
-    /// (<c>VirtualCrossoverChannelSettings.EffectiveCrossover</c>: the IIR filter, or a FIR crossover's design
-    /// corners). It shapes the target (<see cref="EqTargetCrossover"/>); null without a chain or a crossover.
-    /// </summary>
+    /// <summary>Per edge, the acoustic crossover stated on the card, else the filter the channel runs. Null without a
+    /// chain or a crossover.</summary>
     public CrossoverSpec? TargetCrossover { get; init; }
+
+    /// <summary>The electrical crossover, only where it differs from <see cref="TargetCrossover"/>; drawn, never fitted.</summary>
+    public CrossoverSpec? ElectricalCrossover { get; init; }
 
     /// <summary>
     /// The crossover KERNEL when the channel is crossed by a designed FIR: its window and length set the slope, which

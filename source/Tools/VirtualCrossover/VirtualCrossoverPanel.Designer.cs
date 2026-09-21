@@ -20,6 +20,8 @@ namespace Resonalyze
                 // owned by the designer container and would otherwise leak its handle.
                 targetMenu?.Dispose();
                 targetMenu = null;
+                toolsMenu?.Dispose();
+                toolsMenu = null;
             }
 
             base.Dispose(disposing);
@@ -67,14 +69,14 @@ namespace Resonalyze
             buttonAutoDelay = new ReleaseClickButton();
             buttonAi = new ReleaseClickButton();
             buttonAutoSetup = new ReleaseClickButton();
+            buttonTuneJunction = new ReleaseClickButton();
             buttonDspProcessor = new ReleaseClickButton();
-            buttonCaptureOverlay = new ReleaseClickButton();
+            buttonTools = new ReleaseClickButton();
             buttonExport = new ReleaseClickButton();
             buttonPhaseGate = new ReleaseClickButton();
             comboBoxCalibration = new ThemedComboBox();
             buttonSessionImport = new ReleaseClickButton();
             buttonSessionExport = new ReleaseClickButton();
-            buttonAudition = new ReleaseClickButton();
             dspModePanel = new RoundedPanel();
             labelDspMode = new Label();
             radioDspMagnitude = new ReleaseClickRadioButton();
@@ -487,7 +489,7 @@ namespace Resonalyze
             buttonAutoDelay.BackColor = UiPalette.ButtonBackground;
             buttonAutoDelay.FlatStyle = FlatStyle.Popup;
             buttonAutoDelay.ForeColor = UiPalette.TextPrimary;
-            buttonAutoDelay.Location = new Point(359, 530);
+            buttonAutoDelay.Location = new Point(359, 554);
             buttonAutoDelay.Name = "buttonAutoDelay";
             buttonAutoDelay.Size = new Size(125, 24);
             buttonAutoDelay.TabIndex = 12;
@@ -499,19 +501,32 @@ namespace Resonalyze
             buttonAi.BackColor = UiPalette.ButtonBackground;
             buttonAi.FlatStyle = FlatStyle.Popup;
             buttonAi.ForeColor = UiPalette.TextPrimary;
-            buttonAi.Location = new Point(359, 560);
+            buttonAi.Location = new Point(359, 582);
             buttonAi.Name = "buttonAi";
             buttonAi.Size = new Size(125, 24);
             buttonAi.TabIndex = 22;
             buttonAi.Text = "AI assistant...";
             buttonAi.UseVisualStyleBackColor = false;
             // 
+            // buttonTuneJunction
+            // 
+            buttonTuneJunction.BackColor = UiPalette.ButtonBackground;
+            buttonTuneJunction.FlatStyle = FlatStyle.Popup;
+            buttonTuneJunction.ForeColor = UiPalette.TextPrimary;
+            buttonTuneJunction.Location = new Point(359, 526);
+            buttonTuneJunction.Name = "buttonTuneJunction";
+            buttonTuneJunction.Size = new Size(125, 24);
+            buttonTuneJunction.TabIndex = 45;
+            buttonTuneJunction.Text = "Tune junction…";
+            buttonTuneJunction.UseCompatibleTextRendering = true;
+            buttonTuneJunction.UseVisualStyleBackColor = false;
+            // 
             // buttonAutoSetup
             // 
             buttonAutoSetup.BackColor = UiPalette.ButtonBackground;
             buttonAutoSetup.FlatStyle = FlatStyle.Popup;
             buttonAutoSetup.ForeColor = UiPalette.TextPrimary;
-            buttonAutoSetup.Location = new Point(359, 500);
+            buttonAutoSetup.Location = new Point(359, 498);
             buttonAutoSetup.Name = "buttonAutoSetup";
             buttonAutoSetup.Size = new Size(125, 24);
             buttonAutoSetup.TabIndex = 19;
@@ -530,17 +545,17 @@ namespace Resonalyze
             buttonDspProcessor.Text = "DSP processor...";
             buttonDspProcessor.UseVisualStyleBackColor = false;
             // 
-            // buttonCaptureOverlay
+            // buttonTools
             // 
-            buttonCaptureOverlay.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            buttonCaptureOverlay.FlatStyle = FlatStyle.Popup;
-            buttonCaptureOverlay.ForeColor = UiPalette.TextPrimary;
-            buttonCaptureOverlay.Location = new Point(358, 702);
-            buttonCaptureOverlay.Name = "buttonCaptureOverlay";
-            buttonCaptureOverlay.Size = new Size(125, 24);
-            buttonCaptureOverlay.TabIndex = 13;
-            buttonCaptureOverlay.Text = "Capture to overlay";
-            buttonCaptureOverlay.UseVisualStyleBackColor = true;
+            buttonTools.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+            buttonTools.FlatStyle = FlatStyle.Popup;
+            buttonTools.ForeColor = UiPalette.TextPrimary;
+            buttonTools.Location = new Point(358, 642);
+            buttonTools.Name = "buttonTools";
+            buttonTools.Size = new Size(125, 24);
+            buttonTools.TabIndex = 13;
+            buttonTools.Text = "Tools...";
+            buttonTools.UseVisualStyleBackColor = true;
             // 
             // buttonExport
             // 
@@ -580,7 +595,7 @@ namespace Resonalyze
             buttonSessionImport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonSessionImport.FlatStyle = FlatStyle.Popup;
             buttonSessionImport.ForeColor = UiPalette.TextPrimary;
-            buttonSessionImport.Location = new Point(358, 672);
+            buttonSessionImport.Location = new Point(358, 702);
             buttonSessionImport.Name = "buttonSessionImport";
             buttonSessionImport.Size = new Size(125, 24);
             buttonSessionImport.TabIndex = 17;
@@ -592,24 +607,14 @@ namespace Resonalyze
             buttonSessionExport.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
             buttonSessionExport.FlatStyle = FlatStyle.Popup;
             buttonSessionExport.ForeColor = UiPalette.TextPrimary;
-            buttonSessionExport.Location = new Point(358, 642);
+            buttonSessionExport.Location = new Point(358, 672);
             buttonSessionExport.Name = "buttonSessionExport";
             buttonSessionExport.Size = new Size(125, 24);
             buttonSessionExport.TabIndex = 18;
             buttonSessionExport.Text = "Save session...";
             buttonSessionExport.UseVisualStyleBackColor = true;
             // 
-            // buttonAudition
-            // 
-            buttonAudition.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            buttonAudition.FlatStyle = FlatStyle.Popup;
-            buttonAudition.ForeColor = UiPalette.TextPrimary;
-            buttonAudition.Location = new Point(358, 612);
-            buttonAudition.Name = "buttonAudition";
-            buttonAudition.Size = new Size(125, 24);
-            buttonAudition.TabIndex = 21;
-            buttonAudition.Text = "Audition track...";
-            buttonAudition.UseVisualStyleBackColor = true;
+
             // 
             // dspModePanel
             // 
@@ -791,14 +796,14 @@ namespace Resonalyze
             Controls.Add(buttonAutoDelay);
             Controls.Add(buttonAi);
             Controls.Add(buttonAutoSetup);
+            Controls.Add(buttonTuneJunction);
             Controls.Add(buttonDspProcessor);
-            Controls.Add(buttonCaptureOverlay);
+            Controls.Add(buttonTools);
             Controls.Add(buttonExport);
             Controls.Add(buttonPhaseGate);
             Controls.Add(comboBoxCalibration);
             Controls.Add(buttonSessionImport);
             Controls.Add(buttonSessionExport);
-            Controls.Add(buttonAudition);
             Controls.Add(dspModePanel);
             Controls.Add(channelListPanel);
             Controls.Add(buttonAddChannel);
@@ -869,14 +874,14 @@ namespace Resonalyze
         private ReleaseClickButton buttonAutoDelay;
         private ReleaseClickButton buttonAi;
         private ReleaseClickButton buttonAutoSetup;
+        private ReleaseClickButton buttonTuneJunction;
         private ReleaseClickButton buttonDspProcessor;
-        private ReleaseClickButton buttonCaptureOverlay;
+        private ReleaseClickButton buttonTools;
         private ReleaseClickButton buttonExport;
         private ReleaseClickButton buttonPhaseGate;
         private ThemedComboBox comboBoxCalibration;
         private ReleaseClickButton buttonSessionImport;
         private ReleaseClickButton buttonSessionExport;
-        private ReleaseClickButton buttonAudition;
         private RoundedPanel dspModePanel;
         private Label labelDspMode;
         private ReleaseClickRadioButton radioDspMagnitude;

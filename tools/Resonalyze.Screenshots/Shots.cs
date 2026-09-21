@@ -36,7 +36,8 @@ internal static class Shots
             ["manual/virtual-dsp", "manual/channel-card", "manual/eq-wizard-handoff",
              "manual/eq-wizard-tuned", "manual/dsp-processor",
              "manual/dsp-processor-model", "manual/eq-target", "manual/auto-crossover",
-             "manual/auto-delay", "manual/tuning-sheet-q", "manual/audition-track"],
+             "manual/auto-delay", "manual/tune-junction", "manual/tuning-sheet-q",
+             "manual/audition-track"],
             Manual)
     ];
 
@@ -380,6 +381,32 @@ internal static class Shots
             }
         }
 
+        if (wanted("manual/tune-junction"))
+        {
+            // The search is pressed inside the dialog's loop, so the report is on screen for the shot.
+            session.CaptureModal(
+                "manual/tune-junction",
+                () => Reflect.Field<Button>(panel, "buttonTuneJunction").PerformClick(),
+                4_000,
+                dialog =>
+                {
+                    // The search runs in the background; Search comes back once the report is in.
+                    Button search = Reflect.Field<Button>(dialog, "buttonRun");
+                    search.PerformClick();
+                    for (int waited = 0; !search.Enabled && waited < 120_000; waited += 200)
+                    {
+                        session.Pump(200);
+                    }
+
+                    if (!search.Enabled)
+                    {
+                        throw new TimeoutException("The junction search did not finish in two minutes.");
+                    }
+
+                    session.Pump(300);
+                });
+        }
+
         if (wanted("manual/auto-delay"))
         {
             // Run is pressed inside the dialog's loop; regions are measured while it is on screen.
@@ -398,7 +425,8 @@ internal static class Shots
         if (wanted("manual/audition-track"))
         {
             session.CaptureModal("manual/audition-track",
-                () => Reflect.Field<Button>(panel, "buttonAudition").PerformClick(), 3_000);
+                // Behind the Tools menu now; the action is invoked directly rather than posting a drop-down.
+                () => Reflect.Invoke(panel, "AuditionTrackAsync"), 3_000);
         }
     }
 

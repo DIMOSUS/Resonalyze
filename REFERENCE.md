@@ -52,6 +52,7 @@ read-out refuses rather than guesses, what a number was measured against.
   - [The panel: gates, plots and read-outs](#the-panel-gates-plots-and-read-outs)
   - [DSP processor](#dsp-processor)
   - [Auto crossover](#auto-crossover)
+  - [Tune junction](#tune-junction)
   - [Auto delay](#auto-delay)
   - [Panel commands](#panel-commands)
   - [AI assistant bridge](#ai-assistant-bridge)
@@ -1892,6 +1893,13 @@ behind it (a raw handoff, an imported curve, an overlay). A channel crossed with
 [FIR](#fir-constructor) kernel counts, and there the target follows the kernel itself: a
 windowed-sinc design's slope is its window and length, so the corners it carries would
 describe a filter it is not.
+Where the channel card states an acoustic crossover (see [Tune
+junction](#tune-junction)), the target follows that acoustic crossover, and the filter
+the chain actually runs is drawn beside it as a dotted, half-transparent curve in the
+target's colour. It is there to compare the two skirts — how much of the slope the
+driver is expected to supply — and nothing aims at it: not Auto Tune, not the
+statistics. With no acoustic crossover stated, or one that names the filter's own shape,
+there is one crossover and one curve.
 
 Three things follow the box, all measured rather than chosen:
 
@@ -3307,6 +3315,119 @@ keeps the angle — that is what the device itself does, and the read-out moves
 under it where you can see — but a wizard rewriting every channel at once is not
 something to leave a stale all-pass under.
 
+### Tune junction
+
+**Auto crossover** decides a whole system from magnitudes under ideal alignment.
+**Tune junction** does the opposite job on a tune that already exists: it
+refines ONE junction — the lower block's low-pass and the upper block's
+high-pass — and judges every candidate on the **coherent sum of the measured
+responses through both full chains, after re-aligning the upper block's delay
+and polarity for that candidate**. A junction tune is followed by running Auto
+delay again, and each slope puts its own group delay into the handover: read at
+the delays set for the crossover on screen, every other slope — a softer one
+above all — would be charged for a misalignment the next Auto delay removes.
+Nothing is written but the crossover: the other junctions, gains, delays,
+polarity, PEQ and FIR stay. One result serves both sides of the pair, because a
+crossover is one electrical filter — so the two sides have to run the same
+crossover when you start (the side Lock keeps them so), and the tune says so
+rather than mixing two. The tune re-aligns the upper block. Where that block is
+**mono**, one delay and one polarity serve both sides, as Auto delay moves a mono
+channel: every candidate is read at the one shift that suits both sides best on
+average, not at a shift of its own on each side. A mono lower block (the usual
+shared sub under stereo midbass) stays put, and each side's upper block is
+aligned to it on its own. A designed FIR crossover on a facing edge, on
+either side, is refused as well: it is a second crossover stage, not an edge
+this tune fits.
+
+Because the sum is read rather than predicted, a steeper slope that narrows the
+overlap where a ragged excess phase interferes is a legitimate answer the
+magnitude alone cannot see — which is why this tune and the wizard can disagree,
+and why this one has the last word on a finished tune.
+
+- **Junction and corner window.** The window opens half an octave each way
+  around the corner you already have. Candidates are ranked on one band shared
+  by all of them — different corners are not comparable on their own bands — and
+  the report recommends **keeping** your crossover unless a challenger beats it
+  by half a decibel there *and* reads no worse on its own junction band, where
+  your Sum loss read-out lives.
+- **Tune for** says what the search is answering: **the best summation** this
+  junction can have, or **this acoustic crossover** (below). The summation mode
+  takes a **slope window** beside it — narrow it to hold the junction near a
+  steepness you want. An acoustic goal states the answer instead, so the window
+  is left out of that mode altogether.
+- **Families**, and **slopes free per side** where the two edges may differ in
+  steepness. It is on by default, like **Corners free per side** below; untick
+  either to narrow the question (the free search costs slopes² candidates per
+  corner).
+- **Corners free per side** adds a pass that offsets the two edges from the
+  junction — a twelfth, a sixth or a quarter of an octave, half of it each way,
+  so the junction stays where it is. Holding them apart takes a bump off the
+  junction; overlapping them fills a dip. Every corner it offers is a whole
+  number of hertz, the way the channel card states it and a processor takes it.
+- **Nothing is written until Apply**, which writes the crossover the report
+  calls *found* into both sides of both blocks — including one the report
+  advises against, because that choice is yours — and, in the acoustic mode, the
+  goal onto the edges that crossover runs. Where nothing different was found,
+  Apply is offered only for a goal the cards do not state yet. **Undo last
+  Apply**, in the same dialog, puts every channel back exactly as it was before
+  the last Apply — one step, gone once a session is loaded; where the session
+  has changed since, it asks first, because those changes go too.
+- **The dialog remembers what it was left on**: the junction, the families, both
+  toggles, the mode, the slope window, the goal, and each junction's corner
+  window. It is kept in the session, so reopening the dialog — in the same run
+  or after a restart — starts there, Apply or not. Switching junction moves only
+  the corner window; the rest is your question and stays as set. A remembered
+  window that no longer holds the junction's crossover (Auto crossover has moved
+  it since) gives way to the default around where it is crossed now.
+- The report gives each side's sum loss, dip and ripple for the crossover on
+  screen and the one found, both read after re-aligning, and the delay and
+  polarity that re-alignment gives the upper block — run Auto delay after
+  applying to get them. The re-alignment is the one this junction alone would
+  choose; a shift near a whole period of the corner may be a neighbouring lobe
+  that Auto delay, which walks the whole chain, settles differently.
+
+#### The acoustic goal
+
+Optionally state the **acoustic** crossover you want at this junction — driver
+and filter together, which is steeper than the filter alone by the driver's own
+roll-off. The search then prefers the electrical filter that lands on it, among
+the candidates within your **budget** of the best summation (the field beside
+the goal, 1.0 dB of summation score by default, every candidate read
+re-aligned). At 0.2 dB the stated slope only settles a near-tie; at 1.0 it may
+cost a little of the sum, and the report says how much ("it costs 0.9 dB of
+summation score against the best sum here"). A change the goal paid for in sum
+is called "nearer the acoustic goal", not "better".
+
+The report then also says, side by side and all fitted the same way so they
+compare with each other: what was asked, what each side achieved, what the
+channels do by themselves, how near **any** allowed filter could have come, and
+whether the goal is reachable at all. Every figure is the **worst channel**'s
+first and the average second: each channel's EQ aims at the goal by itself, so
+an average can pass while one tweeter is left well short, and the search prefers
+a crossover that lands every channel. A filter only steepens, so a slope softer
+than a driver's own fall is not on offer — the report names that channel rather
+than quietly picking the softest filter, and says apart from it when the goal is
+merely outside the corner window and the filters you allowed. A channel whose
+curve has no points on its skirt is named as not read, and a goal it could not
+check is never called landed. The shapes are
+read on the curve Auto Tune will fit: a channel's spatial average while the
+hybrid is drawn, else its measurement.
+
+Apply writes the goal onto those edges as you asked it, and it shows on the
+channel cards; **Auto Tune then aims at it** instead of at the electrical filter
+(see [Crossover in target](#auto-tune)). That holds whether or not the crossover
+lands on it, and the report says which: where the crossover misses the goal,
+Auto Tune will be aiming at a slope the filter does not make. Measured on eight
+cabins, that made the finished junction worse on average (about 0.1 dB of sum
+loss and 1.6 dB on the worst dip), so where the report shows the goal missed,
+clearing it on the card leaves the fit aiming at the filter.
+
+Honest about what is claimed: the magnitude is fitted to the asked edge. Each
+side keeps its own excess phase, so "the magnitude follows an acoustic LR24" is
+true where "the acoustic crossover is LR24" would be more than was shown — and
+the summation term is there precisely because it sees what a magnitude target
+cannot.
+
 ### Auto delay
 
 #### Staging: the front chain first, then the groups against it
@@ -3673,12 +3794,14 @@ under the table.
 
 ### Panel commands
 
-The remaining buttons in the column beside the plots:
+The remaining buttons in the column beside the plots. The two used occasionally
+rather than while tuning live under **Tools…**, so the column stays the sequence a
+tune is actually built in:
 
-- **Capture to overlay** saves the predicted sum as a Captured overlay in
+- **Tools… → Capture to overlay** saves the predicted sum as a Captured overlay in
   Frequency Response — compare it against real measurements and target curves, or
   feed it onward to the EQ Wizard.
-- **Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
+- **Tools… → Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
   the tune into a stereo WAV: each program channel is convolved with the summed
   processed response of its side, with the microphone calibration optionally
   baked in and one shared normalization gain so the L/R balance survives. The
@@ -3874,8 +3997,9 @@ this: the clipboard is the only transport, and you are the one who pastes.
   works, where the wizard is not — one junction, named by the package's id
   for it, the lower block's low-pass and the upper block's high-pass searched
   over corner (on the wizard's lattice), family and slopes, and every
-  candidate scored on the pair's coherent sum *at the current delays and
-  polarity*, through the whole current chains, on every side the pair is
+  candidate scored on the pair's coherent sum *after re-aligning the upper
+  block's delay and polarity for it*, through the whole current chains, on
+  every side the pair is
   measured on — the summation loss, its dip and the ripple of the sum, read on
   one band every candidate shares for the ranking and on the candidate's own
   octave-each-side band for what you will see, with no slope preferred. Gains,

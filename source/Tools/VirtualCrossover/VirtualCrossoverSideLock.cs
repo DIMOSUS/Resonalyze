@@ -13,16 +13,27 @@ internal sealed class VirtualCrossoverSideLock
     private readonly record struct Crossover(
         CrossoverKind Kind,
         CrossoverEdge HighPass,
-        CrossoverEdge LowPass)
+        CrossoverEdge LowPass,
+        JunctionAcousticTarget? AcousticHighPass,
+        JunctionAcousticTarget? AcousticLowPass)
     {
         public static Crossover Of(VirtualCrossoverChannelSettings settings) =>
-            new(settings.CrossoverKind, settings.HighPassEdge, settings.LowPassEdge);
+            new(
+                settings.CrossoverKind,
+                settings.HighPassEdge,
+                settings.LowPassEdge,
+                // The acoustic wish rides with the filter: it says what this crossover should sound like, and a
+                // crossover is one electrical filter for both sides.
+                settings.AcousticHighPass,
+                settings.AcousticLowPass);
 
         public void WriteTo(VirtualCrossoverChannelSettings settings)
         {
             settings.CrossoverKind = Kind;
             settings.HighPassEdge = HighPass;
             settings.LowPassEdge = LowPass;
+            settings.AcousticHighPass = AcousticHighPass;
+            settings.AcousticLowPass = AcousticLowPass;
         }
     }
 

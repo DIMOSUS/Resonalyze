@@ -300,7 +300,9 @@ internal static class AgentPackageBuilder
             new AgentPackageCrossover(
                 settings.CrossoverKind.ToString(),
                 Edge(settings.HighPassEdge),
-                Edge(settings.LowPassEdge)),
+                Edge(settings.LowPassEdge),
+                Goal(settings.AcousticHighPass),
+                Goal(settings.AcousticLowPass)),
             new AgentPackagePeq(
                 settings.PeqPreampDb,
                 AgentPeqHash.Compute(settings.PeqPreampDb, settings.PeqBands),
@@ -343,6 +345,9 @@ internal static class AgentPackageBuilder
 
     private static AgentPackageEdge Edge(CrossoverEdge edge) =>
         new(edge.Family.ToString(), edge.FrequencyHz, edge.SlopeDbPerOctave, edge.RippleDb);
+
+    private static AgentPackageAcousticGoal? Goal(JunctionAcousticTarget? goal) =>
+        goal is { } asked ? new AgentPackageAcousticGoal(asked.Family.ToString(), asked.SlopeDbPerOctave) : null;
 
     private static AgentPackageFirCrossover FirCrossover(FirCrossoverDesign design) =>
         new(

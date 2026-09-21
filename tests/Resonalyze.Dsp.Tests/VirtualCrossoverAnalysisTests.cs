@@ -1649,4 +1649,51 @@ public sealed class VirtualCrossoverAnalysisTests
         Assert.Throws<ArgumentException>(
             () => VirtualCrossoverAnalysis.FindPeakIndex(Array.Empty<Complex>()));
     }
+
+    // An LR24 pair at 1 kHz with the upper channel late by the given time.
+    private static JunctionAlignmentSide LatePair(double upperDelayMs)
+    {
+        var edge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        Complex[] lower = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(16_384, 480),
+            new DspChannelChain(Crossover: new CrossoverSpec(CrossoverKind.LowPass, LowPassEdge: edge)),
+            SampleRate, SampleRate);
+        Complex[] upper = VirtualCrossoverAnalysis.ApplyChain(
+            UnitImpulse(16_384, 480),
+            new DspChannelChain(
+                Crossover: new CrossoverSpec(CrossoverKind.HighPass, HighPassEdge: edge), DelayMs: upperDelayMs),
+            SampleRate, SampleRate);
+        return new JunctionAlignmentSide(upper, lower, SampleRate);
+    }
+
+    [Fact]
+    public void AJointReadOfOneSide_IsTheSingleSideRead_FigureForFigure()
+    {
+        JunctionAlignmentSide side = LatePair(0.3);
+
+        var single = VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum(
+            side.VariableImpulseResponse, [side.FixedImpulseResponse], SampleRate, 500, 2_000, 1.0)!.Value;
+        var joint = VirtualCrossoverAnalysis.MeasureJointlyAlignedJunctionSpectra([side], 500, 2_000, 1.0)!.Value;
+
+        Assert.Equal(single.Alignment, joint.Alignment);
+        Assert.Equal(single.Reading, Assert.Single(joint.Readings));
+    }
+
+    [Fact]
+    public void AJointRead_TimesEverySideByOneShift_ChosenOnTheirMean()
+    {
+        JunctionAlignmentSide late = LatePair(0.3);
+        JunctionAlignmentSide early = LatePair(-0.3);
+
+        var lateAlone = VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum(
+            late.VariableImpulseResponse, [late.FixedImpulseResponse], SampleRate, 500, 2_000, 1.0)!.Value;
+        var joint = VirtualCrossoverAnalysis.MeasureJointlyAlignedJunctionSpectra(
+            [late, early], 500, 2_000, 1.0)!.Value;
+
+        Assert.InRange(lateAlone.Alignment.DelayMs, -0.35, -0.25);
+        Assert.InRange(joint.Alignment.DelayMs, -0.1, 0.1);
+        Assert.Equal(2, joint.Readings.Count);
+        Assert.True(joint.Readings[0]!.LossDb < lateAlone.Reading.LossDb - 0.1);
+        Assert.Equal(joint.Readings[0]!.LossDb, joint.Readings[1]!.LossDb, 1);
+    }
 }

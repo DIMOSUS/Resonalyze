@@ -26,9 +26,6 @@ internal static class EqTargetCrossover
     /// </summary>
     public const double NoBoostFallDb = 6;
 
-    // A target diving to minus infinity is no goal at all; past this the skirt is simply "as low as it gets".
-    private const double ShapeFloorDb = 40;
-
     private const int StepsPerOctave = 24;
     private const double SearchOctaves = 6;
 
@@ -46,15 +43,18 @@ internal static class EqTargetCrossover
             : new EqTargetSlope(crossover, fir);
     }
 
-    /// <summary>What the crossover adds to the target at one frequency: 0 dB in the passband, negative down a skirt.</summary>
+    /// <summary>The slope the electrical crossover would give the target, or null where the target already follows it.
+    /// A FIR crossover kernel stays in series either way.</summary>
+    public static EqTargetSlope? ElectricalOf(EqWizardCurveSource? source) =>
+        source?.ElectricalCrossover is { Kind: not CrossoverKind.Off } electrical
+            ? new EqTargetSlope(electrical, source.TargetCrossoverFir)
+            : null;
+
+    /// <summary>What the crossover adds to the target at one frequency: 0 dB in the passband, negative down a skirt
+    /// with no floor, and minus infinity at a zero of the response, which the fit skips and the plot leaves as a gap.</summary>
     public static double ShapeDb(EqTargetSlope slope, double frequencyHz, int sampleRateHz)
     {
         ArgumentNullException.ThrowIfNull(slope);
-        if (frequencyHz <= 0)
-        {
-            return -ShapeFloorDb;
-        }
-
         // In series, as the chain applies them: a channel may run a FIR crossover AND an IIR one.
         double magnitude = 1;
         if (slope.Crossover is { } crossover)
@@ -66,8 +66,8 @@ internal static class EqTargetCrossover
         {
             magnitude *= fir.Response(frequencyHz, sampleRateHz).Magnitude;
         }
-        double decibels = magnitude > 0 ? 20 * Math.Log10(magnitude) : -ShapeFloorDb;
-        return Math.Clamp(decibels, -ShapeFloorDb, 0);
+        double decibels = magnitude > 0 ? 20 * Math.Log10(magnitude) : double.NegativeInfinity;
+        return Math.Min(decibels, 0);
     }
 
     /// <summary>

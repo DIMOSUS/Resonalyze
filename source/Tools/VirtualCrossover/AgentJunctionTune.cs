@@ -80,34 +80,123 @@ internal static class AgentJunctionTune
                     operation.MaxHz ?? defaultMaxHz,
                     // One slope for both edges unless the reply frees them: the free search costs slopes² per corner.
                     operation.IndependentSlopes ?? false,
-                    session.ProcessorSampleRateHz)),
+                    session.ProcessorSampleRateHz,
+                    OneAlignmentForAllSides: AgentProbeReader.SharesOneAlignment(lower, upper))),
             null);
     }
 
-    /// <summary>The winner's crossover on both sides of both blocks; a mono block takes it once.</summary>
-    public static void Write(JunctionTuneResult result, VirtualCrossoverChannel lower, VirtualCrossoverChannel upper)
+    /// <summary>The dialog's refusal of a designed FIR crossover on a facing edge, on either side, since both are
+    /// written. The AI review allows that tune and warns instead (AgentProposalValidator).</summary>
+    public static string? FirCrossoverRefusal(VirtualCrossoverChannel lower, VirtualCrossoverChannel upper)
     {
-        CrossoverEdge lowPass = result.Best.LowerLowPass!.Value;
-        CrossoverEdge highPass = result.Best.UpperHighPass!.Value;
+        foreach (bool rightSide in new[] { false, true })
+        {
+            string side = rightSide ? "right" : "left";
+            if (FirCrossoverOn(lower.SideSettings(rightSide && !lower.Pair.Mono), lowPass: true) is { } lowerFir)
+            {
+                return $"on the {side} side, {lowerFir}";
+            }
+            if (FirCrossoverOn(upper.SideSettings(rightSide && !upper.Pair.Mono), lowPass: false) is { } upperFir)
+            {
+                return $"on the {side} side, {upperFir}";
+            }
+        }
+
+        return null;
+    }
+
+    private static string? FirCrossoverOn(VirtualCrossoverChannelSettings settings, bool lowPass)
+    {
+        if (!settings.HasFirCrossover || settings.FirDesign is not { } design)
+        {
+            return null;
+        }
+
+        bool facing = lowPass
+            ? design.Kind is CrossoverKind.LowPass or CrossoverKind.BandPass
+            : design.Kind is CrossoverKind.HighPass or CrossoverKind.BandPass;
+        return facing
+            ? $"the {(lowPass ? "low" : "high")}-pass here is a designed FIR crossover, and this tune " +
+              "fits IIR edges only — clear the kernel or tune the junction by hand"
+            : null;
+    }
+
+    /// <summary>The winner's crossover on both sides of both blocks; a mono block takes it once.</summary>
+    /// <param name="acoustic">Written as asked, landed or not, onto the edges the remaining crossover runs; null leaves
+    /// the cards' goals alone.</param>
+    public static void Write(
+        JunctionTuneResult result,
+        VirtualCrossoverChannel lower,
+        VirtualCrossoverChannel upper,
+        JunctionAcousticTarget? acoustic = null,
+        bool applyCrossover = true)
+    {
+        JunctionTuneCandidate applied = applyCrossover ? result.Best : result.Current;
         foreach (bool rightSide in new[] { false, true })
         {
             if (!lower.Pair.Mono || !rightSide)
             {
                 VirtualCrossoverChannelSettings settings = lower.SideSettings(rightSide);
-                settings.LowPassEdge = lowPass;
-                settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
-                    ? CrossoverKind.BandPass
-                    : CrossoverKind.LowPass;
+                if (applyCrossover && applied.LowerLowPass is { } lowPass)
+                {
+                    settings.LowPassEdge = lowPass;
+                    settings.CrossoverKind =
+                        settings.CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass
+                            ? CrossoverKind.BandPass
+                            : CrossoverKind.LowPass;
+                }
+                if (acoustic != null && applied.LowerLowPass != null)
+                {
+                    settings.AcousticLowPass = acoustic;
+                }
             }
             if (!upper.Pair.Mono || !rightSide)
             {
                 VirtualCrossoverChannelSettings settings = upper.SideSettings(rightSide);
-                settings.HighPassEdge = highPass;
-                settings.CrossoverKind = settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
-                    ? CrossoverKind.BandPass
-                    : CrossoverKind.HighPass;
+                if (applyCrossover && applied.UpperHighPass is { } highPass)
+                {
+                    settings.HighPassEdge = highPass;
+                    settings.CrossoverKind =
+                        settings.CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass
+                            ? CrossoverKind.BandPass
+                            : CrossoverKind.HighPass;
+                }
+                if (acoustic != null && applied.UpperHighPass != null)
+                {
+                    settings.AcousticHighPass = acoustic;
+                }
             }
         }
+    }
+
+    /// <summary>Whether <see cref="Write"/> would change any card's goal.</summary>
+    public static bool WouldChangeGoal(
+        VirtualCrossoverChannel lower,
+        VirtualCrossoverChannel upper,
+        JunctionAcousticTarget? acoustic,
+        JunctionTuneCandidate applied)
+    {
+        if (acoustic == null)
+        {
+            return false;
+        }
+
+        foreach (bool rightSide in new[] { false, true })
+        {
+            if ((!lower.Pair.Mono || !rightSide) && applied.LowerLowPass != null &&
+                !Equals(lower.SideSettings(rightSide).AcousticLowPass, acoustic))
+            {
+                return true;
+            }
+
+            if ((!upper.Pair.Mono || !rightSide) && applied.UpperHighPass != null &&
+                !Equals(upper.SideSettings(rightSide).AcousticHighPass, acoustic))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>What the tune found: the crossover kept or applied, against the search it ran, with each side's readings.</summary>
@@ -130,6 +219,10 @@ internal static class AgentJunctionTune
                     ? ", or reads worse on its own junction band."
                     : "."));
         AppendReadings(summary, result, best: result.Changed);
+        if (options.OneAlignmentForAllSides && result.Current.Sides.Count > 1)
+        {
+            summary.Add("  every side was read at one re-alignment: a mono block has one delay and one polarity.");
+        }
     }
 
     // Readings on the package's octave-each-side junction band, so they compare with what the assistant read.
@@ -165,7 +258,7 @@ internal static class AgentJunctionTune
             (value + 0).ToString("0.0", CultureInfo.InvariantCulture) + " dB";
     }
 
-    private static string JunctionText(JunctionTuneCandidate candidate, string lowerBlock, string upperBlock) =>
+    internal static string JunctionText(JunctionTuneCandidate candidate, string lowerBlock, string upperBlock) =>
         $"{lowerBlock} {(candidate.LowerLowPass is { } low ? "LP " + EdgeText(low) : "no low-pass")} + " +
         $"{upperBlock} {(candidate.UpperHighPass is { } high ? "HP " + EdgeText(high) : "no high-pass")}";
 

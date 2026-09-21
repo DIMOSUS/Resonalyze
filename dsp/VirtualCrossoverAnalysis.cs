@@ -17,6 +17,21 @@ public sealed record AlignmentCandidate(
 /// <summary>Junction sum at current timing: loss and dip (dB, ≤ 0) and ripple of the summed magnitude (dB RMS, ≥ 0).</summary>
 public sealed record JunctionSpectrumReading(double LossDb, double DipDb, double RippleDb);
 
+/// <summary>One side of a junction for a read that times every side at once.</summary>
+public sealed record JunctionAlignmentSide(
+    Complex[] VariableImpulseResponse,
+    Complex[] FixedImpulseResponse,
+    int SampleRate,
+    ValidSampleRange VariableValidRange = default,
+    ValidSampleRange FixedValidRange = default);
+
+/// <summary>One bin of a junction read: each side's gated level (arbitrary reference) and the read's 1/f weight.</summary>
+public readonly record struct JunctionLevelBin(
+    double FrequencyHz,
+    double LogWeight,
+    double FixedDb,
+    double VariableDb);
+
 /// <summary>Envelope crossings at 10/25/50 % of the first credible arrival's peak, on its rising front. Callers comparing
 /// channels must gate on the spread of the DIFFERENCE and on <see cref="SnrDb"/>: noise alone gives stable-looking crossings.</summary>
 public readonly record struct BroadbandOnsetEstimate(
@@ -2103,30 +2118,59 @@ public static class VirtualCrossoverAnalysis
         double? priorDelayMs,
         double priorSigmaMs,
         bool? forcedPolarity,
+        out IReadOnlyList<AlignmentCandidate> allOptima) =>
+        SearchAlignmentCandidatesByLoss(
+            [bins],
+            minDelayMs,
+            maxDelayMs,
+            maxFrequencyHz,
+            priorDelayMs,
+            priorSigmaMs,
+            forcedPolarity,
+            out allOptima);
+
+    /// <summary>One shift for several sides, scored on the mean of their objectives; one side gives the search above.</summary>
+    private static List<AlignmentCandidate> SearchAlignmentCandidatesByLoss(
+        IReadOnlyList<List<AlignmentBin>> sides,
+        double minDelayMs,
+        double maxDelayMs,
+        double maxFrequencyHz,
+        double? priorDelayMs,
+        double priorSigmaMs,
+        bool? forcedPolarity,
         out IReadOnlyList<AlignmentCandidate> allOptima)
     {
-        double weightSum = 0;
-        foreach (AlignmentBin bin in bins)
+        var weightSums = new double[sides.Count];
+        for (int side = 0; side < sides.Count; side++)
         {
-            weightSum += bin.LogWeight;
+            foreach (AlignmentBin bin in sides[side])
+            {
+                weightSums[side] += bin.LogWeight;
+            }
         }
 
         double EvaluatePolarity(double delayMs, bool invert)
         {
-            double loss = 0;
-            foreach (AlignmentBin bin in bins)
+            double mean = 0;
+            for (int side = 0; side < sides.Count; side++)
             {
-                Complex variable = bin.Variable * Complex.Exp(
-                    new Complex(0, -bin.OmegaMs * delayMs));
-                Complex sum = invert
-                    ? bin.FixedSum - variable
-                    : bin.FixedSum + variable;
-                loss += bin.LogWeight * Math.Log10(Math.Max(
-                    sum.Magnitude / bin.MagnitudeSum,
-                    MinBinAmplitudeRatio));
+                double loss = 0;
+                foreach (AlignmentBin bin in sides[side])
+                {
+                    Complex variable = bin.Variable * Complex.Exp(
+                        new Complex(0, -bin.OmegaMs * delayMs));
+                    Complex sum = invert
+                        ? bin.FixedSum - variable
+                        : bin.FixedSum + variable;
+                    loss += bin.LogWeight * Math.Log10(Math.Max(
+                        sum.Magnitude / bin.MagnitudeSum,
+                        MinBinAmplitudeRatio));
+                }
+
+                mean += loss * 20.0 / weightSums[side];
             }
 
-            return loss * 20.0 / weightSum;
+            return mean / sides.Count;
         }
 
         double PriorPenaltyDb(double delayMs)
@@ -2151,21 +2195,38 @@ public static class VirtualCrossoverAnalysis
             (int)Math.Floor((maxDelayMs - minDelayMs) / coarseStep + 1e-9) + 1);
         var normalDb = new double[gridCount];
         var invertedDb = new double[gridCount];
-        foreach (AlignmentBin bin in bins)
+        for (int side = 0; side < sides.Count; side++)
         {
-            Complex rotated = bin.Variable * Complex.Exp(
-                new Complex(0, -bin.OmegaMs * minDelayMs));
-            Complex stepPhasor = Complex.Exp(new Complex(0, -bin.OmegaMs * coarseStep));
+            var sideNormal = new double[gridCount];
+            var sideInverted = new double[gridCount];
+            foreach (AlignmentBin bin in sides[side])
+            {
+                Complex rotated = bin.Variable * Complex.Exp(
+                    new Complex(0, -bin.OmegaMs * minDelayMs));
+                Complex stepPhasor = Complex.Exp(new Complex(0, -bin.OmegaMs * coarseStep));
+                for (int i = 0; i < gridCount; i++)
+                {
+                    sideNormal[i] += bin.LogWeight * Math.Log10(Math.Max(
+                        (bin.FixedSum + rotated).Magnitude / bin.MagnitudeSum,
+                        MinBinAmplitudeRatio));
+                    sideInverted[i] += bin.LogWeight * Math.Log10(Math.Max(
+                        (bin.FixedSum - rotated).Magnitude / bin.MagnitudeSum,
+                        MinBinAmplitudeRatio));
+                    rotated *= stepPhasor;
+                }
+            }
+
             for (int i = 0; i < gridCount; i++)
             {
-                normalDb[i] += bin.LogWeight * Math.Log10(Math.Max(
-                    (bin.FixedSum + rotated).Magnitude / bin.MagnitudeSum,
-                    MinBinAmplitudeRatio));
-                invertedDb[i] += bin.LogWeight * Math.Log10(Math.Max(
-                    (bin.FixedSum - rotated).Magnitude / bin.MagnitudeSum,
-                    MinBinAmplitudeRatio));
-                rotated *= stepPhasor;
+                normalDb[i] += sideNormal[i] * 20.0 / weightSums[side];
+                invertedDb[i] += sideInverted[i] * 20.0 / weightSums[side];
             }
+        }
+
+        for (int i = 0; i < gridCount; i++)
+        {
+            normalDb[i] /= sides.Count;
+            invertedDb[i] /= sides.Count;
         }
 
         // A forced polarity seeds only its own grid, so every candidate is evaluated for the final sign.
@@ -2181,7 +2242,7 @@ public static class VirtualCrossoverAnalysis
             var scores = new double[gridCount];
             for (int i = 0; i < gridCount; i++)
             {
-                scores[i] = accumulated[i] * 20.0 / weightSum
+                scores[i] = accumulated[i]
                     - PriorPenaltyDb(minDelayMs + i * coarseStep);
             }
 
@@ -2224,8 +2285,18 @@ public static class VirtualCrossoverAnalysis
         // Dip excess folded in before ranking, so a notched optimum cannot tie a smooth one.
         for (int i = 0; i < refined.Count; i++)
         {
-            (double lossDb, double dipDb) = DetailedLoss(
-                bins, weightSum, refined[i].DelayMs, refined[i].InvertPolarity);
+            double lossDb = 0;
+            double dipDb = 0;
+            for (int side = 0; side < sides.Count; side++)
+            {
+                (double sideLoss, double sideDip) = DetailedLoss(
+                    sides[side], weightSums[side], refined[i].DelayMs, refined[i].InvertPolarity);
+                lossDb += sideLoss;
+                dipDb += sideDip;
+            }
+
+            lossDb /= sides.Count;
+            dipDb /= sides.Count;
             refined[i] = refined[i] with
             {
                 ScoreDb = refined[i].ScoreDb
@@ -2400,7 +2471,39 @@ public static class VirtualCrossoverAnalysis
         double minFrequencyHz,
         double maxFrequencyHz,
         ValidSampleRange variableValidRange = default,
-        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null) =>
+        MeasureJunctionSpectrum(
+            variableImpulseResponse, fixedImpulseResponses, sampleRate, minFrequencyHz, maxFrequencyHz,
+            variableValidRange, fixedValidRanges, levels: null);
+
+    /// <summary>The same read, also handing back each bin's two levels.</summary>
+    public static JunctionSpectrumReading? MeasureJunctionSpectrum(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz,
+        ValidSampleRange variableValidRange,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges,
+        out IReadOnlyList<JunctionLevelBin> levelBins)
+    {
+        var collected = new List<JunctionLevelBin>();
+        JunctionSpectrumReading? reading = MeasureJunctionSpectrum(
+            variableImpulseResponse, fixedImpulseResponses, sampleRate, minFrequencyHz, maxFrequencyHz,
+            variableValidRange, fixedValidRanges, collected);
+        levelBins = collected;
+        return reading;
+    }
+
+    private static JunctionSpectrumReading? MeasureJunctionSpectrum(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz,
+        ValidSampleRange variableValidRange,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges,
+        List<JunctionLevelBin>? levels)
     {
         List<AlignmentBin> bins = BuildAlignmentBins(
             variableImpulseResponse,
@@ -2419,27 +2522,153 @@ public static class VirtualCrossoverAnalysis
             return null;
         }
 
+        if (levels != null)
+        {
+            foreach (AlignmentBin bin in bins)
+            {
+                levels.Add(new JunctionLevelBin(
+                    bin.OmegaMs * 1_000.0 / Math.Tau,
+                    bin.LogWeight,
+                    20 * Math.Log10(Math.Max(bin.FixedSum.Magnitude, 1e-12)),
+                    20 * Math.Log10(Math.Max(bin.Variable.Magnitude, 1e-12))));
+            }
+        }
+
+        return ReadAt(bins, delayMs: 0, invert: false);
+    }
+
+    /// <summary>The junction read at the variable side's best timing within +/- <paramref name="halfWindowMs"/>, chosen
+    /// as the wizard's post-check chooses it. Null without usable bins or delay evidence.</summary>
+    public static (JunctionSpectrumReading Reading, AlignmentCandidate Alignment)? MeasureAlignedJunctionSpectrum(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz,
+        double halfWindowMs,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
+    {
+        List<AlignmentBin> bins = BuildAlignmentBins(
+            variableImpulseResponse,
+            fixedImpulseResponses,
+            sampleRate,
+            minFrequencyHz,
+            maxFrequencyHz,
+            minDelayMs: -halfWindowMs,
+            maxDelayMs: halfWindowMs,
+            levelMatch: false,
+            gateAnchorSample: null,
+            variableValidRange,
+            fixedValidRanges);
+        if (bins.Count == 0 || !HoldsDelayEvidence(bins))
+        {
+            return null;
+        }
+
+        IReadOnlyList<AlignmentCandidate> found = SearchAlignmentCandidatesByLoss(
+            bins,
+            -halfWindowMs,
+            halfWindowMs,
+            maxFrequencyHz,
+            priorDelayMs: 0,
+            priorSigmaMs: halfWindowMs / 2.0,
+            forcedPolarity: null,
+            out _);
+        if (found.Count == 0)
+        {
+            return null;
+        }
+
+        AlignmentCandidate chosen = AlignmentSelection.Select(found, 0);
+        return (ReadAt(bins, chosen.DelayMs, chosen.InvertPolarity), chosen);
+    }
+
+    /// <summary>Every side read at one timing of the variable side, chosen on the mean of the sides' objectives, as a
+    /// mono block's single delay requires. Only sides with delay evidence vote; null where none does.</summary>
+    public static (IReadOnlyList<JunctionSpectrumReading?> Readings, AlignmentCandidate Alignment)?
+        MeasureJointlyAlignedJunctionSpectra(
+            IReadOnlyList<JunctionAlignmentSide> sides,
+            double minFrequencyHz,
+            double maxFrequencyHz,
+            double halfWindowMs)
+    {
+        ArgumentNullException.ThrowIfNull(sides);
+        var bins = new List<List<AlignmentBin>>(sides.Count);
+        foreach (JunctionAlignmentSide side in sides)
+        {
+            bins.Add(BuildAlignmentBins(
+                side.VariableImpulseResponse,
+                [side.FixedImpulseResponse],
+                side.SampleRate,
+                minFrequencyHz,
+                maxFrequencyHz,
+                minDelayMs: -halfWindowMs,
+                maxDelayMs: halfWindowMs,
+                levelMatch: false,
+                gateAnchorSample: null,
+                side.VariableValidRange,
+                [side.FixedValidRange]));
+        }
+
+        List<List<AlignmentBin>> voters = bins
+            .Where(side => side.Count > 0 && HoldsDelayEvidence(side))
+            .ToList();
+        if (voters.Count == 0)
+        {
+            return null;
+        }
+
+        IReadOnlyList<AlignmentCandidate> found = SearchAlignmentCandidatesByLoss(
+            voters,
+            -halfWindowMs,
+            halfWindowMs,
+            maxFrequencyHz,
+            priorDelayMs: 0,
+            priorSigmaMs: halfWindowMs / 2.0,
+            forcedPolarity: null,
+            out _);
+        if (found.Count == 0)
+        {
+            return null;
+        }
+
+        AlignmentCandidate chosen = AlignmentSelection.Select(found, 0);
+        return (
+            bins.Select(side => side.Count == 0
+                    ? null
+                    : ReadAt(side, chosen.DelayMs, chosen.InvertPolarity))
+                .ToList(),
+            chosen);
+    }
+
+
+    private static JunctionSpectrumReading ReadAt(List<AlignmentBin> bins, double delayMs, bool invert)
+    {
         double weightSum = 0;
         double levelSum = 0;
-        var levels = new double[bins.Count];
+        var sumLevels = new double[bins.Count];
         for (int i = 0; i < bins.Count; i++)
         {
             AlignmentBin bin = bins[i];
             weightSum += bin.LogWeight;
-            double magnitude = (bin.FixedSum + bin.Variable).Magnitude;
-            levels[i] = 20 * Math.Log10(Math.Max(magnitude, 1e-12));
-            levelSum += bin.LogWeight * levels[i];
+            Complex variable = delayMs == 0
+                ? bin.Variable
+                : bin.Variable * Complex.Exp(new Complex(0, -bin.OmegaMs * delayMs));
+            double magnitude = (invert ? bin.FixedSum - variable : bin.FixedSum + variable).Magnitude;
+            sumLevels[i] = 20 * Math.Log10(Math.Max(magnitude, 1e-12));
+            levelSum += bin.LogWeight * sumLevels[i];
         }
 
         double mean = levelSum / weightSum;
         double variance = 0;
         for (int i = 0; i < bins.Count; i++)
         {
-            double deviation = levels[i] - mean;
+            double deviation = sumLevels[i] - mean;
             variance += bins[i].LogWeight * deviation * deviation;
         }
 
-        (double lossDb, double dipDb) = DetailedLoss(bins, weightSum, delayMs: 0, invert: false);
+        (double lossDb, double dipDb) = DetailedLoss(bins, weightSum, delayMs, invert);
         return new JunctionSpectrumReading(lossDb, dipDb, Math.Sqrt(variance / weightSum));
     }
 

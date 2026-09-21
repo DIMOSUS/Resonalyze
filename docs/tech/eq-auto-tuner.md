@@ -148,7 +148,8 @@ everywhere it is sampled, so the plot, the fit, the statistics and the level che
   correction FIR, whose magnitude belongs in the source and not in the goal (folded into the target it would simply
   be cancelled by the fit). A channel may legitimately run both stages, and then the shape is their product, as the
   chain applies them — reading one and dropping the other left the other's skirt unshaped and unprotected. The shape
-  is clamped to 0 dB above and 40 dB below: a target diving to minus infinity is no goal. A narrow passband's two skirts overlap, so the middle of the band sits a few tenths below 0 — the measured
+  is clamped to 0 dB above and has no floor: a floor drew a false shelf, and a window widened by hand past it had the
+  fit pin the response onto that shelf. A zero of the response is minus infinity, which the fit skips. A narrow passband's two skirts overlap, so the middle of the band sits a few tenths below 0 — the measured
   curve through the same chain carries that droop too, so target and source still agree there.
 - **The window** widens to where each skirt has fallen `SlopeWindowFallDb` (18 dB), bounded by the measured band: far
   enough to score the slope that matters for summation, not so far that the fit chases a filter into the floor. It
@@ -176,11 +177,15 @@ The gain is one-sided by nature. Where the measured slope is steeper than the ta
 top of the filter — a bank that may not lift leaves it alone, and only the statistics notice. Where the driver has
 more output than the filter's slope asks for, the fit now brings it down instead of stopping at the corner.
 
-**What this is not.** The goal here is the channel's CURRENT electrical crossover: the tune's filter becomes the
-acoustic target. The fuller idea is a DESIRED acoustic crossover stated independently — an acoustic LR24 at 2 kHz
-does not require an electrical LR24 — with the electrical filter, the PEQ and the driver's own roll-off chosen
-together to reach it. That is a larger feature touching Auto crossover, and this is the first step toward it: it
-stops the fit from ignoring the slopes, and it is measured to help the sum.
+**An acoustic crossover stated on the card.** Where the card states an ACOUSTIC crossover (a junction tune writes the
+one it was asked for, or the card editor sets it), the handoff sends that as `TargetCrossover`, per edge
+(`VirtualDspEqHandoff.GoalCrossoverFor`: the family and slope asked, at the
+electrical corner), so the fit aims at driver and filter together rather than at the filter alone. The filter the
+chain runs then travels beside it as `EqWizardCurveSource.ElectricalCrossover` — only where the two differ — and the
+wizard draws the target on it too (`EqWizardRender.ElectricalTargetCurve`): dotted, at half the target's opacity,
+under the target, and read by nothing else — not the fit, the statistics or the level check. The two skirts side by
+side show how much of the slope the driver is expected to supply. The measured verdict:
+`docs/tech/crossover-auto-setup.md#measured-on-the-battery`.
 
 ### The objective
 

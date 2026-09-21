@@ -263,4 +263,48 @@ internal static class AgentProbeReader
             ? ([], "no side has both blocks measured")
             : (sides, null);
     }
+
+    /// <summary>The tune re-aligns the upper block, so only a mono upper block holds one delay for both sides; a
+    /// mono lower block stays put while each side's upper block aligns to it on its own.</summary>
+    internal static bool SharesOneAlignment(VirtualCrossoverChannel lower, VirtualCrossoverChannel upper) =>
+        upper.Pair.Mono;
+
+    /// <summary>Each channel's plant from its spatial average, where the EQ handoff would give Auto Tune one
+    /// (<paramref name="mode"/> null while the hybrid is not drawn).</summary>
+    internal static List<JunctionTuneSide> WithSpatialAverages(
+        List<JunctionTuneSide> sides,
+        VirtualCrossoverChannel lower,
+        VirtualCrossoverChannel upper,
+        VirtualCrossoverSpatialAverageMode? mode,
+        SpatialAverageCalibration calibration,
+        int processorSampleRateHz)
+    {
+        if (mode is not { } family)
+        {
+            return sides;
+        }
+
+        return sides
+            .Select(side =>
+            {
+                bool rightSide = side.Name == "right";
+                return side with
+                {
+                    LowerMagnitude = Plant(lower, rightSide, CrossoverJunctionTuner.WithoutLowPass(side.LowerChain)),
+                    UpperMagnitude = Plant(upper, rightSide, CrossoverJunctionTuner.WithoutHighPass(side.UpperChain))
+                };
+            })
+            .ToList();
+
+        IReadOnlyList<SignalPoint>? Plant(VirtualCrossoverChannel channel, bool rightSide, DspChannelChain chain) =>
+            channel.SideState(rightSide && !channel.Pair.Mono).SpatialAverageFor(family) is { } capture
+                ? SpatialAverageHybrid.BuildChannelCurve(
+                    capture,
+                    chain with { Peq = null },
+                    processorSampleRateHz,
+                    calibration,
+                    capture.ToCurvePoints().Select(point => point.X).ToList(),
+                    smoothingCode: 0)
+                : null;
+    }
 }

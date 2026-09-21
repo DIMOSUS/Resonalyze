@@ -865,6 +865,37 @@ Press **Apply** if the result makes physical sense. Auto Crossover does not know
 drivers' limits: always check the proposal against the datasheets and your own knowledge
 of the system.
 
+### Refining one junction: Tune junction
+
+Auto Crossover works from magnitudes with the drivers taken as perfectly aligned, which
+is the right reading for a blank tune. Once delays and polarity are set, press **Tune
+junction...** to refine ONE handover against what the pair actually measures: every
+candidate crossover is read on the **coherent sum through both full chains, after the
+delay and polarity Auto delay would give it** — you run Auto delay again after a junction
+tune anyway — and the report recommends keeping the crossover on screen unless a
+challenger beats it on that reading. Nothing is written until you press Apply, which
+writes the crossover the report found — even one it advises against, because that choice
+is yours.
+
+**Tune for** says which question you are asking. **The best summation** searches for the
+flattest handover this junction can have, and the slope window beside it holds the
+answer near a steepness you want. **Corners free per side** additionally offers the two
+edges a little apart or a little overlapped — apart takes a bump off a junction,
+overlapped fills a dip — always on whole hertz, the way the channel card states them.
+
+The other question is the crossover in **acoustic** terms. Set the goal to LR24 and
+Resonalyze looks for the electrical filter that, with this driver's own roll-off
+included, adds up to that slope — on every channel of the junction, judged by the one
+that misses most — and tells you plainly whether these drivers can reach it at all,
+since a filter can only make a response steeper. Apply remembers the goal on the channel
+card and the EQ stage aims at it instead of at the electrical filter; where the
+crossover misses it, the report says so in red, and clearing it on the card sends the
+fit back to the filter. The stated slope chooses only among crossovers within the budget
+beside it — how much of the summation the goal may cost, 1.0 dB by default — and the
+report shows what it cost. **Undo last Apply** in the same dialog takes an Apply back.
+
+![The Tune junction dialog: the junction, the corner window, the filters on offer and the two things it can tune for, with the search report below](assets/images/manual/tune-junction.png)
+
 ### Manual tuning is always available
 
 Every channel card exposes its HPF, LPF, family and slope, so any crossover can be
@@ -1313,7 +1344,7 @@ measurement. [REFERENCE.md](REFERENCE.md#ai-assistant-bridge) describes the brid
 
 ### Hear it before you go back to the car
 
-Press **Audition track...**, choose a music file and a destination, and Resonalyze
+Press **Tools...**, pick **Audition track...**, choose a music file and a destination, and Resonalyze
 convolves it with both sides' summed responses — the sums the graph draws — into a
 stereo file.
 

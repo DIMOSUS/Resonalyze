@@ -114,6 +114,14 @@ internal sealed class AgentSessionReader(
                 // Kernel by content; the imported name is only a label.
                 Digest(settings.Fir?.Taps.ToArray()),
                 FirDesign(settings.FirDesign)));
+            // The acoustic goals move Auto Tune's target, so a reply read against other goals is stale. A line of its
+            // own, and only where a goal is stated, so a session without one hashes as it always has.
+            if (settings.AcousticHighPass != null || settings.AcousticLowPass != null)
+            {
+                lines.Add(string.Join(';',
+                    "goal", block, AgentChannelIds.SideName(side),
+                    Goal(settings.AcousticHighPass), Goal(settings.AcousticLowPass)));
+            }
         }
 
         return AgentSessionFingerprint.Compute(lines);
@@ -136,6 +144,9 @@ internal sealed class AgentSessionReader(
 
         static string Edge(CrossoverEdge edge) =>
             $"{edge.Family}/{Number(edge.FrequencyHz)}/{edge.SlopeDbPerOctave}/{Number(edge.RippleDb)}";
+
+        static string Goal(JunctionAcousticTarget? goal) =>
+            goal is { } asked ? $"{asked.Family}/{asked.SlopeDbPerOctave}" : string.Empty;
 
         static string FirDesign(FirCrossoverDesign? design) =>
             design == null

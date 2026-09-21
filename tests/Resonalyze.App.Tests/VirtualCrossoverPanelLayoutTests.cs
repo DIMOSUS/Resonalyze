@@ -63,9 +63,11 @@ public sealed class VirtualCrossoverPanelLayoutTests
         Control curves = Field<Control>(panel, "labelCurves");
         Control view = Field<Control>(panel, "panel1");
         Control autoDelay = Field<Control>(panel, "buttonAutoDelay");
+        Control tuneJunction = Field<Control>(panel, "buttonTuneJunction");
         int curvesGap = curves.Top - main.Bottom;
         int viewGap = view.Top - main.Bottom;
         int autoDelayGap = autoDelay.Top - main.Bottom;
+        int tuneJunctionGap = tuneJunction.Top - main.Bottom;
         int dspGap = dsp.Top - main.Bottom;
         Size design = panel.Size;
 
@@ -74,8 +76,34 @@ public sealed class VirtualCrossoverPanelLayoutTests
         Assert.Equal(curvesGap, curves.Top - main.Bottom);
         Assert.Equal(viewGap, view.Top - main.Bottom);
         Assert.Equal(autoDelayGap, autoDelay.Top - main.Bottom);
+        Assert.Equal(tuneJunctionGap, tuneJunction.Top - main.Bottom);
         Assert.Equal(dspGap, dsp.Top - main.Bottom);
         Assert.True(main.Bottom < curves.Top);
+        // The column is tight: five buttons above the bottom-anchored block must still clear it.
+        Assert.True(
+            tuneJunction.Bottom < Field<Control>(panel, "buttonTools").Top,
+            "the button column overlaps the bottom row.");
+    }
+
+    [Fact]
+    public void TheAuxiliaryBlock_SitsAtTheBottom_ApartFromTheTuningButtons()
+    {
+        using var panel = new VirtualCrossoverPanel();
+        Control ai = Field<Control>(panel, "buttonAi");
+        Control tools = Field<Control>(panel, "buttonTools");
+        Control save = Field<Control>(panel, "buttonSessionExport");
+        Control load = Field<Control>(panel, "buttonSessionImport");
+        Control export = Field<Control>(panel, "buttonExport");
+
+        Assert.True(
+            tools.Top - ai.Bottom >= tools.Height / 2,
+            $"the two groups touch: {ai.Bottom} to {tools.Top}.");
+        int pitch = save.Top - tools.Top;
+        Assert.Equal(pitch, load.Top - save.Top);
+        Assert.Equal(pitch, export.Top - load.Top);
+        Assert.True(
+            panel.ClientSize.Height - export.Bottom < pitch,
+            $"{panel.ClientSize.Height - export.Bottom} px of empty column under Export.");
     }
 
     [Fact]

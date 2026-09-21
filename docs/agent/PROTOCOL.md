@@ -222,6 +222,13 @@ else in a reply touches it.
 - Both crossover edges are always stored; `kind` says which act (`LowPass` uses
   `lowPass`, `HighPass` uses `highPass`, `BandPass` both, `Off` none). `rippleDb`
   matters only for `Chebyshev`.
+- `crossover.acousticHighPass` / `acousticLowPass`, where present, are the
+  ACOUSTIC crossover the user asked for at that edge: `{ "family", "slopeDbPerOctave" }`,
+  what driver and filter should add up to, at the electrical corner. While `kind`
+  uses that edge, `autoTunePeq` aims the channel's target at it instead of at the
+  electrical filter — so a channel whose driver already falls fast may be fitted to
+  a softer skirt than its filter draws. The Tune junction dialog writes them; no
+  operation does. They are part of what a package was read against.
 - `dsp.phaseRotationDeg` appears only where the channel has a phase rotation
   dialled in — the per-channel Phase control of the processors that have one
   (HELIX and relatives). It is an ANGLE, not a corner: the device places a
@@ -690,16 +697,21 @@ it is now — the document says whether that session still matches the package.
 `tuneJunction` is the crossover engine for a tuned system, where the wizard is
 not: it searches ONE junction's two facing edges — the lower block's low-pass
 and the upper block's high-pass; corner on the wizard's lattice, family,
-slopes — and scores every candidate on the pair's coherent sum **at the
-current delays and polarity**, through the whole current chains (PEQ
-included), on every side the pair is measured on: the summation loss, its
+slopes — and scores every candidate on the pair's coherent sum **after
+re-aligning the upper block for that candidate** (the delay and polarity the
+wizard's post-check would pick, one shift for both sides where the upper block is
+mono), through the whole current chains (PEQ included), on every side the
+pair is measured on: the summation loss, its
 dip, and the ripple of the sum, read on one band shared by every candidate
 (an octave outside the corner window and the current corner, so the car's
 own ripple is the same term for all of them) and again on the candidate's own
 band, an octave each side of its corner — the band the panel's Sum loss row
 and the package read a junction on. No slope is preferred. Gains, delays,
-polarity, PEQ and every other junction stay exactly as they are; one
-crossover is written to both sides of both blocks, as the wizard writes one.
+polarity, PEQ and every other junction stay exactly as they are — the
+re-alignment is only how candidates are read, so a changed crossover wants a
+`runAutoDelay` after it; one crossover is written to both sides of both
+blocks, as the wizard writes one, and a junction whose two sides run
+different crossovers is skipped rather than merged.
 The current crossover keeps its place unless a candidate beats it by 0.5 dB
 on the shared-band score and reads no worse on its own band, and the summary
 says either way: the two edges before and after, per side the own-band loss,

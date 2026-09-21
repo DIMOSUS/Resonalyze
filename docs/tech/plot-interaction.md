@@ -80,6 +80,16 @@ turns that into edits: the EQ Wizard writes the band through `EqWizardBank.Edit`
 strip's precision, and lands the drag as one undo step on release. WinForms raises the view's `Click` after any
 press, so the wizard marks a press that took a handle and does not read that click as a click on empty graph.
 
+## Redraw before paint
+
+A redraw that replaces series (the EQ Wizard's fills, the DSP chain's curves) calls `InvalidatePlot(true)`, and
+OxyPlot binds the new series to their axes only in the model update of the next paint. A mouse press is handled
+before `WM_PAINT`, and `Model.HandleMouseDown` hit-tests every series before any command runs; a series without axes
+throws a `NullReferenceException` inside OxyPlot (`XYAxisSeries.InverseTransform`), and so would the tracker the
+left press starts. `PlotGestureController.HandleMouseDown` therefore runs `Update(false)` first whenever a visible
+series or an annotation is still unbound — the step the paint would take anyway, and a no-op otherwise. One place
+for every plot on the controller, rather than an update after each redraw that the next redraw could forget.
+
 ## Axis zoom arithmetic
 
 `PlotAxisZoom` is kept out of the controller so it can be tested without a view.

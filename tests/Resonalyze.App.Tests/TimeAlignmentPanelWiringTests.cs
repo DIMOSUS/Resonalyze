@@ -167,9 +167,10 @@ public sealed class TimeAlignmentPanelWiringTests
 
         using (AnalyzerDocument.Request hold = live.Document.TryAcquire()!)
         {
+            live.Compare.Set("c.json", null, Measurement(peak: 448));
             live.Settle();
             Assert.Equal(before, live.Status);
-            Assert.Equal("Source: a.json, 48000 Hz, 24 bit.", live.Panel.SourceSummaryLabel.Text);
+            Assert.Equal("Compare: -", live.Panel.CompareLabel.Text);
 
             hold.Install(Measurement(peak: 900), "b.json");
         }
@@ -177,7 +178,8 @@ public sealed class TimeAlignmentPanelWiringTests
         live.Settle();
 
         Assert.Equal("Source: b.json, 48000 Hz, 24 bit.", live.Panel.SourceSummaryLabel.Text);
-        Assert.NotEqual(before, live.Status);
+        Assert.Equal("Compare: c.json, 48000 Hz, 24 bit.", live.Panel.CompareLabel.Text);
+        Assert.Contains("Compare Signal: ", live.Status, StringComparison.Ordinal);
     });
 
     [Fact]

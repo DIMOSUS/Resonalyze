@@ -47,10 +47,10 @@ public sealed class TimeAlignmentEnergyOnsetMarkerTests
     [Fact]
     public void GetEnergyOnsetIndex_RoundsAndWrapsTheSignedSample()
     {
-        Assert.Equal(370, TimeAlignmentPanelController.GetEnergyOnsetIndex(
+        Assert.Equal(370, TimeAlignmentPreviews.GetEnergyOnsetIndex(
             MakeResult(400, 500, 370.4)));
         // A complete record reports a position past its midpoint as a negative delay; the index wraps.
-        Assert.Equal(2048 - 30, TimeAlignmentPanelController.GetEnergyOnsetIndex(
+        Assert.Equal(2048 - 30, TimeAlignmentPreviews.GetEnergyOnsetIndex(
             MakeResult(400, 500, -30.0)));
     }
 
@@ -60,7 +60,7 @@ public sealed class TimeAlignmentEnergyOnsetMarkerTests
         TimeAlignmentAnalysisResult result = MakeResult(400, 500, 370.0);
         var model = new PlotModel();
 
-        TimeAlignmentPanelController.AddMainPeakMarkers(
+        TimeAlignmentPreviews.AddMainPeakMarkers(
             model, result, result.StrongestEnvelopePeak);
 
         PlotCalloutMarkerAnnotation onset = Assert.Single(
@@ -68,7 +68,7 @@ public sealed class TimeAlignmentEnergyOnsetMarkerTests
             annotation => annotation.Text == "M Onset");
         Assert.Equal((370.0 - 400.0) * 1000.0 / SampleRate, onset.AnchorPoint.X, 9);
         Assert.Equal(
-            TimeAlignmentPanelController.GetPeakMarkerDecibels(
+            TimeAlignmentPreviews.GetPeakMarkerDecibels(
                 result, result.StrongestEnvelopePeak, 370),
             onset.AnchorPoint.Y,
             9);
@@ -84,7 +84,7 @@ public sealed class TimeAlignmentEnergyOnsetMarkerTests
         TimeAlignmentAnalysisResult compare = MakeResult(450, 550, 425.0);
         var model = new PlotModel();
 
-        TimeAlignmentPanelController.AddComparePeakMarkers(
+        TimeAlignmentPreviews.AddComparePeakMarkers(
             model, main, compare, main.StrongestEnvelopePeak,
             compare.FirstArrivalDelayMilliseconds - main.FirstArrivalDelayMilliseconds);
 

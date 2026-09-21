@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
@@ -183,6 +185,28 @@ public sealed class PlotAxisZoomTests
             model,
             new ScreenPoint(zoomIn.Center.X, zoomIn.Center.Y - (PlotZoomButtons.Radius * 3)),
             out _));
+    }
+
+    [Fact]
+    public void TextAtTheTopLeft_StartsPastTheLeftPair()
+    {
+        PlotModel model = RenderedModel();
+        model.Annotations.Add(new OverlayTextAnnotation
+        {
+            Text = "Transfer IR Peak",
+            TextPosition = new DataPoint(0, 0),
+            OffsetX = PlotZoomButtons.LeftPairClearance,
+            TextFlowDirection = TextFlowDirection.TopDown,
+            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left
+        });
+        var svg = new OxyPlot.SvgExporter { Width = PlotWidth, Height = PlotHeight }.ExportToString(model);
+
+        Match text = Regex.Match(svg, @"<text[^>]*translate\(([\d.]+),[^>]*>Transfer IR Peak<");
+        Assert.True(text.Success, "the readout was not drawn.");
+        double textLeft = double.Parse(text.Groups[1].Value, CultureInfo.InvariantCulture);
+        Assert.All(
+            PlotZoomButtons.Layout(model).Where(button => !button.Horizontal),
+            button => Assert.True(button.Center.X + PlotZoomButtons.Radius < textLeft));
     }
 
     [Fact]

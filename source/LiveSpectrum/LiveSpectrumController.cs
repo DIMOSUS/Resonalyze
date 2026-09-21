@@ -545,7 +545,8 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
             captureProgressAnnotation = new OverlayTextAnnotation
             {
                 Tag = CaptureProgressAnnotationTag,
-                TextPosition = new DataPoint(0.01, 0),
+                TextPosition = new DataPoint(0, 0),
+                OffsetX = PlotZoomButtons.LeftPairClearance,
                 TextFlowDirection = TextFlowDirection.TopDown,
                 FontSize = 12,
                 TextColor = UiPalette.TextSecondary.ToOxy(),

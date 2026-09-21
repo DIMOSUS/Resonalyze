@@ -15,6 +15,9 @@ internal static class PlotZoomButtons
     private const double Spacing = 12;
     private const double Inset = 20;
 
+    /// <summary>Where text at the top-left starts so the left pair does not cover it, in pixels from the plot's edge.</summary>
+    public const double LeftPairClearance = Inset + Radius + 4;
+
     // Thumbnails (history previews, collapsed panels): buttons would cover the curve.
     private const double MinimumPlotSize = 160;
 

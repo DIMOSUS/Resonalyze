@@ -98,7 +98,10 @@ The analysis plot, the Time Alignment previews, the EQ Wizard and the Virtual DS
 graphs all take the same mouse and keyboard controls, laid out to match REW's
 graph panel so there is nothing to relearn when you move between the two. (The
 small previews inside settings panels and dialogs — the impulse window, the gate
-preview, the history list — are fixed-scale by design and take none of this.)
+preview, the history list, the angle calibration — are fixed-scale by design: a left
+press still reads a point, Ctrl + right-drag still measures and F1 still shows the
+card, but nothing zooms or pans them. The target preview in the target settings is
+the exception and takes all of it.)
 
 | Gesture | What it does |
 | --- | --- |

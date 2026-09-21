@@ -291,7 +291,8 @@ internal sealed class AnalyzerPlot : IModeView
         {
             Tag = PeakInfoAnnotationTag,
             Text = text,
-            TextPosition = new DataPoint(0.01, 0),
+            TextPosition = new DataPoint(0, 0),
+            OffsetX = PlotZoomButtons.LeftPairClearance,
             TextFlowDirection = TextFlowDirection.TopDown,
             FontSize = 12,
             FontWeight = 700,

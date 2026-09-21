@@ -20,6 +20,9 @@ namespace Resonalyze
         public TextFlowDirection TextFlowDirection { get; init; } =
             TextFlowDirection.BottomUp;
 
+        /// <summary>Pixels added after <c>TextPosition.X</c>: a fixed clearance, where a fraction of the width would not be.</summary>
+        public double OffsetX { get; init; }
+
         public override void Render(IRenderContext rc)
         {
             if (this.Text == null)
@@ -35,7 +38,7 @@ namespace Resonalyze
                 ? axisRect.Top + y
                 : axisRect.Bottom - y;
             var position = new ScreenPoint(
-                (1.0 - x) * axisRect.BottomLeft.X + x * axisRect.TopRight.X,
+                (1.0 - x) * axisRect.BottomLeft.X + x * axisRect.TopRight.X + OffsetX,
                 screenY);
 
             this.GetActualTextAlignment(out var ha, out _);

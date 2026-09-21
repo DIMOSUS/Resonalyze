@@ -1,6 +1,3 @@
-using System.Drawing;
-using System.IO;
-
 namespace Resonalyze.Options;
 
 internal sealed record RecordCalibrationButton(string Text, Color Color, string ToolTip);

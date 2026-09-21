@@ -1,4 +1,3 @@
-using Resonalyze.Audio;
 using Resonalyze.Options;
 using Resonalyze.Ui;
 

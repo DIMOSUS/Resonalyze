@@ -1,5 +1,3 @@
-using System.Drawing;
-
 namespace Resonalyze.Options;
 
 /// <summary>The sweep the next run would play, as the session's fields describe it (the rate as selected, not applied).</summary>

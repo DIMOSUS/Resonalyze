@@ -1,7 +1,6 @@
 namespace Resonalyze.Options;
 
-/// <summary>The machine's audio devices as Record Settings reads them. <see cref="SystemRecordDevices"/> asks the
-/// hardware; tests hand in their own list.</summary>
+/// <summary>The audio hardware as Record Settings reads it; <see cref="SystemRecordDevices"/> asks the machine.</summary>
 internal interface IRecordDevices : IDisposable
 {
     /// <summary>A WASAPI endpoint came or went; raised on whatever thread Core Audio notifies on.</summary>
@@ -18,7 +17,6 @@ internal interface IRecordDevices : IDisposable
         int recordingChannelCount,
         int bitsPerSample);
 
-    /// <summary>Both lists empty when the endpoints cannot be enumerated.</summary>
     (IReadOnlyList<AudioEndpointDescriptor> Capture, IReadOnlyList<AudioEndpointDescriptor> Render) GetEndpoints();
 
     /// <summary>A fresh enumeration for Apply, which must not trust the monitored snapshot; failures propagate.</summary>

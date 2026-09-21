@@ -1,5 +1,3 @@
-using System.Drawing;
-
 namespace Resonalyze.Options;
 
 internal sealed record RecordStatusLine(string Text, Color Color, bool Emphasized = false);

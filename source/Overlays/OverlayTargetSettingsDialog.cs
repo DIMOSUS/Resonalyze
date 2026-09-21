@@ -42,6 +42,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         incomingPreset = preset;
 
         InitializeComponent();
+        PlotInteraction.Enable(previewPlot);
         // Palette value, not a designer literal: the two drifted apart once.
         Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill, Ui.UiPalette.TextOnAccent);
         PopulateControls(availableSources);

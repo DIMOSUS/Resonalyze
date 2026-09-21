@@ -15,6 +15,7 @@ namespace Resonalyze.Options
         public BDOpt()
         {
             InitializeComponent();
+            PlotInteraction.Enable(irPlotView);
             BindTukeyWindowControls(
                 numericWindow,
                 numericLeftWindow,

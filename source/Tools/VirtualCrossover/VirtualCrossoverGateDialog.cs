@@ -30,6 +30,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
     public VirtualCrossoverGateDialog()
     {
         InitializeComponent();
+        PlotInteraction.Enable(irPlotView);
         numericGateOffset.ValueChanged += (_, _) => OnGateChanged();
         numericLeft.ValueChanged += (_, _) => OnGateChanged();
         numericPlateau.ValueChanged += (_, _) => OnGateChanged();

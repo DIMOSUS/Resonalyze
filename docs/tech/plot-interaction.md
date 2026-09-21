@@ -3,7 +3,10 @@
 Every OxyPlot `PlotView` in the app gets the same mouse and keyboard behaviour through
 `PlotInteraction.Enable`, which installs a `PlotGestureController`. The map is shaped after
 REW's graph panel so that someone tuning with REW open on another laptop does not have to
-relearn the mouse. The user-facing copy is the "Graph Zoom and Limits" table in
+relearn the mouse. The option dialogs' previews run on it too: their axes are fixed, so what they take from it is
+the tracker and the redraw guard below, and `PreviewPlotControllerTests` holds each dialog to it. The on-graph
+plus/minus pairs sit at the right end of the bottom axis and the top of the left one, clear of the curve labels in
+the bottom-left corner. The user-facing copy is the "Graph Zoom and Limits" table in
 `REFERENCE.md`; the F1 card is `PlotGestureHelp` (shown by `GraphHelpDialog`). A gesture that
 changes has to change in all three places.
 

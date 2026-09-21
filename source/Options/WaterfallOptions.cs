@@ -16,6 +16,7 @@ namespace Resonalyze.Options
         public WaterfallOptions()
         {
             InitializeComponent();
+            PlotInteraction.Enable(irPlotView);
             BindTukeyWindowControls(numericWindow, numericLeftWindow, numericRightWindow);
             SmoothingPresetOptions.Configure(
                 comboSmoothingInverseOctaves, includePsychoacoustic: true);

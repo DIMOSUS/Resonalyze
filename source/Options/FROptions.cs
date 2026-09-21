@@ -19,6 +19,7 @@ namespace Resonalyze.Options
         public FROptions()
         {
             InitializeComponent();
+            PlotInteraction.Enable(irPlotView);
             splChoiceReadyForeColor = radioMagnitudeSpl.ForeColor;
             BindTukeyWindowControls(numericWindow, numericLeftWindow, numericRightWindow);
             comboWindowMode.SelectedIndexChanged +=

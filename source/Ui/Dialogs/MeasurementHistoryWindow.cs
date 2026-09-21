@@ -22,6 +22,7 @@ internal partial class MeasurementHistoryWindow : Form
     public MeasurementHistoryWindow()
     {
         InitializeComponent();
+        PlotInteraction.Enable(FRPlotView);
         activeEntryFont = new Font(Font, FontStyle.Bold);
         StartPosition = FormStartPosition.CenterParent;
         ConfigureNewSessionButton();

@@ -98,7 +98,10 @@ The analysis plot, the Time Alignment previews, the EQ Wizard and the Virtual DS
 graphs all take the same mouse and keyboard controls, laid out to match REW's
 graph panel so there is nothing to relearn when you move between the two. (The
 small previews inside settings panels and dialogs — the impulse window, the gate
-preview, the history list — are fixed-scale by design and take none of this.)
+preview, the history list, the angle calibration — are fixed-scale by design: a left
+press still reads a point, Ctrl + right-drag still measures and F1 still shows the
+card, but nothing zooms or pans them. The target preview in the target settings is
+the exception and takes all of it.)
 
 | Gesture | What it does |
 | --- | --- |
@@ -113,7 +116,7 @@ preview, the history list — are fixed-scale by design and take none of this.)
 | Middle-button drag | Variable zoom: right and left work the horizontal axis, up and down the vertical one |
 | **Ctrl** + right-button drag | Draws a zoom box, labelled with the size of the area it frames in axis units; it stays on the graph until you click inside it to zoom there |
 | Right-button drag | Pans |
-| The **+** / **&minus;** buttons on the graph | Zoom the axis they sit against by about two, click after click; they appear while the pointer is over the plot, and hovering one names the axis it moves |
+| The **+** / **&minus;** buttons on the graph | Zoom the axis they sit against by about two, click after click; the bottom pair sits at the right end of its axis and the left pair at the top of its. They appear while the pointer is over the plot, and hovering one names the axis it moves |
 | Double click | Opens the graph limits dialog |
 | Left drag on an EQ Wizard band handle | Moves that band: frequency sideways, gain up and down (see [EQ Wizard](#eq-wizard)) |
 | Wheel over the selected EQ Wizard band handle | Steps that band's Q instead of zooming |

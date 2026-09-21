@@ -13,6 +13,7 @@ namespace Resonalyze.Options
         public PROpt()
         {
             InitializeComponent();
+            PlotInteraction.Enable(irPlotView);
             comboWindowMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
             comboFdwCycles.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
             comboDetrendMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();

@@ -11,6 +11,7 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
     public GDOpt()
     {
         InitializeComponent();
+        PlotInteraction.Enable(irPlotView);
         comboWindowMode.SelectedIndexChanged += (_, _) => UpdateWindowControlState();
 
         BindGateControls(

@@ -24,6 +24,7 @@ internal sealed partial class AngleCalibrationDialog : Form
         ArgumentNullException.ThrowIfNull(baseCandidates);
         this.definition = definition;
         InitializeComponent();
+        PlotInteraction.Enable(plotViewPreview);
 
         initializing = true;
         try

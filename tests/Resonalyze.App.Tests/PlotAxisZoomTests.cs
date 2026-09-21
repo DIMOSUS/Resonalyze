@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
@@ -152,7 +154,7 @@ public sealed class PlotAxisZoomTests
     }
 
     [Fact]
-    public void ZoomButtons_SitAgainstTheirOwnAxisAndAnswerAHit()
+    public void ZoomButtons_SitAtTheFarEndOfTheirOwnAxisAndAnswerAHit()
     {
         PlotModel model = RenderedModel();
         OxyRect area = model.PlotArea;
@@ -163,10 +165,18 @@ public sealed class PlotAxisZoomTests
         Assert.Equal(2, buttons.Count(button => button.Horizontal));
         Assert.All(
             buttons.Where(button => button.Horizontal),
-            button => Assert.True(button.Center.Y > (area.Top + area.Bottom) / 2));
+            button => Assert.True(
+                button.Center.Y > area.Bottom - (area.Height / 4) && button.Center.X > area.Right - (area.Width / 4)));
         Assert.All(
             buttons.Where(button => !button.Horizontal),
-            button => Assert.True(button.Center.X < (area.Left + area.Right) / 2));
+            button => Assert.True(
+                button.Center.X < area.Left + (area.Width / 4) && button.Center.Y < area.Top + (area.Height / 4)));
+        Assert.True(
+            buttons.Single(button => button.Horizontal && button.ZoomIn).Center.X >
+            buttons.Single(button => button.Horizontal && !button.ZoomIn).Center.X);
+        Assert.True(
+            buttons.Single(button => !button.Horizontal && button.ZoomIn).Center.Y <
+            buttons.Single(button => !button.Horizontal && !button.ZoomIn).Center.Y);
 
         PlotZoomButton zoomIn = buttons.First(button => button.Horizontal && button.ZoomIn);
         Assert.True(PlotZoomButtons.TryHit(model, zoomIn.Center, out PlotZoomButton hit));
@@ -175,6 +185,28 @@ public sealed class PlotAxisZoomTests
             model,
             new ScreenPoint(zoomIn.Center.X, zoomIn.Center.Y - (PlotZoomButtons.Radius * 3)),
             out _));
+    }
+
+    [Fact]
+    public void TextAtTheTopLeft_StartsPastTheLeftPair()
+    {
+        PlotModel model = RenderedModel();
+        model.Annotations.Add(new OverlayTextAnnotation
+        {
+            Text = "Transfer IR Peak",
+            TextPosition = new DataPoint(0, 0),
+            OffsetX = PlotZoomButtons.LeftPairClearance,
+            TextFlowDirection = TextFlowDirection.TopDown,
+            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left
+        });
+        var svg = new OxyPlot.SvgExporter { Width = PlotWidth, Height = PlotHeight }.ExportToString(model);
+
+        Match text = Regex.Match(svg, @"<text[^>]*translate\(([\d.]+),[^>]*>Transfer IR Peak<");
+        Assert.True(text.Success, "the readout was not drawn.");
+        double textLeft = double.Parse(text.Groups[1].Value, CultureInfo.InvariantCulture);
+        Assert.All(
+            PlotZoomButtons.Layout(model).Where(button => !button.Horizontal),
+            button => Assert.True(button.Center.X + PlotZoomButtons.Radius < textLeft));
     }
 
     [Fact]

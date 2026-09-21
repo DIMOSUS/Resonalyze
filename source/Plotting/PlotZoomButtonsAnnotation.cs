@@ -5,7 +5,8 @@ namespace Resonalyze;
 
 internal readonly record struct PlotZoomButton(ScreenPoint Center, bool Horizontal, bool ZoomIn);
 
-/// <summary>REW's on-graph plus/minus pair per movable axis, shown while the pointer is over the graph. Static layout so the controller
+/// <summary>REW's on-graph plus/minus pair per movable axis, shown while the pointer is over the graph: the bottom pair at
+/// the right end of its axis, the left pair at the top, clear of the curve labels. Static layout so the controller
 /// hit-tests without a render pass.</summary>
 internal static class PlotZoomButtons
 {
@@ -14,8 +15,11 @@ internal static class PlotZoomButtons
     private const double Spacing = 12;
     private const double Inset = 20;
 
-    // Thumbnails (history previews, collapsed panels): buttons would cover the curve.
-    private const double MinimumPlotSize = 160;
+    /// <summary>Where text at the top-left starts so the left pair does not cover it, in pixels from the plot's edge.</summary>
+    public const double LeftPairClearance = Inset + Radius + 4;
+
+    // The left pair reaches about 73 px down; below this a pair no longer fits beside the curve (the target preview is 106).
+    private const double MinimumPlotSize = 80;
 
     public static IReadOnlyList<PlotZoomButton> Layout(PlotModel model)
     {
@@ -40,17 +44,17 @@ internal static class PlotZoomButtons
             return Array.Empty<PlotZoomButton>();
         }
 
-        double centerX = (plotArea.Left + plotArea.Right) / 2;
-        double centerY = (plotArea.Top + plotArea.Bottom) / 2;
+        double right = plotArea.Right - Inset;
         double bottom = plotArea.Bottom - Inset;
         double left = plotArea.Left + Inset;
+        double top = plotArea.Top + Inset;
 
         return
         [
-            new PlotZoomButton(new ScreenPoint(centerX - Spacing, bottom), Horizontal: true, ZoomIn: false),
-            new PlotZoomButton(new ScreenPoint(centerX + Spacing, bottom), Horizontal: true, ZoomIn: true),
-            new PlotZoomButton(new ScreenPoint(left, centerY + Spacing), Horizontal: false, ZoomIn: false),
-            new PlotZoomButton(new ScreenPoint(left, centerY - Spacing), Horizontal: false, ZoomIn: true),
+            new PlotZoomButton(new ScreenPoint(right - (2 * Spacing), bottom), Horizontal: true, ZoomIn: false),
+            new PlotZoomButton(new ScreenPoint(right, bottom), Horizontal: true, ZoomIn: true),
+            new PlotZoomButton(new ScreenPoint(left, top + (2 * Spacing)), Horizontal: false, ZoomIn: false),
+            new PlotZoomButton(new ScreenPoint(left, top), Horizontal: false, ZoomIn: true),
         ];
     }
 

@@ -3328,7 +3328,12 @@ the delays set for the crossover on screen, every other slope — a softer one
 above all — would be charged for a misalignment the next Auto delay removes.
 Nothing is written but the crossover: the other junctions, gains, delays,
 polarity, PEQ and FIR stay. One result serves both sides of the pair, because a
-crossover is one electrical filter.
+crossover is one electrical filter — so the two sides have to run the same
+crossover when you start (the side Lock keeps them so), and the tune says so
+rather than mixing two. Where one of the two blocks is **mono**, one delay and
+one polarity serve both sides, as Auto delay moves a mono channel: every
+candidate is read at the one shift that suits both sides best on average, not at
+a shift of its own on each side.
 
 Because the sum is read rather than predicted, a steeper slope that narrows the
 overlap where a ragged excess phase interferes is a legitimate answer the
@@ -3356,10 +3361,13 @@ and why this one has the last word on a finished tune.
   junction; overlapping them fills a dip. Every corner it offers is a whole
   number of hertz, the way the channel card states it and a processor takes it.
 - **Nothing is written until Apply**, which writes the crossover the report
-  calls *found* into both sides of both blocks as one undo step — including one
-  the report advises against, because that choice is yours — and, in the
-  acoustic mode, the goal onto the channel cards. Where nothing different was
-  found, Apply is offered only for a goal the cards do not state yet.
+  calls *found* into both sides of both blocks — including one the report
+  advises against, because that choice is yours — and, in the acoustic mode, the
+  goal onto the edges that crossover runs. Where nothing different was found,
+  Apply is offered only for a goal the cards do not state yet. **Undo last
+  Apply**, in the same dialog, puts every channel back exactly as it was before
+  the last Apply — one step, gone once a session is loaded; where the session
+  has changed since, it asks first, because those changes go too.
 - **The dialog remembers what it was left on**: the junction, the families, both
   toggles, the mode, the slope window, the goal, and each junction's corner
   window. It is kept in the session, so reopening the dialog — in the same run
@@ -3386,12 +3394,18 @@ cost a little of the sum, and the report says how much ("it costs 0.9 dB of
 summation score against the best sum here"). A change the goal paid for in sum
 is called "nearer the acoustic goal", not "better".
 
-The report then also says, all fitted the same way so they compare with each
-other: what was asked, what the two sides achieved, what the channels do by
-themselves, how near **any** allowed filter could have come, and whether the
-goal is reachable at all. A filter only steepens, so a slope softer than the
-drivers' own fall is not on offer — the report says so instead of quietly
-picking the softest filter.
+The report then also says, side by side and all fitted the same way so they
+compare with each other: what was asked, what each side achieved, what the
+channels do by themselves, how near **any** allowed filter could have come, and
+whether the goal is reachable at all. Every figure is the **worst channel**'s
+first and the average second: each channel's EQ aims at the goal by itself, so
+an average can pass while one tweeter is left well short, and the search prefers
+a crossover that lands every channel. A filter only steepens, so a slope softer
+than a driver's own fall is not on offer — the report names that channel rather
+than quietly picking the softest filter, and says apart from it when the goal is
+merely outside the corner window and the filters you allowed. The shapes are
+read on the curve Auto Tune will fit: a channel's spatial average while the
+hybrid is drawn, else its measurement.
 
 Apply writes the goal onto those edges as you asked it, and it shows on the
 channel cards; **Auto Tune then aims at it** instead of at the electrical filter

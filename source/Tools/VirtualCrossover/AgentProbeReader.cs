@@ -263,4 +263,55 @@ internal static class AgentProbeReader
             ? ([], "no side has both blocks measured")
             : (sides, null);
     }
+
+    /// <summary>
+    /// Whether one re-alignment has to serve every side of the junction: a mono block has one delay and one polarity
+    /// for both, and Auto delay settles it on its mean over them (docs/tech/auto-alignment.md#stereo-cascade).
+    /// </summary>
+    internal static bool SharesOneAlignment(VirtualCrossoverChannel lower, VirtualCrossoverChannel upper) =>
+        lower.Pair.Mono || upper.Pair.Mono;
+
+    /// <summary>
+    /// The sides with each channel's plant taken from its spatial average wherever Auto Tune would fit that average:
+    /// a stated acoustic slope is judged on the curve the EQ stage then works on, and the EQ handoff hands the average
+    /// over exactly when the hybrid is drawn (<paramref name="mode"/> is null otherwise). The chain goes on without the
+    /// facing edge and without the PEQ, as the tuner's own plant takes them off; a channel without a capture of that
+    /// family keeps the gated reading.
+    /// </summary>
+    internal static List<JunctionTuneSide> WithSpatialAverages(
+        List<JunctionTuneSide> sides,
+        VirtualCrossoverChannel lower,
+        VirtualCrossoverChannel upper,
+        VirtualCrossoverSpatialAverageMode? mode,
+        SpatialAverageCalibration calibration,
+        int processorSampleRateHz)
+    {
+        if (mode is not { } family)
+        {
+            return sides;
+        }
+
+        return sides
+            .Select(side =>
+            {
+                bool rightSide = side.Name == "right";
+                return side with
+                {
+                    LowerMagnitude = Plant(lower, rightSide, CrossoverJunctionTuner.WithoutLowPass(side.LowerChain)),
+                    UpperMagnitude = Plant(upper, rightSide, CrossoverJunctionTuner.WithoutHighPass(side.UpperChain))
+                };
+            })
+            .ToList();
+
+        IReadOnlyList<SignalPoint>? Plant(VirtualCrossoverChannel channel, bool rightSide, DspChannelChain chain) =>
+            channel.SideState(rightSide && !channel.Pair.Mono).SpatialAverageFor(family) is { } capture
+                ? SpatialAverageHybrid.BuildChannelCurve(
+                    capture,
+                    chain with { Peq = null },
+                    processorSampleRateHz,
+                    calibration,
+                    capture.ToCurvePoints().Select(point => point.X).ToList(),
+                    smoothingCode: 0)
+                : null;
+    }
 }

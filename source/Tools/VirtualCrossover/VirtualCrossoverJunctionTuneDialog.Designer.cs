@@ -47,6 +47,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         textBoxReport = new StatusRichTextBox();
         buttonApply = new ReleaseClickButton();
         buttonCancel = new ReleaseClickButton();
+        buttonUndo = new ReleaseClickButton();
         ((System.ComponentModel.ISupportInitialize)numericMinHz).BeginInit();
         ((System.ComponentModel.ISupportInitialize)numericMaxHz).BeginInit();
         ((System.ComponentModel.ISupportInitialize)numericSumBudget).BeginInit();
@@ -403,6 +404,20 @@ partial class VirtualCrossoverJunctionTuneDialog
         buttonCancel.UseCompatibleTextRendering = true;
         buttonCancel.UseVisualStyleBackColor = true;
         //
+        // buttonUndo
+        //
+        buttonUndo.Enabled = false;
+        buttonUndo.FlatStyle = FlatStyle.Popup;
+        buttonUndo.ForeColor = UiPalette.TextPrimary;
+        buttonUndo.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+        buttonUndo.Location = new Point(12, 464);
+        buttonUndo.Name = "buttonUndo";
+        buttonUndo.Size = new Size(130, 26);
+        buttonUndo.TabIndex = 18;
+        buttonUndo.Text = "Undo last Apply";
+        buttonUndo.UseCompatibleTextRendering = true;
+        buttonUndo.UseVisualStyleBackColor = true;
+        //
         // VirtualCrossoverJunctionTuneDialog
         //
         AutoScaleDimensions = new SizeF(96F, 96F);
@@ -440,6 +455,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         Controls.Add(textBoxReport);
         Controls.Add(buttonApply);
         Controls.Add(buttonCancel);
+        Controls.Add(buttonUndo);
         Font = new Font("Segoe UI", 9F);
         ForeColor = UiPalette.TextPrimary;
         MinimizeBox = false;
@@ -484,4 +500,5 @@ partial class VirtualCrossoverJunctionTuneDialog
     private StatusRichTextBox textBoxReport;
     private ReleaseClickButton buttonApply;
     private ReleaseClickButton buttonCancel;
+    private ReleaseClickButton buttonUndo;
 }

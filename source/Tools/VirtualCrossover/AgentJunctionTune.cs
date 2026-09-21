@@ -80,7 +80,8 @@ internal static class AgentJunctionTune
                     operation.MaxHz ?? defaultMaxHz,
                     // One slope for both edges unless the reply frees them: the free search costs slopes² per corner.
                     operation.IndependentSlopes ?? false,
-                    session.ProcessorSampleRateHz)),
+                    session.ProcessorSampleRateHz,
+                    OneAlignmentForAllSides: AgentProbeReader.SharesOneAlignment(lower, upper))),
             null);
     }
 
@@ -89,8 +90,9 @@ internal static class AgentJunctionTune
     /// The acoustic crossover this tune was asked for, or null for a plain one. Written onto both edges of the
     /// junction whether or not the crossover lands on it: it is the user's own statement, shown and edited on the
     /// channel card, and the report says how far the crossover is from it. The EQ stage's target follows it
-    /// instead of the electrical filter — see docs/specs/acoustic-crossover-target.md. A plain tune leaves
-    /// whatever the card holds alone, because it was not asked about the wish.
+    /// instead of the electrical filter — see docs/specs/acoustic-crossover-target.md. Only onto an edge the
+    /// crossover left on screen runs: a goal for a filter the channel does not run would describe nothing. A plain
+    /// tune leaves whatever the card holds alone, because it was not asked about the wish.
     /// </param>
     public static void Write(
         JunctionTuneResult result,
@@ -115,7 +117,7 @@ internal static class AgentJunctionTune
                             ? CrossoverKind.BandPass
                             : CrossoverKind.LowPass;
                 }
-                if (acoustic != null)
+                if (acoustic != null && applied.LowerLowPass != null)
                 {
                     settings.AcousticLowPass = acoustic;
                 }
@@ -131,7 +133,7 @@ internal static class AgentJunctionTune
                             ? CrossoverKind.BandPass
                             : CrossoverKind.HighPass;
                 }
-                if (acoustic != null)
+                if (acoustic != null && applied.UpperHighPass != null)
                 {
                     settings.AcousticHighPass = acoustic;
                 }
@@ -139,9 +141,13 @@ internal static class AgentJunctionTune
         }
     }
 
-    /// <summary>Whether writing <paramref name="acoustic"/> would change what any of the junction's cards state.</summary>
+    /// <summary>Whether writing <paramref name="acoustic"/> with <paramref name="applied"/> left on screen would
+    /// change what any of the junction's cards state; see <see cref="Write"/> for the edges it goes onto.</summary>
     public static bool WouldChangeGoal(
-        VirtualCrossoverChannel lower, VirtualCrossoverChannel upper, JunctionAcousticTarget? acoustic)
+        VirtualCrossoverChannel lower,
+        VirtualCrossoverChannel upper,
+        JunctionAcousticTarget? acoustic,
+        JunctionTuneCandidate applied)
     {
         if (acoustic == null)
         {
@@ -150,13 +156,13 @@ internal static class AgentJunctionTune
 
         foreach (bool rightSide in new[] { false, true })
         {
-            if ((!lower.Pair.Mono || !rightSide) &&
+            if ((!lower.Pair.Mono || !rightSide) && applied.LowerLowPass != null &&
                 !Equals(lower.SideSettings(rightSide).AcousticLowPass, acoustic))
             {
                 return true;
             }
 
-            if ((!upper.Pair.Mono || !rightSide) &&
+            if ((!upper.Pair.Mono || !rightSide) && applied.UpperHighPass != null &&
                 !Equals(upper.SideSettings(rightSide).AcousticHighPass, acoustic))
             {
                 return true;
@@ -186,9 +192,13 @@ internal static class AgentJunctionTune
                     ? ", or reads worse on its own junction band."
                     : "."));
         AppendReadings(summary, result, best: result.Changed);
+        if (options.OneAlignmentForAllSides && result.Current.Sides.Count > 1)
+        {
+            summary.Add("  every side was read at one re-alignment: a mono block has one delay and one polarity.");
+        }
         if (options.AcousticTarget is { } asked)
         {
-            AppendAcoustic(summary, asked, result);
+            AppendAcoustic(summary, asked, result, lower, upper);
         }
     }
 
@@ -197,12 +207,19 @@ internal static class AgentJunctionTune
     /// the slopes fitted alike so they compare with each other, and whether the goal travels on to the EQ stage.
     /// </summary>
     private static void AppendAcoustic(
-        List<string> summary, JunctionAcousticTarget asked, JunctionTuneResult result)
+        List<string> summary, JunctionAcousticTarget asked, JunctionTuneResult result, string lower, string upper)
     {
         JunctionTuneCandidate candidate = result.Changed ? result.Best : result.Current;
         bool reached = CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb);
-        // Reachable is the lattice's answer; lands is the crossover that stays. The goal is written either way.
-        bool lands = CrossoverJunctionTuner.WasAcousticTargetReached(candidate.AcousticCostDb);
+        // Reachable is the lattice's answer; lands is the crossover that stays, at the channel that misses most,
+        // since every channel's EQ aims at the goal by itself. The goal is written either way.
+        JunctionAcousticMiss? worst = candidate.WorstAcousticChannel;
+        bool lands = CrossoverJunctionTuner.WasAcousticTargetReached(worst?.ChargeDb);
+        string where = worst == null
+            ? string.Empty
+            : worst.Upper is { } isUpper
+                ? $" ({worst.Side} {(isUpper ? upper : lower)})"
+                : $" ({worst.Side})";
         string family = asked.Family switch
         {
             CrossoverFilterFamily.LinkwitzRiley => "LR",
@@ -211,28 +228,31 @@ internal static class AgentJunctionTune
             _ => "Cheb"
         };
         summary.Add(
-            $"  acoustic {family}{asked.SlopeDbPerOctave} asked: magnitude fit " +
-            $"{Number(candidate.AcousticCostDb)} dB, worst side {Number(candidate.WorstAcousticCostDb)} dB, " +
-            $"the nearest any allowed filter reaches {Number(result.ClosestAcousticCostDb)} dB — " +
+            $"  acoustic {family}{asked.SlopeDbPerOctave} asked: magnitude fit {Number(worst?.ChargeDb)} dB at the " +
+            $"worst channel{where}, {Number(candidate.AcousticCostDb)} dB on average; the nearest any allowed filter " +
+            $"reaches {Number(result.ClosestAcousticCostDb)} dB — " +
             (reached ? "reached." : "OUT OF REACH."));
-        JunctionAcousticFit? fit = candidate.Sides.FirstOrDefault()?.Acoustic;
-        JunctionDriverSlopes? plant = result.DriverSlopes.FirstOrDefault();
-        if (fit != null || plant != null)
+        foreach (JunctionTuneReading side in candidate.Sides)
         {
+            JunctionAcousticFit? fit = side.Acoustic;
+            JunctionDriverSlopes? plant = result.DriverSlopes.FirstOrDefault(item => item.Side == side.Side);
             summary.Add(
-                "  slopes over the handover, all fitted the same way: asked " +
+                $"  {side.Side}: slopes over the handover, all fitted the same way: asked " +
                 $"{Number(fit?.TargetSlopeDbPerOctave)}, got {Number(fit?.LowerSlopeDbPerOctave)} / " +
                 $"{Number(fit?.UpperSlopeDbPerOctave)}, the channels alone {Number(plant?.LowerDbPerOctave)} / " +
                 $"{Number(plant?.UpperDbPerOctave)} dB/oct.");
         }
 
+        JunctionAcousticFit? worstFit = candidate.Sides
+            .FirstOrDefault(side => side.Side == worst?.Side)?.Acoustic;
         summary.Add(lands
             ? "  the goal is written onto these edges, so Auto Tune aims at it instead of the filter" +
-              (fit is { ResidualDb: > 0 }
-                  ? $"; the {Number(fit.ResidualDb)} dB left over is cuts, which it may make."
+              (worstFit is { ResidualDb: > 0 }
+                  ? $"; the {Number(worstFit.ResidualDb)} dB left over is cuts, which it may make."
                   : "; what is left over would need a skirt boost, which it refuses.")
             : $"  the goal is written onto these edges, but the crossover misses it by " +
-              $"{Number(candidate.AcousticCostDb)} dB: Auto Tune will aim at a slope the filter does not make.");
+              $"{Number(worst?.ChargeDb)} dB at the worst channel{where}: Auto Tune will aim at a slope the filter " +
+              "does not make there.");
     }
 
     private static string Number(double? value) =>

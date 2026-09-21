@@ -148,11 +148,10 @@ public partial class VirtualCrossoverPanel
             "Nothing is sent anywhere by Resonalyze.");
         toolTip.SetToolTip(
             buttonTuneJunction,
-            "Refine ONE junction of a finished tune: the lower block's\r\n" +
-            "low-pass and the upper block's high-pass, read on the coherent\r\n" +
-            "sum through both chains at their current delays.\r\n" +
-            "State an acoustic slope and it also says what these drivers\r\n" +
-            "can reach. Nothing is written until Apply.");
+            "Refine ONE junction: the lower block's low-pass and the upper\r\n" +
+            "block's high-pass, each candidate read on the coherent sum after\r\n" +
+            "the re-alignment Auto delay would give it. Optionally aims at an\r\n" +
+            "acoustic slope. Nothing is written until Apply.");
         toolTip.SetToolTip(
             buttonAutoSetup,
             "Crossover wizard: detect each channel's driver type from\r\n" +

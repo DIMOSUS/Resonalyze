@@ -4,8 +4,8 @@ using Resonalyze.Dsp;
 namespace Resonalyze.App.Tests;
 
 /// <summary>
-/// What the junction tune says about a stated acoustic slope — the same lines in the dialog's report and in the AI
-/// import's summary, because both come through <c>AgentJunctionTune.Describe</c>.
+/// What the AI import's summary says about a stated acoustic slope, through <c>AgentJunctionTune.Describe</c>. The
+/// dialog has a report of its own (<c>VirtualCrossoverJunctionTuneReport</c>), which reads the same figures.
 /// </summary>
 public sealed class AgentJunctionTuneAcousticReportTests
 {

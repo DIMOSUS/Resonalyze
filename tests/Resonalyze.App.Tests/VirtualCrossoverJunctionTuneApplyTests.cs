@@ -79,6 +79,89 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
         Assert.Equal("BW24", Card(panel, upper).AcousticGoalButton.Text);
     });
 
+    [Fact]
+    public void UndoLastApply_PutsTheCrossoverAndTheGoalBack() => StaTest.Run(() =>
+    {
+        // The dialog's Apply writes four edges and the goals at once; Undo last Apply takes all of it back.
+        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
+        var asked = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
+        Apply(panel, lower, upper, Result(changed: true), asked);
+        AssertFound(panel, lower, upper);
+
+        typeof(VirtualCrossoverPanel).GetMethod("UndoJunctionTune", Hidden)!.Invoke(panel, null);
+
+        foreach (bool right in new[] { false, true })
+        {
+            Assert.Equal(Before, lower.SideSettings(right).LowPassEdge);
+            Assert.Equal(Before, upper.SideSettings(right).HighPassEdge);
+            Assert.Null(lower.SideSettings(right).AcousticLowPass);
+            Assert.Null(upper.SideSettings(right).AcousticHighPass);
+        }
+
+        Assert.Equal(180m, Card(panel, lower).LowPassFrequencyInput.Value);
+        Assert.Equal("—", Card(panel, lower).AcousticGoalButton.Text);
+    });
+
+    [Fact]
+    public void AGoalGoesOnlyOntoAnEdgeTheCrossoverLeftOnScreenRuns() => StaTest.Run(() =>
+    {
+        // A lower block with no low-pass, and a tune that keeps it so: a goal written there would describe a filter
+        // the channel does not run, and Auto Tune would never read it.
+        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
+        foreach (bool right in new[] { false, true })
+        {
+            lower.SideSettings(right).CrossoverKind = CrossoverKind.Off;
+        }
+
+        var kept = new JunctionTuneCandidate(null, Before, [], [], 90, 360);
+        var asked = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
+
+        Apply(panel, lower, upper, Result(kept, kept, changed: false), asked);
+
+        foreach (bool right in new[] { false, true })
+        {
+            Assert.Null(lower.SideSettings(right).AcousticLowPass);
+            Assert.Equal(asked, upper.SideSettings(right).AcousticHighPass);
+        }
+    });
+
+    [Fact]
+    public void AGoalForAnEdgeSwitchedOff_IsNoLongerShownAsStated() => StaTest.Run(() =>
+    {
+        // The goal stays with its edge, as the edge's own corner and slope do, but the card stops saying Auto Tune
+        // aims at it the moment the channel stops running that edge.
+        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out _);
+        var asked = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
+        lower.Settings.AcousticLowPass = asked;
+        typeof(VirtualCrossoverPanel).GetMethod("ApplySettingsToControl", Hidden)!.Invoke(panel, [lower]);
+        Assert.Equal("BW24", Card(panel, lower).AcousticGoalButton.Text);
+
+        Card(panel, lower).CrossoverKindComboBox.SelectedItem = CrossoverKind.Off;
+
+        Assert.Equal(CrossoverKind.Off, lower.Settings.CrossoverKind);
+        Assert.Equal("—", Card(panel, lower).AcousticGoalButton.Text);
+        Assert.Equal(asked, lower.Settings.AcousticLowPass);
+    });
+
+    [Fact]
+    public void AStatedGoal_IsPartOfTheSessionAnAssistantReadsAgainst() => StaTest.Run(() =>
+    {
+        // A goal moves Auto Tune's target, so a reply read against another goal is stale.
+        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out _);
+        string before = Fingerprint(panel);
+
+        lower.SideSettings(false).AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
+
+        Assert.NotEqual(before, Fingerprint(panel));
+        lower.SideSettings(false).AcousticLowPass = null;
+        Assert.Equal(before, Fingerprint(panel));
+    });
+
+    private static string Fingerprint(VirtualCrossoverPanel panel) =>
+        (string)typeof(VirtualCrossoverPanel)
+            .GetMethod("ComputeAgentFingerprint", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(panel, null)!;
+
     private static void AssertFound(
         VirtualCrossoverPanel panel, VirtualCrossoverChannel lower, VirtualCrossoverChannel upper)
     {

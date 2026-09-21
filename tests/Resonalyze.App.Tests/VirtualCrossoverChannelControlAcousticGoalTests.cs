@@ -33,6 +33,14 @@ public sealed class VirtualCrossoverChannelControlAcousticGoalTests
 
         control.SetAcousticGoal(null, null);
         Assert.Equal("—", control.AcousticGoalButton.Text);
+
+        // A goal for an edge the channel does not run is kept, not stated: Auto Tune does not read it.
+        control.SetAcousticGoal(
+            highPass: new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 18),
+            lowPass: new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 48),
+            highPassRuns: false,
+            lowPassRuns: true);
+        Assert.Equal("LR48", control.AcousticGoalButton.Text);
     }
 
     [Fact]

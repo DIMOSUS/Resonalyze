@@ -885,13 +885,14 @@ overlapped fills a dip — always on whole hertz, the way the channel card state
 
 The other question is the crossover in **acoustic** terms. Set the goal to LR24 and
 Resonalyze looks for the electrical filter that, with this driver's own roll-off
-included, adds up to that slope — and tells you plainly whether these drivers can reach
-it at all, since a filter can only make a response steeper. Apply remembers the goal on
-the channel card and the EQ stage aims at it instead of at the electrical filter; where
-the crossover misses it, the report says so in red, and clearing it on the card sends the
+included, adds up to that slope — on every channel of the junction, judged by the one
+that misses most — and tells you plainly whether these drivers can reach it at all,
+since a filter can only make a response steeper. Apply remembers the goal on the channel
+card and the EQ stage aims at it instead of at the electrical filter; where the
+crossover misses it, the report says so in red, and clearing it on the card sends the
 fit back to the filter. The stated slope chooses only among crossovers within the budget
 beside it — how much of the summation the goal may cost, 1.0 dB by default — and the
-report shows what it cost.
+report shows what it cost. **Undo last Apply** in the same dialog takes an Apply back.
 
 ![The Tune junction dialog: the junction, the corner window, the filters on offer and the two things it can tune for, with the search report below](assets/images/manual/tune-junction.png)
 

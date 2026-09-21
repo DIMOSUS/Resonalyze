@@ -474,11 +474,15 @@ public sealed class VirtualCrossoverProjectFileTests
             loaded.Goal = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 18);
             loaded.Windows["B-C"] = [310, 150];
             loaded.Windows["A-B"] = [double.NaN, 120];
+            // Finite, but outside what the corner boxes hold: no decimal holds 1e100.
+            loaded.Windows["C-D"] = [1e100, 2e100];
+            loaded.Windows["D-E"] = [5, 120];
+            loaded.Windows["E-F"] = [20, 200];
             loaded.SumBudgetDb = 40;
             loaded.Sanitize();
             Assert.Null(loaded.Goal);
             Assert.Null(loaded.SumBudgetDb);
-            Assert.Empty(loaded.Windows);
+            Assert.Equal(["E-F"], loaded.Windows.Keys);
         }
         finally
         {

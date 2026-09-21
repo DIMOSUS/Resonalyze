@@ -27,8 +27,17 @@ public partial class VirtualCrossoverPanel
 
         settings.AcousticHighPass = dialog.HighPassGoal;
         settings.AcousticLowPass = dialog.LowPassGoal;
-        ControlFor(channel).SetAcousticGoal(settings.AcousticHighPass, settings.AcousticLowPass);
+        ShowAcousticGoal(channel);
         // Through the channel's own change path: the side Lock carries it to the hidden side and the session saves.
         OnChannelSettingsChanged(channel);
+    }
+
+    /// <summary>The card's goal button for the side shown, with a goal for an edge the channel does not run
+    /// shown as kept rather than as stated.</summary>
+    private void ShowAcousticGoal(VirtualCrossoverChannel channel)
+    {
+        VirtualCrossoverChannelSettings settings = channel.Settings;
+        ControlFor(channel).SetAcousticGoal(
+            settings.AcousticHighPass, settings.AcousticLowPass, settings.RunsHighPass, settings.RunsLowPass);
     }
 }

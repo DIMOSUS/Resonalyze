@@ -48,13 +48,15 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
     {
         ArgumentNullException.ThrowIfNull(settings);
         Text = $"Acoustic crossover goal — channel {channelName}";
-        CrossoverSpec electrical = settings.EffectiveCrossover;
+        // A goal describes an edge the IIR crossover runs, the only one Auto Tune reads it for. One kept for an edge
+        // the channel does not run is shown greyed: neither edited as if it worked nor lost, since it applies again
+        // once the channel runs that edge, as the edge's own corner and slope do.
         Present(
             comboBoxHighPassFamily, comboBoxHighPassSlope, labelHighPassElectrical,
-            settings.AcousticHighPass, electrical.HighPassHz, electrical.HighPassEdge, "high-pass");
+            settings.AcousticHighPass, settings.RunsHighPass ? settings.HighPassEdge : null, "high-pass");
         Present(
             comboBoxLowPassFamily, comboBoxLowPassSlope, labelLowPassElectrical,
-            settings.AcousticLowPass, electrical.LowPassHz, electrical.LowPassEdge, "low-pass");
+            settings.AcousticLowPass, settings.RunsLowPass ? settings.LowPassEdge : null, "low-pass");
         // The driver's own fall is what makes the two differ, and it is measured by the junction tune rather than
         // known here, so the note says where to look instead of inventing a number.
         labelNote.Text =
@@ -68,10 +70,11 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
         ThemedComboBox slope,
         Label electricalLabel,
         JunctionAcousticTarget? goal,
-        double? electricalHz,
-        CrossoverEdge? electricalEdge,
+        CrossoverEdge? running,
         string what)
     {
+        // Before the family is chosen: choosing it fills the slopes, and they follow the family box's state.
+        family.Enabled = running != null;
         family.Items.Clear();
         family.Items.Add(Nothing);
         foreach (CrossoverFamilyChoice item in CrossoverFamilyChoice.Offered)
@@ -88,13 +91,18 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
             slope.SelectedItem = wanted.SlopeDbPerOctave;
         }
 
-        electricalLabel.Text = electricalHz is { } hz && electricalEdge is { } edge
-            ? $"filter: {FamilyName(edge.Family)}{edge.SlopeDbPerOctave} at {hz:0.###} Hz"
-            : $"no {what} on this channel";
+        electricalLabel.Text = running is { } edge
+            ? $"filter: {FamilyName(edge.Family)}{edge.SlopeDbPerOctave} at {edge.FrequencyHz:0.###} Hz"
+            : goal != null
+                ? $"no {what}: kept"
+                : $"no {what}";
         toolTip.SetToolTip(
             electricalLabel,
-            electricalHz == null
-                ? $"The channel runs no {what}, so a goal for it would describe nothing."
+            running == null
+                ? $"The channel runs no {what}, so a goal for it describes" + "\r\n" +
+                  "nothing and Auto Tune does not read it. One stated before" + "\r\n" +
+                  "stays with the edge and applies again once the channel" + "\r\n" +
+                  "runs it; Clear drops it."
                 : "The electrical filter this channel runs." + "\r\n" +
                   "The goal is what it should SOUND like, with the" + "\r\n" +
                   "driver's own roll-off included.");
@@ -110,7 +118,7 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
         }
 
         int? kept = slope.SelectedItem as int?;
-        slope.Enabled = true;
+        slope.Enabled = family.Enabled;
         slope.Items.Clear();
         foreach (int supported in CrossoverFilter.SupportedSlopes(selected.Value))
         {

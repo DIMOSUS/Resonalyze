@@ -148,7 +148,8 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
                 processor.SampleRateHz,
                 AcousticTarget: acousticTarget,
                 TargetCurveDb: acoustic ? targetCurve : null,
-                SumSlackDb: arm.SlackDb);
+                SumSlackDb: arm.SlackDb,
+                OneAlignmentForAllSides: AgentProbeReader.SharesOneAlignment(lower, upper));
             JunctionTuneResult result = CrossoverJunctionTuner.Tune(sides, options);
             tuned.Add(new Tuned(label, lower, upper, result));
             if (result.Changed)
@@ -216,7 +217,7 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
                     $"ripple {sum.RippleDb,5:0.00}" +
                     (result.Best.AcousticCostDb is { } chosen
                         ? $"  acoustic {chosen,5:0.00} (closest {result.ClosestAcousticCostDb,5:0.00}, " +
-                          $"worst side {result.Best.WorstAcousticCostDb,5:0.00}, " +
+                          $"worst channel {result.Best.WorstAcousticCostDb,5:0.00}, " +
                           $"{(CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb) ? "reachable" : "out of reach")})" +
                           $" slopes {Slopes(result)}"
                         : string.Empty) +
@@ -310,6 +311,13 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             return sums;
         }
 
+        // Read after re-aligning the upper channel, as the finished junction will be once Auto delay runs again
+        // after the tune: a crossover change that only moved the timing is not charged for it - by one shift for
+        // every side where a block is mono, as Auto delay moves a mono channel. The band is the candidate's own, an
+        // octave each side of its corner, so the corner is its geometric middle.
+        double cornerHz = Math.Sqrt(result.Best.BandLowHz * result.Best.BandHighHz);
+        double halfWindowMs = CrossoverAutoSetup.PostCheckHalfWindowMs(cornerHz);
+        var inputs = new List<JunctionAlignmentSide>(sides.Count);
         foreach (JunctionTuneSide side in sides)
         {
             Complex[] lowerResponse = VirtualCrossoverAnalysis.ApplyChain(
@@ -318,17 +326,35 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             Complex[] upperResponse = VirtualCrossoverAnalysis.ApplyChain(
                 side.UpperImpulseResponse, side.UpperChain, side.SampleRate, processor.SampleRateHz,
                 out ValidSampleRange upperRange);
-            // Read after re-aligning the upper channel, as the finished junction will be once Auto delay runs again
-            // after the tune: a crossover change that only moved the timing is not charged for it. The band is the
-            // candidate's own, an octave each side of its corner, so the corner is its geometric middle.
-            double cornerHz = Math.Sqrt(result.Best.BandLowHz * result.Best.BandHighHz);
-            if (VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum(
-                    upperResponse, [lowerResponse], side.SampleRate,
-                    result.Best.BandLowHz, result.Best.BandHighHz,
-                    CrossoverAutoSetup.PostCheckHalfWindowMs(cornerHz),
-                    upperRange, [lowerRange]) is { Reading: var reading })
+            inputs.Add(new JunctionAlignmentSide(upperResponse, lowerResponse, side.SampleRate, upperRange, lowerRange));
+        }
+
+        if (AgentProbeReader.SharesOneAlignment(lower, upper) && inputs.Count > 1)
+        {
+            if (VirtualCrossoverAnalysis.MeasureJointlyAlignedJunctionSpectra(
+                    inputs, result.Best.BandLowHz, result.Best.BandHighHz, halfWindowMs) is { } joint)
             {
-                sums.Add(new JunctionSum(side.Name, reading.LossDb, reading.DipDb, reading.RippleDb));
+                for (int i = 0; i < sides.Count; i++)
+                {
+                    if (joint.Readings[i] is { } read)
+                    {
+                        sums.Add(new JunctionSum(sides[i].Name, read.LossDb, read.DipDb, read.RippleDb));
+                    }
+                }
+            }
+
+            return sums;
+        }
+
+        for (int i = 0; i < sides.Count; i++)
+        {
+            JunctionAlignmentSide input = inputs[i];
+            if (VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum(
+                    input.VariableImpulseResponse, [input.FixedImpulseResponse], input.SampleRate,
+                    result.Best.BandLowHz, result.Best.BandHighHz, halfWindowMs,
+                    input.VariableValidRange, [input.FixedValidRange]) is { Reading: var reading })
+            {
+                sums.Add(new JunctionSum(sides[i].Name, reading.LossDb, reading.DipDb, reading.RippleDb));
             }
         }
 

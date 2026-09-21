@@ -86,11 +86,11 @@ internal static class VirtualCrossoverJunctionTuneReport
         }
 
         lines.Add(JunctionTuneLine.Of(string.Empty));
-        Readings(lines, result, moved, upper);
+        Readings(lines, result, moved, upper, plan.Options.OneAlignmentForAllSides);
         if (plan.Options.AcousticTarget is { } asked)
         {
             lines.Add(JunctionTuneLine.Of(string.Empty));
-            Acoustic(lines, asked, result, plan.Options.SumSlackDb);
+            Acoustic(lines, asked, result, plan.Options.SumSlackDb, lower, upper);
         }
 
         return lines;
@@ -99,7 +99,7 @@ internal static class VirtualCrossoverJunctionTuneReport
     /// <summary>One row per side. Where the answer moves the crossover the cells read "now → best" and the second
     /// figure is coloured, which is the whole question a reader has: did this get better or worse?</summary>
     private static void Readings(
-        List<JunctionTuneLine> lines, JunctionTuneResult result, bool moved, string upper)
+        List<JunctionTuneLine> lines, JunctionTuneResult result, bool moved, string upper, bool oneShift)
     {
         lines.Add(JunctionTuneLine.Of(Row("side", "sum loss, dB", "dip, dB", "ripple, dB")));
         foreach (JunctionTuneReading now in result.Current.Sides)
@@ -125,7 +125,17 @@ internal static class VirtualCrossoverJunctionTuneReport
         IReadOnlyList<JunctionTuneAlignment> aligned = moved
             ? result.BestAfterDelay
             : result.CurrentAfterDelay;
-        if (aligned.Count > 0)
+        if (aligned.Count > 1 && oneShift)
+        {
+            // A mono block has one delay, so every side was read at one shift: named once, or the same figure
+            // listed per side reads as two settings. The resulting polarity is still each side's own.
+            string inverted = string.Join(", ", aligned.Where(item => item.InvertUpper).Select(item => item.Side));
+            lines.Add(JunctionTuneLine.Of(
+                $"  read after one shift of {upper} for both sides (a mono block has one delay): " +
+                $"{Signed(aligned[0].ExtraDelayMs)} ms" +
+                (inverted.Length == 0 ? string.Empty : $", inverted on {inverted}")));
+        }
+        else if (aligned.Count > 0)
         {
             lines.Add(JunctionTuneLine.Of(
                 $"  read after re-aligning {upper}: " +
@@ -150,40 +160,59 @@ internal static class VirtualCrossoverJunctionTuneReport
     }
 
     private static void Acoustic(
-        List<JunctionTuneLine> lines, JunctionAcousticTarget asked, JunctionTuneResult result, double budgetDb)
+        List<JunctionTuneLine> lines,
+        JunctionAcousticTarget asked,
+        JunctionTuneResult result,
+        double budgetDb,
+        string lower,
+        string upper)
     {
         // The crossover Apply would leave on screen: the found one wherever it differs.
         JunctionTuneCandidate candidate = result.Moves ? result.Best : result.Current;
-        JunctionAcousticFit? fit = candidate.Sides.FirstOrDefault()?.Acoustic;
-        JunctionDriverSlopes? plant = result.DriverSlopes.FirstOrDefault();
+        // Whether the goal lands is the worst channel's question: every channel's EQ aims at it by itself, so an
+        // average over the channels can pass while one of them is left short of it.
+        JunctionAcousticMiss? worst = candidate.WorstAcousticChannel;
+        bool lands = CrossoverJunctionTuner.WasAcousticTargetReached(worst?.ChargeDb);
+        // The difference matters: "some allowed filter could" is not "this filter does". The goal is written as
+        // asked either way; what differs is whether Auto Tune will then aim at a slope the filter actually makes.
         bool anyFilterCould = CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb);
-        // The difference matters: "these drivers could" is not "this filter does". The goal is written as asked
-        // either way; what differs is whether Auto Tune will then aim at a slope the filter actually makes.
-        bool lands = CrossoverJunctionTuner.WasAcousticTargetReached(candidate.AcousticCostDb);
         // Say WHICH crossover the figures describe: the kept one and the challenger are different answers, and the
         // table above has just shown both.
+        lines.Add(JunctionTuneLine.Of(
+            $"  Acoustic {FirCrossoverDescription.FamilyName(asked.Family)} {asked.SlopeDbPerOctave}, " +
+            $"{(result.Moves ? "as found" : "as it stands")}: off by {Number(worst?.ChargeDb)} dB at worst" +
+            (worst == null ? string.Empty : $" ({Channel(worst, lower, upper)})") +
+            $", {Number(candidate.AcousticCostDb)} on average."));
         lines.Add(new JunctionTuneLine([
-            new JunctionTuneSpan(
-                $"  Acoustic {FirCrossoverDescription.FamilyName(asked.Family)} {asked.SlopeDbPerOctave}, " +
-                $"{(result.Moves ? "as found" : "as it stands")}: " +
-                $"off by {Number(candidate.AcousticCostDb)} dB, " +
-                $"nearest any filter {Number(result.ClosestAcousticCostDb)} dB — "),
+            new JunctionTuneSpan($"    nearest any filter: {Number(result.ClosestAcousticCostDb)} dB at worst — "),
             anyFilterCould
                 ? new JunctionTuneSpan("reachable.")
                 : new JunctionTuneSpan("OUT OF REACH.", JunctionTuneTone.Worse)
         ]));
-        lines.Add(JunctionTuneLine.Of(
-            $"    got {Number(fit?.LowerSlopeDbPerOctave)} / {Number(fit?.UpperSlopeDbPerOctave)} dB/oct " +
-            $"against {Number(fit?.TargetSlopeDbPerOctave)} asked; the channels fall " +
-            $"{Number(plant?.LowerDbPerOctave)} / {Number(plant?.UpperDbPerOctave)} alone."));
-        // The question a reader actually asks next is "so what WOULD land on it?" — which is the asked slope less
-        // what the channels do by themselves, and the answer is usually a filter too soft to sum well.
-        if (!lands && anyFilterCould && fit?.TargetSlopeDbPerOctave is { } askedSlope &&
-            plant is { LowerDbPerOctave: { } plantLower, UpperDbPerOctave: { } plantUpper })
+        // Side by side: one electrical filter serves both, and the drivers on the two sides do not fall alike.
+        foreach (JunctionTuneReading side in candidate.Sides)
+        {
+            JunctionAcousticFit? fit = side.Acoustic;
+            JunctionDriverSlopes? plant = result.DriverSlopes.FirstOrDefault(item => item.Side == side.Side);
+            lines.Add(JunctionTuneLine.Of(
+                $"    {side.Side,-6} got {Number(fit?.LowerSlopeDbPerOctave)} / {Number(fit?.UpperSlopeDbPerOctave)} " +
+                $"dB/oct against {Number(fit?.TargetSlopeDbPerOctave)} asked; the channels fall " +
+                $"{Number(plant?.LowerDbPerOctave)} / {Number(plant?.UpperDbPerOctave)} alone."));
+        }
+
+        // A channel falling faster than asked all by itself is out of reach of any filter, which only steepens.
+        string? tooSteep = TooSteepByItself(candidate, result.DriverSlopes, lower, upper);
+        // The question a reader asks next is "so what WOULD land on it?": the asked slope less what the channel
+        // that misses most does by itself, and the answer is usually a filter too soft to sum well.
+        if (!lands && anyFilterCould && tooSteep == null && worst is { Upper: { } missesUpper } &&
+            candidate.Sides.FirstOrDefault(side => side.Side == worst.Side)?.Acoustic?.TargetSlopeDbPerOctave
+                is { } askedSlope &&
+            result.DriverSlopes.FirstOrDefault(item => item.Side == worst.Side) is { } fall &&
+            (missesUpper ? fall.UpperDbPerOctave : fall.LowerDbPerOctave) is { } own)
         {
             lines.Add(JunctionTuneLine.Of(
-                $"    landing on it takes about {Number(Math.Max(0, askedSlope - plantLower))} / " +
-                $"{Number(Math.Max(0, askedSlope - plantUpper))} dB/oct of filter; a pair that soft sums worse."));
+                $"    landing {Channel(worst, lower, upper)} on it takes about " +
+                $"{Number(Math.Max(0, askedSlope - own))} dB/oct of filter; a filter that soft sums worse."));
         }
 
         // What the goal was paid for with: the found crossover against the best sum on the lattice, both read
@@ -203,11 +232,43 @@ internal static class VirtualCrossoverJunctionTuneReport
                     JunctionTuneTone.Better)
                 : new JunctionTuneSpan(
                     "    Apply writes it anyway, and Auto Tune will aim at it; " +
-                    (anyFilterCould
-                        ? "a filter that lands on it sums worse."
-                        : "these drivers cannot make it."),
+                    (tooSteep != null
+                        ? $"{tooSteep} alone already falls faster."
+                        : anyFilterCould
+                            ? "a filter that lands on it sums worse."
+                            : "no filter in this search lands on it."),
                     JunctionTuneTone.Worse)
         ]));
+    }
+
+    /// <summary>"right C": the side, and the block when the channel is known.</summary>
+    private static string Channel(JunctionAcousticMiss miss, string lower, string upper) =>
+        miss.Upper is { } isUpper ? $"{miss.Side} {(isUpper ? upper : lower)}" : miss.Side;
+
+    /// <summary>The first channel whose own fall, with the facing edge taken out, is already steeper than the asked
+    /// slope: a filter multiplies, so no crossover can make that channel softer. Null where every channel could.</summary>
+    private static string? TooSteepByItself(
+        JunctionTuneCandidate candidate, IReadOnlyList<JunctionDriverSlopes> slopes, string lower, string upper)
+    {
+        foreach (JunctionTuneReading side in candidate.Sides)
+        {
+            if (side.Acoustic?.TargetSlopeDbPerOctave is not { } asked ||
+                slopes.FirstOrDefault(item => item.Side == side.Side) is not { } fall)
+            {
+                continue;
+            }
+
+            if (!CrossoverJunctionTuner.IsReachable(fall.LowerDbPerOctave, asked))
+            {
+                return $"{side.Side} {lower}";
+            }
+            if (!CrossoverJunctionTuner.IsReachable(fall.UpperDbPerOctave, asked))
+            {
+                return $"{side.Side} {upper}";
+            }
+        }
+
+        return null;
     }
 
     private static string Row(string side, string loss, string dip, string ripple) =>

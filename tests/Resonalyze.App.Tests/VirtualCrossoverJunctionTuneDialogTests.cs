@@ -341,6 +341,55 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
     });
 
     [Fact]
+    public void AWindowNoDecimalCanHold_OpensClampedRatherThanThrowing() => StaTest.Run(() =>
+    {
+        // A hand-edited session may hold any finite figure; the dialog's memory must never stop it opening.
+        using var dialog = new VirtualCrossoverJunctionTuneDialog();
+        var remembered = new VirtualCrossoverJunctionTuneSettings
+        {
+            Junction = "A-B",
+            Windows = { ["A-B"] = [1e100, 2e100] }
+        };
+
+        dialog.Init(
+            ["A-B"],
+            _ => new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.LinkwitzRiley], null),
+            _ => Task.FromResult(new JunctionTuneOutcome([], false, "kept", false)),
+            remembered);
+
+        ThemedNumericUpDown max = Field<ThemedNumericUpDown>(dialog, "numericMaxHz");
+        Assert.Equal(max.Maximum, max.Value);
+    });
+
+    [Fact]
+    public void UndoLastApply_IsOfferedOnlyWhileThereIsOne_AndClosesTheDialogToDoIt() => StaTest.Run(() =>
+    {
+        using var nothing = new VirtualCrossoverJunctionTuneDialog();
+        nothing.Init(
+            ["A-B"],
+            _ => new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.LinkwitzRiley], null),
+            _ => Task.FromResult(new JunctionTuneOutcome([], false, "kept", false)));
+        Assert.False(Field<Button>(nothing, "buttonUndo").Enabled);
+
+        using var dialog = new VirtualCrossoverJunctionTuneDialog();
+        dialog.Init(
+            ["A-B"],
+            _ => new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.LinkwitzRiley], null),
+            _ => Task.FromResult(new JunctionTuneOutcome([], false, "kept", false)),
+            undoable: "A/B");
+        Button undo = Field<Button>(dialog, "buttonUndo");
+        Assert.True(undo.Enabled);
+
+        // PerformClick refuses on a never-shown form, so the click is raised as the framework does.
+        typeof(Control)
+            .GetMethod("InvokeOnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(dialog, [undo, EventArgs.Empty]);
+
+        Assert.True(dialog.UndoRequested);
+        Assert.NotEqual(DialogResult.OK, dialog.DialogResult);
+    });
+
+    [Fact]
     public void TheActionButtonsStayVisibleAtEveryHeight() => StaTest.Run(() =>
     {
         using var dialog = new VirtualCrossoverJunctionTuneDialog();
@@ -365,7 +414,7 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
 
     private static void AssertNothingCoversTheActionButtons(Form dialog)
     {
-        foreach (string name in new[] { "buttonApply", "buttonCancel", "buttonRun" })
+        foreach (string name in new[] { "buttonApply", "buttonCancel", "buttonRun", "buttonUndo" })
         {
             Button button = Field<Button>(dialog, name);
             Assert.True(

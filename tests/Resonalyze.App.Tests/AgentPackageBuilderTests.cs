@@ -89,6 +89,24 @@ public sealed class AgentPackageBuilderTests
     }
 
     [Fact]
+    public void Build_CarriesTheAcousticGoals_WhereTheyAreStated()
+    {
+        // Auto Tune aims a channel at its stated goal instead of the filter, so the assistant has to see it.
+        AgentPackageInputs inputs = Inputs();
+        inputs.Channels[0].Settings.AcousticLowPass =
+            new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
+
+        JsonElement channels = Json(AgentPackageBuilder.Build(inputs, Id, Clock).Text!).GetProperty("channels");
+
+        JsonElement crossover = channels[0].GetProperty("dsp").GetProperty("crossover");
+        JsonElement goal = crossover.GetProperty("acousticLowPass");
+        Assert.Equal("Butterworth", goal.GetProperty("family").GetString());
+        Assert.Equal(24, goal.GetProperty("slopeDbPerOctave").GetInt32());
+        Assert.False(crossover.TryGetProperty("acousticHighPass", out _));
+        Assert.False(channels[2].GetProperty("dsp").GetProperty("crossover").TryGetProperty("acousticLowPass", out _));
+    }
+
+    [Fact]
     public void Build_SamplesCurvesOnTheProtocolGrid_AndKeepsHolesAsNull()
     {
         JsonElement root = Json(AgentPackageBuilder.Build(Inputs(), Id, Clock).Text!);

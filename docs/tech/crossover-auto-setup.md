@@ -658,7 +658,9 @@ decimation is skipped; the remaining lever there is caching the gated spectrum p
 `CrossoverJunctionTuner.Tune` retunes one junction of a finished tune: the lower channel's low-pass and
 the upper channel's high-pass (corner, family, slopes), keeping everything else — other junctions,
 gains, delays, polarity, PEQ, chain order. One result serves both sides of a stereo pair, because a
-crossover is one electrical filter; current edges are read from the first side.
+crossover is one electrical filter. The sides must therefore run the same facing edges when the tune starts
+(ripple compared only for a Chebyshev, the one family that reads it), or `Tune` refuses: with two different
+ones "the crossover on screen" would be two answers, and the current candidate's readings would mix them.
 
 It deliberately does not use the wizard's objective. The wizard reads magnitudes under ideal
 alignment, anchors on 24 dB/oct and levels channels — right for a blank tune, wrong for a finished one,
@@ -674,7 +676,11 @@ Every reading is taken **after re-aligning** the upper channel for that candidat
 polarity), the current crossover included. A junction tune is followed by re-tuning the delays, and each
 slope puts its own group delay into the handover; read at the delays set for the crossover on screen,
 every other candidate is charged for a misalignment the next Auto delay removes, and the search keeps
-returning the crossover the delays were set for. Measured on the owner's v6 session-15 (junction B-C,
+returning the crossover the delays were set for. Where a block is mono (`OneAlignmentForAllSides`, set by
+`AgentProbeReader.SharesOneAlignment`), every side is read at ONE shift and polarity, chosen on the mean of the
+sides' objectives (`MeasureJointlyAlignedJunctionSpectra`): a mono channel has one delay, and Auto delay's mono
+co-move settles it on its mean over both sides (`docs/tech/auto-alignment.md#stereo-cascade`). Side by side,
+a candidate at a sub junction would be read at two settings the processor cannot hold at once. Measured on the owner's v6 session-15 (junction B-C,
 corner 180 Hz, own band, left / right): BW18@210 + BW6@210 read -7.9 / -4.0 dB of dip as is and
 -2.4 / -1.3 re-aligned, against -1.8 / -0.35 for the BW36/BW24 on screen; a 12 dB/oct pair on flat
 drivers, 180 degrees apart through the
@@ -745,13 +751,13 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
 - **The plant, not the measurement.** Shapes are judged on each channel's magnitude through its chain
   with the facing edge taken out and **the PEQ taken out**, because the bank is refitted the moment a
   tune lands — leaving it in would make the same car answer differently depending on its tune history.
-  A correction FIR stays (the EQ stage does not rewrite that one). The plant is read off the gated impulse
-  responses. `JunctionTuneSide.LowerMagnitude` / `UpperMagnitude` let a caller pass the curve the EQ stage
-  will actually work on instead — a channel's **spatial average** — but no caller does yet: the Tune
-  junction dialog and the battery both read the impulse responses, so on a channel equalised from an
-  average the acoustic verdict and the fit can see slightly different curves. The candidate edge is then
-  applied to the plant arithmetically, as the device applies it, so the search pays no transform for the
-  acoustic term.
+  A correction FIR stays (the EQ stage does not rewrite that one). The plant is the curve the EQ stage will
+  work on: `JunctionTuneSide.LowerMagnitude` / `UpperMagnitude`, which the Tune junction dialog fills with a
+  channel's **spatial average** exactly where the EQ handoff would hand Auto Tune one — while the hybrid is
+  drawn (`AgentProbeReader.WithSpatialAverages`), through the chain less the facing edge and the PEQ. A
+  channel without a capture of that family, and every channel otherwise, is read off the gated impulse
+  responses, which is also what the battery equalises. The candidate edge is then applied to the plant
+  arithmetically, as the device applies it, so the search pays no transform for the acoustic term.
 - **The tonal target comes out first.** The goal for a channel is `target × acoustic crossover`, so
   `JunctionTuneOptions.TargetCurveDb` is subtracted from the plant before any shape is read. Left in, a
   house curve's own tilt through a low junction would be read as the driver's acoustic slope.
@@ -761,7 +767,12 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
   integrates, so the same decibel-octaves survive any resolution. What separates the seat from the
   crossover is dropping the worst fifth of the charged region's weight before averaging. A feature
   narrower than that is nothing a filter on the lattice could answer; a slope that is systematically
-  wrong covers the region and pays in full. Both figures are the battery's to confirm.
+  wrong covers the region and pays in full. Both figures are the battery's to confirm. Every point is
+  weighted per **octave** (`OctaveWeights`: the stretch of log frequency around it, a step wider than a third
+  of an octave counting as a hole), the level median included. The thinned plant is a 1/24-octave grid only
+  where the read has bins to spare and the FFT's own spacing lower down; a 1/f weight on top of that grid,
+  which the first version carried, leant on the corner of a low-pass side and on the far skirt of a
+  high-pass side, so mirror-image shapes were charged differently (caught in review, 2026-09-21).
 - **Level free, shape charged.** The level is removed as the median difference between the achieved
   curve and the asked edge over the passband side — a median, so one broad bump cannot shift the whole
   comparison. The charge runs from the corner outwards to 24 dB of fall, within the ranking band and
@@ -778,22 +789,31 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
   coherent sum as always; everything within `SumSlackDb` of the best sum is a corridor, and the stated
   slope chooses inside it. The engine keeps 0.2 dB for a caller that states nothing; the Tune junction
   dialog states it as a visible **budget**, 1.0 dB by default (`DefaultSumBudgetDb`, the owner's choice).
-  Measured with every reading re-aligned (8 cabins, 46 junctions,
-  `docs/specs/acoustic-crossover-target.md#6b`): a 1.0 dB budget lands acoustic LR24 almost everywhere
-  (acoustic cost 7.0 -> 2.1) for about 0.25 dB of average sum loss and 0.5 dB of average dip, the worst
-  dip 2 dB deeper; on v6 session-15, junction B-C, BW18@230 + BW12@230 lands acoustic BW24 for 1.0 dB
-  against the best sum. That is a price, not a gain, and the report names it against
+  Measured with every reading re-aligned, weighted per octave and judged at the worst channel (8 cabins,
+  23 junctions, `docs/specs/acoustic-crossover-target.md#6c`): a 1.0 dB budget lands acoustic LR24 at
+  every channel on 5 junctions of 23 — the lattice could at 19, most of them for more than 1 dB of sum —
+  for about 0.3 dB of average sum loss and 0.7 dB of average dip, the worst dip 2 dB deeper. On v6
+  session-15, junction B-C, BW18@230 + BW12@230 lands acoustic BW24 (0.9 dB at the worst channel, on the
+  MMM averages) for 1.0 dB against the best sum. That is a price, not a gain, and the report names it against
   `JunctionTuneResult.BestSumScoreDb`. The user's crossover is rewritten on a
   sum win by `KeepMarginDb`, or on an equal sum with the asked edge drawn better by
   `AcousticKeepMarginDb` (1 dB). A weight in the score would have let a handsome slope buy a dip at an
   exchange rate nobody can name.
+- **The worst channel decides.** Each channel's EQ aims at the goal by itself, so whether a candidate lands
+  is its worst channel's question (`JunctionTuneCandidate.WorstAcousticChannel`, from each fit's
+  `LowerChargeDb` / `UpperChargeDb`): four channels at 0.2, 0.2, 0.3 and 3.7 dB average 1.1 and would read as
+  landed while one tweeter cannot be brought onto the goal. Inside the corridor, candidates whose worst
+  channel lands come first and the average — the steadier figure — chooses among them; where none lands, the
+  one nearest to landing. `slopeWins` compares worst channels too.
 - **Reachability is read off the lattice.** A filter only steepens, so a target softer than the
-  drivers' own fall is not on offer at all. The verdict is `ClosestAcousticCostDb`: the least any
-  candidate on the lattice missed the asked edge by, before the corridor removed any of them. Read
-  beside the chosen candidate's own cost it separates "these drivers cannot" from "the summation would
-  not pay for it". `JunctionDriverSlopes` (a `MagnitudeSlopeFit` of the plant, fitted the same way as
-  the asked edge over the same region, so the two compare with each other rather than with a nameplate
-  figure) is the explanation, not the verdict.
+  drivers' own fall is not on offer at all. The verdict is `ClosestAcousticCostDb`: the least worst-channel
+  miss any candidate on the lattice reached, before the corridor removed any of them. Read beside the chosen
+  candidate's own it separates "no allowed filter can" from "the summation would not pay for it" — and it is
+  a statement about the SEARCH (corner window, families, slopes), not the drivers. What is the drivers' own is
+  `JunctionDriverSlopes` (a `MagnitudeSlopeFit` of the plant, fitted the same way as the asked edge over the
+  same region): where a channel's own fall is already steeper than asked (`IsReachable`), the report names
+  that channel, since no filter can soften it; otherwise a missed goal is either one a filter in reach would
+  pay for in sum, or one outside the search.
 - **What is claimed.** The magnitude is fitted to the asked edge. Each side keeps its own excess phase,
   so "the magnitude follows an acoustic LR24" is true where "the acoustic crossover is LR24" would be
   more than was shown — and the coherent sum term is there precisely because it sees what a magnitude

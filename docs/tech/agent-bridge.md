@@ -122,7 +122,9 @@ guard:
 
 - block order and letters, each side's measurement **by content** (a file re-measured and saved over
   its own name keeps reference, length and rate), peak, band, coherence, calibration curve by points,
-  capture sessions, gain, delay, polarity, chains, FIR kernel by content and its design;
+  capture sessions, gain, delay, polarity, chains, FIR kernel by content and its design, and the
+  acoustic crossover goals (they move `autoTunePeq`'s target) — on a line of their own, written only where
+  a goal is stated, so a session without one hashes as it did before goals existed;
 - project figures the diagnostics were computed under (phase window, calibration by id and points,
   target level and shape, AI notes);
 - the shown side and view, because engines read them (Auto crossover proposes from the shown side,

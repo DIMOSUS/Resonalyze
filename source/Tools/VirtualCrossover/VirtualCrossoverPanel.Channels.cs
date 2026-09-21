@@ -486,6 +486,8 @@ public partial class VirtualCrossoverPanel
             UpdateSideRadioTexts();
         }
 
+        // The kind may have switched an edge on or off, and a goal reads as stated only for an edge that runs.
+        ShowAcousticGoal(channel);
         SaveAndRedraw();
     }
 
@@ -551,7 +553,7 @@ public partial class VirtualCrossoverPanel
         UpdateSourceButton(channel);
         UpdatePeqReadouts(channel);
         UpdateFirReadout(channel);
-        control.SetAcousticGoal(settings.AcousticHighPass, settings.AcousticLowPass);
+        ShowAcousticGoal(channel);
     }
 
     // Also runs on redraw (catches a rate that follows replaced measurements); only a real change reaches the layout.

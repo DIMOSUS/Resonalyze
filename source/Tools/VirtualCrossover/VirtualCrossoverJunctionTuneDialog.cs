@@ -50,8 +50,9 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     /// <summary>
     /// What the acoustic goal may cost the sum by default, in summation score against the best candidate: the
     /// owner's choice. The engine keeps 0.2 for a caller that states nothing; here the user is weighing a slope
-    /// against the sum and sees the price. Measured, re-aligned, on eight cabins: 1.0 lands acoustic LR24 almost
-    /// everywhere for ~0.25 dB of average loss and ~0.5 dB of average dip (docs/specs/acoustic-crossover-target.md).
+    /// against the sum and sees the price. Measured on eight cabins (docs/specs/acoustic-crossover-target.md#6c):
+    /// 1.0 lands acoustic LR24 at every channel on 5 junctions of 23, for ~0.3 dB of average loss and ~0.7 dB of
+    /// average dip.
     /// </summary>
     public const double DefaultSumBudgetDb = 1.0;
 
@@ -134,6 +135,12 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             DialogResult = DialogResult.OK;
             Close();
         };
+        buttonUndo.Click += (_, _) =>
+        {
+            UndoRequested = true;
+            DialogResult = DialogResult.Cancel;
+            Close();
+        };
         Tips();
         PresentMode();
     }
@@ -175,19 +182,31 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     /// <summary>The request the Apply button stands for; null until a search has landed.</summary>
     public JunctionTuneRequest? Result { get; private set; }
 
+    /// <summary>Undo last Apply was pressed: the panel puts the channels back once the dialog is closed.</summary>
+    public bool UndoRequested { get; private set; }
+
     /// <param name="junctions">Labels as the panel's read-outs name them, lower to upper.</param>
     /// <param name="defaults">The corner window, the families in use and the card's own goal, by junction index.</param>
     /// <param name="search">Runs the search off the UI thread; the dialog owns the await and the buttons.</param>
     /// <param name="remembered">What the dialog was left on last time, or null to open on the junction's defaults.</param>
+    /// <param name="undoable">The junction the last Apply was for ("B/C") while it can still be undone, else null.</param>
     public void Init(
         IReadOnlyList<string> junctions,
         Func<int, JunctionTuneDefaults> defaults,
         Func<JunctionTuneRequest, Task<JunctionTuneOutcome>> search,
-        VirtualCrossoverJunctionTuneSettings? remembered = null)
+        VirtualCrossoverJunctionTuneSettings? remembered = null,
+        string? undoable = null)
     {
         ArgumentNullException.ThrowIfNull(junctions);
         defaultsFor = defaults ?? throw new ArgumentNullException(nameof(defaults));
         runner = search ?? throw new ArgumentNullException(nameof(search));
+        buttonUndo.Enabled = undoable != null;
+        toolTip.SetToolTip(
+            buttonUndo,
+            (undoable == null ? "Nothing applied here to undo." : $"The last Apply was for {undoable}.") + "\r\n" +
+            "Undo puts every channel back exactly as it was before it:" + "\r\n" +
+            "crossovers, goals and anything changed since. One step; gone" + "\r\n" +
+            "once a session is loaded.");
         comboBoxJunction.Items.Clear();
         foreach (string junction in junctions)
         {
@@ -299,9 +318,10 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         (remembered.Acoustic ? radioAcoustic : radioSummation).Checked = true;
         foreach ((string label, double[] window) in remembered.Windows)
         {
+            // Clamped before it becomes a decimal: a hand-edited file may hold a figure no decimal can.
             if (window is [var min, var max])
             {
-                windows[label] = ((decimal)min, (decimal)max);
+                windows[label] = (numericMinHz.ClampValue(min), numericMaxHz.ClampValue(max));
             }
         }
     }
@@ -589,7 +609,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             "would sum to. Nothing is written until Apply.");
         toolTip.SetToolTip(
             buttonApply,
-            "Write the winning crossover into both sides of both blocks, as" + "\r\n" +
-            "one undo step.");
+            "Write the found crossover into both sides of both blocks, and" + "\r\n" +
+            "a stated goal onto the cards. Undo last Apply puts them back.");
     }
 }

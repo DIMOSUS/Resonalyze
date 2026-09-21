@@ -51,6 +51,12 @@ public sealed class VirtualCrossoverJunctionTuneSettings
     /// <summary>Corner window per junction label, as [low Hz, high Hz].</summary>
     public Dictionary<string, double[]> Windows { get; set; } = new();
 
+    /// <summary>The corner boxes' own range: a window outside it describes no question the dialog can ask.</summary>
+    public const double WindowLowestHz = 10;
+
+    /// <inheritdoc cref="WindowLowestHz"/>
+    public const double WindowHighestHz = 24_000;
+
     /// <summary>Drops what the dialog could not use. Never throws: this is a convenience, not part of the tune.</summary>
     public void Sanitize()
     {
@@ -69,7 +75,7 @@ public sealed class VirtualCrossoverJunctionTuneSettings
 
         Windows = (Windows ?? new())
             .Where(pair => pair.Value is [var low, var high] &&
-                double.IsFinite(low) && double.IsFinite(high) && low > 0 && high > low)
+                low >= WindowLowestHz && high <= WindowHighestHz && high > low)
             .ToDictionary(pair => pair.Key, pair => pair.Value);
     }
 }
@@ -275,6 +281,16 @@ public sealed class VirtualCrossoverChannelSettings
     [JsonPropertyName("acousticHighPass")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public JunctionAcousticTarget? AcousticHighPass { get; set; }
+
+    /// <summary>Whether the IIR crossover runs the high-pass. Only then does a goal stated for it describe a filter,
+    /// and only then does Auto Tune read it. A goal for an edge the channel does not run stays with that edge, as its
+    /// electrical corner and slope do, and applies again once the channel runs it; the card shows it as kept.</summary>
+    [JsonIgnore]
+    public bool RunsHighPass => CrossoverKind is CrossoverKind.HighPass or CrossoverKind.BandPass;
+
+    /// <inheritdoc cref="RunsHighPass"/>
+    [JsonIgnore]
+    public bool RunsLowPass => CrossoverKind is CrossoverKind.LowPass or CrossoverKind.BandPass;
 
     [JsonIgnore]
     public bool HasFirCrossover => Fir != null && FirDesign != null;

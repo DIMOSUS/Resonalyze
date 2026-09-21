@@ -135,6 +135,10 @@ internal static class AgentProposalApplier
         to.CrossoverKind = from.CrossoverKind;
         to.LowPassEdge = from.LowPassEdge;
         to.HighPassEdge = from.HighPassEdge;
+        // The goals travel with the edges they describe: a junction tune's Apply writes them, and its undo comes
+        // through here.
+        to.AcousticLowPass = from.AcousticLowPass;
+        to.AcousticHighPass = from.AcousticHighPass;
         // No operation writes rotation or FIR, but this is also the undo path: they must go back with everything else.
         to.PhaseRotationDegrees = from.PhaseRotationDegrees;
         to.PeqPreampDb = from.PeqPreampDb;

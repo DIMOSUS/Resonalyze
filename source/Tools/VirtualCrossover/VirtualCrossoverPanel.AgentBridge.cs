@@ -780,6 +780,13 @@ public partial class VirtualCrossoverPanel
 
         AgentImportUndo undo = agentUndo;
         agentUndo = null;
+        RestoreChannels(undo);
+    }
+
+    /// <summary>Every channel, the block order and the session-wide settings an engine commits, back as the
+    /// snapshot holds them. Shared by Undo AI import and Tune junction's Undo last Apply.</summary>
+    private void RestoreChannels(AgentImportUndo undo)
+    {
         AgentProposalApplier.Restore(undo.Channels);
         RefreshChannelsAfterAgentWrite(undo.Channels);
         RestoreAgentChannelOrder(undo.Order);

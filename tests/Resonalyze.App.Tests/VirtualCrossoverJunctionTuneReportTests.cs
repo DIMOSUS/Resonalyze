@@ -195,6 +195,87 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
             line.Text.Length <= Columns, $"{line.Text.Length} characters: {line.Text}"));
     }
 
+    [Fact]
+    public void WithTwoSides_TheWorstChannelDecides_AndEverySideIsShown()
+    {
+        // 0.2, 0.2, 0.3 and 3.7 dB average 1.1 and would read as landed, while the right tweeter cannot be brought
+        // onto the goal. The verdict is that channel's, the slopes are shown side by side, and a mono junction's
+        // one shift is named once.
+        (JunctionTunePlan plan, JunctionTuneResult result) = TwoSides(rightTweeterFallsDbPerOctave: 9.0, closestDb: 1.0);
+
+        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+        List<string> text = report.Select(line => line.Text).ToList();
+        output.WriteLine(string.Join(Environment.NewLine, text));
+
+        Assert.Contains(text, line => line.Contains("off by 3.7 dB at worst (right B), 1.1 on average.", StringComparison.Ordinal));
+        Assert.Contains(text, line => line.TrimStart().StartsWith("left", StringComparison.Ordinal) && line.Contains("got", StringComparison.Ordinal));
+        Assert.Contains(text, line => line.TrimStart().StartsWith("right", StringComparison.Ordinal) && line.Contains("got", StringComparison.Ordinal));
+        Assert.Contains(text, line => line.Contains("landing right B on it takes about 15.0 dB/oct", StringComparison.Ordinal));
+        Assert.Contains(text, line => line.Contains("one shift of B for both sides", StringComparison.Ordinal) &&
+            line.Contains("+0.20 ms", StringComparison.Ordinal));
+        JunctionTuneLine verdict = report[^1];
+        Assert.Contains("Apply writes it anyway", verdict.Text, StringComparison.Ordinal);
+        Assert.Contains("a filter that lands on it sums worse.", verdict.Text, StringComparison.Ordinal);
+        Assert.Equal(JunctionTuneTone.Worse, verdict.Spans[^1].Tone);
+        Assert.All(text, line => Assert.True(line.Length <= Columns, $"{line.Length} characters: {line}"));
+        Assert.True(report.Count <= VirtualCrossoverJunctionTuneReport.PaneLines, $"{report.Count} lines.");
+    }
+
+    [Fact]
+    public void AChannelFallingFasterThanAskedByItself_IsNamed_AndSoIsASearchTooNarrow()
+    {
+        // A filter only steepens: a tweeter already falling 30 dB/oct alone is out of any filter's reach. That is a
+        // statement about the driver; "no filter in this search" is one about the corner window and the menu.
+        (JunctionTunePlan steep, JunctionTuneResult tooSteep) = TwoSides(rightTweeterFallsDbPerOctave: 30.0, closestDb: 3.0);
+        (JunctionTunePlan narrow, JunctionTuneResult notFound) = TwoSides(rightTweeterFallsDbPerOctave: 9.0, closestDb: 3.0);
+
+        string driver = VirtualCrossoverJunctionTuneReport.Build(steep, tooSteep)[^1].Text;
+        string search = VirtualCrossoverJunctionTuneReport.Build(narrow, notFound)[^1].Text;
+
+        Assert.Contains("right B alone already falls faster.", driver, StringComparison.Ordinal);
+        Assert.Contains("no filter in this search lands on it.", search, StringComparison.Ordinal);
+    }
+
+    private static (JunctionTunePlan Plan, JunctionTuneResult Result) TwoSides(
+        double rightTweeterFallsDbPerOctave, double closestDb)
+    {
+        (JunctionTunePlan plain, _) = Tune(acoustic: null);
+        JunctionTunePlan plan = plain with
+        {
+            Options = plain.Options with
+            {
+                AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24),
+                OneAlignmentForAllSides = true
+            }
+        };
+        CrossoverEdge edge = new(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        JunctionTuneReading[] sides =
+        [
+            new("left", -0.3, -1.0, 2.0, new JunctionAcousticFit(0.2, 0.1, 25, 24, 24, 0.2, 0.2)),
+            new("right", -0.4, -1.2, 2.1, new JunctionAcousticFit(2.0, -2.0, 25, 33, 24, 0.3, 3.7))
+        ];
+        var candidate = new JunctionTuneCandidate(edge, edge, sides, sides, 500, 2_000);
+        var result = new JunctionTuneResult(
+            candidate,
+            candidate,
+            Changed: false,
+            [],
+            [
+                new JunctionTuneAlignment("left", 0.2, false, -0.3, -1.0),
+                new JunctionTuneAlignment("right", 0.2, false, -0.4, -1.2)
+            ],
+            [],
+            100,
+            500,
+            2_000,
+            [
+                new JunctionDriverSlopes("left", 1.0, 2.0),
+                new JunctionDriverSlopes("right", 1.0, rightTweeterFallsDbPerOctave)
+            ],
+            ClosestAcousticCostDb: closestDb);
+        return (plan, result);
+    }
+
     private static (JunctionTunePlan Plan, JunctionTuneResult Result) Tune(JunctionAcousticTarget? acoustic)
     {
         CrossoverEdge lr = new(CrossoverFilterFamily.LinkwitzRiley, 1_000, 48);

@@ -263,12 +263,17 @@ public partial class VirtualCrossoverChannelControl : UserControl
     /// <summary>
     /// The acoustic crossover asked for on this channel's edges, shown on the crossover row: what
     /// <c>driver × filter</c> should look like, which is not what the filter boxes beside it say. Em dash for a
-    /// channel nobody has stated a wish for; the button opens the editor either way.
+    /// channel nobody has stated a wish for; the button opens the editor either way. A goal for an edge the channel
+    /// does not run is not shown as stated, since Auto Tune does not read it: the tooltip says it is kept.
     /// </summary>
-    internal void SetAcousticGoal(JunctionAcousticTarget? highPass, JunctionAcousticTarget? lowPass)
+    internal void SetAcousticGoal(
+        JunctionAcousticTarget? highPass,
+        JunctionAcousticTarget? lowPass,
+        bool highPassRuns = true,
+        bool lowPassRuns = true)
     {
-        string? high = Describe(highPass);
-        string? low = Describe(lowPass);
+        string? high = highPassRuns ? Describe(highPass) : null;
+        string? low = lowPassRuns ? Describe(lowPass) : null;
         buttonAcousticGoal.Text = (high, low) switch
         {
             (null, null) => "—",
@@ -279,7 +284,13 @@ public partial class VirtualCrossoverChannelControl : UserControl
         buttonAcousticGoal.ForeColor = high == null && low == null
             ? UiPalette.TextDisabled
             : UiPalette.TextPrimary;
-        tooltipHost?.SetToolTip(buttonAcousticGoal, AcousticGoalTooltipText(highPass, lowPass));
+        tooltipHost?.SetToolTip(
+            buttonAcousticGoal,
+            AcousticGoalTooltipText(
+                highPassRuns ? highPass : null,
+                lowPassRuns ? lowPass : null,
+                highPassRuns ? null : highPass,
+                lowPassRuns ? null : lowPass));
 
         static string? Describe(JunctionAcousticTarget? goal) => goal is { } asked
             ? FamilyShort(asked.Family) + asked.SlopeDbPerOctave
@@ -295,7 +306,10 @@ public partial class VirtualCrossoverChannelControl : UserControl
     };
 
     private static string AcousticGoalTooltipText(
-        JunctionAcousticTarget? highPass, JunctionAcousticTarget? lowPass)
+        JunctionAcousticTarget? highPass,
+        JunctionAcousticTarget? lowPass,
+        JunctionAcousticTarget? keptHighPass,
+        JunctionAcousticTarget? keptLowPass)
     {
         string stated = highPass == null && lowPass == null
             ? "Nothing stated: the EQ target follows the electrical filter."
@@ -303,10 +317,21 @@ public partial class VirtualCrossoverChannelControl : UserControl
               (highPass is { } high ? $", HP {FamilyShort(high.Family)}{high.SlopeDbPerOctave}" : string.Empty) +
               (lowPass is { } low ? $", LP {FamilyShort(low.Family)}{low.SlopeDbPerOctave}" : string.Empty) +
               ": Auto Tune aims at THIS instead of the filter.";
+        // A goal kept for an edge the channel does not run takes the last line: it matters more than the hint.
+        string last = keptHighPass == null && keptLowPass == null
+            ? "Click to read or edit it; the corner always follows the filter's."
+            : "Kept for an edge this channel does not run:" +
+              (keptHighPass is { } keptHigh
+                  ? $" HP {FamilyShort(keptHigh.Family)}{keptHigh.SlopeDbPerOctave}"
+                  : string.Empty) +
+              (keptLowPass is { } keptLow
+                  ? $" LP {FamilyShort(keptLow.Family)}{keptLow.SlopeDbPerOctave}"
+                  : string.Empty) +
+              ", unused until it does.";
         return "The ACOUSTIC crossover you want here — driver and filter together," + "\r\n" +
             "which is steeper than the filter alone by the driver's own fall." + "\r\n" +
             stated + "\r\n" +
-            "Click to read or edit it; the corner always follows the filter's.";
+            last;
     }
 
     internal void SetFir(FirFilter? kernel, string? sourceName, FirCrossoverDesign? design = null)

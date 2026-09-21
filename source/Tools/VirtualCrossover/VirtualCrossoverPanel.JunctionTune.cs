@@ -20,7 +20,8 @@ public partial class VirtualCrossoverPanel
                 .ToList(),
             index => JunctionTuneOpening(junctions, index),
             request => RunJunctionTuneAsync(junctions, request),
-            session.Project.JunctionTune);
+            session.Project.JunctionTune,
+            junctionTuneUndo is { } undo && undo.Generation == projectGeneration ? undo.Junction : null);
         DialogResult answer = dialog.ShowDialog(FindForm());
         if (IsDisposed)
         {
@@ -30,6 +31,13 @@ public partial class VirtualCrossoverPanel
 
         // Kept however the dialog closed: the next opening starts where this one was left, Apply or not.
         session.Project.JunctionTune = dialog.Remembered();
+        if (dialog.UndoRequested)
+        {
+            lastJunctionTune = null;
+            UndoJunctionTune();
+            return;
+        }
+
         if (answer != DialogResult.OK ||
             dialog.Result is not { } request ||
             lastJunctionTune is not { } landed)
@@ -60,20 +68,59 @@ public partial class VirtualCrossoverPanel
         JunctionTuneResult landed,
         JunctionAcousticTarget? goal)
     {
+        // Every channel as it was, taken before the first write: Undo last Apply in the dialog puts it back, as
+        // Undo AI import does for an import.
+        AgentImportUndo before = CaptureAgentUndo();
         // The same write the assistant's tune makes: one crossover into both sides of both blocks, and the goal onto
-        // the edges the applied crossover actually lands on. The crossover is the one the report calls found
-        // whenever it differs from the one on screen: the keep margin is the report's advice, and Apply is the
-        // user overruling it. Where nothing different was found, only the goal is written. The goal is written as
-        // asked whether or not the crossover lands on it; the report says how far it is.
+        // the edges the applied crossover runs. The crossover is the one the report calls found whenever it differs
+        // from the one on screen: the keep margin is the report's advice, and Apply is the user overruling it.
+        // Where nothing different was found, only the goal is written. The goal is written as asked whether or not
+        // the crossover lands on it; the report says how far it is.
         AgentJunctionTune.Write(landed, lower, upper, goal, applyCrossover: landed.Moves);
         ApplySettingsToControl(lower);
         ApplySettingsToControl(upper);
         // Both sides were decided here, so the Lock remembers rather than carries.
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         SaveAndRedraw();
+        junctionTuneUndo = new JunctionTuneUndo(
+            before, projectGeneration, $"{lower.Name}/{upper.Name}", ComputeAgentFingerprint());
+    }
+
+    /// <summary>Puts every channel back as it was before the last Apply. Where the session has changed since, the
+    /// later changes go too, so that is asked first.</summary>
+    private void UndoJunctionTune()
+    {
+        if (junctionTuneUndo is not { } undo || undo.Generation != projectGeneration)
+        {
+            junctionTuneUndo = null;
+            return;
+        }
+
+        if (!string.Equals(undo.FingerprintAfter, ComputeAgentFingerprint(), StringComparison.Ordinal) &&
+            MessageBox.Show(
+                FindForm(),
+                $"The session has changed since the tune of {undo.Junction} was applied. Undo puts every channel " +
+                "back exactly as it was before that Apply, so the later changes go as well." +
+                Environment.NewLine + Environment.NewLine + "Undo anyway?",
+                "Tune junction",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning) != DialogResult.Yes)
+        {
+            return;
+        }
+
+        junctionTuneUndo = null;
+        RestoreChannels(undo.Channels);
     }
 
     private JunctionTuneResult? lastJunctionTune;
+
+    /// <summary>The last Apply's undo: every channel before it, the project generation it wrote into (a session
+    /// load retires it), the junction it was for, and the session as the Apply left it.</summary>
+    private sealed record JunctionTuneUndo(
+        AgentImportUndo Channels, long Generation, string Junction, string FingerprintAfter);
+
+    private JunctionTuneUndo? junctionTuneUndo;
 
     /// <summary>What the dialog opens on for a junction: the assistant's own window, the families in use, and the
     /// acoustic goal the two channel cards already hold.</summary>
@@ -94,7 +141,7 @@ public partial class VirtualCrossoverPanel
             minHz,
             maxHz,
             AgentProposalValidator.CurrentFamilies(lower, upper),
-            lower.AcousticLowPass ?? upper.AcousticHighPass,
+            (lower.RunsLowPass ? lower.AcousticLowPass : null) ?? (upper.RunsHighPass ? upper.AcousticHighPass : null),
             currentHz > 0 ? currentHz : null);
     }
 
@@ -142,6 +189,19 @@ public partial class VirtualCrossoverPanel
             return Refusal(refusal);
         }
 
+        // A stated slope is judged on the curve the EQ stage fits next: the spatial average wherever the hybrid
+        // hands one to Auto Tune, the gated reading elsewhere.
+        if (request.AcousticGoal != null)
+        {
+            sides = AgentProbeReader.WithSpatialAverages(
+                sides,
+                lower,
+                upper,
+                HybridRequested ? session.SpatialAverageMode : null,
+                session.Calibration.SpatialAverageFor(),
+                session.ProcessorSampleRateHz);
+        }
+
         var options = new JunctionTuneOptions(
             request.Families,
             // Null would mean "every slope at or above the floor"; the dialog always states a window.
@@ -153,7 +213,8 @@ public partial class VirtualCrossoverPanel
             AcousticTarget: request.AcousticGoal,
             TargetCurveDb: request.AcousticGoal == null ? null : TargetCurvePoints(),
             SumSlackDb: request.SumSlackDb,
-            SplitCorners: request.SplitCorners);
+            SplitCorners: request.SplitCorners,
+            OneAlignmentForAllSides: AgentProbeReader.SharesOneAlignment(lower, upper));
         var plan = new JunctionTunePlan(label, lower, upper, sides, options);
         string fingerprintBefore = ComputeAgentFingerprint();
         JunctionTuneResult result;
@@ -195,10 +256,11 @@ public partial class VirtualCrossoverPanel
         // Apply writes what the report calls found and the goal that was asked, so it is offered whenever that
         // changes something: a different crossover, or a goal the cards do not state yet. A button that closes
         // the window and changes nothing is the one thing it must not be.
-        bool goalChanges = AgentJunctionTune.WouldChangeGoal(lower, upper, request.AcousticGoal);
+        JunctionTuneCandidate applied = result.Moves ? result.Best : result.Current;
+        bool goalChanges = AgentJunctionTune.WouldChangeGoal(lower, upper, request.AcousticGoal, applied);
+        // At the channel that misses most, as the report reads it.
         bool goalLands = request.AcousticGoal != null &&
-            CrossoverJunctionTuner.WasAcousticTargetReached(
-                (result.Moves ? result.Best : result.Current).AcousticCostDb);
+            CrossoverJunctionTuner.WasAcousticTargetReached(applied.WorstAcousticCostDb);
         bool forTheGoal = request.AcousticGoal != null &&
             result.Best.RankingScoreDb > result.Current.RankingScoreDb;
         string verdict = result.Changed

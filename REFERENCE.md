@@ -3323,12 +3323,25 @@ overlap where a ragged excess phase interferes is a legitimate answer the
 magnitude alone cannot see — which is why this tune and the wizard can disagree,
 and why this one has the last word on a finished tune.
 
-- **Junction, corner window, families, slopes free per side.** The window opens
-  half an octave each way around the corner you already have. Candidates are
-  ranked on one band shared by all of them — different corners are not
-  comparable on their own bands — and your crossover is **kept** unless a
-  challenger beats it by half a decibel there *and* reads no worse on its own
-  junction band, where your Sum loss read-out lives.
+- **Junction and corner window.** The window opens half an octave each way
+  around the corner you already have. Candidates are ranked on one band shared
+  by all of them — different corners are not comparable on their own bands —
+  and your crossover is **kept** unless a challenger beats it by half a decibel
+  there *and* reads no worse on its own junction band, where your Sum loss
+  read-out lives.
+- **Tune for** says what the search is answering: **the best summation** this
+  junction can have, or **this acoustic crossover** (below). The summation mode
+  takes a **slope window** beside it — narrow it to hold the junction near a
+  steepness you want. An acoustic goal states the answer instead, so the window
+  is left out of that mode altogether.
+- **Families**, and **slopes free per side** where the two edges may differ in
+  steepness (that costs slopes² candidates per corner, so it is a tick rather
+  than the default).
+- **Corners free per side** adds a pass that offsets the two edges from the
+  junction — a twelfth, a sixth or a quarter of an octave, half of it each way,
+  so the junction stays where it is. Holding them apart takes a bump off the
+  junction; overlapping them fills a dip. Every corner it offers is a whole
+  number of hertz, the way the channel card states it and a processor takes it.
 - **Nothing is written until Apply**, which writes the crossover into both sides
   of both blocks as one undo step.
 - The report gives each side's sum loss, dip and ripple before and after, the

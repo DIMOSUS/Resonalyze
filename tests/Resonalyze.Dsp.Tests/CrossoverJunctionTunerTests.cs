@@ -611,6 +611,40 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    public void EveryCornerItOffers_IsOneTheCardCanShowAndTheProcessorCanTake()
+    {
+        // The channel card states the crossover frequency with no decimals. A split taken as a pure ratio of
+        // the corner lands between hertz (1 kHz held a twelfth apart is 971.532 / 1029.302), and the panel
+        // would then show 972 and 1029 while the chain ran the fractions - a filter the user cannot read back,
+        // let alone type into a processor.
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        JunctionTuneSide side = Side("left", LowPassChain(lr), HighPassChain(lr));
+        JunctionTuneOptions options = Options(
+            950, 1_050, slopes: [24], independentSlopes: false, CrossoverFilterFamily.LinkwitzRiley)
+            with { SplitCorners = true };
+
+        JunctionTuneResult result = CrossoverJunctionTuner.Tune([side], options);
+
+        List<JunctionTuneCandidate> reported = result.RunnersUp.Append(result.Best).ToList();
+        // Without a split among them the test would be watching nothing.
+        Assert.Contains(
+            reported,
+            candidate => Math.Abs(
+                candidate.LowerLowPass!.Value.FrequencyHz -
+                candidate.UpperHighPass!.Value.FrequencyHz) > 1);
+        foreach (JunctionTuneCandidate candidate in reported)
+        {
+            foreach (double corner in new[]
+            {
+                candidate.LowerLowPass!.Value.FrequencyHz,
+                candidate.UpperHighPass!.Value.FrequencyHz
+            })
+            {
+                Assert.Equal(Math.Round(corner), corner);
+            }
+        }
+    }
+    [Fact]
     public void Tune_RefusesAnEmptyFamilyList_AndAnInvertedWindow()
     {
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);

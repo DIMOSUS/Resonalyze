@@ -457,6 +457,9 @@ public static class CrossoverJunctionTuner
                     continue;
                 }
 
+                // Rounding brings neighbouring offsets onto one pair of corners, and the smallest of them back
+                // onto the corner itself, which is the candidate this pass is refining.
+                var offered = new HashSet<(double Low, double High)>();
                 foreach (double octaves in CrossoverAutoSetup.SplitOffsetOctaves)
                 {
                     if (octaves == 0)
@@ -467,9 +470,12 @@ public static class CrossoverJunctionTuner
                     // Positive holds the corners apart, which takes a bump off the junction; negative overlaps them,
                     // which fills a dip. Half the offset each way, so the junction itself does not move.
                     double spread = Math.Pow(2, octaves / 2);
-                    CrossoverEdge lowEdge = low with { FrequencyHz = low.FrequencyHz / spread };
-                    CrossoverEdge highEdge = high with { FrequencyHz = high.FrequencyHz * spread };
-                    if (lowEdge.FrequencyHz < 20 || highEdge.FrequencyHz > nyquistHz)
+                    CrossoverEdge lowEdge = low with { FrequencyHz = WholeHz(low.FrequencyHz / spread) };
+                    CrossoverEdge highEdge = high with { FrequencyHz = WholeHz(high.FrequencyHz * spread) };
+                    if (lowEdge.FrequencyHz < 20 ||
+                        highEdge.FrequencyHz > nyquistHz ||
+                        (lowEdge.Equals(low) && highEdge.Equals(high)) ||
+                        !offered.Add((lowEdge.FrequencyHz, highEdge.FrequencyHz)))
                     {
                         continue;
                     }
@@ -1304,6 +1310,11 @@ public static class CrossoverJunctionTuner
 
         return probes;
     }
+
+    /// <summary>A corner the user can be shown and a processor can be given: the channel card states the
+    /// frequency with no decimals, so a fractional edge would be a filter the panel displays as one number
+    /// and runs as another.</summary>
+    private static double WholeHz(double frequencyHz) => Math.Round(frequencyHz);
 
     private static double RippleFor(CrossoverFilterFamily family, CrossoverEdge? current) =>
         family == CrossoverFilterFamily.Chebyshev && current is { Family: CrossoverFilterFamily.Chebyshev } edge

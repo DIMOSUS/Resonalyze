@@ -683,6 +683,16 @@ preference, and the current crossover is kept unless a challenger beats it by `K
   is finer than any crossover decision), always keeping the window top. Processed responses are cached
   by chain record: a lower channel's response depends only on its low-pass, so slope combinations of
   one corner share it. Own-band reads are taken only for reported candidates.
+- **Split corners** (`JunctionTuneOptions.SplitCorners`, off by default). The same signed offset from the
+  junction corner the wizard uses (`CrossoverAutoSetup.SplitOffsetOctaves`, shared so the two tools cannot
+  drift apart), the low-pass moving half of it down and the high-pass half up, so the junction itself stays
+  put. Here it runs as a refinement pass over the `SplitRefinements` leading candidates rather than as a
+  second lattice dimension, for the reason the wizard refines it after its own sweep: crossed with the
+  corners it would square the candidate count. Each edge is rounded to a **whole hertz** — the channel card
+  states the frequency with no decimals, and a processor is given it that way, so a corner at 174.876 Hz
+  would be a filter the panel displays as 175 and runs as something else. Rounding brings neighbouring
+  offsets onto one pair of corners at low frequencies, and the smallest of them back onto the corner the
+  pass is refining; both are dropped rather than measured twice.
 - **Phase rotation reference**. A channel phase control states its angle at one of the channel's
   crossover corners (`PhaseRotationSpec.ReferenceIsLowPass` says which, rather than inferring it from
   frequency — a sub with no low-pass dialled in yet can still carry a low-pass reference). A search

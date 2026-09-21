@@ -4,6 +4,8 @@ namespace Resonalyze;
 
 /// <summary>What one junction's tune was asked for: which junction, where its corner may sit, which filters are on
 /// offer, and optionally the ACOUSTIC crossover it should add up to.</summary>
+/// <param name="SumSlackDb">How much summation score the acoustic goal may cost against the best sum: the corridor
+/// the stated slope chooses in. Read only with a goal.</param>
 internal sealed record JunctionTuneRequest(
     int JunctionIndex,
     double MinHz,
@@ -12,7 +14,8 @@ internal sealed record JunctionTuneRequest(
     IReadOnlyList<int> Slopes,
     bool IndependentSlopes,
     JunctionAcousticTarget? AcousticGoal,
-    bool SplitCorners);
+    bool SplitCorners,
+    double SumSlackDb = CrossoverJunctionTuner.DefaultSumSlackDb);
 
 /// <summary>What a junction opens on: the window the assistant's tune would use, the families it already runs, and
 /// the acoustic goal its channel cards already hold.</summary>
@@ -43,6 +46,14 @@ internal sealed record JunctionTuneOutcome(
 internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 {
     private const string Nothing = "—";
+
+    /// <summary>
+    /// What the acoustic goal may cost the sum by default, in summation score against the best candidate: the
+    /// owner's choice. The engine keeps 0.2 for a caller that states nothing; here the user is weighing a slope
+    /// against the sum and sees the price. Measured, re-aligned, on eight cabins: 1.0 lands acoustic LR24 almost
+    /// everywhere for ~0.25 dB of average loss and ~0.5 dB of average dip (docs/specs/acoustic-crossover-target.md).
+    /// </summary>
+    public const double DefaultSumBudgetDb = 1.0;
 
     /// <summary>Status for a question that changed after its answer landed.</summary>
     private const string Again = "The question changed — search again.";
@@ -116,6 +127,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             family.CheckedChanged += (_, _) => InvalidateResult(Again);
         }
         checkBoxSplitCorners.CheckedChanged += (_, _) => InvalidateResult(Again);
+        numericSumBudget.ValueChanged += (_, _) => InvalidateResult(Again);
         buttonRun.Click += async (_, _) => await RunAsync().ConfigureAwait(true);
         buttonApply.Click += (_, _) =>
         {
@@ -142,6 +154,10 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         comboBoxMaxSlope.Enabled = !acoustic;
         UiStyle.SetTextEnabledLook(labelSlopes, !acoustic);
         UiStyle.SetTextEnabledLook(labelSlopeTo, !acoustic);
+        // And the budget belongs to the acoustic one: without a goal there is nothing to spend the sum on.
+        numericSumBudget.Enabled = acoustic;
+        UiStyle.SetTextEnabledLook(labelSumBudget, acoustic);
+        UiStyle.SetTextEnabledLook(labelSumBudgetUnit, acoustic);
         if (acoustic && comboBoxGoalFamily.SelectedItem is not CrossoverFamilyChoice)
         {
             // The mode IS the goal: entering it with nothing stated would search for nothing.
@@ -150,8 +166,8 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         }
 
         labelGoalHint.Text = acoustic
-            ? "Driver and filter together, which is steeper than the filter alone. Chosen among filters that sum " +
-              "as well."
+            ? "Driver and filter together, which is steeper than the filter alone. Chosen among filters within " +
+              "the budget of the best sum."
             : "Every allowed filter is read on the coherent sum at this junction; the one that sums best wins.";
         InvalidateResult(Again);
     }
@@ -279,6 +295,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             ShowGoal(goal);
         }
 
+        numericSumBudget.Value = numericSumBudget.ClampValue(remembered.SumBudgetDb ?? DefaultSumBudgetDb);
         (remembered.Acoustic ? radioAcoustic : radioSummation).Checked = true;
         foreach ((string label, double[] window) in remembered.Windows)
         {
@@ -316,6 +333,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             Acoustic = radioAcoustic.Checked,
             MinSlopeDbPerOctave = comboBoxMinSlope.SelectedItem as int?,
             MaxSlopeDbPerOctave = comboBoxMaxSlope.SelectedItem as int?,
+            SumBudgetDb = (double)numericSumBudget.Value,
             Goal = comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice family &&
                 comboBoxGoalSlope.SelectedItem is int slope
                     ? new JunctionAcousticTarget(family.Value, slope)
@@ -425,7 +443,8 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
                 comboBoxGoalSlope.SelectedItem is int goalSlope
                     ? new JunctionAcousticTarget(goalFamily.Value, goalSlope)
                     : null,
-            checkBoxSplitCorners.Checked);
+            checkBoxSplitCorners.Checked,
+            (double)numericSumBudget.Value);
 
         int asked = question;
         running = true;
@@ -543,9 +562,9 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 
         toolTip.SetToolTip(
             checkBoxIndependentSlopes,
-            "Let the two sides take different slopes. The search then costs" + "\r\n" +
-            "slopes squared per corner, and asymmetric pairs are rarely" + "\r\n" +
-            "what a crossover wants.");
+            "Let the two sides take different slopes. On by default: the" + "\r\n" +
+            "drivers' own falls rarely match, and the search then costs" + "\r\n" +
+            "slopes squared per corner.");
         foreach (CheckBox family in FamilyBoxes)
         {
             toolTip.SetToolTip(
@@ -556,10 +575,14 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         }
         toolTip.SetToolTip(
             comboBoxGoalFamily,
-            "Optional: the ACOUSTIC crossover this junction should add up to," + "\r\n" +
-            "driver and filter together. The search then prefers the filter" + "\r\n" +
-            "that lands on it, but only among candidates the summation calls" + "\r\n" +
-            "equivalent — the sum stays the judge.");
+            "The ACOUSTIC crossover this junction should add up to, driver" + "\r\n" +
+            "and filter together. The search prefers the filter that lands" + "\r\n" +
+            "on it among candidates within the budget of the best sum.");
+        numericSumBudget.ApplyToolTip(
+            toolTip,
+            "How much summation score the goal may cost against the best" + "\r\n" +
+            "candidate, every one read after re-aligning. 0.2 keeps the sum;" + "\r\n" +
+            "1.0 lets a slope that lands on the goal in at a moderate price.");
         toolTip.SetToolTip(
             buttonRun,
             "Read every allowed filter on this junction and report what each" + "\r\n" +

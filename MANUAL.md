@@ -889,9 +889,9 @@ included, adds up to that slope — and tells you plainly whether these drivers 
 it at all, since a filter can only make a response steeper. Apply remembers the goal on
 the channel card and the EQ stage aims at it instead of at the electrical filter; where
 the crossover misses it, the report says so in red, and clearing it on the card sends the
-fit back to the filter.
-The summation always has the last word: the stated slope only chooses between crossovers
-that sum equally well.
+fit back to the filter. The stated slope chooses only among crossovers within the budget
+beside it — how much of the summation the goal may cost, 1.0 dB by default — and the
+report shows what it cost.
 
 ![The Tune junction dialog: the junction, the corner window, the filters on offer and the two things it can tune for, with the search report below](assets/images/manual/tune-junction.png)
 

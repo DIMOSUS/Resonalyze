@@ -170,6 +170,8 @@ public sealed record JunctionTuneAlignment(
 /// candidate's own cost: materially worse means the slope was within reach and the summation would not pay for it.
 /// Null unless a slope was stated.
 /// </param>
+/// <param name="BestSumScoreDb">The best ranking score on the lattice, before a stated slope chose inside its
+/// corridor: what the goal is paid for against. Null unless a slope was stated.</param>
 public sealed record JunctionTuneResult(
     JunctionTuneCandidate Current,
     JunctionTuneCandidate Best,
@@ -181,7 +183,8 @@ public sealed record JunctionTuneResult(
     double RankingBandLowHz,
     double RankingBandHighHz,
     IReadOnlyList<JunctionDriverSlopes> DriverSlopes,
-    double? ClosestAcousticCostDb = null)
+    double? ClosestAcousticCostDb = null,
+    double? BestSumScoreDb = null)
 {
     /// <summary>Whether the best candidate is a different crossover from the one on screen, won or not. The keep
     /// margin behind <see cref="Changed"/> is advice; this is what an explicit Apply would change.</summary>
@@ -514,6 +517,7 @@ public static class CrossoverJunctionTuner
         // sum is equivalent as a junction, so the slope decides between those, and a candidate outside the corridor
         // is never reached however well it draws the asked edge.
         double? closestAcousticCostDb = null;
+        double? bestSumScoreDb = null;
         if (options.AcousticTarget != null)
         {
             // How close the lattice can get at all, before anything is set aside: that answers "can these drivers do
@@ -528,6 +532,7 @@ public static class CrossoverJunctionTuner
 
             }
 
+            bestSumScoreDb = ranked[0].RankingScoreDb;
             double admissible = ranked[0].RankingScoreDb + options.SumSlackDb;
             ranked = ranked
                 .Where(candidate => candidate.RankingScoreDb <= admissible)
@@ -588,7 +593,8 @@ public static class CrossoverJunctionTuner
             rankingLowHz,
             rankingHighHz,
             driverSlopes,
-            closestAcousticCostDb);
+            closestAcousticCostDb,
+            bestSumScoreDb);
     }
 
     /// <summary>Whether a stated acoustic slope counts as drawn, given the best a candidate could do: two decibels of

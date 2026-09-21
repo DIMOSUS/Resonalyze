@@ -48,12 +48,20 @@ internal static class VirtualCrossoverJunctionTuneReport
         string lower = plan.Lower.Name;
         string upper = plan.Upper.Name;
         bool moved = result.Moves;
+        // A change the stated slope paid for in summation is nearer the goal, not better as a sum; the table says
+        // what it cost, and the headline must not contradict it.
+        bool forTheGoal = plan.Options.AcousticTarget != null &&
+            result.Best.RankingScoreDb > result.Current.RankingScoreDb;
         var lines = new List<JunctionTuneLine>
         {
             new([
                 new JunctionTuneSpan($"{lower}/{upper} — "),
                 result.Changed
-                    ? new JunctionTuneSpan("a better crossover was found.", JunctionTuneTone.Better)
+                    ? new JunctionTuneSpan(
+                        forTheGoal
+                            ? "a crossover nearer the acoustic goal was found."
+                            : "a better crossover was found.",
+                        JunctionTuneTone.Better)
                     : moved
                         ? new JunctionTuneSpan("keeping the crossover on screen is recommended.")
                         : new JunctionTuneSpan("the crossover on screen is the best found.")
@@ -82,7 +90,7 @@ internal static class VirtualCrossoverJunctionTuneReport
         if (plan.Options.AcousticTarget is { } asked)
         {
             lines.Add(JunctionTuneLine.Of(string.Empty));
-            Acoustic(lines, asked, result);
+            Acoustic(lines, asked, result, plan.Options.SumSlackDb);
         }
 
         return lines;
@@ -142,7 +150,7 @@ internal static class VirtualCrossoverJunctionTuneReport
     }
 
     private static void Acoustic(
-        List<JunctionTuneLine> lines, JunctionAcousticTarget asked, JunctionTuneResult result)
+        List<JunctionTuneLine> lines, JunctionAcousticTarget asked, JunctionTuneResult result, double budgetDb)
     {
         // The crossover Apply would leave on screen: the found one wherever it differs.
         JunctionTuneCandidate candidate = result.Moves ? result.Best : result.Current;
@@ -176,6 +184,16 @@ internal static class VirtualCrossoverJunctionTuneReport
             lines.Add(JunctionTuneLine.Of(
                 $"    landing on it takes about {Number(Math.Max(0, askedSlope - plantLower))} / " +
                 $"{Number(Math.Max(0, askedSlope - plantUpper))} dB/oct of filter; a pair that soft sums worse."));
+        }
+
+        // What the goal was paid for with: the found crossover against the best sum on the lattice, both read
+        // re-aligned. Said only where it cost something, and against the budget the user set.
+        if (result.Moves && result.BestSumScoreDb is { } bestSum &&
+            result.Best.RankingScoreDb - bestSum >= Noticeable)
+        {
+            lines.Add(JunctionTuneLine.Of(
+                $"    it costs {Number(result.Best.RankingScoreDb - bestSum)} dB of summation score against the " +
+                $"best sum here (budget {Number(budgetDb)} dB)."));
         }
 
         lines.Add(new JunctionTuneLine([

@@ -152,6 +152,7 @@ public partial class VirtualCrossoverPanel
             session.ProcessorSampleRateHz,
             AcousticTarget: request.AcousticGoal,
             TargetCurveDb: request.AcousticGoal == null ? null : TargetCurvePoints(),
+            SumSlackDb: request.SumSlackDb,
             SplitCorners: request.SplitCorners);
         var plan = new JunctionTunePlan(label, lower, upper, sides, options);
         string fingerprintBefore = ComputeAgentFingerprint();
@@ -198,8 +199,12 @@ public partial class VirtualCrossoverPanel
         bool goalLands = request.AcousticGoal != null &&
             CrossoverJunctionTuner.WasAcousticTargetReached(
                 (result.Moves ? result.Best : result.Current).AcousticCostDb);
+        bool forTheGoal = request.AcousticGoal != null &&
+            result.Best.RankingScoreDb > result.Current.RankingScoreDb;
         string verdict = result.Changed
-            ? "A better crossover was found; Apply writes it. "
+            ? forTheGoal
+                ? "A crossover nearer the goal was found, within the budget; Apply writes it. "
+                : "A better crossover was found; Apply writes it. "
             : result.Moves
                 ? "Keeping the crossover on screen is recommended; Apply writes the found one anyway. "
                 : goalChanges

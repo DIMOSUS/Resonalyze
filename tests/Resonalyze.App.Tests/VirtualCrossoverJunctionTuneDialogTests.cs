@@ -206,6 +206,7 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
             .First(choice => choice.Value == CrossoverFilterFamily.Butterworth);
         Field<ThemedComboBox>(dialog, "comboBoxGoalSlope").SelectedItem = 30;
         Field<RadioButton>(dialog, "radioAcoustic").Checked = true;
+        Field<ThemedNumericUpDown>(dialog, "numericSumBudget").Value = 0.6m;
     }
 
     private static void AssertQuestion(VirtualCrossoverJunctionTuneDialog dialog)
@@ -220,6 +221,7 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
             (Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").SelectedItem as CrossoverFamilyChoice)?.Value);
         Assert.Equal(30, Field<ThemedComboBox>(dialog, "comboBoxGoalSlope").SelectedItem);
         Assert.True(Field<RadioButton>(dialog, "radioAcoustic").Checked);
+        Assert.Equal(0.6m, Field<ThemedNumericUpDown>(dialog, "numericSumBudget").Value);
     }
     [Fact]
     public void TheModeSaysWhatIsBeingTunedFor_AndOnlyTheAcousticOneCarriesAGoal() => StaTest.Run(() =>
@@ -243,6 +245,9 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
 
         Assert.True(summation.Checked);
         Assert.False(Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").Enabled);
+        // The budget is what the goal may cost the sum, so it is the acoustic mode's alone.
+        ThemedNumericUpDown budget = Field<ThemedNumericUpDown>(dialog, "numericSumBudget");
+        Assert.False(budget.Enabled);
         Assert.Contains("sums best", hint.Text, StringComparison.Ordinal);
         Run(dialog);
         Assert.Null(asked!.AcousticGoal);
@@ -254,12 +259,15 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         acoustic.Checked = true;
         Assert.True(Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").Enabled);
         Assert.Contains("Driver and filter together", hint.Text, StringComparison.Ordinal);
+        Assert.True(budget.Enabled);
+        Assert.Equal(1.0m, budget.Value);
         Field<CheckBox>(dialog, "checkBoxSplitCorners").Checked = false;
         Run(dialog);
 
         Assert.NotNull(asked!.AcousticGoal);
         Assert.Equal(CrossoverFilterFamily.LinkwitzRiley, asked.AcousticGoal!.Family);
         Assert.False(asked.SplitCorners);
+        Assert.Equal(VirtualCrossoverJunctionTuneDialog.DefaultSumBudgetDb, asked.SumSlackDb);
     });
 
     [Fact]

@@ -94,6 +94,38 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     }
 
     [Fact]
+    public void AChangeTheGoalPaidForInSum_IsCalledNearerTheGoal_NotBetter()
+    {
+        // The budget lets a slope that lands on the goal replace a crossover that sums better; the headline must
+        // say which way it is better, or it contradicts the table right under it.
+        (JunctionTunePlan plain, _) = Tune(acoustic: null);
+        JunctionTunePlan plan = plain with
+        {
+            Options = plain.Options with
+            {
+                AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24),
+                SumSlackDb = 1.0
+            }
+        };
+        CrossoverEdge now = new(CrossoverFilterFamily.Butterworth, 180, 36);
+        CrossoverEdge found = new(CrossoverFilterFamily.Butterworth, 230, 18);
+        JunctionTuneReading[] sums = [new("left", -0.5, -1.8, 4.4, new JunctionAcousticFit(7.7, -7.7, 34, 32, 21.4))];
+        JunctionTuneReading[] lands = [new("left", -0.8, -2.3, 4.9, new JunctionAcousticFit(1.3, 0.5, 31, 26, 21.4))];
+        var result = new JunctionTuneResult(
+            new JunctionTuneCandidate(now, now, sums, sums, 100, 500),
+            new JunctionTuneCandidate(found, found, lands, lands, 100, 500),
+            Changed: true,
+            [], [], [], 856, 100, 500, [],
+            ClosestAcousticCostDb: 1.1,
+            BestSumScoreDb: 5.5);
+
+        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
+
+        Assert.EndsWith("a crossover nearer the acoustic goal was found.", report[0].Text, StringComparison.Ordinal);
+        Assert.Contains(report, line => line.Text.Contains("(budget 1.0 dB)", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void AFoundCrossoverShortOfTheMargin_IsAdvisedAgainst_NotCalledUnapplied()
     {
         // Apply writes the found crossover whether or not it cleared the keep margin, so the report may advise
@@ -145,12 +177,19 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
             Changed: true,
             [], [], [], 857, 100, 500,
             [new JunctionDriverSlopes("left", 14.1, 16.4)],
-            ClosestAcousticCostDb: 1.3);
+            ClosestAcousticCostDb: 1.3,
+            BestSumScoreDb: 3.5);
 
         List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
 
         JunctionTuneLine verdict = report[^1];
         Assert.Contains("Apply writes it anyway", verdict.Text, StringComparison.Ordinal);
+        // And what the goal was paid for with, against the budget it was allowed: the found crossover scores
+        // 4.0 against the best sum's 3.5.
+        Assert.Contains(
+            report,
+            line => line.Text.Contains("it costs 0.5 dB of summation score", StringComparison.Ordinal) &&
+                line.Text.Contains("(budget 0.2 dB)", StringComparison.Ordinal));
         Assert.Equal(JunctionTuneTone.Worse, verdict.Spans[^1].Tone);
         Assert.All(report, line => Assert.True(
             line.Text.Length <= Columns, $"{line.Text.Length} characters: {line.Text}"));

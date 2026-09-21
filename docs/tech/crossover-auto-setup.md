@@ -775,8 +775,15 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
   acoustic slope the driver's own fall is the protection, and a soft edge is often exactly what lands on
   it. Without them the report's "nearest any filter" was read off a lattice that could not reach the goal.
 - **The sum still decides.** The slope is not in `JunctionTuneReading.ScoreDb`. Candidates rank on the
-  coherent sum as always; everything within `SumSlackDb` (0.2 dB) of the best sum is a corridor the
-  sum calls equivalent, and the stated slope chooses inside it. The user's crossover is rewritten on a
+  coherent sum as always; everything within `SumSlackDb` of the best sum is a corridor, and the stated
+  slope chooses inside it. The engine keeps 0.2 dB for a caller that states nothing; the Tune junction
+  dialog states it as a visible **budget**, 1.0 dB by default (`DefaultSumBudgetDb`, the owner's choice).
+  Measured with every reading re-aligned (8 cabins, 46 junctions,
+  `docs/specs/acoustic-crossover-target.md#6b`): a 1.0 dB budget lands acoustic LR24 almost everywhere
+  (acoustic cost 7.0 -> 2.1) for about 0.25 dB of average sum loss and 0.5 dB of average dip, the worst
+  dip 2 dB deeper; on v6 session-15, junction B-C, BW18@230 + BW12@230 lands acoustic BW24 for 1.0 dB
+  against the best sum. That is a price, not a gain, and the report names it against
+  `JunctionTuneResult.BestSumScoreDb`. The user's crossover is rewritten on a
   sum win by `KeepMarginDb`, or on an equal sum with the asked edge drawn better by
   `AcousticKeepMarginDb` (1 dB). A weight in the score would have let a handsome slope buy a dip at an
   exchange rate nobody can name.

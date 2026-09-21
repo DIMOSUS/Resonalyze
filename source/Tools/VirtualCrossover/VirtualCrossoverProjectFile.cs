@@ -42,6 +42,9 @@ public sealed class VirtualCrossoverJunctionTuneSettings
     /// <inheritdoc cref="MinSlopeDbPerOctave"/>
     public int? MaxSlopeDbPerOctave { get; set; }
 
+    /// <summary>The acoustic mode's budget of summation score; null leaves the dialog's default.</summary>
+    public double? SumBudgetDb { get; set; }
+
     /// <summary>The goal boxes as left, kept in the summation mode too so switching back finds them.</summary>
     public JunctionAcousticTarget? Goal { get; set; }
 
@@ -57,6 +60,11 @@ public sealed class VirtualCrossoverJunctionTuneSettings
                 !CrossoverFilter.SupportedSlopes(goal.Family).Contains(goal.SlopeDbPerOctave)))
         {
             Goal = null;
+        }
+
+        if (SumBudgetDb is { } budget && (!double.IsFinite(budget) || budget is < 0 or > 3))
+        {
+            SumBudgetDb = null;
         }
 
         Windows = (Windows ?? new())

@@ -454,6 +454,7 @@ public sealed class VirtualCrossoverProjectFileTests
                 Acoustic = true,
                 MinSlopeDbPerOctave = 18,
                 MaxSlopeDbPerOctave = 36,
+                SumBudgetDb = 0.6,
                 Goal = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24),
                 Windows = { ["B-C"] = [150, 310], ["A-B"] = [40, 120] }
             };
@@ -465,6 +466,7 @@ public sealed class VirtualCrossoverProjectFileTests
             Assert.True(loaded.IndependentSlopes && loaded.SplitCorners && loaded.Acoustic);
             Assert.Equal(18, loaded.MinSlopeDbPerOctave);
             Assert.Equal(36, loaded.MaxSlopeDbPerOctave);
+            Assert.Equal(0.6, loaded.SumBudgetDb);
             Assert.Equal(original.JunctionTune.Goal, loaded.Goal);
             Assert.Equal([150.0, 310.0], loaded.Windows["B-C"]);
             Assert.Equal([40.0, 120.0], loaded.Windows["A-B"]);
@@ -472,8 +474,10 @@ public sealed class VirtualCrossoverProjectFileTests
             loaded.Goal = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 18);
             loaded.Windows["B-C"] = [310, 150];
             loaded.Windows["A-B"] = [double.NaN, 120];
+            loaded.SumBudgetDb = 40;
             loaded.Sanitize();
             Assert.Null(loaded.Goal);
+            Assert.Null(loaded.SumBudgetDb);
             Assert.Empty(loaded.Windows);
         }
         finally

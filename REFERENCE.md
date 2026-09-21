@@ -3378,9 +3378,13 @@ and why this one has the last word on a finished tune.
 
 Optionally state the **acoustic** crossover you want at this junction — driver
 and filter together, which is steeper than the filter alone by the driver's own
-roll-off. The search then prefers the electrical filter that lands on it, but
-only among candidates the summation already calls equivalent (within 0.2 dB of
-the best): the stated slope settles a near-tie, it never buys a dip.
+roll-off. The search then prefers the electrical filter that lands on it, among
+the candidates within your **budget** of the best summation (the field beside
+the goal, 1.0 dB of summation score by default, every candidate read
+re-aligned). At 0.2 dB the stated slope only settles a near-tie; at 1.0 it may
+cost a little of the sum, and the report says how much ("it costs 0.9 dB of
+summation score against the best sum here"). A change the goal paid for in sum
+is called "nearer the acoustic goal", not "better".
 
 The report then also says, all fitted the same way so they compare with each
 other: what was asked, what the two sides achieved, what the channels do by

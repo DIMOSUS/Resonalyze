@@ -318,10 +318,15 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             Complex[] upperResponse = VirtualCrossoverAnalysis.ApplyChain(
                 side.UpperImpulseResponse, side.UpperChain, side.SampleRate, processor.SampleRateHz,
                 out ValidSampleRange upperRange);
-            if (VirtualCrossoverAnalysis.MeasureJunctionSpectrum(
+            // Read after re-aligning the upper channel, as the finished junction will be once Auto delay runs again
+            // after the tune: a crossover change that only moved the timing is not charged for it. The band is the
+            // candidate's own, an octave each side of its corner, so the corner is its geometric middle.
+            double cornerHz = Math.Sqrt(result.Best.BandLowHz * result.Best.BandHighHz);
+            if (VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum(
                     upperResponse, [lowerResponse], side.SampleRate,
                     result.Best.BandLowHz, result.Best.BandHighHz,
-                    upperRange, [lowerRange]) is { } reading)
+                    CrossoverAutoSetup.PostCheckHalfWindowMs(cornerHz),
+                    upperRange, [lowerRange]) is { Reading: var reading })
             {
                 sums.Add(new JunctionSum(side.Name, reading.LossDb, reading.DipDb, reading.RippleDb));
             }

@@ -38,6 +38,9 @@ partial class VirtualCrossoverJunctionTuneDialog
         checkBoxSplitCorners = new ReleaseClickCheckBox();
         comboBoxGoalFamily = new ThemedComboBox();
         comboBoxGoalSlope = new ThemedComboBox();
+        labelSumBudget = new Label();
+        numericSumBudget = new ThemedNumericUpDown();
+        labelSumBudgetUnit = new Label();
         labelGoalHint = new Label();
         buttonRun = new ReleaseClickButton();
         labelStatus = new Label();
@@ -46,6 +49,7 @@ partial class VirtualCrossoverJunctionTuneDialog
         buttonCancel = new ReleaseClickButton();
         ((System.ComponentModel.ISupportInitialize)numericMinHz).BeginInit();
         ((System.ComponentModel.ISupportInitialize)numericMaxHz).BeginInit();
+        ((System.ComponentModel.ISupportInitialize)numericSumBudget).BeginInit();
         SuspendLayout();
         //
         // labelJunction
@@ -288,6 +292,42 @@ partial class VirtualCrossoverJunctionTuneDialog
         comboBoxGoalSlope.Size = new Size(74, 21);
         comboBoxGoalSlope.TabIndex = 11;
         //
+        // labelSumBudget
+        //
+        labelSumBudget.AutoSize = true;
+        labelSumBudget.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
+        labelSumBudget.ForeColor = UiPalette.TextDefault;
+        labelSumBudget.Location = new Point(700, 119);
+        labelSumBudget.Name = "labelSumBudget";
+        labelSumBudget.Size = new Size(46, 15);
+        labelSumBudget.TabIndex = 18;
+        labelSumBudget.Text = "budget";
+        //
+        // numericSumBudget
+        //
+        numericSumBudget.BackColor = UiPalette.ControlSurface;
+        numericSumBudget.DecimalPlaces = 1;
+        numericSumBudget.ForeColor = UiPalette.TextPrimary;
+        numericSumBudget.Increment = new decimal(new int[] { 1, 0, 0, 65536 });
+        numericSumBudget.Location = new Point(752, 116);
+        numericSumBudget.Maximum = new decimal(new int[] { 3, 0, 0, 0 });
+        numericSumBudget.MinimumSize = new Size(36, 21);
+        numericSumBudget.Name = "numericSumBudget";
+        numericSumBudget.Size = new Size(52, 21);
+        numericSumBudget.TabIndex = 19;
+        numericSumBudget.TextAlign = HorizontalAlignment.Right;
+        numericSumBudget.Value = new decimal(new int[] { 1, 0, 0, 0 });
+        //
+        // labelSumBudgetUnit
+        //
+        labelSumBudgetUnit.AutoSize = true;
+        labelSumBudgetUnit.ForeColor = UiPalette.TextDefault;
+        labelSumBudgetUnit.Location = new Point(808, 119);
+        labelSumBudgetUnit.Name = "labelSumBudgetUnit";
+        labelSumBudgetUnit.Size = new Size(58, 15);
+        labelSumBudgetUnit.TabIndex = 20;
+        labelSumBudgetUnit.Text = "dB of sum";
+        //
         // labelGoalHint
         //
         labelGoalHint.ForeColor = UiPalette.TextMuted;
@@ -391,6 +431,9 @@ partial class VirtualCrossoverJunctionTuneDialog
         Controls.Add(checkBoxSplitCorners);
         Controls.Add(comboBoxGoalFamily);
         Controls.Add(comboBoxGoalSlope);
+        Controls.Add(labelSumBudget);
+        Controls.Add(numericSumBudget);
+        Controls.Add(labelSumBudgetUnit);
         Controls.Add(labelGoalHint);
         Controls.Add(buttonRun);
         Controls.Add(labelStatus);
@@ -400,13 +443,14 @@ partial class VirtualCrossoverJunctionTuneDialog
         Font = new Font("Segoe UI", 9F);
         ForeColor = UiPalette.TextPrimary;
         MinimizeBox = false;
-        MinimumSize = new Size(700, 432);
+        MinimumSize = new Size(900, 432);
         Name = "VirtualCrossoverJunctionTuneDialog";
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.CenterParent;
         Text = "Tune junction";
         ((System.ComponentModel.ISupportInitialize)numericMinHz).EndInit();
         ((System.ComponentModel.ISupportInitialize)numericMaxHz).EndInit();
+        ((System.ComponentModel.ISupportInitialize)numericSumBudget).EndInit();
         ResumeLayout(false);
     }
 
@@ -431,6 +475,9 @@ partial class VirtualCrossoverJunctionTuneDialog
     private ReleaseClickCheckBox checkBoxSplitCorners;
     private ThemedComboBox comboBoxGoalFamily;
     private ThemedComboBox comboBoxGoalSlope;
+    private Label labelSumBudget;
+    private ThemedNumericUpDown numericSumBudget;
+    private Label labelSumBudgetUnit;
     private Label labelGoalHint;
     private ReleaseClickButton buttonRun;
     private Label labelStatus;

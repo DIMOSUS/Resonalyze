@@ -45,8 +45,31 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
         CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
         var report = new StringBuilder();
         var rows = new List<Row>();
-        foreach (string session in SessionBatteryHarness.ResolveSessions(
-            SessionBatteryHarness.RootDirectory!))
+        List<string> sessions = SessionBatteryHarness.ResolveSessions(SessionBatteryHarness.RootDirectory!).ToList();
+        (string Session, Arm Arm)[] runs = sessions
+            .Where(File.Exists)
+            .SelectMany(session => Arms.Select(arm => (session, arm)))
+            .ToArray();
+        // Every run loads its own copy of the session, so they are independent; the report keeps the serial order.
+        var done = new (StringBuilder Text, List<Row> Rows)[runs.Length];
+        Parallel.For(0, runs.Length, index =>
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            var text = new StringBuilder();
+            List<Row> judged = [];
+            try
+            {
+                judged = RunArm(runs[index].Session, runs[index].Arm, text);
+            }
+            catch (Exception exception)
+            {
+                text.AppendLine($"  FAILED: {exception.GetType().Name}: {exception.Message}");
+            }
+
+            done[index] = (text, judged);
+        });
+
+        foreach (string session in sessions)
         {
             if (!File.Exists(session))
             {
@@ -57,16 +80,13 @@ public sealed class AcousticTargetBattery(ITestOutputHelper output)
             string name = Path.GetFileName(Path.GetDirectoryName(session)!);
             report.AppendLine();
             report.AppendLine($"=== {name}  ({session})");
-            try
+            for (int index = 0; index < runs.Length; index++)
             {
-                foreach (Arm arm in Arms)
+                if (runs[index].Session == session)
                 {
-                    rows.AddRange(RunArm(session, arm, report));
+                    report.Append(done[index].Text);
+                    rows.AddRange(done[index].Rows);
                 }
-            }
-            catch (Exception exception)
-            {
-                report.AppendLine($"  FAILED: {exception.GetType().Name}: {exception.Message}");
             }
         }
 

@@ -262,6 +262,10 @@ internal sealed class EqWizardPlot
             eqAxis.IsAxisVisible = Model.Series.Any(series =>
                 series is XYAxisSeries { YAxisKey: EqGainAxisKey });
         }
+
+        // Onto their axes now, not at the next paint: a click in between hit-tests every series, and OxyPlot throws on
+        // one without axes.
+        ((IPlotModel)Model).Update(true);
     }
 
     // With the bank's curve, and like it not under Bypass, whose plot shows no EQ.

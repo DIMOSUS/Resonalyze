@@ -1,4 +1,5 @@
 using System.Numerics;
+using OxyPlot;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
 
@@ -27,6 +28,19 @@ public sealed class EqWizardDeviationFillTests
             Assert.All(fill.Points2, point => Assert.True(double.IsFinite(point.Y)));
             Assert.All(fill.Points, point => Assert.True(point.X >= GapBelowHz));
         }
+    }
+
+    [Fact]
+    public void AClickBeforeTheNextPaint_FindsEveryCurveOnItsAxes()
+    {
+        var session = new EqWizardSession();
+        session.Load(GappedHandoff());
+
+        PlotModel model = EqWizardTestPlots.Draw(session);
+
+        Assert.Contains(model.Series, series => series is AreaSeries);
+        Assert.All(model.Series.OfType<XYAxisSeries>(), series => Assert.NotNull(series.XAxis));
+        _ = model.HitTest(new HitTestArguments(new ScreenPoint(200, 100), 10)).ToList();
     }
 
     [Fact]

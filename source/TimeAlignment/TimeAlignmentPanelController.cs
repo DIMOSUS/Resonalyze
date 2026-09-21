@@ -36,8 +36,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     private readonly Font resultTableFont;
     private bool disposed;
 
-    private const double AutoBandFadeOctaves = 0.5;
-
     private const string EnvelopeDecibelAxisTitle = "dB re Main peak";
 
     // Each curve is floored CurveFloorDb under its own max; the plot opens EnvelopeOpeningSpanDb tall so a quiet Compare record does not squeeze the arrivals (the axis still pans the full range).
@@ -173,10 +171,10 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private void RefreshAnalysis()
     {
-        sourceSummaryLabel.Text = CreateSourceSummary();
-        compareLabel.Text = CreateCompareSummary();
+        sourceSummaryLabel.Text = TimeAlignmentSources.MainSummary(session);
+        compareLabel.Text = TimeAlignmentSources.CompareSummary(session);
 
-        if (!TryGetMainSource(out TimeAlignmentAnalysisSource mainSource, out string noDataMessage))
+        if (!TimeAlignmentSources.TryGetMain(session, out TimeAlignmentAnalysisSource mainSource, out string noDataMessage))
         {
             session.ForgetReads();
             UpdateAutoBandLabel();
@@ -203,7 +201,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         if (!owner.IsHandleCreated || owner.IsDisposed || owner.InvokeRequired)
         {
             // No handle yet (controllers refresh before the shell has a window; panel tests never open one).
-            CompleteAnalysis(request, RunAnalysis(request), version);
+            CompleteAnalysis(request, TimeAlignmentRead.Run(request, session.Records), version);
             return;
         }
 
@@ -215,7 +213,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         TimeAlignmentOutcome outcome;
         try
         {
-            outcome = await Task.Run(() => RunAnalysis(request));
+            outcome = await Task.Run(() => TimeAlignmentRead.Run(request, session.Records));
         }
         catch (Exception exception)
         {
@@ -282,262 +280,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
         }
     }
 
-    // Works from the request alone: safe on a worker thread.
-    private TimeAlignmentOutcome RunAnalysis(TimeAlignmentRequest request)
-    {
-        try
-        {
-            TimeAlignmentAnalysisSource mainSource = request.MainSource;
-            // Crosstalk detection on the RAW record, analysis on the CLEANED one (engine order): a click in band could otherwise verify an arrival that times the click. Bypass mode keeps raw and flags.
-            TimeAlignmentHygiene mainHygieneEntry = session.Records.MainHygiene(mainSource);
-            TimeAlignmentAnalysisSource mainAnalysisSource = CleanForAnalysis(
-                mainSource, mainHygieneEntry, request.BandMode);
-
-            // Compare resolved before the band: the Auto band is shared, so the delta must not depend on which record is Main.
-            TimeAlignmentAnalysisSource? compareSource = TryGetCompareSource(
-                request,
-                mainSource,
-                out string? compareWarning,
-                out CrosstalkHeadGate? compareCrosstalk);
-
-            TimeAlignmentAnalysisOptions analysisOptions = CreateAnalysisOptions(
-                request,
-                mainAnalysisSource,
-                compareSource,
-                out DominantBand? autoBand,
-                out bool autoBandShared);
-
-            TimeAlignmentAnalysisResult mainResult = TimeAlignmentAnalysis.Analyze(
-                mainAnalysisSource.TransferImpulseResponse,
-                mainAnalysisSource.SampleRate,
-                analysisOptions,
-                mainAnalysisSource.TransferCoherence);
-            if (!mainResult.IsValid)
-            {
-                return TimeAlignmentOutcome.Failed(
-                    "No signal in the analysis band.\r\n" +
-                    "The transfer IR carries no energy inside the current " +
-                    "band-pass window — widen or move the band, or check " +
-                    "that the measurement actually captured the driver.",
-                    autoBand,
-                    autoBandShared);
-            }
-
-            TimeAlignmentArrivalProbe? mainProbe = TimeAlignmentAnalysis.ProbeArrivalHonesty(
-                mainAnalysisSource.TransferImpulseResponse,
-                mainAnalysisSource.SampleRate,
-                analysisOptions,
-                mainResult,
-                mainAnalysisSource.TransferCoherence);
-            TimeAlignmentCompareAnalysis? compareAnalysis = AnalyzeCompare(
-                compareSource, analysisOptions, ref compareWarning);
-            TimeAlignmentArrivalProbe? compareProbe = compareAnalysis == null
-                ? null
-                : TimeAlignmentAnalysis.ProbeArrivalHonesty(
-                    compareAnalysis.Value.Source.TransferImpulseResponse,
-                    compareAnalysis.Value.Source.SampleRate,
-                    analysisOptions,
-                    compareAnalysis.Value.Result,
-                    compareAnalysis.Value.Source.TransferCoherence);
-            return new TimeAlignmentOutcome(
-                mainSource,
-                autoBand,
-                autoBandShared,
-                mainResult,
-                mainProbe,
-                mainHygieneEntry.Crosstalk,
-                compareAnalysis,
-                compareProbe,
-                compareCrosstalk,
-                compareWarning,
-                Message: null);
-        }
-        catch (Exception exception)
-        {
-            return TimeAlignmentOutcome.Failed(exception.Message);
-        }
-    }
-
-    private static TimeAlignmentAnalysisSource CleanForAnalysis(
-        TimeAlignmentAnalysisSource source,
-        TimeAlignmentHygiene hygiene,
-        TimeAlignmentBandMode bandMode) =>
-        bandMode != TimeAlignmentBandMode.FullBand && hygiene.Crosstalk != null
-            ? source with { TransferImpulseResponse = hygiene.Cleaned }
-            : source;
-
-    private bool TryGetMainSource(
-        out TimeAlignmentAnalysisSource source,
-        out string message)
-    {
-        MeasurementResult? measurement = session.Main;
-        // An imported recording has no absolute time, so every delay this mode reports would be meaningless.
-        if (measurement?.TimingReference == TimingReference.RecordedSweep)
-        {
-            source = default;
-            message =
-                "This measurement was imported from a recorded sweep.\r\n" +
-                "Its arrival time is set by when the recorder was started, not by " +
-                "the tract, so delays cannot be compared across measurements.\r\n" +
-                "Time Alignment needs a sweep measured against its own loopback.";
-            return false;
-        }
-
-        if (measurement?.Transfer is { ImpulseResponse.Length: > 0 } transfer)
-        {
-            source = new TimeAlignmentAnalysisSource(
-                "Main",
-                session.MainFileName ?? "Transfer IR",
-                measurement.SampleRate,
-                measurement.Bits,
-                measurement.SweepDurationSeconds,
-                measurement.PlaybackChannel,
-                measurement.MeasurementMode,
-                session.Records.MainSamples(transfer.ImpulseResponse),
-                measurement.TransferCoherence,
-                measurement.Levels);
-            message = string.Empty;
-            return true;
-        }
-
-        if (measurement != null)
-        {
-            source = default;
-            message =
-                "This record was captured without loopback.\r\n" +
-                "Time Alignment requires a transfer IR.\r\n" +
-                "Run a new measurement with loopback enabled or load a file that contains transfer IR.";
-            return false;
-        }
-
-        source = default;
-        message =
-            "No impulse response is loaded.\r\n" +
-            "Run a loopback measurement or load an impulse response file with transfer IR.";
-        return false;
-    }
-
-    private string CreateSourceSummary()
-    {
-        MeasurementResult? measurement = session.Main;
-        if (measurement?.HasTransfer == true)
-        {
-            string source = session.MainFileName ?? "Transfer IR";
-            return $"Source: {source}, {measurement.SampleRate} Hz, {measurement.Bits} bit.";
-        }
-
-        if (measurement != null)
-        {
-            return
-                $"Source: Sweep deconvolution IR only, {measurement.SampleRate} Hz, {measurement.Bits} bit.\r\n" +
-                "Loopback was not recorded for this entry.";
-        }
-
-        return "Source: waiting for a loopback measurement or file with transfer IR.";
-    }
-
-    private string CreateCompareSummary()
-    {
-        TimeAlignmentCompareMeasurement? compare = session.Compare;
-        if (compare == null)
-        {
-            return "Compare: -";
-        }
-
-        MeasurementResult result = compare.Value.Result;
-        return $"Compare: {compare.Value.DisplayName}, {result.SampleRate} Hz, {result.Bits} bit.";
-    }
-
-    private TimeAlignmentAnalysisSource CreateCompareSource(
-        TimeAlignmentCompareMeasurement compare,
-        MeasurementResult result) =>
-        new(
-            "Compare",
-            compare.DisplayName,
-            result.SampleRate,
-            result.Bits,
-            result.SweepDurationSeconds,
-            result.PlaybackChannel,
-            result.MeasurementMode,
-            session.Records.CompareSamples(result.Transfer!.ImpulseResponse),
-            result.TransferCoherence,
-            result.Levels);
-
-    private static TimeAlignmentAnalysisOptions CreateAnalysisOptions(
-        TimeAlignmentRequest request,
-        TimeAlignmentAnalysisSource source,
-        TimeAlignmentAnalysisSource? compareSource,
-        out DominantBand? autoBand,
-        out bool autoBandShared)
-    {
-        double centerHz = request.BandpassCenterHz;
-        double passOctaves = request.BandpassPassOctaves;
-        double fadeOctaves = request.BandpassFadeOctaves;
-        autoBand = null;
-        autoBandShared = false;
-        if (request.BandMode == TimeAlignmentBandMode.AutoBand)
-        {
-            DominantBand band = DetectDominantBand(source);
-            if (compareSource is { } compare &&
-                TryDetectDominantBand(compare, out DominantBand compareBand))
-            {
-                (band, autoBandShared) = SharedBand(band, compareBand);
-            }
-
-            autoBand = band;
-            centerHz = Math.Sqrt(band.LowHz * band.HighHz);
-            passOctaves = Math.Log2(band.HighHz / band.LowHz);
-            fadeOctaves = AutoBandFadeOctaves;
-        }
-
-        return new TimeAlignmentAnalysisOptions
-        {
-            UseBandpassWindow = request.BandMode != TimeAlignmentBandMode.FullBand,
-            BandpassCenterHz = centerHz,
-            BandpassPassOctaves = passOctaves,
-            BandpassFadeOctaves = fadeOctaves,
-            FirstPeakThresholdBelowMaxDb = request.FirstPeakThresholdBelowMaxDb,
-            FirstPeakMinimumSnrDb = request.FirstPeakMinimumSnrDb,
-            PeakSearchWindowMilliseconds = request.PeakSearchWindowMilliseconds,
-            // Positions are delays against another arrival: a peak past halfway is a negative lead.
-            WrapPeakPositions = true
-        };
-    }
-
-    private static DominantBand DetectDominantBand(TimeAlignmentAnalysisSource source) =>
-        TransferIrDiagnostics.DetectDominantBand(
-            source.TransferImpulseResponse,
-            source.SampleRate,
-            coherence: source.TransferCoherence);
-
-    // Compare's detection failure stays Compare's: the band falls back to Main's (label drops "shared"). Main's failure propagates.
-    internal static bool TryDetectDominantBand(
-        TimeAlignmentAnalysisSource source,
-        out DominantBand band)
-    {
-        try
-        {
-            band = DetectDominantBand(source);
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            band = default;
-            return false;
-        }
-    }
-
-    // Overlap of both dominant bands (symmetric, so swapping Main/Compare gives the same delta); too little overlap keeps Main's band.
-    internal static (DominantBand Band, bool Shared) SharedBand(
-        DominantBand main, DominantBand compare)
-    {
-        double low = Math.Max(main.LowHz, compare.LowHz);
-        double high = Math.Min(main.HighHz, compare.HighHz);
-        return high < low * VirtualCrossoverAnalysis.MinimumArrivalBandRatio
-            ? (main, false)
-            : (new DominantBand(low, high, Math.Clamp(main.PeakHz, low, high)), true);
-    }
-
     // Writing controls raises the user-edit events, which would save the controls back into the options.
     private bool applyingOptions;
 
@@ -589,12 +331,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
     private void UpdateAutoBandLabel()
     {
-        autoBandLabel.Text = session.Options.BandMode != TimeAlignmentBandMode.AutoBand
-            ? "-"
-            : session.AutoBand is { } band
-                ? $"detected: {band.LowHz:0}-{band.HighHz:0} Hz" +
-                    (session.AutoBandShared ? " (shared with Compare)" : string.Empty)
-                : "detected: waiting for a record";
+        autoBandLabel.Text = TimeAlignmentBand.AutoBandCaption(session);
     }
 
     private void UpdateBandpassPreview()
@@ -642,7 +379,7 @@ internal sealed class TimeAlignmentPanelController : IDisposable
                 ? BandpassWindow.BandAround(
                     Math.Sqrt(band.LowHz * band.HighHz),
                     Math.Log2(band.HighHz / band.LowHz),
-                    AutoBandFadeOctaves)
+                    TimeAlignmentBand.AutoBandFadeOctaves)
                 : BandpassWindow.BandAround(
                     (double)bandpassCenterNumeric.Value,
                     (double)bandpassPassOctavesNumeric.Value,
@@ -663,84 +400,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
 
         model.Series.Add(series);
         return model;
-    }
-
-    // Same hygiene as Main; no analysis yet, because the band is agreed between both records first.
-    private TimeAlignmentAnalysisSource? TryGetCompareSource(
-        TimeAlignmentRequest request,
-        TimeAlignmentAnalysisSource mainSource,
-        out string? warning,
-        out CrosstalkHeadGate? crosstalk)
-    {
-        warning = null;
-        crosstalk = null;
-        TimeAlignmentCompareMeasurement? compare = request.Compare;
-        if (compare == null)
-        {
-            return null;
-        }
-
-        TimeAlignmentCompareMeasurement compareValue = compare.Value;
-        MeasurementResult result = compareValue.Result;
-        if (result.SampleRate != mainSource.SampleRate)
-        {
-            warning =
-                $"Sample rate mismatch: Main is {mainSource.SampleRate} Hz, " +
-                $"Compare is {result.SampleRate} Hz.";
-            return null;
-        }
-
-        if (!result.HasTransfer)
-        {
-            warning = "Compare impulse response has no transfer IR.";
-            return null;
-        }
-
-        try
-        {
-            TimeAlignmentAnalysisSource compareSource =
-                CreateCompareSource(compareValue, result);
-            TimeAlignmentHygiene hygiene = session.Records.CompareHygiene(compareSource);
-            crosstalk = hygiene.Crosstalk;
-            return CleanForAnalysis(compareSource, hygiene, request.BandMode);
-        }
-        catch (Exception exception)
-        {
-            warning = exception.Message;
-            return null;
-        }
-    }
-
-    private TimeAlignmentCompareAnalysis? AnalyzeCompare(
-        TimeAlignmentAnalysisSource? compareSource,
-        TimeAlignmentAnalysisOptions analysisOptions,
-        ref string? warning)
-    {
-        if (compareSource is not { } source)
-        {
-            return null;
-        }
-
-        try
-        {
-            TimeAlignmentAnalysisResult compareResult = TimeAlignmentAnalysis.Analyze(
-                source.TransferImpulseResponse,
-                source.SampleRate,
-                analysisOptions,
-                source.TransferCoherence);
-            if (!compareResult.IsValid)
-            {
-                warning = "Compare: no signal in the analysis band.";
-                return null;
-            }
-
-            return new TimeAlignmentCompareAnalysis(source, compareResult);
-        }
-        catch (Exception exception)
-        {
-            warning = exception.Message;
-            return null;
-        }
     }
 
     private void UpdateEnvelopePreview(
@@ -1671,27 +1330,6 @@ internal sealed class TimeAlignmentPanelController : IDisposable
     }
 
 }
-
-internal readonly record struct TimeAlignmentCompareMeasurement(
-    string DisplayName,
-    MeasurementResult Result);
-
-internal readonly record struct TimeAlignmentCompareAnalysis(
-    TimeAlignmentAnalysisSource Source,
-    TimeAlignmentAnalysisResult Result);
-
-internal readonly record struct TimeAlignmentAnalysisSource(
-    string Kind,
-    string DisplayName,
-    int SampleRate,
-    int Bits,
-    double SweepDurationSeconds,
-    PlaybackChannel PlayChannel,
-    SweepMeasurementMode MeasurementMode,
-    double[] TransferImpulseResponse,
-    // γ² half spectrum behind TransferImpulseResponse (null for <2 averages or a snapshot without it); weights the GCC-PHAT refinement.
-    double[]? TransferCoherence,
-    InputLevelMeterSnapshot Levels);
 
 internal sealed class StatusRichTextBox : RichTextBox
 {

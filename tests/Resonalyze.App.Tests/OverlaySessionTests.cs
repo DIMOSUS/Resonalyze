@@ -1,3 +1,4 @@
+using System.Drawing;
 using OxyPlot;
 using OxyPlot.Series;
 using Resonalyze.Dsp;
@@ -219,20 +220,74 @@ public sealed class OverlaySessionTests : IDisposable
     }
 
     [Fact]
-    public void ReopeningAnOperationDialogOverACapture_StartsFromDefaults()
+    public void AnOperationDialogOverACapture_OpensWithDefaults_NotTheOperationTheSlotHeldBefore()
     {
         session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));
+        OverlayAppearance look = new(Color.FromArgb(255, 1, 2, 3), 2, OverlayLineStyle.Dot, 100);
         session.ApplyOperation(
             Slot(2),
             "Copy",
-            OverlayOperationSettings.Default with { Operation = OverlayOperation.CurveA, SourceSlotA = 1 },
-            Slot(2).State.Appearance,
+            OverlayOperationSettings.Default with { Operation = OverlayOperation.CurveA, SourceSlotA = 1, TiltEnabled = true },
+            look,
             0);
+        Assert.Equal(new OverlayDialogSeed("Copy", look.Color, OverlayLineStyle.Dot), Slot(2).DialogSeed(OverlayKind.Operation));
 
         session.Capture(Slot(2), AddLiveCurve(AnalysisCurveKind.SecondHarmonic, "HD2", -30.0));
 
-        Assert.Null(Slot(2).State.Operation);
-        Assert.Equal(OverlayKind.Captured, Slot(2).Kind);
+        Assert.Equal(OverlayOperationSettings.Default with { UseAmplitudeSpace = true }, Slot(2).OperationSeed);
+        Assert.Equal(
+            new OverlayDialogSeed("Calculated overlay 2", Slot(2).Empty.Appearance.Color, OverlayLineStyle.Dash),
+            Slot(2).DialogSeed(OverlayKind.Operation));
+    }
+
+    [Fact]
+    public void ATargetDialogOverACapture_OpensWithDefaults_NotTheTargetTheSlotHeldBefore()
+    {
+        var custom = new OverlayTargetSettings(
+            0, TargetPreset.Custom, TargetCurveSpec.FromPreset(TargetPreset.Flat) with { PresenceGainDb = 4 }, 1, TargetDeviationMode.Correction);
+        session.ApplyTarget(Slot(3), "Mine", custom, Slot(3).State.Appearance, 0);
+        Assert.Equal(custom, Slot(3).TargetSeed);
+
+        session.Capture(Slot(3), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));
+
+        Assert.Equal(
+            new OverlayTargetSettings(
+                0,
+                OverlayTargets.DefaultPreset,
+                TargetCurveSpec.FromPreset(OverlayTargets.DefaultPreset),
+                3,
+                TargetDeviationMode.Deviation),
+            Slot(3).TargetSeed);
+        Assert.Equal(
+            new OverlayDialogSeed("Target 3", Slot(3).Empty.Appearance.Color, OverlayLineStyle.Dash),
+            Slot(3).DialogSeed(OverlayKind.Target));
+    }
+
+    [Fact]
+    public void AnOffAxisSlotRestoredAfterAModeSwitch_StaysArmed_AndDrawsWhenItsScaleReturns()
+    {
+        shownScale = MagnitudeScale.SoundPressureLevel;
+        session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 80.0));
+        List<int> active = session.CaptureActiveSlots(mode);
+
+        session.Prepare(mode);
+        shownScale = MagnitudeScale.Relative;
+        session.RestoreActiveSlots(mode, active);
+
+        Assert.True(Slot(1).Checked);
+        Assert.Null(OverlaySeriesOrNull(1));
+
+        shownScale = MagnitudeScale.SoundPressureLevel;
+        session.Show(mode);
+        Assert.NotNull(OverlaySeriesOrNull(1));
+    }
+
+    [Fact]
+    public void RestoringAnEmptySlot_LeavesItUnchecked()
+    {
+        session.RestoreActiveSlots(mode, [5]);
+
+        Assert.False(Slot(5).Checked);
     }
 
     private OverlaySlot Slot(int index) => session.Slots[index - 1];

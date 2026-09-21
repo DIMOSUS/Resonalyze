@@ -137,9 +137,10 @@ internal sealed class OverlaySession
         {
             OverlaySlot? slot = slots.FirstOrDefault(
                 candidate => candidate.Index == index && candidate.SeriesMode == overlayMode);
-            // Show applies the magnitude-axis rule, so an SPL capture does not reappear on the relative axis.
+            // Armed first: Show leaves an off-axis slot checked but undrawn, so it returns with its own scale.
             if (slot != null)
             {
+                SetChecked(slot, true);
                 Show(slot);
             }
         }

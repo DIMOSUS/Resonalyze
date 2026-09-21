@@ -371,115 +371,27 @@ namespace Resonalyze.Options
 
         private void PresentCalibrations()
         {
-            string? zeroDegreePath = session.MicrophoneCalibration0DegreesPath;
-            string? problem = session.ZeroDegreeCalibrationProblem;
-            buttonCalibration0.Text = zeroDegreePath == null
-                ? "Select file..."
-                : Path.GetFileName(zeroDegreePath);
-            buttonCalibration0.ForeColor = problem != null ? UiPalette.Error : UiPalette.TextPrimary;
-            buttonClearCalibration0.Enabled = zeroDegreePath != null;
-            deviceToolTip.SetToolTip(
-                buttonCalibration0,
-                zeroDegreePath == null
-                    ? "No calibration file selected."
-                    : problem ?? zeroDegreePath);
-            deviceToolTip.SetToolTip(
-                buttonClearCalibration0,
-                zeroDegreePath == null
-                    ? "No calibration file selected."
-                    : "Clear selected calibration file.");
-            int count = session.AdditionalMicrophoneCalibrations.Count;
-            buttonCalibrationExtra.Text = count == 0
-                ? "Manage..."
-                : $"Manage... ({count})";
-            deviceToolTip.SetToolTip(
-                buttonCalibrationExtra,
-                "Further calibration files, and curves estimated from one of them for " +
-                "an angle of incidence. The measurement microphone and every array " +
-                "microphone are read through one of them.");
-            deviceToolTip.SetToolTip(
-                comboBoxMicrophoneCalibration,
-                "The calibration the measurement microphone is read through." +
-                Environment.NewLine + Environment.NewLine +
-                "A run FREEZES it into the file it writes, so it describes the capsule " +
-                "about to record — set it before measuring, not after. The analysis " +
-                "views then read a measurement through the curve it was recorded " +
-                "with, and Virtual DSP offers it as \"Own (as measured)\".");
-            comboBoxMicrophoneCalibration.Enabled = session.MicrophoneCalibration.Items.Count > 1;
-            buttonArrayMicrophones.Text = RecordArrayInputs.ButtonText(session);
-            PresentSplCalibration();
+            RecordCalibrationView view = RecordCalibrations.Read(session, audioSessionFactory != null);
+            PresentCalibrationButton(buttonCalibration0, view.ZeroDegree);
+            buttonClearCalibration0.Enabled = view.CanClearZeroDegree;
+            deviceToolTip.SetToolTip(buttonClearCalibration0, view.ClearZeroDegreeToolTip);
+            buttonCalibrationExtra.Text = view.ExtraButtonText;
+            deviceToolTip.SetToolTip(buttonCalibrationExtra, RecordCalibrations.ExtraToolTip);
+            deviceToolTip.SetToolTip(comboBoxMicrophoneCalibration, RecordCalibrations.MicrophoneCalibrationToolTip);
+            comboBoxMicrophoneCalibration.Enabled = view.MicrophoneCalibrationEnabled;
+            buttonArrayMicrophones.Text = view.ArrayButtonText;
+            buttonSplCalibration.Enabled = view.SplEnabled;
+            buttonClearSplCalibration.Enabled = view.CanClearSpl;
+            PresentCalibrationButton(buttonSplCalibration, view.Spl);
+            deviceToolTip.SetToolTip(buttonClearSplCalibration, view.ClearSplToolTip);
         }
 
-        private void PresentSplCalibration()
+        private void PresentCalibrationButton(Button button, RecordCalibrationButton view)
         {
-            SplCalibration? splCalibration = session.SplCalibration;
-            buttonSplCalibration.Enabled = audioSessionFactory != null;
-            buttonClearSplCalibration.Enabled = splCalibration != null;
-
-            if (splCalibration == null)
-            {
-                buttonSplCalibration.Text = "Calibrate...";
-                buttonSplCalibration.ForeColor = UiPalette.TextPrimary;
-                deviceToolTip.SetToolTip(
-                    buttonSplCalibration,
-                    audioSessionFactory != null
-                        ? "Measure the offset from a 1 kHz acoustic calibrator so measurements " +
-                            "can be shown in dB SPL. Uses the currently selected input."
-                        : "SPL calibration is unavailable.");
-                deviceToolTip.SetToolTip(buttonClearSplCalibration, "No SPL calibration.");
-                return;
-            }
-
-            buttonSplCalibration.Text =
-                $"{splCalibration.ReferenceLevelDbSpl:0} dB · {splCalibration.OffsetDb:+0.0;-0.0;0.0} dB";
-            bool stale = !CurrentInputMatches(splCalibration);
-            buttonSplCalibration.ForeColor = stale ? UiPalette.Warning : UiPalette.TextPrimary;
-            string detail =
-                $"Measured {splCalibration.MeasuredLevelDbFs:0.0} dBFS at " +
-                $"{splCalibration.MeasuredFrequencyHz:0} Hz " +
-                $"({splCalibration.ReferenceLevelDbSpl:0} dB SPL reference).\r\n" +
-                $"Offset {splCalibration.OffsetDb:+0.0;-0.0;0.0} dB · " +
-                $"{splCalibration.CapturedAtUtc.ToLocalTime():g}.";
-            if (stale)
-            {
-                detail += "\r\n⚠ The current input differs from the calibrated one — recalibrate.";
-            }
-            deviceToolTip.SetToolTip(buttonSplCalibration, detail);
-            deviceToolTip.SetToolTip(buttonClearSplCalibration, "Clear the SPL calibration.");
+            button.Text = view.Text;
+            button.ForeColor = view.Color;
+            deviceToolTip.SetToolTip(button, view.ToolTip);
         }
-
-        private bool CurrentInputMatches(SplCalibration calibration)
-        {
-            var backend = (AudioBackend)session.Backend.SelectedIndex;
-            return calibration.MatchesInput(
-                backend,
-                session.SelectedSampleRate,
-                (int)session.Bits.Value,
-                backend == AudioBackend.Asio ? session.SelectedAsioInputOffset : session.SelectedWaveInputOffset,
-                backend == AudioBackend.Wave ? session.SelectedRecordingDeviceNumber : null,
-                session.SelectedCaptureEndpoint?.Id,
-                session.SelectedAsioDriverName);
-        }
-
-        // Microphone only, no loopback: calibrated against an external calibrator.
-        private AudioSessionRequest BuildCalibrationCaptureRequest() =>
-            AudioSessionRequestBuilder.Build(
-                (AudioBackend)session.Backend.SelectedIndex,
-                session.SelectedSampleRate,
-                (int)session.Bits.Value,
-                session.SelectedPlaybackChannel,
-                waveInputChannelOffset: session.SelectedWaveInputOffset,
-                waveLoopbackInputChannelOffset: null,
-                asioInputChannelOffset: session.SelectedAsioInputOffset,
-                asioLoopbackInputChannelOffset: null,
-                asioOutputChannelOffset: session.SelectedAsioOutputOffset,
-                outputDeviceNumber: session.SelectedPlaybackDeviceNumber,
-                inputDeviceNumber: session.SelectedRecordingDeviceNumber,
-                wasapiCaptureEndpointId: session.SelectedCaptureEndpoint?.Id,
-                wasapiRenderEndpointId: session.SelectedRenderEndpoint?.Id,
-                asioDriverName: session.SelectedAsioDriverName,
-                bufferMilliseconds: 100,
-                expectedCaptureSamples: 0);
 
         // From the session's values, not the last generated sweep (stale until the next run).
         private void PresentSweepBand()
@@ -842,7 +754,7 @@ namespace Resonalyze.Options
             AudioSessionRequest request;
             try
             {
-                request = BuildCalibrationCaptureRequest();
+                request = RecordCalibrations.SplCaptureRequest(session);
             }
             catch (Exception exception)
             {

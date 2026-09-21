@@ -5,7 +5,8 @@ Every OxyPlot `PlotView` in the app gets the same mouse and keyboard behaviour t
 REW's graph panel so that someone tuning with REW open on another laptop does not have to
 relearn the mouse. The option dialogs' previews run on it too, and `PreviewPlotControllerTests` holds each dialog
 to it. Their axes are fixed, so they take the tracker, the measuring Ctrl + right-drag box, F1 and the redraw guard
-below, and nothing zooms them; the target preview's axes zoom, so it takes everything. The on-graph plus/minus pairs
+below, and nothing zooms them; the target preview's axes zoom, so it takes everything, and like the Time Alignment
+previews it keeps its zoom across the rebuild each edit makes (`PlotViewportMemory`). The on-graph plus/minus pairs
 sit at the right end of the bottom axis and the top of the left one. Text at the top-left (the analyzer's peak
 readout, Live Spectrum's capture progress) starts `PlotZoomButtons.LeftPairClearance` pixels in, past the pair. The
 user-facing copy is the "Graph Zoom and Limits" table in

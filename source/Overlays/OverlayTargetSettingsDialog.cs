@@ -14,6 +14,10 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
     // An imported shape is an extra preset-list entry; the preset behind it rides through untouched.
     private readonly ImportedTargetCurve? importedCurve;
     private readonly TargetPreset incomingPreset;
+    private readonly Mode mode;
+
+    // The preview is rebuilt on every edit; without this a zoom would not survive the next change.
+    private readonly PlotViewportMemory previewViewports;
     private Color selectedColor;
     private bool suppressEvents;
 
@@ -40,9 +44,11 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         selectedColor = color;
         importedCurve = spec.Imported;
         incomingPreset = preset;
+        this.mode = mode;
 
         InitializeComponent();
         PlotInteraction.Enable(previewPlot);
+        previewViewports = new PlotViewportMemory(previewPlot);
         // Palette value, not a designer literal: the two drifted apart once.
         Ui.UiStyle.ApplySurfaceButton(saveButton, Ui.UiPalette.AccentFill, Ui.UiPalette.TextOnAccent);
         PopulateControls(availableSources);
@@ -390,7 +396,7 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
             series.Points.Add(new DataPoint(frequency, spec.Evaluate(frequency)));
         }
         model.Series.Add(series);
-        previewPlot.Model = model;
+        previewViewports.Show(model, mode);
         NotifyPreview();
     }
 

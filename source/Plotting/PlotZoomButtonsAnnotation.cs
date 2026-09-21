@@ -18,8 +18,8 @@ internal static class PlotZoomButtons
     /// <summary>Where text at the top-left starts so the left pair does not cover it, in pixels from the plot's edge.</summary>
     public const double LeftPairClearance = Inset + Radius + 4;
 
-    // Thumbnails (history previews, collapsed panels): buttons would cover the curve.
-    private const double MinimumPlotSize = 160;
+    // The left pair reaches about 73 px down; below this a pair no longer fits beside the curve (the target preview is 106).
+    private const double MinimumPlotSize = 80;
 
     public static IReadOnlyList<PlotZoomButton> Layout(PlotModel model)
     {

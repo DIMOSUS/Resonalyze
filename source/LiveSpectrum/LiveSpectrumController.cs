@@ -20,7 +20,7 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
     // Through viewport memory so the user's zoom survives model rebuilds.
     private readonly PlotViewportMemory plotViewports;
     private readonly LiveSpectrumPlotFactory plotFactory;
-    private readonly OverlayCollection overlayCollection;
+    private readonly OverlaySession overlays;
     private static readonly CurveTag LiveSpectrumTag =
         new(Mode.LiveSpectrum, AnalysisCurveKind.Primary, CurveSource.Main);
     internal static readonly CurveTag LiveSpectrumInputMagnitudeTag =
@@ -60,7 +60,7 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
         this.plot = plot;
         plotView = plot.View;
         plotViewports = plot.Viewports;
-        overlayCollection = plot.Overlays;
+        overlays = plot.Overlays;
         plotFactory = new LiveSpectrumPlotFactory(session.Curves);
         session.Completed += MeasurementCompleted;
         timer.Tick += TimerTick;
@@ -108,7 +108,7 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
         UpdateCaptureProgressAnnotation(display, model);
         plotViewports.Show(model, plot.Mode);
         plot.UpdateOverlayAvailability();
-        overlayCollection.Show(plot.Mode);
+        overlays.Show(plot.Mode);
         plot.RefreshLabels();
     }
 
@@ -230,7 +230,7 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
 
         plotViewports.Show(model, plot.Mode);
         plot.UpdateOverlayAvailability();
-        overlayCollection.Show(plot.Mode);
+        overlays.Show(plot.Mode);
         plot.RefreshLabels();
     }
 
@@ -253,7 +253,7 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
         session.Start();
         lastDrawnFrameCount = -1;
         plotViewports.Show(LiveSpectrumPlotFactory.CreateModel(session.Display), plot.Mode);
-        overlayCollection.Show(plot.Mode);
+        overlays.Show(plot.Mode);
         timer.Start();
         plot.RefreshLabels();
     }
@@ -274,7 +274,7 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
         UpdateCaptureProgressAnnotation(display, model);
         plotViewports.Show(model, plot.Mode);
         plot.UpdateOverlayAvailability();
-        overlayCollection.Show(plot.Mode);
+        overlays.Show(plot.Mode);
         plot.RefreshLabels();
     }
 
@@ -316,7 +316,7 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
             AddLiveSpectrumSeries(display, model, snapshot);
             // A padded loopback puts the transfer above 0 dB; expand-only ceiling raise.
             PlotModelStyle.RaiseDecibelViewCeiling(model, LiveDisplayMaxDb());
-            overlayCollection.RefreshCurrentMeasurementTargets();
+            overlays.RefreshCurrentMeasurementTargets();
             UpdateOverloadAnnotation(model);
             UpdateCaptureProgressAnnotation(display, model);
             model.InvalidatePlot(true);

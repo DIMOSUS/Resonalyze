@@ -14,7 +14,7 @@ public sealed partial class UiPaletteCoverageTests
     {
         ["source/Ui/UiThemePalette.cs"] = "the palette itself",
         ["source/Ui/Dialogs/ColorPickerDialog.cs"] = "swatches the user picks a CURVE colour from",
-        ["source/Overlays/Overlay.cs"] = "black or white chosen by the luminance of the user's own slot colour",
+        ["source/Overlays/OverlaySlotView.cs"] = "black or white chosen by the luminance of the user's own slot colour",
         ["source/Shell/Form1.Designer.cs"] = "the overlay slot row is painted in the user's slot colour",
         ["source/Plotting/PlotModelStyle.cs"] =
             "OxyPlot's own defaults, compared against to tell a styled axis from an untouched one, " +

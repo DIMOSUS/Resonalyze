@@ -20,7 +20,7 @@ internal sealed class PlotLabelsPanelController
 
     public void Refresh()
     {
-        bool visible = OverlayCollection.SupportsMode(getCurrentMode());
+        bool visible = OverlayModes.Supports(getCurrentMode());
         if (!visible)
         {
             RemovePlotLabelAnnotations();

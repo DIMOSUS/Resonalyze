@@ -51,9 +51,9 @@ internal sealed class AnalyzerPlot : IModeView
         Factory = factory;
         Viewports = new PlotViewportMemory(view);
         labels = new PlotLabelsPanelController(view, () => Mode);
-        Overlays = new OverlayCollection(owner, () => Mode, overlaysPanel, view, toolTip, RefreshLabels);
+        var overlaySources = new OverlayPlotSources(() => view.Model, () => Mode);
         // Overlays gate on the shown axis scale. Live Spectrum shares FR's overlay slots, so it reports its own scale.
-        Overlays.SetMagnitudeScaleProvider(
+        overlaySources.SetMagnitudeScaleProvider(
             () => Mode switch
             {
                 Mode.FrequencyResponse => factory.EffectiveFrequencyResponseScale,
@@ -61,15 +61,16 @@ internal sealed class AnalyzerPlot : IModeView
                 _ => MagnitudeScale.Relative
             });
         // Overlays store the raw curve so smoothing Off reveals the original.
-        Overlays.SetRawCurveProvider(tag =>
+        overlaySources.SetRawCurveProvider(tag =>
             tag == LiveSpectrumController.LiveSpectrumInputMagnitudeTag
                 ? live.BuildRawRtaCapture()
                 : factory.BuildRawCurve(tag));
         // Impulse axes are view settings, so overlays store record coordinates and re-frame on draw.
-        Overlays.SetImpulseCaptureProvider(tag => factory.BuildImpulseCapture(tag));
-        Overlays.SetImpulseFrameProvider(
+        overlaySources.SetImpulseCaptureProvider(tag => factory.BuildImpulseCapture(tag));
+        overlaySources.SetImpulseFrameProvider(
             () => Mode == Mode.ImpulseResponse ? factory.ImpulseFrame : null);
-        Overlays.SetComplexSumProvider(BuildComplexSumOverlayPoints);
+        overlaySources.SetComplexSumProvider(BuildComplexSumOverlayPoints);
+        OverlayControls = new OverlayPanel(owner, overlaysPanel, view, toolTip, overlaySources, RefreshLabels);
         measurementChanged = new DeferredRefresh(owner, RedrawChangedMeasurement);
         document.Changed += measurementChanged.Request;
         compare.Changed += measurementChanged.Request;
@@ -81,7 +82,9 @@ internal sealed class AnalyzerPlot : IModeView
 
     public PlotViewportMemory Viewports { get; }
 
-    public OverlayCollection Overlays { get; }
+    public OverlaySession Overlays => OverlayControls.Session;
+
+    public OverlayPanel OverlayControls { get; }
 
     /// <summary>The mode on screen; <see cref="Mode.None"/> until the first switch.</summary>
     public Mode Mode { get; private set; }
@@ -94,13 +97,13 @@ internal sealed class AnalyzerPlot : IModeView
     public void Leave()
     {
         // Modes without a main plot share Frequency slots but never draw them; capturing their empty set would wipe the selection.
-        if (!descriptor.HasPlotView || !OverlayCollection.SupportsMode(Mode))
+        if (!descriptor.HasPlotView || !OverlayModes.Supports(Mode))
         {
             return;
         }
 
         activeOverlaySlots.Store(
-            OverlayCollection.OverlayModeFor(Mode),
+            OverlayModes.SlotModeFor(Mode),
             Overlays.CaptureActiveSlots(Mode));
     }
 
@@ -110,7 +113,7 @@ internal sealed class AnalyzerPlot : IModeView
         Mode = mode.Mode;
         Viewports.Show(null, Mode);
         RefreshLabels();
-        if (OverlayCollection.SupportsMode(Mode))
+        if (OverlayModes.Supports(Mode))
         {
             Overlays.Prepare(Mode);
         }
@@ -126,12 +129,12 @@ internal sealed class AnalyzerPlot : IModeView
         }
 
         // Show() with a null model unchecks the slots and loses the saved selection.
-        if (!descriptor.HasPlotView || !OverlayCollection.SupportsMode(Mode))
+        if (!descriptor.HasPlotView || !OverlayModes.Supports(Mode))
         {
             return;
         }
 
-        if (activeOverlaySlots.TryGet(OverlayCollection.OverlayModeFor(Mode), out List<int> slots))
+        if (activeOverlaySlots.TryGet(OverlayModes.SlotModeFor(Mode), out List<int> slots))
         {
             Overlays.RestoreActiveSlots(Mode, slots);
         }
@@ -192,7 +195,7 @@ internal sealed class AnalyzerPlot : IModeView
 
     public void UpdateOverlayAvailability()
     {
-        bool available = OverlayCollection.SupportsMode(Mode);
+        bool available = OverlayModes.Supports(Mode);
         overlaysPanel.Enabled = available;
         RefreshOverlayButtons();
         if (!available)
@@ -342,7 +345,7 @@ internal sealed class AnalyzerPlot : IModeView
 
     private void RefreshOverlayButtons()
     {
-        bool hasOverlays = OverlayCollection.SupportsMode(Mode) && Overlays.HasOverlays(Mode);
+        bool hasOverlays = OverlayModes.Supports(Mode) && Overlays.HasOverlays(Mode);
         showAllButton.Enabled = hasOverlays;
         hideAllButton.Enabled = hasOverlays;
     }

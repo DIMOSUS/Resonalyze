@@ -11,7 +11,7 @@ public sealed class OverlayModeTests
     [InlineData(Mode.Autocorrelation)]
     public void SupportsMode_ReturnsTrueForSupportedModes(Mode mode)
     {
-        Assert.True(OverlayCollection.SupportsMode(mode));
+        Assert.True(OverlayModes.Supports(mode));
     }
 
     [Theory]
@@ -20,7 +20,7 @@ public sealed class OverlayModeTests
     [InlineData(Mode.BurstDecay)]
     public void SupportsMode_ReturnsFalseForUnsupportedModes(Mode mode)
     {
-        Assert.False(OverlayCollection.SupportsMode(mode));
+        Assert.False(OverlayModes.Supports(mode));
     }
 
     [Theory]

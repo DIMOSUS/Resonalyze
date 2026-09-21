@@ -390,14 +390,20 @@ internal static class Shots
                 4_000,
                 dialog =>
                 {
-                    if (Reflect.Field<CheckedListBox>(dialog, "checkedListFamilies") is { } families &&
-                        families.Items.Count > 0)
+                    // The search runs in the background; Search comes back once the report is in.
+                    Button search = Reflect.Field<Button>(dialog, "buttonRun");
+                    search.PerformClick();
+                    for (int waited = 0; !search.Enabled && waited < 120_000; waited += 200)
                     {
-                        families.SetItemChecked(0, true);
+                        session.Pump(200);
                     }
 
-                    Reflect.Field<Button>(dialog, "buttonRun").PerformClick();
-                    session.Pump(3_000);
+                    if (!search.Enabled)
+                    {
+                        throw new TimeoutException("The junction search did not finish in two minutes.");
+                    }
+
+                    session.Pump(300);
                 });
         }
 

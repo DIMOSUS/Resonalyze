@@ -2,7 +2,6 @@ using System.Drawing;
 using System.Numerics;
 using System.Reflection;
 using System.Windows.Forms;
-using OxyPlot;
 using OxyPlot.Series;
 
 namespace Resonalyze.App.Tests;

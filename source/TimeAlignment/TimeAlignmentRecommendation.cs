@@ -9,7 +9,6 @@ internal enum TimeAlignmentDelayRow
     EnergyOnset
 }
 
-/// <summary>Which delay row the report recommends aligning from, if any.</summary>
 internal static class TimeAlignmentRecommendation
 {
     public static string RowLabel(TimeAlignmentDelayRow row) => row switch

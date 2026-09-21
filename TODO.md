@@ -605,12 +605,6 @@ shows it as flat by construction.
 
 ## Time Alignment / unwrap
 
-- [ ] **`TimeAlignmentPanelController` holds its rules as `internal static`
-  members** (ten of them, 1,856 lines): band detection (`TryDetectDominantBand`,
-  `SharedBand`), the onset (`GetEnergyOnsetIndex`), the recommendation
-  (`RecommendedRow`, `IsArrivalRecommendable`, `RowLabel`) and plot markers. They
-  are static only so tests can reach them; move the rules to a type of their own
-  (AGENTS.md › Where logic lives) and leave the controller the binding.
 - [ ] ★ **The panel reads the WHOLE record to answer a question about its first
   80 ms.** A transfer IR is `NextPow2(2 x capture)` — a 2.2 s sweep at 96 kHz
   reads a 10.9 s buffer — and every transform is sized by it, so one read costs

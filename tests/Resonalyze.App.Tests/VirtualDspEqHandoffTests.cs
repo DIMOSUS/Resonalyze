@@ -101,6 +101,28 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void TheElectricalCrossoverTravels_OnlyWhereTheTargetFollowsAnAcousticOne()
+    {
+        // The wizard draws the filter the chain runs beside the target, and only where the two differ: with no
+        // wish, or a wish naming the shape of the filter itself, there is one crossover and one curve.
+        VirtualCrossoverChannel channel = BuildChannel();
+        channel.Settings.CrossoverKind = CrossoverKind.BandPass;
+        channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 500, 12);
+        channel.Settings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 24);
+        Assert.Null(Build(channel, withChain: true).Source.ElectricalCrossover);
+
+        channel.Settings.AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 12);
+        Assert.Null(Build(channel, withChain: true).Source.ElectricalCrossover);
+
+        channel.Settings.AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24);
+        Assert.Equal(
+            channel.Settings.EffectiveCrossover,
+            Build(channel, withChain: true).Source.ElectricalCrossover);
+        // A raw handoff has no chain, so no crossover of either kind.
+        Assert.Null(Build(channel, withChain: false).Source.ElectricalCrossover);
+    }
+
+    [Fact]
     public void WithChain_AppliesTheChainWithoutItsPeq()
     {
         VirtualCrossoverChannel channel = BuildChannel();

@@ -167,6 +167,9 @@ internal sealed class EqWizardSession
     /// <summary>The slope that shapes the target, or null: no chain behind the source, or no crossover in it.</summary>
     public EqTargetSlope? TargetCrossover => EqTargetCrossover.Of(Source);
 
+    /// <summary>The electrical crossover's slope where the target follows an acoustic one instead; drawn, never fitted.</summary>
+    public EqTargetSlope? ElectricalCrossover => EqTargetCrossover.ElectricalOf(Source);
+
     // ---- bank and view ----
 
     public EqWizardBank Bank { get; }

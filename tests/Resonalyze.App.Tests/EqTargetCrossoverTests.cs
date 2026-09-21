@@ -1,3 +1,5 @@
+using OxyPlot;
+using OxyPlot.Series;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
@@ -183,6 +185,82 @@ public sealed class EqTargetCrossoverTests
         IReadOnlyList<EqNoBoostBand> bands = EqTargetCrossover.NoBoostBands(slope, 100, 18_000, Rate);
         Assert.True(Forbidden(bands, 15_000), "the IIR skirt must be protected too.");
         Assert.False(Forbidden(bands, 2_000), "the passband between them is the fit's business.");
+    }
+
+    [Fact]
+    public void AStatedAcousticCrossover_DrawsTheElectricalOneBesideTheTarget()
+    {
+        // The target follows the acoustic crossover the card states; the filter the chain runs is drawn beside it
+        // so the two skirts can be compared. It is a reference and not the goal: a pattern of its own, half as
+        // opaque, under the target, and never what the fit aims at.
+        CrossoverSpec acoustic = new(
+            CrossoverKind.LowPass, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24));
+        CrossoverSpec electrical = new(
+            CrossoverKind.LowPass, new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_000, 12));
+        var session = new EqWizardSession();
+        session.Load(Source(acoustic) with { ElectricalCrossover = electrical });
+
+        EqWizardRenderSet render = EqWizardRender.RenderSet(session, new EqualizationCurve([]));
+
+        EqWizardCurve drawn = Assert.IsType<EqWizardCurve>(render.ElectricalTarget);
+        Assert.NotEqual(render.Target.LineStyle, drawn.LineStyle);
+        Assert.NotEqual(LineStyle.Solid, drawn.LineStyle);
+        Assert.Equal(render.Target.Color.A / 2, drawn.Color.A);
+        Assert.Equal(render.Target.Color.R, drawn.Color.R);
+        // One octave up the skirt LR24 has fallen about 24.6 dB and BW12 about 12.3: the two curves say so, and
+        // in the passband they are one curve.
+        int octaveUp = Nearest(render.Target, 2_000);
+        Assert.Equal(12.3, drawn.Points[octaveUp].Y - render.Target.Points[octaveUp].Y, 0.5);
+        int passband = Nearest(render.Target, 100);
+        Assert.Equal(render.Target.Points[passband].Y, drawn.Points[passband].Y, 0.05);
+
+        // What the fit reads is the target alone.
+        (_, EqWizardCurve fitted) = EqWizardRender.FitCurves(session);
+        Assert.Equal(render.Target.Points[octaveUp].Y, fitted.Points[octaveUp].Y, 9);
+
+        // Drawn under the target, so the goal is never covered by its reference.
+        List<string> titles = EqWizardTestPlots.Draw(session).Series
+            .OfType<LineSeries>()
+            .Select(series => series.Title)
+            .ToList();
+        Assert.True(
+            titles.IndexOf(EqWizardRender.ElectricalTargetTitle) is >= 0 and var under &&
+            under < titles.IndexOf("Target"),
+            string.Join(", ", titles));
+    }
+
+    [Fact]
+    public void TheElectricalCrossover_IsNotDrawn_WhenThereIsOnlyOneOrTheCrossoverIsLeftOut()
+    {
+        CrossoverSpec acoustic = new(
+            CrossoverKind.LowPass, new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24));
+        var plain = new EqWizardSession();
+        plain.Load(Source(acoustic));
+        Assert.Null(EqWizardRender.RenderSet(plain, new EqualizationCurve([])).ElectricalTarget);
+
+        // With the crossover left out of the target there is no skirt to compare it with.
+        var leftOut = new EqWizardSession();
+        leftOut.Load(Source(acoustic) with
+        {
+            ElectricalCrossover = new CrossoverSpec(
+                CrossoverKind.LowPass, new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_000, 12))
+        });
+        leftOut.SetCrossoverInTarget(false);
+        Assert.Null(EqWizardRender.RenderSet(leftOut, new EqualizationCurve([])).ElectricalTarget);
+    }
+
+    private static int Nearest(EqWizardCurve curve, double hz)
+    {
+        int best = 0;
+        for (int i = 1; i < curve.Points.Count; i++)
+        {
+            if (Math.Abs(Math.Log(curve.Points[i].X / hz)) < Math.Abs(Math.Log(curve.Points[best].X / hz)))
+            {
+                best = i;
+            }
+        }
+
+        return best;
     }
 
     private static EqWizardCurveSource Source(CrossoverSpec? crossover) => new()

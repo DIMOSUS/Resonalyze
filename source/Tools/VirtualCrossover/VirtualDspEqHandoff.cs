@@ -181,6 +181,8 @@ internal static class VirtualDspEqHandoff
             PreviewChain = previewChain,
             // The corners the window comes from, so the shaped target and From/To describe one filter.
             TargetCrossover = withChain ? TargetCrossoverFor(settings) : null,
+            // Beside it, the filter the chain runs, where a stated acoustic crossover moved the target off it.
+            ElectricalCrossover = withChain ? ElectricalCrossoverFor(settings) : null,
             // A designed crossover kernel describes its own slope; the design's corners do not (a windowed sinc's
             // slope is its window and length). FirDesign is what tells a crossover FIR from a correction one.
             TargetCrossoverFir = withChain && settings.HasFirCrossover ? settings.Fir : null,
@@ -375,6 +377,13 @@ internal static class VirtualDspEqHandoff
     /// counted twice.</summary>
     internal static CrossoverSpec? TargetCrossoverFor(VirtualCrossoverChannelSettings settings) =>
         settings.CrossoverKind != CrossoverKind.Off ? GoalCrossoverFor(settings) : null;
+
+    /// <summary>The filter the channel runs, where the target follows a stated acoustic crossover instead; null
+    /// where the two are one crossover.</summary>
+    internal static CrossoverSpec? ElectricalCrossoverFor(VirtualCrossoverChannelSettings settings) =>
+        TargetCrossoverFor(settings) is { } target && !Equals(target, settings.EffectiveCrossover)
+            ? settings.EffectiveCrossover
+            : null;
 
     private static CrossoverEdge? Asked(JunctionAcousticTarget? goal, CrossoverEdge? electrical) =>
         goal is { } asked && electrical is { } edge

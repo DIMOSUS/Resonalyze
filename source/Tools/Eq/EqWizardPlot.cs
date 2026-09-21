@@ -239,6 +239,12 @@ internal sealed class EqWizardPlot
                 AddSeries(render.Source);
             }
 
+            // Under the target it is compared with, so the goal is never drawn over by its reference.
+            if (render.ElectricalTarget != null)
+            {
+                AddSeries(render.ElectricalTarget);
+            }
+
             AddSeries(render.Target);
             if (showEqCurves)
             {

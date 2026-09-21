@@ -1893,6 +1893,13 @@ behind it (a raw handoff, an imported curve, an overlay). A channel crossed with
 [FIR](#fir-constructor) kernel counts, and there the target follows the kernel itself: a
 windowed-sinc design's slope is its window and length, so the corners it carries would
 describe a filter it is not.
+Where the channel card states an acoustic crossover (see [Tune
+junction](#tune-junction)), the target follows that acoustic crossover, and the filter
+the chain actually runs is drawn beside it as a dotted, half-transparent curve in the
+target's colour. It is there to compare the two skirts — how much of the slope the
+driver is expected to supply — and nothing aims at it: not Auto Tune, not the
+statistics. With no acoustic crossover stated, or one that names the filter's own shape,
+there is one crossover and one curve.
 
 Three things follow the box, all measured rather than chosen:
 

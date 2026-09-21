@@ -176,11 +176,14 @@ The gain is one-sided by nature. Where the measured slope is steeper than the ta
 top of the filter — a bank that may not lift leaves it alone, and only the statistics notice. Where the driver has
 more output than the filter's slope asks for, the fit now brings it down instead of stopping at the corner.
 
-**What this is not.** The goal here is the channel's CURRENT electrical crossover: the tune's filter becomes the
-acoustic target. The fuller idea is a DESIRED acoustic crossover stated independently — an acoustic LR24 at 2 kHz
-does not require an electrical LR24 — with the electrical filter, the PEQ and the driver's own roll-off chosen
-together to reach it. That is a larger feature touching Auto crossover, and this is the first step toward it: it
-stops the fit from ignoring the slopes, and it is measured to help the sum.
+**An acoustic crossover stated on the card.** Where a junction tune landed on a stated ACOUSTIC crossover, the handoff
+sends that as `TargetCrossover`, per edge (`VirtualDspEqHandoff.GoalCrossoverFor`: the family and slope asked, at the
+electrical corner), so the fit aims at driver and filter together rather than at the filter alone. The filter the
+chain runs then travels beside it as `EqWizardCurveSource.ElectricalCrossover` — only where the two differ — and the
+wizard draws the target on it too (`EqWizardRender.ElectricalTargetCurve`): dotted, at half the target's opacity,
+under the target, and read by nothing else — not the fit, the statistics or the level check. The two skirts side by
+side show how much of the slope the driver is expected to supply. Design and the measured verdict:
+`docs/specs/acoustic-crossover-target.md`.
 
 ### The objective
 

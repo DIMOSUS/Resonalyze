@@ -12,10 +12,12 @@ internal sealed record EqWizardCurve(
     IReadOnlyList<DataPoint> Points);
 
 // Source and SourcePlusEq are null without a source; otherwise Target is sampled on the source's frequencies.
+// ElectricalTarget is the target on the chain's own filter, only where the target follows an acoustic crossover.
 internal sealed record EqWizardRenderSet(
     EqWizardCurve Target,
     EqWizardCurve? Source,
-    EqWizardCurve? SourcePlusEq);
+    EqWizardCurve? SourcePlusEq,
+    EqWizardCurve? ElectricalTarget = null);
 
 /// <summary>What the wizard shows for its session: the curves, their statistics and the hints. Pure reads.</summary>
 internal static class EqWizardRender
@@ -48,13 +50,19 @@ internal static class EqWizardRender
         EqWizardCurve? source = session.SourceCurve;
         if (source is not { Points.Count: >= 2 })
         {
-            return new EqWizardRenderSet(TargetCurve(session, DefaultTargetGrid), source, null);
+            return new EqWizardRenderSet(
+                TargetCurve(session, DefaultTargetGrid),
+                source,
+                null,
+                ElectricalTargetCurve(session, DefaultTargetGrid));
         }
 
+        double[] frequencies = source.Points.Select(point => point.X).ToArray();
         return new EqWizardRenderSet(
-            TargetCurve(session, source.Points.Select(point => point.X).ToArray()),
+            TargetCurve(session, frequencies),
             source,
-            SourcePlusEq(session, source.Points, eq));
+            SourcePlusEq(session, source.Points, eq),
+            ElectricalTargetCurve(session, frequencies));
     }
 
     /// <summary>What Auto Tune fits: the bare source and the target on its frequencies; null source without one.</summary>
@@ -239,10 +247,49 @@ internal static class EqWizardRender
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(frequencies);
         EqTargetCurve target = session.Target;
-        double offset = (double)session.TargetOffsetDb;
         // The channel's crossover is part of the goal when the wizard is told to follow it: flat inside the passband,
         // the filter's own slope outside. See docs/tech/eq-auto-tuner.md#the-crossover-in-the-target.
-        EqTargetSlope? slope = session.CrossoverInTarget ? session.TargetCrossover : null;
+        return new EqWizardCurve(
+            "Target",
+            OxyColor.FromArgb(target.Color.A, target.Color.R, target.Color.G, target.Color.B),
+            target.StrokeThickness,
+            OverlayLineStyles.ToOxy(target.LineStyle),
+            ShapedTarget(session, frequencies, session.CrossoverInTarget ? session.TargetCrossover : null));
+    }
+
+    public const string ElectricalTargetTitle = "Target on the electrical crossover";
+
+    /// <summary>
+    /// The same target on the chain's ELECTRICAL crossover, where the target follows a stated acoustic one: the two
+    /// skirts side by side show how much of the slope the driver is expected to supply. Half-transparent and dotted,
+    /// in the target's own colour, because it is a reference and not the goal. Null where there is only one
+    /// crossover to draw, or while the crossover is left out of the target.
+    /// </summary>
+    public static EqWizardCurve? ElectricalTargetCurve(EqWizardSession session, IReadOnlyList<double> frequencies)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(frequencies);
+        if (!session.CrossoverInTarget || session.ElectricalCrossover is not { } electrical)
+        {
+            return null;
+        }
+
+        EqTargetCurve target = session.Target;
+        return new EqWizardCurve(
+            ElectricalTargetTitle,
+            OxyColor.FromArgb((byte)(target.Color.A / 2), target.Color.R, target.Color.G, target.Color.B),
+            target.StrokeThickness,
+            // The target is dashed by default, so the reference takes the other pattern; and the dash where a
+            // user has made the target dotted. Opacity alone does not tell two curves apart at a glance.
+            target.LineStyle == OverlayLineStyle.Dot ? LineStyle.Dash : LineStyle.Dot,
+            ShapedTarget(session, frequencies, electrical));
+    }
+
+    private static DataPoint[] ShapedTarget(
+        EqWizardSession session, IReadOnlyList<double> frequencies, EqTargetSlope? slope)
+    {
+        EqTargetCurve target = session.Target;
+        double offset = (double)session.TargetOffsetDb;
         int sampleRateHz = session.ProcessorSampleRateHz;
         var points = new DataPoint[frequencies.Count];
         for (int i = 0; i < frequencies.Count; i++)
@@ -254,12 +301,7 @@ internal static class EqWizardRender
             points[i] = new DataPoint(frequency, target.Spec.Evaluate(frequency) + offset + shape);
         }
 
-        return new EqWizardCurve(
-            "Target",
-            OxyColor.FromArgb(target.Color.A, target.Color.R, target.Color.G, target.Color.B),
-            target.StrokeThickness,
-            OverlayLineStyles.ToOxy(target.LineStyle),
-            points);
+        return points;
     }
 
     private static EqWizardCurve? SourcePlusEq(

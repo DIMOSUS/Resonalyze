@@ -50,11 +50,19 @@ internal sealed record EqWizardCurveSource
     public DspChannelChain? PreviewChain { get; init; }
 
     /// <summary>
-    /// The crossover this channel defines, as junctions and Auto Tune read it
+    /// The crossover the target follows (<see cref="EqTargetCrossover"/>): per edge, the ACOUSTIC crossover stated on
+    /// the channel card where there is one, else the filter the channel runs
     /// (<c>VirtualCrossoverChannelSettings.EffectiveCrossover</c>: the IIR filter, or a FIR crossover's design
-    /// corners). It shapes the target (<see cref="EqTargetCrossover"/>); null without a chain or a crossover.
+    /// corners). Null without a chain or a crossover.
     /// </summary>
     public CrossoverSpec? TargetCrossover { get; init; }
+
+    /// <summary>
+    /// The ELECTRICAL crossover the chain runs, carried only where it differs from <see cref="TargetCrossover"/> —
+    /// that is, where an acoustic crossover was stated. Drawn beside the target so the two skirts can be compared;
+    /// nothing is fitted to it.
+    /// </summary>
+    public CrossoverSpec? ElectricalCrossover { get; init; }
 
     /// <summary>
     /// The crossover KERNEL when the channel is crossed by a designed FIR: its window and length set the slope, which

@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
 

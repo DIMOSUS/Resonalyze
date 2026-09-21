@@ -1,4 +1,4 @@
-﻿# Professional Car Audio Tuning with Resonalyze
+# Professional Car Audio Tuning with Resonalyze
 
 **A complete step-by-step guide**
 

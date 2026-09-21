@@ -1,4 +1,4 @@
-﻿using OxyPlot;
+using OxyPlot;
 using Resonalyze.Dsp;
 using Resonalyze.History;
 
@@ -89,7 +89,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
         buttonAutoDelay.Click += (_, _) => AutoAlignDelay();
         buttonAi.Click += (_, _) => ShowAgentMenu();
-        buttonAutoSetup.Click += (_, _) => OpenAutoSetupWizard();
+        buttonAutoSetup.Click += (_, _) => OpenAutoSetupWizard();
         buttonTuneJunction.Click += async (_, _) => await ShowJunctionTuneDialogAsync().ConfigureAwait(true);
         buttonDspProcessor.Click += (_, _) => OpenDspProcessorDialog();
         buttonTools.Click += (_, _) => ShowToolsMenu();
@@ -351,7 +351,7 @@ public partial class VirtualCrossoverPanel : UserControl
         bool busy = loadingProject
             || pendingSourceLoads > 0
             || redrawTask is { IsCompleted: false };
-        buttonAutoSetup.Enabled = !busy;
+        buttonAutoSetup.Enabled = !busy;
         buttonTuneJunction.Enabled = !busy;
         buttonAutoDelay.Enabled = !busy;
         // Gathered at one revision; an import would be overwritten by a load in progress.

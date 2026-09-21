@@ -1,4 +1,4 @@
-﻿using Resonalyze.Integration.AgentBridge;
+using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.Screenshots;
 

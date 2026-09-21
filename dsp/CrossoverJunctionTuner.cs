@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 
 namespace Resonalyze.Dsp;
 
@@ -563,10 +563,11 @@ public static class CrossoverJunctionTuner
         var driverSlopes = new List<JunctionDriverSlopes>();
         if (options.AcousticTarget is { } target)
         {
-            double bestHz = best.LowerLowPass?.FrequencyHz ?? best.UpperHighPass?.FrequencyHz ?? currentHz;
+            double lowerHz = best.LowerLowPass?.FrequencyHz ?? best.UpperHighPass?.FrequencyHz ?? currentHz;
+            double upperHz = best.UpperHighPass?.FrequencyHz ?? lowerHz;
             for (int i = 0; i < sides.Count; i++)
             {
-                if (detailWork.DriverSlopes(i, target, bestHz) is { } slopes)
+                if (detailWork.DriverSlopes(i, target, lowerHz, upperHz) is { } slopes)
                 {
                     driverSlopes.Add(slopes);
                 }
@@ -908,16 +909,24 @@ public static class CrossoverJunctionTuner
         Math.Abs(driver) <= Math.Abs(asked) + SlopeReachToleranceDbPerOctave;
 
     /// <summary>The side's two shapes against the asked edges, averaged over whichever of them could be read.</summary>
+    /// <remarks>
+    /// Each edge is asked at its OWN corner, as the goal is written and as the EQ stage then aims at it
+    /// (<c>VirtualDspEqHandoff.GoalCrossoverFor</c>). A split pair judged at one shared corner would read the
+    /// far edge as steeper than it is, and charge it for a slope it draws exactly.
+    /// </remarks>
     private static JunctionAcousticFit? AcousticFit(
         JunctionAcousticTarget target,
-        double cornerHz,
+        double lowerCornerHz,
+        double upperCornerHz,
         JunctionPlant plant,
         CrossoverEdge? lowerEdge,
         CrossoverEdge? upperEdge,
         int rateHz)
     {
-        AcousticChannelFit? lower = ChannelFit(target, cornerHz, plant.Lower, lowerEdge, rateHz, upper: false);
-        AcousticChannelFit? upper = ChannelFit(target, cornerHz, plant.Upper, upperEdge, rateHz, upper: true);
+        AcousticChannelFit? lower = ChannelFit(
+            target, lowerCornerHz, plant.Lower, lowerEdge, rateHz, upper: false);
+        AcousticChannelFit? upper = ChannelFit(
+            target, upperCornerHz, plant.Upper, upperEdge, rateHz, upper: true);
         if (lower == null && upper == null)
         {
             return null;
@@ -1476,21 +1485,30 @@ public static class CrossoverJunctionTuner
                 return reading;
             }
 
-            // The asked edges are drawn at the CANDIDATE's corner: LR24 at 500 Hz and LR24 at 700 Hz are both answers
-            // to "acoustic LR24", and where the handover sits is what the corner window and the sum decide. The
-            // candidate multiplies the plant arithmetically, exactly as the device will.
-            double cornerHz = lowPass?.FrequencyHz ?? highPass?.FrequencyHz ?? 0;
+            // The asked edges are drawn at the CANDIDATE's corners: LR24 at 500 Hz and LR24 at 700 Hz are both
+            // answers to "acoustic LR24", and where the handover sits is what the corner window and the sum decide.
+            // Each edge at its own corner, so a split pair is asked what its goal will say. The candidate multiplies
+            // the plant arithmetically, exactly as the device will.
+            double lowerCornerHz = lowPass?.FrequencyHz ?? highPass?.FrequencyHz ?? 0;
+            double upperCornerHz = highPass?.FrequencyHz ?? lowPass?.FrequencyHz ?? 0;
             return reading with
             {
                 Acoustic = AcousticFit(
-                    target, cornerHz, plants[side], lowPass, highPass, options.ProcessorSampleRateHz)
+                    target,
+                    lowerCornerHz,
+                    upperCornerHz,
+                    plants[side],
+                    lowPass,
+                    highPass,
+                    options.ProcessorSampleRateHz)
             };
         }
 
         /// <summary>What the channels do through this region by themselves — the plant, with the facing edge out of
         /// the chain and everything else (PEQ, FIR, the opposite edge) left as it runs. A filter only steepens, so
         /// this is the physics a stated slope has to live with.</summary>
-        public JunctionDriverSlopes? DriverSlopes(int side, JunctionAcousticTarget target, double cornerHz)
+        public JunctionDriverSlopes? DriverSlopes(
+            int side, JunctionAcousticTarget target, double lowerCornerHz, double upperCornerHz)
         {
             if (Plants is not { } plants)
             {
@@ -1500,8 +1518,8 @@ public static class CrossoverJunctionTuner
             int rate = options.ProcessorSampleRateHz;
             return new JunctionDriverSlopes(
                 sides[side].Name,
-                ChannelFit(target, cornerHz, plants[side].Lower, null, rate, upper: false)?.SlopeDbPerOctave,
-                ChannelFit(target, cornerHz, plants[side].Upper, null, rate, upper: true)?.SlopeDbPerOctave);
+                ChannelFit(target, lowerCornerHz, plants[side].Lower, null, rate, upper: false)?.SlopeDbPerOctave,
+                ChannelFit(target, upperCornerHz, plants[side].Upper, null, rate, upper: true)?.SlopeDbPerOctave);
         }
 
         /// <summary>The side's two plants: the caller's own magnitude curves where it has them (a spatial average is

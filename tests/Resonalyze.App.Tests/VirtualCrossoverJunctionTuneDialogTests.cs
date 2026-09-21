@@ -110,6 +110,37 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         Assert.True(apply.Enabled);
     });
     [Fact]
+    public void SwitchingJunction_TakesTheNewJunctionsOwnGoalAndDropsTheOldReport() => StaTest.Run(() =>
+    {
+        // A goal belongs to the cards of one junction. Carried to the next junction it would be written onto
+        // cards that never asked for it, and the report left in the pane would describe the wrong junction.
+        using var dialog = new VirtualCrossoverJunctionTuneDialog();
+        dialog.Init(
+            ["A-B", "B-C"],
+            index => index == 0
+                ? new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.Butterworth], null)
+                : new JunctionTuneDefaults(
+                    500,
+                    2_000,
+                    [CrossoverFilterFamily.LinkwitzRiley],
+                    new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)),
+            _ => Task.FromResult(new JunctionTuneOutcome(
+                [JunctionTuneLine.Of("B/C report")], CanApply: true, "found", false)));
+        var junction = Field<ThemedComboBox>(dialog, "comboBoxJunction");
+        junction.SelectedIndex = 1;
+        Assert.True(Field<RadioButton>(dialog, "radioAcoustic").Checked);
+        Run(dialog);
+        Assert.Contains("B/C report", Field<RichTextBox>(dialog, "textBoxReport").Text);
+
+        junction.SelectedIndex = 0;
+
+        Assert.True(Field<RadioButton>(dialog, "radioSummation").Checked);
+        Assert.IsNotType<CrossoverFamilyChoice>(
+            Field<ThemedComboBox>(dialog, "comboBoxGoalFamily").SelectedItem);
+        Assert.DoesNotContain("B/C report", Field<RichTextBox>(dialog, "textBoxReport").Text);
+        Assert.Null(dialog.Result);
+    });
+    [Fact]
     public void TheModeSaysWhatIsBeingTunedFor_AndOnlyTheAcousticOneCarriesAGoal() => StaTest.Run(() =>
     {
         // Without the switch the dialog never said what it optimised, and a run with the goal boxes left alone was

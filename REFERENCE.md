@@ -1,4 +1,4 @@
-﻿# Resonalyze Reference
+# Resonalyze Reference
 
 Every mode, panel, setting and graph gesture, with the reasoning behind the ones
 whose behaviour is not obvious — why a window is anchored where it is, why a

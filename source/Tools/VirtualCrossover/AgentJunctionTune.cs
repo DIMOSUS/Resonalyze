@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 using Resonalyze.Dsp;
 using Resonalyze.Integration.AgentBridge;
@@ -184,6 +184,8 @@ internal static class AgentJunctionTune
     {
         JunctionTuneCandidate candidate = result.Changed ? result.Best : result.Current;
         bool reached = CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb);
+        // Reachable is the lattice's answer; written is the crossover that stays, which is what Write gates on.
+        bool lands = CrossoverJunctionTuner.WasAcousticTargetReached(candidate.AcousticCostDb);
         string family = asked.Family switch
         {
             CrossoverFilterFamily.LinkwitzRiley => "LR",
@@ -207,13 +209,13 @@ internal static class AgentJunctionTune
                 $"{Number(plant?.UpperDbPerOctave)} dB/oct.");
         }
 
-        summary.Add(reached
+        summary.Add(lands
             ? "  the goal is written onto these edges, so Auto Tune aims at it instead of the filter" +
               (fit is { ResidualDb: > 0 }
                   ? $"; the {Number(fit.ResidualDb)} dB left over is cuts, which it may make."
                   : "; what is left over would need a skirt boost, which it refuses.")
-            : "  the goal is NOT written onto these edges: aiming the fit at a slope these drivers " +
-              "cannot reach makes the junction worse, measured.");
+            : "  the goal is NOT written onto these edges: aiming the fit at a slope the crossover " +
+              "does not reach makes the junction worse, measured.");
     }
 
     private static string Number(double? value) =>

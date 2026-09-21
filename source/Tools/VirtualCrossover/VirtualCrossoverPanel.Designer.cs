@@ -1,4 +1,4 @@
-﻿namespace Resonalyze
+namespace Resonalyze
 {
     partial class VirtualCrossoverPanel
     {
@@ -20,6 +20,8 @@
                 // owned by the designer container and would otherwise leak its handle.
                 targetMenu?.Dispose();
                 targetMenu = null;
+                toolsMenu?.Dispose();
+                toolsMenu = null;
             }
 
             base.Dispose(disposing);
@@ -66,7 +68,7 @@
             comboBoxSmoothing = new ThemedComboBox();
             buttonAutoDelay = new ReleaseClickButton();
             buttonAi = new ReleaseClickButton();
-            buttonAutoSetup = new ReleaseClickButton();
+            buttonAutoSetup = new ReleaseClickButton();
             buttonTuneJunction = new ReleaseClickButton();
             buttonDspProcessor = new ReleaseClickButton();
             buttonTools = new ReleaseClickButton();
@@ -793,7 +795,7 @@
             Controls.Add(comboBoxSmoothing);
             Controls.Add(buttonAutoDelay);
             Controls.Add(buttonAi);
-            Controls.Add(buttonAutoSetup);
+            Controls.Add(buttonAutoSetup);
             Controls.Add(buttonTuneJunction);
             Controls.Add(buttonDspProcessor);
             Controls.Add(buttonTools);
@@ -871,7 +873,7 @@
         private ThemedComboBox comboBoxSmoothing;
         private ReleaseClickButton buttonAutoDelay;
         private ReleaseClickButton buttonAi;
-        private ReleaseClickButton buttonAutoSetup;
+        private ReleaseClickButton buttonAutoSetup;
         private ReleaseClickButton buttonTuneJunction;
         private ReleaseClickButton buttonDspProcessor;
         private ReleaseClickButton buttonTools;

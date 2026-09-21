@@ -101,6 +101,22 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void AWishOnAnEdgeTheChannelDoesNotRun_ChangesNothing()
+    {
+        // A high-pass-only channel keeps a low-pass edge in its settings, greyed out on the card. A wish stated
+        // for that edge describes no filter, so the target, the drawn reference and the return guard must all
+        // read the channel as having one crossover.
+        VirtualCrossoverChannel channel = BuildChannel();
+        channel.Settings.CrossoverKind = CrossoverKind.HighPass;
+        channel.Settings.AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 12);
+
+        EqWizardCurveSource source = Build(channel, withChain: true).Source;
+
+        Assert.Equal(channel.Settings.EffectiveCrossover, source.TargetCrossover);
+        Assert.Null(source.ElectricalCrossover);
+    }
+
+    [Fact]
     public void TheElectricalCrossoverTravels_OnlyWhereTheTargetFollowsAnAcousticOne()
     {
         // The wizard draws the filter the chain runs beside the target, and only where the two differ: with no

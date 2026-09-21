@@ -189,16 +189,24 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         checkButterworth.Checked = opening.Families.Contains(CrossoverFilterFamily.Butterworth);
         checkLinkwitzRiley.Checked = opening.Families.Contains(CrossoverFilterFamily.LinkwitzRiley);
         checkBessel.Checked = opening.Families.Contains(CrossoverFilterFamily.Bessel);
-        // The card's own wish is what this junction already asks for, so the dialog opens on it.
+        // The card's own wish is what this junction already asks for, so the dialog opens on it - and a junction
+        // whose cards state none opens without one: a goal carried over from the junction shown before would be
+        // written onto cards that never asked for it.
         if (opening.Goal is { } asked)
         {
-            // A junction whose cards already state a goal opens on it: that is the question it was last asked.
             comboBoxGoalFamily.SelectedItem = CrossoverFamilyChoice.Offered
                 .FirstOrDefault(choice => choice.Value == asked.Family) ?? (object)Nothing;
             comboBoxGoalSlope.SelectedItem = asked.SlopeDbPerOctave;
             radioAcoustic.Checked = true;
         }
+        else
+        {
+            radioSummation.Checked = true;
+            comboBoxGoalFamily.SelectedItem = Nothing;
+        }
 
+        // The report in the pane describes the junction it was searched on, not this one.
+        textBoxReport.Clear();
         InvalidateResult("Nothing searched yet.");
     }
 

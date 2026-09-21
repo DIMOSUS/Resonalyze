@@ -44,6 +44,35 @@ public sealed class AgentJunctionTuneAcousticReportTests
     }
 
     [Fact]
+    public void AGoalSomeFilterCouldReach_ButTheCrossoverKeptDoesNot_IsNotCalledWritten()
+    {
+        // "Reachable" is a statement about the lattice; "written onto these edges" is a statement about the
+        // crossover that stays, and Write carries the goal only when THAT one lands. The summary must not
+        // promise the EQ stage a goal Write is about to clear.
+        CrossoverEdge edge = new(CrossoverFilterFamily.LinkwitzRiley, 1_000, 48);
+        var far = new JunctionTuneReading(
+            "left", -0.5, -1.0, 1.0, new JunctionAcousticFit(6.0, -6.0, 40, 40, 24));
+        var kept = new JunctionTuneCandidate(edge, edge, [far], [far], 500, 2_000);
+        var result = new JunctionTuneResult(
+            kept, kept, Changed: false, [], [], [], 10, 500, 2_000, [], ClosestAcousticCostDb: 1.0);
+        var asked = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24);
+        var plan = new JunctionTunePlan(
+            "Junction tune A/B",
+            new VirtualCrossoverChannel("A"),
+            new VirtualCrossoverChannel("B"),
+            [],
+            new JunctionTuneOptions(
+                [CrossoverFilterFamily.LinkwitzRiley], null, 950, 1_050, false, SampleRate,
+                AcousticTarget: asked));
+        var report = new List<string>();
+
+        AgentJunctionTune.Describe(report, plan, result);
+
+        string text = string.Join(Environment.NewLine, report);
+        Assert.Contains("reached.", text);
+        Assert.Contains("the goal is NOT written onto these edges", text);
+    }
+    [Fact]
     public void ApplyingOnlyTheGoal_LeavesTheEdgesWhereTheReportSaidTheyWouldStay()
     {
         // The dialog offers Apply on a kept crossover so a goal can be stated without retuning. Writing the best

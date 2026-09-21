@@ -1,4 +1,4 @@
-﻿namespace Resonalyze;
+namespace Resonalyze;
 
 /// <summary>Tooltips of the panel's own controls; a block's come from <see cref="VirtualCrossoverChannelControl"/>.</summary>
 public partial class VirtualCrossoverPanel

@@ -728,11 +728,13 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
 - **The plant, not the measurement.** Shapes are judged on each channel's magnitude through its chain
   with the facing edge taken out and **the PEQ taken out**, because the bank is refitted the moment a
   tune lands — leaving it in would make the same car answer differently depending on its tune history.
-  A correction FIR stays (the EQ stage does not rewrite that one). A caller passes the curve it wants
-  judged through `JunctionTuneSide.LowerMagnitude` / `UpperMagnitude` — the channel's **spatial
-  average** where it has one, since that is the curve the EQ stage will work on — and the tuner reads
-  it off the gated impulse responses otherwise. The candidate edge is then applied to the plant
-  arithmetically, as the device applies it, so the search pays no transform for the acoustic term.
+  A correction FIR stays (the EQ stage does not rewrite that one). The plant is read off the gated impulse
+  responses. `JunctionTuneSide.LowerMagnitude` / `UpperMagnitude` let a caller pass the curve the EQ stage
+  will actually work on instead — a channel's **spatial average** — but no caller does yet: the Tune
+  junction dialog and the battery both read the impulse responses, so on a channel equalised from an
+  average the acoustic verdict and the fit can see slightly different curves. The candidate edge is then
+  applied to the plant arithmetically, as the device applies it, so the search pays no transform for the
+  acoustic term.
 - **The tonal target comes out first.** The goal for a channel is `target × acoustic crossover`, so
   `JunctionTuneOptions.TargetCurveDb` is subtracted from the plant before any shape is read. Left in, a
   house curve's own tilt through a low junction would be read as the driver's acoustic slope.

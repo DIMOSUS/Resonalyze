@@ -562,6 +562,29 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    public void ASplitJunction_IsJudgedAgainstTheAskedEdgeAtEachOfItsOwnCorners()
+    {
+        // The goal a tune writes is a family and a slope at the ELECTRICAL corner of each edge, and the EQ stage
+        // then aims every edge at its own corner. So the tune must judge a split pair the same way: an LR24
+        // low-pass at 900 Hz and an LR24 high-pass at 1100 Hz on flat drivers ARE acoustic LR24 on both edges.
+        // Judged against one shared corner, the high-pass reads a sixth of an octave too steep and is charged
+        // for a slope it draws exactly.
+        JunctionTuneOptions options = Options(
+            950, 1_050, slopes: [24], independentSlopes: false, CrossoverFilterFamily.LinkwitzRiley) with
+        {
+            AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)
+        };
+
+        JunctionTuneResult result = CrossoverJunctionTuner.Tune(
+            [Side(
+                "left",
+                LowPassChain(Edge(CrossoverFilterFamily.LinkwitzRiley, 900, 24)),
+                HighPassChain(Edge(CrossoverFilterFamily.LinkwitzRiley, 1_100, 24)))],
+            options);
+
+        Assert.InRange(result.Current.AcousticCostDb!.Value, 0, 0.5);
+    }
+    [Fact]
     public void WithNoAcousticTargetStated_NothingIsReportedAndTheScoreIsTheSumAlone()
     {
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);

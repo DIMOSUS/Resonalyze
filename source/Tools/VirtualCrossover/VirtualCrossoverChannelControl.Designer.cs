@@ -1,4 +1,4 @@
-﻿namespace Resonalyze
+namespace Resonalyze
 {
     partial class VirtualCrossoverChannelControl
     {
@@ -43,7 +43,7 @@
             buttonMoveUp = new ReleaseClickButton();
             buttonMoveDown = new ReleaseClickButton();
             labelCrossover = new Label();
-            comboBoxCrossoverKind = new ThemedComboBox();
+            comboBoxCrossoverKind = new ThemedComboBox();
             buttonAcousticGoal = new ReleaseClickButton();
             labelMeasuredPolarity = new Label();
             labelHighPass = new Label();
@@ -620,7 +620,7 @@
             Controls.Add(buttonMoveUp);
             Controls.Add(buttonMoveDown);
             Controls.Add(labelCrossover);
-            Controls.Add(comboBoxCrossoverKind);
+            Controls.Add(comboBoxCrossoverKind);
             Controls.Add(buttonAcousticGoal);
             Controls.Add(labelMeasuredPolarity);
             Controls.Add(labelHighPass);
@@ -677,7 +677,7 @@
         private ReleaseClickButton buttonMoveUp;
         private ReleaseClickButton buttonMoveDown;
         private Label labelCrossover;
-        private ThemedComboBox comboBoxCrossoverKind;
+        private ThemedComboBox comboBoxCrossoverKind;
         private ReleaseClickButton buttonAcousticGoal;
         private Label labelMeasuredPolarity;
         private Label labelHighPass;

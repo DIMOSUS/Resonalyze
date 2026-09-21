@@ -374,7 +374,6 @@ public sealed class VirtualCrossoverChannelSettings
         }
     }
 
-    // Both edges validated even when unused: they are shown greyed out and must round-trip.
     private static void ValidateAcoustic(JunctionAcousticTarget? goal)
     {
         if (goal is not { } asked)
@@ -392,6 +391,7 @@ public sealed class VirtualCrossoverChannelSettings
         }
     }
 
+    // Both edges validated even when unused: they are shown greyed out and must round-trip.
     private static void ValidateEdge(CrossoverEdge edge)
     {
         if (!Enum.IsDefined(edge.Family))

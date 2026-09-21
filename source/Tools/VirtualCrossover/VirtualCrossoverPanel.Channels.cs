@@ -1,4 +1,4 @@
-﻿using Resonalyze.Dsp;
+using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
@@ -143,7 +143,7 @@ public partial class VirtualCrossoverPanel
         control.SourceClicked += (_, _) => ShowSourceMenu(channel);
         control.SpatialAverageClicked += (_, _) => ShowSpatialAverageMenu(channel);
         control.PeqMenuClicked += (_, _) => ShowPeqMenu(channel);
-        control.FirClicked += (_, _) => ShowFirMenu(channel);
+        control.FirClicked += (_, _) => ShowFirMenu(channel);
         control.AcousticGoalClicked += (_, _) => ShowAcousticGoalDialog(channel);
         control.CollapsedChanged += (_, _) => OnChannelCollapsedChanged(channel);
         control.MoveUpClicked += (_, _) => MoveChannel(channel, -1);

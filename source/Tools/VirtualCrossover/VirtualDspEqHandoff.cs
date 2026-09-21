@@ -362,8 +362,14 @@ internal static class VirtualDspEqHandoff
     {
         ArgumentNullException.ThrowIfNull(settings);
         CrossoverSpec electrical = settings.EffectiveCrossover;
-        CrossoverEdge? lowPass = Asked(settings.AcousticLowPass, electrical.LowPassEdge);
-        CrossoverEdge? highPass = Asked(settings.AcousticHighPass, electrical.HighPassEdge);
+        // Only edges the kind reads: a wish for the greyed-out edge of a one-sided channel describes no filter,
+        // and substituting it would make an identical target look like a different crossover.
+        CrossoverEdge? lowPass = electrical.LowPassHz == null
+            ? null
+            : Asked(settings.AcousticLowPass, electrical.LowPassEdge);
+        CrossoverEdge? highPass = electrical.HighPassHz == null
+            ? null
+            : Asked(settings.AcousticHighPass, electrical.HighPassEdge);
         return lowPass == null && highPass == null
             ? electrical
             : new CrossoverSpec(

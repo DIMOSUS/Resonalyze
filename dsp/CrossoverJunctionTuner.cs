@@ -121,6 +121,14 @@ public sealed record JunctionTuneCandidate(
             .MaxBy(miss => miss.ChargeDb);
 
     public double? WorstAcousticCostDb => WorstAcousticChannel?.ChargeDb;
+
+    /// <summary>Every channel of every side read against the stated slope: an unread one is unknown, not a landing.</summary>
+    public bool AcousticReadInFull =>
+        RankingSides.Count > 0 &&
+        RankingSides.All(side => side.Acoustic is { LowerChargeDb: not null, UpperChargeDb: not null });
+
+    public bool AcousticGoalLands =>
+        AcousticReadInFull && CrossoverJunctionTuner.WasAcousticTargetReached(WorstAcousticCostDb);
 }
 
 /// <summary>The junction after the delay production alignment would pick for the upper channel.</summary>
@@ -456,7 +464,7 @@ public static class CrossoverJunctionTuner
         double? bestSumScoreDb = null;
         if (options.AcousticTarget != null)
         {
-            foreach (JunctionTuneCandidate candidate in ranked)
+            foreach (JunctionTuneCandidate candidate in ranked.Where(candidate => candidate.AcousticReadInFull))
             {
                 if (candidate.WorstAcousticCostDb is { } cost &&
                     (closestAcousticCostDb == null || cost < closestAcousticCostDb))
@@ -480,6 +488,8 @@ public static class CrossoverJunctionTuner
             best.ScoreDb <= current.ScoreDb;
         // Or it sums as well and draws the asked slope materially better.
         bool slopeWins = options.AcousticTarget != null &&
+            best.AcousticReadInFull &&
+            current.AcousticReadInFull &&
             best.WorstAcousticCostDb is { } bestCost &&
             current.WorstAcousticCostDb is { } currentCost &&
             bestCost < currentCost - AcousticKeepMarginDb &&
@@ -522,15 +532,15 @@ public static class CrossoverJunctionTuner
     }
 
     /// <summary>Inside the corridor: candidates whose worst channel lands first, by average; then the nearest to
-    /// landing. Outside it the sum's own order stands.</summary>
+    /// landing; then those not read in full. Outside it the sum's own order stands.</summary>
     internal static List<JunctionTuneCandidate> OrderForGoal(
         IReadOnlyList<JunctionTuneCandidate> ranked, double sumSlackDb)
     {
         double admissible = ranked[0].RankingScoreDb + sumSlackDb;
         return ranked
             .Where(candidate => candidate.RankingScoreDb <= admissible)
-            .OrderBy(candidate => WasAcousticTargetReached(candidate.WorstAcousticCostDb) ? 0 : 1)
-            .ThenBy(candidate => (WasAcousticTargetReached(candidate.WorstAcousticCostDb)
+            .OrderBy(candidate => candidate.AcousticGoalLands ? 0 : candidate.AcousticReadInFull ? 1 : 2)
+            .ThenBy(candidate => (candidate.AcousticGoalLands
                 ? candidate.AcousticCostDb
                 : candidate.WorstAcousticCostDb) ?? double.PositiveInfinity)
             .ThenBy(candidate => candidate.RankingScoreDb)

@@ -148,13 +148,15 @@ internal static class VirtualCrossoverJunctionTuneReport
         // The crossover Apply would leave on screen: the found one wherever it differs.
         JunctionTuneCandidate candidate = result.Moves ? result.Best : result.Current;
         JunctionAcousticMiss? worst = candidate.WorstAcousticChannel;
-        bool lands = CrossoverJunctionTuner.WasAcousticTargetReached(worst?.ChargeDb);
+        bool lands = candidate.AcousticGoalLands;
+        string? unread = Unread(candidate, lower, upper);
         bool anyFilterCould = CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb);
         lines.Add(JunctionTuneLine.Of(
             $"  Acoustic {FirCrossoverDescription.FamilyName(asked.Family)} {asked.SlopeDbPerOctave}, " +
             $"{(result.Moves ? "as found" : "as it stands")}: off by {Number(worst?.ChargeDb)} dB at worst" +
             (worst == null ? string.Empty : $" ({Channel(worst, lower, upper)})") +
-            $", {Number(candidate.AcousticCostDb)} on average."));
+            $", {Number(candidate.AcousticCostDb)} on average" +
+            (unread == null ? "." : $"; {unread} not read.")));
         lines.Add(new JunctionTuneLine([
             new JunctionTuneSpan($"    nearest any filter: {Number(result.ClosestAcousticCostDb)} dB at worst — "),
             anyFilterCould
@@ -172,7 +174,7 @@ internal static class VirtualCrossoverJunctionTuneReport
         }
 
         string? tooSteep = TooSteepByItself(candidate, result.DriverSlopes, lower, upper);
-        if (!lands && anyFilterCould && tooSteep == null && worst != null &&
+        if (!lands && unread == null && anyFilterCould && tooSteep == null && worst != null &&
             candidate.Sides.FirstOrDefault(side => side.Side == worst.Side)?.Acoustic?.TargetSlopeDbPerOctave
                 is { } askedSlope &&
             result.DriverSlopes.FirstOrDefault(item => item.Side == worst.Side) is { } fall &&
@@ -198,7 +200,9 @@ internal static class VirtualCrossoverJunctionTuneReport
                     JunctionTuneTone.Better)
                 : new JunctionTuneSpan(
                     "    Apply writes it anyway, and Auto Tune will aim at it; " +
-                    (tooSteep != null
+                    (unread != null
+                        ? $"{unread} could not be read against it."
+                        : tooSteep != null
                         ? $"{tooSteep} alone already falls faster."
                         : anyFilterCould
                             ? "a filter that lands on it sums worse."
@@ -209,6 +213,20 @@ internal static class VirtualCrossoverJunctionTuneReport
 
     private static string Channel(JunctionAcousticMiss miss, string lower, string upper) =>
         $"{miss.Side} {(miss.Upper ? upper : lower)}";
+
+    /// <summary>The channels the plant had too few points to read on their skirt, or null.</summary>
+    private static string? Unread(JunctionTuneCandidate candidate, string lower, string upper)
+    {
+        List<string> unread = candidate.Sides
+            .SelectMany(side => new[]
+            {
+                side.Acoustic?.LowerChargeDb == null ? $"{side.Side} {lower}" : null,
+                side.Acoustic?.UpperChargeDb == null ? $"{side.Side} {upper}" : null
+            })
+            .OfType<string>()
+            .ToList();
+        return unread.Count == 0 ? null : string.Join(", ", unread);
+    }
 
     /// <summary>The first channel already falling faster than asked by itself, or null.</summary>
     private static string? TooSteepByItself(

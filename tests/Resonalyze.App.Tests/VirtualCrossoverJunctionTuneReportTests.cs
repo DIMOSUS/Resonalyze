@@ -213,6 +213,25 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
         Assert.Contains("no filter in this search lands on it.", search, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void AChannelNotRead_IsNamed_AndTheGoalIsNotCalledLanded()
+    {
+        (JunctionTunePlan plan, JunctionTuneResult result) = TwoSides(rightTweeterFallsDbPerOctave: 9.0, closestDb: 1.0);
+        JunctionTuneReading[] halfRead =
+        [
+            new("left", -0.3, -1.0, 2.0, new JunctionAcousticFit(0.2, 0.2, 25, 24, 24)),
+            new("right", -0.4, -1.2, 2.1, new JunctionAcousticFit(0.3, null, 25, null, 24))
+        ];
+        var candidate = result.Current with { Sides = halfRead, RankingSides = halfRead };
+
+        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(
+            plan, result with { Current = candidate, Best = candidate });
+
+        Assert.Contains(report, line => line.Text.Contains("right B not read.", StringComparison.Ordinal));
+        Assert.Contains("right B could not be read against it.", report[^1].Text, StringComparison.Ordinal);
+        Assert.Equal(JunctionTuneTone.Worse, report[^1].Spans[^1].Tone);
+    }
+
     private static (JunctionTunePlan Plan, JunctionTuneResult Result) TwoSides(
         double rightTweeterFallsDbPerOctave, double closestDb)
     {

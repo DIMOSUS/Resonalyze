@@ -154,13 +154,9 @@ public partial class VirtualCrossoverPanel
                 true);
         }
 
-        if (FirCrossoverOn(lower.Settings, lowPass: true) is { } lowerFir)
+        if (AgentJunctionTune.FirCrossoverRefusal(lower, upper) is { } fir)
         {
-            return Refusal(lowerFir);
-        }
-        if (FirCrossoverOn(upper.Settings, lowPass: false) is { } upperFir)
-        {
-            return Refusal(upperFir);
+            return Refusal(fir);
         }
 
         (List<JunctionTuneSide> sides, string? refusal) =
@@ -231,8 +227,7 @@ public partial class VirtualCrossoverPanel
         // Apply is offered whenever it changes something, and only then.
         JunctionTuneCandidate applied = result.Moves ? result.Best : result.Current;
         bool goalChanges = AgentJunctionTune.WouldChangeGoal(lower, upper, request.AcousticGoal, applied);
-        bool goalLands = request.AcousticGoal != null &&
-            CrossoverJunctionTuner.WasAcousticTargetReached(applied.WorstAcousticCostDb);
+        bool goalLands = request.AcousticGoal != null && applied.AcousticGoalLands;
         bool forTheGoal = request.AcousticGoal != null &&
             result.Best.RankingScoreDb > result.Current.RankingScoreDb;
         string verdict = result.Changed
@@ -258,23 +253,6 @@ public partial class VirtualCrossoverPanel
                 false,
                 "Refused.",
                 true);
-    }
-
-    /// <summary>A designed FIR crossover on a facing edge is a second stage, not an edge this tune fits.</summary>
-    private static string? FirCrossoverOn(VirtualCrossoverChannelSettings settings, bool lowPass)
-    {
-        if (!settings.HasFirCrossover || settings.FirDesign is not { } design)
-        {
-            return null;
-        }
-
-        bool facing = lowPass
-            ? design.Kind is CrossoverKind.LowPass or CrossoverKind.BandPass
-            : design.Kind is CrossoverKind.HighPass or CrossoverKind.BandPass;
-        return facing
-            ? $"the {(lowPass ? "low" : "high")}-pass here is a designed FIR crossover, and this tune " +
-              "fits IIR edges only — clear the kernel or tune the junction by hand"
-            : null;
     }
 
     private IReadOnlyList<SignalPoint> TargetCurvePoints()

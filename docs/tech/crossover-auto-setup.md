@@ -792,7 +792,7 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
   Measured with every reading re-aligned, weighted per octave and judged at the worst channel (8 cabins,
   23 junctions, `docs/specs/acoustic-crossover-target.md#6c`): a 1.0 dB budget lands acoustic LR24 at
   every channel on 5 junctions of 23 — the lattice could at 19, most of them for more than 1 dB of sum —
-  for about 0.3 dB of average sum loss and 0.7 dB of average dip, the worst dip 2 dB deeper. On v6
+  for about 0.3 dB of average sum loss and 0.6 dB of average dip, the worst dip 1.7 dB deeper. On v6
   session-15, junction B-C, BW18@230 + BW12@230 lands acoustic BW24 (0.9 dB at the worst channel, on the
   MMM averages) for 1.0 dB against the best sum. That is a price, not a gain, and the report names it against
   `JunctionTuneResult.BestSumScoreDb`. The user's crossover is rewritten on a
@@ -806,7 +806,10 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
   `AcousticReachedCostDb`, 2 dB of average deviation across the skirt: as near as a discrete filter menu is
   asked to come. Inside the corridor, candidates whose worst
   channel lands come first and the average — the steadier figure — chooses among them; where none lands, the
-  one nearest to landing. `slopeWins` compares worst channels too.
+  one nearest to landing. `slopeWins` compares worst channels too. A channel the plant cannot read — too
+  few points on its skirt, as a spatial average with a gap there has — is unknown, not a landing
+  (`AcousticReadInFull`): such a candidate never lands, ranks behind every candidate read in full, stays out
+  of `ClosestAcousticCostDb`, and the report names the channel.
 - **Reachability is read off the lattice.** A filter only steepens, so a target softer than the
   drivers' own fall is not on offer at all. The verdict is `ClosestAcousticCostDb`: the least worst-channel
   miss any candidate on the lattice reached, before the corridor removed any of them. Read beside the chosen

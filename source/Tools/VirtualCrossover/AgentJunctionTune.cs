@@ -85,6 +85,42 @@ internal static class AgentJunctionTune
             null);
     }
 
+    /// <summary>The dialog's refusal of a designed FIR crossover on a facing edge, on either side, since both are
+    /// written. The AI review allows that tune and warns instead (AgentProposalValidator).</summary>
+    public static string? FirCrossoverRefusal(VirtualCrossoverChannel lower, VirtualCrossoverChannel upper)
+    {
+        foreach (bool rightSide in new[] { false, true })
+        {
+            string side = rightSide ? "right" : "left";
+            if (FirCrossoverOn(lower.SideSettings(rightSide && !lower.Pair.Mono), lowPass: true) is { } lowerFir)
+            {
+                return $"on the {side} side, {lowerFir}";
+            }
+            if (FirCrossoverOn(upper.SideSettings(rightSide && !upper.Pair.Mono), lowPass: false) is { } upperFir)
+            {
+                return $"on the {side} side, {upperFir}";
+            }
+        }
+
+        return null;
+    }
+
+    private static string? FirCrossoverOn(VirtualCrossoverChannelSettings settings, bool lowPass)
+    {
+        if (!settings.HasFirCrossover || settings.FirDesign is not { } design)
+        {
+            return null;
+        }
+
+        bool facing = lowPass
+            ? design.Kind is CrossoverKind.LowPass or CrossoverKind.BandPass
+            : design.Kind is CrossoverKind.HighPass or CrossoverKind.BandPass;
+        return facing
+            ? $"the {(lowPass ? "low" : "high")}-pass here is a designed FIR crossover, and this tune " +
+              "fits IIR edges only — clear the kernel or tune the junction by hand"
+            : null;
+    }
+
     /// <summary>The winner's crossover on both sides of both blocks; a mono block takes it once.</summary>
     /// <param name="acoustic">Written as asked, landed or not, onto the edges the remaining crossover runs; null leaves
     /// the cards' goals alone.</param>

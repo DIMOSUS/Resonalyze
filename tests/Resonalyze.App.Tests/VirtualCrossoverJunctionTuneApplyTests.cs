@@ -92,6 +92,48 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
     });
 
     [Fact]
+    public void UndoLastApply_BringsBackTheGoalsEveryChannelHeld() => StaTest.Run(() =>
+    {
+        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
+        VirtualCrossoverChannel untouched = panel.Session.Channels[2];
+        var lowerGoal = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24);
+        var upperGoal = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 18);
+        var otherGoal = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 48);
+        foreach (bool right in new[] { false, true })
+        {
+            lower.SideSettings(right).AcousticLowPass = lowerGoal;
+            upper.SideSettings(right).AcousticHighPass = upperGoal;
+            untouched.SideSettings(right).AcousticHighPass = otherGoal;
+        }
+
+        Apply(panel, lower, upper, Result(changed: true), new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24));
+        typeof(VirtualCrossoverPanel).GetMethod("UndoJunctionTune", Hidden)!.Invoke(panel, null);
+
+        foreach (bool right in new[] { false, true })
+        {
+            Assert.Equal(lowerGoal, lower.SideSettings(right).AcousticLowPass);
+            Assert.Equal(upperGoal, upper.SideSettings(right).AcousticHighPass);
+            Assert.Equal(otherGoal, untouched.SideSettings(right).AcousticHighPass);
+        }
+    });
+
+    [Fact]
+    public void AFirCrossoverOnTheSideNotShown_StillRefusesTheTune()
+    {
+        var lower = new VirtualCrossoverChannel("A");
+        var upper = new VirtualCrossoverChannel("B");
+        var edge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 180, 24);
+        var design = new FirCrossoverDesign(
+            CrossoverKind.LowPass, edge, edge, FirCrossoverMethod.IirMagnitude, FirWindow.Kaiser, 8, 1_023, 48_000);
+        lower.SideSettings(true).Fir = design.Build();
+        lower.SideSettings(true).FirDesign = design;
+
+        Assert.False(lower.ActiveRight);
+        Assert.Contains("right side", AgentJunctionTune.FirCrossoverRefusal(lower, upper), StringComparison.Ordinal);
+        Assert.Null(AgentJunctionTune.FirCrossoverRefusal(upper, lower));
+    }
+
+    [Fact]
     public void AGoalGoesOnlyOntoAnEdgeTheCrossoverLeftOnScreenRuns() => StaTest.Run(() =>
     {
         using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);

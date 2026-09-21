@@ -793,6 +793,43 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
+    public void AChannelThePlantCannotRead_IsUnknown_NotALanding()
+    {
+        // The tweeter's curve stops above the corner, so its skirt has no points.
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        List<SignalPoint> full = Plant(notchHz: null, tiltDbPerOctave: 0);
+        List<SignalPoint> aboveCorner = full.Where(point => point.X > 1_100).ToList();
+        var side = new JunctionTuneSide(
+            "left", Impulse(), LowPassChain(lr), Impulse(), HighPassChain(lr), SampleRate, full, aboveCorner);
+        JunctionTuneOptions options = Options(
+            1_000, 1_000, slopes: [24], independentSlopes: false, CrossoverFilterFamily.LinkwitzRiley) with
+        {
+            AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)
+        };
+
+        JunctionTuneResult result = CrossoverJunctionTuner.Tune([side], options);
+
+        Assert.InRange(result.Best.WorstAcousticCostDb!.Value, 0, 0.5);
+        Assert.False(result.Best.AcousticReadInFull);
+        Assert.False(result.Best.AcousticGoalLands);
+        Assert.Null(result.ClosestAcousticCostDb);
+    }
+
+    [Fact]
+    public void InsideTheBudget_ACandidateReadInFull_BeatsOneWithAChannelUnread()
+    {
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        var halfRead = new JunctionTuneCandidate(lr, lr, [],
+            [new JunctionTuneReading("left", 0, 0, 1.0, new JunctionAcousticFit(0.1, null, null, null, null))],
+            500, 2_000);
+        var missing = new JunctionTuneCandidate(lr, lr, [],
+            [new JunctionTuneReading("left", 0, 0, 1.1, new JunctionAcousticFit(1.0, 2.5, null, null, null))],
+            500, 2_000);
+
+        Assert.Equal([missing, halfRead], CrossoverJunctionTuner.OrderForGoal([halfRead, missing], sumSlackDb: 1.0));
+    }
+
+    [Fact]
     public void TheWorstChannel_IsNamed_WhereAnAverageWouldHideIt()
     {
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);

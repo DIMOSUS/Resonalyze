@@ -3333,7 +3333,9 @@ crossover when you start (the side Lock keeps them so), and the tune says so
 rather than mixing two. Where one of the two blocks is **mono**, one delay and
 one polarity serve both sides, as Auto delay moves a mono channel: every
 candidate is read at the one shift that suits both sides best on average, not at
-a shift of its own on each side.
+a shift of its own on each side. A designed FIR crossover on a facing edge, on
+either side, is refused as well: it is a second crossover stage, not an edge
+this tune fits.
 
 Because the sum is read rather than predicted, a steeper slope that narrows the
 overlap where a ragged excess phase interferes is a legitimate answer the
@@ -3403,7 +3405,9 @@ an average can pass while one tweeter is left well short, and the search prefers
 a crossover that lands every channel. A filter only steepens, so a slope softer
 than a driver's own fall is not on offer — the report names that channel rather
 than quietly picking the softest filter, and says apart from it when the goal is
-merely outside the corner window and the filters you allowed. The shapes are
+merely outside the corner window and the filters you allowed. A channel whose
+curve has no points on its skirt is named as not read, and a goal it could not
+check is never called landed. The shapes are
 read on the curve Auto Tune will fit: a channel's spatial average while the
 hybrid is drawn, else its measurement.
 

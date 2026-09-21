@@ -747,7 +747,7 @@ rival optima it weighed, always including the pick.
 `JunctionTuneOptions.AcousticTarget` states what `driver × filter` should look like at a junction — a
 family and a slope, the language a tuner actually thinks in — and the search answers with the
 ELECTRICAL filter that comes nearest on these drivers. It is off by default; without it the tuner
-behaves exactly as above. Design and open questions: `docs/specs/acoustic-crossover-target.md`.
+behaves exactly as above.
 
 - **The plant, not the measurement.** Shapes are judged on each channel's magnitude through its chain
   with the facing edge taken out and **the PEQ taken out**, because the bank is refitted the moment a
@@ -791,7 +791,7 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
   slope chooses inside it. The engine keeps 0.2 dB for a caller that states nothing; the Tune junction
   dialog states it as a visible **budget**, 1.0 dB by default (`DefaultSumBudgetDb`, the owner's choice).
   Measured with every reading re-aligned, weighted per octave and judged at the worst channel (8 cabins,
-  23 junctions, `docs/specs/acoustic-crossover-target.md#6c`): a 1.0 dB budget lands acoustic LR24 at
+  23 junctions, [below](#measured-on-the-battery)): a 1.0 dB budget lands acoustic LR24 at
   every channel on 5 junctions of 23 — the lattice could at 18 —
   for about 0.3 dB of average sum loss and 0.55 dB of average dip, the worst dip 2 dB deeper. On v6
   session-15, junction B-C, BW18@230 + BW12@230 lands acoustic BW24 (0.9 dB at the worst channel, on the
@@ -825,14 +825,48 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
   so "the magnitude follows an acoustic LR24" is true where "the acoustic crossover is LR24" would be
   more than was shown — and the coherent sum term is there precisely because it sees what a magnitude
   target cannot.
-- **What it is worth, measured.** On eight archived cabins and 46 paired junctions, with the same EQ
-  stage after every arm, asking for acoustic LR24 did not pay: sum loss −0.55 → −0.65 dB, worst dip
-  −8.40 → −10.01, EQ cost unchanged. The arms separate why. The slope told to the TUNE alone reads
-  like the plain tune, so choosing inside the corridor is harmless; the loss is entirely in telling
-  the EQ stage to aim at a slope these drivers cannot reach. `AgentJunctionTune.Write` first carried
-  the goal only where `WasAcousticTargetReached`; the owner overruled that (2026-09-21) — the goal is
-  the user's own statement, shown on the card — so Write carries it as asked and the report says in red
-  when the crossover misses it, which is when the measured harm applies. A corridor of 1 dB instead of 0.2
-  gives −0.84 and a −16.73 dip, and a reachable target (LR48) drops the acoustic cost from 8.13 to
-  2.00 dB at no cost to the sum at all. The mode therefore ships as a language and a diagnosis rather
-  than as a better tune; `docs/specs/acoustic-crossover-target.md#6a` holds the table.
+- **The goal is written as asked.** The goal is the user's own statement, shown on the card, so
+  `AgentJunctionTune.Write` carries it whether or not the crossover lands on it, and the report says in red
+  when it misses — which is exactly when the EQ stage aims at a slope the filter does not make, the case
+  the battery below shows to cost. Clearing the goal from the card returns the fit to the electrical filter.
+- **What the mode does not do.** It writes no PEQ and runs no Auto Tune: equalisation is the next stage.
+  It re-aligns only to read a candidate, and leaves the delays to Auto delay. It refines one junction
+  locally and does not lay the crossovers out from nothing; a band-pass channel holds two edges, so moving
+  one junction can move its neighbour's reading. It fits IIR edges only: an edge a designed FIR crossover
+  makes is refused on either side, while a correction FIR stays in the plant.
+
+### Measured on the battery
+
+`AcousticTargetBattery` (a runner, not a pinned expectation) tunes every junction of eight archived
+cabins under five policies, runs the same EQ stage (the wizard's defaults) after each, and reads the
+final sums re-aligned, per side: 23 junctions, 46 paired rows. Acoustic cost is the average per-octave
+deviation from the asked edge; the closest is the least worst-channel miss on the lattice; "landed"
+counts junctions whose worst channel is within 2 dB.
+
+| arm | sum loss | worst dip | ripple | applied | acoustic cost (closest) | landed |
+|---|---|---|---|---|---|---|
+| plain | −0.31 dB | −2.69 | 4.74 | 14 | — | — |
+| lr24 (corridor 0.2) | −0.31 | −4.81 | 4.60 | 20 | 7.39 (1.79) | 0/23 |
+| lr24-tune (EQ not told) | −0.31 | −3.79 | 4.57 | 20 | 7.39 (1.79) | 0/23 |
+| lr24-slack1 (budget 1.0) | −0.57 | −4.66 | 4.24 | 42 | 2.31 (1.80) | 5/23 |
+| lr48 (corridor 0.2) | −0.32 | −3.21 | 4.65 | 16 | 2.17 (1.51) | 7/23 |
+
+Paired, lr24-slack1 against plain: loss −0.31 → −0.57 (better in 14/46), average dip −1.24 → −1.79
+(better in 15/46), EQ bands 54.9 → 53.4, worst boost 5.92 → 6.00.
+
+- **Asking for LR24 does not buy a better sum.** Neither the sum nor the EQ cost improves; the stated
+  slope is a language and a diagnosis, and the 1.0 dB budget is a price the report names per junction.
+- **The cost sits in the worst case.** Average dips barely move (plain −1.24, lr24-tune −1.22, lr24
+  −1.26 dB); the worst dip goes −2.69 → −3.79 with the slope told to the tune alone, and → −4.81 once the
+  EQ stage also aims at a slope these drivers cannot reach.
+- **Real acoustic crossovers in these cabins run 30–70 dB/oct.** A channel's own fall near its band edge
+  reaches about 28 dB/oct and adds to the electrical edge, so acoustic LR24 asks for softer than the system
+  makes, and on part of the junctions it is out of reach outright. A reachable goal (lr48) lands more often
+  at no cost to the sum.
+- **The corridor is an upper bound, not timidity.** Widened to 1 dB, it buys the slope with sum; the
+  lattice could land the worst channel on 18 junctions, the budget pays for 5.
+- **A mono lower block is read side by side.** The tune moves the upper block; in every cabin here the
+  mono block is the lower sub, so each side's midbass aligns to it on its own. Read at one shared shift, as
+  a first version of the rule did, plain's worst dip was −2.96 instead of −2.69.
+- **Cost.** Serial, the battery takes about 7 minutes in Release; it runs its 40 cabin × arm runs in
+  parallel, with a byte-identical report, in under 3.

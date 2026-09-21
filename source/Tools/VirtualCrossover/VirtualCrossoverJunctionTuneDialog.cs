@@ -35,7 +35,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 {
     private const string Nothing = "—";
 
-    /// <summary>What the goal may cost against the best sum; measured in docs/specs/acoustic-crossover-target.md#6c.</summary>
+    /// <summary>What the goal may cost against the best sum; measured in docs/tech/crossover-auto-setup.md#measured-on-the-battery.</summary>
     public const double DefaultSumBudgetDb = 1.0;
 
     private const string Again = "The question changed — search again.";

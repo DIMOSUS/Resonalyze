@@ -8,7 +8,7 @@ using Xunit.Abstractions;
 namespace Resonalyze.App.Tests;
 
 /// <summary>The acoustic-slope battery: every junction tuned per arm, the same EQ after, the sums read re-aligned.
-/// A runner, not a pinned expectation. See docs/specs/acoustic-crossover-target.md#6.</summary>
+/// A runner, not a pinned expectation. See docs/tech/crossover-auto-setup.md#measured-on-the-battery.</summary>
 public sealed class AcousticTargetBattery(ITestOutputHelper output)
 {
     public const string OutputVariable = "RESONALYZE_ACOUSTIC_TARGET_OUT";

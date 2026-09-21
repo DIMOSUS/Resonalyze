@@ -184,8 +184,8 @@ electrical corner), so the fit aims at driver and filter together rather than at
 chain runs then travels beside it as `EqWizardCurveSource.ElectricalCrossover` — only where the two differ — and the
 wizard draws the target on it too (`EqWizardRender.ElectricalTargetCurve`): dotted, at half the target's opacity,
 under the target, and read by nothing else — not the fit, the statistics or the level check. The two skirts side by
-side show how much of the slope the driver is expected to supply. Design and the measured verdict:
-`docs/specs/acoustic-crossover-target.md`.
+side show how much of the slope the driver is expected to supply. The measured verdict:
+`docs/tech/crossover-auto-setup.md#measured-on-the-battery`.
 
 ### The objective
 

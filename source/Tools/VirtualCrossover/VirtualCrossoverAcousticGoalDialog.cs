@@ -2,7 +2,7 @@
 
 namespace Resonalyze;
 
-/// <summary>Edits one channel's acoustic crossover goal. See docs/specs/acoustic-crossover-target.md.</summary>
+/// <summary>Edits one channel's acoustic crossover goal. See docs/tech/crossover-auto-setup.md#acoustic-slope-target.</summary>
 internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
 {
     private const string Nothing = "—";

@@ -232,7 +232,9 @@ would otherwise become a long code comment goes; the code keeps a one-line point
 updates its section in the same commit. `TechDocPointerTests` fails on any
 `docs/tech/<file>.md#anchor` pointer whose heading no longer exists, so a renamed
 heading takes its pointers along. `docs/specs/` holds feature specifications written
-before implementation; `docs/agent/` is what the external AI assistant reads.
+before implementation; once the feature ships, what still matters moves into `docs/tech/` or
+`REFERENCE.md` and the spec is deleted, so nothing points at it. `docs/agent/` is what the external
+AI assistant reads.
 
 ## Pull requests
 

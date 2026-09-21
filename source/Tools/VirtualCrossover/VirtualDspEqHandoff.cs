@@ -343,7 +343,7 @@ internal static class VirtualDspEqHandoff
         chain with { InvertPolarity = false };
 
     /// <summary>Per edge, the stated acoustic crossover at the electrical corner, else the electrical filter. See
-    /// docs/specs/acoustic-crossover-target.md.</summary>
+    /// docs/tech/crossover-auto-setup.md#acoustic-slope-target.</summary>
     internal static CrossoverSpec GoalCrossoverFor(VirtualCrossoverChannelSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);

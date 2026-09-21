@@ -255,7 +255,7 @@ public sealed class VirtualCrossoverChannelSettings
     public int? FirRunSampleRateHz { get; set; }
 
     /// <summary>The acoustic crossover asked for on this edge: family and slope, the corner always the electrical one.
-    /// See docs/specs/acoustic-crossover-target.md.</summary>
+    /// See docs/tech/crossover-auto-setup.md#acoustic-slope-target.</summary>
     [JsonPropertyName("acousticLowPass")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public JunctionAcousticTarget? AcousticLowPass { get; set; }

@@ -13,10 +13,6 @@ Related files:
 - `dsp/MinimumPhase.cs` — minimum phase from a magnitude spectrum.
 - `dsp/Windowing.cs` — Tukey and other analysis windows.
 
-The Group Delay mode's FDW design (the product spec, UI and tests) is in
-[`docs/specs/fdw-group-delay.md`](../specs/fdw-group-delay.md); this document
-covers the mechanisms and the reasoning behind them.
-
 ## Gate geometry
 
 The gated phase and group-delay FFTs always run at `GatedFftLength` (32768). The

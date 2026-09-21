@@ -75,6 +75,8 @@ internal sealed partial class TimeAlignmentPanelController : IDisposable
 
     public bool InProgress => false;
 
+    internal TimeAlignmentSession Session => session;
+
     public void SetLayoutBounds(Rectangle bounds)
     {
         panel.Bounds = bounds;

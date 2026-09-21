@@ -36,6 +36,9 @@ internal sealed partial class TimeAlignmentPanelController
         statusTextBox.SelectionColor = statusTextBox.ForeColor;
     }
 
+    /// <summary>Where a clicked delay cell goes; tests replace the clipboard and its sounds.</summary>
+    internal Action<string> CopyCell { get; set; } = CopyToClipboard;
+
     private void StatusTextBoxMouseClick(object? sender, MouseEventArgs args)
     {
         if (args.Button != MouseButtons.Left ||
@@ -44,6 +47,11 @@ internal sealed partial class TimeAlignmentPanelController
             return;
         }
 
+        CopyCell(value);
+    }
+
+    private static void CopyToClipboard(string value)
+    {
         try
         {
             Clipboard.SetText(value);

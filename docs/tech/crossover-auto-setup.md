@@ -676,11 +676,12 @@ Every reading is taken **after re-aligning** the upper channel for that candidat
 polarity), the current crossover included. A junction tune is followed by re-tuning the delays, and each
 slope puts its own group delay into the handover; read at the delays set for the crossover on screen,
 every other candidate is charged for a misalignment the next Auto delay removes, and the search keeps
-returning the crossover the delays were set for. Where a block is mono (`OneAlignmentForAllSides`, set by
+returning the crossover the delays were set for. Where the upper block is mono (`OneAlignmentForAllSides`, set by
 `AgentProbeReader.SharesOneAlignment`), every side is read at ONE shift and polarity, chosen on the mean of the
 sides' objectives (`MeasureJointlyAlignedJunctionSpectra`): a mono channel has one delay, and Auto delay's mono
-co-move settles it on its mean over both sides (`docs/tech/auto-alignment.md#stereo-cascade`). Side by side,
-a candidate at a sub junction would be read at two settings the processor cannot hold at once. Measured on the owner's v6 session-15 (junction B-C,
+co-move settles it on its mean over both sides (`docs/tech/auto-alignment.md#stereo-cascade`). A mono LOWER
+block is not a shared shift: the re-alignment moves the upper block, and each side's stereo upper block holds its
+own delay and polarity against the fixed mono one, as Auto delay aligns the right side past it. Measured on the owner's v6 session-15 (junction B-C,
 corner 180 Hz, own band, left / right): BW18@210 + BW6@210 read -7.9 / -4.0 dB of dip as is and
 -2.4 / -1.3 re-aligned, against -1.8 / -0.35 for the BW36/BW24 on screen; a 12 dB/oct pair on flat
 drivers, 180 degrees apart through the
@@ -791,8 +792,8 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
   dialog states it as a visible **budget**, 1.0 dB by default (`DefaultSumBudgetDb`, the owner's choice).
   Measured with every reading re-aligned, weighted per octave and judged at the worst channel (8 cabins,
   23 junctions, `docs/specs/acoustic-crossover-target.md#6c`): a 1.0 dB budget lands acoustic LR24 at
-  every channel on 5 junctions of 23 — the lattice could at 19, most of them for more than 1 dB of sum —
-  for about 0.3 dB of average sum loss and 0.6 dB of average dip, the worst dip 1.7 dB deeper. On v6
+  every channel on 5 junctions of 23 — the lattice could at 18 —
+  for about 0.3 dB of average sum loss and 0.55 dB of average dip, the worst dip 2 dB deeper. On v6
   session-15, junction B-C, BW18@230 + BW12@230 lands acoustic BW24 (0.9 dB at the worst channel, on the
   MMM averages) for 1.0 dB against the best sum. That is a price, not a gain, and the report names it against
   `JunctionTuneResult.BestSumScoreDb`. The user's crossover is rewritten on a

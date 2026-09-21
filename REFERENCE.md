@@ -3330,10 +3330,12 @@ Nothing is written but the crossover: the other junctions, gains, delays,
 polarity, PEQ and FIR stay. One result serves both sides of the pair, because a
 crossover is one electrical filter — so the two sides have to run the same
 crossover when you start (the side Lock keeps them so), and the tune says so
-rather than mixing two. Where one of the two blocks is **mono**, one delay and
-one polarity serve both sides, as Auto delay moves a mono channel: every
-candidate is read at the one shift that suits both sides best on average, not at
-a shift of its own on each side. A designed FIR crossover on a facing edge, on
+rather than mixing two. The tune re-aligns the upper block. Where that block is
+**mono**, one delay and one polarity serve both sides, as Auto delay moves a mono
+channel: every candidate is read at the one shift that suits both sides best on
+average, not at a shift of its own on each side. A mono lower block (the usual
+shared sub under stereo midbass) stays put, and each side's upper block is
+aligned to it on its own. A designed FIR crossover on a facing edge, on
 either side, is refused as well: it is a second crossover stage, not an edge
 this tune fits.
 

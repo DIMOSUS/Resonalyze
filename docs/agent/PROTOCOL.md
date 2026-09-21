@@ -699,7 +699,7 @@ not: it searches ONE junction's two facing edges — the lower block's low-pass
 and the upper block's high-pass; corner on the wizard's lattice, family,
 slopes — and scores every candidate on the pair's coherent sum **after
 re-aligning the upper block for that candidate** (the delay and polarity the
-wizard's post-check would pick, one shift for both sides where a block is
+wizard's post-check would pick, one shift for both sides where the upper block is
 mono), through the whole current chains (PEQ included), on every side the
 pair is measured on: the summation loss, its
 dip, and the ripple of the sum, read on one band shared by every candidate

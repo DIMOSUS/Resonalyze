@@ -216,7 +216,7 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
     [Fact]
     public void AChannelNotRead_IsNamed_AndTheGoalIsNotCalledLanded()
     {
-        (JunctionTunePlan plan, JunctionTuneResult result) = TwoSides(rightTweeterFallsDbPerOctave: 9.0, closestDb: 1.0);
+        (JunctionTunePlan plan, JunctionTuneResult result) = TwoSides(rightTweeterFallsDbPerOctave: 9.0, closestDb: null);
         JunctionTuneReading[] halfRead =
         [
             new("left", -0.3, -1.0, 2.0, new JunctionAcousticFit(0.2, 0.2, 25, 24, 24)),
@@ -228,12 +228,14 @@ public sealed class VirtualCrossoverJunctionTuneReportTests(ITestOutputHelper ou
             plan, result with { Current = candidate, Best = candidate });
 
         Assert.Contains(report, line => line.Text.Contains("right B not read.", StringComparison.Ordinal));
+        Assert.Contains(report, line => line.Text.Contains("not enough data", StringComparison.Ordinal));
+        Assert.DoesNotContain(report, line => line.Text.Contains("OUT OF REACH", StringComparison.Ordinal));
         Assert.Contains("right B could not be read against it.", report[^1].Text, StringComparison.Ordinal);
         Assert.Equal(JunctionTuneTone.Worse, report[^1].Spans[^1].Tone);
     }
 
     private static (JunctionTunePlan Plan, JunctionTuneResult Result) TwoSides(
-        double rightTweeterFallsDbPerOctave, double closestDb)
+        double rightTweeterFallsDbPerOctave, double? closestDb)
     {
         (JunctionTunePlan plain, _) = Tune(acoustic: null);
         JunctionTunePlan plan = plain with

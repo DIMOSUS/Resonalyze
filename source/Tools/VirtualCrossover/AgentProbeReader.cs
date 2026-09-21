@@ -264,9 +264,10 @@ internal static class AgentProbeReader
             : (sides, null);
     }
 
-    /// <summary>A mono block has one delay for both sides.</summary>
+    /// <summary>The tune re-aligns the upper block, so only a mono upper block holds one delay for both sides; a
+    /// mono lower block stays put while each side's upper block aligns to it on its own.</summary>
     internal static bool SharesOneAlignment(VirtualCrossoverChannel lower, VirtualCrossoverChannel upper) =>
-        lower.Pair.Mono || upper.Pair.Mono;
+        upper.Pair.Mono;
 
     /// <summary>Each channel's plant from its spatial average, where the EQ handoff would give Auto Tune one
     /// (<paramref name="mode"/> null while the hybrid is not drawn).</summary>

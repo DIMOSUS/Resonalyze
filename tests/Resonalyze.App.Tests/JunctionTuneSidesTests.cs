@@ -38,14 +38,14 @@ public sealed class JunctionTuneSidesTests
     }
 
     [Fact]
-    public void AMonoBlock_MakesOneReAlignmentServeBothSides()
+    public void OnlyAMonoUpperBlock_MakesOneReAlignmentServeBothSides()
     {
         VirtualCrossoverChannel lower = Channel("A", CrossoverKind.LowPass);
         VirtualCrossoverChannel upper = Channel("B", CrossoverKind.HighPass);
 
         Assert.False(AgentProbeReader.SharesOneAlignment(lower, upper));
         lower.Pair.Mono = true;
-        Assert.True(AgentProbeReader.SharesOneAlignment(lower, upper));
+        Assert.False(AgentProbeReader.SharesOneAlignment(lower, upper));
         lower.Pair.Mono = false;
         upper.Pair.Mono = true;
         Assert.True(AgentProbeReader.SharesOneAlignment(lower, upper));

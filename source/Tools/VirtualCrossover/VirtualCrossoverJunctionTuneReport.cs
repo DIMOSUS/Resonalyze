@@ -159,9 +159,11 @@ internal static class VirtualCrossoverJunctionTuneReport
             (unread == null ? "." : $"; {unread} not read.")));
         lines.Add(new JunctionTuneLine([
             new JunctionTuneSpan($"    nearest any filter: {Number(result.ClosestAcousticCostDb)} dB at worst — "),
-            anyFilterCould
-                ? new JunctionTuneSpan("reachable.")
-                : new JunctionTuneSpan("OUT OF REACH.", JunctionTuneTone.Worse)
+            result.ClosestAcousticCostDb == null
+                ? new JunctionTuneSpan("not enough data: no filter was read on every channel.")
+                : anyFilterCould
+                    ? new JunctionTuneSpan("reachable.")
+                    : new JunctionTuneSpan("OUT OF REACH.", JunctionTuneTone.Worse)
         ]));
         foreach (JunctionTuneReading side in candidate.Sides)
         {

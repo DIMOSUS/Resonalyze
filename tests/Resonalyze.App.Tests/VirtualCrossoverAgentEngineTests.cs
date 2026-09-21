@@ -249,12 +249,14 @@ public sealed class VirtualCrossoverAgentEngineTests
                 }
                 VirtualCrossoverChannelSettings lowerSettings = lower.SideSettings(rightSide);
                 lowerSettings.CrossoverKind = CrossoverKind.LowPass;
-                lowerSettings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 700, 12);
+                lowerSettings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_400, 12);
                 lowerSettings.DelayMs = 0.5;
                 VirtualCrossoverChannelSettings upperSettings = upper.SideSettings(rightSide);
                 upperSettings.CrossoverKind = CrossoverKind.HighPass;
-                upperSettings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_200, 12);
-                // Same delay on both, so the crossover is what is wrong (0.5 ms apart the tuner would point at timing instead).
+                upperSettings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 700, 12);
+                // Corners crossed over each other: between them both blocks play at full level, a bump no delay or
+                // polarity takes out, so the crossover is what is wrong. (The tune reads every candidate after
+                // re-aligning, so a pair that was merely misaligned would simply be kept.)
                 upperSettings.DelayMs = 0.5;
                 upperSettings.GainDb = -2.5;
             }
@@ -270,7 +272,7 @@ public sealed class VirtualCrossoverAgentEngineTests
 
             Assert.True(ran, string.Join(" | ", summary));
             Assert.StartsWith($"Junction tune {lower.Name}/{upper.Name}: applied — ", summary[0]);
-            Assert.Contains("LP BW12 700 Hz", summary[0]);
+            Assert.Contains("LP BW12 1400 Hz", summary[0]);
             Assert.Contains("→", summary[0]);
             Assert.Equal(3, summary.Count);
             Assert.StartsWith("  left: sum loss ", summary[1]);
@@ -299,10 +301,10 @@ public sealed class VirtualCrossoverAgentEngineTests
             foreach (bool rightSide in new[] { false, true })
             {
                 Assert.Equal(
-                    new CrossoverEdge(CrossoverFilterFamily.Butterworth, 700, 12),
+                    new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_400, 12),
                     lower.SideSettings(rightSide).LowPassEdge);
                 Assert.Equal(
-                    new CrossoverEdge(CrossoverFilterFamily.Butterworth, 1_200, 12),
+                    new CrossoverEdge(CrossoverFilterFamily.Butterworth, 700, 12),
                     upper.SideSettings(rightSide).HighPassEdge);
             }
         });

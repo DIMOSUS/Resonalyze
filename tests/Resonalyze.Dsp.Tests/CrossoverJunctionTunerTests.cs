@@ -166,25 +166,28 @@ public sealed class CrossoverJunctionTunerTests
     }
 
     [Fact]
-    public void Tune_ReadsEverySide_AndRanksOnTheirMean()
+    public void Tune_ReadsEverySide_AfterItsBestDelay_AndRanksOnTheirMean()
     {
+        // A junction tune is followed by re-aligning the delays, so a side that is merely late is not a crossover
+        // problem: it is read after the delay that re-alignment would give it, and the delay is reported.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         JunctionTuneResult result = CrossoverJunctionTuner.Tune(
             [
                 Side("left", LowPassChain(lr), HighPassChain(lr)),
-                // Half a period late at the corner: the crossover alone cannot mend it.
+                // Half a period late at the corner: a delay mends it, the crossover does not have to.
                 Side("right", LowPassChain(lr), HighPassChain(lr, delayMs: 0.5))
             ],
             Options(700, 1_400));
 
         Assert.Equal(["left", "right"], result.Current.Sides.Select(side => side.Side));
-        Assert.True(result.Current.Sides[1].LossDb < result.Current.Sides[0].LossDb - 1.0);
+        Assert.Equal(result.Current.Sides[0].LossDb, result.Current.Sides[1].LossDb, 1);
         Assert.Equal(
             result.Current.Sides.Average(side => side.ScoreDb), result.Current.ScoreDb, 9);
         JunctionTuneAlignment right = Assert.Single(
             result.CurrentAfterDelay, alignment => alignment.Side == "right");
         Assert.InRange(right.ExtraDelayMs, -0.6, -0.4);
-        Assert.True(right.LossDb > result.Current.Sides[1].LossDb + 1.0);
+        // Nothing to retune: the textbook pair stays once the late side is read where it will be.
+        Assert.False(result.Changed);
     }
 
     [Fact]
@@ -426,15 +429,16 @@ public sealed class CrossoverJunctionTunerTests
     [Fact]
     public void AnAcousticSlopeTheSumCannotAfford_IsNotBought()
     {
-        // Asked: acoustic Butterworth 12. On a flat driver that is a BW12 pair exactly - which sums with a bump, and
-        // a bump costs far more than the corridor allows. The stated slope chooses INSIDE what the sum calls
-        // equivalent, so the answer stays Linkwitz-Riley and the report shows the deviation it could not spend.
+        // Asked: acoustic Bessel 24. On a flat driver that is a Bessel 24 pair exactly, and a Bessel pair does not
+        // sum flat at any delay or polarity - measured, it ranks well outside the corridor even re-aligned. The
+        // stated slope chooses INSIDE what the sum calls equivalent, so the answer stays Linkwitz-Riley and the
+        // report shows the deviation it could not spend.
         CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
         JunctionTuneOptions options = Options(
-            950, 1_050, slopes: [12, 24], independentSlopes: false,
-            CrossoverFilterFamily.LinkwitzRiley, CrossoverFilterFamily.Butterworth) with
+            950, 1_050, slopes: [24], independentSlopes: false,
+            CrossoverFilterFamily.LinkwitzRiley, CrossoverFilterFamily.Bessel) with
         {
-            AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 12)
+            AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 24)
         };
 
         JunctionTuneResult result = CrossoverJunctionTuner.Tune(
@@ -447,12 +451,37 @@ public sealed class CrossoverJunctionTunerTests
         // And the corridor is what held it: the sum score of the winner is the best on offer.
         Assert.True(result.Best.RankingScoreDb <= result.Current.RankingScoreDb + options.SumSlackDb);
 
-        // The lattice says the target WAS reachable - a Butterworth pair draws it exactly - so the report can tell
+        // The lattice says the target WAS reachable - a Bessel pair draws it exactly - so the report can tell
         // "your drivers cannot" from "the summation would not pay for it".
         Assert.True(CrossoverJunctionTuner.WasAcousticTargetReached(result.ClosestAcousticCostDb));
         Assert.True(
             result.ClosestAcousticCostDb < result.Best.AcousticCostDb - 0.5,
             $"closest {result.ClosestAcousticCostDb:0.00} dB against chosen {result.Best.AcousticCostDb:0.00} dB.");
+    }
+
+    [Fact]
+    public void AStatedSlopeThatSumsAsWellOnceReAligned_IsTaken()
+    {
+        // Asked: acoustic Butterworth 12, with an LR24 on screen. Every 12 dB/oct pair is 180 degrees apart through
+        // the handover, so at the delays set for the LR24 it sums with a hole at the corner (a BW12 pair: -33 dB) and
+        // was refused. With the upper channel inverted, as re-aligning finds, an LR12 pair sums flat and draws the
+        // asked BW12 within a fraction of a decibel - so it is taken, and the report says the inversion it needs.
+        CrossoverEdge lr = Edge(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        JunctionTuneOptions options = Options(
+            950, 1_050, slopes: [12, 24], independentSlopes: false,
+            CrossoverFilterFamily.LinkwitzRiley, CrossoverFilterFamily.Butterworth) with
+        {
+            AcousticTarget = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 12)
+        };
+
+        JunctionTuneResult result = CrossoverJunctionTuner.Tune(
+            [Side("left", LowPassChain(lr), HighPassChain(lr))], options);
+
+        Assert.True(result.Changed);
+        Assert.Equal(12, result.Best.LowerLowPass!.Value.SlopeDbPerOctave);
+        Assert.True(CrossoverJunctionTuner.WasAcousticTargetReached(result.Best.AcousticCostDb));
+        // What re-aligning takes is reported: the upper channel inverted.
+        Assert.True(Assert.Single(result.BestAfterDelay).InvertUpper);
     }
 
     [Fact]

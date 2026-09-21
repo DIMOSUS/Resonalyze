@@ -3318,12 +3318,17 @@ something to leave a stale all-pass under.
 ### Tune junction
 
 **Auto crossover** decides a whole system from magnitudes under ideal alignment.
-**Tune junction** does the opposite job on a tune that already exists: it refines
-ONE junction — the lower block's low-pass and the upper block's high-pass — and
-judges every candidate on the **coherent sum of the measured responses through
-both full chains at their current delays and polarity**. Everything else stays:
-the other junctions, gains, delays, polarity, PEQ, FIR. One result serves both
-sides of the pair, because a crossover is one electrical filter.
+**Tune junction** does the opposite job on a tune that already exists: it
+refines ONE junction — the lower block's low-pass and the upper block's
+high-pass — and judges every candidate on the **coherent sum of the measured
+responses through both full chains, after re-aligning the upper block's delay
+and polarity for that candidate**. A junction tune is followed by running Auto
+delay again, and each slope puts its own group delay into the handover: read at
+the delays set for the crossover on screen, every other slope — a softer one
+above all — would be charged for a misalignment the next Auto delay removes.
+Nothing is written but the crossover: the other junctions, gains, delays,
+polarity, PEQ and FIR stay. One result serves both sides of the pair, because a
+crossover is one electrical filter.
 
 Because the sum is read rather than predicted, a steeper slope that narrows the
 overlap where a ragged excess phase interferes is a legitimate answer the
@@ -3362,10 +3367,12 @@ and why this one has the last word on a finished tune.
   the corner window; the rest is your question and stays as set. A remembered
   window that no longer holds the junction's crossover (Auto crossover has moved
   it since) gives way to the default around where it is crossed now.
-- The report gives each side's sum loss, dip and ripple before and after, the
-  runners-up, and what the junction would read **after the delay Auto delay
-  would then pick** — how much of what is left is timing's to fix rather than
-  the crossover's.
+- The report gives each side's sum loss, dip and ripple for the crossover on
+  screen and the one found, both read after re-aligning, and the delay and
+  polarity that re-alignment gives the upper block — run Auto delay after
+  applying to get them. The re-alignment is the one this junction alone would
+  choose; a shift near a whole period of the corner may be a neighbouring lobe
+  that Auto delay, which walks the whole chain, settles differently.
 
 #### The acoustic goal
 
@@ -3966,8 +3973,9 @@ this: the clipboard is the only transport, and you are the one who pastes.
   works, where the wizard is not — one junction, named by the package's id
   for it, the lower block's low-pass and the upper block's high-pass searched
   over corner (on the wizard's lattice), family and slopes, and every
-  candidate scored on the pair's coherent sum *at the current delays and
-  polarity*, through the whole current chains, on every side the pair is
+  candidate scored on the pair's coherent sum *after re-aligning the upper
+  block's delay and polarity for it*, through the whole current chains, on
+  every side the pair is
   measured on — the summation loss, its dip and the ripple of the sum, read on
   one band every candidate shares for the ranking and on the candidate's own
   octave-each-side band for what you will see, with no slope preferred. Gains,

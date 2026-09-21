@@ -78,7 +78,7 @@ internal static class VirtualCrossoverJunctionTuneReport
         }
 
         lines.Add(JunctionTuneLine.Of(string.Empty));
-        Readings(lines, result, moved);
+        Readings(lines, result, moved, upper);
         if (plan.Options.AcousticTarget is { } asked)
         {
             lines.Add(JunctionTuneLine.Of(string.Empty));
@@ -90,7 +90,8 @@ internal static class VirtualCrossoverJunctionTuneReport
 
     /// <summary>One row per side. Where the answer moves the crossover the cells read "now → best" and the second
     /// figure is coloured, which is the whole question a reader has: did this get better or worse?</summary>
-    private static void Readings(List<JunctionTuneLine> lines, JunctionTuneResult result, bool moved)
+    private static void Readings(
+        List<JunctionTuneLine> lines, JunctionTuneResult result, bool moved, string upper)
     {
         lines.Add(JunctionTuneLine.Of(Row("side", "sum loss, dB", "dip, dB", "ripple, dB")));
         foreach (JunctionTuneReading now in result.Current.Sides)
@@ -111,16 +112,17 @@ internal static class VirtualCrossoverJunctionTuneReport
             lines.Add(new JunctionTuneLine(spans));
         }
 
-        // Timing's share of what is left, one line for all the sides rather than a row each.
+        // Every figure above is read after re-aligning the upper channel, since a junction tune is followed by
+        // re-tuning the delays: this line says what that re-alignment is, for the crossover the table ends on.
         IReadOnlyList<JunctionTuneAlignment> aligned = moved
             ? result.BestAfterDelay
             : result.CurrentAfterDelay;
         if (aligned.Count > 0)
         {
             lines.Add(JunctionTuneLine.Of(
-                "  after the best delay: " +
+                $"  read after re-aligning {upper}: " +
                 string.Join(", ", aligned.Select(item =>
-                    $"{item.Side} {Number(item.LossDb)} dB at {Signed(item.ExtraDelayMs)} ms" +
+                    $"{item.Side} {Signed(item.ExtraDelayMs)} ms" +
                     (item.InvertUpper ? " inverted" : string.Empty)))));
         }
     }

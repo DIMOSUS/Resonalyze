@@ -666,7 +666,23 @@ where the phase the two drivers put into the junction at their current delays is
 A steeper slope that narrows the band where a ragged excess phase can interfere is a legitimate answer
 the magnitude cannot see. So each candidate is scored on the coherent sum of the measured responses
 through their full chains: loss, plus the dip's excess over the loss at half weight, plus ripple (room
-ripple included — what varies between candidates is the crossover's doing). There is no slope
+ripple included — what varies between candidates is the crossover's doing).
+
+Every reading is taken **after re-aligning** the upper channel for that candidate
+(`VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum`: the post-check's window and prior, then
+`AlignmentSelection.Select`, and loss, dip and ripple read on the same bins at the chosen delay and
+polarity), the current crossover included. A junction tune is followed by re-tuning the delays, and each
+slope puts its own group delay into the handover; read at the delays set for the crossover on screen,
+every other candidate is charged for a misalignment the next Auto delay removes, and the search keeps
+returning the crossover the delays were set for. Measured on the owner's v6 session-15 (junction B-C,
+corner 180 Hz, own band, left / right): BW18@210 + BW6@210 read -7.9 / -4.0 dB of dip as is and
+-2.4 / -1.3 re-aligned, against -1.8 / -0.35 for the BW36/BW24 on screen; a 12 dB/oct pair on flat
+drivers, 180 degrees apart through the
+handover, reads a -33 dB hole as is and sums flat once the upper channel is inverted. Bins are built once
+and the delay scan is arithmetic on them, so the cost is about twice the plain read (856 candidates in
+about 4 s on that session). The re-alignment is this junction's alone: a shift near a whole period of the
+corner can be a neighbouring lobe that Auto delay, walking the whole chain, settles differently. The AI
+`Probe` still reads variants as they stand, beside its own after-delay reading. There is no slope
 preference, and the current crossover is kept unless a challenger beats it by `KeepMarginDb` per side.
 `Changed` is that verdict. The AI import applies only a `Changed` result; the Tune junction dialog treats
 it as advice, and its Apply writes `Best` whenever it differs from the crossover on screen
@@ -701,9 +717,10 @@ it as advice, and its Apply writes `Best` whenever it differs from the crossover
   frequency — a sub with no low-pass dialled in yet can still carry a low-pass reference). A search
   that moves that corner must move the all-pass too, or it would score a response the device would not
   produce.
-- **After-delay reading** (`JunctionTuneAlignment`): what the junction would measure after the delay
-  production alignment would pick for the upper channel, with the same search and tie-breaks as the
-  wizard post-check. It shows how much of what remains is timing's to fix. Polarity is reported as
+- **After-delay reading** (`JunctionTuneAlignment`): the delay production alignment would pick for the
+  upper channel, with the same search, window and tie-breaks as the readings above (one rule,
+  `AlignmentCornerHz`, draws the window at the lower of two split corners for both), so the delay the report
+  names is the one its figures were read at. Polarity is reported as
   the upper channel's resulting polarity: the search reads the already-inverted response, so its flip
   is relative, and reporting it raw would tell a reply to invert a channel that should stop being
   inverted.
@@ -753,6 +770,10 @@ behaves exactly as above. Design and open questions: `docs/specs/acoustic-crosso
   costs full price (only a skirt boost would fix it, which the EQ stage refuses); softer costs a
   quarter (a cut lands it). That asymmetry is only honest because the stated slope travels on to the
   EQ stage: see `VirtualDspEqHandoff.GoalCrossoverFor`.
+- **Soft slopes are on offer.** With no slope list the acoustic mode searches every slope the family has,
+  6 dB/oct included, where the summation mode stops at `PracticalSlopeFloorDbPerOctave`: against a stated
+  acoustic slope the driver's own fall is the protection, and a soft edge is often exactly what lands on
+  it. Without them the report's "nearest any filter" was read off a lattice that could not reach the goal.
 - **The sum still decides.** The slope is not in `JunctionTuneReading.ScoreDb`. Candidates rank on the
   coherent sum as always; everything within `SumSlackDb` (0.2 dB) of the best sum is a corridor the
   sum calls equivalent, and the stated slope chooses inside it. The user's crossover is rewritten on a

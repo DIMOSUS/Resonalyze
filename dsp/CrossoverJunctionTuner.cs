@@ -53,7 +53,8 @@ public sealed record JunctionDriverSlopes(
     double? LowerDbPerOctave,
     double? UpperDbPerOctave);
 
-/// <summary><see cref="Slopes"/> null = every family slope at or above 12 dB/oct.</summary>
+/// <summary><see cref="Slopes"/> null = every family slope at or above 12 dB/oct, or with an acoustic target every slope
+/// the family has.</summary>
 /// <param name="KeepMarginDb">Per-side score margin a challenger needs to replace the user's current crossover.</param>
 /// <param name="AcousticTarget">Null = the tuner judges the sum alone, as it always has.</param>
 /// <param name="TargetCurveDb">
@@ -256,6 +257,7 @@ public static class CrossoverJunctionTuner
     /// <summary>Average deviation at which a stated acoustic slope counts as drawn rather than missed. The verdict is
     /// read off the lattice (what any allowed filter could do), never off a slope regression.</summary>
     public const double AcousticReachedCostDb = 2.0;
+
 
     /// <summary>Softer than asked costs a quarter of steeper than asked: the EQ stage lands the rest with CUTS, which
     /// it is free to make, while a skirt boost is what it refuses. Not free, or the search would buy the softest
@@ -514,8 +516,8 @@ public static class CrossoverJunctionTuner
         double? closestAcousticCostDb = null;
         if (options.AcousticTarget != null)
         {
-            // How close the lattice can get at all, before the corridor removes anything: that answers "can these
-            // drivers do it", which a slope regression can only guess at.
+            // How close the lattice can get at all, before anything is set aside: that answers "can these drivers do
+            // it", which a slope regression can only guess at.
             foreach (JunctionTuneCandidate candidate in ranked)
             {
                 if (candidate.AcousticCostDb is { } cost &&
@@ -523,6 +525,7 @@ public static class CrossoverJunctionTuner
                 {
                     closestAcousticCostDb = cost;
                 }
+
             }
 
             double admissible = ranked[0].RankingScoreDb + options.SumSlackDb;
@@ -592,6 +595,7 @@ public static class CrossoverJunctionTuner
     /// average deviation across the skirt is as near as a discrete filter menu is asked to come.</summary>
     public static bool WasAcousticTargetReached(double? costDb) =>
         costDb is { } cost && cost <= AcousticReachedCostDb;
+
 
     /// <summary>A <see cref="Work"/> reading the same crops at a rate just above the ranking band, or null when the
     /// band already fills the measured rate and there is nothing to throw away.</summary>
@@ -1297,9 +1301,11 @@ public static class CrossoverJunctionTuner
 
         foreach (CrossoverFilterFamily family in options.Families.Distinct())
         {
+            // The floor is the summation mode's: a 6 dB/oct edge protects nothing there. Against a stated acoustic
+            // slope the driver's own fall is the protection, and a soft edge is often exactly what lands on it.
             List<int> slopes = CrossoverFilter.SupportedSlopes(family)
                 .Where(slope => options.Slopes == null
-                    ? slope >= PracticalSlopeFloorDbPerOctave
+                    ? options.AcousticTarget != null || slope >= PracticalSlopeFloorDbPerOctave
                     : options.Slopes.Contains(slope))
                 .ToList();
             if (slopes.Count == 0)
@@ -1470,16 +1476,26 @@ public static class CrossoverJunctionTuner
             return result;
         }
 
+        /// <summary>
+        /// A candidate's reading, taken AFTER the delay and polarity the upper channel would be re-aligned to for
+        /// it. A junction tune is followed by re-aligning the delays, and each slope moves the phase through the
+        /// handover by its own group delay: read at the delays set for the crossover on screen, every other
+        /// candidate - a softer one above all - would be charged for a misalignment the next Auto delay removes,
+        /// and the search would keep returning the crossover the delays were set for. The current crossover is
+        /// read the same way, so the comparison stays fair.
+        /// </summary>
         private JunctionTuneReading? Read(
             int side, CrossoverEdge? lowPass, CrossoverEdge? highPass, bool replaceEdges,
             double bandLowHz, double bandHighHz)
         {
-            JunctionTuneReading? reading = Read(
+            double junctionHz = AlignmentCornerHz(lowPass, highPass, bandLowHz, bandHighHz);
+            JunctionTuneReading? reading = ReadAligned(
                 side,
                 ChainFor(side, upper: false, lowPass, replaceEdges),
                 ChainFor(side, upper: true, highPass, replaceEdges),
                 bandLowHz,
-                bandHighHz);
+                bandHighHz,
+                CrossoverAutoSetup.PostCheckHalfWindowMs(junctionHz));
             if (reading == null || options.AcousticTarget is not { } target || Plants is not { } plants)
             {
                 return reading;
@@ -1574,13 +1590,28 @@ public static class CrossoverJunctionTuner
                 : new JunctionTuneReading(sides[side].Name, reading.LossDb, reading.DipDb, reading.RippleDb);
         }
 
+        private JunctionTuneReading? ReadAligned(
+            int side, DspChannelChain lowerChain, DspChannelChain upperChain,
+            double bandLowHz, double bandHighHz, double halfWindowMs)
+        {
+            (Complex[] lower, ValidSampleRange lowerRange) = Processed(side, upper: false, lowerChain);
+            (Complex[] upper, ValidSampleRange upperRange) = Processed(side, upper: true, upperChain);
+            (JunctionSpectrumReading Reading, AlignmentCandidate Alignment)? aligned =
+                VirtualCrossoverAnalysis.MeasureAlignedJunctionSpectrum(
+                    upper, [lower], sides[side].SampleRate, bandLowHz, bandHighHz, halfWindowMs,
+                    upperRange, [lowerRange]);
+            return aligned is { Reading: var reading }
+                ? new JunctionTuneReading(sides[side].Name, reading.LossDb, reading.DipDb, reading.RippleDb)
+                // No delay evidence in the band: the reading at the current timing is all there is.
+                : Read(side, lowerChain, upperChain, bandLowHz, bandHighHz);
+        }
+
         // Same search and tie-breaks as the wizard post-check. Empty for a side with no candidate.
         public List<JunctionTuneAlignment> AfterDelay(JunctionTuneCandidate candidate, bool replaceEdges)
         {
             var result = new List<JunctionTuneAlignment>(sides.Count);
-            double junctionHz = candidate.LowerLowPass?.FrequencyHz
-                ?? candidate.UpperHighPass?.FrequencyHz
-                ?? Math.Sqrt(candidate.BandLowHz * candidate.BandHighHz);
+            double junctionHz = AlignmentCornerHz(
+                candidate.LowerLowPass, candidate.UpperHighPass, candidate.BandLowHz, candidate.BandHighHz);
             for (int i = 0; i < sides.Count; i++)
             {
                 if (Align(
@@ -1620,6 +1651,15 @@ public static class CrossoverJunctionTuner
                 sides[side].Name, chosen.DelayMs, ResultingPolarity(upperChain, chosen),
                 chosen.LossDb, chosen.DipDb);
         }
+
+        /// <summary>The corner a re-alignment window is drawn for: the lower of two split corners, where the group
+        /// delay and so the reach of a re-alignment is larger. One rule for the readings and for the delay line that
+        /// reports them, so the delay the report names is the one the figures were read at.</summary>
+        private static double AlignmentCornerHz(
+            CrossoverEdge? lowPass, CrossoverEdge? highPass, double bandLowHz, double bandHighHz) =>
+            lowPass is { } low && highPass is { } high
+                ? Math.Min(low.FrequencyHz, high.FrequencyHz)
+                : lowPass?.FrequencyHz ?? highPass?.FrequencyHz ?? Math.Sqrt(bandLowHz * bandHighHz);
 
         private DspChannelChain ChainFor(int side, bool upper, CrossoverEdge? edge, bool replace)
         {

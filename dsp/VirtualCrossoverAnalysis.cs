@@ -2460,6 +2460,78 @@ public static class VirtualCrossoverAnalysis
             return null;
         }
 
+        if (levels != null)
+        {
+            foreach (AlignmentBin bin in bins)
+            {
+                levels.Add(new JunctionLevelBin(
+                    bin.OmegaMs * 1_000.0 / Math.Tau,
+                    bin.LogWeight,
+                    20 * Math.Log10(Math.Max(bin.FixedSum.Magnitude, 1e-12)),
+                    20 * Math.Log10(Math.Max(bin.Variable.Magnitude, 1e-12))));
+            }
+        }
+
+        return ReadAt(bins, delayMs: 0, invert: false);
+    }
+
+    /// <summary>
+    /// The junction read at the variable side's BEST timing inside +/- <paramref name="halfWindowMs"/> rather than at
+    /// its current one: the delay and polarity chosen as the crossover wizard's post-check chooses them (the penalized
+    /// loss search with a prior at zero, then <see cref="AlignmentSelection.Select"/>), and loss, dip and ripple read
+    /// on the same bins at that timing. For a caller comparing crossovers that will be re-aligned afterwards, where
+    /// judging them all at the delays set for one of them would favour that one. Null where the band holds no usable
+    /// bins or no delay evidence.
+    /// </summary>
+    public static (JunctionSpectrumReading Reading, AlignmentCandidate Alignment)? MeasureAlignedJunctionSpectrum(
+        Complex[] variableImpulseResponse,
+        IReadOnlyList<Complex[]> fixedImpulseResponses,
+        int sampleRate,
+        double minFrequencyHz,
+        double maxFrequencyHz,
+        double halfWindowMs,
+        ValidSampleRange variableValidRange = default,
+        IReadOnlyList<ValidSampleRange>? fixedValidRanges = null)
+    {
+        List<AlignmentBin> bins = BuildAlignmentBins(
+            variableImpulseResponse,
+            fixedImpulseResponses,
+            sampleRate,
+            minFrequencyHz,
+            maxFrequencyHz,
+            minDelayMs: -halfWindowMs,
+            maxDelayMs: halfWindowMs,
+            levelMatch: false,
+            gateAnchorSample: null,
+            variableValidRange,
+            fixedValidRanges);
+        if (bins.Count == 0 || !HoldsDelayEvidence(bins))
+        {
+            return null;
+        }
+
+        IReadOnlyList<AlignmentCandidate> found = SearchAlignmentCandidatesByLoss(
+            bins,
+            -halfWindowMs,
+            halfWindowMs,
+            maxFrequencyHz,
+            priorDelayMs: 0,
+            priorSigmaMs: halfWindowMs / 2.0,
+            forcedPolarity: null,
+            out _);
+        if (found.Count == 0)
+        {
+            return null;
+        }
+
+        AlignmentCandidate chosen = AlignmentSelection.Select(found, 0);
+        return (ReadAt(bins, chosen.DelayMs, chosen.InvertPolarity), chosen);
+    }
+
+    /// <summary>Loss and dip against the ideal sum, and the summed level's ripple, with the variable side shifted by
+    /// <paramref name="delayMs"/> and inverted when asked.</summary>
+    private static JunctionSpectrumReading ReadAt(List<AlignmentBin> bins, double delayMs, bool invert)
+    {
         double weightSum = 0;
         double levelSum = 0;
         var sumLevels = new double[bins.Count];
@@ -2467,14 +2539,12 @@ public static class VirtualCrossoverAnalysis
         {
             AlignmentBin bin = bins[i];
             weightSum += bin.LogWeight;
-            double magnitude = (bin.FixedSum + bin.Variable).Magnitude;
+            Complex variable = delayMs == 0
+                ? bin.Variable
+                : bin.Variable * Complex.Exp(new Complex(0, -bin.OmegaMs * delayMs));
+            double magnitude = (invert ? bin.FixedSum - variable : bin.FixedSum + variable).Magnitude;
             sumLevels[i] = 20 * Math.Log10(Math.Max(magnitude, 1e-12));
             levelSum += bin.LogWeight * sumLevels[i];
-            levels?.Add(new JunctionLevelBin(
-                bin.OmegaMs * 1_000.0 / Math.Tau,
-                bin.LogWeight,
-                20 * Math.Log10(Math.Max(bin.FixedSum.Magnitude, 1e-12)),
-                20 * Math.Log10(Math.Max(bin.Variable.Magnitude, 1e-12))));
         }
 
         double mean = levelSum / weightSum;
@@ -2485,7 +2555,7 @@ public static class VirtualCrossoverAnalysis
             variance += bins[i].LogWeight * deviation * deviation;
         }
 
-        (double lossDb, double dipDb) = DetailedLoss(bins, weightSum, delayMs: 0, invert: false);
+        (double lossDb, double dipDb) = DetailedLoss(bins, weightSum, delayMs, invert);
         return new JunctionSpectrumReading(lossDb, dipDb, Math.Sqrt(variance / weightSum));
     }
 

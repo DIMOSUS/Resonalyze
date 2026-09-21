@@ -262,6 +262,62 @@ public sealed class MeasurementOptionsWiringTests
     });
 
     [Fact]
+    public void APresentFromOutsideAnEdit_KeepsTextBeingTyped() => StaTest.Run(() =>
+    {
+        using var live = new LiveRecordSettings();
+        TextBox editor = live.Number("numericUpDownLowFrequency").Controls.OfType<TextBox>().Single();
+
+        editor.Text = "150";
+        live.Form.AdoptAdditionalCalibrations([]);
+
+        Assert.Equal("150", editor.Text);
+    });
+
+    [Fact]
+    public void TheAsioInputTest_StaysDisabledWhileItRuns() => StaTest.Run(() =>
+    {
+        using var live = new LiveRecordSettings(settings => settings.AudioBackend = AudioBackend.Asio);
+        live.Devices.PendingProbe = new TaskCompletionSource<IReadOnlyList<AsioInputProbeChannelResult>>();
+        Button probe = live.Control<Button>("buttonAsioInputProbe");
+        Assert.True(probe.Enabled);
+
+        probe.PerformClick();
+        live.Number("numericUpDownAverageRunCount").Value = 4m;
+
+        Assert.False(probe.Enabled);
+        Assert.Equal("Testing...", probe.Text);
+    });
+
+    [Fact]
+    public void ARouteRuleThatThrows_StillLeavesTheControlsShowingTheSession() => StaTest.Run(() =>
+    {
+        using var live = new LiveRecordSettings();
+        live.Devices.RatesThrow = true;
+
+        Assert.Throws<InvalidOperationException>(() => live.Pick("comboBoxRecordingDevice", "Mono mic"));
+
+        Assert.Equal("Mono mic", live.Text("comboBoxRecordingDevice"));
+        Assert.Equal("None", live.Text("comboBoxWaveLoopbackChannel"));
+    });
+
+    [Fact]
+    public void AnEditOutsideTheRoute_DoesNotAskTheHardwareAgain() => StaTest.Run(() =>
+    {
+        using var live = new LiveRecordSettings(settings =>
+        {
+            settings.AudioBackend = AudioBackend.WasapiExclusive;
+            settings.WasapiCaptureEndpointId = "{capture}";
+            settings.WasapiRenderEndpointId = "{render}";
+        });
+        int before = live.Devices.ExclusiveChecks;
+
+        live.Number("numericUpDownRequestedDuration").Value = 500m;
+        live.Number("numericUpDownLowFrequency").Value = 40m;
+
+        Assert.Equal(before, live.Devices.ExclusiveChecks);
+    });
+
+    [Fact]
     public void TheAsioControlPanel_ReReadsTheDriver() => StaTest.Run(() =>
     {
         using var live = new LiveRecordSettings(settings => settings.AudioBackend = AudioBackend.Asio);

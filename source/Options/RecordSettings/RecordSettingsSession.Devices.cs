@@ -18,6 +18,7 @@ internal sealed partial class RecordSettingsSession
     private string? preferredWasapiRenderEndpointName;
     private int preferredWavePlaybackDeviceNumber = -1;
     private int preferredWaveRecordingDeviceNumber = -1;
+    private (ExclusiveFormat Format, bool Supported)? exclusiveVerdict;
 
     public RecordChoice Backend { get; } = new();
     public RecordChoice PlaybackDevice { get; } = new();
@@ -125,7 +126,7 @@ internal sealed partial class RecordSettingsSession
             waveArrayDeviceId = CaptureDeviceId;
         }
 
-        // Applies on the fly like every other field; otherwise closing the panel dropped the edit.
+        // Applies as edited like every other field, so closing the panel keeps it.
         RaiseSweepSettingsChanged();
     }
 
@@ -175,14 +176,31 @@ internal sealed partial class RecordSettingsSession
             (int)Bits.Value);
     }
 
-    public bool IsExclusiveFormatSupported(AudioEndpointDescriptor capture, AudioEndpointDescriptor render, int sampleRate) =>
-        devices.IsExclusiveFormatSupported(
+    /// <summary>For the status line: asked again only when the format or a device changes, since each ask opens both
+    /// endpoints and an edit elsewhere in the panel is not a reason to.</summary>
+    public bool IsExclusiveFormatSupported(AudioEndpointDescriptor capture, AudioEndpointDescriptor render, int sampleRate)
+    {
+        var format = new ExclusiveFormat(
             capture.Id,
             render.Id,
             sampleRate,
             (int)Bits.Value,
             WaveRecordingChannelCount,
             PlaybackChannelCount);
+        if (exclusiveVerdict is not { } verdict || verdict.Format != format)
+        {
+            verdict = (format, devices.IsExclusiveFormatSupported(
+                format.CaptureId,
+                format.RenderId,
+                format.SampleRate,
+                format.Bits,
+                format.CaptureChannels,
+                format.RenderChannels));
+            exclusiveVerdict = verdict;
+        }
+
+        return verdict.Supported;
+    }
 
     /// <summary>A WASAPI endpoint came or went: re-read them and, on WASAPI, rebuild the route around the same picks.</summary>
     public void RefreshEndpoints()
@@ -190,6 +208,7 @@ internal sealed partial class RecordSettingsSession
         int inputOffset = SelectedWaveInputOffset;
         int? loopbackOffset = SelectedWaveLoopbackOffset;
         LoadWasapiEndpoints();
+        exclusiveVerdict = null;
         if (IsWasapi)
         {
             PopulateDeviceChoices(inputOffset, loopbackOffset);
@@ -207,6 +226,7 @@ internal sealed partial class RecordSettingsSession
         }
 
         int preferredSampleRate = SelectedSampleRate;
+        exclusiveVerdict = null;
         if (IsAsio)
         {
             RefreshAsioDriverInfo(
@@ -612,7 +632,7 @@ internal sealed partial class RecordSettingsSession
         int? preferredLoopbackOffset)
     {
         AsioDriverInfo = devices.GetAsioDriverInfo(SelectedAsioDriverName, sampleRate);
-        // Settled here: not every caller rebuilds the rate list, and a stale flag reported a succeeded probe as failed.
+        // Settled here: not every caller rebuilds the rate list, and the flag must describe this probe.
         SampleRateProbeFailed = IsAsioSampleRateProbeFailure();
 
         AsioInput.Clear();
@@ -657,7 +677,7 @@ internal sealed partial class RecordSettingsSession
         SampleRateFellBackFrom = resolution.FellBackFrom;
         if (resolution.Rates is null)
         {
-            // No answer: keep the list and selection (rebuilding replaced a working 96 kHz with 44.1).
+            // No answer: keep the list and selection; rebuilding would replace a working rate with the fallback.
             return;
         }
 
@@ -669,7 +689,7 @@ internal sealed partial class RecordSettingsSession
         {
             SampleRate.Clear();
             SampleRate.AddRange(availableRates.Select(rate => (object)rate));
-            // -1 on an empty list; index 0 would throw mid-rebuild with the guard raised, deafening every field.
+            // -1 on an empty list, where index 0 would throw mid-rebuild.
             SampleRate.SelectedIndex = SampleRateOptions.FindRateIndex(availableRates, resolution.Selected);
         }
         finally
@@ -730,4 +750,12 @@ internal sealed partial class RecordSettingsSession
         choice.Add(new AsioChannelInfo(preferredOffset, "(missing)"));
         return choice.Items.Count - 1;
     }
+
+    private readonly record struct ExclusiveFormat(
+        string CaptureId,
+        string RenderId,
+        int SampleRate,
+        int Bits,
+        int CaptureChannels,
+        int RenderChannels);
 }

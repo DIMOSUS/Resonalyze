@@ -66,7 +66,7 @@ namespace Resonalyze.Options
             comboBoxWaveLoopbackChannel.Enabled = view.WaveLoopbackEnabled;
             comboBoxAsioDriver.Enabled = view.AsioDriverEnabled;
             buttonAsioControlPanel.Enabled = view.AsioControlPanelEnabled;
-            buttonAsioInputProbe.Enabled = view.AsioInputProbeEnabled;
+            buttonAsioInputProbe.Enabled = view.AsioInputProbeEnabled && !asioInputProbeRunning;
             comboBoxAsioInputChannel.Enabled = view.AsioInputsEnabled;
             comboBoxAsioLoopbackChannel.Enabled = view.AsioInputsEnabled;
             comboBoxAsioOutputChannel.Enabled = view.AsioOutputEnabled;
@@ -175,6 +175,7 @@ namespace Resonalyze.Options
 
             try
             {
+                asioInputProbeRunning = true;
                 buttonAsioInputProbe.Enabled = false;
                 buttonAsioInputProbe.Text = "Testing...";
                 IReadOnlyList<AsioInputProbeChannelResult> results = await session.ProbeAsioInputsAsync()!;
@@ -205,6 +206,7 @@ namespace Resonalyze.Options
             }
             finally
             {
+                asioInputProbeRunning = false;
                 if (!IsDisposed)
                 {
                     buttonAsioInputProbe.Text = "Test ASIO Inputs";

@@ -39,6 +39,12 @@ internal sealed class FakeRecordDevices : IRecordDevices
 
     public int ExclusiveChecks { get; private set; }
 
+    /// <summary>Rate probes fail, as a driver refusing the query would.</summary>
+    public bool RatesThrow { get; set; }
+
+    /// <summary>When set, the ASIO input test runs until the test completes it.</summary>
+    public TaskCompletionSource<IReadOnlyList<AsioInputProbeChannelResult>>? PendingProbe { get; set; }
+
     public bool Disposed { get; private set; }
 
     public event Action? EndpointsChanged;
@@ -76,6 +82,11 @@ internal sealed class FakeRecordDevices : IRecordDevices
         int recordingChannelCount,
         int bitsPerSample)
     {
+        if (RatesThrow)
+        {
+            throw new InvalidOperationException("The driver refused the rate query.");
+        }
+
         AudioDeviceInfo? input = Recording.FirstOrDefault(device => device.DeviceNumber == recordingDeviceNumber);
         bool known = Playback.Any(device => device.DeviceNumber == playbackDeviceNumber) && input != null;
         bool wideEnough = input != null && (input.DeviceNumber < 0 || recordingChannelCount <= input.Channels);
@@ -122,7 +133,7 @@ internal sealed class FakeRecordDevices : IRecordDevices
         int sampleRate,
         int outputChannelOffset,
         CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<AsioInputProbeChannelResult>>(
+        PendingProbe?.Task ?? Task.FromResult<IReadOnlyList<AsioInputProbeChannelResult>>(
             [new AsioInputProbeChannelResult(0, "In 1", -12, -20, 1)]);
 
     public void Dispose() => Disposed = true;

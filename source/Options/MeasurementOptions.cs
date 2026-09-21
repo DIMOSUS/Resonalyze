@@ -12,6 +12,7 @@ namespace Resonalyze.Options
         private Font? normalStatusFont;
         private Font? warningStatusFont;
         private bool presenting;
+        private bool asioInputProbeRunning;
 
         // Raised on any calibration change so the host persists it immediately, not on Apply.
         internal event Action<RecordCalibrationSelection>? CalibrationChanged;
@@ -130,8 +131,14 @@ namespace Resonalyze.Options
                         return;
                     }
 
-                    choice.SelectedIndex = combo.SelectedIndex;
-                    Present();
+                    try
+                    {
+                        choice.SelectedIndex = combo.SelectedIndex;
+                    }
+                    finally
+                    {
+                        Present();
+                    }
                 };
             }
 
@@ -145,8 +152,14 @@ namespace Resonalyze.Options
                         return;
                     }
 
-                    number.Value = field.Value;
-                    Present();
+                    try
+                    {
+                        number.Value = field.Value;
+                    }
+                    finally
+                    {
+                        Present();
+                    }
                 };
             }
 
@@ -218,7 +231,8 @@ namespace Resonalyze.Options
                     PresentChoice(combo, choice);
                 }
 
-                foreach ((ThemedNumericUpDown field, RecordNumber number) in numbers)
+                // Only a moved value: the setter rewrites the editor, which would discard text being typed.
+                foreach ((ThemedNumericUpDown field, RecordNumber number) in numbers.Where(pair => pair.Field.Value != pair.Number.Value))
                 {
                     field.Value = number.Value;
                 }

@@ -15,6 +15,9 @@ internal sealed record VirtualDspEqReturnToken(
     bool Mono,
     DspChannelChain PreviewChain,
     bool WithChain,
+    // The crossover the wizard SHAPED its target with, which the chain above does not describe: an acoustic wish
+    // stated or withdrawn on the card moves this and nothing else.
+    CrossoverSpec? TargetCrossover,
     PeqBankState Peq,
     double TargetLevelDb,
     PhaseAnalysisSettings GateTemplate,
@@ -176,12 +179,8 @@ internal static class VirtualDspEqHandoff
             SpatialAverageCalibration = spatialAverageCalibration,
             PreviewImpulseResponse = state.ProcessingSource.CroppedImpulseResponse,
             PreviewChain = previewChain,
-            // The corners the window comes from, so the shaped target and From/To describe one filter. Only when the
-            // IIR crossover is really on: with it off, EffectiveCrossover stands in for the FIR design, whose kernel
-            // travels below and would then be counted twice.
-            TargetCrossover = withChain && settings.CrossoverKind != CrossoverKind.Off
-                ? GoalCrossoverFor(settings)
-                : null,
+            // The corners the window comes from, so the shaped target and From/To describe one filter.
+            TargetCrossover = withChain ? TargetCrossoverFor(settings) : null,
             // A designed crossover kernel describes its own slope; the design's corners do not (a windowed sinc's
             // slope is its window and length). FirDesign is what tells a crossover FIR from a correction one.
             TargetCrossoverFir = withChain && settings.HasFirCrossover ? settings.Fir : null,
@@ -214,6 +213,7 @@ internal static class VirtualDspEqHandoff
                 channel.Pair.Mono,
                 previewChain,
                 withChain,
+                source.TargetCrossover,
                 new PeqBankState(settings.PeqBands, settings.PeqPreampDb),
                 targetLevelDb,
                 gateTemplate,
@@ -309,6 +309,15 @@ internal static class VirtualDspEqHandoff
         // SideFor, not the active side: the user may have flipped L/R while editing.
         VirtualCrossoverChannelSettings settings = token.Channel.Pair.SideFor(token.RightSide);
 
+        // The chain check above reads the electrical filter; the target the wizard shaped may have been the
+        // ACOUSTIC wish instead, and a wish stated or withdrawn meanwhile makes the returning bank answer a
+        // different target than the one on the card.
+        if (token.WithChain &&
+            !Equals(token.TargetCrossover, TargetCrossoverFor(settings)))
+        {
+            return false;
+        }
+
         // The chain check excludes the PEQ, so a Load or Clear in the panel would otherwise be a lost update.
         if (!token.Peq.Equals(new PeqBankState(settings.PeqBands, settings.PeqPreampDb)))
         {
@@ -360,6 +369,12 @@ internal static class VirtualDspEqHandoff
                 lowPass ?? electrical.LowPassEdge,
                 highPass ?? electrical.HighPassEdge);
     }
+
+    /// <summary>What the EQ target's shape is read from, or null where the IIR crossover is off and
+    /// EffectiveCrossover would stand in for the FIR design, whose kernel travels separately and would then be
+    /// counted twice.</summary>
+    internal static CrossoverSpec? TargetCrossoverFor(VirtualCrossoverChannelSettings settings) =>
+        settings.CrossoverKind != CrossoverKind.Off ? GoalCrossoverFor(settings) : null;
 
     private static CrossoverEdge? Asked(JunctionAcousticTarget? goal, CrossoverEdge? electrical) =>
         goal is { } asked && electrical is { } edge

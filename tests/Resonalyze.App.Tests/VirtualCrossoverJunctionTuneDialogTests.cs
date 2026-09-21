@@ -77,6 +77,39 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
     });
 
     [Fact]
+    public void AQuestionChangedWhileTheSearchRan_TakesNoAnswerAtAll() => StaTest.Run(() =>
+    {
+        // The boxes stay live during a search, so the user can retune the question while the sum is being
+        // measured. The answer then belongs to a question nobody is asking any more: neither the report nor
+        // Apply may stand for it.
+        using var dialog = new VirtualCrossoverJunctionTuneDialog();
+        var searching = new TaskCompletionSource<JunctionTuneOutcome>();
+        dialog.Init(
+            ["A-B"],
+            _ => new JunctionTuneDefaults(80, 200, [CrossoverFilterFamily.Butterworth], null),
+            _ => searching.Task);
+        Button apply = Field<Button>(dialog, "buttonApply");
+
+        Task run = Start(dialog);
+        Field<ThemedNumericUpDown>(dialog, "numericMaxHz").Value = 150m;
+        searching.SetResult(new JunctionTuneOutcome(
+            [JunctionTuneLine.Of("Junction tune A/B: applied.")],
+            CanApply: true,
+            "A better crossover was found.",
+            false));
+        StaTest.Settle(run);
+
+        Assert.Null(dialog.Result);
+        Assert.False(apply.Enabled);
+        Assert.Contains("changed", Field<Label>(dialog, "labelStatus").Text);
+        Assert.DoesNotContain("applied", Field<RichTextBox>(dialog, "textBoxReport").Text);
+
+        // And the same question asked again does land.
+        Run(dialog);
+        Assert.NotNull(dialog.Result);
+        Assert.True(apply.Enabled);
+    });
+    [Fact]
     public void TheModeSaysWhatIsBeingTunedFor_AndOnlyTheAcousticOneCarriesAGoal() => StaTest.Run(() =>
     {
         // Without the switch the dialog never said what it optimised, and a run with the goal boxes left alone was
@@ -199,13 +232,14 @@ public sealed class VirtualCrossoverJunctionTuneDialogTests
         AssertNothingCoversTheActionButtons(dialog);
     });
 
-    private static void Run(VirtualCrossoverJunctionTuneDialog dialog)
-    {
-        var task = (Task)typeof(VirtualCrossoverJunctionTuneDialog)
+    private static void Run(VirtualCrossoverJunctionTuneDialog dialog) =>
+        Start(dialog).GetAwaiter().GetResult();
+
+    /// <summary>Starts the search without waiting for it, for a question that changes mid-flight.</summary>
+    private static Task Start(VirtualCrossoverJunctionTuneDialog dialog) =>
+        (Task)typeof(VirtualCrossoverJunctionTuneDialog)
             .GetMethod("RunAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(dialog, null)!;
-        task.GetAwaiter().GetResult();
-    }
 
     private static void AssertNothingCoversTheActionButtons(Form dialog)
     {

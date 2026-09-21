@@ -88,8 +88,9 @@ internal static class AgentJunctionTune
     /// <param name="acoustic">
     /// The acoustic crossover this tune was asked for, or null for a plain one. Written onto the edges it wrote, so
     /// the EQ stage's target follows it instead of the electrical filter — see
-    /// docs/specs/acoustic-crossover-target.md. A plain tune leaves whatever the card holds alone: the wish is the
-    /// user's, shown on the channel card, not a by-product of this run.
+    /// docs/specs/acoustic-crossover-target.md. A tune that was asked for one and could not land on it clears the
+    /// card instead of leaving the old wish to aim the fit somewhere the filter does not go; a plain tune leaves
+    /// whatever the card holds alone, because the wish is the user's and not a by-product of this run.
     /// </param>
     public static void Write(
         JunctionTuneResult result,
@@ -122,8 +123,10 @@ internal static class AgentJunctionTune
                             ? CrossoverKind.BandPass
                             : CrossoverKind.LowPass;
                 }
-                if (reached != null)
+                if (acoustic != null)
                 {
+                    // Asked for and not reached CLEARS it: the report says the fit will aim at the filter, and a
+                    // goal left over from an earlier run would quietly make it aim somewhere else.
                     settings.AcousticLowPass = reached;
                 }
             }
@@ -138,7 +141,7 @@ internal static class AgentJunctionTune
                             ? CrossoverKind.BandPass
                             : CrossoverKind.HighPass;
                 }
-                if (reached != null)
+                if (acoustic != null)
                 {
                     settings.AcousticHighPass = reached;
                 }

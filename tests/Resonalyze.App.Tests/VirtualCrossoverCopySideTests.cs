@@ -122,6 +122,52 @@ public sealed class VirtualCrossoverCopySideTests
     }
 
     [Fact]
+    public void TheAcousticWish_TravelsWithTheCrossoverItDescribes()
+    {
+        // The wish is stated FOR an edge; left behind, it would aim the target of a side that now runs another
+        // filter. A side without one must have it cleared, not inherit the target's.
+        var from = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.BandPass,
+            HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 80, 24),
+            LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.Butterworth, 2_500, 18),
+            AcousticHighPass = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)
+        };
+        var to = new VirtualCrossoverChannelSettings
+        {
+            AcousticHighPass = new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 12),
+            AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 48)
+        };
+
+        Copy(from, to, new VirtualCrossoverCopyScope(
+            Gain: false, Delay: false, InvertPolarity: false, Crossover: true,
+            AllPass: false, Phase: false, Peq: false));
+
+        Assert.Equal(
+            new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24), to.AcousticHighPass);
+        Assert.Null(to.AcousticLowPass);
+    }
+
+    [Fact]
+    public void AnUntickedCrossover_LeavesTheTargetsOwnAcousticWishStanding()
+    {
+        var from = new VirtualCrossoverChannelSettings
+        {
+            AcousticHighPass = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24)
+        };
+        var to = new VirtualCrossoverChannelSettings
+        {
+            AcousticHighPass = new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 12)
+        };
+
+        Copy(from, to, new VirtualCrossoverCopyScope(
+            Gain: true, Delay: true, InvertPolarity: true, Crossover: false,
+            AllPass: true, Phase: true, Peq: true));
+
+        Assert.Equal(
+            new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 12), to.AcousticHighPass);
+    }
+    [Fact]
     public void ThePhaseRotation_TravelsOnItsOwnTick()
     {
         // Copied as the NUMBER: its reference is the target side's own crossover.

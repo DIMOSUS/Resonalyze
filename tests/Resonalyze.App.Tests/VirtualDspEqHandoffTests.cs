@@ -671,6 +671,36 @@ public sealed class VirtualDspEqHandoffTests
     }
 
     [Fact]
+    public void ReturnAfterTheAcousticWishWasStatedOrWithdrawn_Refuses()
+    {
+        // The wish moves the target's SHAPE without touching the chain: the electrical filter the chain guard
+        // reads is the same either way, and a bank fitted against one target would land on a channel aiming at
+        // another.
+        VirtualCrossoverChannel channel = BuildChannel();
+        VirtualDspEqReturnToken token = TokenFor(channel, rightSide: false);
+        // Not LR24: that IS the filter under it, and a wish naming the filter's own shape changes no target.
+        channel.Settings.AcousticLowPass =
+            new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 12);
+        var curve = new EqualizationCurve(new[] { new PeqBand(250, 3, -6) });
+
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, token, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
+        Assert.Empty(channel.Settings.PeqBands);
+
+        // And the other way round: a wish the panel dropped while the wizard was open.
+        VirtualDspEqReturnToken stated = TokenFor(channel, rightSide: false);
+        channel.Settings.AcousticLowPass = null;
+        Assert.False(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, stated, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
+        Assert.Empty(channel.Settings.PeqBands);
+
+        // A wish that stands still is no obstacle.
+        VirtualDspEqReturnToken same = TokenFor(channel, rightSide: false);
+        Assert.True(VirtualDspEqHandoff.TryApplyReturn(
+            new[] { channel }, same, curve, projectGeneration: 1, calibration: null, SpatialAverageCalibration.Off, GateTemplate, null, TargetLevel, spatialAverage: null, SampleRate));
+        Assert.Equal(curve.Bands, channel.Settings.PeqBands);
+    }
+    [Fact]
     public void ReturnAfterADelayOrAnAllPassBandEdit_Refuses()
     {
         // Not free: at 192 kHz (171 ms window) a delay edit moves the gated shape up to 1.70 dB, an all-pass up to 4.77 dB. See SteadyStateWindowTests.
@@ -899,6 +929,7 @@ public sealed class VirtualDspEqHandoffTests
             channel.Pair.Mono,
             channel.Pair.ToChain(rightSide) with { Peq = null },
             WithChain: true,
+            VirtualDspEqHandoff.TargetCrossoverFor(channel.SideSettings(rightSide)),
             new PeqBankState(
                 channel.SideSettings(rightSide).PeqBands,
                 channel.SideSettings(rightSide).PeqPreampDb),

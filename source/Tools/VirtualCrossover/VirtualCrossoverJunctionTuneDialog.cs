@@ -52,6 +52,11 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     private Func<int, JunctionTuneDefaults>? defaultsFor;
     private bool running;
 
+    /// <summary>Bumped by every change to the question. The boxes stay live while the search runs, so this is
+    /// what tells an answer that came back for the question on screen from one that came back for a retired
+    /// question.</summary>
+    private int question;
+
     private CheckBox[] FamilyBoxes => [checkButterworth, checkLinkwitzRiley, checkBessel];
 
     /// <summary>Slopes the window offers, as the crossover wizard offers them: 6 dB/oct protects nothing and the
@@ -221,6 +226,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     /// <summary>Any change to the question retires the answer: Apply must never stand for a search nobody ran.</summary>
     private void InvalidateResult(string? status = null)
     {
+        question++;
         Result = null;
         buttonApply.Enabled = false;
         if (status != null)
@@ -280,6 +286,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
                     : null,
             checkBoxSplitCorners.Checked);
 
+        int asked = question;
         running = true;
         buttonRun.Enabled = false;
         buttonApply.Enabled = false;
@@ -292,6 +299,13 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             JunctionTuneOutcome outcome = await search(request).ConfigureAwait(true);
             if (IsDisposed)
             {
+                return;
+            }
+
+            if (asked != question)
+            {
+                // The question moved while the search ran: the report would describe the old one and Apply
+                // would write it. The handler that moved it has already said so on the status line.
                 return;
             }
 

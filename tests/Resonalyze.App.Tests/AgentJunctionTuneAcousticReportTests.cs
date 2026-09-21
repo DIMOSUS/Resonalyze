@@ -33,17 +33,8 @@ public sealed class AgentJunctionTuneAcousticReportTests
     [Fact]
     public void AGoalTheDriversCannotReach_SaysSo_AndThatItIsNotCarried()
     {
-        // The drivers already fall at LR24 by themselves, so nothing electrical leaves them as soft as LR12.
-        CrossoverEdge own = new(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
-        Complex[] rolledOff = VirtualCrossoverAnalysis.ApplyChain(
-            Impulse(), LowPass(own), SampleRate, SampleRate);
-        Complex[] rolledOn = VirtualCrossoverAnalysis.ApplyChain(
-            Impulse(), HighPass(own), SampleRate, SampleRate);
-        var bare = new DspChannelChain(Crossover: CrossoverSpec.Off);
-        var side = new JunctionTuneSide("left", rolledOff, bare, rolledOn, bare, SampleRate);
         var report = new List<string>();
-        (JunctionTunePlan plan, JunctionTuneResult result) = Tune(
-            new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 12), side, slopes: [12]);
+        (JunctionTunePlan plan, JunctionTuneResult result) = OutOfReach();
 
         AgentJunctionTune.Describe(report, plan, result);
 
@@ -88,6 +79,65 @@ public sealed class AgentJunctionTuneAcousticReportTests
         Assert.Equal(result.Best.LowerLowPass, lower.Settings.LowPassEdge);
         Assert.Equal(result.Best.UpperHighPass, upper.Settings.HighPassEdge);
         _ = plan;
+    }
+
+    [Fact]
+    public void AGoalAskedForAndMissed_ClearsTheWishTheCardsHeld()
+    {
+        // The report says the goal is NOT written onto these edges; the card must agree. An older wish left
+        // standing would keep aiming the EQ stage at a slope this run has just called out of reach.
+        (_, JunctionTuneResult unreachable) = OutOfReach();
+        var lower = new VirtualCrossoverChannel("A");
+        var upper = new VirtualCrossoverChannel("B");
+        var held = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 18);
+        foreach (bool right in new[] { false, true })
+        {
+            lower.SideSettings(right).AcousticLowPass = held;
+            upper.SideSettings(right).AcousticHighPass = held;
+        }
+
+        AgentJunctionTune.Write(
+            unreachable, lower, upper,
+            new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 12));
+
+        foreach (bool right in new[] { false, true })
+        {
+            Assert.Null(lower.SideSettings(right).AcousticLowPass);
+            Assert.Null(upper.SideSettings(right).AcousticHighPass);
+        }
+    }
+
+    [Fact]
+    public void APlainTune_LeavesTheWishTheCardsHeldAlone()
+    {
+        // No goal asked for: the wish is the user's, stated on the card, and a tune that was not asked about it
+        // has no opinion to write.
+        (_, JunctionTuneResult result) = OutOfReach();
+        var lower = new VirtualCrossoverChannel("A");
+        var upper = new VirtualCrossoverChannel("B");
+        var held = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 18);
+        lower.Settings.AcousticLowPass = held;
+        upper.Settings.AcousticHighPass = held;
+
+        AgentJunctionTune.Write(result, lower, upper, acoustic: null);
+
+        Assert.Equal(held, lower.Settings.AcousticLowPass);
+        Assert.Equal(held, upper.Settings.AcousticHighPass);
+    }
+
+    /// <summary>A junction whose drivers already fall at LR24: no 12 dB/oct filter leaves the sum as soft as LR12.</summary>
+    private static (JunctionTunePlan Plan, JunctionTuneResult Result) OutOfReach()
+    {
+        CrossoverEdge own = new(CrossoverFilterFamily.LinkwitzRiley, 1_000, 24);
+        Complex[] rolledOff = VirtualCrossoverAnalysis.ApplyChain(
+            Impulse(), LowPass(own), SampleRate, SampleRate);
+        Complex[] rolledOn = VirtualCrossoverAnalysis.ApplyChain(
+            Impulse(), HighPass(own), SampleRate, SampleRate);
+        var bare = new DspChannelChain(Crossover: CrossoverSpec.Off);
+        return Tune(
+            new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 12),
+            new JunctionTuneSide("left", rolledOff, bare, rolledOn, bare, SampleRate),
+            slopes: [12]);
     }
 
     private static CrossoverEdge Edge(double hz) =>

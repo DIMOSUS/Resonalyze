@@ -921,18 +921,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
         numericLowPassRipple.Enabled = available.LowPassRipple;
     }
 
-    // Many DSPs have no separate EQ preamp, so the PEQ preamp is folded into the channel gain (same sum as the tuning sheets).
-    private void UpdateTotalGain()
-    {
-        if (peqPreampDb == 0)
-        {
-            labelTotalGain.Text = string.Empty;
-            return;
-        }
-
-        double totalDb = (double)numericGain.Value + peqPreampDb;
-        labelTotalGain.Text = $"All {totalDb:+0.0;-0.0;0.0}";
-    }
+    private void UpdateTotalGain() =>
+        labelTotalGain.Text = VirtualCrossoverChannelTotalGain.Text((double)numericGain.Value, peqPreampDb);
 
     // Runs through the collapse path: moving the size pin anywhere else races the flow list's reflow.
     private void ApplyOptionalRows()

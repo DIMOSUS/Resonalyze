@@ -2,8 +2,8 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze;
 
-/// <summary>The session as it stood before a write, as Undo AI import and Tune junction's Undo last Apply put it back.
-/// Scene, tilt and rear-fill offset are committed by Auto delay (CommitAutoDelayResult), so undo carries them.</summary>
+/// <summary>The session before a write, for Undo AI import and Tune junction's Undo last Apply. Auto delay commits the
+/// scene, tilt and rear-fill offset (CommitAutoDelayResult), so undo carries them.</summary>
 internal sealed record AgentImportUndo(
     IReadOnlyList<AgentUndoEntry> Channels,
     VirtualCrossoverSpatialAverageMode? SpatialAverageMode,
@@ -15,8 +15,7 @@ internal sealed record AgentImportUndo(
     double RearFillOffsetMs,
     double TargetLevelDb)
 {
-    /// <summary>Every channel's chain is taken: engines write channels no row names, and the crossover wizard can
-    /// reorder blocks.</summary>
+    /// <summary>Every channel: engines write channels no row names, and the crossover wizard reorders blocks.</summary>
     public static AgentImportUndo Capture(
         VirtualCrossoverSession session, AgentSessionReader reader, AgentViewInputs view) =>
         new(

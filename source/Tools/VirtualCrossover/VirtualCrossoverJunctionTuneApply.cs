@@ -2,13 +2,11 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>The one step Tune junction's Undo last Apply takes back: the session before the Apply, the project it
-/// was applied in, and the session just after it, by which a later change is recognised.</summary>
+/// <summary>The session before the Apply, the project it was applied in, and the session just after it.</summary>
 internal sealed record JunctionTuneUndo(
     AgentImportUndo Channels, long Generation, string Junction, string FingerprintAfter);
 
-/// <summary>Tune junction's write-back: the search result the dialog shows, what Apply writes from it, and the one
-/// step of undo. See docs/tech/crossover-auto-setup.md#junction-tuner.</summary>
+/// <summary>Tune junction's write-back and its one step of undo. See docs/tech/crossover-auto-setup.md#junction-tuner.</summary>
 internal sealed class VirtualCrossoverJunctionTuneApply(VirtualCrossoverSession session, AgentSessionReader reader)
 {
     /// <summary>The last search's result while its dialog is open; what Apply writes.</summary>
@@ -21,8 +19,7 @@ internal sealed class VirtualCrossoverJunctionTuneApply(VirtualCrossoverSession 
         Undo is { } undo && undo.Generation == generation ? undo.Junction : null;
 
     /// <summary>Writes the found crossover whenever it differs, won or not (the keep margin is advice), and the goal
-    /// as asked; remembers the session as it was for Undo.</summary>
-    /// <param name="view">The view the undo and the fingerprint are read against, taken once by the caller.</param>
+    /// as asked.</summary>
     public void Apply(
         VirtualCrossoverChannel lower,
         VirtualCrossoverChannel upper,
@@ -52,7 +49,6 @@ internal sealed class VirtualCrossoverJunctionTuneApply(VirtualCrossoverSession 
     public bool Unchanged(string fingerprintNow) =>
         Undo is { } undo && string.Equals(undo.FingerprintAfter, fingerprintNow, StringComparison.Ordinal);
 
-    /// <summary>What to restore; the step is used up.</summary>
     public AgentImportUndo TakeUndo()
     {
         AgentImportUndo channels = Undo?.Channels ?? throw new InvalidOperationException("Nothing to undo.");

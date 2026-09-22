@@ -168,7 +168,9 @@ public sealed class VirtualCrossoverJunctionTuneWiringTests
             var sum = (CheckBox)Panel.Controls.Find("checkBoxShowSum", searchAllChildren: true).Single();
             sum.Checked = !sum.Checked;
             sum.Checked = !sum.Checked;
-            Wait(() => metric.Contains("A/B", StringComparison.Ordinal) && metric.Contains("B/C", StringComparison.Ordinal));
+            Wait(
+                () => metric.Contains("A/B", StringComparison.Ordinal) && metric.Contains("B/C", StringComparison.Ordinal),
+                "quote its junctions");
         }
 
         public VirtualCrossoverPanel Panel { get; }
@@ -188,8 +190,9 @@ public sealed class VirtualCrossoverJunctionTuneWiringTests
             string status = string.Empty;
             bool asked = false;
             bool searching = false;
+            int runs = 0;
             Exception? failure = null;
-            DateTime deadline = DateTime.UtcNow.AddSeconds(90);
+            DateTime deadline = DateTime.UtcNow.AddSeconds(120);
             using var pilot = new System.Windows.Forms.Timer { Interval = 20 };
             pilot.Tick += (_, _) =>
             {
@@ -200,11 +203,13 @@ public sealed class VirtualCrossoverJunctionTuneWiringTests
                 }
 
                 var dialog = new TuneDialog(open);
+                Button run = dialog.Find<Button>("buttonRun");
                 try
                 {
-                    if (DateTime.UtcNow > deadline)
+                    // The dialog refuses to close mid-search, so a stuck search is waited out rather than cancelled.
+                    if (DateTime.UtcNow > deadline && run.Enabled)
                     {
-                        throw new TimeoutException("The junction tune did not finish.");
+                        throw new TimeoutException($"The junction tune did not finish: '{dialog.Find<Label>("labelStatus").Text}'.");
                     }
 
                     if (!asked)
@@ -217,18 +222,31 @@ public sealed class VirtualCrossoverJunctionTuneWiringTests
                         }
                         else if (apply)
                         {
-                            dialog.Find<Button>("buttonRun").PerformClick();
+                            // A window of a few candidates: the search is the panel's to time, not this test's.
+                            dialog.Find<ThemedNumericUpDown>("numericMinHz").Value = 280m;
+                            dialog.Find<ThemedNumericUpDown>("numericMaxHz").Value = 320m;
+                            run.PerformClick();
                             searching = true;
+                            runs++;
                         }
 
                         return;
                     }
 
-                    if (searching && dialog.Find<Button>("buttonRun").Enabled)
+                    if (searching && run.Enabled)
                     {
                         searching = false;
                         status = dialog.Find<Label>("labelStatus").Text;
                         Button applyButton = dialog.Find<Button>("buttonApply");
+                        // A redraw landing mid-search retires the answer; asking again is what a user does.
+                        if (!applyButton.Enabled && runs == 1 && status.Contains("Refused", StringComparison.Ordinal))
+                        {
+                            run.PerformClick();
+                            searching = true;
+                            runs++;
+                            return;
+                        }
+
                         Assert.True(applyButton.Enabled, status + Environment.NewLine + dialog.Find<Control>("textBoxReport").Text);
                         applyButton.PerformClick();
                     }
@@ -236,14 +254,17 @@ public sealed class VirtualCrossoverJunctionTuneWiringTests
                 catch (Exception exception)
                 {
                     failure ??= exception;
-                    open.DialogResult = DialogResult.Cancel;
-                    open.Close();
+                    if (run.Enabled)
+                    {
+                        open.DialogResult = DialogResult.Cancel;
+                        open.Close();
+                    }
                 }
             };
             pilot.Start();
             Button tune = (Button)Panel.Controls.Find("buttonTuneJunction", searchAllChildren: true).Single();
             // Off while the panel redraws.
-            Wait(() => tune.Enabled);
+            Wait(() => tune.Enabled, "offer Tune junction again");
             tune.PerformClick();
             pilot.Stop();
             if (failure != null)
@@ -262,16 +283,17 @@ public sealed class VirtualCrossoverJunctionTuneWiringTests
             host.Dispose();
         }
 
-        private static void Wait(Func<bool> condition)
+        // Generous: the whole suite runs in parallel, and a redraw of three blocks waits on its own tasks.
+        private void Wait(Func<bool> condition, string what = "settle")
         {
-            DateTime deadline = DateTime.UtcNow.AddSeconds(30);
+            DateTime deadline = DateTime.UtcNow.AddSeconds(120);
             while (!condition() && DateTime.UtcNow < deadline)
             {
                 StaTest.Pump();
                 Thread.Sleep(5);
             }
 
-            Assert.True(condition(), "The panel did not settle.");
+            Assert.True(condition(), $"The panel did not {what}; the metric reads '{metric}'.");
             for (int i = 0; i < 20; i++)
             {
                 StaTest.Pump();

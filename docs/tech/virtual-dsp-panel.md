@@ -31,7 +31,7 @@ for what they bind (`.Project`, `.Calibration`, `.Channels`, `.Sources`, `.Peq`,
 | `VirtualCrossoverAutoDelay`, `StagedGroupPlacement` | Auto delay |
 | `VirtualCrossoverAutoSetup` | what the crossover wizard reads and writes |
 | `VirtualCrossoverJunctionTuneSearch`, `VirtualCrossoverJunctionTuneApply` | Tune junction: its question, its verdict, Apply and Undo |
-| `VirtualCrossoverAudition` | the audition render |
+| `VirtualCrossoverAudition` | what the audition renders; the dialog's own state is in [its code map](#audition-code-map) |
 | `AgentSessionReader`, `AgentProbeReader`, `AgentJunctionTune`, `AgentEngineRequests` | the Agent Bridge |
 
 The shown side has one owner, the project's `ActiveSideRight`. A block's shorthand members (`Settings`,
@@ -76,6 +76,46 @@ Undo AI import shares), the project generation it belongs to and the fingerprint
 later changes would go too and asks. The panel's `.JunctionTune` runs the search off the UI thread, refuses a result
 the session moved under, refreshes the cards and restores through `RestoreChannels`.
 `VirtualCrossoverJunctionTuneWiringTests` drives the real dialog from a live panel.
+
+### Audition code map
+
+The audition dialog keeps its own state in a UI-free `VirtualCrossoverAuditionSession`: the track and the output with
+the consent to replace an existing one, the calibration, cabin and magnitude choices, the report's sections and the
+render in flight. What one dialog leaves for the next (the track, the output, the cabin, the tick) is a
+`VirtualCrossoverAuditionMemory`, kept per process. The context the panel prepares (`VirtualCrossoverAudition`, records
+in `VirtualCrossoverAuditionContext.cs`) is read only.
+
+| Reads the audition's session | For |
+| --- | --- |
+| `VirtualCrossoverAuditionBudget` | the duration and projected-bytes caps: a picked track's refusal, the decoded track's re-check |
+| `VirtualCrossoverAuditionCalibration` | the note on "Own (as measured)", and the curve and label a render carries |
+| `VirtualCrossoverAuditionRender` | when Render can be pressed, the request read once before the first await, the worker that writes the WAV |
+| `VirtualCrossoverAuditionReport` | the report: the result, the tune, the magnitudes, the calibration note, the track |
+
+`VirtualCrossoverAuditionDialog` binds the controls and runs the render; its file dialogs and questions go through
+`ShowFileDialog` and `Ask`, which a test answers. `VirtualCrossoverAuditionDialogBoundaryTests` keeps statics and nested
+types off the dialog, and `VirtualCrossoverAuditionDialogWiringTests` drives a shown dialog beside a session the test
+changes the same way, down to the bytes a render writes.
+
+### Channel block code map
+
+A block (`VirtualCrossoverChannelControl`) shows one side of a channel: the panel writes the session from its fields and
+pushes the session's values back. What the block shows beside its fields comes from readers that take the values it
+holds, so a field the user is typing into and a value the panel pushed read the same way.
+
+| Reader | For |
+| --- | --- |
+| `VirtualCrossoverChannelAvailability` | which crossover fields take input |
+| `VirtualCrossoverChannelTotalGain` | the gain with the PEQ preamp folded in |
+| `VirtualCrossoverChannelDelayReadout` | the delay as a distance in air |
+| `VirtualCrossoverChannelFirReadout` | the FIR row, its tooltips and the conflict that turns it red |
+| `VirtualCrossoverChannelPhaseReadout` | what the Phase angle builds, and its tooltip |
+| `VirtualCrossoverChannelGoalReadout` | the acoustic goal button |
+| `VirtualCrossoverChannelAverageReadout` | the spatial-average button |
+
+The block binds them in partials (`.Readouts`, `.Crossover`, `.Layout`, `.ToolTips`).
+`VirtualCrossoverChannelControlBoundaryTests` keeps statics and nested types off it, and
+`VirtualCrossoverChannelControlWiringTests` drives its fields and setters against the readers.
 
 ## Redraw scheduling
 

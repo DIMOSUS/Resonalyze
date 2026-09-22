@@ -23,7 +23,7 @@ Where the code lives:
 | Datum and median rule | `SpatialAverageOffsets` (`source/Tools/VirtualCrossover/`) |
 | Hybrid view | `VirtualCrossoverHybrid` (`HybridMagnitudes`, `SetDatum`); the MMM button and the toggle in `VirtualCrossoverPanel.SpatialAverage.cs` |
 | Audition correction | `SpatialAverageAudition` |
-| Audition flow and dialog | `VirtualCrossoverAudition`, `VirtualCrossoverAuditionDialog` |
+| Audition flow and dialog | `VirtualCrossoverAudition`, `VirtualCrossoverAuditionDialog` over a `VirtualCrossoverAuditionSession` (see [virtual-dsp-panel.md](virtual-dsp-panel.md#audition-code-map)) |
 
 The stored capture format itself is described in [live-spectrum.md](live-spectrum.md#capture-document).
 
@@ -389,7 +389,7 @@ list previously returned nothing, rendering uncalibrated while blaming an unread
   path is the previous render, and replacing it silently would collapse an A/B pair into just B.
 - **Progress:** the one `Progress<T>` is created on the UI thread so reports post in order; every lower
   layer relays synchronously (`SynchronousProgress`).
-- The report (`ComposeReport`) puts the result first once there is one: appended last, it scrolled
+- The report (`VirtualCrossoverAuditionReport`) puts the result first once there is one: appended last, it scrolled
   below the box on tunes with many channels and a finished render looked unchanged.
 
 ## Averaging core

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
@@ -8,9 +9,12 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 {
     private readonly VirtualCrossoverAuditionSession session;
 
-    public VirtualCrossoverAuditionDialog(VirtualCrossoverAuditionContext context)
+    public VirtualCrossoverAuditionDialog(
+        VirtualCrossoverAuditionContext context, VirtualCrossoverAuditionMemory? memory = null)
     {
-        session = VirtualCrossoverAuditionSession.Restore(context);
+        session = VirtualCrossoverAuditionSession.Restore(context, memory ?? VirtualCrossoverAuditionMemory.Process);
+        ShowFileDialog = dialog => dialog.ShowDialog(this);
+        Ask = (text, buttons, icon) => MessageBox.Show(this, text, "Audition render", buttons, icon);
         InitializeComponent();
 
         // The panel decides the calibration each opening; a local copy could only disagree with the project.
@@ -59,6 +63,13 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         RefreshReport();
     }
 
+    /// <summary>Tests answer the file dialogs and the questions here: a real one waits for a person.</summary>
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<FileDialog, DialogResult> ShowFileDialog { get; set; }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<string, MessageBoxButtons, MessageBoxIcon, DialogResult> Ask { get; set; }
+
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         if (session.Rendering)
@@ -99,18 +110,16 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             RestoreDirectory = true,
             Title = "Choose a track to audition"
         };
-        if (dialog.ShowDialog(this) != DialogResult.OK)
+        if (ShowFileDialog(dialog) != DialogResult.OK)
         {
             return;
         }
 
         if (session.IsTarget(dialog.FileName))
         {
-            MessageBox.Show(
-                this,
+            Ask(
                 "This file is already chosen as the OUTPUT. Rendering a file " +
                 "onto itself would destroy the source.",
-                "Audition render",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
             return;
@@ -139,7 +148,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             OverwritePrompt = true,
             Title = "Save the auditioned track"
         };
-        if (dialog.ShowDialog(this) != DialogResult.OK)
+        if (ShowFileDialog(dialog) != DialogResult.OK)
         {
             return;
         }
@@ -147,11 +156,9 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         // Writing onto the source would destroy it and make the A/B re-render process the processed file.
         if (session.IsSource(dialog.FileName))
         {
-            MessageBox.Show(
-                this,
+            Ask(
                 "This is the source track itself. Choose a different output " +
                 "file — rendering onto the source would destroy it.",
-                "Audition render",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
             return;
@@ -176,12 +183,10 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 
         if (session.TargetNeedsConsent)
         {
-            DialogResult overwrite = MessageBox.Show(
-                this,
+            DialogResult overwrite = Ask(
                 $"The output file already exists:\r\n{session.TargetPath}\r\n\r\nIt " +
                 "holds the previous render. Overwrite it?\r\n\r\n(Choose No " +
                 "and Save as... to keep both variants for an A/B.)",
-                "Audition render",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning);
             if (overwrite != DialogResult.Yes)

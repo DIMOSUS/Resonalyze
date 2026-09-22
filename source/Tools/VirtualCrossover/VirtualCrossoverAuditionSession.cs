@@ -7,6 +7,21 @@ internal sealed record AuditionCabinOption(CabinBodyStyle? Style, string Label)
     public override string ToString() => Label;
 }
 
+/// <summary>What an audition dialog leaves for the next one: kept per process, not persisted, since a session renders
+/// one track through several tunes. The track is probed again on restore.</summary>
+internal sealed class VirtualCrossoverAuditionMemory
+{
+    public static VirtualCrossoverAuditionMemory Process { get; } = new();
+
+    public string? SourcePath { get; set; }
+
+    public string? TargetPath { get; set; }
+
+    public bool SpatialAverage { get; set; } = true;
+
+    public CabinBodyStyle? CabinStyle { get; set; } = CabinBodyStyle.Sedan;
+}
+
 /// <summary>The audition dialog's state: the track and the output with the consent to replace it, the calibration, cabin
 /// and magnitude choices, the report's sections and the render in flight. See docs/tech/virtual-dsp-panel.md#audition-code-map.</summary>
 internal sealed class VirtualCrossoverAuditionSession
@@ -23,15 +38,15 @@ internal sealed class VirtualCrossoverAuditionSession
         new(CabinBodyStyle.BmwF30SkiHatch, "BMW F30, ski hatch open")
     ];
 
-    // Remembered per process, not persisted: a session renders one track through several tunes. Re-probed on restore.
-    private static string? lastSourcePath;
-    private static string? lastTargetPath;
-    private static bool lastSpatialAverage = true;
-    private static CabinBodyStyle? lastCabinStyle = CabinBodyStyle.Sedan;
-
+    private readonly VirtualCrossoverAuditionMemory memory;
     private CancellationTokenSource? activeRender;
 
-    private VirtualCrossoverAuditionSession(VirtualCrossoverAuditionContext context) => Context = context;
+    private VirtualCrossoverAuditionSession(
+        VirtualCrossoverAuditionContext context, VirtualCrossoverAuditionMemory memory)
+    {
+        Context = context;
+        this.memory = memory;
+    }
 
     public VirtualCrossoverAuditionContext Context { get; }
 
@@ -74,35 +89,37 @@ internal sealed class VirtualCrossoverAuditionSession
     public bool TargetNeedsConsent =>
         TargetPath != null && File.Exists(TargetPath) && !TargetOverwriteConfirmed;
 
-    /// <summary>The previous dialog's track (re-probed), output, cabin and magnitude choice.</summary>
-    public static VirtualCrossoverAuditionSession Restore(VirtualCrossoverAuditionContext context)
+    /// <summary>The previous dialog's track, output, cabin and magnitude choice.</summary>
+    public static VirtualCrossoverAuditionSession Restore(
+        VirtualCrossoverAuditionContext context, VirtualCrossoverAuditionMemory memory)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var session = new VirtualCrossoverAuditionSession(context)
+        ArgumentNullException.ThrowIfNull(memory);
+        var session = new VirtualCrossoverAuditionSession(context, memory)
         {
-            CabinStyle = lastCabinStyle,
-            SpatialAverageRequested = context.SpatialAverage != null && lastSpatialAverage
+            CabinStyle = memory.CabinStyle,
+            SpatialAverageRequested = context.SpatialAverage != null && memory.SpatialAverage
         };
-        if (lastSourcePath != null)
+        if (memory.SourcePath != null)
         {
-            session.SelectSource(lastSourcePath);
+            session.SelectSource(memory.SourcePath);
         }
 
         // Restored without overwrite consent: the file is the previous render.
-        session.TargetPath = lastTargetPath;
+        session.TargetPath = memory.TargetPath;
         return session;
     }
 
     // Unconditional: saving null stops the next opening retrying a dead path.
     public void Remember()
     {
-        lastSourcePath = SourcePath;
-        lastTargetPath = TargetPath;
-        lastCabinStyle = CabinStyle;
+        memory.SourcePath = SourcePath;
+        memory.TargetPath = TargetPath;
+        memory.CabinStyle = CabinStyle;
         // Only a real choice: an unticked box with no averages is not a preference.
         if (Context.SpatialAverage != null)
         {
-            lastSpatialAverage = SpatialAverageRequested;
+            memory.SpatialAverage = SpatialAverageRequested;
         }
     }
 

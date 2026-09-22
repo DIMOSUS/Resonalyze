@@ -12,10 +12,6 @@ internal sealed record AuditionCabinOption(CabinBodyStyle? Style, string Label)
 /// and magnitude choices, the report's sections and the render in flight. See docs/tech/virtual-dsp-panel.md#audition-code-map.</summary>
 internal sealed class VirtualCrossoverAuditionSession
 {
-    // Duration cap plus a separate projected-bytes cap (memory scales with rate).
-    public const int MaximumTrackMinutes = 10;
-    public const long MaximumPipelineBytes = 1_000_000_000;
-
     // "off" first: index 0 is the fallback everywhere.
     public static readonly IReadOnlyList<AuditionCabinOption> CabinOptions =
     [
@@ -127,31 +123,16 @@ internal sealed class VirtualCrossoverAuditionSession
         try
         {
             AudioFileInfo info = AudioFileCodec.Probe(fileName);
-            long projectedBytes = ProjectedPipelineBytes(info, Context.SampleRate);
+            string? refusal = VirtualCrossoverAuditionBudget.Refusal(info, Context.SampleRate);
             var section = new StringBuilder();
             section.AppendLine("== Track ==");
             section.AppendLine(Path.GetFileName(fileName));
             section.AppendLine(
                 $"{info.ChannelCount} channel(s), {info.SampleRate} Hz, " +
                 $"{FormatDuration(info.Duration)}");
-            if (info.Duration > TimeSpan.FromMinutes(MaximumTrackMinutes))
+            if (refusal != null)
             {
-                section.Append(
-                    $"REFUSED: longer than {MaximumTrackMinutes} minutes — " +
-                    "use a shorter excerpt.");
-                SourcePath = null;
-            }
-            else if (projectedBytes > MaximumPipelineBytes)
-            {
-                double allowedMinutes = MaximumPipelineBytes
-                    / (ProjectedPipelineBytes(
-                        info with { Duration = TimeSpan.FromMinutes(1) },
-                        Context.SampleRate) * 1.0);
-                section.Append(
-                    $"REFUSED: rendering this would hold ~" +
-                    $"{projectedBytes / 1_000_000} MB of audio in memory " +
-                    $"(bound {MaximumPipelineBytes / 1_000_000} MB). At these " +
-                    $"rates keep the excerpt under ~{allowedMinutes:0} minutes.");
+                section.Append(refusal);
                 SourcePath = null;
             }
             else
@@ -221,21 +202,6 @@ internal sealed class VirtualCrossoverAuditionSession
         cancellation.Cancel();
         return true;
     }
-
-    // Peak working set: decoded stereo, resampled copy (if rates differ) and two rendered sides, all float32.
-    internal static long ProjectedPipelineBytes(long sourceFrames, int sourceRate, int projectRate)
-    {
-        long renderedFrames = (long)Math.Ceiling(
-            sourceFrames * (double)projectRate / sourceRate);
-        long resampledFrames = sourceRate == projectRate ? 0 : renderedFrames;
-        return 4L * 2L * (sourceFrames + resampledFrames + renderedFrames);
-    }
-
-    private static long ProjectedPipelineBytes(AudioFileInfo info, int projectRate) =>
-        ProjectedPipelineBytes(
-            (long)Math.Ceiling(info.Duration.TotalSeconds * info.SampleRate),
-            info.SampleRate,
-            projectRate);
 
     // Total minutes, so over-an-hour durations do not show only the remainder.
     internal static string FormatDuration(TimeSpan duration) =>

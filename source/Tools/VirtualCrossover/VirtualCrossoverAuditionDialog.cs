@@ -434,22 +434,12 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         // Only two channels are decoded; the byte cap also bounds the decode itself.
         AudioFileContent material = AudioFileCodec.Read(
             sourcePath,
-            TimeSpan.FromMinutes(VirtualCrossoverAuditionSession.MaximumTrackMinutes),
+            TimeSpan.FromMinutes(VirtualCrossoverAuditionBudget.MaximumTrackMinutes),
             channelLimit: 2,
-            VirtualCrossoverAuditionSession.MaximumPipelineBytes,
+            VirtualCrossoverAuditionBudget.MaximumPipelineBytes,
             cancellationToken);
-
-        // Re-check the budget on the actual frame count: the header may lie or the file may have changed.
-        long actualBytes = VirtualCrossoverAuditionSession.ProjectedPipelineBytes(
+        VirtualCrossoverAuditionBudget.CheckDecoded(
             material.FrameCount, material.SampleRate, context.SampleRate);
-        if (actualBytes > VirtualCrossoverAuditionSession.MaximumPipelineBytes)
-        {
-            throw new InvalidOperationException(
-                $"The decoded track is larger than its header promised: " +
-                $"rendering would hold ~{actualBytes / 1_000_000} MB of audio " +
-                $"in memory (bound {VirtualCrossoverAuditionSession.MaximumPipelineBytes / 1_000_000} MB). " +
-                "Use a shorter excerpt.");
-        }
 
         var renderProgress = new SynchronousProgress<double>(value =>
             progress.Report(new AuditionProgress(

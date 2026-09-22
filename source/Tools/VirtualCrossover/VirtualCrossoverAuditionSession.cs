@@ -97,7 +97,8 @@ internal sealed class VirtualCrossoverAuditionSession
         ArgumentNullException.ThrowIfNull(memory);
         var session = new VirtualCrossoverAuditionSession(context, memory)
         {
-            CabinStyle = memory.CabinStyle,
+            // A style the list does not offer falls back to its first entry, as the list does.
+            CabinStyle = CabinOptions.Any(option => option.Style == memory.CabinStyle) ? memory.CabinStyle : null,
             SpatialAverageRequested = context.SpatialAverage != null && memory.SpatialAverage
         };
         if (memory.SourcePath != null)

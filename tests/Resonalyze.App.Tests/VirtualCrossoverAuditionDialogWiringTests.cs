@@ -194,7 +194,7 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
         using var folder = new TemporaryDirectory();
         var start = new VirtualCrossoverAuditionMemory
         {
-            SourcePath = Track(folder.Path, "song.wav", Rate, 2, 0.2),
+            SourcePath = Track(folder.Path, "song.wav", Rate, 2, LongEnoughToCancel),
             TargetPath = folder.File("out.wav")
         };
         using var audition = new Audition(Context(), start);
@@ -224,7 +224,7 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
         using var folder = new TemporaryDirectory();
         var memory = new VirtualCrossoverAuditionMemory
         {
-            SourcePath = Track(folder.Path, "song.wav", Rate, 2, 0.2),
+            SourcePath = Track(folder.Path, "song.wav", Rate, 2, LongEnoughToCancel),
             TargetPath = folder.File("out.wav"),
             CabinStyle = CabinBodyStyle.Suv
         };
@@ -238,6 +238,20 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
 
         Assert.Empty(Directory.GetFiles(folder.Path, "out*"));
         Assert.Equal(CabinBodyStyle.CompactSedan, memory.CabinStyle);
+    });
+
+    // Seconds of track: a render of it outlasts a test thread that is starved between two clicks.
+    private const double LongEnoughToCancel = 30;
+
+    [Fact]
+    public void ACabinTheListDoesNotOffer_OpensAsOff() => StaTest.Run(() =>
+    {
+        var memory = new VirtualCrossoverAuditionMemory { CabinStyle = (CabinBodyStyle)99 };
+        using var audition = new Audition(Context(), memory);
+
+        Assert.Equal(0, audition.Find<ThemedComboBox>("comboBoxCabin").SelectedIndex);
+        audition.Dialog.Close();
+        Assert.Null(memory.CabinStyle);
     });
 
     private static VirtualCrossoverAuditionMemory Copy(VirtualCrossoverAuditionMemory memory) => new()

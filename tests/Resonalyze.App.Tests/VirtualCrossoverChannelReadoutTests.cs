@@ -51,7 +51,7 @@ public sealed class VirtualCrossoverChannelReadoutTests
         Assert.Equal(("Add…", "off", "No FIR filter on this channel."), (readout.ButtonText, readout.Info, readout.InfoTip));
         Assert.Equal(UiPalette.TextDisabled, readout.InfoColor);
         Assert.Equal(UiPalette.TextPrimary, readout.ButtonColor);
-        Assert.Null(readout.Conflict);
+        Assert.Null(VirtualCrossoverChannelFirReadout.ConflictOf(null, null, 48_000, CrossoverKind.BandPass));
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class VirtualCrossoverChannelReadoutTests
         Assert.Equal(UiPalette.Warning, readout.InfoColor);
         Assert.StartsWith("taps.txt: 255 taps", readout.InfoTip);
         Assert.Contains("not the filter its designer drew", readout.InfoTip);
-        Assert.Null(readout.Conflict);
+        Assert.Null(VirtualCrossoverChannelFirReadout.ConflictOf(kernel, null, 48_000, CrossoverKind.BandPass));
 
         VirtualCrossoverChannelFirReadout silent = VirtualCrossoverChannelFirReadout.Read(
             new FirFilter(Taps(64, silent: true)), null, null, 48_000, CrossoverKind.Off);
@@ -83,21 +83,23 @@ public sealed class VirtualCrossoverChannelReadoutTests
 
         VirtualCrossoverChannelFirReadout clean =
             VirtualCrossoverChannelFirReadout.Read(kernel, "ignored", design, 96_000, CrossoverKind.Off);
-        Assert.Null(clean.Conflict);
+        Assert.Null(VirtualCrossoverChannelFirReadout.ConflictOf(kernel, design, 96_000, CrossoverKind.Off));
         Assert.StartsWith(FirCrossoverDescription.Short(design) + ": 511 taps", clean.Info);
         Assert.Equal(UiPalette.TextPrimary, clean.ButtonColor);
 
         VirtualCrossoverChannelFirReadout stale =
             VirtualCrossoverChannelFirReadout.Read(kernel, null, design, 48_000, CrossoverKind.Off);
-        Assert.Contains("rebuild it at the processor's rate", stale.Conflict);
+        string? staleConflict = VirtualCrossoverChannelFirReadout.ConflictOf(kernel, design, 48_000, CrossoverKind.Off);
+        Assert.Contains("rebuild it at the processor's rate", staleConflict);
         Assert.Equal(UiPalette.Danger, stale.ButtonColor);
         Assert.Equal(UiPalette.Error, stale.InfoColor);
-        Assert.Equal(stale.Conflict, stale.InfoTip);
-        Assert.StartsWith(stale.Conflict + Environment.NewLine + Environment.NewLine, stale.ButtonTip);
+        Assert.Equal(staleConflict, stale.InfoTip);
+        Assert.StartsWith(staleConflict + Environment.NewLine + Environment.NewLine, stale.ButtonTip);
 
         VirtualCrossoverChannelFirReadout twice =
             VirtualCrossoverChannelFirReadout.Read(kernel, null, design, 96_000, CrossoverKind.HighPass);
-        Assert.Contains("IIR crossover", twice.Conflict);
+        Assert.Equal(UiPalette.Danger, twice.ButtonColor);
+        Assert.Contains("IIR crossover", VirtualCrossoverChannelFirReadout.ConflictOf(kernel, design, 96_000, CrossoverKind.HighPass));
         Assert.Null(VirtualCrossoverChannelFirReadout.ConflictOf(null, design, 48_000, CrossoverKind.HighPass));
     }
 

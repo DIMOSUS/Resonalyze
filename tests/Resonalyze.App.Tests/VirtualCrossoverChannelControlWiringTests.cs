@@ -216,7 +216,9 @@ public sealed class VirtualCrossoverChannelControlWiringTests
         Assert.Equal((expected.Info, expected.InfoColor), (control.FirInfoLabel.Text, control.FirInfoLabel.ForeColor));
         Assert.Equal(block.Wrapped(expected.ButtonTip), block.Tip(control.FirButton));
         Assert.Equal(block.Wrapped(expected.InfoTip), block.Tip(control.FirInfoLabel));
-        Assert.Equal(expected.Conflict, control.FirConflict);
+        Assert.Equal(
+            VirtualCrossoverChannelFirReadout.ConflictOf(kernel, design, control.ProcessorSampleRateHz, control.SelectedCrossoverKind),
+            control.FirConflict);
     }
 
     private static void AssertPhase(Block block)

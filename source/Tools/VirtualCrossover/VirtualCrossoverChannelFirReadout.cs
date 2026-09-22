@@ -11,8 +11,7 @@ internal sealed record VirtualCrossoverChannelFirReadout(
     string Info,
     Color InfoColor,
     string ButtonTip,
-    string InfoTip,
-    string? Conflict)
+    string InfoTip)
 {
     private const string ButtonTooltip =
         "The channel's FIR filter — a kernel the processor convolves the channel" + "\r\n" +
@@ -95,8 +94,7 @@ internal sealed record VirtualCrossoverChannelFirReadout(
             conflict == null
                 ? ButtonTooltip
                 : conflict + Environment.NewLine + Environment.NewLine + ButtonTooltip,
-            conflict ?? infoTip,
-            conflict);
+            conflict ?? infoTip);
     }
 
     /// <summary>Why the FIR button is red (a FIR crossover at a stale rate, or beside an IIR crossover), or null.</summary>

@@ -167,7 +167,7 @@ internal static class VirtualCrossoverAuditionReport
     }
 
     // Total minutes, so over-an-hour durations do not show only the remainder.
-    public static string Duration(TimeSpan duration) =>
+    private static string Duration(TimeSpan duration) =>
         $"{(int)duration.TotalMinutes}:{duration.Seconds:00}";
 
     private static void AppendMagnitudeSection(

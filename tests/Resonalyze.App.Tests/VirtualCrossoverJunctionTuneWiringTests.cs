@@ -1,4 +1,6 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
 using Resonalyze.Integration.AgentBridge;
@@ -196,6 +198,13 @@ public sealed class VirtualCrossoverJunctionTuneWiringTests
             using var pilot = new System.Windows.Forms.Timer { Interval = 20 };
             pilot.Tick += (_, _) =>
             {
+                // The panel asks after the dialog has closed; a box nobody answers would stand on the owner's desktop.
+                if (MessageBoxes.Dismiss() is { } question)
+                {
+                    failure ??= new InvalidOperationException($"A message box asked '{question}'.");
+                    return;
+                }
+
                 if (Application.OpenForms.OfType<VirtualCrossoverJunctionTuneDialog>().FirstOrDefault(form => form.Visible)
                     is not { } open)
                 {
@@ -306,5 +315,52 @@ public sealed class VirtualCrossoverJunctionTuneWiringTests
     {
         public T Find<T>(string name) where T : Control =>
             (T)form.Controls.Find(name, searchAllChildren: true).Single();
+    }
+
+    /// <summary>A MessageBox is no Form, so OpenForms never lists it: found by window class, answered No.</summary>
+    private static class MessageBoxes
+    {
+        private const int No = 7;
+
+        public static string? Dismiss()
+        {
+            string? title = null;
+            EnumThreadWindows(GetCurrentThreadId(), (window, state) =>
+            {
+                var buffer = new StringBuilder(64);
+                GetClassName(window, buffer, buffer.Capacity);
+                if (buffer.ToString() != "#32770" || !IsWindowVisible(window))
+                {
+                    return true;
+                }
+
+                buffer.Clear();
+                GetWindowText(window, buffer, buffer.Capacity);
+                title = buffer.ToString();
+                EndDialog(window, No);
+                return false;
+            }, IntPtr.Zero);
+            return title;
+        }
+
+        private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumThreadWindows(uint threadId, WindowCallback callback, IntPtr parameter);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetClassName(IntPtr window, StringBuilder name, int capacity);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr window, StringBuilder text, int capacity);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr window);
+
+        [DllImport("user32.dll")]
+        private static extern bool EndDialog(IntPtr window, int result);
     }
 }

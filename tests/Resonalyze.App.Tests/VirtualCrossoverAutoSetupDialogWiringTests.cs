@@ -48,11 +48,28 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
         Assert.Equal([0, 1, 2, 3], wizard.Dialog.ChainOrder);
 
         using var cleared = new Wizard(FourWay());
+        Task? preview = cleared.Dialog.PendingPreview;
         cleared.Find<CheckBox>("reorderBlocks").Checked = false;
+        Assert.Same(preview, cleared.Dialog.PendingPreview);
         cleared.Settle();
         cleared.Apply();
 
         Assert.Null(cleared.Dialog.ChainOrder);
+    });
+
+    [Fact]
+    public void AChainOfOne_HasNoElevationToSet() => StaTest.Run(() =>
+    {
+        List<AutoSetupWizardChannel> wide =
+        [
+            Channel("A wide", VirtualCrossoverAlignmentStage.FrontChain, 60, 20_000),
+            Channel("B rear", VirtualCrossoverAlignmentStage.Rear, 120, 15_000)
+        ];
+        using var wizard = new Wizard(wide);
+        Assert.False(Session(wide).SubElevationApplies);
+
+        Assert.False(wizard.Find<ThemedNumericUpDown>("subElevation").Enabled);
+        Assert.True(wizard.Find<Button>("buttonApply").Enabled, "Apply is off.");
     });
 
     [Fact]
@@ -63,19 +80,23 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
         AssertShows(wizard, expected, Preview(expected)!);
 
         // 24 dB/oct stays in every window, so a gentlest slope of 30 changes no fit: only the row can show it held.
+        // A floor no driver reaches is moved and noted, but the field keeps what was typed; its ceiling is untouched.
         wizard.MinHz(2).Value = 4_000m;
         wizard.Split(1).Checked = true;
         wizard.MinSlope(0).SelectedItem = 30;
+        wizard.MinHz(1).Value = AutoSetupWizardPlan.FieldMinimumHz;
         wizard.Settle();
         AutoSetupWizardJunction top = expected.Junctions()[2];
         expected.Edit(top, expected.EditsOf(top) with { MinHz = 4_000m });
         AutoSetupWizardJunction middle = expected.Junctions()[1];
-        expected.Edit(middle, expected.EditsOf(middle) with { Split = true });
+        expected.Edit(middle, expected.EditsOf(middle) with { MinHz = AutoSetupWizardPlan.FieldMinimumHz, Split = true });
         AutoSetupWizardJunction bottom = expected.Junctions()[0];
         expected.Edit(bottom, expected.EditsOf(bottom) with { MinSlope = 30 });
 
         AssertShows(wizard, expected, Preview(expected)!);
         Assert.Equal(4_000m, wizard.MinHz(2).Value);
+        Assert.Equal(AutoSetupWizardPlan.FieldMinimumHz, wizard.MinHz(1).Value);
+        Assert.True(wizard.Notes(1).Visible, "The moved floor was not noted.");
         Assert.Equal(30, wizard.MinSlope(0).SelectedItem);
     });
 
@@ -312,10 +333,13 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
                 .Single(label => table.GetRow(label) == (2 * junction) + 1 && table.GetColumn(label) == 0);
         }
 
+        // A preview writes the session back into the controls as it lands; that is not the user, so none follows.
         public void Settle()
         {
-            StaTest.Settle(Dialog.PendingPreview);
+            Task? pending = Dialog.PendingPreview;
+            StaTest.Settle(pending);
             StaTest.Pump();
+            Assert.Same(pending, Dialog.PendingPreview);
         }
 
         public CrossoverProposal[] Apply()

@@ -278,6 +278,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog
                     Environment.NewLine + Environment.NewLine,
                     window.Notes.Select(note => note.Detail)));
         }
+
+        // A note appearing, or a rebuilt junction set, changes the table's height under the options below it.
+        FitToContents(growOnly: false);
     }
 
     /// <summary>The one part of a row that needs the fit, so the one part that arrives late.</summary>

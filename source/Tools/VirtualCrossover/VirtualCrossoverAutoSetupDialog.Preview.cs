@@ -104,7 +104,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog
         labelPreview.Text = string.Join(
             Environment.NewLine, AutoSetupWizardReport.PreviewLines(session, computed));
         UpdateJunctionVerdicts(computed.Fits);
-        GrowToFitContents();
+        FitToContents(growOnly: true);
     }
 
     private void SetPreviewBusy(bool busy)

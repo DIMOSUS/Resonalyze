@@ -10,7 +10,7 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
 {
     public static TheoryData<string> Changes =>
     [
-        "track", "track cancelled", "track is the output", "unreadable track", "output", "output is the track",
+        "track", "track cancelled", "track is the output", "unreadable track", "output", "first output", "output is the track",
         "own", "own refused", "good", "broken", "cabin", "untick", "tick without averages"
     ];
 
@@ -27,7 +27,11 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
             "tick without averages" => Context(averages: false),
             _ => Context()
         };
-        var start = new VirtualCrossoverAuditionMemory { SourcePath = song, TargetPath = folder.File("out.wav") };
+        var start = new VirtualCrossoverAuditionMemory
+        {
+            SourcePath = song,
+            TargetPath = change == "first output" ? null : folder.File("out.wav")
+        };
         using var audition = new Audition(context, Copy(start));
         VirtualCrossoverAuditionMemory expectedMemory = Copy(start);
         VirtualCrossoverAuditionSession expected = VirtualCrossoverAuditionSession.Restore(context, expectedMemory);
@@ -56,6 +60,7 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
                 expected.SelectSource(folder.File("missing.wav"));
                 break;
             case "output":
+            case "first output":
                 audition.Files.Enqueue(folder.File("second.wav"));
                 audition.Click("buttonChooseTarget");
                 expected.SelectTarget(folder.File("second.wav"));
@@ -97,6 +102,30 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
         audition.Dialog.Close();
         expected.Remember();
         Assert.Equivalent(expectedMemory, audition.Memory);
+    });
+
+    [Fact]
+    public void TheCalibrationThePanelChose_IsTheOneTheDialogOpensWith() => StaTest.Run(() =>
+    {
+        using var folder = new TemporaryDirectory();
+        var start = new VirtualCrossoverAuditionMemory
+        {
+            SourcePath = Track(folder.Path, "song.wav", Rate, 2, 0.1),
+            TargetPath = folder.File("out.wav")
+        };
+        VirtualCrossoverAuditionContext refused =
+            Context(own: Conflict()) with { InitialCalibrationId = VirtualCrossoverCalibrationSelection.OwnId };
+        using (var audition = new Audition(refused, Copy(start)))
+        {
+            VirtualCrossoverAuditionSession expected = VirtualCrossoverAuditionSession.Restore(refused, Copy(start));
+            expected.SelectCalibration(VirtualCrossoverCalibrationSelection.OwnId, "Own (as measured)");
+            audition.AssertShows(expected);
+            Assert.False(audition.Find<Button>("buttonRender").Enabled);
+        }
+
+        using var good = new Audition(Context() with { InitialCalibrationId = Good.Id }, Copy(start));
+        good.Render();
+        Assert.Contains("\r\nCalibration: good mic\r\n", good.Find<TextBox>("textBoxReport").Text);
     });
 
     [Fact]
@@ -274,6 +303,7 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
         {
             Click("buttonRender");
             Assert.Equal("Cancel", Find<Button>("buttonRender").Text);
+            Assert.StartsWith("== Tune ==", Find<TextBox>("textBoxReport").Text);
             WaitIdle();
         }
 

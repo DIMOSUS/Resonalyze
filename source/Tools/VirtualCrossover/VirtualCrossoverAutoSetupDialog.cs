@@ -650,7 +650,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         LayoutBelowChannelTable();
     }
 
-    // Runs once after scaling, so every measurement is already in device pixels.
+    // Runs once after scaling, so every measurement is already in device pixels; later changes refit in FitToContents.
     private void LayoutBelowChannelTable()
     {
         if (optionsPositioned)
@@ -670,6 +670,12 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             row.Down.Size = arrowSize;
         }
 
+        FitToContents(growOnly: false);
+    }
+
+    // A reorder rebuilds the junction rows, so their fields are sized on every fit, not once.
+    private void SizeJunctionFields()
+    {
         Size fieldSize = LogicalToDeviceUnits(new Size(62, 19));
         Size slopeSize = LogicalToDeviceUnits(new Size(58, 19));
         foreach (JunctionRow junction in junctions)
@@ -679,36 +685,6 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             junction.MinSlope.Size = slopeSize;
             junction.MaxSlope.Size = slopeSize;
         }
-
-        tableChannels.PerformLayout();
-        int outsideMargin = LogicalToDeviceUnits(12);
-        int shift = tableChannels.Bottom + outsideMargin - labelJunctions.Top;
-        foreach (Control control in new Control[] { labelJunctions, tableJunctions })
-        {
-            control.Top += shift;
-        }
-
-        tableJunctions.PerformLayout();
-        shift = tableJunctions.Bottom + outsideMargin - labelFilters.Top;
-        foreach (Control control in new Control[]
-                 {
-                     labelFilters, checkButterworth, checkLinkwitzRiley, checkBessel,
-                     labelRange, minCrossover, labelDash, maxCrossover, labelHz,
-                     independentSlopes, reorderBlocks, labelSubElevation, subElevation,
-                     labelSubElevationUnit, panelPreview, progressPreview
-                 })
-        {
-            control.Top += shift;
-        }
-
-        // The AutoSize tables can exceed the designed width even at 100% DPI.
-        int clientWidth = Math.Max(
-            ClientSize.Width,
-            Math.Max(tableChannels.Right, tableJunctions.Right) + outsideMargin);
-        SizePreviewCard(clientWidth, outsideMargin);
-        ClientSize = new Size(
-            clientWidth,
-            progressPreview.Bottom + outsideMargin + buttonApply.Height + outsideMargin);
     }
 
     /// <summary>Sizes the result card to its text and parks the progress bar under it. Measured as laid out
@@ -1111,7 +1087,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         labelPreview.Text = string.Join(
             Environment.NewLine, PreviewLines(computed.Fits, computed.Summaries));
         UpdateJunctionVerdicts(computed.Fits);
-        GrowToFitContents();
+        FitToContents(growOnly: true);
     }
 
     private void SetPreviewBusy(bool busy)
@@ -1198,6 +1174,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                         window.Notes.Select(note => note.Detail)));
             }
         }
+
+        // A note appearing, or a rebuilt junction set, changes the table's height under the options below it.
+        FitToContents(growOnly: false);
     }
 
     /// <summary>The one part of a row that needs the fit, so the one part that arrives late.</summary>
@@ -1217,26 +1196,58 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
     }
 
-    /// <summary>The verdict column and the amber notes arrive after the one-shot layout pass has sized the window,
-    /// and both are AutoSize labels, so the dialog has to be allowed to grow around them. It only ever grows: a
-    /// window that shrank back on every refit would twitch.</summary>
-    private void GrowToFitContents()
+    /// <summary>Restacks everything under the two AutoSize tables, whose height changes as junction notes come and
+    /// go. Width only grows (the verdicts change on every refit and would make it twitch); height follows the content
+    /// except on a refit.</summary>
+    private void FitToContents(bool growOnly)
     {
         if (!optionsPositioned)
         {
             return;
         }
 
+        SizeJunctionFields();
         int margin = LogicalToDeviceUnits(12);
+        tableChannels.PerformLayout();
+        ShiftTo(tableChannels.Bottom + margin, labelJunctions, tableJunctions);
         tableJunctions.PerformLayout();
+        ShiftTo(
+            tableJunctions.Bottom + margin,
+            labelFilters, checkButterworth, checkLinkwitzRiley, checkBessel,
+            labelRange, minCrossover, labelDash, maxCrossover, labelHz,
+            independentSlopes, reorderBlocks, labelSubElevation, subElevation,
+            labelSubElevationUnit, panelPreview, progressPreview);
+
+        // The AutoSize tables can exceed the designed width even at 100% DPI.
         int width = Math.Max(
             ClientSize.Width,
             Math.Max(tableChannels.Right, tableJunctions.Right) + margin);
         SizePreviewCard(width, margin);
         int height = progressPreview.Bottom + margin + buttonApply.Height + margin;
-        if (width > ClientSize.Width || height > ClientSize.Height)
+        if (growOnly)
         {
-            ClientSize = new Size(width, Math.Max(height, ClientSize.Height));
+            height = Math.Max(height, ClientSize.Height);
+        }
+
+        if (width != ClientSize.Width || height != ClientSize.Height)
+        {
+            ClientSize = new Size(width, height);
+        }
+    }
+
+    // Moves a block as one, keeping its internal offsets, so its first control starts at `top`.
+    private static void ShiftTo(int top, Control first, params Control[] rest)
+    {
+        int shift = top - first.Top;
+        if (shift == 0)
+        {
+            return;
+        }
+
+        first.Top += shift;
+        foreach (Control control in rest)
+        {
+            control.Top += shift;
         }
     }
 

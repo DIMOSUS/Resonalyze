@@ -103,7 +103,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal Button SourceButton => buttonSource;
 
     /// <summary>Shows the attached spatial average in the button text, since it gates the hybrid view.</summary>
-    /// <param name="resolved">False for a capture the session refers to but could not read.</param>
     internal void SetSpatialAverage(
         string? title,
         double? integratedSeconds,
@@ -111,55 +110,14 @@ public partial class VirtualCrossoverChannelControl : UserControl
         VirtualCrossoverSpatialAverageMode mode,
         DateTimeOffset? measuredAtUtc = null)
     {
-        bool present = !string.IsNullOrWhiteSpace(title);
-        string label = mode switch
-        {
-            VirtualCrossoverSpatialAverageMode.MicArray => "Array",
-            VirtualCrossoverSpatialAverageMode.MovingMic => "MMM",
-            _ => "Avg off"
-        };
-        buttonSpatialAverage.Text = mode == VirtualCrossoverSpatialAverageMode.Off
-            ? label
-            : !present ? label : resolved ? $"{label} ✓" : $"{label} ⚠";
-        buttonSpatialAverage.ForeColor = !present
-            ? UiPalette.TextPrimary
-            : resolved ? UiPalette.Success : UiPalette.Warning;
-        string newLine = Environment.NewLine;
-        spatialAverageTooltip = !present
-            ? mode switch
-            {
-                VirtualCrossoverSpatialAverageMode.MicArray =>
-                    "This channel was measured with one microphone, so the hybrid " +
-                    "draws it from that POINT measurement." + newLine + newLine +
-                    "Legitimate where a point and an average are the same thing — " +
-                    "below the cabin's first mode they are — but its dips are this " +
-                    "one spot's, and an equalizer fitted to them is fitted to a " +
-                    "place nobody's head occupies." + newLine + newLine +
-                    "Click to change the method the project reads.",
-                VirtualCrossoverSpatialAverageMode.Off =>
-                    "The project draws no spatial average." + newLine + newLine +
-                    "Click to change the method it reads.",
-                _ =>
-                    "No spatial average for this channel." + newLine + newLine +
-                    "Click to attach a moving-microphone capture. The hybrid view " +
-                    "needs one on every channel that plays."
-            }
-            : resolved
-            ? $"Spatial average: {title}" +
-                (integratedSeconds is { } seconds
-                    ? $"{newLine}{seconds:0} s integrated"
-                    : string.Empty) +
-                (measuredAtUtc is { } measured
-                    ? $"{newLine}measured {measured.ToLocalTime():g}"
-                    : string.Empty) +
-                newLine + newLine +
-                "Click to replace it, or to detach it."
-            : $"Missing spatial average: {title}" + newLine +
-                "The session still refers to it, but the file could not be read." +
-                newLine + newLine +
-                "Click to attach it again, or to detach it.";
+        VirtualCrossoverChannelAverageReadout readout = VirtualCrossoverChannelAverageReadout.Read(
+            title, integratedSeconds, resolved, mode, measuredAtUtc);
+        buttonSpatialAverage.Text = readout.Text;
+        buttonSpatialAverage.ForeColor = readout.Color;
+        spatialAverageTooltip = readout.Tooltip;
         tooltipHost?.SetToolTip(buttonSpatialAverage, spatialAverageTooltip);
     }
+
     internal ThemedNumericUpDown GainInput => numericGain;
     internal ThemedNumericUpDown DelayInput => numericDelay;
     internal CheckBox InvertCheckBox => checkBoxInvert;

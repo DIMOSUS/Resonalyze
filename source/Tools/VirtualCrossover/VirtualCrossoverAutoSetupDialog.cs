@@ -16,13 +16,6 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         Button Up,
         Button Down);
 
-    private sealed record GroupPlan(
-        VirtualCrossoverAlignmentStage Group,
-        IReadOnlyList<int> InitIndices,
-        IReadOnlyList<AutoSetupSource> Sources,
-        IReadOnlyList<Complex[]>? ImpulseResponses,
-        bool IsPrimary);
-
     private sealed record JunctionRow(
         AutoSetupWizardJunction Junction,
         Label NameLabel,
@@ -40,7 +33,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     }
 
     private sealed record GroupFit(
-        GroupPlan Plan,
+        AutoSetupGroupPlan Plan,
         IReadOnlyList<CrossoverProposal> Proposals);
 
     private readonly WrappingToolTip toolTip = new()
@@ -238,12 +231,6 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     private List<ChannelRow> MembersOf(VirtualCrossoverAlignmentStage group) =>
         session.MembersOf(group).Select(row => rows[row]).ToList();
 
-    /// <summary>Slopes the window fields offer. 6 dB/oct protects nothing and is excluded from the search anyway.</summary>
-    private static readonly int[] SelectableSlopes = CrossoverFilter
-        .SupportedSlopes(CrossoverFilterFamily.Butterworth)
-        .Where(slope => slope >= 12)
-        .ToArray();
-
     // One row per adjacent pair of every group, rebuilt whenever the chain order changes.
     private void RebuildJunctions()
     {
@@ -283,8 +270,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             Increment = 10m,
             LogarithmicFrequencyStep = true,
             Margin = new Padding(0, 1, 2, 1),
-            Maximum = 20_000m,
-            Minimum = 20m,
+            Maximum = AutoSetupWizardPlan.FieldMaximumHz,
+            Minimum = AutoSetupWizardPlan.FieldMinimumHz,
             MinimumSize = new Size(36, 19)
         };
 
@@ -297,7 +284,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                 ForeColor = UiPalette.TextPrimary,
                 Margin = new Padding(0, 1, 2, 1)
             };
-            box.Items.AddRange(SelectableSlopes.Cast<object>().ToArray());
+            box.Items.AddRange(AutoSetupWizardPlan.SelectableSlopes.Cast<object>().ToArray());
             return box;
         }
 
@@ -447,13 +434,6 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         UiStyle.SetTextEnabledLook(labelJunctions, junctions.Count > 0);
         tableJunctions.ResumeLayout();
     }
-
-    private IReadOnlyList<JunctionSearchWindow> WindowsFor(VirtualCrossoverAlignmentStage group) =>
-        session.Junctions()
-            .Where(junction => junction.Group == group)
-            .OrderBy(junction => junction.IndexInGroup)
-            .Select(junction => session.EditsOf(junction).ToWindow())
-            .ToList();
 
     // Re-run after a reorder with the same controls, so device-unit sizing from LayoutBelowChannelTable survives.
     private void PopulateTable()
@@ -683,47 +663,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         SchedulePreview();
     }
 
-    private static AutoSetupSource SourceOf(AutoSetupWizardRow row) =>
-        new(row.Source.MagnitudeDb, row.Type, row.Source.Coherence, row.Source.Distortion);
-
-    // Sub elevation applies to the primary group only; others keep their balance and are levelled as a whole.
-    private CrossoverAutoSetupOptions OptionsFor(GroupPlan group) =>
-        new(
-            session.SelectedFamilies(),
-            (double)session.MinCrossoverHz,
-            (double)session.MaxCrossoverHz,
-            session.IndependentSlopes,
-            session.SampleRateHz,
-            session.ProcessorSampleRateHz,
-            group.IsPrimary && session.SubElevationInitialized ? (double)session.SubElevationDb : null,
-            WindowsFor(group.Group));
-
-    // Snapshot on the UI thread; the ranked search runs in the background.
-    private List<GroupPlan> CurrentPlan(bool withImpulseResponses)
-    {
-        VirtualCrossoverAlignmentStage primary = session.PrimaryGroup();
-        var plan = new List<GroupPlan>();
-        foreach (VirtualCrossoverAlignmentStage group in session.GroupsInOrder())
-        {
-            List<AutoSetupWizardRow> members = session.MembersOf(group);
-            bool ranked = withImpulseResponses &&
-                members.Count > 1 &&
-                members.All(row => row.Source.ImpulseResponse is { Length: > 0 });
-            plan.Add(new GroupPlan(
-                group,
-                members.Select(row => row.InitIndex).ToList(),
-                members.Select(SourceOf).ToList(),
-                ranked ? members.Select(row => row.Source.ImpulseResponse!).ToList() : null,
-                group == primary));
-        }
-
-        return plan;
-    }
-
     // Pure, so Apply can run it off the UI thread.
     private static List<GroupFit> Fit(
-        IReadOnlyList<GroupPlan> plan,
-        Func<GroupPlan, CrossoverAutoSetupOptions> options,
+        IReadOnlyList<AutoSetupGroupPlan> plan,
+        Func<AutoSetupGroupPlan, CrossoverAutoSetupOptions> options,
         double sampleRateHz)
     {
         var fitted = new IReadOnlyList<CrossoverProposal>[plan.Count];
@@ -732,7 +675,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         foreach (int index in Enumerable.Range(0, plan.Count)
                      .OrderByDescending(index => plan[index].IsPrimary))
         {
-            GroupPlan group = plan[index];
+            AutoSetupGroupPlan group = plan[index];
             CrossoverAutoSetupOptions groupOptions = options(group);
             IReadOnlyList<CrossoverProposal> proposals = group.Sources.Count == 1
                 ? [CrossoverAutoSetup.ProposeSingle(group.Sources[0], groupOptions)]
@@ -781,7 +724,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
         try
         {
-            return Fit(CurrentPlan(withImpulseResponses), OptionsFor, session.SampleRateHz);
+            return Fit(
+                AutoSetupWizardPlan.Groups(session, withImpulseResponses),
+                group => AutoSetupWizardPlan.OptionsFor(session, group),
+                session.SampleRateHz);
         }
         catch (ArgumentException)
         {
@@ -855,9 +801,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         try
         {
             await Task.Delay(PreviewDebounceMilliseconds, token);
-            List<GroupPlan> plan = CurrentPlan(withImpulseResponses: false);
+            List<AutoSetupGroupPlan> plan = AutoSetupWizardPlan.Groups(session, withImpulseResponses: false);
             Dictionary<VirtualCrossoverAlignmentStage, CrossoverAutoSetupOptions> snapshot =
-                plan.ToDictionary(group => group.Group, OptionsFor);
+                AutoSetupWizardPlan.Snapshot(session, plan);
             double rateHz = session.SampleRateHz;
             double processorHz = session.ProcessorSampleRateHz;
             bool elevationSet = session.SubElevationInitialized;
@@ -889,7 +835,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     /// <summary>Pure: touches no control, so it is safe on a worker. A run that moves the elevation ceiling fits a
     /// second time here rather than bouncing back through the UI to do it.</summary>
     private static PreviewComputation? ComputePreview(
-        IReadOnlyList<GroupPlan> plan,
+        IReadOnlyList<AutoSetupGroupPlan> plan,
         IReadOnlyDictionary<VirtualCrossoverAlignmentStage, CrossoverAutoSetupOptions> options,
         double sampleRateHz,
         double processorSampleRateHz,
@@ -936,7 +882,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     }
 
     private static List<GroupFit>? TryFit(
-        IReadOnlyList<GroupPlan> plan,
+        IReadOnlyList<AutoSetupGroupPlan> plan,
         IReadOnlyDictionary<VirtualCrossoverAlignmentStage, CrossoverAutoSetupOptions> options,
         double sampleRateHz)
     {
@@ -1018,74 +964,49 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return;
         }
 
-        foreach (VirtualCrossoverAlignmentStage group in session.GroupsInOrder())
+        foreach ((AutoSetupWizardJunction junction, JunctionWindowResolution window)
+                 in AutoSetupWizardPlan.ResolvedWindows(session))
         {
-            List<AutoSetupWizardRow> members = session.MembersOf(group);
-            if (members.Count < 2)
+            JunctionRow row = junctions.First(candidate => candidate.Junction == junction);
+            AutoSetupJunctionEdits edits = session.EditsOf(junction);
+            row.Suppressed = true;
+            try
             {
-                continue;
+                if (edits.MinHz == null)
+                {
+                    row.MinHz.Value = AutoSetupWizardPlan.FieldHz(window.LowHz);
+                }
+
+                if (edits.MaxHz == null)
+                {
+                    row.MaxHz.Value = AutoSetupWizardPlan.FieldHz(window.HighHz);
+                }
+
+                if (edits.MinSlope == null)
+                {
+                    row.MinSlope.SelectedItem = AutoSetupWizardPlan.NearestSlope(window.MinSlopeDbPerOctave);
+                }
+
+                if (edits.MaxSlope == null)
+                {
+                    row.MaxSlope.SelectedItem = AutoSetupWizardPlan.NearestSlope(window.MaxSlopeDbPerOctave);
+                }
+            }
+            finally
+            {
+                row.Suppressed = false;
             }
 
-            var sources = members.Select(SourceOf).ToList();
-            CrossoverAutoSetupOptions options = OptionsFor(new GroupPlan(
-                group, [], sources, null, group == session.PrimaryGroup()));
-            List<JunctionRow> rowsInGroup = junctions
-                .Where(junction => junction.Junction.Group == group)
-                .OrderBy(junction => junction.Junction.IndexInGroup)
-                .ToList();
-            for (int j = 0; j < rowsInGroup.Count; j++)
-            {
-                JunctionRow row = rowsInGroup[j];
-                JunctionWindowResolution window;
-                try
-                {
-                    window = CrossoverAutoSetup.ResolveJunctionWindow(sources, j, options);
-                }
-                catch (ArgumentException)
-                {
-                    continue;
-                }
-
-                AutoSetupJunctionEdits edits = session.EditsOf(row.Junction);
-                row.Suppressed = true;
-                try
-                {
-                    if (edits.MinHz == null)
-                    {
-                        row.MinHz.Value = Clamp(row.MinHz, window.LowHz);
-                    }
-
-                    if (edits.MaxHz == null)
-                    {
-                        row.MaxHz.Value = Clamp(row.MaxHz, window.HighHz);
-                    }
-
-                    if (edits.MinSlope == null)
-                    {
-                        row.MinSlope.SelectedItem = NearestSlope(window.MinSlopeDbPerOctave);
-                    }
-
-                    if (edits.MaxSlope == null)
-                    {
-                        row.MaxSlope.SelectedItem = NearestSlope(window.MaxSlopeDbPerOctave);
-                    }
-                }
-                finally
-                {
-                    row.Suppressed = false;
-                }
-
-                // The fact goes beside the row; the reasoning goes in the tooltip, where it is read only by
-                // someone who wants it.
-                row.Notes.Text = string.Join(
-                    "   ·   ", window.Notes.Select(note => note.Summary));
-                row.Notes.Visible = window.Notes.Count > 0;
-                toolTip.SetToolTip(
-                    row.Notes,
-                    string.Join(
-                        Environment.NewLine + Environment.NewLine,
-                        window.Notes.Select(note => note.Detail)));
-            }
+            // The fact goes beside the row; the reasoning goes in the tooltip, where it is read only by
+            // someone who wants it.
+            row.Notes.Text = string.Join(
+                "   ·   ", window.Notes.Select(note => note.Summary));
+            row.Notes.Visible = window.Notes.Count > 0;
+            toolTip.SetToolTip(
+                row.Notes,
+                string.Join(
+                    Environment.NewLine + Environment.NewLine,
+                    window.Notes.Select(note => note.Detail)));
         }
     }
 
@@ -1128,12 +1049,6 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             ClientSize = new Size(width, Math.Max(height, ClientSize.Height));
         }
     }
-
-    private static decimal Clamp(ThemedNumericUpDown field, double value) =>
-        Math.Clamp((decimal)Math.Round(value), field.Minimum, field.Maximum);
-
-    private static int NearestSlope(int slopeDbPerOctave) =>
-        SelectableSlopes.MinBy(slope => Math.Abs(slope - slopeDbPerOctave));
 
     /// <summary>What the junction ended up as. Split corners print both, so the row shows the split rather than
     /// hiding it behind one number.</summary>
@@ -1417,7 +1332,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             return;
         }
 
-        List<GroupPlan> plan = CurrentPlan(withImpulseResponses: true);
+        List<AutoSetupGroupPlan> plan = AutoSetupWizardPlan.Groups(session, withImpulseResponses: true);
         if (plan.All(group => group.ImpulseResponses == null))
         {
             Result = InInitOrder(quick, session.Rows.Count);
@@ -1430,8 +1345,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         IReadOnlyList<int>? order = session.RequestedChainOrder();
         // Snapshot per group on the UI thread: the ranked search runs off it and must not read the controls.
         Dictionary<VirtualCrossoverAlignmentStage, CrossoverAutoSetupOptions> snapshot =
-            plan.ToDictionary(group => group.Group, OptionsFor);
-        CrossoverAutoSetupOptions Options(GroupPlan group) => snapshot[group.Group];
+            AutoSetupWizardPlan.Snapshot(session, plan);
+        CrossoverAutoSetupOptions Options(AutoSetupGroupPlan group) => snapshot[group.Group];
         string previousPreview = labelPreview.Text;
         int count = session.Rows.Count;
         double rateHz = session.SampleRateHz;

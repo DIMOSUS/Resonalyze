@@ -1,4 +1,3 @@
-using System.Text;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -124,47 +123,13 @@ internal sealed class VirtualCrossoverAuditionSession
         {
             AudioFileInfo info = AudioFileCodec.Probe(fileName);
             string? refusal = VirtualCrossoverAuditionBudget.Refusal(info, Context.SampleRate);
-            var section = new StringBuilder();
-            section.AppendLine("== Track ==");
-            section.AppendLine(Path.GetFileName(fileName));
-            section.AppendLine(
-                $"{info.ChannelCount} channel(s), {info.SampleRate} Hz, " +
-                $"{FormatDuration(info.Duration)}");
-            if (refusal != null)
-            {
-                section.Append(refusal);
-                SourcePath = null;
-            }
-            else
-            {
-                if (info.SampleRate != Context.SampleRate)
-                {
-                    section.AppendLine(
-                        $"Will be converted to the project's {Context.SampleRate} Hz " +
-                        "(the measured responses are never resampled).");
-                }
-                if (info.ChannelCount == 1)
-                {
-                    section.AppendLine("Mono: the same signal will feed both sides.");
-                }
-                else if (info.ChannelCount > 2)
-                {
-                    section.AppendLine(
-                        "Only the first two channels will feed the two sides.");
-                }
-
-                SourcePath = fileName;
-            }
-
-            TrackSection = section.ToString().TrimEnd();
+            TrackSection = VirtualCrossoverAuditionReport.Track(fileName, info, Context.SampleRate, refusal);
+            SourcePath = refusal == null ? fileName : null;
         }
         catch (Exception exception)
         {
             SourcePath = null;
-            TrackSection =
-                "== Track ==\r\n" +
-                $"{Path.GetFileName(fileName)}\r\n" +
-                $"UNREADABLE: {exception.Message}";
+            TrackSection = VirtualCrossoverAuditionReport.UnreadableTrack(fileName, exception.Message);
         }
 
         ResultSection = string.Empty;
@@ -202,10 +167,6 @@ internal sealed class VirtualCrossoverAuditionSession
         cancellation.Cancel();
         return true;
     }
-
-    // Total minutes, so over-an-hour durations do not show only the remainder.
-    internal static string FormatDuration(TimeSpan duration) =>
-        $"{(int)duration.TotalMinutes}:{duration.Seconds:00}";
 
     private static bool PathsEqual(string? first, string? second) =>
         first != null && second != null &&

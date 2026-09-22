@@ -6,7 +6,7 @@ public sealed class VirtualCrossoverAuditionReportTests
     [Fact]
     public void AFinishedRenderLeadsTheReport()
     {
-        string report = VirtualCrossoverAuditionDialog.ComposeReport(
+        string report = VirtualCrossoverAuditionReport.Compose(
             Context(Spatial()),
             spatialAverageRequested: true,
             calibrationNote: null,
@@ -21,7 +21,7 @@ public sealed class VirtualCrossoverAuditionReportTests
     [Fact]
     public void WithNothingRenderedYet_TheBriefingLeads()
     {
-        string report = VirtualCrossoverAuditionDialog.ComposeReport(
+        string report = VirtualCrossoverAuditionReport.Compose(
             Context(Spatial()),
             spatialAverageRequested: true,
             calibrationNote: null,
@@ -34,16 +34,16 @@ public sealed class VirtualCrossoverAuditionReportTests
     [Fact]
     public void TheMagnitudeSectionSaysWhereTheLevelsComeFrom()
     {
-        string requested = VirtualCrossoverAuditionDialog.ComposeReport(
+        string requested = VirtualCrossoverAuditionReport.Compose(
             Context(Spatial()), true, null, string.Empty, string.Empty);
         Assert.Contains("Set offset +1.0 dB", requested);
 
-        string declined = VirtualCrossoverAuditionDialog.ComposeReport(
+        string declined = VirtualCrossoverAuditionReport.Compose(
             Context(Spatial()), false, null, string.Empty, string.Empty);
         Assert.Contains("one microphone position", declined);
         Assert.DoesNotContain("Set offset +1.0 dB", declined);
 
-        string unavailable = VirtualCrossoverAuditionDialog.ComposeReport(
+        string unavailable = VirtualCrossoverAuditionReport.Compose(
             Context(spatial: null, reason: "the two sides are not one set."),
             true,
             null,
@@ -55,11 +55,11 @@ public sealed class VirtualCrossoverAuditionReportTests
     [Fact]
     public void TheCalibrationBlockAppearsOnlyWhenItHasSomethingToSay()
     {
-        string silent = VirtualCrossoverAuditionDialog.ComposeReport(
+        string silent = VirtualCrossoverAuditionReport.Compose(
             Context(null), false, null, string.Empty, string.Empty);
         Assert.DoesNotContain("== Calibration ==", silent);
 
-        string spoken = VirtualCrossoverAuditionDialog.ComposeReport(
+        string spoken = VirtualCrossoverAuditionReport.Compose(
             Context(null), false, "Own (as measured): every channel through 'XREF'.",
             string.Empty, string.Empty);
         Assert.Contains("== Calibration ==", spoken);

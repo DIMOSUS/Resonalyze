@@ -137,9 +137,11 @@ curve INSIDE the passband and the crossover's own slope outside it, so the fit c
 the filter the tune defines — which is what the neighbour's slope has to sum with. `EqWizardSession.CrossoverInTarget`
 (the **Crossover in target** box, on by default for a chain handoff) adds `20·log10|crossover|` to the target
 everywhere it is sampled, so the plot, the fit, the statistics and the level check all read the same goal.
-An imported target that is itself cut with the crossover gets the slope twice; `EqDoubleSkirtCheck` reads each skirt's
-−3 → −18 dB span and warns in the results panel when the imported curve falls 10 dB or more across it (a skirt falls
-~15 dB there; the steepest preset shelf stays under 7).
+An imported target that is itself cut with the crossover gets the slope twice; `EqDoubleSkirtCheck` warns in the results
+panel when the imported curve falls 10 dB or more over the octave beyond each skirt's −3 dB point (LR24 ~20 dB, LR12
+~10, the steepest preset shelf under 7). An octave rather than the skirt's own −3 → −18 dB span, because a windowed-sinc
+FIR skirt covers a tenth of an octave, over which a cut in the file barely moves. `EqDoubleSkirtCheck.Cache` holds the
+answer between redraws: a FIR skirt costs a pass over the kernel per frequency.
 
 - **The shape** (`EqTargetSlope`) is a designed FIR crossover's own KERNEL where there is one, and otherwise the
   channel's `VirtualCrossoverChannelSettings.EffectiveCrossover` — the same corners the window comes from, so From/To

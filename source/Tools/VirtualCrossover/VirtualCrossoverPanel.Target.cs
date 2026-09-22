@@ -95,7 +95,8 @@ public partial class VirtualCrossoverPanel
         TargetCurveChanged?.Invoke(edited);
         if (TargetCurveImport.OfferLevel(
                 FindForm(),
-                imported,
+                imported.Name,
+                imported.PeakDb,
                 (double)numericTargetLevel.Value,
                 numericTargetLevel.FieldRange(),
                 VirtualCrossoverAcousticPlot.MagnitudeFloorDb,

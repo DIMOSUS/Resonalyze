@@ -76,6 +76,64 @@ public sealed class EqDoubleSkirtCheckTests
             TargetCurveSpec.FromPreset(TargetPreset.Car), Midrange, crossoverInTarget: true, Rate));
     }
 
+    [Fact]
+    public void AFirCrossoverKernel_IsReadLikeAnIirOne()
+    {
+        // A windowed-sinc skirt falls 15 dB in a tenth of an octave, over which the LR24 cut in the file barely moves.
+        var design = new FirCrossoverDesign(
+            CrossoverKind.BandPass,
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_900, 24),
+            new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 200, 24),
+            FirCrossoverMethod.WindowedSinc,
+            FirWindow.Kaiser,
+            8,
+            4_095,
+            Rate);
+        var fir = new EqTargetSlope(null, design.Build());
+
+        Assert.Equal(2, EqDoubleSkirtCheck.RepeatedSkirts(Spec(MidrangeCut), fir, Rate).Count);
+        Assert.Empty(EqDoubleSkirtCheck.RepeatedSkirts(Spec(WholeTarget), fir, Rate));
+    }
+
+    [Fact]
+    public void TheCache_AnswersAgainOnlyWhenAnInputChanges()
+    {
+        var cache = new EqDoubleSkirtCheck.Cache();
+        TargetCurveSpec cut = Spec(MidrangeCut);
+
+        string? first = cache.Warning(cut, Midrange, crossoverInTarget: true, Rate);
+        Assert.NotNull(first);
+        Assert.Same(first, cache.Warning(cut, Midrange with { }, crossoverInTarget: true, Rate));
+        Assert.Null(cache.Warning(cut, Midrange, crossoverInTarget: false, Rate));
+        Assert.Null(cache.Warning(Spec(WholeTarget), Midrange, crossoverInTarget: true, Rate));
+        Assert.Equal(first, cache.Warning(cut, Midrange, crossoverInTarget: true, Rate));
+    }
+
+    [Fact]
+    public void TheLevelOffer_ReadsTheTargetAsDrawn()
+    {
+        // A file peaking at +40 dB at 20 Hz, on a tweeter's channel: the high-pass keeps that peak off the plot.
+        var session = new EqWizardSession();
+        session.Load(new EqWizardCurveSource
+        {
+            Kind = EqWizardSourceKind.VirtualDspChannel,
+            DisplayName = "Ch T",
+            Description = "test",
+            PreviewChain = DspChannelChain.Identity,
+            TargetCrossover = new CrossoverSpec(
+                CrossoverKind.HighPass,
+                HighPassEdge: new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 3_000, 24))
+        });
+        session.SetTarget(session.Target with
+        {
+            Spec = Spec([(20, 40.0), (200, 0.0), (20_000, 0.0)])
+        });
+
+        Assert.Equal(0, EqWizardRender.TargetShapePeakDb(session)!.Value, 0.5);
+        session.SetCrossoverInTarget(false);
+        Assert.Equal(40, EqWizardRender.TargetShapePeakDb(session)!.Value, 1e-9);
+    }
+
     private static TargetCurveSpec Spec((double Hz, double Db)[] points) =>
         TargetCurveSpec.FromPreset(TargetPreset.Flat) with
         {

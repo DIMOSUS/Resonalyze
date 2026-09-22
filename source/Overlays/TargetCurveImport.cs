@@ -61,20 +61,21 @@ internal static class TargetCurveImport
     }
 
     /// <summary>
-    /// The Target Level to switch to when the curve's peak, hung at <paramref name="levelDb"/>, lands beyond what the plot can
-    /// pan to and the user agrees to move it, already fitted to <paramref name="levelRange"/>. Null keeps the level. The curve
-    /// itself is never shifted.
+    /// The Target Level to switch to when the target's peak as drawn (<paramref name="peakDb"/> without the level), hung at
+    /// <paramref name="levelDb"/>, lands beyond what the plot can pan to and the user agrees to move it, already fitted to
+    /// <paramref name="levelRange"/>. Null keeps the level. The curve itself is never shifted.
     /// </summary>
     public static decimal? OfferLevel(
         IWin32Window? owner,
-        ImportedTargetCurve curve,
+        string name,
+        double peakDb,
         double levelDb,
         NumericFieldRange levelRange,
         double plotMinDb,
         double plotMaxDb)
     {
-        ArgumentNullException.ThrowIfNull(curve);
-        if (LevelSeatingPeak(curve.PeakDb, levelDb, plotMinDb, plotMaxDb) is not { } ideal)
+        ArgumentNullException.ThrowIfNull(name);
+        if (LevelSeatingPeak(peakDb, levelDb, plotMinDb, plotMaxDb) is not { } ideal)
         {
             return null;
         }
@@ -82,11 +83,11 @@ internal static class TargetCurveImport
         // Offered as the box will hold it, so the peak lands where the question says.
         decimal seated = levelRange.Clamp(ideal);
 
-        double drawnDb = curve.PeakDb + levelDb;
-        double seatedDb = curve.PeakDb + (double)seated;
+        double drawnDb = peakDb + levelDb;
+        double seatedDb = peakDb + (double)seated;
         DialogResult answer = MessageBox.Show(
             owner,
-            $"“{curve.Name}” peaks at {curve.PeakDb:+0.0;-0.0;0.0} dB in the file, which puts it at " +
+            $"“{name}” peaks at {peakDb:+0.0;-0.0;0.0} dB, which puts it at " +
             $"{drawnDb:0} dB on this plot — outside the {plotMinDb:0} … {plotMaxDb:0} dB it shows." +
             Environment.NewLine + Environment.NewLine +
             $"Set the Target Level to {seated:+0.##;-0.##;0} dB so the peak sits at {seatedDb:0.0} dB? " +

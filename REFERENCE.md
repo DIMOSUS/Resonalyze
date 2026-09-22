@@ -1903,8 +1903,8 @@ windowed-sinc design's slope is its window and length, so the corners it carries
 describe a filter it is not.
 An [imported target](#target-curves) already cut with the crossover would then carry
 the slope twice. The **Tuning results** panel says so in amber while the imported curve
-falls more than 10 dB across the span where the channel's own skirt falls from −3 to
-−18 dB: import the curve without the crossover, or untick the box.
+falls 10 dB or more over the octave beyond the channel's −3 dB point: import the curve
+without the crossover, or untick the box.
 Where the channel card states an acoustic crossover (see [Tune
 junction](#tune-junction)), the target follows that acoustic crossover, and the filter
 the chain actually runs is drawn beside it as a dotted, half-transparent curve in the

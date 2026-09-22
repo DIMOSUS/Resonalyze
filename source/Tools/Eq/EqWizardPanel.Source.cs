@@ -435,9 +435,12 @@ public partial class EqWizardPanel
             Spec = session.Target.Spec with { Imported = imported }
         });
         (double reachMinDb, double reachMaxDb) = plot.MagnitudeReach();
-        if (TargetCurveImport.OfferLevel(
+        // The drawn target, not the file: with Crossover in target a peak inside a skirt is never shown.
+        if (EqWizardRender.TargetShapePeakDb(session) is { } peakDb &&
+            TargetCurveImport.OfferLevel(
                 FindForm(),
-                imported,
+                imported.Name,
+                peakDb,
                 (double)session.TargetOffsetDb,
                 NumericTargetOffset.FieldRange(),
                 reachMinDb,

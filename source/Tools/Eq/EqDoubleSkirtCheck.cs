@@ -3,7 +3,8 @@ namespace Resonalyze;
 /// <summary>An imported target cut with the channel's crossover gets its slope twice once Crossover in target adds it.</summary>
 internal static class EqDoubleSkirtCheck
 {
-    /// <summary>Fall across the skirt's own −3 → −18 dB span read as a skirt: ~15 dB for one, under 7 for the steepest shelf.</summary>
+    /// <summary>Fall over the octave past the channel's −3 dB point read as a skirt (LR24 ~20, steepest shelf under 7); an octave
+    /// because a steep FIR skirt's own span is too narrow to read the file across.</summary>
     public const double FallDb = 10;
 
     private const double PassbandDb = -3;
@@ -49,7 +50,8 @@ internal static class EqDoubleSkirtCheck
                 if (shape[i] <= -EqTargetCrossover.SlopeWindowFallDb)
                 {
                     if (pass is { } edge &&
-                        imported.Evaluate(grid[edge]) - imported.Evaluate(grid[i]) >= FallDb)
+                        imported.Evaluate(grid[edge]) -
+                        imported.Evaluate(grid[edge] * Math.Pow(2, direction)) >= FallDb)
                     {
                         repeated.Add(grid[edge]);
                     }
@@ -60,6 +62,25 @@ internal static class EqDoubleSkirtCheck
         }
 
         return repeated;
+    }
+
+    /// <summary>Remembers the last answer: a FIR skirt costs a pass over the kernel per frequency, too much for every redraw.</summary>
+    internal sealed class Cache
+    {
+        private (ImportedTargetCurve? Imported, EqTargetSlope? Slope, bool CrossoverInTarget, int SampleRateHz)? key;
+        private string? warning;
+
+        public string? Warning(TargetCurveSpec spec, EqTargetSlope? slope, bool crossoverInTarget, int sampleRateHz)
+        {
+            var current = (spec.Imported, slope, crossoverInTarget, sampleRateHz);
+            if (key is not { } last || !last.Equals(current))
+            {
+                warning = EqDoubleSkirtCheck.Warning(spec, slope, crossoverInTarget, sampleRateHz);
+                key = current;
+            }
+
+            return warning;
+        }
     }
 
     public static string? Warning(

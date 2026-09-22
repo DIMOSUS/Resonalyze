@@ -256,6 +256,16 @@ internal static class EqWizardRender
             ShapedTarget(session, frequencies, session.CrossoverInTarget ? session.TargetCrossover : null));
     }
 
+    /// <summary>The highest level the target is drawn at across the plot, Target Level excluded; null when none is finite.</summary>
+    public static double? TargetShapePeakDb(EqWizardSession session)
+    {
+        double[] levels = TargetCurve(session, DefaultTargetGrid).Points
+            .Select(point => point.Y)
+            .Where(double.IsFinite)
+            .ToArray();
+        return levels.Length == 0 ? null : levels.Max() - (double)session.TargetOffsetDb;
+    }
+
     public const string ElectricalTargetTitle = "Target on the electrical crossover";
 
     /// <summary>The target on the electrical crossover, drawn as a reference where the target follows a stated

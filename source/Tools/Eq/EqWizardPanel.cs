@@ -39,6 +39,7 @@ public partial class EqWizardPanel : UserControl
     private readonly EqWizardAutoTuneOrchestrator autoTuneOrchestrator = new();
     private readonly EqWizardImportExportCoordinator importExportCoordinator = new();
     private readonly EqWizardPlot plot = new();
+    private readonly EqDoubleSkirtCheck.Cache doubleSkirtCheck = new();
     private PlotLabelsPanelController plotLabels = null!;
     // Set while the panel writes its own controls, so their handlers do not write the value back.
     private bool presenting;
@@ -482,7 +483,7 @@ public partial class EqWizardPanel : UserControl
         NumericTargetOffset.Enabled = true;
         NumericGain.Enabled = !session.Bypass && render.SourcePlusEq != null;
         ResultsChanged?.Invoke(EqWizardRender.Stats(session, render, eq));
-        WarningChanged?.Invoke(EqDoubleSkirtCheck.Warning(
+        WarningChanged?.Invoke(doubleSkirtCheck.Warning(
             session.Target.Spec,
             session.TargetCrossover,
             session.CrossoverInTarget,

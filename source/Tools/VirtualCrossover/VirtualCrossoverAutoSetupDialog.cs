@@ -126,7 +126,14 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             "every junction window. At 20 kHz it adds nothing.");
         independentSlopes.CheckedChanged +=
             (_, _) => OptionChanged(() => session.IndependentSlopes = independentSlopes.Checked);
-        reorderBlocks.CheckedChanged += (_, _) => OptionChanged(() => session.ReorderBlocks = reorderBlocks.Checked);
+        // Read only by Apply, so it changes no preview.
+        reorderBlocks.CheckedChanged += (_, _) =>
+        {
+            if (initialized)
+            {
+                session.ReorderBlocks = reorderBlocks.Checked;
+            }
+        };
         subElevation.ValueChanged += (_, _) => OptionChanged(() => session.SubElevationDb = subElevation.Value);
         toolTip.SetToolTip(
             independentSlopes,

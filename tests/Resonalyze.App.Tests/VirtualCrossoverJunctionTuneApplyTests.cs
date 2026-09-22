@@ -162,7 +162,7 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests : IDisposable
         Apply(Result(changed: true), goal: null, generation: 3);
 
         Assert.Equal("A/B", tune.Undoable(3));
-        Assert.Equal(reader.Fingerprint(View), tune.Undo!.FingerprintAfter);
+        Assert.Null(tune.Undoable(2));
         Assert.True(tune.Unchanged(reader.Fingerprint(View)));
 
         session.Channels[2].SideSettings(false).GainDb = -3;
@@ -201,9 +201,8 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests : IDisposable
         var view = new AgentViewInputs(VirtualCrossoverGroupView.FrontAndSub, true, true, -6.5, null);
         session.Project.RearFillOffsetMs = 4;
 
-        tune.Apply(Lower, Upper, Result(changed: true), null, view, 1);
+        AgentImportUndo before = tune.Apply(Lower, Upper, Result(changed: true), null, view);
 
-        AgentImportUndo before = tune.Undo!.Channels;
         Assert.Equal(session.Channels, before.Order);
         Assert.True(before.HybridTicked);
         Assert.Equal(-6.5, before.TargetLevelDb);
@@ -253,7 +252,7 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests : IDisposable
     }
 
     private void Apply(JunctionTuneResult landed, JunctionAcousticTarget? goal, long generation = 1) =>
-        tune.Apply(Lower, Upper, landed, goal, View, generation);
+        tune.Remember(tune.Apply(Lower, Upper, landed, goal, View), generation, Lower, Upper, reader.Fingerprint(View));
 
     private void AssertFound()
     {

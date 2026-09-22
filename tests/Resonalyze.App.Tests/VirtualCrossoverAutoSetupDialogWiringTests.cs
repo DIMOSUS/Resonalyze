@@ -30,9 +30,10 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
         CrossoverProposal[] untouched = Proposals(expected);
 
         Change(change, wizard, expected);
-        Preview(expected);
+        AutoSetupPreview preview = Preview(expected)!;
         wizard.Settle();
 
+        AssertShows(wizard, expected, preview);
         CrossoverProposal[] applied = wizard.Apply();
         Assert.Equal(Proposals(expected), applied);
         Assert.NotEqual(untouched, applied);

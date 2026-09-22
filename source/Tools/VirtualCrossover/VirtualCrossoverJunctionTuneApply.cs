@@ -20,18 +20,27 @@ internal sealed class VirtualCrossoverJunctionTuneApply(VirtualCrossoverSession 
 
     /// <summary>Writes the found crossover whenever it differs, won or not (the keep margin is advice), and the goal
     /// as asked.</summary>
-    public void Apply(
+    /// <returns>The session as it was, for <see cref="Remember"/> once the write is shown.</returns>
+    public AgentImportUndo Apply(
         VirtualCrossoverChannel lower,
         VirtualCrossoverChannel upper,
         JunctionTuneResult landed,
         JunctionAcousticTarget? goal,
-        AgentViewInputs view,
-        long generation)
+        AgentViewInputs view)
     {
         AgentImportUndo before = AgentImportUndo.Capture(session, reader, view);
         AgentJunctionTune.Write(landed, lower, upper, goal, applyCrossover: landed.Moves);
-        Undo = new JunctionTuneUndo(before, generation, $"{lower.Name}/{upper.Name}", reader.Fingerprint(view));
+        return before;
     }
+
+    /// <param name="fingerprintAfter">The session read after the cards took the write: showing it can still move a field.</param>
+    public void Remember(
+        AgentImportUndo before,
+        long generation,
+        VirtualCrossoverChannel lower,
+        VirtualCrossoverChannel upper,
+        string fingerprintAfter) =>
+        Undo = new JunctionTuneUndo(before, generation, $"{lower.Name}/{upper.Name}", fingerprintAfter);
 
     /// <summary>The undo for this project, or null; an undo left from another project is dropped.</summary>
     public JunctionTuneUndo? UndoFor(long generation)

@@ -61,12 +61,13 @@ public partial class VirtualCrossoverPanel
         JunctionTuneResult landed,
         JunctionAcousticTarget? goal)
     {
-        junctionTune.Apply(lower, upper, landed, goal, AgentView(), projectGeneration);
+        AgentImportUndo before = junctionTune.Apply(lower, upper, landed, goal, AgentView());
         ApplySettingsToControl(lower);
         ApplySettingsToControl(upper);
         // Both sides were decided here, so the Lock remembers rather than carries.
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         SaveAndRedraw();
+        junctionTune.Remember(before, projectGeneration, lower, upper, ComputeAgentFingerprint());
     }
 
     /// <summary>Changes made since the Apply go too, so that is asked first.</summary>

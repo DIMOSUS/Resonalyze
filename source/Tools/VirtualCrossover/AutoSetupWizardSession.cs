@@ -51,7 +51,7 @@ internal sealed record AutoSetupJunctionEdits(
 }
 
 /// <summary>The crossover wizard's state: the channels in chain order with their types, what the user set on each
-/// junction, and the options, each number held as its field shows it. See docs/tech/virtual-dsp-panel.md#crossover-wizard.</summary>
+/// junction, and the options, each number held as its field shows it. See docs/tech/virtual-dsp-panel.md#crossover-wizard-code-map.</summary>
 internal sealed class AutoSetupWizardSession
 {
     public static readonly IReadOnlyList<CrossoverFilterFamily> OfferedFamilies =
@@ -140,8 +140,6 @@ internal sealed class AutoSetupWizardSession
 
     /// <summary>Pre-filled once from the first measured elevation; until then the DSP uses the measured default.</summary>
     public bool SubElevationInitialized { get; private set; }
-
-    public bool FamilyEnabled(CrossoverFilterFamily family) => families.Contains(family);
 
     public void SetFamily(CrossoverFilterFamily family, bool enabled)
     {

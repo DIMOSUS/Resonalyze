@@ -242,7 +242,8 @@ public sealed class VirtualCrossoverJunctionTuneWiringTests
             };
             pilot.Start();
             Button tune = (Button)Panel.Controls.Find("buttonTuneJunction", searchAllChildren: true).Single();
-            Assert.True(tune.Enabled);
+            // Off while the panel redraws.
+            Wait(() => tune.Enabled);
             tune.PerformClick();
             pilot.Stop();
             if (failure != null)

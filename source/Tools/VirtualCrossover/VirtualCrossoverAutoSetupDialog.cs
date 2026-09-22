@@ -64,6 +64,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         double processorSampleRateHz,
         IReadOnlyList<AutoSetupWizardChannel> channels)
     {
+        // A second Init builds a second session: until it is bound, the controls' events have nothing to write to.
+        initialized = false;
         session = new AutoSetupWizardSession(sampleRateHz, processorSampleRateHz, channels);
         maxCrossover.Maximum = session.CrossoverRange.Maximum;
         minCrossover.Maximum = session.CrossoverRange.Maximum;

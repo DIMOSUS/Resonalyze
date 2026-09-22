@@ -79,7 +79,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog
         labelPreview.Width =
             panelPreview.Width - panelPreview.Padding.Left - panelPreview.Padding.Right;
         labelPreview.Height = Math.Max(
-            AutoSetupWizardReport.PreviewLineCount(session) * labelPreview.Font.Height,
+            (session is null ? 0 : AutoSetupWizardReport.PreviewLineCount(session)) * labelPreview.Font.Height,
             TextRenderer.MeasureText(
                 labelPreview.Text,
                 labelPreview.Font,

@@ -1196,11 +1196,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
     }
 
-    /// <summary>Restacks everything under the two AutoSize tables and sizes the window around it. The tables change
-    /// height after the first layout (junction notes come and go on every edit), so the options
-    /// below must follow them every time, not once. Width only ever grows: a window that narrowed back on every
-    /// refit's verdict text would twitch. Height grows only on a refit and follows the content on a structural
-    /// change.</summary>
+    /// <summary>Restacks everything under the two AutoSize tables, whose height changes as junction notes come and
+    /// go. Width only grows (the verdicts change on every refit and would make it twitch); height follows the content
+    /// except on a refit.</summary>
     private void FitToContents(bool growOnly)
     {
         if (!optionsPositioned)

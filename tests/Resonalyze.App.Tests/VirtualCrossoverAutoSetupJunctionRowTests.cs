@@ -205,8 +205,7 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
     [Fact]
     public void ANoteAppearingAfterShow_PushesTheOptionsDown()
     {
-        // The notes line under a row shows up on an edit, long after the first layout: the table grows, and the
-        // options below used to stay where they were and cover it.
+        // The notes line under a row shows up on an edit, long after the first layout, and grows the table.
         StaTest.Run(() =>
         {
             using var dialog = new VirtualCrossoverAutoSetupDialog();

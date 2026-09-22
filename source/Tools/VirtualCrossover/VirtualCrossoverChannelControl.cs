@@ -336,33 +336,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
     }
 
     /// <summary>Why the FIR button is red (FIR crossover at a stale rate, or beside an IIR crossover), or null.</summary>
-    internal string? FirConflict
-    {
-        get
-        {
-            if (firKernel == null || firDesign is not { } design)
-            {
-                return null;
-            }
-
-            if (design.SampleRateHz != processorSampleRateHz)
-            {
-                return $"This FIR crossover was designed at {FormatRate(design.SampleRateHz)}, and the " +
-                    $"processor runs at {FormatRate(processorSampleRateHz)}:" + Environment.NewLine +
-                    "the taps are convolved as they are, so it cuts somewhere else. Open it in the" +
-                    Environment.NewLine + "FIR Constructor and return it to rebuild it at the processor's rate.";
-            }
-
-            if (SelectedCrossoverKind != CrossoverKind.Off)
-            {
-                return "This side runs a FIR crossover AND an IIR crossover: both filter the channel," +
-                    Environment.NewLine + "so it is cut twice. Legitimate, but rarely meant — turn one of them off" +
-                    Environment.NewLine + "unless the two are designed to work together.";
-            }
-
-            return null;
-        }
-    }
+    internal string? FirConflict => VirtualCrossoverChannelFirReadout.ConflictOf(
+        firKernel, firDesign, processorSampleRateHz, SelectedCrossoverKind);
 
     private double PhaseReferenceHz => SelectedZone == VirtualCrossoverZone.Sub
         ? (double)numericLowPassHz.Value
@@ -933,92 +908,20 @@ public partial class VirtualCrossoverChannelControl : UserControl
         UpdateFirReadout();
     }
 
-    // Latency read at the kernel peak (bulk delay for linear phase). Amber for a missing file or a file rate the processor does not run:
-    // the taps are used as-is (see FirFilter), so that kernel is a different filter.
     private void UpdateFirReadout()
     {
-        string buttonText;
-        string info;
-        Color infoColor = UiPalette.TextSecondary;
-        string infoTip;
-        if (firKernel == null)
-        {
-            buttonText = "Add…";
-            info = "off";
-            infoColor = UiPalette.TextDisabled;
-            infoTip = "No FIR filter on this channel.";
-        }
-        else
-        {
-            buttonText = "Edit…";
-            string name = firDesign is { } named
-                ? FirCrossoverDescription.Short(named)
-                : firSourceName ?? "FIR";
-            double peakMs = firKernel.PeakIndex * 1_000.0 / processorSampleRateHz;
-            double lengthMs = firKernel.Length * 1_000.0 / processorSampleRateHz;
-            bool rateMismatch = firKernel.DeclaredSampleRateHz is { } declared &&
-                declared != processorSampleRateHz;
-            info = rateMismatch
-                ? $"{firKernel.Length} taps · file {FormatRate(firKernel.DeclaredSampleRateHz!.Value)} ≠ {FormatRate(processorSampleRateHz)}"
-                : $"{firKernel.Length} taps · {peakMs:0.0} ms";
-            infoColor = rateMismatch ? UiPalette.Warning : UiPalette.TextSecondary;
-            infoTip =
-                $"{firKernel.Length} taps, {lengthMs:0.0} ms at {FormatRate(processorSampleRateHz)}; " +
-                $"peak at {peakMs:0.00} ms — roughly the bulk delay of a linear-phase kernel," +
-                Environment.NewLine + "no delay at all for a minimum-phase one." +
-                (firKernel.IsSilent
-                    ? Environment.NewLine + "Every tap is zero: the kernel MUTES the channel."
-                    : string.Empty) +
-                (rateMismatch
-                    ? Environment.NewLine +
-                      $"The file states {FormatRate(firKernel.DeclaredSampleRateHz!.Value)}, the processor runs " +
-                      $"{FormatRate(processorSampleRateHz)}. The taps are convolved as they are, at the" +
-                      Environment.NewLine +
-                      "processor's rate — so this is not the filter its designer drew."
-                    : string.Empty);
-            if (firDesign is { } design)
-            {
-                // Latency at the processor's rate: a design made at another rate delays by the same samples, a different time.
-                double runLatencyMs = design.LatencySamples * 1_000.0 / processorSampleRateHz;
-                info = $"{firKernel.Length} taps · {runLatencyMs:0.0} ms";
-                infoColor = UiPalette.TextSecondary;
-                infoTip = FirCrossoverDescription.Long(design) + "." + Environment.NewLine +
-                    $"Linear-phase: the channel is delayed by {runLatencyMs:0.00} ms, half the kernel" +
-                    (design.SampleRateHz == processorSampleRateHz
-                        ? "."
-                        : $" ({design.LatencyMs:0.00} ms as designed at {FormatRate(design.SampleRateHz)}).");
-            }
-            else
-            {
-                infoTip = name + ": " + infoTip;
-            }
-
-            info = $"{name}: {info}";
-        }
-
-        string? conflict = FirConflict;
-        buttonFir.Text = buttonText;
-        buttonFir.ForeColor = conflict != null ? UiPalette.Danger : UiPalette.TextPrimary;
-        labelFirInfo.Text = info;
-        labelFirInfo.ForeColor = conflict != null ? UiPalette.Error : infoColor;
+        VirtualCrossoverChannelFirReadout readout = VirtualCrossoverChannelFirReadout.Read(
+            firKernel, firSourceName, firDesign, processorSampleRateHz, SelectedCrossoverKind);
+        buttonFir.Text = readout.ButtonText;
+        buttonFir.ForeColor = readout.ButtonColor;
+        labelFirInfo.Text = readout.Info;
+        labelFirInfo.ForeColor = readout.InfoColor;
         if (tooltipHost is { } host)
         {
-            host.SetToolTip(
-                buttonFir,
-                conflict == null
-                    ? FirButtonTooltipText()
-                    : conflict + Environment.NewLine + Environment.NewLine + FirButtonTooltipText());
-            host.SetToolTip(labelFirInfo, conflict ?? infoTip);
+            host.SetToolTip(buttonFir, readout.ButtonTip);
+            host.SetToolTip(labelFirInfo, readout.InfoTip);
         }
     }
-
-    private static string FormatRate(int sampleRateHz) => $"{sampleRateHz / 1_000.0:0.###} kHz";
-
-    private string FirButtonTooltipText() =>
-        "The channel's FIR filter — a kernel the processor convolves the channel" + "\r\n" +
-        "with, designed in the FIR Constructor or imported from a file, kept in" + "\r\n" +
-        "the session, and run AT THE PROCESSOR'S RATE." + "\r\n" +
-        "Click to design, import, export or clear it.";
 
     private void UpdatePhaseReadout()
     {

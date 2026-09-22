@@ -841,111 +841,26 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
     }
 
-    private List<(AutoSetupWizardRow Earlier, AutoSetupWizardRow Later, VirtualCrossoverChainOrder Verdict)>
-        JudgedPairs()
-    {
-        var pairs =
-            new List<(AutoSetupWizardRow, AutoSetupWizardRow, VirtualCrossoverChainOrder)>();
-        foreach (VirtualCrossoverAlignmentStage group in session.GroupsInOrder())
-        {
-            List<AutoSetupWizardRow> members = session.MembersOf(group);
-            for (int i = 0; i + 1 < members.Count; i++)
-            {
-                VirtualCrossoverChainOrder verdict = VirtualCrossoverAutoSetupOrder.Judge(
-                    CenterOf(members[i]), CenterOf(members[i + 1]));
-                if (verdict != VirtualCrossoverChainOrder.AsMeasured)
-                {
-                    pairs.Add((members[i], members[i + 1], verdict));
-                }
-            }
-        }
-
-        return pairs;
-    }
-
-    private static double CenterOf(AutoSetupWizardRow row) =>
-        VirtualCrossoverAutoSetupOrder.CenterHz(
-            row.Source.Band, row.Source.HighPassHz, row.Source.LowPassHz);
-
     // Amber: order undetermined; red: chain runs backwards.
     private void MarkChainOrder()
     {
-        var doubtful = new Dictionary<AutoSetupWizardRow, Color>();
-        foreach ((AutoSetupWizardRow earlier, AutoSetupWizardRow later, VirtualCrossoverChainOrder verdict)
-                 in JudgedPairs())
-        {
-            Color color = verdict == VirtualCrossoverChainOrder.Reversed
-                ? UiPalette.Danger
-                : UiPalette.Warning;
-            foreach (AutoSetupWizardRow row in new[] { earlier, later })
-            {
-                if (!doubtful.TryGetValue(row, out Color existing) ||
-                    existing != UiPalette.Danger)
-                {
-                    doubtful[row] = color;
-                }
-            }
-        }
-
+        Dictionary<AutoSetupWizardRow, VirtualCrossoverChainOrder> marks = AutoSetupWizardChainOrder.Marks(session);
         foreach (AutoSetupWizardRow row in session.Rows)
         {
-            rows[row].BandLabel.ForeColor = doubtful.TryGetValue(row, out Color color)
-                ? color
+            rows[row].BandLabel.ForeColor = marks.TryGetValue(row, out VirtualCrossoverChainOrder verdict)
+                ? verdict == VirtualCrossoverChainOrder.Reversed ? UiPalette.Danger : UiPalette.Warning
                 : UiPalette.TextSecondary;
         }
     }
 
-    // Asks rather than refuses: the user may know which sub is which.
-    private bool ConfirmChainOrder()
-    {
-        List<(AutoSetupWizardRow Earlier, AutoSetupWizardRow Later, VirtualCrossoverChainOrder Verdict)>
-            doubtful = JudgedPairs();
-        if (doubtful.Count == 0)
-        {
-            return true;
-        }
-
-        var message = new List<string>();
-        var reversed = doubtful
-            .Where(pair => pair.Verdict == VirtualCrossoverChainOrder.Reversed)
-            .ToList();
-        if (reversed.Count > 0)
-        {
-            message.Add(
-                "A group's chain runs from the lowest driver to the highest, and " +
-                "these are the wrong way round — the second measures LOWER than " +
-                "the one above it:");
-            message.Add(string.Empty);
-            message.AddRange(reversed.Select(pair =>
-                $"    {pair.Earlier.Source.Name}  above  {pair.Later.Source.Name}"));
-            message.Add(string.Empty);
-        }
-
-        var unclear = doubtful
-            .Where(pair => pair.Verdict == VirtualCrossoverChainOrder.Unclear)
-            .ToList();
-        if (unclear.Count > 0)
-        {
-            message.Add(
-                "These measure too much alike for their order to be read off the " +
-                "measurement at all:");
-            message.Add(string.Empty);
-            message.AddRange(unclear.Select(pair =>
-                $"    {pair.Earlier.Source.Name}  above  {pair.Later.Source.Name}"));
-            message.Add(string.Empty);
-        }
-
-        message.Add(
-            "The wizard will cross them in the order shown. Use the ▲▼ arrows to " +
-            "change it, or set a crossover corner on one of them first — either " +
-            "one says which plays lower. Continue anyway?");
-        return MessageBox.Show(
+    private bool ConfirmChainOrder() =>
+        AutoSetupWizardChainOrder.Question(session) is not { } question ||
+        MessageBox.Show(
             this,
-            string.Join(Environment.NewLine, message),
+            question,
             "Auto crossover",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning) == DialogResult.Yes;
-    }
 
     // Frozen during ranking so the applied result matches the visible settings.
     private IEnumerable<Control> RankingInputControls()

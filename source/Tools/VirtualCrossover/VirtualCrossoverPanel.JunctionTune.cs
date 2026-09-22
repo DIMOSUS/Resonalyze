@@ -1,5 +1,4 @@
 ﻿using Resonalyze.Dsp;
-using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze;
 
@@ -14,35 +13,35 @@ public partial class VirtualCrossoverPanel
             junctions
                 .Select(pair => $"{pair.Lower.Channel.Name}-{pair.Upper.Channel.Name}")
                 .ToList(),
-            index => JunctionTuneOpening(junctions, index),
+            index => VirtualCrossoverJunctionTuneSearch.Opening(junctions, index),
             request => RunJunctionTuneAsync(junctions, request),
             session.Project.JunctionTune,
-            junctionTuneUndo is { } undo && undo.Generation == projectGeneration ? undo.Junction : null);
+            junctionTune.Undoable(projectGeneration));
         DialogResult answer = dialog.ShowDialog(FindForm());
         if (IsDisposed)
         {
-            lastJunctionTune = null;
+            junctionTune.Landed = null;
             return;
         }
 
         session.Project.JunctionTune = dialog.Remembered();
         if (dialog.UndoRequested)
         {
-            lastJunctionTune = null;
+            junctionTune.Landed = null;
             UndoJunctionTune();
             return;
         }
 
         if (answer != DialogResult.OK ||
             dialog.Result is not { } request ||
-            lastJunctionTune is not { } landed)
+            junctionTune.Landed is not { } landed)
         {
-            lastJunctionTune = null;
+            junctionTune.Landed = null;
             ScheduleSave();
             return;
         }
 
-        lastJunctionTune = null;
+        junctionTune.Landed = null;
         if (request.JunctionIndex >= junctions.Count)
         {
             return;
@@ -62,28 +61,24 @@ public partial class VirtualCrossoverPanel
         JunctionTuneResult landed,
         JunctionAcousticTarget? goal)
     {
-        AgentImportUndo before = CaptureAgentUndo();
-        // The found crossover whenever it differs, won or not: the keep margin is advice.
-        AgentJunctionTune.Write(landed, lower, upper, goal, applyCrossover: landed.Moves);
+        AgentImportUndo before = junctionTune.Apply(lower, upper, landed, goal, AgentView());
         ApplySettingsToControl(lower);
         ApplySettingsToControl(upper);
         // Both sides were decided here, so the Lock remembers rather than carries.
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         SaveAndRedraw();
-        junctionTuneUndo = new JunctionTuneUndo(
-            before, projectGeneration, $"{lower.Name}/{upper.Name}", ComputeAgentFingerprint());
+        junctionTune.Remember(before, projectGeneration, lower, upper, ComputeAgentFingerprint());
     }
 
     /// <summary>Changes made since the Apply go too, so that is asked first.</summary>
     private void UndoJunctionTune()
     {
-        if (junctionTuneUndo is not { } undo || undo.Generation != projectGeneration)
+        if (junctionTune.UndoFor(projectGeneration) is not { } undo)
         {
-            junctionTuneUndo = null;
             return;
         }
 
-        if (!string.Equals(undo.FingerprintAfter, ComputeAgentFingerprint(), StringComparison.Ordinal) &&
+        if (!junctionTune.Unchanged(ComputeAgentFingerprint()) &&
             MessageBox.Show(
                 FindForm(),
                 $"The session has changed since the tune of {undo.Junction} was applied. Undo puts every channel " +
@@ -96,111 +91,46 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        junctionTuneUndo = null;
-        RestoreChannels(undo.Channels);
+        RestoreChannels(junctionTune.TakeUndo());
     }
 
-    private JunctionTuneResult? lastJunctionTune;
-
-    private sealed record JunctionTuneUndo(
-        AgentImportUndo Channels, long Generation, string Junction, string FingerprintAfter);
-
-    private JunctionTuneUndo? junctionTuneUndo;
-
-    private JunctionTuneDefaults JunctionTuneOpening(List<AdjacentPair> junctions, int index)
-    {
-        if (index < 0 || index >= junctions.Count)
-        {
-            return new JunctionTuneDefaults(20, 20_000, [CrossoverFilterFamily.LinkwitzRiley], null);
-        }
-
-        VirtualCrossoverChannelSettings lower = junctions[index].Lower.Channel.Settings;
-        VirtualCrossoverChannelSettings upper = junctions[index].Upper.Channel.Settings;
-        double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(lower, upper);
-        (double minHz, double maxHz) = currentHz > 0
-            ? AgentProposalValidator.DefaultJunctionWindow(currentHz)
-            : (junctions[index].BandLowHz, junctions[index].BandHighHz);
-        return new JunctionTuneDefaults(
-            minHz,
-            maxHz,
-            AgentProposalValidator.CurrentFamilies(lower, upper),
-            (lower.RunsLowPass ? lower.AcousticLowPass : null) ?? (upper.RunsHighPass ? upper.AcousticHighPass : null),
-            currentHz > 0 ? currentHz : null);
-    }
+    private readonly VirtualCrossoverJunctionTuneApply junctionTune;
 
     private async Task<JunctionTuneOutcome> RunJunctionTuneAsync(
         List<AdjacentPair> junctions, JunctionTuneRequest request)
     {
-        lastJunctionTune = null;
+        junctionTune.Landed = null;
         if (request.JunctionIndex < 0 || request.JunctionIndex >= junctions.Count)
         {
-            return new JunctionTuneOutcome(
-                [JunctionTuneLine.Of("The junction is no longer in this view.")],
-                false,
-                "Nothing to search.",
-                true);
+            return VirtualCrossoverJunctionTuneSearch.NotInView();
         }
 
-        VirtualCrossoverChannel lower = junctions[request.JunctionIndex].Lower.Channel;
-        VirtualCrossoverChannel upper = junctions[request.JunctionIndex].Upper.Channel;
-        string label = $"Junction tune {lower.Name}/{upper.Name}";
         if (GateIsMisplaced)
         {
-            return new JunctionTuneOutcome(
-                [JunctionTuneLine.Of(
-                    "The phase gate is misplaced, so the junction cannot be read through it.")],
-                false,
-                "Place the gate first.",
-                true);
+            return VirtualCrossoverJunctionTuneSearch.GateMisplaced();
         }
 
-        if (AgentJunctionTune.FirCrossoverRefusal(lower, upper) is { } fir)
+        (JunctionTunePlan? plan, JunctionTuneOutcome? refused) = VirtualCrossoverJunctionTuneSearch.Plan(
+            session,
+            junctions[request.JunctionIndex],
+            request,
+            HybridRequested ? session.SpatialAverageMode : null);
+        if (plan == null)
         {
-            return Refusal(fir);
+            return refused!;
         }
 
-        (List<JunctionTuneSide> sides, string? refusal) =
-            AgentProbeReader.JunctionTuneSides(lower, upper, rightSideOnly: null);
-        if (refusal != null)
-        {
-            return Refusal(refusal);
-        }
-
-        if (request.AcousticGoal != null)
-        {
-            sides = AgentProbeReader.WithSpatialAverages(
-                sides,
-                lower,
-                upper,
-                HybridRequested ? session.SpatialAverageMode : null,
-                session.Calibration.SpatialAverageFor(),
-                session.ProcessorSampleRateHz);
-        }
-
-        var options = new JunctionTuneOptions(
-            request.Families,
-            request.Slopes.Count > 0 ? request.Slopes : null,
-            Math.Min(request.MinHz, request.MaxHz),
-            Math.Max(request.MinHz, request.MaxHz),
-            request.IndependentSlopes,
-            session.ProcessorSampleRateHz,
-            AcousticTarget: request.AcousticGoal,
-            TargetCurveDb: request.AcousticGoal == null ? null : TargetCurvePoints(),
-            SumSlackDb: request.SumSlackDb,
-            SplitCorners: request.SplitCorners,
-            OneAlignmentForAllSides: AgentProbeReader.SharesOneAlignment(lower, upper));
-        var plan = new JunctionTunePlan(label, lower, upper, sides, options);
         string fingerprintBefore = ComputeAgentFingerprint();
         JunctionTuneResult result;
         UseWaitCursor = true;
         try
         {
-            result = await Task.Run(() => CrossoverJunctionTuner.Tune(sides, options))
+            result = await Task.Run(() => CrossoverJunctionTuner.Tune(plan.Sides, plan.Options))
                 .ConfigureAwait(true);
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
-            return Refusal(exception.Message.TrimEnd('.'));
+            return VirtualCrossoverJunctionTuneSearch.Refusal(exception.Message.TrimEnd('.'));
         }
         finally
         {
@@ -216,51 +146,10 @@ public partial class VirtualCrossoverPanel
         }
         if (!string.Equals(fingerprintBefore, ComputeAgentFingerprint(), StringComparison.Ordinal))
         {
-            return Refusal("the session changed while the search ran");
+            return VirtualCrossoverJunctionTuneSearch.Refusal("the session changed while the search ran");
         }
 
-        List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
-        lastJunctionTune = result;
-        string searched =
-            $"{result.CandidatesEvaluated} candidates read over " +
-            $"{options.MinCrossoverHz:0.###}–{options.MaxCrossoverHz:0.###} Hz.";
-        // Apply is offered whenever it changes something, and only then.
-        JunctionTuneCandidate applied = result.Moves ? result.Best : result.Current;
-        bool goalChanges = AgentJunctionTune.WouldChangeGoal(lower, upper, request.AcousticGoal, applied);
-        bool goalLands = request.AcousticGoal != null && applied.AcousticGoalLands;
-        bool forTheGoal = request.AcousticGoal != null &&
-            result.Best.RankingScoreDb > result.Current.RankingScoreDb;
-        string verdict = result.Changed
-            ? forTheGoal
-                ? "A crossover nearer the goal was found, within the budget; Apply writes it. "
-                : "A better crossover was found; Apply writes it. "
-            : result.Moves
-                ? "Keeping the crossover on screen is recommended; Apply writes the found one anyway. "
-                : goalChanges
-                    ? "The crossover on screen is the best found; Apply writes the goal onto the cards. "
-                    : "The crossover on screen is the best found; nothing to apply. ";
-        return new JunctionTuneOutcome(
-            report,
-            result.Moves || goalChanges,
-            verdict + searched,
-            false,
-            Recommended: (result.Changed || (!result.Moves && goalChanges)) &&
-                (request.AcousticGoal == null || goalLands));
-
-        static JunctionTuneOutcome Refusal(string because) =>
-            new(
-                [JunctionTuneLine.Of(because[..1].ToUpperInvariant() + because[1..] + ".")],
-                false,
-                "Refused.",
-                true);
-    }
-
-    private IReadOnlyList<SignalPoint> TargetCurvePoints()
-    {
-        TargetCurveSpec spec = (session.Project.Target ?? new VirtualCrossoverTargetSettings())
-            .ToCurve().Normalized().Spec;
-        return EqualizationCurve.LogFrequencyGrid(20, 20_000, 400)
-            .Select(hz => new SignalPoint(hz, spec.Evaluate(hz)))
-            .ToList();
+        junctionTune.Landed = result;
+        return VirtualCrossoverJunctionTuneSearch.Outcome(plan, request, result);
     }
 }

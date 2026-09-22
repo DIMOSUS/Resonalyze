@@ -19,8 +19,8 @@ calibration policy, the Gate dialog's preview and the magnitude gate snapshot. W
 session. `VirtualCrossoverPanel` is its only writer: it binds the controls to it and presents what the readers
 return, and only its binding methods look a block's `VirtualCrossoverChannelControl` up. Its partials are named
 for what they bind (`.Project`, `.Calibration`, `.Channels`, `.Sources`, `.Peq`, `.Fir`, `.Views`, `.DspPlot`,
-`.Target`, `.SpatialAverage`, `.AutoDelay`, `.AutoCrossover`, `.Audition`, `.AgentBridge`, `.Export`,
-`.ToolTips`, `.Layout`); the main file holds the constructor, the host's API and the redraw loop.
+`.Target`, `.SpatialAverage`, `.AutoDelay`, `.AutoCrossover`, `.JunctionTune`, `.Audition`, `.AgentBridge`,
+`.Export`, `.ToolTips`, `.Layout`); the main file holds the constructor, the host's API and the redraw loop.
 
 | Reads the session | For |
 | --- | --- |
@@ -30,6 +30,7 @@ for what they bind (`.Project`, `.Calibration`, `.Channels`, `.Sources`, `.Peq`,
 | `GatePlacementVerdict`, `VirtualCrossoverWarnings` | the warning line |
 | `VirtualCrossoverAutoDelay`, `StagedGroupPlacement` | Auto delay |
 | `VirtualCrossoverAutoSetup` | what the crossover wizard reads and writes |
+| `VirtualCrossoverJunctionTuneSearch`, `VirtualCrossoverJunctionTuneApply` | Tune junction: its question, its verdict, Apply and Undo |
 | `VirtualCrossoverAudition` | the audition render |
 | `AgentSessionReader`, `AgentProbeReader`, `AgentJunctionTune`, `AgentEngineRequests` | the Agent Bridge |
 
@@ -42,6 +43,39 @@ Tests of a rule build a session directly or read a panel's through `panel.Sessio
 and the readers, which only the panel path exercises, is pinned by `VirtualCrossoverPanelWiringTests`: a live panel on
 synthetic measurements (the right side 6 dB below the left, so every reading names its side), driven through its
 controls and read by what it draws and reports.
+
+### Crossover wizard code map
+
+The wizard has state of its own, apart from the tune, in a UI-free `AutoSetupWizardSession`: the channels in chain
+order with their confirmed driver types (`AutoSetupWizardRow`), what the user set on each junction
+(`AutoSetupJunctionEdits`, kept by the pair, so a reorder elsewhere keeps it and a pair that comes back finds it),
+the filter families, the system band, the slope and reorder options and the bass elevation, each number held as its
+field shows it.
+
+| Reads the wizard's session | For |
+| --- | --- |
+| `AutoSetupWizardPlan` | each group's sources and options, and the window each junction resolves to |
+| `AutoSetupWizardFit` | the fit (the primary group first, the others levelled onto it) and the preview, over `AutoSetupPreviewInputs` read before the run leaves the UI thread |
+| `AutoSetupWizardReport` | band texts, the preview card's lines, each junction's verdict |
+| `AutoSetupWizardChainOrder` | pairs the measurements do not confirm, the rows' marks, the question Apply asks |
+
+`VirtualCrossoverAutoSetupDialog` binds the controls in partials (`.Channels`, `.Junctions`, `.Preview`, `.Layout`,
+`.Apply`) and runs the preview and the ranked search off the UI thread; `VirtualCrossoverAutoSetup` reads the blocks
+it opens on and writes its proposal back. A field the user has not touched shows the resolved window, and writing
+it is not an edit. `VirtualCrossoverAutoSetupDialogBoundaryTests` keeps statics and nested types off the dialog, and
+`VirtualCrossoverAutoSetupDialogWiringTests` drives a shown dialog through its controls beside a session the test
+changes the same way.
+
+### Junction tune code map
+
+`VirtualCrossoverJunctionTuneSearch` states what the dialog opens a junction with, turns a request into the tuner's
+plan (or the refusal that stands in for a search) and the result into the report and verdict.
+`VirtualCrossoverJunctionTuneApply` holds the result the open dialog shows, writes it on Apply through
+`AgentJunctionTune.Write`, and keeps the one step of Undo: the session before the Apply (`AgentImportUndo`, which
+Undo AI import shares), the project generation it belongs to and the fingerprint after it, by which Undo knows that
+later changes would go too and asks. The panel's `.JunctionTune` runs the search off the UI thread, refuses a result
+the session moved under, refreshes the cards and restores through `RestoreChannels`.
+`VirtualCrossoverJunctionTuneWiringTests` drives the real dialog from a live panel.
 
 ## Redraw scheduling
 

@@ -1,55 +1,83 @@
-using System.Reflection;
 using Resonalyze.Dsp;
+using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.App.Tests;
 
-public sealed class VirtualCrossoverJunctionTuneApplyTests
+public sealed class VirtualCrossoverJunctionTuneApplyTests : IDisposable
 {
-    private const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
-
     private static readonly CrossoverEdge Before = new(CrossoverFilterFamily.Butterworth, 180, 36);
     private static readonly CrossoverEdge FoundLow = new(CrossoverFilterFamily.Butterworth, 175, 36);
     private static readonly CrossoverEdge FoundHigh = new(CrossoverFilterFamily.Butterworth, 185, 24);
+    private static readonly AgentViewInputs View = new(VirtualCrossoverGroupView.FrontAndSub, false, false, 0, null);
 
-    [Fact]
-    public void ApplyWritesTheFoundCrossover_EvenWhereTheReportCalledItNotWorthTheChange() => StaTest.Run(() =>
+    private readonly VirtualCrossoverSession session = new();
+    private readonly VirtualCrossoverProcessingCoordinator coordinator = new();
+    private readonly AgentSessionReader reader;
+    private readonly VirtualCrossoverJunctionTuneApply tune;
+
+    public VirtualCrossoverJunctionTuneApplyTests()
     {
-        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
-
-        Apply(panel, lower, upper, Result(changed: false), goal: null);
-
-        AssertFound(panel, lower, upper);
-    });
-
-    [Fact]
-    public void ApplyWritesAWinningCrossover_OntoBothSidesAndBothCards() => StaTest.Run(() =>
-    {
-        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
-
-        Apply(panel, lower, upper, Result(changed: true), goal: null);
-
-        AssertFound(panel, lower, upper);
-    });
-
-    [Fact]
-    public void WithNothingBetterFound_ApplyLeavesTheCrossoverAlone() => StaTest.Run(() =>
-    {
-        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
-        JunctionTuneCandidate same = Candidate(Before, Before);
-
-        Apply(panel, lower, upper, Result(same, same, changed: false), goal: null);
+        foreach (string name in new[] { "A", "B", "C" })
+        {
+            session.Channels.Add(new VirtualCrossoverChannel(name));
+        }
 
         foreach (bool right in new[] { false, true })
         {
-            Assert.Equal(Before, lower.SideSettings(right).LowPassEdge);
-            Assert.Equal(Before, upper.SideSettings(right).HighPassEdge);
+            Lower.SideSettings(right).CrossoverKind = CrossoverKind.LowPass;
+            Lower.SideSettings(right).LowPassEdge = Before;
+            Upper.SideSettings(right).CrossoverKind = CrossoverKind.HighPass;
+            Upper.SideSettings(right).HighPassEdge = Before;
         }
-    });
+
+        reader = new AgentSessionReader(
+            session,
+            coordinator,
+            VirtualCrossoverMetrics.Through(
+                coordinator, () => session.MagnitudeGate, oppositeSide: false, channel => session.Calibration.For(channel)),
+            new VirtualCrossoverHybrid(session));
+        tune = new VirtualCrossoverJunctionTuneApply(session, reader);
+    }
+
+    private VirtualCrossoverChannel Lower => session.Channels[0];
+
+    private VirtualCrossoverChannel Upper => session.Channels[1];
+
+    public void Dispose() => coordinator.Dispose();
 
     [Fact]
-    public void TheAskedAcousticCrossover_LandsOnTheCards_EvenWhereTheFoundCrossoverMissesIt() => StaTest.Run(() =>
+    public void ApplyWritesTheFoundCrossover_EvenWhereTheReportCalledItNotWorthTheChange()
     {
-        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
+        Apply(Result(changed: false), goal: null);
+
+        AssertFound();
+    }
+
+    [Fact]
+    public void ApplyWritesAWinningCrossover_OntoBothSides()
+    {
+        Apply(Result(changed: true), goal: null);
+
+        AssertFound();
+    }
+
+    [Fact]
+    public void WithNothingBetterFound_ApplyLeavesTheCrossoverAlone()
+    {
+        JunctionTuneCandidate same = Candidate(Before, Before);
+
+        Apply(Result(same, same, changed: false), goal: null);
+
+        foreach (bool right in new[] { false, true })
+        {
+            Assert.Equal(Before, Lower.SideSettings(right).LowPassEdge);
+            Assert.Equal(Before, Upper.SideSettings(right).HighPassEdge);
+        }
+    }
+
+    [Fact]
+    public void TheAskedAcousticCrossover_IsWritten_EvenWhereTheFoundCrossoverMissesIt()
+    {
         var asked = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
         JunctionTuneReading[] missed =
             [new("left", -0.6, -1.8, 2.8, new JunctionAcousticFit(4.6, 4.6, 41.8, 50.7, 21.5))];
@@ -57,65 +85,130 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
         var result = new JunctionTuneResult(
             Candidate(Before, Before), found, Changed: true, [], [], [], 1, 90, 360, [], ClosestAcousticCostDb: 1.3);
 
-        Apply(panel, lower, upper, result, asked);
+        Apply(result, asked);
 
         foreach (bool right in new[] { false, true })
         {
-            Assert.Equal(asked, lower.SideSettings(right).AcousticLowPass);
-            Assert.Equal(asked, upper.SideSettings(right).AcousticHighPass);
+            Assert.Equal(asked, Lower.SideSettings(right).AcousticLowPass);
+            Assert.Equal(asked, Upper.SideSettings(right).AcousticHighPass);
         }
-
-        Assert.Equal("BW24", Card(panel, lower).AcousticGoalButton.Text);
-        Assert.Equal("BW24", Card(panel, upper).AcousticGoalButton.Text);
-    });
+    }
 
     [Fact]
-    public void UndoLastApply_PutsTheCrossoverAndTheGoalBack() => StaTest.Run(() =>
+    public void AGoalGoesOnlyOntoAnEdgeTheCrossoverLeftOnScreenRuns()
     {
-        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
+        foreach (bool right in new[] { false, true })
+        {
+            Lower.SideSettings(right).CrossoverKind = CrossoverKind.Off;
+        }
+
+        var kept = new JunctionTuneCandidate(null, Before, [], [], 90, 360);
         var asked = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
-        Apply(panel, lower, upper, Result(changed: true), asked);
-        AssertFound(panel, lower, upper);
 
-        typeof(VirtualCrossoverPanel).GetMethod("UndoJunctionTune", Hidden)!.Invoke(panel, null);
+        Apply(Result(kept, kept, changed: false), asked);
 
         foreach (bool right in new[] { false, true })
         {
-            Assert.Equal(Before, lower.SideSettings(right).LowPassEdge);
-            Assert.Equal(Before, upper.SideSettings(right).HighPassEdge);
-            Assert.Null(lower.SideSettings(right).AcousticLowPass);
-            Assert.Null(upper.SideSettings(right).AcousticHighPass);
+            Assert.Null(Lower.SideSettings(right).AcousticLowPass);
+            Assert.Equal(asked, Upper.SideSettings(right).AcousticHighPass);
         }
-
-        Assert.Equal(180m, Card(panel, lower).LowPassFrequencyInput.Value);
-        Assert.Equal("—", Card(panel, lower).AcousticGoalButton.Text);
-    });
+    }
 
     [Fact]
-    public void UndoLastApply_BringsBackTheGoalsEveryChannelHeld() => StaTest.Run(() =>
+    public void Undo_PutsTheCrossoverAndTheGoalBack()
     {
-        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
-        VirtualCrossoverChannel untouched = panel.Session.Channels[2];
+        Apply(Result(changed: true), new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24));
+        AssertFound();
+
+        AgentProposalApplier.Restore(tune.TakeUndo().Channels);
+
+        foreach (bool right in new[] { false, true })
+        {
+            Assert.Equal(Before, Lower.SideSettings(right).LowPassEdge);
+            Assert.Equal(Before, Upper.SideSettings(right).HighPassEdge);
+            Assert.Null(Lower.SideSettings(right).AcousticLowPass);
+            Assert.Null(Upper.SideSettings(right).AcousticHighPass);
+        }
+    }
+
+    [Fact]
+    public void Undo_BringsBackTheGoalsEveryChannelHeld()
+    {
+        VirtualCrossoverChannel untouched = session.Channels[2];
         var lowerGoal = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 24);
         var upperGoal = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 18);
         var otherGoal = new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 48);
         foreach (bool right in new[] { false, true })
         {
-            lower.SideSettings(right).AcousticLowPass = lowerGoal;
-            upper.SideSettings(right).AcousticHighPass = upperGoal;
+            Lower.SideSettings(right).AcousticLowPass = lowerGoal;
+            Upper.SideSettings(right).AcousticHighPass = upperGoal;
             untouched.SideSettings(right).AcousticHighPass = otherGoal;
         }
 
-        Apply(panel, lower, upper, Result(changed: true), new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24));
-        typeof(VirtualCrossoverPanel).GetMethod("UndoJunctionTune", Hidden)!.Invoke(panel, null);
+        Apply(Result(changed: true), new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24));
+        AgentProposalApplier.Restore(tune.TakeUndo().Channels);
 
         foreach (bool right in new[] { false, true })
         {
-            Assert.Equal(lowerGoal, lower.SideSettings(right).AcousticLowPass);
-            Assert.Equal(upperGoal, upper.SideSettings(right).AcousticHighPass);
+            Assert.Equal(lowerGoal, Lower.SideSettings(right).AcousticLowPass);
+            Assert.Equal(upperGoal, Upper.SideSettings(right).AcousticHighPass);
             Assert.Equal(otherGoal, untouched.SideSettings(right).AcousticHighPass);
         }
-    });
+    }
+
+    [Fact]
+    public void TheUndo_RemembersTheSessionAsTheApplyLeftIt_AndTellsALaterChange()
+    {
+        Apply(Result(changed: true), goal: null, generation: 3);
+
+        Assert.Equal("A/B", tune.Undoable(3));
+        Assert.Null(tune.Undoable(2));
+        Assert.True(tune.Unchanged(reader.Fingerprint(View)));
+
+        session.Channels[2].SideSettings(false).GainDb = -3;
+
+        Assert.False(tune.Unchanged(reader.Fingerprint(View)));
+        Assert.Same(tune.Undo, tune.UndoFor(3));
+    }
+
+    [Fact]
+    public void TheUndo_BelongsToTheProjectItWasAppliedIn()
+    {
+        Apply(Result(changed: true), goal: null, generation: 3);
+
+        Assert.Null(tune.Undoable(4));
+        Assert.Null(tune.UndoFor(4));
+
+        Assert.Null(tune.Undo);
+        Assert.Null(tune.Undoable(3));
+        Assert.Throws<InvalidOperationException>(() => tune.TakeUndo());
+    }
+
+    [Fact]
+    public void TakingTheUndo_UsesItUp()
+    {
+        Apply(Result(changed: true), goal: null);
+
+        tune.TakeUndo();
+
+        Assert.Null(tune.Undo);
+        Assert.False(tune.Unchanged(reader.Fingerprint(View)));
+    }
+
+    [Fact]
+    public void TheUndo_KeepsTheBlockOrderAndTheViewItWasTakenIn()
+    {
+        var view = new AgentViewInputs(VirtualCrossoverGroupView.FrontAndSub, true, true, -6.5, null);
+        session.Project.RearFillOffsetMs = 4;
+
+        AgentImportUndo before = tune.Apply(Lower, Upper, Result(changed: true), null, view);
+
+        Assert.Equal(session.Channels, before.Order);
+        Assert.True(before.HybridTicked);
+        Assert.Equal(-6.5, before.TargetLevelDb);
+        Assert.Equal(4, before.RearFillOffsetMs);
+        Assert.Equal(6, before.Channels.Count);
+    }
 
     [Fact]
     public void AFirCrossoverOnTheSideNotShown_StillRefusesTheTune()
@@ -134,75 +227,40 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
     }
 
     [Fact]
-    public void AGoalGoesOnlyOntoAnEdgeTheCrossoverLeftOnScreenRuns() => StaTest.Run(() =>
+    public void AStatedGoal_IsPartOfTheSessionAnAssistantReadsAgainst()
     {
-        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper);
-        foreach (bool right in new[] { false, true })
-        {
-            lower.SideSettings(right).CrossoverKind = CrossoverKind.Off;
-        }
+        string before = reader.Fingerprint(View);
 
-        var kept = new JunctionTuneCandidate(null, Before, [], [], 90, 360);
-        var asked = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
+        Lower.SideSettings(false).AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
 
-        Apply(panel, lower, upper, Result(kept, kept, changed: false), asked);
-
-        foreach (bool right in new[] { false, true })
-        {
-            Assert.Null(lower.SideSettings(right).AcousticLowPass);
-            Assert.Equal(asked, upper.SideSettings(right).AcousticHighPass);
-        }
-    });
+        Assert.NotEqual(before, reader.Fingerprint(View));
+        Lower.SideSettings(false).AcousticLowPass = null;
+        Assert.Equal(before, reader.Fingerprint(View));
+    }
 
     [Fact]
-    public void AGoalForAnEdgeSwitchedOff_IsNoLongerShownAsStated() => StaTest.Run(() =>
+    public void ARefusal_IsASentence()
     {
-        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out _);
-        var asked = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
-        lower.Settings.AcousticLowPass = asked;
-        typeof(VirtualCrossoverPanel).GetMethod("ApplySettingsToControl", Hidden)!.Invoke(panel, [lower]);
-        Assert.Equal("BW24", Card(panel, lower).AcousticGoalButton.Text);
+        JunctionTuneOutcome refused = VirtualCrossoverJunctionTuneSearch.Refusal("the session changed while the search ran");
 
-        Card(panel, lower).CrossoverKindComboBox.SelectedItem = CrossoverKind.Off;
+        Assert.True(refused.Refused);
+        Assert.False(refused.CanApply);
+        Assert.Equal("Refused.", refused.Status);
+        Assert.Equal(
+            "The session changed while the search ran.",
+            string.Concat(refused.Report.Single().Spans.Select(span => span.Text)));
+    }
 
-        Assert.Equal(CrossoverKind.Off, lower.Settings.CrossoverKind);
-        Assert.Equal("—", Card(panel, lower).AcousticGoalButton.Text);
-        Assert.Equal(asked, lower.Settings.AcousticLowPass);
-    });
+    private void Apply(JunctionTuneResult landed, JunctionAcousticTarget? goal, long generation = 1) =>
+        tune.Remember(tune.Apply(Lower, Upper, landed, goal, View), generation, Lower, Upper, reader.Fingerprint(View));
 
-    [Fact]
-    public void AStatedGoal_IsPartOfTheSessionAnAssistantReadsAgainst() => StaTest.Run(() =>
-    {
-        using VirtualCrossoverPanel panel = Loaded(out VirtualCrossoverChannel lower, out _);
-        string before = Fingerprint(panel);
-
-        lower.SideSettings(false).AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 24);
-
-        Assert.NotEqual(before, Fingerprint(panel));
-        lower.SideSettings(false).AcousticLowPass = null;
-        Assert.Equal(before, Fingerprint(panel));
-    });
-
-    private static string Fingerprint(VirtualCrossoverPanel panel) =>
-        (string)typeof(VirtualCrossoverPanel)
-            .GetMethod("ComputeAgentFingerprint", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(panel, null)!;
-
-    private static void AssertFound(
-        VirtualCrossoverPanel panel, VirtualCrossoverChannel lower, VirtualCrossoverChannel upper)
+    private void AssertFound()
     {
         foreach (bool right in new[] { false, true })
         {
-            Assert.Equal(FoundLow, lower.SideSettings(right).LowPassEdge);
-            Assert.Equal(FoundHigh, upper.SideSettings(right).HighPassEdge);
+            Assert.Equal(FoundLow, Lower.SideSettings(right).LowPassEdge);
+            Assert.Equal(FoundHigh, Upper.SideSettings(right).HighPassEdge);
         }
-
-        VirtualCrossoverChannelControl lowerCard = Card(panel, lower);
-        Assert.Equal(175m, lowerCard.LowPassFrequencyInput.Value);
-        Assert.Equal(36, lowerCard.LowPassSlopeComboBox.SelectedItem);
-        VirtualCrossoverChannelControl upperCard = Card(panel, upper);
-        Assert.Equal(185m, upperCard.HighPassFrequencyInput.Value);
-        Assert.Equal(24, upperCard.HighPassSlopeComboBox.SelectedItem);
     }
 
     private static JunctionTuneResult Result(bool changed) =>
@@ -214,42 +272,4 @@ public sealed class VirtualCrossoverJunctionTuneApplyTests
 
     private static JunctionTuneCandidate Candidate(CrossoverEdge lowPass, CrossoverEdge highPass) =>
         new(lowPass, highPass, [], [], 90, 360);
-
-    private static void Apply(
-        VirtualCrossoverPanel panel,
-        VirtualCrossoverChannel lower,
-        VirtualCrossoverChannel upper,
-        JunctionTuneResult landed,
-        JunctionAcousticTarget? goal) =>
-        typeof(VirtualCrossoverPanel)
-            .GetMethod("ApplyJunctionTune", Hidden)!
-            .Invoke(panel, [lower, upper, landed, goal]);
-
-    private static VirtualCrossoverChannelControl Card(VirtualCrossoverPanel panel, VirtualCrossoverChannel channel) =>
-        (VirtualCrossoverChannelControl)typeof(VirtualCrossoverPanel)
-            .GetMethod("ControlFor", Hidden)!
-            .Invoke(panel, [channel])!;
-
-    private static VirtualCrossoverPanel Loaded(
-        out VirtualCrossoverChannel lower, out VirtualCrossoverChannel upper)
-    {
-        var panel = new VirtualCrossoverPanel();
-        List<VirtualCrossoverChannel> channels = panel.Session.Channels;
-        for (int index = 0; index < channels.Count; index++)
-        {
-            channels[index].Pair = panel.Session.Project.Pairs[index];
-        }
-
-        lower = channels[0];
-        upper = channels[1];
-        foreach (bool right in new[] { false, true })
-        {
-            lower.SideSettings(right).CrossoverKind = CrossoverKind.LowPass;
-            lower.SideSettings(right).LowPassEdge = Before;
-            upper.SideSettings(right).CrossoverKind = CrossoverKind.HighPass;
-            upper.SideSettings(right).HighPassEdge = Before;
-        }
-
-        return panel;
-    }
 }

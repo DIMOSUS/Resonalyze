@@ -75,6 +75,7 @@ public partial class VirtualCrossoverPanel : UserControl
             oppositeSide: false,
             channel => session.Calibration.For(channel));
         agentReader = new AgentSessionReader(session, processingCoordinator, metrics, hybridReader);
+        junctionTune = new VirtualCrossoverJunctionTuneApply(session, agentReader);
         audition = new VirtualCrossoverAudition(session, processingCoordinator, metrics, hybridReader);
         acousticPlot = new VirtualCrossoverAcousticPlot(
             mainPlotView, AcousticViewBuilder.NoSourcesHint, CurrentAcousticView());

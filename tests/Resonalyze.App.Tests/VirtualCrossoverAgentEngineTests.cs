@@ -44,7 +44,7 @@ public sealed class VirtualCrossoverAgentEngineTests
             double level = Project(panel).TargetLevelDb;
             Assert.Equal(level, (double)targetLevel.Value);
 
-            object undo = Invoke(panel, "CaptureAgentUndo")!;
+            object undo = CaptureUndo(panel);
             Invoke(panel, "ApplyAgentSpatialAverage",
                 new UseSpatialAverageOperation("op-1", "", "MicArray", true));
             Channels(panel)[0].SideSettings(rightSide: false).GainDb = gain - 6;
@@ -260,7 +260,7 @@ public sealed class VirtualCrossoverAgentEngineTests
                 upperSettings.DelayMs = 0.5;
                 upperSettings.GainDb = -2.5;
             }
-            object undo = Invoke(panel, "CaptureAgentUndo")!;
+            object undo = CaptureUndo(panel);
             var summary = new List<string>();
 
             bool ran = RunEnginesPumping(panel,
@@ -773,7 +773,7 @@ public sealed class VirtualCrossoverAgentEngineTests
             project.StereoLevelDifferenceDb = -1.0;
             project.RearFillOffsetMs = 15.0;
 
-            object undo = Invoke(panel, "CaptureAgentUndo")!;
+            object undo = CaptureUndo(panel);
             project.SetStereoScene(0.6, rightHandDrive: true);
             project.StereoLevelDifferenceDb = 2.5;
             project.RearFillOffsetMs = 9.0;
@@ -858,7 +858,7 @@ public sealed class VirtualCrossoverAgentEngineTests
             Hybrid(panel).Checked = false;
             string before = Fingerprint(panel);
 
-            object undo = Invoke(panel, "CaptureAgentUndo")!;
+            object undo = CaptureUndo(panel);
             Invoke(panel, "ApplyAgentSpatialAverage",
                 new UseSpatialAverageOperation("op-1", "", "MicArray", true));
             Channels(panel)[0].SideSettings(rightSide: false).GainDb -= 6;
@@ -954,6 +954,12 @@ public sealed class VirtualCrossoverAgentEngineTests
 
     private static void Set(object target, string name, object? value) =>
         target.GetType().GetField(name, Hidden)!.SetValue(target, value);
+
+    private static AgentImportUndo CaptureUndo(VirtualCrossoverPanel panel) =>
+        AgentImportUndo.Capture(
+            panel.Session,
+            (AgentSessionReader)Field(panel, "agentReader"),
+            (AgentViewInputs)Invoke(panel, "AgentView")!);
 
     private static object? Invoke(object target, string name, params object?[] arguments) =>
         target.GetType().GetMethod(name, Hidden)!.Invoke(target, arguments);

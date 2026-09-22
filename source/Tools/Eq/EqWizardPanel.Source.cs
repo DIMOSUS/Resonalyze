@@ -434,6 +434,20 @@ public partial class EqWizardPanel
         {
             Spec = session.Target.Spec with { Imported = imported }
         });
+        (double reachMinDb, double reachMaxDb) = plot.MagnitudeReach();
+        // The drawn target, not the file: with Crossover in target a peak inside a skirt is never shown.
+        if (EqWizardRender.TargetShapePeakDb(session) is { } peakDb &&
+            TargetCurveImport.OfferLevel(
+                FindForm(),
+                imported.Name,
+                peakDb,
+                (double)session.TargetOffsetDb,
+                NumericTargetOffset.FieldRange(),
+                reachMinDb,
+                reachMaxDb) is { } levelDb)
+        {
+            NumericTargetOffset.Value = levelDb;
+        }
     }
 
     // Isolated overlay target dialog; Cancel reverts the preview. An imported curve rides as a preset entry so edits keep it.

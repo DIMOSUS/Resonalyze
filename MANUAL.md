@@ -984,7 +984,7 @@ thing.
 Tick **Target** under the main graph, open **Target... → Parametric shape…** and pick a
 Car preset; they differ mainly in bass lift, so this is where the system's tonal balance
 begins. A house curve of your own goes in through **Target... → Import from file…** — a
-text file of `frequency level` pairs, read as relative dB.
+text file of `frequency level` pairs, kept at the levels it states.
 
 ![The shared target editor, with its preview at the bottom](assets/images/manual/eq-target.png)
 

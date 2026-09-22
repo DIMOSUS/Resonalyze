@@ -1522,10 +1522,13 @@ one in force:
   out of a spreadsheet all load. The menu entry then names the file, and its
   tooltip says how many points the curve holds and what band it covers.
 
-An imported curve is read as **relative dB**, exactly like a parametric shape:
-whatever it reads at 1 kHz is subtracted from it, so a file written around 75 dB
-SPL and the same shape written around 0 dB become one target, hung at the
-**Target Level** you set. Between its points it runs straight in log frequency
+An imported curve keeps **the levels its file states**, hung at the **Target
+Level** you set: a set of per-driver curves cut from one target with its crossover
+keeps their common level, as it does in REW. Only the Target Level ever moves the
+curve. When the curve's peak would land outside what the plot can pan to — a file
+written around 75 dB SPL, say — the import offers to set the Target Level so the
+peak sits at 0 dB (on a dB SPL plot, which shows no 0 dB, in its middle); *No*
+leaves the level alone. Between its points it runs straight in log frequency
 and dB; **outside its range it holds its end values** rather than continuing
 their slope — a curve that stops at 200 Hz says nothing about 10 kHz, and
 inventing a target there is something Auto Tune would spend real filters chasing.
@@ -1898,6 +1901,10 @@ behind it (a raw handoff, an imported curve, an overlay). A channel crossed with
 [FIR](#fir-constructor) kernel counts, and there the target follows the kernel itself: a
 windowed-sinc design's slope is its window and length, so the corners it carries would
 describe a filter it is not.
+An [imported target](#target-curves) already cut with the crossover would then carry
+the slope twice. The **Tuning results** panel says so in amber while the imported curve
+falls 15 dB or more from the channel's −3 dB point to an octave past its −18 dB point:
+import the curve without the crossover, or untick the box.
 Where the channel card states an acoustic crossover (see [Tune
 junction](#tune-junction)), the target follows that acoustic crossover, and the filter
 the chain actually runs is drawn beside it as a dotted, half-transparent curve in the

@@ -107,6 +107,7 @@ namespace Resonalyze
             dockedMeasurementSettingsHost = dependencies.DockedMeasurementSettingsHost;
             dockedHistoryHost = dependencies.DockedHistoryHost;
             eqWizardPanel.ResultsChanged = eqResultsPanel.SetResults;
+            eqWizardPanel.WarningChanged = eqResultsPanel.SetWarning;
             eqWizardPanel.HistoryService = measurementHistoryService;
             eqWizardPanel.ApplyPersistedSettings(measurementSettings.EqWizard);
             // Q convention belongs to the DSP being tuned, so it is top-level; VDSP reads it off its processor profile instead.

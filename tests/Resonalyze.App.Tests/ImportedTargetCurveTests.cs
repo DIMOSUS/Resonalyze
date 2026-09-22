@@ -3,21 +3,37 @@ namespace Resonalyze.App.Tests;
 public sealed class ImportedTargetCurveTests
 {
     [Fact]
-    public void TheShapeIsAnchoredAtOneKilohertz()
+    public void TheFileLevelsAreKept()
     {
-        // The target's level belongs to the wizard's Target Level, not the file.
+        // Issue #218: per-driver curves cut from one target keep their common level; a 1 kHz anchor lifted the
+        // 60–200 Hz one by 55 dB. Placing the curve is the Target Level's job alone.
+        ImportedTargetCurve woofer = Build(
+            (40, -6.664), (100, 3.416), (200, -4.088), (1_000, -54.939));
         ImportedTargetCurve absolute = Build(
             (100, 81.0), (1_000, 75.0), (10_000, 72.0));
-        ImportedTargetCurve relative = Build(
-            (100, 6.0), (1_000, 0.0), (10_000, -3.0));
 
-        Assert.Equal(0, absolute.Evaluate(1_000), 12);
-        Assert.Equal(6, absolute.Evaluate(100), 12);
-        Assert.Equal(-3, absolute.Evaluate(10_000), 12);
-        for (double frequency = 20; frequency <= 20_000; frequency *= 1.3)
-        {
-            Assert.Equal(relative.Evaluate(frequency), absolute.Evaluate(frequency), 12);
-        }
+        Assert.Equal(3.416, woofer.Evaluate(100), 12);
+        Assert.Equal(-54.939, woofer.Evaluate(1_000), 12);
+        Assert.Equal(3.416, woofer.PeakDb, 12);
+        Assert.Equal(75, absolute.Evaluate(1_000), 12);
+        Assert.Equal(81, absolute.PeakDb, 12);
+    }
+
+    [Fact]
+    public void APeakOnThePlotKeepsTheLevel()
+    {
+        Assert.Null(TargetCurveImport.LevelSeatingPeak(3.4, 0, -90, 60));
+        Assert.Null(TargetCurveImport.LevelSeatingPeak(81, -30, -90, 60));
+        Assert.Null(TargetCurveImport.LevelSeatingPeak(60, 0, -90, 60));
+    }
+
+    [Fact]
+    public void APeakOffThePlotIsOfferedALevelSeatingItAtZero()
+    {
+        Assert.Equal(-81, TargetCurveImport.LevelSeatingPeak(81, 0, -90, 60));
+        Assert.Equal(-3.4, TargetCurveImport.LevelSeatingPeak(3.4, -120, -90, 60));
+        // A dB SPL axis never shows 0 dB: the peak goes to the middle of what it does show.
+        Assert.Equal(90 - 3.4, TargetCurveImport.LevelSeatingPeak(3.4, 0, 30, 150));
     }
 
     [Fact]
@@ -33,13 +49,13 @@ public sealed class ImportedTargetCurveTests
     [Fact]
     public void OutsideItsRangeTheCurveHoldsItsEnds()
     {
-        // No extrapolation beyond the last point: flat above, anchor on the held value (+8 over +2 becomes +6).
+        // No extrapolation beyond the last point: flat below and above.
         ImportedTargetCurve curve = Build((50, 8.0), (200, 2.0));
 
-        Assert.Equal(6, curve.Evaluate(20), 12);
-        Assert.Equal(6, curve.Evaluate(1), 12);
-        Assert.Equal(0, curve.Evaluate(200), 12);
-        Assert.Equal(0, curve.Evaluate(20_000), 12);
+        Assert.Equal(8, curve.Evaluate(20), 12);
+        Assert.Equal(8, curve.Evaluate(1), 12);
+        Assert.Equal(2, curve.Evaluate(200), 12);
+        Assert.Equal(2, curve.Evaluate(20_000), 12);
         Assert.Equal(0, curve.Evaluate(0), 12);
         Assert.Equal(0, curve.Evaluate(-5), 12);
     }
@@ -82,18 +98,19 @@ public sealed class ImportedTargetCurveTests
     }
 
     [Fact]
-    public void LevelsThatOverflowTheAnchoringAreRefused()
+    public void LevelsThatOverflowTheThinningAreRefused()
     {
-        // Finite levels whose difference overflows: anchoring is a subtraction.
-        Assert.Null(ImportedTargetCurve.FromPoints(
-            "overflow.txt",
-            [new OverlayPoint(100, 1e308), new OverlayPoint(1_000, -1e308)]));
-        Assert.Null(ImportedTargetCurve.FromStorage(
-            "overflow.json",
-            [100, 1e308, 1_000, -1e308]));
+        // Finite levels whose difference overflows: thinning interpolates between neighbours.
+        var points = new List<OverlayPoint>();
+        for (int index = 0; index < 2 * ImportedTargetCurve.MaximumPoints; index++)
+        {
+            points.Add(new OverlayPoint(20 + index, index % 2 == 0 ? 1e308 : -1e308));
+        }
+
+        Assert.Null(ImportedTargetCurve.FromPoints("overflow.txt", points));
         Assert.NotNull(ImportedTargetCurve.FromPoints(
-            "loud.txt",
-            [new OverlayPoint(100, 1e30), new OverlayPoint(1_000, -1e30)]));
+            "extreme.txt",
+            [new OverlayPoint(100, 1e308), new OverlayPoint(1_000, -1e308)]));
     }
 
     [Fact]

@@ -39,6 +39,7 @@ public partial class EqWizardPanel : UserControl
     private readonly EqWizardAutoTuneOrchestrator autoTuneOrchestrator = new();
     private readonly EqWizardImportExportCoordinator importExportCoordinator = new();
     private readonly EqWizardPlot plot = new();
+    private readonly EqDoubleSkirtCheck.Cache doubleSkirtCheck = new();
     private PlotLabelsPanelController plotLabels = null!;
     // Set while the panel writes its own controls, so their handlers do not write the value back.
     private bool presenting;
@@ -155,6 +156,10 @@ public partial class EqWizardPanel : UserControl
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Action<EqTuneStats?>? ResultsChanged { get; set; }
+
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<string?>? WarningChanged { get; set; }
 
     /// <summary>Raised after a change the settings file keeps (see <see cref="EqWizardSession.SettingsChanged"/>).</summary>
     internal event Action? SettingsChanged
@@ -478,6 +483,11 @@ public partial class EqWizardPanel : UserControl
         NumericTargetOffset.Enabled = true;
         NumericGain.Enabled = !session.Bypass && render.SourcePlusEq != null;
         ResultsChanged?.Invoke(EqWizardRender.Stats(session, render, eq));
+        WarningChanged?.Invoke(doubleSkirtCheck.Warning(
+            session.Target.Spec,
+            session.TargetCrossover,
+            session.CrossoverInTarget,
+            session.ProcessorSampleRateHz));
 
         EqWizardPhaseCurves? phase = null;
         if (session.PhaseMode && session.PhaseContext != null)

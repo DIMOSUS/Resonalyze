@@ -152,6 +152,13 @@ internal sealed class EqWizardPlot
         axis.Reset();
     }
 
+    /// <summary>How far the magnitude axis can be panned: what a curve must stay inside to be found on the plot at all.</summary>
+    public (double MinDb, double MaxDb) MagnitudeReach()
+    {
+        Axis axis = Model.Axes.First(axis => axis.Position == AxisPosition.Left);
+        return (axis.AbsoluteMinimum, axis.AbsoluteMaximum);
+    }
+
     /// <summary>
     /// Budget range extended to contain the drawn curve (overlapping bands can exceed one band's limit); 0/0 = no curve.
     /// Phase owns the whole axis at a fixed ±180°.

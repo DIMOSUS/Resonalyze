@@ -98,19 +98,6 @@ public partial class VirtualCrossoverPanel
     private AgentImportUndo? agentUndo;
     private long agentUndoGeneration;
 
-    /// <summary>Pre-import state. Every channel's chain is taken: engines write channels no row names, and the crossover wizard can reorder blocks.</summary>
-    // Scene, tilt and rear-fill offset are committed by Auto delay (CommitAutoDelayResult), so undo carries them.
-    private sealed record AgentImportUndo(
-        IReadOnlyList<AgentUndoEntry> Channels,
-        VirtualCrossoverSpatialAverageMode? SpatialAverageMode,
-        bool HybridTicked,
-        IReadOnlyList<VirtualCrossoverChannel> Order,
-        double SceneOffsetMagnitudeMs,
-        bool RightHandDrive,
-        double StereoLevelDifferenceDb,
-        double RearFillOffsetMs,
-        double TargetLevelDb);
-
     /// <summary>Import AI proposal. See docs/tech/agent-bridge.md#import-flow.</summary>
     private async void ImportAiProposal()
     {
@@ -391,7 +378,7 @@ public partial class VirtualCrossoverPanel
         }
 
         // Armed before the first write: an engine can throw after the rows landed. The previous undo returns only if nothing moved.
-        AgentImportUndo undo = CaptureAgentUndo();
+        AgentImportUndo undo = AgentImportUndo.Capture(session, agentReader, AgentView());
         AgentImportUndo? previousUndo = agentUndo;
         long previousUndoGeneration = agentUndoGeneration;
         agentUndo = undo;
@@ -748,22 +735,6 @@ public partial class VirtualCrossoverPanel
 
         static string Rms(double? value) => value is { } rms ? $"{rms:0.0} dB" : "n/a";
     }
-
-    private AgentImportUndo CaptureAgentUndo() =>
-        new(
-            agentReader.Slots()
-                .Select(slot => slot.Channel.SideSettings(slot.RightSide))
-                .Select(settings => new AgentUndoEntry(
-                    settings, AgentOperations.CloneEditable(settings)))
-                .ToList(),
-            session.Project.SpatialAverageMode,
-            checkBoxHybrid.Checked,
-            session.Channels.ToList(),
-            session.Project.StereoSceneOffsetMagnitudeMs,
-            session.Project.StereoRightHandDrive,
-            session.Project.StereoLevelDifferenceDb,
-            session.Project.RearFillOffsetMs,
-            (double)numericTargetLevel.Value);
 
     private void UndoAiImport()
     {

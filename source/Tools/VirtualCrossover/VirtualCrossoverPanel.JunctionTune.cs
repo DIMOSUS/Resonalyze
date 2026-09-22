@@ -17,32 +17,32 @@ public partial class VirtualCrossoverPanel
             index => JunctionTuneOpening(junctions, index),
             request => RunJunctionTuneAsync(junctions, request),
             session.Project.JunctionTune,
-            junctionTuneUndo is { } undo && undo.Generation == projectGeneration ? undo.Junction : null);
+            junctionTune.Undoable(projectGeneration));
         DialogResult answer = dialog.ShowDialog(FindForm());
         if (IsDisposed)
         {
-            lastJunctionTune = null;
+            junctionTune.Landed = null;
             return;
         }
 
         session.Project.JunctionTune = dialog.Remembered();
         if (dialog.UndoRequested)
         {
-            lastJunctionTune = null;
+            junctionTune.Landed = null;
             UndoJunctionTune();
             return;
         }
 
         if (answer != DialogResult.OK ||
             dialog.Result is not { } request ||
-            lastJunctionTune is not { } landed)
+            junctionTune.Landed is not { } landed)
         {
-            lastJunctionTune = null;
+            junctionTune.Landed = null;
             ScheduleSave();
             return;
         }
 
-        lastJunctionTune = null;
+        junctionTune.Landed = null;
         if (request.JunctionIndex >= junctions.Count)
         {
             return;
@@ -62,28 +62,23 @@ public partial class VirtualCrossoverPanel
         JunctionTuneResult landed,
         JunctionAcousticTarget? goal)
     {
-        AgentImportUndo before = CaptureAgentUndo();
-        // The found crossover whenever it differs, won or not: the keep margin is advice.
-        AgentJunctionTune.Write(landed, lower, upper, goal, applyCrossover: landed.Moves);
+        junctionTune.Apply(lower, upper, landed, goal, AgentView(), projectGeneration);
         ApplySettingsToControl(lower);
         ApplySettingsToControl(upper);
         // Both sides were decided here, so the Lock remembers rather than carries.
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         SaveAndRedraw();
-        junctionTuneUndo = new JunctionTuneUndo(
-            before, projectGeneration, $"{lower.Name}/{upper.Name}", ComputeAgentFingerprint());
     }
 
     /// <summary>Changes made since the Apply go too, so that is asked first.</summary>
     private void UndoJunctionTune()
     {
-        if (junctionTuneUndo is not { } undo || undo.Generation != projectGeneration)
+        if (junctionTune.UndoFor(projectGeneration) is not { } undo)
         {
-            junctionTuneUndo = null;
             return;
         }
 
-        if (!string.Equals(undo.FingerprintAfter, ComputeAgentFingerprint(), StringComparison.Ordinal) &&
+        if (!junctionTune.Unchanged(ComputeAgentFingerprint()) &&
             MessageBox.Show(
                 FindForm(),
                 $"The session has changed since the tune of {undo.Junction} was applied. Undo puts every channel " +
@@ -96,16 +91,10 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        junctionTuneUndo = null;
-        RestoreChannels(undo.Channels);
+        RestoreChannels(junctionTune.TakeUndo());
     }
 
-    private JunctionTuneResult? lastJunctionTune;
-
-    private sealed record JunctionTuneUndo(
-        AgentImportUndo Channels, long Generation, string Junction, string FingerprintAfter);
-
-    private JunctionTuneUndo? junctionTuneUndo;
+    private readonly VirtualCrossoverJunctionTuneApply junctionTune;
 
     private JunctionTuneDefaults JunctionTuneOpening(List<AdjacentPair> junctions, int index)
     {
@@ -131,7 +120,7 @@ public partial class VirtualCrossoverPanel
     private async Task<JunctionTuneOutcome> RunJunctionTuneAsync(
         List<AdjacentPair> junctions, JunctionTuneRequest request)
     {
-        lastJunctionTune = null;
+        junctionTune.Landed = null;
         if (request.JunctionIndex < 0 || request.JunctionIndex >= junctions.Count)
         {
             return new JunctionTuneOutcome(
@@ -220,7 +209,7 @@ public partial class VirtualCrossoverPanel
         }
 
         List<JunctionTuneLine> report = VirtualCrossoverJunctionTuneReport.Build(plan, result);
-        lastJunctionTune = result;
+        junctionTune.Landed = result;
         string searched =
             $"{result.CandidatesEvaluated} candidates read over " +
             $"{options.MinCrossoverHz:0.###}–{options.MaxCrossoverHz:0.###} Hz.";

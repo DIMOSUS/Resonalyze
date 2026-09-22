@@ -38,49 +38,14 @@ internal sealed record VirtualCrossoverAuditionSpatialAverage(
 /// <remarks>Calibration and cabin subtraction are linear-phase FIRs in both side kernels. See docs/tech/spatial-average.md#audition-render.</remarks>
 internal sealed partial class VirtualCrossoverAuditionDialog : Form
 {
-    // Duration cap plus a separate projected-bytes cap (memory scales with rate).
-    private const int MaximumTrackMinutes = 10;
-    private const long MaximumPipelineBytes = 1_000_000_000;
-
     private const double DecodeShare = 0.06;
     private const double RenderShare = 0.86;
 
-    private readonly VirtualCrossoverAuditionContext context;
-
-    private string? sourcePath;
-    private string? targetPath;
-
-    // Overwrite consent granted in this dialog only (OverwritePrompt on an existing file, or the render-time question); otherwise an A/B pair could collapse.
-    private bool targetOverwriteConfirmed;
-    private string trackSection = string.Empty;
-    private string resultSection = string.Empty;
-
-    private CancellationTokenSource? activeRender;
-    private bool closeRequested;
-
-    // Remembered per process, not persisted: a session renders one track through several tunes. Re-probed on restore.
-    private static string? lastSourcePath;
-    private static string? lastTargetPath;
-
-    private static bool lastSpatialAverage = true;
-
-    private static CabinBodyStyle? lastCabinStyle = CabinBodyStyle.Sedan;
-
-    // "off" first: index 0 is the fallback everywhere.
-    private static readonly CabinOption[] CabinOptions =
-    [
-        new(null, "off (as measured)"),
-        new(CabinBodyStyle.Sedan, "average sedan"),
-        new(CabinBodyStyle.CompactSedan, "compact sedan"),
-        new(CabinBodyStyle.Hatchback, "hatchback"),
-        new(CabinBodyStyle.Wagon, "wagon"),
-        new(CabinBodyStyle.Suv, "SUV / crossover"),
-        new(CabinBodyStyle.BmwF30SkiHatch, "BMW F30, ski hatch open")
-    ];
+    private readonly VirtualCrossoverAuditionSession session;
 
     public VirtualCrossoverAuditionDialog(VirtualCrossoverAuditionContext context)
     {
-        this.context = context ?? throw new ArgumentNullException(nameof(context));
+        session = VirtualCrossoverAuditionSession.Restore(context);
         InitializeComponent();
 
         // The panel decides the calibration each opening; a local copy could only disagree with the project.
@@ -88,25 +53,34 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             comboBoxCalibration,
             context.InitialCalibrationId,
             context.CalibrationEntries);
+        ReadCalibration();
 
         comboBoxCabin.DropDownStyle = ComboBoxStyle.DropDownList;
-        foreach (CabinOption option in CabinOptions)
+        foreach (AuditionCabinOption option in VirtualCrossoverAuditionSession.CabinOptions)
         {
             comboBoxCabin.Items.Add(option);
         }
 
         comboBoxCabin.SelectedIndex = Math.Max(
-            0, Array.FindIndex(CabinOptions, option => option.Style == lastCabinStyle));
+            0,
+            VirtualCrossoverAuditionSession.CabinOptions.ToList()
+                .FindIndex(option => option.Style == session.CabinStyle));
+        comboBoxCabin.SelectedIndexChanged += (_, _) => session.CabinStyle =
+            comboBoxCabin.SelectedItem is AuditionCabinOption option ? option.Style : null;
 
         // Muted by hand, not disabled (WinForms disabled grey is unreadable on this theme).
-        checkBoxSpatialAverage.Checked =
-            context.SpatialAverage != null && lastSpatialAverage;
+        checkBoxSpatialAverage.Checked = session.SpatialAverageRequested;
         UiStyle.SetTextEnabledLook(
             checkBoxSpatialAverage, context.SpatialAverage != null, interactive: true);
-        checkBoxSpatialAverage.CheckedChanged += (_, _) => RefreshReport();
+        checkBoxSpatialAverage.CheckedChanged += (_, _) =>
+        {
+            session.SpatialAverageRequested = checkBoxSpatialAverage.Checked;
+            RefreshReport();
+        };
         // Wired after Configure, whose SelectedIndex assignment would fire this too early.
         comboBoxCalibration.SelectedIndexChanged += (_, _) =>
         {
+            ReadCalibration();
             RefreshRenderEnabled();
             RefreshReport();
         };
@@ -115,28 +89,17 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         buttonChooseTarget.Click += (_, _) => ChooseTarget();
         buttonRender.Click += async (_, _) => await OnRenderClickedAsync();
 
-        if (lastSourcePath != null)
-        {
-            ApplySourceSelection(lastSourcePath);
-        }
-        if (lastTargetPath != null)
-        {
-            // Restored without overwrite consent: the file is the previous render.
-            targetPath = lastTargetPath;
-            labelTargetFile.Text = lastTargetPath;
-            targetOverwriteConfirmed = false;
-        }
-
+        ShowFiles();
         RefreshRenderEnabled();
         RefreshReport();
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
-        if (activeRender != null)
+        if (session.Rendering)
         {
             e.Cancel = true;
-            closeRequested = true;
+            session.CloseRequested = true;
             RequestCancel();
             return;
         }
@@ -144,19 +107,21 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         base.OnFormClosing(e);
     }
 
-    // Unconditional: saving null stops the next opening retrying a dead path.
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        lastSourcePath = sourcePath;
-        lastTargetPath = targetPath;
-        lastCabinStyle = SelectedCabinStyle;
-        // Remember only a real choice: an unticked box with no averages is not a preference.
-        if (context.SpatialAverage != null)
-        {
-            lastSpatialAverage = checkBoxSpatialAverage.Checked;
-        }
-
+        session.Remember();
         base.OnFormClosed(e);
+    }
+
+    private void ReadCalibration() =>
+        session.SelectCalibration(
+            MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration),
+            comboBoxCalibration.GetItemText(comboBoxCalibration.SelectedItem));
+
+    private void ShowFiles()
+    {
+        labelSourceFile.Text = session.SourcePath ?? "no file chosen";
+        labelTargetFile.Text = session.TargetPath ?? "no file chosen";
     }
 
     private void ChooseSource()
@@ -174,7 +139,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             return;
         }
 
-        if (PathsEqual(dialog.FileName, targetPath))
+        if (session.IsTarget(dialog.FileName))
         {
             MessageBox.Show(
                 this,
@@ -186,79 +151,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             return;
         }
 
-        ApplySourceSelection(dialog.FileName);
-    }
-
-    // Probes at pick time so an unreadable, too long or too large file is refused before Render.
-    private void ApplySourceSelection(string fileName)
-    {
-        try
-        {
-            AudioFileInfo info = AudioFileCodec.Probe(fileName);
-            long projectedBytes = ProjectedPipelineBytes(info, context.SampleRate);
-            var section = new StringBuilder();
-            section.AppendLine("== Track ==");
-            section.AppendLine(Path.GetFileName(fileName));
-            section.AppendLine(
-                $"{info.ChannelCount} channel(s), {info.SampleRate} Hz, " +
-                $"{FormatDuration(info.Duration)}");
-            if (info.Duration > TimeSpan.FromMinutes(MaximumTrackMinutes))
-            {
-                section.Append(
-                    $"REFUSED: longer than {MaximumTrackMinutes} minutes — " +
-                    "use a shorter excerpt.");
-                sourcePath = null;
-                labelSourceFile.Text = "no file chosen";
-            }
-            else if (projectedBytes > MaximumPipelineBytes)
-            {
-                double allowedMinutes = MaximumPipelineBytes
-                    / (ProjectedPipelineBytes(
-                        info with { Duration = TimeSpan.FromMinutes(1) },
-                        context.SampleRate) * 1.0);
-                section.Append(
-                    $"REFUSED: rendering this would hold ~" +
-                    $"{projectedBytes / 1_000_000} MB of audio in memory " +
-                    $"(bound {MaximumPipelineBytes / 1_000_000} MB). At these " +
-                    $"rates keep the excerpt under ~{allowedMinutes:0} minutes.");
-                sourcePath = null;
-                labelSourceFile.Text = "no file chosen";
-            }
-            else
-            {
-                if (info.SampleRate != context.SampleRate)
-                {
-                    section.AppendLine(
-                        $"Will be converted to the project's {context.SampleRate} Hz " +
-                        "(the measured responses are never resampled).");
-                }
-                if (info.ChannelCount == 1)
-                {
-                    section.AppendLine("Mono: the same signal will feed both sides.");
-                }
-                else if (info.ChannelCount > 2)
-                {
-                    section.AppendLine(
-                        "Only the first two channels will feed the two sides.");
-                }
-
-                sourcePath = fileName;
-                labelSourceFile.Text = fileName;
-            }
-
-            trackSection = section.ToString().TrimEnd();
-        }
-        catch (Exception exception)
-        {
-            sourcePath = null;
-            labelSourceFile.Text = "no file chosen";
-            trackSection =
-                "== Track ==\r\n" +
-                $"{Path.GetFileName(fileName)}\r\n" +
-                $"UNREADABLE: {exception.Message}";
-        }
-
-        resultSection = string.Empty;
+        session.SelectSource(dialog.FileName);
+        ShowFiles();
         RefreshRenderEnabled();
         RefreshReport();
     }
@@ -270,13 +164,13 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         {
             AddExtension = true,
             DefaultExt = "wav",
-            FileName = sourcePath == null
+            FileName = session.SourcePath == null
                 ? "audition_processed.wav"
-                : Path.GetFileNameWithoutExtension(sourcePath) + "_processed.wav",
+                : Path.GetFileNameWithoutExtension(session.SourcePath) + "_processed.wav",
             Filter = "WAV audio (*.wav)|*.wav",
-            InitialDirectory = sourcePath == null
+            InitialDirectory = session.SourcePath == null
                 ? null
-                : Path.GetDirectoryName(sourcePath),
+                : Path.GetDirectoryName(session.SourcePath),
             OverwritePrompt = true,
             Title = "Save the auditioned track"
         };
@@ -286,7 +180,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         }
 
         // Writing onto the source would destroy it and make the A/B re-render process the processed file.
-        if (PathsEqual(dialog.FileName, sourcePath))
+        if (session.IsSource(dialog.FileName))
         {
             MessageBox.Show(
                 this,
@@ -298,53 +192,28 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             return;
         }
 
-        // An existing file was just confirmed by OverwritePrompt; a new one will ask on the next render.
-        targetOverwriteConfirmed = File.Exists(dialog.FileName);
-        targetPath = dialog.FileName;
-        labelTargetFile.Text = dialog.FileName;
+        session.SelectTarget(dialog.FileName);
+        ShowFiles();
         RefreshRenderEnabled();
     }
 
-    private static bool PathsEqual(string? first, string? second) =>
-        first != null && second != null &&
-        string.Equals(
-            Path.GetFullPath(first),
-            Path.GetFullPath(second),
-            StringComparison.OrdinalIgnoreCase);
-
-    // Peak working set: decoded stereo, resampled copy (if rates differ) and two rendered sides, all float32.
-    private static long ProjectedPipelineBytes(
-        long sourceFrames, int sourceRate, int projectRate)
-    {
-        long renderedFrames = (long)Math.Ceiling(
-            sourceFrames * (double)projectRate / sourceRate);
-        long resampledFrames = sourceRate == projectRate ? 0 : renderedFrames;
-        return 4L * 2L * (sourceFrames + resampledFrames + renderedFrames);
-    }
-
-    private static long ProjectedPipelineBytes(AudioFileInfo info, int projectRate) =>
-        ProjectedPipelineBytes(
-            (long)Math.Ceiling(info.Duration.TotalSeconds * info.SampleRate),
-            info.SampleRate,
-            projectRate);
-
     private async Task OnRenderClickedAsync()
     {
-        if (activeRender != null)
+        if (session.Rendering)
         {
             RequestCancel();
             return;
         }
-        if (sourcePath == null || targetPath == null || PathsEqual(sourcePath, targetPath))
+        if (!session.HasDistinctFiles)
         {
             return;
         }
 
-        if (File.Exists(targetPath) && !targetOverwriteConfirmed)
+        if (session.TargetNeedsConsent)
         {
             DialogResult overwrite = MessageBox.Show(
                 this,
-                $"The output file already exists:\r\n{targetPath}\r\n\r\nIt " +
+                $"The output file already exists:\r\n{session.TargetPath}\r\n\r\nIt " +
                 "holds the previous render. Overwrite it?\r\n\r\n(Choose No " +
                 "and Save as... to keep both variants for an A/B.)",
                 "Audition render",
@@ -355,12 +224,12 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
                 return;
             }
 
-            targetOverwriteConfirmed = true;
+            session.ConfirmOverwrite();
         }
 
         // A configured but unreadable file degrades to Off, reported in the result.
-        string? calibrationId =
-            MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration);
+        VirtualCrossoverAuditionContext context = session.Context;
+        string? calibrationId = session.CalibrationId;
         // "Own" is a rule the calibration list cannot resolve; the panel already resolved it.
         bool own = VirtualCrossoverCalibrationSelection.IsOwn(calibrationId);
         CalibrationFile? calibration = own
@@ -373,29 +242,28 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             : MicrophoneCalibrationIds.IsOff(calibrationId)
                 ? "off"
                 : calibration is { HasData: true }
-                    ? comboBoxCalibration.GetItemText(comboBoxCalibration.SelectedItem)
+                    ? session.CalibrationName
                     : "off (the calibration file could not be read)";
         if (calibration is not { HasData: true })
         {
             calibration = null;
         }
 
-        CabinTransferFunction? cabin = SelectedCabinStyle is { } cabinStyle
+        CabinTransferFunction? cabin = session.CabinStyle is { } cabinStyle
             ? CabinTransferFunction.FromBodyStyle(cabinStyle)
             : null;
         string cabinLabel = cabin == null
             ? "off"
-            : comboBoxCabin.GetItemText(comboBoxCabin.SelectedItem);
+            : session.CabinLabel;
 
-        VirtualCrossoverAuditionSpatialAverage? spatialAverage = RequestedSpatialAverage;
+        VirtualCrossoverAuditionSpatialAverage? spatialAverage = session.RequestedSpatialAverage;
         string magnitudeLabel = spatialAverage != null
             ? "spatial averages (MMM / array)"
             : "impulse responses (one microphone position)";
 
-        var cancellation = new CancellationTokenSource();
-        activeRender = cancellation;
+        CancellationToken cancellation = session.BeginRender();
         SetRunning(true);
-        resultSection = string.Empty;
+        session.ResultSection = string.Empty;
         RefreshReport();
 
         // The only async hop: created on the UI thread so reports post in order. Lower layers relay synchronously.
@@ -413,38 +281,37 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
                 progressBar.Maximum);
         });
 
-        string source = sourcePath;
-        string target = targetPath;
+        string source = session.SourcePath!;
+        string target = session.TargetPath!;
         try
         {
             RenderOutcome outcome = await Task.Run(
                 () => ExecuteRender(
                     context, source, target, calibration, calibrationLabel,
                     cabin, cabinLabel, spatialAverage, magnitudeLabel, progress,
-                    cancellation.Token),
-                cancellation.Token);
-            resultSection = FormatResult(outcome, target);
+                    cancellation),
+                cancellation);
+            session.ResultSection = FormatResult(outcome, target);
             labelStatus.Text = $"Finished — wrote {Path.GetFileName(target)}";
         }
         catch (OperationCanceledException)
         {
-            resultSection = "== Result ==\r\nCancelled; nothing was written.";
+            session.ResultSection = "== Result ==\r\nCancelled; nothing was written.";
             labelStatus.Text = "Cancelled.";
             progressBar.Value = 0;
         }
         catch (Exception exception)
         {
-            resultSection = $"== Result ==\r\nFAILED: {exception.Message}";
+            session.ResultSection = $"== Result ==\r\nFAILED: {exception.Message}";
             labelStatus.Text = "Failed.";
             progressBar.Value = 0;
         }
         finally
         {
-            activeRender = null;
-            cancellation.Dispose();
+            session.EndRender();
             SetRunning(false);
             RefreshReport();
-            if (closeRequested)
+            if (session.CloseRequested)
             {
                 Close();
             }
@@ -453,9 +320,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 
     private void RequestCancel()
     {
-        if (activeRender is { IsCancellationRequested: false } cancellation)
+        if (session.RequestCancel())
         {
-            cancellation.Cancel();
             buttonRender.Enabled = false;
             labelStatus.Text = "Cancelling…";
         }
@@ -481,37 +347,31 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     }
 
     private void RefreshRenderEnabled() =>
-        buttonRender.Enabled = activeRender != null ||
-            (sourcePath != null && targetPath != null && CalibrationNote()?.Refused != true);
+        buttonRender.Enabled = session.Rendering ||
+            (session.SourcePath != null && session.TargetPath != null && CalibrationNote()?.Refused != true);
 
     /// <summary>Calibration note for the report; only "Own (as measured)" has anything to say.</summary>
     private (string Text, bool Refused)? CalibrationNote()
     {
-        if (!VirtualCrossoverCalibrationSelection.IsOwn(
-            MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboBoxCalibration)))
+        if (!VirtualCrossoverCalibrationSelection.IsOwn(session.CalibrationId))
         {
             return null;
         }
 
-        if (context.OwnCalibration.Conflict is { } conflict)
+        VirtualCrossoverAuditionOwnCalibration ownCalibration = session.Context.OwnCalibration;
+        if (ownCalibration.Conflict is { } conflict)
         {
             return ($"REFUSED: {conflict}. Choose one of the calibrations above, or Off.",
                 true);
         }
 
-        return (context.OwnCalibration.Name is { } name
+        return (ownCalibration.Name is { } name
             ? $"Own (as measured): every channel was read through '{name}', and the " +
                 "render carries it."
             : "Own (as measured): the measurements recorded no calibration, so the " +
                 "render carries none.",
             false);
     }
-
-    private CabinBodyStyle? SelectedCabinStyle =>
-        comboBoxCabin.SelectedItem is CabinOption option ? option.Style : null;
-
-    private VirtualCrossoverAuditionSpatialAverage? RequestedSpatialAverage =>
-        checkBoxSpatialAverage.Checked ? context.SpatialAverage : null;
 
     // Worker thread; static and argument-fed so it cannot touch a control.
     private static RenderOutcome ExecuteRender(
@@ -574,20 +434,20 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         // Only two channels are decoded; the byte cap also bounds the decode itself.
         AudioFileContent material = AudioFileCodec.Read(
             sourcePath,
-            TimeSpan.FromMinutes(MaximumTrackMinutes),
+            TimeSpan.FromMinutes(VirtualCrossoverAuditionSession.MaximumTrackMinutes),
             channelLimit: 2,
-            MaximumPipelineBytes,
+            VirtualCrossoverAuditionSession.MaximumPipelineBytes,
             cancellationToken);
 
         // Re-check the budget on the actual frame count: the header may lie or the file may have changed.
-        long actualBytes = ProjectedPipelineBytes(
+        long actualBytes = VirtualCrossoverAuditionSession.ProjectedPipelineBytes(
             material.FrameCount, material.SampleRate, context.SampleRate);
-        if (actualBytes > MaximumPipelineBytes)
+        if (actualBytes > VirtualCrossoverAuditionSession.MaximumPipelineBytes)
         {
             throw new InvalidOperationException(
                 $"The decoded track is larger than its header promised: " +
                 $"rendering would hold ~{actualBytes / 1_000_000} MB of audio " +
-                $"in memory (bound {MaximumPipelineBytes / 1_000_000} MB). " +
+                $"in memory (bound {VirtualCrossoverAuditionSession.MaximumPipelineBytes / 1_000_000} MB). " +
                 "Use a shorter excerpt.");
         }
 
@@ -660,11 +520,11 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 
     private void RefreshReport() =>
         textBoxReport.Text = ComposeReport(
-            context,
-            checkBoxSpatialAverage.Checked,
+            session.Context,
+            session.SpatialAverageRequested,
             CalibrationNote()?.Text,
-            trackSection,
-            resultSection);
+            session.TrackSection,
+            session.ResultSection);
 
     /// <summary>The whole report; the result leads once present so a finished render is visible without scrolling.</summary>
     internal static string ComposeReport(
@@ -793,7 +653,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             $"Written: {targetPath}");
         section.AppendLine(
             $"Stereo, {rendered.SampleRate} Hz, 24-bit, " +
-            $"{FormatDuration(TimeSpan.FromSeconds(durationSeconds))}");
+            $"{VirtualCrossoverAuditionSession.FormatDuration(TimeSpan.FromSeconds(durationSeconds))}");
         section.AppendLine();
         if (outcome.CabinApplied)
         {
@@ -813,10 +673,6 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         return section.ToString();
     }
 
-    // Total minutes, so over-an-hour durations do not show only the remainder.
-    private static string FormatDuration(TimeSpan duration) =>
-        $"{(int)duration.TotalMinutes}:{duration.Seconds:00}";
-
     private sealed record RenderOutcome(
         int SourceSampleRate,
         AuralizationResult Rendered,
@@ -830,9 +686,4 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         string CabinLabel,
         double CabinTwentyHzDb,
         string MagnitudeLabel);
-
-    private sealed record CabinOption(CabinBodyStyle? Style, string Label)
-    {
-        public override string ToString() => Label;
-    }
 }

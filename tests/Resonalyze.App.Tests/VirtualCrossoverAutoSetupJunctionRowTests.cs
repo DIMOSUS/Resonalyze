@@ -203,6 +203,53 @@ public sealed class VirtualCrossoverAutoSetupJunctionRowTests
     }
 
     [Fact]
+    public void ANoteAppearingAfterShow_PushesTheOptionsDown()
+    {
+        // The notes line under a row shows up on an edit, long after the first layout: the table grows, and the
+        // options below used to stay where they were and cover it.
+        StaTest.Run(() =>
+        {
+            using var dialog = new VirtualCrossoverAutoSetupDialog();
+            dialog.Init(SampleRate, SampleRate, FourWay());
+            dialog.Show();
+            try
+            {
+                var junctions = (System.Collections.IList)Field<object>(dialog, "junctions");
+                foreach (object? junction in junctions)
+                {
+                    // Beyond what the drivers can take, so every bound is moved and says so.
+                    ((ThemedNumericUpDown)junction!.GetType().GetProperty("MinHz")!
+                        .GetValue(junction)!).Value = 20m;
+                    ((ThemedNumericUpDown)junction.GetType().GetProperty("MaxHz")!
+                        .GetValue(junction)!).Value = 20_000m;
+                }
+
+                StaTest.Settle(dialog.PendingPreview);
+                Assert.Contains(
+                    junctions.Cast<object>(),
+                    junction => ((Label)junction.GetType().GetProperty("Notes")!
+                        .GetValue(junction)!).Visible);
+
+                var junctionsTable = Field<TableLayoutPanel>(dialog, "tableJunctions");
+                var filters = Field<Label>(dialog, "labelFilters");
+                var preview = Field<Control>(dialog, "panelPreview");
+                Assert.True(
+                    filters.Top >= junctionsTable.Bottom,
+                    $"The options at {filters.Top} overlap the junctions table ending at " +
+                    $"{junctionsTable.Bottom}.");
+                Assert.True(
+                    preview.Bottom <= dialog.ClientSize.Height,
+                    $"The preview ends at {preview.Bottom}, past the client area " +
+                    $"{dialog.ClientSize.Height}.");
+            }
+            finally
+            {
+                dialog.Hide();
+            }
+        });
+    }
+
+    [Fact]
     public void ASplitVerdict_FitsInsideTheWindow()
     {
         // A split junction prints both corners and may add "inverted", which is the longest the column ever gets.

@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Resonalyze.Dsp;
 using Resonalyze.Options;
 
 namespace Resonalyze;

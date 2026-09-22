@@ -339,9 +339,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
     internal string? FirConflict => VirtualCrossoverChannelFirReadout.ConflictOf(
         firKernel, firDesign, processorSampleRateHz, SelectedCrossoverKind);
 
-    private double PhaseReferenceHz => SelectedZone == VirtualCrossoverZone.Sub
-        ? (double)numericLowPassHz.Value
-        : (double)numericHighPassHz.Value;
+    private double PhaseReferenceHz => VirtualCrossoverChannelPhaseReadout.ReferenceHz(
+        SelectedZone, (double)numericHighPassHz.Value, (double)numericLowPassHz.Value);
 
     public void SetAccentColor(Color color)
     {
@@ -530,7 +529,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "Also the null test: with polarity flipped, the deepest\r\n" +
             "notch at the crossover frequency marks perfect alignment.");
         numericDelay.ApplyToolTip(toolTip, DelayTooltipText(delayDistanceMm));
-        numericPhase.ApplyToolTip(toolTip, PhaseTooltipText());
+        numericPhase.ApplyToolTip(toolTip, PhaseTooltip());
         UpdateFirReadout();
         toolTip.SetToolTip(
             labelPhaseInfo,
@@ -925,79 +924,18 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
     private void UpdatePhaseReadout()
     {
-        double degrees = (double)numericPhase.Value;
-        double reference = PhaseReferenceHz;
-        var rotation = new PhaseRotationSpec(degrees, reference);
-        string text;
-        Color color = UiPalette.TextSecondary;
-        if (rotation.IsTransparent)
-        {
-            text = $"ref {FormatHz(reference)}";
-            color = UiPalette.TextDisabled;
-        }
-        else
-        {
-            AllPassSpec realized = PhaseRotationControl.Realize(rotation, processorSampleRateHz)!;
-            double delivered = PhaseRotationControl.DeliveredDegrees(
-                rotation, processorSampleRateHz);
-            bool capped = delivered > degrees + 0.05;
-            text = capped
-                ? $"ref {FormatHz(reference)} → {delivered:0.0}° min"
-                : $"ref {FormatHz(reference)} → AP2 {FormatHz(realized.FrequencyHz)}";
-            color = capped ? UiPalette.Warning : UiPalette.TextSecondary;
-        }
-
-        labelPhaseInfo.Text = text;
-        labelPhaseInfo.ForeColor = color;
+        VirtualCrossoverChannelPhaseReadout readout = VirtualCrossoverChannelPhaseReadout.Read(
+            (double)numericPhase.Value, PhaseReferenceHz, processorSampleRateHz);
+        labelPhaseInfo.Text = readout.Text;
+        labelPhaseInfo.ForeColor = readout.Color;
         if (tooltipHost is { } host)
         {
-            numericPhase.ApplyToolTip(host, PhaseTooltipText());
+            numericPhase.ApplyToolTip(host, PhaseTooltip());
         }
     }
 
-    private static string FormatHz(double frequencyHz) =>
-        frequencyHz >= 10_000 ? $"{frequencyHz / 1_000:0.0} kHz" : $"{frequencyHz:0} Hz";
-
-    private string PhaseTooltipText()
-    {
-        double degrees = (double)numericPhase.Value;
-        double reference = PhaseReferenceHz;
-        string newLine = Environment.NewLine;
-        string head =
-            "The processor's channel Phase control: a second-order all-pass" + newLine +
-            "(Q = 1) whose corner the device places so that the phase equals" + newLine +
-            "this angle at the channel's own crossover — the low-pass on a" + newLine +
-            "subwoofer block, the high-pass on every other one, and the" + newLine +
-            "configured value even where that filter is switched off." + newLine +
-            $"Steps of {PhaseRotationControl.StepDegrees:0.###}°, up to " +
-            $"{PhaseRotationControl.MaximumDegrees:0.###}°." + newLine + newLine +
-            "Move the crossover and the same angle becomes a different" + newLine +
-            "filter — that is the control's own rule, not a simplification." +
-            newLine + newLine;
-        var rotation = new PhaseRotationSpec(degrees, reference);
-        if (rotation.IsTransparent)
-        {
-            return head + $"No rotation. The reference would be {FormatHz(reference)}.";
-        }
-
-        AllPassSpec realized = PhaseRotationControl.Realize(rotation, processorSampleRateHz)!;
-        double delivered = PhaseRotationControl.DeliveredDegrees(rotation, processorSampleRateHz);
-        double groupDelayMs = AllPassFilter.GroupDelaySeconds(
-            realized, reference, processorSampleRateHz) * 1_000;
-        string body =
-            $"Reference {FormatHz(reference)}, all-pass corner " +
-            $"{FormatHz(realized.FrequencyHz)}," + newLine +
-            $"{groupDelayMs:0.000} ms of group delay at the reference.";
-        return delivered > degrees + 0.05
-            ? head + body + newLine + newLine +
-                $"The device will not place a corner above " +
-                $"{FormatHz(PhaseRotationControl.MaximumCornerHz(processorSampleRateHz))}," +
-                newLine +
-                $"so this setting delivers {delivered:0.0}° rather than {degrees:0.###}°." +
-                newLine +
-                "Every smaller setting delivers the same filter."
-            : head + body;
-    }
+    private string PhaseTooltip() => VirtualCrossoverChannelPhaseReadout.Tooltip(
+        (double)numericPhase.Value, PhaseReferenceHz, processorSampleRateHz);
 
     private void UpdateDelayDistance()
     {

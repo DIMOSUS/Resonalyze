@@ -152,9 +152,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             AutoSize = true,
             ForeColor = UiPalette.TextSecondary,
             Margin = new Padding(0, 4, 24, 4),
-            Text = $"{FormatHz(channel.Band.LowHz)} – {FormatHz(channel.Band.HighHz)}"
+            Text = AutoSetupWizardReport.BandText(channel)
         };
-        toolTip.SetToolTip(bandLabel, BandTooltip(channel));
+        toolTip.SetToolTip(bandLabel, AutoSetupWizardReport.BandTooltip(channel));
         var typeComboBox = new ThemedComboBox
         {
             Anchor = AnchorStyles.Left,
@@ -196,20 +196,6 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
 
         return row;
-    }
-
-    // The band shown is measured, but the chain is ordered by the effective band after the channel's own corners.
-    private static string BandTooltip(AutoSetupWizardChannel channel)
-    {
-        const string measured = "The usable band read from the raw response — what\r\n" +
-            "bounds where this driver may be crossed.";
-        (double low, double high) = VirtualCrossoverAutoSetupOrder.EffectiveBand(
-            channel.Band, channel.HighPassHz, channel.LowPassHz);
-        bool narrowed = low > channel.Band.LowHz || high < channel.Band.HighHz;
-        return narrowed
-            ? measured + "\r\n\r\nIts crossover already narrows it to " +
-                $"{FormatHz(low)} – {FormatHz(high)},\r\nwhich is what puts it here in the chain."
-            : measured;
     }
 
     private Button BuildArrow(string glyph) =>
@@ -301,7 +287,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                 AutoSize = true,
                 ForeColor = UiPalette.TextDefault,
                 Margin = new Padding(0, 4, 16, 4),
-                Text = $"{junction.Lower.Name.Split(' ')[0]} → {junction.Upper.Name.Split(' ')[0]}"
+                Text = AutoSetupWizardReport.JunctionName(junction)
             },
             Frequency(),
             Dash(),
@@ -585,7 +571,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         labelPreview.Width =
             panelPreview.Width - panelPreview.Padding.Left - panelPreview.Padding.Right;
         labelPreview.Height = Math.Max(
-            PreviewLineCount() * labelPreview.Font.Height,
+            AutoSetupWizardReport.PreviewLineCount(session) * labelPreview.Font.Height,
             TextRenderer.MeasureText(
                 labelPreview.Text,
                 labelPreview.Font,
@@ -596,10 +582,6 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         progressPreview.Top = panelPreview.Bottom + LogicalToDeviceUnits(6);
         progressPreview.Width = panelPreview.Width;
     }
-
-    // From structure, not current text (which may be a one-line error).
-    private int PreviewLineCount() =>
-        session.Rows.Count + (2 * session.GroupsInOrder().Count());
 
     private void WireOptionControls()
     {
@@ -759,7 +741,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
 
         labelPreview.Text = string.Join(
-            Environment.NewLine, PreviewLines(computed.Fits, computed.Summaries));
+            Environment.NewLine, AutoSetupWizardReport.PreviewLines(session, computed));
         UpdateJunctionVerdicts(computed.Fits);
         GrowToFitContents();
     }
@@ -829,17 +811,10 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     /// <summary>The one part of a row that needs the fit, so the one part that arrives late.</summary>
     private void UpdateJunctionVerdicts(IReadOnlyList<AutoSetupGroupFit> fits)
     {
-        foreach (AutoSetupGroupFit fit in fits)
+        foreach ((AutoSetupWizardJunction junction, string verdict)
+                 in AutoSetupWizardReport.JunctionVerdicts(session, fits))
         {
-            List<JunctionRow> rowsInGroup = junctions
-                .Where(junction => junction.Junction.Group == fit.Plan.Group)
-                .OrderBy(junction => junction.Junction.IndexInGroup)
-                .ToList();
-            for (int j = 0; j < rowsInGroup.Count && j + 1 < fit.Proposals.Count; j++)
-            {
-                rowsInGroup[j].Verdict.Text =
-                    DescribeJunction(fit.Proposals[j], fit.Proposals[j + 1]);
-            }
+            junctions.First(row => row.Junction == junction).Verdict.Text = verdict;
         }
     }
 
@@ -864,120 +839,6 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         {
             ClientSize = new Size(width, Math.Max(height, ClientSize.Height));
         }
-    }
-
-    /// <summary>What the junction ended up as. Split corners print both, so the row shows the split rather than
-    /// hiding it behind one number.</summary>
-    private static string DescribeJunction(CrossoverProposal lower, CrossoverProposal upper)
-    {
-        if (lower.LowPassEdge is not { } lowPass || upper.HighPassEdge is not { } highPass)
-        {
-            return "—";
-        }
-
-        string family = lowPass.Family == highPass.Family
-            ? FamilyName(lowPass.Family)
-            : $"{FamilyName(lowPass.Family)}/{FamilyName(highPass.Family)}";
-        string corners = Math.Abs(lowPass.FrequencyHz - highPass.FrequencyHz) < 0.5
-            ? FormatHz(lowPass.FrequencyHz)
-            : $"{FormatHz(lowPass.FrequencyHz)} ↓ / {FormatHz(highPass.FrequencyHz)} ↑";
-        string polarity = upper.InvertPolarity == lower.InvertPolarity ? string.Empty : ", inverted";
-        return $"{family} {corners} · " +
-            $"{lowPass.SlopeDbPerOctave}/{highPass.SlopeDbPerOctave} dB/oct{polarity}";
-    }
-
-    private static string FamilyName(CrossoverFilterFamily family) => family switch
-    {
-        CrossoverFilterFamily.LinkwitzRiley => "LR",
-        CrossoverFilterFamily.Butterworth => "BW",
-        CrossoverFilterFamily.Bessel => "Bessel",
-        _ => family.ToString()
-    };
-
-    private IEnumerable<string> PreviewLines(
-        IReadOnlyList<AutoSetupGroupFit> fits,
-        IReadOnlyList<AutoSetupGroupSummary> summaries)
-    {
-        bool headers = fits.Count > 1;
-        VirtualCrossoverAlignmentStage primary =
-            fits.FirstOrDefault(fit => fit.Plan.IsPrimary)?.Plan.Group
-            ?? VirtualCrossoverAlignmentStage.FrontChain;
-        string anchor = primary == VirtualCrossoverAlignmentStage.FrontChain
-            ? "front stage"
-            : LowerFirst(VirtualCrossoverAlignmentStages.DisplayName(primary));
-        for (int g = 0; g < fits.Count; g++)
-        {
-            AutoSetupGroupFit fit = fits[g];
-            if (headers)
-            {
-                yield return VirtualCrossoverAlignmentStages.DisplayName(fit.Plan.Group) + ":";
-            }
-
-            for (int i = 0; i < fit.Plan.InitIndices.Count; i++)
-            {
-                AutoSetupWizardRow row = session.Rows.First(
-                    candidate => candidate.InitIndex == fit.Plan.InitIndices[i]);
-                yield return FormatProposal(row, fit.Proposals[i], headers);
-            }
-
-            yield return FormatSummary(fit, summaries[g], headers, anchor);
-        }
-    }
-
-    private static string LowerFirst(string text) =>
-        text.Length == 0 ? text : char.ToLowerInvariant(text[0]) + text[1..];
-
-    // Target-curve gains make the sum an intentional downslope, so report its span, not a defect.
-    private string FormatSummary(
-        AutoSetupGroupFit fit,
-        AutoSetupGroupSummary summary,
-        bool indent,
-        string anchor)
-    {
-        string prefix = indent ? "   " : string.Empty;
-        string levelled = fit.Plan.IsPrimary
-            ? string.Empty
-            : $"  ·  levelled to the {anchor}";
-        if (fit.Plan.Sources.Count == 1)
-        {
-            return prefix + (fit.Plan.IsPrimary
-                ? "One driver, so nothing to cross: a protective high-pass only."
-                : $"Protective high-pass, levelled to the {anchor} — balance by ear.");
-        }
-
-        // The span comes from the worker with the fit: reading it here would mean a second summed response on the
-        // UI thread, which is the bulk of what the preview costs.
-        string elevation = fit.Plan.IsPrimary && session.SubElevationInitialized
-            ? $"  ·  bass +{(double)session.SubElevationDb:0.0} dB over mid/treble"
-            : string.Empty;
-        return $"{prefix}Predicted sum spans {summary.SpanDb:0.0} dB over " +
-            $"{FormatHz(summary.LowHz)}–{FormatHz(summary.HighHz)}{elevation}{levelled}";
-    }
-
-    private static string FormatProposal(AutoSetupWizardRow row, CrossoverProposal proposal, bool indent)
-    {
-        var parts = new List<string>();
-        if (proposal.HighPassEdge is { } highPass)
-        {
-            parts.Add($"HP {FormatHz(highPass.FrequencyHz)} {FormatFamily(highPass)}");
-        }
-        if (proposal.LowPassEdge is { } lowPass)
-        {
-            parts.Add($"LP {FormatHz(lowPass.FrequencyHz)} {FormatFamily(lowPass)}");
-        }
-        parts.Add($"gain {proposal.GainDb:0.0} dB");
-        return $"{(indent ? "   " : string.Empty)}{row.Source.Name}:  {string.Join(",  ", parts)}";
-    }
-
-    private static string FormatFamily(CrossoverEdge edge)
-    {
-        string family = edge.Family switch
-        {
-            CrossoverFilterFamily.LinkwitzRiley => "LR",
-            CrossoverFilterFamily.Butterworth => "BW",
-            _ => "BE"
-        };
-        return $"{family}{edge.SlopeDbPerOctave}";
     }
 
     private List<(AutoSetupWizardRow Earlier, AutoSetupWizardRow Later, VirtualCrossoverChainOrder Verdict)>
@@ -1217,7 +1078,4 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
                 MessageBoxIcon.Error);
         }
     }
-
-    private static string FormatHz(double frequencyHz) =>
-        FrequencyText.Format(frequencyHz);
 }

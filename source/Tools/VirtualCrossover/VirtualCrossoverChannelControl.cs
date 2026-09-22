@@ -902,31 +902,23 @@ public partial class VirtualCrossoverChannelControl : UserControl
     // Greyed out, not hidden, so the layout never shifts.
     private void UpdateCrossoverAvailability()
     {
-        CrossoverKind kind = SelectedCrossoverKind;
-        bool highPass = kind is CrossoverKind.HighPass or CrossoverKind.BandPass;
-        bool lowPass = kind is CrossoverKind.LowPass or CrossoverKind.BandPass;
+        VirtualCrossoverChannelAvailability available = VirtualCrossoverChannelAvailability.Of(
+            SelectedCrossoverKind,
+            comboBoxHighPassFamily.SelectedItem as CrossoverFilterFamily?,
+            comboBoxLowPassFamily.SelectedItem as CrossoverFilterFamily?);
 
-        UiStyle.SetTextEnabledLook(labelHighPass, highPass);
-        numericHighPassHz.Enabled = highPass;
-        comboBoxHighPassFamily.Enabled = highPass;
-        comboBoxHighPassSlope.Enabled = highPass;
+        UiStyle.SetTextEnabledLook(labelHighPass, available.HighPass);
+        numericHighPassHz.Enabled = available.HighPass;
+        comboBoxHighPassFamily.Enabled = available.HighPass;
+        comboBoxHighPassSlope.Enabled = available.HighPass;
 
-        UiStyle.SetTextEnabledLook(labelLowPass, lowPass);
-        numericLowPassHz.Enabled = lowPass;
-        comboBoxLowPassFamily.Enabled = lowPass;
-        comboBoxLowPassSlope.Enabled = lowPass;
+        UiStyle.SetTextEnabledLook(labelLowPass, available.LowPass);
+        numericLowPassHz.Enabled = available.LowPass;
+        comboBoxLowPassFamily.Enabled = available.LowPass;
+        comboBoxLowPassSlope.Enabled = available.LowPass;
 
-        UpdateRippleAvailability(numericHighPassRipple, comboBoxHighPassFamily, highPass);
-        UpdateRippleAvailability(numericLowPassRipple, comboBoxLowPassFamily, lowPass);
-    }
-
-    private static void UpdateRippleAvailability(
-        ThemedNumericUpDown rippleInput,
-        ThemedComboBox familyComboBox,
-        bool edgeActive)
-    {
-        bool chebyshev = familyComboBox.SelectedItem is CrossoverFilterFamily.Chebyshev;
-        rippleInput.Enabled = edgeActive && chebyshev;
+        numericHighPassRipple.Enabled = available.HighPassRipple;
+        numericLowPassRipple.Enabled = available.LowPassRipple;
     }
 
     // Many DSPs have no separate EQ preamp, so the PEQ preamp is folded into the channel gain (same sum as the tuning sheets).

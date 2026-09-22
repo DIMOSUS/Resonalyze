@@ -292,14 +292,8 @@ public partial class VirtualCrossoverChannelControl : UserControl
     {
         labelChannel.ForeColor = color;
         checkBoxShowProcessed.ForeColor = color;
-        checkBoxShowRaw.ForeColor = Blend(color, BackColor, 0.55);
+        checkBoxShowRaw.ForeColor = VirtualCrossoverColors.ChannelAccentFaded(color, BackColor);
     }
-
-    private static Color Blend(Color foreground, Color background, double amount) =>
-        Color.FromArgb(
-            (int)(foreground.R * amount + background.R * (1 - amount)),
-            (int)(foreground.G * amount + background.G * (1 - amount)),
-            (int)(foreground.B * amount + background.B * (1 - amount)));
 
     [DefaultValue(false)]
     public bool Muted

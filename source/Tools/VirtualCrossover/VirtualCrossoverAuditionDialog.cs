@@ -35,12 +35,8 @@ internal sealed record VirtualCrossoverAuditionSpatialAverage(
     IReadOnlyList<string> ReportLines);
 
 /// <summary>Virtual DSP audition dialog: renders a track through the tune on a cancellable worker.</summary>
-/// <remarks>Calibration and cabin subtraction are linear-phase FIRs in both side kernels. See docs/tech/spatial-average.md#audition-render.</remarks>
 internal sealed partial class VirtualCrossoverAuditionDialog : Form
 {
-    private const double DecodeShare = 0.06;
-    private const double RenderShare = 0.86;
-
     private readonly VirtualCrossoverAuditionSession session;
 
     public VirtualCrossoverAuditionDialog(VirtualCrossoverAuditionContext context)
@@ -227,22 +223,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             session.ConfirmOverwrite();
         }
 
-        VirtualCrossoverAuditionContext context = session.Context;
-        (CalibrationFile? calibration, string calibrationLabel) =
-            VirtualCrossoverAuditionCalibration.ForRender(session);
-
-        CabinTransferFunction? cabin = session.CabinStyle is { } cabinStyle
-            ? CabinTransferFunction.FromBodyStyle(cabinStyle)
-            : null;
-        string cabinLabel = cabin == null
-            ? "off"
-            : session.CabinLabel;
-
-        VirtualCrossoverAuditionSpatialAverage? spatialAverage = session.RequestedSpatialAverage;
-        string magnitudeLabel = spatialAverage != null
-            ? "spatial averages (MMM / array)"
-            : "impulse responses (one microphone position)";
-
+        AuditionRenderRequest request = VirtualCrossoverAuditionRender.Request(session);
         CancellationToken cancellation = session.BeginRender();
         SetRunning(true);
         session.ResultSection = string.Empty;
@@ -263,18 +244,13 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
                 progressBar.Maximum);
         });
 
-        string source = session.SourcePath!;
-        string target = session.TargetPath!;
         try
         {
-            RenderOutcome outcome = await Task.Run(
-                () => ExecuteRender(
-                    context, source, target, calibration, calibrationLabel,
-                    cabin, cabinLabel, spatialAverage, magnitudeLabel, progress,
-                    cancellation),
+            AuditionRenderOutcome outcome = await Task.Run(
+                () => VirtualCrossoverAuditionRender.Run(request, progress, cancellation),
                 cancellation);
-            session.ResultSection = FormatResult(outcome, target);
-            labelStatus.Text = $"Finished — wrote {Path.GetFileName(target)}";
+            session.ResultSection = FormatResult(outcome, request.TargetPath);
+            labelStatus.Text = $"Finished — wrote {Path.GetFileName(request.TargetPath)}";
         }
         catch (OperationCanceledException)
         {
@@ -329,144 +305,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
     }
 
     private void RefreshRenderEnabled() =>
-        buttonRender.Enabled = session.Rendering ||
-            (session.SourcePath != null && session.TargetPath != null &&
-                VirtualCrossoverAuditionCalibration.Note(session)?.Refused != true);
-
-    // Worker thread; static and argument-fed so it cannot touch a control.
-    private static RenderOutcome ExecuteRender(
-        VirtualCrossoverAuditionContext context,
-        string sourcePath,
-        string targetPath,
-        CalibrationFile? calibration,
-        string calibrationLabel,
-        CabinTransferFunction? cabin,
-        string cabinLabel,
-        VirtualCrossoverAuditionSpatialAverage? spatialAverage,
-        string magnitudeLabel,
-        IProgress<AuditionProgress> progress,
-        CancellationToken cancellationToken)
-    {
-        progress.Report(new AuditionProgress("Preparing the responses…", 0));
-        Complex[] leftSum = spatialAverage?.LeftSum ?? context.LeftSum;
-        Complex[] rightSum = spatialAverage?.RightSum ?? context.RightSum;
-        double[] leftKernel = Auralization.TrimResponse(
-            leftSum, context.SampleRate, out AuralizationTrim leftTrim);
-        double[] rightKernel = Auralization.TrimResponse(
-            rightSum, context.SampleRate, out AuralizationTrim rightTrim);
-
-        // Calibration and cabin combine into one linear-phase FIR in both kernels; with cabin subtraction a calibration-only
-        // reference pair is built first for level matching. See docs/tech/spatial-average.md#audition-render.
-        double[]? referenceLeftKernel = null;
-        double[]? referenceRightKernel = null;
-        if (cabin != null)
-        {
-            if (calibration != null)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                double[] calFir = CalibrationFirFilter.Design(
-                    calibration.GetDecibelCorrection, context.SampleRate);
-                referenceLeftKernel = FastConvolution.Convolve(leftKernel, calFir);
-                referenceRightKernel = FastConvolution.Convolve(rightKernel, calFir);
-            }
-            else
-            {
-                referenceLeftKernel = leftKernel;
-                referenceRightKernel = rightKernel;
-            }
-        }
-
-        int correctionFirTaps = 0;
-        if (calibration != null || cabin != null)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            double[] fir = CalibrationFirFilter.Design(
-                frequencyHz =>
-                    (calibration?.GetDecibelCorrection(frequencyHz) ?? 0.0) +
-                    (cabin?.Evaluate(frequencyHz) ?? 0.0),
-                context.SampleRate);
-            correctionFirTaps = fir.Length;
-            leftKernel = FastConvolution.Convolve(leftKernel, fir);
-            rightKernel = FastConvolution.Convolve(rightKernel, fir);
-        }
-
-        progress.Report(new AuditionProgress("Decoding the track…", 0.01));
-        // Only two channels are decoded; the byte cap also bounds the decode itself.
-        AudioFileContent material = AudioFileCodec.Read(
-            sourcePath,
-            TimeSpan.FromMinutes(VirtualCrossoverAuditionBudget.MaximumTrackMinutes),
-            channelLimit: 2,
-            VirtualCrossoverAuditionBudget.MaximumPipelineBytes,
-            cancellationToken);
-        VirtualCrossoverAuditionBudget.CheckDecoded(
-            material.FrameCount, material.SampleRate, context.SampleRate);
-
-        var renderProgress = new SynchronousProgress<double>(value =>
-            progress.Report(new AuditionProgress(
-                "Rendering through the tune…",
-                DecodeShare + value * RenderShare)));
-        AuralizationResult rendered = Auralization.Render(
-            new AuralizationRequest
-            {
-                LeftKernel = leftKernel,
-                RightKernel = rightKernel,
-                ReferenceLeftKernel = referenceLeftKernel,
-                ReferenceRightKernel = referenceRightKernel,
-                KernelSampleRate = context.SampleRate,
-                SourceChannels = material.Channels,
-                SourceSampleRate = material.SampleRate
-            },
-            renderProgress,
-            cancellationToken);
-
-        progress.Report(new AuditionProgress(
-            "Writing the WAV file…", DecodeShare + RenderShare));
-        WriteRenderedTrack(targetPath, rendered, cancellationToken);
-        progress.Report(new AuditionProgress("Finished", 1.0));
-
-        return new RenderOutcome(
-            material.SampleRate,
-            rendered,
-            leftTrim,
-            rightTrim,
-            leftKernel.Length,
-            rightKernel.Length,
-            correctionFirTaps,
-            calibrationLabel,
-            cabin != null,
-            cabinLabel,
-            cabin?.Evaluate(20.0) ?? 0.0,
-            magnitudeLabel);
-    }
-
-    // Via a temporary file so a cancel or failure never leaves a truncated WAV in place.
-    private static void WriteRenderedTrack(
-        string targetPath,
-        AuralizationResult result,
-        CancellationToken cancellationToken)
-    {
-        string temporaryPath = targetPath + ".partial";
-        try
-        {
-            AudioFileCodec.WriteWav(
-                temporaryPath,
-                new AudioFileContent(result.Channels, result.SampleRate),
-                cancellationToken);
-            File.Move(temporaryPath, targetPath, overwrite: true);
-        }
-        catch
-        {
-            try
-            {
-                File.Delete(temporaryPath);
-            }
-            catch (IOException)
-            {
-            }
-
-            throw;
-        }
-    }
+        buttonRender.Enabled = VirtualCrossoverAuditionRender.Available(session);
 
     private void RefreshReport() =>
         textBoxReport.Text = ComposeReport(
@@ -561,7 +400,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             "does at that one position.");
     }
 
-    private static string FormatResult(RenderOutcome outcome, string targetPath)
+    private static string FormatResult(AuditionRenderOutcome outcome, string targetPath)
     {
         AuralizationResult rendered = outcome.Rendered;
         double durationSeconds =
@@ -622,18 +461,4 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             "would convolve the car twice.");
         return section.ToString();
     }
-
-    private sealed record RenderOutcome(
-        int SourceSampleRate,
-        AuralizationResult Rendered,
-        AuralizationTrim LeftTrim,
-        AuralizationTrim RightTrim,
-        int LeftKernelTaps,
-        int RightKernelTaps,
-        int CorrectionFirTaps,
-        string CalibrationLabel,
-        bool CabinApplied,
-        string CabinLabel,
-        double CabinTwentyHzDb,
-        string MagnitudeLabel);
 }

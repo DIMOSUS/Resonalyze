@@ -227,27 +227,9 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
             session.ConfirmOverwrite();
         }
 
-        // A configured but unreadable file degrades to Off, reported in the result.
         VirtualCrossoverAuditionContext context = session.Context;
-        string? calibrationId = session.CalibrationId;
-        // "Own" is a rule the calibration list cannot resolve; the panel already resolved it.
-        bool own = VirtualCrossoverCalibrationSelection.IsOwn(calibrationId);
-        CalibrationFile? calibration = own
-            ? context.OwnCalibration.Curve
-            : context.CalibrationResolver?.Invoke(calibrationId);
-        string calibrationLabel = own
-            ? context.OwnCalibration.Name is { } ownName
-                ? $"own (as measured): {ownName}"
-                : "own (as measured): the measurements recorded none"
-            : MicrophoneCalibrationIds.IsOff(calibrationId)
-                ? "off"
-                : calibration is { HasData: true }
-                    ? session.CalibrationName
-                    : "off (the calibration file could not be read)";
-        if (calibration is not { HasData: true })
-        {
-            calibration = null;
-        }
+        (CalibrationFile? calibration, string calibrationLabel) =
+            VirtualCrossoverAuditionCalibration.ForRender(session);
 
         CabinTransferFunction? cabin = session.CabinStyle is { } cabinStyle
             ? CabinTransferFunction.FromBodyStyle(cabinStyle)
@@ -348,30 +330,8 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
 
     private void RefreshRenderEnabled() =>
         buttonRender.Enabled = session.Rendering ||
-            (session.SourcePath != null && session.TargetPath != null && CalibrationNote()?.Refused != true);
-
-    /// <summary>Calibration note for the report; only "Own (as measured)" has anything to say.</summary>
-    private (string Text, bool Refused)? CalibrationNote()
-    {
-        if (!VirtualCrossoverCalibrationSelection.IsOwn(session.CalibrationId))
-        {
-            return null;
-        }
-
-        VirtualCrossoverAuditionOwnCalibration ownCalibration = session.Context.OwnCalibration;
-        if (ownCalibration.Conflict is { } conflict)
-        {
-            return ($"REFUSED: {conflict}. Choose one of the calibrations above, or Off.",
-                true);
-        }
-
-        return (ownCalibration.Name is { } name
-            ? $"Own (as measured): every channel was read through '{name}', and the " +
-                "render carries it."
-            : "Own (as measured): the measurements recorded no calibration, so the " +
-                "render carries none.",
-            false);
-    }
+            (session.SourcePath != null && session.TargetPath != null &&
+                VirtualCrossoverAuditionCalibration.Note(session)?.Refused != true);
 
     // Worker thread; static and argument-fed so it cannot touch a control.
     private static RenderOutcome ExecuteRender(
@@ -512,7 +472,7 @@ internal sealed partial class VirtualCrossoverAuditionDialog : Form
         textBoxReport.Text = ComposeReport(
             session.Context,
             session.SpatialAverageRequested,
-            CalibrationNote()?.Text,
+            VirtualCrossoverAuditionCalibration.Note(session)?.Text,
             session.TrackSection,
             session.ResultSection);
 

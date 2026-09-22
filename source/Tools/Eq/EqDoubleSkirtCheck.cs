@@ -3,9 +3,12 @@ namespace Resonalyze;
 /// <summary>An imported target cut with the channel's crossover gets its slope twice once Crossover in target adds it.</summary>
 internal static class EqDoubleSkirtCheck
 {
-    /// <summary>Fall over the octave past the channel's −3 dB point read as a skirt (LR24 ~20, steepest shelf under 7); an octave
-    /// because a steep FIR skirt's own span is too narrow to read the file across.</summary>
-    public const double FallDb = 10;
+    /// <summary>
+    /// Fall from the channel's −3 dB point to an octave past its −18 dB point (at least two octaves: a steep FIR skirt's own
+    /// span is too narrow to read the file across). A skirt keeps falling there; a shelf levels off, and no preset's exceeds
+    /// 12 dB in all.
+    /// </summary>
+    public const double FallDb = 15;
 
     private const double PassbandDb = -3;
     private const double LowestHz = 10;
@@ -49,9 +52,11 @@ internal static class EqDoubleSkirtCheck
 
                 if (shape[i] <= -EqTargetCrossover.SlopeWindowFallDb)
                 {
+                    double octaveHz = pass is { } start ? grid[start] * Math.Pow(2, direction) : grid[i];
+                    double farHz = (direction < 0 ? Math.Min(grid[i], octaveHz) : Math.Max(grid[i], octaveHz)) *
+                        Math.Pow(2, direction);
                     if (pass is { } edge &&
-                        imported.Evaluate(grid[edge]) -
-                        imported.Evaluate(grid[edge] * Math.Pow(2, direction)) >= FallDb)
+                        imported.Evaluate(grid[edge]) - imported.Evaluate(farHz) >= FallDb)
                     {
                         repeated.Add(grid[edge]);
                     }

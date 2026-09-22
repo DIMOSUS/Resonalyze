@@ -95,6 +95,48 @@ public sealed class EqDoubleSkirtCheckTests
         Assert.Empty(EqDoubleSkirtCheck.RepeatedSkirts(Spec(WholeTarget), fir, Rate));
     }
 
+    [Theory]
+    [InlineData(12)]
+    [InlineData(24)]
+    [InlineData(48)]
+    public void ATargetCutWithTheChannelsOwnLinkwitzRiley_IsFlagged(int slopeDbPerOctave)
+    {
+        // An octave past −3 dB LR12 has fallen only ~5.5 dB, and the ATF bass rise hides a third of its −3 → −18 dB span.
+        var slope = new EqTargetSlope(
+            new CrossoverSpec(
+                CrossoverKind.BandPass,
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 2_900, slopeDbPerOctave),
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 200, slopeDbPerOctave)),
+            null);
+        var cut = new List<(double Hz, double Db)>();
+        for (double hz = 10; hz <= 24_000; hz *= 1.05)
+        {
+            cut.Add((hz, Interpolate(WholeTarget, hz) + EqTargetCrossover.ShapeDb(slope, hz, Rate)));
+        }
+
+        Assert.Equal(2, EqDoubleSkirtCheck.RepeatedSkirts(Spec([.. cut]), slope, Rate).Count);
+        Assert.Empty(EqDoubleSkirtCheck.RepeatedSkirts(Spec(WholeTarget), slope, Rate));
+    }
+
+    [Fact]
+    public void TheCarBassShelf_UnderAnLr12Sub_IsNotReadAsASkirt()
+    {
+        // The widest span the check reads: LR12's runs past the whole shelf, which levels off 12 dB down.
+        var sub = new EqTargetSlope(
+            new CrossoverSpec(
+                CrossoverKind.LowPass,
+                new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 80, 12)),
+            null);
+        TargetCurveSpec carBass = TargetCurveSpec.FromPreset(TargetPreset.CarBass);
+        var points = new List<(double Hz, double Db)>();
+        for (double hz = 10; hz <= 24_000; hz *= 1.05)
+        {
+            points.Add((hz, carBass.Evaluate(hz)));
+        }
+
+        Assert.Empty(EqDoubleSkirtCheck.RepeatedSkirts(Spec([.. points]), sub, Rate));
+    }
+
     [Fact]
     public void TheCache_AnswersAgainOnlyWhenAnInputChanges()
     {
@@ -133,6 +175,10 @@ public sealed class EqDoubleSkirtCheckTests
         session.SetCrossoverInTarget(false);
         Assert.Equal(40, EqWizardRender.TargetShapePeakDb(session)!.Value, 1e-9);
     }
+
+    private static double Interpolate((double Hz, double Db)[] points, double hz) =>
+        ImportedTargetCurve.FromPoints("base.txt", points.Select(point => new OverlayPoint(point.Hz, point.Db)))!
+            .Evaluate(hz);
 
     private static TargetCurveSpec Spec((double Hz, double Db)[] points) =>
         TargetCurveSpec.FromPreset(TargetPreset.Flat) with

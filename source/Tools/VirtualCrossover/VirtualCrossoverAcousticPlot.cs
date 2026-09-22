@@ -55,6 +55,9 @@ internal sealed class VirtualCrossoverAcousticPlot
     private const double LossAxisNominalBottomDb = -24;
     private const double LossAxisFloorDb = -60;
 
+    /// <summary>The magnitude view's pan floor; the ceiling is <see cref="PlotModelStyle.RelativeDecibelAbsoluteMaximum"/>.</summary>
+    public const double MagnitudeFloorDb = -90;
+
     public static readonly OxyColor LossAxisColor = UiPalette.CurveTarget.ToOxy();
 
     private readonly PlotView view;
@@ -173,7 +176,7 @@ internal sealed class VirtualCrossoverAcousticPlot
         else
         {
             valueAxis.Title = "dB";
-            valueAxis.AbsoluteMinimum = -90;
+            valueAxis.AbsoluteMinimum = MagnitudeFloorDb;
             // Loopback-referenced magnitudes share the pan ceiling (see PlotModelStyle).
             valueAxis.AbsoluteMaximum = PlotModelStyle.RelativeDecibelAbsoluteMaximum;
             valueAxis.Minimum = double.NaN;

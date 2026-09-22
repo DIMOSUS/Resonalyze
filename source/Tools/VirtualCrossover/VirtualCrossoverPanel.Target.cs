@@ -93,6 +93,16 @@ public partial class VirtualCrossoverPanel
         ApplyTargetLocally(edited);
         StoreTargetInProject(edited);
         TargetCurveChanged?.Invoke(edited);
+        if (TargetCurveImport.OfferLevel(
+                FindForm(),
+                imported,
+                (double)numericTargetLevel.Value,
+                numericTargetLevel.FieldRange(),
+                VirtualCrossoverAcousticPlot.MagnitudeFloorDb,
+                PlotModelStyle.RelativeDecibelAbsoluteMaximum) is { } levelDb)
+        {
+            numericTargetLevel.Value = levelDb;
+        }
     }
 
     // The EQ Wizard's isolated target dialog previewing on this plot; Save hands the curve to the host.

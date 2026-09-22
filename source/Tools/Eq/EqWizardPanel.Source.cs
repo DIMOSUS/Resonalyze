@@ -434,6 +434,17 @@ public partial class EqWizardPanel
         {
             Spec = session.Target.Spec with { Imported = imported }
         });
+        (double reachMinDb, double reachMaxDb) = plot.MagnitudeReach();
+        if (TargetCurveImport.OfferLevel(
+                FindForm(),
+                imported,
+                (double)session.TargetOffsetDb,
+                NumericTargetOffset.FieldRange(),
+                reachMinDb,
+                reachMaxDb) is { } levelDb)
+        {
+            NumericTargetOffset.Value = levelDb;
+        }
     }
 
     // Isolated overlay target dialog; Cancel reverts the preview. An imported curve rides as a preset entry so edits keep it.

@@ -43,6 +43,7 @@ namespace Resonalyze
             cutValue = new Label();
             headroomCaption = new Label();
             headroomValue = new Label();
+            warningLabel = new Label();
             tableLayout.SuspendLayout();
             SuspendLayout();
             // 
@@ -243,12 +244,24 @@ namespace Resonalyze
             headroomValue.TabIndex = 12;
             headroomValue.Text = "-";
             // 
+            // warningLabel
+            // 
+            warningLabel.Dock = DockStyle.Fill;
+            warningLabel.ForeColor = UiPalette.Warning;
+            warningLabel.Location = new Point(8, 172);
+            warningLabel.Name = "warningLabel";
+            warningLabel.Padding = new Padding(3, 8, 3, 0);
+            warningLabel.Size = new Size(138, 161);
+            warningLabel.TabIndex = 1;
+            warningLabel.Visible = false;
+            // 
             // EqResultsPanel
             // 
             AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             BackColor = UiPalette.PanelSurfaceDeep;
             BorderStyle = BorderStyle.FixedSingle;
+            Controls.Add(warningLabel);
             Controls.Add(tableLayout);
             Font = new Font("Segoe UI", 9F);
             ForeColor = UiPalette.TextValue;
@@ -277,5 +290,6 @@ namespace Resonalyze
         private Label cutValue;
         private Label headroomCaption;
         private Label headroomValue;
+        private Label warningLabel;
     }
 }

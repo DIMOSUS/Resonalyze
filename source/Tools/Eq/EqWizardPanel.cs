@@ -156,6 +156,10 @@ public partial class EqWizardPanel : UserControl
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Action<EqTuneStats?>? ResultsChanged { get; set; }
 
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<string?>? WarningChanged { get; set; }
+
     /// <summary>Raised after a change the settings file keeps (see <see cref="EqWizardSession.SettingsChanged"/>).</summary>
     internal event Action? SettingsChanged
     {
@@ -478,6 +482,11 @@ public partial class EqWizardPanel : UserControl
         NumericTargetOffset.Enabled = true;
         NumericGain.Enabled = !session.Bypass && render.SourcePlusEq != null;
         ResultsChanged?.Invoke(EqWizardRender.Stats(session, render, eq));
+        WarningChanged?.Invoke(EqDoubleSkirtCheck.Warning(
+            session.Target.Spec,
+            session.TargetCrossover,
+            session.CrossoverInTarget,
+            session.ProcessorSampleRateHz));
 
         EqWizardPhaseCurves? phase = null;
         if (session.PhaseMode && session.PhaseContext != null)

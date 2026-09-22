@@ -65,6 +65,13 @@ public sealed partial class EqResultsPanel : UserControl
         }
     }
 
+    /// <summary>A standing condition of the setup rather than of one tune; null hides it.</summary>
+    internal void SetWarning(string? warning)
+    {
+        warningLabel.Text = warning ?? string.Empty;
+        warningLabel.Visible = warning != null;
+    }
+
     internal void SetResults(EqTuneStats? stats)
     {
         if (stats == null)

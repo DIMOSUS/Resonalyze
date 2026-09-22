@@ -293,9 +293,8 @@ internal sealed partial class OverlayTargetSettingsDialog : Form
         {
             toolTip.SetToolTip(
                 presetComboBox,
-                $"{option.Curve.Describe()}\r\nRelative dB, anchored at " +
-                $"{ImportedTargetCurve.AnchorHz:0} Hz and held flat outside its " +
-                "range. Pick a preset to go back to a parametric shape.");
+                $"{option.Curve.Describe()}\r\nFile levels at the Target Level, flat " +
+                "outside its range. A preset returns to a parametric shape.");
         }
     }
 

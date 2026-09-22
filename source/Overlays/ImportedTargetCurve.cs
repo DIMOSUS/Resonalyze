@@ -1,12 +1,11 @@
 namespace Resonalyze;
 
-/// <summary>A house curve used instead of the parametric <see cref="TargetCurveSpec"/>; relative dB.</summary>
-/// <remarks>Cleaned (duplicates averaged), anchored to 0 dB at <see cref="AnchorHz"/>, thinned to <see cref="MaximumPoints"/>
-/// (stored by value). Log-linear between points; holds end values outside its range so the tuner chases nothing invented.</remarks>
+/// <summary>A house curve used instead of the parametric <see cref="TargetCurveSpec"/>, at the levels its file states.</summary>
+/// <remarks>Cleaned (duplicates averaged) and thinned to <see cref="MaximumPoints"/> (stored by value), never shifted: a set of
+/// per-driver curves cut from one target keeps its common level. Log-linear between points; holds end values outside its
+/// range so the tuner chases nothing invented.</remarks>
 public sealed class ImportedTargetCurve : IEquatable<ImportedTargetCurve>
 {
-    public const double AnchorHz = TargetCurveSpec.PivotHz;
-
     public const int MaximumPoints = 1024;
 
     private readonly double[] frequencies;
@@ -27,7 +26,9 @@ public sealed class ImportedTargetCurve : IEquatable<ImportedTargetCurve>
 
     public double HighFrequencyHz => frequencies[^1];
 
-    /// <summary>Null when fewer than two usable points survive or anchoring overflows. Idempotent; every path goes through here.</summary>
+    public double PeakDb => levelsDb.Max();
+
+    /// <summary>Null when fewer than two usable points survive or thinning overflows. Idempotent; every path goes through here.</summary>
     public static ImportedTargetCurve? FromPoints(
         string name,
         IEnumerable<OverlayPoint> points)
@@ -75,16 +76,7 @@ public sealed class ImportedTargetCurve : IEquatable<ImportedTargetCurve>
             (gridHz, gridDb) = Resample(gridHz, gridDb);
         }
 
-        double anchor = Interpolate(gridHz, gridDb, AnchorHz);
-        if (anchor != 0)
-        {
-            for (int index = 0; index < gridDb.Length; index++)
-            {
-                gridDb[index] -= anchor;
-            }
-        }
-
-        // ±1e308 is finite but the anchoring difference is not; the settings serializer would throw on it. Refuse.
+        // ±1e308 neighbours are finite but their interpolated difference is not; the settings serializer would throw. Refuse.
         foreach (double level in gridDb)
         {
             if (!double.IsFinite(level))

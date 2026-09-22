@@ -32,10 +32,6 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         public bool Suppressed { get; set; }
     }
 
-    private sealed record GroupFit(
-        AutoSetupGroupPlan Plan,
-        IReadOnlyList<CrossoverProposal> Proposals);
-
     private readonly WrappingToolTip toolTip = new()
     {
         InitialDelay = 500,
@@ -663,88 +659,6 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         SchedulePreview();
     }
 
-    // Pure, so Apply can run it off the UI thread.
-    private static List<GroupFit> Fit(
-        IReadOnlyList<AutoSetupGroupPlan> plan,
-        Func<AutoSetupGroupPlan, CrossoverAutoSetupOptions> options,
-        double sampleRateHz)
-    {
-        var fitted = new IReadOnlyList<CrossoverProposal>[plan.Count];
-        double? reference = null;
-        // Primary fitted first (others level onto it); stable sort keeps plan order for the rest.
-        foreach (int index in Enumerable.Range(0, plan.Count)
-                     .OrderByDescending(index => plan[index].IsPrimary))
-        {
-            AutoSetupGroupPlan group = plan[index];
-            CrossoverAutoSetupOptions groupOptions = options(group);
-            IReadOnlyList<CrossoverProposal> proposals = group.Sources.Count == 1
-                ? [CrossoverAutoSetup.ProposeSingle(group.Sources[0], groupOptions)]
-                : group.ImpulseResponses != null
-                    ? CrossoverAutoSetup.ProposeRanked(
-                        group.Sources, groupOptions, group.ImpulseResponses)[0].Proposals
-                    : CrossoverAutoSetup.Propose(group.Sources, groupOptions);
-
-            if (group.IsPrimary)
-            {
-                reference = CrossoverAutoSetup.ReferenceLevelDb(
-                    group.Sources, proposals, sampleRateHz);
-            }
-            else if (reference is { } level)
-            {
-                proposals = CrossoverAutoSetup.OffsetToReferenceLevel(
-                    group.Sources, proposals, sampleRateHz, level);
-            }
-
-            fitted[index] = proposals;
-        }
-
-        return plan.Select((group, index) => new GroupFit(group, fitted[index])).ToList();
-    }
-
-    private static CrossoverProposal[] InInitOrder(IReadOnlyList<GroupFit> fits, int count)
-    {
-        var result = new CrossoverProposal[count];
-        foreach (GroupFit fit in fits)
-        {
-            for (int i = 0; i < fit.Plan.InitIndices.Count; i++)
-            {
-                result[fit.Plan.InitIndices[i]] = fit.Proposals[i];
-            }
-        }
-
-        return result;
-    }
-
-    private List<GroupFit>? TryFit(bool withImpulseResponses)
-    {
-        if (session.SelectedFamilies().Count == 0)
-        {
-            return null;
-        }
-
-        try
-        {
-            return Fit(
-                AutoSetupWizardPlan.Groups(session, withImpulseResponses),
-                group => AutoSetupWizardPlan.OptionsFor(session, group),
-                session.SampleRateHz);
-        }
-        catch (ArgumentException)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>Everything the preview needs that costs real time, computed off the UI thread.</summary>
-    private sealed record PreviewComputation(
-        IReadOnlyList<GroupFit> Fits,
-        IReadOnlyList<GroupSummary> Summaries,
-        decimal ElevationCeiling,
-        decimal? ElevationValue);
-
-    /// <summary>The summed span one group is predicted to have, and the band it was read over.</summary>
-    private sealed record GroupSummary(double SpanDb, double LowHz, double HighHz);
-
     private int previewGeneration;
     private CancellationTokenSource? previewWork;
 
@@ -801,17 +715,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         try
         {
             await Task.Delay(PreviewDebounceMilliseconds, token);
-            List<AutoSetupGroupPlan> plan = AutoSetupWizardPlan.Groups(session, withImpulseResponses: false);
-            Dictionary<VirtualCrossoverAlignmentStage, CrossoverAutoSetupOptions> snapshot =
-                AutoSetupWizardPlan.Snapshot(session, plan);
-            double rateHz = session.SampleRateHz;
-            double processorHz = session.ProcessorSampleRateHz;
-            bool elevationSet = session.SubElevationInitialized;
-            decimal elevation = session.SubElevationDb;
-            PreviewComputation? computed = await Task.Run(
-                () => ComputePreview(
-                    plan, snapshot, rateHz, processorHz, elevationSet, elevation),
-                token);
+            AutoSetupPreviewInputs inputs = AutoSetupPreviewInputs.Of(session);
+            AutoSetupPreview? computed = await Task.Run(() => AutoSetupWizardFit.Preview(inputs), token);
             if (token.IsCancellationRequested || generation != previewGeneration || IsDisposed)
             {
                 return;
@@ -832,96 +737,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         }
     }
 
-    /// <summary>Pure: touches no control, so it is safe on a worker. A run that moves the elevation ceiling fits a
-    /// second time here rather than bouncing back through the UI to do it.</summary>
-    private static PreviewComputation? ComputePreview(
-        IReadOnlyList<AutoSetupGroupPlan> plan,
-        IReadOnlyDictionary<VirtualCrossoverAlignmentStage, CrossoverAutoSetupOptions> options,
-        double sampleRateHz,
-        double processorSampleRateHz,
-        bool elevationInitialized,
-        decimal elevation)
-    {
-        List<GroupFit>? fits = TryFit(plan, options, sampleRateHz);
-        if (fits == null)
-        {
-            return null;
-        }
-
-        decimal ceiling = 0;
-        decimal? value = null;
-        GroupFit? primary = fits.FirstOrDefault(fit => fit.Plan.IsPrimary);
-        if (primary != null && primary.Plan.Sources.Count > 1)
-        {
-            ceiling = (decimal)Math.Max(0, Math.Round(
-                CrossoverAutoSetup.MeasuredSubElevationDb(
-                    primary.Plan.Sources, primary.Proposals, sampleRateHz),
-                1));
-            if (!elevationInitialized && ceiling != elevation)
-            {
-                value = ceiling;
-                // The first fit used a default elevation the user never sees; refit to the one about to be shown.
-                fits = TryFit(
-                    plan,
-                    options.ToDictionary(
-                        entry => entry.Key,
-                        entry => entry.Key == primary.Plan.Group
-                            ? entry.Value with { SubElevationDb = (double)ceiling }
-                            : entry.Value),
-                    sampleRateHz) ?? fits;
-            }
-        }
-
-        var summaries = new List<GroupSummary>(fits.Count);
-        foreach (GroupFit fit in fits)
-        {
-            summaries.Add(Summarize(fit, sampleRateHz, processorSampleRateHz));
-        }
-
-        return new PreviewComputation(fits, summaries, ceiling, value);
-    }
-
-    private static List<GroupFit>? TryFit(
-        IReadOnlyList<AutoSetupGroupPlan> plan,
-        IReadOnlyDictionary<VirtualCrossoverAlignmentStage, CrossoverAutoSetupOptions> options,
-        double sampleRateHz)
-    {
-        try
-        {
-            return Fit(plan, group => options[group.Group], sampleRateHz);
-        }
-        catch (ArgumentException)
-        {
-            return null;
-        }
-    }
-
-    private static GroupSummary Summarize(
-        GroupFit fit,
-        double sampleRateHz,
-        double processorSampleRateHz)
-    {
-        IReadOnlyList<AutoSetupSource> sources = fit.Plan.Sources;
-        if (sources.Count < 2)
-        {
-            return new GroupSummary(0, 0, 0);
-        }
-
-        DriverBandEstimate low = CrossoverAutoSetup.EstimateBand(
-            sources[0].MagnitudeDb, sources[0].Coherence);
-        DriverBandEstimate high = CrossoverAutoSetup.EstimateBand(
-            sources[^1].MagnitudeDb, sources[^1].Coherence);
-        double trim = Math.Pow(2.0, 0.5);
-        var window = CrossoverAutoSetup
-            .SummedResponseDb(sources, fit.Proposals, sampleRateHz, processorSampleRateHz)
-            .Where(point => point.X >= low.LowHz * trim && point.X <= high.HighHz / trim)
-            .Select(point => point.Y)
-            .ToList();
-        return new GroupSummary(
-            window.Count > 0 ? window.Max() - window.Min() : 0, low.LowHz, high.HighHz);
-    }
-
-    private void ApplyPreview(PreviewComputation? computed)
+    private void ApplyPreview(AutoSetupPreview? computed)
     {
         buttonApply.Enabled = computed != null && !rankingInProgress;
         if (computed == null)
@@ -1011,9 +827,9 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     }
 
     /// <summary>The one part of a row that needs the fit, so the one part that arrives late.</summary>
-    private void UpdateJunctionVerdicts(IReadOnlyList<GroupFit> fits)
+    private void UpdateJunctionVerdicts(IReadOnlyList<AutoSetupGroupFit> fits)
     {
-        foreach (GroupFit fit in fits)
+        foreach (AutoSetupGroupFit fit in fits)
         {
             List<JunctionRow> rowsInGroup = junctions
                 .Where(junction => junction.Junction.Group == fit.Plan.Group)
@@ -1079,8 +895,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
     };
 
     private IEnumerable<string> PreviewLines(
-        IReadOnlyList<GroupFit> fits,
-        IReadOnlyList<GroupSummary> summaries)
+        IReadOnlyList<AutoSetupGroupFit> fits,
+        IReadOnlyList<AutoSetupGroupSummary> summaries)
     {
         bool headers = fits.Count > 1;
         VirtualCrossoverAlignmentStage primary =
@@ -1091,7 +907,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
             : LowerFirst(VirtualCrossoverAlignmentStages.DisplayName(primary));
         for (int g = 0; g < fits.Count; g++)
         {
-            GroupFit fit = fits[g];
+            AutoSetupGroupFit fit = fits[g];
             if (headers)
             {
                 yield return VirtualCrossoverAlignmentStages.DisplayName(fit.Plan.Group) + ":";
@@ -1113,8 +929,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
     // Target-curve gains make the sum an intentional downslope, so report its span, not a defect.
     private string FormatSummary(
-        GroupFit fit,
-        GroupSummary summary,
+        AutoSetupGroupFit fit,
+        AutoSetupGroupSummary summary,
         bool indent,
         string anchor)
     {
@@ -1320,7 +1136,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
     private async void ApplyClick(object? sender, EventArgs e)
     {
-        List<GroupFit>? quick = TryFit(withImpulseResponses: false);
+        List<AutoSetupGroupFit>? quick = AutoSetupWizardFit.TryFit(session);
         if (quick == null)
         {
             System.Media.SystemSounds.Beep.Play();
@@ -1335,7 +1151,7 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         List<AutoSetupGroupPlan> plan = AutoSetupWizardPlan.Groups(session, withImpulseResponses: true);
         if (plan.All(group => group.ImpulseResponses == null))
         {
-            Result = InInitOrder(quick, session.Rows.Count);
+            Result = AutoSetupWizardFit.InInitOrder(quick, session.Rows.Count);
             ChainOrder = session.RequestedChainOrder();
             DialogResult = DialogResult.OK;
             return;
@@ -1357,14 +1173,14 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         labelPreview.Text = "Ranking candidates against the measured responses…";
         try
         {
-            List<GroupFit> ranked = await Task.Run(
-                () => Fit(plan, Options, rateHz));
+            List<AutoSetupGroupFit> ranked = await Task.Run(
+                () => AutoSetupWizardFit.Fit(plan, Options, rateHz));
             if (IsDisposed)
             {
                 return;
             }
 
-            Result = InInitOrder(ranked, count);
+            Result = AutoSetupWizardFit.InInitOrder(ranked, count);
             ChainOrder = order;
             DialogResult = DialogResult.OK;
         }

@@ -21,7 +21,6 @@ internal static class AutoSetupWizardPlan
         .Where(slope => slope >= 12)
         .ToArray();
 
-    /// <summary>The junction frequency fields' range.</summary>
     public const decimal FieldMinimumHz = 20m;
 
     public const decimal FieldMaximumHz = 20_000m;

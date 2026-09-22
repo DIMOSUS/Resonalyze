@@ -40,7 +40,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         WireEvents();
         UpdateZoneAvailability();
         UpdateCrossoverAvailability();
-        UpdateDelayDistance();
+        UpdateDelayTooltip();
         UpdateTotalGain();
         // Applied here, not by the host: the flow list measures the block as soon as it is added.
         ApplyOptionalRows();
@@ -496,9 +496,6 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
     private WrappingToolTip? tooltipHost;
     private string spatialAverageTooltip = string.Empty;
-    private double delayDistanceMm;
-
-    private const double MillimetersPerInch = 25.4;
 
     public void ApplyTooltips(WrappingToolTip toolTip)
     {
@@ -528,7 +525,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
             "Invert the channel polarity — the DSP polarity switch.\r\n" +
             "Also the null test: with polarity flipped, the deepest\r\n" +
             "notch at the crossover frequency marks perfect alignment.");
-        numericDelay.ApplyToolTip(toolTip, DelayTooltipText(delayDistanceMm));
+        numericDelay.ApplyToolTip(toolTip, VirtualCrossoverChannelDelayReadout.Tooltip((double)numericDelay.Value));
         numericPhase.ApplyToolTip(toolTip, PhaseTooltip());
         UpdateFirReadout();
         toolTip.SetToolTip(
@@ -663,7 +660,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
 
         UpdateZoneAvailability();
         UpdateCrossoverAvailability();
-        UpdateDelayDistance();
+        UpdateDelayTooltip();
         UpdateTotalGain();
     }
 
@@ -785,7 +782,7 @@ public partial class VirtualCrossoverChannelControl : UserControl
         };
         numericDelay.ValueChanged += (_, _) =>
         {
-            UpdateDelayDistance();
+            UpdateDelayTooltip();
             RaiseSettingsChanged();
         };
         checkBoxInvert.CheckedChanged += (_, _) => RaiseSettingsChanged();
@@ -937,19 +934,14 @@ public partial class VirtualCrossoverChannelControl : UserControl
     private string PhaseTooltip() => VirtualCrossoverChannelPhaseReadout.Tooltip(
         (double)numericPhase.Value, PhaseReferenceHz, processorSampleRateHz);
 
-    private void UpdateDelayDistance()
+    // The tooltip host arrives after construction; whichever comes second applies the text.
+    private void UpdateDelayTooltip()
     {
-        double millimeters = (double)numericDelay.Value * Acoustics.SpeedOfSoundAt20CMetersPerSecond;
-        delayDistanceMm = millimeters;
-        // Tooltip host arrives after construction; whichever comes second applies the text.
         if (tooltipHost is { } host)
         {
-            numericDelay.ApplyToolTip(host, DelayTooltipText(millimeters));
+            numericDelay.ApplyToolTip(host, VirtualCrossoverChannelDelayReadout.Tooltip((double)numericDelay.Value));
         }
     }
-
-    private static string DelayTooltipText(double millimeters) =>
-        $"= {millimeters:0.#} mm\r\n({millimeters / MillimetersPerInch:0.#} in)\r\nin air";
 
     private static CrossoverEdge ReadEdge(
         ThemedNumericUpDown frequencyInput,

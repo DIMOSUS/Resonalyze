@@ -1,7 +1,19 @@
+using System.ComponentModel;
+
 namespace Resonalyze;
 
 public partial class FirConstructorPanel
 {
+    /// <summary>Shows a file dialog over the panel's form; a test answers it instead.</summary>
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Func<FileDialog, DialogResult> ShowFileDialog { get; set; }
+
+    /// <summary>Shows a warning over the panel's form; a test reads it instead.</summary>
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal Action<string> Warn { get; set; }
+
     private void ImportFile()
     {
         using var dialog = new OpenFileDialog
@@ -10,7 +22,7 @@ public partial class FirConstructorPanel
             Filter = FirFilterFiles.ImportFileDialogFilter,
             Title = "Open FIR filter"
         };
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        if (ShowFileDialog(dialog) != DialogResult.OK)
         {
             return;
         }
@@ -21,12 +33,7 @@ public partial class FirConstructorPanel
         }
         catch (Exception exception)
         {
-            MessageBox.Show(
-                FindForm(),
-                "FIR filter could not be opened." + Environment.NewLine + Environment.NewLine + exception.Message,
-                "FIR Constructor",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+            Warn("FIR filter could not be opened." + Environment.NewLine + Environment.NewLine + exception.Message);
         }
     }
 
@@ -46,7 +53,7 @@ public partial class FirConstructorPanel
             OverwritePrompt = true,
             Title = "Export FIR filter"
         };
-        if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
+        if (ShowFileDialog(dialog) != DialogResult.OK)
         {
             return;
         }
@@ -57,12 +64,12 @@ public partial class FirConstructorPanel
         }
         catch (Exception exception)
         {
-            MessageBox.Show(
-                FindForm(),
-                "FIR filter could not be exported." + Environment.NewLine + Environment.NewLine + exception.Message,
-                "FIR Constructor",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+            Warn("FIR filter could not be exported." + Environment.NewLine + Environment.NewLine + exception.Message);
         }
     }
+
+    private DialogResult ShowOverForm(FileDialog dialog) => dialog.ShowDialog(FindForm());
+
+    private void WarnOverForm(string text) =>
+        MessageBox.Show(FindForm(), text, "FIR Constructor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
 }

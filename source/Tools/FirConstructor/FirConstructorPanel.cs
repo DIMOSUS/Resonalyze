@@ -35,6 +35,8 @@ public partial class FirConstructorPanel : UserControl
 
     public FirConstructorPanel()
     {
+        ShowFileDialog = ShowOverForm;
+        Warn = WarnOverForm;
         InitializeComponent();
         Ui.ThemedScrollBars.Apply(this);
 

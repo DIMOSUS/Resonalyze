@@ -1,8 +1,9 @@
 namespace Resonalyze.Options;
 
-/// <summary>Base of the mode settings panels: follows the open measurement on the UI thread, and writes every control
-/// from its session in <see cref="Present"/> with the controls' own change events ignored meanwhile.</summary>
-public class ModeSettingsForm : Form
+/// <summary>Base of the mode settings panels: follows the open measurement on the UI thread, writes every control from
+/// its session in <see cref="Present"/> with the controls' own change events ignored meanwhile, and announces the
+/// user's edits, which alone apply.</summary>
+public class ModeSettingsForm : Form, IUserEditedSettings
 {
     private protected readonly WrappingToolTip toolTip = new();
     private AnalyzerDocument? document;
@@ -17,6 +18,8 @@ public class ModeSettingsForm : Form
             toolTip.Dispose();
         };
     }
+
+    public event Action? UserChanged;
 
     /// <summary>Every tooltip the panel shows, including the ones it rewrites as the session changes.</summary>
     internal WrappingToolTip ToolTips => toolTip;
@@ -70,13 +73,10 @@ public class ModeSettingsForm : Form
 
     private protected void Edit(Action edit)
     {
-        if (presenting)
+        if (TakeEdit(edit))
         {
-            return;
+            UserChanged?.Invoke();
         }
-
-        edit();
-        Present();
     }
 
     private protected void Bind(ThemedNumericUpDown field, Action<decimal> edit) =>
@@ -88,18 +88,25 @@ public class ModeSettingsForm : Form
     private protected void Bind(RadioButton radio, Action<bool> edit) =>
         radio.CheckedChanged += (_, _) => Edit(() => edit(radio.Checked));
 
-    /// <summary>A moved list (a pick, an arrow key, a reset) reaches the session at once.</summary>
-    private protected void BindIndex(ThemedComboBox combo, Action<int> select) =>
-        combo.SelectedIndexChanged += (_, _) => Edit(() => select(combo.SelectedIndex));
+    /// <summary>A moved list (a pick, an arrow key, a reset) reaches the session at once; only a pick or a reset
+    /// applies.</summary>
+    private protected void BindIndex(ThemedComboBox combo, Action<int> select)
+    {
+        combo.SelectedIndexChanged += (_, _) => TakeEdit(() => select(combo.SelectedIndex));
+        combo.SelectionChangeCommitted += (_, _) => UserChanged?.Invoke();
+    }
 
-    private protected void BindItem<T>(ThemedComboBox combo, Action<T> select) =>
+    private protected void BindItem<T>(ThemedComboBox combo, Action<T> select)
+    {
         combo.SelectedIndexChanged += (_, _) =>
         {
             if (combo.SelectedItem is T item)
             {
-                Edit(() => select(item));
+                TakeEdit(() => select(item));
             }
         };
+        combo.SelectionChangeCommitted += (_, _) => UserChanged?.Invoke();
+    }
 
     /// <summary>Only a moved value: the setter rewrites the editor, which would discard text being typed.</summary>
     private protected static void Show(ThemedNumericUpDown field, decimal value)
@@ -141,6 +148,18 @@ public class ModeSettingsForm : Form
         {
             ShowIndex(combo, index);
         }
+    }
+
+    private bool TakeEdit(Action edit)
+    {
+        if (presenting)
+        {
+            return false;
+        }
+
+        edit();
+        Present();
+        return true;
     }
 
     private void Unfollow()

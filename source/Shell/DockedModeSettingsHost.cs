@@ -164,7 +164,15 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
         if (applyOnChange)
         {
-            WireLiveApply(dialog, apply);
+            Action scheduleApply = CreateLiveApply(dialog, apply);
+            if (dialog is IUserEditedSettings edited)
+            {
+                edited.UserChanged += scheduleApply;
+            }
+            else
+            {
+                WireControls(dialog, scheduleApply);
+            }
         }
     }
 
@@ -189,7 +197,8 @@ internal sealed class DockedModeSettingsHost : IDisposable
         }
     }
 
-    private static void WireLiveApply(Form dialog, Func<Task> apply)
+    // Edits arriving while an apply runs are applied once more after it.
+    private static Action CreateLiveApply(Form dialog, Func<Task> apply)
     {
         bool applying = false;
         bool pending = false;
@@ -237,6 +246,12 @@ internal sealed class DockedModeSettingsHost : IDisposable
             }
         }
 
+        return ScheduleApply;
+    }
+
+    // A dialog that does not announce its edits: any control's change applies, whoever made it.
+    private static void WireControls(Form dialog, Action scheduleApply)
+    {
         foreach (Control control in EnumerateControls(dialog))
         {
             switch (control)
@@ -244,28 +259,28 @@ internal sealed class DockedModeSettingsHost : IDisposable
                 case Button:
                     break;
                 case NumericUpDown numeric:
-                    numeric.ValueChanged += (_, _) => ScheduleApply();
+                    numeric.ValueChanged += (_, _) => scheduleApply();
                     break;
                 case ThemedNumericUpDown numeric:
-                    numeric.ValueChanged += (_, _) => ScheduleApply();
+                    numeric.ValueChanged += (_, _) => scheduleApply();
                     break;
                 case ComboBox comboBox:
-                    comboBox.SelectionChangeCommitted += (_, _) => ScheduleApply();
+                    comboBox.SelectionChangeCommitted += (_, _) => scheduleApply();
                     break;
                 case ThemedComboBox comboBox:
-                    comboBox.SelectionChangeCommitted += (_, _) => ScheduleApply();
+                    comboBox.SelectionChangeCommitted += (_, _) => scheduleApply();
                     break;
                 case CheckBox checkBox:
-                    checkBox.CheckedChanged += (_, _) => ScheduleApply();
+                    checkBox.CheckedChanged += (_, _) => scheduleApply();
                     break;
                 case RadioButton radioButton:
-                    radioButton.CheckedChanged += (_, _) => ScheduleApply();
+                    radioButton.CheckedChanged += (_, _) => scheduleApply();
                     break;
                 case TextBox textBox:
-                    textBox.Validated += (_, _) => ScheduleApply();
+                    textBox.Validated += (_, _) => scheduleApply();
                     break;
                 case TrackBar trackBar:
-                    trackBar.ValueChanged += (_, _) => ScheduleApply();
+                    trackBar.ValueChanged += (_, _) => scheduleApply();
                     break;
             }
         }

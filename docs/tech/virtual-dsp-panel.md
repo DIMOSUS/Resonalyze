@@ -518,7 +518,9 @@ template, smoothing, calibration, spatial-average method; the gate's pins stay o
 project load forgets both. The hybrid sum of the side not shown is not re-read: it is the dashed curve the shown side
 already draws. A side whose inputs have not moved since its last read (its responses by identity, which the coordinator
 reuses for an unchanged chain, its curve flags, zones, captures and gate pin) is not read again, so edits to the shown
-side cost nothing on the other. A current read that finds nothing to draw replaces the old extent, so an emptied side stops widening the
+side cost nothing on the other. A shown side with nothing to draw (no source, or an empty group view) takes the same
+path, drawn on the other side's extent, rather than autoscaling an empty plot; with nothing on either side the axis
+autoscales again. A current read that finds nothing to draw replaces the old extent, so an emptied side stops widening the
 scale; a read overtaken by a newer frame changes nothing. The side's junctions (which decide whether it quotes a loss,
 and the Direct loss's bands) read the settings its responses were built from: `ComputeSideSumAsync` snapshots them into
 `ProcessedChannel.SideSettings`, since `Channel.Settings` is the shown side's, and the AI package's opposite side

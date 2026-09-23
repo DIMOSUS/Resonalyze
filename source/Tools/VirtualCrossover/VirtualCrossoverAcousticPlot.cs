@@ -336,12 +336,13 @@ internal sealed class VirtualCrossoverAcousticPlot
     /// <summary>Re-ranges the axes to a scale known only after the draw (the side not shown, read once edits settle).</summary>
     public void ApplyScale(ScaleExtent? scale)
     {
-        if (view.Model is not { } model || scale == null)
+        if (view.Model is not { } model)
         {
             return;
         }
 
-        ApplyAxes(scale, shared: true);
+        // Null: neither side has anything to draw, so the magnitude axis autoscales again.
+        ApplyAxes(scale, shared: scale != null);
         model.InvalidatePlot(false);
     }
 

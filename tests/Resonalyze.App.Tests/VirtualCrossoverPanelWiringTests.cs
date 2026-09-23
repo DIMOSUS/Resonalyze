@@ -209,6 +209,32 @@ public sealed class VirtualCrossoverPanelWiringTests
         });
     }
 
+    // Emptied while shown, the left side keeps the scale the right side is drawn on.
+    [Fact]
+    public void AnEmptiedShownSide_KeepsTheOtherSidesScale()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+            live.Set<CheckBox>("checkBoxShowSum", box => box.Checked = false);
+            live.ShowRight();
+            live.ShowLeft();
+            double withLeft = live.AxisRanges().Value.High;
+
+            foreach (VirtualCrossoverChannel channel in live.Session.Channels)
+            {
+                channel.PhysicalSideState(false).Clear();
+            }
+
+            live.Redraw();
+            var emptied = live.AxisRanges().Value;
+            live.ShowRight();
+
+            Assert.Equal(live.AxisRanges().Value, emptied);
+            Assert.True(emptied.High < withLeft, $"the emptied left side still holds the scale at {emptied.High} dB");
+        });
+    }
+
     // The louder left side, once emptied, must stop holding the right side's axis up.
     [Fact]
     public void AnEmptiedHiddenSide_StopsWideningTheScale()

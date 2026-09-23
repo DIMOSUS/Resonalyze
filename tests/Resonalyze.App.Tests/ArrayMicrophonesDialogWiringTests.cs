@@ -189,6 +189,7 @@ public sealed class ArrayMicrophonesDialogWiringTests
                 ArrayMicrophoneRows.Read(expected).Select(row => new[] { row.Input, row.Calibration, row.Note }),
                 List.Items.Cast<ListViewItem>().Select(item => item.SubItems.Cast<ListViewItem.ListViewSubItem>()
                     .Select(sub => sub.Text).ToArray()));
+            Assert.True(List.OwnerDraw);
             Assert.Equal(expected.Selected is int row ? [row] : [], List.SelectedIndices.Cast<int>());
             if (rebuilt && expected.Selected is int focused)
             {

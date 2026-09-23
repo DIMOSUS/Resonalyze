@@ -171,6 +171,7 @@ public sealed class RecordSettingsSessionTests
         Assert.Equal("(missing) Gone", session.AsioDriver.SelectedItem!.ToString());
         Assert.Equal(3, session.SelectedAsioInputOffset);
         Assert.Equal(4, session.SelectedAsioLoopbackOffset);
+        Assert.Equal([5], RecordArrayInputs.ReachableChannels(session));
     }
 
     [Fact]

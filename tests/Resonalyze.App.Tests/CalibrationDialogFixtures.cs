@@ -146,6 +146,8 @@ internal sealed class ToneStream(double frequencyHz, params double[] amplitudes)
 
     public TaskCompletionSource Emitted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    public TimeSpan FrameGap { get; init; }
+
     public async Task RunAsync(AudioPlaybackSignal loopingSignal, int sequenceLength, CancellationToken cancellationToken)
     {
         double phase = 0.0;
@@ -160,7 +162,14 @@ internal sealed class ToneStream(double frequencyHz, params double[] amplitudes)
             }
 
             FrameAvailable?.Invoke(new AudioCaptureFrame([block], 0, null));
-            await Task.Yield();
+            if (FrameGap > TimeSpan.Zero)
+            {
+                await Task.Delay(FrameGap, cancellationToken);
+            }
+            else
+            {
+                await Task.Yield();
+            }
         }
 
         Emitted.TrySetResult();

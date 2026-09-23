@@ -34,6 +34,22 @@ public sealed class RecordedSweepChannelDialogWiringTests
     });
 
     [Fact]
+    public void EachRowNamesItsTrackMatchAndLevels()
+    {
+        var choice = new RecordedSweepChannelChoice(Channels, Qualities);
+        AudioChannelLevel level = RecordedLevelMetering.MeasureSamples(Channels[1]);
+
+        RecordedSweepChannelRow row = choice.Rows[1];
+
+        Assert.Equal(RecordedSweepFile.DescribeChannel(1, 3), row.Channel);
+        Assert.Equal("0.700", row.Match);
+        Assert.Equal(FormattableString.Invariant($"{level.RmsDbFs:0.0} dBFS"), row.Rms);
+        Assert.Equal(FormattableString.Invariant($"{level.PeakDbFs:0.0} dBFS"), row.Peak);
+        Assert.NotEqual(row.Rms, row.Peak);
+        Assert.Equal(2, choice.SelectedChannel);
+    }
+
+    [Fact]
     public void AClickedRowIsTheOneMeasured() => Run(() =>
     {
         using RecordedSweepChannelDialog dialog = Shown(new RecordedSweepChannelDialog(Channels, Qualities));

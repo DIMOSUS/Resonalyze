@@ -80,13 +80,14 @@ public sealed class SplCalibrationSessionTests
     public void AnMmeAnchorKeepsItsInputDevice()
     {
         SplCalibration calibration = SplCalibrationReport.Calibration(
-            SplRequest(AudioBackend.Wave),
+            SplRequest(AudioBackend.Wave) with { Routing = new AudioCaptureRouting(3, 1) },
             new SplCalibrationCaptureResult(new SplToneReading(1_000, -20, 30, true, true), -19, false, 0.01, 6, false),
             94,
             SplToneCriteria.Default,
             Now);
 
         Assert.Equal(1, calibration.InputDeviceNumber);
+        Assert.Equal(3, calibration.MicrophoneChannelOffset);
         Assert.Equal(114.0, calibration.OffsetDb, 9);
     }
 
@@ -167,6 +168,23 @@ public sealed class SplCalibrationSessionTests
         Assert.All(heard, text => Assert.Matches(
             @"^Listening…   input peak -20\.0 dBFS\r\nLoudest tone: 100\d Hz at -20\.0 dBFS\r\nProminence: \d+\.\d dB$",
             text));
+    });
+
+    [Fact]
+    public void TheProgressFollowsTheTimeListened() => StaTest.Run(() =>
+    {
+        SplCalibrationSession session = Session();
+        var stream = new ToneStream(1_000, Frames(0.1)) { FrameGap = TimeSpan.FromMilliseconds(60) };
+        var percents = new List<int>();
+
+        Task run = session.RunAsync(Hearing(() => stream), () => percents.Add(session.ProgressPercent));
+        StaTest.Settle(stream.Emitted.Task);
+        Wait(() => percents.Count == 6);
+        session.Stop();
+        StaTest.Settle(run);
+
+        Assert.InRange(percents[^1], 1, 99);
+        Assert.Equal(percents.Order(), percents);
     });
 
     [Fact]

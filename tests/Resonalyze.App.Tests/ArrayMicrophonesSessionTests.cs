@@ -39,14 +39,14 @@ public sealed class ArrayMicrophonesSessionTests
     [Fact]
     public void SelectingAMicrophoneLoadsItIntoTheEditor()
     {
-        ArrayMicrophonesSession session = Session([On(2, "left", "cal-1"), On(3)], [0, 1, 2, 3, 4]);
+        ArrayMicrophonesSession session = Session([On(4, "left", "cal-1"), On(2)], [0, 1, 2, 3, 4]);
         int loads = session.EditorVersion;
 
         session.Select(0);
 
         Assert.Equal(0, session.Selected);
-        Assert.Equal([2, 4], session.EditorChannels);
-        Assert.Equal(2, session.EditorChannel);
+        Assert.Equal([3, 4], session.EditorChannels);
+        Assert.Equal(4, session.EditorChannel);
         Assert.Equal("ECM8000 90°", session.CalibrationOptions[session.CalibrationIndex].DisplayName);
         Assert.Equal("left", session.Note);
         Assert.Equal(loads + 1, session.EditorVersion);

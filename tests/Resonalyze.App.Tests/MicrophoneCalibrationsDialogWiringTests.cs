@@ -53,6 +53,7 @@ public sealed class MicrophoneCalibrationsDialogWiringTests
                 list.Files.Enqueue(folder.File("good.cal"));
                 Click(list.Dialog, "buttonEdit");
                 expected.SetPath(expected.Definitions[1], folder.File("good.cal"));
+                Assert.Equal([1], list.View.SelectedIndices.Cast<int>());
                 break;
             case "edit same path":
                 SelectRow(list.View, 0);
@@ -78,6 +79,7 @@ public sealed class MicrophoneCalibrationsDialogWiringTests
                 estimate.AngleDegrees = 30;
                 estimate.BaseId = "broken";
                 expected.Add(estimate);
+                Assert.Equal([4], list.View.SelectedIndices.Cast<int>());
                 break;
             case "add estimate cancelled":
                 Answer<AngleCalibrationDialog>(
@@ -241,6 +243,7 @@ public sealed class MicrophoneCalibrationsDialogWiringTests
                 {
                     Id((string)item.Tag!), item.Text, item.SubItems[1].Text, item.SubItems[2].Text, item.SubItems[3].Text
                 }));
+            Assert.True(View.OwnerDraw);
             bool one = View.SelectedItems.Count == 1;
             Assert.Equal(one, In<Button>(Dialog, "buttonEdit").Enabled);
             Assert.Equal(one, In<Button>(Dialog, "buttonRename").Enabled);

@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
 
@@ -27,16 +26,38 @@ public sealed class VirtualCrossoverAcousticGoalDialogTests
         Assert.True(Field<ThemedComboBox>(dialog, "comboBoxLowPassFamily").Enabled);
         Assert.True(Field<ThemedComboBox>(dialog, "comboBoxLowPassSlope").Enabled);
 
-        dialog.DialogResult = DialogResult.OK;
-        typeof(VirtualCrossoverAcousticGoalDialog)
-            .GetMethod("OnFormClosing", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(dialog, [new FormClosingEventArgs(CloseReason.UserClosing, false)]);
         Assert.Equal(kept, dialog.HighPassGoal);
         Assert.Equal(stated, dialog.LowPassGoal);
     });
 
-    private static T Field<T>(object target, string name) where T : class =>
-        (T)target.GetType()
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(target)!;
+    [Fact]
+    public void AFamilyKeepsTheSlopeItOffers_AndClearStatesNoGoal() => StaTest.Run(() =>
+    {
+        var settings = new VirtualCrossoverChannelSettings
+        {
+            CrossoverKind = CrossoverKind.BandPass,
+            AcousticLowPass = new JunctionAcousticTarget(CrossoverFilterFamily.Butterworth, 36)
+        };
+        using var dialog = new VirtualCrossoverAcousticGoalDialog();
+        dialog.Init(settings, "B");
+        ThemedComboBox family = Field<ThemedComboBox>(dialog, "comboBoxLowPassFamily");
+
+        family.SelectedItem = CrossoverFamilyChoice.Offered.First(choice => choice.Value == CrossoverFilterFamily.LinkwitzRiley);
+        Assert.Equal(new JunctionAcousticTarget(CrossoverFilterFamily.LinkwitzRiley, 36), dialog.LowPassGoal);
+
+        Field<ThemedComboBox>(dialog, "comboBoxHighPassFamily").SelectedItem =
+            CrossoverFamilyChoice.Offered.First(choice => choice.Value == CrossoverFilterFamily.Bessel);
+        Assert.Equal(new JunctionAcousticTarget(CrossoverFilterFamily.Bessel, 12), dialog.HighPassGoal);
+
+        dialog.StartPosition = FormStartPosition.Manual;
+        dialog.Location = new(-5000, -5000);
+        dialog.Show();
+        Field<Button>(dialog, "buttonClear").PerformClick();
+        Assert.Null(dialog.HighPassGoal);
+        Assert.Null(dialog.LowPassGoal);
+        Assert.False(Field<ThemedComboBox>(dialog, "comboBoxLowPassSlope").Enabled);
+    });
+
+    private static T Field<T>(Control root, string name) where T : Control =>
+        (T)root.Controls.Find(name, searchAllChildren: true).Single();
 }

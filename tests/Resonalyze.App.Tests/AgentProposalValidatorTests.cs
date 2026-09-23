@@ -889,42 +889,47 @@ public sealed class AgentProposalValidatorTests
     }
 
     [Fact]
-    public void EngineInputLimits_MatchTheFieldsTheyWouldBeTypedInto()
+    public void EngineInputLimits_AreTheRangesTheFieldsTakeTheirOwnFrom()
     {
         StaTest.Run(() =>
         {
             using var dialog = new VirtualCrossoverAutoDelayDialog();
-            AssertField(dialog, "numericSceneOffset",
-                AgentProposalValidator.MinimumSceneOffsetMs,
-                AgentProposalValidator.MaximumSceneOffsetMs,
-                AgentProposalValidator.SceneOffsetStepMs);
-            AssertField(dialog, "numericNearSideCut",
-                AgentProposalValidator.MinimumNearSideCutDb,
-                AgentProposalValidator.MaximumNearSideCutDb,
-                AgentProposalValidator.NearSideCutStepDb);
-            AssertField(dialog, "numericRearFill",
-                AgentProposalValidator.MinimumRearFillOffsetMs,
-                AgentProposalValidator.MaximumRearFillOffsetMs,
-                AgentProposalValidator.RearFillOffsetStepMs);
+            AssertField(dialog, "numericSceneOffset", VirtualCrossoverLimits.SceneOffset);
+            AssertField(dialog, "numericNearSideCut", VirtualCrossoverLimits.NearSideCut);
+            AssertField(dialog, "numericRearFill", VirtualCrossoverLimits.RearFillOffset);
 
             using var panel = new VirtualCrossoverPanel();
-            AssertField(panel, "numericTargetLevel",
-                AgentProposalValidator.MinimumTargetLevelDb,
-                AgentProposalValidator.MaximumTargetLevelDb,
-                AgentProposalValidator.TargetLevelStepDb);
+            AssertField(panel, "numericTargetLevel", VirtualCrossoverLimits.TargetLevel);
         });
     }
 
-    // A typed value is rounded to the field's decimal places; Increment is only the arrows' step.
-    private static void AssertField(
-        Control owner, string name, double minimum, double maximum, double step)
+    [Theory]
+    [InlineData(5.0, null)]
+    [InlineData(5.01, "The scene offset must be between 0.00 and 5.00 ms.")]
+    [InlineData(0.255, "The scene offset must be a multiple of 0.01 ms.")]
+    public void AnAutoDelayInput_IsHeldToItsFieldsRangeAndStep(double sceneOffsetMs, string? refusal)
     {
-        var field = (ThemedNumericUpDown)owner.GetType()
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(owner)!;
-        Assert.Equal((decimal)minimum, field.Minimum);
-        Assert.Equal((decimal)maximum, field.Maximum);
-        Assert.Equal(step, Math.Pow(10, -field.DecimalPlaces), 12);
+        var proposal = new AgentProposal(
+            Package, "s", [], [],
+            [new RunAutoDelayOperation("op-1", "r", sceneOffsetMs, null, null, null, null)], []);
+
+        AgentOperationVerdict verdict = AgentProposalValidator.Review(proposal, Session()).Verdicts[0];
+
+        if (refusal == null)
+        {
+            Assert.NotEqual(AgentVerdictStatus.Rejected, verdict.Status);
+        }
+        else
+        {
+            Assert.Equal(AgentVerdictStatus.Rejected, verdict.Status);
+            Assert.Contains(refusal, verdict.Message);
+        }
+    }
+
+    private static void AssertField(Control owner, string name, NumericFieldRange range)
+    {
+        var field = (ThemedNumericUpDown)owner.Controls.Find(name, searchAllChildren: true).Single();
+        Assert.Equal(range, field.FieldRange());
     }
 
     private static AgentSessionSnapshot Session(

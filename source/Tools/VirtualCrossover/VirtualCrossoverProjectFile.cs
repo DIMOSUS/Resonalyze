@@ -930,6 +930,20 @@ public sealed class VirtualCrossoverProjectFile
             rootDirectory ?? ApplicationDataPaths.Current.ToolsDirectory,
             FileName);
 
+    /// <summary>A project nothing was saved to: each measurement is read through the calibration it was measured with.</summary>
+    /// <remarks>Not a property default: an older file without the field, and a stored null (a deliberate Off), must read as saved.</remarks>
+    public static VirtualCrossoverProjectFile CreateNew() => new()
+    {
+        CalibrationId = VirtualCrossoverCalibrationSelection.OwnId
+    };
+
+    /// <summary>The project a Reset binds: defaults everywhere but the microphone calibration, a property of the rig.</summary>
+    public VirtualCrossoverProjectFile ForReset() => new()
+    {
+        CalibrationId = CalibrationId,
+        Calibration = Calibration
+    };
+
     public static string ResetBackupPath(string? rootDirectory = null) =>
         Path.Combine(
             rootDirectory ?? ApplicationDataPaths.Current.ToolsDirectory,
@@ -1306,7 +1320,7 @@ public sealed class VirtualCrossoverProjectFile
         {
             if (!File.Exists(path))
             {
-                return new VirtualCrossoverProjectFile();
+                return CreateNew();
             }
 
             using FileStream stream = new(
@@ -1327,10 +1341,9 @@ public sealed class VirtualCrossoverProjectFile
         }
         catch
         {
-            return new VirtualCrossoverProjectFile
-            {
-                BackupNoticePath = BackupUnusableFile(path)
-            };
+            VirtualCrossoverProjectFile fresh = CreateNew();
+            fresh.BackupNoticePath = BackupUnusableFile(path);
+            return fresh;
         }
     }
 

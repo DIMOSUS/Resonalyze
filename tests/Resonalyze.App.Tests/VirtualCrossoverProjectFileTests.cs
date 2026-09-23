@@ -2239,6 +2239,50 @@ public sealed class VirtualCrossoverProjectFileTests
         Assert.True(custom.ResolveDspPhaseControl());
     }
 
+    [Fact]
+    public void ANewProject_ReadsEachMeasurementAsMeasured_AndASavedOffStaysOff()
+    {
+        string root = CreateTemporaryDirectory();
+        try
+        {
+            Assert.Equal(
+                VirtualCrossoverCalibrationSelection.OwnId,
+                VirtualCrossoverProjectFile.LoadOrDefault(root).CalibrationId);
+
+            new VirtualCrossoverProjectFile { CalibrationId = null }.Save(root);
+            Assert.Null(VirtualCrossoverProjectFile.LoadOrDefault(root).CalibrationId);
+
+            File.WriteAllText(VirtualCrossoverProjectFile.GetPath(root), "{ not json");
+            Assert.Equal(
+                VirtualCrossoverCalibrationSelection.OwnId,
+                VirtualCrossoverProjectFile.LoadOrDefault(root).CalibrationId);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AReset_KeepsTheMicrophoneCalibration_AndNothingElse()
+    {
+        var calibration = VirtualCrossoverCalibrationSettings.From(
+            CalibrationFile.Parse("20 0\n20000 3\n"), "rig", null);
+        var project = new VirtualCrossoverProjectFile
+        {
+            CalibrationId = "cal1",
+            Calibration = calibration,
+            TargetLevelDb = -38
+        };
+
+        VirtualCrossoverProjectFile reset = project.ForReset();
+
+        Assert.Equal("cal1", reset.CalibrationId);
+        Assert.Same(calibration, reset.Calibration);
+        Assert.Equal(0, reset.TargetLevelDb);
+        Assert.Null(new VirtualCrossoverProjectFile { CalibrationId = null }.ForReset().CalibrationId);
+    }
+
     private static string CreateTemporaryDirectory()
     {
         string path = Path.Combine(

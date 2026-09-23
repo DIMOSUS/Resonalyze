@@ -360,7 +360,7 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        await ApplyProjectAsync(new VirtualCrossoverProjectFile(), imported: false);
+        await ApplyProjectAsync(session.Project.ForReset(), imported: false);
         // The autosave makes the reset the state the tool opens on.
         ScheduleSave();
     }

@@ -149,6 +149,11 @@ ascending `[Hz, dB]` points) plus `CalibrationId`, the entry of *this* machine's
 calibration describes the microphone the measurements were taken with, so it travels with them; a few dozen
 points cost nothing next to the impulse responses.
 
+A project nothing was saved to (`VirtualCrossoverProjectFile.CreateNew`: no file, or an unusable one) starts on
+Own. It is a factory rather than a property default because a stored `null` is a deliberate Off, and a schema-5
+file without the field must reach its legacy-mode migration unchanged. Reset binds `ForReset`, which keeps the
+selection and its curve and defaults everything else.
+
 The id is only a hint. Slot-style ids such as `90deg` are minted on every machine that migrated a legacy 90°
 slot, so two machines' ids agreeing says nothing about their files. `VirtualCrossoverCalibrationSelection.Resolve`
 therefore decides by curve content (`CalibrationFile.SameCurve`):

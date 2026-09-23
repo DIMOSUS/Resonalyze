@@ -3088,8 +3088,10 @@ pair that had to stay point-measured — an array set may have gaps.
 
 Editing a chain recomputes the prediction on a background task, so dragging a
 value stays responsive with several channels loaded. The **Mic cal** selector
-applies one of your configured microphone corrections to the magnitude curves; it
-defaults to Off because the measurements are loopback-referenced.
+chooses how the magnitude curves are corrected for the microphone. A new project
+starts on **Own (as measured)**, so every curve is read through the calibration it
+was measured with without a step to remember; a project you saved keeps whatever
+you chose, Off included, and Reset keeps it too.
 
 **Own (as measured)** is the other kind of answer in that list. The configured
 calibrations correct every curve with one of them, which is right when one

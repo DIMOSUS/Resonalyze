@@ -3,41 +3,37 @@ using Resonalyze.Ui;
 namespace Resonalyze.Options;
 
 /// <summary>Shown only when ambiguous (<see cref="RecordedSweepChannels.IsAmbiguous"/>): a DAW track holding the played
-/// sweep matches best and measures flat, and only the person who recorded it knows the microphone track.</summary>
+/// sweep matches best and measures flat, and only the person who recorded it knows the microphone track. The rows
+/// and the pick are a <see cref="RecordedSweepChannelChoice"/>.</summary>
 internal sealed partial class RecordedSweepChannelDialog : Form
 {
+    private readonly RecordedSweepChannelChoice choice;
+
     public RecordedSweepChannelDialog(
         IReadOnlyList<float[]> channels,
         IReadOnlyList<double> qualities)
     {
-        ArgumentNullException.ThrowIfNull(channels);
-        ArgumentNullException.ThrowIfNull(qualities);
+        choice = new RecordedSweepChannelChoice(channels, qualities);
 
         InitializeComponent();
         StyleGrid();
 
-        for (int channel = 0; channel < channels.Count; channel++)
+        foreach (RecordedSweepChannelRow row in choice.Rows)
         {
-            AudioChannelLevel level = RecordedLevelMetering.MeasureSamples(channels[channel]);
-            channelGridView.Rows.Add(
-                RecordedSweepFile.DescribeChannel(channel, channels.Count),
-                FormattableString.Invariant($"{qualities[channel]:0.000}"),
-                FormattableString.Invariant($"{level.RmsDbFs:0.0} dBFS"),
-                FormattableString.Invariant($"{level.PeakDbFs:0.0} dBFS"));
+            channelGridView.Rows.Add(row.Channel, row.Match, row.Rms, row.Peak);
         }
 
-        SelectedChannel = RecordedSweepChannels.Best(qualities);
-        channelGridView.Rows[SelectedChannel].Selected = true;
+        channelGridView.Rows[choice.SelectedChannel].Selected = true;
         channelGridView.SelectionChanged += (_, _) =>
         {
             if (channelGridView.CurrentRow is { } row)
             {
-                SelectedChannel = row.Index;
+                choice.Select(row.Index);
             }
         };
     }
 
-    public int SelectedChannel { get; private set; }
+    public int SelectedChannel => choice.SelectedChannel;
 
     private void StyleGrid()
     {
@@ -62,7 +58,7 @@ internal sealed partial class RecordedSweepChannelDialog : Form
     {
         if (e.RowIndex >= 0)
         {
-            SelectedChannel = e.RowIndex;
+            choice.Select(e.RowIndex);
             DialogResult = DialogResult.OK;
         }
     }

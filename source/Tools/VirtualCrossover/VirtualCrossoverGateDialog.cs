@@ -20,12 +20,11 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
     private double fitOffsetMs;
     private bool initialized;
 
-    /// <summary>Live preview on every change (ms values plus the Auto flag, since an unpinned gate follows each curve's own arrival).</summary>
+    /// <summary>Live preview on every change (the Auto flag too, since an unpinned gate follows each curve's own arrival).</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public Action<double, bool, double, double, double, PhaseWindowMode, int,
-        PhaseDetrendMode, double>? PreviewChanged { get; set; }
+    public Action<VirtualCrossoverGatePreview>? PreviewChanged { get; set; }
 
     public VirtualCrossoverGateDialog()
     {
@@ -59,24 +58,20 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         Disposed += (_, _) => toolTip.Dispose();
     }
 
-    public double GateOffsetMs => (double)numericGateOffset.Value;
-
-    /// <summary>Offset unpinned: the caller stores null and the gate follows the earliest channel IR start.</summary>
-    public bool AutoOffset => checkAutoOffset.Checked;
-    public double LeftMs => (double)numericLeft.Value;
-    public double PlateauMs => (double)numericPlateau.Value;
-    public double RightMs => (double)numericRight.Value;
-    public double DetrendMs => (double)numericTau.Value;
-    public PhaseWindowMode WindowMode => comboWindowMode.SelectedIndex == 0
-        ? PhaseWindowMode.Fixed
-        : PhaseWindowMode.FrequencyDependent;
-    public int FdwCycles => comboFdwCycles.SelectedItem is int cycles
-        ? cycles
-        : PhaseAnalysisSettings.DefaultFdwCycles;
-    public PhaseDetrendMode DetrendMode =>
+    /// <summary>The gate as the fields state it; an Auto offset is stored unpinned and follows the earliest channel IR start.</summary>
+    public VirtualCrossoverGatePreview Gate => new(
+        (double)numericGateOffset.Value,
+        checkAutoOffset.Checked,
+        (double)numericLeft.Value,
+        (double)numericPlateau.Value,
+        (double)numericRight.Value,
+        comboWindowMode.SelectedIndex == 0 ? PhaseWindowMode.Fixed : PhaseWindowMode.FrequencyDependent,
+        comboFdwCycles.SelectedItem is int cycles ? cycles : PhaseAnalysisSettings.DefaultFdwCycles,
         Enum.IsDefined((PhaseDetrendMode)comboDetrendMode.SelectedIndex)
             ? (PhaseDetrendMode)comboDetrendMode.SelectedIndex
-            : PhaseDetrendMode.Auto;
+            : PhaseDetrendMode.Auto,
+        (double)numericTau.Value);
+
     public void Init(
         IReadOnlyList<IrPreviewTrace> previewTraces,
         int previewSampleRate,
@@ -112,27 +107,15 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         OnGateChanged();
     }
 
-    // From the earliest trace (the shared phase reference). Slope flattens the excess-phase trend; peak references the dominant arrival.
     private void ApplyEstimatedTau(bool useSlope)
     {
-        IrPreviewTrace? earliest = traces
-            .OrderBy(trace => VirtualCrossoverAnalysis.FindPeakIndex(trace.Samples))
-            .FirstOrDefault();
-        if (earliest == null || sampleRate <= 0)
+        if (VirtualCrossoverGateEstimate.Tau(traces, sampleRate, Gate) is not { } tau)
         {
             System.Media.SystemSounds.Beep.Play();
             return;
         }
 
-        var view = new ImpulseMeasurementView(
-            earliest.Samples,
-            VirtualCrossoverAnalysis.FindPeakIndex(earliest.Samples),
-            sampleRate);
-        var settings = new PhaseAnalysisSettings(
-            WindowMode, FdwCycles, PhaseDetrendMode.Auto, DetrendMs,
-            GateOffsetMs, LeftMs, PlateauMs, RightMs, Unwrap: false, 0.0);
-        (double slopeMs, double peakMs) = DataHelper.EstimatePhaseDetrend(view, settings);
-        numericTau.Value = numericTau.ClampValue(useSlope ? slopeMs : peakMs);
+        numericTau.Value = numericTau.ClampValue(useSlope ? tau.SlopeMs : tau.PeakMs);
     }
 
     private void OnGateChanged()
@@ -145,48 +128,27 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
         UpdateMinFrequencyLabel();
         UpdatePreview();
         UpdatePhaseControlState();
-        PreviewChanged?.Invoke(
-            GateOffsetMs, AutoOffset, LeftMs, PlateauMs, RightMs, WindowMode,
-            FdwCycles, DetrendMode, DetrendMs);
+        PreviewChanged?.Invoke(Gate);
     }
 
     private void UpdatePhaseControlState()
     {
-        comboFdwCycles.Enabled = WindowMode == PhaseWindowMode.FrequencyDependent;
-        bool manual = DetrendMode == PhaseDetrendMode.Manual;
+        VirtualCrossoverGatePreview gate = Gate;
+        comboFdwCycles.Enabled = gate.WindowMode == PhaseWindowMode.FrequencyDependent;
+        bool manual = gate.DetrendMode == PhaseDetrendMode.Manual;
         numericTau.Enabled = manual;
         buttonTauSlope.Enabled = manual;
         buttonTauPeak.Enabled = manual;
-        labelAutoDetrend.Text = DetrendMode == PhaseDetrendMode.Auto
-            ? ResolveAutoDetrendLabel()
+        labelAutoDetrend.Text = gate.DetrendMode == PhaseDetrendMode.Auto
+            ? VirtualCrossoverGateEstimate.AutoDetrendLabel(traces, sampleRate, gate)
             : string.Empty;
-    }
-
-    private string ResolveAutoDetrendLabel()
-    {
-        IrPreviewTrace? reference = traces
-            .OrderBy(trace => VirtualCrossoverAnalysis.FindPeakIndex(trace.Samples))
-            .FirstOrDefault();
-        if (reference == null || sampleRate <= 0)
-        {
-            return "Auto detrend: —";
-        }
-
-        var view = new ImpulseMeasurementView(
-            reference.Samples,
-            VirtualCrossoverAnalysis.FindPeakIndex(reference.Samples),
-            sampleRate);
-        var settings = new PhaseAnalysisSettings(
-            WindowMode, FdwCycles, PhaseDetrendMode.Auto, DetrendMs,
-            GateOffsetMs, LeftMs, PlateauMs, RightMs, Unwrap: false, 0.0);
-        double resolved = DataHelper.ResolveCommonPhaseDetrendMilliseconds(view, settings);
-        return $"Auto detrend: {resolved:0.00} ms, reference: {reference.Title}";
     }
 
     private void UpdateMinFrequencyLabel()
     {
+        VirtualCrossoverGatePreview gate = Gate;
         double hz = FrequencyResponseOptions.GateMinReliableFrequencyHz(
-            LeftMs, PlateauMs, RightMs);
+            gate.LeftMs, gate.PlateauMs, gate.RightMs);
         labelMinFrequency.Text = hz > 0
             ? $"Reliable from ≈ {hz:0}+ Hz"
             : "Reliable from ≈ — Hz";
@@ -194,14 +156,15 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
 
     private void UpdatePreview()
     {
+        VirtualCrossoverGatePreview gate = Gate;
         ImpulseWindowPreview.UpdateGatedMulti(
             irPlotView,
             traces,
             sampleRate,
-            GateOffsetMs,
-            LeftMs,
-            PlateauMs,
-            RightMs);
+            gate.OffsetMs,
+            gate.LeftMs,
+            gate.PlateauMs,
+            gate.RightMs);
     }
 
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)

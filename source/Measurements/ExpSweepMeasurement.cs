@@ -290,7 +290,7 @@ namespace Resonalyze
                     $"The recording is {sampleRate} Hz while the measurement is configured " +
                     $"for {signal.SampleRate} Hz. The sweep it would be deconvolved against " +
                     "is generated at the configured rate, so the two do not describe the " +
-                    "same signal. Set the sample rate in Measurement Options to match the file.");
+                    "same signal. Set the sample rate in Record Settings to match the file.");
             }
 
             using var sweep = new ExponentialSineSweep();
@@ -303,7 +303,7 @@ namespace Resonalyze
             if (recordedSamples.Length < sweep.SweepSamples)
             {
                 throw new InvalidOperationException(FormattableString.Invariant(
-                    $"The recording is {recordedSamples.Length / (double)sampleRate:0.00} s long while the sweep is {sweep.ComputedDuration:0.00} s, so it cannot hold the whole excitation. Check the band and the per-octave time in Measurement Options against the sweep this file was recorded from."));
+                    $"The recording is {recordedSamples.Length / (double)sampleRate:0.00} s long while the sweep is {sweep.ComputedDuration:0.00} s, so it cannot hold the whole excitation. Check the band and the per-octave time in Record Settings against the sweep this file was recorded from."));
             }
 
             // FFTs are sized by their input, so analyze only the excitation and decay, trying candidates in turn.
@@ -363,7 +363,7 @@ namespace Resonalyze
             {
                 // Noisy real take (match 0.06) and a different sweep (0.21) overlap, so the message names both.
                 throw new InvalidOperationException(FormattableString.Invariant(
-                    $"The excitation was found only {longestExcitation / (double)sampleRate:0.00} s before the end of the recording, less than the sweep's own {sweep.ComputedDuration:0.00} s. Either the take is cut short — record again with the whole sweep inside it — or this is not a recording of this sweep, in which case check the band and the per-octave time in Measurement Options."));
+                    $"The excitation was found only {longestExcitation / (double)sampleRate:0.00} s before the end of the recording, less than the sweep's own {sweep.ComputedDuration:0.00} s. Either the take is cut short — record again with the whole sweep inside it — or this is not a recording of this sweep, in which case check the band and the per-octave time in Record Settings."));
             }
             if (captureIssues is { Count: > 0 })
             {
@@ -626,11 +626,11 @@ namespace Resonalyze
             if (bestCompactnessDb >= TransferIrDiagnostics.MinimumCompactnessDb)
             {
                 return new InvalidOperationException(FormattableString.Invariant(
-                    $"The recording deconvolves into a smeared arrival rather than an impulse response: its peak stands only {bestSharpnessDb:0.0} dB above the {TransferIrDiagnostics.ArrivalWindowSeconds * 1000:0} ms around it, where a real measurement reads 11-16 dB. The sweep in the file is not the one the settings describe — check the band and the per-octave time in Measurement Options against the sweep it was recorded from."));
+                    $"The recording deconvolves into a smeared arrival rather than an impulse response: its peak stands only {bestSharpnessDb:0.0} dB above the {TransferIrDiagnostics.ArrivalWindowSeconds * 1000:0} ms around it, where a real measurement reads 11-16 dB. The sweep in the file is not the one the settings describe — check the band and the per-octave time in Record Settings against the sweep it was recorded from."));
             }
 
             return new InvalidOperationException(FormattableString.Invariant(
-                $"The recording did not deconvolve into a credible impulse response: the energy around its peak is only {bestCompactnessDb:0.0} dB above the rest of the recording, at best (a real measurement reads 29-49 dB). It is most likely not a recording of this sweep — check that the band, the per-octave time and the sample rate in Measurement Options are the ones the sweep was generated with."));
+                $"The recording did not deconvolve into a credible impulse response: the energy around its peak is only {bestCompactnessDb:0.0} dB above the rest of the recording, at best (a real measurement reads 29-49 dB). It is most likely not a recording of this sweep — check that the band, the per-octave time and the sample rate in Record Settings are the ones the sweep was generated with."));
         }
 
         private async Task<MeasurementResult?> RunCoreAsync(

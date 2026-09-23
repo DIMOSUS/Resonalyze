@@ -780,7 +780,7 @@ edited between the walk and the Save would otherwise recompute the walk through 
 microphone it never passed through — and the file would name that microphone as the
 one it was taken with. A changed rig describes the NEXT run.
 
-If a **protective high-pass** is configured (Measurement Options), MMM divides it
+If a **protective high-pass** is configured (Record Settings), MMM divides it
 back out of its curve. That filter sits in your own DSP, ahead of the loudspeaker,
 so a reference-free capture carries it while a swept impulse response has it
 removed — without the same division the two measurements of one tweeter would sit

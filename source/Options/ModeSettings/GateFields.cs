@@ -27,12 +27,14 @@ internal sealed class GateFields
         RightMs = ModeSettingsLimits.GateLengthMs.Clamp(rightMs);
     }
 
-    /// <summary>Auto puts the offset on the transfer IR's band-limited start; without one the offset stays.</summary>
+    /// <summary>Auto puts the offset on the transfer IR's band-limited start; without one the offset stays. An equal
+    /// value keeps the one held, as the field does.</summary>
     public void Snap(ModeSettingsMeasurement measurement)
     {
-        if (Auto && measurement.TransferStartMs() is { } startMs)
+        if (Auto && measurement.TransferStartMs() is { } startMs &&
+            ModeSettingsLimits.GateOffsetMs.Clamp(startMs) is var snapped && snapped != OffsetMs)
         {
-            OffsetMs = ModeSettingsLimits.GateOffsetMs.Clamp(startMs);
+            OffsetMs = snapped;
         }
     }
 }

@@ -323,7 +323,7 @@ public partial class VirtualCrossoverPanel
 
         using (AppProfiler.Zone("VirtualDSP.UpdateWarnings"))
         {
-            UpdateWarnings(processed, hybrid, view.RightSide);
+            UpdateWarnings(processed, frame.Shown, hybrid, view.RightSide);
         }
 
         // Split from the draw so the profiler separates curve building from OxyPlot.
@@ -378,10 +378,10 @@ public partial class VirtualCrossoverPanel
         session.Project.TargetLevelDb);
 
     private void UpdateWarnings(
-        List<ProcessedChannel> processed, HybridMagnitudes? hybrid, bool rightSide)
+        List<ProcessedChannel> processed, List<ProcessedChannel> shown, HybridMagnitudes? hybrid, bool rightSide)
     {
         gatePlacement = GatePlacementVerdict.Judge(processed, session.MagnitudeGate, rightSide);
-        if (warnings.Judge(processed, hybrid, gatePlacement) is not { } warning)
+        if (warnings.Judge(processed, hybrid, gatePlacement, shown) is not { } warning)
         {
             HideWarning();
             return;

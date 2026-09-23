@@ -149,6 +149,18 @@ public sealed class VirtualCrossoverOwnCalibrationTests
         Assert.Null(Warnings(own: false).DescribeForeignCalibration([Channel("left", PanelCurve)], hybrid: null));
     }
 
+    [Fact]
+    public void AChannelTheGroupViewHides_IsNotReportedAsReadThroughAnotherCalibration()
+    {
+        ProcessedChannel hidden = Channel("rear", CapsuleA);
+        ProcessedChannel visible = Channel("front", PanelCurve);
+
+        VirtualCrossoverWarnings warnings = Warnings(own: false);
+
+        Assert.Null(warnings.Judge([hidden, visible], hybrid: null, gatePlacement: null, shown: [visible]));
+        Assert.NotNull(warnings.Judge([hidden, visible], hybrid: null, gatePlacement: null, shown: [hidden, visible]));
+    }
+
     // A hybrid draws the capture, so the capture's own file is what the selection is compared with.
     [Theory]
     [InlineData(VirtualCrossoverSpatialAverageMode.MovingMic, true, false)]

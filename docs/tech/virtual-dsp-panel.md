@@ -393,7 +393,8 @@ The host shows one warning line (`WarningChanged`), chosen in this order:
 8. Crossover spread (red, see below); with none of these the line is hidden.
 
 Warnings are hidden on an empty group view,
-since they would describe channels the user can no longer see.
+since they would describe channels the user can no longer see. For the same reason the calibration notes
+(4 to 6) read only the group on screen.
 
 ### Hybrid spread thresholds
 

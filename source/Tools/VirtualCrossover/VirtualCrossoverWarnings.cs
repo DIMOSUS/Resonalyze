@@ -32,11 +32,14 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
     // A steep/narrow LF band-pass arrives so late that Auto delay pushes every driver out by this much.
     private const double CrossoverGroupDelayWarningMs = 15.0;
 
+    /// <param name="shown">The group on screen, which the calibration notes describe; null when every channel is shown.</param>
     public VirtualCrossoverWarning? Judge(
         IReadOnlyList<ProcessedChannel> processed,
         HybridMagnitudes? hybrid,
-        GatePlacementVerdict? gatePlacement)
+        GatePlacementVerdict? gatePlacement,
+        IReadOnlyList<ProcessedChannel>? shown = null)
     {
+        IReadOnlyList<ProcessedChannel> plotted = shown ?? processed;
         if (gatePlacement is { CutsChannels: true } verdict)
         {
             return new(
@@ -63,7 +66,7 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
                 VirtualCrossoverWarningLevel.Caution);
         }
 
-        if (DescribeUnappliedCalibration(processed) is { } unapplied)
+        if (DescribeUnappliedCalibration(plotted) is { } unapplied)
         {
             return new(
                 "⚠ The selected calibration does not reach every curve.",
@@ -71,7 +74,7 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
                 VirtualCrossoverWarningLevel.Caution);
         }
 
-        if (DescribeForeignCalibration(processed, hybrid) is { } foreign)
+        if (DescribeForeignCalibration(plotted, hybrid) is { } foreign)
         {
             return session.Calibration.Selected == null
                 ? new(
@@ -84,7 +87,7 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
                     VirtualCrossoverWarningLevel.Caution);
         }
 
-        if (DescribeOwnCalibrationMismatch(processed) is { } corrections)
+        if (DescribeOwnCalibrationMismatch(plotted) is { } corrections)
         {
             return new(
                 "⚠ The channels were not measured through one calibration.",

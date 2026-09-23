@@ -23,6 +23,19 @@ internal sealed class VirtualCrossoverSession
     /// <summary>Refreshed by each redraw on the UI thread, read by its workers: one frame reads one snapshot.</summary>
     public MagnitudeGateSnapshot MagnitudeGate { get; set; } = MagnitudeGateSnapshot.Initial;
 
+    /// <summary>Bumped by every bind: channel objects are reused across projects, so a handoff or an undo names the
+    /// project it belongs to.</summary>
+    public long ProjectGeneration { get; private set; }
+
+    public void NextProjectGeneration() => ProjectGeneration++;
+
+    /// <summary>The last redraw's processed channels; current only while the coordinator's revision still matches.</summary>
+    public VirtualCrossoverProcessedRender? LastRender { get; set; }
+
+    /// <summary>The hybrid offset the last magnitude redraw drew with: it belongs to the capture SET, which one
+    /// handed-over channel could not re-derive.</summary>
+    public (long Revision, double OffsetDb)? LastHybridOffset { get; set; }
+
     /// <summary>Extra search root from relinking an imported session's missing measurements; cleared on bind.</summary>
     public string? RelinkDirectory { get; set; }
 

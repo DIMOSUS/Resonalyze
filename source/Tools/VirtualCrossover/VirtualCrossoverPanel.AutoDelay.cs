@@ -121,7 +121,7 @@ public partial class VirtualCrossoverPanel
     {
         // RedrawAll pushes the read-out asynchronously, so recompute here; capture the side before the await.
         bool metricSideRight = session.ActiveSideRight;
-        ProcessedRender? render = await ProcessChannelsAsync();
+        VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
         List<ProcessedChannel> outcomeChannels = render?.Channels ?? [];
         (_, _, List<SignalPoint>? outcomeLoss) =
             metrics.BuildCurves(outcomeChannels, session.MagnitudeGate.SmoothingInverseOctaves);
@@ -148,7 +148,7 @@ public partial class VirtualCrossoverPanel
 
     private async Task OpenPhaseGateDialogAsync()
     {
-        ProcessedRender? render = await ProcessChannelsAsync();
+        VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
         if (render == null)
         {
             return;

@@ -172,7 +172,7 @@ public partial class VirtualCrossoverPanel
     private async Task RedrawMainPlotAsync()
     {
         // Old curves stay on screen until new data is ready (no flicker).
-        ProcessedRender? render = await ProcessChannelsAsync();
+        VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
         if (render == null || mainPlotView.IsDisposed)
         {
             return;
@@ -185,7 +185,7 @@ public partial class VirtualCrossoverPanel
         }
 
         // The whole set is kept: the junction views and opposite-side read-outs need channels this view does not draw.
-        lastProcessedRender = render;
+        session.LastRender = render;
 
         // Read once: a control changed during the awaits below requests the next frame. Filtered by group view once, so
         // curves, sum, loss and read-out describe the same channels.
@@ -298,7 +298,7 @@ public partial class VirtualCrossoverPanel
 
             if (hybrid != null)
             {
-                lastHybrid = (revision, hybrid.OffsetDb);
+                session.LastHybridOffset = (revision, hybrid.OffsetDb);
             }
         }
 

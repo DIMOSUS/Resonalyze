@@ -8,8 +8,7 @@ public partial class VirtualCrossoverPanel
 {
     private readonly EqWizardImportExportCoordinator peqExport = new();
 
-    // The offset belongs to the capture SET; one handed-over channel could not re-derive it.
-    private (long Revision, double OffsetDb)? lastHybrid;
+    private readonly VirtualCrossoverEqHandoff eqHandoff;
 
     // Rebuilt per click: enabled states follow channel state.
     private void ShowPeqMenu(VirtualCrossoverChannel channel)
@@ -89,111 +88,15 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        VirtualDspEqHandoffRequest? request = BuildPeqHandoffRequest(
-            channel, withChain, HandoffSpatialAverage(channel, channel.ActiveRight));
+        VirtualDspEqHandoffRequest? request = eqHandoff.Request(
+            channel,
+            withChain,
+            HybridRequested,
+            eqHandoff.SpatialAverage(channel, channel.ActiveRight, HybridRequested));
         if (request != null)
         {
             requested(request);
         }
-    }
-
-    // Null when the side has no measurement.
-    private VirtualDspEqHandoffRequest? BuildPeqHandoffRequest(
-        VirtualCrossoverChannel channel,
-        bool withChain,
-        (LiveCaptureDocument? Capture, double OffsetDb) spatialAverage,
-        // Written to the panel only once the fit has landed.
-        double? targetLevelDb = null)
-    {
-        MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
-        // Only a render describing the CURRENT settings may place the window; stale -> the builder reads the channel's front.
-        int? renderAnchor =
-            lastProcessedRender is { Channels.Count: >= 2 } render &&
-            processingCoordinator.IsCurrent(render.Revision)
-                ? ProcessedChannels.SharedStartAnchorIndex(render.Channels)
-                : null;
-        VirtualDspEqHandoffRequest request;
-        try
-        {
-            request = VirtualDspEqHandoff.Build(
-                channel,
-                channel.ActiveRight,
-                withChain,
-                session.ProcessorProfile,
-                snapshot.Template,
-                snapshot.PinnedOffsetMs,
-                renderAnchor,
-                CapturePhaseContext(channel),
-                targetLevelDb ?? session.Project.TargetLevelDb,
-                (double)VirtualCrossoverLimits.TargetLevel.Minimum,
-                (double)VirtualCrossoverLimits.TargetLevel.Maximum,
-                snapshot.SmoothingInverseOctaves,
-                // The wizard pins what the panel rendered with, including per-channel Own calibration.
-                session.Calibration.For(channel.SideState(channel.ActiveRight)),
-                session.Calibration.NameFor(channel.SideState(channel.ActiveRight)),
-                session.Calibration.SpatialAverageFor(),
-                projectGeneration,
-                spatialAverage.Capture,
-                spatialAverage.OffsetDb,
-                HybridRequested &&
-                    session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray &&
-                    spatialAverage.Capture == null);
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
-
-        return request;
-    }
-
-    /// <summary>Other drivers as processed IRs (not drawn curves, so the wizard can re-gate), plus window and τ.</summary>
-    /// <remarks>Resolved over the set the wizard draws (<see cref="ProcessedChannels.PhaseNeighbourhood"/>); null when the render is stale.</remarks>
-    private EqWizardPhaseContext? CapturePhaseContext(VirtualCrossoverChannel channel)
-    {
-        if (lastProcessedRender is not { } render ||
-            !processingCoordinator.IsCurrent(render.Revision))
-        {
-            return null;
-        }
-
-        List<ProcessedChannel> drawn =
-            ProcessedChannels.PhaseNeighbourhood(render.Channels, channel);
-        int index = drawn.FindIndex(item => ReferenceEquals(item.Channel, channel));
-        if (index < 0)
-        {
-            return null;
-        }
-
-        // Off the snapshot: a concurrent import rebinds channels and the live rate reads zero.
-        int sampleRate = drawn[0].SampleRate;
-        VirtualCrossoverPhaseGate gate = session.Gate;
-        double referenceOffsetMs = gate.ReferenceOffsetMs(drawn, sampleRate);
-        double detrendMs = gate.CommonDetrendMs(drawn, referenceOffsetMs, sampleRate);
-        List<double> offsets = gate.PerCurveOffsets(drawn, referenceOffsetMs, sampleRate);
-
-        return new EqWizardPhaseContext(
-            // Curves render as Manual against one τ for the whole set, but the user's detrend mode must arrive intact.
-            gate.Settings(
-                referenceOffsetMs,
-                gate.DetrendMode,
-                detrendMs),
-            offsets[index],
-            detrendMs,
-            gate.PinnedOffsetMs is not null,
-            // The source responses travel too, so the wizard re-resolves placements the same way when its window changes.
-            PlacementChannel.From(drawn[index]),
-            sampleRate,
-            drawn[index].Color,
-            drawn
-                .Select((item, position) => (item, position))
-                .Where(entry => entry.position != index)
-                .Select(entry => new EqWizardPhaseNeighbour(
-                    entry.item.Channel.Name,
-                    entry.item.Color,
-                    PlacementChannel.From(entry.item),
-                    offsets[entry.position]))
-                .ToList());
     }
 
     /// <summary>False, writing nothing, when the channel is gone (removed or replaced by an import).</summary>
@@ -202,74 +105,18 @@ public partial class VirtualCrossoverPanel
         EqualizationCurve curve,
         double targetLevelDb)
     {
-        MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
-        if (!VirtualDspEqHandoff.TryApplyReturn(
-                session.Channels,
-                token,
-                curve,
-                projectGeneration,
-                // Per side: under Own the panel holds no single calibration, and null would refuse every return.
-                session.Calibration.For(token.Channel.SideState(token.RightSide)),
-                session.Calibration.SpatialAverageFor(),
-                snapshot.Template,
-                snapshot.PinnedOffsetMs,
-                session.Project.TargetLevelDb,
-                // Same decision the handoff recorded, so an in-flight redraw cannot turn a valid return into a refusal.
-                HybridHandoffCapture(token.Channel, token.RightSide),
-                session.ProcessorSampleRateHz))
+        // Same decision the handoff recorded, so an in-flight redraw cannot turn a valid return into a refusal.
+        if (!eqHandoff.TryReturn(
+                token, curve, eqHandoff.HybridCapture(token.Channel, token.RightSide, HybridRequested)))
         {
             return false;
         }
 
         // The guard above proved the level is still the wizard's starting point, so writing it overwrites nothing.
         SetTargetLevel(targetLevelDb);
-
         UpdatePeqReadouts(token.Channel);
         SaveAndRedraw();
         return true;
-    }
-
-    /// <summary>The spatial average handed to the EQ Wizard, or null when the hybrid is not drawn.</summary>
-    /// <remarks>Cheap and redraw-independent so the handoff and the return guard cannot disagree mid-redraw.</remarks>
-    private LiveCaptureDocument? HybridHandoffCapture(
-        VirtualCrossoverChannel channel, bool rightSide) =>
-        HybridRequested
-            ? channel.SideState(rightSide).SpatialAverageFor(session.SpatialAverageMode)
-            : null;
-
-    /// <summary>The capture plus its offset onto the IR axis; resolved here when no current magnitude render carries it.</summary>
-    private (LiveCaptureDocument? Capture, double OffsetDb) HandoffSpatialAverage(
-        VirtualCrossoverChannel channel, bool rightSide)
-    {
-        if (HybridHandoffCapture(channel, rightSide) is not { } capture)
-        {
-            return (null, 0.0);
-        }
-
-        if (lastHybrid is { } cached && processingCoordinator.IsCurrent(cached.Revision))
-        {
-            return (capture, cached.OffsetDb);
-        }
-
-        if (lastProcessedRender is not { } render ||
-            !processingCoordinator.IsCurrent(render.Revision))
-        {
-            return (null, 0.0);
-        }
-
-        (List<AnalysisCurve>? magnitudes, _, _) =
-            metrics.BuildCurves(render.Channels, session.MagnitudeGate.SmoothingInverseOctaves);
-        if (magnitudes == null ||
-            hybridReader.Build(
-                render.Channels,
-                magnitudes,
-                rightSide,
-                session.MagnitudeGate.SmoothingInverseOctaves) is not { } hybrid)
-        {
-            return (null, 0.0);
-        }
-
-        return (capture, hybrid.OffsetDb);
     }
 
     // Same coordinator and formats as the EQ Wizard: this is the door to the hardware, not a second exporter.

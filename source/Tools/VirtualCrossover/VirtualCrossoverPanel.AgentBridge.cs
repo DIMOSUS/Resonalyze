@@ -382,7 +382,7 @@ public partial class VirtualCrossoverPanel
         AgentImportUndo? previousUndo = agentUndo;
         long previousUndoGeneration = agentUndoGeneration;
         agentUndo = undo;
-        agentUndoGeneration = projectGeneration;
+        agentUndoGeneration = session.ProjectGeneration;
 
         List<AgentUndoEntry> written = AgentProposalApplier.Apply(toApply);
         if (written.Count > 0)
@@ -590,7 +590,7 @@ public partial class VirtualCrossoverPanel
         }
 
         (LiveCaptureDocument? Capture, double OffsetDb) average =
-            HandoffSpatialAverage(channel, channel.ActiveRight);
+            eqHandoff.SpatialAverage(channel, channel.ActiveRight, HybridRequested);
         if (operation.Source == AgentProposalValidator.PointSource)
         {
             average = (null, 0.0);
@@ -605,8 +605,8 @@ public partial class VirtualCrossoverPanel
         }
 
         // A stated target level travels in the request and reaches the panel only once the fit lands: a skipped run must leave nothing, since undo is dropped when nothing ran.
-        VirtualDspEqHandoffRequest? request = BuildPeqHandoffRequest(
-            channel, withChain: true, average, targetLevelDb);
+        VirtualDspEqHandoffRequest? request = eqHandoff.Request(
+            channel, withChain: true, HybridRequested, average, targetLevelDb);
         if (request == null)
         {
             summary.Add($"{label}: skipped (no measurement to fit against).");
@@ -698,20 +698,7 @@ public partial class VirtualCrossoverPanel
         double previousTargetLevel = session.Project.TargetLevelDb;
         SetTargetLevel(request.TargetLevelDb);
 
-        VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
-        MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
-        if (!VirtualDspEqHandoff.TryApplyReturn(
-                session.Channels,
-                request.Token,
-                fitted,
-                projectGeneration,
-                session.Calibration.For(state),
-                session.Calibration.SpatialAverageFor(),
-                snapshot.Template,
-                snapshot.PinnedOffsetMs,
-                session.Project.TargetLevelDb,
-                average.Capture,
-                session.ProcessorSampleRateHz))
+        if (!eqHandoff.TryReturn(request.Token, fitted, average.Capture))
         {
             SetTargetLevel(previousTargetLevel);
             summary.Add($"{label}: skipped (the channel changed while the fit ran).");
@@ -739,7 +726,7 @@ public partial class VirtualCrossoverPanel
         {
             return;
         }
-        if (agentUndoGeneration != projectGeneration)
+        if (agentUndoGeneration != session.ProjectGeneration)
         {
             agentUndo = null;
             ShowError("Nothing to undo.", "A session was loaded since the last AI import.");

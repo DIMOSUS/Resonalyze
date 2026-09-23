@@ -25,9 +25,6 @@ public partial class VirtualCrossoverPanel : UserControl
     private readonly VirtualCrossoverAudition audition;
     private readonly VirtualCrossoverSideLock sideLock = new();
 
-    // Bumped by every bind; lets an EQ Wizard handoff refuse to return into a replaced project.
-    private long projectGeneration;
-
     private readonly VirtualCrossoverProcessingCoordinator processingCoordinator = new();
     private readonly VirtualCrossoverMetrics metrics;
     private readonly WrappingToolTip toolTip = new()
@@ -77,6 +74,7 @@ public partial class VirtualCrossoverPanel : UserControl
             channel => session.Calibration.For(channel));
         agentReader = new AgentSessionReader(session, processingCoordinator, metrics, hybridReader);
         junctionTune = new VirtualCrossoverJunctionTuneApply(session, agentReader);
+        eqHandoff = new VirtualCrossoverEqHandoff(session, processingCoordinator, metrics, hybridReader);
         audition = new VirtualCrossoverAudition(session, processingCoordinator, metrics, hybridReader);
         acousticPlot = new VirtualCrossoverAcousticPlot(
             mainPlotView, AcousticViewBuilder.NoSourcesHint, CurrentAcousticView());
@@ -389,12 +387,8 @@ public partial class VirtualCrossoverPanel : UserControl
         RefreshAutoActionsEnabled();
     }
 
-    private sealed record ProcessedRender(
-        long Revision,
-        List<ProcessedChannel> Channels);
-
     // The coordinator never reads controls or mutable settings after this awaits (snapshots are copies).
-    private async Task<ProcessedRender?> ProcessChannelsAsync()
+    private async Task<VirtualCrossoverProcessedRender?> ProcessChannelsAsync()
     {
         // Tracy zones are thread-bound LIFO: no zone may span an await.
         long revision = processingCoordinator.CurrentRevision;
@@ -463,10 +457,8 @@ public partial class VirtualCrossoverPanel : UserControl
                 band,
                 ownCalibration));
         }
-        return new ProcessedRender(render.Revision, processed);
+        return new VirtualCrossoverProcessedRender(render.Revision, processed);
     }
-
-    private ProcessedRender? lastProcessedRender;
 
     private void ShowError(string message, string details)
     {

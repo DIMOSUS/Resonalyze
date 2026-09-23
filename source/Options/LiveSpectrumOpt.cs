@@ -84,6 +84,9 @@ namespace Resonalyze.Options
 
         public void SetOptions(LiveSpectrumOptions options) => session.WriteTo(options);
 
+        /// <summary>Every tooltip the panel shows, including the ones it rewrites as the session changes.</summary>
+        internal ToolTip ToolTips => toolTip;
+
         private void WireFields()
         {
             radioModeRta.CheckedChanged += (_, _) => Edit(() => session.SelectMode(CheckedMode()));

@@ -10,6 +10,7 @@ namespace Resonalyze.App.Tests;
 /// target level, the processor, a channel's goal and the phase gate. The rules have their own tests; these pin the glue
 /// between the controls, the dialogs and the types that hold the rules.
 /// </summary>
+[Collection(AgentClipboardUsers.Name)]
 public sealed class VirtualCrossoverPanelDialogWiringTests
 {
     [Fact]

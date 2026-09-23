@@ -3,6 +3,13 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze.App.Tests;
 
+/// <summary>Tests that swap the clipboard transport, which is one static for the process, run one at a time.</summary>
+[CollectionDefinition(Name)]
+public sealed class AgentClipboardUsers
+{
+    public const string Name = "Agent clipboard";
+}
+
 /// <summary>An AI import over a bare session: the runner, its readers, and a host that records what the panel would show.</summary>
 internal sealed class AgentImportFixture : IDisposable, IAgentImportHost
 {

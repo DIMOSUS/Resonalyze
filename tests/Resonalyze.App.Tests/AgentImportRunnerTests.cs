@@ -8,6 +8,7 @@ namespace Resonalyze.App.Tests;
 
 /// <summary>The import once the review is answered: probes, the re-check, the rows, the engines in their order, and undo,
 /// which snapshots the whole chain, the spatial average, the Hybrid tick and the block order.</summary>
+[Collection(AgentClipboardUsers.Name)]
 public sealed class AgentImportRunnerTests : IDisposable
 {
     private readonly AgentImportFixture import = new();

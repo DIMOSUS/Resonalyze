@@ -14,6 +14,7 @@ namespace Resonalyze.App.Tests;
 /// The analyzer through its own window: every input lands in one document, and every view shows that one.
 /// Drives the real main window, so a view left reading something else fails here.
 /// </summary>
+[Collection(MainWindowData.Name)]
 public sealed class AnalyzerWiringTests : IDisposable
 {
     private const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -405,6 +406,7 @@ public sealed class AnalyzerWiringTests : IDisposable
         {
             // The read-outs format with the thread's culture.
             CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            MainWindowData.Reset();
             Form = new Form1();
             _ = Form.Handle;
             Pump();
@@ -465,7 +467,11 @@ public sealed class AnalyzerWiringTests : IDisposable
             Pump();
         }
 
-        public void Dispose() => Form.Dispose();
+        public void Dispose()
+        {
+            Form.Dispose();
+            MainWindowData.Reset();
+        }
 
         /// <summary>Lets queued UI work run: a view redraws after the input that changed it.</summary>
         public void Pump()

@@ -15,6 +15,7 @@ namespace Resonalyze.App.Tests;
 /// surfaces follow the session, and a loaded capture stays until a run replaces it. A view or a surface left reading
 /// something else fails here.
 /// </summary>
+[Collection(MainWindowData.Name)]
 public sealed class LiveSpectrumWiringTests : IDisposable
 {
     private const BindingFlags Hidden = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -259,6 +260,7 @@ public sealed class LiveSpectrumWiringTests : IDisposable
         {
             // The read-outs format with the thread's culture.
             CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            MainWindowData.Reset();
             Form = new Form1(new FakeAudioSessionFactory(
                 streamingFactory: _ => new RecordingStreamingSession(
                     framesToRaise: 400,
@@ -376,6 +378,7 @@ public sealed class LiveSpectrumWiringTests : IDisposable
             }
 
             Form.Dispose();
+            MainWindowData.Reset();
         }
     }
 }

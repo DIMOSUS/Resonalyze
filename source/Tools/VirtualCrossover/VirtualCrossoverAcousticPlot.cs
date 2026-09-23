@@ -35,10 +35,12 @@ internal sealed record AcousticImpulseRender(
     double RightMs,
     bool Step = false);
 
+/// <param name="Scale">Both sides' extent in a magnitude view, so the axes hold when the side flips; null elsewhere.</param>
 internal sealed record AcousticRender(
     string HintText,
     IReadOnlyList<AcousticCurve> Curves,
-    AcousticImpulseRender? Impulse);
+    AcousticImpulseRender? Impulse,
+    ScaleExtent? Scale = null);
 
 /// <summary>Presenter of the Virtual DSP main (acoustic) plot: owns the model, its four axes and range preservation; never builds curves.</summary>
 internal sealed class VirtualCrossoverAcousticPlot
@@ -55,6 +57,9 @@ internal sealed class VirtualCrossoverAcousticPlot
     private const double LossAxisNominalBottomDb = -24;
     private const double LossAxisFloorDb = -60;
 
+    // The shared magnitude scale rounds outward to this step.
+    private const double ValueAxisStepDb = 5;
+
     /// <summary>The magnitude view's pan floor; the ceiling is <see cref="PlotModelStyle.RelativeDecibelAbsoluteMaximum"/>.</summary>
     public const double MagnitudeFloorDb = -90;
 
@@ -68,6 +73,7 @@ internal sealed class VirtualCrossoverAcousticPlot
     private readonly LinearAxis lossAxis;
     // Last armed nominal range, to tell our range from the user's zoom.
     private (double Lower, double Upper)? lossAxisNominal;
+    private bool magnitudeView;
     // Only one bottom axis is in the model at a time, so untagged series bind to the active one.
     private readonly LogarithmicAxis frequencyAxis;
     private readonly LinearAxis timeAxis;
@@ -192,6 +198,7 @@ internal sealed class VirtualCrossoverAcousticPlot
         valueAxis.MinimumPadding = groupDelay ? 0.1 : 0.01;
         valueAxis.MaximumPadding = groupDelay ? 0.1 : 0.01;
         curveTrackerFormat = groupDelay ? GroupDelayTrackerFormat : TrackerFormat;
+        magnitudeView = acousticView == AcousticView.Magnitude;
 
         // The loss is magnitude-only; other views drop its axis immediately.
         if (acousticView != AcousticView.Magnitude)
@@ -236,10 +243,7 @@ internal sealed class VirtualCrossoverAcousticPlot
             }
 
             lossAxis.IsAxisVisible = lossDrawn;
-            if (lossDrawn)
-            {
-                UpdateLossAxisRange(render.Curves);
-            }
+            ApplyAxes(render.Scale ?? ScaleExtent.Of(render.Curves), shared: render.Scale != null);
         }
 
         plotLabels.Refresh();
@@ -329,27 +333,41 @@ internal sealed class VirtualCrossoverAcousticPlot
         }
     }
 
-    // The nominal range is the hard limit; the range is re-armed only when the nominal moves (as for the time axis).
-    private void UpdateLossAxisRange(IReadOnlyList<AcousticCurve> curves)
+    /// <summary>Re-ranges the axes to a scale known only after the draw (the side not shown, read once edits settle).</summary>
+    public void ApplyScale(ScaleExtent? scale)
     {
-        double deepest = 0;
-        foreach (AcousticCurve curve in curves)
+        if (view.Model is not { } model || scale == null)
         {
-            if (!curve.OnLossAxis)
-            {
-                continue;
-            }
-
-            foreach (SignalPoint point in curve.Points)
-            {
-                if (double.IsFinite(point.Y))
-                {
-                    deepest = Math.Min(deepest, point.Y);
-                }
-            }
+            return;
         }
 
-        (double lower, double upper) = LossAxisRange(deepest);
+        ApplyAxes(scale, shared: true);
+        model.InvalidatePlot(false);
+    }
+
+    // Min/Max only: a user's zoom lives in the view range and survives; an unshared magnitude view autoscales as before.
+    private void ApplyAxes(ScaleExtent? scale, bool shared)
+    {
+        if (magnitudeView)
+        {
+            (double Low, double High)? range = shared
+                ? scale?.AxisRange(
+                    ValueAxisStepDb, MagnitudeFloorDb, PlotModelStyle.RelativeDecibelAbsoluteMaximum)
+                : null;
+            valueAxis.Minimum = range?.Low ?? double.NaN;
+            valueAxis.Maximum = range?.High ?? double.NaN;
+        }
+
+        if (lossAxis.IsAxisVisible)
+        {
+            UpdateLossAxisRange(scale?.DeepestLossDb ?? 0);
+        }
+    }
+
+    // The nominal range is the hard limit; the range is re-armed only when the nominal moves (as for the time axis).
+    private void UpdateLossAxisRange(double deepest)
+    {
+        (double lower, double upper) = LossAxisRange(Math.Min(0, deepest));
         lossAxis.AbsoluteMinimum = lower;
         lossAxis.AbsoluteMaximum = upper;
         if (lossAxisNominal is { } previous &&

@@ -1,5 +1,6 @@
 using System.Windows.Forms;
 using OxyPlot;
+using OxyPlot.Axes;
 using OxyPlot.Series;
 using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
@@ -170,6 +171,24 @@ public sealed class VirtualCrossoverPanelWiringTests
         });
     }
 
+    // The right side plays 6 dB lower; without the Sum (whose dashed opposite curve spans both) each side alone scales differently.
+    [Fact]
+    public void BothSides_AreDrawnOnOneScale()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+            live.Set<CheckBox>("checkBoxShowSum", box => box.Checked = false);
+            live.ShowRight();
+            live.ShowLeft();
+            var left = live.AxisRanges();
+
+            live.ShowRight();
+
+            Assert.Equal(left, live.AxisRanges());
+        });
+    }
+
     [Fact]
     public void TheHybridToggle_QuotesTheSpatialAverage_OnTheShownSide()
     {
@@ -277,6 +296,22 @@ public sealed class VirtualCrossoverPanelWiringTests
         {
             Control<RadioButton>("radioSideLeft").Checked = false;
             Set<RadioButton>("radioSideRight", radio => radio.Checked = true);
+        }
+
+        public void ShowLeft()
+        {
+            Control<RadioButton>("radioSideRight").Checked = false;
+            Set<RadioButton>("radioSideLeft", radio => radio.Checked = true);
+        }
+
+        /// <summary>The ranges the main plot renders: the dB axis and the loss axis.</summary>
+        public ((double Low, double High) Value, (double Low, double High) Loss) AxisRanges()
+        {
+            PlotModel model = Model("mainPlotView");
+            ((IPlotModel)model).Update(true);
+            Axis value = model.Axes.Single(axis => axis.Title == "dB");
+            Axis loss = model.Axes.Single(axis => axis.Key == "virtual-crossover:loss");
+            return ((value.ActualMinimum, value.ActualMaximum), (loss.ActualMinimum, loss.ActualMaximum));
         }
 
         public void PickView(string radio)

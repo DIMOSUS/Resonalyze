@@ -127,6 +127,7 @@ public partial class VirtualCrossoverPanel
         VirtualCrossoverSessionCalibration? previousSession = sessionCalibration;
         session.Project = newProject;
         session.RelinkDirectory = null;
+        sharedScale.Forget();
         // The previous import's undo would restore into settings nobody displays.
         agentImport.ForgetUndo();
         // Channel objects are reused across binds; this tells an EQ Wizard handoff which project it came from.

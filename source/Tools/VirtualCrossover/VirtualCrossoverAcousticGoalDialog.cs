@@ -32,9 +32,10 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
             "filter as it does by default.");
     }
 
-    public JunctionAcousticTarget? HighPassGoal { get; private set; }
+    /// <summary>The goal the high-pass box states; read once the dialog is answered OK.</summary>
+    public JunctionAcousticTarget? HighPassGoal => Read(comboBoxHighPassFamily, comboBoxHighPassSlope);
 
-    public JunctionAcousticTarget? LowPassGoal { get; private set; }
+    public JunctionAcousticTarget? LowPassGoal => Read(comboBoxLowPassFamily, comboBoxLowPassSlope);
 
     public void Init(VirtualCrossoverChannelSettings settings, string channelName)
     {
@@ -108,26 +109,12 @@ internal sealed partial class VirtualCrossoverAcousticGoalDialog : Form
         int? kept = slope.SelectedItem as int?;
         slope.Enabled = family.Enabled;
         slope.Items.Clear();
-        foreach (int supported in CrossoverFilter.SupportedSlopes(selected.Value))
+        foreach (int supported in selected.GoalSlopes)
         {
             slope.Items.Add(supported);
         }
 
-        slope.SelectedItem = kept is { } previous && slope.Items.Contains(previous)
-            ? previous
-            : slope.Items[Math.Min(1, slope.Items.Count - 1)];
-    }
-
-    protected override void OnFormClosing(FormClosingEventArgs e)
-    {
-        ArgumentNullException.ThrowIfNull(e);
-        if (DialogResult == DialogResult.OK)
-        {
-            HighPassGoal = Read(comboBoxHighPassFamily, comboBoxHighPassSlope);
-            LowPassGoal = Read(comboBoxLowPassFamily, comboBoxLowPassSlope);
-        }
-
-        base.OnFormClosing(e);
+        slope.SelectedItem = selected.GoalSlope(kept);
     }
 
     private static JunctionAcousticTarget? Read(ThemedComboBox family, ThemedComboBox slope) =>

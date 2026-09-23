@@ -9,9 +9,8 @@ using Resonalyze.Dsp;
 namespace Resonalyze;
 
 /// <summary>Designs linear-phase LP/HP/BP FIR kernels, standalone or for one Virtual DSP channel side.</summary>
-/// <remarks>Holds a design (rebuilt on every edit) or a bare imported kernel (shown only; any control edit replaces it).
-/// In a handoff the rate is the processor's; standalone work is set aside and restored when the session ends.
-/// Rebuilds run in the background after a short settle; only the latest lands, and Export/Return wait meanwhile.</remarks>
+/// <remarks>Binds the controls and plots to a <see cref="FirConstructorSession"/>. Every edit designs a new kernel in the
+/// background after a short settle; only the latest lands, and Export/Return wait meanwhile.</remarks>
 public partial class FirConstructorPanel : UserControl
 {
     private static readonly int[] SampleRates = [44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
@@ -37,29 +36,9 @@ public partial class FirConstructorPanel : UserControl
     private readonly LineSeries impulseSeries;
     private readonly LinearAxis amplitudeAxis;
 
-    private Rendering? lastRendering;
-
-    // Design is null for a bare kernel.
-    private FirFilter? kernel;
-    private FirCrossoverDesign? design;
-    private string? kernelName;
-
-    private FirConstructorReturnToken? virtualDspToken;
-    private string? sessionLabel;
+    private readonly FirConstructorSession session = new();
 
     private bool suppressEdits;
-
-    private int displayRate = 48_000;
-
-    // Only the generation current when a rebuild finishes may land.
-    private CancellationTokenSource? rebuildCancellation;
-    private int rebuildGeneration;
-
-    // Kept so a handoff can set it aside while its rebuild is still running.
-    private FirFilter? requestedBareKernel;
-    private string? requestedBareName;
-
-    private StandaloneWork? standaloneWork;
 
     private const int RebuildSettleMs = 60;
 
@@ -170,29 +149,20 @@ public partial class FirConstructorPanel : UserControl
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     internal Action? BackToVirtualDspRequested { get; set; }
 
-    internal FirCrossoverDesign? CurrentDesign => design;
+    internal FirCrossoverDesign? CurrentDesign => session.Design;
 
-    internal FirFilter? CurrentKernel => kernel;
+    internal FirFilter? CurrentKernel => session.Kernel;
 
-    internal bool InVirtualDspHandoff => virtualDspToken != null;
+    internal bool InVirtualDspHandoff => session.InHandoff;
 
-    internal bool RebuildPending { get; private set; }
+    internal bool RebuildPending => session.RebuildPending;
 
     /// <summary>Installs a side's design (rebuilt at the processor rate), bare kernel, or a seed from its IIR corners.</summary>
     internal void BeginVirtualDspHandoff(FirConstructorHandoffRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        standaloneWork ??= virtualDspToken == null
-            ? new StandaloneWork(
-                ReadControls(),
-                Selected(comboBoxSampleRate, 48_000),
-                requestedBareKernel,
-                requestedBareName)
-            : null;
-        virtualDspToken = request.Token;
-        sessionLabel = request.ChannelLabel;
-        string? rebuiltNote = null;
+        session.BeginHandoff(request, ReadControls());
         suppressEdits = true;
         try
         {
@@ -200,12 +170,6 @@ public partial class FirConstructorPanel : UserControl
             if (request.Design is { } arrived)
             {
                 WriteControls(arrived);
-                if (arrived.SampleRateHz != request.ProcessorSampleRateHz)
-                {
-                    rebuiltNote =
-                        $"It was designed at {FirCrossoverDescription.Rate(arrived.SampleRateHz)} and is " +
-                        $"rebuilt here at {FirCrossoverDescription.Rate(request.ProcessorSampleRateHz)}.";
-                }
             }
             else if (request.SeedCrossover is { } seed)
             {
@@ -217,7 +181,7 @@ public partial class FirConstructorPanel : UserControl
             suppressEdits = false;
         }
 
-        UpdateSessionControls(rebuiltNote);
+        UpdateSessionControls();
         if (request.Design == null && request.Kernel is { } bare)
         {
             ShowBareKernel(bare, request.KernelName);
@@ -231,20 +195,18 @@ public partial class FirConstructorPanel : UserControl
     /// <summary>Restores the pre-session standalone work. Back to Virtual DSP does not end a session.</summary>
     internal void EndVirtualDspHandoff()
     {
-        virtualDspToken = null;
-        sessionLabel = null;
+        FirConstructorStandaloneWork? work = session.EndHandoff();
         UpdateSessionControls();
-        if (standaloneWork is not { } work)
+        if (work == null)
         {
             UpdateActions();
             return;
         }
 
-        standaloneWork = null;
         suppressEdits = true;
         try
         {
-            SelectRate(work.RateHz);
+            SelectRate(work.Controls.SampleRateHz);
             WriteControls(work.Controls);
         }
         finally
@@ -337,7 +299,7 @@ public partial class FirConstructorPanel : UserControl
         buttonExport.Click += (_, _) => ExportFile();
         buttonReturnToDsp.Click += (_, _) => ReturnToVirtualDsp();
         buttonBackToDsp.Click += (_, _) => BackToVirtualDspRequested?.Invoke();
-        checkBoxImpulseDb.CheckedChanged += (_, _) => ApplyImpulse(lastRendering, rescale: true);
+        checkBoxImpulseDb.CheckedChanged += (_, _) => ApplyImpulse(session.Rendering, rescale: true);
     }
 
     private void LayoutPlots()
@@ -408,89 +370,61 @@ public partial class FirConstructorPanel : UserControl
         }
 
         UpdateControlAvailability();
-        FirCrossoverDesign candidate = ReadControls();
-        requestedBareKernel = null;
-        requestedBareName = null;
-        if (candidate.Problem() is { } problem)
+        FirFilter? before = session.Kernel;
+        FirConstructorRebuild? rebuild = session.Edit(ReadControls());
+        labelProblem.Text = session.Problem;
+        if (rebuild == null)
         {
-            CancelRebuild();
-            design = null;
-            kernel = null;
-            kernelName = null;
-            labelProblem.Text = problem;
-            ApplyRendering(null);
+            ApplyRendering(before);
             return;
         }
 
-        labelProblem.Text = string.Empty;
-        _ = ShowAsync(candidate, bare: null, name: null, settle: true);
+        _ = ShowAsync(rebuild);
     }
 
     private void ShowBareKernel(FirFilter bare, string? name)
     {
-        requestedBareKernel = bare;
-        requestedBareName = name;
-        labelProblem.Text = string.Empty;
-        _ = ShowAsync(null, bare, name, settle: false);
+        FirConstructorRebuild rebuild = session.ShowBare(bare, name, Selected(comboBoxSampleRate, 48_000));
+        labelProblem.Text = session.Problem;
+        _ = ShowAsync(rebuild);
     }
 
-    private void CancelRebuild()
+    private async Task ShowAsync(FirConstructorRebuild rebuild)
     {
-        rebuildCancellation?.Cancel();
-        rebuildCancellation = null;
-        rebuildGeneration++;
-        RebuildPending = false;
-    }
-
-    private async Task ShowAsync(FirCrossoverDesign? candidate, FirFilter? bare, string? name, bool settle)
-    {
-        rebuildCancellation?.Cancel();
-        using var cancellation = new CancellationTokenSource();
-        rebuildCancellation = cancellation;
-        int generation = ++rebuildGeneration;
-        RebuildPending = true;
+        using FirConstructorRebuild owned = rebuild;
         UpdateActions();
-        int rate = candidate?.SampleRateHz ?? Selected(comboBoxSampleRate, 48_000);
-        CancellationToken token = cancellation.Token;
+        CancellationToken token = rebuild.Token;
         try
         {
-            if (settle)
+            if (rebuild.Settle)
             {
                 await Task.Delay(RebuildSettleMs, token);
             }
 
-            Rendering rendering = await Task.Run(
-                () => Render(bare ?? candidate!.Build(), candidate, rate, token),
+            FirConstructorRendering rendering = await Task.Run(
+                () => Render(rebuild.BareKernel ?? rebuild.Design!.Build(), rebuild.Design, rebuild.RateHz, token),
                 token);
-            if (generation != rebuildGeneration || IsDisposed)
+            FirFilter? before = session.Kernel;
+            if (IsDisposed || !session.Land(rebuild, rendering))
             {
                 return;
             }
 
-            design = candidate;
-            kernel = rendering.Kernel;
-            kernelName = name;
-            displayRate = rate;
-            RebuildPending = false;
-            ApplyRendering(rendering);
+            ApplyRendering(before);
         }
         catch (OperationCanceledException)
         {
         }
-        catch (Exception exception) when (generation == rebuildGeneration && !IsDisposed)
+        catch (Exception exception) when (session.IsCurrent(rebuild) && !IsDisposed)
         {
-            design = null;
-            kernel = null;
-            RebuildPending = false;
-            labelProblem.Text = "The kernel could not be built: " + exception.Message;
-            ApplyRendering(null);
+            FirFilter? before = session.Kernel;
+            session.Fail(exception.Message);
+            labelProblem.Text = session.Problem;
+            ApplyRendering(before);
         }
         finally
         {
-            if (ReferenceEquals(rebuildCancellation, cancellation))
-            {
-                rebuildCancellation = null;
-            }
+            session.Finish(rebuild);
         }
     }
 
@@ -602,28 +536,35 @@ public partial class FirConstructorPanel : UserControl
         }
     }
 
-    private void UpdateSessionControls(string? note = null)
+    private void UpdateSessionControls()
     {
-        bool linked = virtualDspToken != null;
+        bool linked = session.Handoff != null;
         buttonReturnToDsp.Visible = linked;
         buttonBackToDsp.Visible = linked;
         comboBoxSampleRate.Enabled = !linked;
+        string? note = session.Handoff is { Design: { } arrived } request &&
+            arrived.SampleRateHz != request.ProcessorSampleRateHz
+                ? $"It was designed at {FirCrossoverDescription.Rate(arrived.SampleRateHz)} and is " +
+                    $"rebuilt here at {FirCrossoverDescription.Rate(request.ProcessorSampleRateHz)}."
+                : null;
         labelSession.Text = linked
-            ? $"Editing {sessionLabel}. The rate is the processor's." + (note == null ? string.Empty : " " + note)
+            ? $"Editing {session.Handoff!.ChannelLabel}. The rate is the processor's." +
+                (note == null ? string.Empty : " " + note)
             : "Standalone: design a kernel and export it to a file.";
     }
 
     private void UpdateActions()
     {
-        buttonExport.Enabled = kernel != null && !RebuildPending;
+        buttonExport.Enabled = session.Kernel != null && !session.RebuildPending;
         // Only a design returns; bare kernel files are imported on the Virtual DSP side, where they keep their name.
         buttonReturnToDsp.Enabled =
-            virtualDspToken != null && kernel != null && design != null && !RebuildPending;
+            session.Handoff != null && session.Kernel != null && session.Design != null && !session.RebuildPending;
     }
 
     private void ReturnToVirtualDsp()
     {
-        if (!RebuildPending && virtualDspToken is { } token && kernel is { } built && design is { } designed)
+        if (!session.RebuildPending && session.Handoff is { Token: var token } &&
+            session.Kernel is { } built && session.Design is { } designed)
         {
             ReturnFirRequested?.Invoke(token, built, designed);
         }
@@ -659,7 +600,7 @@ public partial class FirConstructorPanel : UserControl
 
     private void ExportFile()
     {
-        if (RebuildPending || kernel is not { } exported)
+        if (session.RebuildPending || session.Kernel is not { } exported)
         {
             return;
         }
@@ -669,9 +610,9 @@ public partial class FirConstructorPanel : UserControl
             AddExtension = true,
             DefaultExt = "wav",
             Filter = FirFilterFiles.ExportFileDialogFilter,
-            FileName = design is { } named
+            FileName = session.Design is { } named
                 ? $"FIR {FirCrossoverDescription.Short(named)}"
-                : Path.GetFileNameWithoutExtension(kernelName) is { Length: > 0 } stem ? stem : "FIR",
+                : Path.GetFileNameWithoutExtension(session.KernelName) is { Length: > 0 } stem ? stem : "FIR",
             OverwritePrompt = true,
             Title = "Export FIR filter"
         };
@@ -685,9 +626,9 @@ public partial class FirConstructorPanel : UserControl
             FirFilterFiles.Save(
                 dialog.FileName,
                 exported,
-                displayRate,
-                kernelName,
-                design is { } described ? FirCrossoverDescription.Long(described) : null);
+                session.RateHz,
+                session.KernelName,
+                session.Design is { } described ? FirCrossoverDescription.Long(described) : null);
         }
         catch (Exception exception)
         {
@@ -700,22 +641,7 @@ public partial class FirConstructorPanel : UserControl
         }
     }
 
-    private sealed record Rendering(
-        FirFilter Kernel,
-        DataPoint[] Magnitude,
-        DataPoint[] Target,
-        DataPoint[] Phase,
-        DataPoint[] Impulse,
-        DataPoint[] ImpulseDb,
-        double DeviationDb);
-
-    private sealed record StandaloneWork(
-        FirCrossoverDesign Controls,
-        int RateHz,
-        FirFilter? BareKernel,
-        string? BareName);
-
-    private static Rendering Render(
+    private static FirConstructorRendering Render(
         FirFilter shown,
         FirCrossoverDesign? designed,
         int rate,
@@ -778,11 +704,13 @@ public partial class FirConstructorPanel : UserControl
 
         cancellation.ThrowIfCancellationRequested();
         double deviation = designed?.WorstDeviationDb(shown) ?? double.NaN;
-        return new Rendering(shown, magnitude, target.ToArray(), phase, impulse, impulseDb, deviation);
+        return new FirConstructorRendering(shown, magnitude, target.ToArray(), phase, impulse, impulseDb, deviation);
     }
 
-    private void ApplyRendering(Rendering? rendering)
+    // Before is the kernel shown until now: a new one refits the impulse view, the same one redrawn keeps the zoom.
+    private void ApplyRendering(FirFilter? before)
     {
+        FirConstructorRendering? rendering = session.Rendering;
         magnitudeSeries.Points.Clear();
         targetSeries.Points.Clear();
         phaseSeries.Points.Clear();
@@ -793,15 +721,14 @@ public partial class FirConstructorPanel : UserControl
             phaseSeries.Points.AddRange(rendering.Phase);
         }
 
-        UpdateReadouts(displayRate, rendering?.DeviationDb ?? double.NaN);
+        UpdateReadouts(session.RateHz, rendering?.DeviationDb ?? double.NaN);
         UpdateActions();
         responseModel.InvalidatePlot(true);
-        ApplyImpulse(rendering, rescale: !ReferenceEquals(lastRendering?.Kernel, rendering?.Kernel));
-        lastRendering = rendering;
+        ApplyImpulse(rendering, rescale: !ReferenceEquals(before, rendering?.Kernel));
     }
 
     // A new kernel or scale refits the view; the same kernel redrawn keeps the user's zoom.
-    private void ApplyImpulse(Rendering? rendering, bool rescale)
+    private void ApplyImpulse(FirConstructorRendering? rendering, bool rescale)
     {
         impulseSeries.Points.Clear();
         bool decibels = checkBoxImpulseDb.Checked;
@@ -821,14 +748,14 @@ public partial class FirConstructorPanel : UserControl
 
     private void UpdateReadouts(int rate, double deviation)
     {
-        if (kernel is not { } shown)
+        if (session.Kernel is not { } shown)
         {
             labelLatency.Text = string.Empty;
             labelDeviation.Text = string.Empty;
             return;
         }
 
-        if (design is { } designed)
+        if (session.Design is { } designed)
         {
             labelLatency.Text = string.Create(
                 CultureInfo.InvariantCulture,
@@ -843,7 +770,7 @@ public partial class FirConstructorPanel : UserControl
         {
             labelLatency.Text = string.Create(
                 CultureInfo.InvariantCulture,
-                $"{kernelName ?? "Kernel"}: {shown.Length} taps, shown as it is at {FirCrossoverDescription.Rate(rate)}");
+                $"{session.KernelName ?? "Kernel"}: {shown.Length} taps, shown as it is at {FirCrossoverDescription.Rate(rate)}");
             labelDeviation.Text = "Any change to the controls designs a new kernel in its place.";
         }
     }

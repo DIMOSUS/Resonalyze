@@ -581,7 +581,7 @@ namespace Resonalyze.Options
             MinimizeBox = false;
             Name = "MeasurementOptions";
             ShowInTaskbar = false;
-            Text = "Measurement Options";
+            Text = "Record Settings";
             sweepPanel.ResumeLayout(false);
             sweepPanel.PerformLayout();
             audioBackendPanel.ResumeLayout(false);

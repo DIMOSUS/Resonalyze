@@ -15,7 +15,7 @@ internal static class LiveSpectrumSettingsToolTips
         }
 
         return Base + "\r\n" +
-            "No loopback reference channel is configured (Measurement Options), " +
+            "No loopback reference channel is configured (Record Settings), " +
             "so the analyzer runs as a reference-free RTA regardless of this " +
             "choice.";
     }
@@ -37,14 +37,14 @@ internal static class LiveSpectrumSettingsToolTips
                 "View-only right now: no SPL calibration is configured for the " +
                 "live input (or it was captured on a different input), so the " +
                 "live curve is hidden — only overlays captured in dB SPL are " +
-                "shown. Configure it in Measurement Options — Calibration; " +
+                "shown. Configure it in Record Settings — Calibration; " +
                 "starting the analyzer in this state switches the display back " +
                 "to relative.";
         }
 
         return Base + "\r\n" +
-            "No SPL calibration is configured for the live input (Measurement " +
-            "Options — Calibration). Starting the analyzer without one switches " +
+            "No SPL calibration is configured for the live input (Record " +
+            "Settings — Calibration). Starting the analyzer without one switches " +
             "the display back to relative; overlays captured in dB SPL are " +
             "shown either way.";
     }

@@ -314,8 +314,8 @@ over from the gate. The Compare overlay reads through the same mode and cycles.
 
 ## Audio Backends
 
-Resonalyze can run measurements through four backends, chosen in the measurement
-settings dialog:
+Resonalyze can run measurements through four backends, chosen in **Record
+Settings**:
 
 | Backend | Use it for |
 |---------|------------|
@@ -328,7 +328,7 @@ Both WASAPI modes address devices by endpoint id rather than by index, so a
 chosen device survives reboots and device reordering, and they use the same
 microphone and loopback channel selection as MME.
 
-![Measurement settings](assets/images/measurement-options.png)
+![Record Settings](assets/images/measurement-options.png)
 
 The microphone input is the primary measurement channel, and a loopback reference
 channel is **required** for every measurement. Both are recorded simultaneously
@@ -392,7 +392,7 @@ reciprocal scale and the transfer function is scale-invariant.
 24-bit WAV file — the same band, pace, sample rate, playback channel and level a
 measurement would play, with a second of silence before and after — for measuring
 from a source that is not this computer, such as a phone, a head unit or a USB
-stick in the car. Measurement options otherwise apply as you edit them and touch
+stick in the car. Record Settings otherwise apply as you edit them and touch
 the audio session only when its identity changed; the audio backend, the device
 format and its device panel commit together with **Apply settings**.
 
@@ -780,7 +780,7 @@ edited between the walk and the Save would otherwise recompute the walk through 
 microphone it never passed through — and the file would name that microphone as the
 one it was taken with. A changed rig describes the NEXT run.
 
-If a **protective high-pass** is configured (Measurement Options), MMM divides it
+If a **protective high-pass** is configured (Record Settings), MMM divides it
 back out of its curve. That filter sits in your own DSP, ahead of the loudspeaker,
 so a reference-free capture carries it while a swept impulse response has it
 removed — without the same division the two measurements of one tweeter would sit
@@ -1306,7 +1306,7 @@ The dialog lists REW's measurements with their name, date, sample rate and the p
 REW reports, with REW's own selection chosen for you. It holds the same address setting
 as Export, asks REW as it opens, and **Refresh** asks again — after starting REW or
 correcting the address. A measurement at another sample rate than the one set in the
-[measurement settings](#audio-backends) is greyed out and cannot be imported: the sweep a
+[Record Settings](#audio-backends) is greyed out and cannot be imported: the sweep a
 result is filed under is generated at the configured rate.
 
 **REW's timing offset** is stated in the same dialog. REW folds that offset into a

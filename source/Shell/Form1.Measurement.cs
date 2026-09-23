@@ -143,7 +143,7 @@ public partial class Form1
                     "A loopback reference channel is required before measuring.\r\n\r\n" +
                     "Every analysis (frequency response, phase, group delay, impulse " +
                     "response and the decays) is derived from the loopback transfer IR. " +
-                    "Open Measurement Options and select a loopback channel for the " +
+                    "Open Record Settings and select a loopback channel for the " +
                     "current audio backend.",
                     "Loopback required",
                     MessageBoxButtons.OK,
@@ -234,8 +234,8 @@ public partial class Form1
             "run on independent clocks, which silently degraded phase, group " +
             "delay and time alignment.\r\n\r\n" +
             "The loopback must now be a second channel of the microphone device " +
-            "(or ASIO). The loopback selection was reset — open Measurement " +
-            "Options and choose a loopback channel before measuring.",
+            "(or ASIO). The loopback selection was reset — open Record " +
+            "Settings and choose a loopback channel before measuring.",
             "Loopback configuration reset",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
@@ -426,7 +426,7 @@ public partial class Form1
                     MessageBox.Show(
                         this,
                         exception.Message,
-                        "Measurement Options",
+                        "Record Settings",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
                 }
@@ -435,7 +435,7 @@ public partial class Form1
                     MessageBox.Show(
                         this,
                         $"Failed to reinitialize the audio device.\r\n\r\n{exception.Message}",
-                        "Measurement Options",
+                        "Record Settings",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
                 }

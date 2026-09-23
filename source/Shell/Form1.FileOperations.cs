@@ -304,7 +304,7 @@ public partial class Form1
             {
                 throw new InvalidOperationException(
                     $"This export is {file.SampleRate} Hz while the measurement is configured " +
-                    $"for {configuredSampleRate} Hz. Set the sample rate in Measurement Options " +
+                    $"for {configuredSampleRate} Hz. Set the sample rate in Record Settings " +
                     "to match the file, then import it again.");
             }
 

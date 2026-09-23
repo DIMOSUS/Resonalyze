@@ -98,7 +98,7 @@ public sealed class LiveSpectrumSettingsReaderTests
 
         session.SetAvailability(isSplAvailable: true, hasLiveCurve: false, hasTransferReference: false);
         Assert.EndsWith(
-            "\r\nNo loopback reference channel is configured (Measurement Options), so the analyzer runs as a " +
+            "\r\nNo loopback reference channel is configured (Record Settings), so the analyzer runs as a " +
             "reference-free RTA regardless of this choice.",
             LiveSpectrumSettingsToolTips.Transfer(session));
     }

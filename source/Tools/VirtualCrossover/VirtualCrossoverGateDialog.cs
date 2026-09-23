@@ -146,11 +146,7 @@ internal sealed partial class VirtualCrossoverGateDialog : Form
     private void UpdateMinFrequencyLabel()
     {
         VirtualCrossoverGatePreview gate = Gate;
-        double hz = FrequencyResponseOptions.GateMinReliableFrequencyHz(
-            gate.LeftMs, gate.PlateauMs, gate.RightMs);
-        labelMinFrequency.Text = hz > 0
-            ? $"Reliable from ≈ {hz:0}+ Hz"
-            : "Reliable from ≈ — Hz";
+        labelMinFrequency.Text = GateReadout.ReliableFrom(gate.LeftMs, gate.PlateauMs, gate.RightMs);
     }
 
     private void UpdatePreview()

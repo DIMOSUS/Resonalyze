@@ -254,17 +254,17 @@ internal sealed partial class RecordSettingsSession
     {
         bool wasInitializing = initializing;
         initializing = true;
-        IReadOnlyList<MicrophoneCalibrationComboHelper.MicrophoneCalibrationOption> options =
-            MicrophoneCalibrationComboHelper.BuildOptions(microphoneCalibrationId, CalibrationEntries());
+        IReadOnlyList<MicrophoneCalibrationOption> options =
+            MicrophoneCalibrationChoices.BuildOptions(microphoneCalibrationId, CalibrationEntries());
         MicrophoneCalibration.Clear();
         MicrophoneCalibration.AddRange(options);
-        MicrophoneCalibration.SelectedIndex = MicrophoneCalibrationComboHelper.FindIndex(options, microphoneCalibrationId);
+        MicrophoneCalibration.SelectedIndex = MicrophoneCalibrationChoices.FindIndex(options, microphoneCalibrationId);
         microphoneCalibrationId = SelectedMicrophoneCalibrationId();
         initializing = wasInitializing;
     }
 
     private string? SelectedMicrophoneCalibrationId() =>
-        MicrophoneCalibration.SelectedItem is MicrophoneCalibrationComboHelper.MicrophoneCalibrationOption option
+        MicrophoneCalibration.SelectedItem is MicrophoneCalibrationOption option
             ? option.CalibrationId
             : null;
 

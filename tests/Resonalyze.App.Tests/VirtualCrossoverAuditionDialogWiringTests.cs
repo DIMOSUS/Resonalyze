@@ -310,7 +310,7 @@ public sealed class VirtualCrossoverAuditionDialogWiringTests
         {
             ThemedComboBox combo = Find<ThemedComboBox>("comboBoxCalibration");
             combo.SelectedIndex = Enumerable.Range(0, combo.Items.Count).Single(index =>
-                ((Options.MicrophoneCalibrationComboHelper.MicrophoneCalibrationOption)combo.Items[index]!).CalibrationId == id);
+                ((Options.MicrophoneCalibrationOption)combo.Items[index]!).CalibrationId == id);
         }
 
         public void Render()

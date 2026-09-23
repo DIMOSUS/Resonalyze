@@ -23,7 +23,7 @@ namespace Resonalyze.Options
                 afterWindowChanged: () =>
                     numericCaptureTime.Value = (decimal)CalcCapturedTime);
             // Width presets only: burst decay has no magnitude grid, so psychoacoustic would silently alias 1/6.
-            SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
+            comboSmoothingInverseOctaves.FillSmoothingPresets();
             InitializeToolTips();
         }
 

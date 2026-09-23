@@ -18,8 +18,7 @@ namespace Resonalyze.Options
             InitializeComponent();
             PlotInteraction.Enable(irPlotView);
             BindTukeyWindowControls(numericWindow, numericLeftWindow, numericRightWindow);
-            SmoothingPresetOptions.Configure(
-                comboSmoothingInverseOctaves, includePsychoacoustic: true);
+            comboSmoothingInverseOctaves.FillSmoothingPresets(includePsychoacoustic: true);
             InitializeToolTips();
         }
 

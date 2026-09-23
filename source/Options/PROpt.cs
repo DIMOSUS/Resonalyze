@@ -35,7 +35,7 @@ namespace Resonalyze.Options
                 }
             };
             ConfigureResetDefaults();
-            SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
+            comboSmoothingInverseOctaves.FillSmoothingPresets();
             InitializeToolTips();
         }
 

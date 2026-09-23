@@ -24,8 +24,7 @@ namespace Resonalyze.Options
             BindTukeyWindowControls(numericWindow, numericLeftWindow, numericRightWindow);
             comboWindowMode.SelectedIndexChanged +=
                 (_, _) => UpdateMagnitudeWindowControlState();
-            SmoothingPresetOptions.Configure(
-                comboSmoothingInverseOctaves, includePsychoacoustic: true);
+            comboSmoothingInverseOctaves.FillSmoothingPresets(includePsychoacoustic: true);
             InitializeToolTips();
         }
 

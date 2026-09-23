@@ -22,8 +22,7 @@ namespace Resonalyze.Options
             InitializeComponent();
             splChoiceReadyForeColor = labelSpl.ForeColor;
             transferChoiceReadyForeColor = radioModeTransfer.ForeColor;
-            SmoothingPresetOptions.Configure(
-                comboSmoothingInverseOctaves, includePsychoacoustic: true);
+            comboSmoothingInverseOctaves.FillSmoothingPresets(includePsychoacoustic: true);
             buttonResetAverage.Click += (_, _) => ResetAverageRequested?.Invoke();
             WireFields();
             InitializeToolTips();

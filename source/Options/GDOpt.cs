@@ -22,7 +22,7 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
             numericRightWindow,
             labelMinFrequency);
         ConfigureResetDefaults();
-        SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
+        comboSmoothingInverseOctaves.FillSmoothingPresets();
         InitializeToolTips();
     }
 

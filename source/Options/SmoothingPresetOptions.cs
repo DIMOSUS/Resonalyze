@@ -2,6 +2,7 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Options;
 
+/// <summary>The smoothing lists of the settings panels, their labels, and where a stored width lands on them.</summary>
 internal static class SmoothingPresetOptions
 {
     public static IReadOnlyList<int> SupportedInverseOctaves { get; } =
@@ -23,29 +24,28 @@ internal static class SmoothingPresetOptions
                 ? "Psycho"
                 : $"1/{inverseOctaves}";
 
-    /// <summary>Phase and GD combos stay width-only: cubic averaging is defined for amplitudes, not signed values.</summary>
-    public static void Configure(
-        ThemedComboBox comboBox, bool includePsychoacoustic = false)
+    /// <summary>Phase and GD lists stay width-only: cubic averaging is defined for amplitudes, not signed values.</summary>
+    public static IReadOnlyList<int> Offered(bool includePsychoacoustic)
     {
-        comboBox.Items.Clear();
-        comboBox.FormattingEnabled = true;
+        var offered = new List<int>();
         foreach (int value in SupportedInverseOctaves)
         {
-            comboBox.Items.Add(value);
-            if (value == SpectrumSmoothing.PsychoacousticBaseInverseOctaves &&
-                includePsychoacoustic)
+            offered.Add(value);
+            if (value == SpectrumSmoothing.PsychoacousticBaseInverseOctaves && includePsychoacoustic)
             {
-                comboBox.Items.Add(SpectrumSmoothing.PsychoacousticCode);
+                offered.Add(SpectrumSmoothing.PsychoacousticCode);
             }
         }
 
-        comboBox.Format -= ComboBoxFormat;
-        comboBox.Format += ComboBoxFormat;
-        comboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        return offered;
     }
 
-    /// <summary><paramref name="includePsychoacoustic"/> must match <see cref="Configure"/>: with the item the code is kept
-    /// (nearest width would be Off); without it the code decodes to its base width.</summary>
+    /// <summary>A list with nothing selected reads as its first width.</summary>
+    public static int ReadBack(object? selectedItem) =>
+        selectedItem is int inverseOctaves ? inverseOctaves : SupportedInverseOctaves[0];
+
+    /// <summary><paramref name="includePsychoacoustic"/> must match the list: with the item the code is kept (nearest
+    /// width would be Off); without it the code decodes to its base width.</summary>
     public static int Normalize(
         double inverseOctaves, bool includePsychoacoustic = true)
     {
@@ -70,13 +70,5 @@ internal static class SmoothingPresetOptions
         }
 
         return best;
-    }
-
-    private static void ComboBoxFormat(object? sender, ListControlConvertEventArgs args)
-    {
-        if (args.ListItem is int value)
-        {
-            args.Value = GetLabel(value);
-        }
     }
 }

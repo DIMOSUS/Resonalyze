@@ -143,13 +143,10 @@ public class ImpulsePreviewOptionsForm : Form
             return;
         }
 
-        double hz = FrequencyResponseOptions.GateMinReliableFrequencyHz(
+        g.MinFrequency.Text = GateReadout.ReliableFrom(
             (double)l.Left.Value,
             (double)l.Window.Value,
             (double)l.Right.Value);
-        g.MinFrequency.Text = hz > 0
-            ? $"Reliable from ≈ {hz:0}+ Hz"
-            : "Reliable from ≈ — Hz";
     }
 
     /// <summary>Band-limited first-arrival front, memoized per IR in TransferIrStartCache.</summary>
@@ -209,24 +206,12 @@ public class ImpulsePreviewOptionsForm : Form
             return;
         }
 
-        g.Offset.ApplyToolTip(
-            toolTip,
-            "Gate position: time from the IR start to the end of the left Tukey shoulder. Auto keeps it snapped to the detected IR start.");
-        toolTip.SetToolTip(
-            g.AutoFit,
-            "Keep the gate offset snapped to the detected IR start (band-limited first-arrival front), following every new measurement. Release to set the offset manually.");
-        l.Window.ApplyToolTip(
-            toolTip,
-            "Flat (weight 1) part of the gate after the peak, in milliseconds.");
-        l.Left.ApplyToolTip(
-            toolTip,
-            "Tukey fade-in before the peak, in milliseconds. Keep short.");
-        l.Right.ApplyToolTip(
-            toolTip,
-            "Tukey fade-out gate after the plateau, in milliseconds. End it before the first reflection.");
-        toolTip.SetToolTip(
-            g.MinFrequency,
-            "Lowest frequency the current gate can resolve (≈ 1 / gate length). Below it the curve is not reliable.");
+        g.Offset.ApplyToolTip(toolTip, GateReadout.Offset);
+        toolTip.SetToolTip(g.AutoFit, GateReadout.Auto);
+        l.Window.ApplyToolTip(toolTip, GateReadout.Plateau);
+        l.Left.ApplyToolTip(toolTip, GateReadout.Left);
+        l.Right.ApplyToolTip(toolTip, GateReadout.Right);
+        toolTip.SetToolTip(g.MinFrequency, GateReadout.MinFrequency);
     }
 
     public void RefreshComparePreview() => UpdateIrPreview();

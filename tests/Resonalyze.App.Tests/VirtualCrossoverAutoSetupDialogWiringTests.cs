@@ -20,14 +20,21 @@ public sealed class VirtualCrossoverAutoSetupDialogWiringTests
         "junction floor", "junction ceiling", "steepest slope", "split"
     ];
 
+    // Every case starts from this session; a fit costs about a second, so its preview and proposals are read once.
+    private static readonly Lazy<(AutoSetupPreview Preview, CrossoverProposal[] Proposals)> Untouched = new(() =>
+    {
+        AutoSetupWizardSession session = Session(LoudSub());
+        return (Preview(session)!, Proposals(session));
+    });
+
     [Theory]
     [MemberData(nameof(Changes))]
     public void EachControl_ReachesTheProposalApplyWrites(string change) => StaTest.Run(() =>
     {
         using var wizard = new Wizard(LoudSub());
         AutoSetupWizardSession expected = Session(LoudSub());
-        Preview(expected);
-        CrossoverProposal[] untouched = Proposals(expected);
+        expected.TakeElevation(Untouched.Value.Preview.ElevationCeiling, Untouched.Value.Preview.ElevationValue);
+        CrossoverProposal[] untouched = Untouched.Value.Proposals;
 
         Change(change, wizard, expected);
         AutoSetupPreview preview = Preview(expected)!;

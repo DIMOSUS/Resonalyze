@@ -1,30 +1,27 @@
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
+using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
 
 namespace Resonalyze.Options
 {
+    /// <summary>Binds the Frequency Response settings to a <see cref="FrequencyResponseSettingsSession"/>.</summary>
     public partial class FROptions : ImpulsePreviewOptionsForm
     {
+        private readonly FrequencyResponseSettingsSession session = new();
         private readonly Color splChoiceReadyForeColor;
+        private IReadOnlyList<MicrophoneCalibrationOption>? shownCalibrations;
 
         public FROptions()
         {
             InitializeComponent();
             PlotInteraction.Enable(irPlotView);
             splChoiceReadyForeColor = radioMagnitudeSpl.ForeColor;
-            BindTukeyWindowControls(numericWindow, numericLeftWindow, numericRightWindow);
-            comboWindowMode.SelectedIndexChanged +=
-                (_, _) => UpdateMagnitudeWindowControlState();
+            numericWindow.ApplyFieldRange(ModeSettingsLimits.FrequencyResponseWindow);
+            numericLeftWindow.ApplyFieldRange(ModeSettingsLimits.TukeyFade);
+            numericRightWindow.ApplyFieldRange(ModeSettingsLimits.TukeyFade);
             comboSmoothingInverseOctaves.FillSmoothingPresets(includePsychoacoustic: true);
+            comboCalibration.DropDownStyle = ComboBoxStyle.DropDownList;
+            WireFields();
             InitializeToolTips();
         }
 
@@ -35,171 +32,121 @@ namespace Resonalyze.Options
             CurveVisibilityOptions visibility,
             IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries)
         {
-            AttachMeasurement(document, configuredSampleRate);
-            InitializeControls(() =>
-            {
-                comboWindowMode.SelectedIndex =
-                    frequencyResponseOptions.MagnitudeWindowMode == PhaseWindowMode.Fixed
-                        ? 0
-                        : 1;
-                comboFdwCycles.SelectedItem =
-                    frequencyResponseOptions.MagnitudeFdwCycles is 4 or 6 or 8
-                        ? frequencyResponseOptions.MagnitudeFdwCycles
-                        : PhaseAnalysisSettings.DefaultFdwCycles;
-                numericWindow.Value = frequencyResponseOptions.Window;
-                numericLeftWindow.Value = frequencyResponseOptions.LeftTukeyWindow;
-                numericRightWindow.Value = frequencyResponseOptions.RightTukeyWindow;
-                comboSmoothingInverseOctaves.SelectedItem =
-                    SmoothingPresetOptions.Normalize(frequencyResponseOptions.SmoothingInverseOctaves);
-                MicrophoneCalibrationComboHelper.Configure(
-                    comboCalibration,
-                    frequencyResponseOptions.CalibrationId,
-                    calibrationEntries);
-                checkBoxShowPrimary.Checked = visibility.ShowPrimary;
-                checkBoxShowCoherence.Checked = visibility.ShowCoherence;
-                checkBoxShowArrayAverage.Checked = visibility.ShowArrayAverage;
-                checkBoxShowArrayMicrophones.Checked = visibility.ShowArrayMicrophones;
-                checkBoxShowArraySpread.Checked = visibility.ShowArraySpread;
-                checkBoxShowHd2.Checked = visibility.ShowHd2;
-                checkBoxShowHd3.Checked = visibility.ShowHd3;
-                checkBoxShowHd4.Checked = visibility.ShowHd4;
-                checkBoxShowThdPlusNoise.Checked = visibility.ShowThdPlusNoise;
-                checkBoxShowNoiseFloor.Checked = visibility.ShowNoiseFloor;
-                // dB SPL stays selected without a calibration (view-only, amber); do not rewrite to relative.
-                UpdateSplChoiceLook();
-                bool spl = frequencyResponseOptions.MagnitudeScale ==
-                    MagnitudeScale.SoundPressureLevel;
-                radioMagnitudeSpl.Checked = spl;
-                radioMagnitudeRelative.Checked = !spl;
-                RefreshTukeyWindowLimits();
-            });
-            UpdateMagnitudeWindowControlState();
-            UpdateIrPreview();
+            Follow(document, configuredSampleRate);
+            session.Follow(OpenMeasurement);
+            session.Load(frequencyResponseOptions, visibility, calibrationEntries);
+            Redraw();
         }
 
         /// <summary>A selection the list no longer holds stays selected and marked missing.</summary>
         internal void RefreshCalibrationEntries(
             IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
-            SelectCalibration(
-                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration),
-                calibrationEntries);
+            SelectCalibration(session.CalibrationId, calibrationEntries);
 
         /// <summary>Shows the calibration a loaded measurement carries.</summary>
         internal void SelectCalibration(
             string? calibrationId,
-            IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries) =>
-            MicrophoneCalibrationComboHelper.Configure(
-                comboCalibration,
-                calibrationId,
-                calibrationEntries);
+            IReadOnlyList<MicrophoneCalibrationEntry> calibrationEntries)
+        {
+            session.SelectCalibration(calibrationId, calibrationEntries);
+            Present();
+        }
 
         public void SetOptions(
             FrequencyResponseOptions frequencyResponseOptions,
             CurveVisibilityOptions visibility)
         {
-            frequencyResponseOptions.MagnitudeWindowMode = comboWindowMode.SelectedIndex == 0
-                ? PhaseWindowMode.Fixed
-                : PhaseWindowMode.FrequencyDependent;
-            frequencyResponseOptions.MagnitudeFdwCycles =
-                comboFdwCycles.SelectedItem is int cycles
-                    ? cycles
-                    : PhaseAnalysisSettings.DefaultFdwCycles;
-            frequencyResponseOptions.Window = (int)numericWindow.Value;
-            frequencyResponseOptions.LeftTukeyWindow = (int)numericLeftWindow.Value;
-            frequencyResponseOptions.RightTukeyWindow = (int)numericRightWindow.Value;
-            frequencyResponseOptions.SmoothingInverseOctaves =
-                comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
-                    ? inverseOctaves
-                    : SmoothingPresetOptions.SupportedInverseOctaves[0];
-            frequencyResponseOptions.CalibrationId =
-                MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(comboCalibration);
-            visibility.ShowPrimary = checkBoxShowPrimary.Checked;
-            visibility.ShowCoherence = checkBoxShowCoherence.Checked;
-            visibility.ShowArrayAverage = checkBoxShowArrayAverage.Checked;
-            visibility.ShowArrayMicrophones = checkBoxShowArrayMicrophones.Checked;
-            visibility.ShowArraySpread = checkBoxShowArraySpread.Checked;
-            visibility.ShowHd2 = checkBoxShowHd2.Checked;
-            visibility.ShowHd3 = checkBoxShowHd3.Checked;
-            visibility.ShowHd4 = checkBoxShowHd4.Checked;
-            visibility.ShowThdPlusNoise = checkBoxShowThdPlusNoise.Checked;
-            visibility.ShowNoiseFloor = checkBoxShowNoiseFloor.Checked;
-            frequencyResponseOptions.MagnitudeScale = radioMagnitudeSpl.Checked
-                ? MagnitudeScale.SoundPressureLevel
-                : MagnitudeScale.Relative;
-            UpdateIrPreview();
-        }
-
-        // In FDW mode the window fields still define the outer gate.
-        private void UpdateMagnitudeWindowControlState() =>
-            comboFdwCycles.Enabled = comboWindowMode.SelectedIndex == 1;
-
-        // Mirrors MeasurementPlotContext.SplOffsetDb: the result's own anchor (loaded files carry theirs).
-        private bool IsSplAvailable() => Measurement?.SplOffsetDb != null;
-
-        // A new measurement may carry an SPL anchor or lack one; recolours without changing the selection.
-        protected override void OnMeasurementChanged()
-        {
-            UpdateSplChoiceLook();
-            base.OnMeasurementChanged();
+            session.WriteTo(frequencyResponseOptions, visibility);
+            Redraw();
         }
 
         /// <summary>Called when a run starts in view-only SPL, so the fresh measurement is not born hidden.</summary>
-        public void ForceRelativeScale() => radioMagnitudeRelative.Checked = true;
-
-        // Never locked (SPL axis still shows SPL overlays). Amber only when a measurement on screen cannot render in SPL.
-        private void UpdateSplChoiceLook()
+        public void ForceRelativeScale()
         {
-            bool available = IsSplAvailable();
-            bool measurementOnScreen = Measurement != null;
-            bool viewOnlyConflict = !available && measurementOnScreen;
-            radioMagnitudeSpl.ForeColor = viewOnlyConflict
+            session.Spl = false;
+            Present();
+        }
+
+        // A new measurement may carry an SPL anchor or lack one; recolours without changing the selection.
+        private protected override void OnMeasurementChanged()
+        {
+            session.Follow(OpenMeasurement);
+            Redraw();
+        }
+
+        private protected override PlotView PreviewView => irPlotView;
+
+        private protected override ImpulsePreviewInput PreviewInput => session.Preview;
+
+        private void WireFields()
+        {
+            BindIndex(comboWindowMode, index =>
+                session.WindowMode = session.WindowMode with { Mode = WindowModeChoice.ModeAt(index) });
+            BindItem<int>(comboFdwCycles, cycles => session.WindowMode = session.WindowMode with { Cycles = cycles });
+            Bind(numericWindow, value => session.Fades.SetWindow((int)value));
+            Bind(numericLeftWindow, value => session.Fades.SetLeft((int)value));
+            Bind(numericRightWindow, value => session.Fades.SetRight((int)value));
+            BindItem<int>(comboSmoothingInverseOctaves, value => session.SmoothingInverseOctaves = value);
+            BindIndex(comboCalibration, index => session.CalibrationIndex = index);
+            Bind(checkBoxShowPrimary, on => session.Curves.ShowPrimary = on);
+            Bind(checkBoxShowCoherence, on => session.Curves.ShowCoherence = on);
+            Bind(checkBoxShowArrayAverage, on => session.Curves.ShowArrayAverage = on);
+            Bind(checkBoxShowArrayMicrophones, on => session.Curves.ShowArrayMicrophones = on);
+            Bind(checkBoxShowArraySpread, on => session.Curves.ShowArraySpread = on);
+            Bind(checkBoxShowHd2, on => session.Curves.ShowHd2 = on);
+            Bind(checkBoxShowHd3, on => session.Curves.ShowHd3 = on);
+            Bind(checkBoxShowHd4, on => session.Curves.ShowHd4 = on);
+            Bind(checkBoxShowThdPlusNoise, on => session.Curves.ShowThdPlusNoise = on);
+            Bind(checkBoxShowNoiseFloor, on => session.Curves.ShowNoiseFloor = on);
+            // A radio clears its sibling before it raises CheckedChanged, so both read the final pick.
+            Bind(radioMagnitudeSpl, _ => session.Spl = radioMagnitudeSpl.Checked);
+            Bind(radioMagnitudeRelative, _ => session.Spl = radioMagnitudeSpl.Checked);
+        }
+
+        private protected override void PresentControls()
+        {
+            ShowIndex(comboWindowMode, session.WindowMode.ModeIndex);
+            ShowItem(comboFdwCycles, session.WindowMode.Cycles);
+            // In FDW mode the window fields still define the outer gate.
+            comboFdwCycles.Enabled = session.WindowMode.CyclesEditable;
+            Show(numericWindow, session.Fades.Window);
+            Show(numericLeftWindow, session.Fades.Left, session.Fades.LeftMaximum);
+            Show(numericRightWindow, session.Fades.Right, session.Fades.RightMaximum);
+            ShowItem(comboSmoothingInverseOctaves, session.SmoothingInverseOctaves);
+            PresentCalibrations();
+            checkBoxShowPrimary.Checked = session.Curves.ShowPrimary;
+            checkBoxShowCoherence.Checked = session.Curves.ShowCoherence;
+            checkBoxShowArrayAverage.Checked = session.Curves.ShowArrayAverage;
+            checkBoxShowArrayMicrophones.Checked = session.Curves.ShowArrayMicrophones;
+            checkBoxShowArraySpread.Checked = session.Curves.ShowArraySpread;
+            checkBoxShowHd2.Checked = session.Curves.ShowHd2;
+            checkBoxShowHd3.Checked = session.Curves.ShowHd3;
+            checkBoxShowHd4.Checked = session.Curves.ShowHd4;
+            checkBoxShowThdPlusNoise.Checked = session.Curves.ShowThdPlusNoise;
+            checkBoxShowNoiseFloor.Checked = session.Curves.ShowNoiseFloor;
+            radioMagnitudeSpl.Checked = session.Spl;
+            radioMagnitudeRelative.Checked = !session.Spl;
+            radioMagnitudeSpl.ForeColor = FrequencyResponseSplChoice.ViewOnlyConflict(session.Measurement)
                 ? UiPalette.Warning
                 : splChoiceReadyForeColor;
-            toolTip.SetToolTip(radioMagnitudeSpl, DescribeSplChoice(available, viewOnlyConflict));
+            toolTip.SetToolTip(radioMagnitudeSpl, FrequencyResponseSplChoice.ToolTip(session.Measurement));
         }
 
-        private static string DescribeSplChoice(bool available, bool viewOnlyConflict)
+        private void PresentCalibrations()
         {
-            const string Base = "Absolute dB SPL from the microphone SPL calibration.";
-            if (available)
+            if (!ReferenceEquals(shownCalibrations, session.Calibrations))
             {
-                return Base;
+                comboCalibration.Items.Clear();
+                foreach (MicrophoneCalibrationOption option in session.Calibrations)
+                {
+                    comboCalibration.Items.Add(option);
+                }
+
+                shownCalibrations = session.Calibrations;
             }
 
-            if (viewOnlyConflict)
-            {
-                return Base + "\r\n" +
-                    "View-only: the measurement on screen carries no SPL anchor (it " +
-                    "is stamped at run time from the configured calibration plus the " +
-                    "run's loopback level), so its curves cannot be shown in dB SPL — " +
-                    "only overlays captured in dB SPL are. A new measurement with an " +
-                    "SPL calibration configured comes up in dB SPL; starting one " +
-                    "without returns the display to dBr/dBc.";
-            }
-
-            return Base + "\r\n" +
-                "No measurement yet. With an SPL calibration configured in " +
-                "Measurement Options, the first run comes up in dB SPL; without one, " +
-                "starting a run switches the display back to dBr/dBc. Overlays " +
-                "captured in dB SPL are shown either way.";
-        }
-
-        protected override void RenderIrPreview()
-        {
-            if (Document == null)
-            {
-                return;
-            }
-
-            ImpulseWindowPreview.Update(
-                irPlotView,
-                Measurement,
-                (int)numericWindow.Value,
-                (int)numericLeftWindow.Value,
-                (int)numericRightWindow.Value,
-                offset: 0,
-                // FR magnitude is windowed at the IR's estimated start.
-                IrPreviewSource.PrimaryAtStart);
+            ShowIndex(comboCalibration, session.CalibrationIndex);
+            comboCalibration.Enabled = session.Calibrations.Count > 1;
         }
 
         private void InitializeToolTips()
@@ -236,7 +183,7 @@ namespace Resonalyze.Options
                 radioMagnitudeRelative,
                 "Native scale: the response in dBr (relative to the loopback reference), " +
                 "distortion and noise in dBc (relative to the fundamental).");
-            // radioMagnitudeSpl's tooltip is owned by UpdateSplChoiceLook.
+            // radioMagnitudeSpl's tooltip is owned by PresentControls.
             toolTip.SetToolTip(
                 checkBoxShowPrimary,
                 "Shows the primary frequency-response curve.");

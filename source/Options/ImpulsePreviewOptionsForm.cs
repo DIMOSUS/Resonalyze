@@ -5,46 +5,63 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.Options;
 
-/// <summary>Base for option panels with a live IR preview: measurement subscription, UI-thread marshal, Disposed cleanup
-/// (an unshown dialog never raises FormClosed), Init render suppression, and the shared Tukey/gate control groups.</summary>
-public class ImpulsePreviewOptionsForm : Form
+/// <summary>Base of the panels with a live IR preview: draws what the session reads when it changes.</summary>
+public class ImpulsePreviewOptionsForm : ModeSettingsForm
 {
-    protected readonly WrappingToolTip toolTip = new();
     private bool initializingControls;
+    private ImpulsePreviewInput? shownPreview;
 
     private (ThemedNumericUpDown Window, ThemedNumericUpDown Left, ThemedNumericUpDown Right)? lengths;
     private (ThemedNumericUpDown Offset, CheckBox AutoFit, Label MinFrequency)? gate;
 
-    public ImpulsePreviewOptionsForm()
-    {
-        Disposed += (_, _) =>
-        {
-            DetachMeasurement();
-            toolTip.Dispose();
-        };
-    }
-
-    private protected AnalyzerDocument? Document { get; private set; }
-
-    private int configuredSampleRate;
-
     private protected MeasurementResult? Measurement => Document?.Result;
 
     /// <summary>The open result's rate, or the one the next run is configured for when nothing is open.</summary>
-    protected int SampleRate => Measurement?.SampleRate ?? configuredSampleRate;
+    protected int SampleRate => OpenMeasurement.SampleRate;
 
-    private protected void AttachMeasurement(AnalyzerDocument document, int configuredSampleRate)
+    private protected void AttachMeasurement(AnalyzerDocument document, int configuredSampleRate) =>
+        Follow(document, configuredSampleRate);
+
+    private protected virtual PlotView? PreviewView => null;
+
+    private protected virtual ImpulsePreviewInput? PreviewInput => null;
+
+    private protected override void OnPresented() => RenderPreview(force: false);
+
+    /// <summary>Presents the session and redraws the preview whether or not what it reads changed.</summary>
+    private protected void Redraw()
     {
-        ArgumentNullException.ThrowIfNull(document);
-        this.configuredSampleRate = configuredSampleRate;
-        if (ReferenceEquals(Document, document))
+        shownPreview = null;
+        Present();
+    }
+
+    /// <summary>Redraws what the session reads; unforced, only when that changed.</summary>
+    private protected void RenderPreview(bool force)
+    {
+        if (PreviewView is not { } view || PreviewInput is not { } input || (!force && input == shownPreview))
         {
             return;
         }
 
-        DetachMeasurement();
-        Document = document;
-        document.Changed += HandleImpulseResponseChanged;
+        shownPreview = input;
+        switch (input)
+        {
+            case SampleWindowPreview window:
+                ImpulseWindowPreview.Update(
+                    view, window.Result, window.Window, window.Left, window.Right, window.Offset, window.Source);
+                break;
+            case GatePreview gated:
+                ImpulseWindowPreview.UpdateGated(
+                    view,
+                    gated.Result,
+                    gated.OffsetMs,
+                    gated.LeftMs,
+                    gated.PlateauMs,
+                    gated.RightMs,
+                    IrPreviewSource.Primary,
+                    gated.Compare);
+                break;
+        }
     }
 
     /// <summary>Suppresses the several renders each ValueChanged would trigger before Init's final render.</summary>
@@ -228,31 +245,6 @@ public class ImpulsePreviewOptionsForm : Form
         UpdateIrPreview();
     }
 
-    private void DetachMeasurement()
-    {
-        if (Document != null)
-        {
-            Document.Changed -= HandleImpulseResponseChanged;
-            Document = null;
-        }
-    }
-
-    private void HandleImpulseResponseChanged()
-    {
-        if (IsDisposed)
-        {
-            return;
-        }
-
-        if (IsHandleCreated && InvokeRequired)
-        {
-            BeginInvoke((MethodInvoker)OnMeasurementChanged);
-            return;
-        }
-
-        OnMeasurementChanged();
-    }
-
     /// <summary>The open measurement changed: the preview redraws; a panel showing more of it adds to this.</summary>
-    protected virtual void OnMeasurementChanged() => UpdateIrPreview();
+    private protected override void OnMeasurementChanged() => UpdateIrPreview();
 }

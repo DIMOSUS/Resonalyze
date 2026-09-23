@@ -91,7 +91,6 @@ public partial class VirtualCrossoverPanel
         session.Project.SumLossWindowMode = SelectedSumLossWindow;
         session.Project.ShowHybridCurves = checkBoxHybrid.Checked;
         session.Project.ShowTargetCurve = checkBoxShowTarget.Checked;
-        session.Project.TargetLevelDb = (double)numericTargetLevel.Value;
         // Newer view flags are written beside older ones so an older build opens the nearest view.
         session.Project.ShowPhaseView = radioViewPhase.Checked || radioViewGroupDelay.Checked;
         session.Project.ShowImpulseView = radioViewImpulse.Checked || radioViewStep.Checked;
@@ -376,7 +375,7 @@ public partial class VirtualCrossoverPanel
         SelectedSumLossWindow,
         HybridRequested,
         checkBoxShowTarget.Checked ? targetCurve : null,
-        (double)numericTargetLevel.Value);
+        session.Project.TargetLevelDb);
 
     private void UpdateWarnings(
         List<ProcessedChannel> processed, HybridMagnitudes? hybrid, bool rightSide)

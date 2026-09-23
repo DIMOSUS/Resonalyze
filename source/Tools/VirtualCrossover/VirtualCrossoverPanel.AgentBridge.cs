@@ -23,7 +23,7 @@ public partial class VirtualCrossoverPanel
         SelectedGroupView,
         checkBoxHybrid.Checked,
         HybridRequested,
-        (double)numericTargetLevel.Value,
+        session.Project.TargetLevelDb,
         targetCurve);
 
     /// <summary>The session as one hash for the review's staleness check. See docs/tech/agent-bridge.md#session-fingerprint.</summary>
@@ -213,7 +213,7 @@ public partial class VirtualCrossoverPanel
     {
         bool ran = false;
         // One target level for every fit of this import: the stated one (the review made them agree), else the project's.
-        double importTargetLevelDb = AgentEngineRequests.TargetLevelDb(toApply, (double)numericTargetLevel.Value);
+        double importTargetLevelDb = AgentEngineRequests.TargetLevelDb(toApply, session.Project.TargetLevelDb);
         EqAutoTunePolicy policy = AutoTunePolicyProvider?.Invoke() ?? EqAutoTunePolicy.Default;
         // Iterate verdicts: the snapshot's settings object still names the channel after the crossover wizard re-letters blocks.
         foreach (AgentOperationVerdict verdict in toApply
@@ -695,11 +695,8 @@ public partial class VirtualCrossoverPanel
         }
 
         // Landed as the wizard's Return lands, against the capture the request was built with (the token says which). The fit's datum becomes the project's, as Return moves it.
-        decimal previousTargetLevel = numericTargetLevel.Value;
-        if (!((double)numericTargetLevel.Value).Equals(request.TargetLevelDb))
-        {
-            numericTargetLevel.Value = numericTargetLevel.ClampValue(request.TargetLevelDb);
-        }
+        double previousTargetLevel = session.Project.TargetLevelDb;
+        SetTargetLevel(request.TargetLevelDb);
 
         VirtualCrossoverChannelState state = channel.SideState(channel.ActiveRight);
         MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
@@ -712,11 +709,11 @@ public partial class VirtualCrossoverPanel
                 session.Calibration.SpatialAverageFor(),
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
-                (double)numericTargetLevel.Value,
+                session.Project.TargetLevelDb,
                 average.Capture,
                 session.ProcessorSampleRateHz))
         {
-            numericTargetLevel.Value = previousTargetLevel;
+            SetTargetLevel(previousTargetLevel);
             summary.Add($"{label}: skipped (the channel changed while the fit ran).");
             return false;
         }
@@ -772,9 +769,8 @@ public partial class VirtualCrossoverPanel
             session.Project.SetStereoScene(undo.SceneOffsetMagnitudeMs, undo.RightHandDrive);
             session.Project.StereoLevelDifferenceDb = undo.StereoLevelDifferenceDb;
             session.Project.RearFillOffsetMs = undo.RearFillOffsetMs;
-            numericTargetLevel.Value = numericTargetLevel.ClampValue(undo.TargetLevelDb);
-            // ValueChanged's project write is suppressed above, so the datum the package and session read is written by hand.
-            session.Project.TargetLevelDb = (double)numericTargetLevel.Value;
+            session.Project.TargetLevelDb = (double)VirtualCrossoverLimits.TargetLevel.Clamp(undo.TargetLevelDb);
+            ShowTargetLevel();
         }
         finally
         {

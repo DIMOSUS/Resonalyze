@@ -140,8 +140,9 @@ public partial class VirtualCrossoverPanel
             // Intent only: captures attach as sources resolve, and HybridRequested also needs coverage.
             checkBoxHybrid.Checked = session.Project.ShowHybridCurves;
             checkBoxShowTarget.Checked = session.Project.ShowTargetCurve;
-            numericTargetLevel.Value =
-                numericTargetLevel.ClampValue(session.Project.TargetLevelDb);
+            session.Project.TargetLevelDb =
+                (double)VirtualCrossoverLimits.TargetLevel.Clamp(session.Project.TargetLevelDb);
+            ShowTargetLevel();
             // Each newer view flag is written beside the older one it falls back to.
             radioViewStep.Checked = session.Project.ShowStepView;
             radioViewImpulse.Checked =

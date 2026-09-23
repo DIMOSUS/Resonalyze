@@ -124,9 +124,9 @@ public partial class VirtualCrossoverPanel
                 snapshot.PinnedOffsetMs,
                 renderAnchor,
                 CapturePhaseContext(channel),
-                targetLevelDb ?? (double)numericTargetLevel.Value,
-                (double)numericTargetLevel.Minimum,
-                (double)numericTargetLevel.Maximum,
+                targetLevelDb ?? session.Project.TargetLevelDb,
+                (double)VirtualCrossoverLimits.TargetLevel.Minimum,
+                (double)VirtualCrossoverLimits.TargetLevel.Maximum,
                 snapshot.SmoothingInverseOctaves,
                 // The wizard pins what the panel rendered with, including per-channel Own calibration.
                 session.Calibration.For(channel.SideState(channel.ActiveRight)),
@@ -213,7 +213,7 @@ public partial class VirtualCrossoverPanel
                 session.Calibration.SpatialAverageFor(),
                 snapshot.Template,
                 snapshot.PinnedOffsetMs,
-                (double)numericTargetLevel.Value,
+                session.Project.TargetLevelDb,
                 // Same decision the handoff recorded, so an in-flight redraw cannot turn a valid return into a refusal.
                 HybridHandoffCapture(token.Channel, token.RightSide),
                 session.ProcessorSampleRateHz))
@@ -222,10 +222,7 @@ public partial class VirtualCrossoverPanel
         }
 
         // The guard above proved the level is still the wizard's starting point, so writing it overwrites nothing.
-        if (!((double)numericTargetLevel.Value).Equals(targetLevelDb))
-        {
-            numericTargetLevel.Value = numericTargetLevel.ClampValue(targetLevelDb);
-        }
+        SetTargetLevel(targetLevelDb);
 
         UpdatePeqReadouts(token.Channel);
         SaveAndRedraw();

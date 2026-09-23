@@ -557,7 +557,7 @@ public partial class FirConstructorPanel : UserControl
 
     private void ExportFile()
     {
-        if (!FirConstructorAvailability.CanExport(session) || session.Kernel is not { } exported)
+        if (FirConstructorExport.Request(session) is not { } request)
         {
             return;
         }
@@ -567,9 +567,7 @@ public partial class FirConstructorPanel : UserControl
             AddExtension = true,
             DefaultExt = "wav",
             Filter = FirFilterFiles.ExportFileDialogFilter,
-            FileName = session.Design is { } named
-                ? $"FIR {FirCrossoverDescription.Short(named)}"
-                : Path.GetFileNameWithoutExtension(session.KernelName) is { Length: > 0 } stem ? stem : "FIR",
+            FileName = request.SuggestedFileName,
             OverwritePrompt = true,
             Title = "Export FIR filter"
         };
@@ -580,12 +578,7 @@ public partial class FirConstructorPanel : UserControl
 
         try
         {
-            FirFilterFiles.Save(
-                dialog.FileName,
-                exported,
-                session.RateHz,
-                session.KernelName,
-                session.Design is { } described ? FirCrossoverDescription.Long(described) : null);
+            FirConstructorExport.Save(request, dialog.FileName);
         }
         catch (Exception exception)
         {

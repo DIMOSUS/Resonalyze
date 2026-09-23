@@ -1182,7 +1182,10 @@ with the inverse filter of the sweep the **current settings** describe, and the
 transfer function is estimated against that same sweep standing in for the
 loopback reference. If the file has more than one channel, the one whose content
 actually matches the sweep is measured — not the loudest, because a dead input's
-hum can easily out-measure a quiet microphone.
+hum can easily out-measure a quiet microphone. When another channel matches almost as
+well — a DAW track that recorded the sweep itself matches best of all and measures
+flat — Resonalyze asks which channel is the microphone, listing each one's match,
+RMS and peak with the best match picked.
 
 The recording may be far longer than the sweep. The excitation is found by
 matching the sweep against the recording rather than by looking for something
@@ -4199,7 +4202,9 @@ level, while the Live Spectrum RTA needs only `SPL = mic level + anchor offset`.
 
 The anchor is valid only at the gain it was captured at, so a changed digital
 input is flagged (the **Calibrate** button turns gold) and the dialog warns that
-the analog preamp gain must not move after calibrating.
+the analog preamp gain must not move after calibrating. **Save** keeps only the last
+listen: starting another clears the result, so one that is stopped or fails leaves
+nothing to save until a listen succeeds, and **Cancel** keeps the anchor you had.
 
 Selecting dB SPL never depends on having an anchor, because the scale is also how
 you *view* curves captured in it: without one the plot keeps the dB SPL axis and

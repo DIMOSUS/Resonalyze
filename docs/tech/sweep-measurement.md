@@ -909,10 +909,10 @@ frames could be the failing ones.
 | Device captions, which controls apply, the loopback line, the ASIO rate status | `RecordDeviceStatus` |
 | Apply: the route checked against the hardware now, the engine configuration, what the settings keep | `RecordSettingsApply` |
 | 0° file, further calibrations, the microphone's pick, the SPL anchor and whether it is stale, the SPL capture request | `RecordCalibrations` |
-| The inputs an array can use and which of them a run records | `RecordArrayInputs` |
+| The inputs an array can use and which of them a run records | `RecordArrayInputs` (the rule: `ArrayChannelRules`) |
 | The achieved-band line, its shortfall warning, the sweep file | `SweepBandPreview` |
 | The protective high-pass as configured | `RecordHighPass` |
-| Binding: controls, dialogs, message boxes | `MeasurementOptions` (+ `.Devices`, `.Calibration`, `.Sweep`) |
+| Binding: controls, dialogs, message boxes | `MeasurementOptions` (+ `.Devices`, `.Calibration`, `.Sweep`); the dialogs' own types in [Calibration dialogs code map](#calibration-dialogs-code-map) |
 
 - **Fields behave as their controls.** A `RecordChoice` raises `Changed` only when its selection moves; clearing
   it is silent, as `ThemedComboBox.Items.Clear` is. A `RecordNumber` rounds and clamps as its field does
@@ -928,6 +928,30 @@ frames could be the failing ones.
   the host shows. A calibration change raises `CalibrationChanged` and the host persists it at once.
 - **Tests.** Rules are tested on a session over `FakeRecordDevices`; `MeasurementOptionsBoundaryTests` keeps
   statics and nested types off the form, and `MeasurementOptionsWiringTests` drives its controls.
+
+## Calibration dialogs code map
+
+Record Settings opens five dialogs; each keeps its state and rules in a type of its own and binds only.
+
+| Dialog | State and rules | Readers |
+| --- | --- | --- |
+| Further calibrations (`MicrophoneCalibrationsDialog`) | `MicrophoneCalibrationsSession`: the working copy, add a file or an estimate, a new path, rename, remove (estimates on a removed base fall back to 0°), which entries may be a base | `MicrophoneCalibrationRows`: kind, details and status of each row; files read through `CalibrationFileProbe`, once per path while the dialog is open |
+| Angle estimate (`AngleCalibrationDialog`) | `AngleCalibrationSession`: the fields as they show (`NumericFieldRange`), the base, grid and reference picks, written into the definition on OK | `AngleCalibrationPreview`: the correction and its spread on a 240-point log grid, and the summary |
+| Array microphones (`ArrayMicrophonesDialog`) | `ArrayMicrophonesSession`: the working copy, the selected row, the editor beside the list and the free inputs | `ArrayMicrophoneRows`: the rows and the status line |
+| SPL calibration (`SplCalibrationDialog`) | `SplCalibrationSession`: the reference level (read when a listen starts), the listen in flight, its cancellation and a close waiting for it, the result of the last listen | `SplCalibrationReport`: progress, failure and success texts, and the anchor built from the capture request |
+| Recorded sweep channel (`RecordedSweepChannelDialog`) | `RecordedSweepChannelChoice`: the rows and the pick, the best match until the user picks another | |
+
+- **Which array channels a run records** has one owner, `ArrayChannelRules`, asked by the settings file, by
+  `RecordArrayInputs` and by the array dialog.
+- **Presenting.** A dialog writes one edit into its session and presents it, ignoring its controls' events meanwhile.
+  The lists are rebuilt only when their content changes (the array session counts versions), so a click does not
+  lose the focused row; the calibration list keeps a renamed label as the list control edited it.
+- **The track grid.** The grid makes its first row current when it is built and shown; the dialog ignores those
+  selections and puts the current row on the pick when it is shown, so OK measures the proposed track. Each row
+  carries its channel, because a click on a column header sorts the grid.
+- **Tests.** Rules are tested on the sessions and readers; `CalibrationDialogsBoundaryTests` keeps statics and
+  nested types off the dialogs, and the `*DialogWiringTests` drive each shown dialog through its controls beside a
+  session changed the same way.
 
 ## Live analysis modes
 

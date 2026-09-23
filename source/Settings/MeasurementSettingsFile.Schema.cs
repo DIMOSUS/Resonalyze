@@ -165,28 +165,10 @@ internal sealed partial class MeasurementSettingsFile
             bool deviceMatches)
         {
             // Filtered, not refused: the app must start on its own saved settings. A gone device means numbers name unchosen inputs.
-            if (!deviceMatches)
-            {
-                return [];
-            }
-
-            var channels = new List<int>(microphones.Count);
-            foreach (ArrayMicrophoneDefinition microphone in microphones)
-            {
-                if (microphone.ChannelOffset < 0 ||
-                    microphone.ChannelOffset == microphoneChannel ||
-                    microphone.ChannelOffset == loopbackChannel ||
-                    channels.Contains(microphone.ChannelOffset) ||
-                    // Stored per backend, not per interface, so offsets beyond a smaller card's inputs must be dropped.
-                    !reachable(microphone.ChannelOffset))
-                {
-                    continue;
-                }
-
-                channels.Add(microphone.ChannelOffset);
-            }
-
-            return channels;
+            // Stored per backend, not per interface, so offsets beyond a smaller card's inputs are dropped as unreachable.
+            return deviceMatches
+                ? ArrayChannelRules.Recorded(microphones, microphoneChannel, loopbackChannel, reachable)
+                : [];
         }
 
         /// <remarks>Permissive when the device cannot be asked (unplugged); the session refuses on open instead.</remarks>

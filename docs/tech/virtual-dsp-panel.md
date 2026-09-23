@@ -516,7 +516,9 @@ frame would double the curve work and add a junction read (50–100 ms under Dir
 is kept only under the view options it was taken with (view, group view, hybrid, sum, loss window, target, gate
 template, smoothing, calibration, spatial-average method; the gate's pins stay out, as they swap with the sides), and a
 project load forgets both. The hybrid sum of the side not shown is not re-read: it is the dashed curve the shown side
-already draws. A current read that finds nothing to draw replaces the old extent, so an emptied side stops widening the
+already draws. A side whose inputs have not moved since its last read (its responses by identity, which the coordinator
+reuses for an unchanged chain, its curve flags, zones, captures and gate pin) is not read again, so edits to the shown
+side cost nothing on the other. A current read that finds nothing to draw replaces the old extent, so an emptied side stops widening the
 scale; a read overtaken by a newer frame changes nothing. The side's junctions (which decide whether it quotes a loss,
 and the Direct loss's bands) read the settings its responses were built from: `ComputeSideSumAsync` snapshots them into
 `ProcessedChannel.SideSettings`, since `Channel.Settings` is the shown side's, and the AI package's opposite side

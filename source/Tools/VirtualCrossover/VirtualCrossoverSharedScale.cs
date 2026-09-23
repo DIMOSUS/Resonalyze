@@ -73,6 +73,9 @@ internal sealed class VirtualCrossoverSharedScale(
 {
     private readonly Dictionary<bool, (object Signature, ScaleExtent? Extent)> known = [];
 
+    // What the last re-read measured; an unchanged side (edits went to the shown one) is not read again.
+    private (bool RightSide, object Signature, List<object> Inputs)? lastRead;
+
     /// <summary>A side's last extent, as long as it was taken under the view options now in force.</summary>
     public ScaleExtent? Known(bool rightSide, VirtualCrossoverViewState view) =>
         known.TryGetValue(rightSide, out var entry) && entry.Signature.Equals(Signature(view))
@@ -82,7 +85,11 @@ internal sealed class VirtualCrossoverSharedScale(
     public void Remember(bool rightSide, VirtualCrossoverViewState view, ScaleExtent? extent) =>
         known[rightSide] = (Signature(view), extent);
 
-    public void Forget() => known.Clear();
+    public void Forget()
+    {
+        known.Clear();
+        lastRead = null;
+    }
 
     /// <summary>The side not shown, read as it is drawn when shown. Not current once a newer frame started; a current read
     /// with no extent is a side with nothing to draw, which must replace what it drew before.</summary>
@@ -101,6 +108,15 @@ internal sealed class VirtualCrossoverSharedScale(
         if (frame == null || frame.Shown.Count == 0)
         {
             return (true, null);
+        }
+
+        object signature = Signature(view);
+        List<object> inputs = Inputs(frame, rightSide);
+        if (lastRead is { } last && last.RightSide == rightSide && last.Signature.Equals(signature) &&
+            last.Inputs.SequenceEqual(inputs) && known.TryGetValue(rightSide, out var entry) &&
+            entry.Signature.Equals(signature))
+        {
+            return (true, entry.Extent);
         }
 
         int smoothing = session.MagnitudeGate.SmoothingInverseOctaves;
@@ -164,7 +180,31 @@ internal sealed class VirtualCrossoverSharedScale(
             curves.Add(new AcousticCurve(string.Empty, drawnLoss, default, 0, default, OnLossAxis: true));
         }
 
-        return coordinator.IsCurrent(revision) ? (true, ScaleExtent.Of(curves)) : (false, null);
+        if (!coordinator.IsCurrent(revision))
+        {
+            return (false, null);
+        }
+
+        lastRead = (rightSide, signature, inputs);
+        return (true, ScaleExtent.Of(curves));
+    }
+
+    // The responses by identity (the coordinator hands an unchanged chain the same array), the rest by value.
+    private List<object> Inputs(VirtualCrossoverFrame frame, bool rightSide)
+    {
+        var inputs = new List<object> { session.GateFor(rightSide).PinnedOffsetMs ?? double.NaN };
+        foreach (ProcessedChannel item in frame.All)
+        {
+            VirtualCrossoverChannelState state = item.Channel.SideState(rightSide);
+            inputs.Add(item.ImpulseResponse);
+            inputs.Add(item.Channel.Pair.Zone);
+            inputs.Add(item.Channel.Pair.ShowRawCurve);
+            inputs.Add(item.Channel.Pair.ShowProcessedCurve);
+            inputs.Add((object?)state.TransferImpulseResponse ?? string.Empty);
+            inputs.Add((object?)state.SpatialAverageFor(session.SpatialAverageMode) ?? string.Empty);
+        }
+
+        return inputs;
     }
 
     private static AcousticCurve Level(IReadOnlyList<SignalPoint> points) =>

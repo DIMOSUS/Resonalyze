@@ -35,6 +35,8 @@ public sealed class ScaleExtentTests
     {
         Assert.Equal((-55.0, -5.0), new ScaleExtent(-52.3, -9.8, null).AxisRange(5, -90, 60));
         Assert.Equal((-90.0, -5.0), new ScaleExtent(-140, -9.8, null).AxisRange(5, -90, 60));
+        Assert.Equal((55.0, 60.0), new ScaleExtent(70, 80, null).AxisRange(5, -90, 60));
+        Assert.Equal((-90.0, -85.0), new ScaleExtent(-140, -120, null).AxisRange(5, -90, 60));
         Assert.Null(new ScaleExtent(double.NaN, double.NaN, -20).AxisRange(5, -90, 60));
     }
 

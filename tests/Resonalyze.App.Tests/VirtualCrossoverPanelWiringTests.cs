@@ -189,6 +189,26 @@ public sealed class VirtualCrossoverPanelWiringTests
         });
     }
 
+    // Raised while hidden, the right side is re-read once edits pause: the left view's axis follows it up without a visit.
+    [Fact]
+    public void AHiddenSideRaisedWhileHidden_WidensTheScaleOnceEditsPause()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+            live.Set<CheckBox>("checkBoxShowSum", box => box.Checked = false);
+            double before = live.AxisRanges().Value.High;
+
+            foreach (VirtualCrossoverChannel channel in live.Session.Channels)
+            {
+                channel.SideSettings(true).GainDb = 18;
+            }
+
+            live.Redraw();
+            live.WaitFor(() => live.AxisRanges().Value.High >= before + 10, "take in the raised hidden side");
+        });
+    }
+
     // The louder left side, once emptied, must stop holding the right side's axis up.
     [Fact]
     public void AnEmptiedHiddenSide_StopsWideningTheScale()

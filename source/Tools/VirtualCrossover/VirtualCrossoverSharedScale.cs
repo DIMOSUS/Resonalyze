@@ -53,9 +53,9 @@ internal sealed record ScaleExtent(double LowDb, double HighDb, double? DeepestL
             return null;
         }
 
-        double low = Math.Max(floorDb, Math.Floor(LowDb / stepDb) * stepDb);
-        double high = Math.Min(ceilingDb, Math.Ceiling(HighDb / stepDb) * stepDb);
-        return high > low ? (low, high) : (low, low + stepDb);
+        double low = Math.Clamp(Math.Floor(LowDb / stepDb) * stepDb, floorDb, ceilingDb - stepDb);
+        double high = Math.Clamp(Math.Ceiling(HighDb / stepDb) * stepDb, low + stepDb, ceilingDb);
+        return (low, high);
     }
 
     private static double Lower(double a, double b) => double.IsNaN(a) ? b : double.IsNaN(b) ? a : Math.Min(a, b);

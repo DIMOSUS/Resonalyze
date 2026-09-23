@@ -176,35 +176,31 @@ namespace Resonalyze.Options
         private void FillLists(int sampleRateHz)
         {
             sequenceLengthComboBox.Items.Clear();
-            foreach (int sequenceLength in LiveSequenceLengths.Supported)
+            foreach (int sequenceLength in LiveSpectrumSettingsChoices.SequenceLengths)
             {
-                sequenceLengthComboBox.Items.Add(
-                    new SequenceLengthOption(sequenceLength, sampleRateHz));
+                sequenceLengthComboBox.Items.Add(new SequenceLengthOption(sequenceLength, sampleRateHz));
             }
 
             overlapComboBox.Items.Clear();
-            foreach (int overlapPercent in new[] { 0, 50, 75 })
+            foreach (int overlapPercent in LiveSpectrumSettingsChoices.OverlapPercents)
             {
                 overlapComboBox.Items.Add(new OverlapOption(overlapPercent));
             }
 
             windowComboBox.Items.Clear();
-            windowComboBox.Items.Add(new WindowOption(WindowType.Hann, "Hann"));
-            windowComboBox.Items.Add(new WindowOption(WindowType.FlatTop, "Flat Top"));
-            windowComboBox.Items.Add(
-                new WindowOption(WindowType.BlackmanHarris, "Blackman-Harris"));
-            windowComboBox.Items.Add(
-                new WindowOption(WindowType.Rectangular, "Rectangular"));
+            foreach ((WindowType window, string label) in LiveSpectrumSettingsChoices.Windows)
+            {
+                windowComboBox.Items.Add(new WindowOption(window, label));
+            }
 
             averagingComboBox.Items.Clear();
-            averagingComboBox.Items.Add(new AveragingOption(AveragingSpeed.Fast, "Fast"));
-            averagingComboBox.Items.Add(new AveragingOption(AveragingSpeed.Medium, "Medium"));
-            averagingComboBox.Items.Add(new AveragingOption(AveragingSpeed.Slow, "Slow"));
-            averagingComboBox.Items.Add(
-                new AveragingOption(AveragingSpeed.Infinite, "Infinite"));
+            foreach ((AveragingSpeed speed, string label) in LiveSpectrumSettingsChoices.Averagings)
+            {
+                averagingComboBox.Items.Add(new AveragingOption(speed, label));
+            }
 
             coherenceLimitComboBox.Items.Clear();
-            foreach (int limit in new[] { 0, 10, 20, 25, 30, 40, 50 })
+            foreach (int limit in LiveSpectrumSettingsChoices.CoherenceLimits)
             {
                 coherenceLimitComboBox.Items.Add(new CoherenceLimitOption(limit));
             }
@@ -259,22 +255,14 @@ namespace Resonalyze.Options
                 signalTypeComboBox.Items.Clear();
                 foreach (NoiseColor signal in session.Signals)
                 {
-                    signalTypeComboBox.Items.Add(new NoiseColorOption(signal, SignalName(signal)));
+                    signalTypeComboBox.Items.Add(
+                        new NoiseColorOption(signal, LiveSpectrumSettingsChoices.SignalLabel(signal)));
                 }
             }
 
             Select(signalTypeComboBox, item => item is NoiseColorOption option && option.NoiseColor == session.Signal);
             signalTypeComboBox.Enabled = !session.IsMmm;
         }
-
-        private static string SignalName(NoiseColor signal) => signal switch
-        {
-            NoiseColor.Silent => "Silent",
-            NoiseColor.PinkPeriodic => "Pink noise (periodic)",
-            NoiseColor.Pink => "Pink noise",
-            NoiseColor.Brown => "Brown / red noise",
-            _ => "White noise"
-        };
 
         private static void Select(ThemedComboBox combo, Func<object, bool> matches)
         {
@@ -426,7 +414,6 @@ namespace Resonalyze.Options
                 "shown either way.";
         }
 
-        // Shown with its duration: resolution is 2/T (rect) or 4/T (Hann), so 32768 is 341 ms at 96 kHz but 683 ms at 48 kHz.
         private sealed class SequenceLengthOption
         {
             private readonly int sampleRateHz;
@@ -440,9 +427,7 @@ namespace Resonalyze.Options
             public int Length { get; }
 
             public override string ToString() =>
-                sampleRateHz > 0
-                    ? $"{Length} — {1000.0 * Length / sampleRateHz:0} ms"
-                    : $"{Length}";
+                LiveSpectrumSettingsChoices.SequenceLengthLabel(Length, sampleRateHz);
         }
 
         private sealed class CoherenceLimitOption
@@ -454,7 +439,7 @@ namespace Resonalyze.Options
 
             public int Percent { get; }
 
-            public override string ToString() => Percent == 0 ? "Off" : $"{Percent}%";
+            public override string ToString() => LiveSpectrumSettingsChoices.PercentLabel(Percent);
         }
 
         private sealed class WindowOption
@@ -496,10 +481,7 @@ namespace Resonalyze.Options
 
             public int Percent { get; }
 
-            public override string ToString()
-            {
-                return Percent == 0 ? "Off" : $"{Percent}%";
-            }
+            public override string ToString() => LiveSpectrumSettingsChoices.PercentLabel(Percent);
         }
 
 

@@ -9,16 +9,6 @@ namespace Resonalyze.Options;
 /// user's pick, and runs no rule; the next commit or mode change does.</remarks>
 internal sealed class LiveSpectrumSettingsSession
 {
-    private static readonly IReadOnlyList<int> SequenceLengths = LiveSequenceLengths.Supported;
-    private static readonly IReadOnlyList<int> OverlapPercents = [0, 50, 75];
-    private static readonly IReadOnlyList<int> CoherenceLimits = [0, 10, 20, 25, 30, 40, 50];
-
-    private static readonly IReadOnlyList<WindowType> Windows =
-        [WindowType.Hann, WindowType.FlatTop, WindowType.BlackmanHarris, WindowType.Rectangular];
-
-    private static readonly IReadOnlyList<AveragingSpeed> Averagings =
-        [AveragingSpeed.Fast, AveragingSpeed.Medium, AveragingSpeed.Slow, AveragingSpeed.Infinite];
-
     private NoiseColor userSignal = NoiseColor.PinkPeriodic;
     private WindowType userWindow = WindowType.Hann;
     private int userOverlap = 50;
@@ -37,14 +27,14 @@ internal sealed class LiveSpectrumSettingsSession
 
     public int SampleRateHz { get; private set; }
 
-    public int SequenceLength { get; private set; } = SequenceLengths[0];
+    public int SequenceLength { get; private set; } = LiveSpectrumSettingsChoices.SequenceLengths[0];
 
     public WindowType Window { get; private set; } = WindowType.Hann;
 
     /// <summary>False while periodic pink forces a rectangular window.</summary>
     public bool WindowEditable { get; private set; } = true;
 
-    public int OverlapPercent { get; private set; } = OverlapPercents[0];
+    public int OverlapPercent { get; private set; } = LiveSpectrumSettingsChoices.OverlapPercents[0];
 
     /// <summary>False while periodic pink forces the overlap off.</summary>
     public bool OverlapEditable { get; private set; } = true;
@@ -53,7 +43,7 @@ internal sealed class LiveSpectrumSettingsSession
 
     public AveragingSpeed Averaging { get; private set; } = AveragingSpeed.Medium;
 
-    public int CoherenceLimitPercent { get; private set; } = CoherenceLimits[0];
+    public int CoherenceLimitPercent { get; private set; } = LiveSpectrumSettingsChoices.CoherenceLimits[0];
 
     public bool MainCurve { get; private set; }
 
@@ -104,16 +94,19 @@ internal sealed class LiveSpectrumSettingsSession
 
         userSignal = options.NoiseColor;
         SampleRateHz = sampleRateHz;
-        SequenceLength = SequenceLengths[FloorIndex(SequenceLengths, options.SequenceLength)];
+        SequenceLength = LiveSpectrumSettingsChoices.Floor(
+            LiveSpectrumSettingsChoices.SequenceLengths, options.SequenceLength);
         userOverlap = options.OverlapPercent;
-        OverlapPercent = OverlapPercents[FloorIndex(OverlapPercents, options.OverlapPercent)];
+        OverlapPercent = LiveSpectrumSettingsChoices.Floor(
+            LiveSpectrumSettingsChoices.OverlapPercents, options.OverlapPercent);
         userSmoothing = SmoothingPresetOptions.Normalize(options.SmoothingInverseOctaves);
         SmoothingInverseOctaves = userSmoothing;
         userWindow = options.WindowType;
-        Window = Offered(Windows, options.WindowType);
+        Window = LiveSpectrumSettingsChoices.Offered(LiveSpectrumSettingsChoices.Windows, options.WindowType);
         userAveraging = options.AveragingSpeed;
-        Averaging = Offered(Averagings, options.AveragingSpeed);
-        CoherenceLimitPercent = CoherenceLimits[FloorIndex(CoherenceLimits, options.CoherenceThresholdPercent)];
+        Averaging = LiveSpectrumSettingsChoices.Offered(LiveSpectrumSettingsChoices.Averagings, options.AveragingSpeed);
+        CoherenceLimitPercent = LiveSpectrumSettingsChoices.Floor(
+            LiveSpectrumSettingsChoices.CoherenceLimits, options.CoherenceThresholdPercent);
         MainCurve = options.ShowMainCurve;
         InputMagnitude = options.ShowInputMagnitude;
         userInputMagnitude = options.ShowInputMagnitude;
@@ -252,24 +245,15 @@ internal sealed class LiveSpectrumSettingsSession
     // RTA and MMM show no transfer curves and force the RTA on; MMM pins its recipe and offers periodic pink only.
     private void ApplyMode()
     {
-        if (IsMmm)
-        {
-            Signals = [NoiseColor.PinkPeriodic];
-            Signal = NoiseColor.PinkPeriodic;
-        }
-        else
-        {
-            Signals = IsReferenceFree
-                ? [NoiseColor.Silent, NoiseColor.PinkPeriodic, NoiseColor.Pink, NoiseColor.Brown, NoiseColor.White]
-                : [NoiseColor.PinkPeriodic, NoiseColor.Pink, NoiseColor.Brown, NoiseColor.White];
-            // Only Silent can be missing (leaving RTA): fall back like the controller's normalization.
-            Signal = Signals.Contains(userSignal) ? userSignal : NoiseColor.PinkPeriodic;
-        }
-
+        Signals = LiveSpectrumSettingsChoices.Signals(IsReferenceFree, IsMmm);
+        // Only Silent can be missing (leaving RTA): fall back like the controller's normalization.
+        Signal = Signals.Contains(userSignal) ? userSignal : NoiseColor.PinkPeriodic;
         ApplyPeriodicPink();
         Spl = IsMmm || userSpl;
         Tilt = IsMmm || userTilt;
-        Averaging = IsMmm ? AveragingSpeed.Infinite : Offered(Averagings, userAveraging);
+        Averaging = IsMmm
+            ? AveragingSpeed.Infinite
+            : LiveSpectrumSettingsChoices.Offered(LiveSpectrumSettingsChoices.Averagings, userAveraging);
         SmoothingInverseOctaves = IsMmm ? 0 : userSmoothing;
         TiltApplicable = Mode == LiveAnalysisMode.Rta && Signal != NoiseColor.Silent;
         InputMagnitude = IsReferenceFree || userInputMagnitude;
@@ -281,26 +265,10 @@ internal sealed class LiveSpectrumSettingsSession
         bool periodicPink = Signals.Count > 0 && Signal == NoiseColor.PinkPeriodic;
         WindowEditable = !periodicPink;
         OverlapEditable = !periodicPink;
-        Window = periodicPink ? WindowType.Rectangular : Offered(Windows, userWindow);
-        OverlapPercent = OverlapPercents[FloorIndex(OverlapPercents, periodicPink ? 0 : userOverlap)];
-    }
-
-    // The value when the list has it, its first entry otherwise.
-    private static T Offered<T>(IReadOnlyList<T> values, T value) =>
-        values.Contains(value) ? value : values[0];
-
-    // The largest entry not above the target, or the first. Lists are ascending.
-    private static int FloorIndex(IReadOnlyList<int> ascending, int target)
-    {
-        int index = 0;
-        for (int i = 0; i < ascending.Count; i++)
-        {
-            if (target >= ascending[i])
-            {
-                index = i;
-            }
-        }
-
-        return index;
+        Window = periodicPink
+            ? WindowType.Rectangular
+            : LiveSpectrumSettingsChoices.Offered(LiveSpectrumSettingsChoices.Windows, userWindow);
+        OverlapPercent = LiveSpectrumSettingsChoices.Floor(
+            LiveSpectrumSettingsChoices.OverlapPercents, periodicPink ? 0 : userOverlap);
     }
 }

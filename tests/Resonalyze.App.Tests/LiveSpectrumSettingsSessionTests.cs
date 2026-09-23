@@ -78,8 +78,8 @@ public sealed class LiveSpectrumSettingsSessionTests
         Assert.Equal((WindowType.Rectangular, 0), (session.Window, session.OverlapPercent));
         Assert.Equal((AveragingSpeed.Infinite, 0), (session.Averaging, session.SmoothingInverseOctaves));
         Assert.True(session.Spl && session.Tilt && session.InputMagnitude);
-        Assert.False(session.SignalEditable || session.WindowEditable || session.OverlapEditable);
-        Assert.False(session.AveragingEditable || session.SmoothingEditable || session.CoherenceLimitEditable);
+        Assert.False(session.RecipeEditable || session.WindowEditable || session.OverlapEditable);
+        Assert.False(session.CoherenceLimitEditable);
         Assert.False(session.SplInteractive || session.TiltInteractive || session.InputMagnitudeInteractive);
         LiveSpectrumOptions pinned = Written(session);
         Assert.Equal(
@@ -106,12 +106,12 @@ public sealed class LiveSpectrumSettingsSessionTests
             options.OverlapPercent = 50;
         });
 
-        session.MoveSignal(NoiseColor.PinkPeriodic);
+        session.Signal = NoiseColor.PinkPeriodic;
         session.CommitSignal();
         Assert.Equal((WindowType.Rectangular, 0, false, false),
             (session.Window, session.OverlapPercent, session.WindowEditable, session.OverlapEditable));
 
-        session.MoveSignal(NoiseColor.Brown);
+        session.Signal = NoiseColor.Brown;
         session.CommitSignal();
         Assert.Equal((WindowType.FlatTop, 50, true, true),
             (session.Window, session.OverlapPercent, session.WindowEditable, session.OverlapEditable));
@@ -128,8 +128,8 @@ public sealed class LiveSpectrumSettingsSessionTests
             options.WindowType = WindowType.Hann;
         });
 
-        session.MoveSignal(NoiseColor.Silent);
-        session.MoveWindow(WindowType.FlatTop);
+        session.Signal = NoiseColor.Silent;
+        session.Window = WindowType.FlatTop;
 
         Assert.True(session.TiltApplicable);
         Assert.True(session.WindowEditable);
@@ -171,10 +171,10 @@ public sealed class LiveSpectrumSettingsSessionTests
         Assert.False(session.InputMagnitude);
         Assert.True(session.InputMagnitudeInteractive);
 
-        session.SetInputMagnitude(true);
+        session.InputMagnitude = true;
         session.ClickInputMagnitude();
         session.SelectMode(LiveAnalysisMode.Rta);
-        session.SetInputMagnitude(false);
+        session.InputMagnitude = false;
         session.ClickInputMagnitude();
 
         Assert.True(Written(session).ShowInputMagnitude);
@@ -186,18 +186,18 @@ public sealed class LiveSpectrumSettingsSessionTests
     public void AClick_IsTheUsersPickOnlyWhereTheBoxTakesOne()
     {
         LiveSpectrumSettingsSession session = Loaded(options => options.AnalysisMode = LiveAnalysisMode.Rta);
-        session.SetSpl(true);
+        session.Spl = true;
         session.ClickSpl();
-        session.SetTilt(true);
+        session.Tilt = true;
         session.ClickTilt();
         LiveSpectrumOptions rta = Written(session);
         Assert.Equal((MagnitudeScale.SoundPressureLevel, true), (rta.MagnitudeScale, rta.CompensateNoiseTilt));
 
         session.SelectMode(LiveAnalysisMode.TransferFunction);
         Assert.False(session.SplInteractive || session.TiltInteractive);
-        session.SetSpl(false);
+        session.Spl = false;
         session.ClickSpl();
-        session.SetTilt(false);
+        session.Tilt = false;
         session.ClickTilt();
         LiveSpectrumOptions transfer = Written(session);
         Assert.Equal((MagnitudeScale.SoundPressureLevel, true), (transfer.MagnitudeScale, transfer.CompensateNoiseTilt));
@@ -228,7 +228,7 @@ public sealed class LiveSpectrumSettingsSessionTests
             options.AnalysisMode = LiveAnalysisMode.Rta;
             options.NoiseColor = NoiseColor.Pink;
         });
-        session.MoveSignal(NoiseColor.White);
+        session.Signal = NoiseColor.White;
 
         session.SelectMode(LiveAnalysisMode.Rta);
 
@@ -252,16 +252,16 @@ public sealed class LiveSpectrumSettingsSessionTests
     public void ACheckedBox_AndAListNoRuleTouches_AreWrittenAsShown()
     {
         LiveSpectrumSettingsSession session = Loaded();
-        session.SetMainCurve(false);
-        session.SetPeakHold(true);
-        session.SetCoherence(false);
-        session.MoveSequenceLength(512);
-        session.MoveCoherenceLimit(40);
-        session.MoveAveraging(AveragingSpeed.Slow);
+        session.MainCurve = false;
+        session.PeakHold = true;
+        session.Coherence = false;
+        session.SequenceLength = 512;
+        session.CoherenceLimitPercent = 40;
+        session.Averaging = AveragingSpeed.Slow;
         session.CommitAveraging();
-        session.MoveSmoothing(12);
+        session.SmoothingInverseOctaves = 12;
         session.CommitSmoothing();
-        session.MoveOverlap(75);
+        session.OverlapPercent = 75;
         session.CommitOverlap();
         session.SetCalibration(null);
 

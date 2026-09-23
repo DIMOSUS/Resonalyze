@@ -100,12 +100,27 @@ public sealed class FirConstructorSessionTests
         Land(session, first);
         using FirConstructorRebuild failing = session.Edit(LowPass(taps: 511))!;
 
-        session.Fail("out of memory");
+        Assert.True(session.Fail(failing, "out of memory"));
 
         Assert.Equal("The kernel could not be built: out of memory", session.Problem);
         Assert.False(session.RebuildPending);
         Assert.Null(session.Rendering);
         Assert.Null(session.Design);
+    }
+
+    [Fact]
+    public void AnEarlierRebuildThatFails_LeavesTheLatestAlone()
+    {
+        var session = new FirConstructorSession();
+        using FirConstructorRebuild first = session.Edit(LowPass())!;
+        using FirConstructorRebuild second = session.Edit(LowPass(taps: 511))!;
+
+        Assert.False(session.Fail(first, "cancelled too late"));
+
+        Assert.True(session.RebuildPending);
+        Assert.Empty(session.Problem);
+        Assert.True(session.Land(second, Render(second)));
+        Assert.Equal(LowPass(taps: 511), session.Design);
     }
 
     [Fact]

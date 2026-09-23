@@ -273,7 +273,7 @@ public sealed class LiveSpectrumOptWiringTests
                 "signalTypeComboBox",
                 Shadow.Signals.Select(LiveSpectrumSettingsChoices.SignalLabel),
                 LiveSpectrumSettingsChoices.SignalLabel(Shadow.Signal),
-                Shadow.SignalEditable);
+                Shadow.RecipeEditable);
             AssertList(
                 "sequenceLengthComboBox",
                 LiveSpectrumSettingsChoices.SequenceLengths.Select(length =>
@@ -294,7 +294,7 @@ public sealed class LiveSpectrumOptWiringTests
                 "averagingComboBox",
                 LiveSpectrumSettingsChoices.Averagings.Select(speed => speed.Label),
                 LiveSpectrumSettingsChoices.Averagings.Single(speed => speed.Value == Shadow.Averaging).Label,
-                Shadow.AveragingEditable);
+                Shadow.RecipeEditable);
             AssertList(
                 "coherenceLimitComboBox",
                 LiveSpectrumSettingsChoices.CoherenceLimits.Select(LiveSpectrumSettingsChoices.PercentLabel),
@@ -302,7 +302,7 @@ public sealed class LiveSpectrumOptWiringTests
                 Shadow.CoherenceLimitEditable);
             ThemedComboBox smoothing = Find<ThemedComboBox>("comboSmoothingInverseOctaves");
             Assert.Equal(Shadow.SmoothingInverseOctaves, smoothing.SelectedItem);
-            Assert.Equal(Shadow.SmoothingEditable, smoothing.Enabled);
+            Assert.Equal(Shadow.RecipeEditable, smoothing.Enabled);
             ThemedComboBox calibration = Find<ThemedComboBox>("comboCalibration");
             Assert.Equal([Shadow.Calibration], calibration.Items.Cast<object>());
             Assert.Equal(0, calibration.SelectedIndex);
@@ -357,18 +357,18 @@ public sealed class LiveSpectrumOptWiringTests
             switch (name)
             {
                 case "checkMainCurve" when !LiveSpectrumSettingsLook.CurvesMuted(Shadow):
-                    Shadow.SetMainCurve(!Shadow.MainCurve);
+                    Shadow.MainCurve = !Shadow.MainCurve;
                     break;
                 case "checkCoherence" when !LiveSpectrumSettingsLook.CurvesMuted(Shadow):
-                    Shadow.SetCoherence(!Shadow.Coherence);
+                    Shadow.Coherence = !Shadow.Coherence;
                     break;
                 case "checkPeakHold":
-                    Shadow.SetPeakHold(!Shadow.PeakHold);
+                    Shadow.PeakHold = !Shadow.PeakHold;
                     break;
                 case "checkInputMagnitude":
                     if (Shadow.InputMagnitudeInteractive)
                     {
-                        Shadow.SetInputMagnitude(!Shadow.InputMagnitude);
+                        Shadow.InputMagnitude = !Shadow.InputMagnitude;
                     }
 
                     Shadow.ClickInputMagnitude();
@@ -376,7 +376,7 @@ public sealed class LiveSpectrumOptWiringTests
                 case "checkSpl":
                     if (Shadow.SplInteractive)
                     {
-                        Shadow.SetSpl(!Shadow.Spl);
+                        Shadow.Spl = !Shadow.Spl;
                     }
 
                     Shadow.ClickSpl();
@@ -384,7 +384,7 @@ public sealed class LiveSpectrumOptWiringTests
                 case "checkTilt":
                     if (Shadow.TiltInteractive)
                     {
-                        Shadow.SetTilt(!Shadow.Tilt);
+                        Shadow.Tilt = !Shadow.Tilt;
                     }
 
                     Shadow.ClickTilt();
@@ -398,28 +398,28 @@ public sealed class LiveSpectrumOptWiringTests
             switch (name)
             {
                 case "signalTypeComboBox":
-                    Shadow.MoveSignal(Shadow.Signals.Single(signal => LiveSpectrumSettingsChoices.SignalLabel(signal) == label));
+                    Shadow.Signal = Shadow.Signals.Single(signal => LiveSpectrumSettingsChoices.SignalLabel(signal) == label);
                     break;
                 case "sequenceLengthComboBox":
-                    Shadow.MoveSequenceLength(LiveSpectrumSettingsChoices.SequenceLengths.Single(length =>
-                        LiveSpectrumSettingsChoices.SequenceLengthLabel(length, Shadow.SampleRateHz) == label));
+                    Shadow.SequenceLength = LiveSpectrumSettingsChoices.SequenceLengths.Single(length =>
+                        LiveSpectrumSettingsChoices.SequenceLengthLabel(length, Shadow.SampleRateHz) == label);
                     break;
                 case "windowComboBox":
-                    Shadow.MoveWindow(LiveSpectrumSettingsChoices.Windows.Single(window => window.Label == label).Value);
+                    Shadow.Window = LiveSpectrumSettingsChoices.Windows.Single(window => window.Label == label).Value;
                     break;
                 case "overlapComboBox":
-                    Shadow.MoveOverlap(LiveSpectrumSettingsChoices.OverlapPercents.Single(percent =>
-                        LiveSpectrumSettingsChoices.PercentLabel(percent) == label));
+                    Shadow.OverlapPercent = LiveSpectrumSettingsChoices.OverlapPercents.Single(percent =>
+                        LiveSpectrumSettingsChoices.PercentLabel(percent) == label);
                     break;
                 case "averagingComboBox":
-                    Shadow.MoveAveraging(LiveSpectrumSettingsChoices.Averagings.Single(speed => speed.Label == label).Value);
+                    Shadow.Averaging = LiveSpectrumSettingsChoices.Averagings.Single(speed => speed.Label == label).Value;
                     break;
                 case "coherenceLimitComboBox":
-                    Shadow.MoveCoherenceLimit(LiveSpectrumSettingsChoices.CoherenceLimits.Single(percent =>
-                        LiveSpectrumSettingsChoices.PercentLabel(percent) == label));
+                    Shadow.CoherenceLimitPercent = LiveSpectrumSettingsChoices.CoherenceLimits.Single(percent =>
+                        LiveSpectrumSettingsChoices.PercentLabel(percent) == label);
                     break;
                 case "comboSmoothingInverseOctaves":
-                    Shadow.MoveSmoothing((int)item);
+                    Shadow.SmoothingInverseOctaves = (int)item;
                     break;
             }
         }

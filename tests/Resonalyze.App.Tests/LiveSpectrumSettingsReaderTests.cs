@@ -43,7 +43,7 @@ public sealed class LiveSpectrumSettingsReaderTests
         Assert.Equal(LiveSettingTone.Normal, LiveSpectrumSettingsLook.Spl(rta));
         Assert.Equal(LiveSettingTone.Normal, LiveSpectrumSettingsLook.Tilt(rta));
 
-        rta.MoveSignal(NoiseColor.Silent);
+        rta.Signal = NoiseColor.Silent;
         rta.CommitSignal();
         Assert.Equal(LiveSettingTone.Muted, LiveSpectrumSettingsLook.Tilt(rta));
     }

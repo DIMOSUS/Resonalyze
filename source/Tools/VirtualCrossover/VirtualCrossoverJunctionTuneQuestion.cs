@@ -276,7 +276,6 @@ internal sealed class VirtualCrossoverJunctionTuneQuestion
         GoalSlopes = family.GoalSlopes;
         GoalSlope = family.GoalSlope(GoalSlope);
         Retire(Again);
-        Retire();
     }
 
     public void SetGoalSlope(int slope)

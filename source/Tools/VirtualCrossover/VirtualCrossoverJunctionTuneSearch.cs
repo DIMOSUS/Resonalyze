@@ -3,6 +3,33 @@ using Resonalyze.Integration.AgentBridge;
 
 namespace Resonalyze;
 
+internal sealed record JunctionTuneRequest(
+    int JunctionIndex,
+    double MinHz,
+    double MaxHz,
+    IReadOnlyList<CrossoverFilterFamily> Families,
+    IReadOnlyList<int> Slopes,
+    bool IndependentSlopes,
+    JunctionAcousticTarget? AcousticGoal,
+    bool SplitCorners,
+    double SumSlackDb = CrossoverJunctionTuner.DefaultSumSlackDb);
+
+/// <param name="CornerHz">Where the junction is crossed now: a remembered window without it gives way to the default.</param>
+internal sealed record JunctionTuneDefaults(
+    double MinHz,
+    double MaxHz,
+    IReadOnlyList<CrossoverFilterFamily> Families,
+    JunctionAcousticTarget? Goal,
+    double? CornerHz = null);
+
+/// <param name="Recommended">Whether Apply writes what the search advises; it is offered either way.</param>
+internal sealed record JunctionTuneOutcome(
+    IReadOnlyList<JunctionTuneLine> Report,
+    bool CanApply,
+    string Status,
+    bool Refused,
+    bool Recommended = false);
+
 /// <summary>Tune junction's question and answer: what the dialog opens a junction with, the tuner's inputs for a
 /// request, and the verdict on what it found. See docs/tech/crossover-auto-setup.md#junction-tuner.</summary>
 internal static class VirtualCrossoverJunctionTuneSearch

@@ -2,43 +2,11 @@
 
 namespace Resonalyze;
 
-internal sealed record JunctionTuneRequest(
-    int JunctionIndex,
-    double MinHz,
-    double MaxHz,
-    IReadOnlyList<CrossoverFilterFamily> Families,
-    IReadOnlyList<int> Slopes,
-    bool IndependentSlopes,
-    JunctionAcousticTarget? AcousticGoal,
-    bool SplitCorners,
-    double SumSlackDb = CrossoverJunctionTuner.DefaultSumSlackDb);
-
-/// <param name="CornerHz">Where the junction is crossed now: a remembered window without it gives way to the default.</param>
-internal sealed record JunctionTuneDefaults(
-    double MinHz,
-    double MaxHz,
-    IReadOnlyList<CrossoverFilterFamily> Families,
-    JunctionAcousticTarget? Goal,
-    double? CornerHz = null);
-
-/// <param name="Recommended">Whether Apply writes what the search advises; it is offered either way.</param>
-internal sealed record JunctionTuneOutcome(
-    IReadOnlyList<JunctionTuneLine> Report,
-    bool CanApply,
-    string Status,
-    bool Refused,
-    bool Recommended = false);
-
-/// <summary>States one junction's tune and shows the answer; the search runs in the panel. See
-/// docs/tech/crossover-auto-setup.md#junction-tuner.</summary>
+/// <summary>States one junction's tune and shows the answer; the question is a <see cref="VirtualCrossoverJunctionTuneQuestion"/>
+/// and the search runs in the panel. See docs/tech/crossover-auto-setup.md#junction-tuner.</summary>
 internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
 {
     private const string Nothing = "—";
-
-    /// <summary>What the goal may cost against the best sum; measured in docs/tech/crossover-auto-setup.md#measured-on-the-battery.</summary>
-    public const double DefaultSumBudgetDb = 1.0;
-
-    private const string Again = "The question changed — search again.";
 
     private readonly WrappingToolTip toolTip = new()
     {
@@ -47,63 +15,57 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         ReshowDelay = 100
     };
 
+    private readonly VirtualCrossoverJunctionTuneQuestion question = new();
     private Func<JunctionTuneRequest, Task<JunctionTuneOutcome>>? runner;
-    private Func<int, JunctionTuneDefaults>? defaultsFor;
-    private bool running;
-
-    /// <summary>Corner windows as left, per junction label.</summary>
-    private readonly Dictionary<string, (decimal Min, decimal Max)> windows = new(StringComparer.Ordinal);
-
-    private string? shownJunction;
-
-    /// <summary>Only the first junction shown, with nothing remembered, opens on its own families and goal.</summary>
-    private bool useJunctionDefaults = true;
-
-    /// <summary>Bumped by every change to the question: the boxes stay live while the search runs.</summary>
-    private int question;
+    private IReadOnlyList<JunctionTuneLine>? shownReport;
+    private bool presenting;
 
     private CheckBox[] FamilyBoxes => [checkButterworth, checkLinkwitzRiley, checkBessel];
-
-    /// <summary>As the crossover wizard offers them: from 12 dB/oct.</summary>
-    private static readonly int[] SelectableSlopes = CrossoverFilter
-        .SupportedSlopes(CrossoverFilterFamily.Butterworth)
-        .Where(slope => slope >= CrossoverJunctionTuner.PracticalSlopeFloorDbPerOctave)
-        .ToArray();
 
     public VirtualCrossoverJunctionTuneDialog()
     {
         InitializeComponent();
+        numericMinHz.ApplyFieldRange(VirtualCrossoverJunctionTuneQuestion.CornerRange);
+        numericMaxHz.ApplyFieldRange(VirtualCrossoverJunctionTuneQuestion.CornerRange);
+        numericSumBudget.ApplyFieldRange(VirtualCrossoverJunctionTuneQuestion.BudgetRange);
         comboBoxGoalFamily.Items.Add(Nothing);
         foreach (CrossoverFamilyChoice family in CrossoverFamilyChoice.Offered)
         {
             comboBoxGoalFamily.Items.Add(family);
         }
 
-        comboBoxGoalFamily.SelectedItem = Nothing;
-        comboBoxGoalSlope.Enabled = false;
         foreach (ThemedComboBox window in new[] { comboBoxMinSlope, comboBoxMaxSlope })
         {
-            window.Items.AddRange(SelectableSlopes.Cast<object>().ToArray());
-            window.SelectedIndexChanged += (_, _) => InvalidateResult(Again);
+            window.Items.AddRange(VirtualCrossoverJunctionTuneQuestion.SelectableSlopes.Cast<object>().ToArray());
+            window.SelectedIndexChanged += (_, _) => Edit(() => question.SetSlopeWindow(
+                comboBoxMinSlope.SelectedItem as int? ?? question.MinSlope,
+                comboBoxMaxSlope.SelectedItem as int? ?? question.MaxSlope));
         }
 
-        comboBoxMinSlope.SelectedItem = SelectableSlopes[0];
-        comboBoxMaxSlope.SelectedItem = SelectableSlopes[^1];
-        comboBoxGoalFamily.SelectedIndexChanged += (_, _) => FillGoalSlopes();
-        comboBoxJunction.SelectedIndexChanged += (_, _) => PresentJunction();
-        radioSummation.CheckedChanged += (_, _) => PresentMode();
-        radioAcoustic.CheckedChanged += (_, _) => PresentMode();
-        // Every input retires the answer, so Apply never stands for a question nobody asked.
-        numericMinHz.ValueChanged += (_, _) => InvalidateResult(Again);
-        numericMaxHz.ValueChanged += (_, _) => InvalidateResult(Again);
-        comboBoxGoalSlope.SelectedIndexChanged += (_, _) => InvalidateResult(Again);
-        checkBoxIndependentSlopes.CheckedChanged += (_, _) => InvalidateResult(Again);
-        foreach (CheckBox family in FamilyBoxes)
+        comboBoxGoalFamily.SelectedIndexChanged += (_, _) =>
+            Edit(() => question.SetGoalFamily(comboBoxGoalFamily.SelectedItem as CrossoverFamilyChoice));
+        comboBoxJunction.SelectedIndexChanged += (_, _) => Edit(() => question.ShowJunction(comboBoxJunction.SelectedIndex));
+        radioSummation.CheckedChanged += (_, _) => Edit(() => question.SetMode(radioAcoustic.Checked));
+        radioAcoustic.CheckedChanged += (_, _) => Edit(() => question.SetMode(radioAcoustic.Checked));
+        numericMinHz.ValueChanged += (_, _) => Edit(() => question.SetWindow(numericMinHz.Value, numericMaxHz.Value));
+        numericMaxHz.ValueChanged += (_, _) => Edit(() => question.SetWindow(numericMinHz.Value, numericMaxHz.Value));
+        comboBoxGoalSlope.SelectedIndexChanged += (_, _) => Edit(() =>
         {
-            family.CheckedChanged += (_, _) => InvalidateResult(Again);
-        }
-        checkBoxSplitCorners.CheckedChanged += (_, _) => InvalidateResult(Again);
-        numericSumBudget.ValueChanged += (_, _) => InvalidateResult(Again);
+            if (comboBoxGoalSlope.SelectedItem is int slope)
+            {
+                question.SetGoalSlope(slope);
+            }
+        });
+        checkBoxIndependentSlopes.CheckedChanged += (_, _) =>
+            Edit(() => question.SetIndependentSlopes(checkBoxIndependentSlopes.Checked));
+        checkButterworth.CheckedChanged += (_, _) =>
+            Edit(() => question.SetFamily(CrossoverFilterFamily.Butterworth, checkButterworth.Checked));
+        checkLinkwitzRiley.CheckedChanged += (_, _) =>
+            Edit(() => question.SetFamily(CrossoverFilterFamily.LinkwitzRiley, checkLinkwitzRiley.Checked));
+        checkBessel.CheckedChanged += (_, _) =>
+            Edit(() => question.SetFamily(CrossoverFilterFamily.Bessel, checkBessel.Checked));
+        checkBoxSplitCorners.CheckedChanged += (_, _) => Edit(() => question.SetSplitCorners(checkBoxSplitCorners.Checked));
+        numericSumBudget.ValueChanged += (_, _) => Edit(() => question.SetSumBudget(numericSumBudget.Value));
         buttonRun.Click += async (_, _) => await RunAsync().ConfigureAwait(true);
         buttonApply.Click += (_, _) =>
         {
@@ -117,37 +79,11 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             Close();
         };
         Tips();
-        PresentMode();
-    }
-
-    private void PresentMode()
-    {
-        bool acoustic = radioAcoustic.Checked;
-        comboBoxGoalFamily.Enabled = acoustic;
-        comboBoxGoalSlope.Enabled = acoustic && comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice;
-        // The slope window is the summation mode's, the budget the acoustic mode's.
-        comboBoxMinSlope.Enabled = !acoustic;
-        comboBoxMaxSlope.Enabled = !acoustic;
-        UiStyle.SetTextEnabledLook(labelSlopes, !acoustic);
-        UiStyle.SetTextEnabledLook(labelSlopeTo, !acoustic);
-        numericSumBudget.Enabled = acoustic;
-        UiStyle.SetTextEnabledLook(labelSumBudget, acoustic);
-        UiStyle.SetTextEnabledLook(labelSumBudgetUnit, acoustic);
-        if (acoustic && comboBoxGoalFamily.SelectedItem is not CrossoverFamilyChoice)
-        {
-            comboBoxGoalFamily.SelectedItem = CrossoverFamilyChoice.Offered
-                .First(choice => choice.Value == CrossoverFilterFamily.LinkwitzRiley);
-        }
-
-        labelGoalHint.Text = acoustic
-            ? "Driver and filter together, which is steeper than the filter alone. Chosen among filters within " +
-              "the budget of the best sum."
-            : "Every allowed filter is read on the coherent sum at this junction; the one that sums best wins.";
-        InvalidateResult(Again);
+        Present();
     }
 
     /// <summary>Null until a search has landed.</summary>
-    public JunctionTuneRequest? Result { get; private set; }
+    public JunctionTuneRequest? Result => question.Result;
 
     public bool UndoRequested { get; private set; }
 
@@ -160,7 +96,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
         string? undoable = null)
     {
         ArgumentNullException.ThrowIfNull(junctions);
-        defaultsFor = defaults ?? throw new ArgumentNullException(nameof(defaults));
+        ArgumentNullException.ThrowIfNull(defaults);
         runner = search ?? throw new ArgumentNullException(nameof(search));
         buttonUndo.Enabled = undoable != null;
         toolTip.SetToolTip(
@@ -169,263 +105,120 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
             "Undo puts every channel back exactly as it was before it:" + "\r\n" +
             "crossovers, goals and anything changed since. One step; gone" + "\r\n" +
             "once a session is loaded.");
-        comboBoxJunction.Items.Clear();
-        foreach (string junction in junctions)
+        presenting = true;
+        try
         {
-            comboBoxJunction.Items.Add(junction);
-        }
-
-        if (remembered != null)
-        {
-            Restore(remembered);
-        }
-
-        if (junctions.Count > 0)
-        {
-            int last = remembered?.Junction is { } label ? IndexOf(junctions, label) : -1;
-            comboBoxJunction.SelectedIndex = Math.Max(0, last);
-        }
-        else
-        {
-            buttonRun.Enabled = false;
-            labelStatus.Text = "This view has no junction with two measured blocks.";
-            labelStatus.ForeColor = UiPalette.Warning;
-        }
-    }
-
-    /// <summary>Switching junction changes only its corner window; the rest of the question stays as set.</summary>
-    private void PresentJunction()
-    {
-        if (defaultsFor is not { } defaults || comboBoxJunction.SelectedIndex < 0)
-        {
-            return;
-        }
-
-        KeepShownWindow();
-        string label = comboBoxJunction.Items[comboBoxJunction.SelectedIndex]?.ToString() ?? string.Empty;
-        JunctionTuneDefaults opening = defaults(comboBoxJunction.SelectedIndex);
-        (decimal min, decimal max) = windows.TryGetValue(label, out (decimal Min, decimal Max) kept) &&
-            (opening.CornerHz is not { } corner || ((double)kept.Min <= corner && corner <= (double)kept.Max))
-                ? kept
-                : (numericMinHz.ClampValue(opening.MinHz), numericMaxHz.ClampValue(opening.MaxHz));
-        numericMinHz.Value = numericMinHz.ClampValue((double)min);
-        numericMaxHz.Value = numericMaxHz.ClampValue((double)max);
-        shownJunction = label;
-        if (useJunctionDefaults)
-        {
-            useJunctionDefaults = false;
-            checkButterworth.Checked = opening.Families.Contains(CrossoverFilterFamily.Butterworth);
-            checkLinkwitzRiley.Checked = opening.Families.Contains(CrossoverFilterFamily.LinkwitzRiley);
-            checkBessel.Checked = opening.Families.Contains(CrossoverFilterFamily.Bessel);
-            if (opening.Goal is { } asked)
+            comboBoxJunction.Items.Clear();
+            foreach (string junction in junctions)
             {
-                ShowGoal(asked);
-                radioAcoustic.Checked = true;
+                comboBoxJunction.Items.Add(junction);
             }
         }
+        finally
+        {
+            presenting = false;
+        }
 
-        textBoxReport.Clear();
-        InvalidateResult("Nothing searched yet.");
+        question.Open(junctions, defaults, remembered);
+        Present();
     }
 
-    private void KeepShownWindow()
+    public VirtualCrossoverJunctionTuneSettings Remembered() => question.Remembered();
+
+    private void Edit(Action change)
     {
-        if (shownJunction != null)
+        if (presenting)
         {
-            windows[shownJunction] = (numericMinHz.Value, numericMaxHz.Value);
+            return;
         }
+
+        change();
+        Present();
     }
 
-    private void ShowGoal(JunctionAcousticTarget goal)
+    // Writes the question back into the controls without raising their handlers.
+    private void Present()
     {
-        comboBoxGoalFamily.SelectedItem = CrossoverFamilyChoice.Offered
-            .FirstOrDefault(choice => choice.Value == goal.Family) ?? (object)Nothing;
-        if (comboBoxGoalSlope.Items.Contains(goal.SlopeDbPerOctave))
+        presenting = true;
+        try
         {
-            comboBoxGoalSlope.SelectedItem = goal.SlopeDbPerOctave;
-        }
-    }
-
-    /// <summary>Anything the menus no longer offer keeps its default.</summary>
-    private void Restore(VirtualCrossoverJunctionTuneSettings remembered)
-    {
-        useJunctionDefaults = false;
-        checkButterworth.Checked = remembered.Families.Contains(CrossoverFilterFamily.Butterworth);
-        checkLinkwitzRiley.Checked = remembered.Families.Contains(CrossoverFilterFamily.LinkwitzRiley);
-        checkBessel.Checked = remembered.Families.Contains(CrossoverFilterFamily.Bessel);
-        checkBoxIndependentSlopes.Checked = remembered.IndependentSlopes;
-        checkBoxSplitCorners.Checked = remembered.SplitCorners;
-        if (remembered.MinSlopeDbPerOctave is { } low && SelectableSlopes.Contains(low))
-        {
-            comboBoxMinSlope.SelectedItem = low;
-        }
-        if (remembered.MaxSlopeDbPerOctave is { } high && SelectableSlopes.Contains(high))
-        {
-            comboBoxMaxSlope.SelectedItem = high;
-        }
-        if (remembered.Goal is { } goal)
-        {
-            ShowGoal(goal);
-        }
-
-        numericSumBudget.Value = numericSumBudget.ClampValue(remembered.SumBudgetDb ?? DefaultSumBudgetDb);
-        (remembered.Acoustic ? radioAcoustic : radioSummation).Checked = true;
-        foreach ((string label, double[] window) in remembered.Windows)
-        {
-            // Clamped as a double: a hand-edited file may hold a figure no decimal can.
-            if (window is [var min, var max])
+            bool acoustic = question.Acoustic;
+            bool searching = question.Searching;
+            comboBoxJunction.SelectedIndex = question.JunctionIndex;
+            numericMinHz.Value = question.MinHz;
+            numericMaxHz.Value = question.MaxHz;
+            checkButterworth.Checked = question.Butterworth;
+            checkLinkwitzRiley.Checked = question.LinkwitzRiley;
+            checkBessel.Checked = question.Bessel;
+            checkBoxIndependentSlopes.Checked = question.IndependentSlopes;
+            checkBoxSplitCorners.Checked = question.SplitCorners;
+            radioAcoustic.Checked = acoustic;
+            radioSummation.Checked = !acoustic;
+            comboBoxMinSlope.SelectedItem = question.MinSlope;
+            comboBoxMaxSlope.SelectedItem = question.MaxSlope;
+            numericSumBudget.Value = question.SumBudget;
+            comboBoxGoalFamily.SelectedItem = (object?)question.GoalFamily ?? Nothing;
+            if (!comboBoxGoalSlope.Items.Cast<int>().SequenceEqual(question.GoalSlopes))
             {
-                windows[label] = (numericMinHz.ClampValue(min), numericMaxHz.ClampValue(max));
+                comboBoxGoalSlope.Items.Clear();
+                comboBoxGoalSlope.Items.AddRange(question.GoalSlopes.Cast<object>().ToArray());
             }
-        }
-    }
 
-    public VirtualCrossoverJunctionTuneSettings Remembered()
-    {
-        KeepShownWindow();
-        var families = new List<CrossoverFilterFamily>();
-        if (checkButterworth.Checked)
-        {
-            families.Add(CrossoverFilterFamily.Butterworth);
-        }
-        if (checkLinkwitzRiley.Checked)
-        {
-            families.Add(CrossoverFilterFamily.LinkwitzRiley);
-        }
-        if (checkBessel.Checked)
-        {
-            families.Add(CrossoverFilterFamily.Bessel);
-        }
-
-        return new VirtualCrossoverJunctionTuneSettings
-        {
-            Junction = shownJunction,
-            Families = families,
-            IndependentSlopes = checkBoxIndependentSlopes.Checked,
-            SplitCorners = checkBoxSplitCorners.Checked,
-            Acoustic = radioAcoustic.Checked,
-            MinSlopeDbPerOctave = comboBoxMinSlope.SelectedItem as int?,
-            MaxSlopeDbPerOctave = comboBoxMaxSlope.SelectedItem as int?,
-            SumBudgetDb = (double)numericSumBudget.Value,
-            Goal = comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice family &&
-                comboBoxGoalSlope.SelectedItem is int slope
-                    ? new JunctionAcousticTarget(family.Value, slope)
-                    : null,
-            Windows = windows.ToDictionary(
-                pair => pair.Key,
-                pair => new[] { (double)pair.Value.Min, (double)pair.Value.Max },
-                StringComparer.Ordinal)
-        };
-    }
-
-    private static int IndexOf(IReadOnlyList<string> junctions, string label)
-    {
-        for (int i = 0; i < junctions.Count; i++)
-        {
-            if (string.Equals(junctions[i], label, StringComparison.Ordinal))
+            comboBoxGoalSlope.SelectedItem = question.GoalSlope;
+            comboBoxGoalFamily.Enabled = acoustic;
+            comboBoxGoalSlope.Enabled = acoustic && question.GoalFamily != null;
+            // The slope window is the summation mode's, the budget the acoustic mode's.
+            comboBoxMinSlope.Enabled = !acoustic;
+            comboBoxMaxSlope.Enabled = !acoustic;
+            UiStyle.SetTextEnabledLook(labelSlopes, !acoustic);
+            UiStyle.SetTextEnabledLook(labelSlopeTo, !acoustic);
+            numericSumBudget.Enabled = acoustic;
+            UiStyle.SetTextEnabledLook(labelSumBudget, acoustic);
+            UiStyle.SetTextEnabledLook(labelSumBudgetUnit, acoustic);
+            labelGoalHint.Text = acoustic
+                ? "Driver and filter together, which is steeper than the filter alone. Chosen among filters within " +
+                  "the budget of the best sum."
+                : "Every allowed filter is read on the coherent sum at this junction; the one that sums best wins.";
+            labelStatus.Text = question.Status;
+            labelStatus.ForeColor = question.StatusTone switch
             {
-                return i;
+                JunctionTuneStatusTone.Warning => UiPalette.Warning,
+                JunctionTuneStatusTone.Error => UiPalette.Error,
+                JunctionTuneStatusTone.Success => UiPalette.Success,
+                _ => UiPalette.TextMuted
+            };
+            if (!ReferenceEquals(shownReport, question.Report))
+            {
+                shownReport = question.Report;
+                ShowReport(question.Report);
             }
+
+            buttonRun.Enabled = question.Junctions.Count > 0 && !searching;
+            buttonApply.Enabled = question.Result != null && !searching;
+            buttonCancel.Enabled = !searching;
+            UseWaitCursor = searching;
         }
-
-        return -1;
-    }
-
-    private void FillGoalSlopes()
-    {
-        if (comboBoxGoalFamily.SelectedItem is not CrossoverFamilyChoice choice)
+        finally
         {
-            comboBoxGoalSlope.Items.Clear();
-            comboBoxGoalSlope.Enabled = false;
-            InvalidateResult();
-            return;
-        }
-
-        int? kept = comboBoxGoalSlope.SelectedItem as int?;
-        comboBoxGoalSlope.Enabled = true;
-        comboBoxGoalSlope.Items.Clear();
-        foreach (int slope in CrossoverFilter.SupportedSlopes(choice.Value))
-        {
-            comboBoxGoalSlope.Items.Add(slope);
-        }
-
-        comboBoxGoalSlope.SelectedItem = kept is { } previous && comboBoxGoalSlope.Items.Contains(previous)
-            ? previous
-            : comboBoxGoalSlope.Items[Math.Min(1, comboBoxGoalSlope.Items.Count - 1)];
-        InvalidateResult();
-    }
-
-    private void InvalidateResult(string? status = null)
-    {
-        question++;
-        Result = null;
-        buttonApply.Enabled = false;
-        if (status != null)
-        {
-            labelStatus.Text = status;
-            labelStatus.ForeColor = UiPalette.TextMuted;
+            presenting = false;
         }
     }
 
-    internal async Task RunAsync()
+    private async Task RunAsync()
     {
-        if (running || runner is not { } search || comboBoxJunction.SelectedIndex < 0)
+        if (runner is not { } search)
         {
             return;
         }
 
-        var families = new List<CrossoverFilterFamily>();
-        if (checkButterworth.Checked)
+        if (question.Ask() is not { } request)
         {
-            families.Add(CrossoverFilterFamily.Butterworth);
-        }
-        if (checkLinkwitzRiley.Checked)
-        {
-            families.Add(CrossoverFilterFamily.LinkwitzRiley);
-        }
-        if (checkBessel.Checked)
-        {
-            families.Add(CrossoverFilterFamily.Bessel);
-        }
-
-        if (families.Count == 0)
-        {
-            labelStatus.Text = "Tick at least one filter family to search.";
-            labelStatus.ForeColor = UiPalette.Warning;
+            Present();
             return;
         }
 
-        int lowSlope = comboBoxMinSlope.SelectedItem as int? ?? SelectableSlopes[0];
-        int highSlope = comboBoxMaxSlope.SelectedItem as int? ?? SelectableSlopes[^1];
-        // Empty means every slope the families have.
-        List<int> slopes = radioAcoustic.Checked
-            ? []
-            : SelectableSlopes
-                .Where(slope => slope >= Math.Min(lowSlope, highSlope) && slope <= Math.Max(lowSlope, highSlope))
-                .ToList();
-        var request = new JunctionTuneRequest(
-            comboBoxJunction.SelectedIndex,
-            (double)numericMinHz.Value,
-            (double)numericMaxHz.Value,
-            families,
-            slopes,
-            checkBoxIndependentSlopes.Checked,
-            radioAcoustic.Checked &&
-                comboBoxGoalFamily.SelectedItem is CrossoverFamilyChoice goalFamily &&
-                comboBoxGoalSlope.SelectedItem is int goalSlope
-                    ? new JunctionAcousticTarget(goalFamily.Value, goalSlope)
-                    : null,
-            checkBoxSplitCorners.Checked,
-            (double)numericSumBudget.Value);
-
-        int asked = question;
-        running = true;
-        buttonRun.Enabled = false;
-        buttonApply.Enabled = false;
-        buttonCancel.Enabled = false;
-        UseWaitCursor = true;
-        labelStatus.Text = "Searching…";
-        labelStatus.ForeColor = UiPalette.TextMuted;
+        int asked = question.BeginSearch();
+        Present();
         try
         {
             JunctionTuneOutcome outcome = await search(request).ConfigureAwait(true);
@@ -434,28 +227,14 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
                 return;
             }
 
-            if (asked != question)
-            {
-                // The question moved while the search ran; its handler has said so on the status line.
-                return;
-            }
-
-            ShowReport(outcome.Report);
-            labelStatus.Text = outcome.Status;
-            labelStatus.ForeColor = outcome.Refused
-                ? UiPalette.Error
-                : outcome.Recommended ? UiPalette.Success : UiPalette.Warning;
-            Result = outcome.CanApply ? request : null;
-            buttonApply.Enabled = outcome.CanApply;
+            question.Land(asked, request, outcome);
         }
         finally
         {
-            running = false;
+            question.EndSearch();
             if (!IsDisposed)
             {
-                buttonRun.Enabled = true;
-                buttonCancel.Enabled = true;
-                UseWaitCursor = false;
+                Present();
             }
         }
     }
@@ -498,7 +277,7 @@ internal sealed partial class VirtualCrossoverJunctionTuneDialog : Form
     {
         ArgumentNullException.ThrowIfNull(e);
         // Closing mid-search would leave the panel's await holding a disposed dialog.
-        if (running)
+        if (question.Searching)
         {
             e.Cancel = true;
             return;

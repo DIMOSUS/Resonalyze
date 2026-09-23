@@ -1,14 +1,11 @@
-using System.Reflection;
 using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
 public sealed class AgentProgressDialogTests
 {
-    private const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
-
     private static Label Label(Form dialog, string name) =>
-        (Label)dialog.GetType().GetField(name, Hidden)!.GetValue(dialog)!;
+        (Label)dialog.Controls.Find(name, searchAllChildren: true).Single();
 
     [Fact]
     public void Report_KeepsTheStepsBefore_AndShowsTheOneRunning()

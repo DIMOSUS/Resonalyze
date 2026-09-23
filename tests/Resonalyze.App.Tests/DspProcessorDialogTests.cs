@@ -1,288 +1,113 @@
-using System.Reflection;
+using System.Globalization;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
+/// <summary>The dialog binds its fields to a <see cref="DspProcessorSession"/>: each pick reaches the choice and the choice
+/// comes back into the fields.</summary>
 public sealed class DspProcessorDialogTests
 {
-    private const int MeasurementRate = 48_000;
+    private static DspProcessorSession Choice(int measurementRateHz = 48_000, DspProcessorProfile? profile = null) =>
+        new(
+            profile ?? DspProcessorProfile.Custom(48_000, PeqQConvention.Rbj),
+            followsMeasurements: true,
+            measurementRateHz,
+            phaseControl: null,
+            firFilters: null);
 
-    [Fact]
-    public void LookingAtAPreset_DoesNotForgetAStatedRate()
+    private static T Find<T>(Control root, string name) where T : Control =>
+        (T)root.Controls.Find(name, searchAllChildren: true).Single();
+
+    private static void Pick(Form dialog, string name, Func<object, bool> match)
     {
-        StaTest.Run(() =>
-        {
-            using Form dialog = Open(followsMeasurements: true);
-            SelectRate(dialog, 96_000);
-            SelectModel(dialog, DspProcessorCatalog.Preset("helix-next-v-eight-dsp-ultimate")!);
-            SelectCustom(dialog);
-
-            Assert.False(Follows(dialog));
-            Assert.Equal(96_000, Profile(dialog).SampleRateHz);
-        });
+        ThemedComboBox combo = Find<ThemedComboBox>(dialog, name);
+        combo.SelectedItem = combo.Items.Cast<object>().First(match);
     }
 
     [Fact]
-    public void LookingAtAPreset_DoesNotForgetTheFollowChoice()
+    public void EachPickReachesTheChoice_AndTheChoiceComesBackIntoTheFields() => StaTest.Run(() =>
     {
-        StaTest.Run(() =>
-        {
-            using Form dialog = Open(followsMeasurements: false);
-            SelectFollow(dialog);
-            SelectModel(dialog, DspProcessorCatalog.Preset("amp-panacea-v1-v2")!);
-            SelectCustom(dialog);
+        DspProcessorSession choice = Choice();
+        using var dialog = new DspProcessorDialog(choice);
+        ThemedComboBox rate = Find<ThemedComboBox>(dialog, "comboBoxSampleRate");
+        Label status = Find<Label>(dialog, "labelStatus");
 
-            Assert.True(Follows(dialog));
-            Assert.Equal(MeasurementRate, Profile(dialog).SampleRateHz);
-        });
-    }
+        Assert.Equal("Follow measurements (48 kHz)", rate.GetItemText(rate.SelectedItem));
+        Assert.True(rate.Enabled);
+        Assert.Equal(DspProcessorStatus.Text(choice), status.Text);
+
+        Pick(dialog, "comboBoxSampleRate", item => item is 96_000);
+        Pick(dialog, "comboBoxQConvention", item => item is PeqQConvention.Symmetric);
+        Assert.Equal(96_000, choice.SampleRate);
+        Assert.Equal(PeqQConvention.Symmetric, choice.QConvention);
+        Assert.Equal(DspProcessorStatus.Text(choice), status.Text);
+
+        DspProcessorPreset helix = DspProcessorCatalog.Preset("helix-dsp-ultra-s")!;
+        Pick(dialog, "comboBoxModel", item => ReferenceEquals(item, helix));
+        Assert.Same(helix, choice.Model);
+        Assert.False(rate.Enabled);
+        Assert.False(Find<ThemedComboBox>(dialog, "comboBoxQConvention").Enabled);
+        Assert.Equal(helix.SampleRateHz, rate.SelectedItem);
+        Assert.True(Find<CheckBox>(dialog, "checkBoxPhaseControl").Checked);
+
+        Find<CheckBox>(dialog, "checkBoxPhaseControl").Checked = false;
+        Find<CheckBox>(dialog, "checkBoxFirFilters").Checked = true;
+        Assert.False(choice.PhaseControl);
+        Assert.True(choice.FirFilters);
+
+        Pick(dialog, "comboBoxModel", item => item is not DspProcessorPreset);
+        Assert.Null(choice.Model);
+        Assert.Equal(96_000, rate.SelectedItem);
+        ThemedComboBox model = Find<ThemedComboBox>(dialog, "comboBoxModel");
+        Assert.Equal("Custom", model.GetItemText(model.SelectedItem));
+    });
 
     [Fact]
-    public void ANamedModel_NeverFollows()
+    public void AnUnlistedRateIsOffered_AndTheFollowEntryNamesWhatItFollows() => StaTest.Run(() =>
     {
-        StaTest.Run(() =>
-        {
-            using Form dialog = Open(followsMeasurements: true);
-            SelectModel(dialog, DspProcessorCatalog.Preset("helix-dsp-ultra-s")!);
+        CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+        using var dialog = new DspProcessorDialog(Choice(50_000, DspProcessorProfile.Custom(22_050, PeqQConvention.Rbj)));
+        ThemedComboBox rate = Find<ThemedComboBox>(dialog, "comboBoxSampleRate");
+        List<string> offered = rate.Items.Cast<object>().Select(rate.GetItemText).ToList();
 
-            Assert.False(Follows(dialog));
-            Assert.Equal(96_000, Profile(dialog).SampleRateHz);
-            Assert.Equal(PeqQConvention.Rbj, Profile(dialog).QConvention);
-        });
-    }
+        Assert.Equal("Follow measurements (50 kHz)", offered[0]);
+        Assert.Contains("22.05 kHz", offered);
+        Assert.Contains("50 kHz", offered);
+
+        using var none = new DspProcessorDialog(Choice(0));
+        ThemedComboBox follow = Find<ThemedComboBox>(none, "comboBoxSampleRate");
+        Assert.Equal("Follow measurements", follow.GetItemText(follow.Items[0]));
+    });
 
     [Fact]
-    public void WithoutAMeasurement_FollowingStillResolvesToAUsableRate()
+    public void Notes_RoundTripThroughTheField_AndBlankReadsAsNone() => StaTest.Run(() =>
     {
-        StaTest.Run(() =>
-        {
-            using Form dialog = Open(followsMeasurements: true, measurementRateHz: 0);
+        DspProcessorSession choice = Choice();
+        choice.Notes = "2019 Passat B8, LHD.";
+        using var dialog = new DspProcessorDialog(choice);
+        TextBox notes = Find<TextBox>(dialog, "textBoxNotes");
+        Assert.Equal("2019 Passat B8, LHD.", notes.Text);
 
-            Assert.True(Follows(dialog));
-            Assert.True(Profile(dialog).SampleRateHz > 0);
-        });
-    }
+        notes.Text = "Tweeters in the A-pillars.";
+        Assert.Equal("Tweeters in the A-pillars.", choice.Notes);
+
+        notes.Text = "   \r\n";
+        Assert.Null(choice.Notes);
+    });
 
     [Fact]
-    public void Notes_RoundTripThroughTheField_AndEmptyReadsAsNone()
+    public void Notes_FieldIsBoundedAndLaidOutInsideTheDialog() => StaTest.Run(() =>
     {
-        StaTest.Run(() =>
-        {
-            // Null means no notes; blank must match, or every OK counts as an edit and schedules a save.
-            using Form dialog = Open(followsMeasurements: true);
-            Assert.Null(Notes(dialog));
+        // The field is the tallest control, so it would push the buttons off if designer numbers slipped.
+        using var dialog = new DspProcessorDialog(Choice());
+        TextBox notes = Find<TextBox>(dialog, "textBoxNotes");
+        Assert.True(notes.Multiline);
+        Assert.Equal(DspProcessorSession.MaximumNotesLength, notes.MaxLength);
 
-            SetNotes(dialog, "2019 Passat B8, LHD.\r\nTweeters in the A-pillars.");
-            Assert.Equal("2019 Passat B8, LHD.\r\nTweeters in the A-pillars.", Notes(dialog));
-
-            NotesBox(dialog).Text = "   \r\n";
-            Assert.Null(Notes(dialog));
-
-            SetNotes(dialog, null);
-            Assert.Equal(string.Empty, NotesBox(dialog).Text);
-        });
-    }
-
-    [Fact]
-    public void Notes_FieldIsBoundedAndLaidOutInsideTheDialog()
-    {
-        StaTest.Run(() =>
-        {
-            // The field is the tallest control, so it would push the buttons off if designer numbers slipped.
-            using Form dialog = Open(followsMeasurements: true);
-            TextBox notes = NotesBox(dialog);
-            Assert.True(notes.Multiline);
-            Assert.Equal(8_000, notes.MaxLength);
-
-            Button ok = dialog.Controls.OfType<Button>().Single(button => button.Text == "OK");
-            Assert.True(notes.Top > 0);
-            Assert.True(ok.Top >= notes.Bottom);
-            Assert.True(ok.Bottom <= dialog.ClientSize.Height);
-        });
-    }
-
-    private static string? Notes(Form dialog) => (string?)Property(dialog, "Notes");
-
-    private static void SetNotes(Form dialog, string? value) =>
-        dialog.GetType()
-            .GetProperty("Notes", BindingFlags.Instance | BindingFlags.Public)!
-            .SetValue(dialog, value);
-
-    private static TextBox NotesBox(Form dialog) =>
-        (TextBox)dialog.GetType()
-            .GetField("textBoxNotes", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(dialog)!;
-
-    [Fact]
-    public void NamingAnotherModel_LetsTheCatalogAnswerThePhaseQuestionAgain()
-    {
-        StaTest.Run(() =>
-        {
-            // A stored phase-control yes belongs to its device; carried over it would keep rotations on hardware without the control.
-            using Form dialog = Open(followsMeasurements: false, phaseControl: true);
-            Assert.True(PhaseControl(dialog));
-
-            SelectModel(dialog, DspProcessorCatalog.Preset("amp-panacea-v1-v2")!);
-
-            Assert.False(PhaseControl(dialog));
-
-            SelectModel(dialog, DspProcessorCatalog.Preset("helix-dsp-ultra-s")!);
-
-            Assert.True(PhaseControl(dialog));
-        });
-    }
-
-    [Fact]
-    public void TheStoredPhaseAnswer_SurvivesWhileTheModelDoes()
-    {
-        StaTest.Run(() =>
-        {
-            using Form dialog = Open(followsMeasurements: false, phaseControl: true);
-            SelectRate(dialog, 96_000);
-
-            Assert.True(PhaseControl(dialog));
-
-            using Form off = Open(followsMeasurements: false, phaseControl: false);
-
-            Assert.False(PhaseControl(off));
-        });
-    }
-
-    [Fact]
-    public void APhaseAnswerGivenForThisModel_IsNotUndoneByLookingAtTheFields()
-    {
-        StaTest.Run(() =>
-        {
-            using Form dialog = Open(followsMeasurements: false, phaseControl: null);
-            SelectModel(dialog, DspProcessorCatalog.Preset("helix-dsp-ultra-s")!);
-            Assert.True(PhaseControl(dialog));
-
-            SetPhaseControl(dialog, false);
-            SelectRate(dialog, 96_000);
-
-            Assert.False(PhaseControl(dialog));
-        });
-    }
-
-    [Fact]
-    public void TheFirTick_IsOffUntilGiven_AndNotTakenAwayByNamingAModel()
-    {
-        StaTest.Run(() =>
-        {
-            // The catalog's FIR false means "not known", and an untick detaches every kernel, so browsing models keeps the user's tick.
-            using Form dialog = Open(followsMeasurements: false, firFilters: null);
-            Assert.False(FirFilters(dialog));
-
-            SetFirFilters(dialog, true);
-            Assert.True(FirFilters(dialog));
-
-            SelectModel(dialog, DspProcessorCatalog.Preset("helix-dsp-ultra-s")!);
-            Assert.True(FirFilters(dialog));
-
-            SelectModel(dialog, DspProcessorCatalog.Preset("amp-panacea-v1-v2")!);
-            Assert.True(FirFilters(dialog));
-
-            SelectCustom(dialog);
-            Assert.True(FirFilters(dialog));
-        });
-    }
-
-    [Fact]
-    public void TheStoredFirAnswer_SurvivesTheModelList_AndOnlyTheUserUnticksIt()
-    {
-        StaTest.Run(() =>
-        {
-            using Form dialog = Open(followsMeasurements: false, firFilters: true);
-            SelectRate(dialog, 96_000);
-            Assert.True(FirFilters(dialog));
-
-            SelectModel(dialog, DspProcessorCatalog.Preset("amp-panacea-v1-v2")!);
-            Assert.True(FirFilters(dialog));
-
-            SetFirFilters(dialog, false);
-            SelectModel(dialog, DspProcessorCatalog.Preset("helix-dsp-ultra-s")!);
-            Assert.False(FirFilters(dialog));
-
-            using Form off = Open(followsMeasurements: false, firFilters: false);
-            Assert.False(FirFilters(off));
-        });
-    }
-
-    private static bool FirFilters(Form dialog) => (bool)Property(dialog, "FirFilters")!;
-
-    private static void SetFirFilters(Form dialog, bool value) =>
-        ((CheckBox)dialog.GetType()
-            .GetField("checkBoxFirFilters", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(dialog)!).Checked = value;
-
-    private static bool PhaseControl(Form dialog) => (bool)Property(dialog, "PhaseControl")!;
-
-    private static void SetPhaseControl(Form dialog, bool value) =>
-        ((CheckBox)dialog.GetType()
-            .GetField("checkBoxPhaseControl", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(dialog)!).Checked = value;
-
-    private static Form Open(
-        bool followsMeasurements,
-        int measurementRateHz = MeasurementRate,
-        bool? phaseControl = null,
-        bool? firFilters = null)
-    {
-        Type type = typeof(VirtualCrossoverPanel).Assembly
-            .GetType("Resonalyze.DspProcessorDialog")!;
-        return (Form)Activator.CreateInstance(
-            type,
-            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
-            binder: null,
-            [
-                DspProcessorProfile.Custom(measurementRateHz > 0 ? measurementRateHz : 48_000,
-                    PeqQConvention.Rbj),
-                followsMeasurements,
-                measurementRateHz,
-                phaseControl,
-                firFilters
-            ],
-            culture: null)!;
-    }
-
-    private static DspProcessorProfile Profile(Form dialog) =>
-        (DspProcessorProfile)Property(dialog, "Profile")!;
-
-    private static bool Follows(Form dialog) =>
-        (bool)Property(dialog, "FollowsMeasurements")!;
-
-    private static object? Property(Form dialog, string name) =>
-        dialog.GetType()
-            .GetProperty(name, BindingFlags.Instance | BindingFlags.Public)!
-            .GetValue(dialog);
-
-    private static void SelectRate(Form dialog, int rateHz) =>
-        Select(dialog, "comboBoxSampleRate", item => item is int rate && rate == rateHz);
-
-    private static void SelectFollow(Form dialog) =>
-        Select(dialog, "comboBoxSampleRate", item => item is not int);
-
-    private static void SelectModel(Form dialog, DspProcessorPreset preset) =>
-        Select(dialog, "comboBoxModel", item => ReferenceEquals(item, preset));
-
-    private static void SelectCustom(Form dialog) =>
-        Select(dialog, "comboBoxModel", item => item is not DspProcessorPreset);
-
-    private static void Select(Form dialog, string field, Func<object?, bool> match)
-    {
-        var combo = (ThemedComboBox)dialog.GetType()
-            .GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(dialog)!;
-        foreach (object? item in combo.Items)
-        {
-            if (match(item))
-            {
-                combo.SelectedItem = item;
-                return;
-            }
-        }
-
-        throw new InvalidOperationException($"{field} holds no matching entry.");
-    }
+        Button ok = Find<Button>(dialog, "buttonOk");
+        Assert.True(notes.Top > 0);
+        Assert.True(ok.Top >= notes.Bottom);
+        Assert.True(ok.Bottom <= dialog.ClientSize.Height);
+    });
 }

@@ -28,12 +28,11 @@ public partial class EqWizardPanel
         bool committedPin = session.PhaseGatePinned;
         using var dialog = new VirtualCrossoverGateDialog();
         // The plot tracks the dialog live, like Virtual DSP: a gate is placed by watching its effect.
-        dialog.PreviewChanged = (offsetMs, autoOffset, leftMs, plateauMs, rightMs,
-            windowMode, fdwCycles, detrendMode, detrendMs) =>
+        dialog.PreviewChanged = gate =>
         {
             session.ApplyPhaseGate(
-                context, offsetMs, autoOffset, leftMs, plateauMs, rightMs,
-                windowMode, fdwCycles, detrendMode, detrendMs);
+                context, gate.OffsetMs, gate.AutoOffset, gate.LeftMs, gate.PlateauMs, gate.RightMs,
+                gate.WindowMode, gate.FdwCycles, gate.DetrendMode, gate.DetrendMs);
             if (session.PhaseMode)
             {
                 Redraw();
@@ -56,10 +55,10 @@ public partial class EqWizardPanel
         dialog.PreviewChanged = null;
         if (result == DialogResult.OK)
         {
+            VirtualCrossoverGatePreview gate = dialog.Gate;
             session.ApplyPhaseGate(
-                context, dialog.GateOffsetMs, dialog.AutoOffset, dialog.LeftMs,
-                dialog.PlateauMs, dialog.RightMs, dialog.WindowMode, dialog.FdwCycles,
-                dialog.DetrendMode, dialog.DetrendMs);
+                context, gate.OffsetMs, gate.AutoOffset, gate.LeftMs, gate.PlateauMs, gate.RightMs,
+                gate.WindowMode, gate.FdwCycles, gate.DetrendMode, gate.DetrendMs);
         }
         else
         {

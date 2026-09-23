@@ -14,8 +14,11 @@ Where the code lives:
   `AgentSessionReader` (package inputs, the session snapshot and fingerprint, the excess group
   delay), `AgentProbeReader` (probes), `AgentJunctionTune` (the junction tune's search, write and
   summary) and `AgentEngineRequests` (the engines' order and the inputs a reply leaves out).
-- `source/Tools/VirtualCrossover/VirtualCrossoverPanel.AgentBridge.cs` - the panel side: the menu,
-  the import flow, headless engine runs and undo.
+- `source/Tools/VirtualCrossover/AgentImportRunner.cs` - an import once its review is answered: the
+  probes, the re-check, the rows, the engines headless and the one step of undo, reaching the panel
+  through `IAgentImportHost`.
+- `source/Tools/VirtualCrossover/VirtualCrossoverPanel.AgentBridge.cs` - the panel side: the menu, the
+  clipboard, the review dialog, the progress window, the messages and the host's members.
 - `source/Integration/AgentBridge/` - UI-free pieces: `AgentProtocol` (words and limits),
   `AgentPackageBuilder` / `AgentPackageModels` / `AgentPackageInputs` / `AgentCurveSampling`
   (package), `AgentProposalParser` / `AgentProposal` (reply), `AgentProposalValidator` /
@@ -275,13 +278,15 @@ instead of taking the others or the import down.
 
 ## Import flow
 
-`ImportAiProposal`: clipboard, strict parse, review against the live session, the review dialog, a
-first `AgentProposalApplier.Prepare` of the ticked rows, and a warning if the ticked subset leaves a
-final state the review never showed (unticking a row can take a compensating change with it; a
-warning, not a refusal). Then under `AgentProgressDialog`:
+The panel's `ImportAiProposal`: clipboard, strict parse, review against the live session, the review
+dialog, a first `AgentProposalApplier.Prepare` of the ticked rows, and a warning if the ticked subset
+leaves a final state the review never showed (unticking a row can take a compensating change with it;
+a warning, not a refusal). Then, under `AgentProgressDialog`, `AgentImportRunner` does the rest
+(`ProbesAsync`, then `CommitAsync`), reaching the controls only through `IAgentImportHost`, and the
+panel shows the summary:
 
 1. Run probes (read-only, before anything is written).
-2. `CommitAgentImportAsync` re-judges the ticked rows against the session **as it is now**
+2. `AgentImportRunner.CommitAsync` re-judges the ticked rows against the session **as it is now**
    (`AgentProposalApplier.Prepare`). This is not ceremony: rows were prepared before probes ran,
    probes take seconds, and the panel stays editable. Ticked is the review's default, not a gate
    (stale rows are offered unticked for deliberate opt-in), so the check is whether the fingerprint
@@ -308,7 +313,7 @@ restored state as it stands; reading it as a difference could carry a side where
 
 ## Engine order
 
-`RunAgentEngineRequests` runs engines in a fixed order regardless of reply order: spatial average
+`AgentImportRunner.EnginesAsync` runs engines in a fixed order regardless of reply order: spatial average
 first (it decides which curves the rest read), Auto crossover, junction tune (after the wizard,
 before Auto delay, which realigns whatever the crossover became), Auto delay, then Auto-tune last,
 fitting the bank to everything the others left. Each keeps its own confirmation; cancelling one skips
@@ -319,13 +324,13 @@ Headless engine runs:
 
 - **Spatial average** sets mode and Hybrid tick together (either alone leaves the point measurement in
   charge), with project events suppressed so the import saves and redraws once.
-- **Auto delay** (`RunAgentAutoDelayAsync`) runs the button's checks headless (a refusal becomes a
+- **Auto delay** runs the button's checks headless (a refusal becomes a
   summary phrase), the dialog's compute delegate and its Apply commit, including report, log and
   outcome metric. Inputs a request omits come from `AgentSessionReader.AutoDelayDefaults`: layout-neutral
   magnitudes (the layout toggle owns signs) and gain balance unticked (the project stores the tilt,
   not the opt-in). The panel is disabled during compute, because the dialog's modality is what kept
   the chain still. The summary shows only the report's head, since a message box does not scroll.
-- **Junction tune** (`AgentJunctionTune`, run by `RunAgentTuneJunctionAsync`) reads the two blocks off
+- **Junction tune** (`AgentJunctionTune`, run through `VirtualCrossoverJunctionTuneRun` as the dialog runs it) reads the two blocks off
   live channels, passes every side the pair is measured on with its raw responses and current chains,
   and writes the one crossover the tuner settles on to both sides of both blocks, as the wizard writes.
   One slope for both edges unless freed (the free search costs slopes squared per corner). The panel is
@@ -335,7 +340,7 @@ Headless engine runs:
   holding the new edge would look untouched and receive the shown side's whole crossover. Readings are
   reported on the package's octave-each-side junction band so they compare with what the assistant
   read.
-- **Auto-tune** (`RunAgentAutoTuneAsync`) builds the PEQ menu's handoff for the channel (only the shown
+- **Auto-tune** builds the PEQ menu's handoff (`VirtualCrossoverEqHandoff`) for the channel (only the shown
   side: gate pin, render anchor and hybrid datum are the shown side's), fits with `EqAutoTuneHeadless`
   (pinned against the wizard's render) and lands the way the wizard's Return lands, guards included,
   so a channel that moved during the fit is refused. The wizard's target-level question becomes a

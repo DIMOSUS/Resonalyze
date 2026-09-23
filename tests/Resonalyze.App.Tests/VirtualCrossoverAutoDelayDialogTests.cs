@@ -1,7 +1,5 @@
-using System.Reflection;
 using System.Text;
 using System.Windows.Forms;
-using Resonalyze;
 
 namespace Resonalyze.App.Tests;
 
@@ -10,23 +8,34 @@ public sealed class VirtualCrossoverAutoDelayDialogTests
     [Fact]
     public void ChangingRearFillInvalidatesTheCompletedProposal() => StaTest.Run(() =>
     {
-        using var dialog = new VirtualCrossoverAutoDelayDialog();
+        using var dialog = new VirtualCrossoverAutoDelayDialog
+        {
+            StartPosition = FormStartPosition.Manual,
+            Location = new(-5000, -5000)
+        };
+        AutoDelayRunRequest? asked = null;
         dialog.Init(
             stereo: true,
             sceneOffsetMs: 0.25,
             rightHandDrive: false,
             nearSideCutDb: 1.0,
-            request => Task.FromResult(new AutoDelayRunResult(
-                [], true, request, "Proposal for the current inputs.", new StringBuilder())),
+            request =>
+            {
+                asked = request;
+                return Task.FromResult(new AutoDelayRunResult(
+                    [], true, request, "Proposal for the current inputs.", new StringBuilder()));
+            },
             hasRearFill: true,
             rearFillOffsetMs: 15.0);
+        dialog.Show();
+        Field<ThemedNumericUpDown>(dialog, "numericSceneOffset").Value = 0.3m;
 
-        var run = (Task)typeof(VirtualCrossoverAutoDelayDialog)
-            .GetMethod("RunAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .Invoke(dialog, null)!;
-        run.GetAwaiter().GetResult();
+        Field<Button>(dialog, "buttonRun").PerformClick();
+        StaTest.Pump();
 
         Assert.NotNull(dialog.Result);
+        Assert.Equal(new AutoDelayRunRequest(0.3, false, false, 1.0, 15.0), asked);
+        Assert.Equal("Proposal for the current inputs.", Field<TextBox>(dialog, "textBoxReport").Text);
         Button apply = Field<Button>(dialog, "buttonApply");
         Assert.True(apply.Enabled);
 
@@ -79,8 +88,6 @@ public sealed class VirtualCrossoverAutoDelayDialogTests
         }
     }
 
-    private static T Field<T>(object target, string name) where T : class =>
-        (T)target.GetType()
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(target)!;
+    private static T Field<T>(Control root, string name) where T : Control =>
+        (T)root.Controls.Find(name, searchAllChildren: true).Single();
 }

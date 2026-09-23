@@ -15,7 +15,10 @@ The heavy processing lives in the processing coordinator and in `Resonalyze.Dsp`
 
 Code: `source/Tools/VirtualCrossover/`. The tune lives in a UI-free `VirtualCrossoverSession`: the project, the
 blocks (`VirtualCrossoverChannel`, one per L/R pair, with `VirtualCrossoverChannelSettings` per side), the
-calibration policy, the Gate dialog's preview and the magnitude gate snapshot. Whatever reads the tune takes the
+calibration policy, the Gate dialog's preview, the magnitude gate snapshot, the project generation and the last
+redraw's processed channels and hybrid offset. The project is the one owner of the target level: the Level field
+shows it and hands back the user's edit. The ranges a restored file or an AI reply can state too (the target level,
+the Auto delay fields) are `VirtualCrossoverLimits`, which the fields and the AI review both read. Whatever reads the tune takes the
 session. `VirtualCrossoverPanel` is its only writer: it binds the controls to it and presents what the readers
 return, and only its binding methods look a block's `VirtualCrossoverChannelControl` up. Its partials are named
 for what they bind (`.Project`, `.Calibration`, `.Channels`, `.Sources`, `.Peq`, `.Fir`, `.Views`, `.DspPlot`,
@@ -30,9 +33,13 @@ for what they bind (`.Project`, `.Calibration`, `.Channels`, `.Sources`, `.Peq`,
 | `GatePlacementVerdict`, `VirtualCrossoverWarnings` | the warning line |
 | `VirtualCrossoverAutoDelay`, `StagedGroupPlacement` | Auto delay |
 | `VirtualCrossoverAutoSetup` | what the crossover wizard reads and writes |
-| `VirtualCrossoverJunctionTuneSearch`, `VirtualCrossoverJunctionTuneApply` | Tune junction: its question, its verdict, Apply and Undo |
+| `VirtualCrossoverEqHandoff` | what a channel side hands the EQ Wizard, and whether its bank may come back ([EQ handoff](#eq-handoff-code-map)) |
+| `VirtualCrossoverJunctionTuneSearch`, `VirtualCrossoverJunctionTuneApply` | Tune junction: its search, its verdict, Apply and Undo; the dialog's question is in [its code map](#junction-tune-code-map) |
+| `DspProcessorSession`, `DspProcessorStatus`, `DspProcessorApply` | the processor dialog ([DSP processor](#dsp-processor-code-map)) |
+| `VirtualCrossoverGateEstimate` | the Gate dialog's τ estimate and auto detrend line ([gate estimate](#gate-estimate)) |
 | `VirtualCrossoverAudition` | what the audition renders; the dialog's own state is in [its code map](#audition-code-map) |
 | `AgentSessionReader`, `AgentProbeReader`, `AgentJunctionTune`, `AgentEngineRequests` | the Agent Bridge |
+| `AgentImportRunner`, `AgentImportUndo` | an AI import once its review is answered, and its undo ([AI import runner](#ai-import-runner-code-map)) |
 
 The shown side has one owner, the project's `ActiveSideRight`. A block's shorthand members (`Settings`,
 `TransferImpulseResponse`, ...) read the side it shows; a block the panel creates reads that side from the session
@@ -68,14 +75,57 @@ changes the same way.
 
 ### Junction tune code map
 
+The dialog's question is a `VirtualCrossoverJunctionTuneQuestion`: the junction and its corner window, remembered
+per junction and kept only while it still holds the junction's corner; the families, which only the first junction
+shown without memory takes from the cards, with the goal; the slope window, read either way round; the mode and the
+budget; the status and the report. Every change retires the standing answer, and a search that returns to a changed
+question lands nothing. `CrossoverFamilyChoice.GoalSlope` is the slope a goal box opens on, shared with the goal
+dialog. `VirtualCrossoverJunctionTuneDialog` binds the controls and writes the question back into them.
+
 `VirtualCrossoverJunctionTuneSearch` states what the dialog opens a junction with, turns a request into the tuner's
 plan (or the refusal that stands in for a search) and the result into the report and verdict.
+`VirtualCrossoverJunctionTuneRun` runs the tuner off the UI thread with the session's fingerprint taken on both sides
+and drops a result the session moved under, for the dialog and the AI import alike.
 `VirtualCrossoverJunctionTuneApply` holds the result the open dialog shows, writes it on Apply through
 `AgentJunctionTune.Write`, and keeps the one step of Undo: the session before the Apply (`AgentImportUndo`, which
 Undo AI import shares), the project generation it belongs to and the fingerprint after it, by which Undo knows that
-later changes would go too and asks. The panel's `.JunctionTune` runs the search off the UI thread, refuses a result
-the session moved under, refreshes the cards and restores through `RestoreChannels`.
-`VirtualCrossoverJunctionTuneWiringTests` drives the real dialog from a live panel.
+later changes would go too and asks. The panel's `.JunctionTune` refreshes the cards and restores through
+`RestoreChannels`. `VirtualCrossoverJunctionTuneQuestionTests` test the question; `VirtualCrossoverJunctionTuneDialogTests`
+drive a shown dialog, and `VirtualCrossoverJunctionTuneWiringTests` the real dialog from a live panel.
+
+### EQ handoff code map
+
+`VirtualCrossoverEqHandoff` builds the request a PEQ menu hands the EQ Wizard (see [PEQ and FIR
+handoffs](#peq-and-fir-handoffs)) and guards the bank that comes back, over the session and its last redraw; the
+panel raises `EditPeqInWizardRequested` and shows the level and bank that land. The AI import's Auto-tune builds its
+request and lands its fit through the same type.
+
+### AI import runner code map
+
+`AgentImportRunner` runs an import once the review is answered (see [agent-bridge.md](agent-bridge.md#import-flow)):
+the probes, the re-check, the rows, the engines in their order and the one step of undo. It reads the view through
+`IAgentImportHost`, which the panel implements with what only a control can do: the crossover wizard, the Auto delay
+commit, showing a channel or a bank, the target level, the side lock, the wait cursor. `AgentImportUndo.Restore` puts
+the session back, block order included (`VirtualCrossoverSession.Reorder`); the panel refreshes the cards. The menu, the
+clipboard, the review and every message stay in the panel's `.AgentBridge`, the messages and menus through
+`ShowMessage` and `ShowMenu`, which a test answers. `AgentImportRunnerTests` drive the runner over a bare session;
+`VirtualCrossoverPanelDialogWiringTests` drive the menu on a live panel.
+
+### DSP processor code map
+
+`DspProcessorSession` holds the processor dialog's choice: a catalog model fixes rate and Q convention, Custom keeps
+its own (a stated rate or following the measurements) while the user looks at models, a new model proposes the
+phase-control answer afresh and the FIR answer only one way, and an unlisted rate joins the list.
+`DspProcessorStatus` reads the status line off it; `DspProcessorApply` writes the notes and the processor (see
+[processor rate](#processor-rate)) and words the notice for what a device cannot run. `DspProcessorDialog` binds the
+controls; the panel shows the blocks and the notice.
+
+### Gate estimate
+
+`VirtualCrossoverGateEstimate` reads the Gate dialog's curves: the earliest trace as the phase reference, the τ the
+Slope and Peak buttons put there (none without a trace, and the dialog beeps), and the auto detrend line. The dialog
+reports its gate as one `VirtualCrossoverGatePreview`, live and after Save, to both the Virtual DSP panel and the EQ
+Wizard's phase view.
 
 ### Audition code map
 
@@ -456,13 +506,13 @@ and the loss is smoothed only at the end of the reconstruction.
 
 ## Hybrid handoff to the EQ Wizard
 
-`HybridHandoffCapture` is the decision whether a side's hybrid is being handed over. It is cheap and reads
+`VirtualCrossoverEqHandoff.HybridCapture` is the decision whether a side's hybrid is being handed over. It is cheap and reads
 only live state, and both the handoff and the return guard ask it, so they cannot disagree. An earlier
 version derived it through the offset resolution, which failed mid-redraw: a target edit in the wizard
 invalidated the panel and a Return clicked before the redraw was refused as if the hybrid were off.
 
-`HandoffSpatialAverage` supplies the capture and its offset onto the IR axis. The offset belongs to the
-capture SET (`lastHybrid`), so it is normally the last magnitude render's; the phase and impulse views never
+`VirtualCrossoverEqHandoff.SpatialAverage` supplies the capture and its offset onto the IR axis. The offset belongs to
+the capture SET (the session's `LastHybridOffset`), so it is normally the last magnitude render's; the phase and impulse views never
 build one, so it is resolved on demand, since a stale height would hang the curve tens of dB from the Target
 Level. If it cannot be resolved the handoff falls back to the IR and the token records it; the return guard
 then refuses the bank if the panel meanwhile draws a hybrid.
@@ -470,12 +520,12 @@ then refuses the bank if the panel meanwhile draws a hybrid.
 ## PEQ and FIR handoffs
 
 - The PEQ handoff carries the active side, the gate snapshot, the active pin and the last redraw's anchor so
-  an unpinned gate opens where the plot's did. The render anchor is used only when `lastProcessedRender`
+  an unpinned gate opens where the plot's did. The render anchor is used only when the session's `LastRender`
   still describes the current settings; otherwise the builder reads the channel's own front. The calibration
   the channel was rendered with (per channel under Own) and the spatial-average mode travel along, and the
-  return compares against them per side. `projectGeneration` is bumped on every bind because channel objects
+  return compares against them per side. The session's `ProjectGeneration` is bumped on every bind because channel objects
   are reused across projects; a return into a replaced project is refused and the host keeps the wizard open.
-- `CapturePhaseContext` freezes the other drivers as processed IRs, not drawn curves, because the wizard
+- `VirtualCrossoverEqHandoff.PhaseContext` freezes the other drivers as processed IRs, not drawn curves, because the wizard
   has its own gate and a curve gated at this panel's window could not be re-read. It is resolved over the set
   the wizard draws (`ProcessedChannels.PhaseNeighbourhood`) so a hidden driver cannot move visible windows,
   and is null when the render is stale. The gate travels as the user has it (detrend mode included) while the

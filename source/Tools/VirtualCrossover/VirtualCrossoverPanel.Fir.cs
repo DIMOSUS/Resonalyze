@@ -144,7 +144,7 @@ public partial class VirtualCrossoverPanel
         }
 
         requested(FirConstructorHandoff.Build(
-            channel, channel.ActiveRight, projectGeneration, session.ProcessorSampleRateHz));
+            channel, channel.ActiveRight, session.ProjectGeneration, session.ProcessorSampleRateHz));
     }
 
     /// <summary>False, writing nothing, when the side is no longer the one the session opened on.</summary>
@@ -158,7 +158,7 @@ public partial class VirtualCrossoverPanel
                 token,
                 kernel,
                 design,
-                projectGeneration,
+                session.ProjectGeneration,
                 session.ProcessorSampleRateHz,
                 session.Project.ResolveDspFirFilters()))
         {

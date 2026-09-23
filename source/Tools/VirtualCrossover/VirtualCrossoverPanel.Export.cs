@@ -10,7 +10,7 @@ public partial class VirtualCrossoverPanel
 
     private async Task CaptureSumToOverlayAsync()
     {
-        ProcessedRender? render = await ProcessChannelsAsync();
+        VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
         if (render == null)
         {
             return;
@@ -79,7 +79,7 @@ public partial class VirtualCrossoverPanel
             return;
         }
 
-        ProcessedRender? render = await ProcessChannelsAsync();
+        VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
         if (render == null)
         {
             return;

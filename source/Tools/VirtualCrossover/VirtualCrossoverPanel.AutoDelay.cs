@@ -121,7 +121,7 @@ public partial class VirtualCrossoverPanel
     {
         // RedrawAll pushes the read-out asynchronously, so recompute here; capture the side before the await.
         bool metricSideRight = session.ActiveSideRight;
-        ProcessedRender? render = await ProcessChannelsAsync();
+        VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
         List<ProcessedChannel> outcomeChannels = render?.Channels ?? [];
         (_, _, List<SignalPoint>? outcomeLoss) =
             metrics.BuildCurves(outcomeChannels, session.MagnitudeGate.SmoothingInverseOctaves);
@@ -148,7 +148,7 @@ public partial class VirtualCrossoverPanel
 
     private async Task OpenPhaseGateDialogAsync()
     {
-        ProcessedRender? render = await ProcessChannelsAsync();
+        VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
         if (render == null)
         {
             return;
@@ -190,12 +190,9 @@ public partial class VirtualCrossoverPanel
             fitOffsetMs,
             autoOffset: stored.StoredOffsetMs == null);
         // Wired after Init so seeding the controls does not redraw.
-        dialog.PreviewChanged = (offsetMs, autoOffset, leftMs, plateauMs, rightMs,
-            windowMode, fdwCycles, detrendMode, detrendMs) =>
+        dialog.PreviewChanged = preview =>
         {
-            session.GatePreview = new VirtualCrossoverGatePreview(
-                offsetMs, autoOffset, leftMs, plateauMs, rightMs,
-                windowMode, fdwCycles, detrendMode, detrendMs);
+            session.GatePreview = preview;
             RequestRedraw();
         };
 
@@ -207,14 +204,15 @@ public partial class VirtualCrossoverPanel
                 VirtualCrossoverPhaseGateSettings gate =
                     session.Project.PhaseGateFor(session.ActiveSideRight);
                 // Auto = null: keeps following the earliest channel IR start.
-                gate.OffsetMs = dialog.AutoOffset ? null : dialog.GateOffsetMs;
-                gate.DetrendMs = dialog.DetrendMs;
-                session.Project.PhaseGateLeftMs = dialog.LeftMs;
-                session.Project.PhaseGatePlateauMs = dialog.PlateauMs;
-                session.Project.PhaseGateRightMs = dialog.RightMs;
-                session.Project.PhaseWindowMode = dialog.WindowMode;
-                session.Project.PhaseFdwCycles = dialog.FdwCycles;
-                session.Project.PhaseDetrendMode = dialog.DetrendMode;
+                VirtualCrossoverGatePreview saved = dialog.Gate;
+                gate.OffsetMs = saved.AutoOffset ? null : saved.OffsetMs;
+                gate.DetrendMs = saved.DetrendMs;
+                session.Project.PhaseGateLeftMs = saved.LeftMs;
+                session.Project.PhaseGatePlateauMs = saved.PlateauMs;
+                session.Project.PhaseGateRightMs = saved.RightMs;
+                session.Project.PhaseWindowMode = saved.WindowMode;
+                session.Project.PhaseFdwCycles = saved.FdwCycles;
+                session.Project.PhaseDetrendMode = saved.DetrendMode;
                 ScheduleSave();
             }
         }

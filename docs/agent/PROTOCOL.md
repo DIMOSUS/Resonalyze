@@ -211,6 +211,8 @@ else in a reply touches it.
   `A:left`, `A:right`, `C:mono`. A mono block has one channel, `side: "mono"`.
   Ids are stable for as long as the blocks keep their order — which is exactly as
   long as the expected current values in a reply keep matching.
+- `source.measuredBandHz` is what the measurement covered; a measurement that recorded no top edge
+  reads up to its Nyquist.
 - `source.available` is false when no measurement is loaded; `unavailableReason`
   says why a loaded channel has no curves (`channel muted`, `not processed`).
   `source.spatialAverage` names the capture family the hybrid curves are built

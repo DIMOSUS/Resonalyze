@@ -257,16 +257,14 @@ next field session rather than in a register nobody else can tick.
 - [ ] **Virtual DSP — residual boundaries.** The tune lives in a UI-free
   `VirtualCrossoverSession` and whatever reads it takes the session
   (docs/tech/virtual-dsp-panel.md#code-map); the panel is binding code in
-  partials named for what they bind, the largest the Agent Bridge's import flow
-  (~1000 lines) and the blocks (~600). Remaining, lower-value slices: the EQ
-  Wizard handoff request (`BuildPeqHandoffRequest`, `CapturePhaseContext`,
-  `HandoffSpatialAverage`) still reads the last render and the target level off
-  the panel, so the AI import's Auto-tune runs in the panel too; a full source
-  resolver/assignment boundary (the panel still orchestrates the file/History/
-  restore flow around the shared core); splitting `VirtualCrossoverMetrics` into
-  curve building vs side-processing orchestration; and moving `ProcessedChannel`'s
-  `OxyColor` out into the render binding. Persistence, calibration and control
-  binding are inherently UI-bound — leave them.
+  partials named for what they bind, and the EQ handoff, the AI import and the
+  dialogs' questions have their own types. Remaining, lower-value slices: a full
+  source resolver/assignment boundary (the panel still orchestrates the
+  file/History/restore flow around the shared core); splitting
+  `VirtualCrossoverMetrics` into curve building vs side-processing orchestration;
+  and moving `ProcessedChannel`'s `OxyColor` out into the render binding.
+  Persistence, calibration and control binding are inherently UI-bound — leave
+  them.
 - [ ] **The audition's "Own (as measured)" refuses more than the render needs.**
   A car whose two SIDES were measured through different microphones is refused
   along with one whose own channels disagree, though only the second is

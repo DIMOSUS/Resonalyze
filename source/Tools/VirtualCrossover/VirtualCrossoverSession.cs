@@ -23,6 +23,19 @@ internal sealed class VirtualCrossoverSession
     /// <summary>Refreshed by each redraw on the UI thread, read by its workers: one frame reads one snapshot.</summary>
     public MagnitudeGateSnapshot MagnitudeGate { get; set; } = MagnitudeGateSnapshot.Initial;
 
+    /// <summary>Bumped by every bind: channel objects are reused across projects, so a handoff or an undo names the
+    /// project it belongs to.</summary>
+    public long ProjectGeneration { get; private set; }
+
+    public void NextProjectGeneration() => ProjectGeneration++;
+
+    /// <summary>The last redraw's processed channels; current only while the coordinator's revision still matches.</summary>
+    public VirtualCrossoverProcessedRender? LastRender { get; set; }
+
+    /// <summary>The hybrid offset the last magnitude redraw drew with: it belongs to the capture SET, which one
+    /// handed-over channel could not re-derive.</summary>
+    public (long Revision, double OffsetDb)? LastHybridOffset { get; set; }
+
     /// <summary>Extra search root from relinking an imported session's missing measurements; cleared on bind.</summary>
     public string? RelinkDirectory { get; set; }
 
@@ -100,6 +113,57 @@ internal sealed class VirtualCrossoverSession
 
     /// <summary>Ceiling for automatic delay proposals; manual delay fields keep a wider range on purpose.</summary>
     public double ProcessorMaxDelayMs => ProcessorProfile.MaxDelayMs;
+
+    /// <summary>Moves the blocks and the project's pairs by one permutation, <c>order[newIndex]</c> being a block's current
+    /// position; the letters follow position. The pairs are permuted, not rebuilt from the blocks: they are bound only once a
+    /// project is applied, and their list is the whole persisted order.</summary>
+    public void Reorder(IReadOnlyList<int> order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        List<VirtualCrossoverChannel> reordered = order.Select(index => Channels[index]).ToList();
+        Channels.Clear();
+        Channels.AddRange(reordered);
+        if (Project.Pairs.Count == order.Count)
+        {
+            List<VirtualCrossoverChannelPairSettings> pairs = order.Select(index => Project.Pairs[index]).ToList();
+            Project.Pairs.Clear();
+            Project.Pairs.AddRange(pairs);
+        }
+
+        for (int i = 0; i < Channels.Count; i++)
+        {
+            Channels[i].Name = VirtualCrossoverSheet.ChannelName(i);
+        }
+    }
+
+    /// <summary>The permutation that swaps a block with its neighbour; null off either end.</summary>
+    public IReadOnlyList<int>? MoveOrder(VirtualCrossoverChannel channel, int delta)
+    {
+        int at = Channels.IndexOf(channel);
+        int to = at + delta;
+        if (at < 0 || to < 0 || to >= Channels.Count)
+        {
+            return null;
+        }
+
+        var order = Enumerable.Range(0, Channels.Count).ToList();
+        (order[at], order[to]) = (order[to], order[at]);
+        return order;
+    }
+
+    /// <summary>The permutation that puts the blocks back in an earlier order, by identity; null when nothing moved, or when
+    /// a block of it is gone or the count differs.</summary>
+    public IReadOnlyList<int>? OrderOf(IReadOnlyList<VirtualCrossoverChannel> earlier)
+    {
+        ArgumentNullException.ThrowIfNull(earlier);
+        if (earlier.Count != Channels.Count || earlier.SequenceEqual(Channels))
+        {
+            return null;
+        }
+
+        List<int> indices = earlier.Select(channel => Channels.IndexOf(channel)).ToList();
+        return indices.All(index => index >= 0) ? indices : null;
+    }
 
     /// <summary>The block with this letter; null once the blocks moved under whatever named it.</summary>
     public VirtualCrossoverChannel? Block(string name) =>

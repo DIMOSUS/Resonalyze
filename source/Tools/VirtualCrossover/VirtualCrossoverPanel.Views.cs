@@ -91,7 +91,6 @@ public partial class VirtualCrossoverPanel
         session.Project.SumLossWindowMode = SelectedSumLossWindow;
         session.Project.ShowHybridCurves = checkBoxHybrid.Checked;
         session.Project.ShowTargetCurve = checkBoxShowTarget.Checked;
-        session.Project.TargetLevelDb = (double)numericTargetLevel.Value;
         // Newer view flags are written beside older ones so an older build opens the nearest view.
         session.Project.ShowPhaseView = radioViewPhase.Checked || radioViewGroupDelay.Checked;
         session.Project.ShowImpulseView = radioViewImpulse.Checked || radioViewStep.Checked;
@@ -173,7 +172,7 @@ public partial class VirtualCrossoverPanel
     private async Task RedrawMainPlotAsync()
     {
         // Old curves stay on screen until new data is ready (no flicker).
-        ProcessedRender? render = await ProcessChannelsAsync();
+        VirtualCrossoverProcessedRender? render = await ProcessChannelsAsync();
         if (render == null || mainPlotView.IsDisposed)
         {
             return;
@@ -186,7 +185,7 @@ public partial class VirtualCrossoverPanel
         }
 
         // The whole set is kept: the junction views and opposite-side read-outs need channels this view does not draw.
-        lastProcessedRender = render;
+        session.LastRender = render;
 
         // Read once: a control changed during the awaits below requests the next frame. Filtered by group view once, so
         // curves, sum, loss and read-out describe the same channels.
@@ -299,7 +298,7 @@ public partial class VirtualCrossoverPanel
 
             if (hybrid != null)
             {
-                lastHybrid = (revision, hybrid.OffsetDb);
+                session.LastHybridOffset = (revision, hybrid.OffsetDb);
             }
         }
 
@@ -376,7 +375,7 @@ public partial class VirtualCrossoverPanel
         SelectedSumLossWindow,
         HybridRequested,
         checkBoxShowTarget.Checked ? targetCurve : null,
-        (double)numericTargetLevel.Value);
+        session.Project.TargetLevelDb);
 
     private void UpdateWarnings(
         List<ProcessedChannel> processed, HybridMagnitudes? hybrid, bool rightSide)

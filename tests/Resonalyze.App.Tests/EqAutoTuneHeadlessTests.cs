@@ -127,8 +127,8 @@ public sealed class EqAutoTuneHeadlessTests
         EqAutoTuner.Options cuts = EqAutoTuneHeadless.Prepare(
             request, target, plain, null, null, allowShelves: false, boosts: EqAutoTuneBoosts.Off).Options;
         Assert.Equal(EqAutoTuneBoosts.Off, cuts.Boosts);
-        Assert.Equal(-EqAutoTuneHeadless.PreampRangeDb, cuts.PreampMinDb);
-        Assert.Equal(EqAutoTuneHeadless.PreampRangeDb, cuts.PreampMaxDb);
+        Assert.Equal((double)EqWizardLimits.Preamp.Minimum, cuts.PreampMinDb);
+        Assert.Equal((double)EqWizardLimits.Preamp.Maximum, cuts.PreampMaxDb);
         Assert.Equal(0, cuts.TotalGainMaxDb);
         Assert.False(cuts.AllowShelves);
         Assert.Equal(80, cuts.MinFrequencyHz);

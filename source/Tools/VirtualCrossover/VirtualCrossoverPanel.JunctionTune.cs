@@ -16,7 +16,7 @@ public partial class VirtualCrossoverPanel
             index => VirtualCrossoverJunctionTuneSearch.Opening(junctions, index),
             request => RunJunctionTuneAsync(junctions, request),
             session.Project.JunctionTune,
-            junctionTune.Undoable(projectGeneration));
+            junctionTune.Undoable(session.ProjectGeneration));
         DialogResult answer = dialog.ShowDialog(FindForm());
         if (IsDisposed)
         {
@@ -67,21 +67,19 @@ public partial class VirtualCrossoverPanel
         // Both sides were decided here, so the Lock remembers rather than carries.
         sideLock.Remember(session.Channels.Select(channel => channel.Pair));
         SaveAndRedraw();
-        junctionTune.Remember(before, projectGeneration, lower, upper, ComputeAgentFingerprint());
+        junctionTune.Remember(before, session.ProjectGeneration, lower, upper, ComputeAgentFingerprint());
     }
 
     /// <summary>Changes made since the Apply go too, so that is asked first.</summary>
     private void UndoJunctionTune()
     {
-        if (junctionTune.UndoFor(projectGeneration) is not { } undo)
+        if (junctionTune.UndoFor(session.ProjectGeneration) is not { } undo)
         {
             return;
         }
 
         if (!junctionTune.Unchanged(ComputeAgentFingerprint()) &&
-            MessageBox.Show(
-                FindForm(),
-                $"The session has changed since the tune of {undo.Junction} was applied. Undo puts every channel " +
+            ShowMessage($"The session has changed since the tune of {undo.Junction} was applied. Undo puts every channel " +
                 "back exactly as it was before that Apply, so the later changes go as well." +
                 Environment.NewLine + Environment.NewLine + "Undo anyway?",
                 "Tune junction",
@@ -120,31 +118,17 @@ public partial class VirtualCrossoverPanel
             return refused!;
         }
 
-        string fingerprintBefore = ComputeAgentFingerprint();
-        JunctionTuneResult result;
-        UseWaitCursor = true;
-        try
+        JunctionTuneRunOutcome outcome =
+            await VirtualCrossoverJunctionTuneRun.RunAsync(plan, ComputeAgentFingerprint, this).ConfigureAwait(true);
+        if (outcome.Failure is { } failure)
         {
-            result = await Task.Run(() => CrossoverJunctionTuner.Tune(plan.Sides, plan.Options))
-                .ConfigureAwait(true);
+            return VirtualCrossoverJunctionTuneSearch.Refusal(failure);
         }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
-        {
-            return VirtualCrossoverJunctionTuneSearch.Refusal(exception.Message.TrimEnd('.'));
-        }
-        finally
-        {
-            if (!IsDisposed)
-            {
-                UseWaitCursor = false;
-            }
-        }
-
-        if (IsDisposed)
+        if (outcome.Gone)
         {
             return new JunctionTuneOutcome([], false, "Closed.", true);
         }
-        if (!string.Equals(fingerprintBefore, ComputeAgentFingerprint(), StringComparison.Ordinal))
+        if (outcome.Result is not { } result)
         {
             return VirtualCrossoverJunctionTuneSearch.Refusal("the session changed while the search ran");
         }

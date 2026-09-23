@@ -28,6 +28,46 @@ public partial class VirtualCrossoverPanel
         }
     }
 
+    // The project holds the target level; the field shows it and hands back the user's edit.
+    private void OnTargetLevelEdited()
+    {
+        if (suppressProjectEvents)
+        {
+            return;
+        }
+
+        session.Project.TargetLevelDb = (double)numericTargetLevel.Value;
+        OnViewChanged();
+    }
+
+    private void ShowTargetLevel()
+    {
+        bool suppressed = suppressProjectEvents;
+        suppressProjectEvents = true;
+        try
+        {
+            numericTargetLevel.Value = VirtualCrossoverLimits.TargetLevel.Clamp(session.Project.TargetLevelDb);
+        }
+        finally
+        {
+            suppressProjectEvents = suppressed;
+        }
+    }
+
+    // A level written by code (a return, an import, a level offer) lands like an edit of the field.
+    private void SetTargetLevel(double levelDb)
+    {
+        double held = (double)VirtualCrossoverLimits.TargetLevel.Clamp(levelDb);
+        if (held.Equals(session.Project.TargetLevelDb))
+        {
+            return;
+        }
+
+        session.Project.TargetLevelDb = held;
+        ShowTargetLevel();
+        OnViewChanged();
+    }
+
     // Disabled CheckBox text is near-black on this theme, so mute by hand; not via SetTextEnabledLook, which
     // memorizes a colour that follows the shared target.
     private void UpdateTargetToggleLook()
@@ -97,12 +137,12 @@ public partial class VirtualCrossoverPanel
                 FindForm(),
                 imported.Name,
                 imported.PeakDb,
-                (double)numericTargetLevel.Value,
-                numericTargetLevel.FieldRange(),
+                session.Project.TargetLevelDb,
+                VirtualCrossoverLimits.TargetLevel,
                 VirtualCrossoverAcousticPlot.MagnitudeFloorDb,
                 PlotModelStyle.RelativeDecibelAbsoluteMaximum) is { } levelDb)
         {
-            numericTargetLevel.Value = levelDb;
+            SetTargetLevel((double)levelDb);
         }
     }
 

@@ -128,9 +128,9 @@ public partial class VirtualCrossoverPanel
         session.Project = newProject;
         session.RelinkDirectory = null;
         // The previous import's undo would restore into settings nobody displays.
-        agentUndo = null;
+        agentImport.ForgetUndo();
         // Channel objects are reused across binds; this tells an EQ Wizard handoff which project it came from.
-        projectGeneration++;
+        session.NextProjectGeneration();
         SetChannelCount(session.Project.Pairs.Count);
 
         suppressProjectEvents = true;
@@ -140,8 +140,9 @@ public partial class VirtualCrossoverPanel
             // Intent only: captures attach as sources resolve, and HybridRequested also needs coverage.
             checkBoxHybrid.Checked = session.Project.ShowHybridCurves;
             checkBoxShowTarget.Checked = session.Project.ShowTargetCurve;
-            numericTargetLevel.Value =
-                numericTargetLevel.ClampValue(session.Project.TargetLevelDb);
+            session.Project.TargetLevelDb =
+                (double)VirtualCrossoverLimits.TargetLevel.Clamp(session.Project.TargetLevelDb);
+            ShowTargetLevel();
             // Each newer view flag is written beside the older one it falls back to.
             radioViewStep.Checked = session.Project.ShowStepView;
             radioViewImpulse.Checked =

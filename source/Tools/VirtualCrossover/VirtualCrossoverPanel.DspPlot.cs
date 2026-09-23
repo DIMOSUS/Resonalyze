@@ -92,7 +92,7 @@ public partial class VirtualCrossoverPanel
 
     // From the last processed snapshot, narrowed to the view's summing chain (ProcessedChannels.JunctionsInView).
     private List<AdjacentPair> CurrentCorrelationPairs() =>
-        lastProcessedRender is { } render
+        session.LastRender is { } render
             ? ProcessedChannels.JunctionsInView(render.Channels, SelectedGroupView)
             : [];
 
@@ -190,7 +190,7 @@ public partial class VirtualCrossoverPanel
         JunctionCoherenceView? coherence = null;
         try
         {
-            List<ProcessedChannel> scope = lastProcessedRender is { } render
+            List<ProcessedChannel> scope = session.LastRender is { } render
                 ? render.Channels.ToList()
                 : [pair.Lower, pair.Upper];
             if (mode == DspPlotMode.Coherence)

@@ -25,9 +25,6 @@ public partial class VirtualCrossoverPanel : UserControl
     private readonly VirtualCrossoverAudition audition;
     private readonly VirtualCrossoverSideLock sideLock = new();
 
-    // Bumped by every bind; lets an EQ Wizard handoff refuse to return into a replaced project.
-    private long projectGeneration;
-
     private readonly VirtualCrossoverProcessingCoordinator processingCoordinator = new();
     private readonly VirtualCrossoverMetrics metrics;
     private readonly WrappingToolTip toolTip = new()
@@ -55,6 +52,8 @@ public partial class VirtualCrossoverPanel : UserControl
     public VirtualCrossoverPanel()
     {
         InitializeComponent();
+        ShowMessage = (text, caption, buttons, icon) => MessageBox.Show(FindForm(), text, caption, buttons, icon);
+        numericTargetLevel.ApplyFieldRange(VirtualCrossoverLimits.TargetLevel);
         hybridReader = new VirtualCrossoverHybrid(session);
         warnings = new VirtualCrossoverWarnings(session);
         viewBuilder = new AcousticViewBuilder(session, hybridReader);
@@ -76,6 +75,8 @@ public partial class VirtualCrossoverPanel : UserControl
             channel => session.Calibration.For(channel));
         agentReader = new AgentSessionReader(session, processingCoordinator, metrics, hybridReader);
         junctionTune = new VirtualCrossoverJunctionTuneApply(session, agentReader);
+        eqHandoff = new VirtualCrossoverEqHandoff(session, processingCoordinator, metrics, hybridReader);
+        agentImport = new AgentImportRunner(session, agentReader, eqHandoff, this);
         audition = new VirtualCrossoverAudition(session, processingCoordinator, metrics, hybridReader);
         acousticPlot = new VirtualCrossoverAcousticPlot(
             mainPlotView, AcousticViewBuilder.NoSourcesHint, CurrentAcousticView());
@@ -162,6 +163,18 @@ public partial class VirtualCrossoverPanel : UserControl
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Action<FirConstructorHandoffRequest>? EditFirInConstructorRequested { get; set; }
 
+    /// <summary>Shows a block's or the AI button's menu under it; a test takes the menu instead.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<Control, ContextMenuStrip> ShowMenu { get; set; } = DropDownMenu.ShowUnder;
+
+    /// <summary>The AI import's, the processor's and Tune junction's messages and questions; a test answers them.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Func<string, string, MessageBoxButtons, MessageBoxIcon, DialogResult> ShowMessage { get; set; }
+
     /// <summary>History entry id when it still exists, else the file path; at least one is non-null.</summary>
     [System.ComponentModel.Browsable(false)]
     [System.ComponentModel.DesignerSerializationVisibility(
@@ -231,7 +244,7 @@ public partial class VirtualCrossoverPanel : UserControl
             OnViewChanged();
         };
         checkBoxShowTarget.CheckedChanged += (_, _) => OnViewChanged();
-        numericTargetLevel.ValueChanged += (_, _) => OnViewChanged();
+        numericTargetLevel.ValueChanged += (_, _) => OnTargetLevelEdited();
         // Radios fire on check and uncheck; act only on the checked one.
         radioViewMagnitude.CheckedChanged += (_, _) =>
         {
@@ -388,12 +401,8 @@ public partial class VirtualCrossoverPanel : UserControl
         RefreshAutoActionsEnabled();
     }
 
-    private sealed record ProcessedRender(
-        long Revision,
-        List<ProcessedChannel> Channels);
-
     // The coordinator never reads controls or mutable settings after this awaits (snapshots are copies).
-    private async Task<ProcessedRender?> ProcessChannelsAsync()
+    private async Task<VirtualCrossoverProcessedRender?> ProcessChannelsAsync()
     {
         // Tracy zones are thread-bound LIFO: no zone may span an await.
         long revision = processingCoordinator.CurrentRevision;
@@ -462,16 +471,12 @@ public partial class VirtualCrossoverPanel : UserControl
                 band,
                 ownCalibration));
         }
-        return new ProcessedRender(render.Revision, processed);
+        return new VirtualCrossoverProcessedRender(render.Revision, processed);
     }
-
-    private ProcessedRender? lastProcessedRender;
 
     private void ShowError(string message, string details)
     {
-        MessageBox.Show(
-            FindForm(),
-            $"{message}{Environment.NewLine}{Environment.NewLine}{details}",
+        ShowMessage($"{message}{Environment.NewLine}{Environment.NewLine}{details}",
             "Virtual DSP",
             MessageBoxButtons.OK,
             MessageBoxIcon.Error);

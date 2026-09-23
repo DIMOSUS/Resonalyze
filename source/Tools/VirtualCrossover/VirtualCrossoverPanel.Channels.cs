@@ -1,5 +1,3 @@
-using Resonalyze.Dsp;
-
 namespace Resonalyze;
 
 /// <summary>The blocks and their sides: adding, removing, moving and resetting blocks, the L/R selector, the side lock and
@@ -154,42 +152,29 @@ public partial class VirtualCrossoverPanel
     // The channel object moves with its resolved IRs; only position-derived letter, colour and pair order are rewritten.
     private void MoveChannel(VirtualCrossoverChannel channel, int delta)
     {
-        int at = session.Channels.IndexOf(channel);
-        int to = at + delta;
-        if (at < 0 || to < 0 || to >= session.Channels.Count)
+        if (session.MoveOrder(channel, delta) is not { } order)
         {
             return;
         }
 
-        var order = Enumerable.Range(0, session.Channels.Count).ToList();
-        (order[at], order[to]) = (order[to], order[at]);
         ApplyChannelOrder(order);
         SaveAndRedraw();
     }
 
     /// <summary><c>order[newIndex]</c> is the block's current position.</summary>
-    /// <remarks>The project's pairs are permuted by the same indices, not rebuilt from the channels: they are bound
-    /// only once a project is applied. The pair list is the whole persisted order.</remarks>
     private void ApplyChannelOrder(IReadOnlyList<int> order)
     {
-        List<VirtualCrossoverChannel> reordered =
-            order.Select(index => session.Channels[index]).ToList();
-        session.Channels.Clear();
-        session.Channels.AddRange(reordered);
-        if (session.Project.Pairs.Count == order.Count)
-        {
-            List<VirtualCrossoverChannelPairSettings> pairs =
-                order.Select(index => session.Project.Pairs[index]).ToList();
-            session.Project.Pairs.Clear();
-            session.Project.Pairs.AddRange(pairs);
-        }
+        session.Reorder(order);
+        ShowChannelOrder();
+    }
 
+    private void ShowChannelOrder()
+    {
         channelListPanel.SuspendLayout();
         for (int i = 0; i < session.Channels.Count; i++)
         {
             VirtualCrossoverChannel channel = session.Channels[i];
             VirtualCrossoverChannelControl control = ControlFor(channel);
-            channel.Name = ChannelNameFor(i);
             control.ChannelName = channel.Name;
             control.SetAccentColor(VirtualCrossoverColors.ChannelAccent(i));
             channelListPanel.Controls.SetChildIndex(control, i);
@@ -206,7 +191,7 @@ public partial class VirtualCrossoverPanel
     private void OpenDspProcessorDialog()
     {
         // The dialog gets the real measured rate, zero included, never a default.
-        using var dialog = new DspProcessorDialog(
+        var choice = new DspProcessorSession(
             session.ProcessorProfile,
             session.Project.DspProcessorRateFollowsMeasurements,
             session.MeasuredSampleRateHz ?? 0,
@@ -215,41 +200,24 @@ public partial class VirtualCrossoverPanel
         {
             Notes = session.Project.AiNotes
         };
+        using var dialog = new DspProcessorDialog(choice);
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
             return;
         }
 
-        // Notes alone are a save, never a re-run.
-        string? notes = dialog.Notes;
-        bool notesChanged = !string.Equals(notes, session.Project.AiNotes, StringComparison.Ordinal);
-        if (notesChanged)
+        if (DspProcessorApply.WriteNotes(session.Project, choice))
         {
-            session.Project.AiNotes = notes;
             ScheduleSave();
         }
 
-        DspProcessorProfile profile = dialog.Profile;
-        // Compare intent, not numbers: "follow measurements" equals 48 kHz only until they are replaced.
-        bool follows = dialog.FollowsMeasurements;
-        // Confirming stores the shown phase answer, so a later model change cannot remove a control in use.
-        bool phaseControl = dialog.PhaseControl;
-        bool phaseControlChanged = session.Project.DspProcessorPhaseControl != phaseControl;
-        bool firFilters = dialog.FirFilters;
-        bool firFiltersChanged = session.Project.DspProcessorFirFilters != firFilters;
-        if (profile == session.ProcessorProfile && follows == session.Project.DspProcessorRateFollowsMeasurements &&
-            !phaseControlChanged && !firFiltersChanged)
+        DspProcessorWrite write = DspProcessorApply.WriteProcessor(session, choice);
+        if (!write.Changed)
         {
             return;
         }
 
-        session.Project.DspProcessorPhaseControl = phaseControl;
-        session.Project.DspProcessorFirFilters = firFilters;
-        session.Project.SetDspProcessor(profile, follows);
-        // A device without phase control (or FIR) drops them: left in place they would bend curves with no field on screen.
-        int clearedRotations = session.Project.ClearUnavailablePhaseRotations();
-        int clearedFirFilters = session.Project.ClearUnavailableFirFilters();
-        if (clearedRotations > 0 || clearedFirFilters > 0)
+        if (write.ClearedRotations > 0 || write.ClearedFirFilters > 0)
         {
             foreach (VirtualCrossoverChannel channel in session.Channels)
             {
@@ -258,40 +226,10 @@ public partial class VirtualCrossoverPanel
         }
 
         RefreshProcessorRowAvailability();
-
         SaveAndRedraw();
-        var notices = new List<string>();
-        if (clearedRotations > 0)
+        if (DspProcessorApply.Notice(write) is { } notice)
         {
-            notices.Add(
-                $"{clearedRotations} channel side" +
-                (clearedRotations == 1 ? " had" : "s had") +
-                " a phase rotation dialled in, and this processor has no such " +
-                "control.\r\n\r\nThe angle" +
-                (clearedRotations == 1 ? " was" : "s were") +
-                " cleared: left in place it would go on bending the curves with " +
-                "nothing on screen to explain it, and the tuning sheet would go on " +
-                "naming a control this device does not have.");
-        }
-        if (clearedFirFilters > 0)
-        {
-            notices.Add(
-                $"{clearedFirFilters} channel side" +
-                (clearedFirFilters == 1 ? " had" : "s had") +
-                " a FIR filter loaded, and this processor has no FIR stage.\r\n\r\n" +
-                "The kernel" + (clearedFirFilters == 1 ? " was" : "s were") +
-                " detached: left in place it would go on shaping the curves with " +
-                "nothing on screen to explain it, and the tuning sheet would go on " +
-                "naming a file this device cannot take.");
-        }
-        if (notices.Count > 0)
-        {
-            MessageBox.Show(
-                this,
-                string.Join("\r\n\r\n", notices),
-                "Virtual DSP",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            ShowMessage(notice, "Virtual DSP", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 

@@ -44,8 +44,6 @@ internal static class EqAutoTuneHeadless
 
     public const double MaxQ = 6.0;
 
-    public const double PreampRangeDb = 80;
-
     public const double WindowMinHz = 20;
     public const double WindowMaxHz = 20_000;
     public const double MinWindowGapHz = 1;
@@ -128,7 +126,6 @@ internal static class EqAutoTuneHeadless
         ArgumentNullException.ThrowIfNull(targetSpec);
         ArgumentNullException.ThrowIfNull(policy);
         EqAutoTuneBoosts mode = boosts ?? policy.Boosts;
-        bool lifts = mode == EqAutoTuneBoosts.Allowed;
         bool shelves = allowShelves ?? policy.AllowShelves;
 
         EqWizardCurveSource source = request.Source;
@@ -153,10 +150,10 @@ internal static class EqAutoTuneHeadless
 
         // The wizard's goal for a handed-over channel, so an import fits what the screen shows: target inside the
         // passband, the crossover's slope outside it. See docs/tech/eq-auto-tuner.md#the-crossover-in-the-target.
-        IReadOnlyList<EqNoBoostBand> noBoost = Array.Empty<EqNoBoostBand>();
-        if (policy.CrossoverInTarget && EqTargetCrossover.Of(source) is { } slope)
+        EqTargetSlope? crossover = policy.CrossoverInTarget ? EqTargetCrossover.Of(source) : null;
+        int processorRate = ProcessorRate(source);
+        if (crossover is { } slope)
         {
-            int shapeRate = ProcessorRate(source);
             // A stated window is the caller's; only the handoff's own passband is widened down the skirts.
             if (minHz == null && maxHz == null)
             {
@@ -164,16 +161,15 @@ internal static class EqAutoTuneHeadless
                     slope,
                     windowMinHz,
                     windowMaxHz,
-                    shapeRate,
+                    processorRate,
                     source.Measurement?.LowestMeasuredFrequencyHz,
                     source.Measurement?.HighestMeasuredFrequencyHz);
             }
 
             target = target
                 .Select(point => new SignalPoint(
-                    point.X, point.Y + EqTargetCrossover.ShapeDb(slope, point.X, shapeRate)))
+                    point.X, point.Y + EqTargetCrossover.ShapeDb(slope, point.X, processorRate)))
                 .ToList();
-            noBoost = EqTargetCrossover.NoBoostBands(slope, windowMinHz, windowMaxHz, shapeRate);
         }
 
         // Max Filters budgets the BANK; kept bands come off it.
@@ -183,25 +179,15 @@ internal static class EqAutoTuneHeadless
             throw new InvalidOperationException(
                 $"Keeping {allPass.Count} all-pass bands leaves no room under Max Filters ({policy.MaxBands}).");
         }
-        // Wizard preamp policy (CreateAutoTuneOptions); see docs/tech/eq-auto-tuner.md#wizard-preamp-policy.
-        double seedPreamp = request.BankSeed.PreampDb;
-        var options = new EqAutoTuner.Options
-        {
-            MaxBands = bandLimit,
-            MinFrequencyHz = windowMinHz,
-            MaxFrequencyHz = windowMaxHz,
-            PreampMinDb = lifts ? seedPreamp : -PreampRangeDb,
-            PreampMaxDb = lifts ? seedPreamp : PreampRangeDb,
-            BandGainMinDb = policy.BandGainMinDb,
-            BandGainMaxDb = policy.BandGainMaxDb,
-            TotalGainMaxDb = lifts ? double.PositiveInfinity : 0,
-            SampleRateHz = ProcessorRate(source),
-            Boosts = mode,
-            QMin = (double)EqWizardLimits.BandQ.Minimum,
-            QMax = policy.MaxQ,
-            AllowShelves = shelves,
-            NoBoostBands = noBoost
-        };
+
+        EqAutoTuner.Options options = EqWizardFit.Options(
+            policy with { Boosts = mode, AllowShelves = shelves },
+            bandLimit,
+            windowMinHz,
+            windowMaxHz,
+            request.BankSeed.PreampDb,
+            processorRate,
+            crossover);
 
         return new EqHeadlessTuneInputs(
             fitSource, target, options, source.Coherence, allPass,

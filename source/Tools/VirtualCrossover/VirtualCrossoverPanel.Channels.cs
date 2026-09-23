@@ -193,7 +193,7 @@ public partial class VirtualCrossoverPanel
     private void OpenDspProcessorDialog()
     {
         // The dialog gets the real measured rate, zero included, never a default.
-        using var dialog = new DspProcessorDialog(
+        var choice = new DspProcessorSession(
             session.ProcessorProfile,
             session.Project.DspProcessorRateFollowsMeasurements,
             session.MeasuredSampleRateHz ?? 0,
@@ -202,41 +202,24 @@ public partial class VirtualCrossoverPanel
         {
             Notes = session.Project.AiNotes
         };
+        using var dialog = new DspProcessorDialog(choice);
         if (dialog.ShowDialog(FindForm()) != DialogResult.OK)
         {
             return;
         }
 
-        // Notes alone are a save, never a re-run.
-        string? notes = dialog.Notes;
-        bool notesChanged = !string.Equals(notes, session.Project.AiNotes, StringComparison.Ordinal);
-        if (notesChanged)
+        if (DspProcessorApply.WriteNotes(session.Project, choice))
         {
-            session.Project.AiNotes = notes;
             ScheduleSave();
         }
 
-        DspProcessorProfile profile = dialog.Profile;
-        // Compare intent, not numbers: "follow measurements" equals 48 kHz only until they are replaced.
-        bool follows = dialog.FollowsMeasurements;
-        // Confirming stores the shown phase answer, so a later model change cannot remove a control in use.
-        bool phaseControl = dialog.PhaseControl;
-        bool phaseControlChanged = session.Project.DspProcessorPhaseControl != phaseControl;
-        bool firFilters = dialog.FirFilters;
-        bool firFiltersChanged = session.Project.DspProcessorFirFilters != firFilters;
-        if (profile == session.ProcessorProfile && follows == session.Project.DspProcessorRateFollowsMeasurements &&
-            !phaseControlChanged && !firFiltersChanged)
+        DspProcessorWrite write = DspProcessorApply.WriteProcessor(session, choice);
+        if (!write.Changed)
         {
             return;
         }
 
-        session.Project.DspProcessorPhaseControl = phaseControl;
-        session.Project.DspProcessorFirFilters = firFilters;
-        session.Project.SetDspProcessor(profile, follows);
-        // A device without phase control (or FIR) drops them: left in place they would bend curves with no field on screen.
-        int clearedRotations = session.Project.ClearUnavailablePhaseRotations();
-        int clearedFirFilters = session.Project.ClearUnavailableFirFilters();
-        if (clearedRotations > 0 || clearedFirFilters > 0)
+        if (write.ClearedRotations > 0 || write.ClearedFirFilters > 0)
         {
             foreach (VirtualCrossoverChannel channel in session.Channels)
             {
@@ -245,40 +228,10 @@ public partial class VirtualCrossoverPanel
         }
 
         RefreshProcessorRowAvailability();
-
         SaveAndRedraw();
-        var notices = new List<string>();
-        if (clearedRotations > 0)
+        if (DspProcessorApply.Notice(write) is { } notice)
         {
-            notices.Add(
-                $"{clearedRotations} channel side" +
-                (clearedRotations == 1 ? " had" : "s had") +
-                " a phase rotation dialled in, and this processor has no such " +
-                "control.\r\n\r\nThe angle" +
-                (clearedRotations == 1 ? " was" : "s were") +
-                " cleared: left in place it would go on bending the curves with " +
-                "nothing on screen to explain it, and the tuning sheet would go on " +
-                "naming a control this device does not have.");
-        }
-        if (clearedFirFilters > 0)
-        {
-            notices.Add(
-                $"{clearedFirFilters} channel side" +
-                (clearedFirFilters == 1 ? " had" : "s had") +
-                " a FIR filter loaded, and this processor has no FIR stage.\r\n\r\n" +
-                "The kernel" + (clearedFirFilters == 1 ? " was" : "s were") +
-                " detached: left in place it would go on shaping the curves with " +
-                "nothing on screen to explain it, and the tuning sheet would go on " +
-                "naming a file this device cannot take.");
-        }
-        if (notices.Count > 0)
-        {
-            MessageBox.Show(
-                this,
-                string.Join("\r\n\r\n", notices),
-                "Virtual DSP",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            MessageBox.Show(this, notice, "Virtual DSP", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 

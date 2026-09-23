@@ -38,7 +38,6 @@ internal static class RecordArrayInputs
             : session.SelectedWaveLoopbackOffset;
 
     /// <summary>Array channels actually recordable on the selected device; none when the array was set up on another.</summary>
-    /// <remarks>Must match <c>MeasurementSettingsFile.ResolveArrayChannels</c>, or a probed rate fails at the device.</remarks>
     public static IReadOnlyList<int> ReachableChannels(RecordSettingsSession session)
     {
         if (!MatchesDevice(session))
@@ -46,23 +45,12 @@ internal static class RecordArrayInputs
             return [];
         }
 
-        int microphoneChannel = MicrophoneChannel(session);
-        int? loopbackChannel = LoopbackChannel(session);
         var reachable = InputChannels(session).Channels.ToHashSet();
-        var channels = new List<int>();
-        foreach (ArrayMicrophoneDefinition microphone in session.ArrayMicrophones)
-        {
-            if (microphone.ChannelOffset >= 0 &&
-                microphone.ChannelOffset != microphoneChannel &&
-                microphone.ChannelOffset != loopbackChannel &&
-                (reachable.Count == 0 || reachable.Contains(microphone.ChannelOffset)) &&
-                !channels.Contains(microphone.ChannelOffset))
-            {
-                channels.Add(microphone.ChannelOffset);
-            }
-        }
-
-        return channels;
+        return ArrayChannelRules.Recorded(
+            session.ArrayMicrophones,
+            MicrophoneChannel(session),
+            LoopbackChannel(session),
+            channel => reachable.Count == 0 || reachable.Contains(channel));
     }
 
     public static string ButtonText(RecordSettingsSession session)

@@ -1,18 +1,6 @@
-using OxyPlot;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
-
-/// <summary>What the constructor draws of one kernel: the response against the design's target, the phase with the
-/// kernel's delay taken out, and the impulse from its peak.</summary>
-internal sealed record FirConstructorRendering(
-    FirFilter Kernel,
-    DataPoint[] Magnitude,
-    DataPoint[] Target,
-    DataPoint[] Phase,
-    DataPoint[] Impulse,
-    DataPoint[] ImpulseDb,
-    double DeviationDb);
 
 /// <summary>What a handoff sets aside: the controls' design and the bare kernel shown or still rebuilding.</summary>
 internal sealed record FirConstructorStandaloneWork(

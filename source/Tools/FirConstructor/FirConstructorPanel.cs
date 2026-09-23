@@ -503,15 +503,12 @@ public partial class FirConstructorPanel : UserControl
 
     private void UpdateControlAvailability()
     {
-        CrossoverKind kind = Selected(comboBoxType, CrossoverKind.LowPass);
-        bool usesHigh = kind is CrossoverKind.HighPass or CrossoverKind.BandPass;
-        bool usesLow = kind is CrossoverKind.LowPass or CrossoverKind.BandPass;
-        bool iir = Selected(comboBoxMethod, FirCrossoverMethod.IirMagnitude) == FirCrossoverMethod.IirMagnitude;
-        SetEnabled(usesHigh, labelHighPass, numericHighPassHz);
-        SetEnabled(usesHigh && iir, comboBoxHighPassFamily, comboBoxHighPassSlope);
-        SetEnabled(usesLow, labelLowPass, numericLowPassHz);
-        SetEnabled(usesLow && iir, comboBoxLowPassFamily, comboBoxLowPassSlope);
-        SetEnabled(Selected(comboBoxWindow, FirWindow.Kaiser) == FirWindow.Kaiser, labelKaiserBeta, numericKaiserBeta);
+        FirConstructorFields fields = FirConstructorAvailability.Fields(ReadControls());
+        SetEnabled(fields.HighPass, labelHighPass, numericHighPassHz);
+        SetEnabled(fields.HighPassShape, comboBoxHighPassFamily, comboBoxHighPassSlope);
+        SetEnabled(fields.LowPass, labelLowPass, numericLowPassHz);
+        SetEnabled(fields.LowPassShape, comboBoxLowPassFamily, comboBoxLowPassSlope);
+        SetEnabled(fields.KaiserBeta, labelKaiserBeta, numericKaiserBeta);
     }
 
     private static void SetEnabled(bool enabled, params Control[] controls)
@@ -531,7 +528,7 @@ public partial class FirConstructorPanel : UserControl
 
     private void UpdateSessionControls()
     {
-        bool linked = session.Handoff != null;
+        bool linked = session.InHandoff;
         buttonReturnToDsp.Visible = linked;
         buttonBackToDsp.Visible = linked;
         comboBoxSampleRate.Enabled = !linked;
@@ -540,18 +537,15 @@ public partial class FirConstructorPanel : UserControl
 
     private void UpdateActions()
     {
-        buttonExport.Enabled = session.Kernel != null && !session.RebuildPending;
-        // Only a design returns; bare kernel files are imported on the Virtual DSP side, where they keep their name.
-        buttonReturnToDsp.Enabled =
-            session.Handoff != null && session.Kernel != null && session.Design != null && !session.RebuildPending;
+        buttonExport.Enabled = FirConstructorAvailability.CanExport(session);
+        buttonReturnToDsp.Enabled = FirConstructorAvailability.Return(session) != null;
     }
 
     private void ReturnToVirtualDsp()
     {
-        if (!session.RebuildPending && session.Handoff is { Token: var token } &&
-            session.Kernel is { } built && session.Design is { } designed)
+        if (FirConstructorAvailability.Return(session) is { } back)
         {
-            ReturnFirRequested?.Invoke(token, built, designed);
+            ReturnFirRequested?.Invoke(back.Token, back.Kernel, back.Design);
         }
     }
 
@@ -585,7 +579,7 @@ public partial class FirConstructorPanel : UserControl
 
     private void ExportFile()
     {
-        if (session.RebuildPending || session.Kernel is not { } exported)
+        if (!FirConstructorAvailability.CanExport(session) || session.Kernel is not { } exported)
         {
             return;
         }

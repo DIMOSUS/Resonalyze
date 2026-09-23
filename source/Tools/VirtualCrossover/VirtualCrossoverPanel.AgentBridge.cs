@@ -92,7 +92,7 @@ public partial class VirtualCrossoverPanel : IAgentImportHost
                 "Puts the channels back exactly as they were before the last import. " +
                 "One step; gone once a session is loaded.")
         });
-        DropDownMenu.ShowUnder(buttonAi, agentMenu);
+        ShowMenu(buttonAi, agentMenu);
     }
 
     private readonly AgentImportRunner agentImport;
@@ -148,9 +148,7 @@ public partial class VirtualCrossoverPanel : IAgentImportHost
             }
             // The ticked subset can leave a state the review never showed: warn, do not refuse.
             if (unseenWarnings.Count > 0 &&
-                MessageBox.Show(
-                    FindForm(),
-                    "With only the ticked rows applied:" + Environment.NewLine + Environment.NewLine +
+                ShowMessage("With only the ticked rows applied:" + Environment.NewLine + Environment.NewLine +
                     string.Join(Environment.NewLine, unseenWarnings) + Environment.NewLine + Environment.NewLine +
                     "Apply anyway?",
                     "Import AI proposal",
@@ -175,9 +173,7 @@ public partial class VirtualCrossoverPanel : IAgentImportHost
                 });
 
             SaveAndRedraw();
-            MessageBox.Show(
-                FindForm(),
-                string.Join(Environment.NewLine, summary) + Environment.NewLine +
+            ShowMessage(string.Join(Environment.NewLine, summary) + Environment.NewLine +
                 Environment.NewLine + "Undo AI import is in the same menu.",
                 "Import AI proposal",
                 MessageBoxButtons.OK,
@@ -387,9 +383,7 @@ public partial class VirtualCrossoverPanel : IAgentImportHost
                 return;
             }
 
-            MessageBox.Show(
-                FindForm(),
-                $"Excess group delay diagnostic copied ({(result.JsonBytes + 1023) / 1024} KB, " +
+            ShowMessage($"Excess group delay diagnostic copied ({(result.JsonBytes + 1023) / 1024} KB, " +
                 $"{count} channel{(count == 1 ? "" : "s")}). Paste it into the " +
                 "same chat as the package.",
                 "Copy diagnostics for AI",
@@ -472,9 +466,7 @@ public partial class VirtualCrossoverPanel : IAgentImportHost
                 ? Environment.NewLine + "Left out to fit the size limit: " +
                     string.Join(", ", result.Omitted) + "."
                 : string.Empty;
-            MessageBox.Show(
-                FindForm(),
-                $"AI package copied ({(result.JsonBytes + 1023) / 1024} KB). " +
+            ShowMessage($"AI package copied ({(result.JsonBytes + 1023) / 1024} KB). " +
                 "Paste it into a chat assistant." + omitted,
                 "Copy for AI",
                 MessageBoxButtons.OK,

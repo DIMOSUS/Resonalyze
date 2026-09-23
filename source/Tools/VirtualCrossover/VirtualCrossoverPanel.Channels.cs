@@ -231,7 +231,7 @@ public partial class VirtualCrossoverPanel
         SaveAndRedraw();
         if (DspProcessorApply.Notice(write) is { } notice)
         {
-            MessageBox.Show(this, notice, "Virtual DSP", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            ShowMessage(notice, "Virtual DSP", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 

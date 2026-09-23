@@ -52,6 +52,7 @@ public partial class VirtualCrossoverPanel : UserControl
     public VirtualCrossoverPanel()
     {
         InitializeComponent();
+        ShowMessage = (text, caption, buttons, icon) => MessageBox.Show(FindForm(), text, caption, buttons, icon);
         numericTargetLevel.ApplyFieldRange(VirtualCrossoverLimits.TargetLevel);
         hybridReader = new VirtualCrossoverHybrid(session);
         warnings = new VirtualCrossoverWarnings(session);
@@ -161,6 +162,18 @@ public partial class VirtualCrossoverPanel : UserControl
     [System.ComponentModel.DesignerSerializationVisibility(
         System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     internal Action<FirConstructorHandoffRequest>? EditFirInConstructorRequested { get; set; }
+
+    /// <summary>Shows a block's or the AI button's menu under it; a test takes the menu instead.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Action<Control, ContextMenuStrip> ShowMenu { get; set; } = DropDownMenu.ShowUnder;
+
+    /// <summary>The AI import's, the processor's and Tune junction's messages and questions; a test answers them.</summary>
+    [System.ComponentModel.Browsable(false)]
+    [System.ComponentModel.DesignerSerializationVisibility(
+        System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    internal Func<string, string, MessageBoxButtons, MessageBoxIcon, DialogResult> ShowMessage { get; set; }
 
     /// <summary>History entry id when it still exists, else the file path; at least one is non-null.</summary>
     [System.ComponentModel.Browsable(false)]
@@ -463,9 +476,7 @@ public partial class VirtualCrossoverPanel : UserControl
 
     private void ShowError(string message, string details)
     {
-        MessageBox.Show(
-            FindForm(),
-            $"{message}{Environment.NewLine}{Environment.NewLine}{details}",
+        ShowMessage($"{message}{Environment.NewLine}{Environment.NewLine}{details}",
             "Virtual DSP",
             MessageBoxButtons.OK,
             MessageBoxIcon.Error);

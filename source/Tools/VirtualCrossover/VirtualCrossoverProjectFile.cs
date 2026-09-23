@@ -789,7 +789,7 @@ public sealed class VirtualCrossoverProjectFile
 
     /// <summary>Rear fill delay behind the front stage (ms); part of the tune, not a dialog default.</summary>
     public double RearFillOffsetMs { get; set; } =
-        VirtualCrossoverAutoDelayDialog.DefaultRearFillOffsetMs;
+        VirtualCrossoverLimits.DefaultRearFillOffsetMs;
 
     /// <summary>Draw the hybrid (spatial-average) magnitude. Intent: kept on load, drawn only while every playing channel has an average.</summary>
     public bool ShowHybridCurves { get; set; }

@@ -79,9 +79,7 @@ public partial class VirtualCrossoverPanel
         }
 
         if (!junctionTune.Unchanged(ComputeAgentFingerprint()) &&
-            MessageBox.Show(
-                FindForm(),
-                $"The session has changed since the tune of {undo.Junction} was applied. Undo puts every channel " +
+            ShowMessage($"The session has changed since the tune of {undo.Junction} was applied. Undo puts every channel " +
                 "back exactly as it was before that Apply, so the later changes go as well." +
                 Environment.NewLine + Environment.NewLine + "Undo anyway?",
                 "Tune junction",

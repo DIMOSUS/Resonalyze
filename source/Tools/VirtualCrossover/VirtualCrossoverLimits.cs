@@ -10,4 +10,7 @@ internal static class VirtualCrossoverLimits
     public static readonly NumericFieldRange SceneOffset = new(0m, 5m, 2);
     public static readonly NumericFieldRange NearSideCut = new(0m, 6m, 1);
     public static readonly NumericFieldRange RearFillOffset = new(0m, 30m, 1);
+
+    /// <summary>Precedence-effect start: 10-20 ms is where the rear stops being localized and reads as room.</summary>
+    public const double DefaultRearFillOffsetMs = 15.0;
 }

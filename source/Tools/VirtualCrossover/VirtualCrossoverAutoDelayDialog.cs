@@ -80,7 +80,7 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
         Func<AutoDelayRunRequest, Task<AutoDelayRunResult>> runner,
         string? polarityWarning = null,
         bool hasRearFill = false,
-        double rearFillOffsetMs = DefaultRearFillOffsetMs)
+        double rearFillOffsetMs = VirtualCrossoverLimits.DefaultRearFillOffsetMs)
     {
         this.stereo = stereo;
         this.runner = runner;
@@ -133,9 +133,6 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
             SetStatus(polarityWarning, StatusError);
         }
     }
-
-    /// <summary>Precedence-effect start: 10-20 ms is where the rear stops being localized and reads as room.</summary>
-    public const double DefaultRearFillOffsetMs = 15.0;
 
     private void ApplyRearFillAvailability(bool hasRearFill)
     {

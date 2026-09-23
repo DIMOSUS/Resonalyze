@@ -77,7 +77,7 @@ public partial class VirtualCrossoverPanel
         };
         menu.Items.Add(clearItem);
 
-        DropDownMenu.ShowUnder(ControlFor(channel).PeqMenuButton, menu);
+        ShowMenu(ControlFor(channel).PeqMenuButton, menu);
     }
 
     // The gate mirrors the magnitude view: shared template, active pin, last redraw's anchor.

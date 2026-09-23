@@ -50,20 +50,6 @@ internal static class AgentProposalValidator
     public const double MaximumDelayMs = 100;
     public const double DelayStepMs = 0.01;
 
-    // Auto delay dialog and Target Level fields, pinned the same way: a clamped input would not be the reviewed run.
-    public const double MinimumSceneOffsetMs = 0;
-    public const double MaximumSceneOffsetMs = 5;
-    public const double SceneOffsetStepMs = 0.01;
-    public const double MinimumNearSideCutDb = 0;
-    public const double MaximumNearSideCutDb = 6;
-    public const double NearSideCutStepDb = 0.1;
-    public const double MinimumRearFillOffsetMs = 0;
-    public const double MaximumRearFillOffsetMs = 30;
-    public const double RearFillOffsetStepMs = 0.1;
-    public const double MinimumTargetLevelDb = -120;
-    public const double MaximumTargetLevelDb = 60;
-    public const double TargetLevelStepDb = 1;
-
     public const string PointSource = "point";
     public const string SpatialAverageSource = "spatialAverage";
 
@@ -734,12 +720,10 @@ internal static class AgentProposalValidator
         switch (operation)
         {
             case RunAutoDelayOperation delay:
-                return Bounded(delay.SceneOffsetMs, MinimumSceneOffsetMs, MaximumSceneOffsetMs,
-                        SceneOffsetStepMs, "The scene offset", "ms", 2)
-                    ?? Bounded(delay.NearSideCutDb, MinimumNearSideCutDb, MaximumNearSideCutDb,
-                        NearSideCutStepDb, "The near-side cut", "dB", 1)
-                    ?? Bounded(delay.RearFillOffsetMs, MinimumRearFillOffsetMs,
-                        MaximumRearFillOffsetMs, RearFillOffsetStepMs, "The rear fill offset", "ms", 1);
+                // The fields' own ranges: a clamped input would not be the reviewed run.
+                return Bounded(delay.SceneOffsetMs, VirtualCrossoverLimits.SceneOffset, "The scene offset", "ms")
+                    ?? Bounded(delay.NearSideCutDb, VirtualCrossoverLimits.NearSideCut, "The near-side cut", "dB")
+                    ?? Bounded(delay.RearFillOffsetMs, VirtualCrossoverLimits.RearFillOffset, "The rear fill offset", "ms");
 
             case AutoTunePeqOperation tune:
                 return CheckAutoTune(tune, channel!, session);
@@ -1203,8 +1187,7 @@ internal static class AgentProposalValidator
         }
 
         string? problem =
-            Bounded(tune.TargetLevelDb, MinimumTargetLevelDb, MaximumTargetLevelDb,
-                TargetLevelStepDb, "The target level", "dB", 0)
+            Bounded(tune.TargetLevelDb, VirtualCrossoverLimits.TargetLevel, "The target level", "dB")
             ?? Edge(tune.MinHz, nyquistHz, "lower")
             ?? Edge(tune.MaxHz, nyquistHz, "upper");
         if (problem != null)
@@ -1246,14 +1229,22 @@ internal static class AgentProposalValidator
         return session.SpatialAverageMode == mode && session.HybridTicked ? "No change." : null;
     }
 
-    private static string? Bounded(
-        double? value, double minimum, double maximum, double step,
-        string name, string unit, int decimals)
+    // A field's range and its step: a typed value is rounded to the field's decimal places.
+    private static string? Bounded(double? value, NumericFieldRange range, string name, string unit)
     {
         if (value is not { } number)
         {
             return null;
         }
+
+        decimal places = 1m;
+        for (int place = 0; place < range.Decimals; place++)
+        {
+            places /= 10;
+        }
+
+        (double minimum, double maximum, double step, int decimals) =
+            ((double)range.Minimum, (double)range.Maximum, (double)places, range.Decimals);
         if (!double.IsFinite(number) || number < minimum || number > maximum)
         {
             return $"{name} must be between {Fixed(minimum, decimals)} and " +

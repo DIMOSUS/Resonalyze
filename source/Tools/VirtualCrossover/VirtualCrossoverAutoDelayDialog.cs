@@ -24,6 +24,9 @@ internal sealed partial class VirtualCrossoverAutoDelayDialog : Form
     public VirtualCrossoverAutoDelayDialog()
     {
         InitializeComponent();
+        numericSceneOffset.ApplyFieldRange(VirtualCrossoverLimits.SceneOffset);
+        numericNearSideCut.ApplyFieldRange(VirtualCrossoverLimits.NearSideCut);
+        numericRearFill.ApplyFieldRange(VirtualCrossoverLimits.RearFillOffset);
         CancelButton = buttonCancel;
         buttonApply.Enabled = false;
         buttonRun.Click += async (_, _) => await RunAsync();

@@ -5,4 +5,9 @@ namespace Resonalyze;
 internal static class VirtualCrossoverLimits
 {
     public static readonly NumericFieldRange TargetLevel = new(-120m, 60m, 0);
+
+    // The Auto delay dialog's fields.
+    public static readonly NumericFieldRange SceneOffset = new(0m, 5m, 2);
+    public static readonly NumericFieldRange NearSideCut = new(0m, 6m, 1);
+    public static readonly NumericFieldRange RearFillOffset = new(0m, 30m, 1);
 }

@@ -1,5 +1,3 @@
-using Resonalyze.Dsp;
-
 namespace Resonalyze.Options
 {
     public partial class LiveSpectrumOpt

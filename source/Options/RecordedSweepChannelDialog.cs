@@ -18,16 +18,18 @@ internal sealed partial class RecordedSweepChannelDialog : Form
         InitializeComponent();
         StyleGrid();
 
-        foreach (RecordedSweepChannelRow row in choice.Rows)
+        // A row carries its channel: a click on a header sorts the grid, and a position is no channel then.
+        for (int channel = 0; channel < choice.Rows.Count; channel++)
         {
-            channelGridView.Rows.Add(row.Channel, row.Match, row.Rms, row.Peak);
+            RecordedSweepChannelRow row = choice.Rows[channel];
+            channelGridView.Rows[channelGridView.Rows.Add(row.Channel, row.Match, row.Rms, row.Peak)].Tag = channel;
         }
 
         channelGridView.SelectionChanged += (_, _) =>
         {
             if (!presenting && channelGridView.CurrentRow is { } row)
             {
-                choice.Select(row.Index);
+                choice.Select((int)row.Tag!);
             }
         };
         Shown += (_, _) => Present();
@@ -40,7 +42,8 @@ internal sealed partial class RecordedSweepChannelDialog : Form
         presenting = true;
         try
         {
-            channelGridView.CurrentCell = channelGridView.Rows[choice.SelectedChannel].Cells[0];
+            channelGridView.CurrentCell = channelGridView.Rows.Cast<DataGridViewRow>()
+                .First(row => (int)row.Tag! == choice.SelectedChannel).Cells[0];
         }
         finally
         {
@@ -71,7 +74,7 @@ internal sealed partial class RecordedSweepChannelDialog : Form
     {
         if (e.RowIndex >= 0)
         {
-            choice.Select(e.RowIndex);
+            choice.Select((int)channelGridView.Rows[e.RowIndex].Tag!);
             DialogResult = DialogResult.OK;
         }
     }

@@ -50,6 +50,22 @@ public sealed class RecordedSweepChannelDialogWiringTests
     }
 
     [Fact]
+    public void ASortedGridStillMeasuresTheTrackClicked() => Run(() =>
+    {
+        using RecordedSweepChannelDialog dialog = Shown(new RecordedSweepChannelDialog(Channels, Qualities));
+        DataGridView grid = In<DataGridView>(dialog, "channelGridView");
+        grid.Sort(grid.Columns["ColumnMatch"]!, System.ComponentModel.ListSortDirection.Descending);
+        StaTest.Pump();
+
+        ClickCell(grid, 1, 0);
+        Assert.Equal(1, dialog.SelectedChannel);
+        ClickCell(grid, 2, 0, twice: true);
+
+        Assert.Equal(0, dialog.SelectedChannel);
+        Assert.Equal(DialogResult.OK, dialog.DialogResult);
+    });
+
+    [Fact]
     public void AClickedRowIsTheOneMeasured() => Run(() =>
     {
         using RecordedSweepChannelDialog dialog = Shown(new RecordedSweepChannelDialog(Channels, Qualities));

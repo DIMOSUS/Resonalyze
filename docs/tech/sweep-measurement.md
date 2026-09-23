@@ -947,7 +947,8 @@ Record Settings opens five dialogs; each keeps its state and rules in a type of 
   The lists are rebuilt only when their content changes (the array session counts versions), so a click does not
   lose the focused row; the calibration list keeps a renamed label as the list control edited it.
 - **The track grid.** The grid makes its first row current when it is built and shown; the dialog ignores those
-  selections and puts the current row on the pick when it is shown, so OK measures the proposed track.
+  selections and puts the current row on the pick when it is shown, so OK measures the proposed track. Each row
+  carries its channel, because a click on a column header sorts the grid.
 - **Tests.** Rules are tested on the sessions and readers; `CalibrationDialogsBoundaryTests` keeps statics and
   nested types off the dialogs, and the `*DialogWiringTests` drive each shown dialog through its controls beside a
   session changed the same way.

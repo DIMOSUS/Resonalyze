@@ -100,7 +100,7 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
                     ? "1 channel is drawn from its point measurement."
                     : $"{fallbacks.PointMeasuredCount} channels are drawn from their " +
                         "point measurements.",
-                FormatPointMeasuredDetail(fallbacks, processed),
+                FormatPointMeasuredDetail(fallbacks),
                 VirtualCrossoverWarningLevel.Information);
         }
 
@@ -125,16 +125,15 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
             : null;
     }
 
-    private static string FormatPointMeasuredDetail(
-        HybridMagnitudes hybrid,
-        IReadOnlyList<ProcessedChannel> processed)
+    // The hybrid's own channels: the render also holds channels a group view hides.
+    private static string FormatPointMeasuredDetail(HybridMagnitudes hybrid)
     {
         var names = new List<string>();
-        for (int i = 0; i < processed.Count && i < hybrid.PointMeasuredChannels.Count; i++)
+        for (int i = 0; i < hybrid.DrawnChannels.Count && i < hybrid.PointMeasuredChannels.Count; i++)
         {
             if (hybrid.PointMeasuredChannels[i])
             {
-                names.Add(processed[i].Channel.Name);
+                names.Add(hybrid.DrawnChannels[i].Name);
             }
         }
 
@@ -425,9 +424,9 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
         else
         {
             // Positional, nulls included: packing once shifted figures onto the wrong driver's name.
-            for (int i = 0; i < hybrid.ChannelOffsetsDb.Count && i < processed.Count; i++)
+            for (int i = 0; i < hybrid.ChannelOffsetsDb.Count && i < hybrid.DrawnChannels.Count; i++)
             {
-                VirtualCrossoverChannel channel = processed[i].Channel;
+                VirtualCrossoverChannel channel = hybrid.DrawnChannels[i];
                 string figure = hybrid.ChannelOffsetsDb[i] is { } offset
                     ? $"{offset:+0.0;-0.0} dB"
                     : "no overlap to compare";

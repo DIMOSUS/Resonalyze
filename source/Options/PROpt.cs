@@ -1,244 +1,96 @@
-using System;
-using System.Windows.Forms;
+using System.Media;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.Options
 {
-    public partial class PROpt : ImpulsePreviewOptionsForm
+    /// <summary>Binds the Phase settings to a <see cref="GatedAnalysisSettingsSession"/> with its detrend.</summary>
+    public partial class PROpt : GatedAnalysisOptionsForm
     {
-        private Func<CompareAnalysisSource?>? getCompare;
-        private double manualDetrendMilliseconds;
-        private bool updatingDetrendDisplay;
+        private readonly PhaseDetrendEstimate detrendEstimate = new();
 
         public PROpt()
         {
             InitializeComponent();
-            PlotInteraction.Enable(irPlotView);
-            comboWindowMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
-            comboFdwCycles.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
-            comboDetrendMode.SelectedIndexChanged += (_, _) => UpdatePhaseControlState();
-            BindGateControls(
+            BindGated(
+                GatedAnalysisSettingsSession.ForPhase(),
                 numericGateOffset,
                 checkAutoFit,
                 numericLeftWindow,
                 numericWindow,
                 numericRightWindow,
-                labelMinFrequency);
-            buttonTauSlope.Click += (_, _) => ApplyEstimatedTau(useSlope: true);
-            buttonTauPeak.Click += (_, _) => ApplyEstimatedTau(useSlope: false);
-            numericOffset.ValueChanged += (_, _) =>
-            {
-                if (!updatingDetrendDisplay &&
-                    comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Manual)
-                {
-                    manualDetrendMilliseconds = (double)numericOffset.Value;
-                }
-            };
-            ConfigureResetDefaults();
-            comboSmoothingInverseOctaves.FillSmoothingPresets();
+                labelMinFrequency,
+                comboWindowMode,
+                comboFdwCycles,
+                comboSmoothingInverseOctaves,
+                checkBoxShowCoherence,
+                irPlotView);
+            numericOffset.ApplyFieldRange(ModeSettingsLimits.DetrendMs);
+            numericOffset.DefaultValue = Session.Defaults.DetrendMs;
+            BindIndex(comboDetrendMode, index => Detrend.ModeIndex = index);
+            Bind(numericOffset, Detrend.Type);
+            buttonTauSlope.Click += (_, _) => TakeEstimate(useSlope: true);
+            buttonTauPeak.Click += (_, _) => TakeEstimate(useSlope: false);
+            Bind(checkBoxUnwrap, on => Session.Unwrap = on);
+            Bind(checkBoxShowMeasured, on => Session.Curves.ShowMeasuredPhase = on);
+            Bind(checkBoxShowMinimum, on => Session.Curves.ShowMinimumPhase = on);
+            Bind(checkBoxShowExcess, on => Session.Curves.ShowExcessPhase = on);
             InitializeToolTips();
         }
+
+        /// <summary>The refusal sound of the τ buttons; a test listens for it.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(
+            System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        internal Action PlayRefusal { get; set; } = SystemSounds.Beep.Play;
+
+        private PhaseDetrendState Detrend => Session.Detrend!;
 
         internal void Init(
             AnalyzerDocument document,
             int configuredSampleRate,
             FrequencyResponseOptions opt,
             CurveVisibilityOptions visibility,
-            Func<CompareAnalysisSource?>? getCompare = null)
-        {
-            AttachMeasurement(document, configuredSampleRate);
-            this.getCompare = getCompare;
-            manualDetrendMilliseconds = opt.PhaseDetrendMs;
-            InitializeControls(() =>
-            {
-                numericGateOffset.Value = numericGateOffset.ClampValue(opt.PhaseGateOffsetMs);
-                checkAutoFit.Checked = opt.PhaseGateAutoFit;
-                numericWindow.Value = numericWindow.ClampValue(opt.PhasePlateauMs);
-                numericLeftWindow.Value = numericLeftWindow.ClampValue(opt.PhaseLeftMs);
-                numericRightWindow.Value = numericRightWindow.ClampValue(opt.PhaseRightMs);
-                comboSmoothingInverseOctaves.SelectedItem =
-                    SmoothingPresetOptions.Normalize(
-                    opt.SmoothingInverseOctaves, includePsychoacoustic: false);
-                numericOffset.Value = numericOffset.ClampValue(opt.PhaseDetrendMs);
-                comboWindowMode.SelectedIndex = opt.PhaseWindowMode == PhaseWindowMode.Fixed ? 0 : 1;
-                comboFdwCycles.SelectedItem = opt.PhaseFdwCycles is 4 or 6 or 8
-                    ? opt.PhaseFdwCycles
-                    : PhaseAnalysisSettings.DefaultFdwCycles;
-                comboDetrendMode.SelectedIndex = (int)opt.PhaseDetrendMode;
-                checkBoxUnwrap.Checked = opt.Unwrap;
-                checkBoxShowMeasured.Checked = visibility.ShowMeasuredPhase;
-                checkBoxShowMinimum.Checked = visibility.ShowMinimumPhase;
-                checkBoxShowExcess.Checked = visibility.ShowExcessPhase;
-                checkBoxShowCoherence.Checked = visibility.ShowCoherence;
-            });
-            UpdateMinFrequencyLabel();
-            UpdatePhaseControlState();
-            SyncGateOffsetEnabled();
-            UpdateIrPreview();
-        }
+            Func<CompareAnalysisSource?>? getCompare = null) =>
+            InitGated(document, configuredSampleRate, opt, visibility, getCompare);
 
-        public void SetOptions(FrequencyResponseOptions opt, CurveVisibilityOptions visibility)
-        {
-            opt.PhaseGateAutoFit = checkAutoFit.Checked;
-            opt.PhaseGateOffsetMs = (double)numericGateOffset.Value;
-            opt.PhasePlateauMs = (double)numericWindow.Value;
-            opt.PhaseLeftMs = (double)numericLeftWindow.Value;
-            opt.PhaseRightMs = (double)numericRightWindow.Value;
-            opt.SmoothingInverseOctaves =
-                comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
-                    ? inverseOctaves
-                    : SmoothingPresetOptions.SupportedInverseOctaves[0];
-            opt.PhaseDetrendMs = manualDetrendMilliseconds;
-            opt.PhaseWindowMode = comboWindowMode.SelectedIndex == 0
-                ? PhaseWindowMode.Fixed
-                : PhaseWindowMode.FrequencyDependent;
-            opt.PhaseFdwCycles = comboFdwCycles.SelectedItem is int cycles
-                ? cycles
-                : PhaseAnalysisSettings.DefaultFdwCycles;
-            opt.PhaseDetrendMode = Enum.IsDefined(
-                (PhaseDetrendMode)comboDetrendMode.SelectedIndex)
-                    ? (PhaseDetrendMode)comboDetrendMode.SelectedIndex
-                    : PhaseDetrendMode.Auto;
-            opt.Unwrap = checkBoxUnwrap.Checked;
-            visibility.ShowMeasuredPhase = checkBoxShowMeasured.Checked;
-            visibility.ShowMinimumPhase = checkBoxShowMinimum.Checked;
-            visibility.ShowExcessPhase = checkBoxShowExcess.Checked;
-            visibility.ShowCoherence = checkBoxShowCoherence.Checked;
-            UpdateIrPreview();
-        }
+        public void SetOptions(FrequencyResponseOptions opt, CurveVisibilityOptions visibility) => WriteGated(opt, visibility);
 
-        private void UpdatePhaseControlState()
-        {
-            comboFdwCycles.Enabled = comboWindowMode.SelectedIndex == 1;
-            bool manual = comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Manual;
-            numericOffset.Enabled = manual;
-            buttonTauSlope.Enabled = manual;
-            buttonTauPeak.Enabled = manual;
-            UpdateDetrendDisplay();
-        }
-
-        private void UpdateDetrendDisplay()
-        {
-            double displayed = comboDetrendMode.SelectedIndex switch
-            {
-                (int)PhaseDetrendMode.Off => 0.0,
-                (int)PhaseDetrendMode.Auto when TryResolveAutoDetrend(out double resolved) =>
-                    resolved,
-                (int)PhaseDetrendMode.Manual => manualDetrendMilliseconds,
-                _ => 0.0
-            };
-
-            updatingDetrendDisplay = true;
-            try
-            {
-                numericOffset.Value = numericOffset.ClampValue(displayed);
-            }
-            finally
-            {
-                updatingDetrendDisplay = false;
-            }
-        }
-
-        private bool TryResolveAutoDetrend(out double resolved)
-        {
-            resolved = 0.0;
-            try
-            {
-                if (Document is not { } document || Measurement?.HasTransfer != true)
-                {
-                    return false;
-                }
-                IImpulseMeasurement impulse =
-                    new MeasurementPlotContext(document).CreatePrimaryMeasurement();
-                PhaseAnalysisSettings settings = CreateCurrentPhaseAnalysisSettings(
-                    PhaseDetrendMode.Auto);
-                resolved = DataHelper.ResolvePhaseDetrendMilliseconds(impulse, settings);
-                return double.IsFinite(resolved);
-            }
-            catch (InvalidOperationException)
-            {
-                return false;
-            }
-        }
-
-        private PhaseAnalysisSettings CreateCurrentPhaseAnalysisSettings(
-            PhaseDetrendMode detrendMode) => new(
-                comboWindowMode.SelectedIndex == 0
-                    ? PhaseWindowMode.Fixed
-                    : PhaseWindowMode.FrequencyDependent,
-                comboFdwCycles.SelectedItem is int cycles
-                    ? cycles
-                    : PhaseAnalysisSettings.DefaultFdwCycles,
-                detrendMode,
-                manualDetrendMilliseconds,
-                (double)numericGateOffset.Value,
-                (double)numericLeftWindow.Value,
-                (double)numericWindow.Value,
-                (double)numericRightWindow.Value,
-                checkBoxUnwrap.Checked,
-                comboSmoothingInverseOctaves.SelectedItem is int smoothing
-                    ? smoothing
-                    : FrequencyResponseOptions.DefaultPhaseSmoothingInverseOctaves);
-
-        internal (double SlopeMilliseconds, double PeakMilliseconds)
-            EstimateCurrentPhaseDetrend(IImpulseMeasurement impulse) =>
-                DataHelper.EstimatePhaseDetrend(
-                    impulse,
-                    CreateCurrentPhaseAnalysisSettings(PhaseDetrendMode.Auto));
-
-        private void ConfigureResetDefaults()
-        {
-            var defaults = new FrequencyResponseOptions();
-            numericLeftWindow.DefaultValue = (decimal)defaults.PhaseLeftMs;
-            numericWindow.DefaultValue = (decimal)defaults.PhasePlateauMs;
-            numericRightWindow.DefaultValue = (decimal)defaults.PhaseRightMs;
-            numericOffset.DefaultValue = (decimal)defaults.PhaseDetrendMs;
-            comboSmoothingInverseOctaves.DefaultSelectedItem =
-                SmoothingPresetOptions.Normalize(
-                    FrequencyResponseOptions.DefaultPhaseSmoothingInverseOctaves);
-        }
-
-        // Slope flattens the average excess-phase trend; peak references the dominant arrival.
-        private void ApplyEstimatedTau(bool useSlope)
+        private void TakeEstimate(bool useSlope)
         {
             if (Document is not { } document ||
-                Measurement?.HasTransfer != true ||
-                document.IsBusy)
+                PhaseDetrendEstimate.Estimate(document, Session.DetrendReading()) is not { } estimate)
             {
-                System.Media.SystemSounds.Beep.Play();
+                PlayRefusal();
                 return;
             }
 
-            try
-            {
-                IImpulseMeasurement impulse =
-                    new MeasurementPlotContext(document).CreatePrimaryMeasurement();
-                (double slopeMs, double peakMs) = EstimateCurrentPhaseDetrend(impulse);
-                numericOffset.Value = numericOffset.ClampValue(
-                    useSlope ? slopeMs : peakMs);
-                manualDetrendMilliseconds = (double)numericOffset.Value;
-            }
-            catch (InvalidOperationException)
-            {
-                System.Media.SystemSounds.Beep.Play();
-            }
+            Edit(() => Detrend.TakeEstimate(useSlope ? estimate.SlopeMs : estimate.PeakMs));
         }
 
-        // Auto detrend resolves tau from the gate, so recompute the tau display when the gate moves.
-        protected override void OnGatePreviewRendering()
+        // Auto reads τ off the gate, so a moved gate or window moves it.
+        private protected override void PresentControls()
         {
-            if (comboDetrendMode.SelectedIndex == (int)PhaseDetrendMode.Auto)
+            if (Detrend.IsAuto)
             {
-                UpdateDetrendDisplay();
+                Detrend.AutoMs = Document is { } document
+                    ? detrendEstimate.ResolveAuto(document, Session.DetrendReading())
+                    : null;
             }
-        }
 
-        protected override void RenderIrPreview() =>
-            RenderGatedIrPreview(irPlotView, getCompare?.Invoke());
+            base.PresentControls();
+            ShowIndex(comboDetrendMode, Detrend.ModeIndex);
+            Show(numericOffset, Detrend.ShownMs);
+            numericOffset.Enabled = Detrend.IsManual;
+            buttonTauSlope.Enabled = Detrend.IsManual;
+            buttonTauPeak.Enabled = Detrend.IsManual;
+            checkBoxUnwrap.Checked = Session.Unwrap;
+            checkBoxShowMeasured.Checked = Session.Curves.ShowMeasuredPhase;
+            checkBoxShowMinimum.Checked = Session.Curves.ShowMinimumPhase;
+            checkBoxShowExcess.Checked = Session.Curves.ShowExcessPhase;
+        }
 
         private void InitializeToolTips()
         {
-            ApplyGateToolTips();
             toolTip.SetToolTip(
                 comboSmoothingInverseOctaves,
                 "Applies octave smoothing to the phase traces.");

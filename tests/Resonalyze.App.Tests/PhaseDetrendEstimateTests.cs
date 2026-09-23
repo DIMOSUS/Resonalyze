@@ -4,7 +4,7 @@ using Resonalyze.Options;
 
 namespace Resonalyze.App.Tests;
 
-public sealed class PROptTests
+public sealed class PhaseDetrendEstimateTests
 {
     [Fact]
     public void ManualTauEstimate_UsesSelectedFdwSpectrum()
@@ -42,8 +42,8 @@ public sealed class PROptTests
             PhaseRightMs = 15.0,
             Unwrap = true
         };
-        using var panel = new PROpt();
-        panel.Init(measurement.Document, sampleRate, options, new CurveVisibilityOptions());
+        GatedAnalysisSettingsSession session = GatedAnalysisSettingsSession.ForPhase();
+        session.Load(options, new CurveVisibilityOptions());
 
         IImpulseMeasurement view =
             new MeasurementPlotContext(measurement.Document).CreatePrimaryMeasurement();
@@ -61,7 +61,8 @@ public sealed class PROptTests
 
         (double expectedSlope, double expectedPeak) =
             DataHelper.EstimatePhaseDetrend(view, fdwSettings);
-        (double actualSlope, double actualPeak) = panel.EstimateCurrentPhaseDetrend(view);
+        (double actualSlope, double actualPeak) =
+            PhaseDetrendEstimate.Estimate(measurement.Document, session.DetrendReading())!.Value;
 
         Assert.Equal(expectedSlope, actualSlope, tolerance: 1e-9);
         Assert.Equal(expectedPeak, actualPeak, tolerance: 1e-9);

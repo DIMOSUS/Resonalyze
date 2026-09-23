@@ -1,28 +1,29 @@
-using System;
-using System.Windows.Forms;
 using Resonalyze.Dsp;
 
 namespace Resonalyze.Options;
 
-public partial class GDOpt : ImpulsePreviewOptionsForm
+/// <summary>Binds the Group Delay settings to a <see cref="GatedAnalysisSettingsSession"/>.</summary>
+public partial class GDOpt : GatedAnalysisOptionsForm
 {
-    private Func<CompareAnalysisSource?>? getCompare;
-
     public GDOpt()
     {
         InitializeComponent();
-        PlotInteraction.Enable(irPlotView);
-        comboWindowMode.SelectedIndexChanged += (_, _) => UpdateWindowControlState();
-
-        BindGateControls(
+        BindGated(
+            GatedAnalysisSettingsSession.ForGroupDelay(),
             numericGateOffset,
             checkAutoFit,
             numericLeftWindow,
             numericWindow,
             numericRightWindow,
-            labelMinFrequency);
-        ConfigureResetDefaults();
-        comboSmoothingInverseOctaves.FillSmoothingPresets();
+            labelMinFrequency,
+            comboWindowMode,
+            comboFdwCycles,
+            comboSmoothingInverseOctaves,
+            checkBoxShowCoherence,
+            irPlotView);
+        Bind(checkBoxShowGroupDelay, on => Session.Curves.ShowGroupDelay = on);
+        Bind(checkBoxShowMinimumPhaseGroupDelay, on => Session.Curves.ShowMinimumPhaseGroupDelay = on);
+        Bind(checkBoxShowExcessGroupDelay, on => Session.Curves.ShowExcessGroupDelay = on);
         InitializeToolTips();
     }
 
@@ -31,88 +32,21 @@ public partial class GDOpt : ImpulsePreviewOptionsForm
         int configuredSampleRate,
         FrequencyResponseOptions opt,
         CurveVisibilityOptions visibility,
-        Func<CompareAnalysisSource?>? getCompare = null)
+        Func<CompareAnalysisSource?>? getCompare = null) =>
+        InitGated(document, configuredSampleRate, opt, visibility, getCompare);
+
+    public void SetOptions(FrequencyResponseOptions opt, CurveVisibilityOptions visibility) => WriteGated(opt, visibility);
+
+    private protected override void PresentControls()
     {
-        AttachMeasurement(document, configuredSampleRate);
-        this.getCompare = getCompare;
-        InitializeControls(() =>
-        {
-            numericGateOffset.Value = numericGateOffset.ClampValue(opt.GroupDelayGateOffsetMs);
-            checkAutoFit.Checked = opt.GroupDelayGateAutoFit;
-            numericWindow.Value = numericWindow.ClampValue(opt.GroupDelayPlateauMs);
-            numericLeftWindow.Value = numericLeftWindow.ClampValue(opt.GroupDelayLeftMs);
-            numericRightWindow.Value = numericRightWindow.ClampValue(opt.GroupDelayRightMs);
-            comboWindowMode.SelectedIndex =
-                opt.GroupDelayWindowMode == PhaseWindowMode.Fixed ? 0 : 1;
-            comboFdwCycles.SelectedItem = opt.GroupDelayFdwCycles is 4 or 6 or 8
-                ? opt.GroupDelayFdwCycles
-                : PhaseAnalysisSettings.DefaultFdwCycles;
-            comboSmoothingInverseOctaves.SelectedItem =
-                SmoothingPresetOptions.Normalize(
-                    opt.SmoothingInverseOctaves, includePsychoacoustic: false);
-            checkBoxShowGroupDelay.Checked = visibility.ShowGroupDelay;
-            checkBoxShowMinimumPhaseGroupDelay.Checked =
-                visibility.ShowMinimumPhaseGroupDelay;
-            checkBoxShowExcessGroupDelay.Checked = visibility.ShowExcessGroupDelay;
-            checkBoxShowCoherence.Checked = visibility.ShowCoherence;
-        });
-
-        UpdateMinFrequencyLabel();
-        UpdateWindowControlState();
-        SyncGateOffsetEnabled();
-        UpdateIrPreview();
+        base.PresentControls();
+        checkBoxShowGroupDelay.Checked = Session.Curves.ShowGroupDelay;
+        checkBoxShowMinimumPhaseGroupDelay.Checked = Session.Curves.ShowMinimumPhaseGroupDelay;
+        checkBoxShowExcessGroupDelay.Checked = Session.Curves.ShowExcessGroupDelay;
     }
-
-    public void SetOptions(FrequencyResponseOptions opt, CurveVisibilityOptions visibility)
-    {
-        opt.GroupDelayGateAutoFit = checkAutoFit.Checked;
-        opt.GroupDelayGateOffsetMs = (double)numericGateOffset.Value;
-        opt.GroupDelayPlateauMs = (double)numericWindow.Value;
-        opt.GroupDelayLeftMs = (double)numericLeftWindow.Value;
-        opt.GroupDelayRightMs = (double)numericRightWindow.Value;
-        opt.GroupDelayWindowMode = comboWindowMode.SelectedIndex == 0
-            ? PhaseWindowMode.Fixed
-            : PhaseWindowMode.FrequencyDependent;
-        opt.GroupDelayFdwCycles = comboFdwCycles.SelectedItem is int cycles
-            ? cycles
-            : PhaseAnalysisSettings.DefaultFdwCycles;
-        opt.SmoothingInverseOctaves =
-            comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
-                ? inverseOctaves
-                : SmoothingPresetOptions.SupportedInverseOctaves[0];
-        visibility.ShowGroupDelay = checkBoxShowGroupDelay.Checked;
-        visibility.ShowMinimumPhaseGroupDelay =
-            checkBoxShowMinimumPhaseGroupDelay.Checked;
-        visibility.ShowExcessGroupDelay = checkBoxShowExcessGroupDelay.Checked;
-        visibility.ShowCoherence = checkBoxShowCoherence.Checked;
-        UpdateIrPreview();
-    }
-
-    private void UpdateWindowControlState() =>
-        comboFdwCycles.Enabled = comboWindowMode.SelectedIndex == 1;
-
-    internal bool FdwCyclesEnabled => comboFdwCycles.Enabled;
-
-    private void ConfigureResetDefaults()
-    {
-        var defaults = new FrequencyResponseOptions();
-        comboWindowMode.DefaultSelectedItem =
-            defaults.GroupDelayWindowMode == PhaseWindowMode.Fixed ? "Fixed" : "FDW";
-        comboFdwCycles.DefaultSelectedItem = defaults.GroupDelayFdwCycles;
-        numericLeftWindow.DefaultValue = (decimal)defaults.GroupDelayLeftMs;
-        numericWindow.DefaultValue = (decimal)defaults.GroupDelayPlateauMs;
-        numericRightWindow.DefaultValue = (decimal)defaults.GroupDelayRightMs;
-        comboSmoothingInverseOctaves.DefaultSelectedItem =
-            SmoothingPresetOptions.Normalize(
-                FrequencyResponseOptions.DefaultGroupDelaySmoothingInverseOctaves);
-    }
-
-    protected override void RenderIrPreview() =>
-        RenderGatedIrPreview(irPlotView, getCompare?.Invoke());
 
     private void InitializeToolTips()
     {
-        ApplyGateToolTips();
         toolTip.SetToolTip(
             comboSmoothingInverseOctaves,
             "Applies octave smoothing to the resulting Group Delay curve.");

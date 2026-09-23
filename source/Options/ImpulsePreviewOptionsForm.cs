@@ -231,8 +231,6 @@ public class ImpulsePreviewOptionsForm : ModeSettingsForm
         toolTip.SetToolTip(g.MinFrequency, GateReadout.MinFrequency);
     }
 
-    public void RefreshComparePreview() => UpdateIrPreview();
-
     private void TukeyFadeChanged(object? sender, EventArgs e)
     {
         RefreshTukeyWindowLimits();

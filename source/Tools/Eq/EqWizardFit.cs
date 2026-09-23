@@ -21,34 +21,53 @@ internal static class EqWizardFit
     {
         ArgumentNullException.ThrowIfNull(session);
         // A reserve eating the budget is refused before the fit; this only clamps.
-        int bandLimit = session.BandLimit - reservedBands;
         (double minHz, double maxHz) = session.FrequencyWindow;
+        return Options(
+            Policy(session),
+            Math.Clamp(session.BandLimit - reservedBands, 1, EqWizardLimits.MaxBands),
+            minHz,
+            maxHz,
+            session.Bank.PreampDb,
+            session.ProcessorSampleRateHz,
+            session.TargetCrossover);
+    }
 
+    /// <summary>The fit's options from the Auto Tune settings: the button's and a fit run elsewhere (AI import) alike.</summary>
+    /// <param name="pinnedPreampDb">The preamp a fit that may lift the curve keeps.</param>
+    /// <param name="crossover">The handed-over channel's crossover; read only while the policy puts it in the target.</param>
+    public static EqAutoTuner.Options Options(
+        EqAutoTunePolicy policy,
+        int maxBands,
+        double minHz,
+        double maxHz,
+        double pinnedPreampDb,
+        int processorSampleRateHz,
+        EqTargetSlope? crossover)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
         // Preamp policy: a bank that may not lift the curve lets it move with a 0 dB ceiling; with boosts it is pinned to
         // the user's value. See docs/tech/eq-auto-tuner.md#wizard-preamp-policy.
-        bool lifts = session.Boosts == EqAutoTuneBoosts.Allowed;
-        double pinnedPreampDb = session.Bank.PreampDb;
-
+        bool lifts = policy.Boosts == EqAutoTuneBoosts.Allowed;
         return new EqAutoTuner.Options
         {
-            MaxBands = Math.Clamp(bandLimit, 1, EqWizardLimits.MaxBands),
+            MaxBands = maxBands,
             MinFrequencyHz = minHz,
             MaxFrequencyHz = maxHz,
             PreampMinDb = lifts ? pinnedPreampDb : (double)EqWizardLimits.Preamp.Minimum,
             PreampMaxDb = lifts ? pinnedPreampDb : (double)EqWizardLimits.Preamp.Maximum,
-            BandGainMinDb = (double)session.GainMinDb,
-            BandGainMaxDb = (double)session.GainMaxDb,
+            BandGainMinDb = policy.BandGainMinDb,
+            BandGainMaxDb = policy.BandGainMaxDb,
             TotalGainMaxDb = lifts ? double.PositiveInfinity : 0,
-            SampleRateHz = session.ProcessorSampleRateHz,
-            Boosts = session.Boosts,
+            SampleRateHz = processorSampleRateHz,
+            Boosts = policy.Boosts,
             // Widest Q is the strips' limit (available with an empty bank); narrowest is the user's Max Q, below what strips accept.
             QMin = (double)EqWizardLimits.BandQ.Minimum,
-            QMax = (double)session.AutoTuneMaxQ,
+            QMax = policy.MaxQ,
             // Shelves are opt-in: they change the SHAPE returned, and Max Q says nothing about a shelf's knee.
-            AllowShelves = session.AllowShelves,
+            AllowShelves = policy.AllowShelves,
             // Down a crossover skirt the target's fall is the filter's doing: cut onto it, never lift it.
-            NoBoostBands = session.CrossoverInTarget && session.TargetCrossover is { } slope
-                ? EqTargetCrossover.NoBoostBands(slope, minHz, maxHz, session.ProcessorSampleRateHz)
+            NoBoostBands = policy.CrossoverInTarget && crossover is { } slope
+                ? EqTargetCrossover.NoBoostBands(slope, minHz, maxHz, processorSampleRateHz)
                 : Array.Empty<EqNoBoostBand>()
         };
     }

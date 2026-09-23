@@ -1,4 +1,5 @@
 using System.Windows.Forms;
+using Resonalyze.Ui;
 
 namespace Resonalyze.Options;
 
@@ -30,11 +31,7 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
         listViewCalibrations.DoubleClick += (_, _) => EditSelected();
         listViewCalibrations.AfterLabelEdit += (_, e) =>
             e.CancelEdit = !session.Rename(listViewCalibrations.Items[e.Item].Tag as string, e.Label);
-        // System-drawn column headers ignore dark colours; only they are owner-drawn.
-        listViewCalibrations.OwnerDraw = true;
-        listViewCalibrations.DrawColumnHeader += DrawColumnHeader;
-        listViewCalibrations.DrawItem += (_, e) => e.DrawDefault = true;
-        listViewCalibrations.DrawSubItem += (_, e) => e.DrawDefault = true;
+        ThemedListViewHeaders.Apply(listViewCalibrations);
         RefreshList(selectedId: null);
     }
 
@@ -165,25 +162,5 @@ internal sealed partial class MicrophoneCalibrationsDialog : Form
         buttonEdit.Enabled = hasSelection;
         buttonRename.Enabled = hasSelection;
         buttonRemove.Enabled = hasSelection;
-    }
-
-    private void DrawColumnHeader(object? sender, DrawListViewColumnHeaderEventArgs e)
-    {
-        using var background = new SolidBrush(UiPalette.AppBackground);
-        e.Graphics.FillRectangle(background, e.Bounds);
-        using var separator = new Pen(UiPalette.BorderMuted);
-        e.Graphics.DrawLine(
-            separator,
-            e.Bounds.Right - 1,
-            e.Bounds.Top + 2,
-            e.Bounds.Right - 1,
-            e.Bounds.Bottom - 3);
-        TextRenderer.DrawText(
-            e.Graphics,
-            e.Header?.Text ?? string.Empty,
-            e.Font ?? listViewCalibrations.Font,
-            Rectangle.Inflate(e.Bounds, -6, 0),
-            UiPalette.TextPrimary,
-            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
     }
 }

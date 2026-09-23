@@ -8,18 +8,26 @@ internal sealed class PhaseDetrendEstimate
 {
     private (MeasurementResult Result, PhaseAnalysisSettings Settings, double? Value)? last;
 
-    /// <summary>The slope-based excess delay; null without a transfer IR or a finite reading. Memoized per snapshot.</summary>
-    public double? ResolveAuto(AnalyzerDocument document, PhaseAnalysisSettings settings)
+    /// <summary>The slope-based excess delay, null without a transfer IR or a finite reading; memoized per snapshot.
+    /// False while the document is busy: nothing is read, and the panel keeps what it shows.</summary>
+    public bool TryResolveAuto(AnalyzerDocument document, PhaseAnalysisSettings settings, out double? autoMs)
     {
         ArgumentNullException.ThrowIfNull(document);
+        autoMs = null;
+        if (document.IsBusy)
+        {
+            return false;
+        }
+
         if (document.Result is not { HasTransfer: true } result)
         {
-            return null;
+            return true;
         }
 
         if (last is { } memo && ReferenceEquals(memo.Result, result) && memo.Settings == settings)
         {
-            return memo.Value;
+            autoMs = memo.Value;
+            return true;
         }
 
         double? value;
@@ -36,11 +44,12 @@ internal sealed class PhaseDetrendEstimate
         }
 
         last = (result, settings, value);
-        return value;
+        autoMs = value;
+        return true;
     }
 
-    /// <summary>Slope flattens the average excess-phase trend; peak references the dominant arrival. Null while the
-    /// document is busy or has no transfer IR.</summary>
+    /// <summary>Slope flattens the average excess-phase trend; peak references the dominant arrival. Null, as the
+    /// Auto reading is, while the document is busy, and without a transfer IR.</summary>
     public static (double SlopeMs, double PeakMs)? Estimate(AnalyzerDocument document, PhaseAnalysisSettings settings)
     {
         ArgumentNullException.ThrowIfNull(document);

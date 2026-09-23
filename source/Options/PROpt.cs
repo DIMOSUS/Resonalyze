@@ -72,9 +72,14 @@ namespace Resonalyze.Options
         {
             if (Detrend.IsAuto)
             {
-                Detrend.AutoMs = Document is { } document
-                    ? detrendEstimate.ResolveAuto(document, Session.DetrendReading())
-                    : null;
+                if (Document is not { } document)
+                {
+                    Detrend.AutoMs = null;
+                }
+                else if (detrendEstimate.TryResolveAuto(document, Session.DetrendReading(), out double? autoMs))
+                {
+                    Detrend.AutoMs = autoMs;
+                }
             }
 
             base.PresentControls();

@@ -210,11 +210,49 @@ public sealed class ModeSettingsWiringTests
         });
     }
 
-    internal static MeasurementResult Transfer(int sampleRate, int peak, int length = 16_384)
+    [Fact]
+    public void TheAutoTauIsNotReadWhileTheDocumentIsBusy()
+    {
+        StaTest.Run(() =>
+        {
+            using var analyzer = new TestAnalyzer();
+            analyzer.Open(Transfer(48_000, peak: 480, echo: 480));
+            var options = new FrequencyResponseOptions
+            {
+                PhaseGateAutoFit = false,
+                PhaseGateOffsetMs = 10.0,
+                PhasePlateauMs = 2.0,
+                PhaseRightMs = 0.5,
+                PhaseWindowMode = PhaseWindowMode.Fixed,
+                PhaseDetrendMode = PhaseDetrendMode.Auto
+            };
+            var refusals = 0;
+            using var docked = new DockedSettingsPanel<PROpt>(
+                () => new PROpt(),
+                panel =>
+                {
+                    panel.PlayRefusal = () => refusals++;
+                    panel.Init(analyzer.Document, 48_000, options, new CurveVisibilityOptions());
+                });
+            decimal before = docked.Value("numericOffset");
+
+            using (analyzer.Document.TryAcquire())
+            {
+                docked.Type("numericWindow", 15.0m);
+                Assert.Equal(before, docked.Value("numericOffset"));
+            }
+
+            docked.Settle();
+            Assert.NotEqual(before, docked.Value("numericOffset"));
+            Assert.Equal(0, refusals);
+        });
+    }
+
+    internal static MeasurementResult Transfer(int sampleRate, int peak, int length = 16_384, int? echo = null)
     {
         var impulse = new Complex[length];
         impulse[peak] = Complex.One;
-        impulse[peak + (sampleRate / 1_000)] = new Complex(-0.4, 0.0);
+        impulse[peak + (echo ?? sampleRate / 1_000)] = new Complex(echo == null ? -0.4 : 1.0, 0.0);
         return TestMeasurementResults.Restored(
             20,
             20_000,

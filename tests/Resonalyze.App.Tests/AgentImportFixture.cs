@@ -98,10 +98,17 @@ internal sealed class AgentImportFixture : IDisposable, IAgentImportHost
 
     public void SaveAndRedraw() => Calls.Add("save");
 
+    /// <summary>Runs as the work gives the panel back: an edit made while a fit ran.</summary>
+    public Action? WhenIdle { get; set; }
+
     public IDisposable Busy(bool disable)
     {
         Calls.Add(disable ? "busy, disabled" : "busy");
-        return new DisposeAction(() => Calls.Add("idle"));
+        return new DisposeAction(() =>
+        {
+            Calls.Add("idle");
+            WhenIdle?.Invoke();
+        });
     }
 
     /// <summary>Both sides of the first <paramref name="count"/> blocks carry a unit impulse at 48 kHz.</summary>

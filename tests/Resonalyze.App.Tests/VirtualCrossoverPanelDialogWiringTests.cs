@@ -39,6 +39,11 @@ public sealed class VirtualCrossoverPanelDialogWiringTests
         Assert.Equal(-4, a.SideSettings(rightSide: false).GainDb);
         Assert.Equal(-4m, live.Card(a).GainInput.Value);
         Assert.Contains("Applied 1 of 1 proposed change.", Assert.Single(live.Messages));
+        double level = live.Session.Project.TargetLevelDb;
+        CheckBox hybrid = live.Find<CheckBox>("checkBoxHybrid");
+        bool ticked = hybrid.Checked;
+        hybrid.Checked = !ticked;
+        live.Find<ThemedNumericUpDown>("numericTargetLevel").Value = (decimal)level - 7;
 
         live.Click("buttonAi");
         Assert.True(live.MenuItemEnabled("Undo AI import"));
@@ -46,6 +51,9 @@ public sealed class VirtualCrossoverPanelDialogWiringTests
 
         Assert.Equal(before, a.SideSettings(rightSide: false).GainDb);
         Assert.Equal((decimal)before, live.Card(a).GainInput.Value);
+        Assert.Equal(ticked, hybrid.Checked);
+        Assert.Equal(level, live.Session.Project.TargetLevelDb);
+        Assert.Equal((decimal)level, live.Find<ThemedNumericUpDown>("numericTargetLevel").Value);
         live.Click("buttonAi");
         Assert.False(live.MenuItemEnabled("Undo AI import"));
     });
@@ -144,11 +152,19 @@ public sealed class VirtualCrossoverPanelDialogWiringTests
         live.Card(b).PeqMenuButton.PerformClick();
         live.ClickMenu("Edit raw in EQ Wizard");
         VirtualDspEqHandoffRequest raw = handed!;
+        Assert.False(raw.Token.WithChain);
         live.Card(b).PeqMenuButton.PerformClick();
         live.ClickMenu("Clear");
 
         Assert.False(live.Panel.TryApplyPeqFromWizard(raw.Token, bank, raw.TargetLevelDb));
         Assert.Empty(b.Settings.PeqBands);
+
+        live.Settle();
+        VirtualCrossoverProcessedRender drawn = Assert.IsType<VirtualCrossoverProcessedRender>(live.Session.LastRender);
+        live.Session.LastRender = drawn with { Revision = drawn.Revision - 1 };
+        live.Card(b).PeqMenuButton.PerformClick();
+        live.ClickMenu("Edit in EQ Wizard");
+        Assert.Null(handed!.Source.PhaseContext);
     });
 
     [Fact]
@@ -166,6 +182,38 @@ public sealed class VirtualCrossoverPanelDialogWiringTests
 
         Assert.Equal(-11, live.Session.Project.TargetLevelDb);
         Assert.NotEqual(at12, live.Panel.ComputeAgentFingerprint());
+
+        ((IAgentImportHost)live.Panel).SetTargetLevel(-9);
+        Assert.Equal(-9, live.Session.Project.TargetLevelDb);
+        Assert.Equal(-9m, level.Value);
+    });
+
+    [Fact]
+    public void Busy_DisablesThePanelWithAWaitCursor_AndGivesItBack() => StaTest.Run(() =>
+    {
+        using var live = new VirtualCrossoverLivePanel();
+        using (((IVirtualCrossoverWorkHost)live.Panel).Busy(disable: true))
+        {
+            Assert.False(live.Panel.Enabled);
+            Assert.True(live.Panel.UseWaitCursor);
+        }
+
+        Assert.True(live.Panel.Enabled);
+        Assert.False(live.Panel.UseWaitCursor);
+    });
+
+    [Fact]
+    public void TheImportsSpatialAverage_SetsTheModeAndTicksTheHybrid() => StaTest.Run(() =>
+    {
+        using var live = new VirtualCrossoverLivePanel();
+        CheckBox hybrid = live.Find<CheckBox>("checkBoxHybrid");
+        hybrid.Checked = false;
+
+        ((IAgentImportHost)live.Panel).UseSpatialAverage(VirtualCrossoverSpatialAverageMode.MicArray);
+
+        Assert.Equal(VirtualCrossoverSpatialAverageMode.MicArray, live.Session.Project.SpatialAverageMode);
+        Assert.True(hybrid.Checked);
+        Assert.True(live.Session.Project.ShowHybridCurves);
     });
 
     [Fact]
@@ -198,8 +246,18 @@ public sealed class VirtualCrossoverPanelDialogWiringTests
         });
 
         Assert.Equal(0, a.Settings.PhaseRotationDegrees);
+        Assert.Equal(0m, live.Card(a).PhaseInput.Value);
         Assert.False(live.Card(a).PhaseControlShown);
         Assert.StartsWith("Virtual DSP: 1 channel side had a phase rotation", Assert.Single(live.Messages));
+
+        live.Answer<DspProcessorDialog>(() => live.Click("buttonDspProcessor"), dialog =>
+        {
+            In<ThemedComboBox>(dialog, "comboBoxModel").SelectedItem = DspProcessorCatalog.Preset("helix-dsp-ultra-s");
+            In<Button>(dialog, "buttonOk").PerformClick();
+            return true;
+        });
+
+        Assert.True(live.Card(a).PhaseControlShown);
     });
 
     [Fact]

@@ -200,6 +200,30 @@ public sealed class AgentImportRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task AnAutoTuneWhoseProjectMovedDuringTheFit_WritesNoBank_AndPutsTheLevelBack()
+    {
+        import.Measure(2);
+        Project.TargetLevelDb = -2;
+        VirtualCrossoverChannel a = Channels[0];
+        AgentSessionSnapshot snapshot = Runner.Snapshot();
+        AgentOperationVerdict row = Row(
+            new AutoTunePeqOperation("op-1", "A:left", "", -6, null, null, null, null, null, null), "Auto-tune")
+            with
+            {
+                Channel = snapshot.Channels.First(item => ReferenceEquals(item.Settings, a.SideSettings(a.ActiveRight)))
+            };
+        import.WhenIdle = () => import.Session.NextProjectGeneration();
+        var summary = new List<string>();
+
+        bool ran = await Runner.EnginesAsync([row], summary);
+
+        Assert.False(ran);
+        Assert.Contains("skipped (the channel changed while the fit ran)", Assert.Single(summary));
+        Assert.Equal(-2, Project.TargetLevelDb);
+        Assert.Empty(a.SideSettings(a.ActiveRight).PeqBands);
+    }
+
+    [Fact]
     public async Task AnAutoTuneWhoseWindowHoldsNothingMeasured_SkipsThatRowAndRunsTheNext()
     {
         // Two channels crossed at 80..500 Hz but measured from 5 kHz up: an empty fit would replace the bank with nothing.
@@ -629,9 +653,14 @@ public sealed class AgentImportRunnerTests : IDisposable
         await Runner.CommitAsync(trim, new HashSet<string> { "op-1" }, Runner.Snapshot().Fingerprint, 1, [], null);
         AgentImportUndo? first = Runner.Undo;
 
-        var wizard = new AgentProposal(null, "", [], [], [new RunAutoCrossoverOperation("op-1", "")], []);
-        await Runner.CommitAsync(wizard, new HashSet<string> { "op-1" }, Runner.Snapshot().Fingerprint, 1, [], null);
+        // Engine requests need the package this session copied, or the review refuses them before anything is armed.
+        string fingerprint = Runner.Snapshot().Fingerprint!;
+        import.Reader.RememberPackage("package-1", fingerprint);
+        var wizard = new AgentProposal("package-1", "", [], [], [new RunAutoCrossoverOperation("op-1", "")], []);
+        var summary = new List<string>();
+        await Runner.CommitAsync(wizard, new HashSet<string> { "op-1" }, fingerprint, 1, summary, null);
 
+        Assert.Equal(["Auto crossover: skipped (fewer than two enabled channels have a measurement)."], summary);
         Assert.NotNull(first);
         Assert.Same(first, Runner.Undo);
     }

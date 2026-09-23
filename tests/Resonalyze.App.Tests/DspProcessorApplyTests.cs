@@ -36,6 +36,16 @@ public sealed class DspProcessorApplyTests
     }
 
     [Fact]
+    public void ThePhaseAnswerAlone_IsAProcessorChange()
+    {
+        DspProcessorSession choice = Choice();
+        choice.SetPhaseControl(true);
+
+        Assert.True(DspProcessorApply.WriteProcessor(session, choice).Changed);
+        Assert.True(session.Project.DspProcessorPhaseControl);
+    }
+
+    [Fact]
     public void TheIntentIsCompared_NotTheNumber()
     {
         DspProcessorSession choice = Choice();

@@ -57,16 +57,11 @@ public sealed class VirtualCrossoverHybridOffsetTests
     [Fact]
     public void AChannelWithNothingToCompare_LeavesAHoleInTheSpreadReadOut()
     {
-        var hybrid = new HybridMagnitudes([], [], [90.0, null, 82.0], 0);
-        List<ProcessedChannel> processed =
-        [
-            .. new[] { "A", "B", "C" }.Select(name => new ProcessedChannel(
-                new VirtualCrossoverChannel(name),
-                new System.Numerics.Complex[8],
-                PeakIndex: 0,
-                SampleRate: 48_000,
-                OxyColors.White))
-        ];
+        List<ProcessedChannel> processed = Processed("A", "B", "C");
+        var hybrid = new HybridMagnitudes([], [], [90.0, null, 82.0], 0)
+        {
+            DrawnChannels = [.. processed.Select(item => item.Channel)]
+        };
 
         VirtualCrossoverWarning? warning =
             new VirtualCrossoverWarnings(new VirtualCrossoverSession())
@@ -77,6 +72,35 @@ public sealed class VirtualCrossoverHybridOffsetTests
         Assert.Contains("    B     no overlap to compare", warning.Detail);
         Assert.Contains($"    C     {82.0:+0.0;-0.0} dB", warning.Detail);
     }
+
+    // The warnings read every channel of the render; the hybrid holds only the group on screen.
+    [Fact]
+    public void APointMeasuredChannelIsNamedByTheHybrid_NotByItsPlaceInTheRender()
+    {
+        List<ProcessedChannel> processed = Processed("Rear", "Mid", "Sub");
+        var hybrid = new HybridMagnitudes([], [], [0.0, 0.0], 0)
+        {
+            DrawnChannels = [processed[1].Channel, processed[2].Channel],
+            PointMeasuredChannels = [false, true]
+        };
+
+        VirtualCrossoverWarning? warning =
+            new VirtualCrossoverWarnings(new VirtualCrossoverSession())
+                .Judge(processed, hybrid, gatePlacement: null);
+
+        Assert.NotNull(warning);
+        Assert.StartsWith("Drawn from one microphone: Sub.", warning!.Detail);
+    }
+
+    private static List<ProcessedChannel> Processed(params string[] names) =>
+    [
+        .. names.Select(name => new ProcessedChannel(
+            new VirtualCrossoverChannel(name),
+            new System.Numerics.Complex[8],
+            PeakIndex: 0,
+            SampleRate: 48_000,
+            OxyColors.White))
+    ];
 
     private static double Spread(params double[] offsets) =>
         new HybridMagnitudes(

@@ -82,7 +82,7 @@ internal static class EqWizardCalibration
             {
                 options.Add(new EqWizardCalibrationOption(
                     EqWizardCalibrationChoice.Microphone(entry.Id),
-                    entry.Available ? entry.Name : $"{entry.Name} (unavailable)"));
+                    entry.Label));
             }
         }
 

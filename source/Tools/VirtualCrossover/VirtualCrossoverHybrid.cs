@@ -17,6 +17,9 @@ internal sealed record HybridMagnitudes(
     IReadOnlyList<double?> ChannelOffsetsDb,
     double OffsetDb)
 {
+    /// <summary>Whose the positional lists are, in order: the shown group, which may hold fewer channels than the render.</summary>
+    public IReadOnlyList<VirtualCrossoverChannel> DrawnChannels { get; init; } = [];
+
     /// <summary>Channels drawn from their point measurement for lack of a spatial average; must always be surfaced to the user.</summary>
     public IReadOnlyList<bool> PointMeasuredChannels { get; init; } = [];
 
@@ -61,6 +64,9 @@ internal sealed record HybridMagnitudes(
             Channels = [.. positions.Select(index => Channels[index])],
             UnsmoothedChannels = [.. positions.Select(index => UnsmoothedChannels[index])],
             ChannelOffsetsDb = [.. positions.Select(index => ChannelOffsetsDb[index])],
+            DrawnChannels = DrawnChannels.Count == 0
+                ? []
+                : [.. positions.Select(index => DrawnChannels[index])],
             PointMeasuredChannels = PointMeasuredChannels.Count == 0
                 ? []
                 : [.. positions.Select(index => PointMeasuredChannels[index])]
@@ -342,6 +348,7 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
 
         return new HybridMagnitudes(hybrids, unsmoothed, offsets, setOffset)
         {
+            DrawnChannels = [.. processed.Select(item => item.Channel)],
             PointMeasuredChannels = pointMeasured,
             SetDatumsDb = setDatums
         };

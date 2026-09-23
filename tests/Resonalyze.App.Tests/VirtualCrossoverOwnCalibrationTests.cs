@@ -127,4 +127,73 @@ public sealed class VirtualCrossoverOwnCalibrationTests
             [Channel("left", CapsuleA), Channel("right", CapsuleA)]));
         Assert.Null(Warnings(own: false).DescribeOwnCalibrationMismatch(channels));
     }
+
+    [Fact]
+    public void ASelectionOtherThanTheMeasurementsOwn_IsSaidOutLoud_OffIncluded()
+    {
+        IReadOnlyList<ProcessedChannel> channels = [Channel("left", CapsuleA), Channel("right", null)];
+
+        string? named = Warnings(own: false).DescribeForeignCalibration(channels, hybrid: null);
+        string? off = new VirtualCrossoverWarnings(new VirtualCrossoverSession
+        {
+            Project = new VirtualCrossoverProjectFile(),
+            Calibration = VirtualCrossoverCalibrationPolicy.None
+        }).DescribeForeignCalibration(channels, hybrid: null);
+
+        Assert.NotNull(named);
+        Assert.Contains("left", named!);
+        Assert.DoesNotContain("right", named);
+        Assert.NotNull(off);
+        Assert.Contains("no calibration at all", off!);
+        Assert.Null(Warnings(own: true).DescribeForeignCalibration(channels, hybrid: null));
+        Assert.Null(Warnings(own: false).DescribeForeignCalibration([Channel("left", PanelCurve)], hybrid: null));
+    }
+
+    [Fact]
+    public void AChannelTheGroupViewHides_IsNotReportedAsReadThroughAnotherCalibration()
+    {
+        ProcessedChannel hidden = Channel("rear", CapsuleA);
+        ProcessedChannel visible = Channel("front", PanelCurve);
+
+        VirtualCrossoverWarnings warnings = Warnings(own: false);
+
+        Assert.Null(warnings.Judge([hidden, visible], hybrid: null, gatePlacement: null, shown: [visible]));
+        Assert.NotNull(warnings.Judge([hidden, visible], hybrid: null, gatePlacement: null, shown: [hidden, visible]));
+    }
+
+    // A hybrid draws the capture, so the capture's own file is what the selection is compared with.
+    [Theory]
+    [InlineData(VirtualCrossoverSpatialAverageMode.MovingMic, true, false)]
+    [InlineData(VirtualCrossoverSpatialAverageMode.MovingMic, false, true)]
+    [InlineData(VirtualCrossoverSpatialAverageMode.MicArray, true, true)]
+    public void UnderAHybridTheDrawnCurvesSourceDecides(
+        VirtualCrossoverSpatialAverageMode mode, bool selectCapturesFile, bool expectNotice)
+    {
+        // The IR through the panel's curve, the capture (none for the array case) through capsule A.
+        ProcessedChannel channel = Channel("left", PanelCurve);
+        VirtualCrossoverChannelState state = channel.Channel.SideState(false);
+        state.MicrophoneCalibration = Settings(PanelCurve, "panel");
+        if (mode == VirtualCrossoverSpatialAverageMode.MovingMic)
+        {
+            state.SpatialAverage = new LiveCaptureDocument
+            {
+                Method = SpatialAverageMethod.MovingMic,
+                Calibration = Settings(CapsuleA, "capsule A")
+            };
+        }
+
+        var warnings = new VirtualCrossoverWarnings(new VirtualCrossoverSession
+        {
+            Project = new VirtualCrossoverProjectFile { SpatialAverageMode = mode },
+            Calibration = new(false, selectCapturesFile ? CapsuleA : PanelCurve, SelectedName: null)
+        });
+        var hybrid = new HybridMagnitudes([], [], [null], 0);
+
+        string? notice = warnings.DescribeForeignCalibration([channel], hybrid);
+
+        Assert.Equal(expectNotice, notice != null);
+    }
+
+    private static VirtualCrossoverCalibrationSettings Settings(CalibrationFile curve, string name) =>
+        VirtualCrossoverCalibrationSettings.From(curve, name, null);
 }

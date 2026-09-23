@@ -14,21 +14,16 @@ internal sealed class MicrophoneCalibrationService
     private readonly Func<string?> getZeroDegreePath;
     private readonly Func<IReadOnlyList<MicrophoneCalibrationDefinition>> getDefinitions;
     private readonly Action<string, string?> reportProblem;
-    private readonly string legacyZeroDegreePath;
     private MicrophoneCalibrationDefinition[] definitions;
 
     public MicrophoneCalibrationService(
         Func<string?> getZeroDegreePath,
         Func<IReadOnlyList<MicrophoneCalibrationDefinition>> getDefinitions,
-        Action<string, string?> reportProblem,
-        string? legacyZeroDegreeDirectory = null)
+        Action<string, string?> reportProblem)
     {
         this.getZeroDegreePath = getZeroDegreePath;
         this.getDefinitions = getDefinitions;
         this.reportProblem = reportProblem;
-        legacyZeroDegreePath = Path.Combine(
-            legacyZeroDegreeDirectory ?? AppContext.BaseDirectory,
-            "calibration.txt");
         definitions = Snapshot();
     }
 
@@ -36,14 +31,15 @@ internal sealed class MicrophoneCalibrationService
     public IReadOnlyList<MicrophoneCalibrationEntry> GetEntries()
     {
         MicrophoneCalibrationDefinition[] current = definitions;
-        string? zeroDegreePath = ResolveZeroDegreePath();
+        string? configured = getZeroDegreePath();
+        string? zeroDegreePath = ResolveZeroDegreePath(configured);
         var entries = new List<MicrophoneCalibrationEntry>(current.Length + 1)
         {
             new(
                 MicrophoneCalibrationIds.ZeroDegrees,
                 "0°",
                 HasUsableData(zeroDegreePath),
-                FileNameOf(zeroDegreePath))
+                FileNameOf(configured))
         };
         foreach (MicrophoneCalibrationDefinition definition in current)
         {
@@ -261,14 +257,9 @@ internal sealed class MicrophoneCalibrationService
         }
     }
 
-    private string? ResolveZeroDegreePath()
-    {
-        string? path = getZeroDegreePath();
-        if (!string.IsNullOrWhiteSpace(path))
-        {
-            return File.Exists(path) ? path : null;
-        }
+    // Only the path set in the interface; no file beside the executable stands in for it.
+    private string? ResolveZeroDegreePath() => ResolveZeroDegreePath(getZeroDegreePath());
 
-        return File.Exists(legacyZeroDegreePath) ? legacyZeroDegreePath : null;
-    }
+    private static string? ResolveZeroDegreePath(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? path : null;
 }

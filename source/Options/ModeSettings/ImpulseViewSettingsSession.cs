@@ -18,11 +18,12 @@ internal sealed class ImpulseViewSettingsSession
 
     public bool BandActive => BandOctaves > 0.0;
 
-    public ImpulseAmplitudeScale AmplitudeScale { get; set; }
+    /// <summary>Null for a stored value the list does not hold: nothing is picked and Apply writes the first.</summary>
+    public ImpulseAmplitudeScale? AmplitudeScale { get; set; }
 
-    public ImpulseTimeUnit TimeUnit { get; set; }
+    public ImpulseTimeUnit? TimeUnit { get; set; }
 
-    public ImpulseTimeOrigin TimeOrigin { get; set; }
+    public ImpulseTimeOrigin? TimeOrigin { get; set; }
 
     public bool Invert { get; set; }
 
@@ -46,9 +47,9 @@ internal sealed class ImpulseViewSettingsSession
         EnvelopeSmoothingMs = ModeSettingsLimits.EnvelopeSmoothingMs.Clamp(options.EnvelopeSmoothingMs);
         BandOctaves = ImpulseBandCentres.NearestWidth(options.BandFilterOctaves);
         ListCentres(options.BandCenterHz);
-        AmplitudeScale = options.AmplitudeScale;
-        TimeUnit = options.TimeUnit;
-        TimeOrigin = options.TimeOrigin;
+        AmplitudeScale = Enum.IsDefined(options.AmplitudeScale) ? options.AmplitudeScale : null;
+        TimeUnit = Enum.IsDefined(options.TimeUnit) ? options.TimeUnit : null;
+        TimeOrigin = Enum.IsDefined(options.TimeOrigin) ? options.TimeOrigin : null;
         Invert = options.Invert;
         NormalizeStepToImpulsePeak = options.NormalizeStepToImpulsePeak;
         ShowImpulse = options.ShowImpulse;
@@ -83,9 +84,9 @@ internal sealed class ImpulseViewSettingsSession
         options.EnvelopeSmoothingMs = (double)EnvelopeSmoothingMs;
         options.BandFilterOctaves = BandOctaves;
         options.BandCenterHz = CentreHz ?? options.BandCenterHz;
-        options.AmplitudeScale = AmplitudeScale;
-        options.TimeUnit = TimeUnit;
-        options.TimeOrigin = TimeOrigin;
+        options.AmplitudeScale = AmplitudeScale ?? ImpulseAmplitudeScale.Linear;
+        options.TimeUnit = TimeUnit ?? ImpulseTimeUnit.Milliseconds;
+        options.TimeOrigin = TimeOrigin ?? ImpulseTimeOrigin.RecordStart;
         options.Invert = Invert;
         options.NormalizeStepToImpulsePeak = NormalizeStepToImpulsePeak;
         options.ShowImpulse = ShowImpulse;

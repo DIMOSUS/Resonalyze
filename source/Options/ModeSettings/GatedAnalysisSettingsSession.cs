@@ -30,10 +30,8 @@ internal sealed class GatedAnalysisSettingsSession
 
     public ModeSettingsMeasurement Measurement { get; private set; } = new(null, 0);
 
-    public CompareAnalysisSource? Compare { get; set; }
-
-    public GatePreview Preview =>
-        new(Measurement.Result, (double)Gate.OffsetMs, (double)Gate.LeftMs, (double)Gate.PlateauMs, (double)Gate.RightMs, Compare);
+    public GatePreview Preview(CompareAnalysisSource? compare) =>
+        new(Measurement.Result, (double)Gate.OffsetMs, (double)Gate.LeftMs, (double)Gate.PlateauMs, (double)Gate.RightMs, compare);
 
     public static GatedAnalysisSettingsSession ForPhase() => new(GatedAnalysisDefaults.Phase, new PhaseDetrendState());
 

@@ -97,14 +97,23 @@ namespace Resonalyze.Options
             comboBandCenter.Enabled = session.BandActive;
             // Not Enabled: a disabled label paints near-black on this dark panel.
             UiStyle.SetTextEnabledLook(labelBandCenter, session.BandActive);
-            ShowItem(comboAmplitudeScale, session.AmplitudeScale);
-            ShowItem(comboTimeUnit, session.TimeUnit);
-            ShowItem(comboTimeOrigin, session.TimeOrigin);
+            ShowChoice(comboAmplitudeScale, session.AmplitudeScale);
+            ShowChoice(comboTimeUnit, session.TimeUnit);
+            ShowChoice(comboTimeOrigin, session.TimeOrigin);
             checkInvert.Checked = session.Invert;
             checkNormalizeStep.Checked = session.NormalizeStepToImpulsePeak;
             checkBoxShowImpulse.Checked = session.ShowImpulse;
             checkBoxShowEnvelope.Checked = session.ShowEnvelope;
             checkBoxShowStep.Checked = session.ShowStep;
+        }
+
+        private void ShowChoice<T>(ThemedComboBox comboBox, T? value)
+            where T : struct
+        {
+            if (value is { } shown)
+            {
+                ShowItem(comboBox, shown);
+            }
         }
 
         private static void Fill<T>(ThemedComboBox comboBox, IReadOnlyList<T> values, Func<T, string> label)

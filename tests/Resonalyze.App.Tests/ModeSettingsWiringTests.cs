@@ -296,6 +296,9 @@ public sealed class ModeSettingsWiringTests
             Assert.Equal((double)ModeSettingsLimits.DetrendMs.Clamp(peakMs), options.PhaseDetrendMs);
             docked.Click("buttonTauSlope");
             Assert.Equal(ModeSettingsLimits.DetrendMs.Clamp(slopeMs), docked.Value("numericOffset"));
+            Assert.Equal(1, docked.TakeApplies());
+            docked.Click("buttonTauSlope");
+            Assert.Equal(0, docked.TakeApplies());
 
             using (analyzer.Document.TryAcquire())
             {

@@ -99,7 +99,7 @@ public class GatedAnalysisOptionsForm : ImpulsePreviewOptionsForm
 
     private protected override PlotView? PreviewView => preview;
 
-    private protected override ImpulsePreviewInput PreviewInput => session.Preview with { Compare = getCompare?.Invoke() };
+    private protected override ImpulsePreviewInput PreviewInput => session.Preview(getCompare?.Invoke());
 
     private protected override void PresentControls()
     {

@@ -64,7 +64,15 @@ namespace Resonalyze.Options
                 return;
             }
 
-            Edit(() => Detrend.TakeEstimate(useSlope ? estimate.SlopeMs : estimate.PeakMs));
+            double estimateMs = useSlope ? estimate.SlopeMs : estimate.PeakMs;
+            // An estimate the field already shows moves nothing, so nothing applies.
+            if (ModeSettingsLimits.DetrendMs.Clamp(estimateMs) == Detrend.ShownMs)
+            {
+                Detrend.TakeEstimate(estimateMs);
+                return;
+            }
+
+            Edit(() => Detrend.TakeEstimate(estimateMs));
         }
 
         // Auto reads τ off the gate, so a moved gate or window moves it.

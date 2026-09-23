@@ -270,6 +270,26 @@ public sealed class ModeSettingsSessionTests
     }
 
     [Fact]
+    public void AStoredViewTheListsDoNotHoldIsWrittenAsTheirFirst()
+    {
+        var session = new ImpulseViewSettingsSession();
+        session.Load(new ImpulseResponseOptions
+        {
+            AmplitudeScale = (ImpulseAmplitudeScale)9,
+            TimeUnit = (ImpulseTimeUnit)9,
+            TimeOrigin = ImpulseTimeOrigin.Peak
+        }, 48_000);
+        Assert.Null(session.AmplitudeScale);
+
+        var written = new ImpulseResponseOptions { AmplitudeScale = ImpulseAmplitudeScale.Decibels, TimeUnit = ImpulseTimeUnit.Samples };
+        session.WriteTo(written);
+
+        Assert.Equal(
+            (ImpulseAmplitudeScale.Linear, ImpulseTimeUnit.Milliseconds, ImpulseTimeOrigin.Peak),
+            (written.AmplitudeScale, written.TimeUnit, written.TimeOrigin));
+    }
+
+    [Fact]
     public void AWaterfallDrawsFromEightSlices()
     {
         Assert.Null(WaterfallSliceVerdict.Explain(WaterfallMode.Fourier, 8));

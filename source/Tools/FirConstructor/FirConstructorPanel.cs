@@ -346,12 +346,14 @@ public partial class FirConstructorPanel : UserControl
         catch (OperationCanceledException)
         {
         }
-        catch (Exception exception) when (session.IsCurrent(rebuild) && !IsDisposed)
+        catch (Exception exception) when (!IsDisposed)
         {
             FirFilter? before = session.Kernel;
-            session.Fail(exception.Message);
-            labelProblem.Text = session.Problem;
-            ApplyRendering(before);
+            if (session.Fail(rebuild, exception.Message))
+            {
+                labelProblem.Text = session.Problem;
+                ApplyRendering(before);
+            }
         }
         finally
         {

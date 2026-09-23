@@ -21,43 +21,43 @@ internal sealed class LiveSpectrumSettingsSession
     /// <summary>The excitations the mode offers: Silent only without a reference, periodic pink only in MMM.</summary>
     public IReadOnlyList<NoiseColor> Signals { get; private set; } = [];
 
-    public NoiseColor Signal { get; private set; } = NoiseColor.PinkPeriodic;
+    public NoiseColor Signal { get; set; } = NoiseColor.PinkPeriodic;
 
     public int SampleRateHz { get; private set; }
 
-    public int SequenceLength { get; private set; } = LiveSpectrumSettingsChoices.SequenceLengths[0];
+    public int SequenceLength { get; set; } = LiveSpectrumSettingsChoices.SequenceLengths[0];
 
-    public WindowType Window { get; private set; } = WindowType.Hann;
+    public WindowType Window { get; set; } = WindowType.Hann;
 
     /// <summary>False while periodic pink forces a rectangular window.</summary>
     public bool WindowEditable { get; private set; } = true;
 
-    public int OverlapPercent { get; private set; } = LiveSpectrumSettingsChoices.OverlapPercents[0];
+    public int OverlapPercent { get; set; } = LiveSpectrumSettingsChoices.OverlapPercents[0];
 
     /// <summary>False while periodic pink forces the overlap off.</summary>
     public bool OverlapEditable { get; private set; } = true;
 
-    public int SmoothingInverseOctaves { get; private set; }
+    public int SmoothingInverseOctaves { get; set; }
 
-    public AveragingSpeed Averaging { get; private set; } = AveragingSpeed.Medium;
+    public AveragingSpeed Averaging { get; set; } = AveragingSpeed.Medium;
 
-    public int CoherenceLimitPercent { get; private set; } = LiveSpectrumSettingsChoices.CoherenceLimits[0];
+    public int CoherenceLimitPercent { get; set; } = LiveSpectrumSettingsChoices.CoherenceLimits[0];
 
-    public bool MainCurve { get; private set; }
+    public bool MainCurve { get; set; }
 
-    public bool InputMagnitude { get; private set; }
+    public bool InputMagnitude { get; set; }
 
-    public bool PeakHold { get; private set; }
+    public bool PeakHold { get; set; }
 
-    public bool Coherence { get; private set; }
+    public bool Coherence { get; set; }
 
-    public bool Tilt { get; private set; }
+    public bool Tilt { get; set; }
 
     /// <summary>The slope compensation needs a known excitation: RTA with a real noise. Evaluated when the signal is
     /// committed or the mode changes.</summary>
     public bool TiltApplicable { get; private set; }
 
-    public bool Spl { get; private set; }
+    public bool Spl { get; set; }
 
     public bool SplAvailable { get; private set; }
 
@@ -81,11 +81,7 @@ internal sealed class LiveSpectrumSettingsSession
 
     /// <summary>MMM pins the excitation, the averaging and the smoothing to the one recipe a spatial average is valid
     /// under.</summary>
-    public bool SignalEditable => !IsMmm;
-
-    public bool AveragingEditable => !IsMmm;
-
-    public bool SmoothingEditable => !IsMmm;
+    public bool RecipeEditable => !IsMmm;
 
     /// <summary>The limit dims the transfer function, which a reference-free mode does not draw.</summary>
     public bool CoherenceLimitEditable => !IsReferenceFree;
@@ -163,8 +159,7 @@ internal sealed class LiveSpectrumSettingsSession
         Spl = false;
     }
 
-    public void MoveSignal(NoiseColor signal) => Signal = signal;
-
+    // A field's setter is a move; a commit makes the shown value the user's pick and runs the rules it drives.
     public void CommitSignal()
     {
         userSignal = Signal;
@@ -172,33 +167,13 @@ internal sealed class LiveSpectrumSettingsSession
         TiltApplicable = IsRta && Signal != NoiseColor.Silent;
     }
 
-    public void MoveSequenceLength(int length) => SequenceLength = length;
-
-    public void MoveWindow(WindowType window) => Window = window;
-
     public void CommitWindow() => userWindow = Window;
-
-    public void MoveOverlap(int percent) => OverlapPercent = percent;
 
     public void CommitOverlap() => userOverlap = OverlapPercent;
 
-    public void MoveSmoothing(int inverseOctaves) => SmoothingInverseOctaves = inverseOctaves;
-
     public void CommitSmoothing() => userSmoothing = SmoothingInverseOctaves;
 
-    public void MoveAveraging(AveragingSpeed speed) => Averaging = speed;
-
     public void CommitAveraging() => userAveraging = Averaging;
-
-    public void MoveCoherenceLimit(int percent) => CoherenceLimitPercent = percent;
-
-    public void SetMainCurve(bool shown) => MainCurve = shown;
-
-    public void SetPeakHold(bool shown) => PeakHold = shown;
-
-    public void SetCoherence(bool shown) => Coherence = shown;
-
-    public void SetInputMagnitude(bool shown) => InputMagnitude = shown;
 
     /// <summary>A click the box took; a muted box ignores it and keeps the user's pick.</summary>
     public void ClickInputMagnitude()
@@ -209,8 +184,6 @@ internal sealed class LiveSpectrumSettingsSession
         }
     }
 
-    public void SetTilt(bool on) => Tilt = on;
-
     public void ClickTilt()
     {
         if (TiltInteractive)
@@ -218,8 +191,6 @@ internal sealed class LiveSpectrumSettingsSession
             userTilt = Tilt;
         }
     }
-
-    public void SetSpl(bool on) => Spl = on;
 
     public void ClickSpl()
     {

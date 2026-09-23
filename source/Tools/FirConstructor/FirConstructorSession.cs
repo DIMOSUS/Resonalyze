@@ -8,35 +8,12 @@ internal sealed record FirConstructorStandaloneWork(
     FirFilter? BareKernel,
     string? BareName);
 
-/// <summary>One rebuild: a design to build or a bare kernel to show, at a rate. Only the session's latest one lands.</summary>
-internal sealed class FirConstructorRebuild : IDisposable
+/// <summary>One rebuild: a design to build (null for a bare kernel) or a bare kernel to show, at a rate. An edit
+/// settles a moment first, so a burst of them builds once; only the session's latest rebuild lands.</summary>
+internal sealed record FirConstructorRebuild(
+    int Generation, FirCrossoverDesign? Design, FirFilter? BareKernel, string? Name, int RateHz, bool Settle) : IDisposable
 {
     private readonly CancellationTokenSource cancellation = new();
-
-    public FirConstructorRebuild(
-        int generation, FirCrossoverDesign? design, FirFilter? bareKernel, string? name, int rateHz, bool settle)
-    {
-        Generation = generation;
-        Design = design;
-        BareKernel = bareKernel;
-        Name = name;
-        RateHz = rateHz;
-        Settle = settle;
-    }
-
-    public int Generation { get; }
-
-    /// <summary>Null for a bare kernel.</summary>
-    public FirCrossoverDesign? Design { get; }
-
-    public FirFilter? BareKernel { get; }
-
-    public string? Name { get; }
-
-    public int RateHz { get; }
-
-    /// <summary>An edit waits a moment first, so a burst of them builds once.</summary>
-    public bool Settle { get; }
 
     public CancellationToken Token => cancellation.Token;
 
@@ -129,13 +106,21 @@ internal sealed class FirConstructorSession
         return true;
     }
 
-    /// <summary>The latest rebuild threw: nothing is shown, and the problem says why.</summary>
-    public void Fail(string message)
+    /// <summary>The rebuild threw: nothing is shown, and the problem says why. False, with nothing changed, when a later
+    /// edit has taken its place.</summary>
+    public bool Fail(FirConstructorRebuild rebuild, string message)
     {
+        if (!IsCurrent(rebuild))
+        {
+            return false;
+        }
+
         Design = null;
         Rendering = null;
+        KernelName = null;
         RebuildPending = false;
         Problem = "The kernel could not be built: " + message;
+        return true;
     }
 
     public void Finish(FirConstructorRebuild rebuild)

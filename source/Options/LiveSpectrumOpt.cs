@@ -90,70 +90,49 @@ namespace Resonalyze.Options
         {
             radioModeRta.CheckedChanged += (_, _) => Edit(() => session.SelectMode(CheckedMode()));
             radioModeMmm.CheckedChanged += (_, _) => Edit(() => session.SelectMode(CheckedMode()));
-            signalTypeComboBox.SelectedIndexChanged += (_, _) =>
+            Bind<NoiseColor>(signalTypeComboBox, value => session.Signal = value, session.CommitSignal);
+            Bind<int>(sequenceLengthComboBox, value => session.SequenceLength = value);
+            Bind<WindowType>(windowComboBox, value => session.Window = value, session.CommitWindow);
+            Bind<int>(overlapComboBox, value => session.OverlapPercent = value, session.CommitOverlap);
+            Bind<int>(comboSmoothingInverseOctaves, value => session.SmoothingInverseOctaves = value, session.CommitSmoothing);
+            Bind<AveragingSpeed>(averagingComboBox, value => session.Averaging = value, session.CommitAveraging);
+            Bind<int>(coherenceLimitComboBox, value => session.CoherenceLimitPercent = value);
+            Bind(checkMainCurve, on => session.MainCurve = on);
+            Bind(checkPeakHold, on => session.PeakHold = on);
+            Bind(checkCoherence, on => session.Coherence = on);
+            Bind(checkInputMagnitude, on => session.InputMagnitude = on, session.ClickInputMagnitude);
+            Bind(checkTilt, on => session.Tilt = on, session.ClickTilt);
+            Bind(checkSpl, on => session.Spl = on, session.ClickSpl);
+        }
+
+        // A moved list is shown at once; only a commit (a pick, not an arrow key) reaches the user's pick.
+        private void Bind<T>(ThemedComboBox combo, Action<T> move, Action? commit = null)
+        {
+            combo.SelectedIndexChanged += (_, _) =>
             {
-                if (signalTypeComboBox.SelectedItem is NoiseColorOption option)
+                // The smoothing list holds its values bare.
+                if (combo.SelectedItem is Choice<T> choice)
                 {
-                    Edit(() => session.MoveSignal(option.NoiseColor));
+                    Edit(() => move(choice.Value));
+                }
+                else if (combo.SelectedItem is T value)
+                {
+                    Edit(() => move(value));
                 }
             };
-            signalTypeComboBox.SelectionChangeCommitted += (_, _) => Edit(session.CommitSignal);
-            sequenceLengthComboBox.SelectedIndexChanged += (_, _) =>
+            if (commit != null)
             {
-                if (sequenceLengthComboBox.SelectedItem is SequenceLengthOption option)
-                {
-                    Edit(() => session.MoveSequenceLength(option.Length));
-                }
-            };
-            windowComboBox.SelectedIndexChanged += (_, _) =>
+                combo.SelectionChangeCommitted += (_, _) => Edit(commit);
+            }
+        }
+
+        private void Bind(CheckBox box, Action<bool> show, Action? click = null)
+        {
+            box.CheckedChanged += (_, _) => Edit(() => show(box.Checked));
+            if (click != null)
             {
-                if (windowComboBox.SelectedItem is WindowOption option)
-                {
-                    Edit(() => session.MoveWindow(option.WindowType));
-                }
-            };
-            windowComboBox.SelectionChangeCommitted += (_, _) => Edit(session.CommitWindow);
-            overlapComboBox.SelectedIndexChanged += (_, _) =>
-            {
-                if (overlapComboBox.SelectedItem is OverlapOption option)
-                {
-                    Edit(() => session.MoveOverlap(option.Percent));
-                }
-            };
-            overlapComboBox.SelectionChangeCommitted += (_, _) => Edit(session.CommitOverlap);
-            comboSmoothingInverseOctaves.SelectedIndexChanged += (_, _) =>
-            {
-                if (comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves)
-                {
-                    Edit(() => session.MoveSmoothing(inverseOctaves));
-                }
-            };
-            comboSmoothingInverseOctaves.SelectionChangeCommitted += (_, _) => Edit(session.CommitSmoothing);
-            averagingComboBox.SelectedIndexChanged += (_, _) =>
-            {
-                if (averagingComboBox.SelectedItem is AveragingOption option)
-                {
-                    Edit(() => session.MoveAveraging(option.Speed));
-                }
-            };
-            averagingComboBox.SelectionChangeCommitted += (_, _) => Edit(session.CommitAveraging);
-            coherenceLimitComboBox.SelectedIndexChanged += (_, _) =>
-            {
-                if (coherenceLimitComboBox.SelectedItem is CoherenceLimitOption option)
-                {
-                    Edit(() => session.MoveCoherenceLimit(option.Percent));
-                }
-            };
-            checkMainCurve.CheckedChanged += (_, _) => Edit(() => session.SetMainCurve(checkMainCurve.Checked));
-            checkPeakHold.CheckedChanged += (_, _) => Edit(() => session.SetPeakHold(checkPeakHold.Checked));
-            checkCoherence.CheckedChanged += (_, _) => Edit(() => session.SetCoherence(checkCoherence.Checked));
-            checkInputMagnitude.CheckedChanged +=
-                (_, _) => Edit(() => session.SetInputMagnitude(checkInputMagnitude.Checked));
-            checkInputMagnitude.Click += (_, _) => Edit(session.ClickInputMagnitude);
-            checkTilt.CheckedChanged += (_, _) => Edit(() => session.SetTilt(checkTilt.Checked));
-            checkTilt.Click += (_, _) => Edit(session.ClickTilt);
-            checkSpl.CheckedChanged += (_, _) => Edit(() => session.SetSpl(checkSpl.Checked));
-            checkSpl.Click += (_, _) => Edit(session.ClickSpl);
+                box.Click += (_, _) => Edit(click);
+            }
         }
 
         // A radio clears its siblings before it raises CheckedChanged, so the handler reads the final pick.

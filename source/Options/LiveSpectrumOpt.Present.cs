@@ -6,34 +6,23 @@ namespace Resonalyze.Options
     {
         private void FillLists()
         {
-            sequenceLengthComboBox.Items.Clear();
-            foreach (int sequenceLength in LiveSpectrumSettingsChoices.SequenceLengths)
-            {
-                sequenceLengthComboBox.Items.Add(new SequenceLengthOption(sequenceLength, session.SampleRateHz));
-            }
+            Fill(sequenceLengthComboBox, LiveSpectrumSettingsChoices.SequenceLengths.Select(length =>
+                (length, LiveSpectrumSettingsChoices.SequenceLengthLabel(length, session.SampleRateHz))));
+            Fill(overlapComboBox, Percents(LiveSpectrumSettingsChoices.OverlapPercents));
+            Fill(windowComboBox, LiveSpectrumSettingsChoices.Windows);
+            Fill(averagingComboBox, LiveSpectrumSettingsChoices.Averagings);
+            Fill(coherenceLimitComboBox, Percents(LiveSpectrumSettingsChoices.CoherenceLimits));
+        }
 
-            overlapComboBox.Items.Clear();
-            foreach (int overlapPercent in LiveSpectrumSettingsChoices.OverlapPercents)
-            {
-                overlapComboBox.Items.Add(new OverlapOption(overlapPercent));
-            }
+        private static IEnumerable<(int, string)> Percents(IEnumerable<int> percents) =>
+            percents.Select(percent => (percent, LiveSpectrumSettingsChoices.PercentLabel(percent)));
 
-            windowComboBox.Items.Clear();
-            foreach ((WindowType window, string label) in LiveSpectrumSettingsChoices.Windows)
+        private static void Fill<T>(ThemedComboBox combo, IEnumerable<(T Value, string Label)> choices)
+        {
+            combo.Items.Clear();
+            foreach ((T value, string label) in choices)
             {
-                windowComboBox.Items.Add(new WindowOption(window, label));
-            }
-
-            averagingComboBox.Items.Clear();
-            foreach ((AveragingSpeed speed, string label) in LiveSpectrumSettingsChoices.Averagings)
-            {
-                averagingComboBox.Items.Add(new AveragingOption(speed, label));
-            }
-
-            coherenceLimitComboBox.Items.Clear();
-            foreach (int limit in LiveSpectrumSettingsChoices.CoherenceLimits)
-            {
-                coherenceLimitComboBox.Items.Add(new CoherenceLimitOption(limit));
+                combo.Items.Add(new Choice<T>(value, label));
             }
         }
 
@@ -48,20 +37,20 @@ namespace Resonalyze.Options
                 radioModeRta.Checked = session.Mode == LiveAnalysisMode.Rta;
                 radioModeTransfer.Checked = session.Mode == LiveAnalysisMode.TransferFunction;
                 PresentSignals();
-                Select(sequenceLengthComboBox, item => item is SequenceLengthOption option && option.Length == session.SequenceLength);
-                Select(windowComboBox, item => item is WindowOption option && option.WindowType == session.Window);
+                Show(sequenceLengthComboBox, session.SequenceLength);
+                Show(windowComboBox, session.Window);
                 windowComboBox.Enabled = session.WindowEditable;
-                Select(overlapComboBox, item => item is OverlapOption option && option.Percent == session.OverlapPercent);
+                Show(overlapComboBox, session.OverlapPercent);
                 overlapComboBox.Enabled = session.OverlapEditable;
                 if (!Equals(comboSmoothingInverseOctaves.SelectedItem, session.SmoothingInverseOctaves))
                 {
                     comboSmoothingInverseOctaves.SelectedItem = session.SmoothingInverseOctaves;
                 }
 
-                comboSmoothingInverseOctaves.Enabled = session.SmoothingEditable;
-                Select(averagingComboBox, item => item is AveragingOption option && option.Speed == session.Averaging);
-                averagingComboBox.Enabled = session.AveragingEditable;
-                Select(coherenceLimitComboBox, item => item is CoherenceLimitOption option && option.Percent == session.CoherenceLimitPercent);
+                comboSmoothingInverseOctaves.Enabled = session.RecipeEditable;
+                Show(averagingComboBox, session.Averaging);
+                averagingComboBox.Enabled = session.RecipeEditable;
+                Show(coherenceLimitComboBox, session.CoherenceLimitPercent);
                 coherenceLimitComboBox.Enabled = session.CoherenceLimitEditable;
                 checkMainCurve.Checked = session.MainCurve;
                 checkInputMagnitude.Checked = session.InputMagnitude;
@@ -80,26 +69,20 @@ namespace Resonalyze.Options
 
         private void PresentSignals()
         {
-            if (!signalTypeComboBox.Items.Cast<object>().Select(item => ((NoiseColorOption)item).NoiseColor)
-                    .SequenceEqual(session.Signals))
+            if (!signalTypeComboBox.Items.Cast<Choice<NoiseColor>>().Select(item => item.Value).SequenceEqual(session.Signals))
             {
-                signalTypeComboBox.Items.Clear();
-                foreach (NoiseColor signal in session.Signals)
-                {
-                    signalTypeComboBox.Items.Add(
-                        new NoiseColorOption(signal, LiveSpectrumSettingsChoices.SignalLabel(signal)));
-                }
+                Fill(signalTypeComboBox, session.Signals.Select(signal => (signal, LiveSpectrumSettingsChoices.SignalLabel(signal))));
             }
 
-            Select(signalTypeComboBox, item => item is NoiseColorOption option && option.NoiseColor == session.Signal);
-            signalTypeComboBox.Enabled = session.SignalEditable;
+            Show(signalTypeComboBox, session.Signal);
+            signalTypeComboBox.Enabled = session.RecipeEditable;
         }
 
-        private static void Select(ThemedComboBox combo, Func<object, bool> matches)
+        private static void Show<T>(ThemedComboBox combo, T value)
         {
             for (int index = 0; index < combo.Items.Count; index++)
             {
-                if (matches(combo.Items[index]!))
+                if (combo.Items[index] is Choice<T> choice && EqualityComparer<T>.Default.Equals(choice.Value, value))
                 {
                     if (combo.SelectedIndex != index)
                     {

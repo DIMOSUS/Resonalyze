@@ -4,6 +4,7 @@ using static Resonalyze.App.Tests.CalibrationDialogFixtures;
 
 namespace Resonalyze.App.Tests;
 
+[Collection(WindowInput.Name)]
 public sealed class RecordedSweepChannelDialogWiringTests
 {
     private static readonly float[][] Channels = [Level(0.001f), Level(0.5f), Level(0.25f)];

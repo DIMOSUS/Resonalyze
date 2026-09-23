@@ -7,6 +7,7 @@ namespace Resonalyze.App.Tests;
 
 /// <summary>A shown calibration list driven through its controls, beside a session changed the same way: the rows, the
 /// buttons and what OK hands back must be what the session and its reader say.</summary>
+[Collection(WindowInput.Name)]
 public sealed class MicrophoneCalibrationsDialogWiringTests
 {
     public static TheoryData<string> Changes =>

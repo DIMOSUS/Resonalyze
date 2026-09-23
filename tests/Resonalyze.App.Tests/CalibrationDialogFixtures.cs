@@ -5,6 +5,14 @@ using System.Windows.Forms;
 
 namespace Resonalyze.App.Tests;
 
+/// <summary>Runs beside no other collection: mouse messages and a label edit need the window input state, which a
+/// dialog shown by a test running alongside can take.</summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class WindowInput
+{
+    internal const string Name = "Window input";
+}
+
 /// <summary>The calibration dialogs shown off-screen and driven as a user would: controls found by name, clicks and
 /// rows through window messages, a nested modal answered from a timer in its own loop.</summary>
 internal static class CalibrationDialogFixtures

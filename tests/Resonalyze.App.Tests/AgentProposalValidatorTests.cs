@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
 using Resonalyze.Integration.AgentBridge;

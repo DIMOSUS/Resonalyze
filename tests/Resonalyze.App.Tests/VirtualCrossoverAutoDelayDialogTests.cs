@@ -1,6 +1,5 @@
 using System.Text;
 using System.Windows.Forms;
-using Resonalyze;
 
 namespace Resonalyze.App.Tests;
 

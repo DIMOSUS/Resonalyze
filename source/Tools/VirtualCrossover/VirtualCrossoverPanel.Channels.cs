@@ -1,5 +1,3 @@
-using Resonalyze.Dsp;
-
 namespace Resonalyze;
 
 /// <summary>The blocks and their sides: adding, removing, moving and resetting blocks, the L/R selector, the side lock and

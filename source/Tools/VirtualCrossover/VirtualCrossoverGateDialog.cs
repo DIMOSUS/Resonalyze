@@ -1,4 +1,3 @@
-using OxyPlot;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 

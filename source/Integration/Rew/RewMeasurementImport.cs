@@ -283,7 +283,7 @@ internal sealed class RewMeasurementImport
         }
 
         return FormattableString.Invariant(
-            $"This measurement is {rate:0.#} Hz while the measurement is configured for {configuredSampleRate} Hz. Set the sample rate in the measurement settings to match, then import it.");
+            $"This measurement is {rate:0.#} Hz while the measurement is configured for {configuredSampleRate} Hz. Set the sample rate in Record Settings to match, then import it.");
     }
 
     public static bool IsLoopbackReferenced(string? timingReference) =>

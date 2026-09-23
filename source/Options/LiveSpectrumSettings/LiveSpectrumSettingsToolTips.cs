@@ -43,8 +43,8 @@ internal static class LiveSpectrumSettingsToolTips
         }
 
         return Base + "\r\n" +
-            "No SPL calibration is configured for the live input (Measurement " +
-            "Options — Calibration). Starting the analyzer without one switches " +
+            "No SPL calibration is configured for the live input (Record " +
+            "Settings — Calibration). Starting the analyzer without one switches " +
             "the display back to relative; overlays captured in dB SPL are " +
             "shown either way.";
     }

@@ -368,7 +368,7 @@ works:
    unmuted). The loopback is a channel selection rather than a cable where the
    interface provides it internally; otherwise run a second output back into a
    spare input.
-2. Start Resonalyze, open the measurement settings, select the interface, and
+2. Start Resonalyze, open **Record Settings**, select the interface, and
    assign the **input** and **loopback** channels. The measurement will not start
    without a loopback — that is by design. Set **Measurements** to at least `4`:
    the averaged sweeps lift the response out of the cabin's noise floor and

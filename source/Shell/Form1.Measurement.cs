@@ -234,8 +234,8 @@ public partial class Form1
             "run on independent clocks, which silently degraded phase, group " +
             "delay and time alignment.\r\n\r\n" +
             "The loopback must now be a second channel of the microphone device " +
-            "(or ASIO). The loopback selection was reset — open Measurement " +
-            "Options and choose a loopback channel before measuring.",
+            "(or ASIO). The loopback selection was reset — open Record " +
+            "Settings and choose a loopback channel before measuring.",
             "Loopback configuration reset",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);

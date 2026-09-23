@@ -87,12 +87,37 @@ internal sealed record SweepRunRejection(
     int Run,
     IReadOnlyList<string> Issues);
 
-/// <summary>Notice published with the result, from its own shape; never a refusal and names no cause. See docs/tech/sweep-measurement.md#pre-arrival.</summary>
-internal sealed record SweepResultCaution(double PreArrivalDb)
+/// <summary>Notices published with the result; never a refusal. See docs/tech/sweep-measurement.md#pre-arrival and #arrival-ahead-of-the-loopback.</summary>
+internal sealed record SweepResultCaution(double? PreArrivalDb, double? AheadOfLoopbackMs = null)
 {
     public string Describe() =>
+        string.Join(
+            "\r\n\r\n",
+            new[]
+            {
+                AheadOfLoopbackMs is { } aheadMs ? DescribeAheadOfLoopback(aheadMs) : null,
+                PreArrivalDb is { } preArrivalDb ? DescribePreArrival(preArrivalDb) : null
+            }.OfType<string>());
+
+    private static string DescribeAheadOfLoopback(double aheadMs) =>
         FormattableString.Invariant(
-            $"The measurement was saved, but it carries unusual energy well before its arrival: the stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms AHEAD of the peak reads {PreArrivalDb:0.0} dB against the arrival itself, where a clean field record reads -39 dB or less.\r\n\r\n") +
+            $"The measurement was saved, but its microphone heard the sweep {aheadMs:0.0} ms BEFORE the loopback did.\r\n\r\n") +
+        "Nothing reaches a microphone before the signal that drives it, so the " +
+        "loopback does not time this measurement. The usual cause is a driver that " +
+        "joins two audio devices (ASIO4ALL, FlexASIO, an aggregate device) with the " +
+        "microphone on one and the loopback on the other, where the offset is set " +
+        "anew each time the stream starts; another is a loopback path that adds " +
+        "latency the loudspeaker's does not.\r\n\r\n" +
+        "The response's shape is real, so it is filed without absolute time, like " +
+        "an imported recording: its arrival is placed at " +
+        FormattableString.Invariant($"{ArrivalPlacement.PlacedArrivalSeconds * 1000:0} ms, ") +
+        "Virtual DSP and Time Alignment will not take it, and its delay cannot be " +
+        "compared with another measurement's. Put the microphone that times the " +
+        "measurement and a loopback taken straight from the output on one audio device.";
+
+    private static string DescribePreArrival(double preArrivalDb) =>
+        FormattableString.Invariant(
+            $"The measurement was saved, but it carries unusual energy well before its arrival: the stretch from {TransferIrDiagnostics.PreArrivalStartSeconds * 1000:0} to {TransferIrDiagnostics.PreArrivalEndSeconds * 1000:0} ms AHEAD of the peak reads {preArrivalDb:0.0} dB against the arrival itself, where a clean field record reads -39 dB or less.\r\n\r\n") +
         "Nothing physical arrives before the direct sound, so this is either the " +
         "reference — a loopback that is not a clean copy of the excitation cancels " +
         "itself and divides into a resonance the microphone never heard — or a " +

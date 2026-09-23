@@ -505,9 +505,6 @@ namespace Resonalyze
                 transfer.Coherence);
         }
 
-        /// <summary>Where an imported arrival is placed. See docs/tech/sweep-measurement.md#imported-arrival-placement.</summary>
-        private const double ImportedArrivalSeconds = 0.010;
-
         private static RecordedSweepImport BuildImportedSweep(
             SweepMeasurementConfiguration configuration,
             ExponentialSineSweep sweep,
@@ -515,10 +512,9 @@ namespace Resonalyze
             double timeScalePpm)
         {
             SweepSignalConfiguration signal = configuration.Signal;
-            int arrival = Math.Min(
-                (int)Math.Round(ImportedArrivalSeconds * signal.SampleRate),
-                analysis.TransferImpulseResponse.Length - 1);
-            Complex[] transfer = RotateTo(
+            int arrival = ArrivalPlacement.PlacedArrivalIndex(
+                signal.SampleRate, analysis.TransferImpulseResponse.Length);
+            Complex[] transfer = ArrivalPlacement.RotateTo(
                 analysis.TransferImpulseResponse, analysis.TransferPeakIndex, arrival);
             // No loopback entry: the reference is generated, so there is no input level to meter.
             var average = new SweepAverageResult(
@@ -587,25 +583,6 @@ namespace Resonalyze
             }
 
             return attached;
-        }
-
-        // Circular, because the transfer IR's acausal pre-ringing lives at the buffer's far end.
-        private static Complex[] RotateTo(Complex[] impulseResponse, int from, int to)
-        {
-            int shift = from - to;
-            if (shift == 0)
-            {
-                return impulseResponse;
-            }
-
-            int length = impulseResponse.Length;
-            var rotated = new Complex[length];
-            for (int i = 0; i < length; i++)
-            {
-                rotated[i] = impulseResponse[((i + shift) % length + length) % length];
-            }
-
-            return rotated;
         }
 
         // Import counterpart of RequireCredibleTransferIr: a shapeless transfer IR means the file is not a recording of THIS sweep.
@@ -714,8 +691,6 @@ namespace Resonalyze
 
                 SweepAverageResult averageResult = accumulator.BuildResult();
                 RequireCredibleTransferIr(averageResult);
-                // After the refusal, never inside it: the total-failure diagnosis also calls that check.
-                ResultCaution = DescribeResultCaution(averageResult);
                 measured = BuildResult(
                     averageResult,
                     new ResultOrigin(
@@ -731,6 +706,8 @@ namespace Resonalyze
                         measuredAtUtc,
                         frozen,
                         LastAudioSessionDiagnostics));
+                // After the refusal, never inside it: the total-failure diagnosis also calls that check.
+                ResultCaution = DescribeResultCaution(averageResult, measured);
                 RaiseLevels(averageResult.Levels);
             }
             catch (OperationCanceledException)
@@ -1225,17 +1202,24 @@ namespace Resonalyze
             : ExcitationBandGate.FullBand;
 
         /// <summary>Never a refusal; see <see cref="SweepResultCaution"/>.</summary>
-        private SweepResultCaution? DescribeResultCaution(SweepAverageResult result)
+        private SweepResultCaution? DescribeResultCaution(SweepAverageResult result, MeasurementResult measured)
         {
             if (result.TransferImpulseResponse is not { } transfer)
             {
                 return null;
             }
 
-            return MeasurePreArrival(transfer) is { } preArrivalDb &&
-                preArrivalDb > TransferIrDiagnostics.SuspectPreArrivalDb
-                ? new SweepResultCaution(preArrivalDb)
+            double? preArrivalDb = MeasurePreArrival(transfer) is { } reading &&
+                reading > TransferIrDiagnostics.SuspectPreArrivalDb
+                    ? reading
+                    : null;
+            // The verdict is the built result's; the lead is read before the rotation that placed it.
+            double? aheadMs = measured.TimingReference == TimingReference.NonCausalLoopback
+                ? ArrivalPlacement.AheadOfLoopbackMs(result.TransferPeakIndex, transfer.Length, SampleRate)
                 : null;
+            return preArrivalDb == null && aheadMs == null
+                ? null
+                : new SweepResultCaution(preArrivalDb, aheadMs);
         }
 
         /// <summary>Names the channel whose own signal distorts; H1 believes whatever the reference says was played. Empty when none.</summary>
@@ -1305,7 +1289,7 @@ namespace Resonalyze
                 int correctedPeakIndex = FindPeakIndex(transferImpulseResponse);
                 if (origin.TimingReference == TimingReference.RecordedSweep)
                 {
-                    transferImpulseResponse = RotateTo(
+                    transferImpulseResponse = ArrivalPlacement.RotateTo(
                         transferImpulseResponse,
                         correctedPeakIndex,
                         result.TransferPeakIndex);
@@ -1317,7 +1301,7 @@ namespace Resonalyze
             }
 
             ExponentialSineSweep sweep = origin.Sweep;
-            return new MeasurementResult
+            return ArrivalPlacement.Judge(new MeasurementResult
             {
                 SampleRate = origin.SampleRate,
                 Bits = origin.Bits,
@@ -1352,7 +1336,7 @@ namespace Resonalyze
                     origin.Diagnostics,
                     origin.SampleRate,
                     origin.Bits)
-            };
+            });
         }
 
         /// <summary>The calibration a run is taken through, fixed when it starts.</summary>

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Numerics;
 using Resonalyze.Dsp;
 
 namespace Resonalyze;
@@ -168,11 +167,12 @@ internal sealed class EqWizardSourceResolver
     {
         ArgumentNullException.ThrowIfNull(file);
 
-        Complex[]? transfer = file.GetTransferImpulseResponse();
         bool useTransfer =
             file.MeasurementMode == SweepMeasurementMode.LoopbackTransfer &&
-            transfer is { Length: > 0 } &&
+            file.TransferRealSamples is { Length: > 0 } &&
             file.TransferPeakIndex is not null;
+        // Read as every other path reads the file, so an arrival re-placed on load is placed here too.
+        MeasurementImpulseResponse? transfer = useTransfer ? file.ToResult().Transfer : null;
 
         // Transfer IR is zeroed outside the measured band; sweep deconvolution edges are signal and stay.
         MeasuredBand band = MeasuredBand.Resolve(
@@ -186,7 +186,7 @@ internal sealed class EqWizardSourceResolver
             file.SampleRate);
         IImpulseMeasurement measurement = useTransfer
             ? new ImpulseMeasurementView(
-                transfer!, file.TransferPeakIndex!.Value, file.SampleRate)
+                transfer!.ImpulseResponse, transfer.PeakIndex, file.SampleRate)
             {
                 LowestMeasuredFrequencyHz = band.LowEdgeHz,
                 HighestMeasuredFrequencyHz = band.HighEdgeHz

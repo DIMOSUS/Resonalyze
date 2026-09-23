@@ -2,10 +2,14 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
+/// <param name="ArrayStandOff">True: the worst array's distance from its IR; false: the moving-mic set's offset.</param>
+internal sealed record HybridReadOut(double Db, bool ArrayStandOff);
+
 /// <summary>One channel of the set and how far its capture sits from its response.</summary>
 internal readonly record struct SetDatum(
     VirtualCrossoverChannel Channel,
-    double? DatumDb);
+    double? DatumDb,
+    bool RightSide = false);
 
 internal sealed record HybridMagnitudes(
     IReadOnlyList<IReadOnlyList<SignalPoint>> Channels,
@@ -23,17 +27,30 @@ internal sealed record HybridMagnitudes(
     {
         get
         {
-            List<double> known = (SetDatumsDb.Count > 0
-                    ? SetDatumsDb.Select(entry => entry.DatumDb)
-                    : ChannelOffsetsDb)
-                .Where(offset => offset.HasValue)
-                .Select(offset => offset!.Value)
-                .ToList();
+            List<double> known = KnownDatumsDb();
             return known.Count < 2 ? 0.0 : known.Max() - known.Min();
         }
     }
 
-    /// <summary>Every channel's datum on this side, muted ones included, so mutes cannot move the offset or the warning.</summary>
+    /// <summary>The datum furthest from zero, signed: how far the worst array stands off its IR.</summary>
+    public double? WorstDatumDb
+    {
+        get
+        {
+            List<double> known = KnownDatumsDb();
+            return known.Count == 0 ? null : known.MaxBy(Math.Abs);
+        }
+    }
+
+    private List<double> KnownDatumsDb() =>
+        (SetDatumsDb.Count > 0
+            ? SetDatumsDb.Select(entry => entry.DatumDb)
+            : ChannelOffsetsDb)
+        .Where(offset => offset.HasValue)
+        .Select(offset => offset!.Value)
+        .ToList();
+
+    /// <summary>The set's datums (this side, and the other when both are one set), muted ones included, so mutes cannot move the offset or the warning.</summary>
     public IReadOnlyList<SetDatum> SetDatumsDb { get; init; } = [];
 
     /// <summary>One group's slice of the set's hybrid.</summary>
@@ -121,6 +138,16 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
 
         return JudgeSidesShareAnOffset(active, opposite).Coherent;
     }
+
+    private bool SidesFormOneSet() => CanDrawOppositeSum(!session.ActiveSideRight);
+
+    /// <summary>The read-out's health figure; null while no hybrid is drawn.</summary>
+    public HybridReadOut? ReadOut(HybridMagnitudes? hybrid) =>
+        hybrid == null
+            ? null
+            : session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+                ? hybrid.WorstDatumDb is { } worst ? new HybridReadOut(worst, ArrayStandOff: true) : null
+                : new HybridReadOut(hybrid.OffsetDb, ArrayStandOff: false);
 
     internal static LiveCaptureSetVerdict JudgeSidesShareAnOffset(
         IReadOnlyList<LiveCaptureDocument> active,
@@ -374,26 +401,16 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
     }
 
     /// <summary>Per-channel and set datums on the raw pair (capture without chain vs bypass response), so tuning cannot move them.</summary>
-    /// <remarks>Median over every channel with a capture, muted included. See docs/tech/spatial-average.md#set-offset-and-spread.</remarks>
+    /// <remarks>The set is this side, muted included, and the other side too when both are one set; the offset and the health
+    /// checks read the same set. See docs/tech/spatial-average.md#set-offset-and-spread.</remarks>
     public (double?[] PerChannel, double SetOffsetDb, IReadOnlyList<SetDatum> SetDatums)
         ResolveRawOffsetsDb(
             IReadOnlyList<ProcessedChannel> processed,
             bool rightSide)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.HybridOffsets");
-        VirtualCrossoverSpatialAverageMode mode = session.SpatialAverageMode;
         var datums = new Dictionary<VirtualCrossoverChannel, double?>();
-        var setDatums = new List<SetDatum>();
-        foreach (VirtualCrossoverChannel channel in AllChannelsWith(processed))
-        {
-            double? datum = ResolveRawDatumDb(channel, rightSide);
-            datums[channel] = datum;
-            // No capture: not part of the set. A capture that cannot compare stays as a named hole.
-            if (channel.SideState(rightSide).SpatialAverageFor(mode) != null)
-            {
-                setDatums.Add(new SetDatum(channel, datum));
-            }
-        }
+        List<SetDatum> setDatums = SideDatums(AllChannelsWith(processed), rightSide, datums);
 
         var perChannel = new double?[processed.Count];
         for (int i = 0; i < processed.Count; i++)
@@ -403,11 +420,43 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
                 : null;
         }
 
+        if (SidesFormOneSet())
+        {
+            // A mono pair answers both sides with one state, so it counts once.
+            var seen = setDatums.Select(entry => entry.Channel.SideState(entry.RightSide)).ToHashSet();
+            setDatums.AddRange(SideDatums(session.Channels, !rightSide, new())
+                .Where(entry => seen.Add(entry.Channel.SideState(entry.RightSide))));
+        }
+
         List<double> known = setDatums
             .Where(entry => entry.DatumDb.HasValue)
             .Select(entry => entry.DatumDb!.Value)
             .ToList();
-        return (perChannel, known.Count == 0 ? 0.0 : SpatialAverageOffsets.Median(known), setDatums);
+        SpatialAverageMethod method = session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+            ? SpatialAverageMethod.MicArray
+            : SpatialAverageMethod.MovingMic;
+        return (perChannel, SpatialAverageOffsets.SetOffsetDb(method, known), setDatums);
+    }
+
+    // No capture: not part of the set. A capture that cannot compare stays as a named hole.
+    private List<SetDatum> SideDatums(
+        IEnumerable<VirtualCrossoverChannel> channels,
+        bool rightSide,
+        Dictionary<VirtualCrossoverChannel, double?> datums)
+    {
+        VirtualCrossoverSpatialAverageMode mode = session.SpatialAverageMode;
+        var setDatums = new List<SetDatum>();
+        foreach (VirtualCrossoverChannel channel in channels)
+        {
+            double? datum = ResolveRawDatumDb(channel, rightSide);
+            datums[channel] = datum;
+            if (channel.SideState(rightSide).SpatialAverageFor(mode) != null)
+            {
+                setDatums.Add(new SetDatum(channel, datum, rightSide));
+            }
+        }
+
+        return setDatums;
     }
 
     // The session's blocks plus drawn channels it does not hold (harness-built).
@@ -441,19 +490,25 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
             return null;
         }
 
-        AnalysisCurve rawIr = session.MagnitudeGate.CanonicalRaw(
-            ir, state.TransferPeakIndex, state.SampleRate, state.MeasuredBand);
         if (state.SpatialAverageFor(session.SpatialAverageMode) is not { } document)
         {
             return null;
         }
 
+        // An array is placed on calibrated curves, so it is compared as measured, the IR through its anchor's file;
+        // a moving mic on canonical raw terms, which the spread threshold was calibrated on.
+        bool array = session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray;
+        AnalysisCurve rawIr = session.MagnitudeGate.CanonicalRaw(
+            ir,
+            state.TransferPeakIndex,
+            state.SampleRate,
+            state.MeasuredBand,
+            array ? state.MicrophoneCalibrationCurve : null);
         IReadOnlyList<SignalPoint>? rawCapture = SpatialAverageHybrid.BuildChannelCurve(
             document,
             DspChannelChain.Identity,
             state.SampleRate,
-            // Canonical terms, matching HybridOffsetDatumMeasurement and the spread threshold's calibration.
-            SpatialAverageCalibration.Off,
+            array ? SpatialAverageCalibration.Own : SpatialAverageCalibration.Off,
             rawIr.Points.Select(point => point.X).ToList(),
             smoothingCode: 0);
         return rawCapture == null
@@ -529,7 +584,7 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
         // Raw, smoothed only at the end (see Sum).
         List<SignalPoint> loss = VirtualCrossoverAnalysis.SumLossCurve(
             sum.Unsmoothed.Points, operands);
-        // Its own offset is replaced: using it would level the sides separately.
+        // The sides share one offset once they form a set; passed so the two cannot drift.
         List<SignalPoint>? points = Sum(
             hybrid with { OffsetDb = offsetDb },
             side.Channels,

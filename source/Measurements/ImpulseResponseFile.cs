@@ -174,7 +174,7 @@ public sealed class ImpulseResponseFile
             achievedHighHz);
         Complex[]? transfer = GetTransferImpulseResponse();
         int averageRunCount = Math.Clamp(AverageRunCount, 1, 64);
-        return new MeasurementResult
+        return ArrivalPlacement.JudgeStored(new MeasurementResult
         {
             SampleRate = SampleRate,
             Bits = Bits,
@@ -205,7 +205,7 @@ public sealed class ImpulseResponseFile
             ProtectiveHighPass = ProtectiveHighPass?.ToConfiguration(),
             ArrayMicrophones = ArrayMicrophones?.ToCurves() ?? [],
             AudioSession = AudioSession
-        }.Validated();
+        }.Validated());
     }
 
     public async Task SaveAsync(string path, CancellationToken cancellationToken = default)

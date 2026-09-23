@@ -225,8 +225,10 @@ internal sealed class MeasurementHistoryService
     }
 
     // A file keeps the preview it was saved with; one from before previews were stored gets it rebuilt.
+    // A result re-filed on load (ArrivalPlacement) has another IR than the stored preview was drawn from.
     private static MeasurementHistoryPreview PreviewOf(ImpulseResponseFile file, MeasurementResult result) =>
-        file.ToPreview() ?? MeasurementHistoryPreviewBuilder.Build(result);
+        (result.TimingReference == file.TimingReference ? file.ToPreview() : null) ??
+        MeasurementHistoryPreviewBuilder.Build(result);
 
     // Memory cap: unsaved results hold full IRs, so few are kept. Depth cap: over it the oldest file-backed
     // row goes even if an unsaved one is older (the file restores it; an unsaved row is the measurement).

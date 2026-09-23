@@ -6,5 +6,15 @@ public enum TimingReference
     SynchronizedLoopback,
 
     /// <summary>External recording: shape is real, position is not; delays are meaningful only within one measurement.</summary>
-    RecordedSweep
+    RecordedSweep,
+
+    /// <summary>The microphone heard the sweep before the loopback did (another device or stream, or a delayed reference path):
+    /// shape is real, position is not. See docs/tech/sweep-measurement.md#arrival-ahead-of-the-loopback.</summary>
+    NonCausalLoopback
+}
+
+internal static class TimingReferences
+{
+    public static bool HasAbsoluteTime(this TimingReference reference) =>
+        reference == TimingReference.SynchronizedLoopback;
 }

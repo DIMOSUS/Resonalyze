@@ -458,14 +458,14 @@ internal static class VirtualCrossoverMetric
     }
 
     /// <summary>The panel's read-out column (compact) and its tooltip (detail), block by block in reading order.</summary>
-    /// <param name="hybridOffsetDb">The spatial-average set's offset while the hybrid is drawn, else null.</param>
+    /// <param name="hybrid">The hybrid's health figure while it is drawn, else null.</param>
     public static (string Compact, string Detail) FormatReadOut(
         IReadOnlyList<Entry> entries,
         bool direct,
         IReadOnlyList<PhaseEntry> phaseEntries,
         IReadOnlyList<GroupDelta> groupDeltas,
         IReadOnlyList<StereoDelta> stereoDeltas,
-        double? hybridOffsetDb)
+        HybridReadOut? hybrid)
     {
         string compact = FormatCompact(entries, direct);
         string detail = entries.Count > 0 ? FormatDetail(entries, direct) : string.Empty;
@@ -490,14 +490,17 @@ internal static class VirtualCrossoverMetric
             detail += DetailBreak() + FormatStereoDeltasDetail(stereoDeltas);
         }
 
-        if (hybridOffsetDb is { } offsetDb)
+        if (hybrid is { } reading)
         {
-            // A health reading: an array shares the IRs' loopback, so a large offset means a different input, calibration or driver.
-            compact += "\r\n\r\n" + $"Spatial average {offsetDb:+0.0;-0.0} dB";
-            detail += DetailBreak() +
-                $"The spatial averages sit {offsetDb:+0.0;-0.0} dB from the " +
-                "impulse responses, and the whole set is drawn shifted by that one " +
-                "figure.";
+            // A health reading: an array shares the IRs' loopback, so a large figure means a different input, calibration or driver.
+            compact += "\r\n\r\n" + $"Spatial average {reading.Db:+0.0;-0.0} dB";
+            detail += DetailBreak() + (reading.ArrayStandOff
+                ? $"The array furthest from its impulse response sits {reading.Db:+0.0;-0.0} dB " +
+                    "off it. Arrays share the impulse responses' loopback, so each is drawn " +
+                    "at the level it measured."
+                : $"The spatial averages sit {reading.Db:+0.0;-0.0} dB from the " +
+                    "impulse responses, and the whole set is drawn shifted by that one " +
+                    "figure.");
         }
 
         return (compact, detail);

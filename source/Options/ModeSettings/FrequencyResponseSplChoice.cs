@@ -30,7 +30,7 @@ internal static class FrequencyResponseSplChoice
 
         return Base + "\r\n" +
             "No measurement yet. With an SPL calibration configured in " +
-            "Measurement Options, the first run comes up in dB SPL; without one, " +
+            "Record Settings, the first run comes up in dB SPL; without one, " +
             "starting a run switches the display back to dBr/dBc. Overlays " +
             "captured in dB SPL are shown either way.";
     }

@@ -1,4 +1,3 @@
-using System.Drawing;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
 
@@ -45,7 +44,7 @@ namespace Resonalyze.Options
             averagingComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
             // Selection follows options verbatim (SPL without calibration, Transfer without loopback); amber and tooltips explain.
             session.Load(options, isSplAvailable, hasLiveCurve, hasTransferReference, sampleRateHz);
-            FillLists(sampleRateHz);
+            FillLists();
             Present();
         }
 
@@ -85,7 +84,7 @@ namespace Resonalyze.Options
         public void SetOptions(LiveSpectrumOptions options) => session.WriteTo(options);
 
         /// <summary>Every tooltip the panel shows, including the ones it rewrites as the session changes.</summary>
-        internal ToolTip ToolTips => toolTip;
+        internal WrappingToolTip ToolTips => toolTip;
 
         private void WireFields()
         {

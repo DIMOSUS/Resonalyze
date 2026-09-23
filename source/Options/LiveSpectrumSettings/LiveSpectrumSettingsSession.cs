@@ -3,10 +3,8 @@ using Resonalyze.Dsp;
 namespace Resonalyze.Options;
 
 /// <summary>The Live Spectrum settings panel's state: each field as its control shows it, the user's own picks that
-/// survive what MMM and periodic pink force on them, and what the analyzer offers right now (an SPL calibration, a
-/// curve an uncalibrated dB SPL would hide, a loopback). See docs/tech/live-spectrum.md#settings-panel-code-map.</summary>
-/// <remarks>A pick moved without a commit (an arrow key in a closed list) changes what the field shows but not the
-/// user's pick, and runs no rule; the next commit or mode change does.</remarks>
+/// survive what MMM and periodic pink force, and what the analyzer offers now. An arrow key in a closed list moves a field
+/// without a rule or the user's pick. See docs/tech/live-spectrum.md#settings-panel-code-map.</summary>
 internal sealed class LiveSpectrumSettingsSession
 {
     private NoiseColor userSignal = NoiseColor.PinkPeriodic;
@@ -72,10 +70,14 @@ internal sealed class LiveSpectrumSettingsSession
     /// <summary>What the plot is corrected through, as the shell names it; a read-out, not a choice.</summary>
     public string Calibration { get; private set; } = string.Empty;
 
-    public bool IsMmm => Mode == LiveAnalysisMode.Mmm;
+    public bool IsMmm => Mode.IsSpatialAverageCapture();
 
     /// <summary>MMM shares the reference-free path.</summary>
-    public bool IsReferenceFree => IsMmm || Mode == LiveAnalysisMode.Rta;
+    public bool IsReferenceFree => Mode.IsReferenceFree();
+
+    /// <summary>Reference-free with its recipe free: the only mode the dB SPL scale and the slope compensation are
+    /// the user's.</summary>
+    public bool IsRta => IsReferenceFree && !IsMmm;
 
     /// <summary>MMM pins the excitation, the averaging and the smoothing to the one recipe a spatial average is valid
     /// under.</summary>
@@ -90,7 +92,7 @@ internal sealed class LiveSpectrumSettingsSession
 
     public bool InputMagnitudeInteractive => !IsReferenceFree;
 
-    public bool SplInteractive => Mode == LiveAnalysisMode.Rta;
+    public bool SplInteractive => IsRta;
 
     public bool TiltInteractive => !IsMmm && TiltApplicable;
 
@@ -167,7 +169,7 @@ internal sealed class LiveSpectrumSettingsSession
     {
         userSignal = Signal;
         ApplyPeriodicPink();
-        TiltApplicable = Mode == LiveAnalysisMode.Rta && Signal != NoiseColor.Silent;
+        TiltApplicable = IsRta && Signal != NoiseColor.Silent;
     }
 
     public void MoveSequenceLength(int length) => SequenceLength = length;
@@ -234,7 +236,7 @@ internal sealed class LiveSpectrumSettingsSession
 
         options.AnalysisMode = IsMmm
             ? LiveAnalysisMode.Mmm
-            : Mode == LiveAnalysisMode.Rta
+            : IsRta
                 ? LiveAnalysisMode.Rta
                 : LiveAnalysisMode.TransferFunction;
         // MMM offers periodic pink only; the user's real choice is kept.
@@ -266,7 +268,7 @@ internal sealed class LiveSpectrumSettingsSession
             ? AveragingSpeed.Infinite
             : LiveSpectrumSettingsChoices.Offered(LiveSpectrumSettingsChoices.Averagings, userAveraging);
         SmoothingInverseOctaves = IsMmm ? 0 : userSmoothing;
-        TiltApplicable = Mode == LiveAnalysisMode.Rta && Signal != NoiseColor.Silent;
+        TiltApplicable = IsRta && Signal != NoiseColor.Silent;
         InputMagnitude = IsReferenceFree || userInputMagnitude;
     }
 

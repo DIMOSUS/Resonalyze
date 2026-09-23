@@ -1,17 +1,15 @@
-using System.Drawing;
 using Resonalyze.Dsp;
-using Resonalyze.Ui;
 
 namespace Resonalyze.Options
 {
     public partial class LiveSpectrumOpt
     {
-        private void FillLists(int sampleRateHz)
+        private void FillLists()
         {
             sequenceLengthComboBox.Items.Clear();
             foreach (int sequenceLength in LiveSpectrumSettingsChoices.SequenceLengths)
             {
-                sequenceLengthComboBox.Items.Add(new SequenceLengthOption(sequenceLength, sampleRateHz));
+                sequenceLengthComboBox.Items.Add(new SequenceLengthOption(sequenceLength, session.SampleRateHz));
             }
 
             overlapComboBox.Items.Clear();

@@ -20,7 +20,7 @@ internal static class LiveSpectrumSettingsLook
     public static LiveSettingTone Spl(LiveSpectrumSettingsSession session) =>
         session.IsMmm
             ? LiveSettingTone.Normal
-            : session.Mode != LiveAnalysisMode.Rta
+            : !session.IsRta
                 ? LiveSettingTone.Muted
                 : session.SplViewOnlyConflict
                     ? LiveSettingTone.Warning

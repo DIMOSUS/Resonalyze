@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Globalization;
 using OxyPlot;
 using OxyPlot.Axes;
 using OxyPlot.Series;
@@ -536,15 +535,7 @@ public partial class FirConstructorPanel : UserControl
         buttonReturnToDsp.Visible = linked;
         buttonBackToDsp.Visible = linked;
         comboBoxSampleRate.Enabled = !linked;
-        string? note = session.Handoff is { Design: { } arrived } request &&
-            arrived.SampleRateHz != request.ProcessorSampleRateHz
-                ? $"It was designed at {FirCrossoverDescription.Rate(arrived.SampleRateHz)} and is " +
-                    $"rebuilt here at {FirCrossoverDescription.Rate(request.ProcessorSampleRateHz)}."
-                : null;
-        labelSession.Text = linked
-            ? $"Editing {session.Handoff!.ChannelLabel}. The rate is the processor's." +
-                (note == null ? string.Empty : " " + note)
-            : "Standalone: design a kernel and export it to a file.";
+        labelSession.Text = FirConstructorReadout.Session(session);
     }
 
     private void UpdateActions()
@@ -649,7 +640,8 @@ public partial class FirConstructorPanel : UserControl
             phaseSeries.Points.AddRange(rendering.Phase);
         }
 
-        UpdateReadouts(session.RateHz, rendering?.DeviationDb ?? double.NaN);
+        labelLatency.Text = FirConstructorReadout.Latency(session);
+        labelDeviation.Text = FirConstructorReadout.Deviation(session);
         UpdateActions();
         responseModel.InvalidatePlot(true);
         ApplyImpulse(rendering, rescale: !ReferenceEquals(before, rendering?.Kernel));
@@ -672,35 +664,6 @@ public partial class FirConstructorPanel : UserControl
         }
 
         impulseModel.InvalidatePlot(true);
-    }
-
-    private void UpdateReadouts(int rate, double deviation)
-    {
-        if (session.Kernel is not { } shown)
-        {
-            labelLatency.Text = string.Empty;
-            labelDeviation.Text = string.Empty;
-            return;
-        }
-
-        if (session.Design is { } designed)
-        {
-            labelLatency.Text = string.Create(
-                CultureInfo.InvariantCulture,
-                $"Latency {designed.LatencyMs:0.00} ms ({designed.LatencySamples} samples at {FirCrossoverDescription.Rate(rate)})");
-            labelDeviation.Text = double.IsNaN(deviation)
-                ? "A brick wall has no slope to compare with: read the plot."
-                : string.Create(
-                    CultureInfo.InvariantCulture,
-                    $"Worst deviation from the target: {deviation:0.00} dB above −30 dB");
-        }
-        else
-        {
-            labelLatency.Text = string.Create(
-                CultureInfo.InvariantCulture,
-                $"{session.KernelName ?? "Kernel"}: {shown.Length} taps, shown as it is at {FirCrossoverDescription.Rate(rate)}");
-            labelDeviation.Text = "Any change to the controls designs a new kernel in its place.";
-        }
     }
 
     private static T Selected<T>(ThemedComboBox combo, T fallback) =>

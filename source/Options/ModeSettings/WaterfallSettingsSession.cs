@@ -40,7 +40,13 @@ internal sealed class WaterfallSettingsSession
 
     public static WaterfallSettingsSession ForBurstDecay() => new(true);
 
-    public void Follow(ModeSettingsMeasurement measurement) => Measurement = measurement;
+    /// <summary>The rate and the time the slices cover follow the open measurement.</summary>
+    public void Follow(ModeSettingsMeasurement measurement)
+    {
+        Measurement = measurement;
+        SampleRateShown = ModeSettingsLimits.SampleRate.Clamp(measurement.SampleRate);
+        CaptureTimeMs = ModeSettingsLimits.CaptureTimeMs.Assign((decimal)CapturedMs());
+    }
 
     public void Load(WaterfallGenerateOptions options)
     {

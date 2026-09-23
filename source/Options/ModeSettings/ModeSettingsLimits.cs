@@ -1,3 +1,5 @@
+using Resonalyze.Audio;
+
 namespace Resonalyze.Options;
 
 /// <summary>The ranges of the mode settings panels' fields: the panels apply them to their fields, the sessions hold
@@ -26,7 +28,7 @@ internal static class ModeSettingsLimits
 
     public static readonly NumericFieldRange Periods = new(1, 60, 0);
 
-    public static readonly NumericFieldRange SampleRate = new(1, 192000, 0);
+    public static readonly NumericFieldRange SampleRate = new(1, SampleRateCatalog.GetCandidateRates()[^1], 0);
 
     public static readonly NumericFieldRange CaptureTimeMs = new(-999999999, 999999999, 2);
 

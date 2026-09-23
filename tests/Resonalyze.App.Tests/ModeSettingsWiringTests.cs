@@ -152,6 +152,38 @@ public sealed class ModeSettingsWiringTests
         });
     }
 
+    [Fact]
+    public void TheRateAndCaptureTimeFollowTheOpenMeasurement()
+    {
+        StaTest.Run(() =>
+        {
+            using var analyzer = new TestAnalyzer();
+            analyzer.Open(Transfer(48_000, peak: 480));
+            var waterfall = new WaterfallGenerateOptions { SliceCount = 64, Step = 96 };
+            var burst = new WaterfallGenerateOptions { Window = 9600 };
+            using var waterfallPanel = new DockedSettingsPanel<WaterfallOptions>(
+                () => new WaterfallOptions(),
+                panel => panel.Init(analyzer.Document, 44_100, waterfall));
+            using var burstPanel = new DockedSettingsPanel<BDOpt>(
+                () => new BDOpt(),
+                panel => panel.Init(analyzer.Document, 44_100, burst));
+            Assert.Equal((48_000m, 128m), (waterfallPanel.Value("numericSampleRate"), waterfallPanel.Value("numericCaptureTime")));
+            Assert.Equal((48_000m, 200m), (burstPanel.Value("numericSampleRate"), burstPanel.Value("numericCaptureTime")));
+
+            analyzer.Open(Transfer(96_000, peak: 960));
+            waterfallPanel.Settle();
+
+            Assert.Equal((96_000m, 64m), (waterfallPanel.Value("numericSampleRate"), waterfallPanel.Value("numericCaptureTime")));
+            Assert.Equal((96_000m, 100m), (burstPanel.Value("numericSampleRate"), burstPanel.Value("numericCaptureTime")));
+            Assert.Equal(0, waterfallPanel.TakeApplies() + burstPanel.TakeApplies());
+
+            analyzer.Open(Transfer(384_000, peak: 3_840, length: 65_536));
+            waterfallPanel.Settle();
+
+            Assert.Equal((384_000m, 16m), (waterfallPanel.Value("numericSampleRate"), waterfallPanel.Value("numericCaptureTime")));
+        });
+    }
+
     internal static MeasurementResult Transfer(int sampleRate, int peak, int length = 16_384)
     {
         var impulse = new Complex[length];

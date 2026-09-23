@@ -158,7 +158,7 @@ namespace Resonalyze.Options
             numericSampleRate.ForeColor = UiPalette.TextPrimary;
             numericSampleRate.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericSampleRate.Location = new Point(193, 11);
-            numericSampleRate.Maximum = new decimal(new int[] { 192000, 0, 0, 0 });
+            numericSampleRate.Maximum = new decimal(new int[] { 384000, 0, 0, 0 });
             numericSampleRate.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             numericSampleRate.MinimumSize = new Size(36, 19);
             numericSampleRate.Name = "numericSampleRate";

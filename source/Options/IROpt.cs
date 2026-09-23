@@ -1,214 +1,121 @@
-using System;
-using System.Windows.Forms;
 using Resonalyze.Dsp;
 using Resonalyze.Ui;
 
 namespace Resonalyze.Options
 {
-    public partial class IROpt : Form
+    /// <summary>Binds the Impulse settings to an <see cref="ImpulseViewSettingsSession"/>.</summary>
+    public partial class IROpt : ModeSettingsForm
     {
-        private readonly WrappingToolTip toolTip = new();
-
-        // Zero until Init, which then offers the full ISO list.
-        private int sampleRate;
+        private readonly ImpulseViewSettingsSession session = new();
+        private IReadOnlyList<double>? shownCentres;
 
         public IROpt()
         {
             InitializeComponent();
-            ConfigureChoices();
+            numericLength.ApplyFieldRange(ModeSettingsLimits.ImpulseLength);
+            numericEnvelopeSmoothing.ApplyFieldRange(ModeSettingsLimits.EnvelopeSmoothingMs);
+            FillChoices();
+            WireFields();
             InitializeToolTips();
-            Disposed += (_, _) => toolTip.Dispose();
         }
 
         /// <param name="sampleRate">The open result's rate, or the configured one when nothing is open.</param>
         public void Init(int sampleRate, ImpulseResponseOptions opt)
         {
-            this.sampleRate = sampleRate;
-            // The settings file clamps wider than the control; an out-of-range value must not throw.
-            numericLength.Value = numericLength.ClampValue(opt.Length);
-            numericEnvelopeSmoothing.Value =
-                numericEnvelopeSmoothing.ClampValue(opt.EnvelopeSmoothingMs);
-            comboBandWidth.SelectedItem = NearestBandWidth(opt.BandFilterOctaves);
-            SyncBandCentres(opt.BandCenterHz);
-            comboAmplitudeScale.SelectedItem = opt.AmplitudeScale;
-            comboTimeUnit.SelectedItem = opt.TimeUnit;
-            comboTimeOrigin.SelectedItem = opt.TimeOrigin;
-            checkInvert.Checked = opt.Invert;
-            checkNormalizeStep.Checked = opt.NormalizeStepToImpulsePeak;
-            checkBoxShowImpulse.Checked = opt.ShowImpulse;
-            checkBoxShowEnvelope.Checked = opt.ShowEnvelope;
-            checkBoxShowStep.Checked = opt.ShowStep;
+            session.Load(opt, sampleRate);
+            Present();
         }
 
-        public void SetOptions(ImpulseResponseOptions opt)
+        public void SetOptions(ImpulseResponseOptions opt) => session.WriteTo(opt);
+
+        private void FillChoices()
         {
-            opt.Length = (int)numericLength.Value;
-            opt.EnvelopeSmoothingMs = (double)numericEnvelopeSmoothing.Value;
-            opt.BandFilterOctaves =
-                comboBandWidth.SelectedItem is double width ? width : 0.0;
-            opt.BandCenterHz =
-                comboBandCenter.SelectedItem is double centre ? centre : opt.BandCenterHz;
-            opt.AmplitudeScale = Selected(
-                comboAmplitudeScale, ImpulseAmplitudeScale.Linear);
-            opt.TimeUnit = Selected(comboTimeUnit, ImpulseTimeUnit.Milliseconds);
-            opt.TimeOrigin = Selected(comboTimeOrigin, ImpulseTimeOrigin.RecordStart);
-            opt.Invert = checkInvert.Checked;
-            opt.NormalizeStepToImpulsePeak = checkNormalizeStep.Checked;
-            opt.ShowImpulse = checkBoxShowImpulse.Checked;
-            opt.ShowEnvelope = checkBoxShowEnvelope.Checked;
-            opt.ShowStep = checkBoxShowStep.Checked;
-        }
-
-        private static T Selected<T>(ThemedComboBox comboBox, T fallback)
-            where T : struct, Enum =>
-            comboBox.SelectedItem is T value ? value : fallback;
-
-        // Off is width zero, so "no band" and "which band" are one setting.
-        private const double OctaveBand = 1.0;
-        private const double ThirdOctaveBand = 1.0 / 3.0;
-
-        private static readonly double[] OctaveCentres =
-            [31.5, 63, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000];
-
-        private static readonly double[] ThirdOctaveCentres =
-        [
-            25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800,
-            1_000, 1_250, 1_600, 2_000, 2_500, 3_150, 4_000, 5_000, 6_300, 8_000,
-            10_000, 12_500, 16_000, 20_000
-        ];
-
-        private void ConfigureChoices()
-        {
-            FillNumeric(
-                comboBandWidth,
-                width => width switch
-                {
-                    OctaveBand => "1 octave",
-                    ThirdOctaveBand => "1/3 octave",
-                    _ => "Off"
-                },
-                0.0,
-                OctaveBand,
-                ThirdOctaveBand);
-            FillNumeric(comboBandCenter, FormatFrequency, OctaveCentres);
-            comboBandWidth.SelectedIndexChanged += (_, _) =>
-                SyncBandCentres(
-                    comboBandCenter.SelectedItem is double current ? current : 1_000.0);
-
+            Fill(comboBandWidth, ImpulseBandCentres.Widths, ImpulseBandCentres.WidthLabel);
+            Format<double>(comboBandCenter, ImpulseBandCentres.CentreLabel);
             Fill(
                 comboAmplitudeScale,
+                [ImpulseAmplitudeScale.Linear, ImpulseAmplitudeScale.PercentOfPeak, ImpulseAmplitudeScale.Decibels],
                 scale => scale switch
                 {
                     ImpulseAmplitudeScale.PercentOfPeak => "% of peak",
                     ImpulseAmplitudeScale.Decibels => "dB re peak",
                     _ => "Linear"
-                },
-                ImpulseAmplitudeScale.Linear,
-                ImpulseAmplitudeScale.PercentOfPeak,
-                ImpulseAmplitudeScale.Decibels);
+                });
             Fill(
                 comboTimeUnit,
-                unit => unit == ImpulseTimeUnit.Samples ? "Samples" : "Milliseconds",
-                ImpulseTimeUnit.Milliseconds,
-                ImpulseTimeUnit.Samples);
+                [ImpulseTimeUnit.Milliseconds, ImpulseTimeUnit.Samples],
+                unit => unit == ImpulseTimeUnit.Samples ? "Samples" : "Milliseconds");
             Fill(
                 comboTimeOrigin,
+                [ImpulseTimeOrigin.RecordStart, ImpulseTimeOrigin.FirstArrival, ImpulseTimeOrigin.Peak],
                 origin => origin switch
                 {
                     ImpulseTimeOrigin.FirstArrival => "First arrival",
                     ImpulseTimeOrigin.Peak => "Peak",
                     _ => "Record start"
-                },
-                ImpulseTimeOrigin.RecordStart,
-                ImpulseTimeOrigin.FirstArrival,
-                ImpulseTimeOrigin.Peak);
+                });
         }
 
-        // Keeps the nearest centre when switching widths.
-        private void SyncBandCentres(double preferredCentreHz)
+        private void WireFields()
         {
-            double octaves = comboBandWidth.SelectedItem is double width ? width : 0.0;
-            bool active = octaves > 0.0;
-            double[] centres = active && octaves < OctaveBand
-                ? ThirdOctaveCentres
-                : OctaveCentres;
-            // Only bands whose whole octave-symmetric passband fits under Nyquist; same rule as ImpulseResponseOptions.HasBandFilter.
-            if (active && sampleRate > 0)
+            Bind(numericLength, value => session.Length = (int)value);
+            Bind(numericEnvelopeSmoothing, value => session.EnvelopeSmoothingMs = value);
+            BindItem<double>(comboBandWidth, session.SetBandOctaves);
+            BindIndex(comboBandCenter, index => session.CentreIndex = index);
+            BindItem<ImpulseAmplitudeScale>(comboAmplitudeScale, scale => session.AmplitudeScale = scale);
+            BindItem<ImpulseTimeUnit>(comboTimeUnit, unit => session.TimeUnit = unit);
+            BindItem<ImpulseTimeOrigin>(comboTimeOrigin, origin => session.TimeOrigin = origin);
+            Bind(checkInvert, on => session.Invert = on);
+            Bind(checkNormalizeStep, on => session.NormalizeStepToImpulsePeak = on);
+            Bind(checkBoxShowImpulse, on => session.ShowImpulse = on);
+            Bind(checkBoxShowEnvelope, on => session.ShowEnvelope = on);
+            Bind(checkBoxShowStep, on => session.ShowStep = on);
+        }
+
+        private protected override void PresentControls()
+        {
+            Show(numericLength, session.Length);
+            Show(numericEnvelopeSmoothing, session.EnvelopeSmoothingMs);
+            ShowItem(comboBandWidth, session.BandOctaves);
+            if (!ReferenceEquals(shownCentres, session.Centres))
             {
-                double[] realizable = centres
-                    .Where(centre => new ImpulseResponseOptions
-                    {
-                        BandFilterOctaves = octaves,
-                        BandCenterHz = centre
-                    }.HasBandFilter(sampleRate))
-                    .ToArray();
-                if (realizable.Length > 0)
+                comboBandCenter.Items.Clear();
+                foreach (double centre in session.Centres)
                 {
-                    centres = realizable;
+                    comboBandCenter.Items.Add(centre);
                 }
+
+                shownCentres = session.Centres;
             }
 
-            SetItems(comboBandCenter, centres);
-            comboBandCenter.SelectedItem = Nearest(centres, preferredCentreHz);
-            comboBandCenter.Enabled = active;
+            ShowIndex(comboBandCenter, session.CentreIndex);
+            comboBandCenter.Enabled = session.BandActive;
             // Not Enabled: a disabled label paints near-black on this dark panel.
-            UiStyle.SetTextEnabledLook(labelBandCenter, active);
+            UiStyle.SetTextEnabledLook(labelBandCenter, session.BandActive);
+            ShowItem(comboAmplitudeScale, session.AmplitudeScale);
+            ShowItem(comboTimeUnit, session.TimeUnit);
+            ShowItem(comboTimeOrigin, session.TimeOrigin);
+            checkInvert.Checked = session.Invert;
+            checkNormalizeStep.Checked = session.NormalizeStepToImpulsePeak;
+            checkBoxShowImpulse.Checked = session.ShowImpulse;
+            checkBoxShowEnvelope.Checked = session.ShowEnvelope;
+            checkBoxShowStep.Checked = session.ShowStep;
         }
 
-        private static double NearestBandWidth(double octaves) =>
-            octaves <= 0.0
-                ? 0.0
-                : Nearest([OctaveBand, ThirdOctaveBand], octaves);
-
-        // Nearest in octaves: linear Hz reads 250 as nearer to 500 than to 125.
-        private static double Nearest(IReadOnlyList<double> values, double wanted) =>
-            values.MinBy(value => Math.Abs(Math.Log2(value / wanted)));
-
-        private static string FormatFrequency(double hertz) =>
-            hertz >= 1_000.0
-                ? $"{hertz / 1_000.0:0.###} kHz"
-                : $"{hertz:0.#} Hz";
-
-        // Format handler attached once; the list is refilled on width change and handlers would stack.
-        private static void FillNumeric(
-            ThemedComboBox comboBox,
-            Func<double, string> label,
-            params double[] values)
-        {
-            comboBox.FormattingEnabled = true;
-            comboBox.Format += (_, e) =>
-            {
-                if (e.ListItem is double item)
-                {
-                    e.Value = label(item);
-                }
-            };
-            comboBox.DropDownStyle = ComboBoxStyle.DropDownList;
-            SetItems(comboBox, values);
-        }
-
-        private static void SetItems(ThemedComboBox comboBox, IReadOnlyList<double> values)
+        private static void Fill<T>(ThemedComboBox comboBox, IReadOnlyList<T> values, Func<T, string> label)
         {
             comboBox.Items.Clear();
-            foreach (double value in values)
-            {
-                comboBox.Items.Add(value);
-            }
-        }
-
-        private static void Fill<T>(
-            ThemedComboBox comboBox,
-            Func<T, string> label,
-            params T[] values)
-            where T : struct, Enum
-        {
-            comboBox.Items.Clear();
-            comboBox.FormattingEnabled = true;
             foreach (T value in values)
             {
-                comboBox.Items.Add(value);
+                comboBox.Items.Add(value!);
             }
 
+            Format(comboBox, label);
+        }
+
+        private static void Format<T>(ThemedComboBox comboBox, Func<T, string> label)
+        {
+            comboBox.FormattingEnabled = true;
             comboBox.Format += (_, e) =>
             {
                 if (e.ListItem is T item)

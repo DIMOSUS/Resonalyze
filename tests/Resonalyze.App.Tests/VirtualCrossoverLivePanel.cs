@@ -4,11 +4,8 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// A shown Virtual DSP panel on three measured blocks (a low-pass, a band-pass and a high-pass, LR24 at 300 Hz and
-/// 3 kHz), driven through its controls: menus are taken through <see cref="VirtualCrossoverPanel.ShowMenu"/>, messages
-/// answered through <see cref="VirtualCrossoverPanel.ShowMessage"/>, and a modal dialog by a timer in its loop.
-/// </summary>
+/// <summary>A shown panel on three measured blocks (LR24 at 300 Hz and 3 kHz) driven through its controls: menus taken
+/// through ShowMenu, messages answered through ShowMessage, a modal dialog by a timer in its loop.</summary>
 internal sealed class VirtualCrossoverLivePanel : IDisposable
 {
     private const int SampleRate = 48_000;

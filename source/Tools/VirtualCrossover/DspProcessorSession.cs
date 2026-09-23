@@ -2,10 +2,9 @@ using Resonalyze.Dsp;
 
 namespace Resonalyze;
 
-/// <summary>The processor a Virtual DSP project is being told it targets, as the DSP processor dialog holds it: a catalog
-/// model, which fixes rate and Q convention, or Custom, which keeps its own rate (stated, or following the measurements)
-/// and convention while the user looks at models; the phase-control and FIR answers, which naming a model proposes
-/// afresh; and the notes for an AI assistant. See docs/tech/virtual-dsp-panel.md#processor-rate.</summary>
+/// <summary>The processor the DSP processor dialog names: a catalog model, or Custom keeping its own rate and convention
+/// while the user looks at models; the phase-control and FIR answers; the AI notes. See
+/// docs/tech/virtual-dsp-panel.md#dsp-processor-code-map.</summary>
 internal sealed class DspProcessorSession
 {
     private const int FallbackSampleRateHz = 48_000;

@@ -5,11 +5,8 @@ using static Resonalyze.App.Tests.VirtualCrossoverLivePanel;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The panel's menus and dialogs driven through a live panel: the AI import, the EQ Wizard handoff and its return, the
-/// target level, the processor, a channel's goal and the phase gate. The rules have their own tests; these pin the glue
-/// between the controls, the dialogs and the types that hold the rules.
-/// </summary>
+/// <summary>The panel's menus and dialogs driven through a live panel. The rules have their own tests; these pin the
+/// glue between the controls, the dialogs and the types that hold the rules.</summary>
 [Collection(AgentClipboardUsers.Name)]
 public sealed class VirtualCrossoverPanelDialogWiringTests
 {

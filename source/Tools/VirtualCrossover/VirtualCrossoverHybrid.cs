@@ -8,7 +8,8 @@ internal sealed record HybridReadOut(double Db, bool ArrayStandOff);
 /// <summary>One channel of the set and how far its capture sits from its response.</summary>
 internal readonly record struct SetDatum(
     VirtualCrossoverChannel Channel,
-    double? DatumDb);
+    double? DatumDb,
+    bool RightSide = false);
 
 internal sealed record HybridMagnitudes(
     IReadOnlyList<IReadOnlyList<SignalPoint>> Channels,
@@ -49,7 +50,7 @@ internal sealed record HybridMagnitudes(
         .Select(offset => offset!.Value)
         .ToList();
 
-    /// <summary>Every channel's datum on this side, muted ones included, so mutes cannot move the offset or the warning.</summary>
+    /// <summary>The set's datums (this side, and the other when both are one set), muted ones included, so mutes cannot move the offset or the warning.</summary>
     public IReadOnlyList<SetDatum> SetDatumsDb { get; init; } = [];
 
     /// <summary>One group's slice of the set's hybrid.</summary>
@@ -400,14 +401,14 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
     }
 
     /// <summary>Per-channel and set datums on the raw pair (capture without chain vs bypass response), so tuning cannot move them.</summary>
-    /// <remarks>Datums are this side's, muted included; both sides share the offset. See docs/tech/spatial-average.md#set-offset-and-spread.</remarks>
+    /// <remarks>The set is this side, muted included, and the other side too when both are one set; the offset and the health
+    /// checks read the same set. See docs/tech/spatial-average.md#set-offset-and-spread.</remarks>
     public (double?[] PerChannel, double SetOffsetDb, IReadOnlyList<SetDatum> SetDatums)
         ResolveRawOffsetsDb(
             IReadOnlyList<ProcessedChannel> processed,
             bool rightSide)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.HybridOffsets");
-        VirtualCrossoverSpatialAverageMode mode = session.SpatialAverageMode;
         var datums = new Dictionary<VirtualCrossoverChannel, double?>();
         List<SetDatum> setDatums = SideDatums(AllChannelsWith(processed), rightSide, datums);
 
@@ -419,34 +420,22 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
                 : null;
         }
 
-        if (mode == VirtualCrossoverSpatialAverageMode.MicArray)
-        {
-            return (perChannel, SpatialAverageOffsets.SetOffsetDb(SpatialAverageMethod.MicArray, []), setDatums);
-        }
-
-        // A mono pair answers both sides with one state, so it counts once.
-        var levelled = new Dictionary<VirtualCrossoverChannelState, double>();
-        void Add(IEnumerable<SetDatum> entries, bool right)
-        {
-            foreach (SetDatum entry in entries)
-            {
-                if (entry.DatumDb is { } datum)
-                {
-                    levelled.TryAdd(entry.Channel.SideState(right), datum);
-                }
-            }
-        }
-
-        Add(setDatums, rightSide);
         if (SidesFormOneSet())
         {
-            Add(SideDatums(session.Channels, !rightSide, new()), !rightSide);
+            // A mono pair answers both sides with one state, so it counts once.
+            var seen = setDatums.Select(entry => entry.Channel.SideState(entry.RightSide)).ToHashSet();
+            setDatums.AddRange(SideDatums(session.Channels, !rightSide, new())
+                .Where(entry => seen.Add(entry.Channel.SideState(entry.RightSide))));
         }
 
-        return (
-            perChannel,
-            SpatialAverageOffsets.SetOffsetDb(SpatialAverageMethod.MovingMic, [.. levelled.Values]),
-            setDatums);
+        List<double> known = setDatums
+            .Where(entry => entry.DatumDb.HasValue)
+            .Select(entry => entry.DatumDb!.Value)
+            .ToList();
+        SpatialAverageMethod method = session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
+            ? SpatialAverageMethod.MicArray
+            : SpatialAverageMethod.MovingMic;
+        return (perChannel, SpatialAverageOffsets.SetOffsetDb(method, known), setDatums);
     }
 
     // No capture: not part of the set. A capture that cannot compare stays as a named hole.
@@ -463,7 +452,7 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
             datums[channel] = datum;
             if (channel.SideState(rightSide).SpatialAverageFor(mode) != null)
             {
-                setDatums.Add(new SetDatum(channel, datum));
+                setDatums.Add(new SetDatum(channel, datum, rightSide));
             }
         }
 
@@ -501,19 +490,25 @@ internal sealed class VirtualCrossoverHybrid(VirtualCrossoverSession session)
             return null;
         }
 
-        AnalysisCurve rawIr = session.MagnitudeGate.CanonicalRaw(
-            ir, state.TransferPeakIndex, state.SampleRate, state.MeasuredBand);
         if (state.SpatialAverageFor(session.SpatialAverageMode) is not { } document)
         {
             return null;
         }
 
+        // An array is placed on calibrated curves, so it is compared as measured, the IR through its anchor's file;
+        // a moving mic on canonical raw terms, which the spread threshold was calibrated on.
+        bool array = session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray;
+        AnalysisCurve rawIr = session.MagnitudeGate.CanonicalRaw(
+            ir,
+            state.TransferPeakIndex,
+            state.SampleRate,
+            state.MeasuredBand,
+            array ? state.MicrophoneCalibrationCurve : null);
         IReadOnlyList<SignalPoint>? rawCapture = SpatialAverageHybrid.BuildChannelCurve(
             document,
             DspChannelChain.Identity,
             state.SampleRate,
-            // Canonical terms, matching HybridOffsetDatumMeasurement and the spread threshold's calibration.
-            SpatialAverageCalibration.Off,
+            array ? SpatialAverageCalibration.Own : SpatialAverageCalibration.Off,
             rawIr.Points.Select(point => point.X).ToList(),
             smoothingCode: 0);
         return rawCapture == null

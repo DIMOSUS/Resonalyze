@@ -1214,7 +1214,7 @@ namespace Resonalyze
                     ? reading
                     : null;
             // The verdict is the built result's; the lead is read before the rotation that placed it.
-            double? aheadMs = measured.TimingReference == TimingReference.UnsynchronizedLoopback
+            double? aheadMs = measured.TimingReference == TimingReference.NonCausalLoopback
                 ? ArrivalPlacement.AheadOfLoopbackMs(result.TransferPeakIndex, transfer.Length, SampleRate)
                 : null;
             return preArrivalDb == null && aheadMs == null

@@ -28,9 +28,11 @@ internal static class TimeAlignmentSources
             source = default;
             message =
                 "In this measurement the microphone heard the sweep before the loopback did.\r\n" +
-                "The loopback ran on another clock or stream, so its arrival is not " +
-                "the tract's delay and cannot be compared across measurements.\r\n" +
-                "Time Alignment needs the microphone and the loopback on one audio device.";
+                "Its arrival is not the tract's delay and cannot be compared across " +
+                "measurements: usually the loopback was on another device or stream, or its " +
+                "path adds latency the loudspeaker's does not.\r\n" +
+                "Time Alignment needs the microphone and a loopback taken straight from the " +
+                "output on one audio device.";
             return false;
         }
 

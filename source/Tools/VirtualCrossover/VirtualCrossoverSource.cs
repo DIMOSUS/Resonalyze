@@ -22,7 +22,7 @@ internal sealed class ResolvedVirtualDspSource
     /// <summary>Calibration recorded by the file; null for older measurements, which use the panel's selection.</summary>
     public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; init; }
 
-    /// <summary>Null without a loopback transfer IR, or without absolute time (an imported sweep, a loopback on another clock): summing sums arrivals.</summary>
+    /// <summary>Null without a loopback transfer IR, or without absolute time (an imported sweep, a non-causal loopback): summing sums arrivals.</summary>
     public static ResolvedVirtualDspSource? FromResult(MeasurementResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

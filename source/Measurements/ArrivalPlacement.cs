@@ -37,7 +37,7 @@ internal static class ArrivalPlacement
             ? (length - peakIndex) * 1_000.0 / sampleRate
             : null;
 
-    /// <summary>A loopback result whose arrival led the loopback, re-filed unsynchronized and placed like an import.</summary>
+    /// <summary>A loopback result whose arrival led the loopback, re-filed non-causal and placed like an import.</summary>
     public static MeasurementResult Judge(MeasurementResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -51,7 +51,7 @@ internal static class ArrivalPlacement
         int arrival = PlacedArrivalIndex(result.SampleRate, transfer.ImpulseResponse.Length);
         return result with
         {
-            TimingReference = TimingReference.UnsynchronizedLoopback,
+            TimingReference = TimingReference.NonCausalLoopback,
             Transfer = new MeasurementImpulseResponse(
                 RotateTo(transfer.ImpulseResponse, transfer.PeakIndex, arrival),
                 arrival)

@@ -713,23 +713,25 @@ the buffer, where the automatic gate would read a delay of nearly the whole reco
 
 Nothing reaches a microphone before the signal that drives it, so on one audio device a loopback
 transfer IR is causal: the arrival sits a few milliseconds into the circular buffer. When the
-microphone heard the sweep first, the loopback ran on another clock or stream. The usual cause is
-a driver that joins two interfaces (ASIO4ALL, FlexASIO, an aggregate device) with the microphone
-on one and the loopback on the other; each starts its stream with its own buffering, so the offset
-is set anew at every start. The 12-microphone set of #214 (UMIK-X for the microphones, an RME for
+microphone heard the sweep first, the loopback does not time the measurement. The stamp records that
+fact, not a cause. The usual cause is a driver that joins two interfaces (ASIO4ALL, FlexASIO, an
+aggregate device) with the microphone on one and the loopback on the other; each starts its stream
+with its own buffering, so the offset is set anew at every start. A loopback path that adds latency
+the loudspeaker's does not reads the same. The 12-microphone set of #214 (UMIK-X for the microphones, an RME for
 the loopback, clocks locked over optical) put the arrival 39 to 52 ms ahead, a spread of 13 ms
 between measurements where the cabin explains 2 or 3. Within one measurement the offset held: the
 tweeters' coherence over five runs read 0.995 at 8 to 16 kHz. So the shape is real and the
 position is not, which is what `TimingReference.RecordedSweep` already means for imports.
 
-`ArrivalPlacement.Judge` files such a result as `TimingReference.UnsynchronizedLoopback` and places
+`ArrivalPlacement.Judge` files such a result as `TimingReference.NonCausalLoopback` and places
 its arrival like an import's. It reads the transfer peak, and the split is exact, not a threshold: H1
 pads both records of length L to at least 2L, so a delay (a lag from 0 to L−1) lands in the near half
 and an arrival ahead of the loopback (−L+1 to −1) wraps into the far half; a delay longer than the
 record cannot be measured at all. A REW import is the exception, since its buffer is REW's: there a
 delay past half of it would read as ahead. It runs where a run is built (`ExpSweepMeasurement.BuildResult`, which then publishes
-the notice through `SweepResultCaution`) and where a file is read (`ImpulseResponseFile.ToResult`),
-so files saved before the check are re-filed on load and saved back re-filed. Without it the
+the notice through `SweepResultCaution`) and where a file is read (`ImpulseResponseFile.ToResult`,
+which the EQ Wizard's file source reads too), so files saved before the check are re-filed on load
+and saved back re-filed; a history row redraws its preview from the re-filed IR. Without it the
 arrival stayed at the far end: the IR start estimate reads only the head of the record and found
 a start in the wrapped tail, every magnitude window opened 40 to 50 ms after the direct sound, and
 the curves sat 13 to 43 dB low and matched none of the set's twelve microphones.

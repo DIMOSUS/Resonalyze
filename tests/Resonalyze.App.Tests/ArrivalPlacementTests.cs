@@ -1,4 +1,5 @@
 using System.Numerics;
+using Resonalyze.History;
 
 namespace Resonalyze.App.Tests;
 
@@ -15,7 +16,7 @@ public sealed class ArrivalPlacementTests
         MeasurementResult judged = ArrivalPlacement.Judge(Result(peak, TimingReference.SynchronizedLoopback));
 
         int placed = (int)Math.Round(ArrivalPlacement.PlacedArrivalSeconds * SampleRate);
-        Assert.Equal(TimingReference.UnsynchronizedLoopback, judged.TimingReference);
+        Assert.Equal(TimingReference.NonCausalLoopback, judged.TimingReference);
         Assert.False(judged.TimingReference.HasAbsoluteTime());
         Assert.Equal(placed, judged.Transfer!.PeakIndex);
         Assert.Equal(1.0, judged.Transfer.ImpulseResponse[placed].Real);
@@ -48,8 +49,8 @@ public sealed class ArrivalPlacementTests
             await ImpulseResponseFile.From(loaded).SaveAsync(second);
             MeasurementResult reloaded = (await ImpulseResponseFile.LoadAsync(second)).ToResult();
 
-            Assert.Equal(TimingReference.UnsynchronizedLoopback, loaded.TimingReference);
-            Assert.Equal(TimingReference.UnsynchronizedLoopback, reloaded.TimingReference);
+            Assert.Equal(TimingReference.NonCausalLoopback, loaded.TimingReference);
+            Assert.Equal(TimingReference.NonCausalLoopback, reloaded.TimingReference);
             Assert.Equal(loaded.Transfer!.PeakIndex, reloaded.Transfer!.PeakIndex);
             Assert.Null(ResolvedVirtualDspSource.FromResult(reloaded));
             Assert.Contains("before the loopback did", VirtualCrossoverSourceRules.DescribeUnsummable(reloaded));
@@ -58,6 +59,46 @@ public sealed class ArrivalPlacementTests
         {
             File.Delete(first);
             File.Delete(second);
+        }
+    }
+
+    [Fact]
+    public void TheEqWizardsFileSource_ReadsTheArrivalWhereTheFileLoadPlacesIt()
+    {
+        ImpulseResponseFile file = ImpulseResponseFile.From(
+            Result(Length - 2_400, TimingReference.SynchronizedLoopback));
+
+        EqWizardCurveSource source = EqWizardSourceResolver.CreateFromImpulseResponse(file, "ahead", "ahead");
+
+        Assert.Equal(file.ToResult().Transfer!.PeakIndex, source.Measurement!.PeakIndex);
+        Assert.Equal(1.0, source.Measurement.ImpulseResponse![source.Measurement.PeakIndex].Real);
+    }
+
+    [Fact]
+    public void AHistoryRowOfAReFiledFile_DrawsItsPreviewFromTheReFiledImpulseResponse()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"resonalyze-ahead-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            // The stored preview was drawn with the arrival at the far end.
+            ImpulseResponseFile file = ImpulseResponseFile.From(
+                Result(Length - 2_400, TimingReference.SynchronizedLoopback));
+            MeasurementResult result = file.ToResult();
+            var service = new MeasurementHistoryService(
+                new MeasurementHistoryPersistence(Path.Combine(directory, "history.json")));
+
+            Guid id = service.AddOrUpdateLoadedFile(
+                Path.Combine(directory, "ahead.json"), file, result, new MeasurementSessionSnapshot());
+
+            Assert.Equal(
+                MeasurementHistoryPreviewBuilder.Build(result).MagnitudesDb,
+                service.FindById(id)!.Preview.MagnitudesDb);
+            Assert.NotEqual(file.ToPreview()!.MagnitudesDb, service.FindById(id)!.Preview.MagnitudesDb);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
         }
     }
 

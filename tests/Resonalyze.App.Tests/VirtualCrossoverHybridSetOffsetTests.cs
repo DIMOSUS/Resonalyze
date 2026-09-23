@@ -62,6 +62,67 @@ public sealed class VirtualCrossoverHybridSetOffsetTests
     }
 
     [Fact]
+    public void TheSpreadIsReadOverBothSides_WhenBothSidesTakeTheOffset()
+    {
+        // Each side agrees with itself to 1 dB; the two sides stand 8 dB apart.
+        VirtualCrossoverChannel a = Channel("A", SpatialAverageMethod.MovingMic, left: -30.0, right: -38.0);
+        VirtualCrossoverChannel b = Channel("B", SpatialAverageMethod.MovingMic, left: -31.0, right: -39.0);
+        VirtualCrossoverHybrid reader = Reader(VirtualCrossoverSpatialAverageMode.MovingMic, [a, b]);
+
+        (double?[] perChannel, double offset, IReadOnlyList<SetDatum> set) =
+            reader.ResolveRawOffsetsDb(Processed([a, b], false), rightSide: false);
+        var hybrid = new HybridMagnitudes([], [], perChannel, offset) { SetDatumsDb = set };
+
+        Assert.Equal(4, set.Count);
+        Assert.Equal(9.0, hybrid.SpreadDb, 6);
+        Assert.NotNull(new VirtualCrossoverWarnings(new VirtualCrossoverSession
+        {
+            Project = new VirtualCrossoverProjectFile
+            {
+                SpatialAverageMode = VirtualCrossoverSpatialAverageMode.MovingMic
+            }
+        }).DescribeHybridDisagreement(hybrid));
+    }
+
+    [Fact]
+    public void AHealthyMixedCalibrationArray_SitsWhereASingleFileArrayDoes()
+    {
+        // Positions 6 dB apart raw, files 5 dB apart: as measured they agree to 1 dB, and the anchor reads -2 dB.
+        double uncalibrated = ArrayDatum(
+            Position(0.0, measurement: true, channel: 0, correctionDb: null),
+            Position(1.0, measurement: false, channel: 2, correctionDb: null));
+        double mixed = ArrayDatum(
+            Position(0.0, measurement: true, channel: 0, correctionDb: -2.0),
+            Position(6.0, measurement: false, channel: 2, correctionDb: 3.0));
+
+        Assert.Equal(uncalibrated, mixed, 1);
+    }
+
+    private static double ArrayDatum(params ArrayMicrophoneCurve[] positions)
+    {
+        var channel = new VirtualCrossoverChannel("A");
+        VirtualCrossoverChannelState state = channel.PhysicalSideState(false);
+        Attach(state, SpatialAverageMethod.MicArray, 0.0);
+        state.ArrayCapture = ArrayCaptureDocument.TryCreate(positions, SampleRate, null)!;
+        state.MicrophoneCalibration = positions[0].Calibration;
+        VirtualCrossoverHybrid reader = Reader(VirtualCrossoverSpatialAverageMode.MicArray, [channel]);
+        return reader.ResolveRawOffsetsDb(Processed([channel], false), rightSide: false).PerChannel[0]!.Value;
+    }
+
+    private static ArrayMicrophoneCurve Position(double levelDb, bool measurement, int channel, double? correctionDb) =>
+        new(channel, measurement, Enumerable.Repeat(levelDb, SpatialAverage.BuildGrid().Count).ToArray(), AcceptedRuns: 1)
+        {
+            Calibration = correctionDb is { } db
+                ? VirtualCrossoverCalibrationSettings.From(
+                    CalibrationFile.FromPoints(
+                        [new CalibrationPoint(20.0, db), new CalibrationPoint(20_000.0, db)],
+                        "flat"),
+                    $"flat {db:0.#}",
+                    null)
+                : null
+        };
+
+    [Fact]
     public void AnArrayStandingOffItsImpulseResponse_IsFlagged_EvenWhenTheSetAgreesWithItself()
     {
         var session = new VirtualCrossoverSession

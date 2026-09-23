@@ -140,7 +140,7 @@ sixteen sides, and the autosave rewrites on every knob turn.
 `VirtualCrossoverSourceRules` admits a source only with a loopback transfer IR and at the project's single
 sample rate. `ResolvedVirtualDspSource.FromResult` also refuses measurements without absolute time
 (`TimingReferences.HasAbsoluteTime`): summing drivers sums their arrivals, and an imported arrival is set by
-when the recorder started, a loopback on another clock by when each stream did.
+when the recorder started, a non-causal loopback by something other than the tract.
 
 ## Calibration
 

@@ -744,6 +744,10 @@ once the measurement is saved:
 > The measurement was saved, but its microphone heard the sweep 43.9 ms BEFORE the
 > loopback did.
 
+The same sign comes from a loopback path that adds latency the loudspeaker's does not
+(a reference taken after a processor the speaker feed bypasses), so the notice names
+both.
+
 Such a measurement is filed like a [recorded sweep](#importing-a-sweep-recorded-elsewhere):
 its arrival is placed at 10 ms, [Time Alignment](#time-alignment) and
 [Virtual DSP](#virtual-dsp) decline it, and its frequency response reads normally.

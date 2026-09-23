@@ -165,6 +165,16 @@ commute with subtraction, and the spread threshold was calibrated on these canon
 (`HybridOffsetDatumMeasurement` reads them the same way). A channel that cannot produce the raw pair
 contributes nothing rather than falling back to processed curves.
 
+An **array** is read as measured instead: its average through its own corrections against the
+impulse response through its anchor's file. The placement trims are taken on calibrated curves, so
+undoing each position's correction afterwards leaves an average no single microphone measured: a
+healthy pair whose files differ by 5 dB (`ArrayCalibrationCrossPathTests.MixedArray`) stood 3.2 dB
+off its IR on raw terms and 0 as measured. With one file for every position the two readings agree.
+
+**The set is both sides** when their captures form one set: the offset, the spread and the worst
+datum all read the same deduplicated union (a mono pair once), as the audition does. Read per side,
+a left set at 0 and 1 dB and a right at 8 and 9 took one offset of 4.5 dB with no warning on either.
+
 **Muted channels count.** The datums and the median cover every channel that carries a capture,
 muted or not (`HybridMagnitudes.SetDatumsDb`). A mute says what to draw, not what the set is made of;
 a median over drawn channels only moved every remaining curve about a quarter of a dB per mute on

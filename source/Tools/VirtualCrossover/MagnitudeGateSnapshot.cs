@@ -117,13 +117,14 @@ internal sealed record MagnitudeGateSnapshot(
             calibration).Display;
     }
 
-    /// <summary>Bypass response on canonical terms (own onset, fixed window, no calibration, no smoothing), matching how
-    /// the hybrid spread threshold was calibrated.</summary>
+    /// <summary>Bypass response on canonical terms (own onset, fixed window, no smoothing, calibration only when given), matching
+    /// how the hybrid spread threshold was calibrated.</summary>
     public AnalysisCurve CanonicalRaw(
         Complex[] impulseResponse,
         int peakIndex,
         int sampleRate,
-        MeasuredBand band)
+        MeasuredBand band,
+        CalibrationFile? calibration = null)
     {
         int anchorIndex = ProcessedChannels.StartAnchorIndex(
             impulseResponse, peakIndex, sampleRate);
@@ -134,7 +135,7 @@ internal sealed record MagnitudeGateSnapshot(
                 HighestMeasuredFrequencyHz = band.HighEdgeHz
             },
             Template with { GateOffsetMs = anchorIndex * 1_000.0 / sampleRate },
-            calibration: null,
+            calibration,
             smoothingInverseOctaves: 0).Unsmoothed;
     }
 }

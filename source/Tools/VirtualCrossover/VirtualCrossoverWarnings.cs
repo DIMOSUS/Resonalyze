@@ -351,14 +351,16 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
         if (hybrid.SetDatumsDb.Count > 0)
         {
             var drawn = processed.Select(item => item.Channel).ToHashSet();
+            bool bothSides = hybrid.SetDatumsDb.Select(entry => entry.RightSide).Distinct().Count() > 1;
             foreach (SetDatum entry in hybrid.SetDatumsDb)
             {
                 string figure = entry.DatumDb is { } datum
                     ? $"{datum:+0.0;-0.0} dB"
                     : "no overlap to compare";
                 string muted = drawn.Contains(entry.Channel) ? string.Empty : "  (muted)";
+                string name = bothSides ? entry.Channel.SideLabel(entry.RightSide) : entry.Channel.Name;
                 lines.Append(
-                    $"    {entry.Channel.Name} {entry.Channel.Settings.DisplayName}" +
+                    $"    {name} {entry.Channel.SideSettings(entry.RightSide).DisplayName}" +
                     $"    {figure}{muted}\r\n");
             }
         }

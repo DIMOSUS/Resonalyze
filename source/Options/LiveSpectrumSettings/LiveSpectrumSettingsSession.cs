@@ -77,6 +77,17 @@ internal sealed class LiveSpectrumSettingsSession
     /// <summary>MMM shares the reference-free path.</summary>
     public bool IsReferenceFree => IsMmm || Mode == LiveAnalysisMode.Rta;
 
+    /// <summary>MMM pins the excitation, the averaging and the smoothing to the one recipe a spatial average is valid
+    /// under.</summary>
+    public bool SignalEditable => !IsMmm;
+
+    public bool AveragingEditable => !IsMmm;
+
+    public bool SmoothingEditable => !IsMmm;
+
+    /// <summary>The limit dims the transfer function, which a reference-free mode does not draw.</summary>
+    public bool CoherenceLimitEditable => !IsReferenceFree;
+
     public bool InputMagnitudeInteractive => !IsReferenceFree;
 
     public bool SplInteractive => Mode == LiveAnalysisMode.Rta;

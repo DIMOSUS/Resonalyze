@@ -227,11 +227,11 @@ namespace Resonalyze.Options
                     comboSmoothingInverseOctaves.SelectedItem = session.SmoothingInverseOctaves;
                 }
 
-                comboSmoothingInverseOctaves.Enabled = !session.IsMmm;
+                comboSmoothingInverseOctaves.Enabled = session.SmoothingEditable;
                 Select(averagingComboBox, item => item is AveragingOption option && option.Speed == session.Averaging);
-                averagingComboBox.Enabled = !session.IsMmm;
+                averagingComboBox.Enabled = session.AveragingEditable;
                 Select(coherenceLimitComboBox, item => item is CoherenceLimitOption option && option.Percent == session.CoherenceLimitPercent);
-                coherenceLimitComboBox.Enabled = !session.IsReferenceFree;
+                coherenceLimitComboBox.Enabled = session.CoherenceLimitEditable;
                 checkMainCurve.Checked = session.MainCurve;
                 checkInputMagnitude.Checked = session.InputMagnitude;
                 checkPeakHold.Checked = session.PeakHold;
@@ -261,7 +261,7 @@ namespace Resonalyze.Options
             }
 
             Select(signalTypeComboBox, item => item is NoiseColorOption option && option.NoiseColor == session.Signal);
-            signalTypeComboBox.Enabled = !session.IsMmm;
+            signalTypeComboBox.Enabled = session.SignalEditable;
         }
 
         private static void Select(ThemedComboBox combo, Func<object, bool> matches)
@@ -280,74 +280,49 @@ namespace Resonalyze.Options
             }
         }
 
-        // RTA mode: no transfer/coherence curves (muted); RTA forced on. SPL and tilt are muted in Transfer mode instead.
         // Mute rather than disable, for the theme's muted colour instead of system grey.
         private void PresentLooks()
         {
-            bool mmm = session.IsMmm;
-            bool rta = session.IsReferenceFree;
-            SetPinned(checkSpl, mmm);
-            SetPinned(checkTilt, mmm);
-            UiStyle.SetTextEnabledLook(labelMainCurve, !rta);
-            UiStyle.SetTextEnabledLook(checkMainCurve, !rta, interactive: true);
-            UiStyle.SetTextEnabledLook(labelInputMagnitude, !rta);
-            UiStyle.SetTextEnabledLook(checkInputMagnitude, !rta, interactive: true);
-            UiStyle.SetTextEnabledLook(label9, !rta);
-            UiStyle.SetTextEnabledLook(checkCoherence, !rta, interactive: true);
-            UiStyle.SetTextEnabledLook(label10, !rta);
-            PresentSplChoice();
-            PresentTilt();
-            PresentTransferChoice();
-        }
+            bool curvesMuted = LiveSpectrumSettingsLook.CurvesMuted(session);
+            UiStyle.SetTextEnabledLook(labelMainCurve, !curvesMuted);
+            PresentBox(checkMainCurve, curvesMuted, !curvesMuted);
+            UiStyle.SetTextEnabledLook(labelInputMagnitude, !curvesMuted);
+            PresentBox(checkInputMagnitude, curvesMuted, session.InputMagnitudeInteractive);
+            UiStyle.SetTextEnabledLook(label9, !curvesMuted);
+            PresentBox(checkCoherence, curvesMuted, !curvesMuted);
+            UiStyle.SetTextEnabledLook(label10, !curvesMuted);
 
-        // Precedence: muted (Transfer) → amber → normal. Managed manually: SetTextEnabledLook memorizes the colour it
-        // replaces when muting and would restore a stale amber.
-        private void PresentSplChoice()
-        {
             string splDescription = DescribeSplChoice(session.SplAvailable, session.SplViewOnlyConflict);
             toolTip.SetToolTip(labelSpl, splDescription);
             toolTip.SetToolTip(checkSpl, splDescription);
-            // MMM is band-power dB SPL by definition: pinned, not muted.
-            if (session.IsMmm)
-            {
-                labelSpl.ForeColor = splChoiceReadyForeColor;
-                UiStyle.SetTextEnabledLook(checkSpl, true);
-                return;
-            }
+            // Set directly: SetTextEnabledLook memorizes the colour it replaces when muting and would restore a stale amber.
+            LiveSettingTone spl = LiveSpectrumSettingsLook.Spl(session);
+            labelSpl.ForeColor = ColorOf(spl, splChoiceReadyForeColor);
+            PresentBox(checkSpl, spl == LiveSettingTone.Muted, session.SplInteractive);
 
-            bool rta = session.Mode == LiveAnalysisMode.Rta;
-            labelSpl.ForeColor = !rta
-                ? UiPalette.TextDisabled
-                : session.SplViewOnlyConflict
-                    ? UiPalette.Warning
-                    : splChoiceReadyForeColor;
-            UiStyle.SetTextEnabledLook(checkSpl, rta, interactive: true);
-        }
+            LiveSettingTone tilt = LiveSpectrumSettingsLook.Tilt(session);
+            UiStyle.SetTextEnabledLook(labelTilt, tilt != LiveSettingTone.Muted);
+            PresentBox(checkTilt, tilt == LiveSettingTone.Muted, session.TiltInteractive);
 
-        // Needs a known excitation spectrum: RTA with a real noise only (transfer divides it out; Silent is unknown).
-        private void PresentTilt()
-        {
-            if (session.IsMmm)
-            {
-                UiStyle.SetTextEnabledLook(labelTilt, true);
-                UiStyle.SetTextEnabledLook(checkTilt, true);
-                return;
-            }
-
-            UiStyle.SetTextEnabledLook(labelTilt, session.TiltApplicable);
-            UiStyle.SetTextEnabledLook(checkTilt, session.TiltApplicable, interactive: true);
-        }
-
-        // Amber only for an active override: Transfer selected without a loopback.
-        private void PresentTransferChoice()
-        {
-            radioModeTransfer.ForeColor =
-                session.Mode == LiveAnalysisMode.TransferFunction && !session.HasTransferReference
-                    ? UiPalette.Warning
-                    : transferChoiceReadyForeColor;
+            radioModeTransfer.ForeColor = ColorOf(LiveSpectrumSettingsLook.Transfer(session), transferChoiceReadyForeColor);
             toolTip.SetToolTip(
                 radioModeTransfer, DescribeTransferChoice(session.HasTransferReference));
         }
+
+        // A box that takes no click keeps its state; muted or not is only its colour.
+        private static void PresentBox(CheckBox box, bool muted, bool interactive)
+        {
+            UiStyle.SetTextEnabledLook(box, !muted);
+            box.AutoCheck = interactive;
+            box.TabStop = interactive;
+        }
+
+        private static Color ColorOf(LiveSettingTone tone, Color normal) => tone switch
+        {
+            LiveSettingTone.Warning => UiPalette.Warning,
+            LiveSettingTone.Muted => UiPalette.TextDisabled,
+            _ => normal
+        };
 
         private void PresentCalibration()
         {
@@ -359,14 +334,6 @@ namespace Resonalyze.Options
             }
 
             comboCalibration.Enabled = false;
-        }
-
-        // MMM settings are forced, not muted (mandatory, not ignored): normal colour, unresponsive. AutoCheck:false keeps
-        // the state on click without the muted colour.
-        private static void SetPinned(CheckBox checkBox, bool pinned)
-        {
-            checkBox.AutoCheck = !pinned;
-            checkBox.TabStop = !pinned;
         }
 
         private static string DescribeTransferChoice(bool hasTransferReference)
@@ -519,7 +486,7 @@ namespace Resonalyze.Options
                 "DSP adds the channel's chain to the capture itself, so a capture " +
                 "taken through a chain gets that chain applied twice — and the result " +
                 "still looks entirely plausible.");
-            // radioModeTransfer's tooltip is owned by PresentTransferChoice.
+            // radioModeTransfer, labelSpl and checkSpl take their tooltips in PresentLooks.
             toolTip.SetToolTip(
                 signalTypeComboBox,
                 "Excitation noise. Pink (periodic): one looped FFT period,\r\n" +
@@ -574,7 +541,6 @@ namespace Resonalyze.Options
                 "spectrum is unknown.";
             toolTip.SetToolTip(labelTilt, tiltDescription);
             toolTip.SetToolTip(checkTilt, tiltDescription);
-            // labelSpl/checkSpl tooltips are owned by PresentSplChoice.
         }
     }
 }

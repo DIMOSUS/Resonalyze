@@ -5,36 +5,6 @@ namespace Resonalyze;
 
 public partial class Form1
 {
-    private void buttonWaterfallOpt_Click(object sender, EventArgs e)
-    {
-        OpenModeSettings(ModeTab.Waterfall);
-    }
-
-    private void buttonFROpt_Click(object sender, EventArgs e)
-    {
-        OpenModeSettings(ModeTab.Frequency);
-    }
-
-    private void buttonBurstDecayOpt_Click(object sender, EventArgs e)
-    {
-        OpenModeSettings(ModeTab.Burst);
-    }
-
-    private void buttonGDOpt_Click(object sender, EventArgs e)
-    {
-        OpenModeSettings(ModeTab.GroupDelay);
-    }
-
-    private void buttonPROpt_Click(object sender, EventArgs e)
-    {
-        OpenModeSettings(ModeTab.Phase);
-    }
-
-    private void buttonImpOpt_Click(object sender, EventArgs e)
-    {
-        OpenModeSettings(ModeTab.Impulse);
-    }
-
     private void OpenModeSettings(ModeTab tab)
     {
         dockedMeasurementSettingsHost.Close();

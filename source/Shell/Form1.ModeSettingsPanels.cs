@@ -4,8 +4,11 @@ namespace Resonalyze;
 
 public partial class Form1
 {
-    /// <summary>The open measurement's rate, or the one the next run is configured for.</summary>
-    private int OpenSampleRate => analyzerDocument.Result?.SampleRate ?? expSweepMeasurement.SampleRate;
+    /// <summary>The rate a settings panel shows while nothing is open: the one the next run is configured for.</summary>
+    private int ModeSettingsSampleRate => expSweepMeasurement.SampleRate;
+
+    /// <summary>The open measurement's rate, or <see cref="ModeSettingsSampleRate"/>.</summary>
+    private int OpenSampleRate => analyzerDocument.Result?.SampleRate ?? ModeSettingsSampleRate;
 
     private ModeDescriptor GetActiveModeDescriptor() =>
         ModeCatalog.For(modeController.ActiveTab);
@@ -33,7 +36,7 @@ public partial class Form1
                     () => new FROptions(),
                     opt => opt.Init(
                         analyzerDocument,
-                        expSweepMeasurement.SampleRate,
+                        ModeSettingsSampleRate,
                         viewSettings.FrequencyResponse,
                         viewSettings.FrequencyResponseVisibility,
                         CalibrationEntries()),
@@ -46,7 +49,7 @@ public partial class Form1
                     () => new PROpt(),
                     opt => opt.Init(
                         analyzerDocument,
-                        expSweepMeasurement.SampleRate,
+                        ModeSettingsSampleRate,
                         viewSettings.PhaseResponse,
                         viewSettings.PhaseResponseVisibility,
                         compareSelection.GetAnalysisSource),
@@ -58,7 +61,7 @@ public partial class Form1
                     () => new GDOpt(),
                     opt => opt.Init(
                         analyzerDocument,
-                        expSweepMeasurement.SampleRate,
+                        ModeSettingsSampleRate,
                         viewSettings.GroupDelay,
                         viewSettings.GroupDelayVisibility,
                         compareSelection.GetAnalysisSource),
@@ -68,14 +71,14 @@ public partial class Form1
                 ToggleModeOptions(
                     tab,
                     () => new WaterfallOptions(),
-                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, viewSettings.Waterfall),
+                    opt => opt.Init(analyzerDocument, ModeSettingsSampleRate, viewSettings.Waterfall),
                     opt => opt.SetOptions(viewSettings.Waterfall));
                 break;
             case ModeTab.Burst:
                 ToggleModeOptions(
                     tab,
                     () => new BDOpt(),
-                    opt => opt.Init(analyzerDocument, expSweepMeasurement.SampleRate, viewSettings.BurstDecay),
+                    opt => opt.Init(analyzerDocument, ModeSettingsSampleRate, viewSettings.BurstDecay),
                     opt => opt.SetOptions(viewSettings.BurstDecay));
                 break;
             case ModeTab.LiveSpectrum:

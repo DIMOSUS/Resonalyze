@@ -200,7 +200,8 @@ public partial class VirtualCrossoverPanel
                     ? AcousticViewBuilder.NoSourcesHint
                     : AcousticViewBuilder.EmptyViewHint(groupView),
                 [],
-                null));
+                null,
+                SharedScaleFor(view, drawn: null)));
             MetricChanged?.Invoke(string.Empty, string.Empty);
             // A warning about channels no longer visible would read as a fault in this view.
             HideWarning();
@@ -338,9 +339,58 @@ public partial class VirtualCrossoverPanel
                 loadingProject);
         }
 
+        acousticRender = acousticRender with
+        {
+            Scale = SharedScaleFor(view, ScaleExtent.Of(acousticRender.Curves))
+        };
+
         using (AppProfiler.Zone("VirtualDSP.AcousticPlotDraw"))
         {
             acousticPlot.Draw(acousticRender);
+        }
+    }
+
+    // The shown side's reach as drawn (none for an empty side), the other's as last known; the other is re-read once
+    // edits pause. Null outside the magnitude view.
+    private ScaleExtent? SharedScaleFor(VirtualCrossoverViewState view, ScaleExtent? drawn)
+    {
+        if (view.View != AcousticView.Magnitude)
+        {
+            return null;
+        }
+
+        sharedScale.Remember(view.RightSide, view, drawn);
+        sharedScaleTimer.Stop();
+        sharedScaleTimer.Start();
+        return ScaleExtent.Union(drawn, sharedScale.Known(!view.RightSide, view));
+    }
+
+    // Guarded async void: the timer's handler is synchronous.
+    private async void MeasureSharedScale()
+    {
+        sharedScaleTimer.Stop();
+        try
+        {
+            VirtualCrossoverViewState view = CaptureViewState();
+            if (session.LastRender is not { } render || view.View != AcousticView.Magnitude)
+            {
+                return;
+            }
+
+            (bool current, ScaleExtent? other) =
+                await sharedScale.MeasureOtherSideAsync(view, render.Revision);
+            if (!current || mainPlotView.IsDisposed ||
+                !processingCoordinator.IsCurrent(render.Revision) || CaptureViewState() != view)
+            {
+                return;
+            }
+
+            sharedScale.Remember(!view.RightSide, view, other);
+            acousticPlot.ApplyScale(ScaleExtent.Union(sharedScale.Known(view.RightSide, view), other));
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine($"Virtual DSP shared scale failed: {exception}");
         }
     }
 

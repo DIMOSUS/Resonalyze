@@ -167,17 +167,19 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
 
     // One summed line per zone, all gated on ONE anchor across the shown channels.
     // See docs/tech/virtual-dsp-panel.md#groups-view.
-    private List<AcousticCurve> GroupSumCurves(
+    /// <param name="oppositeSide">Windowed through the other side's gate placement, for the shared scale.</param>
+    internal List<AcousticCurve> GroupSumCurves(
         List<ProcessedChannel> shown,
         IReadOnlyList<AnalysisCurve>? magnitudes,
         HybridMagnitudes? hybrid,
-        VirtualCrossoverViewState view)
+        VirtualCrossoverViewState view,
+        bool oppositeSide = false)
     {
         using var _ = AppProfiler.Zone("VirtualDSP.BuildGroupSumCurves");
         int anchor = ProcessedChannels.SharedStartAnchorIndex(shown);
         MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
         double gateOffsetMs = snapshot.ResolveGateOffsetMs(
-            oppositeSide: false, anchor, shown[0].SampleRate);
+            oppositeSide, anchor, shown[0].SampleRate);
         // Check every list the slice indexes: the slice runs before VirtualCrossoverHybrid.Sum's own guard.
         bool drawHybrid = hybrid != null && magnitudes != null &&
             magnitudes.Count >= shown.Count &&
@@ -216,7 +218,7 @@ internal sealed class AcousticViewBuilder(VirtualCrossoverSession session, Virtu
                 points ?? snapshot.MeasuredSum(
                     members,
                     anchor,
-                    snapshot.ResolveGateOffsetMs(oppositeSide: false, anchor, members[0].SampleRate),
+                    snapshot.ResolveGateOffsetMs(oppositeSide, anchor, members[0].SampleRate),
                     session.Calibration.For).Display.Points,
                 VirtualCrossoverColors.Group(zone),
                 2.0,

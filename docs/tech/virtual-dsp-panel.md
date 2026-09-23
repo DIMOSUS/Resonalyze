@@ -498,6 +498,34 @@ channels; in a grouped view a spectator failing the leading-edge guard may send 
 while these figures keep per-curve placements, which is the right way round. The direct-sound loss (FDW-8) is
 the same block's spectra summed, so it is built in the same task from the same windows.
 
+## One scale for both sides
+
+The magnitude view's dB axis and the loss axis take one range for both sides, so flipping the side selector
+changes the curves and nothing else: autoscaled per side, a quieter right side redrew on a lower axis and read as a
+level jump even where the tune was identical (#214). `VirtualCrossoverSharedScale` keeps each side's extent
+(`ScaleExtent`: lowest and highest level, deepest loss), the plot draws the union, and the value axis rounds outward
+to 5 dB so the small differences between how the two views read one curve (a sum drawn solid on its own side and
+dashed, through `OppositeSum`, on the other) land on the same limits. The loss axis takes the deeper loss of the two.
+A user's zoom lives in the axis view range and survives; only Minimum/Maximum are set.
+
+The redraw path pays nothing for it. The shown side's extent is read from the curves just drawn and remembered; the
+side not shown contributes its last known extent: remembered from its own drawing when it was shown, and re-read
+(`MeasureOtherSideAsync`: its channel, raw and group curves through its own gate placement, its sum outside the
+hybrid, the loss the selector draws, Direct included) only once edits have paused for 250 ms. Reading it on every
+frame would double the curve work and add a junction read (50–100 ms under Direct) to each step of a drag. An extent
+is kept only under the view options it was taken with (view, group view, hybrid, sum, loss window, target, gate
+template, smoothing, calibration, spatial-average method; the gate's pins stay out, as they swap with the sides), and a
+project load forgets both. The hybrid sum of the side not shown is not re-read: it is the dashed curve the shown side
+already draws. A side whose inputs have not moved since its last read (its responses by identity, which the coordinator
+reuses for an unchanged chain, its curve flags, zones, captures and gate pin) is not read again, so edits to the shown
+side cost nothing on the other. A shown side with nothing to draw (no source, or an empty group view) takes the same
+path, drawn on the other side's extent, rather than autoscaling an empty plot; with nothing on either side the axis
+autoscales again. A current read that finds nothing to draw replaces the old extent, so an emptied side stops widening the
+scale; a read overtaken by a newer frame changes nothing. The side's junctions (which decide whether it quotes a loss,
+and the Direct loss's bands) read the settings its responses were built from: `ComputeSideSumAsync` snapshots them into
+`ProcessedChannel.SideSettings`, since `Channel.Settings` is the shown side's, and the AI package's opposite side
+reads them the same way.
+
 ## Opposite-side sum
 
 The opposite side's sum comes from the metrics (shared coordinator cache), but its curve is built by

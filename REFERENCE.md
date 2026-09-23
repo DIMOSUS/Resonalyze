@@ -2526,7 +2526,9 @@ miniDSP-class hardware up to Nyquist, not just an analog textbook curve.
 
 The acoustic plot shows raw and processed curves per channel for the active side
 (the two per-channel curve checkboxes belong to the block, so a side switch
-redraws the same curves from the other side's measurement),
+redraws the same curves from the other side's measurement, on the same scale:
+the magnitude and Sum loss axes span both sides, so the curves are compared
+without setting the limits by hand),
 the complex **Sum**, the **opposite side's Sum** as a dashed translucent curve,
 and the **Sum loss** curve, with a **View** row — **Magnitude**, **Phase**,
 **Impulse**, **Group delay** and **Step** — and a **Sum loss** read-out (avg / dip per

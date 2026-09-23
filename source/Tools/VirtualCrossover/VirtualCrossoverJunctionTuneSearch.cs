@@ -41,8 +41,8 @@ internal static class VirtualCrossoverJunctionTuneSearch
             return new JunctionTuneDefaults(20, 20_000, [CrossoverFilterFamily.LinkwitzRiley], null);
         }
 
-        VirtualCrossoverChannelSettings lower = junctions[index].Lower.Channel.Settings;
-        VirtualCrossoverChannelSettings upper = junctions[index].Upper.Channel.Settings;
+        VirtualCrossoverChannelSettings lower = junctions[index].Lower.Settings;
+        VirtualCrossoverChannelSettings upper = junctions[index].Upper.Settings;
         double currentHz = VirtualCrossoverJunctions.GetPairCrossoverHz(lower, upper);
         (double minHz, double maxHz) = currentHz > 0
             ? AgentProposalValidator.DefaultJunctionWindow(currentHz)

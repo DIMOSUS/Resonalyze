@@ -1,5 +1,6 @@
 using System.Windows.Forms;
 using OxyPlot;
+using OxyPlot.Axes;
 using OxyPlot.Series;
 using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
@@ -170,6 +171,91 @@ public sealed class VirtualCrossoverPanelWiringTests
         });
     }
 
+    // The right side plays 6 dB lower; without the Sum (whose dashed opposite curve spans both) each side alone scales differently.
+    [Fact]
+    public void BothSides_AreDrawnOnOneScale()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+            live.Set<CheckBox>("checkBoxShowSum", box => box.Checked = false);
+            live.ShowRight();
+            live.ShowLeft();
+            var left = live.AxisRanges();
+
+            live.ShowRight();
+
+            Assert.Equal(left, live.AxisRanges());
+        });
+    }
+
+    // Raised while hidden, the right side is re-read once edits pause: the left view's axis follows it up without a visit.
+    [Fact]
+    public void AHiddenSideRaisedWhileHidden_WidensTheScaleOnceEditsPause()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+            live.Set<CheckBox>("checkBoxShowSum", box => box.Checked = false);
+            double before = live.AxisRanges().Value.High;
+
+            foreach (VirtualCrossoverChannel channel in live.Session.Channels)
+            {
+                channel.SideSettings(true).GainDb = 18;
+            }
+
+            live.Redraw();
+            live.WaitFor(() => live.AxisRanges().Value.High >= before + 10, "take in the raised hidden side");
+        });
+    }
+
+    // Emptied while shown, the left side keeps the scale the right side is drawn on.
+    [Fact]
+    public void AnEmptiedShownSide_KeepsTheOtherSidesScale()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+            live.Set<CheckBox>("checkBoxShowSum", box => box.Checked = false);
+            live.ShowRight();
+            live.ShowLeft();
+            double withLeft = live.AxisRanges().Value.High;
+
+            foreach (VirtualCrossoverChannel channel in live.Session.Channels)
+            {
+                channel.PhysicalSideState(false).Clear();
+            }
+
+            live.Redraw();
+            var emptied = live.AxisRanges().Value;
+            live.ShowRight();
+
+            Assert.Equal(live.AxisRanges().Value, emptied);
+            Assert.True(emptied.High < withLeft, $"the emptied left side still holds the scale at {emptied.High} dB");
+        });
+    }
+
+    // The louder left side, once emptied, must stop holding the right side's axis up.
+    [Fact]
+    public void AnEmptiedHiddenSide_StopsWideningTheScale()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+            live.Set<CheckBox>("checkBoxShowSum", box => box.Checked = false);
+            live.ShowRight();
+            double shared = live.AxisRanges().Value.High;
+
+            foreach (VirtualCrossoverChannel channel in live.Session.Channels)
+            {
+                channel.PhysicalSideState(false).Clear();
+            }
+
+            live.Redraw();
+            live.WaitFor(() => live.AxisRanges().Value.High < shared, "drop the emptied side's range");
+        });
+    }
+
     [Fact]
     public void TheHybridToggle_QuotesTheSpatialAverage_OnTheShownSide()
     {
@@ -277,6 +363,24 @@ public sealed class VirtualCrossoverPanelWiringTests
         {
             Control<RadioButton>("radioSideLeft").Checked = false;
             Set<RadioButton>("radioSideRight", radio => radio.Checked = true);
+        }
+
+        public void WaitFor(Func<bool> condition, string what) => live.Wait(condition, what);
+
+        public void ShowLeft()
+        {
+            Control<RadioButton>("radioSideRight").Checked = false;
+            Set<RadioButton>("radioSideLeft", radio => radio.Checked = true);
+        }
+
+        /// <summary>The ranges the main plot renders: the dB axis and the loss axis.</summary>
+        public ((double Low, double High) Value, (double Low, double High) Loss) AxisRanges()
+        {
+            PlotModel model = Model("mainPlotView");
+            ((IPlotModel)model).Update(true);
+            Axis value = model.Axes.Single(axis => axis.Title == "dB");
+            Axis loss = model.Axes.Single(axis => axis.Key == "virtual-crossover:loss");
+            return ((value.ActualMinimum, value.ActualMaximum), (loss.ActualMinimum, loss.ActualMaximum));
         }
 
         public void PickView(string radio)

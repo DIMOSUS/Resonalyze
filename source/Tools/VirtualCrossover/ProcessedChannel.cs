@@ -16,7 +16,12 @@ internal sealed record ProcessedChannel(
     // Snapshotted per side: the list can carry the opposite side's responses.
     MeasuredBand MeasuredBand = default,
     // This side's measurement calibration; null when its file named none or the path does not care (panel selection applies).
-    CalibrationFile? MicrophoneCalibration = null);
+    CalibrationFile? MicrophoneCalibration = null,
+    // The settings the response was built from when they are not the shown side's; junction order and corners read them.
+    VirtualCrossoverChannelSettings? SideSettings = null)
+{
+    public VirtualCrossoverChannelSettings Settings => SideSettings ?? Channel.Settings;
+}
 
 /// <summary><see cref="Unsmoothed"/> is the sum-loss operand; smoothing before the division invents corner dips.</summary>
 internal sealed record GatedMagnitude(AnalysisCurve Display, AnalysisCurve Unsmoothed)
@@ -98,7 +103,7 @@ internal static class ProcessedChannels
     public static (double MinHz, double MaxHz) GetCrossoverWindow(
         IReadOnlyList<ProcessedChannel> processed) =>
         VirtualCrossoverJunctions.GetCrossoverWindow(
-            processed.Select(item => item.Channel.Settings));
+            processed.Select(item => item.Settings));
 
     /// <summary>Estimated response START (peak fallback): a filtered channel's peak trails its front by the crossover GD.</summary>
     public static int StartAnchorIndex(
@@ -117,7 +122,7 @@ internal static class ProcessedChannels
 
     public static List<ProcessedChannel> OrderByBand(IReadOnlyList<ProcessedChannel> processed) =>
         processed
-            .OrderBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Channel.Settings))
+            .OrderBy(item => VirtualCrossoverJunctions.BandCenterHz(item.Settings))
             .ToList();
 
     /// <summary>Band neighbours that really hand over: both channels must play inside the junction's octave-each-way window.</summary>
@@ -127,7 +132,7 @@ internal static class ProcessedChannels
         for (int i = 0; i < byBand.Count - 1; i++)
         {
             double pairHz = VirtualCrossoverJunctions.GetPairCrossoverHz(
-                byBand[i].Channel.Settings, byBand[i + 1].Channel.Settings);
+                byBand[i].Settings, byBand[i + 1].Settings);
             (double bandLowHz, double bandHighHz) = VirtualCrossoverJunctions.OverlapBand(pairHz);
             if (!PlaysWithin(byBand[i], bandLowHz, bandHighHz) ||
                 !PlaysWithin(byBand[i + 1], bandLowHz, bandHighHz))
@@ -228,7 +233,7 @@ internal static class ProcessedChannels
     private static bool PlaysWithin(ProcessedChannel channel, double lowHz, double highHz)
     {
         (double channelLow, double channelHigh) =
-            VirtualCrossoverJunctions.GetChannelBand(channel.Channel.Settings);
+            VirtualCrossoverJunctions.GetChannelBand(channel.Settings);
         return channelHigh > lowHz && channelLow < highHz;
     }
 }

@@ -8,6 +8,8 @@ namespace Resonalyze.Options;
 internal sealed partial class RecordedSweepChannelDialog : Form
 {
     private readonly RecordedSweepChannelChoice choice;
+    // The grid picks its own first row while it is built and shown; only rows chosen after that are the user's.
+    private bool presenting = true;
 
     public RecordedSweepChannelDialog(
         IReadOnlyList<float[]> channels,
@@ -23,17 +25,30 @@ internal sealed partial class RecordedSweepChannelDialog : Form
             channelGridView.Rows.Add(row.Channel, row.Match, row.Rms, row.Peak);
         }
 
-        channelGridView.Rows[choice.SelectedChannel].Selected = true;
         channelGridView.SelectionChanged += (_, _) =>
         {
-            if (channelGridView.CurrentRow is { } row)
+            if (!presenting && channelGridView.CurrentRow is { } row)
             {
                 choice.Select(row.Index);
             }
         };
+        Shown += (_, _) => Present();
     }
 
     public int SelectedChannel => choice.SelectedChannel;
+
+    private void Present()
+    {
+        presenting = true;
+        try
+        {
+            channelGridView.CurrentCell = channelGridView.Rows[choice.SelectedChannel].Cells[0];
+        }
+        finally
+        {
+            presenting = false;
+        }
+    }
 
     private void StyleGrid()
     {

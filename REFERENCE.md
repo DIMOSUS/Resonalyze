@@ -1182,7 +1182,10 @@ with the inverse filter of the sweep the **current settings** describe, and the
 transfer function is estimated against that same sweep standing in for the
 loopback reference. If the file has more than one channel, the one whose content
 actually matches the sweep is measured — not the loudest, because a dead input's
-hum can easily out-measure a quiet microphone.
+hum can easily out-measure a quiet microphone. When another channel matches almost as
+well — a DAW track that recorded the sweep itself matches best of all and measures
+flat — Resonalyze asks which channel is the microphone, listing each one's match,
+RMS and peak with the best match picked.
 
 The recording may be far longer than the sweep. The excitation is found by
 matching the sweep against the recording rather than by looking for something

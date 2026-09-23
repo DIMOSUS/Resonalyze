@@ -112,6 +112,31 @@ public sealed class ArrivalPlacementTests
         Assert.DoesNotContain("unusual energy", text);
     }
 
+    // A REW import states no levels: its buffer is REW's, so a delay past half of it is no evidence.
+    [Fact]
+    public async Task AStoredResultWithoutALoopbackLevel_KeepsItsTimeAndItsArrival()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"resonalyze-rew-{Guid.NewGuid():N}.json");
+        try
+        {
+            MeasurementResult imported = Result(Length - 2_400, TimingReference.SynchronizedLoopback) with
+            {
+                Levels = InputLevelMeterSnapshot.Empty
+            };
+            await ImpulseResponseFile.From(imported).SaveAsync(path);
+
+            MeasurementResult loaded = (await ImpulseResponseFile.LoadAsync(path)).ToResult();
+
+            Assert.Equal(TimingReference.SynchronizedLoopback, loaded.TimingReference);
+            Assert.Equal(Length - 2_400, loaded.Transfer!.PeakIndex);
+            Assert.Equal(imported.Transfer!.ImpulseResponse, loaded.Transfer.ImpulseResponse);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static MeasurementResult Result(int peak, TimingReference reference)
     {
         var transfer = new Complex[Length];
@@ -132,7 +157,10 @@ public sealed class ArrivalPlacementTests
             MeasurementMode = SweepMeasurementMode.LoopbackTransfer,
             TimingReference = reference,
             SweepDeconvolution = new MeasurementImpulseResponse(sweep, 16),
-            Transfer = new MeasurementImpulseResponse(transfer, peak)
+            Transfer = new MeasurementImpulseResponse(transfer, peak),
+            Levels = new InputLevelMeterSnapshot(
+                new InputLevelMeterEntry(true, -40.0, -55.0, false, false),
+                new InputLevelMeterEntry(true, -6.0, -12.0, false, true))
         };
     }
 }

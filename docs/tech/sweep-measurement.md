@@ -727,8 +727,12 @@ position is not, which is what `TimingReference.RecordedSweep` already means for
 its arrival like an import's. It reads the transfer peak, and the split is exact, not a threshold: H1
 pads both records of length L to at least 2L, so a delay (a lag from 0 to L−1) lands in the near half
 and an arrival ahead of the loopback (−L+1 to −1) wraps into the far half; a delay longer than the
-record cannot be measured at all. A REW import is the exception, since its buffer is REW's: there a
-delay past half of it would read as ahead. It runs where a run is built (`ExpSweepMeasurement.BuildResult`, which then publishes
+record cannot be measured at all. The split holds only for a buffer laid out here, so a stored result
+is judged only when it carries its loopback level (`ArrivalPlacement.JudgeStored`): every run recorded
+here writes one, while a REW import and files written by external tools carry none, and in REW's
+buffer a delay past half of it is no evidence. Of 152 archived files, 129 runs carry the level (the
+set of #214 among them) and the 23 that do not are a REW import and external conversions; none
+carries an `AudioSession`, so that field could not tell them apart. It runs where a run is built (`ExpSweepMeasurement.BuildResult`, which then publishes
 the notice through `SweepResultCaution`) and where a file is read (`ImpulseResponseFile.ToResult`,
 which the EQ Wizard's file source reads too), so files saved before the check are re-filed on load
 and saved back re-filed; a history row redraws its preview from the re-filed IR. Without it the

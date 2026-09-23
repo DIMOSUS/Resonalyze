@@ -174,7 +174,7 @@ public sealed class ImpulseResponseFile
             achievedHighHz);
         Complex[]? transfer = GetTransferImpulseResponse();
         int averageRunCount = Math.Clamp(AverageRunCount, 1, 64);
-        return ArrivalPlacement.Judge(new MeasurementResult
+        return ArrivalPlacement.JudgeStored(new MeasurementResult
         {
             SampleRate = SampleRate,
             Bits = Bits,

@@ -37,6 +37,14 @@ internal static class ArrivalPlacement
             ? (length - peakIndex) * 1_000.0 / sampleRate
             : null;
 
+    /// <summary><see cref="Judge"/> for a stored result, only when it carries its loopback level: every run recorded here writes
+    /// one, and imports (REW, external tools) do not, whose buffers are not laid out as ours.</summary>
+    public static MeasurementResult JudgeStored(MeasurementResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        return result.Levels.Loopback.Available ? Judge(result) : result;
+    }
+
     /// <summary>A loopback result whose arrival led the loopback, re-filed non-causal and placed like an import.</summary>
     public static MeasurementResult Judge(MeasurementResult result)
     {

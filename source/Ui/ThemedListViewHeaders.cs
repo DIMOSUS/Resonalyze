@@ -1,5 +1,3 @@
-using System.Windows.Forms;
-
 namespace Resonalyze.Ui;
 
 /// <summary>System-drawn column headers ignore the palette; only they are owner-drawn, the rows stay the system's.</summary>

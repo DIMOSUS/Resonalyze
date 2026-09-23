@@ -1,4 +1,3 @@
-using Resonalyze.Audio;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 using static Resonalyze.App.Tests.CalibrationDialogFixtures;

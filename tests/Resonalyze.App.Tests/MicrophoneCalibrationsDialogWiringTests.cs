@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-using Resonalyze.Dsp;
 using Resonalyze.Options;
 using static Resonalyze.App.Tests.CalibrationDialogFixtures;
 

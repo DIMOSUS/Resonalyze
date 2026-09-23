@@ -1,5 +1,3 @@
-using Resonalyze.Ui;
-
 namespace Resonalyze.Options;
 
 /// <summary>Shown only when ambiguous (<see cref="RecordedSweepChannels.IsAmbiguous"/>): a DAW track holding the played

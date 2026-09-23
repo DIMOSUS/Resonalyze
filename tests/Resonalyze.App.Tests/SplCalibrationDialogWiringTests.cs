@@ -1,5 +1,4 @@
 using System.Windows.Forms;
-using Resonalyze.Audio;
 using Resonalyze.Options;
 using Resonalyze.Ui;
 using static Resonalyze.App.Tests.CalibrationDialogFixtures;

@@ -1,4 +1,3 @@
-using System.Windows.Forms;
 using Resonalyze.Ui;
 
 namespace Resonalyze.Options;

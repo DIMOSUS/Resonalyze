@@ -2,7 +2,6 @@ using System.Drawing;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-using Resonalyze.Audio;
 
 namespace Resonalyze.App.Tests;
 

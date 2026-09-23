@@ -9,11 +9,9 @@ using Resonalyze.Ui;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The FIR Constructor through its own controls, file dialogs and host callbacks, beside a session driven the same
-/// way: after every step the panel shows what the session's readers return. A read-out, a field or a plot left bound
-/// to something else fails here.
-/// </summary>
+/// <summary>The FIR Constructor through its controls, file dialogs and host callbacks beside a session driven the same way:
+/// after every step the panel shows what the session's readers return, so a read-out, a field or a plot bound to
+/// anything else fails here.</summary>
 public sealed class FirConstructorPanelWiringTests
 {
     [Fact]
@@ -54,11 +52,20 @@ public sealed class FirConstructorPanelWiringTests
     {
         StaTest.Run(() =>
         {
+            using var folder = new TemporaryDirectory();
             using var constructor = new Constructor();
+            string kernel = folder.File("room.txt");
+            FirFilterFiles.Save(kernel, new FirFilter([0.5, 0.25, -0.125]), 48_000, null);
             constructor.Pick("comboBoxType", "Band pass", draft => draft with { Kind = CrossoverKind.BandPass });
             constructor.Number("numericHighPassHz", 5_000, draft => draft with { HighPassEdge = draft.HighPassEdge with { FrequencyHz = 5_000 } });
             Assert.NotEmpty(constructor.Text("labelProblem"));
             Assert.Null(constructor.Panel.CurrentKernel);
+
+            // A kernel shown in the problem's place clears it.
+            constructor.Import(kernel);
+            Assert.Empty(constructor.Text("labelProblem"));
+            constructor.Number("numericHighPassHz", 6_000, draft => draft with { HighPassEdge = draft.HighPassEdge with { FrequencyHz = 6_000 } });
+            Assert.NotEmpty(constructor.Text("labelProblem"));
 
             constructor.Number("numericHighPassHz", 500, draft => draft with { HighPassEdge = draft.HighPassEdge with { FrequencyHz = 500 } });
             Assert.Empty(constructor.Text("labelProblem"));
@@ -203,6 +210,7 @@ public sealed class FirConstructorPanelWiringTests
     {
         private readonly Form host;
         private readonly Queue<string?> files = new();
+        private readonly string cancelled = Path.Combine(Path.GetTempPath(), $"resonalyze-fir-cancelled-{Guid.NewGuid():N}.txt");
 
         public Constructor()
         {
@@ -220,6 +228,8 @@ public sealed class FirConstructorPanelWiringTests
                 Suggested = dialog.FileName;
                 if (files.Dequeue() is not { } answer)
                 {
+                    // A cancelled dialog still holds a name.
+                    dialog.FileName = cancelled;
                     return DialogResult.Cancel;
                 }
 
@@ -309,6 +319,7 @@ public sealed class FirConstructorPanelWiringTests
             Find<Button>("buttonExport").PerformClick();
             Settle();
             Assert.Equal(request.SuggestedFileName, Suggested);
+            Assert.False(File.Exists(cancelled), "a cancelled export wrote a file");
             if (path != null && Warnings.Count == warned)
             {
                 string expected = path + ".expected" + Path.GetExtension(path);

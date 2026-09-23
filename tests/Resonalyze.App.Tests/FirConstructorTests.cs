@@ -532,13 +532,15 @@ public sealed class FirConstructorTests
 
             using var bare = new FirConstructorPanel();
             Settle(bare);
-            Import(bare, new FirFilter([0.25, 0.5, 0.25], 48_000));
-            FirFilter imported = bare.CurrentKernel!;
+            var file = new FirFilter([0.25, 0.5, 0.25], 48_000);
+            // Handed off while the import is still rebuilding: the import is what comes back.
+            Import(bare, file, settle: false);
+            Assert.True(bare.RebuildPending);
             bare.BeginVirtualDspHandoff(FirConstructorHandoff.Build(first, false, 1, 48_000));
             Settle(bare);
             bare.EndVirtualDspHandoff();
             Settle(bare);
-            Assert.Same(imported, bare.CurrentKernel);
+            Assert.Equal(file.Taps.ToArray(), bare.CurrentKernel!.Taps.ToArray());
             Assert.Null(bare.CurrentDesign);
         });
     }
@@ -596,7 +598,7 @@ public sealed class FirConstructorTests
     }
 
     // What the Import button reads, answered through the panel's file dialog.
-    private static void Import(FirConstructorPanel panel, FirFilter kernel)
+    private static void Import(FirConstructorPanel panel, FirFilter kernel, bool settle = true)
     {
         string root = CreateTemporaryDirectory();
         string path = Path.Combine(root, "room.txt");
@@ -607,7 +609,11 @@ public sealed class FirConstructorTests
             return DialogResult.OK;
         };
         Field<Button>(panel, "buttonImport").PerformClick();
-        Settle(panel);
+        if (settle)
+        {
+            Settle(panel);
+        }
+
         Directory.Delete(root, recursive: true);
     }
 

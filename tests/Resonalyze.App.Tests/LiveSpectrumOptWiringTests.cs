@@ -7,11 +7,9 @@ using Resonalyze.Ui;
 
 namespace Resonalyze.App.Tests;
 
-/// <summary>
-/// The Live Spectrum settings panel through its own controls and the shell's calls, beside a session driven the same
-/// way: after every step every control, colour and tooltip shows what the session and its readers say, and Apply
-/// writes what the session writes. A field left bound to something else fails here.
-/// </summary>
+/// <summary>The Live Spectrum settings panel through its controls and the shell's calls beside a session driven the same
+/// way: after every step each control, colour and tooltip shows what the session's readers say and Apply writes what
+/// the session writes, so a field bound to anything else fails here.</summary>
 public sealed class LiveSpectrumOptWiringTests
 {
     [Fact]
@@ -64,7 +62,8 @@ public sealed class LiveSpectrumOptWiringTests
             panel.Pick("overlapComboBox", "75%");
             panel.Pick("signalTypeComboBox", "Pink noise (periodic)");
             panel.Pick("signalTypeComboBox", "White noise");
-            panel.Arrow("signalTypeComboBox", -2);
+            // Onto periodic pink: without a commit the window and overlap stay free.
+            panel.Arrow("signalTypeComboBox", -3);
             panel.Arrow("windowComboBox", 1);
             panel.Arrow("overlapComboBox", -1);
             panel.Click("checkTilt");

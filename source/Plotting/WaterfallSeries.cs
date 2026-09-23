@@ -99,7 +99,7 @@ namespace Resonalyze
         {
             if (
                 !(XAxis is LogarithmicClipAxis) ||
-                RawSlices.Count < 8 ||
+                RawSlices.Count < WaterfallSliceVerdict.MinimumSlices ||
                 ColorAxis is not LinearColorAxis colorAxis
                 )
                 return;

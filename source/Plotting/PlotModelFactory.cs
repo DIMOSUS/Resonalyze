@@ -544,6 +544,7 @@ internal sealed class PlotModelFactory
 
             waterfall.FillFourierWaterfallData(measurementContext.CreatePrimaryMeasurement());
             model.Series.Add(waterfall);
+            AddSliceVerdict(model, waterfall);
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse)
@@ -737,6 +738,7 @@ internal sealed class PlotModelFactory
 
             waterfall.FillFourierWaterfallData(measurementContext.CreatePrimaryMeasurement());
             model.Series.Add(waterfall);
+            AddSliceVerdict(model, waterfall);
         }
         else if (measurementContext.CanIncludeCurves(includeCurves) &&
                  !measurementContext.HasTransferImpulseResponse)
@@ -1808,6 +1810,24 @@ internal sealed class PlotModelFactory
                 TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
             });
         }
+    }
+
+    private static void AddSliceVerdict(PlotModel model, WaterfallSeries waterfall)
+    {
+        if (WaterfallSliceVerdict.Explain(waterfall.GenerateOptions.WaterfallMode, waterfall.RawSlices.Count) is not { } text)
+        {
+            return;
+        }
+
+        model.Annotations.Add(new OverlayTextAnnotation
+        {
+            Text = text,
+            TextPosition = new DataPoint(0.5, 3),
+            TextFlowDirection = TextFlowDirection.TopDown,
+            FontSize = 13,
+            TextColor = UiPalette.CurveMuted.ToOxy(),
+            TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
+        });
     }
 
     private static void AddRequiresTransferIrAnnotation(PlotModel model)

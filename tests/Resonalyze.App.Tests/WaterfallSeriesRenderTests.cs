@@ -32,6 +32,37 @@ public sealed class WaterfallSeriesRenderTests
             $"a non-finite screen coordinate reached the renderer: {context.FirstNonFinite}");
     }
 
+    [Fact]
+    public void AWaterfallWithTooFewSlices_SaysSo_InsteadOfDrawingNothing()
+    {
+        using var measurement = CreateBroadbandTransferMeasurement();
+        PlotModelFactory factory = CreateFactory(measurement, waterfall: new WaterfallGenerateOptions { SliceCount = 7 });
+        PlotModel fourier = factory.CreateWaterfall(includeCurves: true);
+        PlotModel enough = CreateFactory(measurement).CreateWaterfall(includeCurves: true);
+        using var fast = new TestAnalyzer();
+        fast.Open(ModeSettingsWiringTests.Transfer(96_000, peak: 960));
+        PlotModel burst = CreateFactory(
+                fast,
+                burst: new WaterfallGenerateOptions
+                {
+                    WaterfallMode = WaterfallMode.BurstDecay,
+                    Window = 32,
+                    LeftTukeyWindow = 0,
+                    RightTukeyWindow = 16,
+                    SmoothingInverseOctaves = 1
+                })
+            .CreateBurstDecay(includeCurves: true);
+
+        Assert.Equal(
+            "Only 7 slices; the waterfall draws from 8. Raise Slices.",
+            Assert.Single(fourier.Annotations.OfType<OverlayTextAnnotation>()).Text);
+        Assert.Empty(enough.Annotations.OfType<OverlayTextAnnotation>());
+        Assert.StartsWith(
+            $"Only {burst.Series.OfType<WaterfallSeries>().Single().RawSlices.Count} frequencies fit",
+            Assert.Single(burst.Annotations.OfType<OverlayTextAnnotation>()).Text,
+            StringComparison.Ordinal);
+    }
+
     private static TestAnalyzer CreateBroadbandTransferMeasurement()
     {
         var ir = new Complex[8192];
@@ -58,7 +89,9 @@ public sealed class WaterfallSeriesRenderTests
     }
 
     private static PlotModelFactory CreateFactory(
-        TestAnalyzer measurement)
+        TestAnalyzer measurement,
+        WaterfallGenerateOptions? waterfall = null,
+        WaterfallGenerateOptions? burst = null)
     {
         string calibrationPath = Path.Combine(
             Path.GetTempPath(),
@@ -72,8 +105,8 @@ public sealed class WaterfallSeriesRenderTests
             {
                 PhaseResponse = new FrequencyResponseOptions(),
                 GroupDelay = new FrequencyResponseOptions(),
-                Waterfall = new WaterfallGenerateOptions(),
-                BurstDecay = new WaterfallGenerateOptions { WaterfallMode = WaterfallMode.BurstDecay }
+                Waterfall = waterfall ?? new WaterfallGenerateOptions(),
+                BurstDecay = burst ?? new WaterfallGenerateOptions { WaterfallMode = WaterfallMode.BurstDecay }
             });
     }
 

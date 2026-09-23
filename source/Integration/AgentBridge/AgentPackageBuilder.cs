@@ -333,7 +333,9 @@ internal static class AgentPackageBuilder
         static double[] MeasuredBandHz(AgentSourceInputs source) =>
         [
             source.MeasuredBand.LowEdgeHz,
-            Math.Min(source.MeasuredBand.HighEdgeHz, source.SampleRateHz / 2.0)
+            double.IsPositiveInfinity(source.MeasuredBand.HighEdgeHz)
+                ? source.SampleRateHz / 2.0
+                : source.MeasuredBand.HighEdgeHz
         ];
 
         return new AgentPackageChannel(

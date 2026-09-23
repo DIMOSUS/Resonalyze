@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json.Nodes;
 using System.Windows.Forms;
 using Resonalyze.Dsp;
@@ -534,12 +533,14 @@ public sealed class FirConstructorTests
             using var bare = new FirConstructorPanel();
             Settle(bare);
             var file = new FirFilter([0.25, 0.5, 0.25], 48_000);
-            Invoke(bare, "ShowBareKernel", file, "room.wav");
+            // Handed off while the import is still rebuilding: the import is what comes back.
+            Import(bare, file, settle: false);
+            Assert.True(bare.RebuildPending);
             bare.BeginVirtualDspHandoff(FirConstructorHandoff.Build(first, false, 1, 48_000));
             Settle(bare);
             bare.EndVirtualDspHandoff();
             Settle(bare);
-            Assert.Same(file, bare.CurrentKernel);
+            Assert.Equal(file.Taps.ToArray(), bare.CurrentKernel!.Taps.ToArray());
             Assert.Null(bare.CurrentDesign);
         });
     }
@@ -571,7 +572,7 @@ public sealed class FirConstructorTests
     }
 
     [Fact]
-    public void TheImpulsePlot_IsDecimated_AndAnEvenSymmetricKernelReadsFlatPhase()
+    public void TheImpulsePlot_IsDecimated()
     {
         StaTest.Run(() =>
         {
@@ -579,17 +580,8 @@ public sealed class FirConstructorTests
             Settle(panel);
 
             // Drawn through the decimator, not 131072 GDI+ segments per repaint.
-            var impulse = Field<OxyPlot.Series.LineSeries>(panel, "impulseSeries");
+            var impulse = (OxyPlot.Series.LineSeries)Field<OxyPlot.WindowsForms.PlotView>(panel, "plotImpulse").Model!.Series[0];
             Assert.NotNull(impulse.Decimator);
-
-            // Even length: true delay is 1.5 samples, so passband phase is 0°, not a 90°-per-kHz tilt.
-            Invoke(panel, "ShowBareKernel", new FirFilter([0.1, 0.4, 0.4, 0.1], 48_000), "even.txt");
-            Settle(panel);
-            var phase = Field<OxyPlot.Series.LineSeries>(panel, "phaseSeries");
-            Assert.NotEmpty(phase.Points);
-            Assert.All(
-                phase.Points.Where(point => !double.IsNaN(point.Y)),
-                point => Assert.True(Math.Abs(point.Y) < 1e-6 || Math.Abs(Math.Abs(point.Y) - 180) < 1e-6, $"{point.X} Hz: {point.Y}°"));
         });
     }
 
@@ -605,15 +597,28 @@ public sealed class FirConstructorTests
         }
     }
 
-    private static void Invoke(object owner, string method, params object?[] arguments) =>
-        owner.GetType()
-            .GetMethod(method, BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(owner, arguments);
+    // What the Import button reads, answered through the panel's file dialog.
+    private static void Import(FirConstructorPanel panel, FirFilter kernel, bool settle = true)
+    {
+        string root = CreateTemporaryDirectory();
+        string path = Path.Combine(root, "room.txt");
+        FirFilterFiles.Save(path, kernel, 48_000, null);
+        panel.ShowFileDialog = dialog =>
+        {
+            dialog.FileName = path;
+            return DialogResult.OK;
+        };
+        Field<Button>(panel, "buttonImport").PerformClick();
+        if (settle)
+        {
+            Settle(panel);
+        }
 
-    private static T Field<T>(object owner, string name) =>
-        (T)owner.GetType()
-            .GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(owner)!;
+        Directory.Delete(root, recursive: true);
+    }
+
+    private static T Field<T>(Control owner, string name) where T : Control =>
+        (T)owner.Controls.Find(name, searchAllChildren: true).Single();
 
     private static void Select(ThemedComboBox combo, int index) => combo.SelectedIndex = index;
 

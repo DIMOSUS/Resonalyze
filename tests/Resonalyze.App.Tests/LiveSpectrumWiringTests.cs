@@ -242,7 +242,7 @@ public sealed class LiveSpectrumWiringTests : IDisposable
     }
 
     private static T Control<T>(LiveSpectrumOpt panel, string name) where T : Control =>
-        (T)typeof(LiveSpectrumOpt).GetField(name, Hidden)!.GetValue(panel)!;
+        (T)panel.Controls.Find(name, searchAllChildren: true).Single();
 
     private static bool IsRta(OxyPlot.Series.Series series) =>
         Equals(series.Tag, LiveSpectrumController.LiveSpectrumInputMagnitudeTag);

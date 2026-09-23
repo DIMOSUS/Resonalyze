@@ -57,3 +57,25 @@ built once per design rather than per bin (half the grid, at least 131 073 bins)
 
 `WorstDeviationDb` compares a kernel with the target only where the target is above a floor (−30 dB default):
 below it the target heads to −∞ and any finite kernel misses by an unbounded, meaningless amount.
+
+## Constructor code map
+
+The FIR Constructor (`source/Tools/FirConstructor/`) edits a `FirCrossoverDesign` and shows the kernel it builds. Its
+state is a UI-free `FirConstructorSession`: the kernel shown with its rendering (a design's, or a bare kernel imported or
+handed off, which any edit replaces), the rate it is shown at, the problem that stops a design, the Virtual DSP side it
+edits with the standalone work set aside meanwhile, and the rebuild in flight. Every edit starts a
+`FirConstructorRebuild`; only the latest lands.
+
+| Type | For |
+| --- | --- |
+| `FirConstructorRender` | the worker that builds a rebuild's kernel and draws it: the response against the target, the phase without the kernel's delay, the impulse from its peak |
+| `FirConstructorReadout` | what the constructor is editing (and a design rebuilt at the processor's rate), the latency and the deviation |
+| `FirConstructorAvailability` | which design fields a draft reads, when Export can be pressed, and the design Return hands back |
+| `FirConstructorChoices` | the pick lists with their labels, the slope nearest the one wanted, the family a design falls back to, odd tap counts |
+| `FirConstructorExport` | the file name, rate and description an export is written with |
+
+`FirConstructorPanel` binds the controls in partials (`.Controls`, `.Plots`, `.Files`) and runs each rebuild off the UI
+thread after a short settle; its file dialogs and warnings go through `ShowFileDialog` and `Warn`, which a test answers.
+The handoff request and the return's landing rules are `FirConstructorHandoff`. `FirConstructorPanelBoundaryTests` keeps
+statics and nested types off the panel, and `FirConstructorPanelWiringTests` drives it beside a session the test changes
+the same way.

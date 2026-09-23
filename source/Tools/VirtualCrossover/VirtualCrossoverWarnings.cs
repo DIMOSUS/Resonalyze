@@ -71,7 +71,7 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
                 VirtualCrossoverWarningLevel.Caution);
         }
 
-        if (DescribeForeignCalibration(processed) is { } foreign)
+        if (DescribeForeignCalibration(processed, hybrid) is { } foreign)
         {
             return session.Calibration.Selected == null
                 ? new(
@@ -187,7 +187,7 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
     }
 
     /// <summary>Off or a named curve, null unless a drawn channel was measured through a different one.</summary>
-    internal string? DescribeForeignCalibration(IReadOnlyList<ProcessedChannel> processed)
+    internal string? DescribeForeignCalibration(IReadOnlyList<ProcessedChannel> processed, HybridMagnitudes? hybrid)
     {
         if (session.Calibration.Own)
         {
@@ -198,12 +198,21 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
         var measuredWith = new List<string>();
         foreach (ProcessedChannel item in processed)
         {
-            if (item.MicrophoneCalibration is { HasData: true } own &&
-                !CalibrationFile.SameCurve(own, selected))
+            VirtualCrossoverChannelState state = item.Channel.SideState(session.ActiveSideRight);
+            // The drawn curve's source decides: a hybrid draws the capture (an array channel without one falls back to its IR).
+            (bool foreign, string? name) =
+                hybrid != null && state.SpatialAverageFor(session.SpatialAverageMode) is { } capture
+                    ? capture.CalibrationIsAggregate
+                        // A named curve leaves an aggregate its own corrections (DescribeUnappliedCalibration); Off removes them.
+                        ? (selected == null, "each position's own file")
+                        : (capture.Calibration?.ToCalibrationFile() is { HasData: true } captured &&
+                            !CalibrationFile.SameCurve(captured, selected), capture.Calibration?.Name)
+                    : (item.MicrophoneCalibration is { HasData: true } own &&
+                        !CalibrationFile.SameCurve(own, selected), state.MicrophoneCalibration?.Name);
+            if (foreign)
             {
-                string name = item.Channel.SideState(session.ActiveSideRight).MicrophoneCalibration?.Name
-                    ?? "a calibration";
-                measuredWith.Add($"    {item.Channel.Name} {item.Channel.Settings.DisplayName}    {name}");
+                measuredWith.Add(
+                    $"    {item.Channel.Name} {item.Channel.Settings.DisplayName}    {name ?? "a calibration"}");
             }
         }
 

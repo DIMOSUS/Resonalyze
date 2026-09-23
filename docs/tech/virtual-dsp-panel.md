@@ -385,7 +385,9 @@ The host shows one warning line (`WarningChanged`), chosen in this order:
 5. A chosen calibration, or Off, that is not the one a drawn channel was measured through
    (`DescribeForeignCalibration`; amber, an information line under Off). The list offers every entry on the
    machine, and a named slot can hold another microphone's file, so nothing else says the plot is no longer
-   read as measured.
+   read as measured. Under a hybrid the drawn curve is the capture, which the selection re-reads through its
+   own swap, so the capture's file is compared (an array channel without one is drawn from its IR, whose
+   file is compared); an aggregate keeps its own files under a named curve and loses them only under Off.
 6. Own-calibration mismatch between channels.
 7. Point-measured fallbacks inside a hybrid (neutral info colour; nothing is wrong).
 8. Crossover spread (red, see below); with none of these the line is hidden.

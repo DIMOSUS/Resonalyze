@@ -31,14 +31,15 @@ internal sealed class MicrophoneCalibrationService
     public IReadOnlyList<MicrophoneCalibrationEntry> GetEntries()
     {
         MicrophoneCalibrationDefinition[] current = definitions;
-        string? zeroDegreePath = ResolveZeroDegreePath();
+        string? configured = getZeroDegreePath();
+        string? zeroDegreePath = ResolveZeroDegreePath(configured);
         var entries = new List<MicrophoneCalibrationEntry>(current.Length + 1)
         {
             new(
                 MicrophoneCalibrationIds.ZeroDegrees,
                 "0°",
                 HasUsableData(zeroDegreePath),
-                FileNameOf(getZeroDegreePath()))
+                FileNameOf(configured))
         };
         foreach (MicrophoneCalibrationDefinition definition in current)
         {
@@ -257,9 +258,8 @@ internal sealed class MicrophoneCalibrationService
     }
 
     // Only the path set in the interface; no file beside the executable stands in for it.
-    private string? ResolveZeroDegreePath()
-    {
-        string? path = getZeroDegreePath();
-        return !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? path : null;
-    }
+    private string? ResolveZeroDegreePath() => ResolveZeroDegreePath(getZeroDegreePath());
+
+    private static string? ResolveZeroDegreePath(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? path : null;
 }

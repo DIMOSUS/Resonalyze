@@ -196,7 +196,6 @@ namespace Resonalyze.Options
             numericSlices.TextAlign = HorizontalAlignment.Right;
             numericSlices.ThousandsSeparator = false;
             numericSlices.Value = new decimal(new int[] { 64, 0, 0, 0 });
-            numericSlices.ValueChanged += numericSlices_ValueChanged;
             // 
             // numericStep
             // 
@@ -214,7 +213,6 @@ namespace Resonalyze.Options
             numericStep.TextAlign = HorizontalAlignment.Right;
             numericStep.ThousandsSeparator = false;
             numericStep.Value = new decimal(new int[] { 4, 0, 0, 0 });
-            numericStep.ValueChanged += numericStep_ValueChanged;
             // 
             // label3
             // 

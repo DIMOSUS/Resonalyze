@@ -1,121 +1,43 @@
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
 namespace Resonalyze.Options
 {
-    public partial class WaterfallOptions : ImpulsePreviewOptionsForm
+    /// <summary>Binds the Waterfall settings to a <see cref="WaterfallSettingsSession"/>.</summary>
+    public partial class WaterfallOptions : WaterfallSettingsForm
     {
-        private decimal lastNonZeroStep = 4;
-
         public WaterfallOptions()
         {
             InitializeComponent();
-            PlotInteraction.Enable(irPlotView);
-            BindTukeyWindowControls(numericWindow, numericLeftWindow, numericRightWindow);
-            comboSmoothingInverseOctaves.FillSmoothingPresets(includePsychoacoustic: true);
+            BindWaterfall(
+                WaterfallSettingsSession.ForWaterfall(),
+                numericSampleRate,
+                numericWindow,
+                numericLeftWindow,
+                numericRightWindow,
+                numericCaptureTime,
+                numericDbRange,
+                comboSmoothingInverseOctaves,
+                numericOffset,
+                irPlotView);
+            numericSlices.ApplyFieldRange(ModeSettingsLimits.Slices);
+            numericStep.ApplyFieldRange(ModeSettingsLimits.Step);
+            Bind(numericSlices, value => Session.SetSliceCount((int)value));
+            Bind(numericStep, value => Session.SetStep((int)value));
             InitializeToolTips();
         }
 
         internal void Init(
             AnalyzerDocument document,
             int configuredSampleRate,
-            WaterfallGenerateOptions waterfallGenerateOptions)
+            WaterfallGenerateOptions waterfallGenerateOptions) =>
+            InitWaterfall(document, configuredSampleRate, waterfallGenerateOptions);
+
+        public void SetOptions(WaterfallGenerateOptions waterfallGenerateOptions) =>
+            WriteWaterfall(waterfallGenerateOptions);
+
+        private protected override void PresentControls()
         {
-            AttachMeasurement(document, configuredSampleRate);
-            InitializeControls(() =>
-            {
-                numericSampleRate.Value = numericSampleRate.ClampValue(SampleRate);
-
-                // The settings file clamps wider than the controls; an out-of-range value must not throw.
-                numericWindow.Value = numericWindow.ClampValue(waterfallGenerateOptions.Window);
-                numericSlices.Value = numericSlices.ClampValue(waterfallGenerateOptions.SliceCount);
-                lastNonZeroStep = waterfallGenerateOptions.Step == 0 ? 1 : waterfallGenerateOptions.Step;
-                numericStep.Value = numericStep.ClampValue((double)lastNonZeroStep);
-                numericCaptureTime.Value = numericCaptureTime.ClampValue((double)CalcCapturedTime);
-
-                numericLeftWindow.Value = numericLeftWindow.ClampValue(waterfallGenerateOptions.LeftTukeyWindow);
-                numericRightWindow.Value = numericRightWindow.ClampValue(waterfallGenerateOptions.RightTukeyWindow);
-
-                numericDbRange.Value = numericDbRange.ClampValue(waterfallGenerateOptions.DbRange);
-
-                comboSmoothingInverseOctaves.SelectedItem =
-                    SmoothingPresetOptions.Normalize(waterfallGenerateOptions.SmoothingInverseOctaves);
-
-                numericOffset.Value = numericOffset.ClampValue(waterfallGenerateOptions.Offset);
-                RefreshTukeyWindowLimits();
-            });
-            UpdateIrPreview();
-        }
-
-        public void SetOptions(WaterfallGenerateOptions waterfallGenerateOptions)
-        {
-            waterfallGenerateOptions.Window = (int)numericWindow.Value;
-            waterfallGenerateOptions.SliceCount = (int)numericSlices.Value;
-            waterfallGenerateOptions.Step = (int)numericStep.Value;
-
-            waterfallGenerateOptions.LeftTukeyWindow = (int)numericLeftWindow.Value;
-            waterfallGenerateOptions.RightTukeyWindow = (int)numericRightWindow.Value;
-
-            waterfallGenerateOptions.DbRange = (int)numericDbRange.Value;
-
-            waterfallGenerateOptions.SmoothingInverseOctaves =
-                comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
-                    ? inverseOctaves
-                    : SmoothingPresetOptions.SupportedInverseOctaves[0];
-
-            waterfallGenerateOptions.Offset = (int)numericOffset.Value;
-            UpdateIrPreview();
-        }
-
-        private double CalcCapturedTime
-        {
-            get
-            {
-                int sampleRate = Document == null ? 0 : SampleRate;
-                return sampleRate > 0
-                    ? (double)numericSlices.Value * (double)numericStep.Value / sampleRate * 1000.0
-                    : 0;
-            }
-        }
-
-        private void numericSlices_ValueChanged(object sender, EventArgs e)
-        {
-            numericCaptureTime.Value = (decimal)CalcCapturedTime;
-        }
-
-        private void numericStep_ValueChanged(object sender, EventArgs e)
-        {
-            if (numericStep.Value == 0)
-            {
-                numericStep.Value = lastNonZeroStep > 0 ? -1 : 1;
-                return;
-            }
-
-            lastNonZeroStep = numericStep.Value;
-            numericCaptureTime.Value = (decimal)CalcCapturedTime;
-        }
-
-        protected override void RenderIrPreview()
-        {
-            if (Document == null)
-            {
-                return;
-            }
-
-            ImpulseWindowPreview.Update(
-                irPlotView,
-                Measurement,
-                (int)numericWindow.Value,
-                (int)numericLeftWindow.Value,
-                (int)numericRightWindow.Value,
-                (int)numericOffset.Value,
-                IrPreviewSource.Primary);
+            base.PresentControls();
+            Show(numericSlices, Session.SliceCount);
+            Show(numericStep, Session.Step);
         }
 
         private void InitializeToolTips()

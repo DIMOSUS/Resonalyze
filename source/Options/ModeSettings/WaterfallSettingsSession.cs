@@ -10,7 +10,7 @@ internal sealed class WaterfallSettingsSession
 
     public bool IsBurstDecay { get; }
 
-    public TukeyFades Fades { get; } = new(4096, 8, 512);
+    public TukeyFades Fades { get; } = new();
 
     /// <summary>Waterfall only.</summary>
     public int SliceCount { get; private set; }

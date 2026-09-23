@@ -4,8 +4,6 @@ namespace Resonalyze.Options;
 /// window, the left one first.</summary>
 internal sealed class TukeyFades
 {
-    public TukeyFades(int window, int left, int right) => Load(window, left, right);
-
     public int Window { get; private set; }
 
     public int Left { get; private set; }
@@ -25,15 +23,9 @@ internal sealed class TukeyFades
         return (containedLeft, Math.Clamp(right, 0, Math.Max(0, window - containedLeft)));
     }
 
-    /// <summary>As the fields took it set one after another: a new window first clamps the fades shown before it.</summary>
+    /// <summary>A stored pair is contained in its own window, not in the one shown before it.</summary>
     public void Load(int window, int left, int right)
     {
-        if (window != Window)
-        {
-            SetWindow(window);
-            left = Math.Min(left, LeftMaximum);
-        }
-
         Window = window;
         (Left, Right) = Contain(left, right, window);
     }

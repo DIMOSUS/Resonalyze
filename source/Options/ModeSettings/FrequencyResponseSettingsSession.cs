@@ -6,7 +6,7 @@ namespace Resonalyze.Options;
 /// docs/tech/mode-settings.md#code-map.</summary>
 internal sealed class FrequencyResponseSettingsSession
 {
-    public TukeyFades Fades { get; } = new(8192, 256, 256);
+    public TukeyFades Fades { get; } = new();
 
     public WindowModeChoice WindowMode { get; set; } = WindowModeChoice.From(PhaseWindowMode.Fixed, 4);
 

@@ -13,6 +13,25 @@ public sealed class ImpulseWindowPreviewTests
     private const string Tag = "test-tag";
 
     [Fact]
+    public void UpdateGated_AGatePastTheEndOfTheRecord_KeepsTheTimeAxisInOrder()
+    {
+        StaTest.Run(() =>
+        {
+            using var view = new OxyPlot.WindowsForms.PlotView();
+            MeasurementResult measurement = ModeSettingsWiringTests.Transfer(SampleRate, peak: 480, length: 4_800);
+
+            ImpulseWindowPreview.UpdateGated(
+                view, measurement, gateOffsetMs: 500, leftMs: 0.5, plateauMs: 4, rightMs: 1.5, IrPreviewSource.Primary);
+
+            OxyPlot.Axes.Axis time = view.Model.Axes[0];
+            Assert.True(time.Minimum <= time.Maximum, $"{time.Minimum}..{time.Maximum}");
+            Assert.All(
+                view.Model.Series.OfType<LineSeries>().SelectMany(series => series.Points),
+                point => Assert.Equal(0.0, point.Y));
+        });
+    }
+
+    [Fact]
     public void AddGatedTraceSeries_NoTraces_AddsNothingAndReturnsNull()
     {
         var model = new PlotModel();

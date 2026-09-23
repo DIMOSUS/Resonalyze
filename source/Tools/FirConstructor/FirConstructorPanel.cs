@@ -11,8 +11,6 @@ namespace Resonalyze;
 /// background after a short settle; only the latest lands, and Export/Return wait meanwhile.</remarks>
 public partial class FirConstructorPanel : UserControl
 {
-    private static readonly int[] SampleRates = [44_100, 48_000, 88_200, 96_000, 176_400, 192_000];
-
     private static readonly OxyColor KernelColor = UiPalette.CurveKernel.ToOxy();
     private static readonly OxyColor TargetColor = OxyColor.FromAColor(200, UiPalette.CurveTarget.ToOxy());
     private static readonly OxyColor PhaseColor = UiPalette.CurvePhase.ToOxy();
@@ -223,43 +221,22 @@ public partial class FirConstructorPanel : UserControl
         suppressEdits = true;
         try
         {
-            comboBoxType.Items.AddRange(
-            [
-                new Choice<CrossoverKind>(CrossoverKind.LowPass, "Low pass"),
-                new Choice<CrossoverKind>(CrossoverKind.HighPass, "High pass"),
-                new Choice<CrossoverKind>(CrossoverKind.BandPass, "Band pass")
-            ]);
+            Fill(comboBoxType, FirConstructorChoices.Kinds);
             comboBoxType.SelectedIndex = 0;
-            comboBoxMethod.Items.AddRange(
-            [
-                new Choice<FirCrossoverMethod>(FirCrossoverMethod.IirMagnitude, "IIR magnitude"),
-                new Choice<FirCrossoverMethod>(FirCrossoverMethod.WindowedSinc, "Windowed sinc")
-            ]);
+            Fill(comboBoxMethod, FirConstructorChoices.Methods);
             comboBoxMethod.SelectedIndex = 0;
             foreach (ThemedComboBox family in new[] { comboBoxHighPassFamily, comboBoxLowPassFamily })
             {
-                foreach (CrossoverFilterFamily value in FirCrossoverDesign.IirFamilies)
-                {
-                    family.Items.Add(new Choice<CrossoverFilterFamily>(value, FirCrossoverDescription.FamilyName(value)));
-                }
-
+                Fill(family, FirConstructorChoices.Families);
                 family.SelectedIndex = 0;
             }
 
-            FillSlopes(comboBoxHighPassSlope, CrossoverFilterFamily.LinkwitzRiley, 24);
-            FillSlopes(comboBoxLowPassSlope, CrossoverFilterFamily.LinkwitzRiley, 24);
-            foreach (FirWindow window in Enum.GetValues<FirWindow>())
-            {
-                comboBoxWindow.Items.Add(new Choice<FirWindow>(window, window.ToString()));
-            }
-
+            FillSlopes(comboBoxHighPassSlope, CrossoverFilterFamily.LinkwitzRiley, FirConstructorChoices.DefaultSlope);
+            FillSlopes(comboBoxLowPassSlope, CrossoverFilterFamily.LinkwitzRiley, FirConstructorChoices.DefaultSlope);
+            Fill(comboBoxWindow, FirConstructorChoices.Windows);
             SelectChoice(comboBoxWindow, FirWindow.Kaiser);
-            foreach (int rate in SampleRates)
-            {
-                comboBoxSampleRate.Items.Add(new Choice<int>(rate, FirCrossoverDescription.Rate(rate)));
-            }
-
-            SelectChoice(comboBoxSampleRate, 48_000);
+            Fill(comboBoxSampleRate, FirConstructorChoices.SampleRates.Select(rate => (rate, FirConstructorChoices.RateLabel(rate))));
+            SelectChoice(comboBoxSampleRate, FirConstructorChoices.DefaultRateHz);
         }
         finally
         {
@@ -316,7 +293,7 @@ public partial class FirConstructorPanel : UserControl
             return;
         }
 
-        int current = slope.SelectedItem is Choice<int> choice ? choice.Value : 24;
+        int current = Selected(slope, FirConstructorChoices.DefaultSlope);
         suppressEdits = true;
         try
         {
@@ -330,7 +307,6 @@ public partial class FirConstructorPanel : UserControl
         OnDesignEdited();
     }
 
-    // Only a typed even count lands here (arrows step by two); stepped to the odd neighbour in the user's direction.
     private void OnTapsChanged()
     {
         if (suppressEdits)
@@ -339,12 +315,13 @@ public partial class FirConstructorPanel : UserControl
         }
 
         int taps = (int)numericTaps.Value;
-        if (taps % 2 == 0)
+        int odd = FirConstructorChoices.OddTapCount(taps);
+        if (odd != taps)
         {
             suppressEdits = true;
             try
             {
-                numericTaps.Value = taps + 1 <= FirCrossoverDesign.MaximumTapCount ? taps + 1 : taps - 1;
+                numericTaps.Value = odd;
             }
             finally
             {
@@ -377,7 +354,8 @@ public partial class FirConstructorPanel : UserControl
 
     private void ShowBareKernel(FirFilter bare, string? name)
     {
-        FirConstructorRebuild rebuild = session.ShowBare(bare, name, Selected(comboBoxSampleRate, 48_000));
+        FirConstructorRebuild rebuild = session.ShowBare(
+            bare, name, Selected(comboBoxSampleRate, FirConstructorChoices.DefaultRateHz));
         labelProblem.Text = session.Problem;
         _ = ShowAsync(rebuild);
     }
@@ -427,16 +405,16 @@ public partial class FirConstructorPanel : UserControl
             new CrossoverEdge(
                 Selected(comboBoxLowPassFamily, CrossoverFilterFamily.LinkwitzRiley),
                 (double)numericLowPassHz.Value,
-                Selected(comboBoxLowPassSlope, 24)),
+                Selected(comboBoxLowPassSlope, FirConstructorChoices.DefaultSlope)),
             new CrossoverEdge(
                 Selected(comboBoxHighPassFamily, CrossoverFilterFamily.LinkwitzRiley),
                 (double)numericHighPassHz.Value,
-                Selected(comboBoxHighPassSlope, 24)),
+                Selected(comboBoxHighPassSlope, FirConstructorChoices.DefaultSlope)),
             Selected(comboBoxMethod, FirCrossoverMethod.IirMagnitude),
             Selected(comboBoxWindow, FirWindow.Kaiser),
             (double)numericKaiserBeta.Value,
             (int)numericTaps.Value,
-            Selected(comboBoxSampleRate, 48_000));
+            Selected(comboBoxSampleRate, FirConstructorChoices.DefaultRateHz));
 
     private void WriteControls(FirCrossoverDesign source)
     {
@@ -471,9 +449,7 @@ public partial class FirConstructorPanel : UserControl
         CrossoverEdge edge, ThemedNumericUpDown frequency, ThemedComboBox family, ThemedComboBox slope)
     {
         frequency.Value = frequency.ClampValue(edge.FrequencyHz);
-        CrossoverFilterFamily offered = FirCrossoverDesign.IirFamilies.Contains(edge.Family)
-            ? edge.Family
-            : CrossoverFilterFamily.LinkwitzRiley;
+        CrossoverFilterFamily offered = FirConstructorChoices.OfferedFamily(edge.Family);
         SelectChoice(family, offered);
         FillSlopes(slope, offered, edge.SlopeDbPerOctave);
     }
@@ -482,7 +458,7 @@ public partial class FirConstructorPanel : UserControl
     {
         if (!comboBoxSampleRate.Items.OfType<Choice<int>>().Any(choice => choice.Value == rate))
         {
-            comboBoxSampleRate.Items.Add(new Choice<int>(rate, FirCrossoverDescription.Rate(rate)));
+            comboBoxSampleRate.Items.Add(new Choice<int>(rate, FirConstructorChoices.RateLabel(rate)));
         }
 
         SelectChoice(comboBoxSampleRate, rate);
@@ -490,15 +466,17 @@ public partial class FirConstructorPanel : UserControl
 
     private static void FillSlopes(ThemedComboBox slope, CrossoverFilterFamily family, int preferred)
     {
-        IReadOnlyList<int> slopes = FirCrossoverDesign.SupportedSlopes(family);
         slope.Items.Clear();
-        foreach (int value in slopes)
-        {
-            slope.Items.Add(new Choice<int>(value, $"{value} dB/oct"));
-        }
+        Fill(slope, FirConstructorChoices.Slopes(family));
+        SelectChoice(slope, FirConstructorChoices.NearestSlope(family, preferred));
+    }
 
-        int nearest = slopes.OrderBy(value => Math.Abs(value - preferred)).First();
-        SelectChoice(slope, nearest);
+    private static void Fill<T>(ThemedComboBox combo, IEnumerable<(T Value, string Label)> choices)
+    {
+        foreach ((T value, string label) in choices)
+        {
+            combo.Items.Add(new Choice<T>(value, label));
+        }
     }
 
     private void UpdateControlAvailability()

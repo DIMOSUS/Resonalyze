@@ -1,5 +1,4 @@
 using Resonalyze.Dsp;
-using Resonalyze.Ui;
 
 namespace Resonalyze.Options
 {

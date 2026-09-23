@@ -1,7 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
-using Resonalyze.Options;
 
 // Resolves stored devices against real hardware; kept apart from the schema because it touches the machine.
 

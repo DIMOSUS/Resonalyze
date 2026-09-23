@@ -1,5 +1,3 @@
-using Resonalyze.Audio;
-
 namespace Resonalyze.Options;
 
 /// <summary>The ranges of the mode settings panels' fields: the panels apply them to their fields, the sessions hold

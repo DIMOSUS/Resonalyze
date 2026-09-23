@@ -69,6 +69,20 @@ public sealed class RecordSettingsApplyTests
     }
 
     [Fact]
+    public void AMonoDeviceForcesNoLoopback_WhichApplyRefusesToSave()
+    {
+        (RecordSettingsSession session, _) = Load(Settings(AudioBackend.Wave));
+        session.RecordingDevice.Select(session.RecordingDevice.Items.Single(item => item.ToString()!.Contains("Mono mic", StringComparison.Ordinal)));
+        Assert.Equal("None", session.WaveLoopback.SelectedItem!.ToString());
+        using ExpSweepMeasurement engine = Engine();
+        var settings = new MeasurementSettingsFile.SweepMeasurementSettings { WaveLoopbackInputChannelOffset = 1 };
+
+        Assert.Throws<InvalidOperationException>(() => RecordSettingsApply.Apply(session, engine, settings));
+
+        Assert.Equal((1, 1), (settings.WaveLoopbackInputChannelOffset, engine.WaveLoopbackInputChannelOffset));
+    }
+
+    [Fact]
     public void TheWaveMicrophoneAndLoopbackMustDiffer()
     {
         (RecordSettingsSession session, _) = Load(Settings(AudioBackend.Wave));

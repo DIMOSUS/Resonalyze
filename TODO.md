@@ -382,21 +382,10 @@ next field session rather than in a register nobody else can tick.
 
 ## Options panels
 
-- [ ] **Loopback channel can still persist as `null` across a restart.** The
-  in-session loss is fixed (a shadow field restores the choice when a stereo
-  device is selected again), but applying while a mono/missing device is
-  selected persists "None"; after a restart there is nothing to restore. Would
-  need the preferred offset persisted separately from the effective one.
 - [ ] **The ASIO driver probe still runs on the UI thread.** `GetDriverInfo` now
   reads the channels, the buffer figures and the supported rates in a single
   `AsioOut` open, but that open is a synchronous COM call that can take seconds
   and still blocks the UI while the measurement panel opens.
-- [ ] **`TukeyWindowControlHelper` clamps are irreversible.** Shrinking the
-  window length clamps the fade values (semantically required, visible in the
-  controls), but growing it back does not restore them; a shadow-value restore
-  like the loopback-channel one would make the clamp reversible. Deferred to a
-  Windows session: control-value re-entrancy across three panels
-  (FR/Waterfall/BurstDecay) needs a live render check.
 
 ## UI chrome
 
@@ -496,7 +485,8 @@ next field session rather than in a register nobody else can tick.
   two of them.
 
 - [ ] **Two settings are still read off the sweep engine.** `PlotModelFactory`
-  takes the rate a plot has when nothing is open from `ExpSweepMeasurement`, and
+  takes the rate a plot has when nothing is open from `ExpSweepMeasurement`, as do
+  the mode settings panels through one member (`Form1.ModeSettingsSampleRate`), and
   `LiveSpectrumSession` takes its SPL anchor from it (a provider the form passes).
   Both are measurement settings. The rate on the engine lags an edit until the
   next run pushes the settings, and the anchor is copied onto it by hand in three
@@ -507,9 +497,6 @@ next field session rather than in a register nobody else can tick.
   (`LiveCaptureSetup`, docs/tech/live-spectrum.md#code-map).
 - [ ] **`LogarithmicClipAxis` label trim.** Edge tick labels can be trimmed at
   the plot boundary. Purely visual; needs a Windows render to reproduce.
-- [ ] **Waterfall renders nothing silently below 8 slices** (`RawSlices.Count <
-  8` guard in `WaterfallSeries.Render`): corrupted settings or narrow ranges show
-  an empty plot with no explanation. Show a message (or clamp the controls).
 - [ ] **Wavelet time-support validity is not tracked**: at low frequencies the
   Morlet kernel outlasts the analysis window and the envelope is window-shaped.
   `Slice.SliceMinValidFrequency` exists but always receives 0 — compute the
@@ -518,10 +505,13 @@ next field session rather than in a register nobody else can tick.
 
 ## Shell
 
-- [ ] **`WireLiveApply` covers only dialog-open controls.** Controls created
-  after wiring never get live-apply behavior. Deferred to a Windows session: the
-  fix hooks `ControlAdded` recursively and re-enters the apply debounce, so it
-  needs a live check that dynamically-added rows apply exactly once.
+- [ ] **The Live Spectrum settings panel is still live-applied by watching its
+  controls.** The mode settings panels announce the user's edits
+  (`IUserEditedSettings`) and the docked host applies on those alone; for a dialog
+  that does not, it still subscribes to every control present when the dialog
+  opens, so code moving a field applies too and a control added later never does.
+  `LiveSpectrumOpt` is the one left: its `Edit` is where a `UserChanged` would be
+  raised, but its forced modes and availability changes apply today and would stop.
 
 ## EQ Wizard (car DSP tuning)
 

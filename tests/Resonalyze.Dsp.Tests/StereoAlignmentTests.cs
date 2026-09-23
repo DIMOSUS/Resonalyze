@@ -185,287 +185,292 @@ public sealed class StereoAlignmentTests
         Dictionary<IAlignmentChannel, AlignmentOverride> alignment) =>
         naturalMs + alignment.GetValueOrDefault(channel).DelayMs;
 
-    [Fact]
-    public void ComputeStereo_BridgeHonorsTheSceneOffsetSign()
+    // The slow cascades sit in nested classes so xUnit runs them beside each other; it runs one class's tests in turn.
+    /// <summary>The top-pair bridge, and the polarity the far side inherits across it.</summary>
+    public sealed class Bridge
     {
-        // Positive offset: the right top's final arrival is 0.25 ms EARLIER than the left top's.
-        (TestChannel _, TestChannel[] left, TestChannel[] right,
-            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-            RunStereo(sceneOffsetMs: 0.25);
-
-        double leftTop = FinalArrivalMs(left[2], 0.0, alignment);
-        double rightTop = FinalArrivalMs(right[2], 1.5, alignment);
-        Assert.InRange(leftTop - rightTop, 0.20, 0.30);
-    }
-
-    [Fact]
-    public void ComputeStereo_NegativeOffsetLeadsTheLeftSide()
-    {
-        (TestChannel _, TestChannel[] left, TestChannel[] right,
-            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-            RunStereo(sceneOffsetMs: -0.25);
-
-        double leftTop = FinalArrivalMs(left[2], 0.0, alignment);
-        double rightTop = FinalArrivalMs(right[2], 1.5, alignment);
-        Assert.InRange(leftTop - rightTop, -0.30, -0.20);
-    }
-
-    [Fact]
-    public void ComputeStereo_MirroredPlanMakesTheLeftSideLead()
-    {
-        // Mirrored (RHD) plan: the same positive offset makes the left side lead.
-        (TestChannel sub, TestChannel[] left, TestChannel[] right,
-            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-            RunStereo(sceneOffsetMs: 0.25, mirrorPlan: true);
-
-        double leftTop = FinalArrivalMs(left[2], 0.0, alignment);
-        double rightTop = FinalArrivalMs(right[2], 1.5, alignment);
-        Assert.InRange(rightTop - leftTop, 0.20, 0.30);
-
-        // The left woofer sits between two settled references, hence the wider tolerance.
-        double[] naturals = [1.0, 0.4, 0.0];
-        for (int i = 0; i < 2; i++)
+        [Fact]
+        public void ComputeStereo_BridgeHonorsTheSceneOffsetSign()
         {
-            Assert.InRange(
-                Math.Abs(
-                    FinalArrivalMs(right[i], naturals[i] + 1.5, alignment) -
-                    FinalArrivalMs(right[i + 1], naturals[i + 1] + 1.5, alignment)),
-                0, 0.1);
-            Assert.InRange(
-                Math.Abs(
-                    FinalArrivalMs(left[i], naturals[i], alignment) -
-                    FinalArrivalMs(left[i + 1], naturals[i + 1], alignment)),
-                0, 0.2);
+            // Positive offset: the right top's final arrival is 0.25 ms EARLIER than the left top's.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(sceneOffsetMs: 0.25);
+
+            double leftTop = FinalArrivalMs(left[2], 0.0, alignment);
+            double rightTop = FinalArrivalMs(right[2], 1.5, alignment);
+            Assert.InRange(leftTop - rightTop, 0.20, 0.30);
         }
 
-        double minimum = new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] }
-            .Min(channel => alignment.GetValueOrDefault(channel).DelayMs);
-        Assert.InRange(minimum, 0, 0.011);
-    }
-
-    [Fact]
-    public void ComputeStereo_AlignsBothSidesInternallyAndKeepsDelaysNonNegative()
-    {
-        // Making the far side lead is only expressible by shifting the left field up; the minimum delay lands on zero.
-        (TestChannel sub, TestChannel[] left, TestChannel[] right,
-            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-            RunStereo(sceneOffsetMs: 0.25);
-
-        double[] naturals = [1.0, 0.4, 0.0];
-        for (int i = 0; i < 2; i++)
+        [Fact]
+        public void ComputeStereo_NegativeOffsetLeadsTheLeftSide()
         {
-            Assert.InRange(
-                Math.Abs(
-                    FinalArrivalMs(left[i], naturals[i], alignment) -
-                    FinalArrivalMs(left[i + 1], naturals[i + 1], alignment)),
-                0, 0.1);
-            Assert.InRange(
-                Math.Abs(
-                    FinalArrivalMs(right[i], naturals[i] + 1.5, alignment) -
-                    FinalArrivalMs(right[i + 1], naturals[i + 1] + 1.5, alignment)),
-                0, 0.2);
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(sceneOffsetMs: -0.25);
+
+            double leftTop = FinalArrivalMs(left[2], 0.0, alignment);
+            double rightTop = FinalArrivalMs(right[2], 1.5, alignment);
+            Assert.InRange(leftTop - rightTop, -0.30, -0.20);
         }
 
-        double minimum = new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] }
-            .Min(channel => alignment.GetValueOrDefault(channel).DelayMs);
-        Assert.InRange(minimum, 0, 0.011);
-        Assert.All(
-            alignment.Values,
-            over => Assert.True(over.DelayMs >= 0));
-    }
-
-    [Fact]
-    public void ComputeStereo_MonoSubIsTimedByTheLeftPassOnly()
-    {
-        // The right pass may only measure the mono sub's junction, never move it.
-        (TestChannel sub, TestChannel[] left, _,
-            Dictionary<IAlignmentChannel, AlignmentOverride> stereo,
-            StringBuilder log) = RunStereo(sceneOffsetMs: 0.25);
-
-        var subOnly = new TestChannel("sub", ImpulseAtMs(2.0));
-        var woof = new TestChannel("L woof", ImpulseAtMs(1.0));
-        var mid = new TestChannel("L mid", ImpulseAtMs(0.4));
-        var twr = new TestChannel("L twr", ImpulseAtMs(0.0));
-        TestChannel[] channels = [subOnly, woof, mid, twr];
-        IReadOnlyList<AlignmentSnapshot> Reprocess(
-            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
-            channels.Select(channel =>
-                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
-        List<AlignmentSnapshot> snapshots = channels
-            .Select(channel => Snapshot(channel, default))
-            .ToList();
-        double[] crossovers = [80, 400, 2_500];
-        var monoAlignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
-        AutoAlignmentEngine.Compute(
-            snapshots,
-            crossovers.Select((fc, i) =>
-                Junction(snapshots[i], snapshots[i + 1], fc)).ToList(),
-            Reprocess,
-            monoAlignment,
-            new StringBuilder());
-
-        double stereoRelative = stereo.GetValueOrDefault(sub).DelayMs
-            - stereo.GetValueOrDefault(left[0]).DelayMs;
-        double monoRelative = monoAlignment.GetValueOrDefault(subOnly).DelayMs
-            - monoAlignment.GetValueOrDefault(woof).DelayMs;
-        Assert.InRange(Math.Abs(stereoRelative - monoRelative), 0, 0.011);
-
-        Assert.Contains("mono, timed by the reference side", log.ToString());
-    }
-
-    [Fact]
-    public void ComputeStereo_RightTopInheritsTheLeftTopsPolarityNeverAsymmetric()
-    {
-        // Auto delay never inverts one side of a pair alone: the right top inherits the left top's sign.
-        (TestChannel _, TestChannel[] left, TestChannel[] right,
-            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-            RunStereo(
-                sceneOffsetMs: 0.25,
-                rightTopAmplitude: -1.0,
-                linkBands: UserLinkBands);
-
-        Assert.False(alignment.GetValueOrDefault(left[2]).InvertPolarity);
-        Assert.False(alignment.GetValueOrDefault(right[2]).InvertPolarity);
-        Assert.Equal(
-            alignment.GetValueOrDefault(left[2]).InvertPolarity,
-            alignment.GetValueOrDefault(right[2]).InvertPolarity);
-        Assert.False(alignment.GetValueOrDefault(right[1]).InvertPolarity);
-    }
-
-    [Fact]
-    public void ComputeStereo_BridgeFollowsAnInvertedLeftTop()
-    {
-        // Both tops backwards: effective signs (raw sign XOR invert) must agree.
-        (TestChannel _, TestChannel[] left, TestChannel[] right,
-            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-            RunStereo(
-                sceneOffsetMs: 0.25,
-                leftTopAmplitude: -1.0,
-                rightTopAmplitude: -1.0);
-
-        bool leftInvert = alignment.GetValueOrDefault(left[2]).InvertPolarity;
-        bool rightInvert = alignment.GetValueOrDefault(right[2]).InvertPolarity;
-        Assert.True(leftInvert);
-        Assert.Equal(leftInvert, rightInvert);
-    }
-
-    [Fact]
-    public void ComputeStereo_RightDriverInheritsItsLeftCounterpartsPolarity()
-    {
-        // Right mid backwards would flip on its own; it inherits the left mid's sign and searches only delay.
-        (TestChannel _, TestChannel[] left, TestChannel[] right,
-            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-            RunStereo(
-                sceneOffsetMs: 0.25,
-                linkBands: UserLinkBands,
-                rightMidAmplitude: -1.0);
-
-        Assert.False(alignment.GetValueOrDefault(left[1]).InvertPolarity);
-        Assert.Equal(
-            alignment.GetValueOrDefault(left[1]).InvertPolarity,
-            alignment.GetValueOrDefault(right[1]).InvertPolarity);
-    }
-
-    [Fact]
-    public void ComputeStereo_AutoDelayNeverInvertsAPairAsymmetrically()
-    {
-        (TestChannel _, TestChannel[] left, TestChannel[] right,
-            Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
-            RunStereo(
-                sceneOffsetMs: 0.25,
-                rightTopAmplitude: -1.0,
-                linkBands: UserLinkBands,
-                rightMidAmplitude: -1.0);
-
-        for (int i = 0; i < 3; i++)
+        [Fact]
+        public void ComputeStereo_MirroredPlanMakesTheLeftSideLead()
         {
-            Assert.Equal(
-                alignment.GetValueOrDefault(left[i]).InvertPolarity,
-                alignment.GetValueOrDefault(right[i]).InvertPolarity);
+            // Mirrored (RHD) plan: the same positive offset makes the left side lead.
+            (TestChannel sub, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(sceneOffsetMs: 0.25, mirrorPlan: true);
+
+            double leftTop = FinalArrivalMs(left[2], 0.0, alignment);
+            double rightTop = FinalArrivalMs(right[2], 1.5, alignment);
+            Assert.InRange(rightTop - leftTop, 0.20, 0.30);
+
+            // The left woofer sits between two settled references, hence the wider tolerance.
+            double[] naturals = [1.0, 0.4, 0.0];
+            for (int i = 0; i < 2; i++)
+            {
+                Assert.InRange(
+                    Math.Abs(
+                        FinalArrivalMs(right[i], naturals[i] + 1.5, alignment) -
+                        FinalArrivalMs(right[i + 1], naturals[i + 1] + 1.5, alignment)),
+                    0, 0.1);
+                Assert.InRange(
+                    Math.Abs(
+                        FinalArrivalMs(left[i], naturals[i], alignment) -
+                        FinalArrivalMs(left[i + 1], naturals[i + 1], alignment)),
+                    0, 0.2);
+            }
+
+            double minimum = new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] }
+                .Min(channel => alignment.GetValueOrDefault(channel).DelayMs);
+            Assert.InRange(minimum, 0, 0.011);
         }
-    }
 
-    [Fact]
-    public void ComputeStereo_RefusesAnUnmeasurableBridgeWithoutTouchingTheRightSide()
-    {
-        // A silent top would time the whole side by garbage: refuse, with no applicable proposals.
-        var sub = new TestChannel("sub", ImpulseAtMs(2.0));
-        var leftWoof = new TestChannel("L woof", ImpulseAtMs(1.0));
-        var leftTwr = new TestChannel("L twr", ImpulseAtMs(0.0));
-        var rightWoof = new TestChannel("R woof", ImpulseAtMs(2.5));
-        var rightTwr = new TestChannel("R twr", new Complex[IrLength]);
-        TestChannel[] all = [sub, leftWoof, leftTwr, rightWoof, rightTwr];
+        [Fact]
+        public void ComputeStereo_AlignsBothSidesInternallyAndKeepsDelaysNonNegative()
+        {
+            // Making the far side lead is only expressible by shifting the left field up; the minimum delay lands on zero.
+            (TestChannel sub, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(sceneOffsetMs: 0.25);
 
-        IReadOnlyList<AlignmentSnapshot> Reprocess(
-            IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
-            all.Select(channel =>
-                Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+            double[] naturals = [1.0, 0.4, 0.0];
+            for (int i = 0; i < 2; i++)
+            {
+                Assert.InRange(
+                    Math.Abs(
+                        FinalArrivalMs(left[i], naturals[i], alignment) -
+                        FinalArrivalMs(left[i + 1], naturals[i + 1], alignment)),
+                    0, 0.1);
+                Assert.InRange(
+                    Math.Abs(
+                        FinalArrivalMs(right[i], naturals[i] + 1.5, alignment) -
+                        FinalArrivalMs(right[i + 1], naturals[i + 1] + 1.5, alignment)),
+                    0, 0.2);
+            }
 
-        List<AlignmentSnapshot> initial = all
-            .Select(channel => Snapshot(channel, default))
-            .ToList();
-        AlignmentSnapshot Of(TestChannel channel) =>
-            initial.First(item => item.Channel == channel);
-        List<AlignmentSnapshot> leftByBand = [Of(sub), Of(leftWoof), Of(leftTwr)];
-        List<AlignmentSnapshot> rightByBand = [Of(sub), Of(rightWoof), Of(rightTwr)];
-        List<AlignmentJunction> leftPairs =
-        [
-            Junction(leftByBand[0], leftByBand[1], 80),
-            Junction(leftByBand[1], leftByBand[2], 2_500)
-        ];
-        List<AlignmentJunction> rightPairs =
-        [
-            Junction(rightByBand[0], rightByBand[1], 80),
-            Junction(rightByBand[1], rightByBand[2], 2_500)
-        ];
+            double minimum = new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] }
+                .Min(channel => alignment.GetValueOrDefault(channel).DelayMs);
+            Assert.InRange(minimum, 0, 0.011);
+            Assert.All(
+                alignment.Values,
+                over => Assert.True(over.DelayMs >= 0));
+        }
 
-        var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
-        InvalidOperationException refusal = Assert.Throws<InvalidOperationException>(
-            () => AutoAlignmentEngine.ComputeStereo(
-                new StereoAlignmentPlan(
-                    leftByBand,
-                    leftPairs,
-                    rightByBand,
-                    rightPairs,
-                    new HashSet<IAlignmentChannel> { sub },
-                    leftTwr,
-                    rightTwr,
-                    BridgeBandLowHz: 2_500,
-                    BridgeBandHighHz: 12_000,
-                    SceneOffsetMs: 0.25),
+        [Fact]
+        public void ComputeStereo_MonoSubIsTimedByTheLeftPassOnly()
+        {
+            // The right pass may only measure the mono sub's junction, never move it.
+            (TestChannel sub, TestChannel[] left, _,
+                Dictionary<IAlignmentChannel, AlignmentOverride> stereo,
+                StringBuilder log) = RunStereo(sceneOffsetMs: 0.25);
+
+            var subOnly = new TestChannel("sub", ImpulseAtMs(2.0));
+            var woof = new TestChannel("L woof", ImpulseAtMs(1.0));
+            var mid = new TestChannel("L mid", ImpulseAtMs(0.4));
+            var twr = new TestChannel("L twr", ImpulseAtMs(0.0));
+            TestChannel[] channels = [subOnly, woof, mid, twr];
+            IReadOnlyList<AlignmentSnapshot> Reprocess(
+                IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+                channels.Select(channel =>
+                    Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+            List<AlignmentSnapshot> snapshots = channels
+                .Select(channel => Snapshot(channel, default))
+                .ToList();
+            double[] crossovers = [80, 400, 2_500];
+            var monoAlignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+            AutoAlignmentEngine.Compute(
+                snapshots,
+                crossovers.Select((fc, i) =>
+                    Junction(snapshots[i], snapshots[i + 1], fc)).ToList(),
                 Reprocess,
-                alignment,
+                monoAlignment,
+                new StringBuilder());
+
+            double stereoRelative = stereo.GetValueOrDefault(sub).DelayMs
+                - stereo.GetValueOrDefault(left[0]).DelayMs;
+            double monoRelative = monoAlignment.GetValueOrDefault(subOnly).DelayMs
+                - monoAlignment.GetValueOrDefault(woof).DelayMs;
+            Assert.InRange(Math.Abs(stereoRelative - monoRelative), 0, 0.011);
+
+            Assert.Contains("mono, timed by the reference side", log.ToString());
+        }
+
+        [Fact]
+        public void ComputeStereo_RightTopInheritsTheLeftTopsPolarityNeverAsymmetric()
+        {
+            // Auto delay never inverts one side of a pair alone: the right top inherits the left top's sign.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(
+                    sceneOffsetMs: 0.25,
+                    rightTopAmplitude: -1.0,
+                    linkBands: UserLinkBands);
+
+            Assert.False(alignment.GetValueOrDefault(left[2]).InvertPolarity);
+            Assert.False(alignment.GetValueOrDefault(right[2]).InvertPolarity);
+            Assert.Equal(
+                alignment.GetValueOrDefault(left[2]).InvertPolarity,
+                alignment.GetValueOrDefault(right[2]).InvertPolarity);
+            Assert.False(alignment.GetValueOrDefault(right[1]).InvertPolarity);
+        }
+
+        [Fact]
+        public void ComputeStereo_BridgeFollowsAnInvertedLeftTop()
+        {
+            // Both tops backwards: effective signs (raw sign XOR invert) must agree.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(
+                    sceneOffsetMs: 0.25,
+                    leftTopAmplitude: -1.0,
+                    rightTopAmplitude: -1.0);
+
+            bool leftInvert = alignment.GetValueOrDefault(left[2]).InvertPolarity;
+            bool rightInvert = alignment.GetValueOrDefault(right[2]).InvertPolarity;
+            Assert.True(leftInvert);
+            Assert.Equal(leftInvert, rightInvert);
+        }
+
+        [Fact]
+        public void ComputeStereo_RightDriverInheritsItsLeftCounterpartsPolarity()
+        {
+            // Right mid backwards would flip on its own; it inherits the left mid's sign and searches only delay.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(
+                    sceneOffsetMs: 0.25,
+                    linkBands: UserLinkBands,
+                    rightMidAmplitude: -1.0);
+
+            Assert.False(alignment.GetValueOrDefault(left[1]).InvertPolarity);
+            Assert.Equal(
+                alignment.GetValueOrDefault(left[1]).InvertPolarity,
+                alignment.GetValueOrDefault(right[1]).InvertPolarity);
+        }
+
+        [Fact]
+        public void ComputeStereo_AutoDelayNeverInvertsAPairAsymmetrically()
+        {
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment, _) =
+                RunStereo(
+                    sceneOffsetMs: 0.25,
+                    rightTopAmplitude: -1.0,
+                    linkBands: UserLinkBands,
+                    rightMidAmplitude: -1.0);
+
+            for (int i = 0; i < 3; i++)
+            {
+                Assert.Equal(
+                    alignment.GetValueOrDefault(left[i]).InvertPolarity,
+                    alignment.GetValueOrDefault(right[i]).InvertPolarity);
+            }
+        }
+
+        [Fact]
+        public void ComputeStereo_RefusesAnUnmeasurableBridgeWithoutTouchingTheRightSide()
+        {
+            // A silent top would time the whole side by garbage: refuse, with no applicable proposals.
+            var sub = new TestChannel("sub", ImpulseAtMs(2.0));
+            var leftWoof = new TestChannel("L woof", ImpulseAtMs(1.0));
+            var leftTwr = new TestChannel("L twr", ImpulseAtMs(0.0));
+            var rightWoof = new TestChannel("R woof", ImpulseAtMs(2.5));
+            var rightTwr = new TestChannel("R twr", new Complex[IrLength]);
+            TestChannel[] all = [sub, leftWoof, leftTwr, rightWoof, rightTwr];
+
+            IReadOnlyList<AlignmentSnapshot> Reprocess(
+                IReadOnlyDictionary<IAlignmentChannel, AlignmentOverride> overrides) =>
+                all.Select(channel =>
+                    Snapshot(channel, overrides.GetValueOrDefault(channel))).ToList();
+
+            List<AlignmentSnapshot> initial = all
+                .Select(channel => Snapshot(channel, default))
+                .ToList();
+            AlignmentSnapshot Of(TestChannel channel) =>
+                initial.First(item => item.Channel == channel);
+            List<AlignmentSnapshot> leftByBand = [Of(sub), Of(leftWoof), Of(leftTwr)];
+            List<AlignmentSnapshot> rightByBand = [Of(sub), Of(rightWoof), Of(rightTwr)];
+            List<AlignmentJunction> leftPairs =
+            [
+                Junction(leftByBand[0], leftByBand[1], 80),
+                Junction(leftByBand[1], leftByBand[2], 2_500)
+            ];
+            List<AlignmentJunction> rightPairs =
+            [
+                Junction(rightByBand[0], rightByBand[1], 80),
+                Junction(rightByBand[1], rightByBand[2], 2_500)
+            ];
+
+            var alignment = new Dictionary<IAlignmentChannel, AlignmentOverride>();
+            InvalidOperationException refusal = Assert.Throws<InvalidOperationException>(
+                () => AutoAlignmentEngine.ComputeStereo(
+                    new StereoAlignmentPlan(
+                        leftByBand,
+                        leftPairs,
+                        rightByBand,
+                        rightPairs,
+                        new HashSet<IAlignmentChannel> { sub },
+                        leftTwr,
+                        rightTwr,
+                        BridgeBandLowHz: 2_500,
+                        BridgeBandHighHz: 12_000,
+                        SceneOffsetMs: 0.25),
+                    Reprocess,
+                    alignment,
+                    new StringBuilder()));
+
+            Assert.Contains("bridge", refusal.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.False(alignment.ContainsKey(rightTwr));
+            Assert.False(alignment.ContainsKey(rightWoof));
+        }
+
+        [Fact]
+        public void ComputeStereo_RejectsAMonoBridge()
+        {
+            var mono = new TestChannel("mono", ImpulseAtMs(0));
+            var left = new TestChannel("L", ImpulseAtMs(0));
+            AlignmentSnapshot monoSnapshot = Snapshot(mono, default);
+            AlignmentSnapshot leftSnapshot = Snapshot(left, default);
+            var plan = new StereoAlignmentPlan(
+                [leftSnapshot, monoSnapshot],
+                [Junction(leftSnapshot, monoSnapshot, 1_000)],
+                [monoSnapshot],
+                [],
+                new HashSet<IAlignmentChannel> { mono },
+                left,
+                mono,
+                1_000,
+                4_000,
+                0);
+
+            Assert.Throws<ArgumentException>(() => AutoAlignmentEngine.ComputeStereo(
+                plan,
+                overrides => [monoSnapshot, leftSnapshot],
+                new Dictionary<IAlignmentChannel, AlignmentOverride>(),
                 new StringBuilder()));
-
-        Assert.Contains("bridge", refusal.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.False(alignment.ContainsKey(rightTwr));
-        Assert.False(alignment.ContainsKey(rightWoof));
-    }
-
-    [Fact]
-    public void ComputeStereo_RejectsAMonoBridge()
-    {
-        var mono = new TestChannel("mono", ImpulseAtMs(0));
-        var left = new TestChannel("L", ImpulseAtMs(0));
-        AlignmentSnapshot monoSnapshot = Snapshot(mono, default);
-        AlignmentSnapshot leftSnapshot = Snapshot(left, default);
-        var plan = new StereoAlignmentPlan(
-            [leftSnapshot, monoSnapshot],
-            [Junction(leftSnapshot, monoSnapshot, 1_000)],
-            [monoSnapshot],
-            [],
-            new HashSet<IAlignmentChannel> { mono },
-            left,
-            mono,
-            1_000,
-            4_000,
-            0);
-
-        Assert.Throws<ArgumentException>(() => AutoAlignmentEngine.ComputeStereo(
-            plan,
-            overrides => [monoSnapshot, leftSnapshot],
-            new Dictionary<IAlignmentChannel, AlignmentOverride>(),
-            new StringBuilder()));
+        }
     }
 
     private static readonly (double LowHz, double HighHz)?[] UserLinkBands =
@@ -483,132 +488,136 @@ public sealed class StereoAlignmentTests
             snapshot.ImpulseResponse, SampleRate, lowHz, highHz);
     }
 
-    [Fact]
-    public void ComputeStereo_SceneLockPinsTheMidPairToTheOffset()
+    /// <summary>The scene offset held through the link bands, and the reference side's independence of the far side.</summary>
+    public sealed class Scene
     {
-        // A stronger lobe 0.7 ms behind the right mid's arrival: the lock must pin first arrivals to the scene.
-        (TestChannel _, TestChannel[] left, TestChannel[] right,
-            Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-            StringBuilder log) = RunStereo(
-                sceneOffsetMs: 0.25,
-                linkBands: UserLinkBands,
-                rightMidEchoMs: 0.7);
-
-        Assert.Contains("SCENE-LOCKED", log.ToString());
-        double delta =
-            FinalBandArrivalMs(left[1], alignment, 400, 2_500) -
-            FinalBandArrivalMs(right[1], alignment, 400, 2_500);
-        Assert.InRange(delta, 0.15, 0.35);
-    }
-
-    [Fact]
-    public void ComputeStereo_PureLowBandPairIsLockedToItsArrivalLobe()
-    {
-        // The woofer link's band never reaches the localization region: locked to the cross-side lobe, not the tight scene pin.
-        (TestChannel _, TestChannel[] _, TestChannel[] _,
-            Dictionary<IAlignmentChannel, AlignmentOverride> _,
-            StringBuilder log) = RunStereo(
-                sceneOffsetMs: 0.25,
-                linkBands: UserLinkBands);
-
-        string[] lines = log.ToString().Split('\n');
-        string woofLine = Array.Find(lines,
-            line => line.StartsWith("Channel R woof:"))!;
-        Assert.NotNull(woofLine);
-        Assert.Contains("(cross-side)", woofLine);
-        Assert.Contains("SCENE-LOCKED", woofLine);
-        string midLine = Array.Find(lines,
-            line => line.StartsWith("Channel R mid:"))!;
-        Assert.NotNull(midLine);
-        Assert.Contains("SCENE-LOCKED", midLine);
-    }
-
-    [Fact]
-    public void ComputeStereo_NarrowSharedBandGetsNoLockAndNoPrior()
-    {
-        // A link band too narrow for arrival analysis yields no target and so no lock.
-        (TestChannel sub, TestChannel[] left, TestChannel[] right,
-            Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-            StringBuilder log) = RunStereo(
-                sceneOffsetMs: 0.25,
-                linkBands: [null, (1_000, 1_100), null]);
-
-        Assert.DoesNotContain("cross-side prior R mid", log.ToString());
-        Assert.DoesNotContain("SCENE-LOCKED", log.ToString());
-        Assert.All(
-            new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] },
-            channel => Assert.True(
-                alignment.GetValueOrDefault(channel).DelayMs is >= 0 and <= 100));
-    }
-
-    [Fact]
-    public void ComputeStereo_ReferenceSideProposal_IsIndependentOfTheFarSide()
-    {
-        // The co-move is judged on the reference side's junctions alone: deranging the far mid changes no reference relation.
-        (_, TestChannel[] left, _,
-            Dictionary<IAlignmentChannel, AlignmentOverride> plain, _) = RunStereo(
-                sceneOffsetMs: 0.25, linkBands: UserLinkBands);
-        (_, TestChannel[] derangedLeft, _,
-            Dictionary<IAlignmentChannel, AlignmentOverride> deranged,
-            StringBuilder derangedLog) = RunStereo(
-                sceneOffsetMs: 0.25, linkBands: UserLinkBands, rightMidEchoMs: 0.7);
-
-        Assert.Contains("Co-move L mid+R mid: ", derangedLog.ToString());
-
-        // Relative to the bottom channel: uniform shifts change no relation. The far side bounds the co-move's
-        // window (never scores it), and the scan's step follows the window, so one 0.02 ms grid step is allowed.
-        for (int i = 1; i < left.Length; i++)
+        [Fact]
+        public void ComputeStereo_SceneLockPinsTheMidPairToTheOffset()
         {
-            double plainMs = plain.GetValueOrDefault(left[i]).DelayMs -
-                plain.GetValueOrDefault(left[0]).DelayMs;
-            double derangedMs = deranged.GetValueOrDefault(derangedLeft[i]).DelayMs -
-                deranged.GetValueOrDefault(derangedLeft[0]).DelayMs;
-            Assert.InRange(derangedMs, plainMs - 0.021, plainMs + 0.021);
-            Assert.Equal(
-                plain.GetValueOrDefault(left[i]).InvertPolarity,
-                deranged.GetValueOrDefault(derangedLeft[i]).InvertPolarity);
+            // A stronger lobe 0.7 ms behind the right mid's arrival: the lock must pin first arrivals to the scene.
+            (TestChannel _, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+                StringBuilder log) = RunStereo(
+                    sceneOffsetMs: 0.25,
+                    linkBands: UserLinkBands,
+                    rightMidEchoMs: 0.7);
+
+            Assert.Contains("SCENE-LOCKED", log.ToString());
+            double delta =
+                FinalBandArrivalMs(left[1], alignment, 400, 2_500) -
+                FinalBandArrivalMs(right[1], alignment, 400, 2_500);
+            Assert.InRange(delta, 0.15, 0.35);
         }
-    }
 
-    [Fact]
-    public void ComputeStereo_NearTheDelayCeilingTheSceneSurvives()
-    {
-        // Near the 50 ms ceiling every delay-adding pass must bound its window up front; clamping one side later bends the scene.
-        (TestChannel sub, TestChannel[] left, TestChannel[] right,
-            Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
-            StringBuilder log) = RunStereo(
+        [Fact]
+        public void ComputeStereo_PureLowBandPairIsLockedToItsArrivalLobe()
+        {
+            // The woofer link's band never reaches the localization region: locked to the cross-side lobe, not the tight scene pin.
+            (TestChannel _, TestChannel[] _, TestChannel[] _,
+                Dictionary<IAlignmentChannel, AlignmentOverride> _,
+                StringBuilder log) = RunStereo(
+                    sceneOffsetMs: 0.25,
+                    linkBands: UserLinkBands);
+
+            string[] lines = log.ToString().Split('\n');
+            string woofLine = Array.Find(lines,
+                line => line.StartsWith("Channel R woof:"))!;
+            Assert.NotNull(woofLine);
+            Assert.Contains("(cross-side)", woofLine);
+            Assert.Contains("SCENE-LOCKED", woofLine);
+            string midLine = Array.Find(lines,
+                line => line.StartsWith("Channel R mid:"))!;
+            Assert.NotNull(midLine);
+            Assert.Contains("SCENE-LOCKED", midLine);
+        }
+
+        [Fact]
+        public void ComputeStereo_NarrowSharedBandGetsNoLockAndNoPrior()
+        {
+            // A link band too narrow for arrival analysis yields no target and so no lock.
+            (TestChannel sub, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+                StringBuilder log) = RunStereo(
+                    sceneOffsetMs: 0.25,
+                    linkBands: [null, (1_000, 1_100), null]);
+
+            Assert.DoesNotContain("cross-side prior R mid", log.ToString());
+            Assert.DoesNotContain("SCENE-LOCKED", log.ToString());
+            Assert.All(
+                new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] },
+                channel => Assert.True(
+                    alignment.GetValueOrDefault(channel).DelayMs is >= 0 and <= 100));
+        }
+
+        [Fact]
+        public void ComputeStereo_ReferenceSideProposal_IsIndependentOfTheFarSide()
+        {
+            // The co-move is judged on the reference side's junctions alone: deranging the far mid changes no reference relation.
+            (_, TestChannel[] left, _,
+                Dictionary<IAlignmentChannel, AlignmentOverride> plain, _) = RunStereo(
+                    sceneOffsetMs: 0.25, linkBands: UserLinkBands);
+            (_, TestChannel[] derangedLeft, _,
+                Dictionary<IAlignmentChannel, AlignmentOverride> deranged,
+                StringBuilder derangedLog) = RunStereo(
+                    sceneOffsetMs: 0.25, linkBands: UserLinkBands, rightMidEchoMs: 0.7);
+
+            Assert.Contains("Co-move L mid+R mid: ", derangedLog.ToString());
+
+            // Relative to the bottom channel: uniform shifts change no relation. The far side bounds the co-move's
+            // window (never scores it), and the scan's step follows the window, so one 0.02 ms grid step is allowed.
+            for (int i = 1; i < left.Length; i++)
+            {
+                double plainMs = plain.GetValueOrDefault(left[i]).DelayMs -
+                    plain.GetValueOrDefault(left[0]).DelayMs;
+                double derangedMs = deranged.GetValueOrDefault(derangedLeft[i]).DelayMs -
+                    deranged.GetValueOrDefault(derangedLeft[0]).DelayMs;
+                Assert.InRange(derangedMs, plainMs - 0.021, plainMs + 0.021);
+                Assert.Equal(
+                    plain.GetValueOrDefault(left[i]).InvertPolarity,
+                    deranged.GetValueOrDefault(derangedLeft[i]).InvertPolarity);
+            }
+        }
+
+        [Fact]
+        public void ComputeStereo_NearTheDelayCeilingTheSceneSurvives()
+        {
+            // Near the 50 ms ceiling every delay-adding pass must bound its window up front; clamping one side later bends the scene.
+            (TestChannel sub, TestChannel[] left, TestChannel[] right,
+                Dictionary<IAlignmentChannel, AlignmentOverride> alignment,
+                StringBuilder log) = RunStereo(
+                    sceneOffsetMs: 0.25,
+                    rightLateMs: 0,
+                    linkBands: UserLinkBands,
+                    leftLateMs: 46.0);
+
+            Assert.Contains("Co-move", log.ToString());
+            Assert.All(
+                new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] },
+                channel => Assert.True(
+                    alignment.GetValueOrDefault(channel).DelayMs is >= 0 and <= 50));
+
+            double twrDelta =
+                FinalBandArrivalMs(left[2], alignment, 2_500, 12_000) -
+                FinalBandArrivalMs(right[2], alignment, 2_500, 12_000);
+            Assert.InRange(twrDelta, 0.15, 0.35);
+            double midDelta =
+                FinalBandArrivalMs(left[1], alignment, 400, 2_500) -
+                FinalBandArrivalMs(right[1], alignment, 400, 2_500);
+            Assert.InRange(midDelta, 0.15, 0.35);
+        }
+
+        [Fact]
+        public void ComputeStereo_ReprocessCallCountStaysBounded()
+        {
+            // Cost unit = one reprocess; co-moves spend one per pass (delta scans are spectrum rotations). Breaks if re-rendering creeps back.
+            int[] count = [0];
+            RunStereo(
                 sceneOffsetMs: 0.25,
-                rightLateMs: 0,
                 linkBands: UserLinkBands,
-                leftLateMs: 46.0);
+                reprocessCount: count);
 
-        Assert.Contains("Co-move", log.ToString());
-        Assert.All(
-            new[] { sub, left[0], left[1], left[2], right[0], right[1], right[2] },
-            channel => Assert.True(
-                alignment.GetValueOrDefault(channel).DelayMs is >= 0 and <= 50));
-
-        double twrDelta =
-            FinalBandArrivalMs(left[2], alignment, 2_500, 12_000) -
-            FinalBandArrivalMs(right[2], alignment, 2_500, 12_000);
-        Assert.InRange(twrDelta, 0.15, 0.35);
-        double midDelta =
-            FinalBandArrivalMs(left[1], alignment, 400, 2_500) -
-            FinalBandArrivalMs(right[1], alignment, 400, 2_500);
-        Assert.InRange(midDelta, 0.15, 0.35);
-    }
-
-    [Fact]
-    public void ComputeStereo_ReprocessCallCountStaysBounded()
-    {
-        // Cost unit = one reprocess; co-moves spend one per pass (delta scans are spectrum rotations). Breaks if re-rendering creeps back.
-        int[] count = [0];
-        RunStereo(
-            sceneOffsetMs: 0.25,
-            linkBands: UserLinkBands,
-            reprocessCount: count);
-
-        Assert.InRange(count[0], 1, 40);
+            Assert.InRange(count[0], 1, 40);
+        }
     }
 
     [Fact]

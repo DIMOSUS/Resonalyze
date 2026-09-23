@@ -275,11 +275,12 @@ public sealed class ShapedFrontProbe
         double probeLowHz = Math.Sqrt(LowHz * HighHz);
         double baseToleranceMs = Math.Max(1.0, 500.0 / probeLowHz);
 
-        // Only a near build-up lands in the 2.5-5 ms window; delay and level are swept and the sweep itself is asserted.
+        // Only a near, weak build-up lands in the 2.5-5 ms window (5-6.5 ms, level under 0.15 on a 2-9 ms, 0.05-2 sweep);
+        // the grid holds that corner with a margin, and the sweep itself is asserted.
         var landed = new List<(double DelayMs, double Level, double SkewMs)>();
-        for (double modeDelayMs = 2.0; modeDelayMs <= 9.0; modeDelayMs += 0.5)
+        for (double modeDelayMs = 4.0; modeDelayMs <= 7.5; modeDelayMs += 0.5)
         {
-            for (double level = 0.05; level <= 2.0; level *= 1.3)
+            for (double level = 0.05; level <= 0.25; level *= 1.3)
             {
                 (AlignmentSnapshot snapshot,
                     TimeAlignmentAnalysisResult full,

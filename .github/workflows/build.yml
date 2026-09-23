@@ -70,19 +70,6 @@ jobs:
       - name: Build
         run: dotnet build source/Resonalyze.sln --configuration Release --no-restore -p:Version="${{ steps.version.outputs.version }}" -p:InformationalVersion="${{ steps.version.outputs.version }}"
 
-      # Every suite filters Category!=Hardware. The hardware tests skip
-      # themselves without endpoint environment variables, but excluding them
-      # here keeps a runner with no audio devices from listing nine skips on
-      # every run.
-      - name: Test App
-        run: dotnet test tests/Resonalyze.App.Tests/Resonalyze.App.Tests.csproj --configuration Release --no-build --no-restore --filter "Category!=Hardware"
-
-      - name: Test Audio
-        run: dotnet test tests/Resonalyze.Audio.Tests/Resonalyze.Audio.Tests.csproj --configuration Release --no-build --no-restore --filter "Category!=Hardware"
-
-      - name: Test DSP
-        run: dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj --configuration Release --no-build --no-restore --filter "Category!=Hardware"
-
       # The single-file publish and the installer script are exercised here so a
       # break shows up on the PR. Until this step existed they were first run by
       # the release job, which holds the appcast signing key — a bad place to
@@ -131,4 +118,49 @@ jobs:
 
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
+          }
+
+  # The suites are CPU-bound and a runner has four cores, so each heavy suite gets
+  # a runner of its own beside the build: the check waits for the slowest job
+  # rather than for the sum of them.
+  test:
+    name: test (${{ matrix.suite }})
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: App
+            projects: tests/Resonalyze.App.Tests/Resonalyze.App.Tests.csproj
+          - suite: DSP and Audio
+            projects: tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj tests/Resonalyze.Audio.Tests/Resonalyze.Audio.Tests.csproj
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      # Every suite filters Category!=Hardware. The hardware tests skip
+      # themselves without endpoint environment variables, but excluding them
+      # here keeps a runner with no audio devices from listing nine skips on
+      # every run. A failing project does not stop the next one from reporting.
+      - name: Test
+        shell: pwsh
+        run: |
+          $failed = @()
+          foreach ($project in "${{ matrix.projects }}".Split(' ')) {
+            dotnet test $project --configuration Release --filter "Category!=Hardware"
+            if ($LASTEXITCODE -ne 0) {
+              $failed += $project
+            }
+          }
+
+          if ($failed.Count -gt 0) {
+            Write-Error "Failed: $($failed -join ', ')"
+            exit 1
           }

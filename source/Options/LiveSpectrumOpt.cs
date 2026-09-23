@@ -292,7 +292,7 @@ namespace Resonalyze.Options
             PresentBox(checkCoherence, curvesMuted, !curvesMuted);
             UiStyle.SetTextEnabledLook(label10, !curvesMuted);
 
-            string splDescription = DescribeSplChoice(session.SplAvailable, session.SplViewOnlyConflict);
+            string splDescription = LiveSpectrumSettingsToolTips.Spl(session);
             toolTip.SetToolTip(labelSpl, splDescription);
             toolTip.SetToolTip(checkSpl, splDescription);
             // Set directly: SetTextEnabledLook memorizes the colour it replaces when muting and would restore a stale amber.
@@ -305,8 +305,7 @@ namespace Resonalyze.Options
             PresentBox(checkTilt, tilt == LiveSettingTone.Muted, session.TiltInteractive);
 
             radioModeTransfer.ForeColor = ColorOf(LiveSpectrumSettingsLook.Transfer(session), transferChoiceReadyForeColor);
-            toolTip.SetToolTip(
-                radioModeTransfer, DescribeTransferChoice(session.HasTransferReference));
+            toolTip.SetToolTip(radioModeTransfer, LiveSpectrumSettingsToolTips.Transfer(session));
         }
 
         // A box that takes no click keeps its state; muted or not is only its colour.
@@ -334,51 +333,6 @@ namespace Resonalyze.Options
             }
 
             comboCalibration.Enabled = false;
-        }
-
-        private static string DescribeTransferChoice(bool hasTransferReference)
-        {
-            const string Base =
-                "Dual-channel transfer function: the microphone divided by the " +
-                "loopback reference, with coherence.";
-            if (hasTransferReference)
-            {
-                return Base;
-            }
-
-            return Base + "\r\n" +
-                "No loopback reference channel is configured (Measurement Options), " +
-                "so the analyzer runs as a reference-free RTA regardless of this " +
-                "choice.";
-        }
-
-        private static string DescribeSplChoice(bool isSplAvailable, bool viewOnlyConflict)
-        {
-            const string Base =
-                "Shows the RTA in absolute dB SPL (microphone plus the SPL " +
-                "calibration offset). RTA mode only: the transfer function is a " +
-                "dimensionless ratio with no scalar SPL under noise excitation.";
-            if (isSplAvailable)
-            {
-                return Base;
-            }
-
-            if (viewOnlyConflict)
-            {
-                return Base + "\r\n" +
-                    "View-only right now: no SPL calibration is configured for the " +
-                    "live input (or it was captured on a different input), so the " +
-                    "live curve is hidden — only overlays captured in dB SPL are " +
-                    "shown. Configure it in Measurement Options — Calibration; " +
-                    "starting the analyzer in this state switches the display back " +
-                    "to relative.";
-            }
-
-            return Base + "\r\n" +
-                "No SPL calibration is configured for the live input (Measurement " +
-                "Options — Calibration). Starting the analyzer without one switches " +
-                "the display back to relative; overlays captured in dB SPL are " +
-                "shown either way.";
         }
 
         private sealed class SequenceLengthOption

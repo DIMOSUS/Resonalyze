@@ -9,20 +9,23 @@ internal sealed class SplCalibrationSession
 {
     // ~5.9 Hz bins at 48 kHz: isolates the 1 kHz tone with enough frames in a few seconds.
     public const int FrameLength = 8_192;
-    public static readonly TimeSpan CaptureDuration = TimeSpan.FromSeconds(4);
+    public static readonly TimeSpan DefaultCaptureDuration = TimeSpan.FromSeconds(4);
     public static readonly SplToneCriteria Criteria = SplToneCriteria.Default;
 
     private readonly Func<DateTimeOffset> now;
+    private readonly TimeSpan captureDuration;
     private CancellationTokenSource? cancellation;
     private int runs;
 
     public SplCalibrationSession(
         AudioSessionRequest request,
         SplCalibration? existing,
-        Func<DateTimeOffset>? now = null)
+        Func<DateTimeOffset>? now = null,
+        TimeSpan? captureDuration = null)
     {
         Request = request ?? throw new ArgumentNullException(nameof(request));
         this.now = now ?? (() => DateTimeOffset.UtcNow);
+        this.captureDuration = captureDuration ?? DefaultCaptureDuration;
         ReferenceIndex = existing != null
             ? Math.Max(0, Array.IndexOf(SplCalibration.StandardReferenceLevelsDb, existing.ReferenceLevelDbSpl))
             : 0;
@@ -89,7 +92,7 @@ internal sealed class SplCalibrationSession
                 return;
             }
 
-            ProgressPercent = SplCalibrationReport.Percent(report, CaptureDuration);
+            ProgressPercent = SplCalibrationReport.Percent(report, captureDuration);
             Status = SplCalibrationReport.Progress(report);
             changed?.Invoke();
         });
@@ -102,7 +105,7 @@ internal sealed class SplCalibrationSession
         try
         {
             capture = await new SplCalibrationListener(factory)
-                .CaptureAsync(Request, FrameLength, Criteria, CaptureDuration, progress, runCancellation.Token);
+                .CaptureAsync(Request, FrameLength, Criteria, captureDuration, progress, runCancellation.Token);
         }
         catch (OperationCanceledException)
         {

@@ -14,9 +14,15 @@ internal static class CalibrationDialogFixtures
     private const int MouseUp = 0x0202;
     private const int MouseDoubleClick = 0x0203;
 
+    /// <summary>On a UI thread, with texts read with a decimal point whatever the machine's locale.</summary>
+    public static void Run(Action body) => StaTest.Run(() =>
+    {
+        using var culture = new InvariantCultureScope();
+        body();
+    });
+
     public static TForm Shown<TForm>(TForm form) where TForm : Form
     {
-        CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
         form.StartPosition = FormStartPosition.Manual;
         form.Location = new Point(-6000, -6000);
         form.ShowInTaskbar = false;
@@ -161,4 +167,14 @@ internal sealed class ToneStream(double frequencyHz, params double[] amplitudes)
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+/// <summary>Texts read with a decimal point whatever the machine's locale, restored afterwards.</summary>
+internal sealed class InvariantCultureScope : IDisposable
+{
+    private readonly CultureInfo previous = CultureInfo.CurrentCulture;
+
+    public InvariantCultureScope() => CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+
+    public void Dispose() => CultureInfo.CurrentCulture = previous;
 }

@@ -4202,7 +4202,9 @@ level, while the Live Spectrum RTA needs only `SPL = mic level + anchor offset`.
 
 The anchor is valid only at the gain it was captured at, so a changed digital
 input is flagged (the **Calibrate** button turns gold) and the dialog warns that
-the analog preamp gain must not move after calibrating.
+the analog preamp gain must not move after calibrating. **Save** keeps only the last
+listen: starting another clears the result, so one that is stopped or fails leaves
+nothing to save until a listen succeeds, and **Cancel** keeps the anchor you had.
 
 Selecting dB SPL never depends on having an anchor, because the scale is also how
 you *view* curves captured in it: without one the plot keeps the dB SPL axis and

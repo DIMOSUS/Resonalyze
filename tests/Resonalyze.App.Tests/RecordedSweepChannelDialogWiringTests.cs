@@ -10,7 +10,7 @@ public sealed class RecordedSweepChannelDialogWiringTests
     private static readonly double[] Qualities = [0.01, 0.7, 1.0];
 
     [Fact]
-    public void TheBestMatchStaysPickedWhenTheDialogShows() => StaTest.Run(() =>
+    public void TheBestMatchStaysPickedWhenTheDialogShows() => Run(() =>
     {
         using RecordedSweepChannelDialog dialog = Shown(new RecordedSweepChannelDialog(Channels, Qualities));
         DataGridView grid = In<DataGridView>(dialog, "channelGridView");
@@ -21,7 +21,7 @@ public sealed class RecordedSweepChannelDialogWiringTests
     });
 
     [Fact]
-    public void TheRowsAreTheChoicesRows() => StaTest.Run(() =>
+    public void TheRowsAreTheChoicesRows() => Run(() =>
     {
         var expected = new RecordedSweepChannelChoice(Channels, Qualities);
         using RecordedSweepChannelDialog dialog = Shown(new RecordedSweepChannelDialog(Channels, Qualities));
@@ -33,7 +33,7 @@ public sealed class RecordedSweepChannelDialogWiringTests
     });
 
     [Fact]
-    public void AClickedRowIsTheOneMeasured() => StaTest.Run(() =>
+    public void AClickedRowIsTheOneMeasured() => Run(() =>
     {
         using RecordedSweepChannelDialog dialog = Shown(new RecordedSweepChannelDialog(Channels, Qualities));
         DataGridView grid = In<DataGridView>(dialog, "channelGridView");
@@ -47,7 +47,7 @@ public sealed class RecordedSweepChannelDialogWiringTests
     });
 
     [Fact]
-    public void ADoubleClickedRowIsMeasuredAtOnce() => StaTest.Run(() =>
+    public void ADoubleClickedRowIsMeasuredAtOnce() => Run(() =>
     {
         using RecordedSweepChannelDialog dialog = Shown(new RecordedSweepChannelDialog(Channels, Qualities));
 

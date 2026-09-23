@@ -104,39 +104,55 @@ point measurement, which is on the same axis (same loopback), and below the cabi
 point measurement *is* the average (a subwoofer gains almost nothing from an array). Such channels are
 always reported (`HybridMagnitudes.PointMeasuredChannels`), never silent. The protective high-pass is
 not compared, for the same reason as above (it refused an ordinary four-way set). Array composition
-(seven positions vs five) is not judged by the verdict either: it does not stop one offset from
-levelling the set, and refusing would hide the view that shows the difference. Virtual DSP warns
+(seven positions vs five) is not judged by the verdict either: it does not move the level an array
+is drawn at, and refusing would hide the view that shows the difference. Virtual DSP warns
 about composition separately, across every array in the project, which also catches the cross-side
 case.
 
-**Across sides.** The dashed opposite-side hybrid sum borrows the active side's offset on purpose —
-levelling sides separately would erase the L/R difference it exists to show. Judging each side on its
-own leaves that borrowing unchecked (two relative capture runs are each self-consistent but say
-nothing about each other; a gain change between them would draw as an L/R imbalance), so
-`CanDrawOppositeSum` / `JudgeSidesShareAnOffset` judge the union of both sides as one set. The
-Δ L−R read-out and the audition render use the same check.
+**Across sides.** Both sides are drawn with one offset — levelling sides separately would erase the
+L/R difference the dashed opposite-side sum exists to show, and would move a mono channel when the side
+selector flips. Judging each side on its own leaves that sharing unchecked (two relative capture runs
+are each self-consistent but say nothing about each other; a gain change between them would draw as an
+L/R imbalance), so `CanDrawOppositeSum` / `JudgeSidesShareAnOffset` judge the union of both sides as
+one set. The Δ L−R read-out and the audition render use the same check.
 
 ## Set offset and spread
 
-Captures and impulse responses are different measurements and their levels may sit tens of dB apart.
-One scalar, the **set offset**, puts the whole set on the impulse responses' axis. Because every
-capture in a valid set shares recipe and gain, whatever separates the two families separates them by
-the same amount in every channel.
+An array rides the impulse responses' own loopback, so it is already on their axis and takes **no
+offset**: each array is drawn at the level it measured. A moving-microphone pass has no reference, and
+its level may sit tens of dB from the impulse responses. One scalar, the **set offset**, puts that set
+on their axis. Because every capture in a valid set shares recipe and gain, whatever separates the two
+families separates them by the same amount in every channel. `SpatialAverageOffsets.SetOffsetDb` is
+the one rule, read by the plot, the EQ Wizard handoff and the audition.
+
+Arrays once took the median too, and it hid a broken set. On a 12-microphone set whose loopback ran on
+a second interface (#214) every datum read −14 to −30 dB; the median shifted the set back to a
+plausible picture, and it differed per side, so a mono subwoofer moved 1.7 dB when the side selector
+flipped and each side's EQ was fitted to its own shift. With the IRs fixed the same set read −1.0 to
++0.1 dB, as the archived arrays do (−0.9 to +0.1), so for an array the datum is a health
+reading rather than a correction.
 
 - **Datum per channel** (`SpatialAverageOffsets.ChannelDatumDb`): the median of reference minus
   average inside the channel's working band, `WorkingBandDb` = 20 dB below the channel's peak (taken
   over points where both curves exist). Twenty dB holds the working band and crossover skirts while
   staying out of the stopband, where the impulse response shows room and noise while the capture shows
   the filter's analytic slope and the two part by tens of dB.
-- **Set offset** = `SpatialAverageOffsets.Median` of the datums — a true median (mean of the central
-  pair). Taking the upper central value shifted a four-way set by half the gap between its middle
-  channels.
-- **Spread** (`HybridMagnitudes.SpreadDb`) = max − min datum. It judges the set's coherence only: the
-  offsets stop agreeing when something entered per capture (input gain, frame length or window, mixed
-  scale, a capture from another session). It does not claim the captures agree with the impulse
-  responses. Per-channel offsets are kept positional (null for "cannot compare") so the warning names
-  the right driver; a packed list shifted names onto the wrong drivers when one channel had nothing to
-  say.
+- **Set offset** (moving microphone) = `SpatialAverageOffsets.Median` of the datums — a true median
+  (mean of the central pair). Taking the upper central value shifted a four-way set by half the gap
+  between its middle channels. The median runs over **both sides** when their captures form one set
+  (`JudgeSidesShareAnOffset`), a mono pair counted once: the unknown is the session's excitation level,
+  common to both sides, and a per-side median moved every shared channel when the side selector flipped.
+  Sides that are not one set keep their own offsets; nothing ties their levels together then, which is
+  why the opposite-side sum and Δ L−R refuse them.
+- **Spread** (`HybridMagnitudes.SpreadDb`, moving microphone) = max − min datum. It judges the set's
+  coherence only: the offsets stop agreeing when something entered per capture (input gain, frame
+  length or window, mixed scale, a capture from another session). It does not claim the captures agree
+  with the impulse responses.
+- **Worst datum** (`HybridMagnitudes.WorstDatumDb`, arrays) = the datum furthest from zero. An array is
+  judged absolutely: a common shift, which a spread cannot see, is exactly what a broken loopback
+  produces. It is the read-out's figure for an array set.
+- Per-channel offsets are kept positional (null for "cannot compare") so the warning names the right
+  driver; a packed list shifted names onto the wrong drivers when one channel had nothing to say.
 
 **Read on the raw pair.** `VirtualCrossoverHybrid.ResolveRawOffsetsDb` reads each datum on the capture with no chain
 against the channel's *bypass* response, built on canonical terms (`MagnitudeGateSnapshot.CanonicalRaw`: own
@@ -149,7 +165,7 @@ commute with subtraction, and the spread threshold was calibrated on these canon
 (`HybridOffsetDatumMeasurement` reads them the same way). A channel that cannot produce the raw pair
 contributes nothing rather than falling back to processed curves.
 
-**Muted channels count.** The median is over every channel of the side that carries a capture,
+**Muted channels count.** The datums and the median cover every channel that carries a capture,
 muted or not (`HybridMagnitudes.SetDatumsDb`). A mute says what to draw, not what the set is made of;
 a median over drawn channels only moved every remaining curve about a quarter of a dB per mute on
 real cabins (arrays and MMM alike), and made the spread warning appear and vanish with mute buttons.
@@ -157,8 +173,9 @@ real cabins (arrays and MMM alike), and made the spread warning appear and vanis
 **Held without the offset.** Channel curves in `HybridMagnitudes` are stored without the offset,
 which is added on the way to the plot (`ShiftedBy`). The drawing and summation read the same arrays,
 and a common gain factors straight out of a magnitude sum. A point-measured fallback channel, already
-on the impulse responses' axis, is therefore pre-subtracted by the offset. The offset is zero for an
-empty set, so captures are drawn at their own level rather than pushed by an invented figure.
+on the impulse responses' axis, is therefore pre-subtracted by the offset (zero for arrays, the only
+sets with fallbacks). The offset is zero for an empty set, so captures are drawn at their own level
+rather than pushed by an invented figure.
 
 ## Hybrid channel curve
 
@@ -317,9 +334,10 @@ exactly (render is raw·D, target is average·D), so the correction survives tun
 - **Limit** `LimitDb` = ±12 dB, a bound on damage: inside a working band the curves are a few dB apart,
   so it is reached only where the difference is no longer evidence (noise-floor stopbands, or a capture
   the offset does not fit).
-- **One set offset** (median of datums, as the plot uses) keeps corrections near zero and within the
-  limit; being common it only changes loudness, which is normalized anyway. A channel without a datum
-  is left uncorrected rather than corrected by the offset alone.
+- **The plot's set offset** (`SpatialAverageOffsets.SetOffsetDb`: none for arrays, the median of datums
+  for a moving mic) keeps corrections near zero and within the limit; being common it only changes
+  loudness, which is normalized anyway. A channel without a datum is left uncorrected rather than
+  corrected by the offset alone.
 - **Gaps** are bridged linearly between covered bands and held flat past the ends (`Bridge`,
   `SampleDb`): the FIR is designed from DC to Nyquist and any step in its magnitude rings. Bridging costs
   nothing where the response was never measured (it is zero there).
@@ -446,7 +464,7 @@ Trimming first means a power average of levelled positions, not of the field as 
 no such need; an array does, since a sensitivity difference is not sound — at the cost of removing genuine
 level differences, which one scalar per microphone cannot separate. Measured on two real seven-position
 sets: trims −1.4 to +1.6 dB; versus a pure power average the result differs by 0.2–0.4 dB in level
-(re-anchored downstream by the raw-IR offset) and 0.14–0.32 dB rms in shape (0.36–1.01 dB at the worst
+(held on the anchor, whose level the IR shares) and 0.14–0.32 dB rms in shape (0.36–1.01 dB at the worst
 band). Positions around one head differ far less in broadband level than the arithmetic allows.
 
 ### Average and spread

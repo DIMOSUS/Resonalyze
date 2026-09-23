@@ -46,10 +46,10 @@ internal sealed class CompareSelection
             selection.Result.MeasuredBand);
     }
 
-    // Recorded-sweep imports cannot join Time Alignment: their arrival depends on when the recorder started.
+    // A result without absolute time cannot join Time Alignment: its arrival is not the tract's delay.
     public TimeAlignmentCompareMeasurement? GetTimeAlignmentMeasurement() =>
         current is not { } selection ||
-            selection.Result.TimingReference == TimingReference.RecordedSweep
+            !selection.Result.TimingReference.HasAbsoluteTime()
             ? null
             : new TimeAlignmentCompareMeasurement(
                 selection.DisplayName,

@@ -138,8 +138,9 @@ Spatial averages are referenced, not embedded: a capture is about 900 kB per cha
 sixteen sides, and the autosave rewrites on every knob turn.
 
 `VirtualCrossoverSourceRules` admits a source only with a loopback transfer IR and at the project's single
-sample rate. `ResolvedVirtualDspSource.FromResult` also refuses measurements imported from a recorded sweep:
-summing drivers sums their arrivals, and an imported arrival is set by when the recorder started.
+sample rate. `ResolvedVirtualDspSource.FromResult` also refuses measurements without absolute time
+(`TimingReferences.HasAbsoluteTime`): summing drivers sums their arrivals, and an imported arrival is set by
+when the recorder started, a loopback on another clock by when each stream did.
 
 ## Calibration
 

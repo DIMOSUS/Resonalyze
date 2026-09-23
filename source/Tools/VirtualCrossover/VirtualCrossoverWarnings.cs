@@ -26,8 +26,8 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
 {
     private const double MovingMicSpreadWarningDb = 3.0;
 
-    /// <summary>Arrays share the IRs' loopback: a real set read 0.33 dB apart, so the margin is tighter.</summary>
-    private const double ArraySpreadWarningDb = 1.5;
+    /// <summary>Arrays share the IRs' loopback, so each should sit on its IR.</summary>
+    private const double ArrayDatumWarningDb = 1.5;
 
     // A steep/narrow LF band-pass arrives so late that Auto delay pushes every driver out by this much.
     private const double CrossoverGroupDelayWarningMs = 15.0;
@@ -46,11 +46,10 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
         }
 
         // Only while the hybrid is drawn.
-        if (hybrid != null && hybrid.SpreadDb > HybridSpreadWarningDb)
+        if (hybrid != null && DescribeHybridDisagreement(hybrid) is { } disagreement)
         {
             return new(
-                $"⚠ The spatial averages disagree by {hybrid.SpreadDb:0.0} dB — " +
-                    "check the captures.",
+                disagreement,
                 FormatHybridSpreadDetail(hybrid, processed),
                 VirtualCrossoverWarningLevel.Caution);
         }
@@ -95,12 +94,23 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
         return CrossoverSpread(processed);
     }
 
-    /// <summary>Allowed disagreement (dB) of a spatial-average set's per-channel offsets before flagging; per mode.</summary>
-    /// <remarks>See docs/tech/virtual-dsp-panel.md#hybrid-spread-thresholds.</remarks>
-    internal double HybridSpreadWarningDb =>
-        session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray
-            ? ArraySpreadWarningDb
-            : MovingMicSpreadWarningDb;
+    /// <summary>Null while the set holds; an array is judged absolutely. See docs/tech/virtual-dsp-panel.md#hybrid-spread-thresholds.</summary>
+    internal string? DescribeHybridDisagreement(HybridMagnitudes hybrid)
+    {
+        ArgumentNullException.ThrowIfNull(hybrid);
+        if (session.SpatialAverageMode == VirtualCrossoverSpatialAverageMode.MicArray)
+        {
+            return hybrid.WorstDatumDb is { } worst && Math.Abs(worst) > ArrayDatumWarningDb
+                ? $"⚠ A microphone array sits {worst:+0.0;-0.0} dB off its impulse " +
+                    "response — check the captures."
+                : null;
+        }
+
+        return hybrid.SpreadDb > MovingMicSpreadWarningDb
+            ? $"⚠ The spatial averages disagree by {hybrid.SpreadDb:0.0} dB — " +
+                "check the captures."
+            : null;
+    }
 
     private static string FormatPointMeasuredDetail(
         HybridMagnitudes hybrid,
@@ -332,8 +342,8 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
         lines.Append(
             arrays
                 ? "Every array is referenced to the same loopback its impulse " +
-                    "response is, so each channel should sit the same distance from " +
-                    "it. These do not:\r\n\r\n"
+                    "response is, so each should sit on it, within about a dB. " +
+                    "These stand off by:\r\n\r\n"
                 : "Every capture in one set is taken with one analyzer recipe at one " +
                     "input gain, so each channel should sit the same distance from " +
                     "its impulse response. These do not:\r\n\r\n");
@@ -368,16 +378,15 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
 
         lines.Append(
             arrays
-                ? "\r\nAn array set should agree closely, so a channel standing " +
-                    "apart usually means its array read a different input, a " +
-                    "different calibration, or a driver that was not the one being " +
-                    "measured. "
+                ? "\r\nAn array standing off its impulse response usually read a " +
+                    "different input, a different calibration, or a driver that was " +
+                    "not the one being measured. The hybrid still draws each array at " +
+                    "the level it measured."
                 : "\r\nUsually one capture was taken with a different input gain, a " +
                     "different frame length or window (which moves the noise-slope " +
-                    "compensation), or belongs to another session. ");
-        lines.Append(
-            "The hybrid still draws: one offset serves the whole set, so a channel " +
-            "that disagrees is drawn at the level it claims.");
+                    "compensation), or belongs to another session. The hybrid still " +
+                    "draws: one offset serves the whole set, so a channel that " +
+                    "disagrees is drawn at the level it claims.");
         return lines.ToString();
     }
 

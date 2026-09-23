@@ -724,6 +724,38 @@ cannot be told from the fault.
 The fix is to take the loopback from the wire: the interface output the sweep is
 played from, straight back into an input, with nothing in between.
 
+### A loopback on another device
+
+The loopback times the measurement only when it is recorded by the same device as
+the microphone, on the same clock and in the same stream. A driver that joins two
+interfaces into one — ASIO4ALL, FlexASIO, an aggregate device — lets you pick the
+microphone on one and the loopback on the other, and every meter reads normally.
+Each interface then starts its stream with its own buffering, so the offset between
+them is set anew each time a measurement starts: on one such rig the arrival moved
+by 13 ms from one measurement to the next with nothing in the car touched. Within
+one measurement the offset holds, so the response's shape is still real; its
+position is not, and every delay, sum and alignment read from it is off by a
+different amount per channel.
+
+When the offset lands the microphone **ahead** of the loopback, Resonalyze can see
+it — nothing reaches a microphone before the signal that drives it — and says so
+once the measurement is saved:
+
+> The measurement was saved, but its microphone heard the sweep 43.9 ms BEFORE the
+> loopback did.
+
+Such a measurement is filed like a [recorded sweep](#importing-a-sweep-recorded-elsewhere):
+its arrival is placed at 10 ms, [Time Alignment](#time-alignment) and
+[Virtual DSP](#virtual-dsp) decline it, and its frequency response reads normally.
+Files saved before this check are recognised when they are opened. When the offset
+lands the other way the arrival only looks late, and nothing in one file tells that
+from a long path.
+
+The fix is to put the microphone that times the measurement and the loopback on one
+interface. On the rig above the [microphone array](#microphone-array) positions read
+correctly all the same: a level is read within one measurement, where the offset
+holds.
+
 ## Live Spectrum
 
 The **Live Spectrum** mode runs in one of two explicitly chosen **Mode**s.
@@ -2728,10 +2760,12 @@ response used to do while the Virtual DSP undid the correction on the first one,
 on a mixed array the two answers parted by three decibels with nothing on either
 plot to say which was which.
 
-Two warnings are specific to arrays. The set's spread is judged against **1.5 dB**
-rather than the moving microphone's 3 dB, because an array is levelled by the same
-loopback the impulse responses are — two real seven-position sets read 0.33 dB
-apart. And a project whose captures were averaged over **different arrays** (a different
+Two warnings are specific to arrays. An array is levelled by the same loopback the
+impulse responses are, so it is drawn at the level it measured, with no offset, and
+each array should sit on its own impulse response: the archived ones read within
+−0.9 to +0.1 dB. One standing more than **1.5 dB** off is reported with its figure,
+since that is a different input, a different calibration or a different driver —
+or a loopback that was never on the microphone's device. And a project whose captures were averaged over **different arrays** (a different
 number of positions, or a different calibration) still draws, since the loopback
 holds their levels either way, but says so: what differs is what "the average"
 means per capture, and that is worth knowing before a tune is fitted to it. It is
@@ -2828,8 +2862,8 @@ The set is checked while it draws. Every capture in one set is taken with one
 analyzer recipe at one input gain, so each channel should sit the same distance
 from its own impulse response — and when they disagree by more than **3 dB** the
 panel says so in amber, listing each channel's own figure. (A set of arrays is held
-to 1.5 dB instead, for the reason given under [Microphone array](#microphone-array):
-it is levelled by the same loopback the impulse responses are.) That single number
+to its impulse responses instead, within 1.5 dB each, for the reason given under
+[Microphone array](#microphone-array): it is levelled by the same loopback they are.) That single number
 catches what would otherwise be invisible: one capture taken at a different input
 gain, one taken with a different frame length or window (which moves the
 [noise-slope compensation](#live-spectrum), a curve rather than a constant), one
@@ -2839,8 +2873,9 @@ their levels may sit tens of dB apart. Only the disagreement between channels is
 evidence, and a known-good seven-capture set reads 1.4 dB on one side and 0.6 on the
 other, which is the two families of measurement differing in shape as they are
 supposed to. The hybrid still draws while the warning stands: one offset serves the
-whole set, so a channel that disagrees is drawn at the level it claims rather than
-quietly normalized into line.
+whole set, both sides included when their captures are one set, so a channel that
+disagrees is drawn at the level it claims rather than quietly normalized into line,
+and a mono channel stays put when you switch sides.
 
 The attachment is part of the session, and so is the toggle. The capture is stored
 as a path — it is close to a megabyte of spectrum per channel, and the session is

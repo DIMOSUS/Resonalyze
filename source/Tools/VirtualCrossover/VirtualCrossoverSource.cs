@@ -22,12 +22,12 @@ internal sealed class ResolvedVirtualDspSource
     /// <summary>Calibration recorded by the file; null for older measurements, which use the panel's selection.</summary>
     public VirtualCrossoverCalibrationSettings? MicrophoneCalibration { get; init; }
 
-    /// <summary>Null without a loopback transfer IR, or for an imported sweep: its arrival is set by when the recorder started.</summary>
+    /// <summary>Null without a loopback transfer IR, or without absolute time (an imported sweep, a loopback on another clock): summing sums arrivals.</summary>
     public static ResolvedVirtualDspSource? FromResult(MeasurementResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
         if (result.Transfer is not { ImpulseResponse.Length: > 0 } transfer ||
-            result.TimingReference == TimingReference.RecordedSweep)
+            !result.TimingReference.HasAbsoluteTime())
         {
             return null;
         }

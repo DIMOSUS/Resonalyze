@@ -90,8 +90,13 @@ internal static class SpatialAverageAudition
             .Where(datum => datum.HasValue)
             .Select(datum => datum!.Value)
             .ToList();
-        double setOffset = known.Count == 0 ? 0.0 : SpatialAverageOffsets.Median(known);
         double spread = known.Count < 2 ? 0.0 : known.Max() - known.Min();
+        // One set never mixes methods (LiveCaptureDocument.JudgeSet).
+        SpatialAverageMethod method = channels
+            .Select(channel => channel.Capture)
+            .OfType<LiveCaptureDocument>()
+            .FirstOrDefault()?.Method ?? SpatialAverageMethod.MovingMic;
+        double setOffset = SpatialAverageOffsets.SetOffsetDb(method, known);
 
         var corrections = new SpatialAverageAuditionCorrection[channels.Count];
         for (int i = 0; i < channels.Count; i++)

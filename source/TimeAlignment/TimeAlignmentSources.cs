@@ -11,7 +11,7 @@ internal static class TimeAlignmentSources
         out string message)
     {
         MeasurementResult? measurement = session.Main;
-        // An imported recording has no absolute time, so every delay this mode reports would be meaningless.
+        // Without absolute time every delay this mode reports would be meaningless.
         if (measurement?.TimingReference == TimingReference.RecordedSweep)
         {
             source = default;
@@ -20,6 +20,17 @@ internal static class TimeAlignmentSources
                 "Its arrival time is set by when the recorder was started, not by " +
                 "the tract, so delays cannot be compared across measurements.\r\n" +
                 "Time Alignment needs a sweep measured against its own loopback.";
+            return false;
+        }
+
+        if (measurement != null && !measurement.TimingReference.HasAbsoluteTime())
+        {
+            source = default;
+            message =
+                "In this measurement the microphone heard the sweep before the loopback did.\r\n" +
+                "The loopback ran on another clock or stream, so its arrival is not " +
+                "the tract's delay and cannot be compared across measurements.\r\n" +
+                "Time Alignment needs the microphone and the loopback on one audio device.";
             return false;
         }
 

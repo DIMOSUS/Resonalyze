@@ -379,7 +379,7 @@ only the side on screen.
 The host shows one warning line (`WarningChanged`), chosen in this order:
 
 1. Gate placement (amber): a window that opens after the drivers turns every curve into a tail.
-2. Hybrid spread above `HybridSpreadWarningDb`, only while the hybrid is drawn.
+2. Hybrid disagreement (`DescribeHybridDisagreement`), only while the hybrid is drawn.
 3. Array composition mismatch, a warning rather than a refusal.
 4. A chosen calibration not applied to part of the plot.
 5. Own-calibration mismatch between channels.
@@ -391,7 +391,9 @@ since they would describe channels the user can no longer see.
 
 ### Hybrid spread thresholds
 
-`HybridSpreadWarningDb` is how far a spatial-average set's per-channel offsets may disagree.
+`DescribeHybridDisagreement` judges the two families differently, because they are tethered differently: a
+moving-microphone set by how far its channels' datums disagree, an array by how far any one stands off its
+own impulse response.
 
 - Moving microphone (`MovingMicSpreadWarningDb` = 3 dB): calibrated on a known-good seven-capture set
   (`HybridOffsetDatumMeasurement` reports it from the archived cabins) at 1.4 dB on one side and 0.6 on the
@@ -400,12 +402,14 @@ since they would describe channels the user can no longer see.
   noise-slope compensation (a curve, not a constant), a capture from an unrelated session. The threshold was
   5 dB while the datum was read on processed curves, where the same set read 2.4 and 2.7, mostly the chain
   failing to cancel; reading on the raw pair removed that and the threshold kept the same margin.
-- Array (`ArraySpreadWarningDb` = 1.5 dB): an array is levelled by the same loopback as the IRs, so the
-  families are one measurement; a real seven-position set on two drivers read 0.33 dB apart. A threshold
-  calibrated on the looser family would let a broken array through.
+- Array (`ArrayDatumWarningDb` = 1.5 dB, on `WorstDatumDb`): an array is levelled by the same loopback as the
+  IRs, so the families are one measurement and each array should sit on its IR. The archived arrays read
+  −0.9 to +0.1 dB off theirs (tweeters lowest), and the synthetic control with a capsule error +1.7. The
+  check is absolute because a spread cannot see a shift every channel shares: the
+  12-microphone set of #214, whose loopback ran on a second interface, read −14 to −30 dB.
 
-The spatial-average set offset is shown in the read-out as a health reading: for an array it is small, and
-a large one means a different input, calibration or driver.
+The read-out shows the hybrid's health figure (`VirtualCrossoverHybrid.ReadOut`): the moving-microphone
+set's offset, or the worst array's stand-off. A large one means a different input, calibration or driver.
 
 ### Array composition and calibration notes
 
@@ -496,11 +500,12 @@ and the opposite side short of a capture, the curve is dropped.
 
 ### Opposite-side hybrid sum
 
-`VirtualCrossoverHybrid.OppositeSum` uses that side's own channels, captures, loss and gate placement, but the
-ACTIVE side's offset. Separate offsets would erase exactly the L/R level difference the captures measured;
-sharing one costs only an absolute shift when the side selector flips, while the gap between curves stays
-the same. Borrowing an offset holds only if both sides' captures are one set, which
-`CanDrawOppositeSum` checks (per-side checks cannot: two relative capture runs are each consistent
+`VirtualCrossoverHybrid.OppositeSum` uses that side's own channels, captures, loss and gate placement, and the
+offset both sides share (none for arrays; one median over both sides for a moving mic, see
+[spatial-average.md](spatial-average.md#set-offset-and-spread)). Separate offsets would erase exactly the L/R
+level difference the captures measured, and moved a mono channel by their difference whenever the side
+selector flipped (1.7 dB on #214's set). Sharing an offset holds only if both sides' captures are one set,
+which `CanDrawOppositeSum` checks (per-side checks cannot: two relative capture runs are each consistent
 but say nothing about their relative level). One anchor and offset serve that side's channels and its sum,
 and the loss is smoothed only at the end of the reconstruction.
 

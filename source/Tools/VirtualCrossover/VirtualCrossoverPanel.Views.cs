@@ -362,7 +362,7 @@ public partial class VirtualCrossoverPanel
         }
 
         (string compact, string detail) = VirtualCrossoverMetric.FormatReadOut(
-            entries, lossDirect, phaseEntries, groupDeltas, stereoDeltas, hybrid?.OffsetDb);
+            entries, lossDirect, phaseEntries, groupDeltas, stereoDeltas, hybridReader.ReadOut(hybrid));
         MetricChanged?.Invoke(compact, detail);
     }
 

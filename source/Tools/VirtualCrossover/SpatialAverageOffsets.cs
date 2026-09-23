@@ -44,6 +44,15 @@ internal static class SpatialAverageOffsets
         return differences.Count == 0 ? null : Median(differences);
     }
 
+    /// <summary>None for arrays, which ride the IRs' loopback; else the datums' median. See docs/tech/spatial-average.md#set-offset-and-spread.</summary>
+    public static double SetOffsetDb(SpatialAverageMethod method, List<double> datums)
+    {
+        ArgumentNullException.ThrowIfNull(datums);
+        return method == SpatialAverageMethod.MicArray || datums.Count == 0
+            ? 0.0
+            : Median(datums);
+    }
+
     /// <summary>True median (mean of the central pair); sorts in place.</summary>
     public static double Median(List<double> values)
     {

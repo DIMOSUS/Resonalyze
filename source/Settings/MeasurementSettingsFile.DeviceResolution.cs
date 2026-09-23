@@ -1,7 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
-using Resonalyze.Options;
 
 // Resolves stored devices against real hardware; kept apart from the schema because it touches the machine.
 
@@ -197,22 +196,6 @@ internal sealed partial class MeasurementSettingsFile
         return legacyUseCalibration == true
             ? MicrophoneCalibrationIds.ZeroDegrees
             : null;
-    }
-
-    // UI invariant (TukeyWindowControlHelper): fades sum to at most the window; clamping each to window/2 breaks 256 + 16.
-    private static (int Left, int Right) ClampTukeyWindows(
-        int left,
-        int right,
-        int window)
-    {
-        int clampedLeft = Clamp(left, 0, window);
-        int clampedRight = Clamp(right, 0, window);
-        if (clampedLeft + clampedRight > window)
-        {
-            clampedRight = Math.Max(0, window - clampedLeft);
-        }
-
-        return (clampedLeft, clampedRight);
     }
 
     private static int Clamp(int value, int minimum, int maximum) =>

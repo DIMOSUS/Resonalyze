@@ -1,108 +1,39 @@
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-
 namespace Resonalyze.Options
 {
-    public partial class BDOpt : ImpulsePreviewOptionsForm
+    /// <summary>Binds the Burst Decay settings to a <see cref="WaterfallSettingsSession"/>.</summary>
+    public partial class BDOpt : WaterfallSettingsForm
     {
         public BDOpt()
         {
             InitializeComponent();
-            PlotInteraction.Enable(irPlotView);
-            BindTukeyWindowControls(
+            BindWaterfall(
+                WaterfallSettingsSession.ForBurstDecay(),
+                numericSampleRate,
                 numericWindow,
                 numericLeftWindow,
                 numericRightWindow,
-                afterWindowChanged: () =>
-                    numericCaptureTime.Value = (decimal)CalcCapturedTime);
-            // Width presets only: burst decay has no magnitude grid, so psychoacoustic would silently alias 1/6.
-            SmoothingPresetOptions.Configure(comboSmoothingInverseOctaves);
+                numericCaptureTime,
+                numericDbRange,
+                comboSmoothingInverseOctaves,
+                numericOffset,
+                irPlotView);
+            numericPeriods.ApplyFieldRange(ModeSettingsLimits.Periods);
+            Bind(numericPeriods, value => Session.Periods = (int)value);
             InitializeToolTips();
         }
 
         internal void Init(
             AnalyzerDocument document,
             int configuredSampleRate,
-            WaterfallGenerateOptions burstDecayGenOptions)
+            WaterfallGenerateOptions burstDecayGenOptions) =>
+            InitWaterfall(document, configuredSampleRate, burstDecayGenOptions);
+
+        public void SetOptions(WaterfallGenerateOptions burstDecayGenOptions) => WriteWaterfall(burstDecayGenOptions);
+
+        private protected override void PresentControls()
         {
-            AttachMeasurement(document, configuredSampleRate);
-            InitializeControls(() =>
-            {
-                numericSampleRate.Value = SampleRate;
-
-                numericWindow.Value = burstDecayGenOptions.Window;
-                numericCaptureTime.Value = (decimal)CalcCapturedTime;
-
-                numericLeftWindow.Value = burstDecayGenOptions.LeftTukeyWindow;
-                numericRightWindow.Value = burstDecayGenOptions.RightTukeyWindow;
-
-                numericDbRange.Value = burstDecayGenOptions.DbRange;
-
-                comboSmoothingInverseOctaves.SelectedItem =
-                    SmoothingPresetOptions.Normalize(
-                    burstDecayGenOptions.SmoothingInverseOctaves, includePsychoacoustic: false);
-
-                numericOffset.Value = burstDecayGenOptions.Offset;
-
-                numericPeriods.Value = (int)burstDecayGenOptions.Periods;
-                RefreshTukeyWindowLimits();
-            });
-            UpdateIrPreview();
-        }
-
-        public void SetOptions(WaterfallGenerateOptions burstDecayGenOptions)
-        {
-            burstDecayGenOptions.Window = (int)numericWindow.Value;
-
-            burstDecayGenOptions.LeftTukeyWindow = (int)numericLeftWindow.Value;
-            burstDecayGenOptions.RightTukeyWindow = (int)numericRightWindow.Value;
-
-            burstDecayGenOptions.DbRange = (int)numericDbRange.Value;
-
-            burstDecayGenOptions.SmoothingInverseOctaves =
-                comboSmoothingInverseOctaves.SelectedItem is int inverseOctaves
-                    ? inverseOctaves
-                    : SmoothingPresetOptions.SupportedInverseOctaves[0];
-
-            burstDecayGenOptions.Offset = (int)numericOffset.Value;
-
-            burstDecayGenOptions.Periods = (double)numericPeriods.Value;
-            UpdateIrPreview();
-        }
-
-        private double CalcCapturedTime
-        {
-            get
-            {
-                int sampleRate = Document == null ? 0 : SampleRate;
-                return sampleRate > 0
-                    ? (double)numericWindow.Value / sampleRate * 1000.0
-                    : 0;
-            }
-        }
-
-        protected override void RenderIrPreview()
-        {
-            if (Document == null)
-            {
-                return;
-            }
-
-            ImpulseWindowPreview.Update(
-                irPlotView,
-                Measurement,
-                (int)numericWindow.Value,
-                (int)numericLeftWindow.Value,
-                (int)numericRightWindow.Value,
-                (int)numericOffset.Value,
-                IrPreviewSource.Primary);
+            base.PresentControls();
+            Show(numericPeriods, Session.Periods);
         }
 
         private void InitializeToolTips()

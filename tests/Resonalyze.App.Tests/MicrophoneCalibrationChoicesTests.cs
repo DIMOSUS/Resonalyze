@@ -2,12 +2,12 @@ using Resonalyze.Dsp;
 using Resonalyze.Options;
 using CalibrationOptions =
     System.Collections.Generic.IReadOnlyList<
-        Resonalyze.Options.MicrophoneCalibrationComboHelper.MicrophoneCalibrationOption>;
+        Resonalyze.Options.MicrophoneCalibrationOption>;
 
 namespace Resonalyze.App.Tests;
 
 /// <summary>A missing selection stays selectable; landing on Off would be persisted by the next apply.</summary>
-public sealed class MicrophoneCalibrationComboHelperTests
+public sealed class MicrophoneCalibrationChoicesTests
 {
     private static readonly MicrophoneCalibrationEntry[] Configured =
     [
@@ -18,24 +18,24 @@ public sealed class MicrophoneCalibrationComboHelperTests
     [Fact]
     public void BuildOptions_ListsOffThenEveryConfiguredCalibration()
     {
-        CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
+        CalibrationOptions options = MicrophoneCalibrationChoices.BuildOptions(
             null,
             Configured);
 
         Assert.Equal(
             [null, MicrophoneCalibrationIds.ZeroDegrees, "cal1"],
             options.Select(option => option.CalibrationId));
-        Assert.Equal(0, MicrophoneCalibrationComboHelper.FindIndex(options, null));
+        Assert.Equal(0, MicrophoneCalibrationChoices.FindIndex(options, null));
     }
 
     [Fact]
     public void BuildOptions_MarksAnEntryThatDoesNotResolve()
     {
-        CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
+        CalibrationOptions options = MicrophoneCalibrationChoices.BuildOptions(
             "cal1",
             [new MicrophoneCalibrationEntry("cal1", "45° seat", Available: false)]);
 
-        int index = MicrophoneCalibrationComboHelper.FindIndex(options, "cal1");
+        int index = MicrophoneCalibrationChoices.FindIndex(options, "cal1");
         Assert.Equal(1, index);
         Assert.Equal("45° seat (unavailable)", options[index].DisplayName);
     }
@@ -43,11 +43,11 @@ public sealed class MicrophoneCalibrationComboHelperTests
     [Fact]
     public void BuildOptions_KeepsASelectionTheListNoLongerHolds()
     {
-        CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
+        CalibrationOptions options = MicrophoneCalibrationChoices.BuildOptions(
             "deleted",
             Configured);
 
-        int index = MicrophoneCalibrationComboHelper.FindIndex(options, "deleted");
+        int index = MicrophoneCalibrationChoices.FindIndex(options, "deleted");
         Assert.Equal(3, index);
         Assert.Equal("deleted", options[index].CalibrationId);
         Assert.Equal("Deleted calibration (missing)", options[index].DisplayName);
@@ -56,7 +56,7 @@ public sealed class MicrophoneCalibrationComboHelperTests
     [Fact]
     public void BuildOptions_DoesNotMarkAvailableCalibrations()
     {
-        CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
+        CalibrationOptions options = MicrophoneCalibrationChoices.BuildOptions(
             "cal1",
             Configured);
 
@@ -77,7 +77,7 @@ public sealed class MicrophoneCalibrationComboHelperTests
         definitions.Add(new MicrophoneCalibrationDefinition { Id = added, Name = "New" });
 
         Assert.NotEqual(deleted, added);
-        CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
+        CalibrationOptions options = MicrophoneCalibrationChoices.BuildOptions(
             deleted,
             definitions
                 .Select(definition => new MicrophoneCalibrationEntry(
@@ -86,7 +86,7 @@ public sealed class MicrophoneCalibrationComboHelperTests
                     Available: true))
                 .ToList());
 
-        int index = MicrophoneCalibrationComboHelper.FindIndex(options, deleted);
+        int index = MicrophoneCalibrationChoices.FindIndex(options, deleted);
         Assert.Equal(deleted, options[index].CalibrationId);
         Assert.Contains("missing", options[index].DisplayName);
     }
@@ -103,10 +103,10 @@ public sealed class MicrophoneCalibrationComboHelperTests
     [Fact]
     public void FindIndex_FallsBackToOffForAnAbsentSelection()
     {
-        CalibrationOptions options = MicrophoneCalibrationComboHelper.BuildOptions(
+        CalibrationOptions options = MicrophoneCalibrationChoices.BuildOptions(
             null,
             []);
 
-        Assert.Equal(0, MicrophoneCalibrationComboHelper.FindIndex(options, "cal1"));
+        Assert.Equal(0, MicrophoneCalibrationChoices.FindIndex(options, "cal1"));
     }
 }

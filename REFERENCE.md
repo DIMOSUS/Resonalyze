@@ -201,7 +201,9 @@ longer fits what it must show.
 The **Mode Settings...** button opens the current mode's settings in a docked,
 title-bar-less panel aligned to the plot area, which stays open while the main
 window has focus and switches automatically when you change modes. Settings apply
-on the fly, redrawing the analysis while preserving the visible plot range. Each
+on the fly, redrawing the analysis while preserving the visible plot range. Only
+your own edits apply: a panel following a new measurement (the Auto gate moving to
+its start, a read-out changing) redraws what it shows without saving anything. Each
 curve-based view groups its plotted curves under a **Curves:** heading with one
 checkbox per curve — Primary / HD2–HD4 / THD+N in Frequency Response, or
 measured / minimum / excess in Phase. A measurement carrying a
@@ -215,11 +217,22 @@ and one microphone would have said the same thing, while 20 dB means the dip one
 of them measured is a property of that seat centimetre and nothing an equalizer
 should be asked to fill. These curves are read from what the file stored, so they
 do not follow the impulse window — a spatial average is a steady-state curve and
-has no gate. Numeric and dropdown settings carry a small
+has no gate. The gate and smoothing fields of the Phase and Group Delay panels —
+and the window mode and FDW cycles in Group Delay, **τ** in Phase — carry a small
 **R** button that resets them to the built-in default, the plot keeps the range
 you zoomed to (see [Graph Zoom and Limits](#graph-zoom-and-limits)), and the
 Frequency Response, Phase, Group Delay, Waterfall and Burst panels include a
 compact impulse-window preview.
+
+The Frequency Response, Waterfall and Burst panels set their window in samples
+with two Tukey fades that share it: the left fade first, the right one within what
+the left leaves. Narrowing the window clamps the fades on screen and widening it
+again brings back the ones you set; the settings keep what the fields show. The
+Waterfall and Burst panels show the open measurement's sample rate and the time
+their slices cover, and follow a new measurement. A waterfall is drawn from 8
+slices up: with Slices set below 8, or a Burst window and smoothing that leave fewer
+than 8 frequencies (burst decay has one slice per frequency, so no field range can
+prevent it), the plot says so instead of staying empty.
 
 The **Tools** modes (EQ Wizard, Signal Generator, Virtual DSP, FIR Constructor) do not measure and
 do not draw the shell's curves: they bring their own sources and controls, so the
@@ -256,8 +269,9 @@ The Phase view shows four independently toggled curves: **measured phase**,
 **excess phase** (measured minus minimum — the all-pass part an equalizer cannot
 fix), and **coherence (γ²)** from averaged runs. **Detrend** removes one constant
 delay before unwrapping: **Auto** estimates the slope-based excess delay from the
-displayed spectrum and shows it in **τ (ms)**, **Manual** uses the editable
-value, **Off** keeps the absolute slope. With Main and Compare together, Auto is
+displayed spectrum and shows it in **τ (ms)** (while a measurement is in progress
+the read-out keeps its value), **Manual** uses the editable value, **Off** keeps
+the absolute slope. With Main and Compare together, Auto is
 resolved once from Main and applied to both, so their real relative delay stays
 visible as a linear phase difference.
 
@@ -953,7 +967,9 @@ Three traces share that timeline, each switched on under **Curves:**
   low-frequency content integrates into a step many times the impulse peak.
 
 **Band filter** reads all three traces through a zero-phase band — a full octave or
-a third of one, centred on any ISO preferred frequency. This is how you see *when*
+a third of one, centred on any ISO preferred frequency whose whole band fits under
+the open measurement's Nyquist frequency (the list follows the measurement; the
+centre you picked is kept while the band is off). This is how you see *when*
 a band arrives: a full-range impulse buries every band's arrival in one waveform,
 and the filter is the same raised-cosine bandpass the
 [Time Alignment](#time-alignment) probe uses, so the view and the delay estimator

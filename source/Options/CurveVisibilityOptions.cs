@@ -27,6 +27,8 @@ public sealed class CurveVisibilityOptions
     public bool ShowArrayMicrophones { get; set; }
     public bool ShowArraySpread { get; set; }
 
+    internal CurveVisibilityOptions Copy() => (CurveVisibilityOptions)MemberwiseClone();
+
     public SpectrumCurves ToSpectrumCurves()
     {
         SpectrumCurves curves = SpectrumCurves.None;

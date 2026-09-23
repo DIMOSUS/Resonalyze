@@ -152,7 +152,7 @@ namespace Resonalyze.Options
             numericSampleRate.ForeColor = UiPalette.TextPrimary;
             numericSampleRate.Increment = new decimal(new int[] { 1, 0, 0, 0 });
             numericSampleRate.Location = new Point(193, 12);
-            numericSampleRate.Maximum = new decimal(new int[] { 192000, 0, 0, 0 });
+            numericSampleRate.Maximum = new decimal(new int[] { 384000, 0, 0, 0 });
             numericSampleRate.Minimum = new decimal(new int[] { 1, 0, 0, 0 });
             numericSampleRate.MinimumSize = new Size(36, 19);
             numericSampleRate.Name = "numericSampleRate";
@@ -196,7 +196,6 @@ namespace Resonalyze.Options
             numericSlices.TextAlign = HorizontalAlignment.Right;
             numericSlices.ThousandsSeparator = false;
             numericSlices.Value = new decimal(new int[] { 64, 0, 0, 0 });
-            numericSlices.ValueChanged += numericSlices_ValueChanged;
             // 
             // numericStep
             // 
@@ -214,7 +213,6 @@ namespace Resonalyze.Options
             numericStep.TextAlign = HorizontalAlignment.Right;
             numericStep.ThousandsSeparator = false;
             numericStep.Value = new decimal(new int[] { 4, 0, 0, 0 });
-            numericStep.ValueChanged += numericStep_ValueChanged;
             // 
             // label3
             // 

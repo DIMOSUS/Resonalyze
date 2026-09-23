@@ -175,11 +175,26 @@ internal static class ImpulseWindowPreview
             double plateauMs,
             double rightMs)
         {
-            if (traces.Count == 0 || sampleRate <= 0)
-            {
-                return null;
-            }
+            return traces.Count == 0 || sampleRate <= 0
+                ? null
+                : Resolve(
+                    traces.Max(trace => trace.Samples.Length),
+                    sampleRate,
+                    gateOffsetMs,
+                    leftMs,
+                    plateauMs,
+                    rightMs);
+        }
 
+        /// <summary>A gate past the end of the record shows as one point at its start, never as an inverted axis.</summary>
+        public static GatedDisplay Resolve(
+            int longest,
+            int sampleRate,
+            double gateOffsetMs,
+            double leftMs,
+            double plateauMs,
+            double rightMs)
+        {
             int gateOffset = MillisecondsToSamples(gateOffsetMs, sampleRate);
             int left = MillisecondsToSamples(leftMs, sampleRate);
             int plateau = MillisecondsToSamples(plateauMs, sampleRate);
@@ -192,7 +207,6 @@ internal static class ImpulseWindowPreview
                 (double)left / gate * 2.0,
                 (double)right / gate * 2.0);
 
-            int longest = traces.Max(trace => trace.Samples.Length);
             int context = Math.Max(gate / 8, MillisecondsToSamples(0.2, sampleRate));
             int displayStart = Math.Max(0, gateStart - context);
             int displayEnd = Math.Min(longest - 1, gateStart + gate + context);
@@ -203,6 +217,9 @@ internal static class ImpulseWindowPreview
 
             return new GatedDisplay(displayStart, displayEnd, gateStart, gate, tukey);
         }
+
+        public double WeightAt(int sample) =>
+            sample >= GateStart && sample < GateStart + Gate ? Tukey[sample - GateStart] : 0.0;
 
         public (double StartMs, double EndMs) BoundsMs(int sampleRate) => (
             Start * 1000.0 / sampleRate,
@@ -287,10 +304,7 @@ internal static class ImpulseWindowPreview
         };
         for (int s = display.Start; s <= display.End; s++)
         {
-            double w = s >= display.GateStart && s < display.GateStart + display.Gate
-                ? display.Tukey[s - display.GateStart]
-                : 0.0;
-            windowSeries.Points.Add(new DataPoint(s * 1000.0 / sampleRate, w));
+            windowSeries.Points.Add(new DataPoint(s * 1000.0 / sampleRate, display.WeightAt(s)));
         }
         model.Series.Add(windowSeries);
 
@@ -367,41 +381,28 @@ internal static class ImpulseWindowPreview
         }
 
         int sampleRate = measurement!.SampleRate;
-        int gateOffset = MillisecondsToSamples(gateOffsetMs, sampleRate);
-        int left = MillisecondsToSamples(leftMs, sampleRate);
-        int plateau = MillisecondsToSamples(plateauMs, sampleRate);
-        int right = MillisecondsToSamples(rightMs, sampleRate);
-        int gate = Math.Max(1, left + plateau + right);
-        int gateStart = gateOffset - left;
-
-        double[] tukey = Windowing.TukeyWindow(
-            gate,
-            (double)left / gate * 2.0,
-            (double)right / gate * 2.0);
-
-        int context = Math.Max(gate / 8, MillisecondsToSamples(0.2, sampleRate));
-        int displayStart = Math.Max(0, gateStart - context);
-        int displayEnd = Math.Min(irSource.Samples.Length - 1, gateStart + gate + context);
+        Complex[] samples = irSource.Samples;
+        GatedDisplay display = GatedDisplay.Resolve(samples.Length, sampleRate, gateOffsetMs, leftMs, plateauMs, rightMs);
+        int displayStart = display.Start;
+        int displayEnd = display.End;
 
         double maxMagnitude = 0;
-        for (int s = displayStart; s <= displayEnd; s++)
+        for (int s = displayStart; s <= displayEnd && s < samples.Length; s++)
         {
-            maxMagnitude = Math.Max(maxMagnitude, Math.Abs(irSource.Samples[s].Real));
+            maxMagnitude = Math.Max(maxMagnitude, Math.Abs(samples[s].Real));
         }
         double scale = maxMagnitude > 0 ? 1.0 / maxMagnitude : 1.0;
 
-        var irPoints = new List<DataPoint>(Math.Max(0, displayEnd - displayStart + 1));
+        var irPoints = new List<DataPoint>(displayEnd - displayStart + 1);
         var windowPoints = new List<DataPoint>(irPoints.Capacity);
         for (int s = displayStart; s <= displayEnd; s++)
         {
             double ms = s * 1000.0 / sampleRate;
-            irPoints.Add(new DataPoint(ms, irSource.Samples[s].Real * scale));
-            double w = s >= gateStart && s < gateStart + gate ? tukey[s - gateStart] : 0.0;
-            windowPoints.Add(new DataPoint(ms, w));
+            irPoints.Add(new DataPoint(ms, s < samples.Length ? samples[s].Real * scale : 0.0));
+            windowPoints.Add(new DataPoint(ms, display.WeightAt(s)));
         }
 
-        double timeMin = displayStart * 1000.0 / sampleRate;
-        double timeMax = displayEnd * 1000.0 / sampleRate;
+        (double timeMin, double timeMax) = display.BoundsMs(sampleRate);
         model.Axes.Add(CreateTimeAxis(timeMin, timeMax));
         model.Axes.Add(CreateAmplitudeAxis());
 

@@ -227,6 +227,24 @@ public sealed class MeasurementSettingsMigrationTests
     }
 
     [Fact]
+    public void StoredFadesAreContainedInTheirWindow_AndOddCyclesReadAsTheDefault()
+    {
+        MeasurementSettingsFile.FrequencyResponseSettings settings =
+            DeserializeFrequencyResponse(
+                """
+                {"Window": 1000, "LeftTukeyWindow": 700, "RightTukeyWindow": 700,
+                 "PhaseFdwCycles": 5, "GroupDelayFdwCycles": 7, "MagnitudeFdwCycles": 3}
+                """);
+        var options = new FrequencyResponseOptions();
+
+        settings.ApplyTo(options, new CurveVisibilityOptions());
+
+        Assert.Equal((700, 300), (options.LeftTukeyWindow, options.RightTukeyWindow));
+        int fallback = PhaseAnalysisSettings.DefaultFdwCycles;
+        Assert.Equal((fallback, fallback, fallback), (options.PhaseFdwCycles, options.GroupDelayFdwCycles, options.MagnitudeFdwCycles));
+    }
+
+    [Fact]
     public void PreFdwMagnitudeFileStaysFixed()
     {
         MeasurementSettingsFile.FrequencyResponseSettings settings =

@@ -427,14 +427,12 @@ internal sealed partial class MeasurementSettingsFile
             int window = Clamp(Window, 4, 32768);
             options.Window = window;
             (options.LeftTukeyWindow, options.RightTukeyWindow) =
-                ClampTukeyWindows(LeftTukeyWindow, RightTukeyWindow, window);
+                TukeyFades.Contain(LeftTukeyWindow, RightTukeyWindow, window);
             options.MagnitudeWindowMode = MagnitudeWindowMode is { } magnitudeWindowMode &&
                 Enum.IsDefined(magnitudeWindowMode)
                     ? magnitudeWindowMode
                     : Resonalyze.Dsp.PhaseWindowMode.Fixed;
-            options.MagnitudeFdwCycles = MagnitudeFdwCycles is 4 or 6 or 8
-                ? MagnitudeFdwCycles
-                : PhaseAnalysisSettings.DefaultFdwCycles;
+            options.MagnitudeFdwCycles = WindowModeChoice.ValidCycles(MagnitudeFdwCycles);
             options.SmoothingInverseOctaves =
                 SmoothingPresetOptions.Normalize(SmoothingInverseOctaves);
             options.Offset = Clamp(Offset, -32768, 32768);
@@ -474,9 +472,7 @@ internal sealed partial class MeasurementSettingsFile
                 Enum.IsDefined(windowMode)
                     ? windowMode
                     : Resonalyze.Dsp.PhaseWindowMode.Fixed;
-            options.PhaseFdwCycles = PhaseFdwCycles is 4 or 6 or 8
-                ? PhaseFdwCycles
-                : PhaseAnalysisSettings.DefaultFdwCycles;
+            options.PhaseFdwCycles = WindowModeChoice.ValidCycles(PhaseFdwCycles);
             options.PhaseDetrendMode = PhaseDetrendMode is { } detrendMode &&
                 Enum.IsDefined(detrendMode)
                     ? detrendMode
@@ -491,9 +487,7 @@ internal sealed partial class MeasurementSettingsFile
                 Enum.IsDefined(groupDelayWindowMode)
                     ? groupDelayWindowMode
                     : Resonalyze.Dsp.PhaseWindowMode.Fixed;
-            options.GroupDelayFdwCycles = GroupDelayFdwCycles is 4 or 6 or 8
-                ? GroupDelayFdwCycles
-                : PhaseAnalysisSettings.DefaultFdwCycles;
+            options.GroupDelayFdwCycles = WindowModeChoice.ValidCycles(GroupDelayFdwCycles);
         }
 
         private static double ClampMilliseconds(double value, double min, double max) =>
@@ -687,7 +681,7 @@ internal sealed partial class MeasurementSettingsFile
             options.Step = Step == 0 ? 1 : Clamp(Step, -32768, 32768);
             options.Window = window;
             (options.LeftTukeyWindow, options.RightTukeyWindow) =
-                ClampTukeyWindows(LeftTukeyWindow, RightTukeyWindow, window);
+                TukeyFades.Contain(LeftTukeyWindow, RightTukeyWindow, window);
             options.DbRange = Clamp(DbRange, -140, -10);
             options.SmoothingInverseOctaves =
                 SmoothingPresetOptions.Normalize(SmoothingInverseOctaves);

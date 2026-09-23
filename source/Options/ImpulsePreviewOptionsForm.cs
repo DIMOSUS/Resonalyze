@@ -1,273 +1,50 @@
-using System;
-using System.Windows.Forms;
 using OxyPlot.WindowsForms;
-using Resonalyze.Dsp;
 
 namespace Resonalyze.Options;
 
-/// <summary>Base for option panels with a live IR preview: measurement subscription, UI-thread marshal, Disposed cleanup
-/// (an unshown dialog never raises FormClosed), Init render suppression, and the shared Tukey/gate control groups.</summary>
-public class ImpulsePreviewOptionsForm : Form
+/// <summary>Base of the panels with a live IR preview: draws what the session reads when it changes.</summary>
+public class ImpulsePreviewOptionsForm : ModeSettingsForm
 {
-    protected readonly WrappingToolTip toolTip = new();
-    private bool initializingControls;
+    private ImpulsePreviewInput? shownPreview;
 
-    private (ThemedNumericUpDown Window, ThemedNumericUpDown Left, ThemedNumericUpDown Right)? lengths;
-    private (ThemedNumericUpDown Offset, CheckBox AutoFit, Label MinFrequency)? gate;
+    private protected virtual PlotView? PreviewView => null;
 
-    public ImpulsePreviewOptionsForm()
+    private protected virtual ImpulsePreviewInput? PreviewInput => null;
+
+    private protected override void OnPresented() => RenderPreview();
+
+    /// <summary>Presents the session and redraws the preview whether or not what it reads changed.</summary>
+    private protected void Redraw()
     {
-        Disposed += (_, _) =>
-        {
-            DetachMeasurement();
-            toolTip.Dispose();
-        };
+        shownPreview = null;
+        Present();
     }
 
-    private protected AnalyzerDocument? Document { get; private set; }
-
-    private int configuredSampleRate;
-
-    private protected MeasurementResult? Measurement => Document?.Result;
-
-    /// <summary>The open result's rate, or the one the next run is configured for when nothing is open.</summary>
-    protected int SampleRate => Measurement?.SampleRate ?? configuredSampleRate;
-
-    private protected void AttachMeasurement(AnalyzerDocument document, int configuredSampleRate)
+    private void RenderPreview()
     {
-        ArgumentNullException.ThrowIfNull(document);
-        this.configuredSampleRate = configuredSampleRate;
-        if (ReferenceEquals(Document, document))
+        if (PreviewView is not { } view || PreviewInput is not { } input || input == shownPreview)
         {
             return;
         }
 
-        DetachMeasurement();
-        Document = document;
-        document.Changed += HandleImpulseResponseChanged;
-    }
-
-    /// <summary>Suppresses the several renders each ValueChanged would trigger before Init's final render.</summary>
-    protected void InitializeControls(Action applyValues)
-    {
-        ArgumentNullException.ThrowIfNull(applyValues);
-        initializingControls = true;
-        try
+        shownPreview = input;
+        switch (input)
         {
-            applyValues();
-        }
-        finally
-        {
-            initializingControls = false;
-        }
-    }
-
-    protected void UpdateIrPreview()
-    {
-        if (initializingControls)
-        {
-            return;
-        }
-
-        RenderIrPreview();
-    }
-
-    protected virtual void RenderIrPreview()
-    {
-    }
-
-    /// <summary>Call once from the constructor. <paramref name="afterWindowChanged"/>: extra work a window edit implies.</summary>
-    protected void BindTukeyWindowControls(
-        ThemedNumericUpDown window,
-        ThemedNumericUpDown left,
-        ThemedNumericUpDown right,
-        Action? afterWindowChanged = null)
-    {
-        lengths = (window, left, right);
-        window.ValueChanged += (_, _) =>
-        {
-            RefreshTukeyWindowLimits();
-            afterWindowChanged?.Invoke();
-            UpdateIrPreview();
-        };
-        left.ValueChanged += TukeyFadeChanged;
-        right.ValueChanged += TukeyFadeChanged;
-    }
-
-    protected void RefreshTukeyWindowLimits()
-    {
-        if (lengths is { } l)
-        {
-            TukeyWindowControlHelper.ClampAndUpdateLimits(l.Window, l.Left, l.Right);
+            case SampleWindowPreview window:
+                ImpulseWindowPreview.Update(
+                    view, window.Result, window.Window, window.Left, window.Right, window.Offset, window.Source);
+                break;
+            case GatePreview gated:
+                ImpulseWindowPreview.UpdateGated(
+                    view,
+                    gated.Result,
+                    gated.OffsetMs,
+                    gated.LeftMs,
+                    gated.PlateauMs,
+                    gated.RightMs,
+                    IrPreviewSource.Primary,
+                    gated.Compare);
+                break;
         }
     }
-
-    protected void BindGateControls(
-        ThemedNumericUpDown offset,
-        CheckBox autoFit,
-        ThemedNumericUpDown left,
-        ThemedNumericUpDown window,
-        ThemedNumericUpDown right,
-        Label minFrequency)
-    {
-        gate = (offset, autoFit, minFrequency);
-        lengths = (window, left, right);
-
-        offset.ValueChanged += (_, _) => UpdateIrPreview();
-        autoFit.CheckedChanged += (_, _) =>
-        {
-            SyncGateOffsetEnabled();
-            if (autoFit.Checked)
-            {
-                ApplyAutoGateOffset();
-            }
-        };
-        window.ValueChanged += GateValueChanged;
-        left.ValueChanged += GateValueChanged;
-        right.ValueChanged += GateValueChanged;
-    }
-
-    /// <summary>CheckedChanged fires only on a transition, so Init calls this for a false -> false init.</summary>
-    protected void SyncGateOffsetEnabled()
-    {
-        if (gate is { } g)
-        {
-            g.Offset.Enabled = !g.AutoFit.Checked;
-        }
-    }
-
-    protected void UpdateMinFrequencyLabel()
-    {
-        if (lengths is not { } l || gate is not { } g)
-        {
-            return;
-        }
-
-        double hz = FrequencyResponseOptions.GateMinReliableFrequencyHz(
-            (double)l.Left.Value,
-            (double)l.Window.Value,
-            (double)l.Right.Value);
-        g.MinFrequency.Text = hz > 0
-            ? $"Reliable from ≈ {hz:0}+ Hz"
-            : "Reliable from ≈ — Hz";
-    }
-
-    /// <summary>Band-limited first-arrival front, memoized per IR in TransferIrStartCache.</summary>
-    protected void ApplyAutoGateOffset()
-    {
-        if (gate is { } g &&
-            Measurement is
-            {
-                Transfer.ImpulseResponse.Length: > 0,
-                SampleRate: > 0
-            } measurement)
-        {
-            g.Offset.Value = g.Offset.ClampValue(
-                TransferIrStartCache.ResolveStartMs(
-                    measurement.Transfer.ImpulseResponse,
-                    measurement.SampleRate,
-                    measurement.Transfer.PeakIndex));
-        }
-    }
-
-    /// <summary>Auto re-snaps the offset on every refresh, including every ImpulseResponseChanged.</summary>
-    protected void RenderGatedIrPreview(PlotView plotView, CompareAnalysisSource? compare)
-    {
-        if (gate?.AutoFit.Checked == true)
-        {
-            ApplyAutoGateOffset();
-        }
-
-        OnGatePreviewRendering();
-
-        if (Document == null ||
-            lengths is not { } l ||
-            gate is not { } g)
-        {
-            return;
-        }
-
-        ImpulseWindowPreview.UpdateGated(
-            plotView,
-            Measurement,
-            (double)g.Offset.Value,
-            (double)l.Left.Value,
-            (double)l.Window.Value,
-            (double)l.Right.Value,
-            IrPreviewSource.Primary,
-            compare);
-    }
-
-    protected virtual void OnGatePreviewRendering()
-    {
-    }
-
-    protected void ApplyGateToolTips()
-    {
-        if (lengths is not { } l || gate is not { } g)
-        {
-            return;
-        }
-
-        g.Offset.ApplyToolTip(
-            toolTip,
-            "Gate position: time from the IR start to the end of the left Tukey shoulder. Auto keeps it snapped to the detected IR start.");
-        toolTip.SetToolTip(
-            g.AutoFit,
-            "Keep the gate offset snapped to the detected IR start (band-limited first-arrival front), following every new measurement. Release to set the offset manually.");
-        l.Window.ApplyToolTip(
-            toolTip,
-            "Flat (weight 1) part of the gate after the peak, in milliseconds.");
-        l.Left.ApplyToolTip(
-            toolTip,
-            "Tukey fade-in before the peak, in milliseconds. Keep short.");
-        l.Right.ApplyToolTip(
-            toolTip,
-            "Tukey fade-out gate after the plateau, in milliseconds. End it before the first reflection.");
-        toolTip.SetToolTip(
-            g.MinFrequency,
-            "Lowest frequency the current gate can resolve (≈ 1 / gate length). Below it the curve is not reliable.");
-    }
-
-    public void RefreshComparePreview() => UpdateIrPreview();
-
-    private void TukeyFadeChanged(object? sender, EventArgs e)
-    {
-        RefreshTukeyWindowLimits();
-        UpdateIrPreview();
-    }
-
-    private void GateValueChanged(object? sender, EventArgs e)
-    {
-        UpdateMinFrequencyLabel();
-        UpdateIrPreview();
-    }
-
-    private void DetachMeasurement()
-    {
-        if (Document != null)
-        {
-            Document.Changed -= HandleImpulseResponseChanged;
-            Document = null;
-        }
-    }
-
-    private void HandleImpulseResponseChanged()
-    {
-        if (IsDisposed)
-        {
-            return;
-        }
-
-        if (IsHandleCreated && InvokeRequired)
-        {
-            BeginInvoke((MethodInvoker)OnMeasurementChanged);
-            return;
-        }
-
-        OnMeasurementChanged();
-    }
-
-    /// <summary>The open measurement changed: the preview redraws; a panel showing more of it adds to this.</summary>
-    protected virtual void OnMeasurementChanged() => UpdateIrPreview();
 }

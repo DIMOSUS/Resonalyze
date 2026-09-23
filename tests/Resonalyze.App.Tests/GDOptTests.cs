@@ -1,3 +1,4 @@
+using System.Windows.Forms;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 
@@ -16,7 +17,7 @@ public sealed class GDOptTests
         };
         using var panel = new GDOpt();
         panel.Init(measurement, 48_000, options, new CurveVisibilityOptions());
-        Assert.True(panel.FdwCyclesEnabled);
+        Assert.True(Cycles(panel).Enabled);
 
         var written = new FrequencyResponseOptions
         {
@@ -40,7 +41,7 @@ public sealed class GDOptTests
         };
         using var panel = new GDOpt();
         panel.Init(measurement, 48_000, options, new CurveVisibilityOptions());
-        Assert.False(panel.FdwCyclesEnabled);
+        Assert.False(Cycles(panel).Enabled);
 
         var written = new FrequencyResponseOptions();
         panel.SetOptions(written, new CurveVisibilityOptions());
@@ -48,4 +49,6 @@ public sealed class GDOptTests
         Assert.Equal(PhaseWindowMode.Fixed, written.GroupDelayWindowMode);
         Assert.Equal(PhaseAnalysisSettings.DefaultFdwCycles, written.GroupDelayFdwCycles);
     }
+
+    private static Control Cycles(GDOpt panel) => panel.Controls.Find("comboFdwCycles", searchAllChildren: true).Single();
 }

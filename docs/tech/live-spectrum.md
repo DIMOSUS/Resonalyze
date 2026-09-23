@@ -29,6 +29,26 @@ failure arrives as `Failed`. The controller draws the session into the main plot
 is the entry point for the gestures that redraw (Record, a display option, a loaded capture). `PlotModelFactory` does
 not read the live analyzer.
 
+## Settings panel code map
+
+The settings panel (`Options/LiveSpectrumOpt`) keeps its state in a UI-free `LiveSpectrumSettingsSession`
+(`Options/LiveSpectrumSettings/`): each field as its control shows it, the user's own picks that survive what MMM and
+periodic pink force on them, and what the analyzer offers now (an SPL calibration, a live curve an uncalibrated dB SPL
+would hide, a loopback). Its rules move one field when another does: MMM pins its recipe, periodic pink forces a
+rectangular window without overlap, the reference-free modes force the RTA on, and a mode without Silent falls back to
+periodic pink. A commit (a pick in the list, a click on a box that takes one) is the user's pick; an arrow key in a
+closed list only moves the field. `WriteTo` is what Apply writes: the user's picks wherever a rule forces the field.
+
+| Reader | For |
+| --- | --- |
+| `LiveSpectrumSettingsChoices` | the lists with their labels (a sequence length with its duration at the rate) and where a stored value lands on them |
+| `LiveSpectrumSettingsLook` | what the mode mutes, and the amber of an uncalibrated dB SPL beside a live curve and of Transfer without a loopback |
+| `LiveSpectrumSettingsToolTips` | the dB SPL and Transfer tooltips that say why the choice cannot apply |
+
+`LiveSpectrumOpt` writes every edit to the session and presents all of it back (`.Present`). `LiveSpectrumOptBoundaryTests`
+keeps statics and nested types off the panel, and `LiveSpectrumOptWiringTests` drives it beside a session the test
+changes the same way.
+
 ## Analysis modes and signals
 
 - The effective mode is RTA when selected or when there is no loopback; starting is not gated on a

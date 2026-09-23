@@ -239,7 +239,7 @@ public sealed class ModeSettingsSessionTests
         Assert.Equal(ImpulseBandCentres.For(0.0, 44_100), ImpulseBandCentres.For(ImpulseBandCentres.OctaveBand, 0));
         Assert.Equal(ImpulseBandCentres.ThirdOctaveBand, ImpulseBandCentres.NearestWidth(0.5));
         Assert.Equal(0.0, ImpulseBandCentres.NearestWidth(-1));
-        Assert.Equal(125.0, ImpulseBandCentres.Nearest([125.0, 500.0], 250.0));
+        Assert.Equal(500.0, ImpulseBandCentres.Nearest([125.0, 500.0], 300.0));
         Assert.Equal(("1/3 octave", "Off", "63 Hz", "16 kHz"), (ImpulseBandCentres.WidthLabel(1.0 / 3.0),
             ImpulseBandCentres.WidthLabel(0), ImpulseBandCentres.CentreLabel(63), ImpulseBandCentres.CentreLabel(16_000)));
     }

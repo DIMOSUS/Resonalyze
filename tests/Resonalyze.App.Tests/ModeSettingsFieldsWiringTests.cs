@@ -29,8 +29,12 @@ public sealed class ModeSettingsFieldsWiringTests
                     [new MicrophoneCalibrationEntry("other", "Other mic", true)]),
                 panel => panel.SetOptions(options, visibility));
 
+            Assert.False(docked.Find<ThemedComboBox>("comboFdwCycles").Enabled);
             docked.Pick("comboWindowMode", "FDW");
+            Assert.True(docked.Find<ThemedComboBox>("comboFdwCycles").Enabled);
+            docked.TakeApplies();
             docked.Pick("comboFdwCycles", "8");
+            Assert.Equal((1, 8), (docked.TakeApplies(), options.MagnitudeFdwCycles));
             docked.Type("numericWindow", 2000);
             docked.Type("numericLeftWindow", 300);
             docked.Type("numericRightWindow", 400);
@@ -160,6 +164,25 @@ public sealed class ModeSettingsFieldsWiringTests
     }
 
     [Fact]
+    public void TheCalibrationListIsOpenOnlyWithAChoice()
+    {
+        StaTest.Run(() =>
+        {
+            using var analyzer = new TestAnalyzer();
+            using var docked = new DockedSettingsPanel<FROptions>(
+                () => new FROptions(),
+                panel => panel.Init(
+                    analyzer.Document, 48_000, new FrequencyResponseOptions { CalibrationId = null }, new CurveVisibilityOptions(), []));
+
+            Assert.Equal(["Off"], docked.Items("comboCalibration"));
+            Assert.False(docked.Find<ThemedComboBox>("comboCalibration").Enabled);
+            docked.Panel.SelectCalibration("gone", []);
+            Assert.True(docked.Find<ThemedComboBox>("comboCalibration").Enabled);
+            Assert.Equal(0, docked.TakeApplies());
+        });
+    }
+
+    [Fact]
     public void AManualTauIsTheUsersValue_AndOnlyManualOffersTheButtons()
     {
         StaTest.Run(() =>
@@ -228,6 +251,7 @@ public sealed class ModeSettingsFieldsWiringTests
             docked.Type("numericRightWindow", 300);
             docked.Type("numericDbRange", -80);
             docked.Type("numericOffset", -120);
+            Assert.Equal(burst, !docked.Items("comboSmoothingInverseOctaves").Contains("Psycho"));
             docked.Pick("comboSmoothingInverseOctaves", "1/12");
             if (burst)
             {

@@ -258,6 +258,7 @@ public sealed class ModeSettingsWiringTests
             {
                 PhaseGateAutoFit = false,
                 PhaseGateOffsetMs = 10.0,
+                PhasePlateauMs = 15.0,
                 PhaseDetrendMode = PhaseDetrendMode.Manual,
                 PhaseDetrendMs = 0.25
             };
@@ -275,11 +276,20 @@ public sealed class ModeSettingsWiringTests
             docked.Click("buttonTauSlope");
             Assert.Equal((1, 0, 0.25m), (refusals, docked.TakeApplies(), docked.Value("numericOffset")));
 
-            analyzer.Open(Transfer(48_000, peak: 480));
+            var ringing = new Complex[16_384];
+            for (int i = 0; i < 2_000; i++)
+            {
+                ringing[480 + i] = new Complex(Math.Exp(-i / 200.0) * Math.Cos(i * 0.05), 0.0);
+            }
+
+            analyzer.Open(TestMeasurementResults.Restored(
+                20, 20_000, 48_000, 24, 1.0, PlaybackChannel.Mono, ringing, 480,
+                SweepMeasurementMode.LoopbackTransfer, ringing, 480));
             docked.Settle();
             GatedAnalysisSettingsSession shadow = GatedAnalysisSettingsSession.ForPhase();
             shadow.Load(options, visibility);
             (double slopeMs, double peakMs) = PhaseDetrendEstimate.Estimate(analyzer.Document, shadow.DetrendReading())!.Value;
+            Assert.NotEqual(ModeSettingsLimits.DetrendMs.Clamp(slopeMs), ModeSettingsLimits.DetrendMs.Clamp(peakMs));
             docked.Click("buttonTauPeak");
             Assert.Equal(ModeSettingsLimits.DetrendMs.Clamp(peakMs), docked.Value("numericOffset"));
             Assert.Equal(1, docked.TakeApplies());

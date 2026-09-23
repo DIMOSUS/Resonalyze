@@ -189,6 +189,27 @@ public sealed class VirtualCrossoverPanelWiringTests
         });
     }
 
+    // The louder left side, once emptied, must stop holding the right side's axis up.
+    [Fact]
+    public void AnEmptiedHiddenSide_StopsWideningTheScale()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LivePanel();
+            live.Set<CheckBox>("checkBoxShowSum", box => box.Checked = false);
+            live.ShowRight();
+            double shared = live.AxisRanges().Value.High;
+
+            foreach (VirtualCrossoverChannel channel in live.Session.Channels)
+            {
+                channel.PhysicalSideState(false).Clear();
+            }
+
+            live.Redraw();
+            live.WaitFor(() => live.AxisRanges().Value.High < shared, "drop the emptied side's range");
+        });
+    }
+
     [Fact]
     public void TheHybridToggle_QuotesTheSpatialAverage_OnTheShownSide()
     {
@@ -297,6 +318,8 @@ public sealed class VirtualCrossoverPanelWiringTests
             Control<RadioButton>("radioSideLeft").Checked = false;
             Set<RadioButton>("radioSideRight", radio => radio.Checked = true);
         }
+
+        public void WaitFor(Func<bool> condition, string what) => live.Wait(condition, what);
 
         public void ShowLeft()
         {

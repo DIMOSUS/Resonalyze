@@ -369,8 +369,9 @@ public partial class VirtualCrossoverPanel
                 return;
             }
 
-            ScaleExtent? other = await sharedScale.MeasureOtherSideAsync(view, render.Revision);
-            if (other == null || mainPlotView.IsDisposed ||
+            (bool current, ScaleExtent? other) =
+                await sharedScale.MeasureOtherSideAsync(view, render.Revision);
+            if (!current || mainPlotView.IsDisposed ||
                 !processingCoordinator.IsCurrent(render.Revision) || CaptureViewState() != view)
             {
                 return;

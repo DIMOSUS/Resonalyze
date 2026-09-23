@@ -84,21 +84,23 @@ internal sealed class VirtualCrossoverSharedScale(
 
     public void Forget() => known.Clear();
 
-    /// <summary>The side not shown, read as it is drawn when shown; null without a channel or once a newer frame started.</summary>
-    public async Task<ScaleExtent?> MeasureOtherSideAsync(VirtualCrossoverViewState view, long revision)
+    /// <summary>The side not shown, read as it is drawn when shown. Not current once a newer frame started; a current read
+    /// with no extent is a side with nothing to draw, which must replace what it drew before.</summary>
+    public async Task<(bool Current, ScaleExtent? Extent)> MeasureOtherSideAsync(
+        VirtualCrossoverViewState view, long revision)
     {
         bool rightSide = !view.RightSide;
         VirtualCrossoverSideSum? side = await metrics.ComputeSideSumAsync(
             session.Channels, rightSide, revision, minimumChannels: 1);
-        if (side == null || !coordinator.IsCurrent(revision))
+        if (!coordinator.IsCurrent(revision))
         {
-            return null;
+            return (false, null);
         }
 
-        var frame = VirtualCrossoverFrame.Of(side.Channels, view.GroupView);
-        if (frame.Shown.Count == 0)
+        var frame = side == null ? null : VirtualCrossoverFrame.Of(side.Channels, view.GroupView);
+        if (frame == null || frame.Shown.Count == 0)
         {
-            return null;
+            return (true, null);
         }
 
         int smoothing = session.MagnitudeGate.SmoothingInverseOctaves;
@@ -108,7 +110,7 @@ internal sealed class VirtualCrossoverSharedScale(
             sideMetrics.BuildCurves(frame.Shown, smoothing, frame.Summed);
         if (magnitudes == null)
         {
-            return null;
+            return (true, null);
         }
 
         HybridMagnitudes? hybrid = view.HybridRequested
@@ -162,7 +164,7 @@ internal sealed class VirtualCrossoverSharedScale(
             curves.Add(new AcousticCurve(string.Empty, drawnLoss, default, 0, default, OnLossAxis: true));
         }
 
-        return coordinator.IsCurrent(revision) ? ScaleExtent.Of(curves) : null;
+        return coordinator.IsCurrent(revision) ? (true, ScaleExtent.Of(curves)) : (false, null);
     }
 
     private static AcousticCurve Level(IReadOnlyList<SignalPoint> points) =>

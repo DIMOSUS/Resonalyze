@@ -521,7 +521,7 @@ internal sealed class VirtualCrossoverMetrics
         foreach (ProcessedChannel member in members)
         {
             (double memberLow, double memberHigh) =
-                VirtualCrossoverJunctions.GetChannelBand(member.Channel.Settings);
+                VirtualCrossoverJunctions.GetChannelBand(member.Settings);
             low = Math.Min(low, memberLow);
             high = Math.Max(high, memberHigh);
         }
@@ -606,7 +606,8 @@ internal sealed class VirtualCrossoverMetrics
                     SampleRate = state.SampleRate,
                     ProcessorSampleRate = channel.ProcessorSampleRate,
                     Chain = settings.ToChain(channel.Pair.Zone),
-                    Channel = channel
+                    Channel = channel,
+                    Settings = settings
                 };
 
             SideProcessJob leftJob = Snapshot(leftState, leftSettings, leftSource);
@@ -856,7 +857,8 @@ internal sealed class VirtualCrossoverMetrics
                 SampleRate = state.SampleRate,
                 ProcessorSampleRate = channel.ProcessorSampleRate,
                 Chain = chain,
-                Channel = channel
+                Channel = channel,
+                Settings = settings
             });
         }
 
@@ -906,7 +908,8 @@ internal sealed class VirtualCrossoverMetrics
                 OxyColors.Transparent,
                 side.ProcessedValidRange,
                 side.State.MeasuredBand,
-                side.State.MicrophoneCalibrationCurve)).ToList());
+                side.State.MicrophoneCalibrationCurve,
+                side.Settings)).ToList());
     }
 
     // UI-thread snapshot of one channel side for background processing.
@@ -923,6 +926,7 @@ internal sealed class VirtualCrossoverMetrics
 
         public required DspChannelChain Chain { get; init; }
         public required VirtualCrossoverChannel Channel { get; init; }
+        public required VirtualCrossoverChannelSettings Settings { get; init; }
         public Complex[]? ProcessedIr { get; set; }
         public int ProcessedPeak { get; set; }
         public ValidSampleRange ProcessedValidRange { get; set; }

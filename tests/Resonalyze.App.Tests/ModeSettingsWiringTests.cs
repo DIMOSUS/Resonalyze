@@ -248,6 +248,80 @@ public sealed class ModeSettingsWiringTests
         });
     }
 
+    [Fact]
+    public void TheTauButtonsTakeAnEstimateAsTheUsersValue_OrRefuse()
+    {
+        StaTest.Run(() =>
+        {
+            using var analyzer = new TestAnalyzer();
+            var options = new FrequencyResponseOptions
+            {
+                PhaseGateAutoFit = false,
+                PhaseGateOffsetMs = 10.0,
+                PhaseDetrendMode = PhaseDetrendMode.Manual,
+                PhaseDetrendMs = 0.25
+            };
+            var visibility = new CurveVisibilityOptions();
+            var refusals = 0;
+            using var docked = new DockedSettingsPanel<PROpt>(
+                () => new PROpt(),
+                panel =>
+                {
+                    panel.PlayRefusal = () => refusals++;
+                    panel.Init(analyzer.Document, 48_000, options, visibility);
+                },
+                panel => panel.SetOptions(options, visibility));
+
+            docked.Click("buttonTauSlope");
+            Assert.Equal((1, 0, 0.25m), (refusals, docked.TakeApplies(), docked.Value("numericOffset")));
+
+            analyzer.Open(Transfer(48_000, peak: 480));
+            docked.Settle();
+            GatedAnalysisSettingsSession shadow = GatedAnalysisSettingsSession.ForPhase();
+            shadow.Load(options, visibility);
+            (double slopeMs, double peakMs) = PhaseDetrendEstimate.Estimate(analyzer.Document, shadow.DetrendReading())!.Value;
+            docked.Click("buttonTauPeak");
+            Assert.Equal(ModeSettingsLimits.DetrendMs.Clamp(peakMs), docked.Value("numericOffset"));
+            Assert.Equal(1, docked.TakeApplies());
+            Assert.Equal((double)ModeSettingsLimits.DetrendMs.Clamp(peakMs), options.PhaseDetrendMs);
+            docked.Click("buttonTauSlope");
+            Assert.Equal(ModeSettingsLimits.DetrendMs.Clamp(slopeMs), docked.Value("numericOffset"));
+
+            using (analyzer.Document.TryAcquire())
+            {
+                docked.Click("buttonTauPeak");
+            }
+
+            Assert.Equal(2, refusals);
+            docked.Pick("comboDetrendMode", "Off");
+            Assert.Equal((0m, false), (docked.Value("numericOffset"), docked.Find<Button>("buttonTauPeak").Enabled));
+            docked.Pick("comboDetrendMode", "Manual");
+            Assert.Equal(ModeSettingsLimits.DetrendMs.Clamp(slopeMs), docked.Value("numericOffset"));
+        });
+    }
+
+    [Fact]
+    public void TheAutocorrelationSwitchWritesOnlyItself()
+    {
+        StaTest.Run(() =>
+        {
+            var options = new ImpulseResponseOptions { ShowAutocorrelation = true, Length = 1234 };
+            using var docked = new DockedSettingsPanel<ACOpt>(
+                () => new ACOpt(),
+                panel => panel.Init(options),
+                panel =>
+                {
+                    options.Length = 7;
+                    panel.SetOptions(options);
+                });
+
+            docked.Click("checkBoxShowAutocorrelation");
+
+            Assert.Equal(1, docked.TakeApplies());
+            Assert.Equal((false, 7), (options.ShowAutocorrelation, options.Length));
+        });
+    }
+
     internal static MeasurementResult Transfer(int sampleRate, int peak, int length = 16_384, int? echo = null)
     {
         var impulse = new Complex[length];

@@ -1,5 +1,4 @@
-﻿using System.Reflection;
-using System.Windows.Forms;
+﻿using System.Windows.Forms;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
 using Resonalyze.Ui;
@@ -64,9 +63,7 @@ public sealed class FROptionsTests
         var document = new AnalyzerDocument();
         using var panel = new FROptions();
         panel.Init(document, 48_000, new FrequencyResponseOptions(), new CurveVisibilityOptions(), []);
-        var spl = (RadioButton)typeof(FROptions)
-            .GetField("radioMagnitudeSpl", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(panel)!;
+        var spl = (RadioButton)panel.Controls.Find("radioMagnitudeSpl", searchAllChildren: true).Single();
         Assert.NotEqual(UiPalette.Warning, spl.ForeColor);
 
         document.TryBegin()!.Install(

@@ -109,7 +109,7 @@ public class ModeSettingsForm : Form, IUserEditedSettings
     }
 
     /// <summary>Only a moved value: the setter rewrites the editor, which would discard text being typed.</summary>
-    private protected static void Show(ThemedNumericUpDown field, decimal value)
+    private protected void Show(ThemedNumericUpDown field, decimal value)
     {
         if (field.Value != value)
         {
@@ -118,7 +118,7 @@ public class ModeSettingsForm : Form, IUserEditedSettings
     }
 
     /// <summary>A field whose upper bound moves with the session; the value never passes a bound it is written under.</summary>
-    private protected static void Show(ThemedNumericUpDown field, decimal value, decimal maximum)
+    private protected void Show(ThemedNumericUpDown field, decimal value, decimal maximum)
     {
         if (field.Maximum < value)
         {
@@ -132,7 +132,7 @@ public class ModeSettingsForm : Form, IUserEditedSettings
         }
     }
 
-    private protected static void ShowIndex(ThemedComboBox combo, int index)
+    private protected void ShowIndex(ThemedComboBox combo, int index)
     {
         if (combo.SelectedIndex != index)
         {
@@ -141,7 +141,7 @@ public class ModeSettingsForm : Form, IUserEditedSettings
     }
 
     /// <summary>An item the list does not hold leaves the selection where it is.</summary>
-    private protected static void ShowItem(ThemedComboBox combo, object item)
+    private protected void ShowItem(ThemedComboBox combo, object item)
     {
         int index = combo.Items.IndexOf(item);
         if (index >= 0)

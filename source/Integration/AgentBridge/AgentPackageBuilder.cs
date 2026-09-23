@@ -324,10 +324,17 @@ internal static class AgentPackageBuilder
         var packageSource = new AgentPackageSource(
             source != null,
             source?.SampleRateHz,
-            source == null ? null : [source.MeasuredBand.LowEdgeHz, source.MeasuredBand.HighEdgeHz],
+            source == null ? null : MeasuredBandHz(source),
             source?.SpatialAverage,
             source is { SpatialAverageCaptures.Count: > 0 } ? source.SpatialAverageCaptures : null,
             source?.UnavailableReason ?? (source == null ? "no measurement loaded" : null));
+
+        // A band without a known top (no sweep band recorded) is open: it reaches the record's Nyquist, and JSON has no infinity.
+        static double[] MeasuredBandHz(AgentSourceInputs source) =>
+        [
+            source.MeasuredBand.LowEdgeHz,
+            Math.Min(source.MeasuredBand.HighEdgeHz, source.SampleRateHz / 2.0)
+        ];
 
         return new AgentPackageChannel(
             channel.Id,

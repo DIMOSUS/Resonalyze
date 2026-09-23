@@ -89,6 +89,26 @@ public sealed class AgentPackageBuilderTests
     }
 
     [Fact]
+    public void Build_StatesAnOpenMeasuredBandUpToTheRecordsNyquist()
+    {
+        // A measurement without a sweep band records its top as open; a package carrying infinity was not copied at all.
+        AgentPackageInputs inputs = Inputs();
+        AgentChannelInputs open = inputs.Channels[0] with
+        {
+            Source = inputs.Channels[0].Source! with { MeasuredBand = MeasuredBand.Everything }
+        };
+        inputs = inputs with { Channels = [open, .. inputs.Channels.Skip(1)] };
+
+        AgentPackageBuildResult result = AgentPackageBuilder.Build(inputs, Id, Clock);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Equal(
+            [0, 24_000],
+            Json(result.Text!).GetProperty("channels")[0].GetProperty("source").GetProperty("measuredBandHz")
+                .EnumerateArray().Select(v => v.GetDouble()));
+    }
+
+    [Fact]
     public void Build_CarriesTheAcousticGoals_WhereTheyAreStated()
     {
         // Auto Tune aims a channel at its stated goal instead of the filter, so the assistant has to see it.

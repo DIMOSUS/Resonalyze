@@ -127,4 +127,25 @@ public sealed class VirtualCrossoverOwnCalibrationTests
             [Channel("left", CapsuleA), Channel("right", CapsuleA)]));
         Assert.Null(Warnings(own: false).DescribeOwnCalibrationMismatch(channels));
     }
+
+    [Fact]
+    public void ASelectionOtherThanTheMeasurementsOwn_IsSaidOutLoud_OffIncluded()
+    {
+        IReadOnlyList<ProcessedChannel> channels = [Channel("left", CapsuleA), Channel("right", null)];
+
+        string? named = Warnings(own: false).DescribeForeignCalibration(channels);
+        string? off = new VirtualCrossoverWarnings(new VirtualCrossoverSession
+        {
+            Project = new VirtualCrossoverProjectFile(),
+            Calibration = VirtualCrossoverCalibrationPolicy.None
+        }).DescribeForeignCalibration(channels);
+
+        Assert.NotNull(named);
+        Assert.Contains("left", named!);
+        Assert.DoesNotContain("right", named);
+        Assert.NotNull(off);
+        Assert.Contains("no calibration at all", off!);
+        Assert.Null(Warnings(own: true).DescribeForeignCalibration(channels));
+        Assert.Null(Warnings(own: false).DescribeForeignCalibration([Channel("left", PanelCurve)]));
+    }
 }

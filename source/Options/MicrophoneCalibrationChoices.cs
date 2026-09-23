@@ -18,7 +18,7 @@ internal static class MicrophoneCalibrationChoices
         {
             options.Add(new MicrophoneCalibrationOption(
                 entry.Id,
-                entry.Available ? entry.Name : $"{entry.Name} (unavailable)"));
+                entry.Label));
         }
 
         if (!MicrophoneCalibrationIds.IsOff(selectedCalibrationId) &&

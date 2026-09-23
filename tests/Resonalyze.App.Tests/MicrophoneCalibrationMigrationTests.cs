@@ -91,6 +91,7 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
         string path = WriteSettings("""
             {
               "SchemaVersion": 7,
+              "Measurement": { "MicrophoneCalibration0DegreesPath": "C:\\mics\\zero.txt" },
               "FrequencyResponse": { "UseCalibration": true },
               "PhaseResponse": { "UseCalibration": false }
             }
@@ -119,22 +120,55 @@ public sealed class MicrophoneCalibrationMigrationTests : IDisposable
     }
 
     [Fact]
-    public void AFirstRunStartsCorrectedByTheMicrophonesOwnCalibration()
+    public void AFirstRunStartsUncalibrated()
     {
         MeasurementSettingsFile settings = MeasurementSettingsFile.LoadOrDefault(
             Path.Combine(tempDirectory, "absent.json"));
 
-        Assert.Equal(
-            MicrophoneCalibrationIds.ZeroDegrees,
-            settings.Measurement.MicrophoneCalibrationId);
-        Assert.Equal(
-            MicrophoneCalibrationIds.ZeroDegrees,
-            settings.FrequencyResponse.CalibrationId);
+        Assert.Null(settings.Measurement.MicrophoneCalibrationId);
+        Assert.Null(settings.FrequencyResponse.CalibrationId);
+        Assert.Null(settings.LiveSpectrum.CalibrationId);
         Assert.Null(settings.EqWizard.CalibrationId);
+    }
 
-        var options = new FrequencyResponseOptions();
-        settings.FrequencyResponse.ApplyTo(options, new CurveVisibilityOptions());
-        Assert.Equal(MicrophoneCalibrationIds.ZeroDegrees, options.CalibrationId);
+    [Fact]
+    public void AZeroDegreeSelectionWithNoFileSet_ReadsAsOff()
+    {
+        string path = WriteSettings("""
+            {
+              "SchemaVersion": 13,
+              "Measurement": { "MicrophoneCalibrationId": "0deg" },
+              "FrequencyResponse": { "CalibrationId": "0deg" },
+              "EqWizard": { "CalibrationId": "0deg" }
+            }
+            """);
+
+        MeasurementSettingsFile settings = Load(path);
+
+        Assert.Null(settings.Measurement.MicrophoneCalibrationId);
+        Assert.Null(settings.FrequencyResponse.CalibrationId);
+        Assert.Null(settings.EqWizard.CalibrationId);
+    }
+
+    // A set file that went missing stays selected, so the choice survives an unplugged drive.
+    [Fact]
+    public void AZeroDegreeSelectionWithAFileSet_StaysSelected()
+    {
+        string path = WriteSettings("""
+            {
+              "SchemaVersion": 13,
+              "Measurement": {
+                "MicrophoneCalibrationId": "0deg",
+                "MicrophoneCalibration0DegreesPath": "Z:\\missing\\mic.txt"
+              },
+              "FrequencyResponse": { "CalibrationId": "0deg" }
+            }
+            """);
+
+        MeasurementSettingsFile settings = Load(path);
+
+        Assert.Equal(MicrophoneCalibrationIds.ZeroDegrees, settings.Measurement.MicrophoneCalibrationId);
+        Assert.Equal(MicrophoneCalibrationIds.ZeroDegrees, settings.FrequencyResponse.CalibrationId);
     }
 
     /// <summary>"Own" names a rule rather than a curve, so it persists across restarts as an ordinary id.</summary>

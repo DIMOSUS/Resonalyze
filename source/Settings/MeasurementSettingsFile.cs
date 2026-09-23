@@ -54,7 +54,7 @@ internal sealed partial class MeasurementSettingsFile
             if (!File.Exists(path))
             {
                 return new MeasurementSettingsFile { pathOnDisk = path }
-                    .WithFirstRunCalibrationDefaults();
+                    .WithoutUnsetZeroDegrees();
             }
 
             using FileStream stream = File.OpenRead(path);
@@ -112,7 +112,7 @@ internal sealed partial class MeasurementSettingsFile
             settings.MigrateLegacyDualDeviceLoopback();
             settings.NormalizeMicrophoneCalibrations();
             settings.pathOnDisk = path;
-            return settings;
+            return settings.WithoutUnsetZeroDegrees();
         }
         catch (Exception exception)
         {
@@ -127,16 +127,24 @@ internal sealed partial class MeasurementSettingsFile
                 pathOnDisk = path,
                 LoadWarning = $"Settings could not be loaded: {exception.Message}\r\n\r\n{preservation}",
                 preserveExistingFileBeforeSave = backup.Status == BackupStatus.Failed
-            }.WithFirstRunCalibrationDefaults();
+            }.WithoutUnsetZeroDegrees();
         }
     }
 
-    // No file = first run: default views to the 0° calibration. A loaded file's absent id is a deliberate Off,
-    // which is why this lives in the load path. EQ Wizard always defaulted to no correction.
-    private MeasurementSettingsFile WithFirstRunCalibrationDefaults()
+    // 0° is a slot the user fills in Record Settings; a selection of it while no file is set there reads as Off.
+    private MeasurementSettingsFile WithoutUnsetZeroDegrees()
     {
-        Measurement.MicrophoneCalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
-        FrequencyResponse.CalibrationId = MicrophoneCalibrationIds.ZeroDegrees;
+        if (!string.IsNullOrWhiteSpace(Measurement.MicrophoneCalibration0DegreesPath))
+        {
+            return this;
+        }
+
+        static string? Unset(string? id) =>
+            string.Equals(id, MicrophoneCalibrationIds.ZeroDegrees, StringComparison.OrdinalIgnoreCase) ? null : id;
+        Measurement.MicrophoneCalibrationId = Unset(Measurement.MicrophoneCalibrationId);
+        FrequencyResponse.CalibrationId = Unset(FrequencyResponse.CalibrationId);
+        LiveSpectrum.CalibrationId = Unset(LiveSpectrum.CalibrationId);
+        EqWizard.CalibrationId = Unset(EqWizard.CalibrationId);
         return this;
     }
 

@@ -14,21 +14,16 @@ internal sealed class MicrophoneCalibrationService
     private readonly Func<string?> getZeroDegreePath;
     private readonly Func<IReadOnlyList<MicrophoneCalibrationDefinition>> getDefinitions;
     private readonly Action<string, string?> reportProblem;
-    private readonly string legacyZeroDegreePath;
     private MicrophoneCalibrationDefinition[] definitions;
 
     public MicrophoneCalibrationService(
         Func<string?> getZeroDegreePath,
         Func<IReadOnlyList<MicrophoneCalibrationDefinition>> getDefinitions,
-        Action<string, string?> reportProblem,
-        string? legacyZeroDegreeDirectory = null)
+        Action<string, string?> reportProblem)
     {
         this.getZeroDegreePath = getZeroDegreePath;
         this.getDefinitions = getDefinitions;
         this.reportProblem = reportProblem;
-        legacyZeroDegreePath = Path.Combine(
-            legacyZeroDegreeDirectory ?? AppContext.BaseDirectory,
-            "calibration.txt");
         definitions = Snapshot();
     }
 
@@ -43,7 +38,7 @@ internal sealed class MicrophoneCalibrationService
                 MicrophoneCalibrationIds.ZeroDegrees,
                 "0°",
                 HasUsableData(zeroDegreePath),
-                FileNameOf(zeroDegreePath))
+                FileNameOf(getZeroDegreePath()))
         };
         foreach (MicrophoneCalibrationDefinition definition in current)
         {
@@ -261,14 +256,10 @@ internal sealed class MicrophoneCalibrationService
         }
     }
 
+    // Only the path set in the interface; no file beside the executable stands in for it.
     private string? ResolveZeroDegreePath()
     {
         string? path = getZeroDegreePath();
-        if (!string.IsNullOrWhiteSpace(path))
-        {
-            return File.Exists(path) ? path : null;
-        }
-
-        return File.Exists(legacyZeroDegreePath) ? legacyZeroDegreePath : null;
+        return !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? path : null;
     }
 }

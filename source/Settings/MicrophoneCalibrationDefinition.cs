@@ -121,4 +121,13 @@ internal sealed record MicrophoneCalibrationEntry(
     string Id,
     string Name,
     bool Available,
-    string? FileName = null);
+    string? FileName = null)
+{
+    /// <summary>As a list shows it: a slot no file was set for reads "not set", a set file that cannot be read "unavailable".</summary>
+    public string Label =>
+        Available ? Name
+        : FileName == null &&
+            string.Equals(Id, MicrophoneCalibrationIds.ZeroDegrees, StringComparison.OrdinalIgnoreCase)
+            ? $"{Name} (not set)"
+        : $"{Name} (unavailable)";
+}

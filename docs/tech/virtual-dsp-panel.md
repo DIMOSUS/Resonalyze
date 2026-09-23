@@ -382,9 +382,13 @@ The host shows one warning line (`WarningChanged`), chosen in this order:
 2. Hybrid disagreement (`DescribeHybridDisagreement`), only while the hybrid is drawn.
 3. Array composition mismatch, a warning rather than a refusal.
 4. A chosen calibration not applied to part of the plot.
-5. Own-calibration mismatch between channels.
-6. Point-measured fallbacks inside a hybrid (neutral info colour; nothing is wrong).
-7. Crossover spread (red, see below); with none of these the line is hidden.
+5. A chosen calibration, or Off, that is not the one a drawn channel was measured through
+   (`DescribeForeignCalibration`; amber, an information line under Off). The list offers every entry on the
+   machine, and a named slot can hold another microphone's file, so nothing else says the plot is no longer
+   read as measured.
+6. Own-calibration mismatch between channels.
+7. Point-measured fallbacks inside a hybrid (neutral info colour; nothing is wrong).
+8. Crossover spread (red, see below); with none of these the line is hidden.
 
 Warnings are hidden on an empty group view,
 since they would describe channels the user can no longer see.

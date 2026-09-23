@@ -37,6 +37,10 @@ CloseApplications=yes
 CloseApplicationsFilter=Resonalyze.exe
 RestartApplications=no
 
+[InstallDelete]
+; No longer shipped or read: an update removes the copy an earlier version installed.
+Type: files; Name: "{app}\calibration.txt"
+
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 

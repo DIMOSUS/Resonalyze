@@ -71,6 +71,19 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
                 VirtualCrossoverWarningLevel.Caution);
         }
 
+        if (DescribeForeignCalibration(processed) is { } foreign)
+        {
+            return session.Calibration.Selected == null
+                ? new(
+                    "The curves are drawn uncalibrated; the measurements carry their own calibration.",
+                    foreign,
+                    VirtualCrossoverWarningLevel.Information)
+                : new(
+                    "⚠ The selected calibration is not the one these channels were measured with.",
+                    foreign,
+                    VirtualCrossoverWarningLevel.Caution);
+        }
+
         if (DescribeOwnCalibrationMismatch(processed) is { } corrections)
         {
             return new(
@@ -171,6 +184,42 @@ internal sealed class VirtualCrossoverWarnings(VirtualCrossoverSession session)
             "truth there is. Everything else on the plot is read through your " +
             "selection.\r\n\r\nSelect \"Own (as measured)\" to read the whole plot " +
             "the way each measurement was taken, and the note goes away.";
+    }
+
+    /// <summary>Off or a named curve, null unless a drawn channel was measured through a different one.</summary>
+    internal string? DescribeForeignCalibration(IReadOnlyList<ProcessedChannel> processed)
+    {
+        if (session.Calibration.Own)
+        {
+            return null;
+        }
+
+        CalibrationFile? selected = session.Calibration.Selected;
+        var measuredWith = new List<string>();
+        foreach (ProcessedChannel item in processed)
+        {
+            if (item.MicrophoneCalibration is { HasData: true } own &&
+                !CalibrationFile.SameCurve(own, selected))
+            {
+                string name = item.Channel.SideState(session.ActiveSideRight).MicrophoneCalibration?.Name
+                    ?? "a calibration";
+                measuredWith.Add($"    {item.Channel.Name} {item.Channel.Settings.DisplayName}    {name}");
+            }
+        }
+
+        if (measuredWith.Count == 0)
+        {
+            return null;
+        }
+
+        string reading = selected == null
+            ? "The plot reads every channel with no calibration at all"
+            : $"The plot reads every channel through \"{session.Calibration.SelectedName ?? "the selected calibration"}\"";
+        return
+            "Measured through:\r\n" + string.Join("\r\n", measuredWith) + "\r\n\r\n" +
+            reading + ", so these curves differ from what their microphones measured by " +
+            "the difference between the two corrections. Select \"Own (as measured)\" to " +
+            "read each channel through the calibration it was measured with.";
     }
 
     /// <summary>Under Own, null when all channels share a microphone. Each channel carries its correction into the sum

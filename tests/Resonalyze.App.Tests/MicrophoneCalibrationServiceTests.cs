@@ -127,16 +127,29 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
     }
 
     [Fact]
-    public void Get_FallsBackToTheLegacyZeroDegreeFile()
+    public void ASetZeroDegreeFileThatIsMissing_IsUnavailableRatherThanNotSet()
     {
-        WriteFile("calibration.txt", ValidCalibration);
-        MicrophoneCalibrationService service = CreateService();
+        zeroDegreePath = Path.Combine(tempDirectory, "gone.txt");
 
-        CalibrationFile? calibration = service.Get(MicrophoneCalibrationIds.ZeroDegrees);
+        Assert.Equal("0° (unavailable)", CreateService().GetEntries()[0].Label);
+    }
 
-        Assert.NotNull(calibration);
-        Assert.True(calibration!.HasData);
-        Assert.True(service.GetEntries()[0].Available);
+    [Fact]
+    public void AnUnsetZeroDegreeSlot_IsUnavailable_WhateverLiesBesideTheExecutable()
+    {
+        string beside = Path.Combine(AppContext.BaseDirectory, "calibration.txt");
+        File.WriteAllText(beside, ValidCalibration);
+        try
+        {
+            MicrophoneCalibrationService service = CreateService();
+
+            Assert.Null(service.Get(MicrophoneCalibrationIds.ZeroDegrees));
+            Assert.Equal("0° (not set)", service.GetEntries()[0].Label);
+        }
+        finally
+        {
+            File.Delete(beside);
+        }
     }
 
     [Fact]
@@ -274,8 +287,7 @@ public sealed class MicrophoneCalibrationServiceTests : IDisposable
         new(
             () => zeroDegreePath,
             () => definitions,
-            (path, reason) => reportedProblems.Add((path, reason)),
-            legacyZeroDegreeDirectory: tempDirectory);
+            (path, reason) => reportedProblems.Add((path, reason)));
 
     private string WriteFile(string name, string content)
     {

@@ -3104,6 +3104,13 @@ passed through would be the panel deciding what the measurement means. A project
 written before this existed names no calibration anywhere, so its own selection
 still applies and nothing about it changes.
 
+Any other choice describes the plot rather than the measurements, and the panel says
+so. When a drawn channel was measured through a calibration other than the one
+selected, Off included, the warning line names each such channel with the file it
+was measured through: amber for another curve, an information line for Off. The 0°
+slot reads **0° (not set)** until a file is set for it in Record Settings; a set file
+that cannot be read shows as *unavailable*.
+
 Under Own the **sum** carries each channel's own correction INTO it. What a
 microphone measured is the response times its calibration, so the total is the sum
 of the corrected channels — Σ HᵢCᵢ, not one correction applied to a raw total. The
@@ -4219,9 +4226,13 @@ than one, and Virtual DSP's list adds **Own (as measured)** for exactly that (se
 apply no correction at all. A selection whose file went missing, or whose entry was
 deleted, stays selected and is marked rather than being silently rewritten to Off. A Virtual DSP session carries its calibration curve inside it and can add
 that curve to this list when loaded elsewhere (see [Virtual DSP](#virtual-dsp));
-such files are kept in the application data folder under `calibrations`. For a
-source checkout, a legacy `source/calibration.txt` beside the executable is
-still honored as the 0° calibration.
+such files are kept in the application data folder under `calibrations`.
+
+Calibrations come only from what you set here: nothing beside the executable stands
+in for the 0° slot. A fresh install therefore starts uncalibrated, and a selection of
+0° while no file is set for it reads as Off rather than as an unavailable entry. Once
+a file is set, 0° behaves like any other entry, including staying selected if the file
+later goes missing.
 
 ## Sound Pressure Level (dB SPL)
 

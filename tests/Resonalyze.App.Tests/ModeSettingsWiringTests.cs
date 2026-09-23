@@ -184,6 +184,32 @@ public sealed class ModeSettingsWiringTests
         });
     }
 
+    [Fact]
+    public void TheBandCentresFollowTheOpenMeasurementsRate()
+    {
+        StaTest.Run(() =>
+        {
+            using var analyzer = new TestAnalyzer();
+            analyzer.Open(Transfer(96_000, peak: 960));
+            var options = new ImpulseResponseOptions { BandFilterOctaves = 1.0 / 3.0, BandCenterHz = 20_000 };
+            using var docked = new DockedSettingsPanel<IROpt>(
+                () => new IROpt(),
+                panel => panel.Init(analyzer.Document, 48_000, options),
+                panel => panel.SetOptions(options));
+            Assert.Equal("20 kHz", docked.Selected("comboBandCenter"));
+
+            analyzer.Open(Transfer(44_100, peak: 441));
+            docked.Settle();
+
+            Assert.Equal("16 kHz", docked.Items("comboBandCenter")[^1]);
+            Assert.Equal("16 kHz", docked.Selected("comboBandCenter"));
+            Assert.Equal(0, docked.TakeApplies());
+            docked.Click("checkInvert");
+            Assert.Equal(1, docked.TakeApplies());
+            Assert.Equal(16_000, options.BandCenterHz);
+        });
+    }
+
     internal static MeasurementResult Transfer(int sampleRate, int peak, int length = 16_384)
     {
         var impulse = new Complex[length];

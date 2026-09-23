@@ -57,6 +57,16 @@ internal sealed class ImpulseViewSettingsSession
         ShowAutocorrelation = options.ShowAutocorrelation;
     }
 
+    /// <summary>The centres a new rate realizes; the nearest to the one shown stays selected.</summary>
+    public void Follow(int sampleRate)
+    {
+        if (sampleRate != SampleRate)
+        {
+            SampleRate = sampleRate;
+            ListCentres(CentreHz ?? 1_000.0);
+        }
+    }
+
     /// <summary>Keeps the nearest centre when the width changes.</summary>
     public void SetBandOctaves(double octaves)
     {

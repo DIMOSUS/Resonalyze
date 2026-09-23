@@ -7,9 +7,6 @@ public partial class Form1
     /// <summary>The rate a settings panel shows while nothing is open: the one the next run is configured for.</summary>
     private int ModeSettingsSampleRate => expSweepMeasurement.SampleRate;
 
-    /// <summary>The open measurement's rate, or <see cref="ModeSettingsSampleRate"/>.</summary>
-    private int OpenSampleRate => analyzerDocument.Result?.SampleRate ?? ModeSettingsSampleRate;
-
     private ModeDescriptor GetActiveModeDescriptor() =>
         ModeCatalog.For(modeController.ActiveTab);
 
@@ -22,7 +19,7 @@ public partial class Form1
                 ToggleModeOptions(
                     tab,
                     () => new IROpt(),
-                    opt => opt.Init(OpenSampleRate, viewSettings.ImpulseResponse),
+                    opt => opt.Init(analyzerDocument, ModeSettingsSampleRate, viewSettings.ImpulseResponse),
                     opt => opt.SetOptions(viewSettings.ImpulseResponse),
                     // These rescale or re-origin an axis, so refit instead of restoring zoom.
                     viewResetKey: () => (

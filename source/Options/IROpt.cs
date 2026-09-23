@@ -19,14 +19,20 @@ namespace Resonalyze.Options
             InitializeToolTips();
         }
 
-        /// <param name="sampleRate">The open result's rate, or the configured one when nothing is open.</param>
-        public void Init(int sampleRate, ImpulseResponseOptions opt)
+        internal void Init(AnalyzerDocument document, int configuredSampleRate, ImpulseResponseOptions opt)
         {
-            session.Load(opt, sampleRate);
+            Follow(document, configuredSampleRate);
+            session.Load(opt, OpenMeasurement.SampleRate);
             Present();
         }
 
         public void SetOptions(ImpulseResponseOptions opt) => session.WriteTo(opt);
+
+        private protected override void OnMeasurementChanged()
+        {
+            session.Follow(OpenMeasurement.SampleRate);
+            Present();
+        }
 
         private void FillChoices()
         {

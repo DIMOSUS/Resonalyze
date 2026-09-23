@@ -275,7 +275,7 @@ next field session rather than in a register nobody else can tick.
   ONE calibration FIR and convolves both kernels with it — and it is combined
   with the cabin subtraction into that single filter, with a reference pair built
   from it for the level match, so splitting it per side touches three places in
-  `VirtualCrossoverAuditionDialog.ExecuteRender` rather than one. Raised in the
+  `VirtualCrossoverAuditionRender.Run` rather than one. Raised in the
   review of #139 and deliberately left: a refusal is the safe side of it, and the
   message and the docs now name the real limit instead of claiming it is per
   side. A side whose OWN channels were measured through different microphones

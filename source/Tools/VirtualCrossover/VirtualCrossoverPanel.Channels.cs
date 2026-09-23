@@ -154,42 +154,29 @@ public partial class VirtualCrossoverPanel
     // The channel object moves with its resolved IRs; only position-derived letter, colour and pair order are rewritten.
     private void MoveChannel(VirtualCrossoverChannel channel, int delta)
     {
-        int at = session.Channels.IndexOf(channel);
-        int to = at + delta;
-        if (at < 0 || to < 0 || to >= session.Channels.Count)
+        if (session.MoveOrder(channel, delta) is not { } order)
         {
             return;
         }
 
-        var order = Enumerable.Range(0, session.Channels.Count).ToList();
-        (order[at], order[to]) = (order[to], order[at]);
         ApplyChannelOrder(order);
         SaveAndRedraw();
     }
 
     /// <summary><c>order[newIndex]</c> is the block's current position.</summary>
-    /// <remarks>The project's pairs are permuted by the same indices, not rebuilt from the channels: they are bound
-    /// only once a project is applied. The pair list is the whole persisted order.</remarks>
     private void ApplyChannelOrder(IReadOnlyList<int> order)
     {
-        List<VirtualCrossoverChannel> reordered =
-            order.Select(index => session.Channels[index]).ToList();
-        session.Channels.Clear();
-        session.Channels.AddRange(reordered);
-        if (session.Project.Pairs.Count == order.Count)
-        {
-            List<VirtualCrossoverChannelPairSettings> pairs =
-                order.Select(index => session.Project.Pairs[index]).ToList();
-            session.Project.Pairs.Clear();
-            session.Project.Pairs.AddRange(pairs);
-        }
+        session.Reorder(order);
+        ShowChannelOrder();
+    }
 
+    private void ShowChannelOrder()
+    {
         channelListPanel.SuspendLayout();
         for (int i = 0; i < session.Channels.Count; i++)
         {
             VirtualCrossoverChannel channel = session.Channels[i];
             VirtualCrossoverChannelControl control = ControlFor(channel);
-            channel.Name = ChannelNameFor(i);
             control.ChannelName = channel.Name;
             control.SetAccentColor(VirtualCrossoverColors.ChannelAccent(i));
             channelListPanel.Controls.SetChildIndex(control, i);

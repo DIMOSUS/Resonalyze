@@ -120,31 +120,17 @@ public partial class VirtualCrossoverPanel
             return refused!;
         }
 
-        string fingerprintBefore = ComputeAgentFingerprint();
-        JunctionTuneResult result;
-        UseWaitCursor = true;
-        try
+        JunctionTuneRunOutcome outcome =
+            await VirtualCrossoverJunctionTuneRun.RunAsync(plan, ComputeAgentFingerprint, this).ConfigureAwait(true);
+        if (outcome.Failure is { } failure)
         {
-            result = await Task.Run(() => CrossoverJunctionTuner.Tune(plan.Sides, plan.Options))
-                .ConfigureAwait(true);
+            return VirtualCrossoverJunctionTuneSearch.Refusal(failure);
         }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
-        {
-            return VirtualCrossoverJunctionTuneSearch.Refusal(exception.Message.TrimEnd('.'));
-        }
-        finally
-        {
-            if (!IsDisposed)
-            {
-                UseWaitCursor = false;
-            }
-        }
-
-        if (IsDisposed)
+        if (outcome.Gone)
         {
             return new JunctionTuneOutcome([], false, "Closed.", true);
         }
-        if (!string.Equals(fingerprintBefore, ComputeAgentFingerprint(), StringComparison.Ordinal))
+        if (outcome.Result is not { } result)
         {
             return VirtualCrossoverJunctionTuneSearch.Refusal("the session changed while the search ran");
         }

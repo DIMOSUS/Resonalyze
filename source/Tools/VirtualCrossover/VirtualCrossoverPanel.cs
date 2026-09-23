@@ -75,6 +75,7 @@ public partial class VirtualCrossoverPanel : UserControl
         agentReader = new AgentSessionReader(session, processingCoordinator, metrics, hybridReader);
         junctionTune = new VirtualCrossoverJunctionTuneApply(session, agentReader);
         eqHandoff = new VirtualCrossoverEqHandoff(session, processingCoordinator, metrics, hybridReader);
+        agentImport = new AgentImportRunner(session, agentReader, eqHandoff, this);
         audition = new VirtualCrossoverAudition(session, processingCoordinator, metrics, hybridReader);
         acousticPlot = new VirtualCrossoverAcousticPlot(
             mainPlotView, AcousticViewBuilder.NoSourcesHint, CurrentAcousticView());

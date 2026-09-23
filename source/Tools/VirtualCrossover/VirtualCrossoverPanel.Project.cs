@@ -128,7 +128,7 @@ public partial class VirtualCrossoverPanel
         session.Project = newProject;
         session.RelinkDirectory = null;
         // The previous import's undo would restore into settings nobody displays.
-        agentUndo = null;
+        agentImport.ForgetUndo();
         // Channel objects are reused across binds; this tells an EQ Wizard handoff which project it came from.
         session.NextProjectGeneration();
         SetChannelCount(session.Project.Pairs.Count);

@@ -30,6 +30,7 @@ internal sealed class VirtualCrossoverLivePanel : IDisposable
         {
             Dock = DockStyle.Fill,
             MetricChanged = (compact, _) => metric = compact,
+            WarningChanged = (text, _, _) => Warning = text,
             ShowMenu = (_, menu) => Menu = menu,
             ShowMessage = (text, caption, buttons, _) =>
             {
@@ -81,6 +82,8 @@ internal sealed class VirtualCrossoverLivePanel : IDisposable
     public VirtualCrossoverSession Session => Panel.Session;
 
     public string Metric => metric;
+
+    public string Warning { get; private set; } = string.Empty;
 
     /// <summary>The last menu the panel opened.</summary>
     public ContextMenuStrip? Menu { get; private set; }

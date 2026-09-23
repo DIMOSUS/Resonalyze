@@ -235,8 +235,10 @@ public sealed class VirtualCrossoverPanelLayoutTests
     private static (PlotView Main, PlotView Dsp) Plots(VirtualCrossoverPanel panel) =>
         (Field<PlotView>(panel, "mainPlotView"), Field<PlotView>(panel, "dspPlotView"));
 
-    private static T Field<T>(VirtualCrossoverPanel panel, string name) =>
-        (T)typeof(VirtualCrossoverPanel)
-            .GetField(name, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(panel)!;
+    private static T Field<T>(VirtualCrossoverPanel panel, string name) where T : Control =>
+        (T)panel.Controls.Find(name, searchAllChildren: true).Single(control => !InACard(control));
+
+    // A block's card reuses the panel's designer names.
+    private static bool InACard(Control control) =>
+        control.Parent is { } parent && (parent is VirtualCrossoverChannelControl || InACard(parent));
 }

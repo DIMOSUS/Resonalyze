@@ -1,5 +1,3 @@
-using System.Numerics;
-using System.Reflection;
 using System.Windows.Forms;
 using OxyPlot;
 using OxyPlot.Series;
@@ -16,9 +14,7 @@ namespace Resonalyze.App.Tests;
 /// </summary>
 public sealed class VirtualCrossoverPanelWiringTests
 {
-    private const BindingFlags Hidden = BindingFlags.NonPublic | BindingFlags.Instance;
     private const int SampleRate = 48_000;
-    private const int PeakIndex = 480;
     private const double RightAmplitude = 0.5;
 
     [Fact]
@@ -50,7 +46,7 @@ public sealed class VirtualCrossoverPanelWiringTests
 
             Assert.Equal(20 * Math.Log10(RightAmplitude), live.LevelDb("A", 100) - left, 1);
             Assert.Contains("Sum L", live.MainTitles());
-            live.Invoke("AddChannel");
+            live.Click("buttonAddChannel");
             Assert.All(live.Session.Channels, channel => Assert.True(channel.ActiveRight));
             Assert.Throws<InvalidOperationException>(() => live.Session.Channels[0].ActiveRight = false);
         });
@@ -238,62 +234,43 @@ public sealed class VirtualCrossoverPanelWiringTests
         }
     };
 
-    /// <summary>Three blocks, a low-pass, a band-pass and a high-pass, each with a measurement on both sides.</summary>
+    /// <summary>The shared live panel, its right side 6 dB below the left, read by what it draws.</summary>
     private sealed class LivePanel : IDisposable
     {
+        private readonly VirtualCrossoverLivePanel live = new(RightAmplitude);
+
         public LivePanel()
         {
-            Panel = new VirtualCrossoverPanel
-            {
-                MetricChanged = (compact, _) => Metric = compact,
-                WarningChanged = (text, _, _) => Warning = text
-            };
-            List<VirtualCrossoverChannel> channels = Session.Channels;
-            for (int index = 0; index < channels.Count; index++)
-            {
-                channels[index].Pair = Session.Project.Pairs[index];
-                foreach (bool rightSide in new[] { false, true })
-                {
-                    VirtualCrossoverChannelState state = channels[index].PhysicalSideState(rightSide);
-                    var impulse = new Complex[16_384];
-                    impulse[PeakIndex] = rightSide ? RightAmplitude : 1.0;
-                    state.TransferImpulseResponse = impulse;
-                    state.TransferPeakIndex = PeakIndex;
-                    state.SampleRate = SampleRate;
-                }
-            }
-
-            Crossover(channels[0], CrossoverKind.LowPass);
-            Crossover(channels[1], CrossoverKind.BandPass);
-            Crossover(channels[2], CrossoverKind.HighPass);
-            Control<RadioButton>("radioViewMagnitude").Checked = true;
-            Control<RadioButton>("radioDspMagnitude").Checked = true;
-            Control<CheckBox>("checkBoxShowSum").Checked = true;
-            Redraw();
+            Set<RadioButton>("radioViewMagnitude", radio => radio.Checked = true);
+            Set<RadioButton>("radioDspMagnitude", radio => radio.Checked = true);
+            Set<CheckBox>("checkBoxShowSum", box => box.Checked = true);
         }
 
-        public VirtualCrossoverPanel Panel { get; }
+        public VirtualCrossoverPanel Panel => live.Panel;
 
-        public VirtualCrossoverSession Session => Panel.Session;
+        public VirtualCrossoverSession Session => live.Session;
 
-        public string Metric { get; private set; } = string.Empty;
+        public string Metric => live.Metric;
 
-        public string Warning { get; private set; } = string.Empty;
+        public string Warning => live.Warning;
 
-        public T Control<T>(string name) => (T)typeof(VirtualCrossoverPanel).GetField(name, Hidden)!.GetValue(Panel)!;
+        public T Control<T>(string name) where T : Control => live.Find<T>(name);
 
-        public void Invoke(string method, params object[] arguments)
+        public void Click(string button) => live.Click(button);
+
+        // A view toggle and back redraws everything from the session as it now stands.
+        public void Redraw()
         {
-            typeof(VirtualCrossoverPanel).GetMethod(method, Hidden)!.Invoke(Panel, arguments);
-            Settle();
+            CheckBox sum = Control<CheckBox>("checkBoxShowSum");
+            sum.Checked = !sum.Checked;
+            sum.Checked = !sum.Checked;
+            live.Settle();
         }
 
-        public void Redraw() => Invoke("RedrawAll");
-
-        public void Set<T>(string name, Action<T> change)
+        public void Set<T>(string name, Action<T> change) where T : Control
         {
             change(Control<T>(name));
-            Settle();
+            live.Settle();
         }
 
         public void ShowRight()
@@ -333,7 +310,7 @@ public sealed class VirtualCrossoverPanelWiringTests
                 return MicrophoneCalibrationComboHelper.GetSelectedCalibrationId(combo) == calibrationId;
             });
             combo.SelectedIndex = index;
-            Settle();
+            live.Settle();
         }
 
         public List<string> MainTitles() => Titles("mainPlotView");
@@ -346,54 +323,11 @@ public sealed class VirtualCrossoverPanelWiringTests
             return series.Points.MinBy(point => Math.Abs(Math.Log(point.X / frequencyHz))).Y;
         }
 
-        public void Dispose() => Panel.Dispose();
+        public void Dispose() => live.Dispose();
 
         private List<string> Titles(string plot) =>
             [.. Model(plot).Series.Select(series => series.Title).Where(title => !string.IsNullOrEmpty(title))];
 
         private PlotModel Model(string plot) => Control<PlotView>(plot).Model!;
-
-        private void Settle()
-        {
-            DateTime deadline = DateTime.UtcNow.AddSeconds(30);
-            while (DateTime.UtcNow < deadline)
-            {
-                StaTest.Pump();
-                // A loop that completes without awaiting leaves its finished task behind rather than null.
-                if (Control<Task?>("redrawTask") is not { IsCompleted: false } &&
-                    Control<Task?>("correlationRebuildTask") is not { IsCompleted: false })
-                {
-                    return;
-                }
-
-                Thread.Sleep(5);
-            }
-
-            Assert.Fail(
-                $"The panel did not settle: redraw {Control<Task?>("redrawTask")?.Status}, " +
-                $"correlation {Control<Task?>("correlationRebuildTask")?.Status}.");
-        }
-
-        private static void Crossover(VirtualCrossoverChannel channel, CrossoverKind kind)
-        {
-            foreach (bool rightSide in new[] { false, true })
-            {
-                VirtualCrossoverChannelSettings settings = channel.SideSettings(rightSide);
-                settings.CrossoverKind = kind;
-                settings.HighPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 300, 24);
-                settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 3_000, 24);
-            }
-
-            if (kind == CrossoverKind.LowPass)
-            {
-                channel.SideSettings(false).LowPassEdge = channel.SideSettings(true).LowPassEdge =
-                    new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 300, 24);
-            }
-            else if (kind == CrossoverKind.HighPass)
-            {
-                channel.SideSettings(false).HighPassEdge = channel.SideSettings(true).HighPassEdge =
-                    new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 3_000, 24);
-            }
-        }
     }
 }

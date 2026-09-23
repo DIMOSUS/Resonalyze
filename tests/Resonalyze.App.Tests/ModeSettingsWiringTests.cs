@@ -124,6 +124,34 @@ public sealed class ModeSettingsWiringTests
         });
     }
 
+    [Fact]
+    public void AShrunkWindowClampsTheFadesOnScreen_AndGrowingItBackReturnsThem()
+    {
+        StaTest.Run(() =>
+        {
+            using var analyzer = new TestAnalyzer();
+            var options = new FrequencyResponseOptions { Window = 8192, LeftTukeyWindow = 256, RightTukeyWindow = 256 };
+            var visibility = new CurveVisibilityOptions();
+            using var docked = new DockedSettingsPanel<FROptions>(
+                () => new FROptions(),
+                panel => panel.Init(analyzer.Document, 48_000, options, visibility, []),
+                panel => panel.SetOptions(options, visibility));
+
+            docked.Type("numericWindow", 300);
+            AssertFades(docked, 300, 256, 44);
+            Assert.Equal(1, docked.TakeApplies());
+            Assert.Equal((256, 44), (options.LeftTukeyWindow, options.RightTukeyWindow));
+            docked.Type("numericWindow", 100);
+            AssertFades(docked, 100, 100, 0);
+            docked.Type("numericLeftWindow", 20);
+            AssertFades(docked, 100, 20, 80);
+            docked.Type("numericWindow", 8192);
+            AssertFades(docked, 8192, 20, 256);
+            Assert.Equal(1, docked.TakeApplies());
+            Assert.Equal((20, 256), (options.LeftTukeyWindow, options.RightTukeyWindow));
+        });
+    }
+
     internal static MeasurementResult Transfer(int sampleRate, int peak, int length = 16_384)
     {
         var impulse = new Complex[length];

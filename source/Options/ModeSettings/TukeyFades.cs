@@ -1,9 +1,13 @@
 namespace Resonalyze.Options;
 
 /// <summary>An analysis window and its two Tukey fades in samples, as the three fields show them: the fades share the
-/// window, the left one first.</summary>
+/// window, the left one first. The fades the user chose are kept, so a window that shrinks clamps them on screen and
+/// one that grows back returns them.</summary>
 internal sealed class TukeyFades
 {
+    private int chosenLeft;
+    private int chosenRight;
+
     public int Window { get; private set; }
 
     public int Left { get; private set; }
@@ -23,20 +27,27 @@ internal sealed class TukeyFades
         return (containedLeft, Math.Clamp(right, 0, Math.Max(0, window - containedLeft)));
     }
 
-    /// <summary>A stored pair is contained in its own window, not in the one shown before it.</summary>
     public void Load(int window, int left, int right)
     {
-        Window = window;
-        (Left, Right) = Contain(left, right, window);
+        (chosenLeft, chosenRight) = (left, right);
+        SetWindow(window);
     }
 
     public void SetWindow(int window)
     {
         Window = window;
-        (Left, Right) = Contain(Left, Right, window);
+        (Left, Right) = Contain(chosenLeft, chosenRight, window);
     }
 
-    public void SetLeft(int left) => (Left, Right) = Contain(left, Right, Window);
+    public void SetLeft(int left)
+    {
+        chosenLeft = left;
+        (Left, Right) = Contain(chosenLeft, chosenRight, Window);
+    }
 
-    public void SetRight(int right) => (Left, Right) = Contain(Left, right, Window);
+    public void SetRight(int right)
+    {
+        chosenRight = right;
+        (Left, Right) = Contain(chosenLeft, chosenRight, Window);
+    }
 }

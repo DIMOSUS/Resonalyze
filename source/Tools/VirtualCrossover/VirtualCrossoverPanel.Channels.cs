@@ -40,6 +40,25 @@ public partial class VirtualCrossoverPanel
         SaveAndRedraw();
     }
 
+    /// <summary>The side keys: ` (the key under Esc) swaps sides, L and R pick one. False for any other key.</summary>
+    internal bool HandleSideKey(Keys keyData)
+    {
+        bool? right = keyData switch
+        {
+            Keys.Oemtilde => !radioSideRight.Checked,
+            Keys.L => false,
+            Keys.R => true,
+            _ => null
+        };
+        if (right is not { } side || !Enabled)
+        {
+            return false;
+        }
+
+        (side ? radioSideRight : radioSideLeft).Checked = true;
+        return true;
+    }
+
     // The source is never copied (each side has its own measurement); mono pairs are not offered.
     private void CopySideSettings(bool fromRight)
     {
@@ -94,6 +113,23 @@ public partial class VirtualCrossoverPanel
         else
         {
             sideLock.Release();
+        }
+    }
+
+    // The chosen side is filled strong (FlatAppearance.CheckedBackColor) and framed; the other stays dim, its frame lost in its fill.
+    private void PaintSideButtons()
+    {
+        foreach ((RadioButton side, Color border) in new[]
+        {
+            (radioSideLeft, UiPalette.SideLeftBorder),
+            (radioSideRight, UiPalette.SideRightBorder)
+        })
+        {
+            side.ForeColor = side.Checked ? UiPalette.TextOnAccent : UiPalette.TextSecondary;
+            side.FlatAppearance.BorderColor = side.Checked ? border : side.BackColor;
+            side.FlatAppearance.MouseOverBackColor = side.Checked
+                ? side.FlatAppearance.CheckedBackColor
+                : side.BackColor;
         }
     }
 

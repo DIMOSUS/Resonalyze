@@ -618,7 +618,8 @@ internal sealed class EqWizardSession
                 FrequencyHz = band.FrequencyHz,
                 Q = band.Q,
                 GainDb = band.GainDb,
-                Type = band.Type
+                Type = band.Type,
+                Locked = band.Locked
             })
             .ToList(),
         PreampDb = Bank.PreampDb,
@@ -694,7 +695,8 @@ internal sealed class EqWizardSession
                             band.Q,
                             band.GainDb,
                             // An undefined enum number becomes a bell HERE, where it enters the app.
-                            Enum.IsDefined(band.Type) ? band.Type : PeqBandType.Peaking))
+                            Enum.IsDefined(band.Type) ? band.Type : PeqBandType.Peaking,
+                            band.Locked))
                     : EqWizardBank.DefaultBands(settings.BandCount),
                 settings.PreampDb);
             SettleCalibrationChoice();

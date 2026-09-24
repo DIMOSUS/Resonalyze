@@ -330,6 +330,9 @@ public partial class VirtualCrossoverPanel : UserControl
             if (radioDspGroupDelay.Checked) OnChainDspModeChecked();
         };
         radioSideRight.CheckedChanged += (_, _) => OnActiveSideChanged();
+        radioSideLeft.CheckedChanged += (_, _) => PaintSideButtons();
+        radioSideRight.CheckedChanged += (_, _) => PaintSideButtons();
+        PaintSideButtons();
     }
 
     private void RedrawAll()

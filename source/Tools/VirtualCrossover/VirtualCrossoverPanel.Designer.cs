@@ -193,38 +193,50 @@ namespace Resonalyze
             // 
             // radioSideLeft
             // 
-            radioSideLeft.AutoSize = true;
+            radioSideLeft.Appearance = Appearance.Button;
+            radioSideLeft.BackColor = UiPalette.SideLeftFill;
             radioSideLeft.Checked = true;
-            radioSideLeft.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioSideLeft.ForeColor = UiPalette.TextDefault;
-            radioSideLeft.Location = new Point(0, 2);
+            radioSideLeft.FlatAppearance.BorderColor = UiPalette.SideLeftBorder;
+            radioSideLeft.FlatAppearance.CheckedBackColor = UiPalette.SideLeftFillSelected;
+            radioSideLeft.FlatStyle = FlatStyle.Flat;
+            radioSideLeft.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            radioSideLeft.ForeColor = UiPalette.TextOnAccent;
+            radioSideLeft.Location = new Point(0, 0);
             radioSideLeft.Name = "radioSideLeft";
-            radioSideLeft.Size = new Size(31, 19);
+            radioSideLeft.Size = new Size(54, 24);
             radioSideLeft.TabIndex = 0;
             radioSideLeft.TabStop = true;
             radioSideLeft.Text = "L";
-            radioSideLeft.UseVisualStyleBackColor = true;
+            radioSideLeft.TextAlign = ContentAlignment.MiddleCenter;
+            radioSideLeft.UseCompatibleTextRendering = true;
+            radioSideLeft.UseVisualStyleBackColor = false;
             // 
             // radioSideRight
             // 
-            radioSideRight.AutoSize = true;
-            radioSideRight.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
-            radioSideRight.ForeColor = UiPalette.TextDefault;
-            radioSideRight.Location = new Point(52, 2);
+            radioSideRight.Appearance = Appearance.Button;
+            radioSideRight.BackColor = UiPalette.SideRightFill;
+            radioSideRight.FlatAppearance.BorderColor = UiPalette.SideRightFill;
+            radioSideRight.FlatAppearance.CheckedBackColor = UiPalette.SideRightFillSelected;
+            radioSideRight.FlatStyle = FlatStyle.Flat;
+            radioSideRight.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            radioSideRight.ForeColor = UiPalette.TextSecondary;
+            radioSideRight.Location = new Point(58, 0);
             radioSideRight.Name = "radioSideRight";
-            radioSideRight.Size = new Size(32, 19);
+            radioSideRight.Size = new Size(54, 24);
             radioSideRight.TabIndex = 1;
             radioSideRight.Text = "R";
-            radioSideRight.UseVisualStyleBackColor = true;
+            radioSideRight.TextAlign = ContentAlignment.MiddleCenter;
+            radioSideRight.UseCompatibleTextRendering = true;
+            radioSideRight.UseVisualStyleBackColor = false;
             // 
             // buttonCopyLeftToRight
             // 
             buttonCopyLeftToRight.BackColor = UiPalette.ButtonBackground;
             buttonCopyLeftToRight.FlatStyle = FlatStyle.Popup;
             buttonCopyLeftToRight.ForeColor = UiPalette.TextPrimary;
-            buttonCopyLeftToRight.Location = new Point(115, 0);
+            buttonCopyLeftToRight.Location = new Point(117, 0);
             buttonCopyLeftToRight.Name = "buttonCopyLeftToRight";
-            buttonCopyLeftToRight.Size = new Size(56, 23);
+            buttonCopyLeftToRight.Size = new Size(54, 24);
             buttonCopyLeftToRight.TabIndex = 2;
             buttonCopyLeftToRight.Text = "L→R";
             buttonCopyLeftToRight.UseVisualStyleBackColor = false;
@@ -234,9 +246,9 @@ namespace Resonalyze
             buttonCopyRightToLeft.BackColor = UiPalette.ButtonBackground;
             buttonCopyRightToLeft.FlatStyle = FlatStyle.Popup;
             buttonCopyRightToLeft.ForeColor = UiPalette.TextPrimary;
-            buttonCopyRightToLeft.Location = new Point(177, 0);
+            buttonCopyRightToLeft.Location = new Point(175, 0);
             buttonCopyRightToLeft.Name = "buttonCopyRightToLeft";
-            buttonCopyRightToLeft.Size = new Size(56, 23);
+            buttonCopyRightToLeft.Size = new Size(54, 24);
             buttonCopyRightToLeft.TabIndex = 3;
             buttonCopyRightToLeft.Text = "R→L";
             buttonCopyRightToLeft.UseVisualStyleBackColor = false;
@@ -250,9 +262,9 @@ namespace Resonalyze
             checkBoxSideLock.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxSideLock.FlatStyle = FlatStyle.Flat;
             checkBoxSideLock.ForeColor = UiPalette.TextPrimary;
-            checkBoxSideLock.Location = new Point(239, 0);
+            checkBoxSideLock.Location = new Point(234, 0);
             checkBoxSideLock.Name = "checkBoxSideLock";
-            checkBoxSideLock.Size = new Size(56, 23);
+            checkBoxSideLock.Size = new Size(113, 24);
             checkBoxSideLock.TabIndex = 4;
             checkBoxSideLock.Text = "Lock";
             checkBoxSideLock.TextAlign = ContentAlignment.MiddleCenter;
@@ -317,15 +329,15 @@ namespace Resonalyze
             // numericTargetLevel
             // 
             numericTargetLevel.BackColor = UiPalette.ControlSurface;
-            numericTargetLevel.DecimalPlaces = 0;
+            numericTargetLevel.DecimalPlaces = 1;
             numericTargetLevel.ForeColor = UiPalette.TextPrimary;
-            numericTargetLevel.Increment = new decimal(new int[] { 1, 0, 0, 0 });
+            numericTargetLevel.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             numericTargetLevel.Location = new Point(71, 4);
             numericTargetLevel.Maximum = new decimal(new int[] { 60, 0, 0, 0 });
             numericTargetLevel.Minimum = new decimal(new int[] { 120, 0, 0, int.MinValue });
             numericTargetLevel.MinimumSize = new Size(36, 19);
             numericTargetLevel.Name = "numericTargetLevel";
-            numericTargetLevel.Size = new Size(72, 19);
+            numericTargetLevel.Size = new Size(80, 19);
             numericTargetLevel.TabIndex = 28;
             numericTargetLevel.TextAlign = HorizontalAlignment.Right;
             numericTargetLevel.ThousandsSeparator = false;
@@ -336,7 +348,7 @@ namespace Resonalyze
             // 
             buttonTargetSettings.FlatStyle = FlatStyle.Popup;
             buttonTargetSettings.ForeColor = UiPalette.TextPrimary;
-            buttonTargetSettings.Location = new Point(149, 2);
+            buttonTargetSettings.Location = new Point(157, 2);
             buttonTargetSettings.Name = "buttonTargetSettings";
             buttonTargetSettings.Size = new Size(80, 22);
             buttonTargetSettings.TabIndex = 29;
@@ -348,7 +360,7 @@ namespace Resonalyze
             labelCalibration.AutoSize = true;
             labelCalibration.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             labelCalibration.ForeColor = UiPalette.TextDefault;
-            labelCalibration.Location = new Point(878, 413);
+            labelCalibration.Location = new Point(886, 413);
             labelCalibration.Name = "labelCalibration";
             labelCalibration.Size = new Size(48, 15);
             labelCalibration.TabIndex = 30;
@@ -373,7 +385,7 @@ namespace Resonalyze
             checkBoxHybrid.AutoSize = true;
             checkBoxHybrid.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Regular, GraphicsUnit.Point, 204);
             checkBoxHybrid.ForeColor = UiPalette.TextDefault;
-            checkBoxHybrid.Location = new Point(1058, 411);
+            checkBoxHybrid.Location = new Point(1062, 411);
             checkBoxHybrid.Name = "checkBoxHybrid";
             checkBoxHybrid.Size = new Size(62, 19);
             checkBoxHybrid.TabIndex = 30;
@@ -584,7 +596,7 @@ namespace Resonalyze
             // 
             comboBoxCalibration.BackColor = UiPalette.ControlSurface;
             comboBoxCalibration.ForeColor = UiPalette.TextPrimary;
-            comboBoxCalibration.Location = new Point(931, 411);
+            comboBoxCalibration.Location = new Point(939, 411);
             comboBoxCalibration.MinimumSize = new Size(36, 19);
             comboBoxCalibration.Name = "comboBoxCalibration";
             comboBoxCalibration.Size = new Size(110, 19);
@@ -749,7 +761,7 @@ namespace Resonalyze
             curvesPanel.CornerRadius = 4;
             curvesPanel.Location = new Point(406, 406);
             curvesPanel.Name = "curvesPanel";
-            curvesPanel.Size = new Size(463, 32);
+            curvesPanel.Size = new Size(471, 32);
             curvesPanel.TabIndex = 7;
             // 
             // sumLossPanel
@@ -772,7 +784,7 @@ namespace Resonalyze
             targetPanel.CornerRadius = 4;
             targetPanel.Location = new Point(222, 3);
             targetPanel.Name = "targetPanel";
-            targetPanel.Size = new Size(235, 26);
+            targetPanel.Size = new Size(243, 26);
             targetPanel.TabIndex = 27;
             // 
             // VirtualCrossoverPanel

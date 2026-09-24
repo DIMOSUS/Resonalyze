@@ -436,13 +436,13 @@ internal sealed class AgentImportRunner(
         VirtualCrossoverTargetSettings targetSettings =
             session.Project.Target ?? new VirtualCrossoverTargetSettings();
         TargetCurveSpec spec = (host.View().TargetCurve ?? targetSettings.ToCurve()).Normalized().Spec;
-        // The wizard's own refusal: kept all-pass bands filling Max Filters leave the fit no room.
+        // The wizard's own refusal: kept bands filling Max Filters leave the fit no room.
         int room = EqAutoTuneHeadless.RoomUnderMaxFilters(request, policy);
         if (room <= 0)
         {
-            int kept = request.BankSeed.Bands.Count(band => band.Type.IsAllPass());
+            string kept = EqWizardFit.DescribeKeptCount(EqAutoTuneHeadless.KeptBands(request.BankSeed));
             summary.Add(
-                $"{label}: skipped (keeping {kept} all-pass band{(kept == 1 ? "" : "s")} " +
+                $"{label}: skipped (keeping {kept} " +
                 $"leaves no room under Max Filters ({policy.MaxBands})).");
             return false;
         }
@@ -515,10 +515,10 @@ internal sealed class AgentImportRunner(
 
         channel.SideSettings(channel.ActiveRight).PeqSourceName = "Auto-tune (AI import)";
         host.ShowBank(channel);
-        int fittedBands = fitted.Bands.Count(band => !band.Type.IsAllPass());
+        int fittedBands = fitted.Bands.Count - inputs.Kept.Count;
         summary.Add(
             $"{label}: applied — {fittedBands} band{(fittedBands == 1 ? "" : "s")}" +
-            (inputs.KeptAllPass.Count > 0 ? $" + {inputs.KeptAllPass.Count} all-pass kept" : string.Empty) +
+            (inputs.Kept.Count > 0 ? $" + {EqWizardFit.DescribeKeptCount(inputs.Kept)} kept" : string.Empty) +
             $", preamp {fitted.PreampDb:0.0} dB, {inputs.MinHz:0}–{inputs.MaxHz:0} Hz, " +
             $"{EqWizardFit.DescribeBoosts(inputs.Boosts)}, on the " +
             $"{(average.Capture != null ? "spatial average" : "point measurement")}; " +

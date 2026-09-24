@@ -22,8 +22,8 @@ namespace Resonalyze
                 sourceMenu = null;
                 targetMenu?.Dispose();
                 targetMenu = null;
-                bandTypeMenu?.Dispose();
-                bandTypeMenu = null;
+                bandMenu?.Dispose();
+                bandMenu = null;
                 // Created in code (see EqWizardPanel.Bank.cs), so it is not in the
                 // designer container either.
                 bankEditTimer.Dispose();
@@ -156,9 +156,9 @@ namespace Resonalyze
             // NumericTargetOffset
             // 
             NumericTargetOffset.BackColor = UiPalette.ControlSurface;
-            NumericTargetOffset.DecimalPlaces = 0;
+            NumericTargetOffset.DecimalPlaces = 1;
             NumericTargetOffset.ForeColor = UiPalette.TextPrimary;
-            NumericTargetOffset.Increment = new decimal(new int[] { 1, 0, 0, 0 });
+            NumericTargetOffset.Increment = new decimal(new int[] { 5, 0, 0, 65536 });
             NumericTargetOffset.Location = new Point(108, 95);
             NumericTargetOffset.Maximum = new decimal(new int[] { 180, 0, 0, 0 });
             NumericTargetOffset.Minimum = new decimal(new int[] { 180, 0, 0, int.MinValue });

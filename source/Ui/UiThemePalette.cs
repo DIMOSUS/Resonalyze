@@ -33,6 +33,13 @@ internal sealed class UiThemePalette
     public required Color AccentFill { get; init; }
     public required Color AccentFillPressed { get; init; }
     public required Color ToggleCheckedFill { get; init; }
+    // The Virtual DSP side buttons: left blue, right red, a dim unframed fill until chosen; chosen carries TextOnAccent.
+    public required Color SideLeftFill { get; init; }
+    public required Color SideLeftFillSelected { get; init; }
+    public required Color SideLeftBorder { get; init; }
+    public required Color SideRightFill { get; init; }
+    public required Color SideRightFillSelected { get; init; }
+    public required Color SideRightBorder { get; init; }
 
     // The text ladder, brightest read-out down to a hint. TextOnAccent is the only one that ignores the theme.
     public required Color TextOnAccent { get; init; }
@@ -163,6 +170,10 @@ internal sealed class UiThemePalette
     public required Color BandPeakingStrip { get; init; }
     public required Color BandPeakingStripSelected { get; init; }
     public required Color BandPeakingTile { get; init; }
+    // A locked band's number plate, amber whatever the band's hue. Its Warning frame is what sets a pale plate off a pale
+    // strip; in the dark theme the fill already stands off every strip and the frame merges with it.
+    public required Color BandLockedHeader { get; init; }
+    public required Color BandLockedHeaderText { get; init; }
 
     // The drag cursor is drawn over whatever it hovers, so it keeps its own outline in both themes. The two
     // curve defaults are written into user FILES at creation: the value is fixed there, but which value a new
@@ -211,6 +222,12 @@ internal sealed class UiThemePalette
         AccentFill = Color.FromArgb(36, 86, 210),
         AccentFillPressed = Color.FromArgb(24, 60, 150),
         ToggleCheckedFill = Color.FromArgb(80, 100, 140),
+        SideLeftFill = Color.FromArgb(38, 46, 70),
+        SideLeftFillSelected = Color.FromArgb(36, 86, 210),
+        SideLeftBorder = Color.FromArgb(86, 140, 245),
+        SideRightFill = Color.FromArgb(62, 40, 46),
+        SideRightFillSelected = Color.FromArgb(186, 44, 54),
+        SideRightBorder = Color.FromArgb(235, 92, 102),
 
         TextOnAccent = Color.White,
         TextPrimary = Color.White,
@@ -358,6 +375,8 @@ internal sealed class UiThemePalette
         BandPeakingStrip = Color.FromArgb(44, 50, 60),
         BandPeakingStripSelected = Color.FromArgb(58, 66, 86),
         BandPeakingTile = Color.FromArgb(25, 28, 34),
+        BandLockedHeader = Color.FromArgb(255, 190, 80),
+        BandLockedHeaderText = Color.FromArgb(34, 26, 10),
 
         CursorOutline = Color.FromArgb(8, 10, 14),
         CurveOverlayDefault = Color.FromArgb(230, 184, 0),
@@ -402,6 +421,12 @@ internal sealed class UiThemePalette
         AccentFill = Color.FromArgb(36, 86, 210),
         AccentFillPressed = Color.FromArgb(24, 60, 150),
         ToggleCheckedFill = Color.FromArgb(150, 176, 226),
+        SideLeftFill = Color.FromArgb(220, 227, 243),
+        SideLeftFillSelected = Color.FromArgb(30, 80, 200),
+        SideLeftBorder = Color.FromArgb(30, 80, 200),
+        SideRightFill = Color.FromArgb(241, 224, 227),
+        SideRightFillSelected = Color.FromArgb(190, 38, 50),
+        SideRightBorder = Color.FromArgb(190, 38, 50),
 
         TextOnAccent = Color.White,
         TextPrimary = Color.FromArgb(18, 21, 28),
@@ -549,6 +574,8 @@ internal sealed class UiThemePalette
         BandPeakingStrip = Color.FromArgb(232, 236, 244),
         BandPeakingStripSelected = Color.FromArgb(210, 222, 242),
         BandPeakingTile = Color.FromArgb(226, 230, 238),
+        BandLockedHeader = Color.FromArgb(250, 204, 110),
+        BandLockedHeaderText = Color.FromArgb(56, 38, 0),
 
         CursorOutline = Color.FromArgb(8, 10, 14),
         CurveOverlayDefault = Color.FromArgb(150, 104, 0),

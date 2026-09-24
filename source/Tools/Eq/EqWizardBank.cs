@@ -155,6 +155,27 @@ internal sealed class EqWizardBank
         return true;
     }
 
+    public bool SetLocked(int index, bool locked)
+    {
+        if (bands[index].Locked == locked)
+        {
+            return false;
+        }
+
+        Commit();
+        bands[index] = bands[index] with { Locked = locked };
+        Commit();
+        return true;
+    }
+
+    /// <summary>One filter removed as a step of its own (the menu, Del); a drag removes through <see cref="Remove"/>.</summary>
+    public void Delete(int index)
+    {
+        Commit();
+        bands.RemoveAt(index);
+        Commit();
+    }
+
     /// <summary>Part of a drag, which re-orders live and ends with <see cref="Commit"/>.</summary>
     public void Move(int from, int to)
     {

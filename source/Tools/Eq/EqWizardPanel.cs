@@ -534,7 +534,9 @@ public partial class EqWizardPanel : UserControl
             return;
         }
 
-        // The tuner replaces the whole bank, all-pass included; ask before discarding phase work aligned by ear.
+        // Locked bands stay without asking. The tuner replaces the rest, all-pass included; ask before discarding phase
+        // work aligned by ear.
+        IReadOnlyList<PeqBand> locked = EqWizardFit.LockedBands(session);
         IReadOnlyList<PeqBand> allPass = EqWizardFit.AllPassBands(session);
         bool keepAllPass = false;
         if (allPass.Count > 0)
@@ -546,7 +548,9 @@ public partial class EqWizardPanel : UserControl
                 Environment.NewLine +
                 "Keep them and tune the remaining slots around them?" +
                 Environment.NewLine +
-                "No replaces the whole bank with the fit.",
+                (locked.Count == 0
+                    ? "No replaces the whole bank with the fit."
+                    : "No lets the fit replace them; locked filters stay either way."),
                 "EQ Wizard",
                 MessageBoxButtons.YesNoCancel,
                 MessageBoxIcon.Question);
@@ -558,23 +562,26 @@ public partial class EqWizardPanel : UserControl
             keepAllPass = answer == DialogResult.Yes;
         }
 
-        // Kept all-pass may leave no slots; say so rather than exceed Max Filters or replace the bank unasked.
-        int reserved = keepAllPass ? allPass.Count : 0;
+        // Kept bands may leave no slots; say so rather than exceed Max Filters or replace the bank unasked.
+        List<PeqBand> kept = [.. locked, .. keepAllPass ? allPass : []];
+        int reserved = kept.Count;
         if (reserved > 0 && reserved >= session.BandLimit)
         {
             MessageBox.Show(
                 FindForm(),
-                $"Keeping {EqWizardFit.DescribeAllPassCount(reserved)} leaves no room under Max " +
+                $"Keeping {EqWizardFit.DescribeKeptCount(kept)} leaves no room under Max " +
                 $"Filters ({session.BandLimit}), so there is nothing for the fit to " +
                 "place." + Environment.NewLine + Environment.NewLine +
-                "Raise Max Filters, or run again and let the fit replace the bank.",
+                (locked.Count > 0
+                    ? "Raise Max Filters or unlock a filter."
+                    : "Raise Max Filters, or run again and let the fit replace the bank."),
                 "EQ Wizard",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
             return;
         }
 
-        List<SignalPoint> fitSource = EqWizardFit.FitSource(session, source, keepAllPass ? allPass : [])
+        List<SignalPoint> fitSource = EqWizardFit.FitSource(session, source, kept)
             .Select(point => new SignalPoint(point.X, point.Y))
             .ToList();
         List<SignalPoint> fitTarget = target.Points
@@ -637,7 +644,7 @@ public partial class EqWizardPanel : UserControl
         }
 
         checkBoxBypass.Checked = false;
-        ApplyEqualizationCurve(EqWizardFit.Finish(tuned, keepAllPass ? allPass : []));
+        ApplyEqualizationCurve(EqWizardFit.Finish(tuned, kept));
     }
 
     // The panel owns only the dialog and feedback; resolution, format setup and I/O live in the coordinator.

@@ -494,8 +494,9 @@ The panel is dense, so here are its six regions:
    its source, gain, delay, polarity, crossover, PEQ and curve toggles. **Add** and
    **Remove** under the list change how many there are; **Reset** empties the panel
    back to three blank cards and its default settings, asking first and putting a
-   copy of the current session aside so **Load session…** can undo it. The **L / R**
-   selector at the bottom decides which side every card shows.
+   copy of the current session aside so **Load session…** can undo it. The blue **L**
+   and red **R** buttons at the bottom decide which side every card shows; `L`, `R`
+   and `` ` `` (the key under Esc, to swap) do the same from the keyboard.
 2. **The acoustic plot** — each channel's processed response, the phase-aware **Sum**,
    and **Sum loss** against the right-hand axis (its selector: **Full** for the sum
    the cabin hears, **FDW-8** for the direct sound alone, **Disable** for no curve).
@@ -1080,11 +1081,18 @@ If the whole useful response sits several dB above the target, use **Preamp** ra
 than several bands cutting the same amount everywhere. The preamp is part of the bank:
 it returns to Virtual DSP with the filters and appears on the tuning sheet.
 
-Auto Tune is a starting point. Remove bands by drag-and-drop, adjust them — on their
-cards, or by dragging their numbered handles on the graph, where the wheel over the
-selected one sets its Q — or add them with the **+** buttons: **PK**, the two shelves, and **AP1 / AP2**, the first- and
+Auto Tune is a starting point. Remove bands — **Delete** on the menu a right-click on a
+band's number opens, **Del** on the selected band, or drag it out of the bank — adjust
+them — on their cards, or by dragging their numbered handles on the graph, where the
+wheel over the selected one sets its Q — or add them with the **+** buttons: **PK**, the two shelves, and **AP1 / AP2**, the first- and
 second-order all-pass bands [Section 9](#9-delay-and-phase-alignment) uses to bend
 phase without touching magnitude.
+
+A band you want to keep through the next run — a broad cut you chose over the narrow
+ones the fit proposes, a correction you placed by ear — can be **locked** from the same
+menu. Its number turns amber, and Auto Tune leaves it as it is and fits the remaining
+slots around it; you can still edit it by hand. The lock travels with the band back to
+Virtual DSP and into the next session.
 
 ### Do not over-equalize
 

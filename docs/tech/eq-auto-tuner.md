@@ -27,7 +27,7 @@ Where the code lives:
 | Calibration options and the choice a source opens with | `EqWizardCalibration` |
 | The source curve through its calibration and smoothing; a gated source's preview request | `EqWizardSourceCurve` |
 | Target, Source + EQ, statistics, the bank's gain and phase curves, hints, the source's axis | `EqWizardRender` |
-| What Auto Tune is given; kept all-pass bands | `EqWizardFit` |
+| What Auto Tune is given; kept bands (locked, all-pass) | `EqWizardFit` |
 | The phase context a source opens with, a gate edited in the dialog, one render's request | `EqWizardPhase` |
 | Gated magnitude and measured phase rendered off the UI thread, keyed by bank | `EqWizardPreviews` |
 | The plot model: axes, window marks, curves, deviation shading, the selected band | `EqWizardPlot` |
@@ -101,7 +101,9 @@ Candidate responses are evaluated at pre-computed unit-circle points with the ar
 under 10 ms on a typical channel and at most about 80 ms on the widest windows measured.
 
 All-pass bands are never fitted: an all-pass is flat, so a magnitude error never asks for one. Callers replace the
-whole bank with the result, so hand-dialled bands (shelves included) do not survive a re-fit.
+whole bank with the result except the kept bands: the ones the user LOCKED (`PeqBand.Locked`), and the all-pass ones
+the wizard asked to keep (a headless run keeps every all-pass). Kept bands come off Max Filters, and `Finish` carries
+them over, the fitted bands yielding on overflow.
 
 ### What it replaced
 
@@ -455,10 +457,10 @@ wrap twice. Both the bare curve (`Bank` null) and the corrected one come from he
 both stop where the measured band stops. The gate anchor is the one resolved at handoff, never re-read per
 render, or the curve would slide under its own correction.
 
-The same applies to the fit: when all-pass bands are KEPT through a gated source, `EqWizardFit.FitSource` (and
-`EqAutoTuneHeadless.Prepare`) renders the source with them applied, because through a window an all-pass is not
-flat — "tune the remaining slots around them" has to mean around what they do. On an ungated curve or a spatial
-average an all-pass changes nothing and the source is used as is.
+The same applies to the fit: `EqWizardFit.FitSource` (and `EqAutoTuneHeadless.Prepare`) renders the source through
+the KEPT bands, by the path the source draws Source + EQ with, so "tune the remaining slots around them" means around
+what they do: a locked bell moves every source; an all-pass moves only a gated one, because through a window it is not
+flat, and on an ungated curve or a spatial average it changes nothing (`EqWizardFit.KeptInSource`).
 
 ### Re-smoothing imported curves
 

@@ -271,7 +271,9 @@ else in a reply touches it.
   `tuneJunction` whose blocks include one, is allowed but ADDS IIR edges on top of
   the kernel, and the review says so.
 - `peq.hash` is twelve hex digits of SHA-256 over the bands in order (type,
-  frequency, Q, gain in round-trip form) and the preamp. A `replacePeqBank`
+  frequency, Q, gain in round-trip form, and whether the user locked the band in
+  the EQ Wizard) and the preamp, so locking a band makes a reply to an earlier
+  package stale. A `replacePeqBank`
   reply echoes it instead of the whole current bank.
 - `peq.peakDb` / `peq.peakHz` is the highest point of the bank's **net**
   response — preamp and every band together, built at the processor's rate —
@@ -571,8 +573,9 @@ spatial average while the hybrid view draws it, the point measurement
 otherwise, or whichever `source` names — with the EQ Wizard's Auto Tune
 settings as they stand (Max Filters, Gain min/max, Max Q, Boosts, Shelves —
 the same bank the wizard's button would fit for the same project) for what the
-reply leaves out, and the channel's passband as the window; all-pass bands
-in the bank are kept and the fit tunes around them; a `targetLevelDb` moves the
+reply leaves out, and the channel's passband as the window; the bands the
+user locked in the EQ Wizard and all-pass bands in the bank are kept and the fit
+tunes around them (they come off Max Filters); a `targetLevelDb` moves the
 project's target level, as the wizard's Return does — it is one datum for the
 whole project, so every request in a reply that states one must state the
 same value (the first stated level stands, the others are refused naming it),
@@ -600,7 +603,7 @@ offset changed states only that.
 | `probe` | `probe`, `junctionId?`, `variants?` | `probe` is one of `limits.probes`; `junctionId` a `junctions[].id` of this package, required by `junction` and `junctionDelay`, optional for `series` (one junction; every junction of the view when absent), absent for `excessGroupDelay`; resolved as `tuneJunction` resolves it. For `series`: `series` (one or more of `broadband`, `target`, `sum`, `junctionCurves`, `sweep`, `correlation`, `coherenceLadder`), `channelIds?` (whose broadband curves; every channel when absent), `pointsPerOctave?` (1…`limits.seriesPointsPerOctave`, every frequency grid of the answer; the nominal densities when absent), `rows?` (2…`limits.seriesRows` for the sweep and correlation series; 48 when absent). For `junction`: at least one variant and, across every probe of the reply together, at most `limits.probeVariantsPerImport`; each variant 1…`limits.probeChanges` changes, each change naming one of the junction's OWN two channels once and stating at least one of `gainDb`, `delayMs`, `invertPolarity`, `crossover`, `peq` — every stated value held to the limit the settings operation that writes it is held to |
 | `runAutoCrossover` | none | the wizard has no inputs: the families, the corner window and the chain order are chosen in its own dialog |
 | `tuneJunction` | `junctionId`, `minHz?`, `maxHz?`, `families?`, `slopes?`, `independentSlopes?` | `junctionId` is a `junctions[].id` of this package (`left:C-D`): both blocks on that side with a measurement, in the sum, not bypassed, in one group, neighbours along the spectrum that hand over to each other; each stated edge within 20 Hz–20 kHz and below the processor's Nyquist, the window as the run will use it — a stated edge with half an octave from the current corner for the one left out — ordered; `families` names from `limits.slopes` (left out: the families the two facing edges use today); `slopes` offered by one of those families (left out: every slope from 12 dB/oct up); `independentSlopes` left out is `false` — one slope for both edges |
-| `autoTunePeq` | `channelId`, `targetLevelDb?`, `minHz?`, `maxHz?`, `allowShelves?`, `boosts?`, `cutsOnly?`, `source?` | the channel exists, has a measurement and is on the side on screen; target level −120…60 dB in whole dB, the same in every request that states one; each stated edge within the wizard's From/To fields (20 Hz–20 kHz) and below the processor's Nyquist, and the window as the run will use it — a stated edge with the channel's passband edge for the one left out — ordered; `boosts` is `off`, `refillOwnCuts` or `allowed` (the wizard's Boosts choices); `cutsOnly` is the older way to say `off` (`true`) or `allowed` (`false`), and a request states one of the two, not both; `source` is `point` or `spatialAverage`, and `spatialAverage` needs the channel to carry one |
+| `autoTunePeq` | `channelId`, `targetLevelDb?`, `minHz?`, `maxHz?`, `allowShelves?`, `boosts?`, `cutsOnly?`, `source?` | the channel exists, has a measurement and is on the side on screen; target level −120…60 dB in steps of 0.1, the same in every request that states one; each stated edge within the wizard's From/To fields (20 Hz–20 kHz) and below the processor's Nyquist, and the window as the run will use it — a stated edge with the channel's passband edge for the one left out — ordered; `boosts` is `off`, `refillOwnCuts` or `allowed` (the wizard's Boosts choices); `cutsOnly` is the older way to say `off` (`true`) or `allowed` (`false`), and a request states one of the two, not both; `source` is `point` or `spatialAverage`, and `spatialAverage` needs the channel to carry one |
 | `useSpatialAverage` | `mode`, `hybrid` | `mode` is `MovingMic` or `MicArray` and at least one channel carries that family (`channels[].source.spatialAverageCaptures`); `hybrid` must be `true`; a mode already in force with Hybrid already ticked is refused as "no change" |
 
 ```json

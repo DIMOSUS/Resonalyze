@@ -68,14 +68,14 @@ public sealed class EqAutoTuneHeadlessTests
             allowShelves: false,
             boosts: EqAutoTuneBoosts.Off);
 
-        PeqBand kept = Assert.Single(inputs.KeptAllPass);
+        PeqBand kept = Assert.Single(inputs.Kept);
         Assert.Equal(400, kept.FrequencyHz);
         Assert.Equal(EqualizationCurve.MaxBandCount - 1, inputs.Options.MaxBands);
         // The fit corrects the response WITH the all-pass in the chain; through a window that is a different curve.
         IReadOnlyList<SignalPoint> withoutAllPass =
             EqAutoTuneHeadless.SourceCurve(request.Source, 0, appliedBank: null);
         IReadOnlyList<SignalPoint> withAllPass = EqAutoTuneHeadless.SourceCurve(
-            request.Source, 0, new EqualizationCurve(inputs.KeptAllPass, preampDb: 0));
+            request.Source, 0, new EqualizationCurve(inputs.Kept, preampDb: 0));
         AssertSameCurve(withAllPass, inputs.Source);
         Assert.NotEqual(
             withoutAllPass.Select(point => point.Y), withAllPass.Select(point => point.Y));
@@ -274,6 +274,61 @@ public sealed class EqAutoTuneHeadlessTests
         // Low to high, as the button leaves it.
         Assert.Equal(fitted.Bands.OrderBy(band => band.FrequencyHz), fitted.Bands);
         Assert.All(fitted.Bands.Where(band => !band.Type.IsAllPass()), band => Assert.True(band.GainDb <= 0));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Prepare_KeepsALockedBell_AndFitsTheSourceThroughIt_AsTheButtonDoes(bool spatialAverage)
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        var locked = new PeqBand(250, 1.5, -4, PeqBandType.Peaking, Locked: true);
+        channel.Settings.PeqBands = [new PeqBand(200, 1.0, -3), locked];
+        VirtualDspEqHandoffRequest request = spatialAverage
+            ? Build(channel, spatialAverage: Capture())
+            : Build(channel);
+
+        EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
+            request,
+            TargetCurveSpec.FromPreset(TargetPreset.Flat),
+            EqAutoTunePolicy.Default with { CrossoverInTarget = false },
+            null,
+            null,
+            allowShelves: false,
+            boosts: EqAutoTuneBoosts.Off);
+
+        Assert.Equal(locked, Assert.Single(inputs.Kept));
+        Assert.Equal(EqualizationCurve.MaxBandCount - 1, inputs.Options.MaxBands);
+        IReadOnlyList<SignalPoint> throughTheBell = EqAutoTuneHeadless.SourceCurve(
+            request.Source, 0, new EqualizationCurve([locked], preampDb: 0));
+        AssertSameCurve(throughTheBell, inputs.Source);
+        Assert.NotEqual(
+            EqAutoTuneHeadless.SourceCurve(request.Source, 0, appliedBank: null).Select(point => point.Y),
+            throughTheBell.Select(point => point.Y));
+
+        var session = new EqWizardSession();
+        session.BeginHandoff(request);
+        AssertSameCurve(
+            EqWizardFit.FitSource(session, session.SourceCurve!, EqWizardFit.LockedBands(session))
+                .Select(point => new SignalPoint(point.X, point.Y))
+                .ToList(),
+            inputs.Source);
+    }
+
+    [Fact]
+    public void Fit_ReturnsALockedBandAsItWas()
+    {
+        VirtualCrossoverChannel channel = BuildChannel();
+        var locked = new PeqBand(250, 1.5, -4, PeqBandType.Peaking, Locked: true);
+        channel.Settings.PeqBands = [locked];
+        EqHeadlessTuneInputs inputs = EqAutoTuneHeadless.Prepare(
+            Build(channel), TargetCurveSpec.FromPreset(TargetPreset.Flat), EqAutoTunePolicy.Default, null, null,
+            allowShelves: false, boosts: EqAutoTuneBoosts.Off);
+
+        EqualizationCurve fitted = EqAutoTuneHeadless.Fit(inputs);
+
+        Assert.Equal(locked, Assert.Single(fitted.Bands, band => band.Locked));
+        Assert.Equal(fitted.Bands.OrderBy(band => band.FrequencyHz), fitted.Bands);
     }
 
     private static IReadOnlyList<SignalPoint> WizardSourceCurve(VirtualDspEqHandoffRequest request)

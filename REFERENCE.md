@@ -1703,7 +1703,10 @@ land on the value they left, whichever way round they are taken. The
 frequency window take the same step.
 
 A band is one of five shapes, picked on the **"+" tile** — each zone adds its
-shape directly — or switched later by right-clicking the band's number: a
+shape directly — or switched later from the menu a right-click on the band's
+number opens; the same menu **locks** the band against Auto Tune (below) and
+**deletes** it, as does **Del** on the selected band once its number or its
+handle was clicked (in a field, Del edits the text). The shapes are: a
 **peaking bell (PK)**; a **high or low shelf (HS / LS)**, whose frequency is
 the middle of the transition and whose Q is the knee (0.7 the steepest that
 stays monotonic); and a **first- or second-order all-pass (AP1 / AP2)**, which
@@ -1780,7 +1783,8 @@ references the same instant, which leaves the driver's own phase with the
 propagation delay flattened out. The **magnitude** curves are never affected:
 they keep the fixed steady-state window that decides tonal balance, and the two
 windows live side by side.
-The Target Level is the user's knob alone — loading a source never moves it, so
+The Target Level holds tenths of a dB and its arrows step by 0.5 dB, as does the
+Virtual DSP level it shares a datum with. It is the user's knob alone — loading a source never moves it, so
 a deliberately placed target survives every source switch (an absolute dB SPL
 curve simply needs the level dialed to its datum once). The one exception
 carries rather than guesses: a Virtual DSP handoff brings that panel's own
@@ -2011,8 +2015,16 @@ spot the microphone stood in — or for a deliberately narrow correction of a mo
 you have identified.
 
 The fit is a magnitude fit, so bells and — with **Shelves** on — the two
-shelves are all it can propose, and a run replaces the bank it found. If that
-bank holds **all-pass** bands, Auto Tune asks before starting: keep them and
+shelves are all it can propose, and a run replaces the bank it found — all but
+its **locked** bands, whose number plates are amber. A locked band stays as it
+is, wherever it sits, and the fit corrects the curve with it applied, so it
+tunes the remaining slots around what that band already does; locked bands
+come off **Max Filters** like kept all-pass ones, and a bank locked up to Max
+Filters leaves the fit nothing to place, which it says rather than running. A
+lock is not a guard against hand edits: the card and its handle move as ever.
+The lock is saved with the band, in the wizard and in the Virtual DSP project,
+so it survives a return and the next **Edit in EQ Wizard**. If the bank holds
+unlocked **all-pass** bands, Auto Tune asks before starting: keep them and
 tune the remaining slots around them (the error curve never asked for them to
 go — they are flat), or let the fit replace the bank whole. Keeping takes their
 count off the **Max Filters** budget, which is a budget for the bank and not
@@ -2285,8 +2297,10 @@ Opening a channel never costs an unexported standalone design.
 The **Virtual DSP** (under the **Tools** tab) is the summation-prediction
 workflow taken to its conclusion: measure each driver once, then design the whole
 DSP setup virtually. Channels (A, B, C, …) are stereo **L/R pairs**, each side
-picking its own measurement and running its own chain. **L / R** radios switch
-which side the controls edit, **L→R** / **R→L** copy chain settings across sides
+picking its own measurement and running its own chain. The blue **L** and red **R**
+buttons (the chosen one filled strong) switch which side the controls edit — from the keyboard too: `L` and `R` pick a side and
+`` ` `` (the key under Esc) swaps them, whenever the caret is not in a field —
+**L→R** / **R→L** copy chain settings across sides
 (a dialog picks the channels and which parts travel — see below), **Lock** keeps
 the two sides' crossovers, polarity and FIR filters in step while it is on (also below),
 and a **Mono** checkbox turns a pair into a single shared driver — the typical
@@ -2943,7 +2957,8 @@ the EQ Wizard equalizes towards, shaped from either place through the same
 file](#the-target-curve) — so the tool that predicts the sum and the tool that
 corrects it aim at one curve rather than at two that drifted apart. These curves
 are transfer-function dB with no absolute reference, so the target has no level
-of its own here — the dB box beside the checkbox says where it hangs. The
+of its own here — the dB box beside the checkbox says where it hangs, in tenths
+of a dB, its arrows stepping by 0.5 dB. The
 session stores both: that level, which belongs to this plot's dB reference and
 so stays put when the shape is retuned, and the target itself — the whole custom
 shape rather than a preset name, because a preset's numbers can change between

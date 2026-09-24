@@ -8,7 +8,7 @@ internal sealed record EqHeadlessTuneInputs(
     IReadOnlyList<SignalPoint> Target,
     EqAutoTuner.Options Options,
     IReadOnlyList<SignalPoint>? Coherence,
-    IReadOnlyList<PeqBand> KeptAllPass,
+    IReadOnlyList<PeqBand> Kept,
     double MinHz,
     double MaxHz,
     EqAutoTuneBoosts Boosts);
@@ -35,7 +35,7 @@ internal sealed record EqAutoTunePolicy(
 
 /// <summary>
 /// Auto Tune without the wizard (AI import), built from the wizard's own constructions so tests can pin them
-/// together; all-pass bands are always kept since a headless run cannot ask.
+/// together; locked bands are kept as in the wizard, and all-pass bands too since a headless run cannot ask.
 /// </summary>
 internal static class EqAutoTuneHeadless
 {
@@ -129,16 +129,11 @@ internal static class EqAutoTuneHeadless
         bool shelves = allowShelves ?? policy.AllowShelves;
 
         EqWizardCurveSource source = request.Source;
-        List<PeqBand> allPass = request.BankSeed.Bands
-            .Where(band => band.Type.IsAllPass())
-            .ToList();
-        // Through a window an all-pass is not flat, so a gated source is rendered WITH kept all-pass bands.
+        IReadOnlyList<PeqBand> kept = KeptBands(request.BankSeed);
         IReadOnlyList<SignalPoint> fitSource = SourceCurve(
             source,
             request.SmoothingInverseOctaves,
-            allPass.Count > 0 && source.IsGated
-                ? new EqualizationCurve(allPass, preampDb: 0)
-                : null);
+            EqWizardFit.KeptInSource(kept, source.IsGated));
         List<SignalPoint> target = fitSource
             .Select(point => new SignalPoint(
                 point.X, targetSpec.Evaluate(point.X) + request.TargetLevelDb))
@@ -177,7 +172,7 @@ internal static class EqAutoTuneHeadless
         if (bandLimit <= 0)
         {
             throw new InvalidOperationException(
-                $"Keeping {allPass.Count} all-pass bands leaves no room under Max Filters ({policy.MaxBands}).");
+                $"Keeping {EqWizardFit.DescribeKeptCount(kept)} leaves no room under Max Filters ({policy.MaxBands}).");
         }
 
         EqAutoTuner.Options options = EqWizardFit.Options(
@@ -190,17 +185,23 @@ internal static class EqAutoTuneHeadless
             crossover);
 
         return new EqHeadlessTuneInputs(
-            fitSource, target, options, source.Coherence, allPass,
+            fitSource, target, options, source.Coherence, kept,
             windowMinHz, windowMaxHz, mode);
     }
 
-    /// <summary>Max Filters less kept all-pass bands; zero or less is a run the wizard refuses.</summary>
+    /// <summary>The bands a headless fit keeps: the locked ones and every all-pass.</summary>
+    public static IReadOnlyList<PeqBand> KeptBands(EqualizationCurve bank)
+    {
+        ArgumentNullException.ThrowIfNull(bank);
+        return bank.Bands.Where(band => band.Locked || band.Type.IsAllPass()).ToList();
+    }
+
+    /// <summary>Max Filters less the kept bands; zero or less is a run the wizard refuses.</summary>
     public static int RoomUnderMaxFilters(VirtualDspEqHandoffRequest request, EqAutoTunePolicy policy)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(policy);
-        int kept = request.BankSeed.Bands.Count(band => band.Type.IsAllPass());
-        return Math.Min(policy.MaxBands, EqualizationCurve.MaxBandCount) - kept;
+        return Math.Min(policy.MaxBands, EqualizationCurve.MaxBandCount) - KeptBands(request.BankSeed).Count;
     }
 
     /// <summary>
@@ -236,7 +237,7 @@ internal static class EqAutoTuneHeadless
 
         EqualizationCurve tuned = EqAutoTuner.Tune(
             inputs.Source, inputs.Target, inputs.Options, inputs.Coherence);
-        return EqWizardFit.Finish(tuned, inputs.KeptAllPass);
+        return EqWizardFit.Finish(tuned, inputs.Kept);
     }
 
     public static double? RmsErrorDb(

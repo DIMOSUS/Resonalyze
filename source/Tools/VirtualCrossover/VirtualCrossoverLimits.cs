@@ -4,7 +4,7 @@ namespace Resonalyze;
 /// checks read them here, so a value the review passed is one the field shows unchanged.</summary>
 internal static class VirtualCrossoverLimits
 {
-    public static readonly NumericFieldRange TargetLevel = new(-120m, 60m, 0);
+    public static readonly NumericFieldRange TargetLevel = new(-120m, 60m, 1);
 
     // The Auto delay dialog's fields.
     public static readonly NumericFieldRange SceneOffset = new(0m, 5m, 2);

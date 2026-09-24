@@ -22,6 +22,7 @@ public partial class PeqSlotControl : UserControl
     private double sampleRateHz = 48_000;
     private bool suppressGainSync;
     private bool selected;
+    private bool locked;
     private bool dragging;
     private bool dragArmed;
     private Point dragOrigin;
@@ -40,6 +41,7 @@ public partial class PeqSlotControl : UserControl
         // The number strip is the only drag handle: fader and fields own the mouse, and WinForms mouse events do not bubble.
         HookDragHandle(slotLabel);
         slotLabel.Cursor = Cursors.SizeAll;
+        slotLabel.Paint += PaintLockedFrame;
         ApplyStripColor();
     }
 
@@ -48,7 +50,7 @@ public partial class PeqSlotControl : UserControl
     // The host runs the drag loop: only it knows the bank.
     public event EventHandler? DragStartRequested;
 
-    internal event EventHandler<PeqSlotMenuEventArgs>? TypeMenuRequested;
+    internal event EventHandler<PeqSlotMenuEventArgs>? MenuRequested;
 
     public void SetSelected(bool isSelected)
     {
@@ -75,6 +77,20 @@ public partial class PeqSlotControl : UserControl
         fader.StripActive = selected;
         fader.BackColor = color;
         fader.Invalidate();
+        slotLabel.BackColor = locked ? UiPalette.BandLockedHeader : color;
+        slotLabel.ForeColor = locked ? UiPalette.BandLockedHeaderText : UiPalette.TextDefault;
+        slotLabel.Invalidate();
+    }
+
+    private void PaintLockedFrame(object? sender, PaintEventArgs e)
+    {
+        if (!locked)
+        {
+            return;
+        }
+
+        using var pen = new Pen(UiPalette.Warning);
+        e.Graphics.DrawRectangle(pen, 0, 0, slotLabel.Width - 1, slotLabel.Height - 1);
     }
 
     // Whole strip registered, so a drag over a child window reaches the host instead of dying there.
@@ -136,7 +152,7 @@ public partial class PeqSlotControl : UserControl
             dragArmed = false;
             if (args.Button == MouseButtons.Right)
             {
-                TypeMenuRequested?.Invoke(
+                MenuRequested?.Invoke(
                     this,
                     new PeqSlotMenuEventArgs(((Control)sender!).PointToScreen(args.Location)));
             }
@@ -222,6 +238,24 @@ public partial class PeqSlotControl : UserControl
             UpdateSlotLabel();
             ApplyStripColor();
             UpdateBandTypeAppearance();
+        }
+    }
+
+    /// <summary>Auto Tune keeps the band; the strip stays editable, only its number plate changes.</summary>
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    internal bool Locked
+    {
+        get => locked;
+        set
+        {
+            if (locked == value)
+            {
+                return;
+            }
+
+            locked = value;
+            ApplyStripColor();
         }
     }
 

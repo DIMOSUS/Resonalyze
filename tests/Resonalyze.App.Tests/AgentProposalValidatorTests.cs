@@ -382,6 +382,14 @@ public sealed class AgentProposalValidatorTests
         Assert.NotEqual(baseline, AgentPeqHash.Compute(0, [a, b with { Type = PeqBandType.HighShelf }]));
         Assert.NotEqual(baseline, AgentPeqHash.Compute(0, [a, b with { GainDb = 3.1 }]));
         Assert.NotEqual(baseline, AgentPeqHash.Compute(0, [a with { FrequencyHz = 100.1 }, b]));
+        Assert.NotEqual(baseline, AgentPeqHash.Compute(0, [a, b with { Locked = true }]));
+    }
+
+    [Fact]
+    public void PeqHash_OfAnUnlockedBank_IsTheOneEarlierPackagesCarry()
+    {
+        // SHA-256 of "Peaking;100;1.5;-2", a line break, "preamp;0": the text hashed before bands could be locked.
+        Assert.Equal("c4aae938f236", AgentPeqHash.Compute(0, [new PeqBand(100, 1.5, -2)]));
     }
 
     [Fact]
@@ -599,7 +607,7 @@ public sealed class AgentProposalValidatorTests
 
     [Theory]
     [InlineData("D:mono", null, null, null, null, "has no measurement")]
-    [InlineData("B:left", 90.0, null, null, null, "The target level must be between -120 and 60 dB")]
+    [InlineData("B:left", 90.0, null, null, null, "The target level must be between -120.0 and 60.0 dB")]
     [InlineData("B:left", null, 8000.0, 100.0, null, "lower edge must sit below its upper edge")]
     [InlineData("B:left", null, 100.0, 60_000.0, null, "upper edge must sit between 20 Hz and 20000 Hz")]
     [InlineData("B:left", null, null, null, "hybrid", "Unknown auto-tune source 'hybrid'")]

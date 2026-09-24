@@ -16,7 +16,7 @@ internal static class EqWizardFit
         session.AllowShelves,
         session.CrossoverInTarget);
 
-    /// <summary>Mirrors the fields; bands held back (kept all-pass) come off Max Filters, which budgets the whole BANK.</summary>
+    /// <summary>Mirrors the fields; bands held back (locked, kept all-pass) come off Max Filters, which budgets the whole BANK.</summary>
     public static EqAutoTuner.Options Options(EqWizardSession session, int reservedBands)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -108,33 +108,58 @@ internal static class EqWizardFit
             "the channel's crossover.";
     }
 
-    /// <summary>The all-pass bands in the bank, which the fit cannot place and may keep.</summary>
+    /// <summary>The bands the user locked: Auto Tune keeps them as they are and fits the rest around them.</summary>
+    public static IReadOnlyList<PeqBand> LockedBands(EqWizardSession session) =>
+        session.Bank.Bands.Where(band => band.Locked).ToList();
+
+    /// <summary>The unlocked all-pass bands, which the fit cannot place and may keep.</summary>
     public static IReadOnlyList<PeqBand> AllPassBands(EqWizardSession session) =>
-        session.Bank.Bands.Where(band => band.Type.IsAllPass()).ToList();
+        session.Bank.Bands.Where(band => band.Type.IsAllPass() && !band.Locked).ToList();
 
     /// <summary>
-    /// The curve the fit corrects. When kept all-pass bands meet a GATED source they are applied first: through a window
-    /// an all-pass is not flat (see <see cref="EqWizardGatedPreview"/>).
+    /// The curve the fit corrects: the source through the kept bands, drawn as the wizard draws Source + EQ. Through a
+    /// GATED window an all-pass is not flat (see <see cref="EqWizardGatedPreview"/>); elsewhere only gain bands count.
     /// </summary>
     public static IReadOnlyList<DataPoint> FitSource(
         EqWizardSession session,
         EqWizardCurve source,
-        IReadOnlyList<PeqBand> keptAllPass)
+        IReadOnlyList<PeqBand> kept)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(source);
-        if (keptAllPass.Count == 0 ||
-            session.Source is not { IsGated: true } gated)
+        if (KeptInSource(kept, session.Source is { IsGated: true }) is not { } bank)
         {
             return source.Points;
         }
 
-        // Same conversion as the source curve, so the tuner's index pairing with the target holds.
-        return EqWizardSourceCurve.ToPlotPoints(
-            EqWizardGatedPreview.Render(
-                EqWizardSourceCurve.GatedPreviewRequest(
-                    session, gated, new EqualizationCurve(keptAllPass, preampDb: 0))),
-            EqWizardSourceCurve.KeepsGaps(gated));
+        // Each path is the source's own builder, so the tuner's index pairing with the target holds.
+        if (session.Source is { IsGated: true } gated)
+        {
+            return EqWizardSourceCurve.ToPlotPoints(
+                EqWizardGatedPreview.Render(EqWizardSourceCurve.GatedPreviewRequest(session, gated, bank)),
+                EqWizardSourceCurve.KeepsGaps(gated));
+        }
+
+        if (session.Source is { SpatialAverage: not null } average)
+        {
+            return EqWizardSourceCurve.ToPlotPoints(
+                EqWizardSourceCurve.SpatialAverageCurve(session, average, bank),
+                EqWizardSourceCurve.KeepsGaps(average));
+        }
+
+        return source.Points
+            .Select(point => new DataPoint(
+                point.X,
+                point.Y + DigitalEqualizationResponse.MagnitudeDbAt(bank, point.X, session.ProcessorSampleRateHz)))
+            .ToList();
+    }
+
+    /// <summary>The kept bands the source is rendered through; null when none of them moves it.</summary>
+    public static EqualizationCurve? KeptInSource(IReadOnlyList<PeqBand> kept, bool gated)
+    {
+        ArgumentNullException.ThrowIfNull(kept);
+        List<PeqBand> moving = gated ? kept.ToList() : kept.Where(band => !band.Type.IsAllPass()).ToList();
+        return moving.Count > 0 ? new EqualizationCurve(moving, preampDb: 0) : null;
     }
 
     /// <summary>A wrong datum is fitted faithfully (whole window boosted or cut), so the user is asked before, not told after.</summary>
@@ -152,37 +177,37 @@ internal static class EqWizardFit
     }
 
     /// <summary>
-    /// Carries the replaced bank's all-pass bands over into a tuned bank (the tuner emits bells and shelves only). On
-    /// overflow the FITTED bands give way: they can be regenerated, a hand-aligned all-pass cannot.
+    /// Carries the replaced bank's kept bands (locked, and all-pass the tuner cannot emit) over into a tuned bank. On
+    /// overflow the FITTED bands give way: they can be regenerated, a hand-placed band cannot.
     /// </summary>
-    public static EqualizationCurve WithAllPassBands(
+    public static EqualizationCurve WithKeptBands(
         EqualizationCurve tuned,
-        IReadOnlyList<PeqBand> allPass)
+        IReadOnlyList<PeqBand> kept)
     {
         ArgumentNullException.ThrowIfNull(tuned);
-        ArgumentNullException.ThrowIfNull(allPass);
-        if (allPass.Count == 0)
+        ArgumentNullException.ThrowIfNull(kept);
+        if (kept.Count == 0)
         {
             return tuned;
         }
 
         return new EqualizationCurve(
             tuned.Bands
-                .Take(Math.Max(0, EqWizardLimits.MaxBands - allPass.Count))
-                .Concat(allPass),
+                .Take(Math.Max(0, EqWizardLimits.MaxBands - kept.Count))
+                .Concat(kept),
             tuned.PreampDb);
     }
 
     /// <summary>
-    /// The bank a fit leaves: the kept all-pass bands carried over (<see cref="WithAllPassBands"/>, so an overflow still
-    /// drops the fit's least important bands, which it returns last), then every band in ascending frequency, the order
-    /// a tuner reads a bank in. Bands at one frequency keep the fit's order.
+    /// The bank a fit leaves: the kept bands carried over (<see cref="WithKeptBands"/>, so an overflow still drops the
+    /// fit's least important bands, which it returns last), then every band in ascending frequency, the order a tuner
+    /// reads a bank in. Bands at one frequency keep the fit's order.
     /// </summary>
     public static EqualizationCurve Finish(
         EqualizationCurve tuned,
-        IReadOnlyList<PeqBand> keptAllPass)
+        IReadOnlyList<PeqBand> kept)
     {
-        EqualizationCurve carried = WithAllPassBands(tuned, keptAllPass);
+        EqualizationCurve carried = WithKeptBands(tuned, kept);
         return new EqualizationCurve(
             carried.Bands.OrderBy(band => band.FrequencyHz),
             carried.PreampDb);
@@ -197,4 +222,17 @@ internal static class EqWizardFit
 
     public static string DescribeAllPassCount(int count) =>
         count == 1 ? "an all-pass filter" : $"{count} all-pass filters";
+
+    public static string DescribeKeptCount(IReadOnlyList<PeqBand> kept)
+    {
+        int locked = kept.Count(band => band.Locked);
+        int allPass = kept.Count - locked;
+        string lockedText = locked == 1 ? "a locked filter" : $"{locked} locked filters";
+        return (locked, allPass) switch
+        {
+            (0, _) => DescribeAllPassCount(allPass),
+            (_, 0) => lockedText,
+            _ => $"{lockedText} and {DescribeAllPassCount(allPass)}"
+        };
+    }
 }

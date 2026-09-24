@@ -34,6 +34,12 @@ internal static class UiPalette
     public static Color AccentFill => Current.AccentFill;
     public static Color AccentFillPressed => Current.AccentFillPressed;
     public static Color ToggleCheckedFill => Current.ToggleCheckedFill;
+    public static Color SideLeftFill => Current.SideLeftFill;
+    public static Color SideLeftFillSelected => Current.SideLeftFillSelected;
+    public static Color SideLeftBorder => Current.SideLeftBorder;
+    public static Color SideRightFill => Current.SideRightFill;
+    public static Color SideRightFillSelected => Current.SideRightFillSelected;
+    public static Color SideRightBorder => Current.SideRightBorder;
     public static Color TextOnAccent => Current.TextOnAccent;
     public static Color TextPrimary => Current.TextPrimary;
     public static Color TextBright => Current.TextBright;
@@ -142,6 +148,8 @@ internal static class UiPalette
     public static Color BandPeakingStrip => Current.BandPeakingStrip;
     public static Color BandPeakingStripSelected => Current.BandPeakingStripSelected;
     public static Color BandPeakingTile => Current.BandPeakingTile;
+    public static Color BandLockedHeader => Current.BandLockedHeader;
+    public static Color BandLockedHeaderText => Current.BandLockedHeaderText;
     public static Color CursorOutline => Current.CursorOutline;
     public static Color CurveOverlayDefault => Current.CurveOverlayDefault;
     public static Color CurveTargetDefault => Current.CurveTargetDefault;

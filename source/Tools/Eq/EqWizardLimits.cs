@@ -24,16 +24,17 @@ internal static class EqWizardLimits
     public static readonly NumericFieldRange GainMaximum = new(0m, 24m, 0);
     public static readonly NumericFieldRange AutoTuneMaxQ = new(0.5m, 20m, 1);
     public static readonly NumericFieldRange WindowFrequency = new(20m, 20_000m, 0);
-    public static readonly NumericFieldRange TargetOffset = new(-180m, 180m, 0);
+    public static readonly NumericFieldRange TargetOffset = new(-180m, 180m, 1);
 
     /// <summary>A band's gain field: the user's Max Cut to Max Boost.</summary>
     public static NumericFieldRange BandGain(decimal minimumDb, decimal maximumDb) =>
         new(minimumDb, maximumDb, BandGainDecimals);
 
     /// <summary>A band as a strip holds it: each field clamped and rounded (<see cref="NumericFieldRange.Clamp"/>).</summary>
-    public static PeqBand Normalize(PeqBand band, NumericFieldRange gain) => new(
-        (double)BandFrequency.Clamp(band.FrequencyHz),
-        (double)BandQ.Clamp(band.Q),
-        (double)gain.Clamp(band.GainDb),
-        band.Type);
+    public static PeqBand Normalize(PeqBand band, NumericFieldRange gain) => band with
+    {
+        FrequencyHz = (double)BandFrequency.Clamp(band.FrequencyHz),
+        Q = (double)BandQ.Clamp(band.Q),
+        GainDb = (double)gain.Clamp(band.GainDb)
+    };
 }

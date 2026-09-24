@@ -9,28 +9,28 @@ public sealed class EqWizardAutoTuneAllPassTests
         new(90, 2.5, 0, PeqBandType.AllPassSecondOrder);
 
     [Fact]
-    public void WithAllPassBands_KeepsThemAfterTheFittedBands()
+    public void WithKeptBands_KeepsThemAfterTheFittedBands()
     {
         var tuned = new EqualizationCurve(
             [new PeqBand(1_000, 2, -4), new PeqBand(3_150, 3, -2)], preampDb: -3.5);
 
         EqualizationCurve merged =
-            EqWizardFit.WithAllPassBands(tuned, [AllPass]);
+            EqWizardFit.WithKeptBands(tuned, [AllPass]);
 
         Assert.Equal([.. tuned.Bands, AllPass], merged.Bands);
         Assert.Equal(-3.5, merged.PreampDb);
     }
 
     [Fact]
-    public void WithAllPassBands_WithNothingToKeep_ReturnsTheFitUntouched()
+    public void WithKeptBands_WithNothingToKeep_ReturnsTheFitUntouched()
     {
         var tuned = new EqualizationCurve([new PeqBand(1_000, 2, -4)], preampDb: -1);
 
-        Assert.Same(tuned, EqWizardFit.WithAllPassBands(tuned, []));
+        Assert.Same(tuned, EqWizardFit.WithKeptBands(tuned, []));
     }
 
     [Fact]
-    public void WithAllPassBands_OverTheSlotBudget_DropsFittedBandsNotTheAllPass()
+    public void WithKeptBands_OverTheSlotBudget_DropsFittedBandsNotTheAllPass()
     {
         // Backstop: the tuner can regenerate a bell, but a hand-aligned all-pass would never be proposed again.
         var tuned = new EqualizationCurve(
@@ -39,7 +39,7 @@ public sealed class EqWizardAutoTuneAllPassTests
             preampDb: 0);
 
         EqualizationCurve merged =
-            EqWizardFit.WithAllPassBands(tuned, [AllPass]);
+            EqWizardFit.WithKeptBands(tuned, [AllPass]);
 
         Assert.Equal(EqualizationCurve.MaxBandCount, merged.Bands.Count);
         Assert.Equal(AllPass, merged.Bands[^1]);

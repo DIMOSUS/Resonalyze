@@ -6,6 +6,7 @@ using OxyPlot;
 using OxyPlot.Annotations;
 using OxyPlot.WindowsForms;
 using Resonalyze.Dsp;
+using Resonalyze.Ui;
 
 namespace Resonalyze.App.Tests;
 
@@ -91,6 +92,80 @@ public sealed class EqWizardPanelWiringTests
         Assert.Equal(1.0m, live.Strips[1].QInput.Value);
         Assert.Equal(0m, live.Control<ThemedNumericUpDown>("NumericGain").Value);
         Assert.True(live.Control<Button>("buttonRedo").Enabled);
+    });
+
+    [Fact]
+    public void TheBandMenu_LocksAndDeletes_EachAsOneStep() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Set<ThemedComboBox>("darkComboBoxBands", box => box.SelectedItem = 2);
+        PeqBand second = live.Session.Bank.Bands[1];
+
+        live.ChooseFromBandMenu(live.Strips[0], "Lock (Auto Tune keeps it)");
+
+        Assert.True(live.Session.Bank.Bands[0].Locked);
+        Assert.True(live.Strips[0].Locked);
+        Assert.Equal(UiPalette.BandLockedHeader, live.Strips[0].SlotLabel.BackColor);
+        Assert.NotEqual(UiPalette.BandLockedHeader, live.Strips[1].SlotLabel.BackColor);
+
+        // An edit typed into a locked strip keeps the lock.
+        live.Change(() => live.Strips[0].GainInput.Value = -2m);
+        Assert.True(live.Session.Bank.Bands[0].Locked);
+
+        live.ChooseFromBandMenu(live.Strips[0], "Delete");
+
+        Assert.Equal([second], live.Session.Bank.Bands);
+        Assert.Single(live.Strips);
+
+        live.Click("buttonUndo");
+        Assert.Equal(2, live.Strips.Count);
+        Assert.True(live.Strips[0].Locked);
+        Assert.Equal(-2, live.Session.Bank.Bands[0].GainDb);
+        Assert.True(live.Session.Bank.Bands[0].Locked);
+
+        live.ChooseFromBandMenu(live.Strips[0], "Lock (Auto Tune keeps it)");
+        Assert.False(live.Session.Bank.Bands[0].Locked);
+        Assert.NotEqual(UiPalette.BandLockedHeader, live.Strips[0].SlotLabel.BackColor);
+    });
+
+    [Fact]
+    public void Del_DeletesTheFilterPickedByItsPlate_ButNotWhileAFieldIsBeingTyped() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Set<ThemedComboBox>("darkComboBoxBands", box => box.SelectedItem = 2);
+        PeqBand second = live.Session.Bank.Bands[1];
+
+        live.Change(() => live.Strips[0].FrequencyInput.Focus());
+        Assert.True(live.Strips[0].FrequencyInput.ContainsFocus);
+        Assert.False(live.PressDelete());
+        Assert.Equal(2, live.Session.Bank.Bands.Count);
+
+        live.PickByPlate(live.Strips[0]);
+        Assert.True(live.Control<TableLayoutPanel>("peqSlotTable").Focused);
+        Assert.True(live.PressDelete());
+        Assert.Equal([second], live.Session.Bank.Bands);
+
+        // The selection went with the filter: another Del has nothing to delete.
+        Assert.False(live.PressDelete());
+        Assert.Single(live.Session.Bank.Bands);
+    });
+
+    [Fact]
+    public void AFit_KeepsALockedBand_AndFillsOnlyTheSlotsLeft() => StaTest.Run(() =>
+    {
+        using var live = FitReady();
+        live.Set<ThemedComboBox>("comboBoxBandsLimit", box => box.SelectedItem = 4);
+        live.Invoke("AddBand", PeqBandType.Peaking);
+        live.Change(() => live.Strips[0].GainInput.Value = -3m);
+        live.ChooseFromBandMenu(live.Strips[0], "Lock (Auto Tune keeps it)");
+        PeqBand locked = live.Session.Bank.Bands[0];
+
+        live.Control<Button>("buttonAutoTune").PerformClick();
+        live.SettleFit();
+
+        Assert.Equal(locked, Assert.Single(live.Session.Bank.Bands, band => band.Locked));
+        Assert.InRange(live.Session.Bank.Bands.Count, 2, 4);
+        Assert.Contains(live.Strips, strip => strip.Locked);
     });
 
     [Fact]
@@ -550,6 +625,34 @@ public sealed class EqWizardPanelWiringTests
             Change(() => typeof(EqWizardPanel).GetMethod(method, Hidden)!.Invoke(Panel, arguments));
 
         public void Click(string button) => Change(() => Control<Button>(button).PerformClick());
+
+        // Built as a right-click builds it, never shown: a popup would open on the desktop of whoever runs the tests.
+        public void ChooseFromBandMenu(PeqSlotControl strip, string text) => Change(() =>
+        {
+            var menu = (ContextMenuStrip)typeof(EqWizardPanel).GetMethod("BuildBandMenu", Hidden)!
+                .Invoke(Panel, [strip])!;
+            menu.Items.OfType<ToolStripMenuItem>().Single(item => item.Text == text).PerformClick();
+        });
+
+        // A left press and click on the number plate, through the label's own handlers.
+        public void PickByPlate(PeqSlotControl strip) => Change(() =>
+        {
+            Control plate = strip.SlotLabel;
+            typeof(Control).GetMethod("OnMouseDown", Hidden)!.Invoke(
+                plate, [new MouseEventArgs(MouseButtons.Left, 1, 2, 2, 0)]);
+            typeof(Control).GetMethod("OnMouseUp", Hidden)!.Invoke(
+                plate, [new MouseEventArgs(MouseButtons.Left, 1, 2, 2, 0)]);
+            typeof(Control).GetMethod("OnClick", Hidden)!.Invoke(plate, [EventArgs.Empty]);
+        });
+
+        public bool PressDelete()
+        {
+            var message = new Message { Msg = 0x0100, WParam = (IntPtr)Keys.Delete };
+            object[] arguments = [message, Keys.Delete];
+            bool handled = (bool)typeof(EqWizardPanel).GetMethod("ProcessCmdKey", Hidden)!.Invoke(Panel, arguments)!;
+            Settle();
+            return handled;
+        }
 
         public void Settle()
         {

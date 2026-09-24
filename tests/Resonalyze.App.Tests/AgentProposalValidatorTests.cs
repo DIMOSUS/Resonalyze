@@ -599,7 +599,7 @@ public sealed class AgentProposalValidatorTests
 
     [Theory]
     [InlineData("D:mono", null, null, null, null, "has no measurement")]
-    [InlineData("B:left", 90.0, null, null, null, "The target level must be between -120 and 60 dB")]
+    [InlineData("B:left", 90.0, null, null, null, "The target level must be between -120.0 and 60.0 dB")]
     [InlineData("B:left", null, 8000.0, 100.0, null, "lower edge must sit below its upper edge")]
     [InlineData("B:left", null, 100.0, 60_000.0, null, "upper edge must sit between 20 Hz and 20000 Hz")]
     [InlineData("B:left", null, null, null, "hybrid", "Unknown auto-tune source 'hybrid'")]

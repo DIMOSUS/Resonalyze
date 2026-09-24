@@ -1,14 +1,18 @@
+using System.Text.Json.Serialization;
+
 namespace Resonalyze.Dsp;
 
 /// <summary>
 /// One PEQ band with an analog-prototype (rate-independent) magnitude. <see cref="Type"/> defaults to Peaking so
-/// files written before shelves existed read back as bells.
+/// files written before shelves existed read back as bells. <see cref="Locked"/> is the tuner's, not the filter's: Auto
+/// Tune keeps a locked band and fits around it; no response reads it, and a file writes it only when set.
 /// </summary>
 public readonly record struct PeqBand(
     double FrequencyHz,
     double Q,
     double GainDb,
-    PeqBandType Type = PeqBandType.Peaking)
+    PeqBandType Type = PeqBandType.Peaking,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Locked = false)
 {
     /// <summary>Contributes nothing: degenerate frequency/Q, or zero gain on a gain band (an all-pass is never gain-transparent).</summary>
     public bool IsTransparent =>

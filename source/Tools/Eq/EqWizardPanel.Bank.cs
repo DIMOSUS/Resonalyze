@@ -18,7 +18,7 @@ public partial class EqWizardPanel
     private TableLayoutPanel peqSlotTable = null!;
     private PeqAddSlotControl addSlotTile = null!;
     // Rebuilt per open, so the last one is not owned by the designer container (see Dispose).
-    private ContextMenuStrip? bandTypeMenu;
+    private ContextMenuStrip? bandMenu;
     private PeqSlotControl? selectedSlot;
     private PeqSlotControl? draggedSlot;
     private int draggedSlotOrigin;
@@ -29,7 +29,7 @@ public partial class EqWizardPanel
 
     private void InitializePeqSlotTable()
     {
-        peqSlotTable = new DoubleBufferedTableLayoutPanel
+        peqSlotTable = new SlotTablePanel
         {
             BackColor = panelPEQ.BackColor,
             ColumnCount = PeqColumnCount,
@@ -68,7 +68,7 @@ public partial class EqWizardPanel
             "Add a filter: PK a peaking bell, HS a high shelf, LS a low shelf, " +
             "AP1/AP2 a first- or second-order all-pass (moves phase only). Drag " +
             "a filter by its number to reorder it, or out of the bank to remove it; " +
-            "right-click the number to change its type. Ctrl+Z undoes any of it.");
+            "right-click the number to change its type, lock it or delete it. Ctrl+Z undoes any of it.");
 
         panelPEQ.Controls.Add(peqSlotTable);
         bankEditTimer.Tick += (_, _) => CommitBankChange();
@@ -115,15 +115,23 @@ public partial class EqWizardPanel
         (PeqBandType.AllPassSecondOrder, "All-pass, 2nd order (phase only)")
     };
 
-    private void ShowBandTypeMenu(PeqSlotControl slot, Point screenPoint)
+    private void ShowBandMenu(PeqSlotControl slot, Point screenPoint)
+    {
+        if (BuildBandMenu(slot) is { } menu)
+        {
+            DropDownMenu.ShowAt(this, menu, screenPoint);
+        }
+    }
+
+    private ContextMenuStrip? BuildBandMenu(PeqSlotControl slot)
     {
         if (!peqSlots.Contains(slot))
         {
-            return;
+            return null;
         }
 
-        bandTypeMenu?.Dispose();
-        bandTypeMenu = new ContextMenuStrip();
+        bandMenu?.Dispose();
+        bandMenu = new ContextMenuStrip();
         foreach ((PeqBandType type, string label) in BandTypeChoices)
         {
             PeqBandType chosen = type;
@@ -131,10 +139,53 @@ public partial class EqWizardPanel
             {
                 Checked = slot.BandType == type
             };
-            bandTypeMenu.Items.Add(item);
+            bandMenu.Items.Add(item);
         }
 
-        DropDownMenu.ShowAt(this, bandTypeMenu, screenPoint);
+        bandMenu.Items.Add(new ToolStripSeparator());
+        bandMenu.Items.Add(new ToolStripMenuItem(
+            "Lock (Auto Tune keeps it)", null, (_, _) => SetBandLocked(slot, !slot.Locked))
+        {
+            Checked = slot.Locked
+        });
+        bandMenu.Items.Add(new ToolStripMenuItem("Delete", null, (_, _) => DeleteBand(slot))
+        {
+            ShortcutKeyDisplayString = "Del"
+        });
+        return bandMenu;
+    }
+
+    private void SetBandLocked(PeqSlotControl slot, bool locked)
+    {
+        int index = peqSlots.IndexOf(slot);
+        if (index < 0)
+        {
+            return;
+        }
+
+        if (session.Bank.SetLocked(index, locked))
+        {
+            bankEditTimer.Stop();
+            PresentBank(keepSelection: false);
+            Redraw();
+        }
+    }
+
+    private void DeleteBand(PeqSlotControl slot)
+    {
+        int index = peqSlots.IndexOf(slot);
+        if (index < 0)
+        {
+            return;
+        }
+
+        bankEditTimer.Stop();
+        session.Bank.Delete(index);
+        RemoveSlot(slot);
+        LayoutSlots();
+        PresentBandCount();
+        UpdateUndoRedoButtons();
+        Redraw();
     }
 
     private void SetBandType(PeqSlotControl slot, PeqBandType type)
@@ -189,11 +240,13 @@ public partial class EqWizardPanel
         SetTip(slot.GroupDelayReadout, AllPassGroupDelayTip);
         SetTip(slot.SlotLabel,
             "Filter number and type, and the drag handle: drag it to reorder the " +
-            "filter or out of the bank to remove it, right-click to switch between " +
-            "a bell, a shelf and an all-pass.");
+            "filter or out of the bank to remove it. Right-click to change its type, " +
+            "lock it against Auto Tune (amber plate) or delete it; Del deletes the selected filter.");
         slot.Activated += (sender, _) => SelectSlot((PeqSlotControl)sender!);
-        slot.TypeMenuRequested += (sender, args) =>
-            ShowBandTypeMenu((PeqSlotControl)sender!, args.ScreenPoint);
+        // The plate cannot hold focus, and Del must not reach a caret left in another strip's field.
+        slot.SlotLabel.MouseDown += (_, _) => peqSlotTable.Focus();
+        slot.MenuRequested += (sender, args) =>
+            ShowBandMenu((PeqSlotControl)sender!, args.ScreenPoint);
         slot.DragStartRequested += (sender, _) => BeginSlotDrag((PeqSlotControl)sender!);
         slot.EnableDropTarget(SlotDragOver, SlotDragDrop);
 
@@ -222,6 +275,7 @@ public partial class EqWizardPanel
     private static void WriteBand(PeqSlotControl slot, PeqBand band)
     {
         slot.BandType = band.Type;
+        slot.Locked = band.Locked;
         slot.FrequencyInput.Value = (decimal)band.FrequencyHz;
         slot.QInput.Value = (decimal)band.Q;
         slot.GainInput.Value = (decimal)band.GainDb;
@@ -231,7 +285,8 @@ public partial class EqWizardPanel
         (double)slot.FrequencyInput.Value,
         (double)slot.QInput.Value,
         (double)slot.GainInput.Value,
-        slot.BandType);
+        slot.BandType,
+        slot.Locked);
 
     /// <summary>
     /// Makes the strips show the session's bank: trailing strips added or removed, every value written, the grid laid out.
@@ -510,6 +565,9 @@ public partial class EqWizardPanel
             case Keys.Control | Keys.Shift | Keys.Z:
                 RedoBankChange();
                 return true;
+            case Keys.Delete when selectedSlot != null && !KeyboardFocus.IsTyping(this):
+                DeleteBand(selectedSlot);
+                return true;
             default:
                 return base.ProcessCmdKey(ref msg, keyData);
         }
@@ -662,5 +720,16 @@ public partial class EqWizardPanel
         session.Bank.Replace(curve);
         PresentBank(keepSelection: true);
         Redraw();
+    }
+
+    // Selectable, so picking a filter by its plate can move focus off a field; out of the tab order.
+    private sealed class SlotTablePanel : TableLayoutPanel
+    {
+        public SlotTablePanel()
+        {
+            DoubleBuffered = true;
+            SetStyle(ControlStyles.Selectable, true);
+            TabStop = false;
+        }
     }
 }

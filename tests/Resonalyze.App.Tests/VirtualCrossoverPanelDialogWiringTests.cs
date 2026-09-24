@@ -1,6 +1,7 @@
 using System.Windows.Forms;
 using Resonalyze.Dsp;
 using Resonalyze.Integration.AgentBridge;
+using Resonalyze.Ui;
 using static Resonalyze.App.Tests.VirtualCrossoverLivePanel;
 
 namespace Resonalyze.App.Tests;
@@ -186,6 +187,42 @@ public sealed class VirtualCrossoverPanelDialogWiringTests
         ((IAgentImportHost)live.Panel).SetTargetLevel(-9);
         Assert.Equal(-9, live.Session.Project.TargetLevelDb);
         Assert.Equal(-9m, level.Value);
+    });
+
+    [Fact]
+    public void TheSideKeys_SwapAndPickTheSide_ButNotWhileThePanelIsBusy() => StaTest.Run(() =>
+    {
+        using var live = new VirtualCrossoverLivePanel();
+        RadioButton right = live.Find<RadioButton>("radioSideRight");
+        Assert.False(live.Session.Project.ActiveSideRight);
+
+        Assert.True(live.Panel.HandleSideKey(Keys.Oemtilde));
+        Assert.True(live.Session.Project.ActiveSideRight);
+        Assert.True(right.Checked);
+        // The chosen side carries the light text of its strong fill and its frame; the other stays dim and unframed.
+        RadioButton left = live.Find<RadioButton>("radioSideLeft");
+        Assert.Equal(UiPalette.TextOnAccent, right.ForeColor);
+        Assert.Equal(UiPalette.SideRightBorder, right.FlatAppearance.BorderColor);
+        Assert.Equal(UiPalette.TextSecondary, left.ForeColor);
+        Assert.Equal(left.BackColor, left.FlatAppearance.BorderColor);
+        Assert.True(live.Panel.HandleSideKey(Keys.Oemtilde));
+        Assert.False(live.Session.Project.ActiveSideRight);
+
+        Assert.True(live.Panel.HandleSideKey(Keys.R));
+        Assert.True(live.Panel.HandleSideKey(Keys.R));
+        Assert.True(live.Session.Project.ActiveSideRight);
+        Assert.True(live.Panel.HandleSideKey(Keys.L));
+        Assert.False(live.Session.Project.ActiveSideRight);
+
+        Assert.False(live.Panel.HandleSideKey(Keys.Control | Keys.R));
+        Assert.False(live.Panel.HandleSideKey(Keys.Shift | Keys.Oemtilde));
+        Assert.False(live.Panel.HandleSideKey(Keys.X));
+        using (((IVirtualCrossoverWorkHost)live.Panel).Busy(disable: true))
+        {
+            Assert.False(live.Panel.HandleSideKey(Keys.R));
+        }
+
+        Assert.False(live.Session.Project.ActiveSideRight);
     });
 
     [Fact]

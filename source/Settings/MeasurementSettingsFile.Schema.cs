@@ -484,6 +484,8 @@ internal sealed partial class MeasurementSettingsFile
         public double GainDb { get; set; }
 
         public PeqBandType Type { get; set; } = PeqBandType.Peaking;
+
+        public bool Locked { get; set; }
     }
 
     // Self-contained: derives nothing from overlays or the current measurement. The loaded IR is not persisted.

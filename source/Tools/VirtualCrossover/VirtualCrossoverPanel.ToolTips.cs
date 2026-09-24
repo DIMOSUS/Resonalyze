@@ -111,11 +111,13 @@ public partial class VirtualCrossoverPanel
         toolTip.SetToolTip(
             radioSideLeft,
             "Show and edit the LEFT side of every channel pair.\r\n" +
-            "● — at least one source is loaded on this side.");
+            "● — at least one source is loaded on this side.\r\n" +
+            "Keys: L picks this side, ` (under Esc) swaps sides.");
         toolTip.SetToolTip(
             radioSideRight,
             "Show and edit the RIGHT side of every channel pair.\r\n" +
-            "● — at least one source is loaded on this side.");
+            "● — at least one source is loaded on this side.\r\n" +
+            "Keys: R picks this side, ` (under Esc) swaps sides.");
         toolTip.SetToolTip(
             buttonCopyLeftToRight,
             "Copy the LEFT side onto the RIGHT side: a dialog picks the\r\n" +

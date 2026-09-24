@@ -400,6 +400,26 @@ public sealed class AnalyzerWiringTests : IDisposable
         return path;
     }
 
+    [Fact]
+    public void TheSideKeys_ReachTheVirtualDsp_OnlyWhileItIsShown()
+    {
+        StaTest.Run(() =>
+        {
+            using var live = new LiveAnalyzer();
+            VirtualCrossoverSession session = live.Field<VirtualCrossoverPanel>("virtualCrossoverPanel").Session;
+            Assert.False(session.Project.ActiveSideRight);
+
+            Assert.False(live.PressKey(Keys.R));
+            Assert.False(session.Project.ActiveSideRight);
+
+            live.Select(ModeTab.ToolsVirtualCrossover);
+            Assert.True(live.PressKey(Keys.R));
+            Assert.True(session.Project.ActiveSideRight);
+            Assert.True(live.PressKey(Keys.Oemtilde));
+            Assert.False(session.Project.ActiveSideRight);
+        });
+    }
+
     private sealed class LiveAnalyzer : IDisposable
     {
         public LiveAnalyzer()
@@ -434,6 +454,12 @@ public sealed class AnalyzerWiringTests : IDisposable
         public void Open(string path) => Await("OpenMeasurementFileAsync", path);
 
         public void Select(ModeTab tab) => Await("SelectModeAsync", tab);
+
+        public bool PressKey(Keys key)
+        {
+            object[] arguments = [new Message { Msg = 0x0100, WParam = (IntPtr)key }, key];
+            return (bool)typeof(Form1).GetMethod("ProcessCmdKey", Hidden)!.Invoke(Form, arguments)!;
+        }
 
         public void Await(string method, params object[] arguments) => Settle(Start(method, arguments));
 

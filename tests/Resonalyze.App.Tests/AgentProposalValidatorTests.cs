@@ -382,6 +382,14 @@ public sealed class AgentProposalValidatorTests
         Assert.NotEqual(baseline, AgentPeqHash.Compute(0, [a, b with { Type = PeqBandType.HighShelf }]));
         Assert.NotEqual(baseline, AgentPeqHash.Compute(0, [a, b with { GainDb = 3.1 }]));
         Assert.NotEqual(baseline, AgentPeqHash.Compute(0, [a with { FrequencyHz = 100.1 }, b]));
+        Assert.NotEqual(baseline, AgentPeqHash.Compute(0, [a, b with { Locked = true }]));
+    }
+
+    [Fact]
+    public void PeqHash_OfAnUnlockedBank_IsTheOneEarlierPackagesCarry()
+    {
+        // SHA-256 of "Peaking;100;1.5;-2", a line break, "preamp;0": the text hashed before bands could be locked.
+        Assert.Equal("c4aae938f236", AgentPeqHash.Compute(0, [new PeqBand(100, 1.5, -2)]));
     }
 
     [Fact]

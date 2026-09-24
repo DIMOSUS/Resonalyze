@@ -170,7 +170,8 @@ internal sealed class UiThemePalette
     public required Color BandPeakingStrip { get; init; }
     public required Color BandPeakingStripSelected { get; init; }
     public required Color BandPeakingTile { get; init; }
-    // A locked band's number plate: amber like Warning, framed by Warning, whatever the band's own hue.
+    // A locked band's number plate, amber whatever the band's hue. Its Warning frame is what sets a pale plate off a pale
+    // strip; in the dark theme the fill already stands off every strip and the frame merges with it.
     public required Color BandLockedHeader { get; init; }
     public required Color BandLockedHeaderText { get; init; }
 

@@ -271,7 +271,9 @@ else in a reply touches it.
   `tuneJunction` whose blocks include one, is allowed but ADDS IIR edges on top of
   the kernel, and the review says so.
 - `peq.hash` is twelve hex digits of SHA-256 over the bands in order (type,
-  frequency, Q, gain in round-trip form) and the preamp. A `replacePeqBank`
+  frequency, Q, gain in round-trip form, and whether the user locked the band in
+  the EQ Wizard) and the preamp, so locking a band makes a reply to an earlier
+  package stale. A `replacePeqBank`
   reply echoes it instead of the whole current bank.
 - `peq.peakDb` / `peq.peakHz` is the highest point of the bank's **net**
   response — preamp and every band together, built at the processor's rate —

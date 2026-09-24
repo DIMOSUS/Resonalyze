@@ -131,7 +131,9 @@ internal static class AgentPeqHash
             text.Append(band.Type).Append(';')
                 .Append(band.FrequencyHz.ToString("R", CultureInfo.InvariantCulture)).Append(';')
                 .Append(band.Q.ToString("R", CultureInfo.InvariantCulture)).Append(';')
-                .Append(band.GainDb.ToString("R", CultureInfo.InvariantCulture)).Append('\n');
+                .Append(band.GainDb.ToString("R", CultureInfo.InvariantCulture));
+            // A lock changes what autoTunePeq does, so a reply read before it is stale; unlocked banks keep their old hash.
+            text.Append(band.Locked ? ";locked\n" : "\n");
         }
         text.Append("preamp;").Append(preampDb.ToString("R", CultureInfo.InvariantCulture));
 

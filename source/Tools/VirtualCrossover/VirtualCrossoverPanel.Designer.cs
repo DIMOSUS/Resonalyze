@@ -146,7 +146,7 @@ namespace Resonalyze
             buttonAddChannel.ForeColor = UiPalette.TextPrimary;
             buttonAddChannel.Location = new Point(6, 700);
             buttonAddChannel.Name = "buttonAddChannel";
-            buttonAddChannel.Size = new Size(112, 24);
+            buttonAddChannel.Size = new Size(104, 24);
             buttonAddChannel.TabIndex = 4;
             buttonAddChannel.Text = "Add";
             buttonAddChannel.UseVisualStyleBackColor = false;
@@ -157,9 +157,9 @@ namespace Resonalyze
             buttonRemoveChannel.BackColor = UiPalette.ButtonBackground;
             buttonRemoveChannel.FlatStyle = FlatStyle.Popup;
             buttonRemoveChannel.ForeColor = UiPalette.TextPrimary;
-            buttonRemoveChannel.Location = new Point(123, 700);
+            buttonRemoveChannel.Location = new Point(116, 700);
             buttonRemoveChannel.Name = "buttonRemoveChannel";
-            buttonRemoveChannel.Size = new Size(112, 24);
+            buttonRemoveChannel.Size = new Size(104, 24);
             buttonRemoveChannel.TabIndex = 5;
             buttonRemoveChannel.Text = "Remove";
             buttonRemoveChannel.UseVisualStyleBackColor = false;
@@ -170,9 +170,9 @@ namespace Resonalyze
             buttonResetChannels.BackColor = UiPalette.ButtonBackground;
             buttonResetChannels.FlatStyle = FlatStyle.Popup;
             buttonResetChannels.ForeColor = UiPalette.TextPrimary;
-            buttonResetChannels.Location = new Point(240, 700);
+            buttonResetChannels.Location = new Point(226, 700);
             buttonResetChannels.Name = "buttonResetChannels";
-            buttonResetChannels.Size = new Size(113, 24);
+            buttonResetChannels.Size = new Size(104, 24);
             buttonResetChannels.TabIndex = 6;
             buttonResetChannels.Text = "Reset";
             buttonResetChannels.UseVisualStyleBackColor = false;
@@ -188,7 +188,7 @@ namespace Resonalyze
             sideSelectorPanel.Controls.Add(checkBoxSideLock);
             sideSelectorPanel.Location = new Point(6, 730);
             sideSelectorPanel.Name = "sideSelectorPanel";
-            sideSelectorPanel.Size = new Size(347, 24);
+            sideSelectorPanel.Size = new Size(324, 24);
             sideSelectorPanel.TabIndex = 21;
             // 
             // radioSideLeft
@@ -203,7 +203,7 @@ namespace Resonalyze
             radioSideLeft.ForeColor = UiPalette.TextOnAccent;
             radioSideLeft.Location = new Point(0, 0);
             radioSideLeft.Name = "radioSideLeft";
-            radioSideLeft.Size = new Size(54, 24);
+            radioSideLeft.Size = new Size(49, 24);
             radioSideLeft.TabIndex = 0;
             radioSideLeft.TabStop = true;
             radioSideLeft.Text = "L";
@@ -220,9 +220,9 @@ namespace Resonalyze
             radioSideRight.FlatStyle = FlatStyle.Flat;
             radioSideRight.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
             radioSideRight.ForeColor = UiPalette.TextSecondary;
-            radioSideRight.Location = new Point(58, 0);
+            radioSideRight.Location = new Point(55, 0);
             radioSideRight.Name = "radioSideRight";
-            radioSideRight.Size = new Size(54, 24);
+            radioSideRight.Size = new Size(49, 24);
             radioSideRight.TabIndex = 1;
             radioSideRight.Text = "R";
             radioSideRight.TextAlign = ContentAlignment.MiddleCenter;
@@ -234,9 +234,9 @@ namespace Resonalyze
             buttonCopyLeftToRight.BackColor = UiPalette.ButtonBackground;
             buttonCopyLeftToRight.FlatStyle = FlatStyle.Popup;
             buttonCopyLeftToRight.ForeColor = UiPalette.TextPrimary;
-            buttonCopyLeftToRight.Location = new Point(117, 0);
+            buttonCopyLeftToRight.Location = new Point(110, 0);
             buttonCopyLeftToRight.Name = "buttonCopyLeftToRight";
-            buttonCopyLeftToRight.Size = new Size(54, 24);
+            buttonCopyLeftToRight.Size = new Size(49, 24);
             buttonCopyLeftToRight.TabIndex = 2;
             buttonCopyLeftToRight.Text = "L→R";
             buttonCopyLeftToRight.UseVisualStyleBackColor = false;
@@ -246,9 +246,9 @@ namespace Resonalyze
             buttonCopyRightToLeft.BackColor = UiPalette.ButtonBackground;
             buttonCopyRightToLeft.FlatStyle = FlatStyle.Popup;
             buttonCopyRightToLeft.ForeColor = UiPalette.TextPrimary;
-            buttonCopyRightToLeft.Location = new Point(175, 0);
+            buttonCopyRightToLeft.Location = new Point(165, 0);
             buttonCopyRightToLeft.Name = "buttonCopyRightToLeft";
-            buttonCopyRightToLeft.Size = new Size(54, 24);
+            buttonCopyRightToLeft.Size = new Size(49, 24);
             buttonCopyRightToLeft.TabIndex = 3;
             buttonCopyRightToLeft.Text = "R→L";
             buttonCopyRightToLeft.UseVisualStyleBackColor = false;
@@ -262,9 +262,9 @@ namespace Resonalyze
             checkBoxSideLock.FlatAppearance.CheckedBackColor = UiPalette.ToggleCheckedFill;
             checkBoxSideLock.FlatStyle = FlatStyle.Flat;
             checkBoxSideLock.ForeColor = UiPalette.TextPrimary;
-            checkBoxSideLock.Location = new Point(234, 0);
+            checkBoxSideLock.Location = new Point(220, 0);
             checkBoxSideLock.Name = "checkBoxSideLock";
-            checkBoxSideLock.Size = new Size(113, 24);
+            checkBoxSideLock.Size = new Size(104, 24);
             checkBoxSideLock.TabIndex = 4;
             checkBoxSideLock.Text = "Lock";
             checkBoxSideLock.TextAlign = ContentAlignment.MiddleCenter;

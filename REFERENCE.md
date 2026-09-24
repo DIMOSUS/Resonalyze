@@ -1783,7 +1783,8 @@ references the same instant, which leaves the driver's own phase with the
 propagation delay flattened out. The **magnitude** curves are never affected:
 they keep the fixed steady-state window that decides tonal balance, and the two
 windows live side by side.
-The Target Level is the user's knob alone — loading a source never moves it, so
+The Target Level holds tenths of a dB and its arrows step by 0.5 dB, as does the
+Virtual DSP level it shares a datum with. It is the user's knob alone — loading a source never moves it, so
 a deliberately placed target survives every source switch (an absolute dB SPL
 curve simply needs the level dialed to its datum once). The one exception
 carries rather than guesses: a Virtual DSP handoff brings that panel's own
@@ -2956,7 +2957,8 @@ the EQ Wizard equalizes towards, shaped from either place through the same
 file](#the-target-curve) — so the tool that predicts the sum and the tool that
 corrects it aim at one curve rather than at two that drifted apart. These curves
 are transfer-function dB with no absolute reference, so the target has no level
-of its own here — the dB box beside the checkbox says where it hangs. The
+of its own here — the dB box beside the checkbox says where it hangs, in tenths
+of a dB, its arrows stepping by 0.5 dB. The
 session stores both: that level, which belongs to this plot's dB reference and
 so stays put when the shape is retuned, and the target itself — the whole custom
 shape rather than a preset name, because a preset's numbers can change between

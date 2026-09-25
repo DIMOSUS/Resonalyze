@@ -83,8 +83,8 @@
   </ItemGroup>
 
   <!-- Single-file publish targets live here, not in the .pubxml: Visual Studio reads a profile's properties only. -->
-  <!-- build.yml's version rule: tag vX.Y.Z plus N commits is X.Y.(Z+1)-dev.N. Skipped when -p:Version is given. -->
-  <!-- A prerelease tag vX.Y.Z-rc.1 plus N commits is X.Y.Z-rc.1.dev.N: after that prerelease, before the release. -->
+  <!-- The one version rule; build.yml asks it too. Tag vX.Y.Z plus N commits is X.Y.(Z+1)-dev.N; a prerelease -->
+  <!-- tag vX.Y.Z-rc.1 plus N is X.Y.Z-rc.1.dev.N, after that prerelease and before the release. -p:Version skips it. -->
   <Target Name="VersionFromGitTag" BeforeTargets="GetAssemblyVersion"
           Condition="'$(PublishSingleFile)' == 'true' and '$(Version)' == '$(VersionPrefix)'">
     <Exec Command="git describe --tags --match &quot;v*&quot; --long"

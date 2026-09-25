@@ -2066,8 +2066,9 @@ by that difference.
 A **From /
 To** window limits where bands are placed and bounds the error metrics in the
 colour-coded **Tuning results** panel, which reports **RMS error** and **Max
-error** between Source + EQ and Target, **Filters used**, **Peak boost** and
-**Peak cut**, and **Headroom** (red when the EQ nets a boost that could clip).
+error** between Source + EQ and Target (a dash when no point of the source lies
+in the window), **Filters used**, **Peak boost** and **Peak cut**, and
+**Headroom** (red when the EQ nets a boost that could clip).
 
 **Shelves** (off by default) lets the fit propose a low and a high shelf as well
 as bells. A car target is a bass shelf plus a downward tilt, and a bell is the

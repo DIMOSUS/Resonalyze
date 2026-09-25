@@ -115,7 +115,9 @@ internal static class EqWizardRender
             valid++;
         }
 
-        double rms = valid > 0 ? Math.Sqrt(sumSquares / valid) : 0;
+        // No point in the window is no error to grade, not a perfect fit.
+        double? rms = valid > 0 ? Math.Sqrt(sumSquares / valid) : null;
+        double? maxInWindow = valid > 0 ? maxError : null;
         // Counts the bank, not the bypassed curve. All-pass is always "used": its work is phase, which the gain threshold cannot see.
         int filtersUsed = session.Bank.Bands.Count(
             band => band.Type.IsAllPass() || Math.Abs(band.GainDb) >= 0.05);
@@ -131,7 +133,7 @@ internal static class EqWizardRender
         }
 
         double headroom = -peakBoost;
-        return new EqTuneStats(rms, maxError, filtersUsed, peakBoost, peakCut, headroom);
+        return new EqTuneStats(rms, maxInWindow, filtersUsed, peakBoost, peakCut, headroom);
     }
 
     /// <summary>The statistics the plot shows now, for a tuning sheet.</summary>

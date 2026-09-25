@@ -1,8 +1,9 @@
 namespace Resonalyze;
 
+/// <param name="RmsErrorDb">Null, like <paramref name="MaxErrorDb"/>, when no point of the curve lies in the window.</param>
 internal sealed record EqTuneStats(
-    double RmsErrorDb,
-    double MaxErrorDb,
+    double? RmsErrorDb,
+    double? MaxErrorDb,
     int FiltersUsed,
     double PeakBoostDb,
     double PeakCutDb,
@@ -80,11 +81,8 @@ public sealed partial class EqResultsPanel : UserControl
             return;
         }
 
-        rmsValue.Text = $"{stats.RmsErrorDb:0.0} dB";
-        rmsValue.ForeColor = QualityColor(stats.RmsErrorDb, 3.0, 6.0);
-
-        maxValue.Text = $"{stats.MaxErrorDb:0.0} dB";
-        maxValue.ForeColor = QualityColor(stats.MaxErrorDb, 6.0, 12.0);
+        ShowError(rmsValue, stats.RmsErrorDb, 3.0, 6.0);
+        ShowError(maxValue, stats.MaxErrorDb, 6.0, 12.0);
 
         filtersValue.Text = stats.FiltersUsed.ToString();
         filtersValue.ForeColor = NeutralColor;
@@ -97,6 +95,12 @@ public sealed partial class EqResultsPanel : UserControl
 
         headroomValue.Text = $"{stats.HeadroomDb:+0.0;-0.0;0.0} dB";
         headroomValue.ForeColor = stats.HeadroomDb < -0.05 ? BadColor : GoodColor;
+    }
+
+    private static void ShowError(Label value, double? errorDb, double goodBelow, double badAbove)
+    {
+        value.Text = errorDb is { } db ? $"{db:0.0} dB" : "-";
+        value.ForeColor = errorDb is { } error ? QualityColor(error, goodBelow, badAbove) : NeutralColor;
     }
 
     private static Color QualityColor(double errorDb, double goodBelow, double badAbove)

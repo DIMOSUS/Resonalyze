@@ -97,11 +97,12 @@ public sealed class AgentJunctionTuneReviewTests
     [Fact]
     public void Review_NamesTheSubJunction_ThroughTheMonoBlock()
     {
-        AgentProposalReview review = AgentProposalValidator.Review(
-            Proposal(Tune("left:A-B"), Tune("right:A-B", "op-2")), Session());
+        AgentOperationVerdict left = AgentProposalValidator.Review(Proposal(Tune("left:A-B")), Session()).Verdicts[0];
+        AgentOperationVerdict right = AgentProposalValidator.Review(Proposal(Tune("right:A-B")), Session()).Verdicts[0];
 
-        Assert.All(review.Verdicts, verdict => Assert.True(verdict.Applicable));
-        Assert.Equal("A: LP LR24 80 Hz; B: HP LR24 80 Hz", review.Verdicts[0].Current);
+        Assert.True(left.Applicable);
+        Assert.True(right.Applicable);
+        Assert.Equal("A: LP LR24 80 Hz; B: HP LR24 80 Hz", left.Current);
     }
 
     [Theory]
@@ -194,6 +195,20 @@ public sealed class AgentJunctionTuneReviewTests
     {
         AgentProposalReview review = AgentProposalValidator.Review(
             Proposal(Tune("left:B-C"), Tune("left:B-C", "op-2"), Tune("left:A-B", "op-3")),
+            Session());
+
+        Assert.True(review.Verdicts[0].Applicable);
+        Assert.Equal(AgentVerdictStatus.Rejected, review.Verdicts[1].Status);
+        Assert.Contains("Already requested by op-1", review.Verdicts[1].Message);
+        Assert.True(review.Verdicts[2].Applicable);
+    }
+
+    [Fact]
+    public void Review_RunsOneJunctionOnce_WhicheverSideTheReplyNamesItBy()
+    {
+        // A tune writes both sides of both blocks, so the second side's request would tune the same junction again.
+        AgentProposalReview review = AgentProposalValidator.Review(
+            Proposal(Tune("left:B-C"), Tune("right:B-C", "op-2"), Tune("right:A-B", "op-3")),
             Session());
 
         Assert.True(review.Verdicts[0].Applicable);

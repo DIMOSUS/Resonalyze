@@ -223,16 +223,23 @@ public partial class Form1
             return false;
         }
 
+        LiveSpectrumRestartSnapshot liveBefore = LiveSpectrumRestartSnapshot.Capture(viewSettings.LiveSpectrum);
         if (session != null)
         {
             ApplySessionView(session, result.SampleRate);
         }
 
         ApplyMeasurementConfigurationToControllers();
+        // A held live curve must not be redrawn under the entry's acquisition settings (a pink capture re-tilted as
+        // white), as the settings panel and New session already ensure.
+        if (LiveSpectrumRestartSnapshot.Capture(viewSettings.LiveSpectrum) != liveBefore)
+        {
+            liveSpectrumController.DiscardCapturedData();
+        }
 
         if (session != null)
         {
-            // Mode switch re-prepares overlays hidden, so only the active slots are re-shown. Audio settings untouched.
+            // Audio settings untouched.
             await SelectModeAsync(NormalizeSessionMode(session.ActiveMode));
             // A newer load or run that landed during the switch keeps its own slots and settings.
             if (!request.IsCurrent)

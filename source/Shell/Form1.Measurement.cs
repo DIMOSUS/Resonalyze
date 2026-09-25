@@ -195,6 +195,8 @@ public partial class Form1
         }
 
         viewSettings.LiveSpectrum.MagnitudeScale = Dsp.MagnitudeScale.Relative;
+        // The zoom was taken on the dB SPL axis; the relative axis refits.
+        analyzerPlot.Viewports.Forget(Mode.LiveSpectrum);
         SaveMeasurementSettings();
         // An open panel must follow, or its next apply writes SPL back.
         dockedModeSettingsHost.InvokeIfOpen<Options.LiveSpectrumOpt>(
@@ -213,6 +215,7 @@ public partial class Form1
         }
 
         viewSettings.FrequencyResponse.MagnitudeScale = Dsp.MagnitudeScale.Relative;
+        analyzerPlot.Viewports.Forget(Mode.FrequencyResponse);
         SaveMeasurementSettings();
         // An open panel must follow, or its next apply writes SPL back.
         dockedModeSettingsHost.InvokeIfOpen<Options.FROptions>(

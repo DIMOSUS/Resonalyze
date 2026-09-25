@@ -162,7 +162,9 @@ measurements have to be framed identically, for a screenshot or a before/after.
 A zoom survives a redraw: changing a setting, running a new measurement or
 toggling an overlay keeps the range you are looking at. The analysis plot
 remembers one range per mode, so Frequency Response and Impulse Response do not
-fight over a scale; the Time Alignment previews keep theirs across a
+fight over a scale, and refits when the magnitude axis changes its unit — the
+Scale set between dB and dB SPL, or a view-only dB SPL scale falling back to dB
+when a run without an SPL calibration starts; the Time Alignment previews keep theirs across a
 reconfiguration, and the EQ Wizard and Virtual DSP graphs hold theirs until
 something changes what the axis means (loading a new wizard source, switching
 the Virtual DSP view between magnitude, phase, group delay, impulse and step —

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Resonalyze.Dsp.Tests;
 
 public sealed class PeqTextFileTests
@@ -156,6 +158,34 @@ public sealed class PeqTextFileTests
 
         Assert.Empty(curve.Bands);
         Assert.Equal(0, curve.PreampDb, 6);
+    }
+
+    [Theory]
+    [InlineData("en-US")]
+    [InlineData("de-DE")]
+    [InlineData("")]
+    public void Parse_ReadsADecimalCommaUnderAnyCulture(string culture)
+    {
+        CultureInfo original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo(culture);
+
+            EqualizationCurve curve = PeqTextFile.Parse(
+                "Preamp: -6,5 dB\n" +
+                "Filter 1: ON PK Fc 62,5 Hz Gain -4,5 dB Q 0,707\n" +
+                "Filter 2: ON PK Fc 1250.5 Hz Gain 2.5 dB Q 1.25\n" +
+                "Filter 3: ON PK Fc 1,000.5 Hz Gain 1 dB Q 1\n");
+
+            Assert.Equal(-6.5, curve.PreampDb, 9);
+            Assert.Equal(2, curve.Bands.Count);
+            Assert.Equal(new PeqBand(62.5, 0.707, -4.5), curve.Bands[0]);
+            Assert.Equal(new PeqBand(1250.5, 1.25, 2.5), curve.Bands[1]);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Fact]

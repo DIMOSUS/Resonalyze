@@ -2130,7 +2130,8 @@ Equalizer APO's `Modal` and `PEQ` read as `PK`, as APO itself reads them, and a
 `Filter:` line may leave its number out.
 Import is deliberately
 lenient: comments, blank lines, disabled (`OFF`) filters, unsupported filter
-types, and malformed entries are skipped rather than rejected. The one exception is a
+types, and malformed entries are skipped rather than rejected. A decimal comma
+(`Q 0,707`) reads the same as a point on any Windows language setting. The one exception is a
 fixed-layout device bank: the Audiotec-Fischer file is the channel's 30-slot
 table, so a truncated or renumbered one is refused outright rather than imported
 as an empty bank over the EQ you have — and so is one whose enabled slot claims a

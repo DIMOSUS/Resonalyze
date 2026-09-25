@@ -81,6 +81,19 @@ public sealed class PeqTextFileTests
     }
 
     [Fact]
+    public void Parse_ReadsAPreampAfterTheBandLimit()
+    {
+        string text = string.Concat(Enumerable.Range(1, EqualizationCurve.MaxBandCount + 2)
+                .Select(i => $"Filter {i}: ON PK Fc {100 * i} Hz Gain -1 dB Q 1\n")) +
+            "Preamp: -3 dB\n";
+
+        EqualizationCurve curve = PeqTextFile.Parse(text);
+
+        Assert.Equal(EqualizationCurve.MaxBandCount, curve.Bands.Count);
+        Assert.Equal(-3.0, curve.PreampDb, 6);
+    }
+
+    [Fact]
     public void Parse_AddsPreampLinesAsTheStagesTheyAre()
     {
         EqualizationCurve curve = PeqTextFile.Parse("Preamp: -3 dB\nPreamp: -2.5 dB\nFilter: ON PK Fc 100 Hz Gain -6 dB Q 2\n");

@@ -90,11 +90,6 @@ public static class PeqTextFile
 
         foreach (string rawLine in text.Split('\n'))
         {
-            if (bands.Count >= EqualizationCurve.MaxBandCount)
-            {
-                break;
-            }
-
             string line = rawLine.Trim();
             if (line.Length == 0 || line.StartsWith('#') || line.StartsWith("//", StringComparison.Ordinal))
             {
@@ -150,10 +145,15 @@ public static class PeqTextFile
                 continue;
             }
 
+            // The band limit caps the filters kept, not the file read: a Preamp or Channel line after it still counts.
             if (IsFilterKeyword(tokens[0]) &&
                 TryParseFilter(tokens, out PeqBand band))
             {
-                bands.Add(band);
+                if (bands.Count < EqualizationCurve.MaxBandCount)
+                {
+                    bands.Add(band);
+                }
+
                 recognized = true;
             }
         }

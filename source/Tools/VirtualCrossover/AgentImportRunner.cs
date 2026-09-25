@@ -479,7 +479,7 @@ internal sealed class AgentImportRunner(
             !lifts, inputs.MinHz, inputs.MaxHz);
         if (levelWarning != null)
         {
-            summary.Add($"{label}: skipped ({levelWarning.Split('.')[0]}).");
+            summary.Add($"{label}: skipped ({EqTargetLevelCheck.Statement(levelWarning)}).");
             return false;
         }
 

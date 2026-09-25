@@ -27,6 +27,19 @@ public sealed class EqTargetLevelCheckTests
     }
 
     [Fact]
+    public void TheWarningsStatement_KeepsTheLevelsDecimals_AndDropsTheQuestion()
+    {
+        string warning = "The target sits 3.5 dB above the source over 100–1000 Hz (median). The fit will boost." +
+            Environment.NewLine + Environment.NewLine + "Lower the Target Level. Tune anyway?";
+
+        Assert.Equal(
+            "The target sits 3.5 dB above the source over 100–1000 Hz (median)",
+            EqTargetLevelCheck.Statement(warning));
+        Assert.Equal("A single statement", EqTargetLevelCheck.Statement("A single statement."));
+        Assert.Contains("(median)", EqTargetLevelCheck.Statement(EqTargetLevelCheck.Warning(3.5, false, 100, 1_000)!));
+    }
+
+    [Fact]
     public void AGapInTheSourceInsideTheWindow_IsNotARefusal()
     {
         // Unmeasured octaves inside the window are normal; the fit reads around them.

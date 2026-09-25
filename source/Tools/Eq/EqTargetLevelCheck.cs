@@ -93,4 +93,13 @@ internal static class EqTargetLevelCheck
 
         return null;
     }
+
+    /// <summary>The warning's statement without its question, for a summary line. A sentence ends at a full stop and a
+    /// space: the level inside it may carry a decimal point.</summary>
+    public static string Statement(string warning)
+    {
+        ArgumentNullException.ThrowIfNull(warning);
+        int end = warning.IndexOf(". ", StringComparison.Ordinal);
+        return end < 0 ? warning.TrimEnd('.') : warning[..end];
+    }
 }

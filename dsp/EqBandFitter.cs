@@ -437,10 +437,12 @@ internal sealed class EqBandFitter
                 continue;
             }
 
-            double q = Math.Clamp(
-                Math.Round(Math.Exp(band.V), 1),
-                Math.Ceiling(Math.Exp(band.VLo) * 10 - 1e-9) / 10,
-                Math.Floor(Math.Exp(band.VHi) * 10 + 1e-9) / 10);
+            // A range narrower than a tenth holds no strip value: keep the fitted Q, at two decimals, inside it.
+            double qLow = Math.Ceiling(Math.Exp(band.VLo) * 10 - 1e-9) / 10;
+            double qHigh = Math.Floor(Math.Exp(band.VHi) * 10 + 1e-9) / 10;
+            double q = qLow <= qHigh
+                ? Math.Clamp(Math.Round(Math.Exp(band.V), 1), qLow, qHigh)
+                : Math.Clamp(Math.Round(Math.Exp(band.V), 2), Math.Exp(band.VLo), Math.Exp(band.VHi));
             result.Add(new PeqBand(Math.Max(1, Math.Round(Math.Exp(band.U))), q, gain, band.Type));
         }
 

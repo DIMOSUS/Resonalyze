@@ -91,11 +91,10 @@ public static class AsioDeviceCatalog
                     })))
                 .ToArray();
 
-            bool supportsSampleRate = sampleRate > 0 &&
-                SafeIsSampleRateSupported(driver.IsSampleRateSupported, sampleRate);
-            int[] supportedSampleRates = SampleRateCatalog.GetCandidateRates(minimumSampleRate)
-                .Where(rate => SafeIsSampleRateSupported(driver.IsSampleRateSupported, rate))
-                .ToArray();
+            (bool supportsSampleRate, int[] supportedSampleRates) = ProbeSampleRates(
+                driver.IsSampleRateSupported,
+                sampleRate,
+                SampleRateCatalog.GetCandidateRates(minimumSampleRate));
             return new AsioDriverInfo(
                 driverName,
                 inputChannels,
@@ -154,17 +153,37 @@ public static class AsioDeviceCatalog
         driver.ShowControlPanel();
     }
 
-    /// <summary>ASIO refuses a rate with ASE_NoClock, but some drivers answer another code, which NAudio throws: that rate is unsupported, the driver still usable.</summary>
-    internal static bool SafeIsSampleRateSupported(Func<int, bool> isSupported, int sampleRate)
+    /// <summary>
+    /// ASIO refuses a rate with ASE_NoClock, but some drivers answer another code, which NAudio throws: that rate is
+    /// unsupported. A driver that takes no rate and threw is failing, not refusing, so its first error is rethrown.
+    /// </summary>
+    internal static (bool SupportsSampleRate, int[] SupportedSampleRates) ProbeSampleRates(
+        Func<int, bool> isSupported,
+        int sampleRate,
+        IEnumerable<int> candidateRates)
     {
-        try
+        Exception? firstRefusal = null;
+        bool Probe(int rate)
         {
-            return isSupported(sampleRate);
+            try
+            {
+                return isSupported(rate);
+            }
+            catch (Exception exception)
+            {
+                firstRefusal ??= exception;
+                return false;
+            }
         }
-        catch
+
+        bool supportsSampleRate = sampleRate > 0 && Probe(sampleRate);
+        int[] supportedSampleRates = candidateRates.Where(Probe).ToArray();
+        if (!supportsSampleRate && supportedSampleRates.Length == 0 && firstRefusal != null)
         {
-            return false;
+            throw firstRefusal;
         }
+
+        return (supportsSampleRate, supportedSampleRates);
     }
 
     private static int SafeInt(Func<int> getValue)

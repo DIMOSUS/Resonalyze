@@ -21,19 +21,46 @@ public sealed class SweepBandMigrationTests
     }
 
     [Fact]
-    public void Settings_ExplicitBand_IsPreservedWithinTheAllowedRange()
+    public void Settings_LegacyOctaves_KeepTheWidthTheUserChose()
+    {
+        var settings = new MeasurementSettingsFile.SweepMeasurementSettings { Octaves = 4, SampleRate = 44_100 };
+
+        (double lowHz, double highHz) = settings.ResolveBand(44_100);
+
+        Assert.Equal(22_050.0 / 16.0, lowHz);
+        Assert.Equal(20_000.0, highHz);
+    }
+
+    [Fact]
+    public void Settings_AFreshInstall_SweepsTheDefaultBand_NotTheFloor()
+    {
+        var settings = new MeasurementSettingsFile.SweepMeasurementSettings();
+
+        (double lowHz, double highHz) = settings.ResolveBand(settings.SampleRate);
+
+        Assert.Equal(20.0, lowHz);
+        Assert.Equal(20_000.0, highHz);
+    }
+
+    [Theory]
+    [InlineData(30, 18_000, 30, 18_000)]
+    [InlineData(2, 20_000, 2, 20_000)]
+    [InlineData(1, 200, 2, 200)]
+    [InlineData(10, 40_000, 10, 20_000)]
+    public void Settings_ExplicitBand_IsPreservedWithinTheAllowedRange(
+        double low, double high, double expectedLow, double expectedHigh)
     {
         var settings = new MeasurementSettingsFile.SweepMeasurementSettings
         {
-            LowFrequencyHz = 30,
-            HighFrequencyHz = 18_000,
+            LowFrequencyHz = low,
+            HighFrequencyHz = high,
             SampleRate = 48_000
         };
 
         (double lowHz, double highHz) = settings.ResolveBand(48_000);
 
-        Assert.Equal(30.0, lowHz);
-        Assert.Equal(18_000.0, highHz);
+        Assert.Equal(expectedLow, lowHz);
+        Assert.Equal(expectedHigh, highHz);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Resonalyze.Dsp;
 using Resonalyze.Options;
@@ -9,8 +9,10 @@ internal sealed partial class MeasurementSettingsFile
 {
     internal sealed class SweepMeasurementSettings
     {
-        public const double MinSweepFrequencyHz = 20.0;
+        public const double MinSweepFrequencyHz = 2.0;
         public const double MaxSweepFrequencyHz = 20_000.0;
+        // A derived band (fresh install, pre-band file) starts no lower: the 1 s default sweep cannot reach 2 Hz (~350 ms/octave).
+        public const double DerivedBandFloorHz = 20.0;
 
         // Legacy (top pinned to Nyquist), migration only; 0 in LowFrequencyHz/HighFrequencyHz = derive from this.
         public int Octaves { get; set; } = 12;
@@ -105,7 +107,7 @@ internal sealed partial class MeasurementSettingsFile
             {
                 double nyquist = sampleRate / 2.0;
                 double span = Octaves > 0 ? Octaves : 12;
-                low = nyquist / Math.Pow(2.0, span);
+                low = Math.Max(DerivedBandFloorHz, nyquist / Math.Pow(2.0, span));
                 high = nyquist;
             }
 

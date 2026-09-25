@@ -371,8 +371,13 @@ sits under the noise.
 ### Sweep band and duration
 
 The exponential sweep is described by the band it must cover: a **Low frequency
-(Hz)** and a **High frequency (Hz)** anywhere between 20 Hz and 20 kHz, plus a
-**Per octave (ms)** pace that sets the duration. Measuring a tweeter through a
+(Hz)** and a **High frequency (Hz)** anywhere between 2 Hz and 20 kHz, plus a
+**Per octave (ms)** pace that sets the duration. A fresh install sweeps
+20 Hz – 20 kHz. Starting a subwoofer's sweep well below its band keeps the sweep's
+low band edge, and the ringing it leaves in the impulse response, out of that band,
+but the bottom needs time: a whole cycle at 2 Hz takes 0.5 s, so reaching 2 Hz at
+full amplitude takes about 350 ms per octave, and at 95 ms per octave the sweep
+stops near 7 Hz. Measuring a tweeter through a
 2 kHz crossover no longer means sweeping from 20 Hz and pinning the top to
 Nyquist — sweep the band the driver actually plays. Phase alignment is preserved
 by rounding the band outward to whole start and end cycles, so the achieved range

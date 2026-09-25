@@ -14,7 +14,7 @@ internal sealed record RecordCalibrationSelection(
 /// </summary>
 internal sealed partial class RecordSettingsSession
 {
-    public static readonly NumericFieldRange BandRange = new(20, 20_000, 0);
+    public static readonly NumericFieldRange BandRange = new(2, 20_000, 0);
     public static readonly NumericFieldRange OctavePaceRange = new(5, 20_000, 0);
     public static readonly NumericFieldRange HighPassFrequencyRange = new(10, 20_000, 0);
     public static readonly NumericFieldRange AverageRunCountRange = new(1, 64, 0);

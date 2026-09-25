@@ -136,11 +136,29 @@ internal static class EqWizardRender
         return new EqTuneStats(rms, maxInWindow, filtersUsed, peakBoost, peakCut, headroom);
     }
 
-    /// <summary>The statistics the plot shows now, for a tuning sheet.</summary>
+    /// <summary>The statistics of the bank a tuning sheet prints: under Bypass the plot draws no bank, the sheet still does.</summary>
     public static EqTuneStats? CurrentStats(EqWizardSession session)
     {
-        EqualizationCurve eq = DisplayedEq(session);
-        return Stats(session, RenderSet(session, eq), eq);
+        EqualizationCurve eq = session.Bank.Curve;
+        EqWizardRenderSet render = RenderSet(session, eq);
+        // A gated source's landed preview is the bypassed (empty) bank's, so the bank's own is rendered here.
+        if (session.Bypass && session.Source is { IsGated: true } gated && render.Source != null)
+        {
+            List<DataPoint> corrected = EqWizardSourceCurve.ToPlotPoints(
+                EqWizardGatedPreview.Render(EqWizardSourceCurve.GatedPreviewRequest(session, gated, eq)),
+                EqWizardSourceCurve.KeepsGaps(gated));
+            render = render with
+            {
+                SourcePlusEq = new EqWizardCurve(
+                    EqWizardSourceCurve.CorrectedTitle,
+                    EqWizardSourceCurve.CorrectedColor,
+                    2,
+                    LineStyle.Solid,
+                    corrected)
+            };
+        }
+
+        return Stats(session, render, eq);
     }
 
     /// <summary>The bank's own gain (no preamp) on the baseline's frequencies.</summary>

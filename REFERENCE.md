@@ -2151,6 +2151,8 @@ ordinary empty slots).
 **Export as tuning sheet** produces a phone-friendly PDF for reading next to the
 car: the banner, a title, the date and fit range, an EQ preview graph with the
 fit window shaded, the tuning statistics, the preamp, and one card per filter.
+The statistics are the bank's, the one the cards print, even while **Bypass**
+draws the source without it.
 
 ### DSP Q convention
 

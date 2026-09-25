@@ -524,25 +524,13 @@ public sealed class CrossoverRankedProposalTests
             .ToList();
         Assert.True(slopes.Count > 1, $"Every edge took the same slope: {slopes[0]} dB/oct.");
 
-        // What caps the sub is the budget, not the number 24: the old assertion pinned where the amplitude objective
-        // happened to put this junction, and the coherent one places it higher, where a steeper filter still fits.
+        // The budget holds the sub. Where under it the slope lands is the search's: this used to assert the steepest
+        // slope the budget allows, which is where a polarity scoring that broke the next junction pushed it.
         CrossoverEdge subLowPass = proposals[0].LowPassEdge!.Value;
         Assert.True(
             CrossoverFilter.MaxGroupDelaySeconds(subLowPass, highPass: false, SampleRate)
                 <= CrossoverAutoSetup.MaxCrossoverGroupDelaySeconds,
             $"The sub low-pass at {subLowPass.SlopeDbPerOctave} dB/oct is over the group-delay budget.");
-        int? steeper = CrossoverFilter.SupportedSlopes(subLowPass.Family)
-            .Where(slope => slope > subLowPass.SlopeDbPerOctave)
-            .Cast<int?>()
-            .Min();
-        Assert.True(
-            steeper is null ||
-                CrossoverFilter.MaxGroupDelaySeconds(
-                    subLowPass with { SlopeDbPerOctave = steeper.Value },
-                    highPass: false,
-                    SampleRate) > CrossoverAutoSetup.MaxCrossoverGroupDelaySeconds,
-            $"The budget, not the search, should be what stops the sub at " +
-            $"{subLowPass.SlopeDbPerOctave} dB/oct.");
     }
 
     // Fit levels mid and tweeter to each other, keeps the bass raw by default, leaves a sub-target midbass alone (cut-only).

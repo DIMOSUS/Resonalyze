@@ -1447,6 +1447,21 @@ public static class CrossoverAutoSetup
     }
 
     /// <summary>Coordinate descent over junction frequency/family/slope and channel gain. See docs/tech/crossover-auto-setup.md#optimizer.</summary>
+    /// <summary>Makes junction <paramref name="junction"/> sum inverted or not, leaving every other junction's relation
+    /// as it was: flipping only the channel above also flipped the next junction's, so the whole stack above turns.</summary>
+    internal static void SetRelativeInversion(bool[] invert, int junction, bool invertRelative)
+    {
+        if (invert[junction + 1] == (invert[junction] ^ invertRelative))
+        {
+            return;
+        }
+
+        for (int k = junction + 1; k < invert.Length; k++)
+        {
+            invert[k] = !invert[k];
+        }
+    }
+
     private sealed class Optimizer
     {
         private readonly CrossoverAutoSetupOptions options;
@@ -2544,7 +2559,7 @@ public static class CrossoverAutoSetup
             upperSlope[j] = upper;
             splitOctaves[j] = split;
             // Composed onto the lower channel, which the pool's ascending loop has already settled.
-            invert[j + 1] = invert[j] ^ invertRelative;
+            SetRelativeInversion(invert, j, invertRelative);
         }
 
         private void OptimizeGains()

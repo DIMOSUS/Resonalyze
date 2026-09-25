@@ -230,7 +230,11 @@ free. `NormalizePolarity` settles it once at the end: take the side with fewer i
 on a tie leave the lowest driver upright.
 
 `JunctionOption` therefore carries the RELATION, not the upper channel's absolute sign, and `Set`
-composes it onto the lower channel the pool's ascending loop has already settled. An absolute sign is
+composes it onto the lower channel the pool's ascending loop has already settled. Changing one relation
+turns the whole stack above it (`SetRelativeInversion`), so every higher junction keeps its own: flipping
+only the channel above also flipped the next junction's, and every lower junction's inverted option was
+scored with the one above it broken, by up to 6 dB on a three-way. The descent then chased the penalty
+with corners instead, overlapping a mid and a tweeter to cover a polarity it could not set on its own. An absolute sign is
 correct only while nothing below the junction moves, which is true in the descent and false in the
 ranked pool: there the cross-product takes a junction option that was scored against one state of the
 channel below it and applies it to another, so a stored absolute sign silently means the opposite

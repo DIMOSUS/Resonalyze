@@ -683,13 +683,14 @@ public sealed class CrossoverAutoSetupTests
     [InlineData(true)]
     public void ASplitCorner_NeverPutsATweeterHighPassUnderItsResonanceFloor(bool ranked)
     {
-        // Pinned just above the floor and Linkwitz-Riley only, which is where the search does reach for a
-        // negative offset: without it this reads a junction that never splits and asserts nothing.
+        // Pinned just above the floor and Linkwitz-Riley only, with a midrange that rolls off right above the window:
+        // there the search does reach for a negative offset. Without it this reads a junction that never splits and
+        // asserts nothing (a mid reaching 5 kHz only overlapped while the polarity scoring was biased).
         List<SignalPoint> tweeterCurve = BandCurve(1_100, 20_000, 0);
         var channels = new AutoSetupSource[]
         {
             new(BandCurve(30, 500, 0), DriverType.Woofer),
-            new(BandCurve(200, 5_000, 0), DriverType.Midrange),
+            new(BandCurve(200, 1_800, 0), DriverType.Midrange),
             new(tweeterCurve, DriverType.Tweeter)
         };
         CrossoverAutoSetupOptions options =
@@ -1192,5 +1193,23 @@ public sealed class CrossoverAutoSetupTests
         // Not exactly -5: the level is read over the passband the high-pass leaves.
         Assert.InRange(levelled[0].GainDb, -5.3, -4.7);
         Assert.Equal(single.HighPassEdge, levelled[0].HighPassEdge);
+    }
+
+    // Flipping only the channel above a junction also flipped the next junction's relation, so every lower junction's
+    // inverted option was scored with the one above it broken.
+    [Fact]
+    public void SetRelativeInversion_ChangesOnlyThatJunctionsRelation()
+    {
+        bool[] invert = [false, false, true, true];
+
+        CrossoverAutoSetup.SetRelativeInversion(invert, 0, invertRelative: true);
+
+        Assert.Equal([false, true, false, false], invert);
+        Assert.True(invert[0] ^ invert[1]);
+        Assert.True(invert[1] ^ invert[2]);
+        Assert.False(invert[2] ^ invert[3]);
+
+        CrossoverAutoSetup.SetRelativeInversion(invert, 0, invertRelative: true);
+        Assert.Equal([false, true, false, false], invert);
     }
 }

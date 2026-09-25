@@ -36,7 +36,12 @@ public static class EssNoise
         int regionStart = Math.Min(
             Math.Max(0, linearWindow.EndSample) + guard,
             deconvolvedImpulse.Length);
-        int regionEnd = deconvolvedImpulse.Length;
+        // Only where the inverse filter overlaps the recording in full: past it the noise fades, highs first.
+        int regionEnd = EssHarmonicAnalysis.TailNoiseRegionEnd(
+            deconvolvedImpulse.Length,
+            regionStart,
+            decomposition.Sweep,
+            Math.Min(options.NoiseWindowLength, deconvolvedImpulse.Length));
         int regionLength = regionEnd - regionStart;
 
         int windowLength = LargestPowerOfTwoAtMost(

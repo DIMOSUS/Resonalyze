@@ -159,4 +159,45 @@ public sealed class EssNoiseTests
             Assert.Equal(a[i], b[i], 12);
         }
     }
+
+    // A linear deconvolution is recording + sweep - 1 long; over its last sweep - 1 samples the inverse filter slides
+    // off the recording and the noise fades. The estimate must stop where the full overlap does.
+    [Fact]
+    public void TheNoiseFloorIsReadWhereTheInverseFilterStillOverlapsTheRecording()
+    {
+        const int ShortSweep = 48_000;
+        const int Peak = 60_000;
+        const int FullOverlapEnd = 90_000;
+        const int Length = FullOverlapEnd + ShortSweep - 1;
+        var sweep = new EssSweepMetadata(20, 24_000, ShortSweep / (double)SampleRate, SampleRate, ShortSweep, Peak);
+        Assert.Equal(FullOverlapEnd, sweep.FullOverlapEndSample(Length));
+
+        double[] Impulse(bool fades)
+        {
+            var impulse = new double[Length];
+            impulse[Peak] = 1.0;
+            var random = new Random(7);
+            for (int i = Peak + 2_000; i < Length; i++)
+            {
+                double u1 = 1.0 - random.NextDouble();
+                double u2 = 1.0 - random.NextDouble();
+                double scale = fades && i >= FullOverlapEnd ? 1.0 - (i - FullOverlapEnd) / (double)(Length - FullOverlapEnd) : 1.0;
+                impulse[i] += 1e-4 * scale * Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
+            }
+
+            return impulse;
+        }
+
+        NoiseEstimate Estimate(double[] impulse) => EssNoise.EstimateNoise(
+            impulse,
+            EssHarmonicAnalysis.AnalyzeEssHarmonics(impulse, sweep, new HarmonicAnalysisOptions(MaxHarmonic: 4)),
+            NoiseOptions);
+
+        NoiseEstimate fading = Estimate(Impulse(fades: true));
+        NoiseEstimate steady = Estimate(Impulse(fades: false));
+
+        Assert.All(fading.SourceRanges, range => Assert.True(range.End <= FullOverlapEnd, $"read up to {range.End}"));
+        double MeanDb(NoiseEstimate estimate) => estimate.Magnitude.Skip(10).Where(v => v > 0).Average(v => 20 * Math.Log10(v));
+        Assert.Equal(MeanDb(steady), MeanDb(fading), 0.5);
+    }
 }

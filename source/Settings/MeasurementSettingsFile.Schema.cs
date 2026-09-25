@@ -11,7 +11,11 @@ internal sealed partial class MeasurementSettingsFile
     {
         public const double MinSweepFrequencyHz = 2.0;
         public const double MaxSweepFrequencyHz = 20_000.0;
+        // A derived band (fresh install, pre-band file) starts no lower: the 1 s default sweep cannot reach 2 Hz (~350 ms/octave).
+        public const double DerivedBandFloorHz = 20.0;
 
+        // Legacy (top pinned to Nyquist), migration only; 0 in LowFrequencyHz/HighFrequencyHz = derive from this.
+        public int Octaves { get; set; } = 12;
         public double LowFrequencyHz { get; set; }
         public double HighFrequencyHz { get; set; }
         public int SampleRate { get; set; } = 44100;
@@ -89,15 +93,22 @@ internal sealed partial class MeasurementSettingsFile
                 ? AsioLoopbackInputChannelOffset.HasValue
                 : WaveLoopbackInputChannelOffset.HasValue;
 
-        /// <summary>Clamps the requested band; with none saved (a fresh or pre-band file) the sweep covers the whole allowed range.</summary>
-        public (double LowHz, double HighHz) ResolveBand()
+        /// <summary>Clamps the requested band, migrating pre-band settings (octave count 12 lands at 20 Hz–20 kHz).</summary>
+        public (double LowHz, double HighHz) ResolveBand(int sampleRate)
         {
-            double low = MinSweepFrequencyHz;
-            double high = MaxSweepFrequencyHz;
+            double low;
+            double high;
             if (LowFrequencyHz > 0 && HighFrequencyHz > LowFrequencyHz)
             {
                 low = LowFrequencyHz;
                 high = HighFrequencyHz;
+            }
+            else
+            {
+                double nyquist = sampleRate / 2.0;
+                double span = Octaves > 0 ? Octaves : 12;
+                low = Math.Max(DerivedBandFloorHz, nyquist / Math.Pow(2.0, span));
+                high = nyquist;
             }
 
             high = Math.Clamp(high, MinSweepFrequencyHz + 1.0, MaxSweepFrequencyHz);
@@ -202,7 +213,7 @@ internal sealed partial class MeasurementSettingsFile
                 captureEndpointId,
                 renderEndpointId,
                 Clamp(SampleRate, 44_100, 384_000));
-            (double lowFrequencyHz, double highFrequencyHz) = ResolveBand();
+            (double lowFrequencyHz, double highFrequencyHz) = ResolveBand(sampleRate);
             return new SweepMeasurementConfiguration(
                 new SweepSignalConfiguration(
                     lowFrequencyHz,

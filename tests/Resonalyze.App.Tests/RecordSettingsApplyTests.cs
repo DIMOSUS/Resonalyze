@@ -65,7 +65,7 @@ public sealed class RecordSettingsApplyTests
         Assert.Equal(1, engine.WaveLoopbackInputChannelOffset);
         Assert.Equal(PlaybackChannel.Stereo, engine.PlaybackChannel);
         Assert.Equal(3, engine.AverageRunCount);
-        Assert.Equal(2.0, settings.LowFrequencyHz);
+        Assert.Equal(20.0, settings.LowFrequencyHz);
     }
 
     [Fact]

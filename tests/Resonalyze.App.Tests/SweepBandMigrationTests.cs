@@ -1,29 +1,44 @@
-using System.Text.Json;
-
 namespace Resonalyze.App.Tests;
 
 public sealed class SweepBandMigrationTests
 {
     [Fact]
-    public void Settings_WithoutABand_SweepTheWholeAllowedRange()
+    public void Settings_LegacyOctaves_MigrateAndClampIntoTheAllowedRange()
     {
-        var settings = new MeasurementSettingsFile.SweepMeasurementSettings { SampleRate = 44_100 };
+        // Pre-band settings: 12 octaves derive 5.4 Hz-22.05 kHz, clamped to the 20 Hz-20 kHz default.
+        var settings = new MeasurementSettingsFile.SweepMeasurementSettings
+        {
+            Octaves = 12,
+            LowFrequencyHz = 0,
+            HighFrequencyHz = 0,
+            SampleRate = 44_100
+        };
 
-        (double lowHz, double highHz) = settings.ResolveBand();
+        (double lowHz, double highHz) = settings.ResolveBand(44_100);
 
-        Assert.Equal(2.0, lowHz);
+        Assert.Equal(20.0, lowHz);
         Assert.Equal(20_000.0, highHz);
     }
 
     [Fact]
-    public void Settings_APreBandFile_SweepsTheWholeAllowedRange()
+    public void Settings_LegacyOctaves_KeepTheWidthTheUserChose()
     {
-        var settings = JsonSerializer.Deserialize<MeasurementSettingsFile.SweepMeasurementSettings>(
-            """{ "Octaves": 10, "SampleRate": 48000 }""")!;
+        var settings = new MeasurementSettingsFile.SweepMeasurementSettings { Octaves = 4, SampleRate = 44_100 };
 
-        (double lowHz, double highHz) = settings.ResolveBand();
+        (double lowHz, double highHz) = settings.ResolveBand(44_100);
 
-        Assert.Equal(2.0, lowHz);
+        Assert.Equal(22_050.0 / 16.0, lowHz);
+        Assert.Equal(20_000.0, highHz);
+    }
+
+    [Fact]
+    public void Settings_AFreshInstall_SweepsTheDefaultBand_NotTheFloor()
+    {
+        var settings = new MeasurementSettingsFile.SweepMeasurementSettings();
+
+        (double lowHz, double highHz) = settings.ResolveBand(settings.SampleRate);
+
+        Assert.Equal(20.0, lowHz);
         Assert.Equal(20_000.0, highHz);
     }
 
@@ -42,7 +57,7 @@ public sealed class SweepBandMigrationTests
             SampleRate = 48_000
         };
 
-        (double lowHz, double highHz) = settings.ResolveBand();
+        (double lowHz, double highHz) = settings.ResolveBand(48_000);
 
         Assert.Equal(expectedLow, lowHz);
         Assert.Equal(expectedHigh, highHz);

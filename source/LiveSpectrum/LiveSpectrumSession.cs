@@ -168,9 +168,13 @@ internal sealed class LiveSpectrumSession : IDisposable
     }
 
     /// <summary>Configures the analyzer, and the next run's high-pass, from the measurement settings.</summary>
+    /// <remarks>A stopped accumulation's bins belong to the rate and frame length they were read at; under another
+    /// the plot and Save would place them on the wrong frequencies, so a change of either discards them.</remarks>
     public void Configure(MeasurementSettingsFile.SweepMeasurementSettings measurementSettings)
     {
         SetProtectiveHighPass(measurementSettings);
+        int sampleRateBefore = analyzer.SampleRate;
+        int sequenceLengthBefore = analyzer.SequenceLength;
         analyzer.Init(
             measurementSettings.SampleRate,
             measurementSettings.Bits,
@@ -190,6 +194,14 @@ internal sealed class LiveSpectrumSession : IDisposable
             measurementSettings.WasapiCaptureEndpointId,
             measurementSettings.WasapiRenderEndpointId,
             measurementSettings.WasapiBufferMilliseconds);
+        if (analyzer.SampleRate != sampleRateBefore || analyzer.SequenceLength != sequenceLengthBefore)
+        {
+            // A loaded capture carries its own geometry and stays.
+            analyzer.ResetAccumulation();
+            heldSnapshot = null;
+            PeakHold.Clear();
+        }
+
         NormalizeSilentSignal();
         // Routing may have gained or lost the loopback live Transfer needs.
         Changed?.Invoke();

@@ -219,7 +219,9 @@ public partial class Form1
             viewSettings.ApplySession(session, result.SampleRate);
         }
 
-        // The live analyzer is configured with the entry's live options.
+        // The live analyzer is configured with the entry's live options, which it refuses while it runs; opening another
+        // measurement stops it, as a sweep does.
+        await StopLiveCaptureAsync();
         ApplyMeasurementConfigurationToControllers();
 
         if (session != null)

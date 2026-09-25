@@ -197,6 +197,8 @@ public sealed class EssNoiseTests
         NoiseEstimate steady = Estimate(Impulse(fades: false));
 
         Assert.All(fading.SourceRanges, range => Assert.True(range.End <= FullOverlapEnd, $"read up to {range.End}"));
+        // Shorter windows, not fewer: the median correction counts on every one.
+        Assert.Equal(NoiseOptions.NoiseWindowCount, fading.SourceRanges.Count);
         double MeanDb(NoiseEstimate estimate) => estimate.Magnitude.Skip(10).Where(v => v > 0).Average(v => 20 * Math.Log10(v));
         Assert.Equal(MeanDb(steady), MeanDb(fading), 0.5);
     }

@@ -70,7 +70,8 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
     public int Sequence { get; set; }
     public int ReadSamples => accumulator?.ReadSamples ?? 0;
-    public int AcceptedSamples => capturePump.AcceptedFrames;
+    // A sweep position: its run starts with a Reset, and Live never reads it.
+    public int AcceptedSamples => checked((int)capturePump.AcceptedFrames);
     public int ChannelCount { get; }
 
     public async Task StartAsync(

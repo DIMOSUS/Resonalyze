@@ -22,7 +22,8 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
     private int generation;
     private int failureGeneration;
     private Exception? failureException;
-    private int acceptedFrames;
+    // Long: an int runs out after 3.1 hours of Live at 192 kHz.
+    private long acceptedFrames;
     private int inFlightCount;
     private bool failurePending;
     private bool stopping;
@@ -87,7 +88,7 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
         }
     }
 
-    public int AcceptedFrames
+    public long AcceptedFrames
     {
         get
         {
@@ -208,9 +209,6 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
             return false;
         }
 
-        // Check before the pop so an overflow cannot leak a taken slot.
-        _ = checked(acceptedFrames + frameCount);
-
         slotIndex = freeSlots.Pop();
         slot = slots[slotIndex];
         return true;
@@ -223,7 +221,7 @@ internal abstract class CapturePump<TSlot, TBlock> : IDisposable
 
     protected void PublishSlot(int slotIndex, int frameCount)
     {
-        acceptedFrames = checked(acceptedFrames + frameCount);
+        acceptedFrames += frameCount;
         slots[slotIndex].Generation = generation;
         pendingSlots.Enqueue(slotIndex);
         Monitor.Pulse(Sync);

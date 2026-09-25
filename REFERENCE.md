@@ -1258,6 +1258,10 @@ arrival against another refuses it by name: [Time Alignment](#time-alignment)
 declines it as a source and as a Compare partner, and
 [Virtual DSP](#virtual-dsp) will not sum it with another measurement.
 
+The protective high-pass in Record Settings is taken to have been in the chain,
+as for a run: it is divided out, and the measurement (and the `.json` it is saved
+to) records that filter as a run does, rather than as unknown.
+
 ### Dropping a file on the window
 
 A file dragged onto the Resonalyze window from Explorer opens exactly as it would

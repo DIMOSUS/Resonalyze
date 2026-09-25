@@ -106,6 +106,22 @@ public sealed class RecordedSweepImportTests
                 result.Transfer.ImpulseResponse.MaxBy(sample => sample.Magnitude)));
     }
 
+    [Fact]
+    public void AnImportStatesTheProtectiveHighPassItDividedOut()
+    {
+        var protectiveHighPass = new ProtectiveHighPassConfiguration(ProtectiveHighPassKind.LinkwitzRiley, 250, 48);
+        SweepMeasurementConfiguration filtered = Configuration() with { ProtectiveHighPass = protectiveHighPass };
+        using ExpSweepMeasurement measurement = CreateMeasurement();
+        float[] plain = RecordSweep(measurement, startOffset: 2_400);
+        float[] throughTheFilter = RecordSweep(measurement, startOffset: 2_400);
+        ApplyHighPass(throughTheFilter, protectiveHighPass.ToEdge());
+
+        Assert.Equal(
+            ProtectiveHighPassConfiguration.Normalize(protectiveHighPass),
+            ExpSweepMeasurement.ImportRecordedSweep(filtered, throughTheFilter, SampleRate).Result.ProtectiveHighPass);
+        Assert.Equal(ProtectiveHighPassConfiguration.Off, Import(plain).Result.ProtectiveHighPass);
+    }
+
     // A dead input is rarely silent: hum on it can out-measure a quiet microphone.
     [Fact]
     public void ImportMeasuresTheChannelThatMatchesRatherThanTheLoudest()

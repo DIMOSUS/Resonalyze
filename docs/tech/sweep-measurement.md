@@ -613,7 +613,9 @@ analysis is then the live one: deconvolution plus the gated H1 estimate.
   normalized match separates a clean take (1.0) from noise (0.02), but a noisy real take
   reads 0.06 and a recording of a different sweep 0.21, so no threshold picks between them.
 - An import carries no absolute time (see `TimingReference.RecordedSweep`), no SPL anchor
-  (`Init` clears it; the recording chain gain is unknown) and no array.
+  (`Init` clears it; the recording chain gain is unknown) and no array. Its protective
+  high-pass is the configuration's: divided out as in a run, and frozen as the result's
+  filter, not left null ("unknown").
 
 `RecordedSweepFile` bounds the decode (ten minutes, with a byte cap that holds during
 decoding, so a file lying about its duration stops at the budget).

@@ -183,7 +183,7 @@ internal sealed class AnalyzerPlot : IModeView
 
     public void ShowAllOverlays()
     {
-        Overlays.Show(Mode);
+        Overlays.ShowAll(Mode);
         RefreshLabels();
     }
 

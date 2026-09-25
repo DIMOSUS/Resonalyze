@@ -283,6 +283,23 @@ public sealed class OverlaySessionTests : IDisposable
     }
 
     [Fact]
+    public void ShowAllAfterHideAll_ShowsEverySlotThatCanShow()
+    {
+        session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));
+        session.Capture(Slot(2), AddLiveCurve(AnalysisCurveKind.SecondHarmonic, "HD2", -30.0));
+
+        session.HideAll();
+        Assert.Null(OverlaySeriesOrNull(1));
+        session.ShowAll(mode);
+
+        Assert.True(Slot(1).Checked);
+        Assert.True(Slot(2).Checked);
+        Assert.NotNull(OverlaySeriesOrNull(1));
+        Assert.NotNull(OverlaySeriesOrNull(2));
+        Assert.False(Slot(3).Checked);
+    }
+
+    [Fact]
     public void RestoringAnEmptySlot_LeavesItUnchecked()
     {
         session.RestoreActiveSlots(mode, [5]);

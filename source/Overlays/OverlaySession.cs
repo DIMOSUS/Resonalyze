@@ -88,6 +88,21 @@ internal sealed class OverlaySession
         plotChanged();
     }
 
+    /// <summary>The Show all button: ticks every slot of the mode that can show, as if the user ticked each.</summary>
+    public void ShowAll(Mode mode)
+    {
+        Mode overlayMode = OverlayModes.SlotModeFor(mode);
+        foreach (OverlaySlot slot in slots)
+        {
+            if (slot.SeriesMode == overlayMode && slot.CheckEnabled && slot.Title.Length > 0)
+            {
+                SetShown(slot, true);
+            }
+        }
+
+        plotChanged();
+    }
+
     public void HideAll()
     {
         foreach (OverlaySlot slot in slots)

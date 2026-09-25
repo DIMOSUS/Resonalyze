@@ -63,6 +63,39 @@ public sealed class WaterfallSeriesRenderTests
             StringComparison.Ordinal);
     }
 
+    // A driver whose group delay puts the peak milliseconds behind its onset: the first slice must be the curve
+    // Frequency Response reads, whose window opens at the onset.
+    [Fact]
+    public void TheWaterfallsFirstSlice_OpensWhereTheMagnitudeWindowDoes_NotAtALatePeak()
+    {
+        var ir = new Complex[16384];
+        const int onset = 2000;
+        const int peak = onset + 240;
+        for (int i = 0; i < 6000; i++)
+        {
+            double rise = Math.Min(1.0, i / 240.0);
+            ir[onset + i] = new Complex(rise * rise * Math.Exp(-Math.Max(0, i - 240) / 600.0) * Math.Cos(i * 0.05), 0);
+        }
+
+        using var measurement = new TestAnalyzer();
+        measurement.Open(TestMeasurementResults.Restored(
+            20, 20_000, 48_000, 24, 1.0, PlaybackChannel.Mono, ir, peak,
+            measurementMode: SweepMeasurementMode.LoopbackTransfer,
+            transferImpulseResponse: ir,
+            transferPeakIndex: peak));
+        IImpulseMeasurement view = new MeasurementPlotContext(measurement.Document).CreatePrimaryMeasurement();
+        var options = new WaterfallGenerateOptions { Window = 4096, LeftTukeyWindow = 64, RightTukeyWindow = 1024 };
+        var waterfall = new WaterfallSeries { GenerateOptions = options };
+
+        waterfall.FillFourierWaterfallData(view);
+
+        int anchor = DataHelper.MagnitudeAnchorIndex(view);
+        Assert.InRange(anchor, onset - 64, peak - 64);
+        double[] window = Windowing.TukeyWindow(4096, 64.0 / 4096 * 2.0, 1024.0 / 4096 * 2.0);
+        List<SignalPoint> expected = DataHelper.GetOversampledSpectrumData(view, anchor - 64, window);
+        Assert.Equal(expected.Select(point => point.Y), waterfall.RawSlices[0].Data.Select(point => point.Y));
+    }
+
     private static TestAnalyzer CreateBroadbandTransferMeasurement()
     {
         var ir = new Complex[8192];

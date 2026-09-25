@@ -147,8 +147,9 @@ namespace Resonalyze.Dsp
             return GetOversampledSpectrumData(measurement, h1Start, window, wrapPreRoll: true);
         }
 
-        // The response START, not the peak: driver GD delays the peak. See docs/tech/phase-and-group-delay.md#magnitude-window-anchor.
-        private static int MagnitudeAnchorIndex(IImpulseMeasurement measurement) =>
+        /// <summary>Where a magnitude window's fade-in ends: the response START, not the peak, which a driver's group delay
+        /// delays. See docs/tech/phase-and-group-delay.md#magnitude-window-anchor.</summary>
+        public static int MagnitudeAnchorIndex(IImpulseMeasurement measurement) =>
             measurement.ImpulseResponse is { Length: > 0 } impulseResponse
                 ? TransferIrStartCache.ResolveStartIndex(
                     impulseResponse, measurement.SampleRate, measurement.PeakIndex)

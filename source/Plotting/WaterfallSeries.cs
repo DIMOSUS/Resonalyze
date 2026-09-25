@@ -81,6 +81,8 @@ namespace Resonalyze
         private double resampledMinFrequency = double.NaN;
         private double resampledMaxFrequency = double.NaN;
         private int resampledWidth = -1;
+        // Burst Decay's window opens at the response start; its periods axis stays on the peak, this far in.
+        private int burstPeakOffsetSamples;
 
         public LinearColorAxis? ColorAxis { get; protected set; }
 
@@ -353,6 +355,9 @@ namespace Resonalyze
             int window = GenerateOptions.Window;
             int step = GenerateOptions.Step;
             int sliceCount = GenerateOptions.SliceCount;
+            // Where Frequency Response opens its window, so the first slice is that curve: a fade ending at a peak the
+            // driver's group delay pushed milliseconds behind the onset misreads the bass by whole octaves.
+            int anchor = DataHelper.MagnitudeAnchorIndex(measurement);
             if (step == 0)
             {
                 throw new ArgumentOutOfRangeException(
@@ -374,7 +379,7 @@ namespace Resonalyze
 
                 Parallel.For(0, sliceCount, slice =>
                 {
-                    int offset = measurement.PeakIndex - windowFuncOffset + slice * step + GenerateOptions.Offset;
+                    int offset = anchor - windowFuncOffset + slice * step + GenerateOptions.Offset;
                     List<DataPoint> data = OxyPlotAdapter.ToDataPoints(
                         DataHelper.GetOversampledSpectrumData(measurement, offset, windowFunction));
 
@@ -393,7 +398,9 @@ namespace Resonalyze
 
             if (GenerateOptions.WaterfallMode == WaterfallMode.BurstDecay)
             {
-                int offset = measurement.PeakIndex - GenerateOptions.LeftTukeyWindow + GenerateOptions.Offset;
+                int offset = anchor - GenerateOptions.LeftTukeyWindow + GenerateOptions.Offset;
+                burstPeakOffsetSamples = Math.Max(
+                    0, GenerateOptions.LeftTukeyWindow + measurement.PeakIndex - anchor);
                 // The psychoacoustic code decodes to its plain base width for burst decay envelopes.
                 double decodedOctaves = SpectrumSmoothing.SmoothingOctaves(
                     GenerateOptions.SmoothingInverseOctaves);
@@ -481,8 +488,8 @@ namespace Resonalyze
                         RawSlices[slice].Frequency,
                         OxyPlotAdapter.ToSignalPoints(RawSlices[slice].Data));
 
-                    // Only Window samples are measured (rest is zero-padding) and the peak sits a left fade after gate start:
-                    // periods axis peak-anchored, NaN past the record.
+                    // Only Window samples are measured (rest is zero-padding); the periods axis is peak-anchored, NaN past the
+                    // record.
                     List<SignalPoint> resampled = WaterfallAnalysis.ResampleBurstDecaySlice(
                         rawSlice.Data,
                         rawSlice.Frequency,
@@ -490,7 +497,7 @@ namespace Resonalyze
                         width,
                         GenerateOptions.Periods,
                         measuredSamples: GenerateOptions.Window,
-                        peakOffsetSamples: Math.Max(0, GenerateOptions.LeftTukeyWindow)).ToList();
+                        peakOffsetSamples: burstPeakOffsetSamples).ToList();
 
                     ResampleSlices[slice] = new Slice(
                         OxyPlotAdapter.ToDataPoints(resampled),

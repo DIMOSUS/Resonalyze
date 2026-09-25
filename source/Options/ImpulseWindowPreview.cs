@@ -15,6 +15,8 @@ internal enum IrPreviewSource
     Primary,
     // Referenced at the estimated start, where magnitude extraction opens its window (DataHelper MagnitudeAnchorIndex).
     PrimaryAtStart,
+    // The same start without the circular pre-roll: a waterfall's later slices would read the direct sound again.
+    PrimaryAtStartUnwrapped,
     TransferFromStart
 }
 
@@ -611,7 +613,7 @@ internal static class ImpulseWindowPreview
                     : SelectImpulseResponse(
                         measurement,
                         IrPreviewSource.SweepDeconvolution),
-            IrPreviewSource.PrimaryAtStart =>
+            IrPreviewSource.PrimaryAtStart or IrPreviewSource.PrimaryAtStartUnwrapped =>
                 measurement.Transfer is { ImpulseResponse.Length: > 0 } startTransferResult
                     ? new IrSource(
                         startTransferResult.ImpulseResponse,
@@ -620,7 +622,7 @@ internal static class ImpulseWindowPreview
                             measurement.SampleRate,
                             startTransferResult.PeakIndex),
                         // The magnitude window reads the circular pre-roll, so the preview does too.
-                        true,
+                        source == IrPreviewSource.PrimaryAtStart,
                         "Transfer IR Window")
                     : SelectImpulseResponse(
                         measurement,

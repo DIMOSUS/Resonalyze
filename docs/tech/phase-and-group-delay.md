@@ -382,8 +382,14 @@ the record's end, as the FDW, phase and group-delay gates do; read as zeros, a
 1.25 ms loopback-referenced arrival came out 0.3-0.4 dB high below 60 Hz against
 the same IR further in, and the FDW curve left the fixed one below its transition.
 Only the pre-roll wraps (`wrapPreRoll`): past the record's end stays zero, so a window
-longer than an imported record does not read the direct sound twice. The Waterfall does
-not wrap at all: its later slices would read the direct sound again.
+longer than an imported record does not read the direct sound twice.
+
+The Waterfall and Burst Decay open their windows at the same start
+(`DataHelper.MagnitudeAnchorIndex`), so the Waterfall's first slice is the Frequency
+Response curve; opened at the peak, a woofer's first slice misread its bass as the
+magnitude once did. Burst Decay's periods axis still counts from the peak, which sits
+that much further into its window. Neither wraps: the Waterfall's later slices would
+read the direct sound again, and its window preview shows the start without the pre-roll.
 
 A composite record (a sum of arrivals) must pass `anchorIndex` = the earliest of its
 parts' own starts. On the mixed record the start estimator reads the front of the

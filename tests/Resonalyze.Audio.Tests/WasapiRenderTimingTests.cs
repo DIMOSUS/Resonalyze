@@ -4,6 +4,15 @@ public sealed class WasapiRenderTimingTests
 {
     private static readonly TimeSpan BufferDuration = TimeSpan.FromMilliseconds(40);
 
+    // Stopping on the event after the final buffer cut that buffer: the device had only begun to play it.
+    [Fact]
+    public void AnExclusiveStreamPlaysOneSilentPeriodAfterTheFinalBufferBeforeItStops()
+    {
+        Assert.Equal(WasapiExclusiveRenderStep.Fill, WasapiRenderTiming.NextExclusiveStep(false, false));
+        Assert.Equal(WasapiExclusiveRenderStep.Silence, WasapiRenderTiming.NextExclusiveStep(true, false));
+        Assert.Equal(WasapiExclusiveRenderStep.Finish, WasapiRenderTiming.NextExclusiveStep(true, true));
+    }
+
     [Fact]
     public void EmptyPaddingAtNormalExclusiveCallbackIsNotUnderrun()
     {

@@ -45,9 +45,7 @@ public partial class Form1
             closingPrepared = true;
             shutdownFastClose = true;
             startupAudioWarmup.Cancel();
-            FlushMeasurementSettings();
-            analyzerPlot.Overlays.FlushPendingSaves();
-            sessionTracker.PersistCurrentSessionState();
+            SaveForExit(report: false);
             return;
         }
 
@@ -60,9 +58,7 @@ public partial class Form1
 
         closingInProgress = true;
         Enabled = false;
-        FlushMeasurementSettings();
-        analyzerPlot.Overlays.FlushPendingSaves();
-        sessionTracker.PersistCurrentSessionState();
+        SaveForExit(report: true);
         startupAudioWarmup.Cancel();
         await Task.WhenAll(
             expSweepMeasurement.AbortAsync(),
@@ -73,6 +69,39 @@ public partial class Form1
         DisposeAppResources();
         closingPrepared = true;
         BeginInvoke((MethodInvoker)Close);
+    }
+
+    // A save that throws must not strand the close half done (cancelled, disabled, refusing another try): it is reported and the close goes on.
+    private void SaveForExit(bool report)
+    {
+        var failures = new List<string>();
+        foreach (Action save in new Action[]
+                 {
+                     FlushMeasurementSettings,
+                     analyzerPlot.Overlays.FlushPendingSaves,
+                     sessionTracker.PersistCurrentSessionState
+                 })
+        {
+            try
+            {
+                save();
+            }
+            catch (Exception exception)
+            {
+                failures.Add(exception.Message);
+            }
+        }
+
+        if (report && failures.Count > 0)
+        {
+            MessageBox.Show(
+                this,
+                "Some settings could not be saved and are lost when Resonalyze closes.\r\n\r\n" +
+                string.Join("\r\n", failures),
+                "Closing",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
     }
 
     private void DisposeAppResources()

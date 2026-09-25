@@ -347,6 +347,14 @@ trace. Wrapped phase is smoothed as unit phasors (cosine and sine separately, th
 false ramp across the kernel's width. Unwrapped and excess phase are continuous and
 are averaged directly.
 
+The phase kernel (`SmoothLinear`) is the Lanczos main lobe over the uniform bin grid,
+half an octave-width wide. It stops at both ends of the grid and renormalises, so the
+top bin weighs once in its neighbours' means; repeating it for every virtual bin past
+Nyquist pulled unwrapped phase near the top by tens of degrees toward the last bin.
+Both phasor components share one pass, and a kernel's weights come from one sine and
+a rotation per bin (`FillLanczos2Weights`), so a 1/12-octave rebuild on 16 k bins
+costs tens of milliseconds, not hundreds.
+
 ## Magnitude spectra
 
 `DataHelper.Spectrum.cs` builds the primary magnitude curve: window the impulse,
@@ -501,7 +509,10 @@ capture.
 aliasing and jagged traces of nearest-bin lookup. Lanczos weights are signed, so the
 sum degenerates when the kernel falls outside the input grid (resampling to 20 kHz
 from a spectrum that ends below it); the nearest input sample is held instead of
-pinning the point to the −160 dB floor.
+pinning the point to the −160 dB floor. Each bin is converted to amplitude once, and
+on a uniform bin grid the kernel's sines advance by rotation, as in the phase kernel;
+a curve on any other grid is weighted tap by tap. In the psychoacoustic mode the
+Lanczos mean is computed only where the Gaussian degenerates and needs it.
 
 The psychoacoustic mode uses a Gaussian cubic mean whose FWHM follows the
 frequency-dependent octave width: it gives audible peaks more weight without a hard

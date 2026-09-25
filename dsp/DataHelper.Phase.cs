@@ -1558,18 +1558,22 @@ namespace Resonalyze.Dsp
                 return SmoothLinear(data, octaves);
             }
 
+            if (data.Count < 2)
+            {
+                return new List<SignalPoint>(data);
+            }
+
             const double toRadians = Math.PI / 180.0;
-            List<SignalPoint> cosine = SmoothLinear(
-                data.Select(point => new SignalPoint(point.X, Math.Cos(point.Y * toRadians))).ToList(),
-                octaves);
-            List<SignalPoint> sine = SmoothLinear(
-                data.Select(point => new SignalPoint(point.X, Math.Sin(point.Y * toRadians))).ToList(),
-                octaves);
+            double[][] phasor = SmoothLinearChannels(
+                data,
+                octaves,
+                data.Select(point => Math.Cos(point.Y * toRadians)).ToArray(),
+                data.Select(point => Math.Sin(point.Y * toRadians)).ToArray());
             var result = new List<SignalPoint>(data.Count);
             for (int i = 0; i < data.Count; i++)
             {
                 result.Add(new SignalPoint(
-                    data[i].X, Math.Atan2(sine[i].Y, cosine[i].Y) / toRadians));
+                    data[i].X, Math.Atan2(phasor[1][i], phasor[0][i]) / toRadians));
             }
             return result;
         }

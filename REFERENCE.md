@@ -3938,7 +3938,9 @@ tune is actually built in:
 
 - **Tools... → Capture to overlay** saves the predicted sum as a Captured overlay in
   Frequency Response — compare it against real measurements and target curves, or
-  feed it onward to the EQ Wizard.
+  feed it onward to the EQ Wizard. It is the **Sum** the plot draws for the shown
+  side and group view: the same channels enter it (a centre never does), through
+  the same window.
 - **Tools... → Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
   the tune into a stereo WAV: each program channel is convolved with the summed
   processed response of its side, with the microphone calibration optionally
@@ -4013,7 +4015,9 @@ tune is actually built in:
   junction inverted to fix the cabin's phase shows an electrical dip here
   that the car does not have, because that junction knits through timing this
   graph does not model — the panel's plot is where it is judged. A
-  single-zone project keeps the flat sheet it always had. It
+  single-zone project keeps the flat sheet it always had. The sum-loss line it
+  prints is the plot's read-out for the shown side and group view (Full window),
+  and the Auto delay log ends on the same read-out. It
   states the PEQ columns in the [Q convention](#dsp-q-convention) of the project's
   [DSP processor](#dsp-processor): a named model answers for itself and the export
   asks nothing. A **Custom** processor has only what was typed into that dialog, so

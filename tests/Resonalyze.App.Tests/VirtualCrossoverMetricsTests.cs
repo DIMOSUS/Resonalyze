@@ -837,6 +837,41 @@ public sealed class VirtualCrossoverMetricsTests
     }
 
     [Fact]
+    public void AFramesSum_IsWhatTheViewSums_NotEveryChannelOfTheSideAsOneChain()
+    {
+        using var coordinator = new VirtualCrossoverProcessingCoordinator();
+        var flat = new AnalysisCurve(
+            "x", [.. Enumerable.Range(0, 400).Select(i => new SignalPoint(20.0 * Math.Pow(1_000.0, i / 399.0), 0.0))]);
+        var summedSets = new List<string>();
+        var metrics = new VirtualCrossoverMetrics(
+            coordinator,
+            (_, _, _, _, _) => new GatedMagnitude(flat, flat),
+            null,
+            (channels, _) =>
+            {
+                summedSets.Add(string.Join("+", channels.Select(item => item.Channel.Name)));
+                return new GatedMagnitude(flat, flat);
+            });
+        ProcessedChannel mid = ProcessedThroughChain("B", CrossoverKind.HighPass, 290);
+        mid.Channel.Settings.CrossoverKind = CrossoverKind.BandPass;
+        mid.Channel.Settings.LowPassEdge = new CrossoverEdge(CrossoverFilterFamily.LinkwitzRiley, 3_500, 24);
+        ProcessedChannel tweeter = ProcessedThroughChain("C", CrossoverKind.HighPass, 3_500);
+        ProcessedChannel rear = ProcessedThroughChain("R", CrossoverKind.HighPass, 290);
+        rear.Channel.Pair.Zone = VirtualCrossoverZone.Rear;
+        ProcessedChannel centre = ProcessedThroughChain("X", CrossoverKind.HighPass, 290);
+        centre.Channel.Pair.Zone = VirtualCrossoverZone.Center;
+
+        (AnalysisCurve? sum, List<VirtualCrossoverMetric.Entry> entries) =
+            VirtualCrossoverFrame.Of([mid, rear, centre, tweeter], VirtualCrossoverGroupView.FrontAndSub)
+                .ReadSum(metrics, 12);
+
+        Assert.NotNull(sum);
+        Assert.Equal(["B+C"], summedSets);
+        Assert.Contains(entries, entry => entry.Junction == "B/C");
+        Assert.All(entries.Where(entry => !entry.IsTotal), entry => Assert.Equal("B/C", entry.Junction));
+    }
+
+    [Fact]
     public void BuildCurves_SumsOnlyTheSubsetItIsGiven_ButStillDrawsEveryChannel()
     {
         using var coordinator = new VirtualCrossoverProcessingCoordinator();

@@ -1112,7 +1112,8 @@ namespace Resonalyze
                         sweep.SweepSamples / (double)SampleRate,
                         SampleRate,
                         sweep.SweepSamples,
-                        deconvolved.PeakIndex));
+                        deconvolved.PeakIndex,
+                        sweep.Spec.FullAmplitudeHighFrequencyHz));
             }
             catch (Exception)
             {

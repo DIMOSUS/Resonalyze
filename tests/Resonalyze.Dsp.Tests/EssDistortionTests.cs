@@ -71,6 +71,25 @@ public sealed class EssDistortionTests
     }
 
     [Fact]
+    public void ComputeDistortion_HarmonicCurvesStopWhereTheirProductEntersTheSweepFadeOut()
+    {
+        double[] impulse = new double[ImpulseLength];
+        impulse[PeakIndex] = 1.0;
+        impulse[PeakIndex - EssHarmonicAnalysis.HarmonicOffsetSamples(Sweep(), 2)] = 0.02;
+        EssSweepMetadata sweep = Sweep() with { FullAmplitudeEndFrequencyHz = 20_000 };
+
+        DistortionSpectrum spectrum = EssDistortion.ComputeDistortion(
+            EssHarmonicAnalysis.AnalyzeEssHarmonics(impulse, sweep, new HarmonicAnalysisOptions(MaxHarmonic: 4)),
+            calibration: null,
+            new DistortionOptions(MaxHarmonic: 4));
+
+        double[] hd2 = spectrum.HarmonicDistortionRatio[2];
+        Assert.True(double.IsFinite(hd2[NearestGridIndex(spectrum.Frequencies, 9_000.0)]));
+        // 11 kHz puts its product at 22 kHz, where the gate has already cut it down: no reading, not a low one.
+        Assert.True(double.IsNaN(hd2[NearestGridIndex(spectrum.Frequencies, 11_000.0)]));
+    }
+
+    [Fact]
     public void ComputeDistortion_ThdIsTheEnergyRootOverHarmonics()
     {
         double[] impulse = new double[ImpulseLength];

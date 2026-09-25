@@ -126,15 +126,30 @@ public static class OverlayTextFile
         return new OverlayTextCurve(points.ToArray(), metadata.Build());
     }
 
-    // Whitespace or semicolons separate columns when a line has them, so "63\t4,5" is a decimal comma, not a third column.
+    // A comma is a column separator when it touches whitespace ("20, 75,45") or nothing else separates the line
+    // ("20,75"); inside a whitespace or semicolon column it is a decimal comma ("63\t4,5").
     private static string[] SplitColumns(string line)
     {
-        string[] tokens = line.Split(
-            ColumnSeparators,
-            StringSplitOptions.RemoveEmptyEntries);
-        return tokens.Length >= 2
-            ? tokens
-            : line.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string trimmed = line.Trim();
+        string[] tokens = trimmed.Split(ColumnSeparators, StringSplitOptions.RemoveEmptyEntries);
+        bool commaSeparates = !trimmed.Contains(';') && (tokens.Length < 2 || CommaTouchesWhitespace(trimmed));
+        return commaSeparates
+            ? trimmed.Split([',', ' ', '\t'], StringSplitOptions.RemoveEmptyEntries)
+            : tokens;
+    }
+
+    private static bool CommaTouchesWhitespace(string line)
+    {
+        for (int i = line.IndexOf(','); i >= 0; i = line.IndexOf(',', i + 1))
+        {
+            if ((i > 0 && char.IsWhiteSpace(line[i - 1])) ||
+                (i + 1 < line.Length && char.IsWhiteSpace(line[i + 1])))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool TryParseNumber(string token, out double value)

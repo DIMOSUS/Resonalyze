@@ -2,12 +2,21 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using MathNet.Numerics.IntegralTransforms;
 
 namespace Resonalyze.Dsp
 {
     public static partial class DataHelper
     {
+        // The whole record's unsmoothed envelope and its SNR depend on the record and the band only (an envelope is blind
+        // to sign): a time unit, origin, scale or framing edit rebuilds the view, not them (72-185 ms on 262 k samples).
+        private static readonly ConditionalWeakTable<Complex[], ImpulseEnvelopeReading> ImpulseEnvelopeReadings = new();
+
+        private readonly record struct ImpulseEnvelopeBand(int Length, int SampleRate, double? CenterHz, double? Octaves);
+
+        private sealed record ImpulseEnvelopeReading(ImpulseEnvelopeBand Band, double[] Envelope, double? SnrDb);
+
         // Traces span the whole record on its own timeline; opening length, zero and reference are the caller's framing.
         public static ImpulseCurveSet GetImpulseCurves(
             IImpulseMeasurement measurement,
@@ -58,17 +67,9 @@ namespace Resonalyze.Dsp
             double? snrDb = null;
             if (opt.ShowEnvelope)
             {
-                double[] envelope = SignalEnvelope.Envelope(samples);
-                // Against the envelope peak, as Time Alignment grades it, so the SNR figures match.
-                double envelopePeak = 0.0;
-                for (int i = 0; i < envelope.Length; i++)
-                {
-                    envelopePeak = Math.Max(envelopePeak, envelope[i]);
-                }
-
-                snrDb = envelopePeak > 0.0
-                    ? SignalEnvelope.EstimatePeakConfidenceDecibels(envelope, envelopePeak)
-                    : null;
+                ImpulseEnvelopeReading reading = WholeRecordEnvelope(measurement, opt, samples);
+                snrDb = reading.SnrDb;
+                double[] envelope = (double[])reading.Envelope.Clone();
                 SmoothEnvelopeInPlace(envelope, opt.EnvelopeSmoothingMs, measurement.SampleRate);
                 envelopeCurve = new AnalysisCurve(
                     "Envelope (ETC)",
@@ -93,6 +94,47 @@ namespace Resonalyze.Dsp
                 reference,
                 ownPeakIndex,
                 snrDb);
+        }
+
+        private static ImpulseEnvelopeReading WholeRecordEnvelope(
+            IImpulseMeasurement measurement,
+            ImpulseResponseOptions opt,
+            double[] samples)
+        {
+            bool banded = opt.HasBandFilter(measurement.SampleRate);
+            var band = new ImpulseEnvelopeBand(
+                samples.Length,
+                measurement.SampleRate,
+                banded ? opt.BandCenterHz : null,
+                banded ? opt.BandFilterOctaves : null);
+            Complex[]? record = measurement.ImpulseResponse;
+            if (record != null &&
+                ImpulseEnvelopeReadings.TryGetValue(record, out ImpulseEnvelopeReading? cached) &&
+                cached.Band == band)
+            {
+                return cached;
+            }
+
+            double[] envelope = SignalEnvelope.Envelope(samples);
+            // Against the envelope peak, as Time Alignment grades it, so the SNR figures match.
+            double envelopePeak = 0.0;
+            for (int i = 0; i < envelope.Length; i++)
+            {
+                envelopePeak = Math.Max(envelopePeak, envelope[i]);
+            }
+
+            var reading = new ImpulseEnvelopeReading(
+                band,
+                envelope,
+                envelopePeak > 0.0
+                    ? SignalEnvelope.EstimatePeakConfidenceDecibels(envelope, envelopePeak)
+                    : null);
+            if (record != null)
+            {
+                ImpulseEnvelopeReadings.AddOrUpdate(record, reading);
+            }
+
+            return reading;
         }
 
         private static double ImpulseTime(

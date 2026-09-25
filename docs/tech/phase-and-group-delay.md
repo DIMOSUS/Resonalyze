@@ -601,6 +601,10 @@ Virtual DSP gate pin and saved offsets all refer to its absolute timeline.
   analytic magnitude rides above the samples), because Time Alignment grades the
   record against its envelope peak and the two figures must match. It exists only
   when the envelope is drawn, since the envelope costs a transform.
+- The unsmoothed envelope and its SNR are kept per record array and band: they do
+  not depend on time unit, origin, scale, framing or Invert (the analytic magnitude
+  of a negated record is the same, bit for bit), which each rebuilt them for
+  72-185 ms on a 262 k-sample record. The envelope smoothing is applied to a copy.
 - A band filter (`BandFilterOctaves`, zero-phase mask with a fade skirt of half the
   pass width, as the Time Alignment probe uses) replaces the source signal, so peak,
   reference and SNR describe the band. A band is realisable only if its whole

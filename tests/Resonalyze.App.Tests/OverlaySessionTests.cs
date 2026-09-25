@@ -15,12 +15,13 @@ public sealed class OverlaySessionTests : IDisposable
     private readonly OverlaySession session;
     private MagnitudeScale shownScale = MagnitudeScale.Relative;
     private Mode mode = Mode.FrequencyResponse;
+    private int repaints;
 
     public OverlaySessionTests()
     {
         sources = new OverlayPlotSources(() => model, () => mode);
         sources.SetMagnitudeScaleProvider(() => shownScale);
-        session = new OverlaySession(sources, OffsetRange, 0m, _ => { }, () => { }, root);
+        session = new OverlaySession(sources, OffsetRange, 0m, _ => repaints++, () => { }, root);
         session.Prepare(mode);
     }
 
@@ -307,6 +308,27 @@ public sealed class OverlaySessionTests : IDisposable
         Assert.NotNull(OverlaySeriesOrNull(1));
         Assert.NotNull(OverlaySeriesOrNull(2));
         Assert.False(Slot(3).Checked);
+    }
+
+    [Fact]
+    public void ShowingOrHidingEverySlot_RepaintsOnce()
+    {
+        session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));
+        session.Capture(Slot(2), AddLiveCurve(AnalysisCurveKind.SecondHarmonic, "HD2", -30.0));
+        session.Capture(Slot(3), AddLiveCurve(AnalysisCurveKind.ThirdHarmonic, "HD3", -40.0));
+
+        repaints = 0;
+        session.HideAll();
+        Assert.Equal(1, repaints);
+
+        repaints = 0;
+        session.ShowAll(mode);
+        Assert.Equal(1, repaints);
+
+        repaints = 0;
+        session.HideAll();
+        session.HideAll();
+        Assert.Equal(1, repaints);
     }
 
     [Fact]

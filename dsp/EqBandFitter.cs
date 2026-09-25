@@ -425,6 +425,23 @@ internal sealed class EqBandFitter
         return result;
     }
 
+    /// <summary>Q on the strip's tenth, or on a hundredth or a thousandth where the range holds no tenth; the raw
+    /// value only for a range narrower than that.</summary>
+    internal static double QuantizeQ(double q, double low, double high)
+    {
+        foreach (double step in new[] { 10.0, 100.0, 1_000.0 })
+        {
+            double stepLow = Math.Ceiling(low * step - 1e-9) / step;
+            double stepHigh = Math.Floor(high * step + 1e-9) / step;
+            if (stepLow <= stepHigh)
+            {
+                return Math.Clamp(Math.Round(q * step) / step, stepLow, stepHigh);
+            }
+        }
+
+        return Math.Clamp(q, low, high);
+    }
+
     // Strip precision: whole Hz, a tenth of a dB, a tenth of Q.
     private List<PeqBand> Quantize()
     {
@@ -437,12 +454,8 @@ internal sealed class EqBandFitter
                 continue;
             }
 
-            // A range narrower than a tenth holds no strip value: keep the fitted Q, at two decimals, inside it.
-            double qLow = Math.Ceiling(Math.Exp(band.VLo) * 10 - 1e-9) / 10;
-            double qHigh = Math.Floor(Math.Exp(band.VHi) * 10 + 1e-9) / 10;
-            double q = qLow <= qHigh
-                ? Math.Clamp(Math.Round(Math.Exp(band.V), 1), qLow, qHigh)
-                : Math.Clamp(Math.Round(Math.Exp(band.V), 2), Math.Exp(band.VLo), Math.Exp(band.VHi));
+            // A range narrower than a tenth holds no strip value: keep the fitted Q at the finest step that fits it.
+            double q = QuantizeQ(Math.Exp(band.V), Math.Exp(band.VLo), Math.Exp(band.VHi));
             result.Add(new PeqBand(Math.Max(1, Math.Round(Math.Exp(band.U))), q, gain, band.Type));
         }
 

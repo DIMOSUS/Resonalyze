@@ -101,6 +101,41 @@ public sealed class MeasurementHistoryPersistenceTests : IDisposable
         Assert.DoesNotContain("sourceFilePath", File.ReadAllText(storePath));
     }
 
+    [Fact]
+    public void AnEntryFromBeforeTheWindowSelectors_KeepsTheFixedGate_AndANewerOneItsChoice()
+    {
+        string oldPath = Path.Combine(directory, "old.json");
+        string newPath = Path.Combine(directory, "new.json");
+        File.WriteAllText(oldPath, "{}");
+        File.WriteAllText(newPath, "{}");
+        File.WriteAllText(
+            storePath,
+            """
+            {"schemaVersion":1,"entries":[
+            {"id":"00000000-0000-0000-0000-000000000001","displayName":"old","timestamp":"2025-01-01T00:00:00+00:00",
+            "sourceFilePath":OLD,
+            "session":{"phaseResponse":{"phaseGateOffsetMs":3},"groupDelay":{"groupDelayGateOffsetMs":4}}},
+            {"id":"00000000-0000-0000-0000-000000000002","displayName":"new","timestamp":"2026-01-01T00:00:00+00:00",
+            "sourceFilePath":NEW,
+            "session":{"phaseResponse":{"phaseWindowMode":"FrequencyDependent","phaseDetrendMode":"Auto"},
+            "groupDelay":{"groupDelayWindowMode":"FrequencyDependent"}}}]}
+            """
+                .Replace("OLD", System.Text.Json.JsonSerializer.Serialize(oldPath), StringComparison.Ordinal)
+                .Replace("NEW", System.Text.Json.JsonSerializer.Serialize(newPath), StringComparison.Ordinal));
+        var persistence = new MeasurementHistoryPersistence(storePath);
+
+        IReadOnlyList<MeasurementHistoryEntry> loaded = persistence.Load();
+
+        MeasurementSessionSnapshot old = loaded.Single(entry => entry.SourceFilePath == oldPath).Session!;
+        Assert.Equal(Resonalyze.Dsp.PhaseWindowMode.Fixed, old.GroupDelay.GroupDelayWindowMode);
+        Assert.Equal(Resonalyze.Dsp.PhaseWindowMode.Fixed, old.PhaseResponse.PhaseWindowMode);
+        Assert.Equal(Resonalyze.Dsp.PhaseDetrendMode.Manual, old.PhaseResponse.PhaseDetrendMode);
+        Assert.Equal(4, old.GroupDelay.GroupDelayGateOffsetMs);
+        MeasurementSessionSnapshot current = loaded.Single(entry => entry.SourceFilePath == newPath).Session!;
+        Assert.Equal(Resonalyze.Dsp.PhaseWindowMode.FrequencyDependent, current.GroupDelay.GroupDelayWindowMode);
+        Assert.Equal(Resonalyze.Dsp.PhaseWindowMode.FrequencyDependent, current.PhaseResponse.PhaseWindowMode);
+    }
+
     /// <summary>Rows whose file is gone are dropped at load and the store rewritten immediately (a read-only session never saves).</summary>
     [Fact]
     public void Load_RemovesUnreachableEntriesFromTheStoreImmediately()

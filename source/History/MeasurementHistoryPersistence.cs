@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace Resonalyze.History;
@@ -40,11 +41,13 @@ internal sealed class MeasurementHistoryPersistence
             }
 
             // A block: the stream must close before the rewrite below, or the atomic replace hits our own handle.
-            StoreFile? file;
+            JsonNode? root;
             using (FileStream stream = File.OpenRead(pathOnDisk))
             {
-                file = JsonSerializer.Deserialize<StoreFile>(stream, SerializerOptions);
+                root = JsonNode.Parse(stream);
             }
+
+            StoreFile? file = root?.Deserialize<StoreFile>(SerializerOptions);
 
             if (file == null)
             {
@@ -58,6 +61,7 @@ internal sealed class MeasurementHistoryPersistence
 
             // Migration seam for future schema bumps.
             file.SchemaVersion = CurrentSchemaVersion;
+            KeepUnstatedGatesFixed(root!, file);
 
             var reachable = new List<MeasurementHistoryEntry>(file.Entries.Count);
             var retained = new List<PersistedEntry>(file.Entries.Count);
@@ -130,6 +134,38 @@ internal sealed class MeasurementHistoryPersistence
             LoadWarning = $"Measurement history could not be loaded: {exception.Message}\r\n\r\n{preservation}";
             preserveExistingFileBeforeSave = backup.Status == BackupStatus.Failed;
             return Array.Empty<MeasurementHistoryEntry>();
+        }
+    }
+
+    // An entry saved before a view had its window selector states none, and the options' default (FDW) is not what it
+    // showed: it was on the Fixed gate, as the settings file's own migrations put it (schema 7 for Phase, 13 for Group Delay).
+    private static void KeepUnstatedGatesFixed(JsonNode root, StoreFile file)
+    {
+        if (root["entries"] is not JsonArray rawEntries || rawEntries.Count != file.Entries.Count)
+        {
+            return;
+        }
+
+        for (int index = 0; index < rawEntries.Count; index++)
+        {
+            if (file.Entries[index].Session is not { } session ||
+                rawEntries[index]?["session"] is not JsonObject rawSession)
+            {
+                continue;
+            }
+
+            if (rawSession["groupDelay"] is JsonObject groupDelay &&
+                !groupDelay.ContainsKey("groupDelayWindowMode"))
+            {
+                session.GroupDelay.GroupDelayWindowMode = Resonalyze.Dsp.PhaseWindowMode.Fixed;
+            }
+
+            if (rawSession["phaseResponse"] is JsonObject phase &&
+                !phase.ContainsKey("phaseWindowMode"))
+            {
+                session.PhaseResponse.PhaseWindowMode = Resonalyze.Dsp.PhaseWindowMode.Fixed;
+                session.PhaseResponse.PhaseDetrendMode = Resonalyze.Dsp.PhaseDetrendMode.Manual;
+            }
         }
     }
 

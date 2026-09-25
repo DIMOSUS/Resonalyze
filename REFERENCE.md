@@ -263,8 +263,9 @@ reject the late reflection tail. **FDW cycles** selects 4 (strongest
 suppression), 6 (the recommended balance), or 8 (more late detail). The cycles
 are counted after the gate's left fade, and the gate stays the window's outer
 limit: where `cycles / frequency` would run past it, the window is the gate.
-Both tabs start on FDW with 6 cycles; a settings file written before the Group
-Delay tab had the choice opens on Fixed, the curve its owner has been looking at.
+Both tabs start on FDW with 6 cycles; a settings file or a history entry written
+before a tab had the choice opens that tab on Fixed, the curve its owner has been
+looking at.
 
 The Phase view shows four independently toggled curves: **measured phase**,
 **minimum phase** (the part tied to the magnitude and correctable with EQ),

@@ -154,13 +154,15 @@ public sealed class EqWizardPanelWiringTests
     public void Del_WhileAHandleIsHeld_DeletesNothing_AndWorksOnceItIsLetGo() => StaTest.Run(() =>
     {
         using var live = new LivePanel();
-        live.Set<ThemedComboBox>("darkComboBoxBands", box => box.SelectedItem = 2);
+        live.Invoke("AddBand", PeqBandType.Peaking);
+        live.Invoke("AddBand", PeqBandType.Peaking);
         PeqBand second = live.Session.Bank.Bands[1];
         // Focus off every field, as a click on the plate leaves it.
         live.PickByPlate(live.Strips[0]);
         ScreenPoint start = live.HandleCenter(0);
 
         live.Press(start);
+        Assert.True(live.Handles.Dragging, "the press took the handle");
         Assert.Equal(0, live.Handles.Selected);
         Assert.False(live.PressDelete());
         Assert.Equal(2, live.Session.Bank.Bands.Count);

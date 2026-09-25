@@ -2300,7 +2300,8 @@ workflow taken to its conclusion: measure each driver once, then design the whol
 DSP setup virtually. Channels (A, B, C, …) are stereo **L/R pairs**, each side
 picking its own measurement and running its own chain. The blue **L** and red **R**
 buttons (the chosen one filled strong) switch which side the controls edit — from the keyboard too: `L` and `R` pick a side and
-`` ` `` (the key under Esc) swaps them, whenever the caret is not in a field —
+`` ` `` swaps them (the key Windows reads as the US backtick: under Esc on US and
+Russian layouts, elsewhere on others), whenever the caret is not in a field —
 **L→R** / **R→L** copy chain settings across sides
 (a dialog picks the channels and which parts travel — see below), **Lock** keeps
 the two sides' crossovers, polarity and FIR filters in step while it is on (also below),

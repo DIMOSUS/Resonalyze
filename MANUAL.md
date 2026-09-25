@@ -198,9 +198,10 @@ Its groups, top to bottom:
 
 1. **The sweep** — **Low / High frequency** set its range, **Per octave** its speed; a
    slower sweep buys signal-to-noise. The green line restates the result as band,
-   octaves and duration — the band actually swept, half an octave wider than asked on
-   each side, where the sweep fades in and out. **HPF** declares a protective high-pass
-   left in the DSP — see [Protect the drivers](#-protect-the-drivers).
+   octaves and duration — the band actually swept, which adds up to half an octave on
+   each side for the sweep to fade in and out (less at the top, near the Nyquist limit).
+   **HPF** declares a protective high-pass left in the DSP — see
+   [Protect the drivers](#-protect-the-drivers).
 2. **Channel and averaging** — **Channel** routes the sweep within the output pair
    (Mono, Left, Right or Stereo); **Measurements** is how many sweeps are averaged into
    one result. Two is enough for a quick look; four or more gives a usable coherence
@@ -508,10 +509,11 @@ The panel is dense, so here are its six regions:
    blank cards and default settings — the **Mic cal** choice and the EQ target stay —
    asking first and putting a copy of the current session aside so **Load session...**
    can bring it back. The blue **L** and red **R** buttons at the bottom decide which
-   side every card shows; `L`, `R` and `` ` `` (the key under Esc, to swap) do the same
-   while no field is being typed in. **L→R** / **R→L** copy the settings you pick to the
-   other side, and **Lock**, on by default, mirrors crossover, polarity and FIR-crossover
-   edits onto it.
+   side every card shows; `L`, `R` and, to swap, `` ` `` do the same while no field is
+   being typed in (`` ` `` is the key Windows reads as the US backtick: under Esc on US
+   and Russian layouts, elsewhere on others). **L→R** / **R→L** copy the settings you
+   pick to the other side, and **Lock**, on by default, mirrors crossover, polarity and
+   FIR-crossover edits onto it.
 2. **The acoustic plot** — each channel's processed response, the phase-aware **Sum**,
    and **Sum loss** against the right-hand axis (its selector: **Full** for the sum
    the cabin hears, **FDW-8** for the direct sound alone, **Disable** for no curve).

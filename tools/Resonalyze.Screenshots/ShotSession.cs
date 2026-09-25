@@ -93,9 +93,12 @@ internal sealed class ShotSession
         private readonly Dictionary<nint, DateTime> firstSeen = [];
         private readonly System.Threading.Timer timer;
 
+        // Written on the timer's thread, read on the UI thread once the loop has ended.
+        private string? answered;
+
         public MessageBoxWatchdog() => timer = new System.Threading.Timer(_ => Check(), null, 2_000, 2_000);
 
-        public string? Answered { get; private set; }
+        public string? Answered => Volatile.Read(ref answered);
 
         private void Check()
         {
@@ -132,7 +135,7 @@ internal sealed class ShotSession
                     continue;
                 }
 
-                Answered ??= DialogText(dialog);
+                Interlocked.CompareExchange(ref answered, DialogText(dialog), null);
                 Console.Error.WriteLine($"  watchdog: answering a message box: {DialogText(dialog)}");
                 // IDCANCEL, IDNO, IDOK: a box ignores a command for a button it does not have.
                 foreach (int command in new[] { 2, 7, 1 })

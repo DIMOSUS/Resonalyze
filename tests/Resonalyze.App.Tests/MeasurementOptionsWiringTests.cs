@@ -330,6 +330,21 @@ public sealed class MeasurementOptionsWiringTests
     });
 
     [Fact]
+    public void TheAsioStatus_ReadsWholeInItsTooltip_ADriverErrorIncluded() => StaTest.Run(() =>
+    {
+        using var live = new LiveRecordSettings(settings => settings.AudioBackend = AudioBackend.Asio);
+        Assert.Equal("48000 Hz supported", live.ToolTip("labelAsioSampleRateStatus"));
+
+        live.Pick("comboBoxAsioDriver", "Broken");
+
+        Assert.Equal(BrokenDriverError, live.Control<Label>("labelAsioSampleRateStatus").Text);
+        Assert.Equal(BrokenDriverError, live.ToolTip("labelAsioSampleRateStatus").ReplaceLineEndings(" "));
+    });
+
+    private const string BrokenDriverError =
+        "Error code [ASE_NotPresent] while calling ASIO method <getChannels>, hardware input or output is not present";
+
+    [Fact]
     public void ClosingThePanel_LetsGoOfTheDevices() => StaTest.Run(() =>
     {
         var live = new LiveRecordSettings();
@@ -443,6 +458,11 @@ public sealed class MeasurementOptionsWiringTests
             devices.Recording.Add(new AudioDeviceInfo(2, "Line in 3-4 (A Very Long Interface Name That Needs A Wide Drop-Down List)", 2));
             devices.Capture.Add(FakeRecordDevices.Endpoint("{four}", "Four in", AudioEndpointDirection.Capture, 48_000, 4));
             devices.AsioDrivers["Card"] = FakeRecordDevices.Asio("Card", 4, 2, 44_100, 48_000);
+            devices.AsioDrivers["Broken"] = AsioDeviceCatalog.EmptyDriverInfo with
+            {
+                DriverName = "Broken",
+                ErrorMessage = BrokenDriverError
+            };
             return devices;
         }
 

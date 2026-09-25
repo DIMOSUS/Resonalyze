@@ -82,4 +82,44 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <!-- Single-file publish targets live here, not in the .pubxml: Visual Studio reads a profile's properties only. -->
+  <!-- The one version rule; build.yml asks it too. Tag vX.Y.Z plus N commits is X.Y.(Z+1)-dev.N; a prerelease -->
+  <!-- tag vX.Y.Z-rc.1 plus N is X.Y.Z-rc.1.dev.N, after that prerelease and before the release. -p:Version skips it. -->
+  <Target Name="VersionFromGitTag" BeforeTargets="GetAssemblyVersion"
+          Condition="'$(PublishSingleFile)' == 'true' and '$(Version)' == '$(VersionPrefix)'">
+    <Exec Command="git describe --tags --match &quot;v*&quot; --long"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true"
+          StandardOutputImportance="low"
+          IgnoreExitCode="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitDescribe" />
+      <Output TaskParameter="ExitCode" PropertyName="_GitDescribeExitCode" />
+    </Exec>
+    <PropertyGroup>
+      <_GitVersionPattern>^v(\d+\.\d+)\.(\d+)(-[0-9A-Za-z.-]+)?-(\d+)-g[0-9a-f]+$</_GitVersionPattern>
+      <_GitVersionFound>false</_GitVersionFound>
+      <_GitVersionFound Condition="'$(_GitDescribeExitCode)' == '0' and $([System.Text.RegularExpressions.Regex]::IsMatch('$(_GitDescribe)', '$(_GitVersionPattern)'))">true</_GitVersionFound>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(_GitVersionFound)' == 'true'">
+      <_GitMajorMinor>$([System.Text.RegularExpressions.Regex]::Replace('$(_GitDescribe)', '$(_GitVersionPattern)', '$1'))</_GitMajorMinor>
+      <_GitPatch>$([System.Text.RegularExpressions.Regex]::Replace('$(_GitDescribe)', '$(_GitVersionPattern)', '$2'))</_GitPatch>
+      <_GitPrerelease>$([System.Text.RegularExpressions.Regex]::Replace('$(_GitDescribe)', '$(_GitVersionPattern)', '$3'))</_GitPrerelease>
+      <_GitCommits>$([System.Text.RegularExpressions.Regex]::Replace('$(_GitDescribe)', '$(_GitVersionPattern)', '$4'))</_GitCommits>
+      <Version Condition="'$(_GitCommits)' == '0'">$(_GitMajorMinor).$(_GitPatch)$(_GitPrerelease)</Version>
+      <Version Condition="'$(_GitCommits)' != '0' and '$(_GitPrerelease)' == ''">$(_GitMajorMinor).$([MSBuild]::Add($(_GitPatch), 1))-dev.$(_GitCommits)</Version>
+      <Version Condition="'$(_GitCommits)' != '0' and '$(_GitPrerelease)' != ''">$(_GitMajorMinor).$(_GitPatch)$(_GitPrerelease).dev.$(_GitCommits)</Version>
+    </PropertyGroup>
+    <Warning Condition="'$(_GitVersionFound)' != 'true'"
+             Text="No vX.Y.Z tag found by git describe ('$(_GitDescribe)'); the exe keeps version $(Version)." />
+    <Message Importance="high" Text="Resonalyze version: $(Version)" />
+  </Target>
+
+  <!-- DebugType=None reaches only this project; the libraries' .pdb, which release.yml deletes, are never copied. -->
+  <Target Name="DropReferenceSymbols" AfterTargets="ComputeResolvedFilesToPublishList"
+          Condition="'$(PublishSingleFile)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.pdb'" />
+    </ItemGroup>
+  </Target>
+
 </Project>

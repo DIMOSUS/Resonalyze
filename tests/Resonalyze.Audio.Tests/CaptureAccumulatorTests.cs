@@ -55,6 +55,35 @@ public sealed class CaptureAccumulatorTests
     }
 
     [Fact]
+    public void BreakSequence_StartsTheNextSequenceAfterTheGap()
+    {
+        var accumulator = new CaptureAccumulator(
+            channelCount: 1, sequenceLength: 4, initialCapacity: 16);
+        accumulator.Append(Block([1, 2]), 2);
+
+        // WASAPI flags the packet after a gap; a sequence of [1, 2, 3, 4] would straddle it.
+        accumulator.BreakSequence();
+        accumulator.Append(Block([3, 4, 5, 6]), 4);
+
+        List<float[][]> ready = accumulator.ExtractReadySequences()!;
+        Assert.Equal(new float[] { 3, 4, 5, 6 }, Assert.Single(ready)[0]);
+        Assert.Equal(6, accumulator.ReadSamples);
+    }
+
+    [Fact]
+    public void BreakSequence_KeepsAWholeCaptureWithoutSequences()
+    {
+        var accumulator = new CaptureAccumulator(
+            channelCount: 1, sequenceLength: 0, initialCapacity: 8);
+        accumulator.Append(Block([1, 2]), 2);
+
+        accumulator.BreakSequence();
+        accumulator.Append(Block([3]), 1);
+
+        Assert.Equal(new float[] { 1, 2, 3 }, accumulator.Snapshot()[0]);
+    }
+
+    [Fact]
     public void SequenceMode_TrimsConsumedPrefixSoMemoryStaysBounded()
     {
         const int sequence = 64;

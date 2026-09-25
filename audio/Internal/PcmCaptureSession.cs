@@ -220,6 +220,12 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
 
             if (!paused && accumulator is { } activeAccumulator)
             {
+                // A discontinuous packet is not correlated with the one before: no sequence may span the gap.
+                if (block.Discontinuity)
+                {
+                    activeAccumulator.BreakSequence();
+                }
+
                 activeAccumulator.Append(decodeScratch, decodedFrames);
                 readySequences = activeAccumulator.ExtractReadySequences();
                 sampleWaiters.CompleteUpTo(activeAccumulator.ReadSamples);

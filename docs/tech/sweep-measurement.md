@@ -1053,7 +1053,11 @@ print an artificial bass roll-off onto a correct measurement. Silent has no mode
   captured window. The configured offsets are kept for the Transfer mode.
 - **Dropped blocks** bump a generation counter that resets the reframer, because a frame
   built across the gap reads the step as a broadband burst and poisons H1, coherence and the
-  EMA for seconds.
+  EMA for seconds. A WASAPI packet flagged as a discontinuity is the same kind of gap inside
+  the device's own stream: the accumulator drops the partial sequence before it
+  (`CaptureAccumulator.BreakSequence`), so the next sequence starts after the gap. The
+  reframer resets on the discontinuity event before that sequence arrives; without the break
+  the sequence straddling the gap still became a frame of its own.
 - **Coherence** is hidden (null) until four frames have accumulated: single-frame gamma^2 is
   1 in every energized bin.
 - **Accumulators are seeded** with the first frame: H1 and coherence divide the scale out,

@@ -47,7 +47,9 @@ internal sealed class ModeController
     }
 
     /// <summary>The user chose a tab: the one already shown (or on its way) is no switch, so nothing running stops.</summary>
-    public Task ChooseAsync(ModeTab tab) => tab == requestedTab && !selectChain.IsFaulted ? selectChain : SelectAsync(tab);
+    /// <remarks>A switch that threw or was cancelled never reached the tab, so choosing it again switches.</remarks>
+    public Task ChooseAsync(ModeTab tab) =>
+        tab == requestedTab && !selectChain.IsFaulted && !selectChain.IsCanceled ? selectChain : SelectAsync(tab);
 
     private async Task SelectAfterAsync(Task previous, ModeTab tab)
     {

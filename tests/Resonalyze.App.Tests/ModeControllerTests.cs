@@ -148,6 +148,30 @@ public sealed class ModeControllerTests
         Assert.Equal(ModeTab.Impulse, controller.ActiveTab);
     }
 
+    [Fact]
+    public async Task ChooseAsync_RetriesATabWhoseSwitchWasCancelled()
+    {
+        var calls = new List<string>();
+        bool cancel = true;
+        ModeController controller = CreateController(
+            calls,
+            stop: () =>
+            {
+                if (cancel)
+                {
+                    cancel = false;
+                    throw new OperationCanceledException();
+                }
+
+                return Task.CompletedTask;
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => controller.ChooseAsync(ModeTab.Impulse));
+        await controller.ChooseAsync(ModeTab.Impulse);
+
+        Assert.Equal(ModeTab.Impulse, controller.ActiveTab);
+    }
+
     private static ModeController CreateController(List<string> calls, Func<Task> stop) =>
         new(
             [new RecordingView(calls)],

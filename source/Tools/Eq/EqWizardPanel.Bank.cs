@@ -445,6 +445,14 @@ public partial class EqWizardPanel
             EditBandFromPlot(index, EqBandHandles.StepQ(session.Bank.Bands[index], notches));
         // A drag lands as one undo step when let go; wheel notches wait for the idle timer like typing.
         handles.Released += CommitBankChange;
+        // Alt-Tab or a dialog taking the mouse mid-drag raises no release; let go there too, or Del stays refused.
+        plotWizard.MouseCaptureChanged += (_, _) =>
+        {
+            if (!plotWizard.Capture && handles.Dragging)
+            {
+                handles.Release();
+            }
+        };
     }
 
     // As a strip edit: the bank rounds the band to what its strip can show, and the strip is told without echoing back.

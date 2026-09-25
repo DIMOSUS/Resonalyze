@@ -22,6 +22,8 @@ internal sealed class ActiveOverlaySlotTracker
         return false;
     }
 
+    public void Clear() => slotsByMode.Clear();
+
     public void MarkActive(Mode overlayMode, int slot)
     {
         if (!slotsByMode.TryGetValue(overlayMode, out List<int>? active))

@@ -942,13 +942,15 @@ across launches; the newest appear at the top, in a stable chronological order.
 Double-click a row to load it. Use **Save** to turn an in-memory snapshot into a
 regular IR JSON file, **Delete** to remove an item from history without deleting
 the file from disk, and **New session (reset to defaults)** to start clean — all
-per-mode settings return to their defaults and the current measurement and
-overlays are cleared, while audio device and routing settings, the history list
-and saved files are left intact.
+per-mode settings return to their defaults, the current measurement is cleared
+and every overlay slot is hidden, while audio device and routing settings, the
+history list, saved files and the overlay slots' contents are left intact.
 
-Each entry also remembers the working state it was last used with: the active
-mode, every per-mode setting, and which overlay slots were shown — so leaving it
-for another entry, a new run or a loaded file and coming back restores the whole
+Each entry also remembers the working state it was last used with: the analysis
+tab it was shown on (left for a tool such as Virtual DSP, it keeps the tab shown
+before the tool), every per-mode setting, and exactly which overlay slots were
+shown — slots shown for another entry are hidden again — so leaving it for
+another entry, a new run or a loaded file and coming back restores the whole
 working context, not just the impulse response. Only a small rolling set of unsaved in-memory snapshots is
 retained.
 

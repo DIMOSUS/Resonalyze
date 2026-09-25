@@ -125,6 +125,30 @@ internal sealed class OverlaySession
         plotChanged();
     }
 
+    /// <summary>The selection a history entry or New session states, in place of what the mode shows: restoring on top of
+    /// it would only ever add slots, and a later capture of the union would grow the entry's selection.</summary>
+    public void ReplaceActiveSlots(Mode mode, IReadOnlyCollection<int> activeSlots)
+    {
+        Mode overlayMode = OverlayModes.SlotModeFor(mode);
+        Batched(() =>
+        {
+            foreach (OverlaySlot slot in slots.Where(candidate => candidate.SeriesMode == overlayMode))
+            {
+                if (activeSlots.Contains(slot.Index))
+                {
+                    SetChecked(slot, true);
+                    Show(slot);
+                }
+                else if (slot.Checked)
+                {
+                    Hide(slot);
+                }
+            }
+        });
+
+        plotChanged();
+    }
+
     /// <summary>Redraws the targets that follow the current measurement, without repainting; true when any did.</summary>
     public bool RefreshCurrentMeasurementTargets()
     {

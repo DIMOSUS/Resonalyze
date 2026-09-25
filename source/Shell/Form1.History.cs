@@ -240,7 +240,7 @@ public partial class Form1
                 return false;
             }
 
-            analyzerPlot.RestoreOverlaySlots(session.ActiveOverlaySlots);
+            analyzerPlot.ReplaceOverlaySlots(session.ActiveOverlaySlots);
             SaveMeasurementSettings();
         }
 
@@ -292,6 +292,8 @@ public partial class Form1
         SaveMeasurementSettings();
 
         await SelectModeAsync(ModeTab.Frequency);
+        // Overlay files stay; none is shown until picked again.
+        analyzerPlot.ReplaceOverlaySlots([]);
 
         dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             dialog.SetEntries(measurementHistoryService.Entries, null, null));
@@ -305,11 +307,15 @@ public partial class Form1
         }
     }
 
-    private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot() =>
-        viewSettings.CaptureSession(
-            modeController.ActiveTab,
-            analyzerPlot.ActiveOverlaySlots);
+    private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot()
+    {
+        // On a tool tab the entry keeps the analysis tab shown before it and that tab's overlays.
+        (ModeTab tab, List<int> overlaySlots) = analyzerPlot.SessionView();
+        return viewSettings.CaptureSession(tab, overlaySlots);
+    }
 
+    // A tab without the analysis plot (a tool) opens Frequency Response: switching to it would close the History window
+    // the entry was opened from.
     private static ModeTab NormalizeSessionMode(ModeTab mode) =>
-        Enum.IsDefined(mode) ? mode : ModeTab.Frequency;
+        Enum.IsDefined(mode) && ModeCatalog.For(mode).HasPlotView ? mode : ModeTab.Frequency;
 }

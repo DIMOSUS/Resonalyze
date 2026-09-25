@@ -123,6 +123,11 @@ public partial class Form1
         else
         {
             liveSpectrumController.ApplyDisplayOptions();
+            // It rebuilt the live plot; building it again gives the same model.
+            if (CurrentMode == Mode.LiveSpectrum)
+            {
+                return;
+            }
         }
 
         RefreshCurrentModePlot();

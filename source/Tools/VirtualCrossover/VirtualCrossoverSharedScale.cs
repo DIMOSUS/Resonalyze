@@ -73,8 +73,10 @@ internal sealed class VirtualCrossoverSharedScale(
 {
     private readonly Dictionary<bool, (object Signature, ScaleExtent? Extent)> known = [];
 
-    // What the last re-read measured; an unchanged side (edits went to the shown one) is not read again.
-    private (bool RightSide, object Signature, List<object> Inputs)? lastRead;
+    // What the last re-read measured, and its answer: an unchanged side (edits went to the shown one) is not read again.
+    // The answer is kept apart from what the side remembered while shown, since that also spans the other side's
+    // dashed sum as it was then.
+    private (bool RightSide, object Signature, List<object> Inputs, ScaleExtent? Extent)? lastRead;
 
     /// <summary>A side's last extent, as long as it was taken under the view options now in force.</summary>
     public ScaleExtent? Known(bool rightSide, VirtualCrossoverViewState view) =>
@@ -113,10 +115,9 @@ internal sealed class VirtualCrossoverSharedScale(
         object signature = Signature(view);
         List<object> inputs = Inputs(frame, rightSide);
         if (lastRead is { } last && last.RightSide == rightSide && last.Signature.Equals(signature) &&
-            last.Inputs.SequenceEqual(inputs) && known.TryGetValue(rightSide, out var entry) &&
-            entry.Signature.Equals(signature))
+            last.Inputs.SequenceEqual(inputs))
         {
-            return (true, entry.Extent);
+            return (true, last.Extent);
         }
 
         int smoothing = session.MagnitudeGate.SmoothingInverseOctaves;
@@ -185,8 +186,9 @@ internal sealed class VirtualCrossoverSharedScale(
             return (false, null);
         }
 
-        lastRead = (rightSide, signature, inputs);
-        return (true, ScaleExtent.Of(curves));
+        ScaleExtent? extent = ScaleExtent.Of(curves);
+        lastRead = (rightSide, signature, inputs, extent);
+        return (true, extent);
     }
 
     // The responses by identity (the coordinator hands an unchanged chain the same array), the rest by value.

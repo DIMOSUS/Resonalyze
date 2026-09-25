@@ -82,6 +82,10 @@ public static class PeqTextFile
         double preampDb = 0;
         bool recognized = false;
         var bands = new List<PeqBand>();
+        // APO applies what follows a "Channel:" line to those channels only. One bank holds one channel's chain: the
+        // first channel named, plus what every channel runs (before any Channel line, or under "Channel: all").
+        HashSet<string>? importedChannels = null;
+        bool sectionApplies = true;
 
         foreach (string rawLine in text.Split('\n'))
         {
@@ -102,13 +106,41 @@ public static class PeqTextFile
                 continue;
             }
 
+            if (tokens[0].TrimEnd(':').Equals("Channel", StringComparison.OrdinalIgnoreCase))
+            {
+                var named = new HashSet<string>(
+                    tokens.Skip(1).SelectMany(token => token.Split(',', StringSplitOptions.RemoveEmptyEntries)),
+                    StringComparer.OrdinalIgnoreCase);
+                if (named.Contains("all"))
+                {
+                    sectionApplies = true;
+                }
+                else if (importedChannels == null)
+                {
+                    importedChannels = named;
+                    sectionApplies = named.Count > 0;
+                }
+                else
+                {
+                    sectionApplies = named.Overlaps(importedChannels);
+                }
+
+                continue;
+            }
+
+            if (!sectionApplies)
+            {
+                continue;
+            }
+
+            // Each Preamp line is its own gain stage in APO's chain, so they add up.
             if (tokens[0].StartsWith("Preamp", StringComparison.OrdinalIgnoreCase))
             {
                 foreach (string token in tokens.Skip(1))
                 {
                     if (EqTextNumbers.TryParse(token, out double gain))
                     {
-                        preampDb = gain;
+                        preampDb += gain;
                         recognized = true;
                         break;
                     }

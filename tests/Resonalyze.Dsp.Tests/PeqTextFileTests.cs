@@ -41,6 +41,35 @@ public sealed class PeqTextFileTests
     }
 
     [Fact]
+    public void Parse_TakesTheFirstChannelsChainAndAddsItsPreampStages()
+    {
+        // APO runs L through -3 dB, then its bell; R through -3 dB, -2 dB and its own bell. Stacking both bells and
+        // keeping only the last preamp cut 100 Hz by 14 dB, a chain neither channel runs.
+        string text =
+            "Preamp: -3 dB\n" +
+            "Channel: L\n" +
+            "Filter 1: ON PK Fc 100 Hz Gain -6 dB Q 2\n" +
+            "Channel: R\n" +
+            "Preamp: -2 dB\n" +
+            "Filter 1: ON PK Fc 120 Hz Gain -6 dB Q 2\n" +
+            "Channel: all\n" +
+            "Filter 2: ON PK Fc 1000 Hz Gain 2 dB Q 1\n";
+
+        EqualizationCurve curve = PeqTextFile.Parse(text);
+
+        Assert.Equal(-3.0, curve.PreampDb, 6);
+        Assert.Equal(new[] { 100.0, 1000.0 }, curve.Bands.Select(b => b.FrequencyHz));
+    }
+
+    [Fact]
+    public void Parse_AddsPreampLinesAsTheStagesTheyAre()
+    {
+        EqualizationCurve curve = PeqTextFile.Parse("Preamp: -3 dB\nPreamp: -2.5 dB\nFilter: ON PK Fc 100 Hz Gain -6 dB Q 2\n");
+
+        Assert.Equal(-5.5, curve.PreampDb, 6);
+    }
+
+    [Fact]
     public void Parse_ReadsFilterLinesWithTheNumberOmitted()
     {
         // APO does not interpret the filter number and lets it be left out ("Filter: ON NO Fc 50 Hz" in its reference).

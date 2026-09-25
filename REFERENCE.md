@@ -2139,7 +2139,9 @@ named in the pipeline's `plugins_order`), and import reads both 7 and the older
 unnumbered `equalizer`, skipping muted bands and folding input and output gain
 into the preamp. A CamillaDSP export is a v3 pipeline step (`channels: [0, 1]`).
 Equalizer APO's `Modal` and `PEQ` read as `PK`, as APO itself reads them, and a
-`Filter:` line may leave its number out.
+`Filter:` line may leave its number out. A `config.txt` split by `Channel:` lines
+imports the first channel's chain (its section plus anything every channel runs);
+several `Preamp:` lines add up, as the stages APO runs them as.
 Import is deliberately
 lenient: comments, blank lines, disabled (`OFF`) filters, unsupported filter
 types, and malformed entries are skipped rather than rejected. A decimal comma

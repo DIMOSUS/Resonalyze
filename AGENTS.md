@@ -24,6 +24,10 @@ dotnet test tests/Resonalyze.Dsp.Tests/Resonalyze.Dsp.Tests.csproj --filter "Ful
 
 # Performance profiling build (defines TRACY_ENABLE, references Tracy-CSharp)
 dotnet run --project source/Resonalyze.csproj -c Tracy
+
+# Release single-file exe, as release.yml publishes it (also Visual Studio: Publish → SingleFile-win-x64);
+# versioned from the last v* tag like CI, output in source/bin/Publish/win-x64/
+dotnet publish source/Resonalyze.csproj -p:PublishProfile=SingleFile-win-x64
 ```
 
 Platform constraint: `source/` (the app), `audio/Resonalyze.Audio`, `tests/Resonalyze.Audio.Tests/` and `tests/Resonalyze.App.Tests/` target `net10.0-windows` and only build/run on Windows (WASAPI/ASIO/MME are Windows-only). `dsp/` and `tests/Resonalyze.Dsp.Tests/` target plain `net10.0` and are cross-platform — on a Linux environment, only the DSP library and its tests can be built and run.

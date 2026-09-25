@@ -780,6 +780,10 @@ fine and wide sets on the prior-free score, because the prior is what keeps park
 the trailing lobe. The lead is bounded to one period past the anchor: a sub leading by whole periods
 is detached the other way. The rule does not apply under a scene or onset lock.
 
+The [low-junction polarity](#low-junction-polarity) vote that follows chooses only among picks this
+rule lets stand: its pool spans a period around the pick, which still holds the trailing one, and a
+tie handed it straight back while the decision text said the sub-leading lobe stood.
+
 ## Direct-coherence witness
 
 Where thin overlap ties a lobe with its polarity partner within hundredths of a dB (split corners

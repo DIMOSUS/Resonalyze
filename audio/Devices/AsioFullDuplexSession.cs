@@ -353,7 +353,9 @@ internal sealed class AsioFullDuplexSession : IDisposable
     {
         lock (sync)
         {
-            if (generation != captureGeneration)
+            // Paused between averaged runs (no accumulator): the samples are dropped anyway, and the next run's reset starts
+            // the pump afresh, so a backlog while the last run's analysis holds the cores is not the device failing.
+            if (generation != captureGeneration || accumulator == null)
             {
                 return;
             }

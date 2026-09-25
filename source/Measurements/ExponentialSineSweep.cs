@@ -356,10 +356,11 @@ public sealed class ExponentialSineSweep : IDisposable
         }
 
         // Envelope compensates less time per Hz at high frequencies. PlaybackAmplitude divided out twice (reversed-sweep headroom
-        // and the attenuated excitation), keeping the IR at full-scale level; drop either and results step down 6 dB.
+        // and the attenuated excitation), keeping the IR at full-scale level; drop either and results step down 6 dB. The
+        // passband gain is 2·beta·fHigh/fs times this scale, whatever the band: the old beta/(1 - fLow/fHigh) was unity only
+        // for a sweep reaching Nyquist, and a 20 Hz-2 kHz sweep's IR read 18.7 dB hot.
         double octaveSpan = beta / Math.Log(2.0);
-        double inverseScale = beta /
-            (1.0 - Math.Pow(2.0, -octaveSpan)) /
+        double inverseScale = 2.0 * beta * spec.HighFrequencyHz / spec.SampleRate /
             (PlaybackAmplitude * PlaybackAmplitude);
         double perSampleDecay = Math.Pow(2.0, octaveSpan / sampleCount);
         for (int i = 0; i < sampleCount; i++)

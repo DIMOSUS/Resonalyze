@@ -124,7 +124,12 @@ overs. The headroom costs SNR, not reported level.
 shrinking time per hertz at high frequency, expressed through the (possibly fractional)
 achieved octave span. `PlaybackAmplitude` is divided out twice: once for the headroom
 baked into the reversed sweep, once for the attenuated excitation the microphone hears.
-Dropping either lowers every result by 6 dB.
+Dropping either lowers every result by 6 dB. The scale is `2·β·fHigh / (fs·A²)` with the
+achieved top `fHigh`, which puts the passband at unity for any band; the earlier
+`β / (1 − fLow/fHigh) / A²` left it at `fs / (2(fHigh − fLow))`, unity only for a sweep
+reaching Nyquist, so a 20 Hz–2 kHz sweep's IR (the saved sweep deconvolution, its preview,
+and the only IR without a loopback) read 18.7 dB hot. Transfer IRs and every ratio were
+unaffected.
 
 **Stretched sweeps.** `FillStretched` lays the same whole-cycle trajectory over
 proportionally more or fewer samples, which is exactly what an independent clock does to

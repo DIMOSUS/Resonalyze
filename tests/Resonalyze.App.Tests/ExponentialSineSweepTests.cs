@@ -185,11 +185,16 @@ public sealed class ExponentialSineSweepTests
             $"peak {peak:0.####} fell short of {ExponentialSineSweep.PlaybackAmplitude:0.####}");
     }
 
-    [Fact]
-    public void Deconvolution_RecoversUnityGain_DespiteTheExcitationHeadroom()
+    // The level used to be fs / (2 (fHigh - fLow)): unity only for a sweep reaching Nyquist, 18.7 dB hot for 20 Hz-2 kHz.
+    [Theory]
+    [InlineData(30, 18_000)]
+    [InlineData(20, 10_000)]
+    [InlineData(100, 5_000)]
+    [InlineData(20, 2_000)]
+    public void Deconvolution_RecoversUnityGain_DespiteTheExcitationHeadroom(double lowHz, double highHz)
     {
         using var sweep = new ExponentialSineSweep();
-        sweep.FillData(30, 18_000, 1.0, 24, 48_000);
+        sweep.FillData(lowHz, highHz, 1.0, 24, 48_000);
         float[] samples = sweep.SweepData;
         float[] inverse = sweep.InverseFilter;
 
@@ -200,10 +205,10 @@ public sealed class ExponentialSineSweepTests
         double meanInBandDb = MeanInBandMagnitudeDb(
             result.ImpulseResponse,
             48_000,
-            sweep.LowFrequencyHz * 4.0,
-            sweep.HighFrequencyHz * 0.5);
+            lowHz * 2.0,
+            highHz * 0.5);
 
-        Assert.InRange(meanInBandDb, -1.0, 1.0);
+        Assert.InRange(meanInBandDb, -0.2, 0.2);
     }
 
     private static double MeanInBandMagnitudeDb(

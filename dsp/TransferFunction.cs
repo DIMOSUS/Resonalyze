@@ -82,6 +82,23 @@ public static class TransferFunction
             accumulation.GateWeights,
             accumulation.Regularization);
 
+        return ToRelativeIr(relative, frames.Count >= 2 ? accumulation.Coherence : null);
+    }
+
+    /// <summary>The relative IR and the gated magnitude beside it, from one accumulation (the forward transforms are the
+    /// cost): a spatial average's measurement microphone needs both.</summary>
+    public static (TransferEstimateResult Transfer, TransferMagnitudeEstimate Magnitude)
+        ComputeAveragedRelativeIrAndMagnitude(
+            IReadOnlyList<TransferFunctionFrame> frames,
+            ExcitationBandGate excitationGate)
+    {
+        (TransferMagnitudeEstimate magnitude, Complex[]? relative) =
+            ComputeAveragedMagnitudeAndIr(frames, excitationGate);
+        return (ToRelativeIr(relative!, magnitude.Coherence), magnitude);
+    }
+
+    private static TransferEstimateResult ToRelativeIr(Complex[] relative, double[]? coherence)
+    {
         var impulseResponse = new double[relative.Length];
         double peakMagnitude = 0;
         int peakIndex = 0;
@@ -97,10 +114,7 @@ public static class TransferFunction
             }
         }
 
-        return new TransferEstimateResult(
-            impulseResponse,
-            peakIndex,
-            frames.Count >= 2 ? accumulation.Coherence : null);
+        return new TransferEstimateResult(impulseResponse, peakIndex, coherence);
     }
 
     /// <summary>

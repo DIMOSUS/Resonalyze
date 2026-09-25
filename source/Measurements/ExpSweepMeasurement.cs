@@ -1649,11 +1649,22 @@ namespace Resonalyze
                 Complex[]? transferImpulseResponse = null;
                 int transferPeakIndex = 0;
                 double[]? transferCoherence = null;
+                TransferMagnitudeEstimate? measurementMagnitude = null;
                 if (transferFrames.Count == AcceptedRuns)
                 {
-                    TransferEstimateResult transfer = TransferFunction.ComputeAveragedRelativeIr(
-                        transferFrames,
-                        excitationGate);
+                    TransferEstimateResult transfer;
+                    if (arrayChannelOffsets.Count > 0)
+                    {
+                        // The spatial average's measurement curve reads the same accumulation: one pass of transforms.
+                        (transfer, TransferMagnitudeEstimate magnitude) =
+                            TransferFunction.ComputeAveragedRelativeIrAndMagnitude(transferFrames, excitationGate);
+                        measurementMagnitude = magnitude;
+                    }
+                    else
+                    {
+                        transfer = TransferFunction.ComputeAveragedRelativeIr(transferFrames, excitationGate);
+                    }
+
                     transferImpulseResponse = Array.ConvertAll(
                         transfer.ImpulseResponse,
                         sample => new Complex(sample, 0.0));
@@ -1676,11 +1687,12 @@ namespace Resonalyze
                     microphoneDistortion.ToTally(),
                     loopbackDistortion.ToTally(),
                     loopbackWorstRun,
-                    BuildArrayMicrophones());
+                    BuildArrayMicrophones(measurementMagnitude));
             }
 
             /// <summary>Measurement mic first: it anchors the levelling and is the only one tied to the SPL calibration.</summary>
-            private IReadOnlyList<ArrayMicrophoneCurve> BuildArrayMicrophones()
+            private IReadOnlyList<ArrayMicrophoneCurve> BuildArrayMicrophones(
+                TransferMagnitudeEstimate? measurementMagnitude)
             {
                 if (arrayChannelOffsets.Count == 0 || transferFrames.Count == 0)
                 {
@@ -1693,8 +1705,8 @@ namespace Resonalyze
                         microphoneChannelOffset,
                         IsMeasurementMicrophone: true,
                         ArrayMicrophoneAnalysis.BuildMeasurementCurve(
-                            transferFrames,
-                            excitationGate,
+                            measurementMagnitude ??
+                                TransferFunction.ComputeAveragedMagnitude(transferFrames, excitationGate),
                             sampleRate,
                             protectiveHighPass),
                         transferFrames.Count)

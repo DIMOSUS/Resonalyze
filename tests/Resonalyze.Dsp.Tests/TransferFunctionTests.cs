@@ -57,6 +57,36 @@ public sealed class TransferFunctionTests
     }
 
     [Fact]
+    public void TheRelativeIrAndMagnitudeTogether_AreEachAsComputedAlone()
+    {
+        var random = new Random(3);
+        var frames = new List<TransferFunctionFrame>();
+        for (int run = 0; run < 3; run++)
+        {
+            var reference = new double[512];
+            var target = new double[512];
+            for (int i = 0; i < reference.Length; i++)
+            {
+                reference[i] = random.NextDouble() - 0.5;
+                target[i] = (i >= 5 ? 0.7 * reference[i - 5] : 0.0) + (random.NextDouble() - 0.5) * 0.01;
+            }
+
+            frames.Add(new TransferFunctionFrame(reference, target));
+        }
+
+        (TransferEstimateResult transfer, TransferMagnitudeEstimate magnitude) =
+            TransferFunction.ComputeAveragedRelativeIrAndMagnitude(frames, ExcitationBandGate.FullBand);
+
+        TransferEstimateResult transferAlone = TransferFunction.ComputeAveragedRelativeIr(frames, ExcitationBandGate.FullBand);
+        Assert.Equal(transferAlone.ImpulseResponse, transfer.ImpulseResponse);
+        Assert.Equal(transferAlone.PeakIndex, transfer.PeakIndex);
+        Assert.Equal(transferAlone.Coherence, transfer.Coherence);
+        Assert.Equal(
+            TransferFunction.ComputeAveragedMagnitude(frames, ExcitationBandGate.FullBand).Magnitude,
+            magnitude.Magnitude);
+    }
+
+    [Fact]
     public void MeasureSingleFrameCompactness_LeavesAnUnusableTargetNull()
     {
         var reference = new double[512];

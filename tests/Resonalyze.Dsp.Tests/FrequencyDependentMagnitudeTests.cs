@@ -168,6 +168,37 @@ public sealed class FrequencyDependentMagnitudeTests
         }
     }
 
+    [Fact]
+    public void GatedSpectra_KeepOnlyTheLatestGatesPerRecord()
+    {
+        // Stepping a gate field through its range used to keep every gate's spectra for the record's lifetime.
+        SyntheticMeasurement measurement = ReflectedImpulse();
+        AnalysisCurve? last = null;
+        for (int step = 0; step < 20; step++)
+        {
+            last = DataHelper.GetGatedPrimarySpectrum(
+                measurement,
+                new PhaseAnalysisSettings(
+                    PhaseWindowMode.Fixed,
+                    FdwCycles: 6,
+                    PhaseDetrendMode.Off,
+                    ManualDetrendMilliseconds: 0.0,
+                    GateOffsetMs: 10.0,
+                    LeftMs: 1.0,
+                    PlateauMs: 5.0 + step,
+                    RightMs: 3.0,
+                    Unwrap: false,
+                    SmoothingInverseOctaves: 0.0),
+                calibration: null,
+                smoothingInverseOctaves: 0.0);
+        }
+
+        Assert.Equal(
+            DataHelper.PhaseSpectrumCacheCapacity,
+            DataHelper.CachedPhaseSpectrumCount(measurement.ImpulseResponse!));
+        Assert.NotEmpty(last!.Points);
+    }
+
     private static SyntheticMeasurement ReflectedImpulse()
     {
         var impulse = new Complex[8_192];

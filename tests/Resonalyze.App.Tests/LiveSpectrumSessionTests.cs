@@ -28,6 +28,7 @@ public sealed class LiveSpectrumSessionTests
         Assert.NotNull(held);
         Assert.False(session.InProgress);
         Assert.Same(held, session.HeldSnapshot);
+        Assert.Equal(session.Reread(session.Display)!.FrameCount, held!.FrameCount);
         Assert.True(session.HasDisplayableCurve);
         Assert.True(session.HasCaptureToSave);
         Assert.Equal(2, changed);

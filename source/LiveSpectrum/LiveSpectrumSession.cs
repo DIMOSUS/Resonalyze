@@ -233,9 +233,11 @@ internal sealed class LiveSpectrumSession : IDisposable
     /// <returns>The final accumulation, or null when the run read nothing (the held one is then kept).</returns>
     public async Task<LiveSpectrumSnapshot?> StopAsync()
     {
+        await analyzer.AbortAsync();
+        // Read once the run has drained: frames finished during the stop are in the accumulation every later re-read
+        // shows, so the held reading must have them too.
         LiveSpectrumSnapshot? finalSnapshot = analyzer.GetAccumulatedSpectrumSnapshot(
             Display.NeedsInputMagnitude);
-        await analyzer.AbortAsync();
         heldSnapshot = finalSnapshot ?? heldSnapshot;
         Changed?.Invoke();
         return finalSnapshot;

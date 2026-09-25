@@ -231,6 +231,17 @@ public sealed class EqProfileFormatsTests
         Assert.Equal(firstBand.A2, a2[1], 6);
     }
 
+    [Fact]
+    public void MiniDsp_IsExportableAtEveryMiniDspProcessorsRate()
+    {
+        foreach (DspProcessorPreset preset in DspProcessorCatalog.Presets
+            .Where(preset => preset.Manufacturer == "miniDSP"))
+        {
+            string name = new MiniDspFormat(preset.SampleRateHz).Name;
+            Assert.Contains(EqProfileFormats.Exportable, format => format.Name == name);
+        }
+    }
+
     private static double[] Coefficients(string text, string prefix) => text
         .Split('\n')
         .Where(line => line.StartsWith(prefix, StringComparison.Ordinal))

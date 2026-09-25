@@ -2115,7 +2115,7 @@ shelves, the AP1 / AP2 all-pass slots and REW's `Modal` rows, always 30 slots �
 bank has no place for the
 preamp, so it is not written and the wizard tells you which channel gain to enter
 in the PC-Tool instead), and export-only for miniDSP biquads (RBJ coefficients at
-44.1 / 48 / 96 kHz) and GraphicEQ (Wavelet / JamesDSP). All-pass bands travel
+44.1 / 48 / 96 / 192 kHz) and GraphicEQ (Wavelet / JamesDSP). All-pass bands travel
 wherever the target can state one — Equalizer APO and REW as the second-order
 `AP` (APO has no first-order type), CamillaDSP as `Allpass` / `AllpassFO`, the
 Audiotec bank as its own AP1 / AP2 slots, miniDSP as raw coefficients — and a

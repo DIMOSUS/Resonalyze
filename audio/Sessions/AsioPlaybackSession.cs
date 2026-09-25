@@ -52,8 +52,9 @@ internal sealed class AsioPlaybackSession : IAudioPlaybackSession
                 TaskCreationOptions.RunContinuationsAsynchronously);
             stream = AudioPlaybackStreamFactory.CreateFloat(signal);
             createdDriver.PlaybackStopped += HandlePlaybackStopped;
-            createdDriver.DriverResetRequest += HandleDriverResetRequest;
             createdDriver.Init(stream);
+            // After the rate is set: many drivers answer the host's own rate change with a reset request.
+            createdDriver.DriverResetRequest += HandleDriverResetRequest;
             driver = createdDriver;
             createdDriver.Play();
         }

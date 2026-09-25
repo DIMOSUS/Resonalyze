@@ -20,6 +20,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private AsioCallbackWatchdog? watchdog;
     private long watchdogStart;
     private long callbackCount;
+    private int watchdogGeneration;
     private CaptureAccumulator? accumulator;
     private float[][] convertScratch = Array.Empty<float[]>();
     private double[] meterPeaks = Array.Empty<double>();
@@ -126,11 +127,12 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
             driver.AudioAvailable += ReceiveAudio;
             driver.PlaybackStopped += PlaybackStopped;
-            driver.DriverResetRequest += DriverResetRequested;
             driver.InitRecordAndPlayback(
                 playbackProvider,
                 driverRecordChannelCount,
                 sampleRate);
+            // After the rate is set: many drivers answer the host's own rate change with a reset request.
+            driver.DriverResetRequest += DriverResetRequested;
             capturePump.Prepare(checked(driver.FramesPerBuffer * sizeof(float)));
             driver.Play();
             StartWatchdog();
@@ -366,7 +368,15 @@ internal sealed class AsioFullDuplexSession : IDisposable
             $"The ASIO driver '{driverName}' asked to be reset (its settings changed or the device was removed). " +
             "Check the device, then measure again."));
 
-    private void DriverResetRequested(object? sender, EventArgs args) => ReportDriverReset();
+    // A request before the first buffer is the driver acknowledging the rate this start set, not a lost device; a driver
+    // that really died before then is caught by the watchdog.
+    private void DriverResetRequested(object? sender, EventArgs args)
+    {
+        if (firstBufferReady is { Task.IsCompletedSuccessfully: true })
+        {
+            ReportDriverReset();
+        }
+    }
 
     private void Fail(Exception exception)
     {
@@ -384,50 +394,66 @@ internal sealed class AsioFullDuplexSession : IDisposable
         sampleWaiters.FaultAll(exception);
     }
 
-    private void CheckCallbacks()
+    // The generation keeps a tick of an old run's timer, already past its check, from stopping a newer run's watchdog.
+    private void CheckCallbacks(int generation)
     {
+        Timer? stalledTimer;
         lock (sync)
         {
-            if (watchdog is not { } current ||
+            if (generation != watchdogGeneration ||
+                watchdog is not { } current ||
                 !current.IsStalled(Interlocked.Read(ref callbackCount), Stopwatch.GetElapsedTime(watchdogStart)))
             {
                 return;
             }
 
-            watchdog = null;
             FailLocked(new InvalidOperationException(
                 $"The ASIO driver '{driverName}' delivered no audio for " +
                 $"{AsioCallbackWatchdog.StallTimeout.TotalSeconds:0} seconds (device removed or driver error). " +
                 "Check the device, then measure again."));
+            stalledTimer = DetachWatchdogLocked();
         }
 
-        StopWatchdog();
+        stalledTimer?.Dispose();
     }
 
     private void StartWatchdog()
     {
-        StopWatchdog();
+        Timer? previous;
         lock (sync)
         {
+            previous = DetachWatchdogLocked();
+            int generation = watchdogGeneration;
             watchdogStart = Stopwatch.GetTimestamp();
             watchdog = new AsioCallbackWatchdog(Interlocked.Read(ref callbackCount), TimeSpan.Zero);
+            watchdogTimer = new Timer(
+                _ => CheckCallbacks(generation),
+                null,
+                AsioCallbackWatchdog.CheckInterval,
+                AsioCallbackWatchdog.CheckInterval);
         }
 
-        watchdogTimer = new Timer(
-            _ => CheckCallbacks(),
-            null,
-            AsioCallbackWatchdog.CheckInterval,
-            AsioCallbackWatchdog.CheckInterval);
+        previous?.Dispose();
     }
 
     private void StopWatchdog()
     {
+        Timer? timer;
         lock (sync)
         {
-            watchdog = null;
+            timer = DetachWatchdogLocked();
         }
 
-        Interlocked.Exchange(ref watchdogTimer, null)?.Dispose();
+        timer?.Dispose();
+    }
+
+    private Timer? DetachWatchdogLocked()
+    {
+        watchdogGeneration++;
+        watchdog = null;
+        Timer? timer = watchdogTimer;
+        watchdogTimer = null;
+        return timer;
     }
 
     private void EnsureScratch(int frames)
@@ -453,6 +479,8 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
     private void PlaybackStopped(object? sender, StoppedEventArgs args)
     {
+        // A driver that stops on its own (AutoStop at the end of the signal) calls back no more, which is not a stall.
+        StopWatchdog();
         if (args.Exception != null)
         {
             firstBufferReady?.TrySetException(args.Exception);

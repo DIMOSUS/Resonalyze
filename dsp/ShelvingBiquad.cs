@@ -23,7 +23,9 @@ public static class ShelvingBiquad
         };
 
         double a = Math.Pow(10.0, band.GainDb / 40.0);
-        double w0 = 2.0 * Math.PI * band.FrequencyHz / sampleRateHz;
+        // Past Nyquist sin(w0) turns negative and a pole leaves the unit circle; the crossover and all-pass sections
+        // clamp the same way.
+        double w0 = 2.0 * Math.PI * BilinearTransform.ClampBelowNyquist(band.FrequencyHz, sampleRateHz) / sampleRateHz;
         double cos = Math.Cos(w0);
         double alpha = Math.Sin(w0) / (2.0 * band.Q);
 

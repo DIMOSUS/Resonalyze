@@ -55,4 +55,21 @@ public sealed class PeakingBiquadTests
             BiquadResponse.Evaluate(coefficients, f0, fs).Magnitude);
         Assert.Equal(gainDb, centreDigital, tolerance: 0.01);
     }
+
+    // A band past Nyquist (a hand-edited bank, a slow custom processor) used to realise with a pole outside the
+    // unit circle: a preview of a filter that diverges on the device.
+    [Theory]
+    [InlineData(PeqBandType.Peaking, 23_000, 44_100)]
+    [InlineData(PeqBandType.Peaking, 30_000, 48_000)]
+    [InlineData(PeqBandType.HighShelf, 23_000, 44_100)]
+    [InlineData(PeqBandType.LowShelf, 30_000, 48_000)]
+    public void ABandPastNyquist_RealisesAsAStableSection(PeqBandType type, double frequencyHz, double sampleRateHz)
+    {
+        BiquadCoefficients c = PeqBiquad.Compute(new PeqBand(frequencyHz, 1.0, -6.0, type), sampleRateHz);
+
+        // Stored negated: the denominator is 1 - A1 z^-1 - A2 z^-2, stable inside the triangle |a2| < 1, |a1| < 1 + a2.
+        double a1 = -c.A1;
+        double a2 = -c.A2;
+        Assert.True(Math.Abs(a2) < 1 && Math.Abs(a1) < 1 + a2, $"a1 {a1}, a2 {a2}");
+    }
 }

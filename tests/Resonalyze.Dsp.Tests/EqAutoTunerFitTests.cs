@@ -89,6 +89,31 @@ public sealed class EqAutoTunerFitTests
         Assert.True(curve.PreampDb <= 0, $"preamp {curve.PreampDb:0.0} dB.");
     }
 
+    [Theory]
+    [InlineData(2.25, 2.25)]
+    [InlineData(0.55, 0.58)]
+    public void Tune_AQRangeHoldingNoTenth_KeepsItsBandsInsideIt(double qMin, double qMax)
+    {
+        // The strip rounds Q to a tenth, and these ranges hold none.
+        EqAutoTuner.Options options = Options(EqAutoTuneBoosts.Allowed) with { QMin = qMin, QMax = qMax };
+
+        EqualizationCurve curve = EqAutoTuner.Tune(Adversarial(), Flat, options);
+
+        Assert.NotEmpty(curve.Bands);
+        Assert.All(
+            curve.Bands.Where(band => band.Type == PeqBandType.Peaking),
+            band => Assert.InRange(band.Q, qMin - 1e-9, qMax + 1e-9));
+    }
+
+    [Theory]
+    [InlineData(2.27, 2.25, 2.25, 2.25)]
+    [InlineData(0.5501, 0.55, 0.58, 0.55)]
+    [InlineData(4.04, 0.5, 10, 4.0)]
+    public void QuantizeQ_TakesTheFinestStepTheRangeHolds(double q, double low, double high, double expected)
+    {
+        Assert.Equal(expected, EqBandFitter.QuantizeQ(q, Math.Exp(Math.Log(low)), Math.Exp(Math.Log(high))));
+    }
+
     [Fact]
     public void Tune_TheTotalGainCeiling_HoldsBetweenTheFittedBinsToo()
     {

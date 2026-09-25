@@ -124,7 +124,12 @@ overs. The headroom costs SNR, not reported level.
 shrinking time per hertz at high frequency, expressed through the (possibly fractional)
 achieved octave span. `PlaybackAmplitude` is divided out twice: once for the headroom
 baked into the reversed sweep, once for the attenuated excitation the microphone hears.
-Dropping either lowers every result by 6 dB.
+Dropping either lowers every result by 6 dB. The scale is `2·β·fHigh / (fs·A²)` with the
+achieved top `fHigh`, which puts the passband at unity for any band; the earlier
+`β / (1 − fLow/fHigh) / A²` left it at `fs / (2(fHigh − fLow))`, unity only for a sweep
+reaching Nyquist, so a 20 Hz–2 kHz sweep's IR (the saved sweep deconvolution, its preview,
+and the only IR without a loopback) read 18.7 dB hot. Transfer IRs and every ratio were
+unaffected.
 
 **Stretched sweeps.** `FillStretched` lays the same whole-cycle trajectory over
 proportionally more or fewer samples, which is exactly what an independent clock does to
@@ -1048,7 +1053,14 @@ print an artificial bass roll-off onto a correct measurement. Silent has no mode
   captured window. The configured offsets are kept for the Transfer mode.
 - **Dropped blocks** bump a generation counter that resets the reframer, because a frame
   built across the gap reads the step as a broadband burst and poisons H1, coherence and the
-  EMA for seconds.
+  EMA for seconds. A WASAPI packet flagged as a discontinuity is the same kind of gap inside
+  the device's own stream: the accumulator drops the partial sequence before it
+  (`CaptureAccumulator.BreakSequence`), so the next sequence starts after the gap, and every
+  queued sequence carries the discontinuity count it was written under: the reframer resets
+  at the first one past the gap, however many sequences from before it are still queued.
+  Drops are found the same way, by a gap in the numbers every sequence is queued with
+  (`LiveSequenceContinuity`): a drop counter read at dequeue moved the reset one sequence early
+  when the drop landed between a dequeue and the reader's next check.
 - **Coherence** is hidden (null) until four frames have accumulated: single-frame gamma^2 is
   1 in every energized bin.
 - **Accumulators are seeded** with the first frame: H1 and coherence divide the scale out,

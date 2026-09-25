@@ -20,6 +20,9 @@ public sealed record NoiseEstimate(
 /// as a bias-corrected median of per-bin powers over equal windows.</summary>
 public static class EssNoise
 {
+    /// <summary>Shortest window a full-overlap region is split into before the whole tail is read instead.</summary>
+    private const int MinClippedNoiseWindowLength = 1_024;
+
     public static NoiseEstimate EstimateNoise(
         ReadOnlySpan<double> deconvolvedImpulse,
         EssHarmonicDecomposition decomposition,
@@ -36,11 +39,18 @@ public static class EssNoise
         int regionStart = Math.Min(
             Math.Max(0, linearWindow.EndSample) + guard,
             deconvolvedImpulse.Length);
-        int regionEnd = deconvolvedImpulse.Length;
+        // Only where the inverse filter overlaps the recording in full: past it the noise fades, highs first. The median
+        // correction wants every window it counts on, so a short overlap shortens the windows rather than dropping them.
+        int minimumClipped = options.NoiseWindowCount * MinClippedNoiseWindowLength;
+        int regionEnd = EssHarmonicAnalysis.TailNoiseRegionEnd(
+            deconvolvedImpulse.Length, regionStart, decomposition.Sweep, minimumClipped);
         int regionLength = regionEnd - regionStart;
+        int windowCeiling = regionEnd < deconvolvedImpulse.Length
+            ? regionLength / Math.Max(1, options.NoiseWindowCount)
+            : regionLength;
 
         int windowLength = LargestPowerOfTwoAtMost(
-            Math.Min(options.NoiseWindowLength, Math.Max(1, regionLength)));
+            Math.Min(options.NoiseWindowLength, Math.Max(1, windowCeiling)));
         int available = windowLength > 0 ? regionLength / windowLength : 0;
         int windowCount = Math.Min(options.NoiseWindowCount, available);
 

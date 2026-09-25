@@ -289,12 +289,16 @@ namespace Resonalyze.Dsp
             return points;
         }
 
+        /// <param name="wrap">Every index read circularly.</param>
+        /// <param name="wrapPreRoll">Only indices before the record read from its end (a circular IR's pre-roll); past
+        /// the end stays zero, so a window longer than the record never reads the direct sound twice.</param>
         public static Complex[] ExtractWindow(
             IImpulseMeasurement measurement,
             int start,
             int length,
             double[]? window = null,
-            bool wrap = false)
+            bool wrap = false,
+            bool wrapPreRoll = false)
         {
             ArgumentNullException.ThrowIfNull(measurement);
             if (length <= 0)
@@ -316,6 +320,10 @@ namespace Resonalyze.Dsp
                     {
                         sourceIndex += source.Length;
                     }
+                }
+                else if (wrapPreRoll && sourceIndex < 0 && sourceIndex >= -source.Length)
+                {
+                    sourceIndex += source.Length;
                 }
 
                 if ((uint)sourceIndex < (uint)source.Length)

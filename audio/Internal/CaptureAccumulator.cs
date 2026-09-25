@@ -55,6 +55,20 @@ internal sealed class CaptureAccumulator
         ReadSamples += count;
     }
 
+    /// <summary>A gap in the stream: the partial sequence before it is dropped, so the next one starts after the gap.
+    /// A frame cut across a capture step poisons H1, coherence and the average for seconds. No effect without
+    /// sequences, where the whole capture is kept and judged by its discontinuity count.</summary>
+    public void BreakSequence()
+    {
+        if (SequenceLength <= 0)
+        {
+            return;
+        }
+
+        sequenceStart = ReadSamples;
+        TrimConsumed();
+    }
+
     /// <summary>Returns null when sequences are not configured or none is ready. Sequence mode trims, so <see cref="Snapshot"/> is meaningful only without sequences.</summary>
     public List<float[][]>? ExtractReadySequences()
     {

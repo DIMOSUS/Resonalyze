@@ -82,14 +82,14 @@ public static class PeqTextFile
         double preampDb = 0;
         bool recognized = false;
         var bands = new List<PeqBand>();
+        // APO applies what follows a "Channel:" line to those channels only. One bank holds one channel's chain: the
+        // first channel named, plus every section that channel runs (before any Channel line, under "Channel: all",
+        // or naming it among others).
+        string? importedChannel = null;
+        bool sectionApplies = true;
 
         foreach (string rawLine in text.Split('\n'))
         {
-            if (bands.Count >= EqualizationCurve.MaxBandCount)
-            {
-                break;
-            }
-
             string line = rawLine.Trim();
             if (line.Length == 0 || line.StartsWith('#') || line.StartsWith("//", StringComparison.Ordinal))
             {
@@ -102,13 +102,41 @@ public static class PeqTextFile
                 continue;
             }
 
+            if (tokens[0].TrimEnd(':').Equals("Channel", StringComparison.OrdinalIgnoreCase))
+            {
+                string[] named = tokens
+                    .Skip(1)
+                    .SelectMany(token => token.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    .ToArray();
+                if (named.Length == 0)
+                {
+                    continue;
+                }
+
+                if (named.Contains("all", StringComparer.OrdinalIgnoreCase))
+                {
+                    sectionApplies = true;
+                    continue;
+                }
+
+                importedChannel ??= named[0];
+                sectionApplies = named.Contains(importedChannel, StringComparer.OrdinalIgnoreCase);
+                continue;
+            }
+
+            if (!sectionApplies)
+            {
+                continue;
+            }
+
+            // Each Preamp line is its own gain stage in APO's chain, so they add up.
             if (tokens[0].StartsWith("Preamp", StringComparison.OrdinalIgnoreCase))
             {
                 foreach (string token in tokens.Skip(1))
                 {
                     if (EqTextNumbers.TryParse(token, out double gain))
                     {
-                        preampDb = gain;
+                        preampDb += gain;
                         recognized = true;
                         break;
                     }
@@ -117,10 +145,15 @@ public static class PeqTextFile
                 continue;
             }
 
+            // The band limit caps the filters kept, not the file read: a Preamp or Channel line after it still counts.
             if (IsFilterKeyword(tokens[0]) &&
                 TryParseFilter(tokens, out PeqBand band))
             {
-                bands.Add(band);
+                if (bands.Count < EqualizationCurve.MaxBandCount)
+                {
+                    bands.Add(band);
+                }
+
                 recognized = true;
             }
         }

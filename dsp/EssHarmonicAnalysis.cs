@@ -21,6 +21,13 @@ public sealed record EssSweepMetadata(
 {
     public double NyquistHz => SampleRateHz / 2.0;
 
+    /// <summary>End (exclusive) of the samples where the inverse filter overlaps the recording in full. A linear
+    /// deconvolution is recording + sweep - 1 samples long, and over its last sweep - 1 the filter slides off the
+    /// recording, high-frequency taps first, so noise there fades out and a tail estimate reaching into it reads
+    /// low.</summary>
+    public int FullOverlapEndSample(int impulseLength) =>
+        Math.Clamp(impulseLength - (SweepSampleCount - 1), 0, impulseLength);
+
     /// <summary>Top of the band the deconvolution passes at full gain.</summary>
     public double FlatEndFrequencyHz =>
         FullAmplitudeEndFrequencyHz is > 0 and var flat ? Math.Min(flat, EndFrequencyHz) : EndFrequencyHz;
@@ -453,7 +460,7 @@ public static class EssHarmonicAnalysis
             options.MaxFftLength);
 
         double tailNoiseAmplitude =
-            EstimateTailNoiseAmplitude(deconvolvedImpulse, windows[0]);
+            EstimateTailNoiseAmplitude(deconvolvedImpulse, windows[0], sweep);
 
         var packets = new HarmonicPacket[options.MaxHarmonic];
         var validities = new HarmonicPacketValidity[options.MaxHarmonic - 1];
@@ -494,7 +501,8 @@ public static class EssHarmonicAnalysis
     // Returns 0 when there is no usable tail; the below-noise test is then skipped.
     private static double EstimateTailNoiseAmplitude(
         ReadOnlySpan<double> impulse,
-        HarmonicWindowDefinition linearWindow)
+        HarmonicWindowDefinition linearWindow,
+        EssSweepMetadata sweep)
     {
         int linearStart = Math.Max(0, linearWindow.StartSample);
         int linearEnd = Math.Min(impulse.Length - 1, linearWindow.EndSample);
@@ -504,7 +512,8 @@ public static class EssHarmonicAnalysis
         int regionStart = Math.Min(
             Math.Max(0, linearWindow.EndSample) + guard,
             impulse.Length);
-        int regionLength = impulse.Length - regionStart;
+        int regionEnd = TailNoiseRegionEnd(impulse.Length, regionStart, sweep, TailNoiseChunkCount * MinTailNoiseChunkLength);
+        int regionLength = regionEnd - regionStart;
 
         int chunkLength = regionLength / TailNoiseChunkCount;
         if (chunkLength < MinTailNoiseChunkLength)
@@ -528,6 +537,15 @@ public static class EssHarmonicAnalysis
         double median = 0.5 * (
             chunkRms[TailNoiseChunkCount / 2 - 1] + chunkRms[TailNoiseChunkCount / 2]);
         return double.IsFinite(median) ? median : 0.0;
+    }
+
+    /// <summary>The tail stops where the full overlap does, when that still leaves <paramref name="minimumLength"/>
+    /// samples; otherwise (a sweep too long for its capture tail, an import whose length is not ours) the whole tail
+    /// is read.</summary>
+    internal static int TailNoiseRegionEnd(int impulseLength, int regionStart, EssSweepMetadata sweep, int minimumLength)
+    {
+        int fullOverlapEnd = sweep.FullOverlapEndSample(impulseLength);
+        return fullOverlapEnd - regionStart >= minimumLength ? fullOverlapEnd : impulseLength;
     }
 
     private static HarmonicPacketValidity EvaluatePacketOverlap(

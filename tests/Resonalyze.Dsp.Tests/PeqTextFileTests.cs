@@ -41,6 +41,67 @@ public sealed class PeqTextFileTests
     }
 
     [Fact]
+    public void Parse_TakesTheFirstChannelsChainAndAddsItsPreampStages()
+    {
+        // APO runs L through -3 dB, then its bell; R through -3 dB, -2 dB and its own bell.
+        string text =
+            "Preamp: -3 dB\n" +
+            "Channel: L\n" +
+            "Filter 1: ON PK Fc 100 Hz Gain -6 dB Q 2\n" +
+            "Channel: R\n" +
+            "Preamp: -2 dB\n" +
+            "Filter 1: ON PK Fc 120 Hz Gain -6 dB Q 2\n" +
+            "Channel: all\n" +
+            "Filter 2: ON PK Fc 1000 Hz Gain 2 dB Q 1\n";
+
+        EqualizationCurve curve = PeqTextFile.Parse(text);
+
+        Assert.Equal(-3.0, curve.PreampDb, 6);
+        Assert.Equal(new[] { 100.0, 1000.0 }, curve.Bands.Select(b => b.FrequencyHz));
+    }
+
+    [Fact]
+    public void Parse_AFirstSectionNamingSeveralChannels_ImportsOnlyTheFirstChannelsLaterSections()
+    {
+        string text =
+            "Channel: L R\n" +
+            "Preamp: -3 dB\n" +
+            "Channel: L\n" +
+            "Filter 1: ON PK Fc 100 Hz Gain -4 dB Q 2\n" +
+            "Channel: R\n" +
+            "Filter 2: ON PK Fc 200 Hz Gain -6 dB Q 1\n" +
+            "Channel:\n" +
+            "Filter 3: ON PK Fc 300 Hz Gain -2 dB Q 1\n";
+
+        EqualizationCurve curve = PeqTextFile.Parse(text);
+
+        // L runs the shared preamp and its own bell; an empty Channel line changes nothing.
+        Assert.Equal(-3.0, curve.PreampDb, 6);
+        Assert.Equal(new[] { 100.0 }, curve.Bands.Select(b => b.FrequencyHz));
+    }
+
+    [Fact]
+    public void Parse_ReadsAPreampAfterTheBandLimit()
+    {
+        string text = string.Concat(Enumerable.Range(1, EqualizationCurve.MaxBandCount + 2)
+                .Select(i => $"Filter {i}: ON PK Fc {100 * i} Hz Gain -1 dB Q 1\n")) +
+            "Preamp: -3 dB\n";
+
+        EqualizationCurve curve = PeqTextFile.Parse(text);
+
+        Assert.Equal(EqualizationCurve.MaxBandCount, curve.Bands.Count);
+        Assert.Equal(-3.0, curve.PreampDb, 6);
+    }
+
+    [Fact]
+    public void Parse_AddsPreampLinesAsTheStagesTheyAre()
+    {
+        EqualizationCurve curve = PeqTextFile.Parse("Preamp: -3 dB\nPreamp: -2.5 dB\nFilter: ON PK Fc 100 Hz Gain -6 dB Q 2\n");
+
+        Assert.Equal(-5.5, curve.PreampDb, 6);
+    }
+
+    [Fact]
     public void Parse_ReadsFilterLinesWithTheNumberOmitted()
     {
         // APO does not interpret the filter number and lets it be left out ("Filter: ON NO Fc 50 Hz" in its reference).

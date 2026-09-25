@@ -101,8 +101,10 @@ namespace Resonalyze.Dsp
                 double weightSum = 0;
                 double weightedSum = 0;
 
+                // The kernel stops at the grid's ends, both of them, and the weight sum renormalises. Repeating the last
+                // bin for every virtual bin past the top would weight it several times over near Nyquist.
                 for (int sampleIndex = Math.Max(centerIndex - windowRadius, 0);
-                    sampleIndex <= centerIndex + windowRadius;
+                    sampleIndex <= Math.Min(centerIndex + windowRadius, input.Count - 1);
                     sampleIndex++)
                 {
                     SignalPoint samplePoint = Sample(sampleIndex);

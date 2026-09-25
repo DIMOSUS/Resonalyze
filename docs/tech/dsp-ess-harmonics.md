@@ -96,6 +96,15 @@ its reverb guard, the same region `EssNoise` uses. It is split into `TailNoiseCh
 RMS values are combined by median, so one stray thump cannot inflate it. A tail whose chunks would be
 shorter than `MinTailNoiseChunkLength` = 128 samples returns 0 and the below-noise test is skipped.
 
+The region ends where the inverse filter still overlaps the recording in full
+(`EssSweepMetadata.FullOverlapEndSample`). A linear deconvolution is recording + sweep − 1 samples long,
+and over its last sweep − 1 samples the filter slides off the recording, high-frequency taps first, so the
+noise there fades out. The capture ends 1 s after the sweep, so the fully overlapped tail is about a second
+long, and a longer sweep moves the region's start later into the fade: reading to the end put the tail noise
+4, 17 and 26 dB low for 2, 4 and 8 s sweeps, flagged every order of a clean capture as overlapping instead
+of below the noise, and drew the high-frequency noise floor several dB low. Where the full overlap leaves too
+little (a sweep of 16 s, or an imported deconvolution whose length is not the app's), the whole tail stands.
+
 ## Harmonic energy probe
 
 `MeasureHarmonicEnergy` returns one channel's harmonic content relative to the linear packet

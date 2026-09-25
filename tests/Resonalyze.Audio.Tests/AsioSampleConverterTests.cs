@@ -37,6 +37,21 @@ public sealed class AsioSampleConverterTests
     }
 
     [Fact]
+    public void ConvertsRightAlignedInt32ByItsValidBits()
+    {
+        // 24 valid bits in a 32-bit container: full scale is 2^23, not 2^31.
+        int[] source = [0x7FFFFF, -0x800000, 0x400000, 0x00FFFFFF];
+        float[] result = Convert(source, AsioSampleType.Int32LSB24);
+
+        Assert.Equal(0x7FFFFF / 8388608.0f, result[0]);
+        Assert.Equal(-1.0f, result[1]);
+        Assert.Equal(0.5f, result[2]);
+        // A driver that does not sign-extend into the container still reads -1 LSB.
+        Assert.Equal(-1.0f / 8388608.0f, result[3]);
+        Assert.Equal(0.5f, Convert([0x4000], AsioSampleType.Int32LSB16)[0]);
+    }
+
+    [Fact]
     public void ConvertsInt16ToNormalizedFloats()
     {
         short[] source = [short.MaxValue, short.MinValue, 0, 16384];

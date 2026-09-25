@@ -7,7 +7,9 @@ public sealed class MiniDspFormat : IEqProfileFormat
 {
     // Coefficients are rate-specific, so the rate is part of the visible format name.
     private readonly double sampleRateHz;
-    private const string CoefficientFormat = "0.00000000";
+    // A sub-bass band at 96 or 192 kHz puts its poles within 1e-5 of the unit circle, where eight decimals move a
+    // 20 Hz bell's response by 0.4 dB, so the file keeps what a double carries.
+    internal const string CoefficientFormat = "0.000000000000000";
 
     public MiniDspFormat(double sampleRateHz = 48_000)
     {

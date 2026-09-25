@@ -46,6 +46,22 @@ public sealed class LowJunctionPolarityTests
     }
 
     [Fact]
+    public void Read_JudgesEachMeetingFromWhereTheFrontsPutTheChannel()
+    {
+        // The channel must move 8 ms: its same-sign crest meets there, the opposite one at 3 ms. Judged from the
+        // undelayed position, the 3 ms meeting wins and names an inversion the waveforms never ask for.
+        Complex[] neighbor = Crest(20.0, 1.0, 40.0, -0.2);
+        Complex[] variable = Crest(12.0, 0.9, 17.0, -0.8);
+
+        LowJunctionPolarityVote vote = LowJunctionPolarity.Read(neighbor, variable, SampleRate, anchorMs: 8.0)!;
+
+        Assert.False(vote.ExpectsRelativeInversion);
+        Assert.Equal(8.0, vote.ShiftMs, 3);
+        Assert.Equal(5.0, vote.SeparationMs, 3);
+        Assert.True(LowJunctionPolarity.Read(neighbor, variable, SampleRate)!.ExpectsRelativeInversion);
+    }
+
+    [Fact]
     public void Read_ReadsOnlyInsideTheMeasuredRange()
     {
         Complex[] neighbor = Crest(10.0, 1.0, 30.0, -0.2);

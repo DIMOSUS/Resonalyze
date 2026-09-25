@@ -105,8 +105,8 @@ public sealed class EqProfileAllPassFormatsTests
         BiquadCoefficients expected = AllPassFilter.BuildSections(
             new AllPassSpec(AllPassType.SecondOrder, 120, 1.5), 48_000)[0];
 
-        Assert.Contains($"b0={EqTextNumbers.Format(expected.B0, "0.00000000")}", text);
-        Assert.Contains($"a2={EqTextNumbers.Format(expected.A2, "0.00000000")}", text);
+        Assert.Contains($"b0={EqTextNumbers.Format(expected.B0, MiniDspFormat.CoefficientFormat)}", text);
+        Assert.Contains($"a2={EqTextNumbers.Format(expected.A2, MiniDspFormat.CoefficientFormat)}", text);
     }
 
     [Fact]

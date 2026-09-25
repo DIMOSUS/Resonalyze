@@ -30,14 +30,17 @@ internal sealed class AsioSampleConverter
                     BinaryPrimitives.ReadInt32LittleEndian(sample)),
                 AsioSampleType.Float32MSB => BitConverter.Int32BitsToSingle(
                     BinaryPrimitives.ReadInt32BigEndian(sample)),
-                AsioSampleType.Int32LSB or AsioSampleType.Int32LSB16 or
-                    AsioSampleType.Int32LSB18 or AsioSampleType.Int32LSB20 or
-                    AsioSampleType.Int32LSB24 =>
+                AsioSampleType.Int32LSB =>
                     BinaryPrimitives.ReadInt32LittleEndian(sample) * Int32Scale,
-                AsioSampleType.Int32MSB or AsioSampleType.Int32MSB16 or
-                    AsioSampleType.Int32MSB18 or AsioSampleType.Int32MSB20 or
-                    AsioSampleType.Int32MSB24 =>
+                AsioSampleType.Int32MSB =>
                     BinaryPrimitives.ReadInt32BigEndian(sample) * Int32Scale,
+                // Right-aligned: 16-24 valid bits in a 32-bit container, full scale at 2^(bits-1), not 2^31.
+                AsioSampleType.Int32LSB16 or AsioSampleType.Int32LSB18 or
+                    AsioSampleType.Int32LSB20 or AsioSampleType.Int32LSB24 =>
+                    RightAligned(BinaryPrimitives.ReadInt32LittleEndian(sample), ValidBits(sampleType)),
+                AsioSampleType.Int32MSB16 or AsioSampleType.Int32MSB18 or
+                    AsioSampleType.Int32MSB20 or AsioSampleType.Int32MSB24 =>
+                    RightAligned(BinaryPrimitives.ReadInt32BigEndian(sample), ValidBits(sampleType)),
                 AsioSampleType.Int24LSB => ReadInt24LittleEndian(sample) * Int24Scale,
                 AsioSampleType.Int24MSB => ReadInt24BigEndian(sample) * Int24Scale,
                 AsioSampleType.Int16LSB =>
@@ -63,6 +66,22 @@ internal sealed class AsioSampleConverter
         _ => throw new NotSupportedException(
             $"ASIO sample type '{sampleType}' is not supported.")
     };
+
+    private static int ValidBits(AsioSampleType sampleType) => sampleType switch
+    {
+        AsioSampleType.Int32LSB16 or AsioSampleType.Int32MSB16 => 16,
+        AsioSampleType.Int32LSB18 or AsioSampleType.Int32MSB18 => 18,
+        AsioSampleType.Int32LSB20 or AsioSampleType.Int32MSB20 => 20,
+        _ => 24
+    };
+
+    // Sign-extended from the valid bits, whether or not the driver extended it into the container.
+    private static float RightAligned(int container, int bits)
+    {
+        int shift = 32 - bits;
+        int value = (container << shift) >> shift;
+        return value / (float)(1 << (bits - 1));
+    }
 
     private static int ReadInt24LittleEndian(ReadOnlySpan<byte> value)
     {

@@ -858,7 +858,11 @@ opposite-polarity lobe within 0.5 dB** of the winner, some within 0.05 dB — th
 
 `LowJunctionPolarity` reads the other evidence the channels carry: the neighbour's tallest crest
 fixes a sign, and the variable channel's tallest crest of each sign says how far that channel would
-have to move to meet it in phase and inverted. The nearer meeting names the polarity. The neighbour
+have to move to meet it in phase and inverted. The meeting nearer the fronts' anchor names the polarity:
+nearer the delay the arrivals predict, not nearer the channel's undelayed position, which handed the
+vote to whichever crest met closer to 0 ms once a channel had to move several milliseconds (identical
+80 Hz LR24 channels 8 ms apart read inverted). The archive figures below were taken before that change
+and want re-taking. The neighbour
 is read as rendered, its own settled inversion applied, so the meeting names the variable channel's
 absolute polarity; the relation to the neighbour that the filters and the tie-breaks speak in is that
 XOR the neighbour's flag, taken once. This is crest

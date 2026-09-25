@@ -175,9 +175,48 @@ namespace Resonalyze.Dsp
         private static readonly ConditionalWeakTable<Complex[], PhaseSpectrumCache>
             PhaseSpectrumCaches = new();
 
+        /// <summary>Gates kept per IR, least recently used out first. Each holds a 32768-bin spectrum (and its
+        /// time-weighted twin once group delay reads it), 0.5-1 MiB, and stepping a gate field makes a new one per step.
+        /// Enough for every view reading one record at once.</summary>
+        internal const int PhaseSpectrumCacheCapacity = 8;
+
         private sealed class PhaseSpectrumCache
         {
             public Dictionary<PhaseSpectrumCacheKey, CachedPhaseSpectrum> Entries { get; } = new();
+
+            // Oldest first; a hit moves its key to the back.
+            public LinkedList<PhaseSpectrumCacheKey> Order { get; } = new();
+
+            public void Touch(PhaseSpectrumCacheKey key)
+            {
+                Order.Remove(key);
+                Order.AddLast(key);
+            }
+
+            public void Store(PhaseSpectrumCacheKey key, CachedPhaseSpectrum value)
+            {
+                Entries[key] = value;
+                Touch(key);
+                while (Order.Count > PhaseSpectrumCacheCapacity)
+                {
+                    Entries.Remove(Order.First!.Value);
+                    Order.RemoveFirst();
+                }
+            }
+        }
+
+        /// <summary>How many gates the cache holds for <paramref name="impulse"/>.</summary>
+        internal static int CachedPhaseSpectrumCount(Complex[] impulse)
+        {
+            if (!PhaseSpectrumCaches.TryGetValue(impulse, out PhaseSpectrumCache? cache))
+            {
+                return 0;
+            }
+
+            lock (cache.Entries)
+            {
+                return cache.Entries.Count;
+            }
         }
 
         private readonly record struct PhaseSpectrumCacheKey(
@@ -342,6 +381,7 @@ namespace Resonalyze.Dsp
                 if (cache.Entries.TryGetValue(key, out CachedPhaseSpectrum? cached) &&
                     (!timeWeighted || cached.TimeWeighted != null))
                 {
+                    cache.Touch(key);
                     extractionStart = cached.ExtractionStart;
                     return (cached.Spectrum, cached.TimeWeighted);
                 }
@@ -367,7 +407,7 @@ namespace Resonalyze.Dsp
             }
             lock (cache.Entries)
             {
-                cache.Entries[key] = new CachedPhaseSpectrum(spectrum, weighted, extractionStart);
+                cache.Store(key, new CachedPhaseSpectrum(spectrum, weighted, extractionStart));
             }
             return (spectrum, weighted);
         }

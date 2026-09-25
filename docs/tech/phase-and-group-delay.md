@@ -368,6 +368,15 @@ with a left fade of a couple of milliseconds whole octave bands misread by 10+ d
 The estimate is memoised per IR array, and the peak remains the fallback when the
 estimator rejects the record.
 
+A start less than one left fade into the record puts the window's opening before
+sample 0. The transfer IR is circular, so the fixed window reads that pre-roll from
+the record's end, as the FDW, phase and group-delay gates do; read as zeros, a
+1.25 ms loopback-referenced arrival came out 0.3-0.4 dB high below 60 Hz against
+the same IR further in, and the FDW curve left the fixed one below its transition.
+Only the pre-roll wraps (`wrapPreRoll`): past the record's end stays zero, so a window
+longer than an imported record does not read the direct sound twice. The Waterfall does
+not wrap at all: its later slices would read the direct sound again.
+
 A composite record (a sum of arrivals) must pass `anchorIndex` = the earliest of its
 parts' own starts. On the mixed record the start estimator reads the front of the
 dominant band, which a later, louder arrival can own. The Virtual DSP tool anchors

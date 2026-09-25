@@ -212,10 +212,11 @@ itself is never touched: a Silent RTA that loses SPL keeps running on the relati
   (slope compensation would re-tilt a pink RTA as if the excitation were white). A loaded capture is
   discarded too. A running analyzer needs no call; its restart begins a fresh accumulation.
 - `LiveSpectrumSession.Configure` drops the stopped accumulation, the held curve and the envelope itself
-  when the sample rate or the frame length changes, whoever reconfigures (Record Settings, a history
-  restore): the bins belong to the grid they were read on, and re-read on another they land on the wrong
-  frequencies and Save writes a capture whose bins disagree with its recipe. A loaded capture carries its
-  own geometry and stays. Restoring a history entry stops a running analyzer first, as a sweep does,
+  when the capture session changes (any of rate, frame length, device, route or channel), whoever
+  reconfigures (Record Settings, a history restore): the bins belong to the grid they were read on, and
+  re-read on another they land on the wrong frequencies and Save writes a capture whose bins disagree with
+  its recipe; under another input or route Save would file it under that session and with that input's SPL
+  anchor. A loaded capture carries its own geometry and stays. Restoring a history entry stops a running analyzer first, as a sweep does,
   since the analyzer refuses a new configuration mid-run.
 - New session discards the same way. The accumulation outlives a stop and a loaded capture is state, so
   forgetting only the held curve let the next visit to the mode read the last session's run, or show its

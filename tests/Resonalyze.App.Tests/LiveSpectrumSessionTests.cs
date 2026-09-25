@@ -103,7 +103,7 @@ public sealed class LiveSpectrumSessionTests
 
     // History restores and Record Settings reconfigure a stopped analyzer; its bins must not be re-read at another rate.
     [Fact]
-    public async Task ANewRateOrFrameLengthDropsTheStoppedReading_TheSameOneKeepsIt()
+    public async Task ANewCaptureSessionDropsTheStoppedReading_TheSameOneKeepsIt()
     {
         var options = new LiveSpectrumOptions { AnalysisMode = LiveAnalysisMode.Rta, SequenceLength = 1024 };
         using LiveSpectrumSession session = Create(options);
@@ -125,6 +125,16 @@ public sealed class LiveSpectrumSessionTests
         session.Configure(settings);
         Assert.Null(session.HeldSnapshot);
         Assert.Null(session.Reread(session.Display));
+        Assert.False(session.HasCaptureToSave);
+
+        session.Start();
+        await FirstFrameAsync(session);
+        await session.StopAsync();
+        // Another input: Save would file the reading under that input's session and SPL anchor.
+        settings.WaveInputChannelOffset = 1;
+        settings.WaveLoopbackInputChannelOffset = 0;
+        session.Configure(settings);
+        Assert.Null(session.HeldSnapshot);
         Assert.False(session.HasCaptureToSave);
     }
 

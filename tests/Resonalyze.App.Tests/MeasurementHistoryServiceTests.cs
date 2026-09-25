@@ -127,6 +127,18 @@ public sealed class MeasurementHistoryServiceTests : IDisposable
     }
 
     [Fact]
+    public void AnUnsavedEntrysSessionChange_LeavesTheStoreAlone()
+    {
+        MeasurementHistoryService service = CreateService();
+        Guid unsaved = service.AddMeasurement(CreateMeasurement(), new MeasurementSessionSnapshot());
+
+        service.UpdateSession(unsaved, new MeasurementSessionSnapshot { ActiveMode = ModeTab.Phase });
+
+        Assert.Equal(ModeTab.Phase, service.FindById(unsaved)!.Session!.ActiveMode);
+        Assert.False(File.Exists(Path.Combine(directory, "measurement-history.json")));
+    }
+
+    [Fact]
     public void AStoreOverDepthIsCutWhenItLoads_AndTheCutReachesDisk()
     {
         string storePath = Path.Combine(directory, "measurement-history.json");

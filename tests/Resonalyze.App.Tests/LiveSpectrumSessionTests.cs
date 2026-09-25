@@ -313,6 +313,27 @@ public sealed class LiveSpectrumSessionTests
         Assert.True(analyzer.Setup.IsMicOnly);
     }
 
+    [Fact]
+    public void AReconfigureRepeatingTheRouteKeepsTheCaptureSession_AndANewRouteStartsOne()
+    {
+        using var analyzer = new NoiseMeasurement(new FakeAudioSessionFactory());
+        analyzer.Init(
+            48_000, 24, 0.5, PlaybackChannel.Mono, sequenceLength: 4096,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1, liveSpectrumOptions: new LiveSpectrumOptions());
+        Guid first = analyzer.CaptureSessionId;
+
+        analyzer.Init(
+            48_000, 24, 60, PlaybackChannel.Mono, sequenceLength: 4096,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1,
+            liveSpectrumOptions: new LiveSpectrumOptions { WindowType = WindowType.Rectangular });
+        Assert.Equal(first, analyzer.CaptureSessionId);
+
+        analyzer.Init(
+            96_000, 24, 60, PlaybackChannel.Mono, sequenceLength: 4096,
+            waveInputChannelOffset: 0, waveLoopbackInputChannelOffset: 1, liveSpectrumOptions: new LiveSpectrumOptions());
+        Assert.NotEqual(first, analyzer.CaptureSessionId);
+    }
+
     private static LiveSpectrumSession Create(
         LiveSpectrumOptions options,
         Func<string?, CapturedMicrophoneCalibration>? resolveCalibration = null)

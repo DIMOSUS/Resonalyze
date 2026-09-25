@@ -245,6 +245,10 @@ The credit must be earned carefully:
 - **Clamped to [0, generic allowance].** Uncapped, the same all-pass source earned 7.79 ms and
   swallowed a genuine late mode. The predictions read a bypassed response that may itself carry the
   mode, and no conviction factor protects this credit.
+- **Graded with the override delay taken out.** The prediction excludes bulk delay, so a read taken
+  through a settled channel's delay (the bridge's reference top, a cross-side link's settled side
+  and its donors) is shifted back before grading. Graded as read, a 20 ms delay turns every such
+  prediction Latched and silently drops the credit, and a chain-explained skew then refuses the run.
 
 **Link reads** (`LinkProbeToleranceMs`). An energy-onset read cannot be graded against the
 predictor, which speaks in peaks, so it keeps the generic allowance only.

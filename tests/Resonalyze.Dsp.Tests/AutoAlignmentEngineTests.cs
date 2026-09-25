@@ -2005,6 +2005,39 @@ public sealed class AutoAlignmentEngineTests
     }
 
     [Fact]
+    public void ArrivalProbeTolerance_ReadThroughAnOverrideDelay_KeepsTheChainCredit()
+    {
+        DspChannelChain chain = NamedChain("BW36 BP 70-200");
+        AlignmentSnapshot undelayed = PredictableSnapshot(
+            "midbass", UnitImpulse(BasePosition), chain);
+        // As the reprocessor renders it: the override delay is in the response, not in the snapshot's chain.
+        const double delayMs = 20;
+        Complex[] delayed = VirtualCrossoverAnalysis.ApplyChain(
+            undelayed.BypassedImpulseResponse!, chain with { DelayMs = delayMs },
+            SampleRate, SampleRate, out ValidSampleRange delayedRange);
+        AlignmentSnapshot settled = undelayed with
+        {
+            ImpulseResponse = delayed,
+            PeakIndex = VirtualCrossoverAnalysis.FindPeakIndex(delayed),
+            ValidRange = delayedRange
+        };
+
+        double Tolerance(AlignmentSnapshot side, double appliedDelayMs)
+        {
+            double Read(double lowHz) =>
+                VirtualCrossoverAnalysis.AnalyzeBandLimitedArrival(
+                    side.ImpulseResponse, SampleRate, lowHz, 400, side.ValidRange)
+                    .FirstArrivalDelayMilliseconds;
+            return AutoAlignmentEngine.ArrivalProbeToleranceMs(
+                side, Read(100), Read(200), 100, 200, 400, appliedDelayMs);
+        }
+
+        double expected = Tolerance(undelayed, 0);
+        Assert.True(expected > 2.5, $"the chain must earn credit; got {expected:0.000}");
+        Assert.Equal(expected, Tolerance(settled, delayMs), 2);
+    }
+
+    [Fact]
     public void ArrivalProbeTolerance_NeverTightensBelowTheGenericFloor()
     {
         AlignmentSnapshot highPassed = PredictableSnapshot(

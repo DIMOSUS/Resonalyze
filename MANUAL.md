@@ -598,8 +598,9 @@ centre and a stereo rear fill is six blocks from ten files:
 
 Within a zone the chain runs up the blocks' crossover bands; the list order only breaks
 ties, as it does before any crossover is set. So keep each zone's blocks from lowest to
-highest — Auto crossover re-sorts them to match anyway. A full-range centre or rear pair
-can stand anywhere in the list, since **Show** sorts by zone. Each automatic step then
+highest; Auto crossover re-sorts them for you while **Reorder the channel blocks to
+match** is ticked, as it is by default. A full-range centre or rear pair can stand
+anywhere in the list, since **Show** sorts by zone. Each automatic step then
 works on one zone at a time — the front chain with the subwoofer at its bottom, the
 rear's own drivers (read in **Rear + Sub**), and only afterwards the rear and the centre
 against the finished front (read in **Groups**).

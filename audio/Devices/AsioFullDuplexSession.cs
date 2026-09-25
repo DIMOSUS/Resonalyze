@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using NAudio.Wave;
 
 namespace Resonalyze.Audio;
@@ -15,6 +16,10 @@ internal sealed class AsioFullDuplexSession : IDisposable
     private readonly Action? beforeCaptureCommit;
     private readonly Action? beforeSnapshotCopy;
     private AsioOut? driver;
+    private Timer? watchdogTimer;
+    private AsioCallbackWatchdog? watchdog;
+    private long watchdogStart;
+    private long callbackCount;
     private CaptureAccumulator? accumulator;
     private float[][] convertScratch = Array.Empty<float[]>();
     private double[] meterPeaks = Array.Empty<double>();
@@ -120,12 +125,14 @@ internal sealed class AsioFullDuplexSession : IDisposable
 
             driver.AudioAvailable += ReceiveAudio;
             driver.PlaybackStopped += PlaybackStopped;
+            driver.DriverResetRequest += DriverResetRequested;
             driver.InitRecordAndPlayback(
                 playbackProvider,
                 driverRecordChannelCount,
                 sampleRate);
             capturePump.Prepare(checked(driver.FramesPerBuffer * sizeof(float)));
             driver.Play();
+            StartWatchdog();
 
             using CancellationTokenRegistration registration =
                 cancellationToken.Register(() => firstBufferReady.TrySetCanceled(cancellationToken));
@@ -185,6 +192,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
             return;
         }
 
+        StopWatchdog();
         try
         {
             await AudioCaptureStop.StopAndWaitAsync(
@@ -251,6 +259,7 @@ internal sealed class AsioFullDuplexSession : IDisposable
     // NAudio fills playback only after this returns: bounded copies only, the worker does the rest.
     private void ReceiveAudio(object? sender, AsioAudioAvailableEventArgs args)
     {
+        Interlocked.Increment(ref callbackCount);
         if (args.InputBuffers.Length < driverRecordChannelCount)
         {
             firstBufferReady?.TrySetException(new InvalidOperationException(
@@ -346,11 +355,78 @@ internal sealed class AsioFullDuplexSession : IDisposable
                 return;
             }
 
-            firstBufferReady?.TrySetException(exception);
-            playbackStopped?.TrySetException(exception);
-            terminalException ??= exception;
-            sampleWaiters.FaultAll(exception);
+            FailLocked(exception);
         }
+    }
+
+    /// <summary>The driver asked the host to reset it (settings changed, device removed): it delivers no more audio.</summary>
+    internal void ReportDriverReset() =>
+        Fail(new InvalidOperationException(
+            $"The ASIO driver '{driverName}' asked to be reset (its settings changed or the device was removed). " +
+            "Check the device, then measure again."));
+
+    private void DriverResetRequested(object? sender, EventArgs args) => ReportDriverReset();
+
+    private void Fail(Exception exception)
+    {
+        lock (sync)
+        {
+            FailLocked(exception);
+        }
+    }
+
+    private void FailLocked(Exception exception)
+    {
+        firstBufferReady?.TrySetException(exception);
+        playbackStopped?.TrySetException(exception);
+        terminalException ??= exception;
+        sampleWaiters.FaultAll(exception);
+    }
+
+    private void CheckCallbacks()
+    {
+        lock (sync)
+        {
+            if (watchdog is not { } current ||
+                !current.IsStalled(Interlocked.Read(ref callbackCount), Stopwatch.GetElapsedTime(watchdogStart)))
+            {
+                return;
+            }
+
+            watchdog = null;
+            FailLocked(new InvalidOperationException(
+                $"The ASIO driver '{driverName}' delivered no audio for " +
+                $"{AsioCallbackWatchdog.StallTimeout.TotalSeconds:0} seconds (device removed or driver error). " +
+                "Check the device, then measure again."));
+        }
+
+        StopWatchdog();
+    }
+
+    private void StartWatchdog()
+    {
+        StopWatchdog();
+        lock (sync)
+        {
+            watchdogStart = Stopwatch.GetTimestamp();
+            watchdog = new AsioCallbackWatchdog(Interlocked.Read(ref callbackCount), TimeSpan.Zero);
+        }
+
+        watchdogTimer = new Timer(
+            _ => CheckCallbacks(),
+            null,
+            AsioCallbackWatchdog.CheckInterval,
+            AsioCallbackWatchdog.CheckInterval);
+    }
+
+    private void StopWatchdog()
+    {
+        lock (sync)
+        {
+            watchdog = null;
+        }
+
+        Interlocked.Exchange(ref watchdogTimer, null)?.Dispose();
     }
 
     private void EnsureScratch(int frames)
@@ -444,8 +520,10 @@ internal sealed class AsioFullDuplexSession : IDisposable
             }
         }
 
+        StopWatchdog();
         activeDriver.AudioAvailable -= ReceiveAudio;
         activeDriver.PlaybackStopped -= PlaybackStopped;
+        activeDriver.DriverResetRequest -= DriverResetRequested;
         activeDriver.Dispose();
     }
 

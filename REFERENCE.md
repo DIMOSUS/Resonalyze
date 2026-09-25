@@ -617,7 +617,13 @@ is reported before the measurement starts.
 **ASIO Control Panel** opens the driver's own panel for buffer size or clock
 source; **Test ASIO Inputs** captures a short diagnostic snapshot that verifies
 the microphone and loopback channels are truly separate and not mono-summed by
-the driver or the interface's control software.
+the driver or the interface's control software. The test gives up with an error
+when the driver has not finished it within ten seconds of the one-second capture.
+
+A run, a live capture or the test ends with an error, rather than waiting, when
+the driver asks to be reset (its settings changed in its own panel, or the
+device was removed) or when it delivers no audio for five seconds. Check the
+device and measure again.
 
 ### WASAPI Shared and Exclusive
 

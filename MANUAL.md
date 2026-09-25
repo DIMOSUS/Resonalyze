@@ -222,7 +222,7 @@ Its groups, top to bottom:
 5. **Routing** — the output feeding the DSP, the microphone input, and the channel
    carrying the **loopback**. Without a loopback the measurement will not start, by
    design. With ASIO, the line beneath reads *… Hz supported* once the driver takes the
-   rate.
+   rate, or the driver's error when it does not open; hover the line to read it whole.
 6. **The transport column** of the main window, beside it — the **Mic** / **Loop** level
    meters where you check every run for clipping, then **Start**, **Save**, **Load**,
    **Compare** and the REW **Export** / **Import**.

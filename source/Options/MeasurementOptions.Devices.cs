@@ -100,6 +100,8 @@ namespace Resonalyze.Options
 
             labelAsioSampleRateStatus.Text = view.AsioSampleRateStatus.Text;
             labelAsioSampleRateStatus.ForeColor = view.AsioSampleRateStatus.Color;
+            // A driver's error runs past the panel's edge; the tooltip is where it can be read whole.
+            deviceToolTip.SetToolTip(labelAsioSampleRateStatus, view.AsioSampleRateStatus.Text);
             labelAsioPlaybackLatencyValue.Text = view.AsioPlaybackLatency;
         }
 

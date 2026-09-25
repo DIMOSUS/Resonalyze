@@ -240,6 +240,22 @@ public sealed class PcmCaptureSessionTests
     }
 
     [Fact]
+    public async Task ADeviceThatFailsToOpen_ReportsItsOpenError_NotTheStopTimeoutAfterIt()
+    {
+        var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1))
+        {
+            StartFailure = new IOException("WaveBadFormat calling waveInOpen"),
+            StopFailure = new TimeoutException("The MME audio input did not stop within 3 seconds.")
+        };
+        await using var session = new PcmCaptureSession(device);
+
+        IOException exception = await Assert.ThrowsAsync<IOException>(
+            () => session.StartAsync(CancellationToken.None));
+
+        Assert.Equal("WaveBadFormat calling waveInOpen", exception.Message);
+    }
+
+    [Fact]
     public async Task PacketFlagsAreCountedAndDiscontinuityIsPublished()
     {
         var device = new FakeCaptureDevice(new WaveFormat(48000, 16, 1));
@@ -300,13 +316,17 @@ public sealed class PcmCaptureSessionTests
         public int ChannelCount => CaptureFormat.Channels;
         public int MaximumPacketBytes => CaptureFormat.AverageBytesPerSecond / 10;
 
+        public Exception? StartFailure { get; init; }
+
+        public Exception? StopFailure { get; init; }
+
         public Task StartAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
+            return StartFailure == null ? Task.CompletedTask : Task.FromException(StartFailure);
         }
 
-        public Task StopAsync() => Task.CompletedTask;
+        public Task StopAsync() => StopFailure == null ? Task.CompletedTask : Task.FromException(StopFailure);
 
         public void Push(
             byte[] bytes,

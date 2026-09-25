@@ -48,6 +48,10 @@ so a waiter on a sample count that will never arrive would hang until a manual A
   its callbacks keep running until owner teardown disposes the session.
 - Stopping an already stopped device throws `InvalidOperationException`, which
   `AudioCaptureStop` treats as stopped.
+- A device whose open failed never reports a stop, so waiting for one only times out
+  and the timeout would replace the open error. `MmeCaptureDevice` forgets its stop
+  signal when `StartRecording` throws, and `PcmCaptureSession.StartAsync` rethrows the
+  start's failure even if the cleanup stop times out.
 
 ## Driver reset and silent drivers
 

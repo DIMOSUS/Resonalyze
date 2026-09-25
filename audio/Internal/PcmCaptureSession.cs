@@ -83,7 +83,14 @@ internal sealed class PcmCaptureSession : IAsyncDisposable, ISweepCaptureSession
         }
         catch
         {
-            await device.StopAsync().ConfigureAwait(false);
+            try
+            {
+                await device.StopAsync().ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // The start's own failure is the one to report; a device that never started cannot confirm a stop.
+            }
             throw;
         }
     }

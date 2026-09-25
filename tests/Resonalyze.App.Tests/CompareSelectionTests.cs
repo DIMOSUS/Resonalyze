@@ -34,6 +34,23 @@ public sealed class CompareSelectionTests
     }
 
     [Fact]
+    public void AnOlderLoadFinishingLate_DoesNotLandOverANewerOneOrAClear()
+    {
+        var selection = new CompareSelection();
+        long older = selection.BeginLoad();
+        long newer = selection.BeginLoad();
+
+        Assert.True(selection.TrySet(newer, "new.json", null, CreateSnapshot()));
+        Assert.False(selection.TrySet(older, "old.json", null, CreateSnapshot()));
+        Assert.Equal("new.json", selection.Current!.DisplayName);
+
+        long cleared = selection.BeginLoad();
+        selection.Clear();
+        Assert.False(selection.TrySet(cleared, "late.json", null, CreateSnapshot()));
+        Assert.Null(selection.Current);
+    }
+
+    [Fact]
     public void GetAnalysisSource_MapsTheSnapshotResponses()
     {
         var selection = new CompareSelection();

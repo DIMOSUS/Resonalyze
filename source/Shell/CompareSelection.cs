@@ -6,22 +6,42 @@ namespace Resonalyze;
 internal sealed class CompareSelection
 {
     private volatile CompareMeasurementSelection? current;
+    // UI thread only: the newest load, Set or Clear; an older load that finishes later does not land.
+    private long latest;
 
     public event Action? Changed;
 
     public CompareMeasurementSelection? Current => current;
 
+    /// <summary>Taken before a load's first await; the load lands through <see cref="TrySet"/> with it.</summary>
+    public long BeginLoad() => ++latest;
+
     public void Set(
+        string displayName,
+        string? sourceFilePath,
+        MeasurementResult result) =>
+        TrySet(BeginLoad(), displayName, sourceFilePath, result);
+
+    /// <returns>False when a newer load, <see cref="Set"/> or <see cref="Clear"/> came after <paramref name="load"/>: nothing changes.</returns>
+    public bool TrySet(
+        long load,
         string displayName,
         string? sourceFilePath,
         MeasurementResult result)
     {
+        if (load != latest)
+        {
+            return false;
+        }
+
         current = new CompareMeasurementSelection(displayName, sourceFilePath, result);
         Changed?.Invoke();
+        return true;
     }
 
     public void Clear()
     {
+        ++latest;
         current = null;
         Changed?.Invoke();
     }

@@ -685,7 +685,10 @@ the coarse base(s) ± the period-scaled range.
    to a lobe 4.98 ms out, putting the sub 5 ms behind. The reach is absolute because transient smear
    is absolute. A wide seed dilutes the prior, which is why the reach fences the margin.
    `DeclinedInvertRescue` logs a rescue the reach blocked.
-3. **Re-break** near-ties within the chosen polarity.
+3. **Re-break** near-ties of a rescue within its polarity, measured from the rescue's score (the best of
+   its polarity within reach). A pick the first step made is already the arrival-closest within the
+   margin of the best and stands: re-broken from its own score, the margin grew to twice its width, and
+   candidates at 0.00, −0.08 and −0.17 dB returned the one 0.17 dB down.
 
 Polarity is relative to the settled neighbour. Where the filters expect inversion
 (`expectedRelativeInversion`) the preference is withdrawn, not reversed. Reversing it defended the

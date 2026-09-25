@@ -6,6 +6,16 @@ public sealed class AlignmentSelectionTests
     private static double Score(AlignmentCandidate candidate) => candidate.LossDb;
 
     [Fact]
+    public void Select_TheDelayTieMarginIsMeasuredFromTheBest_NotFromThePickWithinIt()
+    {
+        var top = new AlignmentCandidate(3.0, false, 0.00);
+        var tie = new AlignmentCandidate(1.0, false, -0.08);
+        var beyond = new AlignmentCandidate(0.1, false, -0.17);
+
+        Assert.Equal(tie, AlignmentSelection.Select([top, tie, beyond], baseDeltaMs: 0.0));
+    }
+
+    [Fact]
     public void PreferSubLeading_TrailingPickYieldsToLeadingLobeWithinMargin()
     {
         // 80 Hz sub junction, leadSign +1 (larger delay = sub leads): the leading lobe is 0.7 dB down, inside the precedence margin.

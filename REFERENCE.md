@@ -941,9 +941,9 @@ overlays are cleared, while audio device and routing settings, the history list
 and saved files are left intact.
 
 Each entry also remembers the working state it was last used with: the active
-mode, every per-mode setting, and which overlay slots were shown — so switching
-to another entry and back restores the whole working context, not just the
-impulse response. Only a small rolling set of unsaved in-memory snapshots is
+mode, every per-mode setting, and which overlay slots were shown — so leaving it
+for another entry, a new run or a loaded file and coming back restores the whole
+working context, not just the impulse response. Only a small rolling set of unsaved in-memory snapshots is
 retained.
 
 The list itself holds at most **30** entries. Past that the oldest `FILE` row is

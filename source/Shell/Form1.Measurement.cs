@@ -158,6 +158,8 @@ public partial class Form1
                 return;
             }
 
+            // The entry being left keeps its working state, as when another entry is opened.
+            sessionTracker.PersistCurrentSessionState();
             PrepareSweepMeasurementForRun();
             // After Prepare, so the anchor prediction reads this run's input configuration.
             ResetSplViewOnlyDisplayForRun();

@@ -99,11 +99,14 @@ public static class EssNoise
             }
         }
 
-        // median(exponential) = ln2 · mean; a plain magnitude median reads ~1.6 dB low.
+        // A bin's power is exponential, so its median over the windows reads low; dividing by the median's expected
+        // value for this many windows gives the mean power back. ln 2 is only the many-window limit, and read the
+        // floor 0.5 dB high at the default six windows (1.6 dB at two).
+        double expectedMedian = ExpectedExponentialMedian(windowCount);
         double[] magnitude = new double[usableBins];
         for (int bin = 0; bin < usableBins; bin++)
         {
-            magnitude[bin] = Math.Sqrt(Median(perBin[bin]) / Math.Log(2.0));
+            magnitude[bin] = Math.Sqrt(Median(perBin[bin]) / expectedMedian);
         }
 
         double confidence = Math.Clamp(
@@ -112,6 +115,25 @@ public static class EssNoise
             1.0);
 
         return new NoiseEstimate(binFrequencies, magnitude, enbwHz, ranges, confidence);
+    }
+
+    // E[X(k)] of n unit exponentials is 1/n + ... + 1/(n - k + 1); an even count averages the middle two.
+    private static double ExpectedExponentialMedian(int count)
+    {
+        double OrderStatistic(int k)
+        {
+            double sum = 0.0;
+            for (int i = count - k + 1; i <= count; i++)
+            {
+                sum += 1.0 / i;
+            }
+
+            return sum;
+        }
+
+        return count % 2 == 1
+            ? OrderStatistic((count + 1) / 2)
+            : 0.5 * (OrderStatistic(count / 2) + OrderStatistic(count / 2 + 1));
     }
 
     private static double Median(double[] values)

@@ -97,6 +97,23 @@ public sealed class EssNoiseTests
     }
 
     [Fact]
+    public void TheFloorsPowerIsTheNoisesPower_WithTheDefaultFewWindows()
+    {
+        const double sigma = 0.002;
+        double[] impulse = BasePackets();
+        AddNoise(impulse, sigma, seed: 99);
+        DistortionSpectrum spectrum = Run(impulse, NoiseOptions);
+
+        int noiseLength = (int)Math.Round(SampleRate / spectrum.Noise!.EquivalentNoiseBandwidthHz);
+        double[] power = spectrum.Frequencies
+            .Select((frequency, i) => (frequency, ratio: spectrum.NoiseFloorRatio![i]))
+            .Where(point => point.frequency is >= 500 and <= 15_000 && double.IsFinite(point.ratio))
+            .Select(point => point.ratio * point.ratio)
+            .ToArray();
+        Assert.Equal(0.0, 10.0 * Math.Log10(power.Average() / (sigma * sigma * noiseLength)), 0.25);
+    }
+
+    [Fact]
     public void DoublingTheNoise_RaisesTheFloorBy6Db()
     {
         double[] quiet = BasePackets();

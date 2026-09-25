@@ -105,6 +105,12 @@ long, and a longer sweep moves the region's start later into the fade: reading t
 of below the noise, and drew the high-frequency noise floor several dB low. Where the full overlap leaves too
 little (a sweep of 16 s, or an imported deconvolution whose length is not the app's), the whole tail stands.
 
+The noise-floor trace (`EssNoise`) takes each bin's median power over the region's windows, so one thump
+cannot lift it, and divides it by the median's expected value for that many windows (a bin's power is
+exponential: the expected k-th of n is 1/n + … + 1/(n − k + 1)). That gives the mean power back at any
+window count; ln 2, the many-window limit, read the floor 0.5 dB high at the default six windows and 1.6 dB
+high at two.
+
 ## Harmonic energy probe
 
 `MeasureHarmonicEnergy` returns one channel's harmonic content relative to the linear packet

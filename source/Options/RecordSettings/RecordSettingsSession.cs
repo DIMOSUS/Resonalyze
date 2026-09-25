@@ -14,7 +14,7 @@ internal sealed record RecordCalibrationSelection(
 /// </summary>
 internal sealed partial class RecordSettingsSession
 {
-    public static readonly NumericFieldRange BandRange = new(20, 20_000, 0);
+    public static readonly NumericFieldRange BandRange = new(2, 20_000, 0);
     public static readonly NumericFieldRange OctavePaceRange = new(5, 20_000, 0);
     public static readonly NumericFieldRange HighPassFrequencyRange = new(10, 20_000, 0);
     public static readonly NumericFieldRange AverageRunCountRange = new(1, 64, 0);
@@ -51,7 +51,7 @@ internal sealed partial class RecordSettingsSession
     public RecordChoice HighPassSlope { get; } = new();
     public RecordChoice MicrophoneCalibration { get; } = new();
     public RecordNumber Bits { get; } = new(BitsRange, 8);
-    public RecordNumber LowFrequency { get; } = new(BandRange, 20);
+    public RecordNumber LowFrequency { get; } = new(BandRange, 2);
     public RecordNumber HighFrequency { get; } = new(BandRange, 20_000);
     public RecordNumber OctavePaceMilliseconds { get; } = new(OctavePaceRange, 200);
     public RecordNumber HighPassFrequency { get; } = new(HighPassFrequencyRange, 2_000);
@@ -94,7 +94,7 @@ internal sealed partial class RecordSettingsSession
         LoadDevices(settings);
 
         // Clamped and rounded: the file is not normalized to control ranges, and (int) truncation loses a millisecond.
-        (double lowFrequencyHz, double highFrequencyHz) = settings.ResolveBand(settings.SampleRate);
+        (double lowFrequencyHz, double highFrequencyHz) = settings.ResolveBand();
         LowFrequency.Value = BandRange.Clamp(Math.Round(lowFrequencyHz));
         HighFrequency.Value = BandRange.Clamp(
             Math.Max((double)LowFrequency.Value + 1.0, Math.Round(highFrequencyHz)));

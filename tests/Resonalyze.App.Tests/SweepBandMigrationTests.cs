@@ -1,39 +1,51 @@
+using System.Text.Json;
+
 namespace Resonalyze.App.Tests;
 
 public sealed class SweepBandMigrationTests
 {
     [Fact]
-    public void Settings_LegacyOctaves_MigrateAndClampIntoTheAllowedRange()
+    public void Settings_WithoutABand_SweepTheWholeAllowedRange()
     {
-        // Pre-band settings: 12 octaves derive 5.4 Hz-22.05 kHz, clamped to the 20 Hz-20 kHz default.
-        var settings = new MeasurementSettingsFile.SweepMeasurementSettings
-        {
-            Octaves = 12,
-            LowFrequencyHz = 0,
-            HighFrequencyHz = 0,
-            SampleRate = 44_100
-        };
+        var settings = new MeasurementSettingsFile.SweepMeasurementSettings { SampleRate = 44_100 };
 
-        (double lowHz, double highHz) = settings.ResolveBand(44_100);
+        (double lowHz, double highHz) = settings.ResolveBand();
 
-        Assert.Equal(20.0, lowHz);
+        Assert.Equal(2.0, lowHz);
         Assert.Equal(20_000.0, highHz);
     }
 
     [Fact]
-    public void Settings_ExplicitBand_IsPreservedWithinTheAllowedRange()
+    public void Settings_APreBandFile_SweepsTheWholeAllowedRange()
+    {
+        var settings = JsonSerializer.Deserialize<MeasurementSettingsFile.SweepMeasurementSettings>(
+            """{ "Octaves": 10, "SampleRate": 48000 }""")!;
+
+        (double lowHz, double highHz) = settings.ResolveBand();
+
+        Assert.Equal(2.0, lowHz);
+        Assert.Equal(20_000.0, highHz);
+    }
+
+    [Theory]
+    [InlineData(30, 18_000, 30, 18_000)]
+    [InlineData(2, 20_000, 2, 20_000)]
+    [InlineData(1, 200, 2, 200)]
+    [InlineData(10, 40_000, 10, 20_000)]
+    public void Settings_ExplicitBand_IsPreservedWithinTheAllowedRange(
+        double low, double high, double expectedLow, double expectedHigh)
     {
         var settings = new MeasurementSettingsFile.SweepMeasurementSettings
         {
-            LowFrequencyHz = 30,
-            HighFrequencyHz = 18_000,
+            LowFrequencyHz = low,
+            HighFrequencyHz = high,
             SampleRate = 48_000
         };
 
-        (double lowHz, double highHz) = settings.ResolveBand(48_000);
+        (double lowHz, double highHz) = settings.ResolveBand();
 
-        Assert.Equal(30.0, lowHz);
-        Assert.Equal(18_000.0, highHz);
+        Assert.Equal(expectedLow, lowHz);
+        Assert.Equal(expectedHigh, highHz);
     }
 
     [Fact]

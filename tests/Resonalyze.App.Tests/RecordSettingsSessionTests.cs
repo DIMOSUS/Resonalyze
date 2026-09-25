@@ -199,10 +199,10 @@ public sealed class RecordSettingsSessionTests
         int changes = 0;
         session.SweepSettingsChanged += () => changes++;
 
-        session.HighFrequency.Value = 20;
+        session.HighFrequency.Value = 2;
 
-        Assert.Equal(20m, session.LowFrequency.Value);
-        Assert.Equal(21m, session.HighFrequency.Value);
+        Assert.Equal(2m, session.LowFrequency.Value);
+        Assert.Equal(3m, session.HighFrequency.Value);
         Assert.Equal(1, changes);
     }
 

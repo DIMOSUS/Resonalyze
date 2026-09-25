@@ -246,11 +246,11 @@ one exception it allows.
 ### ⚠ Protect the drivers
 
 Bypassing the DSP removes the filters that protect the speakers. **Never run a
-full-range 20 Hz sweep through an unprotected tweeter.** Two safe approaches, which can
-be combined:
+full-range sweep through an unprotected tweeter** (by default the sweep starts at 2 Hz).
+Two safe approaches, which can be combined:
 
 1. **Restrict the sweep.** Measure at low power and start the sweep where the driver is
-   safe — for a tweeter, **800–1000 Hz → 20 kHz** instead of 20 Hz. The sweep fades in
+   safe — for a tweeter, **800–1000 Hz → 20 kHz** instead of 2 Hz. The sweep fades in
    over the half octave below **Low frequency** (from about 565 Hz for 800 Hz), so leave
    that margin. Frequencies far below its useful range add nothing.
 2. **Declare a protective high-pass.** If a protection filter must stay in the DSP,

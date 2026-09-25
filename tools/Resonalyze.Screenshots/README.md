@@ -72,9 +72,11 @@ remove that file.
 
 - **`noise`** — Live Spectrum needs a live signal through real hardware.
 - **`compare`** — a composed before/after crop of two different tunes.
-- The manual figures that came from the forum article: the microphone photo, the MMM
-  captures, the hybrid pair, and the open PEQ menu — a context menu is a window of
-  its own that neither capture path reaches.
+- The manual figures that came from the forum article: the microphone photo and the
+  MMM captures. (The open PEQ menu and the hybrid pair are shot here now: the menu
+  is opened through the panel's `ShowMenu` seam after the shell is raised, and taken
+  off the screen, since a context menu is a window of its own that `DrawToBitmap`
+  never reaches.)
 - **`manual/record-settings`** — the same panel as `measurement-options`, but composed
   beside the shell's transport column with the six numbered callouts drawn on. The
   panel half has to be shot by hand for the reason `measurement-options` is asked for
@@ -103,12 +105,15 @@ getting it wrong first:
 
 **Never drive a control that can raise a `MessageBox` or a file dialog.** Those are
 window class `#32770`, not Forms, so they never appear in `Application.OpenForms` and
-nothing here can close them — the click that opened one blocks for ever. Two are
+nothing here can close them — the click that opened one blocks for ever. Three are
 already avoided: the EQ Wizard's *Reset filters* asks before clearing, so the bank is
-emptied directly; and *Export* only shows the Q chooser while the project names no
-processor model, so that dialog is constructed rather than clicked. `CaptureModal`
-closes a stray native dialog and fails with a clear message, but that is a net, not a
-licence.
+emptied directly; *Export* only shows the Q chooser while the project names no
+processor model, so that dialog is constructed rather than clicked; and *Copy for AI*
+reports even its success in a message box, so the `agent` scene swaps the panel's
+`ShowMessage` seam for one that answers it (and fails the scene on an error).
+`CaptureModal` closes a stray native dialog and fails with a clear message, and a
+watchdog answers any other box left open for 15 seconds and fails the scene with its
+text — but those are nets, not a licence.
 
 The tool reaches the shell's private fields by name, because it drives panels the
 application never meant to expose. Every accessor throws with the name it could not

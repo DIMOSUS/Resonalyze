@@ -247,6 +247,33 @@ public sealed class EqProfileFormatsTests
     }
 
     [Fact]
+    public void MiniDsp_KeepsASubBassBandAt192kHzAsDesigned()
+    {
+        // Eight decimals moved this bell's response by 0.39 dB near 18.6 Hz on a 192 kHz device.
+        var band = new PeqBand(20, 5.0, 6.0);
+        string text = new MiniDspFormat(192_000).Export(new EqualizationCurve([band]));
+
+        var written = new BiquadCoefficients(
+            Coefficients(text, "b0=")[0],
+            Coefficients(text, "b1=")[0],
+            Coefficients(text, "b2=")[0],
+            Coefficients(text, "a1=")[0],
+            Coefficients(text, "a2=")[0]);
+        BiquadCoefficients exact = PeakingBiquad.Compute(band, 192_000);
+        foreach (double hz in new[] { 5.0, 10.0, 18.6, 20.0, 25.0, 40.0 })
+        {
+            Assert.Equal(DbAt(exact, hz), DbAt(written, hz), 3);
+        }
+
+        static double DbAt(BiquadCoefficients c, double hz)
+        {
+            System.Numerics.Complex z = System.Numerics.Complex.FromPolarCoordinates(1, -2 * Math.PI * hz / 192_000);
+            System.Numerics.Complex h = (c.B0 + c.B1 * z + c.B2 * z * z) / (1 - c.A1 * z - c.A2 * z * z);
+            return 20 * Math.Log10(h.Magnitude);
+        }
+    }
+
+    [Fact]
     public void MiniDsp_IsExportableAtEveryMiniDspProcessorsRate()
     {
         foreach (DspProcessorPreset preset in DspProcessorCatalog.Presets

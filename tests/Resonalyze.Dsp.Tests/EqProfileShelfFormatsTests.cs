@@ -99,8 +99,8 @@ public sealed class EqProfileShelfFormatsTests
         string text = new MiniDspFormat(48_000).Export(new EqualizationCurve(new[] { shelf }));
         BiquadCoefficients expected = ShelvingBiquad.Compute(shelf, 48_000);
 
-        Assert.Contains($"b0={EqTextNumbers.Format(expected.B0, "0.00000000")}", text);
-        Assert.Contains($"a2={EqTextNumbers.Format(expected.A2, "0.00000000")}", text);
+        Assert.Contains($"b0={EqTextNumbers.Format(expected.B0, MiniDspFormat.CoefficientFormat)}", text);
+        Assert.Contains($"a2={EqTextNumbers.Format(expected.A2, MiniDspFormat.CoefficientFormat)}", text);
     }
 
     [Fact]

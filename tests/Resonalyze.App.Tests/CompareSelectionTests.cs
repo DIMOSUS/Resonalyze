@@ -48,6 +48,10 @@ public sealed class CompareSelectionTests
         selection.Clear();
         Assert.False(selection.TrySet(cleared, "late.json", null, CreateSnapshot()));
         Assert.Null(selection.Current);
+        // A replaced load's failure is not reported: the user has already chosen something else.
+        Assert.False(selection.IsCurrent(older));
+        Assert.False(selection.IsCurrent(cleared));
+        Assert.True(selection.IsCurrent(selection.BeginLoad()));
     }
 
     [Fact]

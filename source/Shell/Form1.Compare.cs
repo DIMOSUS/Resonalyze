@@ -117,7 +117,7 @@ public partial class Form1
                 UpdateLastImpulseResponseDirectory(path);
             }
         }
-        catch (Exception exception)
+        catch (Exception exception) when (compareSelection.IsCurrent(load))
         {
             MessageBox.Show(
                 this,
@@ -146,7 +146,7 @@ public partial class Form1
                 entry.SourceFilePath,
                 result);
         }
-        catch (Exception exception)
+        catch (Exception exception) when (compareSelection.IsCurrent(load))
         {
             MessageBox.Show(
                 this,

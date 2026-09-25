@@ -16,6 +16,9 @@ internal sealed class CompareSelection
     /// <summary>Taken before a load's first await; the load lands through <see cref="TrySet"/> with it.</summary>
     public long BeginLoad() => ++latest;
 
+    /// <summary>Whether <paramref name="load"/> is still the newest choice, so its failure is still worth reporting.</summary>
+    public bool IsCurrent(long load) => load == latest;
+
     public void Set(
         string displayName,
         string? sourceFilePath,

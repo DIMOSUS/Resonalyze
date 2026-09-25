@@ -126,6 +126,48 @@ public sealed class FrequencyDependentMagnitudeTests
             $"{point.Y:0.###} dB at {point.X:0.#} Hz for a unit delta."));
     }
 
+    [Fact]
+    public void FixedWindow_ReadsTheSameMagnitudeWhereverTheArrivalSitsInTheCircularRecord()
+    {
+        // A band-limited transfer IR whose arrival sits inside the left fade (60 samples, 1.25 ms at 48 kHz): its
+        // pre-roll is at the record's end. Read as zeros, the bass came out 0.4 dB high against the same IR further in.
+        // Zero phase, as a loopback-referenced transfer IR's band limits leave it: symmetric about the arrival, so the part
+        // before it is real signal.
+        const int Length = 16_384;
+        var spectrum = new Complex[Length];
+        for (int bin = 0; bin <= Length / 2; bin++)
+        {
+            double hz = bin * (double)SampleRate / Length;
+            double gain = 1.0 / Math.Sqrt(1 + Math.Pow(15.0 / Math.Max(hz, 1e-9), 8)) /
+                Math.Sqrt(1 + Math.Pow(hz / 20_000.0, 8));
+            spectrum[bin] = gain;
+            spectrum[(Length - bin) % Length] = gain;
+        }
+
+        MathNet.Numerics.IntegralTransforms.Fourier.Inverse(spectrum, MathNet.Numerics.IntegralTransforms.FourierOptions.Matlab);
+        Complex[] prototype = spectrum.Select(value => new Complex(value.Real, 0)).ToArray();
+        FrequencyResponseOptions options = Options(PhaseWindowMode.Fixed);
+
+        IReadOnlyList<SignalPoint> early = DataHelper.GetOversampledPrimarySpectrum(Rotated(prototype, 60), options, 60);
+        IReadOnlyList<SignalPoint> later = DataHelper.GetOversampledPrimarySpectrum(Rotated(prototype, 1_000), options, 1_000);
+
+        foreach ((SignalPoint a, SignalPoint b) in early.Zip(later).Where(pair => pair.First.X is >= 20 and <= 1_000))
+        {
+            Assert.True(Math.Abs(a.Y - b.Y) < 0.01, $"{a.Y - b.Y:+0.000;-0.000} dB at {a.X:0.#} Hz.");
+        }
+
+        static SyntheticMeasurement Rotated(Complex[] response, int by)
+        {
+            var rotated = new Complex[response.Length];
+            for (int i = 0; i < response.Length; i++)
+            {
+                rotated[(i + by) % response.Length] = response[i];
+            }
+
+            return new SyntheticMeasurement(rotated, SampleRate, by);
+        }
+    }
+
     private static SyntheticMeasurement ReflectedImpulse()
     {
         var impulse = new Complex[8_192];

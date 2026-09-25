@@ -619,7 +619,8 @@ internal static class ImpulseWindowPreview
                             startTransferResult.ImpulseResponse,
                             measurement.SampleRate,
                             startTransferResult.PeakIndex),
-                        false,
+                        // The magnitude window reads the circular pre-roll, so the preview does too.
+                        true,
                         "Transfer IR Window")
                     : SelectImpulseResponse(
                         measurement,

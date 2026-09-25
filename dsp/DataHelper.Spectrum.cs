@@ -12,9 +12,10 @@ namespace Resonalyze.Dsp
             IImpulseMeasurement measurement,
             int start,
             int length,
-            double[]? window = null)
+            double[]? window = null,
+            bool wrap = false)
         {
-            Complex[] spectrum = ExtractWindow(measurement, start, length, window);
+            Complex[] spectrum = ExtractWindow(measurement, start, length, window, wrap);
             Fourier.Forward(spectrum, FourierOptions.Matlab);
 
             var data = new List<SignalPoint>();
@@ -140,7 +141,9 @@ namespace Resonalyze.Dsp
             double rightTukeyWindow = (double)frequencyResponseOptions.RightTukeyWindow / frequencyResponseOptions.Window * 2.0;
             double[] window = Windowing.TukeyWindow(frequencyResponseOptions.Window, leftTukeyWindow, rightTukeyWindow);
             int h1Start = anchor - frequencyResponseOptions.LeftTukeyWindow;
-            return GetOversampledSpectrumData(measurement, h1Start, window);
+            // A transfer IR is circular: a response starting inside the left fade has its pre-roll at the record's end,
+            // as the FDW, phase and group-delay gates read it. Zeros there lifted the bass by 0.4 dB at a 1.25 ms arrival.
+            return GetOversampledSpectrumData(measurement, h1Start, window, wrap: true);
         }
 
         // The response START, not the peak: driver GD delays the peak. See docs/tech/phase-and-group-delay.md#magnitude-window-anchor.
@@ -520,16 +523,18 @@ namespace Resonalyze.Dsp
         }
 
         // Only a zero tail is appended: the window stays put, the grid gets finer.
+        /// <param name="wrap">Read indices outside the record circularly (a transfer IR's pre-roll sits at its end).</param>
         public static List<SignalPoint> GetOversampledSpectrumData(
             IImpulseMeasurement measurement,
             int start,
-            double[] tukeyWindow)
+            double[] tukeyWindow,
+            bool wrap = false)
         {
             int length = tukeyWindow.Length;
             int analysisLength = GetOversampledLength(length);
             double[] window = new double[analysisLength];
             Array.Copy(tukeyWindow, window, length);
-            return GetSpectrumData(measurement, start, analysisLength, window);
+            return GetSpectrumData(measurement, start, analysisLength, window, wrap);
         }
     }
 }

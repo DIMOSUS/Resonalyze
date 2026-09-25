@@ -15,6 +15,9 @@ internal sealed class DockedModeSettingsHost : IDisposable
 
     public bool IsOpen => activeDialog != null;
 
+    /// <summary>Whether the panel open now is the one opened under <paramref name="key"/>.</summary>
+    public bool IsShowing(object key) => activeDialog != null && Equals(activeKey, key);
+
     public DockedModeSettingsHost(Form owner, Control anchorControl)
     {
         this.owner = owner;

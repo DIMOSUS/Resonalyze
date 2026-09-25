@@ -12,6 +12,8 @@ public sealed class ApplicationVersionInfoTests
     [InlineData("1.2.0-1", "1.2.0-alpha")]
     [InlineData("v1.2.0-rc.1", "v1.2.0-rc.2")]
     [InlineData("1.2.0-rc.2+build.5", "1.2.0-rc.3")]
+    [InlineData("1.2.0-rc.1.dev.3", "v1.2.0-rc.2")]
+    [InlineData("1.2.0-rc.1.dev.3", "v1.2.0")]
     public void IsOlderThan_DetectsAnAvailableUpdate(string current, string other)
     {
         Assert.True(ApplicationVersionInfo.IsOlderThan(current, other));
@@ -24,6 +26,7 @@ public sealed class ApplicationVersionInfoTests
     [InlineData("1.2.0-rc.2", "1.2.0-rc.1")]
     [InlineData("1.2.0", "1.2.0-rc.9")]
     [InlineData("1.2.1-rc.1", "1.2.0")]
+    [InlineData("1.2.0-rc.1.dev.3", "v1.2.0-rc.1")]
     public void IsOlderThan_DoesNotPromptForSameOrOlder(string current, string other)
     {
         Assert.False(ApplicationVersionInfo.IsOlderThan(current, other));

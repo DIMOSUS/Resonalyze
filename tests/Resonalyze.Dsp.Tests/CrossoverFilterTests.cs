@@ -158,14 +158,14 @@ public sealed class CrossoverFilterTests
     [InlineData(48)]
     public void Bessel_IsMinus3DbAtCorner(int slope)
     {
-        // The table's four-digit FSF/Q precision leaves ~0.06 dB of slack.
+        // Exact prototype roots: only the bilinear rounding is left (the old SLOA049 table read -3.06 dB at 24 dB/oct).
         double lowPassDb = MagnitudeDb(CrossoverFilter.Response(
             LowPass(CrossoverFilterFamily.Bessel, 1_000, slope), 1_000, SampleRate));
         double highPassDb = MagnitudeDb(CrossoverFilter.Response(
             HighPass(CrossoverFilterFamily.Bessel, 1_000, slope), 1_000, SampleRate));
 
-        Assert.Equal(-3.0103, lowPassDb, 0.07);
-        Assert.Equal(-3.0103, highPassDb, 0.07);
+        Assert.Equal(-3.0103, lowPassDb, 0.005);
+        Assert.Equal(-3.0103, highPassDb, 0.005);
     }
 
     [Fact]

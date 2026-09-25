@@ -291,16 +291,18 @@ public static class CrossoverFilter
         return sampleRateHz / Math.PI * Math.Atan(warpedSection);
     }
 
-    // Bessel prototype normalized to -3 dB (TI SLOA049): (FSF, Q) pairs plus the odd real pole's FSF.
+    // Bessel prototype normalized to -3 dB: (FSF, Q) pairs plus the odd real pole's FSF, from the roots of the reverse
+    // Bessel polynomial scaled to its -3 dB frequency. TI SLOA049's table, used before, is up to 0.8 % off in FSF
+    // (the 4th order read -3.06 dB at its corner).
     private static ((double Fsf, double Q)[] Pairs, double? RealFsf) BesselPrototype(
         int order) => order switch
     {
         1 => ([], 1.0),
-        2 => ([(1.2736, 0.5773)], null),
-        3 => ([(1.4524, 0.6910)], 1.3270),
-        4 => ([(1.4192, 0.5219), (1.5912, 0.8055)], null),
-        6 => ([(1.6060, 0.5103), (1.6913, 0.6112), (1.9071, 1.0234)], null),
-        8 => ([(1.7837, 0.5060), (1.8376, 0.5596), (1.9591, 0.7109), (2.1953, 1.2258)], null),
+        2 => ([(1.272020, 0.577350)], null),
+        3 => ([(1.447617, 0.691047)], 1.322676),
+        4 => ([(1.430172, 0.521935), (1.603358, 0.805538)], null),
+        6 => ([(1.603919, 0.510318), (1.689168, 0.611195), (1.904708, 1.023314)], null),
+        8 => ([(1.778466, 0.505991), (1.832093, 0.559609), (1.953196, 0.710852), (2.188726, 1.225669)], null),
         _ => throw new ArgumentOutOfRangeException(nameof(order))
     };
 

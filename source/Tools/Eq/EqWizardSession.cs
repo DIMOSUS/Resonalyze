@@ -475,7 +475,7 @@ internal sealed class EqWizardSession
             MoveWindow(from: slopeWindow, to: passbandWindow);
         }
 
-        InvalidateSourceCurve();
+        // Only the target and the window move: the source and corrected curves stand.
         Announce();
     }
 

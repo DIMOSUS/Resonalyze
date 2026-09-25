@@ -421,7 +421,8 @@ was fitted to or the level it was fitted against; only a polarity flip changes n
   file the IR names, or Own to Off for an array without its own, leaves the calibration guard satisfied. Checked
   only where a capture exists.
 - `GateTemplate`, reduced to what the magnitude reads (it forces Fixed and ignores FDW cycles, detrend and unwrap,
-  which belong to the phase and impulse views), and `PinnedGateOffsetMs` for chain handoffs only. Where an
+  which belong to the phase and impulse views), and `PinnedGateOffsetMs` for chain handoffs only, against the pin
+  of the side the curve was gated through (`GateRightSide`), not the side shown when the bank comes back. Where an
   *auto-placed* window ended up is deliberately not guarded: it follows the earliest arrival across all channels,
   and measured, a 50 ms move changes the reading by 0.000 dB at 48 kHz and 0.078 dB at 192 kHz (the window opens
   ahead of the response and runs far past it) — two orders below anything else refused, while the guard would fire

@@ -121,6 +121,10 @@ internal sealed class VirtualCrossoverEqHandoff(
         LiveCaptureDocument? spatialAverage)
     {
         MagnitudeGateSnapshot snapshot = session.MagnitudeGate;
+        // The pin of the side the bank was gated through, not of the side shown now: L/R may have flipped meanwhile.
+        double? pinnedOffsetMs = token.GateRightSide == session.ActiveSideRight
+            ? snapshot.PinnedOffsetMs
+            : snapshot.OppositePinnedOffsetMs;
         return VirtualDspEqHandoff.TryApplyReturn(
             session.Channels,
             token,
@@ -130,7 +134,7 @@ internal sealed class VirtualCrossoverEqHandoff(
             session.Calibration.For(token.Channel.SideState(token.RightSide)),
             session.Calibration.SpatialAverageFor(),
             snapshot.Template,
-            snapshot.PinnedOffsetMs,
+            pinnedOffsetMs,
             session.Project.TargetLevelDb,
             spatialAverage,
             session.ProcessorSampleRateHz);

@@ -955,6 +955,7 @@ public sealed class VirtualDspEqHandoffTests
             TargetLevel,
             GateTemplate,
             PinnedGateOffsetMs: null,
+            GateRightSide: rightSide,
             Calibration: null,
             SpatialAverage: null,
             SpatialAverageCalibration: SpatialAverageCalibration.Off,

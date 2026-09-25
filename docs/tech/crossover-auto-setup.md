@@ -176,7 +176,11 @@ Because frequency and slope are searched decoupled, the descent can end with the
 below its floor for the slope it settled on (one lattice step in matched-slope mode, or a whole floor
 when a low max-crossover limit boxes the junction in and the deviation penalty favoured a gentler
 slope). `EnforceTweeterResonanceFloor` runs afterwards as a backstop: raise the crossover to the lowest
-protecting lattice point, and if the max-crossover limit blocks that, steepen instead.
+protecting lattice point, and if the max-crossover limit blocks that, steepen instead. The steepening prefers
+the junction's slope window but leaves it when nothing inside protects Fs, since the window is a preference
+and the floor is safety. The conventional all-24 candidate is defined by its slope, so it is not steepened: where
+24 dB/oct cannot protect Fs under the band limit, that baseline is dropped from the ranked pool rather than
+entered below the floor.
 
 Fs is estimated from the tweeter's own measured low roll-off and
 floored at `TweeterFsFloorHz` = 1200 Hz so a spuriously low or already-filtered edge cannot license a

@@ -1680,15 +1680,25 @@ public static class CrossoverAutoSetup
                 return;
             }
 
+            // Fs is safety and the junction's slope window a preference, so steepening may leave the window. A forced
+            // slope defines the conventional baseline: that run keeps it, and SolvePool drops the candidate instead.
             int floor = SlopeFloor(last, crossoverHz[j]);
-            int? steeper = AllowedSlopes(j, junctionFamily[j], crossoverHz[j])
-                .Where(slope => slope >= floor)
-                .Cast<int?>()
-                .Min();
+            int? Gentlest(IEnumerable<int> slopes) =>
+                slopes.Where(slope => slope >= floor).Cast<int?>().Min();
+            int? steeper = Gentlest(AllowedSlopes(j, junctionFamily[j], crossoverHz[j])) ??
+                (forcedSlope is null ? Gentlest(PracticalSlopes(junctionFamily[j])) : null);
             if (steeper is int slope)
             {
                 upperSlope[j] = slope;
             }
+        }
+
+        private bool TweeterUnderResonanceFloor()
+        {
+            int last = channelCount - 1;
+            return types[last] == DriverType.Tweeter &&
+                HighPassHz(last - 1) < TweeterMinCrossoverHz(
+                    TweeterResonanceHz(bands[last].LowHz), upperSlope[last - 1]) - 1e-6;
         }
 
         /// <summary>Descent winner plus per-junction best options crossed (bounded), one gain pass each. See docs/tech/crossover-auto-setup.md#ranked-search.</summary>
@@ -1703,6 +1713,11 @@ public static class CrossoverAutoSetup
                 // The combination loop composes junction choices that were each cleared on their own; only this
                 // states the invariant over the whole chain, and nothing else re-runs it after the crossing.
                 EnforceTweeterResonanceFloor();
+                if (forcedSlope is not null && TweeterUnderResonanceFloor())
+                {
+                    return;
+                }
+
                 NormalizeGainsCutOnly();
                 NormalizePolarity();
                 IReadOnlyList<CrossoverProposal> proposals = BuildProposals();

@@ -17,6 +17,24 @@ public sealed class DataHelperResampleTests
     }
 
     [Fact]
+    public void LogarithmicResample_DoesNotRepeatTheLastBinPastTheTopOfTheGrid()
+    {
+        // 44.1 kHz, 32768-point grid: flat to 20.5 kHz, then an anti-alias roll-off to -60 dB.
+        const double Step = 44_100.0 / 32_768;
+        var input = new List<SignalPoint>();
+        for (int bin = 1; bin <= 16_384; bin++)
+        {
+            double hz = bin * Step;
+            input.Add(new SignalPoint(hz, hz <= 20_500 ? 0.0 : -60.0));
+        }
+
+        List<SignalPoint> output = DataHelper.LogarithmicResample(input, 20, 20_000, 512, smoothingOctaves: 1.0);
+
+        // Over the real bins only the kernel reads about -3.4 dB here; repeating the -60 dB last bin read -9.2 dB.
+        Assert.InRange(output[^1].Y, -4.5, -2.5);
+    }
+
+    [Fact]
     public void LogarithmicResample_HoldsLastValueBeyondInputRange()
     {
         // No input samples above 10 kHz: the weight sum degenerates, so hold the nearest sample, not the -160 dB floor.

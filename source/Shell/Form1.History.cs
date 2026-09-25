@@ -216,7 +216,7 @@ public partial class Form1
 
         if (session != null)
         {
-            viewSettings.ApplySession(session, result.SampleRate);
+            ApplySessionView(session, result.SampleRate);
         }
 
         // The live analyzer is configured with the entry's live options, which it refuses while it runs; opening another
@@ -275,7 +275,7 @@ public partial class Form1
 
         RefreshMeasurementCommands();
 
-        viewSettings.ApplySession(new MeasurementSessionSnapshot(), expSweepMeasurement.SampleRate);
+        ApplySessionView(new MeasurementSessionSnapshot(), expSweepMeasurement.SampleRate);
         ApplyMeasurementConfigurationToControllers();
         SaveMeasurementSettings();
 
@@ -283,6 +283,14 @@ public partial class Form1
 
         dockedHistoryHost.InvokeIfOpen<MeasurementHistoryWindow>(dialog =>
             dialog.SetEntries(measurementHistoryService.Entries, null, null));
+    }
+
+    private void ApplySessionView(MeasurementSessionSnapshot session, int sampleRate)
+    {
+        foreach (Mode rescaled in viewSettings.ApplySession(session, sampleRate))
+        {
+            analyzerPlot.Viewports.Forget(rescaled);
+        }
     }
 
     private MeasurementSessionSnapshot CaptureCurrentSessionSnapshot() =>

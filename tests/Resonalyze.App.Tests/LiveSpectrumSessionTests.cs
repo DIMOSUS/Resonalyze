@@ -238,22 +238,35 @@ public sealed class LiveSpectrumSessionTests
         Assert.Null(session.Progress(session.Display));
     }
 
-    // A checkbox must not throw away minutes of walking, but an Infinite RTA restarts under the new display.
+    // A checkbox must not throw away minutes of walking, but a running Infinite RTA restarts under the new display.
     [Fact]
-    public void AnInfiniteAverageRestartsOnADisplayChangeAndAWalkDoesNot()
+    public async Task ARunningInfiniteAverageRestartsOnADisplayChange_AStoppedOneAndAWalkDoNot()
     {
         using LiveSpectrumSession rta = Create(new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Rta,
-            AveragingSpeed = AveragingSpeed.Infinite
+            AveragingSpeed = AveragingSpeed.Infinite,
+            PeakHold = true
         });
         using LiveSpectrumSession walk = Create(new LiveSpectrumOptions
         {
             AnalysisMode = LiveAnalysisMode.Mmm
         });
+        rta.Start();
+        walk.Start();
+        await FirstFrameAsync(rta);
+        await FirstFrameAsync(walk);
+        rta.PeakHold.Drawn(rta.Display.PeakHoldKey);
+        rta.PeakHold.Hold([new SignalPoint(1000.0, 85.0)]);
 
         Assert.True(rta.ApplyDisplayOptions());
+        Assert.Null(rta.PeakHold.Points);
         Assert.False(walk.ApplyDisplayOptions());
+
+        await rta.StopAsync();
+        Assert.False(rta.ApplyDisplayOptions());
+        Assert.NotNull(rta.Reread(rta.Display));
+        await walk.StopAsync();
     }
 
     [Fact]

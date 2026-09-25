@@ -271,14 +271,16 @@ internal sealed class LiveSpectrumSession : IDisposable
         PeakHold.Suspend();
     }
 
-    /// <summary>Takes a display option: an Infinite average restarts, and an envelope under another transform is dropped.</summary>
+    /// <summary>Takes a display option: a running Infinite average restarts, and an envelope under another transform is
+    /// dropped.</summary>
     /// <returns>Whether the accumulation restarted.</returns>
     public bool ApplyDisplayOptions()
     {
-        analyzer.RefreshLiveAveraging();
-        bool restarted = false;
-        // Infinite restarts on option changes, except spatial-average captures (the accumulation is the measurement). Keyed on mode, not stored speed.
-        if (!Options.AnalysisMode.IsSpatialAverageCapture() &&
+        bool restarted = analyzer.RefreshLiveAveraging();
+        // Infinite restarts on option changes, except spatial-average captures (the accumulation is the measurement). Keyed
+        // on mode, not stored speed. A stopped reading is what the display is re-read from, so it stays.
+        if (analyzer.InProgress &&
+            !Options.AnalysisMode.IsSpatialAverageCapture() &&
             Options.EffectiveAveragingSpeed == AveragingSpeed.Infinite)
         {
             analyzer.ResetAccumulation();
@@ -288,6 +290,11 @@ internal sealed class LiveSpectrumSession : IDisposable
         if (!Options.PeakHold)
         {
             PeakHold.Clear();
+        }
+        else if (restarted)
+        {
+            // As Reset average: the new average's first frames are noise the envelope must not latch.
+            PeakHold.Suspend();
         }
 
         PeakHold.Follow(Display.PeakHoldKey);

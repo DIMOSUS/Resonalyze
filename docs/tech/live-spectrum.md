@@ -203,10 +203,15 @@ itself is never touched: a Silent RTA that loses SPL keeps running on the relati
 
 ## Averaging reset and discarding data
 
-- Applying display options restarts an Infinite average — except for a spatial-average capture, where
-  the accumulation is the measurement and a checkbox must not throw away minutes of walking. The rule is
-  keyed on the analysis mode, not the stored averaging speed (in MMM that is only the remembered RTA
-  preference).
+- Applying display options restarts a running Infinite average — except for a spatial-average capture,
+  where the accumulation is the measurement and a checkbox must not throw away minutes of walking. The rule
+  is keyed on the analysis mode, not the stored averaging speed (in MMM that is only the remembered RTA
+  preference). A change of averaging speed restarts a running average as well. A stopped reading is never
+  restarted: it takes no more frames, and the display is re-read from it (ticking Show input magnitude
+  after a stop needs the accumulation, not only the held curve).
+- Every restart of a running average suspends peak hold, as Reset average does: the new average's first
+  frames are single-frame noise, and max-ed into an envelope of settled averages they lifted it by several
+  dB in the bass.
 - `DiscardCapturedData` runs when an acquisition parameter (mode, signal colour, window, FFT length,
   overlap) changes while stopped: redrawing old data under new parameters would silently re-interpret it
   (slope compensation would re-tilt a pink RTA as if the excitation were white). A loaded capture is

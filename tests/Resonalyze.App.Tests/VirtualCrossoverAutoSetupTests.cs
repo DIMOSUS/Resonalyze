@@ -51,6 +51,24 @@ public sealed class VirtualCrossoverAutoSetupTests
     }
 
     [Fact]
+    public void ADesignedFirCrossover_OnEitherSide_RefusesTheWrite_AndACorrectionKernelDoesNot()
+    {
+        var sub = new VirtualCrossoverChannel("A");
+        var mid = new VirtualCrossoverChannel("B");
+        var design = new FirCrossoverDesign(
+            CrossoverKind.HighPass, HighPass, HighPass, FirCrossoverMethod.IirMagnitude, FirWindow.Kaiser, 8, 1_023, 48_000);
+        mid.SideSettings(true).Fir = design.Build();
+
+        Assert.Null(VirtualCrossoverAutoSetup.FirCrossoverRefusal([sub, mid]));
+
+        mid.SideSettings(true).FirDesign = design;
+
+        string refusal = Assert.IsType<string>(VirtualCrossoverAutoSetup.FirCrossoverRefusal([sub, mid]));
+        Assert.Contains("channel B", refusal, StringComparison.Ordinal);
+        Assert.Contains("right side", refusal, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Reorder_MovesOnlyTheWizardsBlocks()
     {
         List<VirtualCrossoverChannel> channels =

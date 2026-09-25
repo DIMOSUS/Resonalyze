@@ -3336,6 +3336,12 @@ to them. The response it predicts is therefore an ideal, not a forecast of what
 the panel will measure — that is what Auto delay and the summation read-outs are
 for.
 
+The wizard writes IIR crossovers. A channel whose crossover is a designed FIR
+kernel (the [FIR Constructor](#fir-constructor)'s) is refused with its name
+rather than given a second crossover on top of the first; clear the kernel, or
+tune that channel by hand. An imported correction FIR is not a crossover and stays
+under what the wizard writes.
+
 #### Narrowing a junction
 
 Each junction gets a row of its own: the frequency window the search may use, the

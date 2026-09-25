@@ -222,6 +222,12 @@ public partial class Form1
         // The live analyzer is configured with the entry's live options, which it refuses while it runs; opening another
         // measurement stops it, as a sweep does.
         await StopLiveCaptureAsync();
+        // A load or a run that landed during the stop owns the window now.
+        if (!request.IsCurrent)
+        {
+            return false;
+        }
+
         ApplyMeasurementConfigurationToControllers();
 
         if (session != null)

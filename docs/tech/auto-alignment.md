@@ -854,7 +854,10 @@ opposite-polarity lobe within 0.5 dB** of the winner, some within 0.05 dB — th
 
 `LowJunctionPolarity` reads the other evidence the channels carry: the neighbour's tallest crest
 fixes a sign, and the variable channel's tallest crest of each sign says how far that channel would
-have to move to meet it in phase and inverted. The nearer meeting names the polarity. This is crest
+have to move to meet it in phase and inverted. The nearer meeting names the polarity. The neighbour
+is read as rendered, its own settled inversion applied, so the meeting names the variable channel's
+absolute polarity; the relation to the neighbour that the filters and the tie-breaks speak in is that
+XOR the neighbour's flag, taken once. This is crest
 matching, which `#predicted-front-arrival` rejects for **timing** — a filtered channel's crest trails
 its front by the crossover's group delay — and the rejection stands: the vote picks a branch, never a
 delay. Two channels either side of a low crossover carry similar group delay, so the branch survives

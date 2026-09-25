@@ -2259,7 +2259,9 @@ public static class AutoAlignmentEngine
                     variableSnapshot.ValidRange) is { } crests &&
                 crests.IsDecisive(pair.CrossoverHz))
             {
-                bool expected = crests.ExpectsRelativeInversion;
+                // The neighbour is read as rendered, its own inversion applied, so the crests name the searched
+                // channel's absolute polarity; relative to the neighbour it is that XOR the neighbour's flag.
+                bool expected = crests.ExpectsRelativeInversion ^ neighborInverted;
                 string phase = expected ? "inverted" : "in phase";
                 // The filters do not decide down here (see #expected-polarity), but they do withhold the crests'
                 // authority: a matched split that says the opposite makes this a coin flip, not a reading.

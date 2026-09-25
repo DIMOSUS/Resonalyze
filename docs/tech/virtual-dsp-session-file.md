@@ -312,6 +312,10 @@ on by default so the long window's reflection tail does not reach mid and high j
 timed on the direct arrival; 8 cycles is the gentlest of the three counts, keeping the most late detail — the
 suppression is there to make junctions readable, not to reduce every channel to its first cycle.
 
+A window with no length at all (all three at 0 ms, which the Gate dialog's fields allow) reads nothing, so
+`SetPhaseGateLengths` and `Validate` put the defaults back instead of refusing: a refusal made every autosave
+throw, and a file holding such a gate would have been set aside as unusable at the next start.
+
 ## Autosave, reset backup and load fallback
 
 - `LoadOrDefault` loads the autosave and falls back to a fresh default when the file is missing, unreadable or

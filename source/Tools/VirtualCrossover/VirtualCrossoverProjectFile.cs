@@ -914,6 +914,25 @@ public sealed class VirtualCrossoverProjectFile
     public double PhaseGatePlateauMs { get; set; } = DefaultPhaseGatePlateauMs;
     public double PhaseGateRightMs { get; set; } = DefaultPhaseGateRightMs;
 
+    /// <summary>The Gate dialog's three lengths; a window with no length at all reads nothing, so it keeps the defaults.</summary>
+    public void SetPhaseGateLengths(double leftMs, double plateauMs, double rightMs)
+    {
+        PhaseGateLeftMs = leftMs;
+        PhaseGatePlateauMs = plateauMs;
+        PhaseGateRightMs = rightMs;
+        ResetEmptyPhaseGate();
+    }
+
+    private void ResetEmptyPhaseGate()
+    {
+        if (PhaseGateLeftMs + PhaseGatePlateauMs + PhaseGateRightMs <= 0)
+        {
+            PhaseGateLeftMs = DefaultPhaseGateLeftMs;
+            PhaseGatePlateauMs = DefaultPhaseGatePlateauMs;
+            PhaseGateRightMs = DefaultPhaseGateRightMs;
+        }
+    }
+
     // Analysis modes are shared by both sides; FDW-8 is the gentlest cycle count. See docs/tech/virtual-dsp-session-file.md#phase-gate.
     public const int DefaultPhaseFdwCycles = 8;
 
@@ -1436,11 +1455,11 @@ public sealed class VirtualCrossoverProjectFile
         PhaseGateRight.Validate();
         if (!IsValidGatePart(PhaseGateLeftMs) ||
             !IsValidGatePart(PhaseGatePlateauMs) ||
-            !IsValidGatePart(PhaseGateRightMs) ||
-            PhaseGateLeftMs + PhaseGatePlateauMs + PhaseGateRightMs <= 0)
+            !IsValidGatePart(PhaseGateRightMs))
         {
             throw new InvalidDataException("The phase gate window is invalid.");
         }
+        ResetEmptyPhaseGate();
 
         foreach (VirtualCrossoverChannelPairSettings pair in Pairs)
         {

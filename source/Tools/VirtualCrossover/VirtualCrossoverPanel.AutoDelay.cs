@@ -207,9 +207,7 @@ public partial class VirtualCrossoverPanel
                 VirtualCrossoverGatePreview saved = dialog.Gate;
                 gate.OffsetMs = saved.AutoOffset ? null : saved.OffsetMs;
                 gate.DetrendMs = saved.DetrendMs;
-                session.Project.PhaseGateLeftMs = saved.LeftMs;
-                session.Project.PhaseGatePlateauMs = saved.PlateauMs;
-                session.Project.PhaseGateRightMs = saved.RightMs;
+                session.Project.SetPhaseGateLengths(saved.LeftMs, saved.PlateauMs, saved.RightMs);
                 session.Project.PhaseWindowMode = saved.WindowMode;
                 session.Project.PhaseFdwCycles = saved.FdwCycles;
                 session.Project.PhaseDetrendMode = saved.DetrendMode;

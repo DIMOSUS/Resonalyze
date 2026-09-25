@@ -2960,7 +2960,8 @@ frequency starts being resolved at all, not where it becomes trustworthy. FDW th
 keeps the mid and high junctions reading their direct arrival rather than the whole
 reflection tail the long window would otherwise admit; its cycle count shortens the
 window with frequency and never lengthens it, so the gate stays the outer limit and
-8 cycles are not suddenly available at 24 Hz.
+8 cycles are not suddenly available at 24 Hz. A gate saved with all three lengths
+at 0 ms reads nothing, so it keeps **1 / 30 / 10 ms** instead.
 
 The gate's durations shape the **phase, group-delay, impulse and step views only**. The magnitude
 view — channels, Sum, Sum loss and the read-out built from them — deliberately

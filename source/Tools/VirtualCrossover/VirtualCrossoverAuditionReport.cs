@@ -41,7 +41,7 @@ internal static class VirtualCrossoverAuditionReport
         if (context.BorrowedSide != null)
         {
             report.AppendLine(
-                $"WARNING: the {context.BorrowedSide} side has no sources — both " +
+                $"WARNING: the {context.BorrowedSide} side has no sources of its own — both " +
                 "ears will render from the other one and the image will sound " +
                 "perfectly centred. That is the missing measurement, not the tune.");
         }

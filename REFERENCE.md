@@ -3936,7 +3936,10 @@ tune is actually built in:
 - **Tools... → Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
   the tune into a stereo WAV: each program channel is convolved with the summed
   processed response of its side, with the microphone calibration optionally
-  baked in and one shared normalization gain so the L/R balance survives. The
+  baked in and one shared normalization gain so the L/R balance survives. A side
+  with no measured stereo block of its own renders from the other side and the
+  report says so; a mono block feeds both sides and does not count as either
+  side's own, so a mono sub cannot pass off a missing side as measured. The
   calibration selector opens on **whatever the panel is set to**, every time — the
   render is meant to sound the way the panel's curves look, and the panel already
   keeps that choice in the project. Under **Own (as measured)** it uses the curve

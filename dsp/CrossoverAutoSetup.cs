@@ -683,6 +683,8 @@ public static class CrossoverAutoSetup
         IReadOnlyList<AutoSetupSource> channels,
         CrossoverAutoSetupOptions options)
     {
+        // Arrival reads repeat on identical input across the run; see AlignmentRunMemo.
+        using AlignmentRunMemo.Scope runMemo = AlignmentRunMemo.Begin();
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(options);
         if (channels.Count < 2)
@@ -1031,6 +1033,8 @@ public static class CrossoverAutoSetup
         IReadOnlyList<Complex[]>? impulseResponses = null,
         int candidateCount = 50)
     {
+        // Arrival reads repeat on identical input across the run; see AlignmentRunMemo.
+        using AlignmentRunMemo.Scope runMemo = AlignmentRunMemo.Begin();
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(options);
         if (channels.Count < 2)

@@ -661,7 +661,22 @@ public static class VirtualCrossoverAnalysis
         int sampleRate,
         double lowFrequencyHz,
         double highFrequencyHz,
-        ValidSampleRange validRange = default)
+        ValidSampleRange validRange = default) =>
+        AlignmentRunMemo.Arrival(
+            impulseResponse,
+            sampleRate,
+            lowFrequencyHz,
+            highFrequencyHz,
+            validRange,
+            () => ReadBandLimitedArrival(
+                impulseResponse, sampleRate, lowFrequencyHz, highFrequencyHz, validRange));
+
+    private static TimeAlignmentAnalysisResult ReadBandLimitedArrival(
+        Complex[] impulseResponse,
+        int sampleRate,
+        double lowFrequencyHz,
+        double highFrequencyHz,
+        ValidSampleRange validRange)
     {
         ArgumentNullException.ThrowIfNull(impulseResponse);
         if (impulseResponse.Length == 0)

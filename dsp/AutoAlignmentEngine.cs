@@ -266,6 +266,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
         double maxDelayMs = DefaultMaxDelayMs)
     {
+        // Arrival reads repeat on identical input across the run; see AlignmentRunMemo.
+        using AlignmentRunMemo.Scope runMemo = AlignmentRunMemo.Begin();
         ArgumentNullException.ThrowIfNull(channelsByBand);
         ArgumentNullException.ThrowIfNull(alignment);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxDelayMs);
@@ -2587,6 +2589,8 @@ public static class AutoAlignmentEngine
         Dictionary<IAlignmentChannel, AlignmentDecision>? decisions = null,
         double maxDelayMs = DefaultMaxDelayMs)
     {
+        // Arrival reads repeat on identical input across the run; see AlignmentRunMemo.
+        using AlignmentRunMemo.Scope runMemo = AlignmentRunMemo.Begin();
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(reprocess);
         ArgumentNullException.ThrowIfNull(alignment);

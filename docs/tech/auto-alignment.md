@@ -123,6 +123,17 @@ first credible arrival.
 does not capture the τ reference. Its Slope estimator is the energy centroid (equal to the mean
 group delay), which is the τ to subtract when detrending excess phase.
 
+### Run memo
+
+An Auto delay run, a junction tune and the crossover wizard's ranking read the same response in the
+same band over and over: every bins build re-reads its gate anchor. In a stereo 4-way Auto delay
+the detector was 88% of the run, 110 of its 367 reads repeated one array, band and range, and the
+band-pass kernel's envelope was rebuilt 351 times for 16 windows; 83% of a junction tune's reads
+were repeats. `AlignmentRunMemo` keeps both for one run: `Compute`, `ComputeStereo`, the tuner's
+entry points and `Propose`/`ProposeRanked` open it (an inner opening does nothing), and parallel work
+sees it. An arrival read keys on the response array itself, because a run renders each response once
+and never writes it after; outside a run nothing is kept. Results are identical.
+
 ## Energy onset
 
 `TimeAlignmentAnalysisResult.EnergyOnsetDelayMilliseconds` is a second estimator. It is the point

@@ -116,7 +116,8 @@ public static class TimeAlignmentAnalysis
                     recordSpectrum[bin] *= window[bin];
                 }
 
-                kernelEnvelope = BuildKernelEnvelope(window);
+                kernelEnvelope = AlignmentRunMemo.KernelEnvelope(
+                    window.Length, sampleRate, options, () => BuildKernelEnvelope(window));
             }
 
             envelope = SignalEnvelope.EnvelopeFromSpectrum(recordSpectrum);
@@ -429,7 +430,8 @@ public static class TimeAlignmentAnalysis
             options.BandpassPassOctaves,
             options.BandpassFadeOctaves);
         double[] filtered = BandpassWindow.Apply(padded, window);
-        kernelEnvelope = BuildKernelEnvelope(window);
+        kernelEnvelope = AlignmentRunMemo.KernelEnvelope(
+            window.Length, sampleRate, options, () => BuildKernelEnvelope(window));
         return filtered.Length == impulseResponse.Count
             ? filtered
             : filtered[..impulseResponse.Count];

@@ -151,6 +151,26 @@ public sealed class EqWizardPanelWiringTests
     });
 
     [Fact]
+    public void Del_WhileAHandleIsHeld_DeletesNothing_AndWorksOnceItIsLetGo() => StaTest.Run(() =>
+    {
+        using var live = new LivePanel();
+        live.Set<ThemedComboBox>("darkComboBoxBands", box => box.SelectedItem = 2);
+        PeqBand second = live.Session.Bank.Bands[1];
+        // Focus off every field, as a click on the plate leaves it.
+        live.PickByPlate(live.Strips[0]);
+        ScreenPoint start = live.HandleCenter(0);
+
+        live.Press(start);
+        Assert.Equal(0, live.Handles.Selected);
+        Assert.False(live.PressDelete());
+        Assert.Equal(2, live.Session.Bank.Bands.Count);
+        live.Release(start);
+
+        Assert.True(live.PressDelete());
+        Assert.Equal([second], live.Session.Bank.Bands);
+    });
+
+    [Fact]
     public void AFit_KeepsALockedBand_AndFillsOnlyTheSlotsLeft() => StaTest.Run(() =>
     {
         using var live = FitReady();

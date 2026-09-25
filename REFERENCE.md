@@ -1722,7 +1722,8 @@ A band is one of five shapes, picked on the **"+" tile** — each zone adds its
 shape directly — or switched later from the menu a right-click on the band's
 number opens; the same menu **locks** the band against Auto Tune (below) and
 **deletes** it, as does **Del** on the selected band once its number or its
-handle was clicked (in a field, Del edits the text). The shapes are: a
+handle was clicked (in a field, Del edits the text, and while a handle is held
+down it does nothing). The shapes are: a
 **peaking bell (PK)**; a **high or low shelf (HS / LS)**, whose frequency is
 the middle of the transition and whose Q is the knee (0.7 the steepest that
 stays monotonic); and a **first- or second-order all-pass (AP1 / AP2)**, which

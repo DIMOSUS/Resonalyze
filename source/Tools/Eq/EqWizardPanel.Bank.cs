@@ -565,7 +565,8 @@ public partial class EqWizardPanel
             case Keys.Control | Keys.Shift | Keys.Z:
                 RedoBankChange();
                 return true;
-            case Keys.Delete when selectedSlot != null && !KeyboardFocus.IsTyping(this):
+            // Not while a handle is held: the drag would carry on with the next band under the pointer.
+            case Keys.Delete when selectedSlot != null && !plot.Handles.Dragging && !KeyboardFocus.IsTyping(this):
                 DeleteBand(selectedSlot);
                 return true;
             default:

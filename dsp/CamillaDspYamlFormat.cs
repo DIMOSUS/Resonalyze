@@ -42,7 +42,7 @@ public sealed class CamillaDspYamlFormat : IEqProfileFormat
             };
             if (band.Type != PeqBandType.AllPassFirstOrder)
             {
-                parameters["q"] = EqTextNumbers.Format(band.Q, "0.0");
+                parameters["q"] = EqTextNumbers.Format(band.Q, EqTextNumbers.QFormat);
             }
             if (!band.Type.IsAllPass())
             {

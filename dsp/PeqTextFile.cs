@@ -52,7 +52,7 @@ public static class PeqTextFile
 
             builder
                 .Append(" Q ")
-                .Append(EqTextNumbers.Format(band.Q, "0.0"))
+                .Append(EqTextNumbers.Format(band.Q, EqTextNumbers.QFormat))
                 .AppendLine();
         }
 

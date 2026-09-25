@@ -5,6 +5,9 @@ namespace Resonalyze.Dsp;
 // Parsing accepts '.' and ',' decimals; formatting is invariant so files are portable.
 internal static class EqTextNumbers
 {
+    // A tenth is 20 % of a wide Q 0.5; three decimals keep a fitted Q within 0.2 % and a round one short (Q 4.0).
+    public const string QFormat = "0.0##";
+
     public static bool TryParse(string? token, out double value)
     {
         value = 0;

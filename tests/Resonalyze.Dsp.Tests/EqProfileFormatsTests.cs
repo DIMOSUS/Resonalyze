@@ -40,6 +40,21 @@ public sealed class EqProfileFormatsTests
     }
 
     [Fact]
+    public void BidirectionalFormats_KeepAFittedQToAThousandth()
+    {
+        var curve = new EqualizationCurve([new PeqBand(63.2, 0.547, -5.5), new PeqBand(2_400, 3.26, 2.5)]);
+        foreach (IEqProfileFormat format in EqProfileFormats.All.Where(f => f.CanImport && f.CanExport))
+        {
+            EqualizationCurve parsed = format.Import(format.Export(curve));
+            for (int i = 0; i < curve.Bands.Count; i++)
+            {
+                Assert.True(Math.Abs(curve.Bands[i].Q - parsed.Bands[i].Q) < 0.0006,
+                    $"{format.Name}: Q {curve.Bands[i].Q} came back as {parsed.Bands[i].Q}");
+            }
+        }
+    }
+
+    [Fact]
     public void ExportOnlyFormats_AreNotImportable()
     {
         foreach (IEqProfileFormat format in EqProfileFormats.All.Where(f => !f.CanImport))

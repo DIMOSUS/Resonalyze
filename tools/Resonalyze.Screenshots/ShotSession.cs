@@ -68,11 +68,127 @@ internal sealed class ShotSession
             }
         };
 
-        Application.Run(shell);
+        using (var watchdog = new MessageBoxWatchdog())
+        {
+            Application.Run(shell);
+            if (failure == null && watchdog.Answered is { } blocked)
+            {
+                throw new InvalidOperationException(
+                    $"A message box stopped the scene and was answered by the watchdog: {blocked}");
+            }
+        }
+
         if (failure != null)
         {
             throw new InvalidOperationException("A shot failed.", failure);
         }
+    }
+
+    /// <summary>A MessageBox raised outside <see cref="CaptureModal"/> (a click's question, a result report) is invisible to
+    /// <see cref="Application.OpenForms"/> and blocks the run for ever: after a grace period this records its text,
+    /// answers it with Cancel, No or OK, whichever it has, and the scene fails with that text.</summary>
+    private sealed class MessageBoxWatchdog : IDisposable
+    {
+        private static readonly TimeSpan Grace = TimeSpan.FromSeconds(15);
+        private readonly Dictionary<nint, DateTime> firstSeen = [];
+        private readonly System.Threading.Timer timer;
+
+        // Written on the timer's thread, read on the UI thread once the loop has ended.
+        private string? answered;
+
+        public MessageBoxWatchdog() => timer = new System.Threading.Timer(_ => Check(), null, 2_000, 2_000);
+
+        public string? Answered => Volatile.Read(ref answered);
+
+        private void Check()
+        {
+            // Timer callbacks can overlap; one at a time keeps the table whole.
+            if (!Monitor.TryEnter(firstSeen))
+            {
+                return;
+            }
+
+            try
+            {
+                AnswerStuckDialogs();
+            }
+            finally
+            {
+                Monitor.Exit(firstSeen);
+            }
+        }
+
+        private void AnswerStuckDialogs()
+        {
+            const uint WM_COMMAND = 0x0111;
+            foreach (nint dialog in OwnNativeDialogs())
+            {
+                DateTime now = DateTime.UtcNow;
+                if (!firstSeen.TryGetValue(dialog, out DateTime since))
+                {
+                    firstSeen[dialog] = now;
+                    continue;
+                }
+
+                if (now - since < Grace)
+                {
+                    continue;
+                }
+
+                Interlocked.CompareExchange(ref answered, DialogText(dialog), null);
+                Console.Error.WriteLine($"  watchdog: answering a message box: {DialogText(dialog)}");
+                // IDCANCEL, IDNO, IDOK: a box ignores a command for a button it does not have.
+                foreach (int command in new[] { 2, 7, 1 })
+                {
+                    PostMessage(dialog, WM_COMMAND, command, 0);
+                }
+            }
+        }
+
+        private static List<nint> OwnNativeDialogs()
+        {
+            var found = new List<nint>();
+            EnumWindows((handle, _) =>
+            {
+                GetWindowThreadProcessId(handle, out uint owner);
+                if (owner == (uint)Environment.ProcessId && IsWindowVisible(handle) && ClassOf(handle) == "#32770")
+                {
+                    found.Add(handle);
+                }
+
+                return true;
+            }, 0);
+            return found;
+        }
+
+        private static string DialogText(nint dialog)
+        {
+            var texts = new List<string>();
+            EnumChildWindows(dialog, (child, _) =>
+            {
+                if (ClassOf(child) == "Static")
+                {
+                    var text = new StringBuilder(1024);
+                    GetWindowText(child, text, text.Capacity);
+                    if (text.Length > 0)
+                    {
+                        texts.Add(text.ToString().ReplaceLineEndings(" "));
+                    }
+                }
+
+                return true;
+            }, 0);
+            return texts.Count > 0 ? string.Join(" / ", texts) : "(no text)";
+        }
+
+        private static string ClassOf(nint window)
+        {
+            var name = new StringBuilder(64);
+            GetClassName(window, name, name.Capacity);
+            return name.ToString();
+        }
+
+        public void Dispose() => timer.Dispose();
     }
 
     public void Pump(int milliseconds)
@@ -139,7 +255,14 @@ internal sealed class ShotSession
         }
     }
 
-    public void CaptureScreen(string name)
+    /// <param name="afterRaise">Opens what must sit over the shell (a menu) once the shell is raised, so raising it cannot bury that.</param>
+    public void CaptureScreen(string name, Action? afterRaise = null)
+    {
+        using Bitmap bitmap = GrabScreen(name, afterRaise);
+        Write(bitmap, name);
+    }
+
+    public Bitmap GrabScreen(string name, Action? afterRaise = null)
     {
         // Activate() cannot steal the foreground from another process; TopMost can, and the check below refuses a foreign frame.
         bool wasTopMost = Shell.TopMost;
@@ -148,21 +271,35 @@ internal sealed class ShotSession
             Shell.TopMost = true;
             Shell.Activate();
             Pump(600);
+            if (afterRaise != null)
+            {
+                afterRaise();
+                Pump(600);
+            }
 
             Rectangle bounds = Shell.Bounds;
             EnsureNothingCovers(bounds, name);
-            using var bitmap = new Bitmap(bounds.Width, bounds.Height);
+            var bitmap = new Bitmap(bounds.Width, bounds.Height);
             using (Graphics graphics = Graphics.FromImage(bitmap))
             {
                 graphics.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
             }
 
-            Write(bitmap, name);
+            return bitmap;
         }
         finally
         {
             Shell.TopMost = wasTopMost;
         }
+    }
+
+    /// <summary>A control's rectangle in the pixels <see cref="CaptureScreen"/> writes.</summary>
+    public Rectangle ShellBounds(Control control)
+    {
+        ArgumentNullException.ThrowIfNull(control);
+        Point screen = control.PointToScreen(Point.Empty);
+        return new Rectangle(
+            screen.X - Shell.Left, screen.Y - Shell.Top, control.Width, control.Height);
     }
 
     private static void EnsureNothingCovers(Rectangle bounds, string name)
@@ -313,11 +450,18 @@ internal sealed class ShotSession
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetClassNameW")]
     private static extern int GetClassName(nint window, StringBuilder name, int capacity);
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumChildWindows(nint parent, EnumWindowsProc callback, nint parameter);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "GetWindowTextW")]
+    private static extern int GetWindowText(nint window, StringBuilder text, int capacity);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode, EntryPoint = "PostMessageW")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool PostMessage(nint window, uint message, nint w, nint l);
 
-    private void Write(Bitmap bitmap, string name)
+    public void Write(Bitmap bitmap, string name)
     {
         string path = config.Resolve(name);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);

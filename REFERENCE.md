@@ -555,8 +555,8 @@ written before the full-amplitude edges were recorded fall back to the band they
 reached, which is what they have always been read over.
 
 A microphone that clipped, was unplugged, or recorded something that is not a
-response **fails the run**, exactly as the measurement microphone does: the run is
-stops the measurement, and the error names the input and the reason. There is no
+response **fails the run**, exactly as the measurement microphone does: the run
+stops, and the error names the input and the reason. There is no
 retry: one used to run automatically, and the field answer is that it never recovered
 anything — what these checks catch is a gain set wrong, a cable in the wrong socket,
 a channel that is not there, and the next sweep reproduces all of them exactly.
@@ -762,7 +762,7 @@ holds.
 
 ## Live Spectrum
 
-The **Live Spectrum** mode runs in one of two explicitly chosen **Mode**s.
+The **Live Spectrum** mode runs in one of three explicitly chosen **Mode**s.
 
 **Transfer** is a live, dual-FFT **transfer-function** analyzer. It plays a
 continuous excitation signal, uses the configured loopback channel as a reference,
@@ -791,7 +791,8 @@ behind plain `Pink noise`, does not change shape with the sample rate, so the
 slope compensation stays exact); `Infinite` averaging (a spatial average is a
 cumulative mean of frame power over the whole path the microphone walks, and an
 exponential window would weight the end of that walk over its beginning); the
-banded dB SPL rendering; slope compensation on; and smoothing off. Your own RTA
+banded rendering, on the dB SPL axis once an SPL calibration anchors it; slope
+compensation on; and smoothing off. Your own RTA
 choices are remembered and come back when you leave the mode.
 
 **Measure each driver raw.** Bypass the EQ, the crossovers and the delays in your
@@ -1649,7 +1650,7 @@ high-pass, outside the band the driver was swept over, past the end of a capture
 grid — that range is left unshaded rather than shaded as a deviation from a target
 nothing was measured against. Each card carries its
 **frequency**, **Q**, and **gain**, and the panel adds a **Target Level**, a
-**Gain** (preamp), a **Bands** count, source **Smoothing**, and **Bypass**.
+**Preamp**, an **EQ Filters** count, the source's **Smooth** setting, and **Bypass**.
 
 Every band also has a **handle** on the EQ axis, at its frequency and on its own
 curve — at the gain of a bell, halfway up a shelf's transition (which is where a
@@ -1930,7 +1931,7 @@ Q of **every** band placed so far together, so a band moves over when the next
 one arrives instead of leaving its skirt for the next band to patch — and, with
 **Shelves** ticked, may start from a low and a high shelf. Q is set to whatever
 fits, anywhere up to **Max Q**, not picked from a list. It **chooses the band
-count itself**, up to the **Max Filters** limit (4–32): a band has to take a
+count itself**, up to the **Max EQ Filters** limit (4–32): a band has to take a
 real amount of error off the curve to be kept — a decibel over a sixth of an
 octave is about the smallest that earns one — and after the fit each band is
 tried out again, and dropped when the others, refitted, cover for it. Ripple
@@ -2019,15 +2020,15 @@ shelves are all it can propose, and a run replaces the bank it found — all but
 its **locked** bands, whose number plates are amber. A locked band stays as it
 is, wherever it sits, and the fit corrects the curve with it applied, so it
 tunes the remaining slots around what that band already does; locked bands
-come off **Max Filters** like kept all-pass ones, and a bank locked up to Max
-Filters leaves the fit nothing to place, which it says rather than running. A
+come off **Max EQ Filters** like kept all-pass ones, and a bank locked up to that
+limit leaves the fit nothing to place, which it says rather than running. A
 lock is not a guard against hand edits: the card and its handle move as ever.
 The lock is saved with the band, in the wizard and in the Virtual DSP project,
 so it survives a return and the next **Edit in EQ Wizard**. If the bank holds
 unlocked **all-pass** bands, Auto Tune asks before starting: keep them and
 tune the remaining slots around them (the error curve never asked for them to
 go — they are flat), or let the fit replace the bank whole. Keeping takes their
-count off the **Max Filters** budget, which is a budget for the bank and not
+count off the **Max EQ Filters** budget, which is a budget for the bank and not
 for the fit alone: keep three of eight and the fit places five. And "around
 them" is literal on a gated channel — the curve the fit corrects is the one
 with those bands already applied, because through a window an all-pass is not
@@ -2255,9 +2256,9 @@ edits builds only the last one, the plots keep the previous kernel until it land
 and **Export file…** and **Return FIR to Virtual DSP** wait for it.
 
 **Auto delay and the kernel's latency.** [Auto delay](#auto-delay) absorbs the
-delay a kernel adds like any other delay in the chain, and it reads a linear-phase
-kernel's pre-ringing correctly at every corner and length — see the note on
-symmetric FIR kernels under [The search](#the-search).
+delay a kernel adds like any other delay in the chain, and it knows a linear-phase
+kernel's delay exactly rather than reading it off the pre-ringing, at every corner
+and length — see the note on symmetric FIR kernels under [The search](#the-search).
 
 **Import file…** opens a kernel from a `.wav`, `.fir` or `.txt` file and draws it
 **as it is**, at the selected rate: there is no design in a file to edit. The first
@@ -2299,7 +2300,8 @@ workflow taken to its conclusion: measure each driver once, then design the whol
 DSP setup virtually. Channels (A, B, C, …) are stereo **L/R pairs**, each side
 picking its own measurement and running its own chain. The blue **L** and red **R**
 buttons (the chosen one filled strong) switch which side the controls edit — from the keyboard too: `L` and `R` pick a side and
-`` ` `` (the key under Esc) swaps them, whenever the caret is not in a field —
+`` ` `` swaps them (the key Windows reads as the US backtick: under Esc on US and
+Russian layouts, elsewhere on others), whenever the caret is not in a field —
 **L→R** / **R→L** copy chain settings across sides
 (a dialog picks the channels and which parts travel — see below), **Lock** keeps
 the two sides' crossovers, polarity and FIR filters in step while it is on (also below),
@@ -2312,12 +2314,12 @@ panel's own settings — target level, smoothing, gate, Show view, scene offset 
 with them. It asks first, and the question names what it takes and where the
 copy goes: the session ON SCREEN is written to
 `virtual-crossover.before-reset.json` beside the autosave, so a misclick comes
-back through **Load session…**. The panel's own state, not the autosave — that
+back through **Load session...**. The panel's own state, not the autosave — that
 one is written behind a two-second debounce and on a session that has never been
 saved does not exist at all, so copying the file would have handed back the tune
 minus its last edits and called a missing file nothing to lose. That copy is the
 tool's own one-deep net, not an archive — the next reset overwrites it, so a
-tune worth keeping still wants **Save session…**. A copy that cannot be written
+tune worth keeping still wants **Save session...**. A copy that cannot be written
 stops the reset to ask again rather than discarding a tune with nothing behind
 it. Its name is its own on purpose: the `.backup` file beside it holds a project
 the tool could NOT read, and overwriting that with one it read perfectly well
@@ -2431,7 +2433,8 @@ Each channel runs through:
   filters. The taps are convolved **at the processor's rate**, whatever rate the
   file states — that is what the device does with them — so a kernel designed for
   another rate is a different filter here, and the read-out turns amber and names
-  both rates when a WAV's header disagrees with the processor. The text forms
+  both rates when the rate a file states — a WAV's header or a text file's rate
+  line — disagrees with the processor. The text forms
   take a decimal comma as well as a point (`0,5` and `0.5` are the same tap), and
   refuse a file that mixes the two. The kernel is a stage
   beside the IIR crossover, not in place of it: a kernel that already contains
@@ -2639,7 +2642,7 @@ single set of curves can say anything about — a front three-way, a rear pair a
 a centre all cover 290 Hz upward from different places, and drawn together they
 are seven overlapping traces whose sum describes no listening position. The
 **Show** selector picks a subset that is a coherent question, sorting the blocks
-by their [Zone](#the-channel-blocks):
+by their [Zone](#virtual-dsp):
 
 | Show | draws | sums |
 | --- | --- | --- |
@@ -2800,8 +2803,9 @@ with themselves, and the dashed opposite-side sum would then draw two different
 listening volumes against each other as though the difference were the car.
 
 Per channel the hybrid curve is the stored average with that channel's own DSP
-chain added as its **analytic** magnitude, and the whole set lifted onto the
-impulse responses' axis by **one** common offset. That is exact, not a
+chain added as its **analytic** magnitude, and a moving-microphone set lifted onto
+the impulse responses' axis by **one** common offset (an array needs none, as
+above). That is exact, not a
 convenience: a spatial average is the root-mean-square of |H(f, r)| over the
 listening volume, and a filter does not depend on position, so it factors straight
 out of the average. The chain is added analytically rather than as the difference
@@ -2858,17 +2862,20 @@ averages through their chains — under the same one-set condition as the dashed
 opposite-side Sum — and the **vs Front** ΔdB compares the groups', power-summed
 within each group. Both follow the mode whatever Show view happens to be on
 screen, because the levels a gain trim is judged against do not change with the
-view. The
-toggle needs an average on **every** channel that plays and greys out otherwise,
-since a sum mixing spatially averaged channels with point-measured ones puts two
-references on one axis and still looks like a measurement. The opposite side's
+view. With
+moving-microphone captures the toggle needs one on **every** channel that plays and
+greys out otherwise, since a sum mixing spatially averaged channels with
+point-measured ones puts two references on one axis and still looks like a
+measurement; an array project may have gaps, because an array shares the impulse
+responses' loopback reference. The opposite side's
 dashed Sum is built the same way from **its own** captures, so the two sides stay
 comparable — the whole point of that curve; when that side is short of one the
 curve is dropped rather than drawn from impulse responses, which would read as an
-L/R difference that is really a method difference. The two sides share ONE offset
-(the shown side's), because one analyzer session at one input gain produced every
-capture and giving each side its own would erase exactly the L/R level difference
-the captures measured. Like the target and the sum loss it
+L/R difference that is really a method difference. The two sides share ONE offset,
+read over both sides' captures when they form one set, because one analyzer session
+at one input gain produced every capture and giving each side its own would erase
+exactly the L/R level difference the captures measured. Like the target and the sum
+loss it
 is a magnitude toggle, greyed on the phase, group-delay, impulse and step views — a spatial average
 carries no phase. The tick itself survives all of that: it says what you want
 drawn, so re-attaching a capture brings the hybrid straight back instead of
@@ -2986,7 +2993,7 @@ crossover** decline to run until the gate is moved: an alignment computed
 through such a window would optimize the room's answer, not the loudspeaker.
 
 A second plot shows each DSP chain's own magnitude and phase (without the
-driver) — or, on its **Corr** mode, one adjacent pair's band-limited GCC-PHAT
+driver) — or, on its **Correlation** mode, one adjacent pair's band-limited GCC-PHAT
 whitened cross-correlation together with its **direct twin**, the same comb read
 on the drivers' direct sound alone, plus the junction's **prior-free acoustic
 score** for both polarities. That score is the acoustics alone, while the searches
@@ -3185,7 +3192,7 @@ had rather than replacing a working choice with none.
 **DSP processor...** names the device the project is designed for, and the choice
 is part of the project (it travels in a saved session). Pick a model — the
 catalog covers the common car processors from AMP, HELIX, Audison, Hertz,
-Mosconi, ESX, miniDSP and JL Audio — and its **processing rate** and
+Mosconi, ESX, miniDSP, JL Audio and ARC Audio — and its **processing rate** and
 [**Q convention**](#dsp-q-convention) come with it, locked. Pick **Custom** and
 state both by hand.
 
@@ -3282,7 +3289,7 @@ was before the field existed.
 
 **Auto crossover...** estimates each channel's usable band and driver type
 (subwoofer, woofer, midbass, midrange, tweeter), asks which filter families to
-allow and whether the two sides of a junction may take independent slopes, then
+allow and whether each driver's high-pass and low-pass may take independent slopes, then
 searches frequency, family, slope and polarity to flatten each group's summed
 response — penalizing wide band overlap and keeping a practical minimum slope, so
 it lands on a tight, engineer-sensible split rather than shallow filters that
@@ -3312,8 +3319,9 @@ about to happen, and a field is only yours once you change it.
 You may narrow a window; you cannot widen one past what the measurement and the
 driver's safety allow. Where a number of yours cannot be honoured — a tweeter's
 resonance floor, the frequency its distortion says it stops being clean, a class
-bound, the measured band — the row says so under it, with the value it moved to
-and the reason. A window that comes out as a single frequency says that too.
+bound, the measured band — the row says so under it, with the value it moved to,
+and the note's tooltip gives the reason. A window that comes out as a single
+frequency says that too.
 
 The slope window always keeps 24 dB/oct inside it, widening if you exclude it.
 The score is anchored on the car-audio standard and so is the baseline candidate
@@ -3335,8 +3343,9 @@ driver and a low-pass over the highest where they still play past it — the two
 ends of the chain, which are not junctions and have no row of their own — and it
 bounds every junction window as well, so raising it to 60 Hz holds every
 handover above 60 whatever the rows say. Left at 20 Hz and 20 kHz it does
-neither. A group holding one driver has no junction at all, so its whole
-crossover comes from here.
+neither. A group holding one driver has no junction at all, so this is the only
+control over its crossover: it can raise the protective high-pass the wizard places
+(see [One chain per group](#one-chain-per-group)) and add a low-pass.
 
 #### One chain per group
 
@@ -3891,13 +3900,13 @@ under the table.
 ### Panel commands
 
 The remaining buttons in the column beside the plots. The two used occasionally
-rather than while tuning live under **Tools…**, so the column stays the sequence a
+rather than while tuning live under **Tools...**, so the column stays the sequence a
 tune is actually built in:
 
-- **Tools… → Capture to overlay** saves the predicted sum as a Captured overlay in
+- **Tools... → Capture to overlay** saves the predicted sum as a Captured overlay in
   Frequency Response — compare it against real measurements and target curves, or
   feed it onward to the EQ Wizard.
-- **Tools… → Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
+- **Tools... → Audition track…** renders a music file (wav/mp3/flac/m4a and friends) through
   the tune into a stereo WAV: each program channel is convolved with the summed
   processed response of its side, with the microphone calibration optionally
   baked in and one shared normalization gain so the L/R balance survives. The
@@ -3947,7 +3956,7 @@ tune is actually built in:
   exactly as they do in the hybrid Sum.
   Listen through **headphones only** — it is a stereo auralization of the two
   sides, not a binaural head simulation.
-- **Export…** writes the whole setup as a tuning sheet (printable PDF or plain
+- **Export...** writes the whole setup as a tuning sheet (printable PDF or plain
   text): for every side of every pair (a mono pair prints once) the gain, delay in
   ms and mm, polarity, crossover filters, and PEQ bands down to the all-pass.
   An installation spanning several zones prints **by group**, in the order a
@@ -3986,14 +3995,14 @@ survives restarts. Two files can sit beside it: `virtual-crossover.json.backup`,
 where a project the tool could not read is moved aside so the next start has
 something to open — it is kept for salvage, not because it will load — and
 `virtual-crossover.before-reset.json`, where **Reset** writes the live session
-before it clears the panel — an ordinary session file **Load session…** opens.
+before it clears the panel — an ordinary session file **Load session...** opens.
 Accuracy holds within the usual physics: one microphone
 position, the same playback chain for every measurement, and the linear
 (non-clipping) regime.
 
 ### AI assistant bridge
 
-**AI assistant...** drops a menu of three commands that let a chat assistant of
+**AI assistant...** drops a menu of four commands that let a chat assistant of
 your choice — ChatGPT, Claude, Gemini, anything that reads pasted text — look at
 the tune and propose changes. Resonalyze makes no network request in any of
 this: the clipboard is the only transport, and you are the one who pastes.
@@ -4084,13 +4093,13 @@ this: the clipboard is the only transport, and you are the one who pastes.
   — the button's own checks, search and commit, with the report it would have
   shown returned in the import's summary and the alignment log; Auto-tune runs
   without the EQ Wizard, on the curve the wizard would have opened on for that
-  channel and with the wizard's own Auto Tune settings as they stand (Max
-  Filters, Gain min/max, Max Q, Boosts, Shelves, Crossover in target) for whatever the reply
+  channel and with the wizard's own Auto Tune settings as they stand (Max EQ
+  Filters, Min/Max Gain, Max Q, Boosts, Shelves, Crossover in target) for whatever the reply
   leaves out, keeps the bank's all-pass bands, lands the fit the way the wizard's
   **Return** lands it, and skips itself — with the reason — where the wizard
-  would have asked about the [target level](#eq-wizard). The junction tune has
-  no button of its own: it is the crossover engine for a tune that already
-  works, where the wizard is not — one junction, named by the package's id
+  would have asked about the [target level](#eq-wizard). The junction tune is
+  the engine behind **Tune junction…**, run without its dialog: the crossover
+  engine for a tune that already works, where the wizard is not — one junction, named by the package's id
   for it, the lower block's low-pass and the upper block's high-pass searched
   over corner (on the wizard's lattice), family and slopes, and every
   candidate scored on the pair's coherent sum *after re-aligning the upper

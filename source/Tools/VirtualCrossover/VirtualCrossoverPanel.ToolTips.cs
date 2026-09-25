@@ -112,12 +112,12 @@ public partial class VirtualCrossoverPanel
             radioSideLeft,
             "Show and edit the LEFT side of every channel pair.\r\n" +
             "● — at least one source is loaded on this side.\r\n" +
-            "Keys: L picks this side, ` (under Esc) swaps sides.");
+            "Keys: L picks this side, ` (US layout) swaps sides.");
         toolTip.SetToolTip(
             radioSideRight,
             "Show and edit the RIGHT side of every channel pair.\r\n" +
             "● — at least one source is loaded on this side.\r\n" +
-            "Keys: R picks this side, ` (under Esc) swaps sides.");
+            "Keys: R picks this side, ` (US layout) swaps sides.");
         toolTip.SetToolTip(
             buttonCopyLeftToRight,
             "Copy the LEFT side onto the RIGHT side: a dialog picks the\r\n" +
@@ -156,11 +156,10 @@ public partial class VirtualCrossoverPanel
             "acoustic slope. Nothing is written until Apply.");
         toolTip.SetToolTip(
             buttonAutoSetup,
-            "Crossover wizard: detect each channel's driver type from\r\n" +
-            "its response, confirm the types, and get a starting point —\r\n" +
-            "LR24 splits where the responses intersect and cut-only\r\n" +
-            "gains that level the channels.\r\n" +
-            "Run Auto delay afterward to phase-align the result.");
+            "Crossover wizard: confirm each channel's driver type and order,\r\n" +
+            "then it searches corners, slopes, families and polarity for the\r\n" +
+            "flattest sum, with cut-only gains. A starting point: run Auto\r\n" +
+            "delay afterward to phase-align it.");
         toolTip.SetToolTip(
             buttonPhaseGate,
             "Gate for the phase and impulse views: offset, fades and an IR\r\n" +

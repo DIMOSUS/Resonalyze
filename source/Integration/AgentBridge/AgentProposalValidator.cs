@@ -707,8 +707,9 @@ internal static class AgentProposalValidator
         TuneJunctionOperation => (AgentVerdictStatus.Warning,
             "The junction tune rewrites the lower block's low-pass and the upper block's " +
             "high-pass on both sides — corner, family and slopes — scored on the pair's sum " +
-            "at the current delays; gains, delays, polarity, PEQ and every other junction " +
-            "stay. It runs without a dialog and keeps the current crossover unless a " +
+            "after re-aligning the upper block for each candidate; gains, delays, polarity, " +
+            "PEQ and every other junction stay. It runs without a dialog and keeps the " +
+            "current crossover unless a " +
             "candidate clearly beats it; its report goes into the import's summary."),
         _ => (AgentVerdictStatus.Valid, "OK")
     };

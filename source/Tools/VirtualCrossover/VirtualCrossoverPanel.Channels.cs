@@ -40,7 +40,8 @@ public partial class VirtualCrossoverPanel
         SaveAndRedraw();
     }
 
-    /// <summary>The side keys: ` (the key under Esc) swaps sides, L and R pick one. False for any other key.</summary>
+    /// <summary>The side keys: Oemtilde (` on a US layout; the key under Esc only on some layouts) swaps sides, L and R
+    /// pick one. False for any other key.</summary>
     internal bool HandleSideKey(Keys keyData)
     {
         bool? right = keyData switch

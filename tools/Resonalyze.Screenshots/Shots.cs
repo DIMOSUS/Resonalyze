@@ -3,7 +3,7 @@ using Resonalyze.Integration.AgentBridge;
 namespace Resonalyze.Screenshots;
 
 /// <summary>Catalogue of automatable doc screenshots, grouped into scenes (one app launch each); names are paths under <c>assets/images</c>.</summary>
-/// <remarks>Not automatable: <c>noise</c> (live signal), <c>compare</c> (composed crop), forum-article figures and context menus.</remarks>
+/// <remarks>Not automatable: <c>noise</c> (live signal), <c>compare</c> (composed crop), the manual's photo and live captures.</remarks>
 internal static class Shots
 {
     public static IReadOnlyList<Scene> All { get; } =
@@ -37,7 +37,8 @@ internal static class Shots
              "manual/eq-wizard-tuned", "manual/dsp-processor",
              "manual/dsp-processor-model", "manual/eq-target", "manual/auto-crossover",
              "manual/auto-delay", "manual/tune-junction", "manual/tuning-sheet-q",
-             "manual/audition-track"],
+             "manual/audition-track", "manual/peq-handoff-menu", "manual/hybrid-enable",
+             "manual/hybrid-before-after"],
             Manual)
     ];
 
@@ -73,17 +74,24 @@ internal static class Shots
             return;
         }
 
-        string[] boxes = tab switch
+        // Both ways for Frequency: the portable settings outlive a run, and the array scene turns these the other way.
+        (string Box, bool On)[] boxes = tab switch
         {
+            "Frequency" =>
+                [("checkBoxShowPrimary", true), ("checkBoxShowHd2", true), ("checkBoxShowHd3", true),
+                 ("checkBoxShowHd4", true), ("checkBoxShowThdPlusNoise", true),
+                 ("checkBoxShowNoiseFloor", true), ("checkBoxShowCoherence", true),
+                 ("checkBoxShowArrayAverage", false), ("checkBoxShowArrayMicrophones", false),
+                 ("checkBoxShowArraySpread", false)],
             "GroupDelay" =>
-                ["checkBoxShowGroupDelay", "checkBoxShowMinimumPhaseGroupDelay",
-                 "checkBoxShowExcessGroupDelay", "checkBoxShowCoherence"],
-            "Impulse" => ["checkBoxShowImpulse", "checkBoxShowEnvelope"],
+                [("checkBoxShowGroupDelay", true), ("checkBoxShowMinimumPhaseGroupDelay", true),
+                 ("checkBoxShowExcessGroupDelay", true), ("checkBoxShowCoherence", true)],
+            "Impulse" => [("checkBoxShowImpulse", true), ("checkBoxShowEnvelope", true)],
             _ => []
         };
-        foreach (string name in boxes)
+        foreach ((string name, bool on) in boxes)
         {
-            Reflect.Field<CheckBox>(dialog, name).Checked = true;
+            Reflect.Field<CheckBox>(dialog, name).Checked = on;
         }
 
         if (boxes.Length > 0)
@@ -424,6 +432,138 @@ internal static class Shots
                 // Behind the Tools menu now; the action is invoked directly rather than posting a drop-down.
                 () => Reflect.Invoke(panel, "AuditionTrackAsync"), 3_000);
         }
+
+        // Last: the hybrid figures change the view, and the shots above are taken on the session as saved.
+        if (wanted("manual/peq-handoff-menu"))
+        {
+            PeqMenuFigure(session, panel);
+        }
+
+        if (wanted("manual/hybrid-enable"))
+        {
+            HybridEnableFigure(session, panel);
+        }
+
+        if (wanted("manual/hybrid-before-after"))
+        {
+            HybridBeforeAfterFigure(session, panel);
+        }
+    }
+
+    // A menu is a window of its own, so it comes off the screen: shown through the panel's menu seam once the shell is
+    // raised, synchronously rather than posted, and closed after the grab.
+    private static void PeqMenuFigure(ShotSession session, VirtualCrossoverPanel panel)
+    {
+        VirtualCrossoverChannel channel = panel.Session.Channels.FirstOrDefault(
+            candidate => candidate.Name == "C")
+            ?? throw new InvalidOperationException("manual/peq-handoff-menu: the session has no channel C.");
+        ContextMenuStrip? shown = null;
+        Action<Control, ContextMenuStrip> post = panel.ShowMenu;
+        panel.ShowMenu = (owner, menu) =>
+        {
+            shown = menu;
+            menu.Show(owner, new Point(0, owner.Height));
+        };
+        try
+        {
+            session.CaptureScreen(
+                "manual/peq-handoff-menu",
+                () =>
+                {
+                    Reflect.Invoke(panel, "ShowPeqMenu", channel);
+                    if (shown is not { Visible: true })
+                    {
+                        throw new InvalidOperationException("manual/peq-handoff-menu: the PEQ menu did not open.");
+                    }
+                });
+        }
+        finally
+        {
+            panel.ShowMenu = post;
+            shown?.Close();
+            shown?.Dispose();
+        }
+    }
+
+    private static void HybridEnableFigure(ShotSession session, VirtualCrossoverPanel panel)
+    {
+        CheckBox hybrid = HybridToggle(panel, "manual/hybrid-enable");
+        hybrid.Checked = true;
+        session.Pump(5_000);
+
+        // Measured on the live panel: the cards lay themselves out, so no coordinate is read off a render.
+        Rectangle[] buttons = [.. Reflect.Field<FlowLayoutPanel>(panel, "channelListPanel").Controls
+            .OfType<VirtualCrossoverChannelControl>()
+            .Where(card => card.Visible)
+            .Select(card => session.ShellBounds(Reflect.Field<Control>(card, "buttonSpatialAverage")))];
+        Rectangle toggle = session.ShellBounds(hybrid);
+        session.CaptureScreen("manual/hybrid-enable");
+
+        string path = session.Config.Resolve("manual/hybrid-enable");
+        using Annotate figure = Annotate.Open(path);
+        foreach (Rectangle button in buttons)
+        {
+            figure.Detail(Rectangle.Inflate(button, 3, 3));
+        }
+
+        figure.Detail(Rectangle.Inflate(toggle, 4, 3)).Save(path);
+    }
+
+    // The same plot with the hybrid off above and on below, at the smoothing the manual asks for with it (Off).
+    private static void HybridBeforeAfterFigure(ShotSession session, VirtualCrossoverPanel panel)
+    {
+        const string name = "manual/hybrid-before-after";
+        const int gap = 6;
+        CheckBox hybrid = HybridToggle(panel, name);
+        var smoothing = Reflect.Field<ThemedComboBox>(panel, "comboBoxSmoothing");
+        object? smoothingBefore = smoothing.SelectedItem;
+        bool hybridBefore = hybrid.Checked;
+        try
+        {
+            smoothing.SelectedItem = 0;
+            // The plot and the curve row under it, which carries the Hybrid tick the two halves differ by.
+            Rectangle crop = Rectangle.Union(
+                session.ShellBounds(Reflect.Field<Control>(panel, "mainPlotView")),
+                Rectangle.Union(
+                    session.ShellBounds(Reflect.Field<Control>(panel, "labelCurves")),
+                    session.ShellBounds(hybrid)));
+            crop.Inflate(0, 4);
+
+            using Bitmap off = Grab(false);
+            using Bitmap on = Grab(true);
+            using var figure = new Bitmap(crop.Width, (crop.Height * 2) + gap);
+            using (Graphics graphics = Graphics.FromImage(figure))
+            {
+                graphics.Clear(Color.White);
+                graphics.DrawImage(off, new Rectangle(0, 0, crop.Width, crop.Height), crop, GraphicsUnit.Pixel);
+                graphics.DrawImage(
+                    on, new Rectangle(0, crop.Height + gap, crop.Width, crop.Height), crop, GraphicsUnit.Pixel);
+            }
+
+            session.Write(figure, name);
+        }
+        finally
+        {
+            smoothing.SelectedItem = smoothingBefore;
+            hybrid.Checked = hybridBefore;
+            session.Pump(3_000);
+        }
+
+        Bitmap Grab(bool ticked)
+        {
+            hybrid.Checked = ticked;
+            session.Pump(5_000);
+            return session.GrabScreen(name);
+        }
+    }
+
+    private static CheckBox HybridToggle(VirtualCrossoverPanel panel, string shot)
+    {
+        var hybrid = Reflect.Field<CheckBox>(panel, "checkBoxHybrid");
+        return hybrid.Enabled
+            ? hybrid
+            : throw new InvalidOperationException(
+                $"{shot}: Hybrid is unavailable — the session needs a spatial average on every channel that plays.");
     }
 
     private static void AgentReview(ShotSession session, Func<string, bool> wanted)
@@ -432,10 +572,36 @@ internal static class Shots
         OpenSession(session);
         var panel = Reflect.Field<VirtualCrossoverPanel>(session.Shell, "virtualCrossoverPanel");
 
-        // Copy for AI through its real path: it mints the package id the review checks.
-        session.Await((Task)Reflect.Invoke(panel, "CopyForAiAsync")!);
+        // Copy for AI through its real path: it mints the package id the review checks. It reports through a message
+        // box on success as well as failure, and a real one would block the run for ever.
+        Func<string, string, MessageBoxButtons, MessageBoxIcon, DialogResult> show = panel.ShowMessage;
+        string? failure = null;
+        panel.ShowMessage = (text, _, _, icon) =>
+        {
+            if (icon == MessageBoxIcon.Error)
+            {
+                failure = text;
+            }
+
+            return DialogResult.OK;
+        };
+        try
+        {
+            session.Await((Task)Reflect.Invoke(panel, "CopyForAiAsync")!);
+        }
+        finally
+        {
+            panel.ShowMessage = show;
+        }
+
+        if (failure != null)
+        {
+            throw new InvalidOperationException($"Copy for AI failed: {failure}");
+        }
+
         session.Pump(3_000);
-        var packageId = Reflect.Field<string>(panel, "lastAgentPackageId");
+        string packageId = Reflect.Field<AgentSessionReader>(panel, "agentReader").LastPackageId
+            ?? throw new InvalidOperationException("Copy for AI minted no package id.");
 
         string path = Path.Combine(AppContext.BaseDirectory, "ai-proposal.json");
         string reply = File.ReadAllText(path).Replace("PACKAGE_ID", packageId, StringComparison.Ordinal);
@@ -506,26 +672,15 @@ internal static class Shots
             culture: null)!;
     }
 
+    // Constructed directly, so a changed constructor breaks the build rather than the run.
     private static Form DspProcessorDialog(
         Dsp.DspProcessorProfile profile,
         bool follows,
         int measurementRateHz,
         bool? phaseControl = null,
-        bool? firFilters = null)
-    {
-        // Reflection hides constructor changes from the build: keep these arguments in sync with DspProcessorDialog by hand.
-        Type type = typeof(VirtualCrossoverPanel).Assembly
-            .GetType("Resonalyze.DspProcessorDialog")
-            ?? throw new InvalidOperationException("No Resonalyze.DspProcessorDialog type.");
-        return (Form)Activator.CreateInstance(
-            type,
-            System.Reflection.BindingFlags.Instance |
-            System.Reflection.BindingFlags.NonPublic |
-            System.Reflection.BindingFlags.Public,
-            binder: null,
-            [profile, follows, measurementRateHz, phaseControl, firFilters],
-            culture: null)!;
-    }
+        bool? firFilters = null) =>
+        new DspProcessorDialog(
+            new DspProcessorSession(profile, follows, measurementRateHz, phaseControl, firFilters));
 
     // Coordinates are read off the rendered figure: re-read them when the window size or panel layout changes.
 
@@ -568,9 +723,9 @@ internal static class Shots
               .Region(Box(14, 120, 204, 270), "2", new Point(26, 195), leader: true)
               // Figure pixels, captured 1:1 (panel y=0 at 46).
               .Region(Box(14, 475, 204, 535), "3", new Point(26, 505), leader: true)
-              .Region(Box(14, 807, 206, 982), "4", new Point(26, 894), leader: true)
+              .Region(Box(14, 753, 206, 982), "4", new Point(26, 867), leader: true)
               .Region(Box(18, 985, 202, 1014), "5", new Point(26, 999), leader: true)
-              .Detail(Box(18, 883, 200, 935))
+              .Detail(Box(18, 833, 200, 882))
               .Region(Box(1494, 682, 1712, 1018), "6", new Point(1584, 962))
               .Save(path);
     }

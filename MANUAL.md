@@ -2,7 +2,7 @@
 
 **A complete step-by-step guide**
 
-This guide tracks the repository's `main` branch. Everything in it is in **v0.8.0**.
+This guide tracks the repository's `main` branch. Everything in it is in **v0.8.2**.
 
 > **Author's note.** I wrote Resonalyze. It is free and open-source (MIT) — nothing to
 > buy, nothing to sign up for. If you go through this guide, successfully or not,
@@ -198,10 +198,14 @@ Its groups, top to bottom:
 
 1. **The sweep** — **Low / High frequency** set its range, **Per octave** its speed; a
    slower sweep buys signal-to-noise. The green line restates the result as band,
-   octaves and duration. **HPF** declares a protective high-pass left in the DSP — see
+   octaves and duration — the band actually swept, which adds up to half an octave on
+   each side for the sweep to fade in and out (less at the top, near the Nyquist limit).
+   **HPF** declares a protective high-pass left in the DSP — see
    [Protect the drivers](#-protect-the-drivers).
-2. **Averaging** — **Measurements** is how many sweeps are averaged into one result. Two
-   is enough for a quick look; four or more gives a usable coherence curve.
+2. **Channel and averaging** — **Channel** routes the sweep within the output pair
+   (Mono, Left, Right or Stereo); **Measurements** is how many sweeps are averaged into
+   one result. Two is enough for a quick look; four or more gives a usable coherence
+   curve.
 3. **Calibration** — has to be right **before** the first sweep: a run freezes the
    chosen curve into its result, and **Save** writes it into the file. **Mic
    calibration 0°** takes the on-axis file, **More calibrations → Manage...** takes the
@@ -217,12 +221,15 @@ Its groups, top to bottom:
    **Audio backend** — preferably the native ASIO driver.
 5. **Routing** — the output feeding the DSP, the microphone input, and the channel
    carrying the **loopback**. Without a loopback the measurement will not start, by
-   design. The two lines beneath confirm the driver accepted the rate.
-6. **The transport column** — **Start**, **Save**, **Load**, **Compare**, and the
-   **Mic** / **Loop** level meters where you check every run for clipping.
+   design. With ASIO, the line beneath reads *… Hz supported* once the driver takes the
+   rate.
+6. **The transport column** of the main window, beside it — the **Mic** / **Loop** level
+   meters where you check every run for clipping, then **Start**, **Save**, **Load**,
+   **Compare** and the REW **Export** / **Import**.
 
-Press **Apply settings**, then verify both inputs with **Test ASIO Inputs** or the
-level meters in the main window.
+Press **Apply settings**. With ASIO, **Test ASIO Inputs** then lists the peak and RMS of
+every input while playing silence: speak near the microphone and check that only its
+input moves. The level meters show both inputs once a sweep runs.
 
 ### Put the DSP into bypass
 
@@ -231,7 +238,7 @@ Virtual DSP would then apply your crossovers, delays and EQ on top of it. Before
 recording, disable PEQ and shelves, crossover filters, delays (set them to **0 ms**),
 polarity inversion, all-pass filters, per-channel gain corrections, and every
 level-dependent process — limiters, loudness, dynamic EQ, bass enhancement. The only
-level control to touch is the **global gain common to all channels**.
+level control to touch is the **global playback level**, common to all channels.
 
 The rule is **"nothing unaccounted for in the path"**, and the next subsection is the
 one exception it allows.
@@ -243,8 +250,9 @@ full-range 20 Hz sweep through an unprotected tweeter.** Two safe approaches, wh
 be combined:
 
 1. **Restrict the sweep.** Measure at low power and start the sweep where the driver is
-   safe — for a tweeter, **800–1000 Hz → 20 kHz** instead of 20 Hz. Frequencies far
-   below its useful range add nothing.
+   safe — for a tweeter, **800–1000 Hz → 20 kHz** instead of 20 Hz. The sweep fades in
+   over the half octave below **Low frequency** (from about 565 Hz for 800 Hz), so leave
+   that margin. Frequencies far below its useful range add nothing.
 2. **Declare a protective high-pass.** If a protection filter must stay in the DSP,
    enter the same **HPF** type (**Butterworth** or **Linkwitz-Riley**), corner and slope
    in Record Settings. Resonalyze removes that filter — magnitude, phase and group
@@ -253,11 +261,11 @@ be combined:
    **40 dB**; deeper into the stop band the signal is buried in noise, and the
    **coherence** trace marks that region.
 
-**Disable HPF compensation when measuring a channel that does not use that filter.** It
-is a live Record Settings value: nothing resets it between runs, and loading a saved
-measurement does not change it. The saved file does record which filter its own
-response was corrected for (an older capture says "unknown", deliberately different
-from "none"), but that describes the run behind you, not the one you are about to take.
+**Set HPF to Off when measuring a channel that does not use that filter.** It is a live
+Record Settings value: nothing resets it between runs, and loading a saved measurement
+does not change it. The saved file does record which filter its own response was
+corrected for (a file older than that record reads as unknown, not as Off), but that
+describes the run behind you, not the one you are about to take.
 
 A permanent passive component, such as a series capacitor, is part of the installed
 loudspeaker. Leave it in place and do not compensate for it.
@@ -268,8 +276,9 @@ Set the levels after bypassing, because bypassing changes every channel's output
 Start with the **subwoofer**, usually the loudest source, and use it to set the
 microphone preamp gain and the global playback level so that neither input clips. The
 loopback should peak around **−15 to −3 dBFS**; much quieter and the reference weakens.
+The **Loop** meter reads amber above −12 dBFS, which is fine here.
 
-From here on, **do not change the microphone gain or the global volume between
+From here on, **do not change the microphone gain or the global playback level between
 measurements**: the relative SPL between drivers must survive.
 
 ### Measure and save every driver
@@ -287,9 +296,9 @@ Repeat for every driver **without moving the microphone or changing the micropho
 gain, global playback level, sample rate, or DSP processing**. For a three-way front
 stage with a mono subwoofer that is seven files:
 
-> **Subwoofer**
-> **Left / Right Woofer**
-> **Left / Right Midrange**
+> **Subwoofer**\
+> **Left / Right Woofer**\
+> **Left / Right Midrange**\
 > **Left / Right Tweeter**
 
 That is the whole **reference-position acoustic snapshot**, and everything that follows
@@ -313,7 +322,7 @@ loudspeaker, at the cost of amplifier headroom.
 ![A raw single-point response against a moving-microphone average of the same driver, with their difference above](assets/images/manual/mmm-vs-single-point.png)
 
 *Orange: one position, unsmoothed. Violet: a moving-microphone average of the same
-midrange. Green: their difference, down to **−28 dB**.*
+midrange. Green: their difference, down to about **−35 dB**.*
 
 **Most of that disappears under smoothing**, because most of it is narrow — exactly
 what **psychoacoustic smoothing** discounts, and that is the width
@@ -333,12 +342,12 @@ are two ways to get one.
 
 **With spare inputs and microphones: a [microphone array](REFERENCE.md#microphone-array).**
 In **Record Settings → Array microphones** add one row per further microphone — its
-input, its calibration, and a note saying where it stands.
+input, its calibration, and a **Position** note saying where it stands.
 
 - The measurement microphone stays where [Section 3](#microphone-position) mounted it
   and remains the only source of timing. The further ones exist only for the average,
   so spread them around that position through the volume a head occupies; the seven
-  these were developed against sat within about 30 cm of it.
+  positions this was developed with sat within about 30 cm of it.
 - The table lists only the further microphones. The measurement one joins by itself
   when the sweep runs, which is why six rows produced seven positions. One row is the
   minimum.
@@ -346,7 +355,7 @@ input, its calibration, and a note saying where it stands.
   (**More calibrations → Manage... → Add file...**) before it can be assigned.
 - **All microphones must be inputs of the same interface** — same clock, same
   loopback, not negotiable. In practice that means **ASIO**; the line under the editor
-  says how many inputs it found.
+  says how many further inputs are still free.
 
 ![The Array microphones list: one row per further microphone](assets/images/manual/array-microphones.png)
 
@@ -359,21 +368,22 @@ explains why.
 
 **With one microphone: the moving-microphone method (MMM).** Switch Live Spectrum to
 **MMM** mode. It pins every setting the average is only valid under — periodic pink
-noise, infinite averaging, band-power dB SPL, noise-slope compensation on, smoothing
-off — and needs no SPL calibration. Set **Sequence Length** to the **maximum** (65536):
-the longest frame carries the most bass and the finest grid, 0.7 Hz bins at 48 kHz
-against 23 Hz at the default. Keep it the same for every capture in a set.
+noise, a rectangular window with no overlap, infinite averaging, band power, **Slope
+compensation** on, smoothing off — and needs no SPL calibration: without one the levels
+are relative, which is all a set needs. Set **Sequence Length** to the **maximum**
+(65536): the longest frame carries the most bass and the finest grid, 0.7 Hz bins at
+48 kHz against 23 Hz at the default. Keep it the same for every capture in a set.
 
-![Live Spectrum in MMM mode, mid-capture](assets/images/manual/mmm-capture.png)
+![Live Spectrum in MMM mode, with a finished capture loaded](assets/images/manual/mmm-capture.png)
 
 **⚠ Protect the tweeters here too.** MMM plays full-range pink noise for the whole
-capture — at the sweeps' playback level, about 6 dB under a sweep's power, but
-continuously — and unlike the sweep it has no start frequency to raise, so for a tweeter or
-a small midrange the protective high-pass in the DSP is the only
-[protection](#-protect-the-drivers). Keep it in place and declare it in Record Settings
-exactly as for the sweep: the capture divides that filter back out, so its curve lines
-up with the driver's impulse response. The filter is read when you press **Start** —
-set or disable **HPF** before each driver's capture, not during it.
+capture: about 6 dB less power than a sweep at the same playback level, but continuous,
+and with no start frequency to raise. For a tweeter or a small midrange the protective
+high-pass in the DSP is the only [protection](#-protect-the-drivers). Keep it in place
+and declare it in Record Settings exactly as for the sweep: the capture divides that
+filter back out, so its curve lines up with the driver's impulse response. The filter is
+read when you press **Start** — set **HPF**, or Off, before each driver's capture, not
+during it.
 
 Then, one driver at a time, with the DSP in the same bypassed state and at the same
 levels as the sweeps:
@@ -391,9 +401,12 @@ If the read-out at the top left adds **clipped** in amber, the microphone input 
 during that walk. Those frames are already in the average, so lower the microphone gain and
 take the captures of the set again.
 
-One capture per driver — left and right separately, one for a mono subwoofer — without
-touching the microphone gain or playback level between them. Virtual DSP checks the set
-and tells you when the captures disagree.
+One capture per driver — left and right separately, one for a mono subwoofer — in one
+sitting of the analyzer, without touching the microphone gain or playback level between
+them. Restarting Resonalyze, pressing **Apply settings** or changing a Live Spectrum
+setting such as **Sequence Length** starts a new analyzer session, and captures from
+different sessions form a set only if each carries an SPL calibration; changing **HPF**
+alone is safe. Virtual DSP checks the set and tells you when the captures disagree.
 
 With the averages saved beside the sweeps, the measuring is over: pack up, close the
 car, and continue from a sofa.
@@ -406,10 +419,10 @@ Before opening Virtual DSP, check the raw files one at a time. Nothing is tuned 
 this only confirms the data and shows what each installed driver does. **Load** a
 `.json` on the main panel.
 
-Each analysis mode has its own **settings button** with smoothing, impulse gating and
-displayed curves. Its **Calibration** selector opens on **Own (as measured)** — the
-curve this measurement was recorded through — and every new measurement puts it back
-there, so if it says anything else, someone chose it.
+Each analysis mode has its own settings behind **Mode Settings...**: smoothing, impulse
+gating and the curves drawn. The Frequency Response settings' **Calibration** selector
+opens on **Own (as measured)** — the curve this measurement was recorded through — and
+every new measurement puts it back there, so if it says anything else, someone chose it.
 
 In **Frequency Response**, look for the driver's useful range, its natural roll-off,
 major resonances or cancellations, whether left and right behave alike, and where the
@@ -480,9 +493,9 @@ Building the system is five steps, in the order this section takes them:
 For a three-way front stage with a subwoofer, the seven files of
 [Section 4](#measure-and-save-every-driver) become four blocks:
 
-> **Sub → A Mono**
-> **Left / Right Woofer → B L/R**
-> **Left / Right Midrange → C L/R**
+> **Sub → A Mono**\
+> **Left / Right Woofer → B L/R**\
+> **Left / Right Midrange → C L/R**\
 > **Left / Right Tweeter → D L/R**
 
 Do not normalize or otherwise modify the measurements before loading them: their
@@ -491,21 +504,28 @@ relative SPL, phase and absolute timing are exactly what Virtual DSP needs.
 The panel is dense, so here are its six regions:
 
 1. **The channel cards** — one per band, top to bottom in frequency order, each with
-   its source, gain, delay, polarity, crossover, PEQ and curve toggles. **Add** and
-   **Remove** under the list change how many there are; **Reset** empties the panel
-   back to three blank cards and its default settings, asking first and putting a
-   copy of the current session aside so **Load session…** can undo it. The blue **L**
-   and red **R** buttons at the bottom decide which side every card shows; `L`, `R`
-   and `` ` `` (the key under Esc, to swap) do the same from the keyboard.
+   its source, gain, delay, polarity, crossover, PEQ and curve toggles. **Add** appends
+   a card and **Remove** drops the last one; **Reset** empties the panel back to three
+   blank cards and default settings — the **Mic cal** choice and the EQ target stay —
+   asking first and putting a copy of the current session aside so **Load session...**
+   can bring it back. The blue **L** and red **R** buttons at the bottom decide which
+   side every card shows; `L`, `R` and, to swap, `` ` `` do the same while no field is
+   being typed in (`` ` `` is the key Windows reads as the US backtick: under Esc on US
+   and Russian layouts, elsewhere on others). **L→R** / **R→L** copy the settings you
+   pick to the other side, and **Lock**, on by default, mirrors crossover, polarity and
+   FIR-crossover edits onto it.
 2. **The acoustic plot** — each channel's processed response, the phase-aware **Sum**,
    and **Sum loss** against the right-hand axis (its selector: **Full** for the sum
    the cabin hears, **FDW-8** for the direct sound alone, **Disable** for no curve).
 3. **What the plot shows** — which curves are drawn, the target and its level, the
-   microphone calibration, smoothing, the Hybrid toggle and the magnitude gate.
-4. **The actions** — the DSP processor, the two optimizers, the audition render,
-   session save/load and the tuning-sheet export.
+   microphone calibration, the Hybrid toggle, the **View** (Magnitude, Phase, Impulse,
+   Group delay, Step), smoothing, **Gate...** — the window of every view but Magnitude,
+   which takes only its offset — and **Show**.
+4. **The actions** — the DSP processor, the optimizers (**Auto crossover...**, **Tune
+   junction…**, **Auto delay...**), the AI assistant, **Tools...** (the audition render
+   and overlay capture), session save/load and the tuning-sheet export.
 5. **The junction view** — the chain's own filters, or (as here) the correlation and
-   score curves the delay search reads at one junction.
+   score curves the delay search reads at one junction, or its coherence.
 6. **The read-out** — per-junction sum loss, junction phase, per-channel arrivals and
    the L/R level difference. Most of this guide is about making its numbers small.
 
@@ -517,17 +537,19 @@ The same controls repeat on every block:
 
 1. **Source** — the measurement for the side selected below the card list; **MMM /
    Array** attaches or selects its spatial average; the speaker button excludes the
-   block from the plots, Sum, metrics and Auto Delay.
-2. **Curves** — the raw measurement, the processed result, or the whole chain bypassed.
+   block from the plots, Sum, metrics and Auto delay.
+2. **Curves** — **Raw** and **Processed** draw the measurement and the result through
+   the chain; **Bypass** takes the chain out of the block.
 3. **Level and time** — channel gain, total gain after PEQ preamp, and delay.
-4. **Group and order** — **Zone**, **Mono**, polarity inversion, and **▲▼** to move the
-   block in the list.
-5. **Crossover** — kind, HP/LP corners, family, slope, and ripple where the family has
-   one.
-6. **PEQ** — hand the channel to the EQ Wizard, load or clear its bank, and read how
-   many bands and how much preamp it carries.
+4. **Group and order** — **Zone**, **Mono**, polarity inversion, **▲▼** to move the
+   block in the list, and **−** to fold it down to its first rows.
+5. **Crossover** — kind, the measured polarity of the IR, the acoustic goal a
+   [Tune junction](#refining-one-junction-tune-junction) Apply leaves, HP/LP corners,
+   family, slope, and ripple where the family has one.
+6. **PEQ** — hand the channel to the EQ Wizard, load, save or clear its bank, and read
+   how many bands and how much preamp it carries.
 7. **Phase** — the channel phase control, on the processors that have one. It is
-   absent above because that session's device does not; see
+   absent above because that session's device has none; see
    [the phase control](#the-phase-control-helix-and-relatives) below.
 8. **FIR** — a FIR kernel the channel is convolved with, on the processors that take
    one; absent above for the same reason. See [FIR filters](#fir-filters) below.
@@ -535,11 +557,11 @@ The same controls repeat on every block:
 ### Assign channel groups
 
 Set each block's **Zone** as soon as its source is loaded. A zone changes no filter; it
-tells the plot and the two optimizers which part of the installation the block belongs
+tells the plot and the optimizers which part of the installation the block belongs
 to:
 
 - **Sub** — every subwoofer block. It has its own display and tuning-sheet section, but
-  for Auto Crossover and Auto Delay it is the bottom of the **front crossover chain**,
+  for Auto crossover and Auto delay it is the bottom of the **front crossover chain**,
   not a separate alignment stage.
 - **Front** — the woofer/midbass, midrange and tweeter bands of the front stage.
 - **Rear** — the rear fill. A multi-way rear is one group: its drivers are crossed and
@@ -576,12 +598,14 @@ centre and a stereo rear fill is six blocks from ten files:
 | **E — Centre** | one | Center | locked on |
 | **F — Rear** | left, right | Rear | off |
 
-Only the order **within a zone** matters: B, C, D form the front chain because that is
-the order they stand in, and a two-way rear would be two Rear blocks in the same order.
-A full-range centre or rear pair can stand anywhere in the list, since **Show** sorts by
-zone. Each automatic step then works on one zone at a time — the front chain with the
-subwoofer at its bottom, the rear's own drivers in **Rear + Sub**, and only afterwards
-the rear and the centre against the finished front in **Groups**.
+Within a zone the chain runs up the blocks' crossover bands; the list order only breaks
+ties, as it does before any crossover is set. So keep each zone's blocks from lowest to
+highest; Auto crossover re-sorts them for you while **Reorder the channel blocks to
+match** is ticked, as it is by default. A full-range centre or rear pair can stand
+anywhere in the list, since **Show** sorts by zone. Each automatic step then
+works on one zone at a time — the front chain with the subwoofer at its bottom, the
+rear's own drivers (read in **Rear + Sub**), and only afterwards the rear and the centre
+against the finished front (read in **Groups**).
 
 ### Name the processor you are tuning
 
@@ -590,19 +614,19 @@ Press **DSP processor...** and say which device this project is for.
 ![The DSP processor dialog, as a new project opens it](assets/images/manual/dsp-processor.png)
 
 Pick your **Model** from the catalog — it covers the common car processors from AMP,
-HELIX, Audison, Hertz, Mosconi, ESX, miniDSP and JL Audio — and its **processing rate**
-and **Q convention** come with it, locked, because both are facts about the device:
+HELIX, Audison, Hertz, Mosconi, ESX, miniDSP, JL Audio and ARC Audio — and its
+**processing rate** and **Q convention** come with it, locked, because both are facts
+about the device:
 
 ![The same dialog with a catalog model selected](assets/images/manual/dsp-processor-model.png)
 
 If your processor is not listed, pick **Custom** and state both by hand. That makes the
-same project a preset would: a catalog entry is those two facts looked up for you (plus,
-for some models, the delay range its manual states). The **processing rate** is the
-DSP's internal sample rate, stated in its specification — 48 kHz or 96 kHz are the usual
-answers. The **Q convention** is how the device reads a PEQ band's Q; it only affects
-the Q printed on the tuning sheets, and
+same project a preset would: a catalog entry is those two facts looked up for you. The
+**processing rate** is the DSP's internal sample rate, stated in its specification —
+48 kHz or 96 kHz are the usual answers. The **Q convention** is how the device reads a
+PEQ band's Q; it only affects the Q printed on the tuning sheets, and
 [REFERENCE.md](REFERENCE.md#dsp-q-convention) lists which models use which and gives a
-two-band measurement that settles it. If you have to choose blind, **RBJ** is the most
+one-band bench test that settles it. If you have to choose blind, **RBJ** is the most
 common.
 
 The rate list also offers **Follow measurements**: the project states no rate of its
@@ -617,7 +641,7 @@ the project into the EQ Wizard and the tuning sheet's Q column;
 
 #### The phase control (HELIX and relatives)
 
-The dialog's third setting, **Channel phase control**, is ticked for you when the model
+The **Channel phase control** tick under the rate and Q is set for you when the model
 you picked has one — every HELIX does, through the DSP PC-Tool — and you can tick it
 yourself for a Custom profile standing in for a device the catalog does not list. It
 adds a **Phase** field to every channel card.
@@ -629,8 +653,8 @@ and your DSP cannot dial has no business in the prediction.
 That control is not an all-pass you dial in by frequency. You set an ANGLE, in steps of
 5.625° up to 354.375°, and the processor works out the second-order all-pass that turns
 the phase by exactly that much **at the channel's own crossover frequency** — its
-low-pass on a subwoofer channel, its high-pass on every other one. The read-out beside
-the field names both, so you can see what the number is really building:
+low-pass on a block in the **Sub** zone, its high-pass on every other one. The read-out
+beside the field names both, so you can see what the number is really building:
 
     Phase  90.000   ref 500 Hz → AP2 809 Hz
 
@@ -640,12 +664,13 @@ use it:
 - **Move the crossover and the same angle becomes a different filter.** The reference
   is the crossover frequency as configured — even when that filter is bypassed or
   switched off. This is the hardware's own rule, so Resonalyze keeps it and shows you
-  the corner moving. Auto Crossover clears any rotation it finds rather than leave a
+  the corner moving. Auto crossover clears any rotation it finds rather than leave a
   stale one behind, and tells you how many.
 - **At a high crossover the smallest steps stop working.** The device will not place
-  the all-pass corner above about 18 kHz (3/16 of its processing rate), so a tweeter
-  crossed at 5 kHz cannot turn its phase by less than about 29°: the first five
-  positions all give the same filter. The read-out turns amber and states what you
+  the all-pass corner above 3/16 of its processing rate — 18 kHz on the 96 kHz models —
+  so there a tweeter crossed at 5 kHz cannot turn its phase by less than about 29°: the
+  first five positions all give the same filter (on the 48 kHz models the ceiling is
+  9 kHz and the minimum about 69°). The read-out turns amber and states what you
   actually get.
 
 The behaviour was measured on a HELIX DSP ULTRA S rather than taken from a manual, and
@@ -653,8 +678,8 @@ the model reproduces those measurements to about 0.2 %.
 
 #### FIR filters
 
-The dialog's fourth setting, **FIR filters**, adds a **FIR** button to every channel
-card. Tick it when your processor convolves each channel with a kernel you load into
+The **FIR filters** tick, below the phase control, adds a **FIR** row, with its button,
+to every channel card. Tick it when your processor convolves each channel with a kernel you load into
 it; the catalog does not yet claim the stage for any model, so the tick is yours to
 give, and picking another model in the list leaves it as it is. Unticking it
 removes every kernel from the session and tells you how many, so export a kernel
@@ -665,10 +690,10 @@ forms are one coefficient per line, the way rePhase, REW and the miniDSP tools
 export them. The kernel is then stored in the session itself, like the PEQ bands,
 not as a path to the file: the session travels with it, and the same button
 **exports** it again as a 32-bit float WAV or a text file, at the processor's rate,
-for the device or another tool. From the import on the kernel is a full stage of the
-simulated chain: every
-processed curve, the Sum, the loss, the metrics, Auto Delay and the audition run
-through it, and the DSP chain plot draws it with the rest of the filters. The
+for the device or another tool. Once loaded — imported or designed — the kernel is a
+full stage of the simulated chain: every processed curve, the Sum, the loss, the
+metrics, Auto delay and the audition run through it, and the DSP chain plot draws it
+with the rest of the filters. The
 read-out beside the button gives the kernel's length and where its peak sits in
 time. For the usual linear-phase kernel that is roughly the delay it adds to the
 channel; a minimum-phase kernel peaks near its start and adds no such delay. The
@@ -678,9 +703,10 @@ Two rules are worth knowing before you import one:
 
 - **The kernel runs at the processor's rate, whatever the file says.** That is what
   the device does with the taps, so design the kernel for the rate named in the DSP
-  processor dialog. A WAV whose header states another rate is still loaded — the
-  read-out turns amber and names both rates — but it is then a different filter from
-  the one you drew. An export writes the processor's rate into the file, because
+  processor dialog. A file that states another rate — a WAV header, or a rate line in
+  a text file — is still loaded, the read-out turning amber and naming both rates, but
+  it is then a different filter from the one you drew. An export writes the
+  processor's rate into the file, because
   that is the rate the taps mean here.
 - **The kernel sits beside the IIR crossover, not in place of it.** A kernel that
   already contains the channel's crossover runs on top of whatever the Crossover row
@@ -694,24 +720,25 @@ type, the corners, the method and the length, watch the latency and the deviatio
 from the target slope, and press **Return FIR to Virtual DSP**. Then switch the
 channel's Crossover row **Off** — a red FIR button is the reminder that both are
 cutting the channel — and design the neighbouring channel's kernel with the same
-corner, the same length and the same window, so the pair sums to a pure delay.
-Run **Auto delay** afterwards as usual: it absorbs the kernels' latency like any
-other delay, and it knows a linear-phase kernel's delay exactly rather than
-reading it off the pre-ringing, so a long kernel at a low corner is timed as
-reliably as a short one. If you change the DSP
-processor's rate later, designed kernels turn their buttons red: open each in the
-constructor and return it to rebuild it at the new rate.
+corner, length and window: a Linkwitz-Riley or windowed-sinc pair then sums to a pure
+delay (a Butterworth pair bumps at the corner).
+
+Run **Auto delay** afterwards as usual: it absorbs the kernels' latency like any other
+delay, and it knows a linear-phase kernel's delay exactly rather than reading it off
+the pre-ringing, so a long kernel at a low corner is timed as reliably as a short one.
+If you change the DSP processor's rate later, designed kernels turn their buttons red:
+open each in the constructor and return it to rebuild it at the new rate.
 
 ### Set the display correctly
 
 Both selectors sit directly below the main graph.
 
-Set **Mic cal** to **Own (as measured)**: every channel is read through the calibration
-it was recorded with in [Record Settings](#4-measuring-the-drivers), rather than one
-curve applied to all. Pick a single calibration only to see the whole set through one
-microphone on purpose.
+Keep **Mic cal** on **Own (as measured)**, where a new project opens and Reset leaves
+it: every channel is read through the calibration it was recorded with in
+[Record Settings](#4-measuring-the-drivers), rather than one curve applied to all. Pick
+a single calibration only to see the whole set through one microphone on purpose.
 
-Select **Psychoacoustic smoothing**. As in REW, it de-emphasizes narrow high-Q peaks and
+Set **Smoothing** to **Psychoacoustic**. As in REW, it de-emphasizes narrow high-Q peaks and
 dips and keeps the broader, perceptually relevant features, which also keeps you from
 chasing narrow, position-dependent cancellations with EQ.
 
@@ -720,9 +747,10 @@ Both choices travel with a channel into the EQ Wizard in
 
 ### What Virtual DSP is actually simulating
 
-Each channel's virtual chain applies gain, delay, polarity, HPF and LPF, and PEQ —
-bells, shelves and the phase-only **all-pass** bands, which live in the bank as band
-types — to the **actual measured impulse response** of the installed driver, so its
+Each channel's virtual chain applies gain, delay, polarity, HPF and LPF, the phase
+control and a FIR kernel where the processor has them, and PEQ — bells, shelves and the
+phase-only **all-pass** bands, which live in the bank as band types — to the **actual
+measured impulse response** of the installed driver, so its
 real magnitude, phase and timing are preserved. It models the linear behaviour only:
 distortion, excursion limits, power compression and voice-coil heating must be checked
 in the real system.
@@ -735,15 +763,15 @@ crossover, delay, polarity or EQ recomputes the **predicted acoustic sum of the 
 system**, with its phase and group delay.
 
 Before tuning, confirm that every measurement is in the right channel and side, that
-the block layout matches the real processor, that the **DSP processor** is named, and
-that **Own (as measured)** and **Psychoacoustic smoothing** are selected. Then the
-first real tuning step: crossover design.
+each block's **Zone** is set and the layout matches the real processor, that the
+**DSP processor** is named, and that **Own (as measured)** and **Psychoacoustic**
+smoothing are selected. Then the first real tuning step: crossover design.
 
 ---
 
 ## 7. Crossover tuning
 
-**Auto Crossover** can set every crossover point in a couple of clicks, and as a
+**Auto crossover** can set every crossover point in a couple of clicks, and as a
 starting point that is enough. To get the most out of it, know what it is after. A good
 crossover keeps both drivers in a safe operating range, overlaps their **acoustic
 slopes** sensibly, lets them sum with minimal cancellation after phase alignment, and
@@ -756,7 +784,8 @@ Use the raw measurements to see where each driver actually works well; a driver 
 producing some SPL somewhere is not a reason to cross it there.
 
 This matters most for tweeters. Resonalyze sees their acoustic response but not their
-**Fs, excursion, thermal limits or the manufacturer's recommended crossover**. Check
+**excursion, thermal limits or the manufacturer's recommended crossover**, and it can
+only guess a tweeter's **Fs** from where the response rolls off. Check
 the manufacturer's minimum first, and distortion or excursion data if you have them.
 **Fs alone does not define a safe crossover**; as a fallback, a high-pass around
 **2–3× Fs** is a conservative start, and going lower with a steep filter should be a
@@ -771,12 +800,12 @@ the hardest junction out of it. That is a preference, not a rule — a well-inte
 > **Acoustic response = natural driver response × electrical filter**
 
 A driver already rolling off acoustically ends up with a steeper slope than the DSP
-shows. For active systems **Linkwitz–Riley 24 dB/oct** is a good general-purpose start;
+shows. For active systems **Linkwitz-Riley 24 dB/oct** is a good general-purpose start;
 **LR48** helps when a driver needs more protection, less overlap, or isolation from a
 breakup region. Steeper is not automatically better: each slope has its own phase and
 group delay, which become part of the acoustic crossover that has to be aligned.
 
-### Using Auto Crossover
+### Using Auto crossover
 
 Press **Auto crossover...**.
 
@@ -788,9 +817,10 @@ Press **Auto crossover...**.
    search may use there, and whether it may split the corners. The cyan box is the part
    the wizard writes back — what it chose for that junction.
 3. **Whole-chain settings** — the filter families your DSP supports, the band limit for
-   the system as a whole, whether a junction's two sides may differ in slope, block
-   reordering, and the bass level.
-4. **The proposal** — exactly what **Apply** writes into the channels.
+   the system as a whole, whether each driver's high-pass and low-pass may differ in
+   slope, block reordering, and the bass level.
+4. **The proposal** — the current fit. **Apply** re-ranks its nearest rivals on the
+   measured impulse responses before writing, so what lands can differ slightly.
 
 Resonalyze estimates each channel's usable bandwidth and assigns a likely driver type;
 check the classifications and correct them where needed.
@@ -806,12 +836,13 @@ know better.
 
 Two colours flag an order worth a second look: **amber** means the two channels measure
 too alike to be ordered, so you have to say which is which; **red** means a channel
-measures *lower* than the one above it — usually a row moved one step too far, or a
-wrong driver type. Apply names both before writing anything.
+measures *lower* than the one above it — usually a row moved one step too far. Apply
+lists both and asks before writing anything.
 
-A group holding a single driver has nothing to cross: it gets a protective high-pass
-under its usable band and is levelled onto the front stage. Treat that level as a
-starting point; how far a rear fill sits under the front is for your ears.
+A group holding a single driver has nothing to cross: it gets a protective high-pass an
+octave above where its measured band starts — higher where a tweeter's resonance or its
+distortion asks for it — and is cut down onto the front stage's level. Treat that level
+as a starting point; how far a rear fill sits under the front is for your ears.
 
 Under the channels is a row per **junction** — one for each pair that hands over. Each
 row shows the frequency window and the slope window the search will use, and whether
@@ -821,102 +852,112 @@ yours.
 
 You can narrow a window but not widen it past what the drivers allow. If a number of
 yours cannot be honoured — a tweeter's resonance, the point its distortion says it stops
-being clean, the band a driver actually plays — the row prints where it moved the value
-and why, rather than quietly ignoring you. Note that 24 dB/oct always stays inside the
-slope window: it is what the search measures everything else against.
+being clean, the band a driver actually plays, the usual range of its type — the row
+prints where it moved the value, and its tooltip why, rather than quietly ignoring you.
+Note that 24 dB/oct always stays inside the slope window: it is what the search
+measures everything else against.
 
 **Split** lets one junction put its low-pass and high-pass at different frequencies when
 that sums flatter. Leave it off unless you mean it — a split crossover is easy to
 mistake for an error when you come back to the tuning sheet months later.
 
 Then select the filter families your real DSP supports, the **system band limit**,
-whether HPF and LPF may differ in slope, whether the panel's blocks should be put into
-the same order, and the desired bass level relative to the mid/high range.
+whether each driver's HPF and LPF may differ in slope (**Independent slopes per side**),
+whether the panel's blocks should be put into the same order, and the bass level over
+the mid/high range, which starts at what the measurements show and only goes down.
 
 To narrow one junction, use its own row — the band limit applies to the whole chain at
 once, and it does two things. It is the protective filter at the two ends: a high-pass
 under the lowest driver and a low-pass over the highest, which are not junctions and so
 have no row of their own. And it bounds every junction window on top of whatever that
 junction worked out for itself, so raising it to 60 Hz keeps every handover above 60.
-Left at 20 Hz and 20 kHz it does neither. A group holding a single driver, a rear fill or
-a centre, has no junction at all, so this is the only crossover it gets.
+Left at 20 Hz and 20 kHz it does neither. For a group holding a single driver — a rear
+fill or a centre — it is the only crossover control: it can raise the protective
+high-pass the wizard places, and add a low-pass.
 
-Leave the reordering on: a panel whose blocks read down the spectrum is far easier to
-work in. Blocks are lettered by position, so the ones that move are re-lettered and
-take a new plot colour, with their sources and settings travelling along; a tuning
-sheet printed earlier names channels by the OLD letters. The **▲▼** buttons on each
-block do the same one step at a time.
+Leave the reordering on: a panel whose blocks run from the lowest driver to the highest
+is far easier to work in. Blocks are lettered by position, so the ones that move are
+re-lettered and take a new plot colour, with their sources and settings travelling
+along; a tuning sheet exported earlier names channels by the OLD letters. The **▲▼**
+buttons on each block do the same one step at a time.
 
-The optimizer then searches combinations of frequencies, slopes, families and polarity
-on the **actual measured acoustic responses**, weighing bandwidth, overlap, leakage and
-filter group delay, and prints its proposal at the bottom of the dialog.
+The optimizer searches combinations of frequencies, slopes, families and polarity on
+the **actual measured acoustic responses** — again after every change you make —
+weighing bandwidth, overlap and leakage, and never using a slope whose group delay
+passes 10 ms; its proposal sits at the bottom of the dialog.
 
 It adds them up the way a crossover designer does: each driver's measured response
 through its filter's own phase, with the drivers assumed perfectly aligned in time. That
 is what lets it tell you the **polarity** each junction wants — a Linkwitz-Riley 12 or 36
 crossover needs one side inverted, a 24 does not, and a real driver's own roll-off can
-move that answer. Auto Delay runs later and may flip a channel again; the wizard is
+move that answer. Auto delay runs later and may flip a channel again; the wizard is
 giving you the starting point.
 
-Because the sum assumes perfect alignment, the response it predicts is an ideal. It is
-not what the panel will measure until delays are set — judge the finished result there,
-not here.
+Because the sum assumes perfect alignment, the response it predicts is an ideal, not a
+forecast of what the panel will show even once delays are set — judge the finished
+result there, not here.
 
-Press **Apply** if the result makes physical sense. Auto Crossover does not know your
+Press **Apply** if the result makes physical sense. Auto crossover does not know your
 drivers' limits: always check the proposal against the datasheets and your own knowledge
 of the system.
 
 ### Refining one junction: Tune junction
 
-Auto Crossover works from magnitudes with the drivers taken as perfectly aligned, which
-is the right reading for a blank tune. Once delays and polarity are set, press **Tune
-junction...** to refine ONE handover against what the pair actually measures: every
-candidate crossover is read on the **coherent sum through both full chains, after the
-delay and polarity Auto delay would give it** — you run Auto delay again after a junction
-tune anyway — and the report recommends keeping the crossover on screen unless a
+Auto crossover works from magnitudes with the drivers taken as perfectly aligned, which
+is the right reading for a blank tune. Once delays and polarity are set — in
+[Section 9](#9-delay-and-phase-alignment), so come back here then — press **Tune
+junction…**, pick the junction and press **Search** to refine ONE handover against what
+the pair actually measures: every candidate crossover is read on the **coherent sum
+through both full chains, after re-aligning the upper block's delay and polarity as
+Auto delay would** — you run Auto delay again after a junction tune anyway — and the
+report recommends keeping the crossover on screen unless a
 challenger beats it on that reading. Nothing is written until you press Apply, which
 writes the crossover the report found — even one it advises against, because that choice
 is yours.
 
 **Tune for** says which question you are asking. **The best summation** searches for the
 flattest handover this junction can have, and the slope window beside it holds the
-answer near a steepness you want. **Corners free per side** additionally offers the two
-edges a little apart or a little overlapped — apart takes a bump off a junction,
-overlapped fills a dip — always on whole hertz, the way the channel card states them.
+answer near a steepness you want. **Slopes free per side** and **Corners free per side**,
+both on by default, let the two edges differ in slope and sit a little apart or a
+little overlapped — apart takes a bump off a junction, overlapped fills a dip — always
+on whole hertz, the way the channel card states them.
 
-The other question is the crossover in **acoustic** terms. Set the goal to LR24 and
-Resonalyze looks for the electrical filter that, with this driver's own roll-off
-included, adds up to that slope — on every channel of the junction, judged by the one
-that misses most — and tells you plainly whether these drivers can reach it at all,
-since a filter can only make a response steeper. Apply remembers the goal on the channel
-card and the EQ stage aims at it instead of at the electrical filter; where the
+The other question, **this acoustic crossover**, is the crossover in **acoustic** terms.
+Set it to LR24 and Resonalyze looks for the electrical filter that, with each driver's
+own roll-off included, adds up to that slope — on every channel of the junction, judged
+by the one that misses most — and tells you plainly whether these drivers can reach it
+at all, since a filter can only make a response steeper. Apply remembers the goal on the
+channel card and the EQ stage aims at it instead of at the electrical filter; where the
 crossover misses it, the report says so in red, and clearing it on the card sends the
 fit back to the filter. The stated slope chooses only among crossovers within the budget
 beside it — how much of the summation the goal may cost, 1.0 dB by default — and the
-report shows what it cost. **Undo last Apply** in the same dialog takes an Apply back.
+report shows what it cost. **Undo last Apply** in the same dialog puts every channel
+back as it was before the last Apply — one step, taking any later change with it, so it
+asks first when there is one.
 
 ![The Tune junction dialog: the junction, the corner window, the filters on offer and the two things it can tune for, with the search report below](assets/images/manual/tune-junction.png)
 
 ### Manual tuning is always available
 
 Every channel card exposes its HPF, LPF, family and slope, so any crossover can be
-tuned by hand **before or after** Auto Crossover. Running Auto Crossover again
-overwrites what you edited, and once the next section has fitted a channel's EQ against
-its crossover, changing that crossover means re-checking its PEQ. The practical loop is:
+tuned by hand **before or after** Auto crossover. Running Auto crossover again
+overwrites what you edited, gains and polarity included, and once the next section has
+fitted a channel's EQ against its crossover, changing that crossover means re-checking
+its PEQ. The practical loop is:
 
-> **Auto Crossover → inspect the result → manually refine anything that does not make
+> **Auto crossover → inspect the result → manually refine anything that does not make
 > sense**
 
 ### What ultimately defines a good crossover?
 
 Not where two magnitude curves cross, but how well adjacent drivers **sum
-acoustically** after EQ and time alignment. Virtual DSP reports **Sum Loss** per
+acoustically** after EQ and time alignment. Virtual DSP reports **Sum loss** per
 junction in the read-out: the difference between the phase-aware complex sum and the
 ideal magnitude-only sum. 0 dB is ideal addition at the measurement position;
 increasingly negative values mean cancellation. It does not by itself prove the
 crossover holds when the listener moves.
 
-Do not chase Sum Loss yet. EQ also changes phase, so the final alignment comes **after
+Do not chase Sum loss yet. EQ also changes phase, so the final alignment comes **after
 equalization**; for now the goal is crossovers that are **safe, acoustically sensible
 and physically realistic**.
 
@@ -929,33 +970,35 @@ first would mean redoing it after EQ.
 
 ### Optional: equalize the spatial average
 
-If you arranged a spatial average in
+If you recorded a spatial average in
 [Section 4](#optional-a-spatial-average-for-the-eq), bring it in before setting the
 target.
 
 **Measured with a microphone array?** Nothing to attach — the average came with the
-measurement. Each card's button reads **Array**, and its menu picks which average the
+measurement. Each card's button reads **Array ✓**, and its menu picks which average the
 whole project reads: the arrays the measurements carry, MMM captures attached by hand,
-or none. A channel measured with a single microphone in an array project is drawn from
-its point measurement, and the panel says how many channels that is; below the cabin's
-first mode a point and an average are the same, so a subwoofer loses little. Keep
-**Mic cal** on **Own (as measured)** — with an array each position is a different
-capsule with its own file.
+or none. A channel measured with a single microphone in an array project reads plain
+**Array** and is drawn from its point measurement, and the panel says how many channels
+that is; below the cabin's first mode a point and an average are the same, so a
+subwoofer loses little. Keep **Mic cal** on **Own (as measured)** — with an array each
+position is a different capsule with its own file — and tick **Hybrid**, as below.
 
-**Took MMM captures?** On each card press **MMM** and select that driver's capture —
-both sides for a stereo band, once for a mono channel. The button reads **MMM** for
-none, **MMM ✓** when one is attached, **MMM ⚠** when the session refers to one it cannot
-read. When every playing channel has a capture, the **Hybrid** toggle under the graph
-becomes available — and turns **red** until you tick it, because until then the plot
-is still drawing one microphone position while the averages sit unused. Tick it.
+**Took MMM captures?** On each card press **MMM**, choose **Attach capture...** and select
+that driver's capture — both sides for a stereo pair, once for a mono channel. The
+button reads **MMM** for none, **MMM ✓** when one is attached, **MMM ⚠** when the session
+refers to one it cannot read. When every playing channel has a capture and the captures
+form one set, the **Hybrid** toggle under the graph becomes available — and turns
+**red** until you tick it, because until then the plot is still drawing one microphone
+position while the averages sit unused. Tick it.
 
 ![Each channel's MMM button, and the Hybrid toggle they enable](assets/images/manual/hybrid-enable.png)
 
 With Hybrid on, each channel's magnitude is drawn from its spatial average with that
 channel's own DSP chain added analytically — exact, since a filter does not depend on
 where the microphone was — so the curve you equalize stops carrying the dips of one
-position. The set is lifted onto the impulse responses' axis by one common offset, so
-the target level reads on the same scale as before.
+position. MMM captures are lifted onto the impulse responses' axis by one common offset
+(an array needs none: it shares their loopback), so the target level reads on the same
+scale as before.
 
 ![The same channels with Hybrid off (top) and on (bottom)](assets/images/manual/hybrid-before-after.png)
 
@@ -966,7 +1009,7 @@ crossover, where a fractional-octave window straddling a steep skirt pulls the l
 toward the passband. Where the Auto Tune notes below suggest psychoacoustic smoothing,
 that is for the single-point curve.
 
-What does not change: **timing, polarity, the junction analyses, Auto delay, Sum Loss
+What does not change: **timing, polarity, the junction analyses, Auto delay, Sum loss
 and the phase view keep reading the impulse responses** — an average holds no phase.
 Both sums follow the hybrid channels as phasors with the measured phase; read them as a
 guide to where the junctions land, not as a measured spatial average of the system.
@@ -974,18 +1017,20 @@ guide to where the junctions land, not as a measured spatial average of the syst
 The handoff below carries the capture with it, so **Auto Tune fits the hybrid** — the
 whole reason for taking the captures. If the panel warns in amber that the averages
 disagree, one capture was taken differently — a changed input gain, another analyzer
-setting, another session — and the message names each channel's figure.
+setting, another session — and hovering the message lists each channel's figure.
 
 ### Set the target once, in Virtual DSP
 
 The EQ target is one curve shared by Virtual DSP and the EQ Wizard, edited from either
-through the same **Target...** menu, so every channel tuned afterwards aims at the same
-thing.
+through the same menu — **Target...** in Virtual DSP, **Target Curve…** in the wizard —
+so every channel tuned afterwards aims at the same thing.
 
 Tick **Target** under the main graph, open **Target... → Parametric shape…** and pick a
 Car preset; they differ mainly in bass lift, so this is where the system's tonal balance
 begins. A house curve of your own goes in through **Target... → Import from file…** — a
-text file of `frequency level` pairs, kept at the levels it states.
+text file of `frequency level` pairs, kept at the levels it states. A file that already
+rolls off at a crossover counts that slope twice while the wizard's **Crossover in
+target** is ticked; **Tuning results** flags it in amber.
 
 ![The shared target editor, with its preview at the bottom](assets/images/manual/eq-target.png)
 
@@ -1011,8 +1056,9 @@ channel contributes to the sum, crossover included; **the microphone calibration
 and **the processor's** rate and Q convention, shown locked; **smoothing** as a
 starting point you may change; **Auto Tune From / To** set from the channel's
 crossover corners; **Target Level** verbatim; and the channel's **existing PEQ** as the
-starting bank. Ctrl+Z is the handoff's cancel. Nothing is typed or matched by hand, and
-no file changes hands.
+starting bank — one undo step, so Ctrl+Z brings back the bank the wizard held before,
+though the handoff stays open (**Back without applying** is the way out). Nothing is
+typed or matched by hand, and no file changes hands.
 
 ![The wizard after a handoff: the header names the channel, the source and the mode](assets/images/manual/eq-wizard-handoff.png)
 
@@ -1028,32 +1074,34 @@ no file changes hands.
    Filters** its number of bands, and **Boosts** should stay on **Refill cuts** — the
    fit may boost only to put back what its own cuts dug, so it never spends headroom
    on acoustic nulls and never lifts the curve. **Max Q** (6.0 by default) caps how
-   narrow a filter may be, favouring broad trends that hold across the listening area
-   over notching a peak that may belong to where the microphone stood. **Shelves** is
-   worth ticking when the target is shelved or a whole end of the response runs hot or
-   shy: one shelf replaces three or four bells and frees the slots for real resonances.
-   With **Boosts** on **Refill cuts** or **Off** it is safe to leave ticked — a shelf
-   is kept only where it lands closer to the target; with boosts **Allowed** a boosting
-   shelf can push the total boost past **Max Gain**, so read **Headroom** before
-   accepting. **Crossover in target** is ticked for a channel handed over with its
-   chain: the goal is then the target curve inside the passband and the channel's own
-   crossover slope outside it, so the fit brings the ACOUSTIC roll-off onto the filter
-   you chose — which is what the neighbour has to sum with. **From** and **To** arrive
-   from the crossover corners and, with the box ticked, reach out down each skirt;
-   they stay where you put them if you type them yourself. Untick the box to leave the
-   slopes alone and fit inside the passband only.
+   narrow a bell the fit may place, favouring broad trends that hold across the
+   listening area over notching a peak that may belong to where the microphone stood.
+   **Shelves** is worth ticking when the target is shelved or a whole end of the
+   response runs hot or shy: one shelf replaces three or four bells and frees the slots
+   for real resonances. With **Boosts** on **Refill cuts** or **Off** it is safe to
+   leave ticked — a shelf is kept only where it lands closer to the target; with boosts
+   **Allowed** a boosting shelf can push the total boost past **Max Gain**, so read
+   **Headroom** after the run. **Crossover in target** (on by default, available when
+   the handed-over chain has a crossover) makes the goal the target curve inside the
+   passband and the channel's own crossover slope outside it, so the fit brings the
+   ACOUSTIC roll-off onto the filter you chose — which is what the neighbour has to sum
+   with. **From** and **To** arrive from the crossover corners and, with the box
+   ticked, reach out down each skirt; they stay where you put them if you type them
+   yourself. Untick the box to leave the slopes alone and fit inside the passband only.
 5. **Auto Tune** — run it once these are set.
-6. **The scoreboard.** RMS and max error against the target, filters spent, and the
+6. **Tuning results.** RMS and max error against the target, filters spent, and the
    headroom the bank costs — before the fit the raw disagreement, after it what is left.
 
-Psychoacoustic smoothing helps here too, except in Hybrid mode, where it is **Off**.
+Psychoacoustic smoothing helps here too, except in Hybrid mode, where you keep it
+**Off**.
 
 Press **Auto Tune**. If it asks whether to tune anyway, the target level is the
-problem: it sits so far above the curve that the fit would boost the whole band, or so
-far below that it would cut the whole band. Answer *No*, move **Target Level** toward
-the curve, and press again.
+problem: it sits so far above the curve that the fit would have to lift the whole
+**From**–**To** window (with **Refill cuts** it cannot, and leaves the curve under the
+target), or so far below that it would cut the whole window. Answer *No*, move
+**Target Level** toward the curve, and press again.
 
-![The same channel after Auto Tune: seven bands, RMS error 3.9 → 1.3 dB](assets/images/manual/eq-wizard-tuned.png)
+![The same channel after Auto Tune: nine bands, RMS error 5.2 → 1.5 dB](assets/images/manual/eq-wizard-tuned.png)
 
 ### Read the band edges as the filter, not the driver
 
@@ -1063,9 +1111,9 @@ crossover working, not a defect — and with **Crossover in target** ticked it i
 the goal, so the fit matches the slope instead of reading it as error. What it does
 there is bring an over-generous slope DOWN onto the filter's; it never lifts a skirt,
 which would undo the crossover you chose and spend the driver's excursion where the
-neighbour is playing at full level. Measured across seven car tunes, following the
-slopes took the junctions' sum loss from 0.37 to 0.30 dB on average and their worst dip
-from 2.0 to 1.6 dB.
+neighbour is playing at full level. Measured across seven car tunes fitted with boosts
+**Allowed**, following the slopes took the junctions' sum loss from 0.37 to 0.30 dB on
+average and their worst dip from 2.0 to 1.6 dB.
 
 Correct the driver's own irregularities inside the band instead. Broad, minimum-phase
 bumps and dips are worth attention, especially near a crossover: flattening them also
@@ -1081,18 +1129,18 @@ If the whole useful response sits several dB above the target, use **Preamp** ra
 than several bands cutting the same amount everywhere. The preamp is part of the bank:
 it returns to Virtual DSP with the filters and appears on the tuning sheet.
 
-Auto Tune is a starting point. Remove bands — **Delete** on the menu a right-click on a
-band's number opens, **Del** on the selected band, or drag it out of the bank — adjust
-them — on their cards, or by dragging their numbered handles on the graph, where the
-wheel over the selected one sets its Q — or add them with the **+** buttons: **PK**, the two shelves, and **AP1 / AP2**, the first- and
-second-order all-pass bands [Section 9](#9-delay-and-phase-alignment) uses to bend
-phase without touching magnitude.
+Auto Tune is a starting point. Remove a band with **Delete** on its number's right-click
+menu, **Del** on the selected band, or by dragging it out of the bank. Adjust bands on
+their cards, or drag their numbered handles on the graph, where the wheel over the
+selected one sets its Q. Add them from the **+** tile: **PK**, the two shelves, and
+**AP1 / AP2**, the first- and second-order all-pass bands
+[Section 9](#9-delay-and-phase-alignment) uses to bend phase without touching magnitude.
 
 A band you want to keep through the next run — a broad cut you chose over the narrow
-ones the fit proposes, a correction you placed by ear — can be **locked** from the same
-menu. Its number turns amber, and Auto Tune leaves it as it is and fits the remaining
-slots around it; you can still edit it by hand. The lock travels with the band back to
-Virtual DSP and into the next session.
+ones the fit proposes, a correction you placed by ear — can be locked with **Lock** on
+the same menu. Its number turns amber, and Auto Tune leaves it as it is and fits the
+remaining slots around it, counting it against **Max EQ Filters**; you can still edit it
+by hand. The lock travels with the band back to Virtual DSP and into the next session.
 
 ### Do not over-equalize
 
@@ -1112,13 +1160,13 @@ the added group delay is measured in milliseconds.
 
 So: prefer broad, moderate corrections; cut resonant peaks that are repeatable and
 belong to the driver or the installation; never fill cancellation nulls with boost
-(what **Boosts** on **Refill cuts** or **Off** prevents); do not spend filters on every ripple; and watch narrow
-filters near a crossover, whose phase feeds straight into the integration. There is no
-rule of the form "five PEQs are safe and ten are too many" — a filter should exist
-because it solves a real problem.
+(which **Boosts** on **Refill cuts** or **Off** already rules out); do not spend filters
+on every ripple; and watch narrow filters near a crossover, whose phase feeds straight
+into the integration. There is no rule of the form "five PEQs are safe and ten are too
+many" — a filter should exist because it solves a real problem.
 
 After equalizing, look at the result in the context of the whole crossover: the phase
-and group-delay views, and **Sum Loss** at the junction. If removing a band smooths the
+and group-delay views, and **Sum loss** at the junction. If removing a band smooths the
 phase and broadens the summation with the neighbour, the simpler EQ is the better tune.
 
 ### Return the result
@@ -1130,37 +1178,38 @@ wizard, where they can still be exported.
 
 ### Repeat for every channel, then for the other side
 
-The handoff takes **the side Virtual DSP is currently showing** — the **L / R**
-selector. Left and right are separate measurements and need separate EQ: select **L**,
+The handoff takes **the side Virtual DSP is currently showing** — the **L** / **R**
+buttons. Left and right are separate measurements and need separate EQ: select **L**,
 hand off each channel in turn and return; then select **R** and repeat. There is no
-filename to check any more, so make sure the side selector says what you think before
+filename to check any more, so make sure the side buttons say what you think before
 you start.
 
 ### If the return is refused
 
 A bank belongs to the curve it was fitted against. Change that curve in Virtual DSP
 while the wizard is open — a different measurement on that side, an edited crossover,
-delay or gain, a moved gate, a different calibration, target level or DSP processor,
-the pair switched between stereo and mono — and the return is refused, naming the kind
-of change it saw. The filters stay in the wizard: undo the change, or start a fresh
-handoff and tune against what the channel shows now.
+delay or gain, a moved gate, a different calibration or target level, a processor at
+another rate, the pair switched between stereo and mono, its PEQ loaded or cleared in
+the panel, Hybrid switched — and the return is refused. The handoff ends there, but the
+filters stay in the wizard: export them, or start a fresh handoff and tune against what
+the channel shows now.
 
 ### Raw instead of the chain
 
 The same menu offers **Edit raw in EQ Wizard**: the raw measurement, the driver before
-any of the chain, with the Auto Tune band left alone. Use it to examine or correct the
-driver irrespective of the crossover. For this workflow, **Edit in EQ Wizard** is the
-one you want. If a block is bypassed the item reads *Edit in EQ Wizard (chain — block
+any of the chain, with **From** / **To** left where they were. Use it to examine or
+correct the driver irrespective of the crossover. For this workflow, **Edit in EQ
+Wizard** is the one you want. If a block is bypassed the item reads *Edit in EQ Wizard (chain — block
 is bypassed)* and still opens on the chain, because that is where the PEQ will live
 once bypass comes off.
 
 ### Working with files instead
 
-**Load / Edit… → Save to file…** writes a channel's bank as an EQ profile — Resonalyze
-exchanges PEQ profiles with **Equalizer APO, REW, miniDSP biquads, Audiotec Fischer,
-CamillaDSP, EasyEffects, GraphicEQ, and Generic CSV** — or as a tuning-sheet PDF.
-**Load from file…** reads one back, **Clear** empties the bank. Use this to equalize in
-external software, or when your processor loads its settings from a file.
+**Load / Edit… → Save to file…** writes a channel's bank as an EQ profile — for
+**Equalizer APO, REW, Audiotec Fischer, CamillaDSP, EasyEffects** and **Generic CSV**,
+or export-only **miniDSP biquads** and **GraphicEQ** — or as a tuning-sheet PDF.
+**Load from file…** reads the first six back, **Clear** empties the bank. Use this to
+equalize in external software, or when your processor loads its settings from a file.
 
 Once every channel has its EQ, the virtual system holds both the crossovers and the
 equalization the real DSP will run. Now the most important integration step: **delay
@@ -1178,21 +1227,22 @@ raw drivers**.
 Press **Auto delay...** in Virtual DSP and select **LHD** or **RHD** for the
 steering-wheel position.
 
-### How Auto Delay uses the groups
+### How Auto delay uses the groups
 
-Auto Delay works in stages rather than treating the car as one chain:
+Auto delay works in stages rather than treating the car as one chain:
 
 1. it aligns **Front + Sub** first, anchoring on the highest front driver and walking
    each real junction down to the subwoofer;
 2. it aligns the drivers inside a multi-way **Rear** or **Center** group with each
    other;
 3. it places each rear side against the front on that side, and the mono centre
-   between the two sides, without retuning the settled front chain. Each of those
-   readings is taken against the one front driver that carries **1–4 kHz** — the band
-   the voice a centre exists for is heard in, which is the front midrange on most
-   cars — rather than against the front stage summed. That is the same thing you would do by hand: mute the rest of the front
-   and match the centre to what is left. The trace names the driver it used, and
-   says so when the two sides could not be read against the same one.
+   between the two sides, without retuning the settled front chain.
+
+Each placement in step 3 is read against a single front driver — the one that plays
+most of the **1–4 kHz** band the voice is heard in, the front midrange on most cars —
+rather than against the summed front stage: what you would do by hand, muting the rest
+of the front and matching the centre to what is left. The report's notes name that
+driver, and say so when the two sides could not be read against the same one.
 
 With a Rear block in the project the dialog enables **Rear fill ms**: how far *behind*
 the front stage the rear should arrive, on top of the delay that merely makes the
@@ -1200,36 +1250,34 @@ nearer rear speakers co-arrive. Start at the 15 ms default; roughly 10–20 ms l
 rear add space while the precedence effect keeps the image on the dashboard. Use
 **0 ms** when co-arrival for second-row listeners matters more.
 
-After Apply, choose **Show → Groups** and read **vs Front**: the rear's `Δt` should
-reflect the offset you asked for, and its `ΔdB` is where you set level by ear — start
-6–12 dB below the front, raise it until it becomes audible as a separate source, then
-back off 2–3 dB. The centre is compared the same way, but its level depends on how the
-processor derives centre content, so the measurement cannot choose it for you.
-
 ### Stereo-image positioning
 
-Two ways to place the phantom centre after the basic L/R alignment:
+Two ways to place the phantom centre:
 
-**1. Level only (ICLD).** Leave **Offset = 0 ms**, run Auto Delay, then steer the image
-with the relative gain of the two sides. You sit far off-centre, so the near side
+**1. Level only (ICLD, inter-channel level difference).** Set **Offset** to 0 ms — a new
+project starts at 0.25 — run Auto delay, then steer the image with the relative gain of
+the two sides. You sit far off-centre, so the near side
 arrives earlier and louder and the image collapses onto the driver's door; with level
 doing all the work, expect to attenuate the near side by around **5 to 8 dB**, more in a
 wide cabin. This keeps the alignment's L/R timing untouched and pays in headroom and
 tonal balance on the near side.
 
-**2. Time and level (ICTD).** Set **Offset** before running Auto Delay. A positive
+**2. Time and level (ICTD, inter-channel time difference).** Set **Offset** before
+running Auto delay. A positive
 offset makes the far side arrive slightly earlier and shifts the image toward the
 centre of the dashboard; for a typical sedan **0.2–0.3 ms** is a reasonable start.
 Because the time cue carries part of the steering, the near side typically needs only
 **2 to 4 dB** of attenuation — the same image for roughly half the level imbalance.
 
-**The spread between cars is large.** Treat these as the magnitude to expect, not as
-settings to copy: what decides the number is how far off the centreline you sit and how
-far apart the two sides are installed. Set the offset, run Auto Delay, then trim L/R
-gain by ear until the centre sits where you want it — or judge it in headphones with a
-rendered track, see
-[Hear it before you go back to the car](#hear-it-before-you-go-back-to-the-car). Both
-mechanisms are established, and Resonalyze forces neither.
+**The spread between cars is large.** Treat these as the order of magnitude to expect,
+not as settings to copy: what decides the number is how far off the centreline you sit
+and how far apart the two sides are installed. Set the offset, run Auto delay, then trim
+L/R gain by ear until the centre sits where you want it, or judge it in headphones with
+a rendered track (see
+[Hear it before you go back to the car](#hear-it-before-you-go-back-to-the-car)). The
+run can make the level cut itself: tick **Balance channel gains (cut-only)** and set
+**Near side cut**, up to 6 dB. Both mechanisms are established, and Resonalyze forces
+neither.
 
 Then press **Run**.
 
@@ -1255,16 +1303,20 @@ for the rows it is not sure about, and it says which those are.
 ![The Auto delay proposal: per-channel delay, polarity, gain and confidence, with the reasoning below](assets/images/manual/auto-delay.png)
 
 1. **The run's settings** — steering-wheel side, the scene **Offset**, the optional
-   gain balancing. **Run** recomputes; nothing is written until Apply.
+   gain balancing with its **Near side cut**, and **Rear fill ms** when there is a
+   rear. **Run** recomputes; nothing is written until Apply.
 2. **The summary** — how many delays and polarities change, the predicted sum loss per
    side, and on the last line the rows it is not confident about.
 3. **The table** — one row per channel and side with the proposed **delay**,
-   **polarity** and **gain**; `->` marks a change, `(kept)` a value left alone. The
-   outlined last column is the **confidence** of the delay decision.
+   **polarity** and **gain**; `->` marks a change, `(kept)` a delay or gain left
+   alone. The outlined **Delay conf** column is the confidence of the delay decision —
+   `ref` for the driver the others align to, `locked` where a constraint fixed it; with
+   gain balancing on, a **Gain conf** column follows it.
 4. **The notes** — how each decision was reached: which neighbour a channel was timed
    against, by what margin, whether the scene offset or a wide seed had a say. **Every
    `LOW` in the confidence column has its reasoning here, under that channel's name.**
-5. **The key** — what `->` and `(kept)` mean; the report scrolls past the bottom.
+
+Below the notes a key says what `->` and `(kept)` mean; scroll the report down to it.
 
 Low confidence does not mean wrong; it means the data did not strongly favour one
 solution, so those rows are worth reading the notes for and checking by ear. Press
@@ -1272,7 +1324,13 @@ solution, so those rows are worth reading the notes for and checking by ear. Pre
 **Balance channel gains** mode does cut-only level balancing — a useful start, not
 required for alignment.
 
-Once applied, inspect **Sum Loss** again: each junction should now be close to 0 dB.
+Once applied, inspect **Sum loss** again: each junction should now be close to 0 dB.
+
+With a rear or a centre, choose **Show → Groups** and read **vs Front**: the rear's `Δt`
+should reflect the offset you asked for, and its `ΔdB` is where you set level by ear —
+start 6–12 dB below the front, raise it until it becomes audible as a separate source,
+then back off 2–3 dB. The centre is compared the same way, but its level depends on how
+the processor derives centre content, so the measurement cannot choose it for you.
 
 All-pass filters are optional. They are bands of the channel's PEQ bank — **AP1** and
 **AP2** in the EQ Wizard — so they travel with the bank and appear on the tuning sheet.
@@ -1285,21 +1343,22 @@ phase and group delay, run **Auto delay...** again after adding or changing one.
 
 The **virtual tune is complete**; what remains is transferring it and verifying it.
 Every setting stays editable — delays, polarity, crossovers, gains — with the
-prediction redrawn immediately, in the **Magnitude**, **Phase**, **Group Delay**,
-**Impulse**, **Step** and **Correlation** views. Change a parameter, look, and keep it only if the
-system actually improves. The **Step** view is the quick polarity check: every
-driver's step and the Sum's on one scale, so a driver stepping the other way
-first, or a Sum climbing in two moves, is visible at a glance. **Load / Edit… → Edit in EQ Wizard** reopens any channel
-against its current chain. After changing a crossover, re-check that channel's PEQ;
-after changing a crossover or a bank — an all-pass included — run **Auto delay...**
-again.
+prediction redrawn immediately in the **Magnitude**, **Phase**, **Impulse**, **Group
+delay** and **Step** views and the junction plot's **Correlation**. Change a parameter,
+look, and keep it only if the system actually improves. The **Step** view is the quick
+polarity check: every driver's step and the Sum's on one scale, so a driver stepping the
+other way first, or a Sum climbing in two moves, is visible at a glance. Now that the
+delays are set, [Tune junction…](#refining-one-junction-tune-junction) can refine one
+handover, and **Load / Edit… → Edit in EQ Wizard** reopens any channel against its
+current chain. After changing a crossover, re-check that channel's PEQ; after changing a
+crossover or a bank — an all-pass included — run **Auto delay...** again.
 
 When satisfied, press **Export...** for the **PDF tuning sheet**: crossovers, gains,
-delays, polarities and PEQ, as they go into the real DSP. On a multi-zone install the
-sheet prints by group in entry order — Sub, Front, Rear, Center — each on its own page
-under a graph of its filters; the front group's graph shows the subwoofers' summed
-filter shape in a pale tone, so the bass handover is visible where you dial it in.
-Blocks keep their panel letters.
+delays, polarities and PEQ, as they go into the real DSP. The sheet prints by group —
+Sub, Front, Rear, Center, the order you enter them in — each under a graph of its
+filters, every group after the first on a page of its own; the front group's graph shows
+the subwoofers' summed filter shape in a pale tone, so the bass handover is visible
+where you dial it in. Blocks keep their panel letters.
 
 If the project names a **Custom** processor, Resonalyze first asks which Q convention
 the PEQ columns should be stated in:
@@ -1321,10 +1380,10 @@ file; **Load session...** restores it. Do it before leaving the sofa: after list
 you will want to nudge the offset, revisit a crossover or re-check a polarity, and
 reopening the session takes seconds.
 
-The session stores the *paths* to the measurements, relative to the session file, so a
-folder holding the session and its measurements can be copied to another machine or
-sent to someone else. Resonalyze also autosaves its state; the session file is for
-archiving a finished tune and for sharing.
+The session stores the *paths* to the measurements — absolute, and relative to the
+session file — so a folder holding the session and its measurements can be copied to
+another machine or sent to someone else. Resonalyze also autosaves its state; the
+session file is for archiving a finished tune and for sharing.
 
 ### Optional: a second opinion from a chat assistant
 
@@ -1334,26 +1393,31 @@ what you want from it — the whole system tuned, or advice on the crossovers, t
 or the tonal balance, or a look over the tune you already made — so say which, and
 answer its questions about the drivers and the car (the **Notes for AI** field in the
 **DSP processor...** dialog saves retyping them, and telling it there what you are
-after saves the first question). It reads the same
-read-outs you have — sum loss, junction phase, the delay lobes, the L/R deltas — and
-should send you back to **Auto delay** or **Auto crossover** with settings rather than
-numbers. **Import AI proposal…** shows every change against the current value,
-starts the admissible rows ticked and applies exactly those you leave ticked,
-with **Undo AI import** one click away; a reply can also ask
-to open **Auto crossover**, to tune one junction of a finished tune (the two facing
-crossover edges, scored on the pair's sum at your delays, everything else kept) or to
-switch the tune onto its spatial averages with **Hybrid**, and those arrive as rows you
-tick like any other. A reply can also ask a question instead of proposing a change: a
-**probe** measures what one junction would do under settings it names — another
-crossover, a PEQ bank cleared, a different gain or delay — without touching your tune,
-copies the answer to the clipboard and asks you to paste it back into the chat. It cannot hear the car or
-know your drivers unless you tell it — treat its advice as a colleague's, not as a
-measurement. [REFERENCE.md](REFERENCE.md#ai-assistant-bridge) describes the bridge.
+after saves the first question). It reads the same read-outs you have — sum loss,
+junction phase, the delay lobes, the L/R deltas — and should prefer running the engines
+with settings to typing numbers.
+
+Copy its whole reply, then **Import AI proposal…**: it shows every change against the
+current value, starts the admissible rows ticked and applies exactly those you leave
+ticked, with **Undo AI import** one click away. A reply can also ask to run an engine —
+**Auto delay**, **Auto crossover**, the wizard's **Auto Tune** for a channel, a tune of one
+junction of a finished tune (the two facing crossover edges, each candidate scored after
+re-aligning the upper block, everything else kept), or the switch onto the spatial
+averages with **Hybrid** — and those arrive as rows you tick like any other. It can also
+ask a question instead of proposing a change: a **probe** measures what one junction
+would do under settings it names — another crossover, a PEQ bank cleared, a different
+gain or delay — without touching your tune, copies the answer to the clipboard and asks
+you to paste it back into the chat.
+
+It cannot hear the car or know your drivers unless you tell it — treat its advice as a
+colleague's, not as a measurement. [REFERENCE.md](REFERENCE.md#ai-assistant-bridge)
+describes the bridge.
 
 ### Hear it before you go back to the car
 
-Press **Tools...**, pick **Audition track...**, choose a music file and a destination, and Resonalyze
-convolves it with both sides' summed responses — the sums the graph draws — into a
+Press **Tools...**, pick **Audition track…**, choose a music file (**Choose...**) and a
+destination (**Save as...**) and press **Render**: Resonalyze convolves the track with
+each side's summed response — every enabled block, rear and centre included — into a
 stereo file.
 
 ![The audition dialog, showing what the render will be built from](assets/images/manual/audition-track.png)
@@ -1369,8 +1433,8 @@ top, which destroys exactly the inter-side cues the render exists to show.
 
 - **Mic calibration** — opens on Virtual DSP's setting, baked into both side kernels as
   one linear-phase filter, so magnitude matches the screen and inter-side timing is
-  untouched. On *Own (as measured)* it uses the measurements' own curve, and says so if
-  they were not all recorded through the same one;
+  untouched. On *Own (as measured)* it uses the measurements' own curve, and refuses,
+  naming which channels used which, if they were not all recorded through the same one;
 - **Subtract cabin** — the raw render carries the car's full bass rise, roughly **+15 to
   +27 dB at 20 Hz** by body style. In the car that is not boom; in headphones it is.
   Subtracting a typical cabin transfer function for your body style makes the result
@@ -1392,10 +1456,10 @@ otherwise correct tune.
 
 Make sure the real DSP is the device named in Virtual DSP and runs the processing rate
 its entry states. The PEQ columns are already in your processor's Q convention, so enter
-the numbers as printed; if you tuned against a **Custom** profile and are unsure which
-convention the DSP uses, check its documentation or Resonalyze's processor guidance
-first — the same frequency and gain mean noticeably different bandwidths under
-different conventions.
+the numbers as printed. If you tuned against a **Custom** profile, make sure the
+convention picked in the export's Q chooser is the one your DSP reads — the chooser
+lists known processors and a bench test — and export again if not: the same frequency,
+gain and Q mean noticeably different bandwidths under different conventions.
 
 This time the DSP is *not* in bypass: everything disabled in
 [Section 4](#put-the-dsp-into-bypass) goes back in, as the sheet states it.
@@ -1404,16 +1468,17 @@ This time the DSP is *not* in bypass: everything disabled in
 
 Measure each side from the listening position — the complete **Left** system including
 a shared subwoofer, then the complete **Right** — and compare each with its Virtual DSP
-prediction; then both sides together as a final check. Small differences are normal
-(parameter rounding, microphone repositioning, temperature). Large ones are not, so
-first look for a transfer error:
+prediction (**Tools... → Capture to overlay** puts the shown side's predicted sum on the
+Frequency Response plot as an overlay); then both sides together as a final check. Small
+differences are normal (parameter rounding, microphone repositioning, temperature).
+Large ones are not, so first look for a transfer error:
 
 - wrong L/R channel, polarity or delay;
 - a missing or duplicated PEQ filter;
 - the wrong crossover family or slope;
 - a different Q convention from the sheet's;
 - the wrong **DSP processor** named, or the device running at another rate;
-- protective-HPF compensation left on for a channel that does not use it.
+- an **HPF** left set in Record Settings for a channel that does not use that filter.
 
 This closes the loop: the **real system is checked against the prediction** at the
 reference position instead of the simulation being trusted.

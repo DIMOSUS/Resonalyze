@@ -921,7 +921,7 @@ public static class CrossoverAutoSetup
             .ToList();
     }
 
-    /// <summary>High-pass-only protection for a driver that crosses with nobody (rear fill, centre, lone sub). See docs/tech/crossover-auto-setup.md#groups-outside-the-chain.</summary>
+    /// <summary>Protection for a driver that crosses with nobody (rear fill, centre, lone sub): a high-pass, plus a low-pass where the band limit cuts into its top. See docs/tech/crossover-auto-setup.md#groups-outside-the-chain.</summary>
     public static CrossoverProposal ProposeSingle(
         AutoSetupSource channel,
         CrossoverAutoSetupOptions options)

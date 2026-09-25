@@ -113,15 +113,13 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
 
         minCrossover.ValueChanged += (_, _) => OptionChanged(() => session.MinCrossoverHz = minCrossover.Value);
         maxCrossover.ValueChanged += (_, _) => OptionChanged(() => session.MaxCrossoverHz = maxCrossover.Value);
-        // Two jobs, and the second is the one the old name described: it is the protective filter at the two
-        // ends of the chain, which no junction row can reach because those ends are not junctions — and for a
-        // group holding one driver it is the only crossover there is — AND it still bounds every junction
-        // window on top of whatever that junction resolved for itself.
+        // Two jobs: the protective filter at the chain's two ends, which no junction row can reach, and a bound on
+        // every junction window on top of whatever that junction resolved for itself.
         toolTip.SetToolTip(
             minCrossover,
             "Protective high-pass under the lowest driver, and a floor under " +
-            "every junction window. To narrow one junction, use its own row. A " +
-            "group holding one driver gets its whole crossover from here.");
+            "every junction window. To narrow one junction, use its own row. For " +
+            "a group holding one driver it can only raise the wizard's high-pass.");
         toolTip.SetToolTip(
             maxCrossover,
             "Protective low-pass over the highest driver, and a ceiling over " +
@@ -139,8 +137,8 @@ internal sealed partial class VirtualCrossoverAutoSetupDialog : Form
         subElevation.ValueChanged += (_, _) => OptionChanged(() => session.SubElevationDb = subElevation.Value);
         toolTip.SetToolTip(
             independentSlopes,
-            "Lets a junction's two sides take different slopes. Off ties each " +
-            "driver's own two shoulders to one slope.");
+            "Lets each driver's high-pass and low-pass take different slopes. Off " +
+            "ties them to one slope; neighbouring drivers may still differ.");
         toolTip.SetToolTip(
             reorderBlocks,
             "Put the panel's blocks in this dialog's order: the groups one\r\n" +

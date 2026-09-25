@@ -29,6 +29,8 @@ internal sealed class AnalyzerPlot : IModeView
     private ModeDescriptor descriptor = ModeCatalog.For(ModeTab.Frequency);
     // The last tab that drew the measurement with overlays, which a history entry keeps while a tool is shown.
     private ModeTab lastAnalysisTab = ModeTab.Frequency;
+    // The slot mode the overlay slots were last loaded for; entering another tab of it keeps them (null: reload).
+    private Mode? preparedSlotMode;
     // A build that finishes after a newer one started is dropped.
     private int refreshVersion;
 
@@ -131,7 +133,14 @@ internal sealed class AnalyzerPlot : IModeView
         if (ShowsOverlays)
         {
             lastAnalysisTab = mode.Tab;
-            Overlays.Prepare(Mode);
+            // Frequency Response and Live Spectrum share one slot set: re-reading and re-smoothing every slot from disk
+            // on a switch between them changes nothing. A tab without a plot draws no slots, so it loads none.
+            Mode slotMode = OverlayModes.SlotModeFor(Mode);
+            if (preparedSlotMode != slotMode)
+            {
+                Overlays.Prepare(Mode);
+                preparedSlotMode = slotMode;
+            }
         }
 
         UpdateOverlayAvailability();
@@ -145,7 +154,7 @@ internal sealed class AnalyzerPlot : IModeView
         }
 
         // Show() with a null model unchecks the slots and loses the saved selection.
-        if (!descriptor.HasPlotView || !OverlayModes.Supports(Mode))
+        if (!ShowsOverlays)
         {
             return;
         }
@@ -201,6 +210,8 @@ internal sealed class AnalyzerPlot : IModeView
         activeOverlaySlots.Clear();
         if (!ShowsOverlays)
         {
+            // The loaded slots keep the checks of the state being replaced; the next tab with overlays loads them afresh.
+            preparedSlotMode = null;
             return;
         }
 
@@ -269,6 +280,8 @@ internal sealed class AnalyzerPlot : IModeView
             };
             file.Save();
             activeOverlaySlots.MarkActive(Mode.FrequencyResponse, slot);
+            // Written past the session: the slots load again when Frequency Response is next entered.
+            preparedSlotMode = null;
             return slot;
         }
 

@@ -343,12 +343,28 @@ public partial class Form1
         RefreshOpenMeasurementSettingsDevice();
     }
 
+    private static string CalibrationKey(MeasurementSettingsFile.SweepMeasurementSettings settings) =>
+        System.Text.Json.JsonSerializer.Serialize(new object?[]
+        {
+            settings.MicrophoneCalibration0DegreesPath,
+            settings.MicrophoneCalibrationId,
+            settings.AdditionalMicrophoneCalibrations,
+            settings.WaveArrayMicrophones,
+            settings.AsioArrayMicrophones
+        });
+
     private async Task ApplySweepSettingsAsync(MeasurementOptions dialog)
     {
         AudioSessionRequest requestBefore =
             CreateAudioWarmupRequest(measurementSettings.Measurement);
+        string calibrationsBefore = CalibrationKey(measurementSettings.Measurement);
         dialog.ApplySweepSettings(measurementSettings.Measurement);
-        RefreshCalibrationConsumers();
+        // A band, duration or averaging edit changes no calibration: re-reading every calibration file and redrawing the
+        // hidden EQ Wizard (which drops an Auto Tune still running) is for an edit that does.
+        if (CalibrationKey(measurementSettings.Measurement) != calibrationsBefore)
+        {
+            RefreshCalibrationConsumers();
+        }
         // The settings just edited are not read back from expSweepMeasurement.
         SaveMeasurementSettings();
 

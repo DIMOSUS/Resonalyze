@@ -1442,7 +1442,8 @@ switch the slot to a **Calculated overlay** or **Target**; the checkbox shows or
 hides it, the numeric control applies a vertical offset, and **⚙ Settings…**
 opens its dialog. A dialog opens with what the slot holds; switching a slot that
 holds something else to a calculated overlay or a target starts from that kind's
-defaults, not from what the slot held before. A live-curve operand re-reads the plot on every rebuild, so a
+defaults, not from what the slot held before, and never offers the slot's own capture
+as a source, since the switch replaces it. A live-curve operand re-reads the plot on every rebuild, so a
 calculation over it — for example the difference between the source and a Compare
 curve — updates live as the analysis settings change.
 

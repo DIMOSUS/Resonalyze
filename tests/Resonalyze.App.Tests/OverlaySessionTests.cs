@@ -283,6 +283,16 @@ public sealed class OverlaySessionTests : IDisposable
     }
 
     [Fact]
+    public void ACalculatedOverlayOrTargetIsNotOfferedItsOwnSlotAsASource()
+    {
+        session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));
+        session.Capture(Slot(2), AddLiveCurve(AnalysisCurveKind.SecondHarmonic, "HD2", -30.0));
+
+        Assert.Equal(new[] { 2 }, session.CaptureSourceOptions(Slot(1)).Select(option => option.Slot));
+        Assert.Equal(new[] { 1, 2 }, session.CaptureSourceOptions(Slot(3)).Select(option => option.Slot));
+    }
+
+    [Fact]
     public void ShowAllAfterHideAll_ShowsEverySlotThatCanShow()
     {
         session.Capture(Slot(1), AddLiveCurve(AnalysisCurveKind.Primary, "Frequency Response", 0.0));

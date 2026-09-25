@@ -76,7 +76,7 @@ internal sealed partial class OverlaySlotView
         OverlaySlotState state = slot.State;
         OverlayOperationSettings operation = slot.OperationSeed;
         OverlayDialogSeed seed = slot.DialogSeed(OverlayKind.Operation);
-        IReadOnlyList<OverlaySlotOption> sources = Session.CaptureSourceOptions();
+        IReadOnlyList<OverlaySlotOption> sources = Session.CaptureSourceOptions(slot);
         IReadOnlyList<LiveCurveOption> liveCurves = Session.Sources.LiveCurveOptions();
 
         bool previewShown = false;
@@ -152,7 +152,7 @@ internal sealed partial class OverlaySlotView
             return;
         }
 
-        IReadOnlyList<OverlaySlotOption> sources = Session.CaptureSourceOptions();
+        IReadOnlyList<OverlaySlotOption> sources = Session.CaptureSourceOptions(slot);
         OverlayTargetSettings target = slot.TargetSeed;
         OverlayDialogSeed seed = slot.DialogSeed(OverlayKind.Target);
 

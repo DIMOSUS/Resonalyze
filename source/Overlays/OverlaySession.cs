@@ -163,11 +163,13 @@ internal sealed class OverlaySession
         plotChanged();
     }
 
-    public IReadOnlyList<OverlaySlotOption> CaptureSourceOptions()
+    /// <summary>The captures a calculated overlay or target in <paramref name="forSlot"/> may read: never its own, which it replaces.</summary>
+    public IReadOnlyList<OverlaySlotOption> CaptureSourceOptions(OverlaySlot forSlot)
     {
         Mode overlayMode = Sources.CurrentOverlayMode;
         return slots
             .Where(slot =>
+                slot != forSlot &&
                 slot.Kind == OverlayKind.Captured &&
                 slot.SeriesMode == overlayMode &&
                 slot.State.HasCaptureData)

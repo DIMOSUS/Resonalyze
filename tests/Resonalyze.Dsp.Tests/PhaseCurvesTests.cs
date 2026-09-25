@@ -139,6 +139,34 @@ public sealed class PhaseCurvesTests
         }
     }
 
+    [Fact]
+    public void GetPhase_Wrapped_SmoothsAcrossTheWrapWithoutARamp()
+    {
+        // 1 ms left after the detrend: a linear phase wrapping every 1 kHz, which symmetric smoothing must leave as it is.
+        var settings = new PhaseAnalysisSettings(
+            PhaseWindowMode.Fixed, PhaseAnalysisSettings.DefaultFdwCycles, PhaseDetrendMode.Manual,
+            ManualDetrendMilliseconds: 20.0, GateOffsetMs: 21.0, LeftMs: 1.0, PlateauMs: 5.0,
+            RightMs: 10.0, Unwrap: false, SmoothingInverseOctaves: 0.0);
+        SyntheticMeasurement measurement = Delay(1_008);
+
+        AnalysisCurve raw = DataHelper.GetPhase(measurement, settings);
+        AnalysisCurve smoothed = DataHelper.GetPhase(
+            measurement, settings with { SmoothingInverseOctaves = 12 });
+
+        Assert.Equal(raw.Points.Count, smoothed.Points.Count);
+        foreach ((SignalPoint r, SignalPoint s) in raw.Points.Zip(smoothed.Points))
+        {
+            if (r.X is < 1_000 or > 10_000)
+            {
+                continue;
+            }
+            double difference = Math.IEEERemainder(s.Y - r.Y, 360.0);
+            Assert.True(Math.Abs(difference) < 2.0,
+                $"{r.X:0} Hz: {r.Y:0.0} deg smoothed to {s.Y:0.0} deg");
+            Assert.InRange(s.Y, -180.0, 180.0);
+        }
+    }
+
     [Theory]
     [InlineData(1_440, 30.0)]
     [InlineData(960, 20.0)]

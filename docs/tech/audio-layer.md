@@ -90,6 +90,13 @@ previous instance is still being released. `AsioDeviceCatalog.GetDriverInfo` the
 reads channels, buffer/latency figures and every supported standard rate during one
 open.
 
+The ASIO spec has `canSampleRate` refuse a rate with `ASE_NoClock`, but some drivers
+answer another code (`ASE_NotPresent`), and NAudio throws on anything but those two.
+Each rate is therefore probed on its own, and a thrown refusal leaves only that rate out.
+Every candidate up to 384 kHz is asked, so a 192 kHz device always meets rates it lacks;
+one uncaught refusal would fail the whole open, drop the channel lists and leave the
+driver unusable at every rate.
+
 ## MMDevice wrappers are not disposed
 
 `WindowsAudioEndpointService` deliberately does not dispose `MMDevice` wrappers during

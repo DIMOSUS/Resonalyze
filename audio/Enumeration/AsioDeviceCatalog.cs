@@ -91,9 +91,10 @@ public static class AsioDeviceCatalog
                     })))
                 .ToArray();
 
-            bool supportsSampleRate = sampleRate > 0 && driver.IsSampleRateSupported(sampleRate);
+            bool supportsSampleRate = sampleRate > 0 &&
+                SafeIsSampleRateSupported(driver.IsSampleRateSupported, sampleRate);
             int[] supportedSampleRates = SampleRateCatalog.GetCandidateRates(minimumSampleRate)
-                .Where(driver.IsSampleRateSupported)
+                .Where(rate => SafeIsSampleRateSupported(driver.IsSampleRateSupported, rate))
                 .ToArray();
             return new AsioDriverInfo(
                 driverName,
@@ -151,6 +152,19 @@ public static class AsioDeviceCatalog
 
         using var driver = new AsioOut(driverName);
         driver.ShowControlPanel();
+    }
+
+    /// <summary>ASIO refuses a rate with ASE_NoClock, but some drivers answer another code, which NAudio throws: that rate is unsupported, the driver still usable.</summary>
+    internal static bool SafeIsSampleRateSupported(Func<int, bool> isSupported, int sampleRate)
+    {
+        try
+        {
+            return isSupported(sampleRate);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static int SafeInt(Func<int> getValue)

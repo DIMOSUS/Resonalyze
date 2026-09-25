@@ -241,7 +241,10 @@ frame and clipped-frame counts.
   doing once per analysis **frame**, not every tick. With spatial-average frame lengths (683 ms at
   32768 samples and 48 kHz, no overlap) a frame lands once in about twenty 33 ms ticks; the rest would clone a quarter of a
   megabyte to an identical curve while contending with the audio thread. `lastDrawnFrameCount` lets such
-  ticks skip. Notices still update every tick: an overload is a shortage of frames.
+  ticks skip. Notices still update every tick (an overload is a shortage of frames), but such a tick
+  renders the plot only when a notice appeared, went or changed its text.
+- One frame resamples each display curve once: peak hold envelopes the same transfer or RTA points the
+  series and the coherence split draw.
 - `RebuildModel` prefers a freshly computed snapshot (accumulators survive a stop) so a scale switch
   picks up curves the stored snapshot lacks, falling back to the last drawn one. It rebuilds even while
   running because display options such as coherence add or remove an axis.

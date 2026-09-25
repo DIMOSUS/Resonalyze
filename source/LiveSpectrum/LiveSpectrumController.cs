@@ -299,9 +299,12 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
             int frames = session.AveragedFrameCount;
             if (frames == lastDrawnFrameCount && session.HeldSnapshot != null)
             {
-                UpdateOverloadAnnotation(model);
-                UpdateCaptureProgressAnnotation(display, model);
-                model.InvalidatePlot(false);
+                // A full render of an unchanged plot is for a notice that changed.
+                if (UpdateOverloadAnnotation(model) | UpdateCaptureProgressAnnotation(display, model))
+                {
+                    model.InvalidatePlot(false);
+                }
+
                 return;
             }
 
@@ -492,13 +495,14 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
         }
     }
 
-    private void UpdateOverloadAnnotation(PlotModel model)
+    /// <returns>Whether the notice appeared or went.</returns>
+    private bool UpdateOverloadAnnotation(PlotModel model)
     {
-        RemoveOverloadAnnotation(model);
+        bool wasShown = RemoveOverloadAnnotation(model);
 
         if (!session.HasRecentDrops)
         {
-            return;
+            return wasShown;
         }
 
         model.Annotations.Add(new OverlayTextAnnotation
@@ -512,38 +516,47 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
             TextColor = UiPalette.Warning.ToOxy(),
             TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Center
         });
+        return !wasShown;
     }
 
     private static void RemoveSplViewOnlyAnnotation(PlotModel model) =>
         RemoveTaggedAnnotations(model, SplViewOnlyAnnotationTag);
 
-    private static void RemoveOverloadAnnotation(PlotModel? model) =>
+    private static bool RemoveOverloadAnnotation(PlotModel? model) =>
         RemoveTaggedAnnotations(model, OverloadAnnotationTag);
 
-    private static void RemoveTaggedAnnotations(PlotModel? model, string tag)
+    /// <returns>Whether any was there.</returns>
+    private static bool RemoveTaggedAnnotations(PlotModel? model, string tag)
     {
         if (model == null)
         {
-            return;
+            return false;
         }
 
+        bool removed = false;
         for (int index = model.Annotations.Count - 1; index >= 0; index--)
         {
             if (model.Annotations[index] is OverlayTextAnnotation annotation &&
                 Equals(annotation.Tag, tag))
             {
                 model.Annotations.RemoveAt(index);
+                removed = true;
             }
         }
+
+        return removed;
     }
 
-    private void UpdateCaptureProgressAnnotation(LiveSpectrumDisplay display, PlotModel? model)
+    /// <returns>Whether what the notice shows changed.</returns>
+    private bool UpdateCaptureProgressAnnotation(LiveSpectrumDisplay display, PlotModel? model)
     {
-        RemoveTaggedAnnotations(model, CaptureProgressAnnotationTag);
+        bool wasShown = RemoveTaggedAnnotations(model, CaptureProgressAnnotationTag);
         if (model == null || session.Progress(display) is not { } progress)
         {
-            return;
+            return wasShown;
         }
+
+        bool changed = !wasShown;
 
         // Text rebuilt only on change; a new instance per model (OxyPlot throws on an element owned by another model).
         if (captureProgressAnnotation == null ||
@@ -561,6 +574,7 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
             };
             captureProgressOwner = model;
             captureProgressState = null;
+            changed = true;
         }
 
         if (progress.State != captureProgressState ||
@@ -574,9 +588,11 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
             captureProgressAnnotation.TextColor = progress.ClippedFrames > 0
                 ? UiPalette.Warning.ToOxy()
                 : UiPalette.TextSecondary.ToOxy();
+            changed = true;
         }
 
         model.Annotations.Add(captureProgressAnnotation);
+        return changed;
     }
 
     private static void RemoveLiveSpectrumSeries(PlotModel model)

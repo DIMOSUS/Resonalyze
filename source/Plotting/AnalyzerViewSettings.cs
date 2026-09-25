@@ -81,7 +81,10 @@ internal sealed class AnalyzerViewSettings
         session.ImpulseResponse.ApplyTo(ImpulseResponse);
         session.Waterfall.ApplyTo(Waterfall, WaterfallMode.Fourier);
         session.BurstDecay.ApplyTo(BurstDecay, WaterfallMode.BurstDecay);
+        // A live capture is corrected by the rig's microphone calibration, which no entry carries.
+        string? rigCalibrationId = LiveSpectrum.CalibrationId;
         session.LiveSpectrum.ApplyTo(LiveSpectrum);
+        LiveSpectrum.CalibrationId = rigCalibrationId;
         session.TimeAlignment.ApplyTo(TimeAlignment, sampleRate);
     }
 }

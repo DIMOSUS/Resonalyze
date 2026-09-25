@@ -54,6 +54,22 @@ public sealed class AnalyzerViewSettingsTests
     }
 
     [Fact]
+    public void AHistoryEntryOrANewSessionKeepsTheRigsLiveCalibration()
+    {
+        var left = new AnalyzerViewSettings();
+        left.LiveSpectrum.CalibrationId = "old-rig";
+        MeasurementSessionSnapshot session = left.CaptureSession(ModeTab.LiveSpectrum, []);
+        var view = new AnalyzerViewSettings();
+        view.LiveSpectrum.CalibrationId = "current-rig";
+
+        view.ApplySession(session, sampleRate: 48_000);
+        Assert.Equal("current-rig", view.LiveSpectrum.CalibrationId);
+
+        view.ApplySession(new MeasurementSessionSnapshot(), sampleRate: 48_000);
+        Assert.Equal("current-rig", view.LiveSpectrum.CalibrationId);
+    }
+
+    [Fact]
     public void TheSettingsFileKeepsTheViewAcrossARestart()
     {
         using var engine = new ExpSweepMeasurement(new FakeAudioSessionFactory());

@@ -185,7 +185,7 @@ public sealed class ExponentialSineSweepTests
             $"peak {peak:0.####} fell short of {ExponentialSineSweep.PlaybackAmplitude:0.####}");
     }
 
-    // The level used to be fs / (2 (fHigh - fLow)): unity only for a sweep reaching Nyquist, 18.7 dB hot for 20 Hz-2 kHz.
+    // Narrow bands too: a scale that is unity only for a sweep reaching Nyquist reads 20 Hz-2 kHz 18.7 dB hot.
     [Theory]
     [InlineData(30, 18_000)]
     [InlineData(20, 10_000)]

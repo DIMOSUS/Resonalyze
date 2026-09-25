@@ -685,7 +685,7 @@ public sealed class CrossoverAutoSetupTests
     {
         // Pinned just above the floor and Linkwitz-Riley only, with a midrange that rolls off right above the window:
         // there the search does reach for a negative offset. Without it this reads a junction that never splits and
-        // asserts nothing (a mid reaching 5 kHz only overlapped while the polarity scoring was biased).
+        // asserts nothing.
         List<SignalPoint> tweeterCurve = BandCurve(1_100, 20_000, 0);
         var channels = new AutoSetupSource[]
         {
@@ -1195,9 +1195,7 @@ public sealed class CrossoverAutoSetupTests
         Assert.Equal(single.HighPassEdge, levelled[0].HighPassEdge);
     }
 
-    // Flipping only the channel above a junction also flipped the next junction's relation, so every lower junction's
-    // inverted option was scored with the one above it broken.
-    [Fact]
+        [Fact]
     public void SetRelativeInversion_ChangesOnlyThatJunctionsRelation()
     {
         bool[] invert = [false, false, true, true];

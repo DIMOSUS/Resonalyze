@@ -158,7 +158,7 @@ public sealed class CrossoverFilterTests
     [InlineData(48)]
     public void Bessel_IsMinus3DbAtCorner(int slope)
     {
-        // Exact prototype roots: only the bilinear rounding is left (the old SLOA049 table read -3.06 dB at 24 dB/oct).
+        // Exact prototype roots: only the bilinear rounding is left.
         double lowPassDb = MagnitudeDb(CrossoverFilter.Response(
             LowPass(CrossoverFilterFamily.Bessel, 1_000, slope), 1_000, SampleRate));
         double highPassDb = MagnitudeDb(CrossoverFilter.Response(

@@ -34,8 +34,7 @@ internal sealed class AsioSampleConverter
                     BinaryPrimitives.ReadInt32LittleEndian(sample) * Int32Scale,
                 AsioSampleType.Int32MSB =>
                     BinaryPrimitives.ReadInt32BigEndian(sample) * Int32Scale,
-                // Right-aligned: 16-24 valid bits in a 32-bit container, full scale at 2^(bits-1), not 2^31 (which read a
-                // full-scale Int32LSB24 sample at -48 dBFS).
+                // Right-aligned: 16-24 valid bits in a 32-bit container, full scale at 2^(bits-1), not 2^31.
                 AsioSampleType.Int32LSB16 or AsioSampleType.Int32LSB18 or
                     AsioSampleType.Int32LSB20 or AsioSampleType.Int32LSB24 =>
                     RightAligned(BinaryPrimitives.ReadInt32LittleEndian(sample), ValidBits(sampleType)),

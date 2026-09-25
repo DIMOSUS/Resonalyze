@@ -30,7 +30,7 @@ public sealed class DataHelperResampleTests
 
         List<SignalPoint> output = DataHelper.LogarithmicResample(input, 20, 20_000, 512, smoothingOctaves: 1.0);
 
-        // Over the real bins only the kernel reads about -3.4 dB here; repeating the -60 dB last bin read -9.2 dB.
+        // Over the real bins only the kernel reads about -3.4 dB here; repeating the -60 dB last bin reads -9.2 dB.
         Assert.InRange(output[^1].Y, -4.5, -2.5);
     }
 

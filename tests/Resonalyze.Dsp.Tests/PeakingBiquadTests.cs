@@ -56,8 +56,7 @@ public sealed class PeakingBiquadTests
         Assert.Equal(gainDb, centreDigital, tolerance: 0.01);
     }
 
-    // A band past Nyquist (a hand-edited bank, a slow custom processor) used to realise with a pole outside the
-    // unit circle: a preview of a filter that diverges on the device.
+    // A band past Nyquist: a hand-edited bank, or a slow custom processor.
     [Theory]
     [InlineData(PeqBandType.Peaking, 23_000, 44_100)]
     [InlineData(PeqBandType.Peaking, 30_000, 48_000)]

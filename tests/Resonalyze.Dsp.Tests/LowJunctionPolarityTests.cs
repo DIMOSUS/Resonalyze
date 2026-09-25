@@ -49,7 +49,7 @@ public sealed class LowJunctionPolarityTests
     public void Read_JudgesEachMeetingFromWhereTheFrontsPutTheChannel()
     {
         // The channel must move 8 ms: its same-sign crest meets there, the opposite one at 3 ms. Judged from the
-        // undelayed position, the 3 ms meeting won and named an inversion the waveforms never asked for.
+        // undelayed position, the 3 ms meeting wins and names an inversion the waveforms never ask for.
         Complex[] neighbor = Crest(20.0, 1.0, 40.0, -0.2);
         Complex[] variable = Crest(12.0, 0.9, 17.0, -0.8);
 

@@ -249,7 +249,7 @@ public sealed class EqProfileFormatsTests
     [Fact]
     public void MiniDsp_KeepsASubBassBandAt192kHzAsDesigned()
     {
-        // Eight decimals moved this bell's response by 0.39 dB near 18.6 Hz on a 192 kHz device.
+        // Eight decimals move this bell's response by 0.39 dB near 18.6 Hz on a 192 kHz device.
         var band = new PeqBand(20, 5.0, 6.0);
         string text = new MiniDspFormat(192_000).Export(new EqualizationCurve([band]));
 

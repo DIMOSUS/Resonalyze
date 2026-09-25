@@ -23,8 +23,8 @@ public sealed record EssSweepMetadata(
 
     /// <summary>End (exclusive) of the samples where the inverse filter overlaps the recording in full. A linear
     /// deconvolution is recording + sweep - 1 samples long, and over its last sweep - 1 the filter slides off the
-    /// recording, high-frequency taps first, so noise there fades out: a tail estimate reaching into it read the
-    /// noise up to 26 dB low.</summary>
+    /// recording, high-frequency taps first, so noise there fades out and a tail estimate reaching into it reads
+    /// low.</summary>
     public int FullOverlapEndSample(int impulseLength) =>
         Math.Clamp(impulseLength - (SweepSampleCount - 1), 0, impulseLength);
 
@@ -541,7 +541,7 @@ public static class EssHarmonicAnalysis
 
     /// <summary>The tail stops where the full overlap does, when that still leaves <paramref name="minimumLength"/>
     /// samples; otherwise (a sweep too long for its capture tail, an import whose length is not ours) the whole tail
-    /// stands, as before.</summary>
+    /// is read.</summary>
     internal static int TailNoiseRegionEnd(int impulseLength, int regionStart, EssSweepMetadata sweep, int minimumLength)
     {
         int fullOverlapEnd = sweep.FullOverlapEndSample(impulseLength);

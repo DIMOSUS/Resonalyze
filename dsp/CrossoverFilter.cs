@@ -292,8 +292,7 @@ public static class CrossoverFilter
     }
 
     // Bessel prototype normalized to -3 dB: (FSF, Q) pairs plus the odd real pole's FSF, from the roots of the reverse
-    // Bessel polynomial scaled to its -3 dB frequency. TI SLOA049's table, used before, is up to 0.8 % off in FSF
-    // (the 4th order read -3.06 dB at its corner).
+    // Bessel polynomial scaled to its -3 dB frequency. TI SLOA049's four-digit table is up to 0.8 % off in FSF.
     private static ((double Fsf, double Q)[] Pairs, double? RealFsf) BesselPrototype(
         int order) => order switch
     {

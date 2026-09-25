@@ -39,7 +39,7 @@ public sealed class AsioSampleConverterTests
     [Fact]
     public void ConvertsRightAlignedInt32ByItsValidBits()
     {
-        // 24 valid bits in a 32-bit container: full scale is 2^23, not 2^31 (which read it at -48 dBFS).
+        // 24 valid bits in a 32-bit container: full scale is 2^23, not 2^31.
         int[] source = [0x7FFFFF, -0x800000, 0x400000, 0x00FFFFFF];
         float[] result = Convert(source, AsioSampleType.Int32LSB24);
 

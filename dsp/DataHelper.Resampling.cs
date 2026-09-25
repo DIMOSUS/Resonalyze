@@ -101,9 +101,8 @@ namespace Resonalyze.Dsp
                 double weightSum = 0;
                 double weightedSum = 0;
 
-                // The kernel stops at the grid's ends, both of them, and the weight sum renormalises. Past the top it
-                // used to read the last bin again for every virtual bin, each at the last bin's own position: under
-                // an anti-alias roll-off at 44.1 kHz, 1/1-octave smoothing put 20 kHz at -9.2 dB instead of -3.4 dB.
+                // The kernel stops at the grid's ends, both of them, and the weight sum renormalises. Repeating the last
+                // bin for every virtual bin past the top would weight it several times over near Nyquist.
                 for (int sampleIndex = Math.Max(centerIndex - windowRadius, 0);
                     sampleIndex <= Math.Min(centerIndex + windowRadius, input.Count - 1);
                     sampleIndex++)

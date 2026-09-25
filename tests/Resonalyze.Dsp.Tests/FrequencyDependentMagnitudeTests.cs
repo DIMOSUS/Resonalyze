@@ -130,7 +130,7 @@ public sealed class FrequencyDependentMagnitudeTests
     public void FixedWindow_ReadsTheSameMagnitudeWhereverTheArrivalSitsInTheCircularRecord()
     {
         // A band-limited transfer IR whose arrival sits inside the left fade (60 samples, 1.25 ms at 48 kHz): its
-        // pre-roll is at the record's end. Read as zeros, the bass came out 0.4 dB high against the same IR further in.
+        // pre-roll is at the record's end. Read as zeros, the bass comes out 0.3 dB high against the same IR further in.
         // Zero phase, as a loopback-referenced transfer IR's band limits leave it: symmetric about the arrival, so the part
         // before it is real signal.
         const int Length = 16_384;
@@ -171,7 +171,7 @@ public sealed class FrequencyDependentMagnitudeTests
     [Fact]
     public void GatedSpectra_KeepOnlyTheLatestGatesPerRecord()
     {
-        // Stepping a gate field through its range used to keep every gate's spectra for the record's lifetime.
+        // Stepping a gate field makes a new gate per step.
         SyntheticMeasurement measurement = ReflectedImpulse();
         AnalysisCurve? last = null;
         for (int step = 0; step < 20; step++)

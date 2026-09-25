@@ -524,8 +524,7 @@ public sealed class CrossoverRankedProposalTests
             .ToList();
         Assert.True(slopes.Count > 1, $"Every edge took the same slope: {slopes[0]} dB/oct.");
 
-        // The budget holds the sub. Where under it the slope lands is the search's: this used to assert the steepest
-        // slope the budget allows, which is where a polarity scoring that broke the next junction pushed it.
+        // The budget holds the sub; where under it the slope lands is the search's call.
         CrossoverEdge subLowPass = proposals[0].LowPassEdge!.Value;
         Assert.True(
             CrossoverFilter.MaxGroupDelaySeconds(subLowPass, highPass: false, SampleRate)

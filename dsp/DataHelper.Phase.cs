@@ -175,9 +175,9 @@ namespace Resonalyze.Dsp
         private static readonly ConditionalWeakTable<Complex[], PhaseSpectrumCache>
             PhaseSpectrumCaches = new();
 
-        /// <summary>Gates kept per IR. Each holds a 32768-bin spectrum (and its time-weighted twin once group delay reads
-        /// it), 0.5-1 MiB; unbounded, stepping a gate field through its range left tens of MiB per channel for as long
-        /// as the record lived. Enough for every view reading one record at once.</summary>
+        /// <summary>Gates kept per IR, least recently used out first. Each holds a 32768-bin spectrum (and its
+        /// time-weighted twin once group delay reads it), 0.5-1 MiB, and stepping a gate field makes a new one per step.
+        /// Enough for every view reading one record at once.</summary>
         internal const int PhaseSpectrumCacheCapacity = 8;
 
         private sealed class PhaseSpectrumCache

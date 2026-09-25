@@ -22,7 +22,7 @@ internal sealed class ButtonLongPressBehavior : IDisposable
         timer = new System.Windows.Forms.Timer { Interval = longPressMilliseconds };
         timer.Tick += async (_, _) => await HandleLongPressElapsedAsync();
         button.MouseDown += (_, e) => HandleMouseDown(e.Button);
-        button.MouseUp += (_, _) => timer.Stop();
+        button.MouseUp += (_, e) => HandleMouseUp(button.ClientRectangle.Contains(e.Location));
         button.MouseLeave += (_, _) => timer.Stop();
     }
 
@@ -48,14 +48,30 @@ internal sealed class ButtonLongPressBehavior : IDisposable
     // Internal so tests can drive the state machine; the WinForms timer needs a message pump.
     internal void HandleMouseDown(MouseButtons buttons)
     {
-        if (buttons != MouseButtons.Left || !canTrigger())
+        if (buttons != MouseButtons.Left)
+        {
+            return;
+        }
+
+        // A new press ends the last one, whose release click (if any) has been delivered already.
+        suppressNextClick = false;
+        if (!canTrigger())
         {
             return;
         }
 
         triggered = false;
-        suppressNextClick = false;
         timer.Start();
+    }
+
+    // A release off the button raises no click, so there is none left to swallow.
+    internal void HandleMouseUp(bool overButton)
+    {
+        timer.Stop();
+        if (!overButton)
+        {
+            suppressNextClick = false;
+        }
     }
 
     internal async Task HandleLongPressElapsedAsync()

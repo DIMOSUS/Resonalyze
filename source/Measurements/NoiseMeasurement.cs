@@ -26,14 +26,14 @@ namespace Resonalyze
         private int droppedFrameTotal;
         private volatile int captureMicrophoneIndex;
         private volatile int captureLoopbackIndex = -1;
-        // Bumped per dropped block so the loop resets the reframer and never builds a frame across the gap. Read at
-        // dequeue: a drop removes the oldest queued block, so the gap sits before whatever is read next.
-        private long dropGeneration;
+        // Numbered as queued, so the reader finds a dropped block by the gap in the numbers, wherever the drop landed
+        // relative to its own dequeue.
+        private long nextSequenceIndex;
         // Bumped per device discontinuity and stamped on each sequence as it is queued: the gap sits before the first
         // sequence stamped after it, however many older ones are still queued.
         private long discontinuityGeneration;
 
-        private readonly record struct LiveSequence(float[][] Channels, long DiscontinuityGeneration);
+        private readonly record struct LiveSequence(float[][] Channels, long Index, long DiscontinuityGeneration);
         // Fewer EMA frames read gamma^2 near 1 regardless of the channel relation.
         private const int MinCoherenceFrames = 4;
         private AveragingSpeed appliedAveragingSpeed;
@@ -442,7 +442,6 @@ namespace Resonalyze
         {
             Interlocked.Increment(ref droppedFrameTotal);
             Interlocked.Exchange(ref lastDropTickMs, Environment.TickCount64);
-            Interlocked.Increment(ref dropGeneration);
         }
 
         private async Task<bool> RunCoreAsync(CancellationToken cancellationToken)
@@ -577,8 +576,10 @@ namespace Resonalyze
         {
             captureMicrophoneIndex = frame.MicrophoneChannel;
             captureLoopbackIndex = frame.LoopbackChannel ?? -1;
-            Volatile.Read(ref sequenceWriter)?.TryWrite(
-                new LiveSequence(frame.Channels, Interlocked.Read(ref discontinuityGeneration)));
+            Volatile.Read(ref sequenceWriter)?.TryWrite(new LiveSequence(
+                frame.Channels,
+                Interlocked.Increment(ref nextSequenceIndex),
+                Interlocked.Read(ref discontinuityGeneration)));
         }
 
         private void HandleLevels(AudioInputLevels levels)
@@ -591,18 +592,21 @@ namespace Resonalyze
             OverlapReframer reframer,
             CancellationToken cancellationToken)
         {
-            long consumedDropGeneration = Interlocked.Read(ref dropGeneration);
+            long? previousIndex = null;
             long consumedDiscontinuityGeneration = Interlocked.Read(ref discontinuityGeneration);
             await foreach (LiveSequence queued in reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
-                long generation = Interlocked.Read(ref dropGeneration);
-                if (generation != consumedDropGeneration ||
-                    queued.DiscontinuityGeneration != consumedDiscontinuityGeneration)
+                if (LiveSequenceContinuity.Breaks(
+                        previousIndex,
+                        queued.Index,
+                        consumedDiscontinuityGeneration,
+                        queued.DiscontinuityGeneration))
                 {
-                    consumedDropGeneration = generation;
                     consumedDiscontinuityGeneration = queued.DiscontinuityGeneration;
                     reframer.Reset();
                 }
+
+                previousIndex = queued.Index;
 
                 foreach (float[][] frame in reframer.Push(queued.Channels))
                 {

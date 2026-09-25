@@ -24,7 +24,9 @@ public static class WaterfallAnalysis
         }
 
         Complex[] spectrum = DataHelper.ExtractWindow(measurement, offset, window, windowFunction);
-        Array.Resize(ref spectrum, window * 4);
+        // A power of two: the window field takes any length, and a Bluestein transform of 4 x 5000 points costs about
+        // seven times a radix-2 one of 16384. The longer pad only reduces circular wrap.
+        Array.Resize(ref spectrum, DspMath.NextPowerOfTwo(checked(window * 4)));
         Fourier.Forward(spectrum, FourierOptions.Matlab);
 
         double frequencyStep = (double)measurement.SampleRate / spectrum.Length;
@@ -52,8 +54,14 @@ public static class WaterfallAnalysis
             for (int i = 0; i < morlet.Length; i++)
             {
                 double w = (i <= morlet.Length / 2 ? i : i - morlet.Length) * Math.PI * 2.0;
-                morlet[i] = new Complex(Math.Exp(-Math.Pow((w - w0), 2.0) * t * t * 0.25), 0.0);
-                kernelSum += morlet[i].Magnitude;
+                double exponent = (w - w0) * (w - w0) * t * t * 0.25;
+                // Past this the exponential underflows to zero: most bins of a narrow kernel.
+                if (exponent < 746.0)
+                {
+                    double weight = Math.Exp(-exponent);
+                    morlet[i] = new Complex(weight, 0.0);
+                    kernelSum += weight;
+                }
             }
 
             double normalization = morlet.Length / kernelSum;
@@ -64,8 +72,10 @@ public static class WaterfallAnalysis
 
             Fourier.Inverse(morlet, FourierOptions.Matlab);
 
-            var data = new List<SignalPoint>(morlet.Length / 2);
-            for (int i = 0; i < morlet.Length / 2; i++)
+            // The window's own samples: past them is zero-padding, which a slice never shows.
+            int measured = Math.Min(window, morlet.Length / 2);
+            var data = new List<SignalPoint>(measured);
+            for (int i = 0; i < measured; i++)
             {
                 data.Add(new SignalPoint(i, morlet[i].Magnitude));
             }

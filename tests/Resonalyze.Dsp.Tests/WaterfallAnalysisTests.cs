@@ -63,6 +63,21 @@ public sealed class WaterfallAnalysisTests
     }
 
     [Fact]
+    public void BuildBurstDecayRawSlices_AnyWindowLength_GivesOnePointPerWindowSample_AndStillFindsTheTone()
+    {
+        const int window = 3_000;
+        IReadOnlyList<BurstDecaySlice> slices = WaterfallAnalysis.BuildBurstDecayRawSlices(
+            DecayingTone(1_000.0, tauSamples: 1_500.0),
+            offset: 0,
+            window: window,
+            windowFunction: Hann(window),
+            smoothingOctaves: 1.0);
+
+        Assert.All(slices, slice => Assert.Equal(window, slice.Data.Count));
+        Assert.Equal(PeakMagnitude(ClosestSlice(slices, 1_000.0)), slices.Max(PeakMagnitude), precision: 12);
+    }
+
+    [Fact]
     public void BuildBurstDecayRawSlices_EnvelopeDecaysForADecayingTone()
     {
         const double toneHz = 1_000.0;

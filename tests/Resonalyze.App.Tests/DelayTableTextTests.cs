@@ -64,12 +64,38 @@ public sealed class DelayTableTextTests
     }
 
     [Fact]
-    public void CellAt_MapsAClickColumnToItsCell()
+    public void AClickAnywhereInACell_ReadsThatCellsNumber()
     {
-        Assert.Null(DelayTableText.CellAt(3));
-        Assert.Equal(DelayTableText.MillisecondsColumn, DelayTableText.CellAt(DelayTableText.MillisecondsColumn + 2));
-        Assert.Equal(DelayTableText.SamplesColumn, DelayTableText.CellAt(DelayTableText.SamplesColumn));
-        Assert.Equal(DelayTableText.MetersColumn, DelayTableText.CellAt(DelayTableText.MetersColumn + 10));
+        string line = DelayTableText.FormatLine(DelayTableText.FirstArrivalLabel, "1.006 (+0.010)", "48.3", "0.345") +
+            DelayTableText.RecommendedMarker;
+
+        Assert.Equal(string.Empty, DelayTableText.GetValue(line, 3));
+        Assert.Equal("1.006", DelayTableText.GetValue(line, DelayTableText.MillisecondsColumn + 8));
+        Assert.Equal("1.006", DelayTableText.GetValue(line, DelayTableText.SamplesColumn - 1));
+        Assert.Equal("48.3", DelayTableText.GetValue(line, DelayTableText.SamplesColumn));
+        Assert.Equal("0.345", DelayTableText.GetValue(line, line.Length - 1));
+    }
+
+    [Fact]
+    public void ACellWiderThanItsColumn_MovesTheLaterColumnsInHeaderAndRowsAlike()
+    {
+        string wideMilliseconds = "-163.000 (-12.604)";
+        string wideSamples = "15648.0 (-12345.6)";
+        DelayTableText.Columns columns = DelayTableText.Columns.Fit(
+            [("1.006", "48.3"), (wideMilliseconds, wideSamples)]);
+        string header = DelayTableText.FormatHeader(columns);
+        string narrow = DelayTableText.FirstArrivalLabel.PadRight(DelayTableText.MillisecondsColumn) +
+            DelayTableText.FormatCells("1.006", "48.3", "0.345", columns);
+        string wide = DelayTableText.StrongestPeakLabel.PadRight(DelayTableText.MillisecondsColumn) +
+            DelayTableText.FormatCells(wideMilliseconds, wideSamples, "55.912", columns);
+
+        Assert.Equal(header.IndexOf("samples", StringComparison.Ordinal), wide.IndexOf("15648.0", StringComparison.Ordinal));
+        Assert.Equal(header.IndexOf("samples", StringComparison.Ordinal), narrow.IndexOf("48.3", StringComparison.Ordinal));
+        Assert.Equal(header.IndexOf("meters", StringComparison.Ordinal), wide.IndexOf("55.912", StringComparison.Ordinal));
+        Assert.Equal(header.IndexOf("meters", StringComparison.Ordinal), narrow.IndexOf("0.345", StringComparison.Ordinal));
+        Assert.Equal("15648.0", DelayTableText.GetValue(wide, columns.Samples));
+        Assert.Equal("55.912", DelayTableText.GetValue(wide, columns.Meters));
+        Assert.Equal(DelayTableText.Columns.Default, DelayTableText.Columns.Fit([("163.000 (+2.604)", "7824.0 (+125.0)")]));
     }
 
     [Fact]

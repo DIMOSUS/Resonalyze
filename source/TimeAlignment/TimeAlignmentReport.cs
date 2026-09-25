@@ -274,59 +274,70 @@ internal sealed class TimeAlignmentReport
         TimeAlignmentAnalysisResult? reference,
         TimeAlignmentDelayRow? recommended)
     {
+        DelayRowCells[] rows =
+        [
+            Cells(
+                TimeAlignmentDelayRow.FirstArrival,
+                UiPalette.MarkerFirstArrival,
+                result.FirstArrivalDelayMilliseconds,
+                result.FirstArrivalPeakSample,
+                reference?.FirstArrivalDelayMilliseconds,
+                reference?.FirstArrivalPeakSample),
+            Cells(
+                TimeAlignmentDelayRow.StrongestPeak,
+                UiPalette.MarkerStrongestPeak,
+                result.StrongestDelayMilliseconds,
+                result.StrongestPeakSample,
+                reference?.StrongestDelayMilliseconds,
+                reference?.StrongestPeakSample),
+            Cells(
+                TimeAlignmentDelayRow.EnergyOnset,
+                UiPalette.MarkerEnergyOnset,
+                result.EnergyOnsetDelayMilliseconds,
+                result.EnergyOnsetSample,
+                reference?.EnergyOnsetDelayMilliseconds,
+                reference?.EnergyOnsetSample)
+        ];
+        // A cell wider than its column (a large delay or delta) moves the columns after it, in every row alike.
+        DelayTableText.Columns columns = DelayTableText.Columns.Fit(
+            rows.Select(row => (row.Milliseconds, row.Samples)).ToArray());
         AppendStatusText(
-            DelayTableText.FormatHeader() + "\r\n",
+            DelayTableText.FormatHeader(columns) + "\r\n",
             UiPalette.TextDefault,
             table: true);
-        AppendDelayRow(
-            TimeAlignmentDelayRow.FirstArrival,
-            UiPalette.MarkerFirstArrival,
-            result.FirstArrivalDelayMilliseconds,
-            result.FirstArrivalPeakSample,
-            reference?.FirstArrivalDelayMilliseconds,
-            reference?.FirstArrivalPeakSample,
-            recommended);
-        AppendDelayRow(
-            TimeAlignmentDelayRow.StrongestPeak,
-            UiPalette.MarkerStrongestPeak,
-            result.StrongestDelayMilliseconds,
-            result.StrongestPeakSample,
-            reference?.StrongestDelayMilliseconds,
-            reference?.StrongestPeakSample,
-            recommended);
-        AppendDelayRow(
-            TimeAlignmentDelayRow.EnergyOnset,
-            UiPalette.MarkerEnergyOnset,
-            result.EnergyOnsetDelayMilliseconds,
-            result.EnergyOnsetSample,
-            reference?.EnergyOnsetDelayMilliseconds,
-            reference?.EnergyOnsetSample,
-            recommended);
+        foreach (DelayRowCells row in rows)
+        {
+            AppendDelayRow(row, columns, recommended);
+        }
     }
 
-    private void AppendDelayRow(
+    private static DelayRowCells Cells(
         TimeAlignmentDelayRow row,
         Color labelColor,
         double milliseconds,
         double samples,
         double? referenceMilliseconds,
-        double? referenceSamples,
-        TimeAlignmentDelayRow? recommended)
+        double? referenceSamples) =>
+        new(
+            row,
+            labelColor,
+            FormatValueWithDelta(milliseconds, referenceMilliseconds, "0.000"),
+            FormatValueWithDelta(samples, referenceSamples, "0.0"),
+            FormatValueWithDelta(
+                DelayMeters(milliseconds),
+                referenceMilliseconds is { } referenceMs ? DelayMeters(referenceMs) : null,
+                "0.000"));
+
+    private void AppendDelayRow(DelayRowCells row, DelayTableText.Columns columns, TimeAlignmentDelayRow? recommended)
     {
-        bool isRecommended = recommended == row;
+        bool isRecommended = recommended == row.Row;
         // Cells stay one segment so click-to-copy columns remain exact.
         AppendStatusText(
-            TimeAlignmentRecommendation.RowLabel(row).PadRight(DelayTableText.MillisecondsColumn),
-            labelColor,
+            TimeAlignmentRecommendation.RowLabel(row.Row).PadRight(DelayTableText.MillisecondsColumn),
+            row.LabelColor,
             table: true);
         AppendStatusText(
-            DelayTableText.FormatCells(
-                FormatValueWithDelta(milliseconds, referenceMilliseconds, "0.000"),
-                FormatValueWithDelta(samples, referenceSamples, "0.0"),
-                FormatValueWithDelta(
-                    DelayMeters(milliseconds),
-                    referenceMilliseconds is { } referenceMs ? DelayMeters(referenceMs) : null,
-                    "0.000")),
+            DelayTableText.FormatCells(row.Milliseconds, row.Samples, row.Meters, columns),
             isRecommended ? UiPalette.TextDefault : UiPalette.TextSecondary,
             table: true);
         if (isRecommended)
@@ -339,6 +350,13 @@ internal sealed class TimeAlignmentReport
 
         AppendStatusText("\r\n", UiPalette.TextDefault, table: true);
     }
+
+    private readonly record struct DelayRowCells(
+        TimeAlignmentDelayRow Row,
+        Color LabelColor,
+        string Milliseconds,
+        string Samples,
+        string Meters);
 
     private static double DelayMeters(double delayMilliseconds) =>
         Math.Abs(delayMilliseconds) * Acoustics.SpeedOfSoundAt20CMetersPerSecond / 1000.0;

@@ -290,6 +290,56 @@ public sealed class OverlaySessionTests : IDisposable
         Assert.False(Slot(5).Checked);
     }
 
+    [Fact]
+    public void AnImpulseSlot_LoadsBeforeTheModesFirstBuild_AndRedrawsUnderEachNewFraming()
+    {
+        mode = Mode.ImpulseResponse;
+        ImpulseOverlayFrame? frame = ImpulseFrame(origin: 0);
+        sources.SetImpulseFrameProvider(() => frame);
+        sources.SetImpulseCaptureProvider(_ => new ImpulseOverlayCapture(
+            [new SignalPoint(100, 0.0), new SignalPoint(110, 1.0), new SignalPoint(120, 0.0)],
+            AnalysisCurveKind.Primary,
+            1.0,
+            48_000));
+        session.Prepare(mode);
+        var impulse = new LineSeries { Title = "Impulse", Tag = new CurveTag(Mode.ImpulseResponse, AnalysisCurveKind.Primary) };
+        impulse.Points.AddRange([new DataPoint(100, 0.0), new DataPoint(110, 1.0), new DataPoint(120, 0.0)]);
+        model.Series.Add(impulse);
+        session.Capture(Slot(1), impulse);
+
+        // A new start: the slots load on entering the mode, before its first build has framed anything.
+        frame = null;
+        session.Prepare(Mode.FrequencyResponse);
+        session.Prepare(mode);
+
+        Assert.Equal("Overlay 1: Impulse", Slot(1).Title);
+        Assert.False(File.Exists(OverlayFile.GetPath(mode, 1, root) + ".corrupt"));
+        Assert.NotNull(OverlayFile.Load(mode, 1, root));
+
+        // Each build may move the origin; the stored record coordinates are re-framed on every draw.
+        frame = ImpulseFrame(origin: 100);
+        session.Show(Slot(1));
+        Assert.Equal(0.0, ImpulseSeriesOf(1).Points[0].X, 9);
+        frame = ImpulseFrame(origin: 110);
+        session.Show(Slot(1));
+        Assert.Equal(-10.0, ImpulseSeriesOf(1).Points[0].X, 9);
+    }
+
+    private static ImpulseOverlayFrame ImpulseFrame(double origin) =>
+        new(
+            new ImpulseResponseOptions
+            {
+                TimeUnit = ImpulseTimeUnit.Samples,
+                AmplitudeScale = ImpulseAmplitudeScale.Linear
+            },
+            origin,
+            1.0,
+            48_000);
+
+    private LineSeries ImpulseSeriesOf(int slot) =>
+        model.Series.OfType<LineSeries>().Single(series =>
+            series.Tag is string tag && tag == $"overlay:ImpulseResponse:{slot}:curve");
+
     private OverlaySlot Slot(int index) => session.Slots[index - 1];
 
     private LineSeries AddLiveCurve(AnalysisCurveKind kind, string title, double level)

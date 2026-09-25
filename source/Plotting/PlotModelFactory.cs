@@ -749,8 +749,9 @@ internal sealed class PlotModelFactory
         return model;
     }
 
-    /// <summary>Framing of this build, so stored overlays redraw under the framing on screen now.</summary>
-    public ImpulseOverlayFrame ImpulseFrame { get; private set; }
+    /// <summary>Framing of this build, so stored overlays redraw under the framing on screen now; null until the first
+    /// impulse build, which is later than the slots load on the first entry to the mode.</summary>
+    public ImpulseOverlayFrame? ImpulseFrame { get; private set; }
 
     public PlotModel CreateImpulseResponse(bool includeCurves)
     {

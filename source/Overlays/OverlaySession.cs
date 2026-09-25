@@ -196,6 +196,12 @@ internal sealed class OverlaySession
 
         OverlaySeries.Remove(model, slot.SeriesMode, slot.Index);
         OverlaySlotState state = slot.State;
+        // An impulse capture is stored framing-free and every build may move the origin, unit or level scale.
+        if (state.Kind == OverlayKind.Captured && state.Captured?.Impulse is { Samples.Count: > 1 })
+        {
+            UpdateDrawPoints(slot);
+        }
+
         bool drawn = state.Kind switch
         {
             OverlayKind.Target => AddTarget(model, slot, state.Target!, state.SmoothingInverseOctaves, state.Appearance, state.Title),

@@ -1342,8 +1342,10 @@ public sealed class PlotModelFactoryTests
             PlotModelFactory factory =
                 CreateFactory(measurement, impulseOptions: options);
 
+            // Nothing frames an overlay before the first impulse build.
+            Assert.Null(factory.ImpulseFrame);
             var model = factory.CreateImpulseResponse(includeCurves: true);
-            ImpulseOverlayFrame frame = factory.ImpulseFrame;
+            ImpulseOverlayFrame frame = factory.ImpulseFrame!.Value;
 
             Assert.Empty(model.Series);
             Assert.Equal(measurement.Result.Transfer!.PeakIndex, frame.OriginSamples, precision: 9);

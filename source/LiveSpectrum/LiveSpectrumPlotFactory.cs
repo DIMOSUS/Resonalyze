@@ -59,7 +59,16 @@ internal sealed class LiveSpectrumPlotFactory
         return model;
     }
 
-    public LineSeries BuildTransferSeries(LiveSpectrumDisplay display, double[] magnitude)
+    /// <summary>The live transfer function on the display grid, for <see cref="UpdateTransferSeries"/>, the coherence split
+    /// and peak hold.</summary>
+    public List<SignalPoint> TransferPoints(LiveSpectrumDisplay display, double[] magnitude) =>
+        curves.Transfer(display, magnitude);
+
+    /// <summary>The RTA on the display grid, for <see cref="UpdateInputMagnitudeSeries"/> and peak hold.</summary>
+    public List<SignalPoint> RtaPoints(LiveSpectrumDisplay display, double[] inputMagnitude) =>
+        curves.Rta(display, inputMagnitude);
+
+    public static LineSeries BuildTransferSeries(List<SignalPoint> transferPoints)
     {
         var series = new LineSeries
         {
@@ -67,13 +76,13 @@ internal sealed class LiveSpectrumPlotFactory
             Title = "Live Transfer Function",
             TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
         };
-        UpdateTransferSeries(display, series, magnitude);
+        UpdateTransferSeries(series, transferPoints);
         return series;
     }
 
     // Refill in place at ~30 fps to avoid re-allocating plot objects.
-    public void UpdateTransferSeries(LiveSpectrumDisplay display, LineSeries series, double[] magnitude) =>
-        PlotModelFactory.FillPoints(series, curves.Transfer(display, magnitude));
+    public static void UpdateTransferSeries(LineSeries series, List<SignalPoint> transferPoints) =>
+        PlotModelFactory.FillPoints(series, transferPoints);
 
     /// <summary>A stored capture drawn as captured, not re-rendered from its bins: viewing must show what the author saw.</summary>
     public static LineSeries BuildLoadedCaptureSeries(LiveCaptureDocument document)
@@ -96,22 +105,22 @@ internal sealed class LiveSpectrumPlotFactory
         return series;
     }
 
-    public LineSeries BuildInputMagnitudeSeries(LiveSpectrumDisplay display, double[] inputMagnitude)
+    public static LineSeries BuildInputMagnitudeSeries(LiveSpectrumDisplay display, List<SignalPoint> rtaPoints)
     {
         var series = new LineSeries
         {
             Color = UiPalette.CurveLiveInput.ToOxy(),
             Title = "Input Spectrum (RTA)"
         };
-        UpdateInputMagnitudeSeries(display, series, inputMagnitude);
+        UpdateInputMagnitudeSeries(display, series, rtaPoints);
         return series;
     }
 
     // The RTA is the one live curve with an honest absolute level: in SPL it is band-power integrated (FFT-size independent) and offset.
-    public void UpdateInputMagnitudeSeries(LiveSpectrumDisplay display, LineSeries series, double[] inputMagnitude)
+    public static void UpdateInputMagnitudeSeries(LiveSpectrumDisplay display, LineSeries series, List<SignalPoint> rtaPoints)
     {
         series.TrackerFormatString = MagnitudeTracker(display);
-        PlotModelFactory.FillPoints(series, curves.Rta(display, inputMagnitude));
+        PlotModelFactory.FillPoints(series, rtaPoints);
     }
 
     public static LineSeries BuildPeakHoldSeries(LiveSpectrumDisplay display, List<SignalPoint> peakHoldPoints)
@@ -149,7 +158,7 @@ internal sealed class LiveSpectrumPlotFactory
     /// <summary>Trusted and low-coherence (dimmed, dashed) segments sharing boundary points.</summary>
     public (LineSeries Trusted, LineSeries Untrusted) BuildCoherenceSplitSeries(
         LiveSpectrumDisplay display,
-        double[] magnitude,
+        List<SignalPoint> transferPoints,
         double[] coherence,
         int thresholdPercent)
     {
@@ -167,7 +176,7 @@ internal sealed class LiveSpectrumPlotFactory
             Title = "Low coherence",
             TrackerFormatString = "{0}\n{2:0.0} Hz\n{4:0.00} dB"
         };
-        UpdateCoherenceSplitSeries(display, trusted, untrusted, magnitude, coherence, thresholdPercent);
+        UpdateCoherenceSplitSeries(display, trusted, untrusted, transferPoints, coherence, thresholdPercent);
         return (trusted, untrusted);
     }
 
@@ -175,18 +184,15 @@ internal sealed class LiveSpectrumPlotFactory
         LiveSpectrumDisplay display,
         LineSeries trusted,
         LineSeries untrusted,
-        double[] magnitude,
+        List<SignalPoint> transferPoints,
         double[] coherence,
         int thresholdPercent)
     {
         (List<SignalPoint> trustedPoints, List<SignalPoint> untrustedPoints) =
-            curves.CoherenceSplit(display, magnitude, coherence, thresholdPercent);
+            curves.CoherenceSplit(display, transferPoints, coherence, thresholdPercent);
         PlotModelFactory.FillPoints(trusted, trustedPoints);
         PlotModelFactory.FillPoints(untrusted, untrustedPoints);
     }
-
-    public List<SignalPoint> MainDisplayPoints(LiveSpectrumDisplay display, double[] magnitude, bool rtaOnly) =>
-        curves.MainDisplayPoints(display, magnitude, rtaOnly);
 
     private static string MagnitudeTracker(LiveSpectrumDisplay display) =>
         display.RendersSpl

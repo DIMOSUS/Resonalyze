@@ -380,13 +380,20 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
         LivePeakHold peakHold = session.PeakHold;
         peakHold.Drawn(display.PeakHoldKey);
 
+        // Peak hold envelopes the very points a series draws: each display curve is resampled once per frame.
+        List<SignalPoint>? transferPoints = null;
+        List<SignalPoint>? rtaPoints = null;
+        List<SignalPoint> TransferPoints() => transferPoints ??= plotFactory.TransferPoints(display, snapshot.Magnitude);
+        List<SignalPoint> RtaPoints(double[] inputMagnitude) =>
+            rtaPoints ??= plotFactory.RtaPoints(display, inputMagnitude);
+
         if (options.PeakHold)
         {
             double[]? peakSource = rtaOnly ? snapshot.InputMagnitude : snapshot.Magnitude;
             if (peakSource is { Length: > 0 })
             {
                 // Envelope the displayed band curve: per-bin peaks from different frames would overstate the band.
-                peakHold.Hold(plotFactory.MainDisplayPoints(display, peakSource, rtaOnly));
+                peakHold.Hold(rtaOnly ? RtaPoints(peakSource) : TransferPoints());
             }
             else
             {
@@ -418,7 +425,7 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
                     (trustedSeries, untrustedSeries) =
                         plotFactory.BuildCoherenceSplitSeries(
                             display,
-                            snapshot.Magnitude,
+                            TransferPoints(),
                             snapshot.Coherence,
                             options.CoherenceThresholdPercent);
                     // The trusted segment stays primary so the current-measurement target uses it.
@@ -431,7 +438,7 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
                         display,
                         trustedSeries,
                         untrustedSeries,
-                        snapshot.Magnitude,
+                        TransferPoints(),
                         snapshot.Coherence,
                         options.CoherenceThresholdPercent);
                 }
@@ -442,12 +449,12 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
             {
                 if (mainSeries == null)
                 {
-                    mainSeries = plotFactory.BuildTransferSeries(display, snapshot.Magnitude);
+                    mainSeries = LiveSpectrumPlotFactory.BuildTransferSeries(TransferPoints());
                     mainSeries.Tag = LiveSpectrumTag;
                 }
                 else
                 {
-                    plotFactory.UpdateTransferSeries(display, mainSeries, snapshot.Magnitude);
+                    LiveSpectrumPlotFactory.UpdateTransferSeries(mainSeries, TransferPoints());
                 }
                 model.Series.Add(mainSeries);
             }
@@ -458,14 +465,14 @@ internal sealed class LiveSpectrumController : IModeView, IDisposable
         {
             if (inputMagnitudeSeries == null)
             {
-                inputMagnitudeSeries =
-                    plotFactory.BuildInputMagnitudeSeries(display, snapshot.InputMagnitude);
+                inputMagnitudeSeries = LiveSpectrumPlotFactory.BuildInputMagnitudeSeries(
+                    display, RtaPoints(snapshot.InputMagnitude));
                 inputMagnitudeSeries.Tag = LiveSpectrumInputMagnitudeTag;
             }
             else
             {
-                plotFactory.UpdateInputMagnitudeSeries(
-                    display, inputMagnitudeSeries, snapshot.InputMagnitude);
+                LiveSpectrumPlotFactory.UpdateInputMagnitudeSeries(
+                    display, inputMagnitudeSeries, RtaPoints(snapshot.InputMagnitude));
             }
             model.Series.Add(inputMagnitudeSeries);
         }

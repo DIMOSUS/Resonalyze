@@ -31,6 +31,19 @@ public sealed class AudioRenderBufferReaderTests
     }
 
     [Fact]
+    public void Fill_OfAPrefix_LeavesTheRestOfALargerBufferAlone()
+    {
+        var source = new ChunkedWaveProvider([1, 2, 3], chunkSize: 2);
+        var buffer = Enumerable.Repeat((byte)0xCC, 6).ToArray();
+
+        AudioRenderBufferRead result = AudioRenderBufferReader.Fill(source, buffer, 4);
+
+        Assert.Equal(3, result.BytesRead);
+        Assert.True(result.SourceEnded);
+        Assert.Equal([1, 2, 3, 0, 0xCC, 0xCC], buffer);
+    }
+
+    [Fact]
     public void Fill_EmptySourceProducesSilentBuffer()
     {
         var source = new ChunkedWaveProvider([], chunkSize: 2);

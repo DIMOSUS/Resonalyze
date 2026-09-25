@@ -4,23 +4,29 @@ namespace Resonalyze.Audio;
 
 internal static class AudioRenderBufferReader
 {
-    public static AudioRenderBufferRead Fill(IWaveProvider source, byte[] buffer)
+    public static AudioRenderBufferRead Fill(IWaveProvider source, byte[] buffer) =>
+        Fill(source, buffer, buffer?.Length ?? 0);
+
+    /// <summary>Fills the first <paramref name="count"/> bytes, zeroing what the source leaves short.</summary>
+    public static AudioRenderBufferRead Fill(IWaveProvider source, byte[] buffer, int count)
     {
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(buffer);
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(count, buffer.Length);
 
-        Array.Clear(buffer);
+        Array.Clear(buffer, 0, count);
         int bytesRead = 0;
         bool sourceEnded = false;
-        while (bytesRead < buffer.Length)
+        while (bytesRead < count)
         {
-            int read = source.Read(buffer, bytesRead, buffer.Length - bytesRead);
+            int read = source.Read(buffer, bytesRead, count - bytesRead);
             if (read == 0)
             {
                 sourceEnded = true;
                 break;
             }
-            if (read < 0 || read > buffer.Length - bytesRead)
+            if (read < 0 || read > count - bytesRead)
             {
                 throw new InvalidOperationException(
                     "The audio source returned an invalid byte count.");
